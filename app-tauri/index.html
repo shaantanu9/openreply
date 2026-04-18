@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Gap Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">G</div>
+      <div>
+        <div class="brand-name">Gap Map</div>
+        <div class="brand-sub">research workspace</div>
+      </div>
+    </div>
+
+    <div class="nav-section-label">Workspace</div>
+    <nav class="nav" id="nav-workspace">
+      <a href="#/" data-route="/" class="active">
+        <span class="nav-ic">▦</span>
+        <span>Dashboard</span>
+        <span class="nav-count" id="nav-dash-count">—</span>
+      </a>
+      <a href="#/topics" data-route="/topics">
+        <span class="nav-ic">◉</span>
+        <span>Topics</span>
+        <span class="nav-count" id="nav-topics-count">—</span>
+      </a>
+      <a href="#/ingest" data-route="/ingest">
+        <span class="nav-ic">↓</span>
+        <span>Ingest</span>
+      </a>
+      <a href="#/reports" data-route="/reports">
+        <span class="nav-ic">▤</span>
+        <span>Reports</span>
+      </a>
+    </nav>
+
+    <div class="nav-section-label">Account</div>
+    <nav class="nav">
+      <a href="#/settings" data-route="/settings"><span class="nav-ic">⚙</span><span>Settings</span></a>
+      <a href="https://github.com/shaantanu98/reddit-myind" target="_blank"><span class="nav-ic">?</span><span>Help &amp; docs</span></a>
+    </nav>
+
+    <div class="pro-card">
+      <span class="pro-badge">PRO</span>
+      <h4>Unlock unlimited ingests</h4>
+      <p>Schedule deep crawls, export to Notion, and get weekly digests.</p>
+      <span class="pro-cta">Upgrade →</span>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main" id="main-content">
+    <!-- Screens render here -->
+    <div class="empty-state">Loading…</div>
+  </main>
+</div>
+
+<!-- new-topic modal -->
+<div id="modal-backdrop" class="modal-backdrop" hidden>
+  <div class="modal">
+    <h3>New research topic</h3>
+    <p class="modal-sub">We'll discover the right subs, pull multi-source data, and build a gap map.</p>
+    <input id="new-topic-input" type="text" placeholder='e.g. "ATS resume and job search apps"' autofocus />
+    <label class="modal-check">
+      <input type="checkbox" id="new-topic-aggressive" checked>
+      <span>Aggressive mode (all sources · historical · ~15 min)</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-start">Start collect</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

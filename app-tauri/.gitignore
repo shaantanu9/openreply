@@ -1,0 +1,14 @@
+# Vite build output
+dist/
+node_modules/
+
+# Rust build output
+src-tauri/target/
+src-tauri/gen/
+
+# Sidecar binaries are platform-specific — commit your-platform binary only
+# Users of other platforms run scripts/build-pyinstaller.sh on their machine
+# src-tauri/binaries/*
+
+# OS
+.DS_Store
