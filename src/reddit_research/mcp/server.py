@@ -17,6 +17,9 @@ from ..fetch.comments import fetch_comments
 from ..fetch.posts import fetch_posts
 from ..fetch.search import search_reddit
 from ..fetch.users import fetch_user
+from ..research.collect import collect as research_collect
+from ..research.collect import corpus_for as research_corpus_for
+from ..research.discover import discover_subs as research_discover
 
 mcp = FastMCP("reddit-myind")
 
@@ -120,6 +123,113 @@ def reddit_sub_stats(sub: str) -> dict:
         "last_post_utc": max_created,
         "top_authors": top_authors,
     }
+
+
+# ── research tools (gap-finding for any topic/app) ──────────────────────────
+# These are the "Claude-drives" tools. No LLM calls inside — Claude Code is
+# the LLM, so these return structured data for Claude to synthesize.
+
+
+@mcp.tool()
+def reddit_discover_subs(topic: str, limit: int = 10) -> list[dict]:
+    """Find the most relevant subreddits for any topic or app domain.
+
+    Use this as the FIRST step before research_collect so you (Claude) can
+    decide whether the auto-discovered subs are right or need tweaking.
+
+    Args:
+        topic: e.g. "meditation apps", "freelance invoicing", "resume ATS".
+        limit: max subs to return (default 10).
+    """
+    return research_discover(topic=topic, limit=limit)
+
+
+@mcp.tool()
+def reddit_research_collect(
+    topic: str,
+    subs: list[str] | None = None,
+    limit_per_sub: int = 30,
+    limit_per_query: int = 20,
+    query_categories: list[str] | None = None,
+    scope_to_subs: bool = True,
+) -> dict:
+    """Build a topic-scoped corpus in SQLite — runs discover + top fetch + parameterized search.
+
+    Fetches ~200–800 posts depending on limits. Takes several minutes.
+    All results are tagged with `topic` so later tools can retrieve them.
+
+    Args:
+        topic: research topic.
+        subs: optional override list (['resumes','jobs',...]). Otherwise discovered.
+        limit_per_sub: per-sub top-of-month + top-of-year each fetch this many.
+        limit_per_query: per-search-template fetch this many.
+        query_categories: subset of ['pain','features','complaints','diy'] (default all).
+        scope_to_subs: if True, search each discovered sub separately (higher signal).
+    """
+    r = research_collect(
+        topic=topic,
+        subs=subs,
+        limit_per_sub=limit_per_sub,
+        limit_per_query=limit_per_query,
+        query_categories=query_categories,
+        sub_scope_search=scope_to_subs,
+    )
+    return {
+        "topic": r.topic,
+        "subs": r.subs,
+        "posts_fetched": r.posts_fetched,
+        "by_source": r.by_source,
+        "errors": r.errors[:10],
+    }
+
+
+@mcp.tool()
+def reddit_get_corpus(topic: str, limit: int = 50, min_score: int = 1) -> list[dict]:
+    """Retrieve the collected corpus for a topic, ranked by engagement.
+
+    Use this to pull the raw posts Claude should analyze. `num_comments * 2 + score`
+    is the engagement rank — comments matter more than upvotes for pain signal.
+
+    Args:
+        topic: topic tag (matches a prior research_collect call).
+        limit: max posts to return.
+        min_score: skip posts with score < this.
+    """
+    return research_corpus_for(topic=topic, limit=limit, min_score=min_score)
+
+
+@mcp.tool()
+def reddit_topic_stats(topic: str) -> dict:
+    """Summary stats for a collected topic — size, sub coverage, date range."""
+    db = get_db()
+    rows = list(
+        db.query(
+            """
+            SELECT count(*) AS n,
+                   count(DISTINCT p.sub) AS subs,
+                   min(p.created_utc) AS oldest,
+                   max(p.created_utc) AS newest,
+                   avg(p.num_comments) AS avg_comments,
+                   avg(p.score) AS avg_score
+            FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
+            WHERE tp.topic = ?
+            """,
+            [topic],
+        )
+    )
+    top_subs = list(
+        db.query(
+            """
+            SELECT p.sub, count(*) AS c
+            FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
+            WHERE tp.topic = ?
+            GROUP BY p.sub ORDER BY c DESC LIMIT 10
+            """,
+            [topic],
+        )
+    )
+    base = rows[0] if rows else {}
+    return {"topic": topic, "stats": base, "top_subs": top_subs}
 
 
 def run() -> None:

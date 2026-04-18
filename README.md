@@ -75,9 +75,43 @@ uv run reddit-cli mcp serve
 
 All commands support `--json` for machine-readable output.
 
+## Gap-finding workflow (any app / any topic)
+
+Five commands, one per step:
+
+```bash
+# 1. Find the right subs for a topic
+uv run reddit-cli research discover --topic "meditation apps"
+
+# 2. Build a corpus (discovers subs + top posts + parameterized searches)
+uv run reddit-cli research collect --topic "meditation apps"
+
+# 3. See what's collected
+uv run reddit-cli research corpus --topic "meditation apps" --limit 20
+
+# 4. Extract gap signals via LLM (painpoints / features / complaints / DIY)
+uv run reddit-cli research gaps --topic "meditation apps" --provider anthropic
+
+# 5. Render a human markdown report
+uv run reddit-cli research report --topic "meditation apps" --out report.md
+```
+
+All prompts and query templates live in `prompts/*.yaml` — tune them without
+touching code. Set `REDDIT_MYIND_PROMPTS_DIR` to point at your own set.
+
 ## MCP (Claude Code)
 
 Add to your Claude Code settings:
+
+**Easiest — one command:**
+
+```bash
+uv run reddit-cli mcp install
+```
+
+That writes the server block into `~/.claude.json`. Restart Claude Code.
+
+Or set it manually:
 
 ```json
 {
@@ -90,8 +124,13 @@ Add to your Claude Code settings:
 }
 ```
 
-Tools exposed: `reddit_fetch_posts`, `reddit_fetch_comments`, `reddit_fetch_user`,
+**10 tools exposed to Claude:**
+
+Core: `reddit_fetch_posts`, `reddit_fetch_comments`, `reddit_fetch_user`,
 `reddit_search`, `reddit_query_db`, `reddit_sub_stats`.
+
+Research (gap-finding): `reddit_discover_subs`, `reddit_research_collect`,
+`reddit_get_corpus`, `reddit_topic_stats`.
 
 The MCP server intentionally has **no LLM calls** — Claude Code is the LLM.
 

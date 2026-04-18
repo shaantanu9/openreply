@@ -24,11 +24,13 @@ fetch_app = typer.Typer(help="Fetch data from Reddit (persists to SQLite).")
 analyze_app = typer.Typer(help="LLM-assisted analysis over stored data.")
 mcp_app = typer.Typer(help="MCP server for Claude Code.")
 auth_app = typer.Typer(help="Reddit API credential setup.")
+research_app = typer.Typer(help="Topic/app gap-finding: discover → collect → extract → report.")
 
 app.add_typer(fetch_app, name="fetch")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(auth_app, name="auth")
+app.add_typer(research_app, name="research")
 
 console = Console()
 
@@ -334,6 +336,179 @@ def cmd_mcp_serve() -> None:
         )
         raise typer.Exit(1) from e
     run()
+
+
+@mcp_app.command("install")
+def cmd_mcp_install(
+    claude_config: Optional[Path] = typer.Option(
+        None, "--config", help="Claude Code config path (default: ~/.claude.json)"
+    ),
+    project_dir: Optional[Path] = typer.Option(
+        None, "--project-dir", help="Absolute path to this repo (default: CWD)"
+    ),
+    server_name: str = typer.Option("reddit-myind", "--name"),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing entry"),
+) -> None:
+    """Register reddit-myind's MCP server in Claude Code's config.
+
+    Adds a `mcpServers.<name>` entry that launches via `uv run` from this repo,
+    so Claude Code boots the server with the right venv automatically.
+    """
+    import json
+
+    cfg_path = (claude_config or (Path.home() / ".claude.json")).expanduser()
+    proj = (project_dir or Path.cwd()).expanduser().resolve()
+
+    if not (proj / "pyproject.toml").exists():
+        console.print(f"[red]{proj} doesn't look like the reddit-myind repo (no pyproject.toml).[/red]")
+        raise typer.Exit(1)
+
+    entry = {
+        "command": "uv",
+        "args": ["--directory", str(proj), "run", "reddit-cli", "mcp", "serve"],
+    }
+
+    if cfg_path.exists():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8") or "{}")
+        except json.JSONDecodeError:
+            console.print(f"[red]{cfg_path} is not valid JSON.[/red]")
+            raise typer.Exit(1)
+    else:
+        cfg = {}
+
+    servers = cfg.setdefault("mcpServers", {})
+    if server_name in servers and not force:
+        console.print(
+            f"[yellow]{server_name!r} already registered in {cfg_path}.[/yellow] "
+            "Use --force to overwrite."
+        )
+        console.print_json(data=servers[server_name])
+        raise typer.Exit(0)
+
+    servers[server_name] = entry
+    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    console.print(f"[green]registered[/green] {server_name!r} → {cfg_path}")
+    console.print_json(data=entry)
+    console.print(
+        "\n[dim]Restart Claude Code (or your MCP-capable client) to pick up the new server.[/dim]"
+    )
+
+
+# ── info ─────────────────────────────────────────────────────────────────────
+
+# ── research ─────────────────────────────────────────────────────────────────
+
+@research_app.command("discover")
+def cmd_research_discover(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    limit: int = typer.Option(10, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List the most relevant subreddits for a topic."""
+    from ..research import discover_subs
+
+    rows = discover_subs(topic, limit=limit)
+    _emit(rows, as_json, table_title=f"subs for '{topic}'")
+
+
+@research_app.command("collect")
+def cmd_research_collect(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    subs: Optional[str] = typer.Option(None, "--subs", help="Comma-separated, overrides discovery"),
+    limit_per_sub: int = typer.Option(50, "--per-sub"),
+    limit_per_query: int = typer.Option(25, "--per-query"),
+    categories: Optional[str] = typer.Option(
+        None, "--categories", help="Comma-separated: pain,features,complaints,diy (default: all)"
+    ),
+    scope_to_subs: bool = typer.Option(
+        True, "--scope-to-subs/--search-all-reddit",
+        help="Restrict search queries to discovered subs (higher signal) or search all Reddit.",
+    ),
+) -> None:
+    """Build a topic-scoped corpus in SQLite (discover + fetch + search)."""
+    from ..research import collect
+
+    sub_list = [s.strip() for s in subs.split(",")] if subs else None
+    cats = [c.strip() for c in categories.split(",")] if categories else None
+
+    result = collect(
+        topic=topic,
+        subs=sub_list,
+        limit_per_sub=limit_per_sub,
+        limit_per_query=limit_per_query,
+        query_categories=cats,
+        sub_scope_search=scope_to_subs,
+        progress=lambda m: console.print(f"[dim]• {m}[/dim]"),
+    )
+    console.print(
+        f"\n[green]done[/green] — [bold]{result.posts_fetched}[/bold] posts "
+        f"tagged under [cyan]{result.topic}[/cyan] across {len(result.subs)} subs. "
+        f"{len(result.errors)} error(s)."
+    )
+    if result.errors:
+        console.print("[yellow]errors:[/yellow]")
+        for e in result.errors[:5]:
+            console.print(f"  ! {e}")
+
+
+@research_app.command("gaps")
+def cmd_research_gaps(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str = typer.Option("anthropic", "--provider"),
+    corpus_limit: int = typer.Option(120, "--limit", "-n"),
+    min_score: int = typer.Option(1, "--min-score"),
+    as_json: bool = typer.Option(False, "--json"),
+    extractor: Optional[str] = typer.Option(
+        None, "--only", help="Run one extractor: painpoints|features|complaints|diy"
+    ),
+) -> None:
+    """Extract gap signals from a collected corpus via LLM."""
+    from ..research import find_gaps, run_extractor
+
+    if extractor:
+        result = run_extractor(
+            extractor, topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
+        )
+        _emit(result, as_json)
+    else:
+        report = find_gaps(
+            topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
+        )
+        _emit(report, as_json)
+
+
+@research_app.command("report")
+def cmd_research_report(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str = typer.Option("anthropic", "--provider"),
+    corpus_limit: int = typer.Option(120, "--limit", "-n"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write markdown to file"),
+) -> None:
+    """Run all extractors and produce a human-readable markdown gap report."""
+    from ..research import find_gaps, render_markdown
+
+    report = find_gaps(topic, provider=provider, corpus_limit=corpus_limit)
+    md = render_markdown(report)
+    if out:
+        out.write_text(md, encoding="utf-8")
+        console.print(f"[green]wrote report → {out}[/green]")
+    else:
+        console.print(md)
+
+
+@research_app.command("corpus")
+def cmd_research_corpus(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    limit: int = typer.Option(50, "--limit", "-n"),
+    min_score: int = typer.Option(1, "--min-score"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show what's been collected for a topic (from SQLite)."""
+    from ..research.collect import corpus_for
+
+    rows = corpus_for(topic, limit=limit, min_score=min_score)
+    _emit(rows, as_json, table_title=f"corpus for '{topic}' · {len(rows)} posts")
 
 
 # ── info ─────────────────────────────────────────────────────────────────────

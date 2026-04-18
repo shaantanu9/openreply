@@ -1,0 +1,39 @@
+# Parameterized search queries used by the `collect` orchestrator.
+# `{topic}` is filled in at runtime. Edit freely — no code changes needed.
+#
+# Principle: these queries surface *candidate pain/gap signals*. They will
+# hit Reddit search; add noisy templates sparingly.
+
+version: 1
+
+pain:
+  - "frustrated with {topic}"
+  - "problem with {topic}"
+  - "{topic} is broken"
+  - "hate {topic}"
+  - "{topic} issues"
+  - "why does {topic}"
+  - "struggling with {topic}"
+
+features:
+  - "wish {topic}"
+  - "looking for {topic}"
+  - "best {topic}"
+  - "{topic} that can"
+  - "recommendation {topic}"
+  - "{topic} recommendation"
+
+complaints:
+  - "{topic} sucks"
+  - "alternative to {topic}"
+  - "stop using {topic}"
+  - "switched from {topic}"
+  - "{topic} is terrible"
+
+diy:
+  - "built my own {topic}"
+  - "made my own {topic}"
+  - "ended up using {topic}"
+  - "hack for {topic}"
+  - "workaround for {topic}"
+  - "DIY {topic}"
