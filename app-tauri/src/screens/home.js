@@ -2,6 +2,12 @@
 // active-collect banner, BYOK prompt, fixed empty-state reflow.
 
 import { api, esc, fmtN, timeAgo } from '../api.js';
+import { avatarInitials } from './settings.js';
+
+function headerAvatar() {
+  const name = localStorage.getItem('gapmap.profile.name') || '';
+  return esc(avatarInitials(name));
+}
 
 const COVER_VARIANTS = ['cover-1', 'cover-2', 'cover-3', 'cover-4'];
 const COVER_EMOJIS = ['📄', '🎓', '🌱', '💸', '🎯', '🔧', '💡', '🚀'];
@@ -239,7 +245,7 @@ export async function renderHome(root) {
         <span>Start a topic — type a market or problem…</span>
       </div>
       <div class="icon-btn" id="home-bell" title="Pipeline activity" role="button" tabindex="0">🔔</div>
-      <div class="avatar" id="home-avatar" role="button" tabindex="0" title="Settings">SB</div>
+      <div class="avatar" id="home-avatar" role="button" tabindex="0" title="Settings">${headerAvatar()}</div>
     </header>
 
     <div id="active-collect-slot"></div>

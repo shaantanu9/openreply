@@ -676,6 +676,69 @@ body {
 }
 .sub-tile span { font-size: 11px; color: var(--ink-3); }
 
+/* --- Settings profile + LLM chips + toggles --- */
+.settings-profile { grid-column: span 2; }
+@media (max-width: 900px) { .settings-profile { grid-column: auto; } }
+.settings-profile-head {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 16px;
+}
+.settings-avatar {
+  width: 56px; height: 56px; border-radius: 16px;
+  display: grid; place-items: center; color: white;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-weight: 800; font-size: 19px; letter-spacing: 0.03em;
+  box-shadow: 0 2px 8px rgba(30,22,14,0.08);
+}
+.settings-profile-fields {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.settings-profile-fields label {
+  display: flex; flex-direction: column; gap: 4px; font-size: 11px;
+  color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.settings-profile-fields input,
+.settings-profile-fields select {
+  padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--surface); font-size: 13px; font-family: inherit;
+  font-weight: 500; text-transform: none; letter-spacing: 0;
+  color: var(--ink-1);
+}
+.settings-profile-fields input:focus,
+.settings-profile-fields select:focus {
+  outline: none; border-color: var(--ink-3); background: white;
+}
+.settings-profile-actions {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 12px;
+}
+.settings-profile-status { font-size: 12px; font-weight: 600; }
+
+.llm-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+  margin: 12px 0 4px;
+}
+@media (max-width: 720px) { .llm-grid { grid-template-columns: 1fr; } }
+.llm-chip {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); font-size: 11.5px;
+}
+.llm-chip.on  { background: var(--mint-soft); border-color: #C9E5D2; }
+.llm-chip.on .llm-chip-state { color: #2E7D5B; font-weight: 600; }
+.llm-chip.off .llm-chip-state { color: var(--ink-3); }
+.llm-chip-name { font-weight: 700; color: var(--ink-1); }
+
+.settings-toggle {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 0;
+  border-top: 1px solid var(--line); cursor: pointer;
+}
+.settings-toggle:first-of-type { border-top: none; padding-top: 2px; }
+.settings-toggle input {
+  margin-top: 3px;
+}
+.settings-toggle span { flex: 1; font-size: 13px; color: var(--ink-1); }
+.settings-toggle span b { display: block; margin-bottom: 2px; font-weight: 700; }
+.settings-toggle span small { display: block; font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
+
 /* --- Dashboard skeletons --- */
 .skel {
   background: linear-gradient(90deg, var(--surface-alt) 0%, #F6EFE6 50%, var(--surface-alt) 100%);
