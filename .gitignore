@@ -8,6 +8,7 @@ venv/
 .ruff_cache/
 build/
 dist/
+reddit-cli.spec
 # uv caches — but DO commit uv.lock (tracked for reproducibility)
 .uv-cache/
 !uv.lock
