@@ -44,6 +44,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
+    "pyinstaller>=6.10",
 ]
 all = ["reddit-myind[analyze,mcp,sources,dev]"]
 
