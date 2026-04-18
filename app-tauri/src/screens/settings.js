@@ -1,16 +1,13 @@
-// Settings v2 — profile + multi-LLM status + reddit + data + preferences + danger.
-//
-// Profile is stored locally in localStorage (no server auth — this is a
-// desktop app). The avatar initials derived from the name also render in
-// the dashboard header.
+// Settings — renders instantly with the profile card + skeletons, then
+// fills in each card as its sidecar call returns. No call blocks the UI.
 
 import { api, esc } from '../api.js';
 import { openByokModal } from './byok.js';
 
 const PROFILE_KEYS = {
-  name: 'gapmap.profile.name',
+  name:  'gapmap.profile.name',
   email: 'gapmap.profile.email',
-  role: 'gapmap.profile.role',
+  role:  'gapmap.profile.role',
 };
 
 const LLM_LABELS = {
@@ -49,7 +46,6 @@ function avatarColor(name) {
   for (const c of (name || 'gapmap')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return palette[h % palette.length];
 }
-
 function fmtBytes(bytes) {
   if (!bytes || bytes < 1024) return `${bytes || 0} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -58,56 +54,20 @@ function fmtBytes(bytes) {
 }
 
 export async function renderSettings(root) {
+  const profile = getProfile();
+
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">Account / <strong>Settings</strong></div>
       <div class="topbar-spacer"></div>
     </header>
     <div class="section-head"><div><h2>Settings</h2><p>Profile · keys · data · preferences</p></div></div>
-    <div id="settings-root">
-      <div class="settings-grid">
-        <div class="settings-card"><h4>Loading…</h4></div>
-      </div>
-    </div>
-  `;
 
-  let byok = {};
-  let info = {};
-  let dataDir = '';
-  let dbSize = null;
-
-  try { byok = await api.byokStatus(); } catch {}
-  try { info = await api.cliInfo(); } catch {}
-  try { dataDir = await api.appDataDir(); } catch {}
-
-  // Size of the SQLite DB for the "Data" card.
-  try {
-    const rows = await api.runQuery(
-      `SELECT (page_count * page_size) AS bytes FROM pragma_page_count, pragma_page_size`
-    );
-    if (Array.isArray(rows) && rows[0]?.bytes) dbSize = rows[0].bytes;
-  } catch {}
-
-  const profile = getProfile();
-  const providers = Object.keys(LLM_LABELS);
-  const readyCount = providers.reduce((a, k) => {
-    const st = byok?.[k];
-    if (!st) return a;
-    if (k === 'ollama') return a + (typeof st === 'string' && st ? 1 : 0);
-    return a + (st.set ? 1 : 0);
-  }, 0);
-  const llmProvider = byok?.llm_provider || '';
-  const llmModel = byok?.llm_model || '';
-  const t = (info.tables && info.tables) || {};
-  const slot = root.querySelector('#settings-root');
-
-  slot.innerHTML = `
-    <div class="settings-grid">
-      <!-- PROFILE -->
+    <div class="settings-grid" id="settings-grid">
+      <!-- PROFILE (renders instantly) -->
       <div class="settings-card settings-profile">
         <div class="settings-profile-head">
-          <div class="settings-avatar" id="settings-avatar"
-               style="background:${avatarColor(profile.name)}">
+          <div class="settings-avatar" id="settings-avatar" style="background:${avatarColor(profile.name)}">
             ${esc(avatarInitials(profile.name))}
           </div>
           <div>
@@ -138,69 +98,41 @@ export async function renderSettings(root) {
         </div>
       </div>
 
-      <!-- LLM STATUS -->
-      <div class="settings-card">
-        <h4>LLM providers <span style="color:var(--ink-3);font-size:12px;font-weight:500">${readyCount} ready</span></h4>
-        <p>${esc(byok?.path || '~/.config/reddit-myind/.env')}</p>
-        <div class="llm-grid">
-          ${providers.map(k => {
-            const st = byok?.[k];
-            const isOllama = k === 'ollama';
-            const ready = isOllama ? (typeof st === 'string' && !!st) : !!st?.set;
-            const preview = isOllama ? (st || '') : (st?.preview || '');
-            return `
-              <div class="llm-chip ${ready ? 'on' : 'off'}">
-                <span class="llm-chip-name">${esc(LLM_LABELS[k])}</span>
-                <span class="llm-chip-state">${ready ? (preview ? `✓ ${esc(preview)}` : '✓ ready') : '× not set'}</span>
-              </div>`;
-          }).join('')}
-        </div>
-        <div class="kv-row" style="margin-top:12px"><b>Default provider</b>
-          <span>${llmProvider ? esc(LLM_LABELS[llmProvider] || llmProvider) : '—'}</span>
-        </div>
-        ${llmModel ? `<div class="kv-row"><b>Default model</b><span>${esc(llmModel)}</span></div>` : ''}
+      <!-- LLM card (skeleton → filled) -->
+      <div class="settings-card" id="card-llm">
+        <h4>LLM providers <span style="color:var(--ink-3);font-size:12px;font-weight:500">loading…</span></h4>
+        <p style="color:var(--ink-3)">Reading your .env file…</p>
+        <div class="skel skel-line" style="width:100%;margin-top:10px"></div>
+        <div class="skel skel-line" style="width:85%"></div>
+        <div class="skel skel-line" style="width:70%"></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="btn-manage-keys">🗝 Manage keys</button>
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reveal-env">Reveal .env</button>
+          <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="btn-manage-keys-eager">🗝 Manage keys</button>
         </div>
       </div>
 
-      <!-- REDDIT -->
-      <div class="settings-card">
+      <!-- Reddit card -->
+      <div class="settings-card" id="card-reddit">
         <h4>Reddit source</h4>
-        <p>Without credentials we use public <code>.json</code> endpoints (60/min). With client ID + secret the rate limit jumps to 100/min.</p>
-        <div class="kv-row"><b>Mode</b><span>${esc(info.mode || 'public')}</span></div>
-        <div class="kv-row"><b>Client ID</b><span>${byok?.reddit_client_id?.set ? `✓ ${esc(byok.reddit_client_id.preview)}` : '× not set'}</span></div>
-        <div class="kv-row"><b>Client secret</b><span>${byok?.reddit_client_secret?.set ? `✓ ${esc(byok.reddit_client_secret.preview)}` : '× not set'}</span></div>
-        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reddit-apps">Create Reddit app</button>
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-auth-docs">Setup guide</button>
-        </div>
+        <p style="color:var(--ink-3)">Loading status…</p>
+        <div class="skel skel-line" style="width:60%;margin-top:10px"></div>
       </div>
 
-      <!-- DATA -->
-      <div class="settings-card">
+      <!-- Data card -->
+      <div class="settings-card" id="card-data">
         <h4>Local data</h4>
-        <p>Everything Gap Map knows lives here. Nothing uploaded.</p>
-        <div class="kv-row"><b>Directory</b><span title="${esc(dataDir)}">${esc(dataDir)}</span></div>
-        <div class="kv-row"><b>SQLite DB</b><span title="${esc(info.db_path || '')}">${esc(info.db_path || '—')}</span></div>
-        <div class="kv-row"><b>DB size</b><span>${dbSize != null ? fmtBytes(dbSize) : '—'}</span></div>
-        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reveal-data">Reveal in Finder</button>
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-open-db">Open Database console →</button>
-        </div>
+        <p style="color:var(--ink-3)">Checking disk usage…</p>
+        <div class="skel skel-line" style="width:80%;margin-top:10px"></div>
+        <div class="skel skel-line" style="width:65%"></div>
       </div>
 
-      <!-- TABLE COUNTS -->
-      <div class="settings-card">
+      <!-- Tables -->
+      <div class="settings-card" id="card-tables">
         <h4>Table counts</h4>
         <p>As reported by the CLI at launch</p>
-        ${Object.entries(t).length
-          ? Object.entries(t).map(([k, v]) => `<div class="kv-row"><b>${esc(k)}</b><span>${v}</span></div>`).join('')
-          : `<div class="empty-state" style="padding:12px">No table info yet — run a collect to populate.</div>`}
+        <div class="empty-state" style="padding:12px">loading…</div>
       </div>
 
-      <!-- PREFERENCES -->
+      <!-- Preferences -->
       <div class="settings-card">
         <h4>Preferences</h4>
         <p>Behaviour knobs</p>
@@ -214,7 +146,7 @@ export async function renderSettings(root) {
         </label>
       </div>
 
-      <!-- ONBOARDING + HELP -->
+      <!-- Onboarding + help -->
       <div class="settings-card">
         <h4>Onboarding &amp; help</h4>
         <p>Re-run the welcome wizard or open the docs.</p>
@@ -225,8 +157,8 @@ export async function renderSettings(root) {
         </div>
       </div>
 
-      <!-- ABOUT + DANGER -->
-      <div class="settings-card" style="border-color:var(--rose, #F5DADA);background:#FFFBFB">
+      <!-- Danger -->
+      <div class="settings-card" style="border-color:#F5DADA;background:#FFFBFB">
         <h4 style="color:#B84747">⚠ Danger zone</h4>
         <p>These actions can't be undone.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
@@ -235,85 +167,191 @@ export async function renderSettings(root) {
         </div>
       </div>
 
-      <!-- ABOUT -->
+      <!-- About -->
       <div class="settings-card">
         <h4>About</h4>
         <p>Gap Map · v0.1.0 · Python sidecar + Tauri · variant-6 soft-dashboard</p>
-        <div class="kv-row"><b>CLI mode</b><span>${esc(info.mode || 'public')}</span></div>
       </div>
+
+      <div id="settings-err" style="grid-column:1/-1;color:#B84747;font-size:12px"></div>
     </div>
   `;
 
-  // --- wire profile ---
-  const avatarEl = slot.querySelector('#settings-avatar');
-  const nameInput = slot.querySelector('#profile-name');
-  const emailInput = slot.querySelector('#profile-email');
-  const roleSelect = slot.querySelector('#profile-role');
-  const profileStatus = slot.querySelector('#profile-status');
+  wireProfileCard(root);
+  wireStaticButtons(root);
+
+  // Always-available buttons while the async data loads
+  root.querySelector('#btn-manage-keys-eager').onclick = () => openByokModal(() => renderSettings(root));
+
+  // Fetch everything in parallel; fill cards independently as each resolves.
+  api.byokStatus()
+    .then(byok => fillLlmCard(root, byok))
+    .then(() => api.byokStatus())
+    .then(byok => fillRedditCard(root, byok))
+    .catch(e => reportError(root, 'keys', e));
+
+  api.cliInfo()
+    .then(info => fillTablesCard(root, info))
+    .catch(e => reportError(root, 'info', e));
+
+  Promise.all([api.appDataDir(), api.cliInfo().catch(() => ({}))])
+    .then(async ([dataDir, info]) => {
+      let dbSize = null;
+      try {
+        const rows = await api.runQuery(
+          `SELECT (page_count * page_size) AS bytes FROM pragma_page_count, pragma_page_size`
+        );
+        if (Array.isArray(rows) && rows[0]?.bytes) dbSize = rows[0].bytes;
+      } catch {}
+      fillDataCard(root, info, dataDir, dbSize);
+    })
+    .catch(e => reportError(root, 'data', e));
+}
+
+// --- Profile card (sync) ----------------------------------------------------
+function wireProfileCard(root) {
+  const nameInput  = root.querySelector('#profile-name');
+  const emailInput = root.querySelector('#profile-email');
+  const roleSelect = root.querySelector('#profile-role');
+  const avatarEl   = root.querySelector('#settings-avatar');
+  const statusEl   = root.querySelector('#profile-status');
 
   nameInput.addEventListener('input', () => {
     avatarEl.textContent = avatarInitials(nameInput.value);
     avatarEl.style.background = avatarColor(nameInput.value);
   });
-  slot.querySelector('#profile-save').addEventListener('click', () => {
-    saveProfile({
-      name: nameInput.value.trim(),
-      email: emailInput.value.trim(),
-      role: roleSelect.value,
-    });
-    profileStatus.textContent = '✓ saved';
-    profileStatus.style.color = '#2E7D5B';
-    // Broadcast so the home header avatar refreshes on next visit.
+  root.querySelector('#profile-save').addEventListener('click', () => {
+    saveProfile({ name: nameInput.value.trim(), email: emailInput.value.trim(), role: roleSelect.value });
+    statusEl.textContent = '✓ saved';
+    statusEl.style.color = '#2E7D5B';
     window.dispatchEvent(new CustomEvent('gapmap:profile-updated'));
-    setTimeout(() => { profileStatus.textContent = ''; }, 2000);
+    setTimeout(() => { statusEl.textContent = ''; }, 2000);
   });
+}
 
-  // --- wire rest ---
-  slot.querySelector('#btn-manage-keys')?.addEventListener('click', () => {
-    openByokModal(() => renderSettings(root));
+// --- Static buttons (sync) --------------------------------------------------
+function wireStaticButtons(root) {
+  root.querySelector('#pref-aggressive')?.addEventListener('change', e => {
+    localStorage.setItem('gapmap.pref.aggressive', e.target.checked ? 'true' : 'false');
   });
-  slot.querySelector('#btn-reveal-env')?.addEventListener('click', () => {
-    if (byok.path) api.revealInFinder(byok.path);
+  root.querySelector('#pref-confirm-delete')?.addEventListener('change', e => {
+    localStorage.setItem('gapmap.pref.confirm_delete', e.target.checked ? 'true' : 'false');
   });
-  slot.querySelector('#btn-reddit-apps')?.addEventListener('click', () => {
-    api.openUrl('https://www.reddit.com/prefs/apps');
-  });
-  slot.querySelector('#btn-auth-docs')?.addEventListener('click', () => {
-    api.openUrl('https://github.com/shaantanu98/reddit-myind#readme');
-  });
-  slot.querySelector('#btn-reveal-data')?.addEventListener('click', () => {
-    if (dataDir) api.revealInFinder(dataDir);
-  });
-  slot.querySelector('#btn-open-db')?.addEventListener('click', () => {
-    location.hash = '#/database';
-  });
-  slot.querySelector('#btn-reset-onboarding')?.addEventListener('click', () => {
+  root.querySelector('#btn-reset-onboarding')?.addEventListener('click', () => {
     try { localStorage.removeItem('gapmap.onboarding.completed'); } catch {}
     location.hash = '#/welcome';
   });
-  slot.querySelector('#btn-open-science')?.addEventListener('click', () => {
-    location.hash = '#/science';
-  });
-  slot.querySelector('#btn-open-readme')?.addEventListener('click', () => {
-    api.openUrl('https://github.com/shaantanu98/reddit-myind');
-  });
-  slot.querySelector('#pref-aggressive')?.addEventListener('change', (e) => {
-    localStorage.setItem('gapmap.pref.aggressive', e.target.checked ? 'true' : 'false');
-  });
-  slot.querySelector('#pref-confirm-delete')?.addEventListener('change', (e) => {
-    localStorage.setItem('gapmap.pref.confirm_delete', e.target.checked ? 'true' : 'false');
-  });
-  slot.querySelector('#btn-clear-profile')?.addEventListener('click', () => {
+  root.querySelector('#btn-open-science')?.addEventListener('click', () => { location.hash = '#/science'; });
+  root.querySelector('#btn-open-readme')?.addEventListener('click', () => api.openUrl('https://github.com/shaantanu98/reddit-myind'));
+  root.querySelector('#btn-clear-profile')?.addEventListener('click', () => {
     if (!confirm('Clear your local profile (name/email/role)? LLM keys stay.')) return;
     Object.values(PROFILE_KEYS).forEach(k => localStorage.removeItem(k));
     renderSettings(root);
   });
-  slot.querySelector('#btn-clear-prefs')?.addEventListener('click', () => {
+  root.querySelector('#btn-clear-prefs')?.addEventListener('click', () => {
     if (!confirm('Reset every local preference? LLM keys + DB stay untouched.')) return;
     Object.keys(localStorage)
       .filter(k => k.startsWith('gapmap.'))
-      .filter(k => !k.startsWith('gapmap.onboarding')) // keep onboarding flag so user doesn't re-wizard
+      .filter(k => !k.startsWith('gapmap.onboarding'))
       .forEach(k => localStorage.removeItem(k));
     renderSettings(root);
   });
+}
+
+// --- Async card fillers -----------------------------------------------------
+function fillLlmCard(root, byok) {
+  const providers = Object.keys(LLM_LABELS);
+  const readyCount = providers.reduce((a, k) => {
+    const st = byok?.[k];
+    if (!st) return a;
+    if (k === 'ollama') return a + (typeof st === 'string' && st ? 1 : 0);
+    return a + (st.set ? 1 : 0);
+  }, 0);
+  const llmProvider = byok?.llm_provider || '';
+  const llmModel = byok?.llm_model || '';
+
+  const card = root.querySelector('#card-llm');
+  if (!card) return;
+  card.innerHTML = `
+    <h4>LLM providers <span style="color:var(--ink-3);font-size:12px;font-weight:500">${readyCount} ready</span></h4>
+    <p>${esc(byok?.path || '~/.config/reddit-myind/.env')}</p>
+    <div class="llm-grid">
+      ${providers.map(k => {
+        const st = byok?.[k];
+        const isOllama = k === 'ollama';
+        const ready = isOllama ? (typeof st === 'string' && !!st) : !!st?.set;
+        const preview = isOllama ? (st || '') : (st?.preview || '');
+        return `
+          <div class="llm-chip ${ready ? 'on' : 'off'}">
+            <span class="llm-chip-name">${esc(LLM_LABELS[k])}</span>
+            <span class="llm-chip-state">${ready ? (preview ? `✓ ${esc(preview)}` : '✓ ready') : '× not set'}</span>
+          </div>`;
+      }).join('')}
+    </div>
+    <div class="kv-row" style="margin-top:12px"><b>Default provider</b>
+      <span>${llmProvider ? esc(LLM_LABELS[llmProvider] || llmProvider) : '—'}</span>
+    </div>
+    ${llmModel ? `<div class="kv-row"><b>Default model</b><span>${esc(llmModel)}</span></div>` : ''}
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="btn-manage-keys">🗝 Manage keys</button>
+      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reveal-env">Reveal .env</button>
+    </div>`;
+  card.querySelector('#btn-manage-keys').onclick = () => openByokModal(() => renderSettings(root));
+  card.querySelector('#btn-reveal-env').onclick = () => { if (byok?.path) api.revealInFinder(byok.path); };
+}
+
+function fillRedditCard(root, byok) {
+  const card = root.querySelector('#card-reddit');
+  if (!card) return;
+  const cid = byok?.reddit_client_id;
+  const sec = byok?.reddit_client_secret;
+  card.innerHTML = `
+    <h4>Reddit source</h4>
+    <p>Public <code>.json</code> gives 60/min; with creds, 100/min.</p>
+    <div class="kv-row"><b>Client ID</b><span>${cid?.set ? `✓ ${esc(cid.preview)}` : '× not set'}</span></div>
+    <div class="kv-row"><b>Client secret</b><span>${sec?.set ? `✓ ${esc(sec.preview)}` : '× not set'}</span></div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reddit-apps">Create Reddit app</button>
+      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-auth-docs">Setup guide</button>
+    </div>`;
+  card.querySelector('#btn-reddit-apps').onclick = () => api.openUrl('https://www.reddit.com/prefs/apps');
+  card.querySelector('#btn-auth-docs').onclick   = () => api.openUrl('https://github.com/shaantanu98/reddit-myind#readme');
+}
+
+function fillDataCard(root, info, dataDir, dbSize) {
+  const card = root.querySelector('#card-data');
+  if (!card) return;
+  card.innerHTML = `
+    <h4>Local data</h4>
+    <p>Everything Gap Map knows lives here.</p>
+    <div class="kv-row"><b>Directory</b><span title="${esc(dataDir || '')}">${esc(dataDir || '—')}</span></div>
+    <div class="kv-row"><b>SQLite DB</b><span title="${esc(info?.db_path || '')}">${esc(info?.db_path || '—')}</span></div>
+    <div class="kv-row"><b>DB size</b><span>${dbSize != null ? fmtBytes(dbSize) : '—'}</span></div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reveal-data">Reveal in Finder</button>
+      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-open-db">Open Database console →</button>
+    </div>`;
+  card.querySelector('#btn-reveal-data').onclick = () => { if (dataDir) api.revealInFinder(dataDir); };
+  card.querySelector('#btn-open-db').onclick     = () => { location.hash = '#/database'; };
+}
+
+function fillTablesCard(root, info) {
+  const card = root.querySelector('#card-tables');
+  if (!card) return;
+  const t = info?.tables || {};
+  card.innerHTML = `
+    <h4>Table counts</h4>
+    <p>As reported by the CLI at launch</p>
+    ${Object.entries(t).length
+      ? Object.entries(t).map(([k, v]) => `<div class="kv-row"><b>${esc(k)}</b><span>${v}</span></div>`).join('')
+      : `<div class="empty-state" style="padding:12px">No table info yet — run a collect to populate.</div>`}
+  `;
+}
+
+function reportError(root, section, e) {
+  const err = root.querySelector('#settings-err');
+  if (err) {
+    err.textContent = `${err.textContent ? err.textContent + ' · ' : ''}${section}: ${e?.message || e}`;
+  }
+  console.warn('[settings]', section, e);
 }
