@@ -119,6 +119,148 @@ def run_trends(topic: str, keywords: list[str] | None = None, timeframe: str = "
         return {"error": str(e)}
 
 
+def run_arxiv(topic: str, limit: int = 40) -> int:
+    from .arxiv import fetch_arxiv
+
+    fid = log_fetch_start("source:arxiv", {"topic": topic, "limit": limit})
+    try:
+        rows = fetch_arxiv(topic, limit=limit)
+        n = _persist(topic, rows, source_tag="arxiv")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_openalex(topic: str, limit: int = 40) -> int:
+    from .openalex import fetch_openalex
+
+    fid = log_fetch_start("source:openalex", {"topic": topic, "limit": limit})
+    try:
+        rows = fetch_openalex(topic, limit=limit)
+        n = _persist(topic, rows, source_tag="openalex")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_pubmed(topic: str, limit: int = 40) -> int:
+    from .pubmed import fetch_pubmed
+
+    fid = log_fetch_start("source:pubmed", {"topic": topic, "limit": limit})
+    try:
+        rows = fetch_pubmed(topic, limit=limit)
+        n = _persist(topic, rows, source_tag="pubmed")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_gnews(topic: str, limit: int = 40) -> int:
+    from .gnews import fetch_gnews
+
+    fid = log_fetch_start("source:gnews", {"topic": topic, "limit": limit})
+    try:
+        rows = fetch_gnews(topic, limit=limit)
+        n = _persist(topic, rows, source_tag="gnews")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_devto(topic: str, limit: int = 30) -> int:
+    from .devto import fetch_devto
+
+    fid = log_fetch_start("source:devto", {"topic": topic, "limit": limit})
+    try:
+        rows = fetch_devto(query=topic, limit=limit)
+        n = _persist(topic, rows, source_tag="devto")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_lemmy(topic: str, instance: str = "lemmy.world", limit: int = 30) -> int:
+    from .lemmy import fetch_lemmy
+
+    fid = log_fetch_start("source:lemmy", {"topic": topic, "instance": instance})
+    try:
+        rows = fetch_lemmy(topic, instance=instance, limit=limit)
+        n = _persist(topic, rows, source_tag=f"lemmy:{instance}")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_mastodon(topic: str, instance: str = "mastodon.social", limit: int = 30) -> int:
+    from .mastodon import fetch_mastodon
+
+    fid = log_fetch_start("source:mastodon", {"topic": topic, "instance": instance})
+    try:
+        rows = fetch_mastodon(topic, instance=instance, limit=limit)
+        n = _persist(topic, rows, source_tag=f"mastodon:{instance}")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_github_trending(topic: str, limit: int = 20) -> int:
+    from .github_trending import search_github_repos
+
+    fid = log_fetch_start("source:github_trending", {"topic": topic, "limit": limit})
+    try:
+        rows = search_github_repos(topic, limit=limit)
+        n = _persist(topic, rows, source_tag="github")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_github_issues(topic: str, limit: int = 30) -> int:
+    from .github_issues import fetch_github_issues
+
+    fid = log_fetch_start("source:github_issues", {"topic": topic, "limit": limit})
+    try:
+        rows = fetch_github_issues(topic, limit=limit)
+        rows = [r for r in rows if "_error" not in r]
+        n = _persist(topic, rows, source_tag="github_issue")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_discourse(topic: str, instance: str, limit: int = 30) -> int:
+    """Needs explicit `instance` (e.g. 'forum.obsidian.md'). Called directly, not via SOURCES."""
+    from .discourse import fetch_discourse
+
+    fid = log_fetch_start("source:discourse", {"topic": topic, "instance": instance})
+    try:
+        rows = fetch_discourse(topic, instance=instance, limit=limit)
+        n = _persist(topic, rows, source_tag=f"discourse:{instance}")
+        log_fetch_end(fid, rows=n)
+        return n
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
 # Dispatch map for the collect orchestrator
 SOURCES: dict[str, Any] = {
     "hn": run_hn,
@@ -127,4 +269,14 @@ SOURCES: dict[str, Any] = {
     "scholar": run_scholar,
     "stackoverflow": run_stackoverflow,
     "trends": run_trends,
+    # New in Batch A/B/C/D
+    "arxiv": run_arxiv,
+    "openalex": run_openalex,
+    "pubmed": run_pubmed,
+    "gnews": run_gnews,
+    "devto": run_devto,
+    "lemmy": run_lemmy,
+    "mastodon": run_mastodon,
+    "github": run_github_trending,
+    "github_issues": run_github_issues,
 }

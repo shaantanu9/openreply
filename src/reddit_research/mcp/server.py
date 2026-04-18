@@ -460,6 +460,154 @@ def reddit_fetch_trends(
     return fetch_trends(topic=topic, keywords=keywords, timeframe=timeframe, geo=geo)
 
 
+# ── extended free sources (Batch A/B/C/D) ────────────────────────────────────
+
+
+@mcp.tool()
+def reddit_fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
+    """arXiv pre-prints — free, keyless academic source."""
+    from ..sources.arxiv import fetch_arxiv
+
+    return fetch_arxiv(query=query, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_openalex(query: str, limit: int = 30, year_from: int | None = None) -> list[dict]:
+    """OpenAlex — 200M+ works, open scholarly data."""
+    from ..sources.openalex import fetch_openalex
+
+    return fetch_openalex(query=query, limit=limit, year_from=year_from)
+
+
+@mcp.tool()
+def reddit_fetch_pubmed(query: str, limit: int = 30) -> list[dict]:
+    """PubMed — health/medical research."""
+    from ..sources.pubmed import fetch_pubmed
+
+    return fetch_pubmed(query=query, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_gnews(query: str, limit: int = 30, country: str = "US") -> list[dict]:
+    """Google News via free RSS — mainstream attention overlay."""
+    from ..sources.gnews import fetch_gnews
+
+    return fetch_gnews(query=query, limit=limit, country=country)
+
+
+@mcp.tool()
+def reddit_fetch_devto(query: str | None = None, tag: str | None = None, limit: int = 30) -> list[dict]:
+    """DEV.to articles — tech community signal."""
+    from ..sources.devto import fetch_devto
+
+    return fetch_devto(query=query, tag=tag, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_lemmy(query: str, instance: str = "lemmy.world", limit: int = 30) -> list[dict]:
+    """Lemmy — federated Reddit alternative, niche communities."""
+    from ..sources.lemmy import fetch_lemmy
+
+    return fetch_lemmy(query=query, instance=instance, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_mastodon(query: str, instance: str = "mastodon.social", limit: int = 30) -> list[dict]:
+    """Mastodon public tag timeline."""
+    from ..sources.mastodon import fetch_mastodon
+
+    return fetch_mastodon(query=query, instance=instance, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_discourse(query: str, instance: str, limit: int = 30) -> list[dict]:
+    """Search a Discourse forum. `instance` is the forum domain (e.g. forum.obsidian.md)."""
+    from ..sources.discourse import fetch_discourse
+
+    return fetch_discourse(query=query, instance=instance, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_github_repos(query: str, limit: int = 20) -> list[dict]:
+    """Search GitHub repositories — find OSS competitors for a topic."""
+    from ..sources.github_trending import search_github_repos
+
+    return search_github_repos(query=query, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_github_issues(query: str, limit: int = 30, state: str = "open") -> list[dict]:
+    """Search GitHub issues — ranked by 👍 reactions (user pain density)."""
+    from ..sources.github_issues import fetch_github_issues
+
+    return fetch_github_issues(query=query, limit=limit, state=state)
+
+
+@mcp.tool()
+def reddit_fetch_wikipedia(topic: str, pageview_days: int = 90) -> dict:
+    """Wikipedia summary + pageview time series — topic popularity signal."""
+    from ..sources.wikipedia import fetch_wikipedia_pageviews, fetch_wikipedia_summary
+
+    return {
+        "summary": fetch_wikipedia_summary(topic),
+        "pageviews": fetch_wikipedia_pageviews(topic, days=pageview_days),
+    }
+
+
+@mcp.tool()
+def reddit_fetch_package_stats(
+    package: str, ecosystem: str = "npm", range_: str = "last-month"
+) -> dict:
+    """Download stats for a package. ecosystem: 'npm' or 'pypi'."""
+    if ecosystem == "npm":
+        from ..sources.npmstats import fetch_npm_downloads
+
+        return fetch_npm_downloads(package=package, range_=range_)
+    if ecosystem == "pypi":
+        from ..sources.pypistats import fetch_pypi_downloads
+
+        return fetch_pypi_downloads(package=package)
+    return {"error": f"unknown ecosystem: {ecosystem}"}
+
+
+# ── graph analysis (NetworkX) ────────────────────────────────────────────────
+
+
+@mcp.tool()
+def reddit_graph_pagerank(topic: str, top_n: int = 20, kind: str | None = None) -> list[dict]:
+    """Rank nodes by PageRank — surfaces hidden structural hubs.
+
+    Optionally filter to one kind: 'painpoint', 'product', 'workaround', etc.
+    """
+    from ..graph.analyze import pagerank_nodes
+
+    return pagerank_nodes(topic=topic, top_n=top_n, kind=kind)
+
+
+@mcp.tool()
+def reddit_graph_communities(topic: str, max_communities: int = 10) -> list[dict]:
+    """Louvain community detection — clusters the graph into cohesive groups."""
+    from ..graph.analyze import detect_communities
+
+    return detect_communities(topic=topic, max_communities=max_communities)
+
+
+@mcp.tool()
+def reddit_graph_bridges(topic: str, top_n: int = 15) -> list[dict]:
+    """Betweenness centrality — structural bridges connecting otherwise-separate clusters."""
+    from ..graph.analyze import betweenness_bridges
+
+    return betweenness_bridges(topic=topic, top_n=top_n)
+
+
+@mcp.tool()
+def reddit_graph_structural_summary(topic: str) -> dict:
+    """High-level structural metrics (nodes, edges, density, components)."""
+    from ..graph.analyze import graph_summary
+
+    return graph_summary(topic=topic)
+
+
 def run() -> None:
     """Start the server on stdio."""
     mcp.run()
