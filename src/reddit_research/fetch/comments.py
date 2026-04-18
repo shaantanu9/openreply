@@ -1,9 +1,35 @@
-"""Fetch a comment tree for a given post."""
+"""Fetch a comment tree for a given post. Public mode can't expand 'more' stubs."""
 from __future__ import annotations
 
-from ..core.client import get_reddit
+from ..core.config import load_config
 from ..core.db import log_fetch_end, log_fetch_start, upsert_comments, upsert_posts
-from ._shape import comment_row, post_row
+
+
+def _fetch_auth(post_id: str, depth: int | None, limit: int | None) -> tuple[dict, list[dict]]:
+    from ..core.client import get_reddit
+    from ._shape import comment_row, post_row
+
+    submission = get_reddit().submission(id=post_id)
+    submission.comments.replace_more(limit=limit)
+
+    rows: list[dict] = []
+
+    def _walk(cs, cur_depth: int) -> None:
+        if depth is not None and cur_depth > depth:
+            return
+        for c in cs:
+            rows.append(comment_row(c, post_id=post_id, depth=cur_depth))
+            if getattr(c, "replies", None):
+                _walk(c.replies, cur_depth + 1)
+
+    _walk(submission.comments, 0)
+    return post_row(submission), rows
+
+
+def _fetch_public(post_id: str, depth: int | None) -> tuple[dict | None, list[dict]]:
+    from ..core.public_client import public_get_comments
+
+    return public_get_comments(post_id=post_id, depth=depth)
 
 
 def fetch_comments(
@@ -14,31 +40,22 @@ def fetch_comments(
 ) -> list[dict]:
     """Fetch the comment tree. `depth=None` means full tree.
 
-    Also persists the parent post (useful when fetching comments standalone).
+    Also persists the parent post. `limit` only applies in auth mode
+    (controls PRAW's `replace_more`).
     """
+    mode = load_config().mode
     fetch_id = log_fetch_start(
-        "comments", {"post_id": post_id, "depth": depth, "limit": limit}
+        "comments",
+        {"post_id": post_id, "depth": depth, "limit": limit, "mode": mode},
     )
     try:
-        reddit = get_reddit()
-        submission = reddit.submission(id=post_id)
-        # Expand "more comments" nodes. limit=None expands all; cheap for small threads.
-        submission.comments.replace_more(limit=limit)
-
-        rows: list[dict] = []
-
-        def _walk(cs, cur_depth: int) -> None:
-            if depth is not None and cur_depth > depth:
-                return
-            for c in cs:
-                rows.append(comment_row(c, post_id=post_id, depth=cur_depth))
-                if getattr(c, "replies", None):
-                    _walk(c.replies, cur_depth + 1)
-
-        _walk(submission.comments, 0)
-
+        if mode == "auth":
+            post, rows = _fetch_auth(post_id, depth, limit)
+        else:
+            post, rows = _fetch_public(post_id, depth)
         if save:
-            upsert_posts([post_row(submission)])
+            if post:
+                upsert_posts([post])
             upsert_comments(rows)
         log_fetch_end(fetch_id, rows=len(rows))
         return rows

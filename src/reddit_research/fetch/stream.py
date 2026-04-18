@@ -26,6 +26,13 @@ def start_stream(
     on_hit=None,  # optional callback(hit_dict)
 ) -> None:
     """Blocks. Appends hits to stream_hits. `on_hit` called for each match (e.g. to print)."""
+    from ..core.config import load_config
+
+    if load_config().mode != "auth":
+        raise RuntimeError(
+            "Streaming requires OAuth. Run `reddit-cli auth login` once you have API access.\n"
+            "In public mode, use a cron loop around `reddit-cli fetch posts --sort new` instead."
+        )
     db = get_db()
     patterns = [re.compile(k, re.IGNORECASE) for k in keywords]
 

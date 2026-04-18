@@ -1,14 +1,28 @@
-"""Reddit search — sub-scoped or all of Reddit."""
+"""Reddit search — sub-scoped or all of Reddit. Works in both auth and public mode."""
 from __future__ import annotations
 
 from typing import Literal
 
-from ..core.client import get_reddit
+from ..core.config import load_config
 from ..core.db import log_fetch_end, log_fetch_start, upsert_posts
-from ._shape import post_row
 
 Sort = Literal["relevance", "hot", "new", "top", "comments"]
 TimeFilter = Literal["hour", "day", "week", "month", "year", "all"]
+
+
+def _search_auth(query: str, sub: str | None, sort: str, time_filter: str, limit: int) -> list[dict]:
+    from ..core.client import get_reddit
+    from ._shape import post_row
+
+    reddit = get_reddit()
+    target = reddit.subreddit(sub) if sub else reddit.subreddit("all")
+    return [post_row(p) for p in target.search(query, sort=sort, time_filter=time_filter, limit=limit)]
+
+
+def _search_public(query: str, sub: str | None, sort: str, time_filter: str, limit: int) -> list[dict]:
+    from ..core.public_client import public_search
+
+    return public_search(query=query, sub=sub, sort=sort, time_filter=time_filter, limit=limit)
 
 
 def search_reddit(
@@ -19,15 +33,17 @@ def search_reddit(
     limit: int = 50,
     save: bool = True,
 ) -> list[dict]:
+    mode = load_config().mode
     fetch_id = log_fetch_start(
         "search",
-        {"query": query, "sub": sub, "sort": sort, "time_filter": time_filter, "limit": limit},
+        {"query": query, "sub": sub, "sort": sort, "time_filter": time_filter, "limit": limit, "mode": mode},
     )
     try:
-        reddit = get_reddit()
-        target = reddit.subreddit(sub) if sub else reddit.subreddit("all")
-        results = target.search(query, sort=sort, time_filter=time_filter, limit=limit)
-        rows = [post_row(p) for p in results]
+        rows = (
+            _search_auth(query, sub, sort, time_filter, limit)
+            if mode == "auth"
+            else _search_public(query, sub, sort, time_filter, limit)
+        )
         if save:
             upsert_posts(rows)
         log_fetch_end(fetch_id, rows=len(rows))

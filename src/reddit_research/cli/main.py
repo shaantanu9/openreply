@@ -340,13 +340,14 @@ def cmd_mcp_serve() -> None:
 
 @app.command("info")
 def cmd_info() -> None:
-    """Show config + DB stats."""
+    """Show config + DB stats + which backend mode is active."""
     cfg = load_config()
     db = get_db()
     stats = {
+        "mode": cfg.mode,  # 'auth' (PRAW/OAuth) or 'public' (no-auth JSON)
         "data_dir": str(cfg.data_dir),
         "db_path": str(cfg.db_path),
-        "reddit_creds": bool(cfg.reddit_client_id and cfg.reddit_client_secret),
+        "oauth_ready": cfg.has_oauth,
         "anthropic_key": bool(cfg.anthropic_api_key),
         "openai_key": bool(cfg.openai_api_key),
         "tables": {name: db[name].count for name in db.table_names()},

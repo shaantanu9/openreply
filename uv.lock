@@ -1313,6 +1313,7 @@ name = "reddit-myind"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "praw" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -1349,6 +1350,7 @@ mcp = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'analyze'", specifier = ">=0.34" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=0.4" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'analyze'", specifier = ">=0.27" },
     { name = "openai", marker = "extra == 'analyze'", specifier = ">=1.40" },
     { name = "praw", specifier = ">=7.7" },

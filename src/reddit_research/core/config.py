@@ -34,6 +34,25 @@ class Config:
     def db_path(self) -> Path:
         return self.data_dir / "reddit.db"
 
+    @property
+    def has_oauth(self) -> bool:
+        return bool(
+            self.reddit_client_id
+            and self.reddit_client_secret
+            and self.reddit_refresh_token
+        )
+
+    @property
+    def mode(self) -> str:
+        """'auth' (OAuth via PRAW) or 'public' (no-auth JSON endpoints).
+
+        Forced via REDDIT_MYIND_MODE if set; otherwise auto-selected.
+        """
+        forced = os.getenv("REDDIT_MYIND_MODE", "").strip().lower()
+        if forced in ("auth", "public"):
+            return forced
+        return "auth" if self.has_oauth else "public"
+
     def require_reddit(self) -> None:
         missing = [
             name
