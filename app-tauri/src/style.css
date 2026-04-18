@@ -676,6 +676,70 @@ body {
 }
 .sub-tile span { font-size: 11px; color: var(--ink-3); }
 
+/* --- Dashboard skeletons --- */
+.skel {
+  background: linear-gradient(90deg, var(--surface-alt) 0%, #F6EFE6 50%, var(--surface-alt) 100%);
+  background-size: 200% 100%;
+  animation: skel-shimmer 1.4s infinite linear;
+  border-radius: 8px;
+}
+@keyframes skel-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skel-xs   { width: 64px;  height: 12px; margin-bottom: 10px; }
+.skel-h1   { width: 80%;   height: 40px; margin-bottom: 10px; border-radius: 10px; }
+.skel-h2   { width: 40%;   height: 24px; border-radius: 8px; }
+.skel-line { width: 90%;   height: 14px; margin-bottom: 6px; }
+.skel-lg   { width: 70%;   height: 56px; margin-bottom: 14px; border-radius: 10px; }
+.skel-round{ width: 36px;  height: 36px; border-radius: 10px; }
+.hero-bar.skel { background: var(--surface-alt); border-radius: 3px; }
+
+/* --- Active collect banner --- */
+.active-collect-banner {
+  display: flex; align-items: center; gap: 14px;
+  margin: 14px 0 16px; padding: 14px 16px;
+  background: linear-gradient(90deg, var(--mint-soft) 0%, #E8F5EC 100%);
+  border: 1px solid #C9E5D2; border-radius: 14px; cursor: pointer;
+  transition: transform 0.15s;
+}
+.active-collect-banner:hover { transform: translateY(-1px); }
+.pulse-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #2E7D5B; animation: pulse 1.4s infinite;
+  box-shadow: 0 0 0 0 rgba(46, 125, 91, 0.6);
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(46, 125, 91, 0.55); }
+  70%  { box-shadow: 0 0 0 10px rgba(46, 125, 91, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(46, 125, 91, 0); }
+}
+.acb-body { flex: 1; }
+.acb-body b { font-size: 13px; color: #1E4A37; display: block; }
+.acb-body span { font-size: 11.5px; color: #2E7D5B; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.acb-cta { font-size: 12px; font-weight: 700; color: #1E4A37; }
+
+/* --- BYOK prompt card on dashboard --- */
+.byok-prompt-card {
+  display: flex; align-items: center; gap: 14px;
+  margin: 14px 0 16px; padding: 14px 16px;
+  background: var(--surface); border: 1px dashed var(--ink-3); border-radius: 14px;
+}
+.byok-prompt-ic {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: grid; place-items: center; font-size: 22px;
+  background: var(--peach-soft, #FFE9D6);
+}
+.byok-prompt-body { flex: 1; }
+.byok-prompt-body b { font-size: 13.5px; color: var(--ink-1); display: block; margin-bottom: 2px; }
+.byok-prompt-body p { font-size: 12px; color: var(--ink-3); margin: 0; line-height: 1.5; }
+
+/* --- Momentum chart --- */
+.momentum-legend {
+  font-size: 11.5px; color: var(--ink-3); margin-bottom: 4px;
+}
+.momentum-legend b { color: var(--ink-1); font-weight: 800; font-size: 13px; }
+
 /* --- Science screen --- */
 .science-src-list {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
