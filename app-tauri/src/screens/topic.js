@@ -30,6 +30,7 @@ export async function renderTopic(root, { params }) {
       <button class="tab active" data-tab="map">🕸 Map</button>
       <button class="tab" data-tab="report">📄 Report</button>
       <button class="tab" data-tab="evidence">🔎 Evidence</button>
+      <button class="tab" data-tab="sources">◈ Sources</button>
       <button class="tab" data-tab="actions">⚡ Actions</button>
     </div>
 
@@ -181,7 +182,64 @@ export async function renderTopic(root, { params }) {
     };
   }
 
-  const loaders = { map: loadMap, report: loadReport, evidence: loadEvidence, actions: loadActions };
+  async function loadSources() {
+    contentEl.innerHTML = `<div class="empty-state">Counting sources…</div>`;
+    try {
+      const srcSql = `SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts, \
+                             min(p.created_utc) AS earliest, max(p.created_utc) AS latest \
+                      FROM topic_posts tp JOIN posts p ON p.id=tp.post_id \
+                      WHERE tp.topic='${topic.replace(/'/g, "''")}' \
+                      GROUP BY coalesce(p.source_type,'reddit') \
+                      ORDER BY posts DESC`;
+      const subsSql = `SELECT p.subreddit AS sub, count(*) AS posts \
+                       FROM topic_posts tp JOIN posts p ON p.id=tp.post_id \
+                       WHERE tp.topic='${topic.replace(/'/g, "''")}' \
+                         AND p.subreddit IS NOT NULL AND p.subreddit <> '' \
+                       GROUP BY p.subreddit ORDER BY posts DESC LIMIT 12`;
+      const [sources, subs] = await Promise.all([
+        api.runQuery(srcSql),
+        api.runQuery(subsSql).catch(() => []),
+      ]);
+      const total = (sources || []).reduce((a, r) => a + (r.posts || 0), 0);
+      const sourceRow = (r) => {
+        const pct = total ? Math.round((r.posts / total) * 100) : 0;
+        const earliestS = r.earliest ? new Date(r.earliest * 1000).toISOString().slice(0, 10) : '—';
+        const latestS   = r.latest   ? new Date(r.latest   * 1000).toISOString().slice(0, 10) : '—';
+        return `
+          <div class="source-row">
+            <div class="source-row-head">
+              <b>${esc(r.source)}</b>
+              <span>${r.posts.toLocaleString()} posts · ${pct}%</span>
+            </div>
+            <div class="source-bar"><div class="source-bar-fill" style="width:${pct}%"></div></div>
+            <div class="source-row-meta">First: ${earliestS} · Latest: ${latestS}</div>
+          </div>`;
+      };
+      const subTile = (r) => `
+        <div class="sub-tile">
+          <h5>r/${esc(r.sub)}</h5>
+          <span>${r.posts.toLocaleString()} posts</span>
+        </div>`;
+      contentEl.innerHTML = `
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-head"><div><h3>Sources</h3><p>${total.toLocaleString()} posts across ${(sources || []).length} source types</p></div></div>
+          <div class="sources-list">
+            ${(sources || []).length ? (sources || []).map(sourceRow).join('') : `<div class="empty-state">no posts tagged to this topic yet</div>`}
+          </div>
+        </div>
+        ${(subs || []).length ? `
+          <div class="card">
+            <div class="card-head"><div><h3>Top subreddits</h3><p>${subs.length} subs contributing</p></div></div>
+            <div class="sub-grid">${subs.map(subTile).join('')}</div>
+          </div>
+        ` : ''}
+      `;
+    } catch (e) {
+      contentEl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}</div>`;
+    }
+  }
+
+  const loaders = { map: loadMap, report: loadReport, evidence: loadEvidence, sources: loadSources, actions: loadActions };
   const switchTab = async (name) => {
     activeTab = name;
     tabsEl.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));

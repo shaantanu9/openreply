@@ -634,6 +634,60 @@ def cmd_research_report(
         console.print(md)
 
 
+@research_app.command("chat")
+def cmd_research_chat(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    question: str = typer.Option("", "--question", "-q", help="User question. If empty, the mode's default instruction runs."),
+    mode: str = typer.Option("ask", "--mode", "-m", help="ask | plan | features | sources | bullets"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    max_tokens: int = typer.Option(1800, "--max-tokens"),
+    as_json: bool = typer.Option(False, "--json", help="Emit streaming JSON events (one per line)"),
+) -> None:
+    """Chat with the collected gap data — streams tokens to stdout."""
+    import sys
+    from ..research.chat import chat_stream, chat_meta
+
+    # Emit initial meta so the caller knows what's running.
+    try:
+        meta = chat_meta(topic, provider=provider)
+    except Exception as e:
+        if as_json:
+            typer.echo(json.dumps({"event": "error", "error": str(e)}))
+        else:
+            typer.echo(f"ERROR: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    if as_json:
+        typer.echo(json.dumps({"event": "start", **meta}))
+    else:
+        typer.echo(
+            f"→ provider={meta['provider']} · model={meta['model']} · {meta['posts']} posts in corpus\n"
+        )
+    sys.stdout.flush()
+
+    try:
+        for chunk in chat_stream(
+            topic, question, mode=mode, provider=provider, max_tokens=max_tokens,
+        ):
+            if as_json:
+                typer.echo(json.dumps({"event": "token", "text": chunk}))
+            else:
+                # Raw stream: write without adding newlines.
+                sys.stdout.write(chunk)
+            sys.stdout.flush()
+    except Exception as e:
+        if as_json:
+            typer.echo(json.dumps({"event": "error", "error": str(e)}))
+        else:
+            typer.echo(f"\nERROR: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    if as_json:
+        typer.echo(json.dumps({"event": "done"}))
+    else:
+        typer.echo("")  # trailing newline
+
+
 # ── graph subcommands ───────────────────────────────────────────────────────
 
 @graph_app.command("build")

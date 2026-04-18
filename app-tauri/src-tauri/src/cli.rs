@@ -20,6 +20,11 @@ use tauri_plugin_shell::{
 #[derive(Default, Clone)]
 pub struct ActiveJob(pub Arc<Mutex<Option<CommandChild>>>);
 
+/// Separate handle for the chat sidecar — lets chat run during a collect
+/// and gives it its own cancel button.
+#[derive(Default, Clone)]
+pub struct ActiveChat(pub Arc<Mutex<Option<CommandChild>>>);
+
 /// Resolve the data dir used by the Python CLI for this app.
 /// `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`.
 pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
@@ -133,6 +138,77 @@ pub async fn run_cli_streaming(
 /// Kill the currently-running sidecar child, if any.
 pub fn cancel_active_job(app: &AppHandle) -> bool {
     if let Some(state) = app.try_state::<ActiveJob>() {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(child) = guard.take() {
+            let _ = child.kill();
+            return true;
+        }
+    }
+    false
+}
+
+/// Start the sidecar for chat — streams JSON events, uses its own state
+/// (doesn't conflict with a concurrent collect).
+pub async fn run_cli_chat_streaming(
+    app: &AppHandle,
+    args: Vec<&str>,
+    progress_event: &'static str,
+    done_event: &'static str,
+) -> Result<()> {
+    if let Some(state) = app.try_state::<ActiveChat>() {
+        if state.0.lock().unwrap().is_some() {
+            return Err(anyhow!("another chat is already streaming. Cancel it first."));
+        }
+    }
+
+    let data = data_dir(app)?;
+    let data_str = data.to_string_lossy().to_string();
+
+    let (mut rx, child) = app
+        .shell()
+        .sidecar("reddit-cli")
+        .map_err(|e| anyhow!("sidecar missing: {e}"))?
+        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .args(&args)
+        .spawn()
+        .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
+
+    if let Some(state) = app.try_state::<ActiveChat>() {
+        *state.0.lock().unwrap() = Some(child);
+    }
+
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
+                    if let Ok(s) = String::from_utf8(bytes) {
+                        for line in s.lines() {
+                            if !line.trim().is_empty() {
+                                let _ = app_clone.emit(progress_event, line.to_string());
+                            }
+                        }
+                    }
+                }
+                CommandEvent::Terminated(payload) => {
+                    if let Some(state) = app_clone.try_state::<ActiveChat>() {
+                        *state.0.lock().unwrap() = None;
+                    }
+                    let code = payload.code.unwrap_or(-1);
+                    let _ = app_clone.emit(done_event, serde_json::json!({ "code": code }));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Cancel a running chat, if any.
+pub fn cancel_active_chat(app: &AppHandle) -> bool {
+    if let Some(state) = app.try_state::<ActiveChat>() {
         let mut guard = state.0.lock().unwrap();
         if let Some(child) = guard.take() {
             let _ = child.kill();

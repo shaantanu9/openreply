@@ -4,13 +4,14 @@
 mod cli;
 mod commands;
 
-use cli::ActiveJob;
+use cli::{ActiveChat, ActiveJob};
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ActiveJob::default())
+        .manage(ActiveChat::default())
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
             commands::list_topics,
@@ -32,6 +33,10 @@ fn main() {
             commands::open_url,
             commands::byok_status,
             commands::byok_set,
+            commands::run_query,
+            commands::start_chat,
+            commands::cancel_chat,
+            commands::chat_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gapmap");

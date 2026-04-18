@@ -65,6 +65,11 @@ export async function renderSettings(root) {
         ${Object.entries(t).map(([k, v]) => `<div class="kv-row"><b>${esc(k)}</b><span>${v}</span></div>`).join('')}
       </div>
       <div class="settings-card">
+        <h4>Onboarding</h4>
+        <p>Reset the welcome wizard — next launch will show the 3-step setup again.</p>
+        <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line);margin-top:6px" id="btn-reset-onboarding">Reset onboarding</button>
+      </div>
+      <div class="settings-card">
         <h4>About</h4>
         <p>Gap Map · v0.1.0 · Python sidecar + Tauri · variant-6 soft-dashboard</p>
       </div>
@@ -81,6 +86,10 @@ export async function renderSettings(root) {
     });
     root.querySelector('#btn-reveal-env')?.addEventListener('click', () => {
       if (byok.path) api.revealInFinder(byok.path);
+    });
+    root.querySelector('#btn-reset-onboarding')?.addEventListener('click', () => {
+      try { localStorage.removeItem('gapmap.onboarding.completed'); } catch {}
+      location.hash = '#/welcome';
     });
   } catch (e) {
     root.querySelector('#settings-root').innerHTML =

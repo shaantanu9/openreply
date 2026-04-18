@@ -6,6 +6,9 @@ import { renderSettings } from './screens/settings.js';
 import { renderIngest } from './screens/ingest.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
+import { renderActivity } from './screens/activity.js';
+import { renderDatabase } from './screens/database.js';
+import { renderScience } from './screens/science.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -16,6 +19,9 @@ const routes = [
   { match: /^\/settings\/?$/,       render: renderSettings },
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/reports\/?$/,        render: renderReports },
+  { match: /^\/activity\/?$/,       render: renderActivity },
+  { match: /^\/database\/?$/,       render: renderDatabase },
+  { match: /^\/science\/?$/,        render: renderScience },
 ];
 
 async function route() {
@@ -39,43 +45,43 @@ async function route() {
   main.innerHTML = `<div class="empty-state">404 — not found</div>`;
 }
 
-async function shouldShowWelcome() {
-  // Skip if user has already completed onboarding
-  if (isOnboardingComplete()) return false;
-  // First-run: if we have zero topics AND no fetch history, route to welcome
-  try {
-    const topics = await api.listTopics();
-    if (Array.isArray(topics) && topics.length > 0) return false;
-    const activity = await api.recentActivity();
-    return !Array.isArray(activity) || activity.length === 0;
-  } catch {
-    return true;
-  }
-}
-
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', async () => {
-  // Sidebar counts
-  try {
-    const topics = await api.listTopics();
-    if (Array.isArray(topics)) {
-      $('#nav-topics-count').textContent = topics.length;
-      $('#nav-dash-count').textContent = topics.length;
-    }
-  } catch {}
-
+  // Wire modal + keyboard FIRST so Cancel / Escape work even before any data loads.
+  // (The Python sidecar can take 5–10s to spin up the first time.)
   wireModal();
   wireKeyboard();
 
-  // Decide where to land on first load
+  // Explicit safety: ensure the modal is hidden on boot no matter what.
+  const bd = $('#modal-backdrop');
+  if (bd) bd.hidden = true;
+
+  // If the user has completed onboarding, land on dashboard while data fetches.
+  // If not, route straight to welcome — dashboard never renders until they finish.
   if (!location.hash || location.hash === '#/' || location.hash === '#') {
-    if (await shouldShowWelcome()) {
+    // Fast, synchronous localStorage check — does not block on sidecar.
+    if (!isOnboardingComplete()) {
       location.hash = '#/welcome';
     } else {
       location.hash = '#/';
     }
   }
   route();
+
+  // Fetch sidebar counts in the background (non-blocking).
+  (async () => {
+    try {
+      const topics = await api.listTopics();
+      if (Array.isArray(topics)) {
+        $('#nav-topics-count').textContent = topics.length;
+        $('#nav-dash-count').textContent = topics.length;
+        // Re-check: first-ever user with no topics AND not marked onboarded.
+        if (!isOnboardingComplete() && topics.length === 0) {
+          // Already on /welcome from above — keep it.
+        }
+      }
+    } catch {}
+  })();
 });
 
 function wireModal() {

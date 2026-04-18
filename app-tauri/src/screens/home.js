@@ -72,12 +72,12 @@ export async function renderHome(root) {
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Dashboard</strong></div>
       <div class="topbar-spacer"></div>
-      <div class="search" title="(search coming soon)">
+      <div class="search" id="home-search" role="button" tabindex="0" title="Start a new topic">
         <span>⌕</span>
-        <span>Search topics, painpoints, posts…</span>
+        <span>Start a topic — type a market or problem…</span>
       </div>
-      <div class="icon-btn">🔔<span class="dot"></span></div>
-      <div class="avatar">SB</div>
+      <div class="icon-btn" id="home-bell" title="Pipeline activity" role="button" tabindex="0">🔔</div>
+      <div class="avatar" id="home-avatar" role="button" tabindex="0" title="Settings">SB</div>
     </header>
     <div id="hero-slot"></div>
     <section class="stat-grid" id="stat-grid"></section>
@@ -132,6 +132,9 @@ export async function renderHome(root) {
 
   // --- wire buttons ---
   root.querySelector('#btn-new-topic')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
+  root.querySelector('#home-search')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
+  root.querySelector('#home-bell')?.addEventListener('click',   () => { location.hash = '#/activity'; });
+  root.querySelector('#home-avatar')?.addEventListener('click', () => { location.hash = '#/settings'; });
 
   // --- fetch + render data ---
   let topics = [];

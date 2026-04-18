@@ -23,8 +23,14 @@ export const api = {
   openUrl:         (url)     => invoke('open_url', { url }),
   byokStatus:      ()        => invoke('byok_status'),
   byokSet:         (name, value) => invoke('byok_set', { name, value }),
+  runQuery:        (sql)     => invoke('run_query', { sql }),
+  startChat:       (topic, question, mode) => invoke('start_chat', { topic, question, mode }),
+  cancelChat:      ()        => invoke('cancel_chat'),
+  chatStatus:      ()        => invoke('chat_status'),
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),
   onCollectDone:     (cb) => listen('collect:done',     e => cb(e.payload)),
+  onChatProgress:    (cb) => listen('chat:progress',    e => cb(e.payload)),
+  onChatDone:        (cb) => listen('chat:done',        e => cb(e.payload)),
 };
 
 // ---------- tiny DOM helpers ----------

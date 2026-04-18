@@ -3,7 +3,10 @@
 //! Each command is a thin bridge to one reddit-cli invocation. Heavy
 //! lifting stays in Python.
 
-use crate::cli::{cancel_active_job, data_dir, run_cli, run_cli_streaming, ActiveJob};
+use crate::cli::{
+    cancel_active_chat, cancel_active_job, data_dir, run_cli, run_cli_chat_streaming,
+    run_cli_streaming, ActiveChat, ActiveJob,
+};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
@@ -268,6 +271,94 @@ pub async fn app_data_dir(app: AppHandle) -> Result<String, String> {
         .map_err(err_to_string)
 }
 
+/// Start a chat stream. Sidecar emits JSON events on `chat:progress`.
+#[tauri::command]
+pub async fn start_chat(
+    app: AppHandle,
+    topic: String,
+    question: String,
+    mode: String,
+) -> Result<(), String> {
+    let mut args: Vec<String> = vec![
+        "research".into(),
+        "chat".into(),
+        "--topic".into(),
+        topic,
+        "--mode".into(),
+        mode,
+        "--json".into(),
+    ];
+    if !question.trim().is_empty() {
+        args.push("--question".into());
+        args.push(question);
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli_chat_streaming(&app, arg_refs, "chat:progress", "chat:done")
+        .await
+        .map_err(err_to_string)
+}
+
+/// Cancel the active chat job, if any.
+#[tauri::command]
+pub async fn cancel_chat(app: AppHandle) -> Result<bool, String> {
+    Ok(cancel_active_chat(&app))
+}
+
+/// Is a chat currently streaming?
+#[tauri::command]
+pub async fn chat_status(app: AppHandle) -> Result<bool, String> {
+    let state = app.state::<ActiveChat>();
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(guard.is_some())
+}
+
+/// Run a user-supplied SELECT/WITH query. Rejects anything that
+/// isn't purely read-only so the DB Console can't corrupt state.
+#[tauri::command]
+pub async fn run_query(app: AppHandle, sql: String) -> Result<Value, String> {
+    let trimmed = sql.trim();
+    if trimmed.is_empty() {
+        return Err("empty query".into());
+    }
+    // Strip SQL comments before keyword detection.
+    let mut cleaned = String::new();
+    let mut in_block = false;
+    let mut in_line = false;
+    let bytes = trimmed.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        let next = bytes.get(i + 1).copied().unwrap_or(0) as char;
+        if in_block {
+            if c == '*' && next == '/' { in_block = false; i += 2; continue; }
+            i += 1; continue;
+        }
+        if in_line {
+            if c == '\n' { in_line = false; cleaned.push('\n'); }
+            i += 1; continue;
+        }
+        if c == '/' && next == '*' { in_block = true; i += 2; continue; }
+        if c == '-' && next == '-' { in_line = true; i += 2; continue; }
+        cleaned.push(c);
+        i += 1;
+    }
+    let lower = cleaned.trim().to_ascii_lowercase();
+    let starts_ok = lower.starts_with("select") || lower.starts_with("with")
+        || lower.starts_with("pragma") || lower.starts_with("explain");
+    if !starts_ok {
+        return Err("only SELECT / WITH / PRAGMA / EXPLAIN are allowed".into());
+    }
+    // Block obvious mutations even if someone smuggles them in a CTE.
+    for bad in &["insert ", "update ", "delete ", "drop ", "alter ",
+                 "create ", "replace ", "truncate ", "attach ", "detach ",
+                 "vacuum", "reindex"] {
+        if lower.contains(bad) {
+            return Err(format!("query contains forbidden keyword: {}", bad.trim()));
+        }
+    }
+    run_cli(&app, vec!["query", trimmed]).await.map_err(err_to_string)
+}
+
 /// Path to the user's BYOK env file (`~/.config/reddit-myind/.env`).
 fn byok_env_path() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
@@ -317,24 +408,42 @@ pub async fn byok_status(_app: AppHandle) -> Result<Value, String> {
             _ => serde_json::json!({ "set": false, "preview": "" }),
         }
     };
+    // Non-secret values (pref / model / base-url) — return raw so user can see.
+    let raw = |k: &str| -> Value {
+        map.get(k).map(|v| Value::String(v.clone())).unwrap_or(Value::String(String::new()))
+    };
     Ok(serde_json::json!({
         "path": path.to_string_lossy().to_string(),
-        "anthropic": mask("ANTHROPIC_API_KEY"),
-        "openai":    mask("OPENAI_API_KEY"),
+        "anthropic":  mask("ANTHROPIC_API_KEY"),
+        "openai":     mask("OPENAI_API_KEY"),
+        "openrouter": mask("OPENROUTER_API_KEY"),
+        "groq":       mask("GROQ_API_KEY"),
+        "deepseek":   mask("DEEPSEEK_API_KEY"),
+        "mistral":    mask("MISTRAL_API_KEY"),
+        "google":     mask("GOOGLE_API_KEY"),
+        "ollama_base_url":      raw("OLLAMA_BASE_URL"),
         "reddit_client_id":     mask("REDDIT_CLIENT_ID"),
         "reddit_client_secret": mask("REDDIT_CLIENT_SECRET"),
         "reddit_refresh_token": mask("REDDIT_REFRESH_TOKEN"),
+        "llm_provider": raw("LLM_PROVIDER"),
+        "llm_model":    raw("LLM_MODEL"),
     }))
 }
 
 /// Set (or update) a single BYOK key. Empty `value` deletes the key.
-/// Whitelisted names: ANTHROPIC_API_KEY, OPENAI_API_KEY, REDDIT_CLIENT_ID,
-/// REDDIT_CLIENT_SECRET, REDDIT_REFRESH_TOKEN.
 #[tauri::command]
 pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Value, String> {
     const ALLOWED: &[&str] = &[
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GROQ_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "MISTRAL_API_KEY",
+        "GOOGLE_API_KEY",
+        "OLLAMA_BASE_URL",
+        "LLM_PROVIDER",
+        "LLM_MODEL",
         "REDDIT_CLIENT_ID",
         "REDDIT_CLIENT_SECRET",
         "REDDIT_REFRESH_TOKEN",
