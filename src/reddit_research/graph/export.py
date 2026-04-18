@@ -24,8 +24,35 @@ def _classification_summary(findings: list[dict]) -> dict[str, int]:
     return out
 
 
+def _source_breakdown_for_node(topic: str, node_id: str) -> dict[str, int]:
+    """Group the evidence posts linked to a node by source_type.
+
+    Addresses the 'no single source of truth' pain (CHRONIC, 8 posts) by
+    showing every finding's source distribution on its card.
+    """
+    db = get_db()
+    post_prefix = f"{topic}::post::"
+    rows = list(
+        db.query(
+            """
+            WITH ev AS (
+                SELECT CASE WHEN e.src = ? THEN e.dst ELSE e.src END AS nid
+                FROM graph_edges e
+                WHERE e.topic = ? AND (e.src = ? OR e.dst = ?)
+                  AND e.kind IN ('evidenced_by','wished_in','built_in','solves','about_product')
+            )
+            SELECT coalesce(p.source_type, 'reddit') AS src, count(*) AS n
+            FROM posts p JOIN ev ON ev.nid = ? || p.id
+            GROUP BY src ORDER BY n DESC
+            """,
+            [node_id, topic, node_id, node_id, post_prefix],
+        )
+    )
+    return {r["src"]: r["n"] for r in rows}
+
+
 def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
-    """Pull ranked findings per kind with their evidence edge counts."""
+    """Pull ranked findings per kind with evidence counts + source distribution."""
     db = get_db()
     out: dict[str, list[dict]] = {}
     for kind in ("painpoint", "feature_wish", "product", "workaround"):
@@ -46,9 +73,9 @@ def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
             )
         )
         parsed = [_parse_metadata(r) for r in rows]
-        # attach evidence count separately since _parse_metadata strips it
         for p, r in zip(parsed, rows, strict=False):
             p["evidence_count"] = r.get("evidence_count", 0)
+            p["source_breakdown"] = _source_breakdown_for_node(topic, p["id"])
         out[kind] = parsed
     return out
 
@@ -184,6 +211,34 @@ _HTML_TEMPLATE = """<!doctype html>
   .badge.severity-low { background:#1a3512; color:#7ee787; border:1px solid #2a5020; }
   .card-evidence { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic;
     border-top:1px solid var(--border); padding-top:4px; }
+  /* source distribution mini-bar on each card (triangulation at a glance) */
+  .src-bar { display:flex; height:4px; border-radius:2px; overflow:hidden; margin-top:5px;
+    background:var(--border); }
+  .src-seg { height:100%; }
+  .src-legend { display:flex; flex-wrap:wrap; gap:3px 6px; font-size:9px;
+    color:var(--muted); margin-top:3px; }
+  .src-legend span { display:inline-flex; align-items:center; gap:3px; }
+  .src-legend i { width:6px; height:6px; border-radius:50%; display:inline-block; }
+
+  /* Executive summary banner — always visible, addresses "stakeholders
+     won't read long reports" (CHRONIC, 6 posts) */
+  .exec {
+    margin:0 14px 14px; padding:14px; background:linear-gradient(135deg,#1a2332 0%,#141921 100%);
+    border:1px solid var(--accent); border-radius:6px;
+  }
+  .exec h2 { font-size:10px; color:var(--accent); letter-spacing:1px;
+    margin:0 0 8px; text-transform:uppercase; }
+  .exec-tl { font-size:13px; line-height:1.5; color:var(--text); margin:0 0 8px; }
+  .exec-tl b { color:#fff; }
+  .exec-ul { font-size:11px; line-height:1.6; color:var(--text); margin:0; padding-left:18px; }
+  .exec-ul li { margin-bottom:2px; }
+  .exec-actions { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+  .exec-actions button {
+    background:var(--bg); color:var(--text); border:1px solid var(--border);
+    border-radius:4px; padding:4px 10px; cursor:pointer; font-size:11px;
+  }
+  .exec-actions button:hover { border-color:var(--accent); color:var(--accent); }
+  .exec-actions button.copied { background:var(--accent); color:#0b0e13; border-color:var(--accent); }
 
   .legend { display:flex; flex-wrap:wrap; gap:8px; font-size:10px; color:var(--muted);
     padding:6px 8px; background:var(--bg); border-radius:4px; border:1px solid var(--border);
@@ -222,6 +277,7 @@ _HTML_TEMPLATE = """<!doctype html>
   .empty { color:var(--muted); font-size:11px; font-style:italic; padding:4px; }
 
   footer { position:fixed; bottom:4px; right:10px; font-size:9px; color:var(--muted); }
+  footer a { color:var(--muted); text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -234,6 +290,17 @@ _HTML_TEMPLATE = """<!doctype html>
 </header>
 <main>
   <aside class="left">
+    <!-- EXEC SUMMARY — addresses "stakeholders won't read long reports" (CHRONIC) -->
+    <div class="exec" id="exec">
+      <h2>Executive summary</h2>
+      <div class="exec-tl" id="execThesis"></div>
+      <ol class="exec-ul" id="execTop3"></ol>
+      <div class="exec-actions">
+        <button id="copyTweet">📋 Copy as tweet</button>
+        <button id="copyMd">📋 Copy as markdown</button>
+      </div>
+    </div>
+
     <div class="legend" id="legend"></div>
 
     <h2>🔥 Painpoints <span id="ppCount" style="color:var(--muted);font-weight:400"></span></h2>
@@ -261,7 +328,7 @@ _HTML_TEMPLATE = """<!doctype html>
     </div>
   </aside>
 </main>
-<footer>reddit-myind · gap map</footer>
+<footer>reddit-myind · gap map · <a href="https://github.com/shaantanu98/reddit-myind/blob/master/docs/methodology.md" target="_blank">methodology</a></footer>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
@@ -305,6 +372,31 @@ const legendEl = document.getElementById("legend");
 });
 
 // ── findings columns ──
+// Source-distribution bar — visual "triangulation at a glance" per card.
+// Implements Shneiderman's "details on demand" + Tufte data-ink (4px height).
+function srcBarHtml(sourceBreakdown) {
+  if (!sourceBreakdown) return "";
+  const entries = Object.entries(sourceBreakdown);
+  if (!entries.length) return "";
+  const total = entries.reduce((s,[_,n])=>s+n, 0);
+  const srcColors = {
+    reddit:"#ff4500", hn:"#ff6600", appstore:"#58a6ff", playstore:"#3fb950",
+    arxiv:"#d2a8ff", openalex:"#a371f7", pubmed:"#7ee787", scholar:"#c9d1d9",
+    gnews:"#ffa657", devto:"#79c0ff", lemmy:"#7ee787", mastodon:"#a371f7",
+    github:"#f778ba", github_issue:"#f85149", stackoverflow:"#ffa657",
+  };
+  const segs = entries.map(([s,n]) => {
+    const pct = (n/total*100).toFixed(1);
+    const c = srcColors[s] || "#7d8590";
+    return `<div class="src-seg" style="width:${pct}%;background:${c}" title="${s}: ${n}"></div>`;
+  }).join("");
+  const legend = entries.map(([s,n]) => {
+    const c = srcColors[s] || "#7d8590";
+    return `<span><i style="background:${c}"></i>${s} ${n}</span>`;
+  }).join("");
+  return `<div class="src-bar">${segs}</div><div class="src-legend">${legend}</div>`;
+}
+
 function renderFinding(node, onclick) {
   const md = node.metadata || {};
   const title = (node.label || "(unnamed)").replace(/</g,"&lt;");
@@ -312,6 +404,7 @@ function renderFinding(node, onclick) {
   const severity = md.severity;
   const freq = md.frequency;
   const evCount = node.evidence_count || 0;
+  const sourceBreakdown = node.source_breakdown || {};
   let badges = "";
   if (classification && classification !== "UNCLASSIFIED")
     badges += `<span class="badge ${classification.toLowerCase()}">${classification}</span>`;
@@ -328,10 +421,103 @@ function renderFinding(node, onclick) {
       ${evCount ? `<span>📎 ${evCount} evidence</span>` : ""}
     </div>
     ${md.evidence || md.user_quote || md.complaint ? `<div class="card-evidence">${(md.evidence||md.user_quote||md.complaint).replace(/</g,"&lt;")}</div>` : ""}
+    ${srcBarHtml(sourceBreakdown)}
   `;
   card.addEventListener("click", () => onclick(node));
   return card;
 }
+
+// ── Executive summary renderer ──
+// 3 punchy findings + 1 DIY + share buttons. Stakeholders who won't read
+// the full report read THIS (Guest/Bunce saturation + Tufte compression).
+function renderExec() {
+  const pps = (DATA.findings.painpoint || []).slice(0, 3);
+  const topDiy = (DATA.findings.workaround || [])[0];
+  const topProducts = (DATA.findings.product || []).slice(0, 3).map(p => p.label);
+  const topicName = DATA.meta.topic;
+
+  if (!pps.length) {
+    document.getElementById("exec").style.display = "none";
+    return;
+  }
+
+  const thesisParts = [];
+  thesisParts.push(
+    `Across <b>${DATA.meta.total_nodes.toLocaleString()}</b> signals from <b>${Object.keys(DATA.meta.nodes_by_kind||{}).length}</b> node kinds, the pattern in <b>${topicName}</b> is clear:`
+  );
+  const execThesisEl = document.getElementById("execThesis");
+  execThesisEl.innerHTML = thesisParts.join(" ");
+
+  const ol = document.getElementById("execTop3");
+  pps.forEach(pp => {
+    const md = pp.metadata || {};
+    const cls = md.classification && md.classification !== "UNCLASSIFIED"
+      ? `<span class="badge ${md.classification.toLowerCase()}" style="margin-left:4px">${md.classification}</span>`
+      : "";
+    const li = document.createElement("li");
+    li.innerHTML = `${pp.label}${cls}`;
+    ol.appendChild(li);
+  });
+
+  if (topDiy) {
+    const li = document.createElement("li");
+    li.style.marginTop = "6px";
+    li.innerHTML = `<span style="color:var(--muted)">Users hack around with:</span> <b>${topDiy.label}</b>`;
+    ol.appendChild(li);
+  }
+  if (topProducts.length) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span style="color:var(--muted)">Named competitors:</span> ${topProducts.join(", ")}`;
+    ol.appendChild(li);
+  }
+
+  // Copy buttons
+  const tweet = (() => {
+    const lines = [`Gap map — ${topicName}:`, ""];
+    pps.forEach((p, i) => {
+      const cls = (p.metadata||{}).classification;
+      lines.push(`${i+1}. ${p.label}${cls && cls !== "UNCLASSIFIED" ? " ["+cls+"]" : ""}`);
+    });
+    if (topDiy) {
+      lines.push("", `Users hack around this with: ${topDiy.label}`);
+    }
+    return lines.join("\\n");
+  })();
+
+  const markdown = (() => {
+    const lines = [`# Gap Map — ${topicName}`, ""];
+    lines.push(`**Top painpoints:**`);
+    pps.forEach((p, i) => {
+      const md = p.metadata || {};
+      const cls = md.classification && md.classification !== "UNCLASSIFIED" ? " **"+md.classification+"**" : "";
+      lines.push(`${i+1}. ${p.label}${cls}`);
+      if (md.evidence) lines.push(`   > ${md.evidence}`);
+    });
+    if (topDiy) {
+      lines.push("", `**Biggest gap signal (DIY workaround):** ${topDiy.label}`);
+    }
+    if (topProducts.length) {
+      lines.push("", `**Named competitors:** ${topProducts.join(", ")}`);
+    }
+    return lines.join("\\n");
+  })();
+
+  function flashButton(btn, label) {
+    const orig = btn.textContent;
+    btn.textContent = label;
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 1500);
+  }
+  document.getElementById("copyTweet").addEventListener("click", e => {
+    navigator.clipboard.writeText(tweet);
+    flashButton(e.target, "✓ Copied!");
+  });
+  document.getElementById("copyMd").addEventListener("click", e => {
+    navigator.clipboard.writeText(markdown);
+    flashButton(e.target, "✓ Copied!");
+  });
+}
+renderExec();
 
 const findingsPanels = {
   painpoints: DATA.findings.painpoint || [],
