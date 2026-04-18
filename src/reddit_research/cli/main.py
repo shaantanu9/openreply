@@ -1,0 +1,358 @@
+"""reddit-cli — Typer app. Every command supports --json for machine output."""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Optional
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from ..core.config import load_config
+from ..core.db import get_db
+from ..core.exporters import export_rows
+
+app = typer.Typer(
+    help="Reddit research toolkit — PRAW fetch, SQLite store, optional LLM analysis.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+fetch_app = typer.Typer(help="Fetch data from Reddit (persists to SQLite).")
+analyze_app = typer.Typer(help="LLM-assisted analysis over stored data.")
+mcp_app = typer.Typer(help="MCP server for Claude Code.")
+auth_app = typer.Typer(help="Reddit API credential setup.")
+
+app.add_typer(fetch_app, name="fetch")
+app.add_typer(analyze_app, name="analyze")
+app.add_typer(mcp_app, name="mcp")
+app.add_typer(auth_app, name="auth")
+
+console = Console()
+
+
+def _emit(data, as_json: bool, table_title: str | None = None) -> None:
+    """Print JSON if asked, else a pretty table (falling back to JSON for non-row data)."""
+    if as_json:
+        typer.echo(json.dumps(data, default=str, ensure_ascii=False, indent=2))
+        return
+
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        cols = list(data[0].keys())[:6]  # first 6 cols fit most terminals
+        table = Table(title=table_title, show_lines=False)
+        for c in cols:
+            table.add_column(c, overflow="fold", max_width=40)
+        for row in data:
+            table.add_row(*[str(row.get(c, ""))[:200] for c in cols])
+        console.print(table)
+        console.print(f"[dim]{len(data)} row(s)[/dim]")
+        return
+
+    console.print_json(data=data if not isinstance(data, str) else {"text": data})
+
+
+# ── auth ─────────────────────────────────────────────────────────────────────
+
+@auth_app.command("login")
+def auth_login(
+    client_id: Optional[str] = typer.Option(None, "--client-id"),
+    client_secret: Optional[str] = typer.Option(None, "--client-secret"),
+    port: int = typer.Option(8080, "--port"),
+) -> None:
+    """OAuth browser login. Writes REDDIT_REFRESH_TOKEN to ~/.config/reddit-myind/.env.
+
+    One-time setup before running this:
+      1. Go to https://www.reddit.com/prefs/apps → "create another app"
+      2. Type: WEB APP
+      3. Name: reddit-myind  (or anything)
+      4. Redirect URI: http://localhost:8080
+      5. Copy the client ID (under the name) and secret.
+    """
+    cfg_dir = Path.home() / ".config" / "reddit-myind"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    env_path = cfg_dir / ".env"
+
+    console.print("[bold]Reddit OAuth setup[/bold]\n")
+    console.print(
+        "If you haven't yet:\n"
+        "  1. Open https://www.reddit.com/prefs/apps\n"
+        "  2. 'create another app' → choose [bold]web app[/bold]\n"
+        f"  3. Redirect URI must be exactly: [cyan]http://localhost:{port}[/cyan]\n"
+    )
+    client_id = client_id or typer.prompt("Client ID (under the app name)")
+    client_secret = client_secret or typer.prompt("Client secret", hide_input=True)
+    user_agent = typer.prompt("User agent", default="reddit-myind/0.1")
+
+    # Pre-populate env so get_reddit_unauthed() can read them
+    os.environ["REDDIT_CLIENT_ID"] = client_id
+    os.environ["REDDIT_CLIENT_SECRET"] = client_secret
+    os.environ["REDDIT_USER_AGENT"] = user_agent
+    os.environ["REDDIT_REDIRECT_URI"] = f"http://localhost:{port}"
+
+    from ..core.oauth import run_oauth_flow
+
+    console.print("[dim]Opening browser… approve access when prompted.[/dim]")
+    refresh_token = run_oauth_flow(port=port)
+
+    env_path.write_text(
+        "\n".join(
+            [
+                f"REDDIT_CLIENT_ID={client_id}",
+                f"REDDIT_CLIENT_SECRET={client_secret}",
+                f"REDDIT_REFRESH_TOKEN={refresh_token}",
+                f"REDDIT_USER_AGENT={user_agent}",
+                f"REDDIT_REDIRECT_URI=http://localhost:{port}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(env_path, 0o600)
+    console.print(f"[green]Saved refresh token → {env_path} (chmod 600).[/green]")
+    console.print("Run [cyan]reddit-cli auth check[/cyan] to verify.")
+
+
+@auth_app.command("check")
+def auth_check() -> None:
+    """Verify credentials by calling the Reddit API."""
+    from ..core.client import get_reddit
+
+    reddit = get_reddit()
+    me = reddit.user.me()
+    if me is None:
+        console.print("[green]OK[/green] authenticated (read-only scopes, no identity).")
+    else:
+        console.print(f"[green]OK[/green] authenticated as u/{me}")
+
+
+# ── fetch ────────────────────────────────────────────────────────────────────
+
+@fetch_app.command("posts")
+def cmd_fetch_posts(
+    sub: str = typer.Option(..., "--sub", "-s"),
+    sort: str = typer.Option("hot", "--sort", help="hot|new|top|rising|controversial"),
+    limit: int = typer.Option(50, "--limit", "-n"),
+    time_filter: str = typer.Option("day", "--time", help="hour|day|week|month|year|all"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Fetch posts from r/<sub>."""
+    from ..fetch.posts import fetch_posts
+
+    rows = fetch_posts(sub=sub, sort=sort, limit=limit, time_filter=time_filter)  # type: ignore[arg-type]
+    _emit(rows, as_json, table_title=f"r/{sub} · {sort} · {len(rows)}")
+
+
+@fetch_app.command("comments")
+def cmd_fetch_comments(
+    post: str = typer.Option(..., "--post", "-p"),
+    depth: Optional[int] = typer.Option(None, "--depth", "-d"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n", help="replace_more limit"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Fetch the comment tree for a post."""
+    from ..fetch.comments import fetch_comments
+
+    rows = fetch_comments(post_id=post, depth=depth, limit=limit)
+    _emit(rows, as_json, table_title=f"post {post} · {len(rows)} comments")
+
+
+@fetch_app.command("user")
+def cmd_fetch_user(
+    name: str = typer.Option(..., "--name", "-u"),
+    kind: str = typer.Option("both", "--kind", help="posts|comments|both"),
+    limit: int = typer.Option(100, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Fetch a user's posts + comments."""
+    from ..fetch.users import fetch_user
+
+    out = fetch_user(name=name, kind=kind, limit=limit)  # type: ignore[arg-type]
+    _emit(out, as_json)
+
+
+@app.command("search")
+def cmd_search(
+    query: str = typer.Argument(..., help="Search query"),
+    sub: Optional[str] = typer.Option(None, "--sub", "-s"),
+    sort: str = typer.Option("relevance", "--sort", help="relevance|hot|new|top|comments"),
+    time_filter: str = typer.Option("all", "--time"),
+    limit: int = typer.Option(50, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Search Reddit, optionally scoped to a sub."""
+    from ..fetch.search import search_reddit
+
+    rows = search_reddit(query=query, sub=sub, sort=sort, time_filter=time_filter, limit=limit)  # type: ignore[arg-type]
+    _emit(rows, as_json, table_title=f'search "{query}" · {len(rows)}')
+
+
+@app.command("stream")
+def cmd_stream(
+    sub: str = typer.Option(..., "--sub", "-s"),
+    keywords: str = typer.Option(..., "--keywords", "-k", help="comma-separated regex patterns"),
+    watch: str = typer.Option("both", "--watch", help="posts|comments|both"),
+    name: Optional[str] = typer.Option(None, "--name"),
+) -> None:
+    """Blocking keyword stream. Prints hits + writes to SQLite. Ctrl+C to stop."""
+    from ..fetch.stream import start_stream
+
+    kws = [k.strip() for k in keywords.split(",") if k.strip()]
+    console.print(f"[bold]streaming r/{sub}[/bold] for: {kws}. Ctrl+C to stop.")
+
+    def _on_hit(hit: dict) -> None:
+        console.print(
+            f"[green]HIT[/green] [{hit['kind']}] {hit.get('title') or hit.get('body','')} "
+            f"[dim]({', '.join(hit['keywords'])})[/dim]\n  {hit['permalink']}"
+        )
+
+    try:
+        start_stream(sub=sub, keywords=kws, name=name, watch=watch, on_hit=_on_hit)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]stopped.[/yellow]")
+
+
+@app.command("query")
+def cmd_query(
+    sql: str = typer.Argument(..., help="SQL query against the SQLite store"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run a raw SQL query. Tables: posts, comments, users, subreddits, fetches, streams, stream_hits."""
+    db = get_db()
+    rows = list(db.query(sql))
+    _emit(rows, as_json, table_title=f"{len(rows)} row(s)")
+
+
+@app.command("export")
+def cmd_export(
+    table: str = typer.Argument(..., help="posts|comments|users|custom"),
+    sub: Optional[str] = typer.Option(None, "--sub", "-s"),
+    since: Optional[str] = typer.Option(None, "--since", help='e.g. "7d", "30d", "24h"'),
+    fmt: str = typer.Option("json", "--format", "-f"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o"),
+    sql: Optional[str] = typer.Option(None, "--sql", help="Custom SELECT (overrides table/sub/since)"),
+) -> None:
+    """Export rows to JSON / CSV / Parquet."""
+    db = get_db()
+    if sql:
+        rows = list(db.query(sql))
+    else:
+        where, params = [], []
+        if sub and table in ("posts",):
+            where.append("sub = ?")
+            params.append(sub.lower())
+        if since and table in ("posts", "comments"):
+            unit = since[-1].lower()
+            n = int(since[:-1])
+            secs = {"h": 3600, "d": 86400, "w": 604800}[unit] * n
+            where.append("created_utc >= strftime('%s','now') - ?")
+            params.append(secs)
+        q = f"SELECT * FROM {table}"
+        if where:
+            q += " WHERE " + " AND ".join(where)
+        rows = list(db.query(q, params))
+
+    result = export_rows(rows, out, fmt=fmt)
+    if out:
+        console.print(f"[green]wrote {len(rows)} rows → {result}[/green]")
+    else:
+        typer.echo(result)
+
+
+# ── analyze ──────────────────────────────────────────────────────────────────
+
+def _since_to_days(since: str | None) -> int | None:
+    if not since:
+        return None
+    unit = since[-1].lower()
+    n = int(since[:-1])
+    if unit == "d":
+        return n
+    if unit == "w":
+        return n * 7
+    if unit == "h":
+        # treat sub-day as 1 day for painpoints/themes
+        return max(1, n // 24)
+    raise typer.BadParameter(f"--since '{since}' — use e.g. 7d, 24h, 2w")
+
+
+@analyze_app.command("themes")
+def cmd_themes(
+    sub: Optional[str] = typer.Option(None, "--sub", "-s"),
+    since: Optional[str] = typer.Option(None, "--since"),
+    limit: int = typer.Option(100, "--limit", "-n"),
+    provider: str = typer.Option("anthropic", "--provider", help="anthropic|openai|ollama"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Cluster stored posts into themes via LLM."""
+    from ..analyze.themes import analyze_themes
+
+    result = analyze_themes(sub=sub, since_days=_since_to_days(since), limit=limit, provider=provider)
+    _emit(result, as_json)
+
+
+@analyze_app.command("summarize")
+def cmd_summarize(
+    post: str = typer.Option(..., "--post", "-p"),
+    provider: str = typer.Option("anthropic", "--provider"),
+) -> None:
+    """Summarize a single thread (post + top comments)."""
+    from ..analyze.summarize import summarize_thread
+
+    typer.echo(summarize_thread(post_id=post, provider=provider))
+
+
+@analyze_app.command("painpoints")
+def cmd_painpoints(
+    sub: Optional[str] = typer.Option(None, "--sub", "-s"),
+    since: Optional[str] = typer.Option(None, "--since"),
+    top: int = typer.Option(50, "--top"),
+    provider: str = typer.Option("anthropic", "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Extract user pain points from stored posts (product research)."""
+    from ..analyze.painpoints import extract_painpoints
+
+    result = extract_painpoints(
+        sub=sub, since_days=_since_to_days(since), top=top, provider=provider
+    )
+    _emit(result, as_json)
+
+
+# ── mcp ──────────────────────────────────────────────────────────────────────
+
+@mcp_app.command("serve")
+def cmd_mcp_serve() -> None:
+    """Run the MCP server (stdio transport)."""
+    try:
+        from ..mcp.server import run
+    except ImportError as e:
+        console.print(
+            "[red]MCP extra not installed.[/red] "
+            "Run: pip install -e '.[mcp]'"
+        )
+        raise typer.Exit(1) from e
+    run()
+
+
+# ── info ─────────────────────────────────────────────────────────────────────
+
+@app.command("info")
+def cmd_info() -> None:
+    """Show config + DB stats."""
+    cfg = load_config()
+    db = get_db()
+    stats = {
+        "data_dir": str(cfg.data_dir),
+        "db_path": str(cfg.db_path),
+        "reddit_creds": bool(cfg.reddit_client_id and cfg.reddit_client_secret),
+        "anthropic_key": bool(cfg.anthropic_api_key),
+        "openai_key": bool(cfg.openai_api_key),
+        "tables": {name: db[name].count for name in db.table_names()},
+    }
+    console.print_json(data=stats)
+
+
+if __name__ == "__main__":
+    app()

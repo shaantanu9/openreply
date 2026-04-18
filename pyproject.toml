@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reddit-myind"
+version = "0.1.0"
+description = "Reddit research CLI + MCP server — PRAW-based fetch, SQLite store, pluggable LLM analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Shantanu Bombatkar" }]
+dependencies = [
+    "praw>=7.7",
+    "typer>=0.12",
+    "rich>=13.7",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+    "sqlite-utils>=3.36",
+    "tomli>=2.0; python_version<'3.11'",
+]
+
+[project.optional-dependencies]
+analyze = [
+    "anthropic>=0.34",
+    "openai>=1.40",
+    "httpx>=0.27",
+]
+mcp = [
+    "fastmcp>=0.4",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+all = ["reddit-myind[analyze,mcp,dev]"]
+
+[project.scripts]
+reddit-myind = "reddit_research.cli.main:app"
+reddit-cli   = "reddit_research.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
