@@ -14,9 +14,19 @@ const CURATED_TABLES = [
   { name: 'fetches',       desc: 'Every pipeline invocation with duration, row count, and errors' },
 ];
 
+const PRESET_QUERIES = [
+  { label: 'Top subs across all topics',    sql: `SELECT subreddit, count(*) AS posts FROM posts WHERE subreddit IS NOT NULL GROUP BY subreddit ORDER BY posts DESC LIMIT 20` },
+  { label: 'Post volume by source',         sql: `SELECT coalesce(source_type,'reddit') AS source, count(*) AS n FROM posts GROUP BY coalesce(source_type,'reddit') ORDER BY n DESC` },
+  { label: 'Painpoints with most evidence', sql: `SELECT n.topic, n.label, (SELECT count(*) FROM graph_edges e WHERE e.topic=n.topic AND (e.src=n.id OR e.dst=n.id)) AS evidence FROM graph_nodes n WHERE n.kind='painpoint' ORDER BY evidence DESC LIMIT 20` },
+  { label: 'Failed fetches (last 7d)',      sql: `SELECT kind, error, started_at FROM fetches WHERE error IS NOT NULL AND substr(started_at,1,10) >= date('now','-7 days') ORDER BY started_at DESC LIMIT 30` },
+  { label: 'Topic volume last 30 days',     sql: `SELECT topic, count(*) AS new_posts FROM topic_posts WHERE substr(added_at,1,10) >= date('now','-29 days') GROUP BY topic ORDER BY new_posts DESC` },
+  { label: 'Longest collect runs',          sql: `SELECT kind, params_json, started_at, ended_at, rows FROM fetches WHERE ended_at IS NOT NULL ORDER BY (julianday(ended_at) - julianday(started_at)) DESC LIMIT 15` },
+];
+
 let state = {
   activeTable: null,
   lastQuery: '',
+  lastRows: [],
 };
 
 export async function renderDatabase(root) {
@@ -49,6 +59,12 @@ export async function renderDatabase(root) {
         </div>
 
         <div class="db-pane hidden" id="db-pane-query">
+          <div class="db-presets">
+            <span class="db-presets-label">Presets:</span>
+            ${PRESET_QUERIES.map((p, i) => `
+              <button class="db-preset-btn" data-idx="${i}">${esc(p.label)}</button>
+            `).join('')}
+          </div>
           <textarea id="db-sql"
             placeholder="SELECT * FROM graph_nodes WHERE kind='painpoint' LIMIT 50;"
             spellcheck="false"></textarea>
@@ -57,9 +73,10 @@ export async function renderDatabase(root) {
             <span class="db-hint">⌘/Ctrl + Enter runs</span>
             <div style="flex:1"></div>
             <span id="db-query-meta" class="db-hint"></span>
+            <button class="btn btn-ghost" id="btn-csv" hidden style="padding:6px 10px;font-size:11px;border:1px solid var(--line)">📋 CSV</button>
           </div>
           <div class="db-query-result" id="db-query-result">
-            <div class="empty-state">Type a query above.</div>
+            <div class="empty-state">Type a query above, or click a preset.</div>
           </div>
         </div>
       </section>
@@ -80,6 +97,7 @@ export async function renderDatabase(root) {
   // Wire SQL runner
   const sqlEl = root.querySelector('#db-sql');
   const runBtn = root.querySelector('#btn-run-query');
+  const csvBtn = root.querySelector('#btn-csv');
   const runQuery = async () => {
     const sql = sqlEl.value.trim();
     if (!sql) return;
@@ -88,12 +106,15 @@ export async function renderDatabase(root) {
     const meta = root.querySelector('#db-query-meta');
     out.innerHTML = `<div class="empty-state">running…</div>`;
     meta.textContent = '';
+    csvBtn.hidden = true;
     const t0 = performance.now();
     try {
       const rows = await api.runQuery(sql);
       const ms = Math.round(performance.now() - t0);
       meta.textContent = `${Array.isArray(rows) ? rows.length : 0} rows · ${ms}ms`;
-      renderResult(out, rows);
+      state.lastRows = Array.isArray(rows) ? rows : [];
+      renderResult(out, state.lastRows);
+      if (state.lastRows.length) csvBtn.hidden = false;
     } catch (e) {
       out.innerHTML = `<div class="db-error">✗ ${esc(e?.message || e)}</div>`;
     }
@@ -102,6 +123,16 @@ export async function renderDatabase(root) {
   sqlEl.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); }
   });
+  // Preset chips
+  root.querySelectorAll('.db-preset-btn').forEach(b => {
+    b.onclick = () => {
+      const p = PRESET_QUERIES[Number(b.dataset.idx)];
+      if (!p) return;
+      sqlEl.value = p.sql;
+      runQuery();
+    };
+  });
+  csvBtn.onclick = () => exportCsv(state.lastRows);
 }
 
 async function renderTableList(root) {
@@ -198,18 +229,90 @@ function renderResult(out, rows) {
 
 function renderRowsTable(rows) {
   const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
-  return `
+  const html = `
     <div class="db-rows-wrap">
       <table class="db-rows">
         <thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${fmtCell(r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
+        <tbody>${rows.map((r, i) => `<tr data-row-idx="${i}">${cols.map(c => `<td>${fmtCell(r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
       </table>
-    </div>
-  `;
+    </div>`;
+  // Stash rows so the click handler can find them (re-queried in openRowModal via closure)
+  setTimeout(() => {
+    document.querySelectorAll('.db-rows tbody tr').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const idx = Number(tr.dataset.rowIdx);
+        if (!isNaN(idx) && rows[idx]) openRowModal(rows[idx]);
+      });
+    });
+  }, 0);
+  return html;
 }
 
 function fmtCell(v) {
   if (v == null) return '<span class="db-null">NULL</span>';
   const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
   return esc(s.length > 240 ? s.slice(0, 240) + '…' : s);
+}
+
+function openRowModal(row) {
+  const modal = document.createElement('div');
+  modal.className = 'byok-backdrop';
+  const body = Object.entries(row).map(([k, v]) => {
+    let val = v == null ? 'NULL' : (typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v));
+    // Try to pretty-print JSON columns
+    if (typeof v === 'string' && (v.startsWith('{') || v.startsWith('['))) {
+      try { val = JSON.stringify(JSON.parse(v), null, 2); } catch {}
+    }
+    return `
+      <div class="row-field">
+        <label>${esc(k)}</label>
+        <pre class="row-value">${esc(val)}</pre>
+      </div>`;
+  }).join('');
+  modal.innerHTML = `
+    <div class="byok-dialog" style="max-width:720px">
+      <div class="byok-head">
+        <h3>Row detail</h3>
+        <button class="byok-close">×</button>
+      </div>
+      <div style="max-height:70vh;overflow-y:auto">${body}</div>
+      <div class="byok-foot">
+        <button class="btn btn-ghost" id="row-copy-json" style="border:1px solid var(--line);padding:7px 12px;font-size:12px">📋 Copy JSON</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost" id="row-close" style="border:1px solid var(--line);padding:7px 12px;font-size:12px">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => { modal.remove(); document.removeEventListener('keydown', escH); };
+  modal.querySelector('.byok-close').onclick = close;
+  modal.querySelector('#row-close').onclick = close;
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  modal.querySelector('#row-copy-json').onclick = () => {
+    navigator.clipboard.writeText(JSON.stringify(row, null, 2));
+    const b = modal.querySelector('#row-copy-json');
+    b.textContent = '✓ copied';
+    setTimeout(() => { b.textContent = '📋 Copy JSON'; }, 1400);
+  };
+  function escH(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', escH);
+}
+
+function exportCsv(rows) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+  const escape = (v) => {
+    if (v == null) return '';
+    const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /[,"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [cols.join(',')];
+  for (const r of rows) lines.push(cols.map(c => escape(r[c])).join(','));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gapmap-query-${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 500);
 }
