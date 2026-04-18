@@ -53,45 +53,87 @@ def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
     return out
 
 
-def export_graph_json(topic: str) -> dict[str, Any]:
-    """D3 force-graph shape: {nodes, links, meta, findings}."""
-    db = get_db()
-    node_rows = list(db.query("SELECT * FROM graph_nodes WHERE topic = ?", [topic]))
-    edge_rows = list(db.query("SELECT * FROM graph_edges WHERE topic = ?", [topic]))
+SKELETON_KINDS = {
+    "topic", "era", "subreddit", "source",
+    "painpoint", "feature_wish", "product", "workaround",
+}
 
-    nodes = []
-    for r in node_rows:
-        parsed = _parse_metadata(r)
-        nodes.append(
-            {
-                "id": parsed["id"],
-                "kind": parsed["kind"],
-                "label": parsed["label"],
-                "metadata": parsed.get("metadata", {}),
-            }
-        )
-    links = [
+
+def export_graph_json(topic: str, mode: str = "skeleton", max_post_nodes: int = 120) -> dict[str, Any]:
+    """D3 force-graph shape: {nodes, links, meta, findings}.
+
+    Modes:
+      'skeleton' (default) — topic/era/sub/source/painpoint/product/workaround/feature_wish
+                              ONLY. Plus up to `max_post_nodes` of the highest-
+                              degree posts that are linked to semantic nodes.
+                              ~100-300 nodes total; renders instantly.
+      'full'               — everything, including users. For small topics only.
+    """
+    db = get_db()
+    all_nodes = {r["id"]: _parse_metadata(r) for r in db.query("SELECT * FROM graph_nodes WHERE topic = ?", [topic])}
+    all_edges = list(db.query("SELECT * FROM graph_edges WHERE topic = ?", [topic]))
+
+    keep_ids: set[str]
+    if mode == "full":
+        keep_ids = set(all_nodes.keys())
+    else:
+        keep_ids = {nid for nid, n in all_nodes.items() if n["kind"] in SKELETON_KINDS}
+
+        # Add the top-N highest-degree post nodes that are connected to a
+        # semantic node via evidence edges — so findings show their citations.
+        evidence_kinds = {"evidenced_by", "wished_in", "about_product", "built_in", "solves"}
+        post_scores: dict[str, int] = {}
+        for e in all_edges:
+            if e["kind"] not in evidence_kinds:
+                continue
+            for endpoint in (e["src"], e["dst"]):
+                node = all_nodes.get(endpoint)
+                if node and node["kind"] == "post":
+                    post_scores[endpoint] = post_scores.get(endpoint, 0) + 1
+        top_posts = sorted(post_scores.items(), key=lambda p: -p[1])[:max_post_nodes]
+        keep_ids.update(pid for pid, _ in top_posts)
+
+    nodes_out = []
+    for nid in keep_ids:
+        if nid not in all_nodes:
+            continue
+        p = all_nodes[nid]
+        nodes_out.append({
+            "id": p["id"], "kind": p["kind"], "label": p["label"],
+            "metadata": p.get("metadata", {}),
+        })
+
+    links_out = [
         {"source": r["src"], "target": r["dst"], "kind": r["kind"], "weight": r.get("weight") or 1.0}
-        for r in edge_rows
+        for r in all_edges
+        if r["src"] in keep_ids and r["dst"] in keep_ids
     ]
+
     kinds_count: dict[str, int] = {}
-    for n in nodes:
+    for n in nodes_out:
         kinds_count[n["kind"]] = kinds_count.get(n["kind"], 0) + 1
 
     findings = _findings_for_topic(topic)
+
+    # Real full-graph totals for the header (not just what we rendered)
+    full_total_nodes = len(all_nodes)
+    full_total_edges = len(all_edges)
 
     return {
         "meta": {
             "topic": topic,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "total_nodes": len(nodes),
-            "total_edges": len(links),
+            "render_mode": mode,
+            "rendered_nodes": len(nodes_out),
+            "rendered_edges": len(links_out),
+            "total_nodes": full_total_nodes,
+            "total_edges": full_total_edges,
             "nodes_by_kind": kinds_count,
             "classification_summary": _classification_summary(findings["painpoint"]),
         },
         "findings": findings,
-        "nodes": nodes,
-        "links": links,
+        "nodes": nodes_out,
+        "links": links_out,
     }
 
 
@@ -244,8 +286,12 @@ const cs = meta.classification_summary || {};
 document.getElementById("subtitle").textContent =
   `${pp.length} painpoints · ${(DATA.findings.product||[]).length} products complained about · ` +
   `${(DATA.findings.workaround||[]).length} DIY workarounds · ${(DATA.findings.feature_wish||[]).length} feature wishes`;
+const renderedCount = meta.rendered_nodes || meta.total_nodes;
+const rendersuffix = meta.render_mode === "skeleton" && meta.total_nodes > renderedCount
+  ? ` <span style="color:var(--muted)">(skeleton of ${meta.total_nodes.toLocaleString()} total)</span>`
+  : "";
 document.getElementById("statsLine").innerHTML =
-  `<b>${meta.total_nodes}</b> nodes · <b>${meta.total_edges}</b> edges · ` +
+  `<b>${renderedCount}</b> nodes · <b>${meta.rendered_edges || meta.total_edges}</b> edges${rendersuffix} · ` +
   `${cs.CHRONIC||0} chronic · ${cs.EMERGING||0} emerging · ${cs.FADING||0} fading · ` +
   `${meta.generated_at.replace('T',' ').split('+')[0]} UTC`;
 
@@ -342,28 +388,52 @@ function shouldShow(node) {
   return true;
 }
 
-const sim = d3.forceSimulation(Object.values(nodesById))
-  .force("link", d3.forceLink(links).id(d => d.id).distance(d => {
-    if (d.kind === "evidenced_by" || d.kind === "wished_in" || d.kind === "built_in") return 30;
-    return 50;
-  }).strength(0.45))
-  .force("charge", d3.forceManyBody().strength(d => {
-    // strong repulsion on semantic nodes so they spread
-    if (["painpoint","product","workaround","feature_wish"].includes(d.kind)) return -200;
-    return -60;
-  }))
-  .force("center", d3.forceCenter(width/2, height/2))
-  .force("collide", d3.forceCollide(d => radiusOf(d) + 2));
-
 function radiusOf(d) {
-  if (d.kind === "topic") return 14;
-  if (d.kind === "painpoint") return 9;
-  if (d.kind === "product" || d.kind === "workaround" || d.kind === "feature_wish") return 8;
-  if (d.kind === "subreddit") return 6;
-  if (d.kind === "era") return 10;
+  if (d.kind === "topic") return 16;
+  if (d.kind === "painpoint") return 10;
+  if (d.kind === "product" || d.kind === "workaround" || d.kind === "feature_wish") return 9;
+  if (d.kind === "subreddit" || d.kind === "source") return 7;
+  if (d.kind === "era") return 12;
   if (d.kind === "post") return 3;
+  if (d.kind === "user") return 2.5;
   return 3;
 }
+
+// Radial placement by kind — anchors the graph so the eye finds structure.
+// Each kind lives in a concentric ring: topic center, semantic nodes inner,
+// subs/sources middle, evidence posts outer.
+const KIND_RADII = {
+  topic: 0,
+  era: 70,
+  painpoint: 140,
+  product: 200,
+  workaround: 200,
+  feature_wish: 200,
+  subreddit: 300,
+  source: 300,
+  post: 420,
+  user: 480,
+  comment: 480,
+};
+
+const sim = d3.forceSimulation(Object.values(nodesById))
+  .force("link", d3.forceLink(links).id(d => d.id).distance(d => {
+    if (d.kind === "evidenced_by" || d.kind === "wished_in" || d.kind === "built_in") return 35;
+    if (d.kind === "about_product" || d.kind === "solves") return 30;
+    return 50;
+  }).strength(0.4))
+  .force("charge", d3.forceManyBody().strength(d => {
+    if (["painpoint","product","workaround","feature_wish"].includes(d.kind)) return -280;
+    if (["subreddit","source","era"].includes(d.kind)) return -180;
+    if (d.kind === "topic") return -400;
+    return -50;
+  }))
+  .force("center", d3.forceCenter(width/2, height/2).strength(0.02))
+  .force("radial", d3.forceRadial(
+    d => KIND_RADII[d.kind] ?? 200,
+    width/2, height/2,
+  ).strength(0.35))
+  .force("collide", d3.forceCollide(d => radiusOf(d) + 3));
 
 const linkSel = g.append("g").attr("stroke","#48505c")
   .selectAll("line").data(links).join("line").attr("class","link");
@@ -479,9 +549,15 @@ function showNodeDetails(node) {
 """
 
 
-def export_graph_html(topic: str, out_path: Path | str) -> str:
-    """Write a self-contained, findings-first HTML viewer."""
-    data = export_graph_json(topic)
+def export_graph_html(
+    topic: str, out_path: Path | str, mode: str = "skeleton", max_post_nodes: int = 120
+) -> str:
+    """Write a self-contained, findings-first HTML viewer.
+
+    Default `mode='skeleton'` renders only semantic nodes + top-N evidence
+    posts (~100-300 nodes). Set `mode='full'` for all nodes (very slow at >3k).
+    """
+    data = export_graph_json(topic, mode=mode, max_post_nodes=max_post_nodes)
     payload = json.dumps(data, ensure_ascii=False, default=str).replace("</script>", "<\\/script>")
     html = _HTML_TEMPLATE.replace("{TOPIC}", topic.replace("<", "&lt;")).replace(
         "{GRAPH_JSON}", payload

@@ -557,6 +557,40 @@ def cmd_research_temporal(
     _emit(result, as_json)
 
 
+@research_app.command("report-pro")
+def cmd_research_report_pro(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Premium citation-rich report: painpoints + evidence + build plan + users-to-DM."""
+    from ..research.report_pro import render_citations_md
+
+    md = render_citations_md(topic)
+    if out:
+        out.write_text(md, encoding="utf-8")
+        console.print(f"[green]wrote premium report → {out}[/green]")
+    else:
+        typer.echo(md)
+
+
+@research_app.command("findings")
+def cmd_research_findings(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    top_n: int = typer.Option(5, "--top"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o"),
+    tweet: bool = typer.Option(False, "--tweet", help="Render terse 3-finding tweet summary"),
+) -> None:
+    """Plain markdown findings report — no LLM required, reads from graph."""
+    from ..research.text_report import render_text_report, render_tweet
+
+    md = render_tweet(topic) if tweet else render_text_report(topic, top_n=top_n)
+    if out:
+        out.write_text(md, encoding="utf-8")
+        console.print(f"[green]wrote findings → {out}[/green]")
+    else:
+        typer.echo(md)
+
+
 @research_app.command("report")
 def cmd_research_report(
     topic: str = typer.Option(..., "--topic", "-t"),
