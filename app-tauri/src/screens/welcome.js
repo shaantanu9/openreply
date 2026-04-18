@@ -51,8 +51,18 @@ function setStep(n) {
 }
 
 export async function renderWelcome(root) {
-  const info = await api.cliInfo().catch(() => ({}));
-  renderStep(root, getStep(), info);
+  // Render immediately with empty info — step 3 re-fetches live BYOK status
+  // and step 2 doesn't need cliInfo to draw. Never block the wizard on a
+  // cold sidecar.
+  renderStep(root, getStep(), {});
+  // Fetch cli info in background and re-render only if we're still on a
+  // step that uses it.
+  api.cliInfo().catch(() => null).then(info => {
+    if (!info) return;
+    const cur = getStep();
+    // Only step 3 actually consumes cli info (mode, db_path shown).
+    if (cur === 3) renderStep(root, cur, info);
+  });
 }
 
 function renderStep(root, step, info) {

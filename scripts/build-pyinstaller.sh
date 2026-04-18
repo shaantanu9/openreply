@@ -20,6 +20,11 @@ uv run pyinstaller \
   --collect-submodules praw \
   --collect-submodules prawcore \
   --collect-submodules sqlite_utils \
+  --collect-submodules openai \
+  --collect-submodules anthropic \
+  --collect-submodules httpx \
+  --hidden-import openai \
+  --hidden-import anthropic \
   --add-data "prompts:prompts" \
   --log-level WARN \
   scripts/pyinstaller-entrypoint.py
