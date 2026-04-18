@@ -26,6 +26,9 @@ mcp_app = typer.Typer(help="MCP server for Claude Code.")
 auth_app = typer.Typer(help="Reddit API credential setup.")
 research_app = typer.Typer(help="Topic/app gap-finding: discover → collect → extract → report.")
 
+graph_app = typer.Typer(help="Knowledge graph: build / enrich / query / export.")
+research_app.add_typer(graph_app, name="graph")
+
 app.add_typer(fetch_app, name="fetch")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(mcp_app, name="mcp")
@@ -158,6 +161,29 @@ def cmd_fetch_comments(
 
     rows = fetch_comments(post_id=post, depth=depth, limit=limit)
     _emit(rows, as_json, table_title=f"post {post} · {len(rows)} comments")
+
+
+@fetch_app.command("sub-comments")
+def cmd_fetch_sub_comments(
+    sub: str = typer.Option(..., "--sub", "-s"),
+    limit: int = typer.Option(100, "--limit", "-n"),
+    save: bool = typer.Option(True, "--save/--no-save"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Firehose of a sub's recent comments (public .json, no auth). Pain quotes live here."""
+    from ..core.public_client import public_get_sub_comments
+    from ..core.db import upsert_comments, log_fetch_start, log_fetch_end
+
+    fid = log_fetch_start("sub_comments", {"sub": sub, "limit": limit})
+    try:
+        rows = public_get_sub_comments(sub=sub, limit=limit)
+        if save and rows:
+            upsert_comments(rows)
+        log_fetch_end(fid, rows=len(rows))
+        _emit(rows, as_json, table_title=f"r/{sub} · {len(rows)} comments")
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        raise
 
 
 @fetch_app.command("historical")
@@ -542,6 +568,88 @@ def cmd_research_report(
         console.print(f"[green]wrote report → {out}[/green]")
     else:
         console.print(md)
+
+
+# ── graph subcommands ───────────────────────────────────────────────────────
+
+@graph_app.command("build")
+def cmd_graph_build(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Build structural graph (topic/sub/post/comment/user nodes) — no LLM."""
+    from ..graph import build_structural
+
+    r = build_structural(topic)
+    _emit(r, as_json)
+
+
+@graph_app.command("enrich")
+def cmd_graph_enrich(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str = typer.Option("anthropic", "--provider"),
+    corpus_limit: int = typer.Option(120, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Add semantic nodes (painpoints / products / workarounds) via LLM."""
+    from ..graph import enrich_from_llm
+
+    r = enrich_from_llm(topic=topic, provider=provider, corpus_limit=corpus_limit)
+    _emit(r, as_json)
+
+
+@graph_app.command("stats")
+def cmd_graph_stats(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show node/edge counts per kind for a topic."""
+    from ..graph import graph_stats
+
+    _emit(graph_stats(topic), as_json)
+
+
+@graph_app.command("neighbors")
+def cmd_graph_neighbors(
+    node_id: str = typer.Argument(..., help='Full node id, e.g. "topic::painpoint::forgetfulness"'),
+    topic: str = typer.Option(..., "--topic", "-t"),
+    kinds: Optional[str] = typer.Option(None, "--edge-kinds", help="comma-separated edge kinds"),
+    direction: str = typer.Option("both", "--direction", help="in|out|both"),
+    limit: int = typer.Option(30, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show neighbors of a node."""
+    from ..graph import neighbors
+
+    kind_list = [k.strip() for k in kinds.split(",")] if kinds else None
+    rows = neighbors(topic=topic, node_id=node_id, edge_kinds=kind_list, direction=direction, limit=limit)
+    _emit(rows, as_json)
+
+
+@graph_app.command("export")
+def cmd_graph_export(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    fmt: str = typer.Option("html", "--format", "-f", help="html|json"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export the graph as a shareable HTML (D3 force-graph) or raw JSON."""
+    from ..graph import export_graph_html, export_graph_json
+
+    if fmt == "html":
+        out = out or Path(f"gap-map-{topic.replace(' ', '-')}.html")
+        p = export_graph_html(topic, out)
+        console.print(f"[green]wrote[/green] {p}")
+        console.print(f"[dim]open in a browser: file://{Path(p).resolve()}[/dim]")
+    elif fmt == "json":
+        data = export_graph_json(topic)
+        if out:
+            out.write_text(json.dumps(data, default=str, ensure_ascii=False, indent=2), encoding="utf-8")
+            console.print(f"[green]wrote[/green] {out}")
+        else:
+            typer.echo(json.dumps(data, default=str, ensure_ascii=False, indent=2))
+    else:
+        console.print(f"[red]unknown format:[/red] {fmt} (use html|json)")
+        raise typer.Exit(1)
 
 
 @research_app.command("corpus")

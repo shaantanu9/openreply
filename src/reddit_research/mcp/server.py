@@ -18,6 +18,14 @@ from ..fetch.historical import fetch_historical as fetch_historical_fn
 from ..fetch.posts import fetch_posts
 from ..fetch.search import search_reddit
 from ..fetch.users import fetch_user
+from ..graph import (
+    build_structural as graph_build_structural,
+    export_graph_json as graph_export_json,
+    graph_stats as graph_stats_fn,
+    neighbors as graph_neighbors_fn,
+    top_nodes_by_degree as graph_top_nodes,
+    upsert_semantic as graph_upsert_semantic,
+)
 from ..research.collect import collect as research_collect
 from ..research.collect import corpus_for as research_corpus_for
 from ..research.discover import discover_subs as research_discover
@@ -288,6 +296,89 @@ def reddit_topic_stats(topic: str) -> dict:
     )
     base = rows[0] if rows else {}
     return {"topic": topic, "stats": base, "top_subs": top_subs}
+
+
+# ── graph tools — the virality-enabling layer ───────────────────────────────
+
+
+@mcp.tool()
+def reddit_graph_build(topic: str) -> dict:
+    """Build the structural knowledge graph for a topic from collected data.
+
+    Auto-derives topic/subreddit/post/comment/user nodes + containment/
+    authorship/era edges from the existing SQLite. No LLM calls; idempotent.
+    Run this after reddit_research_collect, before enrichment or export.
+    """
+    return graph_build_structural(topic)
+
+
+@mcp.tool()
+def reddit_graph_stats(topic: str) -> dict:
+    """Return node/edge counts per kind for a topic's graph."""
+    return graph_stats_fn(topic)
+
+
+@mcp.tool()
+def reddit_graph_top_nodes(topic: str, kind: str | None = None, limit: int = 20) -> list[dict]:
+    """Rank nodes by total degree (hubs). Pass kind to filter (e.g. 'painpoint')."""
+    return graph_top_nodes(topic, kind=kind, limit=limit)
+
+
+@mcp.tool()
+def reddit_graph_neighbors(
+    topic: str,
+    node_id: str,
+    edge_kinds: list[str] | None = None,
+    direction: str = "both",
+    limit: int = 50,
+) -> list[dict]:
+    """Return neighbors of a node, optionally filtered by edge kind.
+
+    Use after reddit_graph_top_nodes to drill into hubs.
+    """
+    return graph_neighbors_fn(
+        topic=topic, node_id=node_id, edge_kinds=edge_kinds,
+        direction=direction, limit=limit,
+    )
+
+
+@mcp.tool()
+def reddit_graph_upsert_semantic(
+    topic: str,
+    painpoints: list[dict] | None = None,
+    feature_wishes: list[dict] | None = None,
+    product_complaints: list[dict] | None = None,
+    diy_workarounds: list[dict] | None = None,
+) -> dict:
+    """Persist LLM-extracted gap signals as graph nodes + edges.
+
+    Use this after you (Claude) synthesize painpoints / products / workarounds
+    from the corpus (reddit_get_corpus). This is the "Claude-as-LLM" path —
+    no API key needed on the server side.
+
+    Schemas (all fields optional except the primary label):
+      painpoints: [{painpoint, severity, frequency, evidence, classification, example_post_ids}]
+      feature_wishes: [{feature, user_quote, frequency, example_post_ids}]
+      product_complaints: [{product, complaint, severity, frequency, example_post_ids}]
+      diy_workarounds: [{workaround, gap, user_quote, frequency, example_post_ids}]
+    """
+    return graph_upsert_semantic(
+        topic=topic,
+        painpoints=painpoints,
+        feature_wishes=feature_wishes,
+        product_complaints=product_complaints,
+        diy_workarounds=diy_workarounds,
+    )
+
+
+@mcp.tool()
+def reddit_graph_export_json(topic: str) -> dict:
+    """Export the full topic graph as JSON (D3 force-graph shape: nodes, links, meta).
+
+    Returns everything — use sparingly for very large graphs. For selective
+    slicing, use reddit_graph_top_nodes + reddit_graph_neighbors instead.
+    """
+    return graph_export_json(topic)
 
 
 def run() -> None:

@@ -1,0 +1,245 @@
+"""Structural graph builder — derives a topic's graph from existing Reddit
+tables (topic_posts, posts, comments, users) with zero LLM calls.
+
+Output node kinds: topic, subreddit, post, comment, user.
+Output edge kinds: contains, has_comment, authored, replied_to, era.
+
+Re-runnable. Upsert everything so calling build_structural() twice is a no-op.
+"""
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from ..core.db import get_db
+from ..core.pullpush_client import CUTOFF_UTC
+from .schema import ensure_graph_schema, make_node_id
+
+
+def _upsert_node(
+    db,
+    topic: str,
+    kind: str,
+    key: str,
+    label: str,
+    metadata: dict | None = None,
+) -> str:
+    node_id = make_node_id(topic, kind, key)
+    db["graph_nodes"].upsert(
+        {
+            "id": node_id,
+            "topic": topic,
+            "kind": kind,
+            "label": label,
+            "metadata_json": json.dumps(metadata or {}, default=str, ensure_ascii=False),
+        },
+        pk="id",
+    )
+    return node_id
+
+
+def _upsert_edge(
+    db,
+    topic: str,
+    src: str,
+    dst: str,
+    kind: str,
+    weight: float = 1.0,
+    metadata: dict | None = None,
+) -> None:
+    db["graph_edges"].upsert(
+        {
+            "src": src,
+            "dst": dst,
+            "kind": kind,
+            "topic": topic,
+            "weight": weight,
+            "metadata_json": json.dumps(metadata or {}, default=str, ensure_ascii=False),
+        },
+        pk=("src", "dst", "kind"),
+    )
+
+
+def _era_label(created_utc: float | None) -> str:
+    if not created_utc:
+        return "unknown"
+    return "pre_2025" if created_utc < CUTOFF_UTC else "post_2025"
+
+
+def build_structural(topic: str) -> dict[str, Any]:
+    """Build structural graph nodes + edges for a topic from existing data.
+
+    Returns a summary dict: counts per kind, total rows.
+    """
+    ensure_graph_schema()
+    db = get_db()
+
+    # Root: the topic itself
+    topic_node = _upsert_node(db, topic, "topic", topic, topic)
+
+    # Collect all posts tagged under this topic
+    posts = list(
+        db.query(
+            """
+            SELECT p.id, p.sub, p.author, p.title, p.num_comments, p.score,
+                   p.created_utc, p.permalink
+            FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
+            WHERE tp.topic = ?
+            """,
+            [topic],
+        )
+    )
+
+    node_counts = {
+        "topic": 1,
+        "subreddit": 0,
+        "post": 0,
+        "comment": 0,
+        "user": 0,
+        "era": 0,
+    }
+    edge_counts = {"contains": 0, "has_comment": 0, "authored": 0, "era": 0, "replied_to": 0}
+
+    seen_subs: set[str] = set()
+    seen_users: set[str] = set()
+    seen_eras: set[str] = set()
+    post_id_map: dict[str, str] = {}  # reddit post id → graph node id
+
+    # Era nodes (pre/post 2025)
+    for era in ("pre_2025", "post_2025"):
+        _upsert_node(db, topic, "era", era, era)
+        seen_eras.add(era)
+        node_counts["era"] += 1
+
+    # Subs + posts + authorship + era
+    for p in posts:
+        sub = (p.get("sub") or "").lower()
+        if not sub:
+            continue
+        if sub not in seen_subs:
+            sub_node = _upsert_node(db, topic, "subreddit", sub, f"r/{sub}")
+            _upsert_edge(db, topic, topic_node, sub_node, "contains")
+            edge_counts["contains"] += 1
+            node_counts["subreddit"] += 1
+            seen_subs.add(sub)
+        sub_node = make_node_id(topic, "subreddit", sub)
+
+        post_node = _upsert_node(
+            db,
+            topic,
+            "post",
+            p["id"],
+            (p.get("title") or "")[:140],
+            metadata={
+                "score": p.get("score"),
+                "num_comments": p.get("num_comments"),
+                "created_utc": p.get("created_utc"),
+                "permalink": p.get("permalink"),
+                "sub": sub,
+                "era": _era_label(p.get("created_utc")),
+            },
+        )
+        post_id_map[p["id"]] = post_node
+        _upsert_edge(db, topic, sub_node, post_node, "contains")
+        edge_counts["contains"] += 1
+        node_counts["post"] += 1
+
+        author = p.get("author") or "[deleted]"
+        if author and author != "[deleted]" and author not in seen_users:
+            _upsert_node(db, topic, "user", author, f"u/{author}")
+            seen_users.add(author)
+            node_counts["user"] += 1
+        if author and author != "[deleted]":
+            user_node = make_node_id(topic, "user", author)
+            _upsert_edge(db, topic, user_node, post_node, "authored")
+            edge_counts["authored"] += 1
+
+        # Era edge
+        era = _era_label(p.get("created_utc"))
+        era_node = make_node_id(topic, "era", era)
+        _upsert_edge(db, topic, post_node, era_node, "era")
+        edge_counts["era"] += 1
+
+    # Comments for posts in this topic
+    if posts:
+        post_ids = [p["id"] for p in posts]
+        # sqlite-utils has no ANY() helper; use IN with placeholders
+        placeholders = ",".join("?" for _ in post_ids)
+        comments = list(
+            db.query(
+                f"""
+                SELECT id, post_id, parent_id, author, body, score, created_utc
+                FROM comments WHERE post_id IN ({placeholders})
+                """,
+                post_ids,
+            )
+        )
+        for c in comments:
+            pid = post_id_map.get(c["post_id"])
+            if not pid:
+                continue
+            c_node = _upsert_node(
+                db,
+                topic,
+                "comment",
+                c["id"],
+                (c.get("body") or "")[:120],
+                metadata={
+                    "score": c.get("score"),
+                    "created_utc": c.get("created_utc"),
+                    "post_id": c.get("post_id"),
+                    "era": _era_label(c.get("created_utc")),
+                },
+            )
+            _upsert_edge(db, topic, pid, c_node, "has_comment")
+            edge_counts["has_comment"] += 1
+            node_counts["comment"] += 1
+
+            # Comment authorship
+            author = c.get("author") or "[deleted]"
+            if author and author != "[deleted]":
+                if author not in seen_users:
+                    _upsert_node(db, topic, "user", author, f"u/{author}")
+                    seen_users.add(author)
+                    node_counts["user"] += 1
+                user_node = make_node_id(topic, "user", author)
+                _upsert_edge(db, topic, user_node, c_node, "authored")
+                edge_counts["authored"] += 1
+
+    total_nodes = sum(node_counts.values())
+    total_edges = sum(edge_counts.values())
+
+    return {
+        "topic": topic,
+        "total_nodes": total_nodes,
+        "total_edges": total_edges,
+        "nodes_by_kind": node_counts,
+        "edges_by_kind": edge_counts,
+    }
+
+
+def graph_stats(topic: str) -> dict[str, Any]:
+    """Return summary stats for a topic's graph without rebuilding."""
+    ensure_graph_schema()
+    db = get_db()
+    nodes_by_kind = {
+        r["kind"]: r["n"]
+        for r in db.query(
+            "SELECT kind, count(*) n FROM graph_nodes WHERE topic=? GROUP BY kind",
+            [topic],
+        )
+    }
+    edges_by_kind = {
+        r["kind"]: r["n"]
+        for r in db.query(
+            "SELECT kind, count(*) n FROM graph_edges WHERE topic=? GROUP BY kind",
+            [topic],
+        )
+    }
+    return {
+        "topic": topic,
+        "total_nodes": sum(nodes_by_kind.values()),
+        "total_edges": sum(edges_by_kind.values()),
+        "nodes_by_kind": nodes_by_kind,
+        "edges_by_kind": edges_by_kind,
+    }

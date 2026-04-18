@@ -203,6 +203,50 @@ def public_search(
     return [_post_row(c["data"]) for c in children if c.get("kind") == "t3"][:limit]
 
 
+def public_get_sub_comments(sub: str, limit: int = 100) -> list[dict]:
+    """Firehose of a sub's most recent comments — pain quotes live here, not OPs.
+
+    Uses /r/<sub>/comments.json. No comment tree, just a flat recent-first list.
+    Shape matches `_comment_row`; post_id is extracted from `link_id` (t3_ prefix stripped).
+    """
+    out: list[dict] = []
+    after: str | None = None
+    remaining = limit
+    while remaining > 0:
+        page = min(100, remaining)
+        params: dict[str, Any] = {"limit": page, "raw_json": 1}
+        if after:
+            params["after"] = after
+        j = _get(f"/r/{sub}/comments.json", params=params)
+        children = j.get("data", {}).get("children", [])
+        if not children:
+            break
+        for c in children:
+            if c.get("kind") != "t1":
+                continue
+            d = c["data"]
+            link_id = d.get("link_id") or ""
+            post_id = link_id[3:] if link_id.startswith("t3_") else link_id
+            out.append(
+                {
+                    "id": d.get("id"),
+                    "post_id": post_id,
+                    "parent_id": d.get("parent_id"),
+                    "author": d.get("author") or "[deleted]",
+                    "body": d.get("body") or "",
+                    "score": d.get("score"),
+                    "created_utc": d.get("created_utc"),
+                    "depth": 0,
+                    "fetched_at": _now(),
+                }
+            )
+        after = j.get("data", {}).get("after")
+        remaining -= len(children)
+        if not after:
+            break
+    return out[:limit]
+
+
 def public_get_user(name: str, kind: str = "both", limit: int = 100) -> dict:
     out: dict = {"user": None, "posts": [], "comments": []}
 
