@@ -39,16 +39,5 @@
       "binaries/reddit-cli"
     ]
   },
-  "plugins": {
-    "shell": {
-      "sidecar": true,
-      "scope": [
-        {
-          "name": "binaries/reddit-cli",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    }
-  }
+  "plugins": {}
 }

@@ -1,4 +1,5 @@
 import { api, esc } from '../api.js';
+import { openByokModal } from './byok.js';
 
 export async function renderSettings(root) {
   root.innerHTML = `
@@ -12,23 +13,45 @@ export async function renderSettings(root) {
     </div>
   `;
 
+  let byok = { anthropic: {}, openai: {}, reddit_client_id: {}, reddit_client_secret: {}, path: '' };
+  try {
+    byok = await api.byokStatus();
+  } catch {}
+
   try {
     const info = await api.cliInfo();
     const dataDir = await api.appDataDir();
     const root2 = root.querySelector('#settings-root');
     const t = (info.tables && info.tables) || {};
+    const keyRow = (label, st) => `
+      <div class="kv-row"><b>${esc(label)}</b>
+        <span>${st?.set ? `✓ ${esc(st.preview)}` : '× not set'}</span>
+      </div>`;
     root2.innerHTML = `
       <div class="settings-card">
-        <h4>Reddit credentials</h4>
-        <p>OAuth refresh token (browser-based setup). Stored via <code>reddit-cli auth login</code> in terminal.</p>
-        <div class="kv-row"><b>Status</b><span>${info.oauth_ready ? '✓ configured' : '× not configured'}</span></div>
-        <div class="kv-row"><b>Mode</b><span>${esc(info.mode || 'public')}</span></div>
+        <h4>API keys <span style="color:var(--ink-3);font-size:12px;font-weight:500">(BYOK)</span></h4>
+        <p>Stored locally at <code>${esc(byok.path || '~/.config/reddit-myind/.env')}</code>. Never uploaded.</p>
+        ${keyRow('Anthropic',            byok.anthropic)}
+        ${keyRow('OpenAI',               byok.openai)}
+        ${keyRow('Reddit client ID',     byok.reddit_client_id)}
+        ${keyRow('Reddit client secret', byok.reddit_client_secret)}
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="btn-manage-keys">🗝 Manage keys</button>
+          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reveal-env">Reveal .env</button>
+        </div>
       </div>
       <div class="settings-card">
-        <h4>LLM keys</h4>
-        <p>Optional — Claude-in-MCP also works without setting a key.</p>
-        <div class="kv-row"><b>Anthropic</b><span>${info.anthropic_key ? '✓ configured' : '× not configured'}</span></div>
-        <div class="kv-row"><b>OpenAI</b><span>${info.openai_key ? '✓ configured' : '× not configured'}</span></div>
+        <h4>Reddit source</h4>
+        <p>Without credentials we use public <code>.json</code> endpoints (60/min). With client ID + secret, rate limit jumps to 100/min.</p>
+        <div class="kv-row"><b>Current mode</b><span>${esc(info.mode || 'public')}</span></div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reddit-apps">
+            Create Reddit app
+          </button>
+          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-auth-docs">
+            Setup guide
+          </button>
+        </div>
       </div>
       <div class="settings-card">
         <h4>Data directory</h4>
@@ -46,6 +69,19 @@ export async function renderSettings(root) {
         <p>Gap Map · v0.1.0 · Python sidecar + Tauri · variant-6 soft-dashboard</p>
       </div>
     `;
+    // Wire buttons
+    root.querySelector('#btn-reddit-apps')?.addEventListener('click', () => {
+      api.openUrl('https://www.reddit.com/prefs/apps');
+    });
+    root.querySelector('#btn-auth-docs')?.addEventListener('click', () => {
+      api.openUrl('https://github.com/shaantanu98/reddit-myind/blob/master/README.md');
+    });
+    root.querySelector('#btn-manage-keys')?.addEventListener('click', () => {
+      openByokModal(() => renderSettings(root));
+    });
+    root.querySelector('#btn-reveal-env')?.addEventListener('click', () => {
+      if (byok.path) api.revealInFinder(byok.path);
+    });
   } catch (e) {
     root.querySelector('#settings-root').innerHTML =
       `<div class="settings-card"><h4>Error loading settings</h4><p>${esc(e?.message || e)}</p></div>`;

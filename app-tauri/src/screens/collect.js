@@ -81,10 +81,24 @@ export async function renderCollect(root, { params }) {
     }
   });
 
-  // Cancel just navigates away — the sidecar continues in the background;
-  // re-entering the same topic route resumes the log (partial data kept).
-  root.querySelector('#btn-cancel').addEventListener('click', () => {
-    location.hash = '#/';
+  // Cancel actually kills the sidecar subprocess + navigates back
+  root.querySelector('#btn-cancel').addEventListener('click', async () => {
+    const btn = root.querySelector('#btn-cancel');
+    const origText = btn.textContent;
+    btn.textContent = 'Cancelling…';
+    btn.disabled = true;
+    try {
+      const killed = await api.cancelCollect();
+      appendLine(killed ? '✗ cancelled by user' : 'no active job', 'err');
+      statusPill.textContent = 'cancelled';
+      statusPill.style.background = 'var(--fading)';
+      statusPill.style.color = 'white';
+    } catch (e) {
+      appendLine(`failed to cancel: ${e?.message || e}`, 'err');
+    }
+    btn.textContent = origText;
+    btn.disabled = false;
+    setTimeout(() => { location.hash = '#/'; }, 800);
   });
   openBtn.addEventListener('click', () => {
     location.hash = `#/topic/${slug}`;
