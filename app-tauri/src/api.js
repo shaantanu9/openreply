@@ -1,30 +1,13 @@
 // Thin wrapper over Tauri's invoke + event API.
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-import { listen as tauriListen } from '@tauri-apps/api/event';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
-/**
- * Runtime guard: if the page is loaded outside the Tauri webview
- * (e.g. someone opened http://localhost:1420 in their regular browser),
- * `window.__TAURI_INTERNALS__` is missing and every IPC call crashes
- * with a cryptic `Cannot read properties of undefined (reading 'invoke')`.
- * Surface a clear error instead.
- */
-function ensureTauri() {
-  if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) {
-    throw new Error(
-      "This app must run inside the Gap Map window — " +
-      "you're viewing it in a regular browser. " +
-      "Close this tab and open the Gap Map app from your dock."
-    );
-  }
-}
-function invoke(cmd, args) {
-  ensureTauri();
-  return tauriInvoke(cmd, args);
-}
-function listen(event, cb) {
-  ensureTauri();
-  return tauriListen(event, cb);
+// One-time runtime diagnostic — logs once at load so we know if we're
+// inside the webview. The previous pre-flight guard was producing false
+// positives, so we trust Tauri's own invoke() to surface real errors.
+if (typeof window !== 'undefined') {
+  const inTauri = typeof isTauri === 'function' ? isTauri() : !!window.__TAURI_INTERNALS__;
+  console.info('[api] tauri runtime:', inTauri ? 'yes' : 'NO');
 }
 
 export const api = {
