@@ -29,12 +29,13 @@ def get_db() -> Database:
 
 
 def init_schema(db: Database) -> None:
-    """Idempotent schema creation."""
+    """Idempotent schema creation + additive migrations."""
     if "posts" not in db.table_names():
         db["posts"].create(
             {
                 "id": str,
                 "sub": str,
+                "source_type": str,
                 "author": str,
                 "title": str,
                 "selftext": str,
@@ -52,8 +53,33 @@ def init_schema(db: Database) -> None:
             pk="id",
         )
         db["posts"].create_index(["sub"])
+        db["posts"].create_index(["source_type"])
         db["posts"].create_index(["created_utc"])
         db["posts"].create_index(["author"])
+    else:
+        # Additive migration: add source_type column if missing
+        cols = {c.name for c in db["posts"].columns}
+        if "source_type" not in cols:
+            db["posts"].add_column("source_type", str)
+            db.execute("UPDATE posts SET source_type='reddit' WHERE source_type IS NULL")
+            db["posts"].create_index(["source_type"], if_not_exists=True)
+
+    if "trend_series" not in db.table_names():
+        # Google Trends data — separate table, not graph nodes (time series)
+        db["trend_series"].create(
+            {
+                "id": int,
+                "topic": str,
+                "keyword": str,
+                "timeframe": str,
+                "geo": str,
+                "point_ts": str,      # ISO date
+                "interest": int,      # 0–100
+                "fetched_at": str,
+            },
+            pk="id",
+        )
+        db["trend_series"].create_index(["topic", "keyword"])
 
     if "comments" not in db.table_names():
         db["comments"].create(

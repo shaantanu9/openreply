@@ -76,6 +76,7 @@ def collect(
     historical_days: int = 730,
     historical_limit_per_sub: int = 500,
     aggressive: bool = False,
+    sources: list[str] | None = None,  # extra sources: hn/appstore/playstore/scholar/stackoverflow/trends
     progress=None,  # optional callable(message: str) for CLI progress
 ) -> CollectResult:
     """Run the full collection for a topic.
@@ -99,6 +100,8 @@ def collect(
         historical_days = max(historical_days, 1095)  # 3 years
         historical_limit_per_sub = max(historical_limit_per_sub, 1000)
         query_categories = query_categories or ["pain", "features", "complaints", "diy"]
+        if not sources:
+            sources = ["hn", "appstore", "playstore"]  # highest-signal free sources
     result = CollectResult(topic=topic)
 
     def _log(msg: str) -> None:
@@ -158,6 +161,30 @@ def collect(
                     _log(f"  ! {msg}")
                     result.errors.append(msg)
                 time.sleep(_SLEEP)
+
+    # 3b. Extra sources (HN / App Store / Play Store / Scholar / SO / Trends)
+    if sources:
+        from ..sources.collect_adapter import SOURCES
+
+        for src in sources:
+            fn = SOURCES.get(src)
+            if not fn:
+                _log(f"  ! unknown source: {src}")
+                result.errors.append(f"unknown source: {src}")
+                continue
+            try:
+                _log(f"source:{src} — fetching…")
+                if src == "trends":
+                    result.by_source[f"source:{src}"] = fn(topic)  # dict
+                    continue
+                n = fn(topic)
+                result.posts_fetched += n
+                result.by_source[f"source:{src}"] = n
+            except Exception as e:
+                msg = f"source:{src}: {e}"
+                _log(f"  ! {msg}")
+                result.errors.append(msg)
+            time.sleep(_SLEEP)
 
     # 4. Historical — pullpush (pre-May-2025)
     if include_historical:

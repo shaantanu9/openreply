@@ -476,9 +476,13 @@ def cmd_research_collect(
     ),
     historical_days: int = typer.Option(730, "--historical-days"),
     historical_per_sub: int = typer.Option(500, "--historical-per-sub"),
+    sources: Optional[str] = typer.Option(
+        None, "--sources",
+        help="Extra free sources (comma): hn,appstore,playstore,scholar,stackoverflow,trends",
+    ),
     aggressive: bool = typer.Option(
         False, "--aggressive", "-A",
-        help="Max limits + all categories + historical + 3-year depth.",
+        help="Max limits + all categories + historical + 3-year depth + HN/app stores.",
     ),
 ) -> None:
     """Build a topic-scoped corpus in SQLite (discover + fetch + search [+ history])."""
@@ -486,6 +490,7 @@ def cmd_research_collect(
 
     sub_list = [s.strip() for s in subs.split(",")] if subs else None
     cats = [c.strip() for c in categories.split(",")] if categories else None
+    src_list = [s.strip() for s in sources.split(",")] if sources else None
 
     result = collect(
         topic=topic,
@@ -497,6 +502,7 @@ def cmd_research_collect(
         include_historical=historical,
         historical_days=historical_days,
         historical_limit_per_sub=historical_per_sub,
+        sources=src_list,
         aggressive=aggressive,
         progress=lambda m: console.print(f"[dim]• {m}[/dim]"),
     )

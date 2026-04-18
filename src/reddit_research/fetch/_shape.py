@@ -13,6 +13,7 @@ def post_row(p: Any) -> dict[str, Any]:
     return {
         "id": p.id,
         "sub": str(p.subreddit).lower() if p.subreddit else None,
+        "source_type": "reddit",
         "author": str(p.author) if p.author else "[deleted]",
         "title": p.title,
         "selftext": getattr(p, "selftext", "") or "",

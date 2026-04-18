@@ -381,6 +381,85 @@ def reddit_graph_export_json(topic: str) -> dict:
     return graph_export_json(topic)
 
 
+# ── multi-source tools (free sources — no API keys) ─────────────────────────
+
+
+@mcp.tool()
+def reddit_fetch_hn(query: str, tags: str = "story", limit: int = 30) -> list[dict]:
+    """Search Hacker News via the free Algolia API. `tags`: story | comment | ask_hn | show_hn."""
+    from ..sources.hackernews import fetch_hn
+
+    return fetch_hn(query=query, tags=tags, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_appstore(topic: str, country: str = "us", apps: int = 5, pages_per_app: int = 3) -> dict:
+    """Discover top iOS apps for a topic + pull reviews. Returns {apps, reviews_count}."""
+    from ..sources.appstore import fetch_appstore_reviews, search_appstore_apps
+    from ..core.db import upsert_posts
+
+    found = search_appstore_apps(topic, country=country, limit=apps)
+    total = 0
+    for a in found:
+        if not a.get("track_id"):
+            continue
+        revs = fetch_appstore_reviews(
+            a["track_id"], app_name=a.get("name") or "",
+            country=country, pages=pages_per_app, max_reviews=pages_per_app * 50,
+        )
+        upsert_posts(revs)
+        total += len(revs)
+    return {"apps": found, "reviews_count": total}
+
+
+@mcp.tool()
+def reddit_fetch_playstore(topic: str, apps: int = 5, reviews_per_app: int = 100) -> dict:
+    """Discover top Play Store apps + pull reviews. Returns {apps, reviews_count}."""
+    from ..sources.playstore import fetch_playstore_reviews, search_playstore_apps
+    from ..core.db import upsert_posts
+
+    found = search_playstore_apps(topic, limit=apps)
+    total = 0
+    for a in found:
+        if not a.get("app_id"):
+            continue
+        revs = fetch_playstore_reviews(a["app_id"], count=reviews_per_app)
+        upsert_posts(revs)
+        total += len(revs)
+    return {"apps": found, "reviews_count": total}
+
+
+@mcp.tool()
+def reddit_fetch_scholar(query: str, limit: int = 30, year_from: int | None = None) -> list[dict]:
+    """Search academic papers on Semantic Scholar (free, no key)."""
+    from ..sources.scholar import fetch_scholar
+
+    return fetch_scholar(query=query, limit=limit, year_from=year_from)
+
+
+@mcp.tool()
+def reddit_fetch_stackoverflow(
+    query: str | None = None, tag: str | None = None, limit: int = 30
+) -> list[dict]:
+    """Search Stack Overflow — dev-tool pain signal."""
+    from ..sources.stackoverflow import fetch_stackoverflow
+
+    return fetch_stackoverflow(query=query, tag=tag, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_trends(
+    topic: str,
+    keywords: list[str] | None = None,
+    timeframe: str = "today 5-y",
+    geo: str = "",
+) -> dict:
+    """Google Trends interest-over-time + rising queries. Demand-validation overlay."""
+    from ..sources.trends import fetch_trends
+
+    return fetch_trends(topic=topic, keywords=keywords, timeframe=timeframe, geo=geo)
+
+
 def run() -> None:
     """Start the server on stdio."""
     mcp.run()

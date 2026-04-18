@@ -81,7 +81,7 @@ def build_structural(topic: str) -> dict[str, Any]:
     posts = list(
         db.query(
             """
-            SELECT p.id, p.sub, p.author, p.title, p.num_comments, p.score,
+            SELECT p.id, p.sub, p.source_type, p.author, p.title, p.num_comments, p.score,
                    p.created_utc, p.permalink
             FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
             WHERE tp.topic = ?
@@ -93,6 +93,7 @@ def build_structural(topic: str) -> dict[str, Any]:
     node_counts = {
         "topic": 1,
         "subreddit": 0,
+        "source": 0,
         "post": 0,
         "comment": 0,
         "user": 0,
@@ -111,18 +112,38 @@ def build_structural(topic: str) -> dict[str, Any]:
         seen_eras.add(era)
         node_counts["era"] += 1
 
-    # Subs + posts + authorship + era
+    # Subs (or non-reddit source containers) + posts + authorship + era
     for p in posts:
         sub = (p.get("sub") or "").lower()
+        source_type = (p.get("source_type") or "reddit").lower()
         if not sub:
             continue
+        # Choose node kind + label by source type
+        if source_type == "reddit":
+            container_kind = "subreddit"
+            container_label = f"r/{sub}"
+        else:
+            container_kind = "source"
+            # nicer display labels
+            pretty_prefix = {
+                "hn": "HN",
+                "appstore": "📱",
+                "playstore": "🤖",
+                "scholar": "📚",
+                "stackoverflow": "SO",
+            }.get(source_type, source_type.upper())
+            container_label = f"{pretty_prefix} {sub}" if ":" in sub else pretty_prefix
+
         if sub not in seen_subs:
-            sub_node = _upsert_node(db, topic, "subreddit", sub, f"r/{sub}")
+            sub_node = _upsert_node(
+                db, topic, container_kind, sub, container_label,
+                metadata={"source_type": source_type},
+            )
             _upsert_edge(db, topic, topic_node, sub_node, "contains")
             edge_counts["contains"] += 1
-            node_counts["subreddit"] += 1
+            node_counts[container_kind] = node_counts.get(container_kind, 0) + 1
             seen_subs.add(sub)
-        sub_node = make_node_id(topic, "subreddit", sub)
+        sub_node = make_node_id(topic, container_kind, sub)
 
         post_node = _upsert_node(
             db,

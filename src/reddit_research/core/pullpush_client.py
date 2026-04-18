@@ -71,6 +71,7 @@ def _submission_row(d: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": d.get("id"),
         "sub": (d.get("subreddit") or "").lower() or None,
+        "source_type": "reddit",
         "author": d.get("author") or "[deleted]",
         "title": d.get("title"),
         "selftext": d.get("selftext") or "",

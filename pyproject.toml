@@ -22,7 +22,13 @@ dependencies = [
     "tomli>=2.0; python_version<'3.11'",
 ]
 
+
+
 [project.optional-dependencies]
+sources = [
+    "google-play-scraper>=1.2",
+    "pytrends>=4.9",
+]
 analyze = [
     "anthropic>=0.34",
     "openai>=1.40",
@@ -36,7 +42,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
 ]
-all = ["reddit-myind[analyze,mcp,dev]"]
+all = ["reddit-myind[analyze,mcp,sources,dev]"]
 
 [project.scripts]
 reddit-myind = "reddit_research.cli.main:app"
