@@ -77,27 +77,54 @@ All commands support `--json` for machine-readable output.
 
 ## Gap-finding workflow (any app / any topic)
 
-Five commands, one per step:
+### Data sources
+
+Two complementary backends, automatically merged into one SQLite:
+
+| Source | Timeframe | Role |
+|---|---|---|
+| Reddit `.json` | **May 2025 → now** | Live, recent, high engagement |
+| Pullpush (Pushshift successor) | **Dec 2012 → May 2025** | 13+ years of history |
+
+This lets us classify pain points as:
+- 🟥 **CHRONIC** — strong in both eras → durable gap, safe bet
+- 🟨 **EMERGING** — only recent → early-mover opportunity
+- ⬜ **FADING** — only historical → may be solved
+
+### Commands
 
 ```bash
-# 1. Find the right subs for a topic
+# 1. Find the right subs
 uv run reddit-cli research discover --topic "meditation apps"
 
-# 2. Build a corpus (discovers subs + top posts + parameterized searches)
+# 2. Build a corpus
 uv run reddit-cli research collect --topic "meditation apps"
 
-# 3. See what's collected
+# Aggressive mode: max limits + all categories + 3y historical
+uv run reddit-cli research collect --topic "meditation apps" --aggressive
+
+# Or pick: --historical --historical-days 1095 --per-sub 100 etc.
+
+# 3. Inspect
 uv run reddit-cli research corpus --topic "meditation apps" --limit 20
 
-# 4. Extract gap signals via LLM (painpoints / features / complaints / DIY)
+# 4. Extract gaps via LLM
 uv run reddit-cli research gaps --topic "meditation apps" --provider anthropic
+uv run reddit-cli research temporal-gaps --topic "meditation apps"  # CHRONIC/EMERGING/FADING
 
-# 5. Render a human markdown report
+# 5. Render a human report
 uv run reddit-cli research report --topic "meditation apps" --out report.md
 ```
 
 All prompts and query templates live in `prompts/*.yaml` — tune them without
 touching code. Set `REDDIT_MYIND_PROMPTS_DIR` to point at your own set.
+
+### Standalone historical fetch
+
+```bash
+uv run reddit-cli fetch historical --sub resumes --days 730 --limit 1000
+uv run reddit-cli fetch historical --sub resumes --kind comment --days 30
+```
 
 ## MCP (Claude Code)
 
@@ -124,13 +151,15 @@ Or set it manually:
 }
 ```
 
-**10 tools exposed to Claude:**
+**12 tools exposed to Claude:**
 
 Core: `reddit_fetch_posts`, `reddit_fetch_comments`, `reddit_fetch_user`,
 `reddit_search`, `reddit_query_db`, `reddit_sub_stats`.
 
+Historical (pullpush): `reddit_fetch_historical`.
+
 Research (gap-finding): `reddit_discover_subs`, `reddit_research_collect`,
-`reddit_get_corpus`, `reddit_topic_stats`.
+`reddit_get_corpus`, `reddit_corpus_temporal_split`, `reddit_topic_stats`.
 
 The MCP server intentionally has **no LLM calls** — Claude Code is the LLM.
 

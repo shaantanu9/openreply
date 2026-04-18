@@ -14,6 +14,7 @@ except ImportError as e:  # pragma: no cover
 
 from ..core.db import get_db
 from ..fetch.comments import fetch_comments
+from ..fetch.historical import fetch_historical as fetch_historical_fn
 from ..fetch.posts import fetch_posts
 from ..fetch.search import search_reddit
 from ..fetch.users import fetch_user
@@ -152,19 +153,27 @@ def reddit_research_collect(
     limit_per_query: int = 20,
     query_categories: list[str] | None = None,
     scope_to_subs: bool = True,
+    include_historical: bool = False,
+    historical_days: int = 730,
+    historical_limit_per_sub: int = 500,
+    aggressive: bool = False,
 ) -> dict:
-    """Build a topic-scoped corpus in SQLite — runs discover + top fetch + parameterized search.
+    """Build a topic-scoped corpus (discover + top fetch + parameterized search [+ history]).
 
-    Fetches ~200–800 posts depending on limits. Takes several minutes.
+    Takes several minutes (more with --historical or --aggressive).
     All results are tagged with `topic` so later tools can retrieve them.
 
     Args:
         topic: research topic.
-        subs: optional override list (['resumes','jobs',...]). Otherwise discovered.
+        subs: optional override list. Otherwise auto-discovered.
         limit_per_sub: per-sub top-of-month + top-of-year each fetch this many.
         limit_per_query: per-search-template fetch this many.
         query_categories: subset of ['pain','features','complaints','diy'] (default all).
-        scope_to_subs: if True, search each discovered sub separately (higher signal).
+        scope_to_subs: if True, search each discovered sub separately.
+        include_historical: also pull pre-May-2025 posts via pullpush archive.
+        historical_days: days to look back from May-2025 cutoff.
+        historical_limit_per_sub: max historical posts per sub.
+        aggressive: preset — maxes limits + all categories + 3-year historical.
     """
     r = research_collect(
         topic=topic,
@@ -173,6 +182,10 @@ def reddit_research_collect(
         limit_per_query=limit_per_query,
         query_categories=query_categories,
         sub_scope_search=scope_to_subs,
+        include_historical=include_historical,
+        historical_days=historical_days,
+        historical_limit_per_sub=historical_limit_per_sub,
+        aggressive=aggressive,
     )
     return {
         "topic": r.topic,
@@ -181,6 +194,29 @@ def reddit_research_collect(
         "by_source": r.by_source,
         "errors": r.errors[:10],
     }
+
+
+@mcp.tool()
+def reddit_corpus_temporal_split(
+    topic: str,
+    limit_per_bucket: int = 80,
+    min_score: int = 1,
+) -> dict:
+    """Return the collected corpus split into pre-May-2025 and post-May-2025 buckets.
+
+    Use this for temporal gap analysis — comparing which pain points were chronic
+    (pre + post), emerging (post only), or fading (pre only).
+
+    Args:
+        topic: topic tag (matches a prior research_collect call).
+        limit_per_bucket: max posts per era.
+        min_score: skip posts with score < this.
+    """
+    from ..research.collect import corpus_temporal_split
+
+    return corpus_temporal_split(
+        topic=topic, limit_per_bucket=limit_per_bucket, min_score=min_score
+    )
 
 
 @mcp.tool()
@@ -196,6 +232,28 @@ def reddit_get_corpus(topic: str, limit: int = 50, min_score: int = 1) -> list[d
         min_score: skip posts with score < this.
     """
     return research_corpus_for(topic=topic, limit=limit, min_score=min_score)
+
+
+@mcp.tool()
+def reddit_fetch_historical(
+    sub: str,
+    kind: str = "submission",
+    days: int = 365,
+    limit: int = 500,
+) -> list[dict]:
+    """Fetch historical posts/comments from before May 2025 via pullpush archive.
+
+    Use this to get data older than what Reddit's live endpoints return.
+    Complements reddit_fetch_posts (which only sees recent data).
+
+    Args:
+        sub: subreddit name, no 'r/' prefix.
+        kind: 'submission' or 'comment'.
+        days: how far back to go from the May-2025 cutoff (1–3650).
+        limit: max items (pullpush pages at 100).
+    """
+    rows = fetch_historical_fn(sub=sub, kind=kind, days=days, limit=limit)  # type: ignore[arg-type]
+    return rows
 
 
 @mcp.tool()

@@ -160,6 +160,25 @@ def cmd_fetch_comments(
     _emit(rows, as_json, table_title=f"post {post} · {len(rows)} comments")
 
 
+@fetch_app.command("historical")
+def cmd_fetch_historical(
+    sub: str = typer.Option(..., "--sub", "-s"),
+    kind: str = typer.Option("submission", "--kind", help="submission|comment"),
+    days: int = typer.Option(365, "--days", "-d", help="how far back from cutoff/now"),
+    limit: int = typer.Option(1000, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Fetch historical posts/comments via pullpush (pre-May-2025 archive)."""
+    from ..fetch.historical import fetch_historical
+
+    rows = fetch_historical(sub=sub, kind=kind, days=days, limit=limit)  # type: ignore[arg-type]
+    _emit(
+        rows,
+        as_json,
+        table_title=f"r/{sub} historical {kind}s · last {days}d pre-cutoff · {len(rows)}",
+    )
+
+
 @fetch_app.command("user")
 def cmd_fetch_user(
     name: str = typer.Option(..., "--name", "-u"),
@@ -425,8 +444,18 @@ def cmd_research_collect(
         True, "--scope-to-subs/--search-all-reddit",
         help="Restrict search queries to discovered subs (higher signal) or search all Reddit.",
     ),
+    historical: bool = typer.Option(
+        False, "--historical/--no-historical",
+        help="Also pull pre-May-2025 posts via pullpush archive.",
+    ),
+    historical_days: int = typer.Option(730, "--historical-days"),
+    historical_per_sub: int = typer.Option(500, "--historical-per-sub"),
+    aggressive: bool = typer.Option(
+        False, "--aggressive", "-A",
+        help="Max limits + all categories + historical + 3-year depth.",
+    ),
 ) -> None:
-    """Build a topic-scoped corpus in SQLite (discover + fetch + search)."""
+    """Build a topic-scoped corpus in SQLite (discover + fetch + search [+ history])."""
     from ..research import collect
 
     sub_list = [s.strip() for s in subs.split(",")] if subs else None
@@ -439,6 +468,10 @@ def cmd_research_collect(
         limit_per_query=limit_per_query,
         query_categories=cats,
         sub_scope_search=scope_to_subs,
+        include_historical=historical,
+        historical_days=historical_days,
+        historical_limit_per_sub=historical_per_sub,
+        aggressive=aggressive,
         progress=lambda m: console.print(f"[dim]• {m}[/dim]"),
     )
     console.print(
@@ -476,6 +509,20 @@ def cmd_research_gaps(
             topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
         )
         _emit(report, as_json)
+
+
+@research_app.command("temporal-gaps")
+def cmd_research_temporal(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str = typer.Option("anthropic", "--provider"),
+    per_bucket: int = typer.Option(80, "--per-bucket"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Classify pain points as CHRONIC / EMERGING / FADING via pre/post-May-2025 split."""
+    from ..research import find_temporal_gaps
+
+    result = find_temporal_gaps(topic=topic, provider=provider, per_bucket=per_bucket)
+    _emit(result, as_json)
 
 
 @research_app.command("report")

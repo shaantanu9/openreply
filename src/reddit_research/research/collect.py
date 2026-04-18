@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..core.db import get_db
+from ..core.pullpush_client import CUTOFF_UTC
+from ..fetch.historical import fetch_historical
 from ..fetch.posts import fetch_posts
 from ..fetch.search import search_reddit
 from .discover import discover_subs
@@ -70,6 +72,10 @@ def collect(
     limit_per_query: int = 25,
     query_categories: list[str] | None = None,
     sub_scope_search: bool = True,
+    include_historical: bool = False,
+    historical_days: int = 730,
+    historical_limit_per_sub: int = 500,
+    aggressive: bool = False,
     progress=None,  # optional callable(message: str) for CLI progress
 ) -> CollectResult:
     """Run the full collection for a topic.
@@ -79,9 +85,20 @@ def collect(
       limit_per_sub: top-of-month + top-of-year each fetch this many posts.
       limit_per_query: search fetch this many per query template.
       query_categories: subset of ['pain','features','complaints','diy'].
-      sub_scope_search: if True, restrict searches to the discovered subs
-        (better signal). If False, search all of Reddit.
+      sub_scope_search: if True, restrict searches to the discovered subs.
+      include_historical: also pull pre-May-2025 posts via pullpush.
+      historical_days: days to look back from the May-2025 pullpush cutoff.
+      historical_limit_per_sub: max historical posts per sub.
+      aggressive: preset that maxes limits + enables comments + historical.
     """
+    # Aggressive preset — overrides conservative defaults
+    if aggressive:
+        limit_per_sub = max(limit_per_sub, 100)
+        limit_per_query = max(limit_per_query, 50)
+        include_historical = True
+        historical_days = max(historical_days, 1095)  # 3 years
+        historical_limit_per_sub = max(historical_limit_per_sub, 1000)
+        query_categories = query_categories or ["pain", "features", "complaints", "diy"]
     result = CollectResult(topic=topic)
 
     def _log(msg: str) -> None:
@@ -142,8 +159,62 @@ def collect(
                     result.errors.append(msg)
                 time.sleep(_SLEEP)
 
+    # 4. Historical — pullpush (pre-May-2025)
+    if include_historical:
+        for sub in subs:
+            try:
+                _log(f"historical r/{sub} last {historical_days}d pre-cutoff, limit={historical_limit_per_sub}")
+                hrows = fetch_historical(
+                    sub=sub,
+                    kind="submission",
+                    days=historical_days,
+                    limit=historical_limit_per_sub,
+                )
+                tagged = _tag_posts(topic, [r["id"] for r in hrows], source=f"pullpush:{sub}")
+                result.posts_fetched += tagged
+                result.by_source[f"pullpush:{sub}"] = tagged
+            except Exception as e:
+                msg = f"pullpush {sub}: {e}"
+                _log(f"  ! {msg}")
+                result.errors.append(msg)
+            time.sleep(_SLEEP)
+
     _log(f"done. {result.posts_fetched} posts tagged for '{topic}'.")
     return result
+
+
+def corpus_temporal_split(
+    topic: str,
+    cutoff_utc: int | None = None,
+    limit_per_bucket: int = 100,
+    min_score: int = 1,
+) -> dict:
+    """Return the topic corpus split into pre/post May-2025 buckets.
+
+    Use this to ask Claude (or another LLM) to compare pain patterns across
+    the two eras — chronic vs emerging vs fading signals.
+    """
+    cutoff = cutoff_utc or CUTOFF_UTC
+    db = get_db()
+
+    def _pull(where_clause: str, params: list) -> list[dict]:
+        sql = f"""
+            SELECT p.id, p.sub, p.author, p.title,
+                   substr(p.selftext, 1, 500) AS selftext,
+                   p.score, p.num_comments, p.created_utc
+            FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
+            WHERE tp.topic = ? AND p.score >= ? {where_clause}
+            ORDER BY (p.num_comments * 2 + p.score) DESC
+            LIMIT ?
+        """
+        return list(db.query(sql, [topic, min_score, *params, limit_per_bucket]))
+
+    return {
+        "topic": topic,
+        "cutoff_utc": cutoff,
+        "pre_2025": _pull("AND p.created_utc < ?", [cutoff]),
+        "post_2025": _pull("AND p.created_utc >= ?", [cutoff]),
+    }
 
 
 def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[str, Any]]:

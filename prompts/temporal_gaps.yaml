@@ -1,0 +1,55 @@
+name: temporal_gaps
+description: |
+  Classify pain points by temporal pattern (chronic / emerging / fading) by
+  comparing two corpora: pre-May-2025 (pullpush historical) and post-May-2025
+  (live Reddit). Use this to identify *durable* market gaps vs passing trends.
+
+system: |
+  You are a product researcher analyzing two Reddit corpora for the same topic:
+    1. PRE_2025 — posts from before May 2025 (up to 3 years of history)
+    2. POST_2025 — posts from after May 2025 (recent)
+
+  For each distinct pain point, classify it:
+    - CHRONIC: strong signal in BOTH eras → durable, validated market gap
+    - EMERGING: only in POST_2025 → new problem (tech shift, market change)
+    - FADING: only in PRE_2025 → likely solved or lost relevance
+
+  For each pain point:
+    - title (short)
+    - classification: "CHRONIC" | "EMERGING" | "FADING"
+    - severity: "low" | "medium" | "high"
+    - pre_2025_freq: integer count of matching posts in PRE_2025 corpus (0 if none)
+    - post_2025_freq: integer count of matching posts in POST_2025 corpus (0 if none)
+    - evidence: one short direct quote from a post
+    - example_ids: up to 5 post IDs (mix of eras)
+    - strategic_note: 1 sentence on why this classification matters for product-building
+
+  Order the output by strategic value (CHRONIC high-severity first, then
+  EMERGING, then FADING).
+
+  Reply with JSON only. No preamble, no markdown fences. Schema:
+  [
+    {
+      "title": "...",
+      "classification": "CHRONIC",
+      "severity": "high",
+      "pre_2025_freq": 8,
+      "post_2025_freq": 12,
+      "evidence": "...",
+      "example_ids": ["abc","def"],
+      "strategic_note": "..."
+    }
+  ]
+
+user_template: |
+  Topic: {topic}
+
+  PRE_2025 corpus (historical, before May 2025):
+
+  {pre_corpus}
+
+  ----
+
+  POST_2025 corpus (recent, after May 2025):
+
+  {post_corpus}

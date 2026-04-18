@@ -13,7 +13,7 @@ import json
 from typing import Any
 
 from ..analyze.providers.base import get_provider
-from .collect import corpus_for
+from .collect import corpus_for, corpus_temporal_split
 from .prompts import load_extractor
 
 
@@ -61,6 +61,41 @@ def run_extractor(
         system=ext["system"],
         max_tokens=max_tokens,
         temperature=0.2,
+    )
+    return _parse_json(raw)
+
+
+def find_temporal_gaps(
+    topic: str,
+    provider: str = "anthropic",
+    per_bucket: int = 80,
+    min_score: int = 1,
+    max_tokens: int = 3000,
+) -> list[dict] | dict:
+    """Classify pain points by temporal pattern (chronic/emerging/fading).
+
+    Requires a corpus with both pre-May-2025 (historical) and post-May-2025
+    (recent) data. Use `collect(..., include_historical=True)` beforehand.
+    """
+    split = corpus_temporal_split(
+        topic=topic, limit_per_bucket=per_bucket, min_score=min_score
+    )
+    pre, post = split["pre_2025"], split["post_2025"]
+    if not pre and not post:
+        return {"_error": f"No corpus for topic={topic!r}. Run collect first."}
+    if not pre:
+        return {"_error": "No pre-May-2025 data. Run collect --historical / --aggressive first."}
+    if not post:
+        return {"_error": "No post-May-2025 data. Run a current-mode collect first."}
+
+    ext = load_extractor("temporal_gaps")
+    user = ext["user_template"].format(
+        topic=topic,
+        pre_corpus=_format_corpus(pre),
+        post_corpus=_format_corpus(post),
+    )
+    raw = get_provider(provider).complete(
+        prompt=user, system=ext["system"], max_tokens=max_tokens, temperature=0.2
     )
     return _parse_json(raw)
 
