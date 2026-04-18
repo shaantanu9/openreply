@@ -8,6 +8,9 @@ venv/
 .ruff_cache/
 build/
 dist/
+# uv caches — but DO commit uv.lock (tracked for reproducibility)
+.uv-cache/
+!uv.lock
 
 # Secrets + data
 .env

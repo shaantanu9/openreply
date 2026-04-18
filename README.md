@@ -3,15 +3,33 @@
 Reddit research toolkit — **PRAW fetch → SQLite store → optional LLM analysis**.
 Two surfaces: a `reddit-cli` for humans/scripts, and an MCP server for Claude Code.
 
-## Install
+## Install (uv — one command)
+
+This project is managed by [uv](https://docs.astral.sh/uv/) — it handles Python,
+the venv, and the lockfile automatically. Install uv once:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# or: pip install uv
+```
+
+Then:
 
 ```bash
 git clone <this-repo> && cd reddit-myind
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[all]"          # everything
-# or: pip install -e .            # base (fetch + CLI + DB only)
-# or: pip install -e ".[mcp]"     # base + MCP server
-# or: pip install -e ".[analyze]" # base + LLM analysis
+uv sync --all-extras               # everything (praw + mcp + analyze + dev)
+# or: uv sync                      # base only
+# or: uv sync --extra mcp          # base + MCP server
+# or: uv sync --extra analyze      # base + LLM analysis
+```
+
+Run commands with `uv run`, or activate the venv:
+
+```bash
+uv run reddit-cli --help
+# or:
+source .venv/bin/activate
+reddit-cli --help
 ```
 
 ## Setup (OAuth, no password stored)
@@ -30,27 +48,29 @@ The OAuth refresh token is stored in `~/.config/reddit-myind/.env` (chmod 600). 
 
 ## CLI usage
 
+Prefix every command below with `uv run` (or activate `.venv` once).
+
 ```bash
 # fetch — all writes to SQLite (data/reddit.db) with dedup
-reddit-cli fetch posts --sub resumes --sort hot --limit 100
-reddit-cli fetch comments --post <post_id> --depth 5
-reddit-cli fetch user --name spez --limit 200
-reddit-cli search "ATS resume" --sub cscareerquestions --limit 50
+uv run reddit-cli fetch posts --sub resumes --sort hot --limit 100
+uv run reddit-cli fetch comments --post <post_id> --depth 5
+uv run reddit-cli fetch user --name spez --limit 200
+uv run reddit-cli search "ATS resume" --sub cscareerquestions --limit 50
 
 # stream — keyword monitor that appends hits to SQLite
-reddit-cli stream --sub resumes --keywords "ats,rejection" --tag pain-points
+uv run reddit-cli stream --sub resumes --keywords "ats,rejection"
 
 # query / export — zero LLM
-reddit-cli query "SELECT author, count(*) c FROM posts WHERE sub='resumes' GROUP BY author ORDER BY c DESC LIMIT 20"
-reddit-cli export posts --sub resumes --since 7d --format csv --out out.csv
+uv run reddit-cli query "SELECT author, count(*) c FROM posts WHERE sub='resumes' GROUP BY author ORDER BY c DESC LIMIT 20"
+uv run reddit-cli export posts --sub resumes --since 7d --format csv --out out.csv
 
 # analyze — needs an LLM key
-reddit-cli analyze themes --sub resumes --since 7d --provider anthropic
-reddit-cli analyze summarize --post <post_id>
-reddit-cli analyze painpoints --sub cscareerquestions --top 50
+uv run reddit-cli analyze themes --sub resumes --since 7d --provider anthropic
+uv run reddit-cli analyze summarize --post <post_id>
+uv run reddit-cli analyze painpoints --sub cscareerquestions --top 50
 
 # mcp
-reddit-cli mcp serve
+uv run reddit-cli mcp serve
 ```
 
 All commands support `--json` for machine-readable output.
@@ -63,9 +83,8 @@ Add to your Claude Code settings:
 {
   "mcpServers": {
     "reddit-myind": {
-      "command": "reddit-cli",
-      "args": ["mcp", "serve"],
-      "env": { "REDDIT_MYIND_DATA_DIR": "/absolute/path/to/data" }
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/reddit-myind", "run", "reddit-cli", "mcp", "serve"]
     }
   }
 }

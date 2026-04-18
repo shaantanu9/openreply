@@ -1,26 +1,23 @@
 #!/usr/bin/env bash
-# One-command setup for reddit-myind.
+# One-command setup for reddit-myind via uv.
+# uv manages the Python toolchain, creates .venv, installs deps, and writes uv.lock.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [[ ! -d .venv ]]; then
-  echo "→ creating .venv"
-  python3 -m venv .venv
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
+  echo "Or: pip install uv"
+  exit 1
 fi
 
-# shellcheck disable=SC1091
-source .venv/bin/activate
-
-echo "→ upgrading pip"
-pip install -q --upgrade pip
-
-echo "→ installing reddit-myind[all]"
-pip install -e ".[all]"
+echo "→ uv sync --all-extras"
+uv sync --all-extras
 
 echo
 echo "Done. Next steps:"
-echo "  source .venv/bin/activate"
-echo "  reddit-cli auth login          # one-time OAuth"
-echo "  reddit-cli auth check          # verify"
-echo "  reddit-cli fetch posts --sub python --limit 10"
+echo "  uv run reddit-cli auth login      # one-time OAuth"
+echo "  uv run reddit-cli auth check      # verify"
+echo "  uv run reddit-cli fetch posts --sub python --limit 10"
+echo
+echo "Or activate the venv once:   source .venv/bin/activate"
