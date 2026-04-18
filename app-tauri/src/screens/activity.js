@@ -13,6 +13,8 @@ let state = {
   loading: false,
 };
 
+let refreshTimer = null;
+
 export async function renderActivity(root) {
   state = { ...state, page: 0 };
 
@@ -20,11 +22,19 @@ export async function renderActivity(root) {
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Activity</strong></div>
       <div class="topbar-spacer"></div>
+      <span class="pill" id="activity-live-pill" hidden>● live</span>
     </header>
 
     <div class="section-head">
       <div><h2>Pipeline activity</h2><p id="activity-sub">All fetches + ingests + enrichment runs</p></div>
       <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-activity-refresh">↻ Refresh</button>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-head"><div><h3>Last 30 days</h3><p>Daily pipeline volume</p></div></div>
+      <div class="card-body" id="activity-spark" style="padding:14px 20px 20px">
+        <div class="empty-state">loading…</div>
+      </div>
     </div>
 
     <div class="activity-filters">
@@ -78,14 +88,85 @@ export async function renderActivity(root) {
     }
   } catch {}
 
-  const refresh = () => loadPage(root);
+  const refresh = () => {
+    loadPage(root);
+    loadSpark(root);
+    checkLive(root);
+  };
 
   root.querySelector('#btn-activity-refresh').onclick = refresh;
-  root.querySelector('#f-kind').onchange   = e => { state.kind = e.target.value;   state.page = 0; refresh(); };
-  root.querySelector('#f-topic').onchange  = e => { state.topic = e.target.value;  state.page = 0; refresh(); };
-  root.querySelector('#f-errors').onchange = e => { state.errorsOnly = e.target.checked; state.page = 0; refresh(); };
+  root.querySelector('#f-kind').onchange   = e => { state.kind = e.target.value;   state.page = 0; loadPage(root); };
+  root.querySelector('#f-topic').onchange  = e => { state.topic = e.target.value;  state.page = 0; loadPage(root); };
+  root.querySelector('#f-errors').onchange = e => { state.errorsOnly = e.target.checked; state.page = 0; loadPage(root); };
+
+  // Live poll: if a collect is running (ended_at IS NULL), refresh every 4s.
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(async () => {
+    try {
+      const rows = await api.runQuery(
+        `SELECT 1 FROM fetches WHERE ended_at IS NULL LIMIT 1`
+      );
+      const pill = root.querySelector('#activity-live-pill');
+      if (Array.isArray(rows) && rows.length) {
+        if (pill) pill.hidden = false;
+        loadPage(root); loadSpark(root);
+      } else {
+        if (pill) pill.hidden = true;
+      }
+    } catch {}
+  }, 4000);
+  window.addEventListener('hashchange', function once() {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    window.removeEventListener('hashchange', once);
+  });
 
   await refresh();
+}
+
+async function loadSpark(root) {
+  const el = root.querySelector('#activity-spark');
+  if (!el) return;
+  try {
+    const rows = await api.runQuery(
+      `SELECT substr(started_at,1,10) AS day, count(*) AS n, \
+              sum(CASE WHEN error IS NOT NULL AND error <> '' THEN 1 ELSE 0 END) AS errs \
+       FROM fetches WHERE substr(started_at,1,10) >= date('now','-29 days') \
+       GROUP BY substr(started_at,1,10) ORDER BY day ASC`
+    );
+    const map = {}; (rows || []).forEach(r => { map[r.day] = r; });
+    const today = new Date();
+    const days = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      days.push({ day: key, n: map[key]?.n || 0, errs: map[key]?.errs || 0 });
+    }
+    const max = Math.max(1, ...days.map(d => d.n));
+    const total = days.reduce((a, d) => a + d.n, 0);
+    el.innerHTML = `
+      <div style="font-size:11.5px;color:var(--ink-3);margin-bottom:8px">
+        <b style="color:var(--ink-1);font-size:13px">${total}</b> fetches · last 30 days
+      </div>
+      <div class="spark-bars">
+        ${days.map(d => {
+          const pct = Math.max(4, Math.round((d.n / max) * 100));
+          const hasErr = d.errs > 0;
+          return `<div class="spark-bar ${hasErr ? 'err' : ''}"
+                       style="height:${pct}%"
+                       title="${esc(d.day)}: ${d.n} fetches${hasErr ? ` · ${d.errs} errors` : ''}"></div>`;
+        }).join('')}
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}</div>`;
+  }
+}
+
+async function checkLive(root) {
+  try {
+    const rows = await api.runQuery(`SELECT 1 FROM fetches WHERE ended_at IS NULL LIMIT 1`);
+    const pill = root.querySelector('#activity-live-pill');
+    if (pill) pill.hidden = !(Array.isArray(rows) && rows.length);
+  } catch {}
 }
 
 async function loadPage(root) {
