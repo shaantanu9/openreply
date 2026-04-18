@@ -1,0 +1,1 @@
+Gap map for user research and voice of customer tools: nothing extracted yet — run enrichment first.
