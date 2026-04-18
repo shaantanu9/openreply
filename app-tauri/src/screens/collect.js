@@ -104,10 +104,14 @@ export async function renderCollect(root, { params }) {
     location.hash = `#/topic/${slug}`;
   });
 
-  // Actually start the collect (wait for a tick so listeners are attached)
+  // Actually start the collect. The welcome wizard (and the new-topic modal)
+  // both stash the chosen aggressive-mode flag in localStorage before
+  // navigating here. Default on (most users want everything pulled).
+  const aggressive = localStorage.getItem('gapmap.collect.last_aggressive') !== 'false';
+  localStorage.removeItem('gapmap.collect.last_aggressive');
   try {
-    await api.startCollect(topic, true);
-    appendLine(`→ started collect for "${topic}" (aggressive mode)…`);
+    await api.startCollect(topic, aggressive);
+    appendLine(`→ started collect for "${topic}" (${aggressive ? 'aggressive — all sources + history' : 'quick — reddit only'})…`);
   } catch (e) {
     appendLine(`✗ failed to start: ${e?.message || e}`, 'err');
     statusPill.textContent = 'failed';

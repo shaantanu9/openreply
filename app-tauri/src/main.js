@@ -87,8 +87,11 @@ window.addEventListener('DOMContentLoaded', async () => {
 function wireModal() {
   const bd = $('#modal-backdrop');
   const open  = () => {
+    // Honour the user's "aggressive by default" preference from Settings.
+    const aggPref = localStorage.getItem('gapmap.pref.aggressive') !== 'false';
+    const cb = $('#new-topic-aggressive');
+    if (cb) cb.checked = aggPref;
     bd.hidden = false;
-    // give focus so Escape works
     setTimeout(() => $('#new-topic-input')?.focus(), 50);
   };
   const close = () => {
@@ -112,6 +115,9 @@ function wireModal() {
       return;
     }
     const aggressive = $('#new-topic-aggressive').checked;
+    // Stash so collect.js (which doesn't receive custom events) can honour it.
+    localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
+    localStorage.setItem('gapmap.pref.aggressive',          aggressive ? 'true' : 'false');
     close();
     const slug = encodeURIComponent(topic);
     location.hash = `#/collect/${slug}`;
