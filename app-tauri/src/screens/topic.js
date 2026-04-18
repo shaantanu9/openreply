@@ -285,6 +285,7 @@ export async function renderTopic(root, { params }) {
     const providerLabel = (byok?.llm_provider || '').toString().toUpperCase() || 'auto-detect';
     const modelLabel = byok?.llm_model || 'default';
 
+    const agentDefault = localStorage.getItem('gapmap.chat.agent') === 'true';
     contentEl.innerHTML = `
       <div class="chat-wrap">
         <div class="chat-head">
@@ -296,7 +297,11 @@ export async function renderTopic(root, { params }) {
                 : '<span style="color:#B84747">No LLM key configured yet.</span>'}
             </p>
           </div>
-          <div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label class="mode-toggle" title="Agent mode — LLM can call tools to explore the database (Anthropic only)">
+              <input type="checkbox" id="chat-agent" ${agentDefault ? 'checked' : ''} />
+              <span>🤖 Agent</span>
+            </label>
             <button class="btn btn-ghost" id="btn-chat-keys" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)">🗝 Keys</button>
             <button class="btn btn-ghost" id="btn-chat-clear" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)">Clear</button>
           </div>
@@ -338,6 +343,9 @@ export async function renderTopic(root, { params }) {
       renderMessages();
     });
     $('#btn-chat-add-key')?.addEventListener('click', () => openByokModal(() => loadChat()));
+    $('#chat-agent')?.addEventListener('change', (e) => {
+      localStorage.setItem('gapmap.chat.agent', e.target.checked ? 'true' : 'false');
+    });
 
     if (!anyReady) return;
 
@@ -389,20 +397,17 @@ export async function renderTopic(root, { params }) {
         <div class="chat-msg-body"><b>${esc(m.mode || 'ask')}</b>${m.text ? `<div>${esc(m.text)}</div>` : ''}</div>
       </div>`;
     }
-    // assistant — render markdown of whatever has streamed so far
-    const md = renderMarkdown(m.text || '');
     return `<div class="chat-msg chat-msg-asst">
       <div class="chat-msg-ic">🤖</div>
-      <div class="chat-msg-body markdown-view">${md || '<span class="chat-typing">thinking…</span>'}</div>
+      <div class="chat-msg-body markdown-view">${assistantInnerHtml(m)}</div>
     </div>`;
   }
 
   async function send(mode, question) {
+    const agent = document.getElementById('chat-agent')?.checked || false;
     const hist = chatHistory.get(topic) || [];
-    // Push user message
-    hist.push({ role: 'user', mode, text: question });
-    // Push empty assistant message we'll fill via stream
-    hist.push({ role: 'assistant', mode, text: '' });
+    hist.push({ role: 'user', mode: agent ? `agent · ${mode}` : mode, text: question });
+    hist.push({ role: 'assistant', mode, text: '', toolCalls: [] });
     chatHistory.set(topic, hist);
     renderMessages();
 
@@ -434,7 +439,7 @@ export async function renderTopic(root, { params }) {
     });
 
     try {
-      await api.startChat(topic, question, mode);
+      await api.startChat(topic, question, mode, agent);
     } catch (e) {
       const h = chatHistory.get(topic) || [];
       const last = h[h.length - 1];
@@ -450,34 +455,69 @@ export async function renderTopic(root, { params }) {
   }
 
   function handleChatLine(line) {
-    // The CLI with --json emits one JSON event per line.
-    // {event: 'start'|'token'|'done'|'error', ...}
+    // CLI with --json emits one JSON event per line.
+    //   RAG mode:   {event: 'start'|'token'|'done'|'error', ...}
+    //   Agent mode: {event: 'start'|'text'|'tool_call'|'tool_result'|'done'|'error', ...}
     let ev;
     try { ev = JSON.parse(line); } catch { return; }
     const hist = chatHistory.get(topic) || [];
     const last = hist[hist.length - 1];
     if (!last || last.role !== 'assistant') return;
 
-    if (ev.event === 'token' && typeof ev.text === 'string') {
-      last.text = (last.text || '') + ev.text;
-      // Live update without full re-render of all messages
-      const box = $('#chat-messages');
-      if (box) {
-        // Replace just the last bubble to avoid flicker
-        const bubbles = box.querySelectorAll('.chat-msg');
-        const target = bubbles[bubbles.length - 1];
-        if (target) {
-          target.querySelector('.chat-msg-body').innerHTML = renderMarkdown(last.text);
-        }
-        box.scrollTop = box.scrollHeight;
-      }
+    if (ev.event === 'token' || ev.event === 'text') {
+      const t = ev.text || '';
+      if (typeof t !== 'string') return;
+      last.text = (last.text || '') + t;
+      renderAssistantInPlace(last);
+    } else if (ev.event === 'tool_call') {
+      last.toolCalls = last.toolCalls || [];
+      last.toolCalls.push({ id: ev.id, name: ev.name, input: ev.input, output: null });
+      renderAssistantInPlace(last);
+    } else if (ev.event === 'tool_result') {
+      const tc = (last.toolCalls || []).find(x => x.id === ev.id);
+      if (tc) tc.output = ev.output;
+      renderAssistantInPlace(last);
     } else if (ev.event === 'error') {
       last.text = (last.text || '') + `\n\n✗ Error: ${ev.error}`;
       renderMessages();
-    } else if (ev.event === 'start') {
-      // Optional: could show provider/model in the bubble. Skip for now.
     }
-    // 'done' is handled by the Terminated event (onChatDone)
+  }
+
+  function renderAssistantInPlace(last) {
+    const box = $('#chat-messages');
+    if (!box) return;
+    const bubbles = box.querySelectorAll('.chat-msg');
+    const target = bubbles[bubbles.length - 1];
+    if (!target) return;
+    target.querySelector('.chat-msg-body').innerHTML = assistantInnerHtml(last);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function assistantInnerHtml(m) {
+    let html = '';
+    if (m.toolCalls && m.toolCalls.length) {
+      html += '<div class="tool-calls">';
+      m.toolCalls.forEach(tc => {
+        const inputPreview = esc(JSON.stringify(tc.input || {}).slice(0, 120));
+        const resolved = tc.output != null;
+        const outPreview = resolved
+          ? esc(JSON.stringify(tc.output).slice(0, 180))
+          : '<span class="chat-typing">running…</span>';
+        html += `
+          <details class="tool-call ${resolved ? 'done' : 'pending'}">
+            <summary>
+              <span class="tc-badge">⚙</span>
+              <b>${esc(tc.name)}</b>
+              <code class="tc-input">${inputPreview}</code>
+              <span class="tc-state">${resolved ? '✓' : '…'}</span>
+            </summary>
+            <pre class="tc-output">${typeof outPreview === 'string' ? outPreview : ''}</pre>
+          </details>`;
+      });
+      html += '</div>';
+    }
+    html += renderMarkdown(m.text || '') || '<span class="chat-typing">thinking…</span>';
+    return html;
   }
 
   // ─── Actions ──────────────────────────────────────────────────────────

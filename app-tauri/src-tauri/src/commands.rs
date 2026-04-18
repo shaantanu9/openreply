@@ -272,12 +272,15 @@ pub async fn app_data_dir(app: AppHandle) -> Result<String, String> {
 }
 
 /// Start a chat stream. Sidecar emits JSON events on `chat:progress`.
+/// When `agent=true`, the LLM gets tool-use access (list_topics / run_query /
+/// get_findings / source_breakdown / sample_posts).
 #[tauri::command]
 pub async fn start_chat(
     app: AppHandle,
     topic: String,
     question: String,
     mode: String,
+    agent: Option<bool>,
 ) -> Result<(), String> {
     let mut args: Vec<String> = vec![
         "research".into(),
@@ -288,6 +291,9 @@ pub async fn start_chat(
         mode,
         "--json".into(),
     ];
+    if agent.unwrap_or(false) {
+        args.push("--agent".into());
+    }
     if !question.trim().is_empty() {
         args.push("--question".into());
         args.push(question);

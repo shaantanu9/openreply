@@ -32,7 +32,7 @@ export const api = {
   byokStatus:      ()        => invoke('byok_status'),
   byokSet:         (name, value) => invoke('byok_set', { name, value }),
   runQuery:        (sql)     => invoke('run_query', { sql }),
-  startChat:       (topic, question, mode) => invoke('start_chat', { topic, question, mode }),
+  startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
   cancelChat:      ()        => invoke('cancel_chat'),
   chatStatus:      ()        => invoke('chat_status'),
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),

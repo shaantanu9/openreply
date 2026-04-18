@@ -279,6 +279,235 @@ def chat_stream(
         raise RuntimeError(f"Unknown provider: {prov}")
 
 
+# ─── Agent mode (tool-use loop) ────────────────────────────────────────────
+#
+# Currently Anthropic-only. OpenAI-compatible function-calling can be added
+# later; the tool registry + executor are provider-agnostic.
+
+# Tool definitions in Anthropic's input_schema format.
+AGENT_TOOLS = [
+    {
+        "name": "list_topics",
+        "description": "List every topic in the database with post/painpoint/source counts. Use to discover what's already been collected.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "run_query",
+        "description": (
+            "Run a read-only SQL query against the SQLite corpus. "
+            "Only SELECT / WITH / PRAGMA / EXPLAIN are allowed — any mutation is rejected. "
+            "Available tables: posts, topic_posts, graph_nodes, graph_edges, fetches. "
+            "Results are truncated to 100 rows."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sql": {"type": "string", "description": "A SELECT statement."},
+            },
+            "required": ["sql"],
+        },
+    },
+    {
+        "name": "get_findings",
+        "description": (
+            "Return the top findings of a given kind for a topic, ordered by evidence strength. "
+            "Use this instead of ad-hoc SQL when you want LLM-extracted signals."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "kind": {
+                    "type": "string",
+                    "enum": ["painpoint", "workaround", "product", "feature_wish"],
+                },
+                "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 30},
+            },
+            "required": ["topic", "kind"],
+        },
+    },
+    {
+        "name": "source_breakdown",
+        "description": "Per-source post counts for a topic (reddit / HN / appstore / arXiv / etc).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "sample_posts",
+        "description": (
+            "Return the top N most-engaged raw posts for a topic — title + first 300 chars + score + source. "
+            "Use sparingly; findings are usually more useful."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string"},
+                "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20},
+            },
+            "required": ["topic"],
+        },
+    },
+]
+
+
+def _q_escape(s: str) -> str:
+    return s.replace("'", "''")
+
+
+def _exec_tool(name: str, args: dict) -> dict:
+    """Dispatch a tool call. Returns a JSON-serializable dict."""
+    db = get_db()
+    try:
+        if name == "list_topics":
+            rows = db.query(
+                "SELECT tp.topic, count(DISTINCT tp.post_id) AS posts, "
+                "       count(DISTINCT coalesce(p.source_type,'reddit')) AS sources, "
+                "       (SELECT count(*) FROM graph_nodes n WHERE n.topic=tp.topic AND n.kind='painpoint') AS painpoints "
+                "FROM topic_posts tp LEFT JOIN posts p ON p.id=tp.post_id "
+                "GROUP BY tp.topic ORDER BY posts DESC LIMIT 50"
+            )
+            return {"topics": rows}
+
+        if name == "run_query":
+            sql = (args.get("sql") or "").strip()
+            lower = sql.lower().lstrip()
+            if not (lower.startswith("select") or lower.startswith("with")
+                    or lower.startswith("pragma") or lower.startswith("explain")):
+                return {"error": "only SELECT/WITH/PRAGMA/EXPLAIN allowed"}
+            for bad in ("insert ", "update ", "delete ", "drop ", "alter ",
+                        "create ", "replace ", "truncate "):
+                if bad in lower:
+                    return {"error": f"blocked keyword: {bad.strip()}"}
+            rows = db.query(sql)
+            truncated = len(rows) > 100
+            return {"rows": rows[:100], "truncated": truncated, "row_count": len(rows)}
+
+        if name == "get_findings":
+            topic = args.get("topic") or ""
+            kind = args.get("kind") or "painpoint"
+            limit = min(int(args.get("limit") or 10), 30)
+            rows = db.query(
+                "SELECT n.label, n.metadata_json, "
+                "       (SELECT count(*) FROM graph_edges e "
+                "        WHERE e.topic=n.topic AND (e.src=n.id OR e.dst=n.id)) AS evidence_count "
+                "FROM graph_nodes n "
+                "WHERE n.topic=? AND n.kind=? "
+                "ORDER BY evidence_count DESC LIMIT ?",
+                (topic, kind, limit),
+            )
+            return {"findings": rows, "topic": topic, "kind": kind}
+
+        if name == "source_breakdown":
+            topic = args.get("topic") or ""
+            rows = db.query(
+                "SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts "
+                "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
+                "WHERE tp.topic=? "
+                "GROUP BY coalesce(p.source_type,'reddit') ORDER BY posts DESC",
+                (topic,),
+            )
+            return {"sources": rows, "topic": topic}
+
+        if name == "sample_posts":
+            topic = args.get("topic") or ""
+            limit = min(int(args.get("limit") or 5), 20)
+            rows = db.query(
+                "SELECT p.title, p.subreddit, p.score, p.num_comments, "
+                "       coalesce(p.source_type,'reddit') AS source, "
+                "       substr(coalesce(p.selftext,''),1,300) AS snippet "
+                "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
+                "WHERE tp.topic=? "
+                "ORDER BY coalesce(p.score,0)+coalesce(p.num_comments,0) DESC LIMIT ?",
+                (topic, limit),
+            )
+            return {"posts": rows, "topic": topic}
+
+        return {"error": f"unknown tool: {name}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+AGENT_SYSTEM = (
+    "You are a senior product researcher with access to a local SQLite corpus of "
+    "multi-source data (Reddit, HN, app stores, arXiv, etc.) about user-specified topics. "
+    "Use the tools to gather evidence BEFORE drawing conclusions — never invent data. "
+    "Cite specific painpoints, workarounds, or evidence posts in your final answer. "
+    "Prefer the `get_findings` / `source_breakdown` tools over ad-hoc SQL when they fit. "
+    "When you're done gathering, stop calling tools and write a concise answer in markdown."
+)
+
+
+def agent_stream_anthropic(topic: str, question: str, max_tool_turns: int = 6,
+                           max_tokens: int = 2500) -> Iterator[dict]:
+    """Tool-use loop over Anthropic. Yields structured events:
+        {"event": "text",        "text": "..."}          — streamed text tokens
+        {"event": "tool_call",   "id": "...", "name": "...", "input": {...}}
+        {"event": "tool_result", "id": "...", "output": {...}}
+        {"event": "error",       "error": "..."}
+    """
+    from anthropic import Anthropic
+
+    cfg = load_config()
+    if not cfg.anthropic_api_key:
+        yield {"event": "error", "error": "Agent mode currently requires ANTHROPIC_API_KEY. Set one in Settings → Manage keys."}
+        return
+    model = os.getenv("LLM_MODEL") or "claude-sonnet-4-6"
+    client = Anthropic(api_key=cfg.anthropic_api_key)
+
+    # Seed: topic + question go in the first user message.
+    user_msg = (
+        f"Research topic: **{topic}**\n\n"
+        f"Question: {question or '(Do the default research — summarize the biggest gaps with evidence.)'}"
+    )
+    messages: list[dict] = [{"role": "user", "content": user_msg}]
+
+    for _turn in range(max_tool_turns):
+        # Non-streaming for simplicity in tool loop; we still yield text chunks.
+        # (Anthropic's streaming + tools combo works but adds complexity; keep simple.)
+        resp = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=AGENT_SYSTEM,
+            tools=AGENT_TOOLS,
+            messages=messages,
+        )
+
+        # Emit any text blocks; collect tool_use blocks for the next turn.
+        tool_uses = []
+        for block in resp.content:
+            btype = getattr(block, "type", None)
+            if btype == "text":
+                yield {"event": "text", "text": block.text}
+            elif btype == "tool_use":
+                tool_uses.append(block)
+                yield {
+                    "event": "tool_call",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                }
+
+        if resp.stop_reason != "tool_use" or not tool_uses:
+            # Done — either natural stop or no tools invoked
+            break
+
+        # Execute each tool, feed results back
+        messages.append({"role": "assistant", "content": resp.content})
+        tool_results = []
+        for tu in tool_uses:
+            out = _exec_tool(tu.name, tu.input or {})
+            yield {"event": "tool_result", "id": tu.id, "output": out}
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tu.id,
+                "content": json.dumps(out, default=str)[:8000],
+            })
+        messages.append({"role": "user", "content": tool_results})
+
+
 def chat_meta(topic: str, provider: str | None = None) -> dict:
     """Return a small dict describing what will be used + the current corpus size."""
     prov, model = _resolve_provider(provider)

@@ -730,6 +730,56 @@ body {
   display: inline-block; color: var(--ink-3); font-style: italic;
   animation: typingPulse 1.4s ease-in-out infinite;
 }
+
+/* Agent mode toggle in chat header */
+.mode-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
+  font-size: 11.5px; color: var(--ink-2); cursor: pointer;
+  background: var(--surface); user-select: none;
+}
+.mode-toggle:has(input:checked) {
+  background: #FFE9D6; color: #B85A1E; border-color: #FFB085;
+  font-weight: 700;
+}
+.mode-toggle input { margin: 0; accent-color: #FF8C42; }
+
+/* Tool-call display inside agent replies */
+.tool-calls { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.tool-call {
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-alt); overflow: hidden;
+}
+.tool-call.pending { border-color: #F0C88A; background: #FFF7E8; }
+.tool-call.done    { border-color: #C9E5D2; }
+.tool-call summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; cursor: pointer; list-style: none;
+  font-size: 11.5px;
+}
+.tool-call summary::-webkit-details-marker { display: none; }
+.tool-call summary b { color: var(--ink-1); font-size: 12px; }
+.tc-badge {
+  width: 18px; height: 18px; display: grid; place-items: center;
+  font-size: 10px; border-radius: 4px; background: var(--ink-1); color: white;
+}
+.tc-input {
+  flex: 1; font-size: 11px; color: var(--ink-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: transparent; padding: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.tc-state {
+  font-weight: 700; font-size: 11px;
+}
+.tool-call.done .tc-state { color: #2E7D5B; }
+.tool-call.pending .tc-state { color: #B8691E; }
+.tc-output {
+  margin: 0; padding: 8px 12px; border-top: 1px solid var(--line);
+  background: white; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--ink-2); overflow-x: auto; white-space: pre-wrap;
+  max-height: 240px; overflow-y: auto;
+}
 @keyframes typingPulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
