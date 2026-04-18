@@ -1,6 +1,31 @@
 // Thin wrapper over Tauri's invoke + event API.
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { listen as tauriListen } from '@tauri-apps/api/event';
+
+/**
+ * Runtime guard: if the page is loaded outside the Tauri webview
+ * (e.g. someone opened http://localhost:1420 in their regular browser),
+ * `window.__TAURI_INTERNALS__` is missing and every IPC call crashes
+ * with a cryptic `Cannot read properties of undefined (reading 'invoke')`.
+ * Surface a clear error instead.
+ */
+function ensureTauri() {
+  if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) {
+    throw new Error(
+      "This app must run inside the Gap Map window — " +
+      "you're viewing it in a regular browser. " +
+      "Close this tab and open the Gap Map app from your dock."
+    );
+  }
+}
+function invoke(cmd, args) {
+  ensureTauri();
+  return tauriInvoke(cmd, args);
+}
+function listen(event, cb) {
+  ensureTauri();
+  return tauriListen(event, cb);
+}
 
 export const api = {
   cliInfo:         ()        => invoke('cli_info'),
