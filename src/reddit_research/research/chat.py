@@ -38,16 +38,24 @@ def _ollama_base_url() -> str:
 
 
 def _auto_detect_provider() -> str | None:
-    """Pick the first provider whose key is present in env."""
+    """Pick the first provider whose key is present in env.
+
+    Fallback: if no paid key is set, try to ping a local Ollama.
+    """
     if os.getenv("ANTHROPIC_API_KEY"):
         return "anthropic"
     for name, (env_key, _, _) in _OPENAI_COMPATIBLE.items():
         if env_key and os.getenv(env_key):
             return name
-    # Ollama needs no key — but only pick it if the user explicitly configured a URL.
+    # Ollama: user-set URL wins, else probe default localhost.
     if os.getenv("OLLAMA_BASE_URL"):
         return "ollama"
-    return None
+    try:
+        import urllib.request
+        with urllib.request.urlopen("http://localhost:11434/api/version", timeout=1):
+            return "ollama"
+    except Exception:
+        return None
 
 
 def _resolve_provider(provider: str | None) -> tuple[str, str]:
@@ -506,6 +514,91 @@ def agent_stream_anthropic(topic: str, question: str, max_tool_turns: int = 6,
                 "content": json.dumps(out, default=str)[:8000],
             })
         messages.append({"role": "user", "content": tool_results})
+
+
+# ─── Test + introspection helpers ─────────────────────────────────────────
+
+def test_provider(provider: str | None = None, model: str | None = None) -> dict:
+    """Tiny round-trip ping. Returns {ok, provider, model, latency_ms, reply, error?}."""
+    import time
+
+    prov = (provider or os.getenv("LLM_PROVIDER") or _auto_detect_provider() or "").lower()
+    if not prov:
+        return {"ok": False, "error": "no provider configured"}
+    mdl = model or os.getenv("LLM_MODEL") or _default_model(prov)
+
+    t0 = time.time()
+    try:
+        if prov == "anthropic":
+            from anthropic import Anthropic
+            cfg = load_config()
+            if not cfg.anthropic_api_key:
+                return {"ok": False, "provider": prov, "error": "ANTHROPIC_API_KEY not set"}
+            client = Anthropic(api_key=cfg.anthropic_api_key)
+            resp = client.messages.create(
+                model=mdl, max_tokens=20,
+                messages=[{"role": "user", "content": "Reply with just: OK"}],
+            )
+            reply = " ".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+        elif prov in _OPENAI_COMPATIBLE:
+            from openai import OpenAI
+            env_key, base_url, _ = _OPENAI_COMPATIBLE[prov]
+            if prov == "ollama":
+                api_key = "ollama"; base = _ollama_base_url()
+            else:
+                api_key = os.getenv(env_key) if env_key else None
+                if not api_key:
+                    return {"ok": False, "provider": prov, "error": f"{env_key} not set"}
+                base = base_url
+            client = OpenAI(api_key=api_key, base_url=base)
+            resp = client.chat.completions.create(
+                model=mdl, max_tokens=20,
+                messages=[{"role": "user", "content": "Reply with just: OK"}],
+            )
+            reply = (resp.choices[0].message.content or "").strip()
+        else:
+            return {"ok": False, "error": f"unknown provider: {prov}"}
+    except Exception as e:
+        return {
+            "ok": False, "provider": prov, "model": mdl,
+            "latency_ms": int((time.time() - t0) * 1000),
+            "error": str(e),
+        }
+
+    return {
+        "ok": True, "provider": prov, "model": mdl,
+        "latency_ms": int((time.time() - t0) * 1000),
+        "reply": reply[:80],
+    }
+
+
+def list_ollama_models() -> dict:
+    """Query the Ollama /api/tags endpoint for installed models."""
+    import urllib.request
+
+    base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{base}/api/tags", timeout=3) as r:
+            body = r.read().decode("utf-8")
+        data = json.loads(body)
+        models = []
+        for m in data.get("models", []) or []:
+            name = m.get("name") or m.get("model")
+            if not name:
+                continue
+            # Skip embedding-only models (heuristic on family names)
+            fam = (m.get("details", {}) or {}).get("family") or ""
+            if fam in ("bert", "nomic-bert") or "embed" in name.lower():
+                continue
+            models.append({
+                "name": name,
+                "size_mb": round((m.get("size") or 0) / (1024 * 1024)),
+                "family": fam,
+                "param_size": (m.get("details", {}) or {}).get("parameter_size", ""),
+            })
+        return {"ok": True, "url": base, "models": models}
+    except Exception as e:
+        return {"ok": False, "url": base, "error": str(e)}
 
 
 def chat_meta(topic: str, provider: str | None = None) -> dict:

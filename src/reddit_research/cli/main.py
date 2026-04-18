@@ -702,6 +702,51 @@ def cmd_research_chat(
         typer.echo("")
 
 
+@research_app.command("test-llm")
+def cmd_research_test_llm(
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    model: Optional[str] = typer.Option(None, "--model"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Ping the configured LLM and report latency + reply."""
+    from ..research.chat import test_provider
+
+    result = test_provider(provider=provider, model=model)
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+    else:
+        if result.get("ok"):
+            typer.echo(f"✓ {result['provider']} · {result['model']} · {result['latency_ms']}ms")
+            typer.echo(f"  reply: {result['reply']}")
+        else:
+            typer.echo(f"✗ {result.get('provider','?')}: {result.get('error','unknown')}")
+
+
+@research_app.command("list-models")
+def cmd_research_list_models(
+    provider: str = typer.Option("ollama", "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List available models for a provider (currently Ollama only)."""
+    from ..research.chat import list_ollama_models
+
+    if provider.lower() != "ollama":
+        msg = {"ok": False, "error": f"list-models is only implemented for ollama (got {provider})"}
+        typer.echo(json.dumps(msg) if as_json else f"✗ {msg['error']}")
+        raise typer.Exit(1)
+    result = list_ollama_models()
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+    else:
+        if not result.get("ok"):
+            typer.echo(f"✗ Can't reach Ollama at {result.get('url')}: {result.get('error')}")
+            return
+        for m in result.get("models", []):
+            size = f"{m['size_mb']} MB"
+            params = f" ({m['param_size']})" if m.get("param_size") else ""
+            typer.echo(f"  {m['name']:<50} {size}{params}")
+
+
 # ── graph subcommands ───────────────────────────────────────────────────────
 
 @graph_app.command("build")

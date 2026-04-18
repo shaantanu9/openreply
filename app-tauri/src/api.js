@@ -35,6 +35,8 @@ export const api = {
   startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
   cancelChat:      ()        => invoke('cancel_chat'),
   chatStatus:      ()        => invoke('chat_status'),
+  testLlm:         (provider, model) => invoke('test_llm', { provider, model }),
+  listOllamaModels: ()       => invoke('list_ollama_models'),
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),
   onCollectDone:     (cb) => listen('collect:done',     e => cb(e.payload)),
   onChatProgress:    (cb) => listen('chat:progress',    e => cb(e.payload)),

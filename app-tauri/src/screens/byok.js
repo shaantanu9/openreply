@@ -241,6 +241,79 @@ export async function openByokModal(onClose) {
       } catch (e) { setStatus(`Clear failed: ${e?.message || e}`, false); }
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBtn.click(); });
+
+    // --- NEW: Test button (LLM providers only) ---
+    const testBtn = row.querySelector('.byok-test');
+    const testResultEl = row.querySelector('.byok-test-result');
+    if (testBtn && testResultEl && LLM_PROVIDERS.some(p => p.key === field.key)) {
+      testBtn.onclick = async () => {
+        testBtn.disabled = true;
+        const orig = testBtn.textContent;
+        testBtn.textContent = 'testing…';
+        testResultEl.hidden = false;
+        testResultEl.className = 'byok-test-result byok-test-running';
+        testResultEl.textContent = 'pinging LLM…';
+        try {
+          const r = await api.testLlm(field.key, '');
+          if (r?.ok) {
+            testResultEl.className = 'byok-test-result byok-test-ok';
+            testResultEl.innerHTML = `✓ <b>${esc(r.model || 'default model')}</b> · ${r.latency_ms}ms · reply: <code>${esc(r.reply || '')}</code>`;
+          } else {
+            testResultEl.className = 'byok-test-result byok-test-err';
+            testResultEl.innerHTML = `✗ ${esc(r?.error || 'test failed')}`;
+          }
+        } catch (e) {
+          testResultEl.className = 'byok-test-result byok-test-err';
+          testResultEl.innerHTML = `✗ ${esc(e?.message || e)}`;
+        } finally {
+          testBtn.disabled = false;
+          testBtn.textContent = orig;
+        }
+      };
+    }
+
+    // --- NEW: List Ollama models ---
+    const listBtn = row.querySelector('.byok-list-models');
+    const modelsEl = row.querySelector('.byok-ollama-models');
+    if (listBtn && modelsEl) {
+      listBtn.onclick = async () => {
+        listBtn.disabled = true;
+        modelsEl.textContent = 'loading…';
+        try {
+          const r = await api.listOllamaModels();
+          if (!r?.ok) {
+            modelsEl.innerHTML = `<span style="color:#B84747">✗ ${esc(r?.error || 'ollama unreachable')}</span>`;
+            return;
+          }
+          const models = r.models || [];
+          if (!models.length) {
+            modelsEl.innerHTML = `<span>no chat models installed — <code>ollama pull llama3.1</code></span>`;
+            return;
+          }
+          modelsEl.innerHTML = `<b>${models.length}</b> chat models: ` +
+            models.map(m => `<button class="byok-model-chip" data-m="${esc(m.name)}">${esc(m.name)} <span style="color:var(--ink-3)">${m.size_mb}MB</span></button>`).join(' ');
+          // Click a chip → auto-fill LLM_MODEL default model on the Default-provider tab
+          modelsEl.querySelectorAll('.byok-model-chip').forEach(chip => {
+            chip.onclick = async () => {
+              const name = chip.dataset.m;
+              try {
+                await api.byokSet('LLM_PROVIDER', 'ollama');
+                await api.byokSet('LLM_MODEL', name);
+                setStatus(`Default model set → ${name}`, true);
+                chip.style.background = '#2E7D5B';
+                chip.style.color = 'white';
+              } catch (e) {
+                setStatus(`Failed: ${e?.message || e}`, false);
+              }
+            };
+          });
+        } catch (e) {
+          modelsEl.innerHTML = `<span style="color:#B84747">✗ ${esc(e?.message || e)}</span>`;
+        } finally {
+          listBtn.disabled = false;
+        }
+      };
+    }
   });
 
   // Default-provider selector
@@ -274,7 +347,7 @@ function renderLlmField(p, st) {
   const set = isLocal ? !!st : !!st?.set;
   const preview = isLocal ? (st || '') : (st?.preview || '');
   return `
-    <div class="byok-row" data-key="${esc(p.key)}">
+    <div class="byok-row" data-key="${esc(p.key)}" data-provider="${esc(p.key)}">
       <div class="byok-row-head">
         <div>
           <label>${esc(p.label)}${isLocal ? ' <span style="color:var(--ink-3);font-size:11px">· no key needed</span>' : ''}</label>
@@ -287,8 +360,15 @@ function renderLlmField(p, st) {
         <input type="${isLocal ? 'text' : 'password'}" autocomplete="off" spellcheck="false"
                placeholder="${esc(p.placeholder)}" />
         <button class="btn btn-primary byok-save" style="padding:7px 12px;font-size:12px">Save</button>
+        <button class="btn btn-ghost byok-test" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)" ${(set || isLocal) ? '' : 'disabled'}>Test</button>
         <button class="btn btn-ghost byok-clear" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)" ${set ? '' : 'disabled'}>Clear</button>
       </div>
+      <div class="byok-test-result" hidden></div>
+      ${isLocal ? `
+        <div class="byok-ollama-extras" style="margin-top:10px">
+          <button class="btn btn-ghost byok-list-models" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)">🔎 List installed models</button>
+          <span class="byok-ollama-models" style="font-size:11px;color:var(--ink-3);margin-left:8px"></span>
+        </div>` : ''}
     </div>`;
 }
 

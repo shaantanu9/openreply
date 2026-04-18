@@ -37,6 +37,8 @@ fn main() {
             commands::start_chat,
             commands::cancel_chat,
             commands::chat_status,
+            commands::test_llm,
+            commands::list_ollama_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gapmap");

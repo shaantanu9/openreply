@@ -318,6 +318,28 @@ pub async fn chat_status(app: AppHandle) -> Result<bool, String> {
     Ok(guard.is_some())
 }
 
+/// Send a "Reply with OK" ping to the chosen LLM — returns {ok, latency_ms, reply}.
+#[tauri::command]
+pub async fn test_llm(
+    app: AppHandle,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<String> = vec!["research".into(), "test-llm".into(), "--json".into()];
+    if let Some(p) = provider { if !p.is_empty() { args.push("--provider".into()); args.push(p); } }
+    if let Some(m) = model    { if !m.is_empty() { args.push("--model".into());    args.push(m); } }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+/// List locally installed Ollama models.
+#[tauri::command]
+pub async fn list_ollama_models(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "list-models", "--provider", "ollama"])
+        .await
+        .map_err(err_to_string)
+}
+
 /// Run a user-supplied SELECT/WITH query. Rejects anything that
 /// isn't purely read-only so the DB Console can't corrupt state.
 #[tauri::command]

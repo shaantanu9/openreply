@@ -1367,6 +1367,27 @@ body {
 }
 .byok-status { font-size: 12px; }
 
+.byok-test-result {
+  margin-top: 8px; padding: 7px 10px; border-radius: 8px; font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.byok-test-result code {
+  background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 4px;
+}
+.byok-test-running { background: #FFF7E8; color: #B8691E; border: 1px solid #F0C88A; }
+.byok-test-ok      { background: #EAF6EE; color: #2E7D5B; border: 1px solid #C9E5D2; }
+.byok-test-err     { background: #FCF2F2; color: #B84747; border: 1px solid #F0C8C8; }
+
+.byok-model-chip {
+  display: inline-block; margin: 2px 4px 2px 0;
+  padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px; color: var(--ink-2); cursor: pointer;
+  transition: all 0.15s;
+}
+.byok-model-chip:hover { border-color: var(--ink-3); background: var(--surface-alt); }
+
 /* ======================================================================
    Responsive — below 1100px we narrow the grid; below 820px we collapse
    the sidebar into a top strip and stack cards vertically.
