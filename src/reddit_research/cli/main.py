@@ -29,6 +29,30 @@ research_app = typer.Typer(help="Topic/app gap-finding: discover → collect →
 graph_app = typer.Typer(help="Knowledge graph: build / enrich / query / export.")
 research_app.add_typer(graph_app, name="graph")
 
+ingest_app = typer.Typer(help="Ingest local files (CSV / JSON / TXT / VTT / SRT / MD) into a topic.")
+app.add_typer(ingest_app, name="ingest")
+
+
+@ingest_app.command("file")
+def cmd_ingest_file(
+    path: Path = typer.Option(..., "--path", "-p"),
+    topic: str = typer.Option(..., "--topic", "-t"),
+    source_type: str = typer.Option("local", "--source-type", "-s",
+        help="e.g. slack_export, interviews, gong_calls, intercom_tickets"),
+    sub: Optional[str] = typer.Option(None, "--sub"),
+) -> None:
+    """Parse a local file + upsert into a topic's corpus.
+
+    Formats: .csv .json .txt .vtt .srt .md
+
+    Example:
+      reddit-cli ingest file --path ./slack-export.csv --topic "my product" --source-type slack_export
+    """
+    from ..sources.local_file import ingest_and_persist
+
+    n = ingest_and_persist(path=path, topic=topic, source_type=source_type, sub=sub)
+    console.print(f"[green]ingested {n} rows[/green] from {path} as source_type={source_type!r}")
+
 app.add_typer(fetch_app, name="fetch")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(mcp_app, name="mcp")

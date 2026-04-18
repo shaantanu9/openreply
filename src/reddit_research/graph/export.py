@@ -25,11 +25,7 @@ def _classification_summary(findings: list[dict]) -> dict[str, int]:
 
 
 def _source_breakdown_for_node(topic: str, node_id: str) -> dict[str, int]:
-    """Group the evidence posts linked to a node by source_type.
-
-    Addresses the 'no single source of truth' pain (CHRONIC, 8 posts) by
-    showing every finding's source distribution on its card.
-    """
+    """Group the evidence posts linked to a node by source_type."""
     db = get_db()
     post_prefix = f"{topic}::post::"
     rows = list(
@@ -49,6 +45,63 @@ def _source_breakdown_for_node(topic: str, node_id: str) -> dict[str, int]:
         )
     )
     return {r["src"]: r["n"] for r in rows}
+
+
+def _saturation_for_node(topic: str, node_id: str) -> dict[str, Any]:
+    """Compute Guest/Bunce/Johnson (2006) saturation signal per finding.
+
+    Saturation = a claim has enough independent evidence that further
+    sampling would not change the conclusion. We operationalize as:
+      - unique_authors   : distinct usernames across evidence posts
+      - source_diversity : count of distinct source_types
+      - n_evidence       : total evidence-edge count
+      - saturated        : true iff n_evidence ≥ 12 AND source_diversity ≥ 2
+      - confidence       : label ('saturated' | 'adequate' | 'tentative' | 'thin')
+
+    Thresholds follow the 12-interview saturation rule of thumb.
+    """
+    db = get_db()
+    post_prefix = f"{topic}::post::"
+    rows = list(
+        db.query(
+            """
+            WITH ev AS (
+                SELECT CASE WHEN e.src = ? THEN e.dst ELSE e.src END AS nid
+                FROM graph_edges e
+                WHERE e.topic = ? AND (e.src = ? OR e.dst = ?)
+                  AND e.kind IN ('evidenced_by','wished_in','built_in','solves','about_product')
+            )
+            SELECT
+              count(*) AS n_evidence,
+              count(DISTINCT CASE WHEN p.author NOT IN ('[deleted]','[anon]','[local]','') THEN p.author END) AS unique_authors,
+              count(DISTINCT coalesce(p.source_type,'reddit')) AS source_diversity
+            FROM posts p JOIN ev ON ev.nid = ? || p.id
+            """,
+            [node_id, topic, node_id, node_id, post_prefix],
+        )
+    )
+    r = rows[0] if rows else {}
+    n_ev = int(r.get("n_evidence") or 0)
+    unique = int(r.get("unique_authors") or 0)
+    diversity = int(r.get("source_diversity") or 0)
+
+    # Confidence bucket per research norms
+    if n_ev >= 12 and diversity >= 2:
+        confidence = "saturated"
+    elif n_ev >= 8 and diversity >= 2:
+        confidence = "adequate"
+    elif n_ev >= 4:
+        confidence = "tentative"
+    else:
+        confidence = "thin"
+
+    return {
+        "n_evidence": n_ev,
+        "unique_authors": unique,
+        "source_diversity": diversity,
+        "confidence": confidence,
+        "saturated": confidence == "saturated",
+    }
 
 
 def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
@@ -76,6 +129,7 @@ def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
         for p, r in zip(parsed, rows, strict=False):
             p["evidence_count"] = r.get("evidence_count", 0)
             p["source_breakdown"] = _source_breakdown_for_node(topic, p["id"])
+            p["saturation"] = _saturation_for_node(topic, p["id"])
         out[kind] = parsed
     return out
 
@@ -209,6 +263,11 @@ _HTML_TEMPLATE = """<!doctype html>
   .badge.severity-high { background:#3d1216; color:#ff6b6b; border:1px solid #5a1a20; }
   .badge.severity-medium { background:#3d2a12; color:#ffa657; border:1px solid #5a401a; }
   .badge.severity-low { background:#1a3512; color:#7ee787; border:1px solid #2a5020; }
+  /* Saturation badges — Guest et al. (2006) thresholds */
+  .badge.sat-saturated { background:#153a24; color:#7ee787; border:1px solid #1f5a37; }
+  .badge.sat-adequate  { background:#153244; color:#58a6ff; border:1px solid #1f4764; }
+  .badge.sat-tentative { background:#3d2a12; color:#ffa657; border:1px solid #5a401a; }
+  .badge.sat-thin      { background:#2a2a2a; color:#8b949e; border:1px solid #3a3a3a; }
   .card-evidence { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic;
     border-top:1px solid var(--border); padding-top:4px; }
   /* source distribution mini-bar on each card (triangulation at a glance) */
@@ -298,6 +357,7 @@ _HTML_TEMPLATE = """<!doctype html>
       <div class="exec-actions">
         <button id="copyTweet">📋 Copy as tweet</button>
         <button id="copyMd">📋 Copy as markdown</button>
+        <button id="savePng">📸 Save as PNG</button>
       </div>
     </div>
 
@@ -331,6 +391,7 @@ _HTML_TEMPLATE = """<!doctype html>
 <footer>reddit-myind · gap map · <a href="https://github.com/shaantanu98/reddit-myind/blob/master/docs/methodology.md" target="_blank">methodology</a></footer>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js"></script>
 <script>
 const DATA = {GRAPH_JSON};
 
@@ -409,6 +470,14 @@ function renderFinding(node, onclick) {
   if (classification && classification !== "UNCLASSIFIED")
     badges += `<span class="badge ${classification.toLowerCase()}">${classification}</span>`;
   if (severity) badges += `<span class="badge severity-${severity}">${severity} sev</span>`;
+  // Saturation badge — Guest/Bunce/Johnson 2006 confidence signal.
+  // Explicit hover tooltip explains the math so users can verify.
+  const sat = node.saturation;
+  if (sat && sat.confidence) {
+    const tip = `${sat.n_evidence} evidence across ${sat.source_diversity} source(s); ${sat.unique_authors} unique authors. Thresholds: saturated ≥12 & ≥2 sources, adequate ≥8 & ≥2, tentative ≥4, else thin.`;
+    const icon = sat.confidence === "saturated" ? "✓" : sat.confidence === "adequate" ? "≈" : sat.confidence === "tentative" ? "⚠" : "·";
+    badges += `<span class="badge sat-${sat.confidence}" title="${tip.replace(/"/g,'&quot;')}">${icon} ${sat.confidence}</span>`;
+  }
 
   const card = document.createElement("div");
   card.className = "card";
@@ -515,6 +584,32 @@ function renderExec() {
   document.getElementById("copyMd").addEventListener("click", e => {
     navigator.clipboard.writeText(markdown);
     flashButton(e.target, "✓ Copied!");
+  });
+  // Save as PNG — snapshot the exec block, download with topic-slug filename
+  document.getElementById("savePng").addEventListener("click", async e => {
+    if (typeof htmlToImage === "undefined") {
+      flashButton(e.target, "⚠ library not loaded");
+      return;
+    }
+    const btn = e.target;
+    const orig = btn.textContent;
+    btn.textContent = "rendering…";
+    try {
+      const dataUrl = await htmlToImage.toPng(document.getElementById("exec"), {
+        backgroundColor: "#0b0e13",
+        pixelRatio: 2,
+      });
+      const slug = (DATA.meta.topic || "gap-map").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      const link = document.createElement("a");
+      link.download = `gap-map-${slug}.png`;
+      link.href = dataUrl;
+      link.click();
+      flashButton(btn, "✓ Saved!");
+    } catch (err) {
+      console.error(err);
+      btn.textContent = orig;
+      alert("PNG export failed: " + err.message);
+    }
   });
 }
 renderExec();
