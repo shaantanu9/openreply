@@ -182,64 +182,32 @@ def enrich_from_llm(
     """
     import os
 
-    # ── Resolve provider from the user's configured env (Settings writes
-    # LLM_PROVIDER + the matching *_API_KEY or OLLAMA_BASE_URL into the .env
-    # file that reddit-cli reads at startup).
-    configured_provider = (os.getenv("LLM_PROVIDER") or "").lower()
-    key_for = {
-        "anthropic":  "ANTHROPIC_API_KEY",
-        "openai":     "OPENAI_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-        "groq":       "GROQ_API_KEY",
-        "deepseek":   "DEEPSEEK_API_KEY",
-        "mistral":    "MISTRAL_API_KEY",
-        "google":     "GOOGLE_API_KEY",
-    }
+    from ..analyze.providers.base import (
+        _PROVIDER_ENV_KEY as key_for,
+        _ollama_reachable,
+        resolve_provider,
+    )
 
-    def _ollama_reachable() -> bool:
-        try:
-            import urllib.request
-            base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
-            with urllib.request.urlopen(f"{base}/api/version", timeout=1):
-                return True
-        except Exception:
-            return False
-
-    # Caller passed an explicit provider → trust them (test harness, etc.).
-    # Otherwise auto-detect: prefer saved LLM_PROVIDER, then first env key,
-    # then Ollama.
-    if not provider:
-        if configured_provider == "ollama" and _ollama_reachable():
-            provider = "ollama"
-        elif configured_provider in key_for and os.getenv(key_for[configured_provider]):
-            provider = configured_provider
-        else:
-            # Probe every known provider in a stable order.
-            for name, env_key in key_for.items():
-                if os.getenv(env_key):
-                    provider = name
-                    break
-            else:
-                if _ollama_reachable():
-                    provider = "ollama"
-
-    # Still nothing? Skip cleanly.
-    if not provider:
+    # Delegate to the shared resolver. One implementation. Never drift.
+    try:
+        provider = resolve_provider(provider)
+    except RuntimeError as e:
         return {
             "ok": False,
             "skipped": True,
-            "reason": "no LLM configured — set a key in Settings → API keys, "
-                      "or start a local Ollama instance",
+            "reason": str(e),
             "topic": topic,
         }
 
-    # Validate the chosen provider has its key (or Ollama is reachable).
+    # Double-check the resolved provider still has its key by the time we
+    # run — .env could have been edited between resolve and use in theory.
+    # Return skip-gracefully so the UI shows a banner instead of an error.
     if provider == "ollama" and not _ollama_reachable():
         return {
             "ok": False, "skipped": True, "topic": topic,
             "reason": "Ollama is configured but not reachable — start the service in Settings",
         }
-    elif provider in key_for and not os.getenv(key_for[provider]):
+    if provider in key_for and not os.getenv(key_for[provider]):
         return {
             "ok": False, "skipped": True, "topic": topic,
             "reason": f"{key_for[provider]} not set — add it in Settings → API keys",
