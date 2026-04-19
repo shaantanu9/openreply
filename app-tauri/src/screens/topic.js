@@ -521,15 +521,59 @@ export async function renderTopic(root, { params }) {
     const btn = $('#btn-map-enrich');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2"></i> Enriching…'; window.refreshIcons?.(); }
     let errMsg = '';
+    let alreadyRunning = false;
     try {
       const e = await api.enrichGraph(topic);
-      if (e?.skipped) errMsg = `Enrichment skipped: ${e.reason || 'no LLM configured'}`;
-      else if (e?.ok === false) errMsg = `Enrichment failed: ${e.error || 'unknown'}`;
+      if (e?.already_running) {
+        alreadyRunning = true;
+      } else if (e?.skipped) {
+        errMsg = `Enrichment skipped: ${e.reason || 'no LLM configured'}`;
+      } else if (e?.ok === false) {
+        errMsg = `Enrichment failed: ${e.error || 'unknown'}`;
+      }
     } catch (err) {
       errMsg = `Enrichment errored: ${err?.message || err}`;
     }
+    // Rust-side dedup guard: another enrich for this topic is already in
+    // flight. Friendly info toast, don't reload the Map (that would reset
+    // the "Enriching…" spinner and invite a re-click).
+    if (alreadyRunning) {
+      showToast('Already running', 'Another enrichment for this topic is in progress. Wait for it to finish.', 'warn');
+      return;
+    }
     if (errMsg) showToast('Enrichment issue', errMsg, 'warn');
     loadMap();
+  }
+
+  // Same shape as runEnrichFromMap but reloads the caller instead of the Map.
+  // Used by the Evidence/Report tabs when findings are empty AND the user has
+  // an LLM key — so the button says "Run extraction now" (actionable) instead
+  // of "Add LLM key" (misleading, key is already there). Builds the graph
+  // first so it works even if the user never opened Map.
+  async function runEnrichHere(btnSelector, onDone) {
+    const btn = btnSelector ? $(btnSelector) : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2"></i> Extracting…'; window.refreshIcons?.(); }
+    let errMsg = '';
+    let added = 0;
+    try {
+      // buildGraph is idempotent — no-op when the graph already exists.
+      await api.buildGraph(topic).catch(() => {});
+      const e = await api.enrichGraph(topic);
+      if (e?.skipped)      errMsg = `Extraction skipped: ${e.reason || 'no LLM configured'}`;
+      else if (e?.ok === false) errMsg = `Extraction failed: ${e.error || 'unknown'}`;
+      else {
+        const np = e?.painpoints_added     ?? e?.painpoints     ?? 0;
+        const nf = e?.feature_wishes_added ?? e?.feature_wishes ?? 0;
+        const nw = e?.workarounds_added    ?? e?.diy_workarounds ?? 0;
+        added = np + nf + nw;
+        if (added === 0) errMsg = 'Extraction ran but found no painpoints/features — try Re-run collect to gather more posts.';
+      }
+    } catch (err) {
+      errMsg = `Extraction errored: ${err?.message || err}`;
+    }
+    if (errMsg) showToast('Extraction issue', errMsg, 'warn');
+    else if (added > 0) showToast('Extraction complete', `${added} new finding${added === 1 ? '' : 's'}`, 'ok');
+    onDone?.();
   }
 
   async function loadMap(force = false) {
@@ -748,10 +792,13 @@ export async function renderTopic(root, { params }) {
       $('#btn-reveal-md').onclick = () => api.revealInFinder(path);
       $('#btn-regen-md').onclick  = () => loadReport();
     } catch (e) {
+      const ready = await hasLlmConfigured().catch(() => false);
       const actions = [
         { label: 'Retry',         icon: 'refresh-cw', primary: true,  onClick: () => loadReport() },
         { label: 'Build gap map', primary: false, onClick: () => switchTab('map') },
-        { label: 'Add LLM key',   primary: false, onClick: () => openByokModal(() => loadReport()) },
+        ready
+          ? { label: 'Run extraction', onClick: () => runEnrichHere(null, () => loadReport()) }
+          : { label: 'Add LLM key',    onClick: () => openByokModal(() => loadReport()) },
       ];
       set(errorCard('Could not generate the report', e?.message || String(e), actions));
       if (contentEl.dataset.tab !== 'report') return;
@@ -839,12 +886,36 @@ export async function renderTopic(root, { params }) {
         ? (filterBar + (sectionsHtml || filteredEmpty))
         : '';
       if (contentEl.dataset.tab !== 'evidence') return;
-      set(html || `
-        <div class="empty-big">
-          <h3>No semantic extraction yet</h3>
-          <p>Add an LLM key to pull painpoints / products / DIY workarounds from the corpus.</p>
-          <button class="btn btn-primary icon-btn" id="btn-ev-keys"><i data-lucide="key-round"></i> Add LLM key</button>
-        </div>`);
+      // Empty-state branches on WHY findings are missing:
+      //   • key configured → user just needs to run extraction (not add a key).
+      //   • key missing    → current copy stands.
+      // Prior version hard-coded "Add LLM key" regardless, so users who had
+      // already saved a key saw a dead loop (save key → still empty → same
+      // modal). See docs/research-applications.md / bug discussion 2026-04-20.
+      let emptyHtml = '';
+      let emptyWire = null;
+      if (!html) {
+        const llmReady = await hasLlmConfigured();
+        if (llmReady) {
+          emptyHtml = `
+            <div class="empty-big">
+              <h3>No extraction has run yet on this topic</h3>
+              <p>Your LLM provider is configured. Run extraction now to pull painpoints, DIY workarounds, competitor mentions, and feature wishes out of the corpus.</p>
+              <button class="btn btn-primary icon-btn" id="btn-ev-enrich"><i data-lucide="sparkles"></i> Run extraction now</button>
+            </div>`;
+          emptyWire = () => $('#btn-ev-enrich')?.addEventListener('click', () =>
+            runEnrichHere('#btn-ev-enrich', () => loadEvidence()));
+        } else {
+          emptyHtml = `
+            <div class="empty-big">
+              <h3>No semantic extraction yet</h3>
+              <p>Add a cloud LLM key (Anthropic / OpenAI / OpenRouter / Groq / DeepSeek / Mistral / Gemini) <em>or</em> point to a local Ollama instance so painpoints, DIY workarounds, and feature wishes can be extracted from the corpus.</p>
+              <button class="btn btn-primary icon-btn" id="btn-ev-keys"><i data-lucide="key-round"></i> Add LLM key</button>
+            </div>`;
+          emptyWire = () => $('#btn-ev-keys')?.addEventListener('click', () => openByokModal(() => loadEvidence()));
+        }
+      }
+      set(html || emptyHtml);
       // "Show more" delegates — bumps the per-kind visible counter and re-renders.
       contentEl.querySelectorAll('.show-more-btn').forEach(btn => {
         btn.onclick = () => {
@@ -892,13 +963,19 @@ export async function renderTopic(root, { params }) {
         });
       }
 
-      // After the user saves a key, re-run the Evidence tab so the "add key"
-      // empty-state is replaced with the newly-extracted findings.
-      $('#btn-ev-keys')?.addEventListener('click', () => openByokModal(() => loadEvidence()));
+      // Empty-state button wiring — runs only on the 0-findings branch and
+      // attaches the right handler (Run extraction vs Add LLM key).
+      emptyWire?.();
+      window.refreshIcons?.();
     } catch (e) {
+      // Error-path actions also branch on whether a key is actually present,
+      // so the retry path doesn't tell users to re-add a key they already have.
+      const ready = await hasLlmConfigured().catch(() => false);
       const actions = [
-        { label: 'Retry',       icon: 'refresh-cw', primary: true, onClick: () => loadEvidence() },
-        { label: 'Add LLM key',              onClick: () => openByokModal(() => loadEvidence()) },
+        { label: 'Retry', icon: 'refresh-cw', primary: true, onClick: () => loadEvidence() },
+        ready
+          ? { label: 'Run extraction', onClick: () => runEnrichHere(null, () => loadEvidence()) }
+          : { label: 'Add LLM key',    onClick: () => openByokModal(() => loadEvidence()) },
       ];
       set(errorCard('Could not load evidence', e?.message || String(e), actions));
       if (contentEl.dataset.tab !== 'evidence') return;
@@ -1070,11 +1147,35 @@ export async function renderTopic(root, { params }) {
         }
       });
 
+      // Load existing paper analyses in parallel with the papers query so
+      // the cards can show summaries/relevance/takeaways the moment they
+      // render. Failure is non-fatal — cards just fall back to the
+      // un-analyzed view with an "Analyze" button.
+      const analysesRows = await api.paperAnalysesGet(topic).catch(() => []);
+      const analysesByPostId = new Map();
+      for (const a of (Array.isArray(analysesRows) ? analysesRows : [])) {
+        if (a && a.post_id) analysesByPostId.set(a.post_id, a);
+      }
+      const unanalyzedCount = rows.filter(r => !analysesByPostId.has(r.id)).length;
+
       const paperCard = (r) => {
         const c = SRC_BADGE_COLORS[r.source] || { bg: 'var(--surface-2)', fg: 'var(--ink-2)' };
         const badge = `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;letter-spacing:.03em">${esc(SRC_LABELS[r.source] || r.source)}</span>`;
         const title = esc((r.title || '(untitled)').slice(0, 160));
         const excerpt = esc((r.excerpt || '').trim().slice(0, 260));
+        const analysis = analysesByPostId.get(r.id);
+        const analysisHtml = analysis ? `
+          <div class="paper-analysis" data-post-id="${esc(r.id)}" style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:var(--radius-sm);border:1px solid var(--line)">
+            <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">📘 Summary</div>
+            <div style="font-size:12.5px;color:var(--ink);line-height:1.5;margin-bottom:8px">${esc(analysis.summary || '')}</div>
+            <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">🎯 Why this matters for "${esc(topic)}"</div>
+            <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5;margin-bottom:8px">${esc(analysis.relevance || '')}</div>
+            <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">🔨 Builder takeaway</div>
+            <div style="font-size:12.5px;color:var(--ink);line-height:1.5;background:var(--gold-soft);padding:6px 10px;border-radius:8px;border-left:3px solid var(--gold)"><b>${esc(analysis.takeaway || '')}</b></div>
+          </div>` : `
+          <div class="paper-analyze-row" data-post-id="${esc(r.id)}" style="margin-top:10px">
+            <button class="btn btn-ghost btn-sm btn-bordered paper-analyze-btn" data-analyze="${esc(r.id)}"><i data-lucide="sparkles"></i> Analyze</button>
+          </div>`;
         const url = r.url || r.permalink || '';
         const cites = r.source === 'scholar' || r.source === 'openalex'
           ? (r.score ? `${r.score.toLocaleString()} cites · ` : '')
@@ -1114,18 +1215,23 @@ export async function renderTopic(root, { params }) {
                 <div style="margin-bottom:6px">${badge}<span style="color:var(--ink-3);font-size:11px;margin-left:8px">${cites}${esc(date)}${authorStr}</span></div>
                 <h4 style="font-size:14px;font-weight:700;line-height:1.35;margin-bottom:4px">${title}</h4>
                 ${excerpt ? `<p style="font-size:12px;color:var(--ink-2);line-height:1.5">${excerpt}…</p>` : ''}
+                ${analysisHtml}
               </div>
               <div style="flex-shrink:0;display:flex;gap:6px;align-items:flex-start">${citeBtn}${openBtn}</div>
             </div>
           </div>`;
       };
 
+      const analyzeAllBtn = unanalyzedCount > 0
+        ? `<button class="btn btn-primary btn-sm icon-btn" id="btn-analyze-all"><i data-lucide="sparkles"></i> Analyze all (${unanalyzedCount})</button>`
+        : '';
       const sortToggle = `
         <div class="research-sort-row">
           <span>Sort:</span>
           <button class="research-sort-btn ${researchSort === 'cites' ? 'active' : ''}" data-sort="cites">Most cited</button>
           <button class="research-sort-btn ${researchSort === 'newest' ? 'active' : ''}" data-sort="newest">Newest</button>
-          <span style="margin-left:auto;font-size:11px;color:var(--ink-3)">${rows.length} paper${rows.length === 1 ? '' : 's'} total</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--ink-3);margin-right:10px">${rows.length} paper${rows.length === 1 ? '' : 's'} total · ${analysesByPostId.size} analyzed</span>
+          ${analyzeAllBtn}
         </div>`;
 
       const html = ACADEMIC_SOURCES.filter(s => grouped[s]).map(src => {
@@ -1164,6 +1270,58 @@ export async function renderTopic(root, { params }) {
           loadResearch();
         };
       });
+      // Per-card "Analyze" → one LLM call, replace the button with the
+      // rendered analysis in place. Other cards unaffected.
+      contentEl.querySelectorAll('[data-analyze]').forEach(btn => {
+        btn.onclick = async () => {
+          const pid = btn.dataset.analyze;
+          if (!pid) return;
+          const row = btn.closest('.paper-analyze-row');
+          if (!row) return;
+          btn.disabled = true;
+          const origHtml = btn.innerHTML;
+          btn.innerHTML = '<i data-lucide="loader-2"></i> Analyzing…';
+          window.refreshIcons?.();
+          try {
+            const r = await api.analyzePaper(topic, pid);
+            if (r && r.ok) {
+              // Easy path: re-render the whole Research tab so the card
+              // picks up the new analysis plus the count updates.
+              loadResearch();
+              return;
+            }
+            const msg = r?.reason || r?.error || 'failed';
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            alert(`Analyze failed: ${msg}`);
+          } catch (e) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            alert(`Analyze errored: ${e?.message || e}`);
+          }
+        };
+      });
+      // "Analyze all (N)" → bulk command, re-render when done.
+      const analyzeAllEl = contentEl.querySelector('#btn-analyze-all');
+      if (analyzeAllEl) {
+        analyzeAllEl.onclick = async () => {
+          analyzeAllEl.disabled = true;
+          const origHtml = analyzeAllEl.innerHTML;
+          analyzeAllEl.innerHTML = '<i data-lucide="loader-2"></i> Analyzing…';
+          window.refreshIcons?.();
+          try {
+            const r = await api.analyzePapersBulk(topic);
+            loadResearch();
+            if (r && r.skipped && r.skipped.length === r.total && r.total > 0) {
+              alert(`All ${r.total} skipped — ${r.skipped[0]?.reason || 'no LLM configured'}. Add a key in Settings.`);
+            }
+          } catch (e) {
+            analyzeAllEl.disabled = false;
+            analyzeAllEl.innerHTML = origHtml;
+            alert(`Analyze-all errored: ${e?.message || e}`);
+          }
+        };
+      }
       // Sort toggle → flip mode + re-render.
       contentEl.querySelectorAll('.research-sort-btn').forEach(btn => {
         btn.onclick = () => {

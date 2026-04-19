@@ -663,6 +663,29 @@ def cmd_schedule_tick(
     _emit(result, as_json, table_title="schedule-tick")
 
 
+@research_app.command("analyze-papers")
+def cmd_research_analyze_papers(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    limit: Optional[int] = typer.Option(None, "--limit"),
+    force: bool = typer.Option(False, "--force"),
+    post_id: Optional[str] = typer.Option(None, "--post-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run LLM analysis (summary / relevance / builder-takeaway) per paper."""
+    from ..research.paper_analyze import analyze_paper, analyze_papers_bulk
+
+    if post_id:
+        r = analyze_paper(topic, post_id, force=force)
+        _emit(r, as_json, table_title=f"analyze {post_id}")
+        return
+
+    def _log(msg: str) -> None:
+        typer.echo(msg, err=True)
+
+    r = analyze_papers_bulk(topic, limit=limit, force=force, progress=_log)
+    _emit(r, as_json, table_title=f"analyze-papers '{topic}'")
+
+
 @research_app.command("diff")
 def cmd_research_diff(
     topic: str = typer.Option(..., "--topic", "-t"),

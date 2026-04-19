@@ -169,6 +169,17 @@ export const api = {
   runQuery:        (sql, topic, params) => cachedInvoke('run_query', { sql, topic, params }, 10000),
   diffFindings:    (topic, windowDays = 7) => cachedInvoke('diff_findings', { topic, windowDays }, 30000),
 
+  // ----- per-paper LLM analysis (Research tab) -----
+  analyzePaper:      (topic, postId) => {
+    invalidate('paper_analyses_get');
+    return invoke('analyze_paper', { topic, postId });
+  },
+  analyzePapersBulk: (topic, limit = null) => {
+    invalidate('paper_analyses_get');
+    return invoke('analyze_papers_bulk', { topic, limit });
+  },
+  paperAnalysesGet:  (topic) => cachedInvoke('paper_analyses_get', { topic }, 30000),
+
   // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
   scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),
   scheduleInstall:   (intervalHours) => invoke('schedule_install', { intervalHours }),

@@ -222,28 +222,83 @@ pub async fn start_collect(
         .map_err(err_to_string)
 }
 
-/// Build the structural graph for a topic.
+/// Run a graph operation (build/enrich) with per-(op, topic) dedup.
+///
+/// If another call is already in flight for the same (op, topic) we return
+/// `{ok: false, already_running: true, topic}` instead of spawning another
+/// Python sidecar. This prevents the "11 concurrent enrichments starve
+/// Ollama + hold the SQLite write-lock" pileup — observed in prod when
+/// `loadMap` auto-triggers enrich and the user also clicks the button.
+///
+/// The key is inserted before the (awaited) run_cli call and always removed
+/// afterwards, success or error, via the `_Guard` RAII pattern. Held across
+/// the `.await` — safe because `HashSet<String>` insert/remove takes a
+/// fresh mutex lock on each side, not across the await.
+async fn run_graph_op_deduped(
+    app: &AppHandle,
+    op: &str,
+    topic: &str,
+    args: Vec<&str>,
+) -> Result<Value, String> {
+    use crate::cli::ActiveGraphOps;
+    let key = format!("{}:{}", op, topic);
+    let state = app.state::<ActiveGraphOps>();
+
+    // Try to insert the key — if it's already there, another call is in flight.
+    {
+        let mut set = state.0.lock().map_err(|e| e.to_string())?;
+        if set.contains(&key) {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "already_running": true,
+                "topic": topic,
+                "op": op,
+                "reason": format!(
+                    "A {} for topic {:?} is already running. Wait for it to finish before triggering another.",
+                    op, topic
+                ),
+            }));
+        }
+        set.insert(key.clone());
+    }
+
+    // Run the job. The `guard` drops the key back out on success OR error —
+    // implemented inline as scope exit rather than a Drop impl because
+    // async drop order around `?` is finicky.
+    let result = run_cli(app, args).await.map_err(err_to_string);
+    {
+        if let Ok(mut set) = state.0.lock() {
+            set.remove(&key);
+        }
+    }
+    result
+}
+
+/// Build the structural graph for a topic. Deduped per-topic.
 #[tauri::command]
 pub async fn build_graph(app: AppHandle, topic: String) -> Result<Value, String> {
-    run_cli(
+    run_graph_op_deduped(
         &app,
+        "build",
+        &topic,
         vec!["research", "graph", "build", "--topic", &topic, "--json"],
     )
     .await
-    .map_err(err_to_string)
 }
 
 /// Enrich the graph with LLM-extracted semantic nodes (painpoints, features,
 /// workarounds). Safe to call regardless of key state — Python side returns
 /// `{ok: false, skipped: true, reason}` when no provider is configured.
+/// Deduped per-topic: concurrent callers get `{already_running: true}` back.
 #[tauri::command]
 pub async fn enrich_graph(app: AppHandle, topic: String) -> Result<Value, String> {
-    run_cli(
+    run_graph_op_deduped(
         &app,
+        "enrich",
+        &topic,
         vec!["research", "graph", "enrich", "--topic", &topic, "--json"],
     )
     .await
-    .map_err(err_to_string)
 }
 
 /// Run the Problem -> Why -> Science -> Solution pipeline for a topic.
@@ -435,6 +490,62 @@ pub async fn diff_findings(
         vec![
             "research", "diff", "--topic", &topic, "--window", &win, "--json",
         ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// Analyze a single paper (summary / relevance / builder takeaway).
+#[tauri::command]
+pub async fn analyze_paper(
+    app: AppHandle,
+    topic: String,
+    post_id: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec![
+            "research", "analyze-papers",
+            "--topic", &topic, "--post-id", &post_id, "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// Bulk-analyze every unanalyzed academic paper for a topic.
+#[tauri::command]
+pub async fn analyze_papers_bulk(
+    app: AppHandle,
+    topic: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let mut args: Vec<String> = vec![
+        "research".into(), "analyze-papers".into(),
+        "--topic".into(), topic.clone(),
+        "--json".into(),
+    ];
+    if let Some(n) = limit {
+        args.push("--limit".into());
+        args.push(n.to_string());
+    }
+    let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Read all paper-analysis rows for a topic (one SELECT, no LLM).
+#[tauri::command]
+pub async fn paper_analyses_get(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    let sql =
+        "SELECT pa.post_id, pa.topic, pa.summary, pa.relevance, pa.takeaway, \
+         pa.ts, pa.provider, pa.model \
+         FROM paper_analyses pa WHERE pa.topic = :topic";
+    run_cli(
+        &app,
+        vec!["query", sql, "--topic", &topic, "--json"],
     )
     .await
     .map_err(err_to_string)

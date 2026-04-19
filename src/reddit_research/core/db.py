@@ -312,6 +312,22 @@ def init_schema(db: Database) -> None:
             pk="topic",
         )
 
+    if "paper_analyses" not in db.table_names():
+        db["paper_analyses"].create(
+            {
+                "post_id": str,           # posts.id — one row per academic paper
+                "topic": str,              # topic context at analysis time
+                "summary": str,            # 2-3 sentence TL;DR
+                "relevance": str,          # 1-2 sentences: how it applies to topic
+                "takeaway": str,           # 1 sentence, imperative verb
+                "ts": str,                 # ISO UTC
+                "provider": str,           # resolved LLM provider
+                "model": str,              # LLM_MODEL env value at write
+            },
+            pk="post_id",
+        )
+        db["paper_analyses"].create_index(["topic"])
+
     # Zombie sweep: any fetch row with ended_at=NULL older than 10 min is a
     # crashed/killed collect that never ran its teardown. Closing these out
     # on startup prevents the UI from showing a stale "Collecting…" chip

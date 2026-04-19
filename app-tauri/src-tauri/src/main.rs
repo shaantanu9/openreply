@@ -7,7 +7,8 @@ mod schedule;
 
 use cli::{
     cancel_active_chat, cancel_active_job, cancel_active_stream,
-    ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
+    ActiveChat, ActiveChatPid, ActiveGraphOps, ActiveJob, ActiveJobPid, ActiveStream,
+    ActiveStreamPid,
 };
 use tauri::RunEvent;
 
@@ -21,6 +22,7 @@ fn main() {
         .manage(ActiveChatPid::default())
         .manage(ActiveStream::default())
         .manage(ActiveStreamPid::default())
+        .manage(ActiveGraphOps::default())
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
             commands::list_topics,
@@ -70,6 +72,9 @@ fn main() {
             commands::palace_model_status,
             commands::palace_warmup,
             commands::diff_findings,
+            commands::analyze_paper,
+            commands::analyze_papers_bulk,
+            commands::paper_analyses_get,
             commands::schedule_install,
             commands::schedule_uninstall,
             commands::schedule_status,
