@@ -46,6 +46,7 @@ fn main() {
             commands::run_solutions_pipeline,
             commands::run_temporal_gaps,
             commands::quick_extract_gaps,
+            commands::run_reddit_search,
             commands::ollama_start_service,
             commands::ollama_stop_service,
             commands::close_splash,

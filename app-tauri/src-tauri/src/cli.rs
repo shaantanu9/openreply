@@ -97,6 +97,17 @@ pub struct ActiveJob(pub Arc<Mutex<Option<CommandChild>>>);
 #[derive(Default, Clone)]
 pub struct ActiveChat(pub Arc<Mutex<Option<CommandChild>>>);
 
+/// Parallel handles for **dev-python** streaming jobs — when the dev bypass
+/// spawns `.venv/bin/python` directly (via `tokio::process::Command`), there's
+/// no `CommandChild`; we keep the OS pid instead so cancel can SIGTERM it.
+/// Production (PyInstaller sidecar) continues to use ActiveJob/ActiveChat
+/// above. Cancel tries both, so whichever branch populated its slot gets
+/// killed.
+#[derive(Default, Clone)]
+pub struct ActiveJobPid(pub Arc<Mutex<Option<u32>>>);
+#[derive(Default, Clone)]
+pub struct ActiveChatPid(pub Arc<Mutex<Option<u32>>>);
+
 /// Resolve the data dir used by the Python CLI for this app.
 /// `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`.
 pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
@@ -148,6 +159,91 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     Ok(serde_json::from_str(&stdout).unwrap_or(Value::Null))
 }
 
+/// Dev-only streaming bypass — spawn `.venv/bin/python -m reddit_research.cli.main`
+/// via `tokio::process::Command`, pipe stdout+stderr, and emit per-line
+/// events on `progress_event`. When the child exits, emit a done event with
+/// `{code}` (for chat) or `{code, error_class, hint}` (for collect — see
+/// `on_exit` below to customise).
+///
+/// Sidesteps the Tauri permission system + macOS Gatekeeper PyInstaller
+/// verification, which can hang streaming spawns for 2+ minutes. PID is
+/// stored in `pid_slot` so the matching cancel command can SIGTERM it.
+async fn run_dev_python_streaming(
+    app: &AppHandle,
+    py: std::path::PathBuf,
+    args: &[&str],
+    data_str: &str,
+    progress_event: &'static str,
+    done_event: &'static str,
+    pid_slot: Arc<Mutex<Option<u32>>>,
+    on_exit: impl Fn(i32, &std::collections::VecDeque<String>) -> serde_json::Value + Send + 'static,
+) -> Result<()> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let mut cmd = tokio::process::Command::new(&py);
+    cmd.arg("-m").arg("reddit_research.cli.main");
+    for a in args { cmd.arg(*a); }
+    cmd.env("REDDIT_MYIND_DATA_DIR", data_str)
+       .env("PYTHONUNBUFFERED", "1")
+       .stdout(Stdio::piped())
+       .stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| anyhow!("dev python spawn failed: {e}"))?;
+    if let Some(pid) = child.id() {
+        *pid_slot.lock().unwrap() = Some(pid);
+    }
+    let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout pipe"))?;
+    let stderr = child.stderr.take().ok_or_else(|| anyhow!("no stderr pipe"))?;
+
+    // Collect the last ~40 lines across both streams so on_exit can classify.
+    // Shared buffer protected by a parking_lot-free std Mutex — no hot path.
+    let recent: Arc<Mutex<std::collections::VecDeque<String>>> =
+        Arc::new(Mutex::new(std::collections::VecDeque::with_capacity(40)));
+
+    let app_a = app.clone();
+    let recent_a = recent.clone();
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if line.trim().is_empty() { continue; }
+            {
+                let mut r = recent_a.lock().unwrap();
+                if r.len() == 40 { r.pop_front(); }
+                r.push_back(line.clone());
+            }
+            let _ = app_a.emit(progress_event, line);
+        }
+    });
+
+    let app_b = app.clone();
+    let recent_b = recent.clone();
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if line.trim().is_empty() { continue; }
+            {
+                let mut r = recent_b.lock().unwrap();
+                if r.len() == 40 { r.pop_front(); }
+                r.push_back(line.clone());
+            }
+            let _ = app_b.emit(progress_event, line);
+        }
+    });
+
+    let app_c = app.clone();
+    let pid_slot_c = pid_slot.clone();
+    tokio::spawn(async move {
+        let status = child.wait().await;
+        *pid_slot_c.lock().unwrap() = None;
+        let code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
+        let r = recent.lock().unwrap();
+        let payload = on_exit(code, &r);
+        let _ = app_c.emit(done_event, payload);
+    });
+
+    Ok(())
+}
+
 /// Start the sidecar and stream output as Tauri events.
 /// Stores the child handle in `ActiveJob` so cancel can kill it.
 pub async fn run_cli_streaming(
@@ -167,6 +263,23 @@ pub async fn run_cli_streaming(
 
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
+
+    // Dev fast path — use .venv/bin/python + tokio::process streaming.
+    // In prod (DMG), this falls through to the PyInstaller sidecar below.
+    if let Some(py) = find_dev_venv_python() {
+        let pid_slot = if let Some(state) = app.try_state::<ActiveJobPid>() {
+            state.0.clone()
+        } else {
+            Arc::new(Mutex::new(None))
+        };
+        return run_dev_python_streaming(
+            app, py, &args, &data_str, progress_event, done_event, pid_slot,
+            |code, recent| {
+                let (class, hint) = classify_collect_error(code, recent);
+                serde_json::json!({ "code": code, "error_class": class, "hint": hint })
+            },
+        ).await;
+    }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
         .env("REDDIT_MYIND_DATA_DIR", &data_str)
@@ -280,16 +393,43 @@ fn classify_collect_error(
     )
 }
 
-/// Kill the currently-running sidecar child, if any.
+/// Kill the currently-running sidecar child, if any. Tries both branches —
+/// the Tauri-shell `CommandChild` (prod) and the dev-python pid (dev).
 pub fn cancel_active_job(app: &AppHandle) -> bool {
+    let mut killed = false;
     if let Some(state) = app.try_state::<ActiveJob>() {
         let mut guard = state.0.lock().unwrap();
         if let Some(child) = guard.take() {
             let _ = child.kill();
-            return true;
+            killed = true;
         }
     }
-    false
+    if let Some(state) = app.try_state::<ActiveJobPid>() {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(pid) = guard.take() {
+            kill_pid(pid);
+            killed = true;
+        }
+    }
+    killed
+}
+
+/// Best-effort SIGTERM on a Unix pid. On Windows we shell out to taskkill.
+/// Only used by the dev-python streaming path — prod uses CommandChild::kill.
+fn kill_pid(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status();
+    }
 }
 
 /// Start the sidecar for chat — streams JSON events, uses its own state
@@ -308,6 +448,23 @@ pub async fn run_cli_chat_streaming(
 
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
+
+    // Dev fast path — chat was previously locked to the PyInstaller sidecar
+    // even when `.venv/bin/python` was present, so every in-dev code change
+    // to chat.py / provider resolution required a full rebuild to take
+    // effect. Route dev chat through the venv Python instead; prod (DMG)
+    // still uses the bundled binary below.
+    if let Some(py) = find_dev_venv_python() {
+        let pid_slot = if let Some(state) = app.try_state::<ActiveChatPid>() {
+            state.0.clone()
+        } else {
+            Arc::new(Mutex::new(None))
+        };
+        return run_dev_python_streaming(
+            app, py, &args, &data_str, progress_event, done_event, pid_slot,
+            |code, _recent| serde_json::json!({ "code": code }),
+        ).await;
+    }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
         .env("REDDIT_MYIND_DATA_DIR", &data_str)
@@ -348,16 +505,24 @@ pub async fn run_cli_chat_streaming(
     Ok(())
 }
 
-/// Cancel a running chat, if any.
+/// Cancel a running chat, if any. Same dual-branch as cancel_active_job.
 pub fn cancel_active_chat(app: &AppHandle) -> bool {
+    let mut killed = false;
     if let Some(state) = app.try_state::<ActiveChat>() {
         let mut guard = state.0.lock().unwrap();
         if let Some(child) = guard.take() {
             let _ = child.kill();
-            return true;
+            killed = true;
         }
     }
-    false
+    if let Some(state) = app.try_state::<ActiveChatPid>() {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(pid) = guard.take() {
+            kill_pid(pid);
+            killed = true;
+        }
+    }
+    killed
 }
 
 #[cfg(test)]

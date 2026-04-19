@@ -110,16 +110,30 @@ def _topic_context(topic: str, limit_posts: int = 8) -> str:
         (topic,),
     ))
 
-    # A small sample of the most-engaged posts for concrete evidence
-    posts = list(db.query(
-        "SELECT p.title, p.sub AS subreddit, p.score, p.num_comments, "
-        "       coalesce(p.source_type,'reddit') AS source, substr(coalesce(p.selftext,''),1,400) AS snip "
+    # Sample evidence posts — mix high-engagement Reddit with academic /
+    # ingested sources so every source type gets a voice. Pure engagement
+    # ranking drowned out arxiv papers (which have score=0 by design).
+    reddit_sample = list(db.query(
+        "SELECT p.id, p.title, p.sub AS subreddit, p.score, p.num_comments, "
+        "       coalesce(p.source_type,'reddit') AS source, p.url, "
+        "       substr(coalesce(p.selftext,''),1,400) AS snip "
         "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
-        "WHERE tp.topic=? "
+        "WHERE tp.topic=? AND coalesce(p.source_type,'reddit')='reddit' "
         "ORDER BY coalesce(p.score,0)+coalesce(p.num_comments,0) DESC "
         "LIMIT ?",
-        (topic, limit_posts),
+        (topic, max(limit_posts // 2, 1)),
     ))
+    other_sample = list(db.query(
+        "SELECT p.id, p.title, p.sub AS subreddit, p.score, p.num_comments, "
+        "       coalesce(p.source_type,'reddit') AS source, p.url, "
+        "       substr(coalesce(p.selftext,''),1,400) AS snip "
+        "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
+        "WHERE tp.topic=? AND coalesce(p.source_type,'reddit')!='reddit' "
+        "ORDER BY coalesce(p.score,0) DESC, p.created_utc DESC "
+        "LIMIT ?",
+        (topic, max(limit_posts - len(reddit_sample), 1)),
+    ))
+    posts = reddit_sample + other_sample
 
     parts = [f"# Topic: {topic}", ""]
 
@@ -143,13 +157,22 @@ def _topic_context(topic: str, limit_posts: int = 8) -> str:
             parts.append("")
 
     if posts:
-        parts.append("## Evidence posts (most engaged)")
+        from .corpus_format import _format_row
+        parts.append("## Evidence (mixed sources)")
         for p in posts:
-            origin = f"r/{p['subreddit']}" if p.get("subreddit") else p["source"]
-            parts.append(
-                f"- [{origin}, {p['score']}↑ · {p['num_comments']}c] "
-                f"{p['title']}\n  > {p['snip'].strip()[:300]}"
-            )
+            # Re-use the source-aware formatter so arxiv / pubmed / ingest
+            # rows cite correctly instead of being mislabelled as r/reddit.
+            # `selftext` column is named `snip` here — alias it.
+            row = dict(p)
+            row["selftext"] = p.get("snip", "")
+            row["sub"] = p.get("subreddit") or ""
+            header_and_body = _format_row(row, excerpt_chars=300)
+            # Make it a markdown bullet.
+            lines = header_and_body.split("\n", 1)
+            if len(lines) == 2:
+                parts.append(f"- {lines[0]}\n  > {lines[1].strip()}")
+            else:
+                parts.append(f"- {lines[0]}")
         parts.append("")
 
     return "\n".join(parts)

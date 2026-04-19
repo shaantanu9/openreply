@@ -44,6 +44,19 @@ export async function renderCollect(root, { params }) {
         `).join('')}
       </div>
 
+      <!-- Per-source status grid (hidden until the parallel stage starts).
+           One chip per extra source (HN / arXiv / App Store / …) — status
+           flips from pending → running → done/error as sidecar log lines
+           arrive. Makes it obvious at a glance that the pipeline is actually
+           hitting all 11 sources in parallel, not just Reddit. -->
+      <div class="sources-grid" id="sources-grid" hidden>
+        <div class="sources-grid-head">
+          <b>Sources</b>
+          <span id="sources-grid-count">0 of 0 done</span>
+        </div>
+        <div class="sources-grid-chips" id="sources-grid-chips"></div>
+      </div>
+
       <div class="now-banner" id="now-banner" style="margin:14px 0 10px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;gap:10px">
         <span id="now-spinner" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--orange);border-radius:50%;animation:nowspin 1s linear infinite;flex-shrink:0"></span>
         <div style="flex:1;min-width:0">
@@ -96,11 +109,126 @@ export async function renderCollect(root, { params }) {
     el.classList.add('active');
   };
 
+  // --- per-source status tracker ---
+  // The Python side emits well-defined log markers for its parallel fetch
+  // stage (see research/collect.py::_run_source):
+  //   "[parallel] fetching N sources across W workers…"
+  //   "[src] starting…"
+  //   "[i/N] [src] ✓ 42 posts (3.1s)"       OR
+  //   "[i/N] [src] ✓ trends series collected (2.7s)"   OR
+  //   "[i/N] [src] ✗ <error> (4.8s)"
+  // We translate those into live chip state so the user sees all 11 sources
+  // flip from pending → running → done/error in parallel.
+  const SOURCE_LABELS = {
+    hn: 'Hacker News', appstore: 'App Store', playstore: 'Play Store',
+    arxiv: 'arXiv', openalex: 'OpenAlex', pubmed: 'PubMed',
+    gnews: 'Google News', devto: 'Dev.to', stackoverflow: 'Stack Overflow',
+    github: 'GitHub', trends: 'Google Trends',
+    scholar: 'Google Scholar', github_issues: 'GitHub Issues',
+    lemmy: 'Lemmy', mastodon: 'Mastodon',
+  };
+  const sourceState = new Map();      // src → { status, count, error, elapsed }
+  const sourcesGrid  = $('#sources-grid');
+  const sourcesChips = $('#sources-grid-chips');
+  const sourcesCount = $('#sources-grid-count');
+
+  function ensureChip(src) {
+    let chip = sourcesChips.querySelector(`[data-src="${src}"]`);
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.className = 'src-chip pending';
+      chip.dataset.src = src;
+      chip.innerHTML = `
+        <span class="src-dot"></span>
+        <span class="src-name">${esc(SOURCE_LABELS[src] || src)}</span>
+        <span class="src-meta">pending</span>`;
+      sourcesChips.appendChild(chip);
+    }
+    return chip;
+  }
+
+  function repaintCount() {
+    const total = sourceState.size;
+    const done = [...sourceState.values()].filter(s => s.status === 'done' || s.status === 'error').length;
+    sourcesCount.textContent = `${done} of ${total} done`;
+  }
+
+  function updateSource(src, patch) {
+    const prev = sourceState.get(src) || { status: 'pending', count: 0, error: null, elapsed: null };
+    const next = { ...prev, ...patch };
+    sourceState.set(src, next);
+    const chip = ensureChip(src);
+    chip.classList.remove('pending', 'running', 'done', 'error');
+    chip.classList.add(next.status);
+    const meta = chip.querySelector('.src-meta');
+    if (next.status === 'running') meta.textContent = 'fetching…';
+    else if (next.status === 'done') {
+      if (src === 'trends') meta.textContent = `✓ trends (${next.elapsed ?? '—'}s)`;
+      else meta.textContent = `✓ ${next.count ?? 0} posts`;
+    } else if (next.status === 'error') meta.textContent = `✗ ${(next.error || 'failed').slice(0, 28)}`;
+    else meta.textContent = 'pending';
+    repaintCount();
+  }
+
+  // Match the exact log shapes emitted by research/collect.py.
+  const RE_PARALLEL_START = /\[parallel\] fetching (\d+) sources/i;
+  const RE_SOURCE_START   = /^\[([a-z_]+)\] starting…/i;
+  const RE_SOURCE_DONE    = /\[\d+\/\d+\]\s*\[([a-z_]+)\]\s*✓\s*(\d+)\s*posts\s*\(([\d.]+)s\)/i;
+  const RE_SOURCE_TRENDS  = /\[\d+\/\d+\]\s*\[([a-z_]+)\]\s*✓\s*trends series collected\s*\(([\d.]+)s\)/i;
+  const RE_SOURCE_ERR     = /\[\d+\/\d+\]\s*\[([a-z_]+)\]\s*✗\s*(.+?)\s*\(([\d.]+)s\)/i;
+
+  // The default aggressive source sweep (keep in sync with
+  // research/collect.py `if aggressive: sources = [...]`). Used to seed
+  // pending chips up-front so the user sees "11 queued" the moment the
+  // parallel stage begins, even though only _PARALLEL_SOURCES=6 can run
+  // at a time.
+  const AGGRESSIVE_SOURCES = [
+    'hn', 'appstore', 'playstore', 'arxiv', 'openalex', 'pubmed',
+    'gnews', 'devto', 'stackoverflow', 'github', 'trends',
+  ];
+
+  function maybeUpdateSourceGrid(text) {
+    let m;
+    if ((m = text.match(RE_PARALLEL_START))) {
+      // Reveal the grid and pre-seed pending chips for the full aggressive
+      // source list (11 sources). The parser honors whatever N the Python
+      // side actually reported — if the user ran a custom --sources subset,
+      // the extras will just sit at "pending" until they time out, which
+      // is fine because errors mark them red anyway.
+      sourcesGrid.hidden = false;
+      for (const s of AGGRESSIVE_SOURCES) {
+        if (!sourceState.has(s)) updateSource(s, { status: 'pending' });
+      }
+      return true;
+    }
+    if ((m = text.match(RE_SOURCE_DONE))) {
+      updateSource(m[1], { status: 'done', count: Number(m[2]), elapsed: Number(m[3]).toFixed(1) });
+      return true;
+    }
+    if ((m = text.match(RE_SOURCE_TRENDS))) {
+      updateSource(m[1], { status: 'done', elapsed: Number(m[2]).toFixed(1) });
+      return true;
+    }
+    if ((m = text.match(RE_SOURCE_ERR))) {
+      updateSource(m[1], { status: 'error', error: m[2], elapsed: Number(m[3]).toFixed(1) });
+      return true;
+    }
+    if ((m = text.match(RE_SOURCE_START))) {
+      sourcesGrid.hidden = false;
+      updateSource(m[1], { status: 'running' });
+      return true;
+    }
+    return false;
+  }
+
   const appendLine = (text, cls = null) => {
     lineCount++;
     const klass = cls || classifyLine(text);
     const stage = detectStage(text);
     if (stage) markStage(stage);
+    // Side-effect: update chip grid if this line is a source marker. We
+    // still append the raw line to the log so power users see everything.
+    maybeUpdateSourceGrid(text);
     if (klass === 'err') { errCount++; errsEl.textContent = errCount; errsWrap.classList.add('has-errors'); }
     linesEl.textContent = lineCount;
     const div = document.createElement('div');

@@ -121,6 +121,94 @@ def render_citations_md(topic: str) -> str:
     L.append(f"- **{len(workarounds)}** DIY workarounds observed (strongest gap signal)")
     L.append(f"- **{len(features)}** explicit feature wishes")
     L.append("")
+
+    # ═══ SCIENCE & LOCAL RESEARCH (non-Reddit corpus) ════════════════
+    # Peer-reviewed papers + ingested PDFs / local docs. Separated from
+    # Reddit so the reader sees at a glance what "science-backed" means
+    # for this topic. Empty if no academic sources were fetched.
+    research_rows = list(db.query(
+        """SELECT p.id, p.title, p.url, p.permalink, p.author,
+                  p.score, p.created_utc,
+                  coalesce(p.source_type,'reddit') AS source,
+                  substr(coalesce(p.selftext,''),1,240) AS excerpt,
+                  p.sub AS subreddit
+           FROM posts p JOIN topic_posts tp ON tp.post_id=p.id
+           WHERE tp.topic=? AND coalesce(p.source_type,'reddit')!='reddit'
+           ORDER BY
+             CASE coalesce(p.source_type,'reddit')
+               WHEN 'arxiv'    THEN 1
+               WHEN 'pubmed'   THEN 2
+               WHEN 'openalex' THEN 3
+               WHEN 'scholar'  THEN 4
+               WHEN 'ingest'   THEN 5
+               ELSE 6
+             END,
+             coalesce(p.score,0) DESC, p.created_utc DESC""",
+        [topic],
+    ))
+    if research_rows:
+        # Bucket by source for a clean per-provider listing.
+        by_src: dict[str, list[dict]] = {}
+        for r in research_rows:
+            by_src.setdefault(r["source"], []).append(r)
+
+        L.append("---")
+        L.append("")
+        L.append("## 📚 Research & science evidence")
+        L.append("")
+        L.append(
+            f"{len(research_rows)} non-Reddit sources backing this report — "
+            f"peer-reviewed papers, preprints, and ingested documents."
+        )
+        L.append("")
+        # Academic sources first, then ingest, then others
+        src_order = [
+            ("arxiv",    "arXiv preprints"),
+            ("openalex", "OpenAlex papers"),
+            ("pubmed",   "PubMed papers"),
+            ("scholar",  "Semantic Scholar"),
+            ("ingest",   "Ingested documents (PDFs / local files)"),
+        ]
+        printed = set()
+        for src_key, src_header in src_order:
+            rows = by_src.get(src_key)
+            if not rows:
+                continue
+            printed.add(src_key)
+            L.append(f"### {src_header} ({len(rows)})")
+            L.append("")
+            for r in rows[:15]:  # first 15 per source; avoids runaway reports
+                title = (r.get("title") or "(untitled)").strip()[:160]
+                url = r.get("url") or r.get("permalink") or ""
+                cites = r.get("score") or 0
+                cite_str = f" · **{cites}** cites" if cites and src_key in ("scholar", "openalex") else ""
+                author = (r.get("author") or "").strip()
+                author_str = f" — {author}" if author and author not in ("[deleted]", "") else ""
+                if url:
+                    L.append(f"- [{title}]({url}){author_str}{cite_str}")
+                else:
+                    L.append(f"- **{title}**{author_str}{cite_str}")
+                excerpt = (r.get("excerpt") or "").strip()
+                if excerpt:
+                    L.append(f"  > {excerpt[:200]}")
+            if len(rows) > 15:
+                L.append(f"- _…and {len(rows) - 15} more_")
+            L.append("")
+        # Catch-all for any non-Reddit source not in the canonical order.
+        for src_key, rows in by_src.items():
+            if src_key in printed:
+                continue
+            L.append(f"### {_source_label(src_key)} ({len(rows)})")
+            L.append("")
+            for r in rows[:10]:
+                title = (r.get("title") or "(untitled)").strip()[:160]
+                url = r.get("url") or r.get("permalink") or ""
+                if url:
+                    L.append(f"- [{title}]({url})")
+                else:
+                    L.append(f"- **{title}**")
+            L.append("")
+
     L.append("---")
     L.append("")
 
@@ -284,5 +372,25 @@ def render_citations_md(topic: str) -> str:
     L.append("")
     L.append("---")
     L.append("")
-    L.append(f"*Generated from {total_posts:,} multi-source posts. All links above are real.*")
+    L.append("## 📖 How to use this report")
+    L.append("")
+    L.append("This report is a build guide, not a summary. Each section answers a specific product question:")
+    L.append("")
+    L.append("1. **Painpoints** → your *market validation*. If a painpoint shows up with HIGH severity + MULTI-source confirmation (Reddit **and** arXiv/PubMed), it's real — not a vocal-minority artifact.")
+    L.append("2. **DIY workarounds** → your *product backlog*. Users are already building these themselves. Every row here is a feature that doesn't exist in a shipping product. This is the strongest possible signal.")
+    L.append("3. **Competitors** → your *positioning map*. For each named product, read the complaint — that's your opening. Don't build a clone; build the anti-version.")
+    L.append("4. **Feature wishes** → your *roadmap*. These are explicit asks with frequency counts. Top 3–5 are day-one features; the tail can wait.")
+    L.append("5. **Research & science evidence** → your *credibility backbone*. When you talk to customers, investors, or partners, cite the papers above to show the problem is peer-reviewed, not just Reddit noise. Each link is a direct DOI/URL.")
+    L.append("6. **First 20 users to interview** → your *user research pipeline*. These handles are real people publicly living the problem. DM them today.")
+    L.append("")
+    L.append("**Suggested workflow:**")
+    L.append("")
+    L.append("- Day 1: DM the first 20 users → validate the top 3 painpoints in 1:1s.")
+    L.append("- Day 2–3: For each confirmed painpoint, read its cited papers + top Reddit threads in full — you'll understand *why* the workarounds exist.")
+    L.append("- Day 4–5: Pick 2 workarounds to productize. These become your MVP scope.")
+    L.append("- Day 6+: Write landing-page copy using direct user quotes from the evidence (the `>` blockquotes above). No invented marketing language needed — the users already wrote it.")
+    L.append("")
+    L.append("---")
+    L.append("")
+    L.append(f"*Generated from {total_posts:,} multi-source posts ({len(research_rows) if research_rows else 0} non-Reddit). All links above are real.*")
     return "\n".join(L)

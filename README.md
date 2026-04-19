@@ -3,6 +3,9 @@
 Reddit research toolkit — **PRAW fetch → SQLite store → optional LLM analysis**.
 Two surfaces: a `reddit-cli` for humans/scripts, and an MCP server for Claude Code.
 
+> **New:** for an end-to-end walk-through of collecting a topic, ingesting PDFs,
+> and reading the build-guide Report, see [`docs/HOW_TO_USE.md`](docs/HOW_TO_USE.md).
+
 ## Install (uv — one command)
 
 This project is managed by [uv](https://docs.astral.sh/uv/) — it handles Python,

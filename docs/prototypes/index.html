@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gap Map · Design Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    /* Design tokens — kept in sync with the live app at app-tauri/src/style.css */
+    :root {
+      --bg: #F2EDE5;
+      --surface: #FFFFFF;
+      --surface-2: #F7F2EA;
+      --surface-alt: #FAF6EE;
+      --ink: #1A1614;
+      --ink-1: #2C2522;
+      --ink-2: #5C544E;
+      --ink-3: #8A8178;
+      --line: #E8DDD2;
+      --orange: #FF8C42;
+      --orange-soft: #FFE9D6;
+      --mint: #BAD9C5;
+      --mint-soft: #DDEADE;
+      --lavender-soft: #E5DDF2;
+      --rose-soft: #F5D8D8;
+      --sky-soft: #D7E3EE;
+      --gold-soft: #F0E4C9;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      font-size: 14px; line-height: 1.5;
+    }
+    .proto-topbar {
+      display: flex; align-items: center; gap: 18px;
+      padding: 14px 24px; background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .proto-topbar h1 { margin: 0; font-size: 16px; font-weight: 700; }
+    .proto-topbar .tag { font-size: 11px; background: var(--orange-soft); color: #B85A1E; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
+    .proto-topbar nav { margin-left: auto; display: flex; gap: 18px; font-size: 13px; }
+    .proto-topbar nav a { color: var(--ink-2); text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+    .proto-topbar nav a:hover { background: var(--surface-2); color: var(--ink); }
+    .proto-note { max-width: 840px; margin: 28px auto 8px; padding: 14px 18px; background: var(--surface); border: 1px dashed var(--ink-3); border-radius: 12px; font-size: 13px; color: var(--ink-2); }
+
+    /* ─── Prototype frame (emulates Tauri 1280×800 window) ────────────── */
+    .proto-frame {
+      max-width: 1280px; margin: 18px auto; background: var(--surface);
+      border-radius: 18px; box-shadow: 0 30px 60px rgba(26,22,20,0.08);
+      border: 1px solid var(--line); overflow: hidden;
+    }
+    .proto-frame .chrome {
+      display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+      background: #1A1614;
+    }
+    .proto-frame .chrome .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .proto-frame .chrome .dot.r { background: #FF6157; }
+    .proto-frame .chrome .dot.y { background: #FFBD2E; }
+    .proto-frame .chrome .dot.g { background: #28CA42; }
+    .proto-frame .chrome .title { color: white; font-size: 12px; margin-left: 12px; opacity: 0.6; }
+
+    .app { display: grid; grid-template-columns: 240px 1fr; min-height: 720px; }
+    .sidebar { background: var(--surface-alt); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 10px; }
+    .brand { display: flex; gap: 12px; align-items: center; padding: 6px 4px; }
+    .brand-mark { width: 38px; height: 38px; border-radius: 12px; background: var(--orange); color: white; display: grid; place-items: center; font-weight: 800; font-size: 18px; }
+    .brand-name { font-weight: 800; font-size: 17px; line-height: 1; }
+    .brand-sub { font-size: 11px; color: var(--ink-3); }
+    .nav-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-weight: 700; margin: 18px 6px 4px; }
+    .nav { display: flex; flex-direction: column; gap: 2px; }
+    .nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; color: var(--ink-2); text-decoration: none; font-weight: 500; font-size: 13px; }
+    .nav a:hover { background: var(--surface-2); color: var(--ink); }
+    .nav a.active { background: #FFF4EA; color: var(--ink); font-weight: 600; }
+    .nav-ic { width: 24px; height: 24px; border-radius: 7px; background: var(--surface-2); display: grid; place-items: center; flex-shrink: 0; color: var(--ink-2); }
+    .nav-ic svg { width: 13px; height: 13px; }
+    .nav a.active .nav-ic { background: var(--orange); color: white; }
+    .nav-count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--ink-3); background: var(--surface-2); padding: 2px 8px; border-radius: 999px; }
+    .nav a.active .nav-count { background: var(--orange-soft); color: #B85A1E; }
+
+    .main { padding: 22px 28px; overflow-y: auto; background: var(--bg); }
+    .topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .crumbs { color: var(--ink-3); font-size: 13px; }
+    .crumbs strong { color: var(--ink-1); }
+    .topbar-spacer { flex: 1; }
+    .search { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; font-size: 13px; color: var(--ink-3); width: 280px; }
+    .search svg { width: 14px; height: 14px; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #B084CC, #8A6FBC); color: white; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+    .icon-btn-square { width: 34px; height: 34px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); display: grid; place-items: center; color: var(--ink-2); }
+
+    /* Hero */
+    .hero { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; background: linear-gradient(135deg, #FFDCBD, #FFE9D6); border-radius: var(--radius); padding: 28px; position: relative; overflow: hidden; }
+    .hero-eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #B85A1E; font-weight: 700; margin-bottom: 6px; }
+    .hero h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.15; }
+    .hero p { margin: 0 0 14px; color: var(--ink-2); font-size: 14px; }
+    .hero-actions { display: flex; gap: 8px; }
+    .btn { border: none; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 13px; padding: 9px 16px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: var(--ink-1); color: white; }
+    .btn-primary:hover { background: #000; }
+    .btn-ghost { background: rgba(255,255,255,0.6); color: var(--ink-1); border: 1px solid rgba(26,22,20,0.1); }
+    .hero-stat { background: rgba(255,255,255,0.72); border-radius: 14px; padding: 18px; backdrop-filter: blur(6px); }
+    .hero-stat h4 { margin: 0 0 4px; font-size: 12px; color: var(--ink-2); }
+    .hero-num { font-size: 30px; font-weight: 800; line-height: 1; color: var(--ink-1); }
+    .hero-bars { display: flex; gap: 4px; align-items: flex-end; margin-top: 16px; height: 40px; }
+    .hero-bar { flex: 1; background: #FF8C42; border-radius: 3px 3px 0 0; opacity: 0.85; }
+
+    /* Stat grid */
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+    .stat-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .stat-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; }
+    .stat-icon svg { width: 18px; height: 18px; }
+    .stat-icon.peach { background: var(--orange-soft); color: #B85A1E; }
+    .stat-icon.lavender { background: var(--lavender-soft); color: #6B4FA8; }
+    .stat-icon.mint { background: var(--mint-soft); color: #2E7D5B; }
+    .stat-icon.sky { background: var(--sky-soft); color: #2E5B8C; }
+    .stat-trend { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--mint-soft); color: #2E7D5B; }
+    .stat-num { font-size: 26px; font-weight: 800; line-height: 1; color: var(--ink-1); }
+    .stat-label { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+
+    /* Two-col */
+    .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-top: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .card-head h3 { margin: 0; font-size: 14px; font-weight: 700; }
+    .card-head p { margin: 2px 0 0; font-size: 11px; color: var(--ink-3); }
+    .filter-bar { display: flex; gap: 4px; }
+    .pill { background: var(--surface-2); color: var(--ink-2); font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: none; cursor: pointer; }
+    .pill.active { background: var(--ink-1); color: white; }
+
+    /* Chart */
+    .momentum-legend { font-size: 12px; color: var(--ink-3); padding: 16px 20px 4px; }
+    .momentum-legend b { color: var(--ink-1); font-size: 14px; }
+
+    /* Activity feed */
+    .activity { padding: 8px 0; }
+    .activity-item { display: flex; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }
+    .activity-ic svg { width: 15px; height: 15px; }
+    .activity-title { font-size: 13px; font-weight: 600; }
+    .activity-meta { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+
+    /* Section head */
+    .section-head { display: flex; align-items: flex-end; justify-content: space-between; margin: 28px 0 12px; }
+    .section-head h2 { margin: 0; font-size: 18px; }
+    .section-head p { margin: 2px 0 0; color: var(--ink-3); font-size: 12px; }
+
+    /* Topic tiles */
+    .topic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .topic-tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; cursor: pointer; transition: box-shadow .15s; }
+    .topic-tile:hover { box-shadow: 0 8px 18px rgba(26,22,20,0.06); }
+    .topic-cover { height: 72px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 10px; }
+    .topic-cover svg { width: 28px; height: 28px; color: var(--ink-2); }
+    .topic-tile h4 { margin: 0 0 4px; font-size: 14px; }
+    .topic-stats { display: flex; gap: 12px; color: var(--ink-3); font-size: 11px; }
+    .topic-stats b { color: var(--ink-1); font-weight: 700; }
+    .cover-1 { background: linear-gradient(135deg, var(--orange-soft), var(--gold-soft)); }
+    .cover-2 { background: linear-gradient(135deg, var(--lavender-soft), var(--rose-soft)); }
+    .cover-3 { background: linear-gradient(135deg, var(--mint-soft), var(--sky-soft)); }
+    .cover-4 { background: linear-gradient(135deg, var(--rose-soft), var(--orange-soft)); }
+
+    /* ─── Onboarding screen ────────────────────────────────────────── */
+    .onb-wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+    .onb-crumb { font-size: 12px; color: var(--ink-3); margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; }
+    .onb-skip { border: 1px solid var(--line); background: var(--surface); padding: 6px 12px; border-radius: 999px; font-size: 11px; color: var(--ink-2); cursor: pointer; }
+    .wizard-stepper { display: flex; align-items: center; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin-bottom: 20px; }
+    .step { display: flex; align-items: center; gap: 8px; color: var(--ink-3); font-size: 12px; font-weight: 500; }
+    .step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); color: var(--ink-3); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+    .step.done .step-num { background: var(--mint-soft); color: #2E7D5B; }
+    .step.active .step-num { background: var(--orange); color: white; }
+    .step.active { color: var(--ink-1); font-weight: 700; }
+    .step-sep { flex: 1; height: 2px; background: var(--mint-soft); margin: 0 12px; border-radius: 2px; }
+
+    .onb-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 32px; }
+    .onb-card h2 { margin: 0 0 6px; font-size: 22px; }
+    .onb-card p { margin: 0 0 18px; color: var(--ink-3); }
+    .topic-input { width: 100%; padding: 14px 16px; border-radius: 12px; border: 2px solid #BCC9F5; font-size: 14px; font-family: inherit; margin-bottom: 14px; }
+    .agg-box { background: var(--surface); padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+
+    .onb-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; }
+
+    /* Breadcrumb area ids */
+    .panel-break { max-width: 1280px; margin: 40px auto 0; padding: 0 16px; }
+    .panel-break h2 { margin: 0 0 4px; font-size: 18px; }
+    .panel-break p { margin: 0 0 12px; color: var(--ink-3); font-size: 12px; }
+  </style>
+</head>
+<body>
+
+<div class="proto-topbar">
+  <h1>Gap Map</h1>
+  <span class="tag">DESIGN PROTO</span>
+  <nav>
+    <a href="#dashboard">Dashboard</a>
+    <a href="#onboarding-4">Onboarding · Step 4</a>
+    <a href="#settings">Settings</a>
+  </nav>
+</div>
+
+<div class="proto-note">
+  <b>Design-only prototype.</b> Static mockups of the Gap Map Tauri app for
+  design iteration. No Rust, no sidecar, no data fetches. Edit this file to
+  try layout changes, then bring approved designs into
+  <code>app-tauri/src/screens/*.js</code>.
+</div>
+
+<!-- ─── Dashboard ─────────────────────────────────────────────── -->
+
+<div class="panel-break">
+  <h2 id="dashboard">Dashboard</h2>
+  <p>Hero · stats · momentum chart · recent activity · topics grid</p>
+</div>
+
+<div class="proto-frame">
+  <div class="chrome">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="title">Gap Map — gapmap://dashboard</span>
+  </div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">G</div>
+        <div><div class="brand-name">Gap Map</div><div class="brand-sub">research workspace</div></div>
+      </div>
+      <div class="nav-section-label">Workspace</div>
+      <nav class="nav">
+        <a class="active"><span class="nav-ic"><i data-lucide="layout-dashboard"></i></span>Dashboard<span class="nav-count">4</span></a>
+        <a><span class="nav-ic"><i data-lucide="layers"></i></span>Topics<span class="nav-count">4</span></a>
+        <a><span class="nav-ic"><i data-lucide="download"></i></span>Ingest</a>
+        <a><span class="nav-ic"><i data-lucide="file-text"></i></span>Reports</a>
+        <a><span class="nav-ic"><i data-lucide="activity"></i></span>Activity</a>
+        <a><span class="nav-ic"><i data-lucide="database"></i></span>Database</a>
+        <a><span class="nav-ic"><i data-lucide="flask-conical"></i></span>Science</a>
+      </nav>
+      <div class="nav-section-label">Account</div>
+      <nav class="nav">
+        <a><span class="nav-ic"><i data-lucide="settings"></i></span>Settings</a>
+        <a><span class="nav-ic"><i data-lucide="help-circle"></i></span>Help &amp; docs</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumbs">Workspace / <strong>Dashboard</strong></div>
+        <div class="topbar-spacer"></div>
+        <div class="search"><i data-lucide="search"></i> Start a topic — type a market or problem…</div>
+        <div class="icon-btn-square"><i data-lucide="bell"></i></div>
+        <div class="avatar">SH</div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <div class="hero-eyebrow">Active research</div>
+          <h1>ATS resume and job search apps</h1>
+          <p>Your latest topic has 28 painpoints across 5 source types from 1.2k posts.</p>
+          <div class="hero-actions">
+            <button class="btn btn-primary">+ New topic</button>
+            <button class="btn btn-ghost">Open map</button>
+          </div>
+        </div>
+        <div class="hero-stat">
+          <h4>Total posts indexed</h4>
+          <div class="hero-num">4,821</div>
+          <div class="hero-bars">
+            <div class="hero-bar" style="height:20%"></div>
+            <div class="hero-bar" style="height:45%"></div>
+            <div class="hero-bar" style="height:65%"></div>
+            <div class="hero-bar" style="height:40%"></div>
+            <div class="hero-bar" style="height:80%"></div>
+            <div class="hero-bar" style="height:55%"></div>
+            <div class="hero-bar" style="height:95%"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-head"><div class="stat-icon peach"><i data-lucide="target"></i></div><span class="stat-trend">+4</span></div>
+          <div class="stat-num">28</div>
+          <div class="stat-label">Painpoints surfaced</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-head"><div class="stat-icon lavender"><i data-lucide="sparkles"></i></div><span class="stat-trend">+1</span></div>
+          <div class="stat-num">5</div>
+          <div class="stat-label">Sources indexed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-head"><div class="stat-icon mint"><i data-lucide="wrench"></i></div><span class="stat-trend">+2</span></div>
+          <div class="stat-num">12</div>
+          <div class="stat-label">DIY workarounds (gap signal)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-head"><div class="stat-icon sky"><i data-lucide="layers"></i></div><span class="stat-trend">+340</span></div>
+          <div class="stat-num">1.2k</div>
+          <div class="stat-label">Posts tagged</div>
+        </div>
+      </section>
+
+      <section class="two-col">
+        <div class="card">
+          <div class="card-head">
+            <div><h3>Topic momentum</h3><p>Daily pipeline activity (fetches across all topics)</p></div>
+            <div class="filter-bar"><button class="pill">30d</button><button class="pill active">90d</button><button class="pill">1Y</button></div>
+          </div>
+          <div class="momentum-legend"><b>312</b> fetches · last 90d</div>
+          <svg viewBox="0 0 600 160" style="width:100%;height:180px">
+            <g transform="translate(24,14)">
+              <line x1="0" y1="0" x2="568" y2="0" stroke="#E8DDD2" stroke-dasharray="2,3" />
+              <line x1="0" y1="50" x2="568" y2="50" stroke="#E8DDD2" stroke-dasharray="2,3" />
+              <line x1="0" y1="100" x2="568" y2="100" stroke="#E8DDD2" stroke-dasharray="2,3" />
+              <path d="M0,85 L60,70 L120,50 L180,65 L240,30 L300,55 L360,20 L420,45 L480,35 L540,25 L568,18 L568,116 L0,116 Z" fill="#FFE9D6" opacity="0.55" />
+              <path d="M0,85 L60,70 L120,50 L180,65 L240,30 L300,55 L360,20 L420,45 L480,35 L540,25 L568,18" fill="none" stroke="#FF8C42" stroke-width="2.5" />
+              <text x="0" y="140" font-size="10" fill="#8A8178">01-20</text>
+              <text x="284" y="140" font-size="10" fill="#8A8178" text-anchor="middle">02-20</text>
+              <text x="568" y="140" font-size="10" fill="#8A8178" text-anchor="end">04-19</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div><h3>Recent activity</h3><p>Latest ingests &amp; events</p></div>
+            <a class="pill" style="text-decoration:none;color:inherit">See all →</a>
+          </div>
+          <div class="activity">
+            <div class="activity-item">
+              <div class="activity-ic" style="background:var(--mint-soft);color:#2E7D5B"><i data-lucide="download"></i></div>
+              <div><div class="activity-title">Reddit fetch · r/resumes</div><div class="activity-meta">240 rows · 12m ago</div></div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-ic" style="background:var(--sky-soft);color:#2E5B8C"><i data-lucide="globe"></i></div>
+              <div><div class="activity-title">HACKERNEWS fetch</div><div class="activity-meta">58 rows · 18m ago</div></div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-ic" style="background:var(--lavender-soft);color:#6B4FA8"><i data-lucide="archive"></i></div>
+              <div><div class="activity-title">Pullpush archive · r/jobs</div><div class="activity-meta">1,120 rows · 1h ago</div></div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-ic" style="background:var(--orange-soft);color:#B85A1E"><i data-lucide="search"></i></div>
+              <div><div class="activity-title">Search: "resume auto-rejected"</div><div class="activity-meta">75 rows · 2h ago</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="section-head">
+        <div><h2>Your topics</h2><p>Active research projects</p></div>
+        <button class="btn btn-primary">+ New topic</button>
+      </div>
+      <div class="topic-grid">
+        <div class="topic-tile">
+          <div class="topic-cover cover-1"><i data-lucide="file-text"></i></div>
+          <h4>ATS resume and job search apps</h4>
+          <div class="topic-stats"><span><b>1.2k</b> posts</span><span><b>28</b> pains</span><span><b>5</b> src</span></div>
+        </div>
+        <div class="topic-tile">
+          <div class="topic-cover cover-2"><i data-lucide="check-circle-2"></i></div>
+          <h4>habit tracker apps</h4>
+          <div class="topic-stats"><span><b>840</b> posts</span><span><b>19</b> pains</span><span><b>4</b> src</span></div>
+        </div>
+        <div class="topic-tile">
+          <div class="topic-cover cover-3"><i data-lucide="flower-2"></i></div>
+          <h4>meditation apps</h4>
+          <div class="topic-stats"><span><b>612</b> posts</span><span><b>14</b> pains</span><span><b>3</b> src</span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ─── Onboarding Step 4 ───────────────────────────────────── -->
+
+<div class="panel-break">
+  <h2 id="onboarding-4">Onboarding · Step 4 (Your first topic)</h2>
+  <p>Wizard stepper + topic input + aggressive-mode toggle + 6 example cards</p>
+</div>
+
+<div class="proto-frame">
+  <div class="chrome">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="title">Gap Map — gapmap://welcome</span>
+  </div>
+  <div class="onb-wrap">
+    <div class="onb-crumb"><span>Welcome · <strong>Step 4 of 4</strong></span><button class="onb-skip">Skip setup</button></div>
+    <div class="wizard-stepper">
+      <div class="step done"><span class="step-num">1</span>What is Gap Map</div>
+      <div class="step-sep"></div>
+      <div class="step done"><span class="step-num">2</span>Your profile</div>
+      <div class="step-sep"></div>
+      <div class="step done"><span class="step-num">3</span>Connect sources</div>
+      <div class="step-sep"></div>
+      <div class="step active"><span class="step-num">4</span>Your first topic</div>
+    </div>
+
+    <div class="onb-card">
+      <h2>Your first research topic</h2>
+      <p>Type a problem space, or pick an example.</p>
+      <input class="topic-input" placeholder='e.g. "meditation apps"' />
+      <label class="agg-box">
+        <input type="checkbox" checked style="margin:0" />
+        <span><b>Aggressive mode</b> — pulls all 10 sources + historical archive (~15 min first run, much faster after)</span>
+      </label>
+
+      <div class="section-head" style="margin: 8px 0 10px"><div><h2 style="font-size:15px">Or try an example</h2></div></div>
+      <div class="topic-grid">
+        <div class="topic-tile"><div class="topic-cover cover-1"><i data-lucide="file-text"></i></div><h4>ATS resume and job search apps</h4><div class="topic-stats"><span>Click to use this</span></div></div>
+        <div class="topic-tile"><div class="topic-cover cover-2"><i data-lucide="check-circle-2"></i></div><h4>habit tracker apps</h4><div class="topic-stats"><span>Click to use this</span></div></div>
+        <div class="topic-tile"><div class="topic-cover cover-3"><i data-lucide="receipt"></i></div><h4>freelance invoicing tools</h4><div class="topic-stats"><span>Click to use this</span></div></div>
+        <div class="topic-tile"><div class="topic-cover cover-4"><i data-lucide="notebook-pen"></i></div><h4>note-taking apps</h4><div class="topic-stats"><span>Click to use this</span></div></div>
+        <div class="topic-tile"><div class="topic-cover cover-1"><i data-lucide="flower-2"></i></div><h4>meditation apps</h4><div class="topic-stats"><span>Click to use this</span></div></div>
+        <div class="topic-tile"><div class="topic-cover cover-2"><i data-lucide="terminal"></i></div><h4>AI coding assistants</h4><div class="topic-stats"><span>Click to use this</span></div></div>
+      </div>
+
+      <div class="onb-foot">
+        <button class="btn btn-ghost">← Back</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost">Skip — explore first</button>
+          <button class="btn btn-primary">Start collect →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Settings (DB connected, LLM card) ───────────────────── -->
+
+<div class="panel-break">
+  <h2 id="settings">Settings · Local data + LLM</h2>
+  <p>DB connected badge · LLM provider grid with Ollama active</p>
+</div>
+
+<div class="proto-frame">
+  <div class="chrome">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="title">Gap Map — gapmap://settings</span>
+  </div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">G</div>
+        <div><div class="brand-name">Gap Map</div><div class="brand-sub">research workspace</div></div>
+      </div>
+      <div class="nav-section-label">Workspace</div>
+      <nav class="nav">
+        <a><span class="nav-ic"><i data-lucide="layout-dashboard"></i></span>Dashboard</a>
+        <a><span class="nav-ic"><i data-lucide="layers"></i></span>Topics</a>
+        <a><span class="nav-ic"><i data-lucide="database"></i></span>Database</a>
+      </nav>
+      <div class="nav-section-label">Account</div>
+      <nav class="nav">
+        <a class="active"><span class="nav-ic"><i data-lucide="settings"></i></span>Settings</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="topbar"><div class="crumbs">Account / <strong>Settings</strong></div></div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px">
+
+        <!-- LLM card -->
+        <div class="card" style="padding:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <h4 style="margin:0;font-size:14px">LLM providers <span style="color:var(--ink-3);font-weight:500">1 ready</span></h4>
+          </div>
+          <p style="font-size:12px;color:var(--ink-3);margin:4px 0 14px">~/.config/reddit-myind/.env</p>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:11.5px"><b>Anthropic</b><span style="color:var(--ink-3)">× not set</span></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:11.5px"><b>OpenAI</b><span style="color:var(--ink-3)">× not set</span></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:11.5px"><b>OpenRouter</b><span style="color:var(--ink-3)">× not set</span></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:11.5px"><b>Groq</b><span style="color:var(--ink-3)">× not set</span></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:11.5px"><b>DeepSeek</b><span style="color:var(--ink-3)">× not set</span></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:11.5px"><b>Mistral</b><span style="color:var(--ink-3)">× not set</span></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid var(--line);font-size:11.5px"><b>Google Gemini</b><span style="color:var(--ink-3)">× not set</span></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:8px;border:1px solid #C9E5D2;background:var(--mint-soft);font-size:11.5px"><b>Ollama (local)</b><span style="color:#2E7D5B;font-weight:600">✓ ready</span></div>
+          </div>
+          <div style="font-size:13px;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><b>Default provider</b><span>Ollama (local)</span></div>
+          <div style="font-size:13px;display:flex;justify-content:space-between;padding:8px 0"><b>Default model</b><span>qwen2.5:7b</span></div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn btn-primary"><i data-lucide="key-round"></i> Manage keys</button>
+            <button class="btn btn-ghost">Reveal .env</button>
+          </div>
+        </div>
+
+        <!-- Local data card — DB connected badge -->
+        <div class="card" style="padding:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <h4 style="margin:0;font-size:14px">Local data</h4>
+            <span class="pill" style="background:var(--mint-soft);color:#2E7D5B;display:inline-flex;align-items:center;gap:5px">
+              <i data-lucide="database"></i> DB connected
+            </span>
+          </div>
+          <p style="font-size:12px;color:var(--ink-3);margin:4px 0 14px">Everything Gap Map knows lives here.</p>
+          <div style="font-size:13px;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><b>Directory</b><span>~/Library/…/reddit-myind</span></div>
+          <div style="font-size:13px;display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><b>SQLite DB</b><span>reddit.db</span></div>
+          <div style="font-size:13px;display:flex;justify-content:space-between;padding:8px 0"><b>DB size</b><span>84 KB</span></div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn btn-ghost">Reveal in Finder</button>
+            <button class="btn btn-ghost">Open Database console →</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div style="text-align:center;padding:40px 20px;color:var(--ink-3);font-size:12px">
+  Prototype — edit <code>docs/prototypes/index.html</code>. Scroll top ↑
+</div>
+
+<script>
+  // Render all Lucide icons on load
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide?.createIcons) window.lucide.createIcons();
+  });
+</script>
+</body>
+</html>

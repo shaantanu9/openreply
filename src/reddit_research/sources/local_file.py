@@ -179,6 +179,153 @@ def _parse_md(path: Path, source_type: str, sub: str) -> list[dict]:
     return rows
 
 
+def _parse_pdf_opendataloader(path: Path) -> tuple[str | None, str, str | None]:
+    """Try opendataloader-pdf (Java-backed, structure-aware).
+
+    Returns (title, markdown_body, author) when successful — the markdown
+    preserves headings (Abstract, Methods, Results, …), tables, and list
+    structure, which dramatically improves LLM extraction quality on
+    scientific papers. Returns None-tuple if opendataloader isn't available
+    or Java can't be found; caller should fall back to pypdf.
+
+    Why two extractors: opendataloader needs a Java 11+ runtime installed
+    on the machine. pypdf is pure Python and always works. Preferring the
+    richer one when present costs nothing and yields markdown the LLM can
+    actually reason over (vs flat text).
+    """
+    try:
+        import opendataloader_pdf  # noqa: F401
+    except Exception:
+        return None, "", None
+
+    # opendataloader writes to a directory; use a temp dir so we don't
+    # pollute CWD. It emits one `.md` + one `.json` per input PDF.
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            opendataloader_pdf.convert(
+                input_path=[str(path)],
+                output_dir=tmp,
+                format="markdown,json",
+            )
+            # The emitted filenames mirror the input stem.
+            stem = path.stem
+            md_path = Path(tmp) / f"{stem}.md"
+            json_path = Path(tmp) / f"{stem}.json"
+
+            body_md = ""
+            if md_path.exists():
+                body_md = md_path.read_text(encoding="utf-8", errors="ignore").strip()
+
+            title: str | None = None
+            author: str | None = None
+            if json_path.exists():
+                try:
+                    meta = json.loads(json_path.read_text(encoding="utf-8"))
+                    # opendataloader's JSON is an element tree; the first
+                    # H1 is usually the paper title. Grab the first non-empty
+                    # heading at depth 1 or 2 as title fallback.
+                    def _walk(node, depth=0):
+                        nonlocal title
+                        if title:
+                            return
+                        elements = node if isinstance(node, list) else node.get("children", []) if isinstance(node, dict) else []
+                        for child in elements:
+                            if not isinstance(child, dict):
+                                continue
+                            typ = child.get("type") or child.get("element_type") or ""
+                            if typ.lower() in ("h1", "h2", "title") and not title:
+                                text = (child.get("text") or child.get("content") or "").strip()
+                                if text:
+                                    title = text[:300]
+                                    return
+                            _walk(child, depth + 1)
+                    _walk(meta)
+                    # Author / metadata block if present.
+                    md = meta if isinstance(meta, dict) else {}
+                    props = md.get("metadata") or md.get("properties") or {}
+                    if isinstance(props, dict):
+                        author = (props.get("author") or props.get("Author") or None)
+                        if author:
+                            author = str(author)[:80]
+                except Exception:
+                    pass
+
+            if not body_md:
+                return None, "", None
+            return title, body_md, author
+    except Exception:
+        # Any pypdf-triggered fallback is strictly better than a crash —
+        # surface nothing, caller falls back.
+        return None, "", None
+
+
+def _parse_pdf_pypdf(path: Path) -> tuple[str | None, str, str | None]:
+    """Fallback extractor: pypdf (pure Python, no external deps)."""
+    try:
+        from pypdf import PdfReader
+    except ImportError as e:
+        raise RuntimeError(
+            "pypdf not installed — run: pip install pypdf. "
+            "Needed to ingest .pdf files when opendataloader is unavailable."
+        ) from e
+
+    reader = PdfReader(str(path))
+    meta_title = None
+    try:
+        meta_title = (reader.metadata.title or "").strip() if reader.metadata else None
+    except Exception:
+        meta_title = None
+
+    pages_text: list[str] = []
+    for page in reader.pages:
+        try:
+            txt = page.extract_text() or ""
+        except Exception:
+            txt = ""
+        if txt.strip():
+            pages_text.append(txt.strip())
+    body = "\n\n".join(pages_text).strip()
+
+    author: str | None = None
+    try:
+        if reader.metadata and reader.metadata.author:
+            author = str(reader.metadata.author)[:80]
+    except Exception:
+        pass
+    return meta_title, body, author
+
+
+def _parse_pdf(path: Path, source_type: str, sub: str) -> list[dict]:
+    """Extract text from a PDF → one row per PDF.
+
+    Prefers opendataloader-pdf (preserves headings + tables via Java PDF
+    parser) when available; falls back to pypdf (flat text) otherwise.
+    Fails loudly only if *both* extractors produce empty output — usually
+    a sign the PDF is scanned images and needs OCR (e.g. `ocrmypdf`).
+    """
+    title, body, author = _parse_pdf_opendataloader(path)
+    if not body:
+        title, body, author = _parse_pdf_pypdf(path)
+
+    if not body:
+        raise ValueError(
+            f"PDF {path.name} yielded no extractable text. Likely a scanned "
+            "image — run through OCR first (e.g. `ocrmypdf in.pdf out.pdf`) "
+            "and re-ingest."
+        )
+
+    return [
+        _row(
+            source_type=source_type,
+            sub=sub,
+            text=body,
+            title=(title or path.stem)[:300],
+            author=author or "[pdf]",
+        )
+    ]
+
+
 _PARSERS = {
     ".csv": _parse_csv,
     ".json": _parse_json,
@@ -186,6 +333,7 @@ _PARSERS = {
     ".vtt": _parse_vtt,
     ".srt": _parse_vtt,
     ".md": _parse_md,
+    ".pdf": _parse_pdf,
 }
 
 

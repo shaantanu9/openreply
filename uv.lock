@@ -1121,6 +1121,14 @@ wheels = [
 ]
 
 [[package]]
+name = "opendataloader-pdf"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/f3/52a8a6a42bef261478fe9a1927bfb4666ebb0663285e400380f56194c913/opendataloader_pdf-2.2.1-py3-none-any.whl", hash = "sha256:3207c8880ae8e38b28e3c31cfadaa25e1675799bdefbd5cafe8a9caaa81ce093", size = 22443857, upload-time = "2026-04-03T09:07:35.34Z" },
+]
+
+[[package]]
 name = "opentelemetry-api"
 version = "1.41.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1508,6 +1516,15 @@ crypto = [
 ]
 
 [[package]]
+name = "pypdf"
+version = "6.10.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/3f/9f2167401c2e94833ca3b69535bad89e533b5de75fefe4197a2c224baec2/pypdf-6.10.2.tar.gz", hash = "sha256:7d09ce108eff6bf67465d461b6ef352dcb8d84f7a91befc02f904455c6eea11d", size = 5315679, upload-time = "2026-04-15T16:37:36.978Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/d6/1d5c60cc17bbdf37c1552d9c03862fc6d32c5836732a0415b2d637edc2d0/pypdf-6.10.2-py3-none-any.whl", hash = "sha256:aa53be9826655b51c96741e5d7983ca224d898ac0a77896e64636810517624aa", size = 336308, upload-time = "2026-04-15T16:37:34.851Z" },
+]
+
+[[package]]
 name = "pyperclip"
 version = "1.11.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1697,6 +1714,7 @@ all = [
     { name = "networkx" },
     { name = "openai" },
     { name = "pyinstaller" },
+    { name = "pypdf" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytrends" },
@@ -1714,6 +1732,9 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+ingest-rich = [
+    { name = "opendataloader-pdf" },
+]
 mcp = [
     { name = "fastmcp" },
 ]
@@ -1721,6 +1742,7 @@ sources = [
     { name = "feedparser" },
     { name = "google-play-scraper" },
     { name = "networkx" },
+    { name = "pypdf" },
     { name = "pytrends" },
     { name = "scipy" },
 ]
@@ -1735,9 +1757,11 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'analyze'", specifier = ">=0.27" },
     { name = "networkx", marker = "extra == 'sources'", specifier = ">=3.1" },
     { name = "openai", marker = "extra == 'analyze'", specifier = ">=1.40" },
+    { name = "opendataloader-pdf", marker = "extra == 'ingest-rich'", specifier = ">=2.0" },
     { name = "praw", specifier = ">=7.7" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6.10" },
+    { name = "pypdf", marker = "extra == 'sources'", specifier = ">=4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -1751,7 +1775,7 @@ requires-dist = [
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["sources", "analyze", "mcp", "dev", "all"]
+provides-extras = ["sources", "ingest-rich", "analyze", "mcp", "dev", "all"]
 
 [[package]]
 name = "referencing"

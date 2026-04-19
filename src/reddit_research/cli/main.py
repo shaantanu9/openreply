@@ -29,7 +29,7 @@ research_app = typer.Typer(help="Topic/app gap-finding: discover → collect →
 graph_app = typer.Typer(help="Knowledge graph: build / enrich / query / export.")
 research_app.add_typer(graph_app, name="graph")
 
-ingest_app = typer.Typer(help="Ingest local files (CSV / JSON / TXT / VTT / SRT / MD) into a topic.")
+ingest_app = typer.Typer(help="Ingest local files (CSV / JSON / TXT / VTT / SRT / MD / PDF) into a topic.")
 app.add_typer(ingest_app, name="ingest")
 
 
@@ -43,7 +43,7 @@ def cmd_ingest_file(
 ) -> None:
     """Parse a local file + upsert into a topic's corpus.
 
-    Formats: .csv .json .txt .vtt .srt .md
+    Formats: .csv .json .txt .vtt .srt .md .pdf
 
     Example:
       reddit-cli ingest file --path ./slack-export.csv --topic "my product" --source-type slack_export
@@ -374,7 +374,10 @@ def cmd_themes(
     sub: Optional[str] = typer.Option(None, "--sub", "-s"),
     since: Optional[str] = typer.Option(None, "--since"),
     limit: int = typer.Option(100, "--limit", "-n"),
-    provider: str = typer.Option("anthropic", "--provider", help="anthropic|openai|ollama"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="anthropic|openai|ollama|… (omit → use LLM_PROVIDER from Settings)",
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Cluster stored posts into themes via LLM."""
@@ -387,7 +390,10 @@ def cmd_themes(
 @analyze_app.command("summarize")
 def cmd_summarize(
     post: str = typer.Option(..., "--post", "-p"),
-    provider: str = typer.Option("anthropic", "--provider"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="omit → use the default from Settings → BYOK (LLM_PROVIDER env)",
+    ),
 ) -> None:
     """Summarize a single thread (post + top comments)."""
     from ..analyze.summarize import summarize_thread
@@ -400,7 +406,10 @@ def cmd_painpoints(
     sub: Optional[str] = typer.Option(None, "--sub", "-s"),
     since: Optional[str] = typer.Option(None, "--since"),
     top: int = typer.Option(50, "--top"),
-    provider: str = typer.Option("anthropic", "--provider"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="omit → use Settings → BYOK default (LLM_PROVIDER env)",
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Extract user pain points from stored posts (product research)."""
@@ -523,11 +532,21 @@ def cmd_research_collect(
     historical_per_sub: int = typer.Option(500, "--historical-per-sub"),
     sources: Optional[str] = typer.Option(
         None, "--sources",
-        help="Extra free sources (comma): hn,appstore,playstore,scholar,stackoverflow,trends",
+        help=(
+            "Comma-separated free sources. Options: hn, appstore, playstore, "
+            "arxiv, openalex, pubmed, gnews, devto, stackoverflow, github, "
+            "trends, scholar, github_issues, lemmy, mastodon. Omit → aggressive "
+            "uses the safe 11-source default."
+        ),
     ),
     aggressive: bool = typer.Option(
         False, "--aggressive", "-A",
-        help="Max limits + all categories + historical + 3-year depth + HN/app stores.",
+        help=(
+            "Max limits + all categories + historical + 3-year depth + the "
+            "full 11-source free sweep (HN, App Store, Play Store, arXiv, "
+            "OpenAlex, PubMed, Google News, Dev.to, Stack Overflow, GitHub, "
+            "Google Trends)."
+        ),
     ),
 ) -> None:
     """Build a topic-scoped corpus in SQLite (discover + fetch + search [+ history])."""
@@ -565,7 +584,10 @@ def cmd_research_collect(
 @research_app.command("gaps")
 def cmd_research_gaps(
     topic: str = typer.Option(..., "--topic", "-t"),
-    provider: str = typer.Option("anthropic", "--provider"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="omit → use Settings → BYOK default (LLM_PROVIDER env)",
+    ),
     corpus_limit: int = typer.Option(120, "--limit", "-n"),
     min_score: int = typer.Option(1, "--min-score"),
     as_json: bool = typer.Option(False, "--json"),
@@ -624,7 +646,10 @@ def cmd_research_solutions(
 @research_app.command("temporal-gaps")
 def cmd_research_temporal(
     topic: str = typer.Option(..., "--topic", "-t"),
-    provider: str = typer.Option("anthropic", "--provider"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="omit → use Settings → BYOK default (LLM_PROVIDER env)",
+    ),
     per_bucket: int = typer.Option(80, "--per-bucket"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -678,7 +703,10 @@ def cmd_research_findings(
 @research_app.command("report")
 def cmd_research_report(
     topic: str = typer.Option(..., "--topic", "-t"),
-    provider: str = typer.Option("anthropic", "--provider"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="omit → use Settings → BYOK default (LLM_PROVIDER env)",
+    ),
     corpus_limit: int = typer.Option(120, "--limit", "-n"),
     out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write markdown to file"),
 ) -> None:

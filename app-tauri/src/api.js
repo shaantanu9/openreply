@@ -220,6 +220,8 @@ export const api = {
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic) => invoke('run_temporal_gaps', { topic }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
+  runRedditSearch:    (query, sub, sort, timeFilter, limit) =>
+    invoke('run_reddit_search', { query, sub, sort, timeFilter, limit }),
 
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),

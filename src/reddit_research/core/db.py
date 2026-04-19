@@ -51,6 +51,28 @@ def get_db() -> Database:
     return db
 
 
+def _cache_clear() -> None:
+    """Drop the per-thread DB handle and schema flag.
+
+    Tests used to call `get_db.cache_clear()` on the old `@lru_cache` version.
+    This keeps that contract working after the thread-local rewrite so tests
+    can force a re-read of env-configured db_path (e.g. when monkeypatching
+    REDDIT_MYIND_DATA_DIR per test).
+    """
+    global _schema_inited
+    if hasattr(_tls, "db"):
+        try:
+            _tls.db.close()
+        except Exception:
+            pass
+        del _tls.db
+    _schema_inited = False
+
+
+# Back-compat so existing test code calling `get_db.cache_clear()` keeps working.
+get_db.cache_clear = _cache_clear  # type: ignore[attr-defined]
+
+
 def init_schema(db: Database) -> None:
     """Idempotent schema creation + additive migrations."""
     if "posts" not in db.table_names():

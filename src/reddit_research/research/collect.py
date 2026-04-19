@@ -109,7 +109,26 @@ def collect(
         historical_limit_per_sub = max(historical_limit_per_sub, 1000)
         query_categories = query_categories or ["pain", "features", "complaints", "diy"]
         if not sources:
-            sources = ["hn", "appstore", "playstore"]  # highest-signal free sources
+            # Full free-and-reliable source sweep — matches the "10-source
+            # pipeline" the Science + onboarding screens promise. Each source
+            # runs in its own thread (see _PARALLEL_SOURCES below) and errors
+            # are captured per-source, so one flaky provider doesn't kill the
+            # rest. Sources that need explicit config (lemmy / mastodon need
+            # instance URLs; github_issues + scholar hit rate limits without
+            # tokens) are left opt-in via `--sources` instead of aggressive.
+            sources = [
+                "hn",            # Hacker News
+                "appstore",      # App Store reviews
+                "playstore",     # Play Store reviews
+                "arxiv",         # arXiv preprints
+                "openalex",      # OpenAlex academic catalogue
+                "pubmed",        # PubMed (biomed literature)
+                "gnews",         # Google News
+                "devto",         # Dev.to posts
+                "stackoverflow", # Stack Overflow Q&A
+                "github",        # GitHub trending repos
+                "trends",        # Google Trends series (returns series, not posts)
+            ]
     result = CollectResult(topic=topic)
 
     # Thread-safe log — prevents interleaved stdout writes when the parallel
@@ -273,12 +292,19 @@ def corpus_temporal_split(
     db = get_db()
 
     def _pull(where_clause: str, params: list) -> list[dict]:
+        # Academic sources (arxiv/pubmed/scholar/openalex) + ingested files
+        # don't have Reddit-style engagement scores; many return score=0.
+        # Exempt them from the min_score floor — otherwise the LLM never sees
+        # the very papers the user collected to ground their analysis.
         sql = f"""
             SELECT p.id, p.sub, p.author, p.title,
                    substr(p.selftext, 1, 500) AS selftext,
-                   p.score, p.num_comments, p.created_utc
+                   p.score, p.num_comments, p.created_utc,
+                   coalesce(p.source_type, 'reddit') AS source_type
             FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
-            WHERE tp.topic = ? AND p.score >= ? {where_clause}
+            WHERE tp.topic = ?
+              AND (p.score >= ? OR coalesce(p.source_type,'reddit') != 'reddit')
+              {where_clause}
             ORDER BY (p.num_comments * 2 + p.score) DESC
             LIMIT ?
         """
@@ -293,16 +319,25 @@ def corpus_temporal_split(
 
 
 def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[str, Any]]:
-    """Pull the collected corpus for a topic, newest-engaged first."""
+    """Pull the collected corpus for a topic, newest-engaged first.
+
+    min_score only gates Reddit posts. Academic sources (arxiv / pubmed /
+    openalex / scholar) and ingested files (pdfs / local docs) are always
+    included regardless of score, because their fetchers don't populate a
+    meaningful engagement number — a zero-citation arxiv paper is still
+    signal, and silently filtering it was a bug.
+    """
     db = get_db()
     return list(
         db.query(
             """
             SELECT p.id, p.sub, p.author, p.title, p.selftext,
-                   p.score, p.num_comments, p.created_utc, p.permalink
+                   p.score, p.num_comments, p.created_utc, p.permalink,
+                   p.url, coalesce(p.source_type, 'reddit') AS source_type
             FROM posts p
             JOIN topic_posts tp ON tp.post_id = p.id
-            WHERE tp.topic = ? AND p.score >= ?
+            WHERE tp.topic = ?
+              AND (p.score >= ? OR coalesce(p.source_type,'reddit') != 'reddit')
             ORDER BY (p.num_comments * 2 + p.score) DESC
             LIMIT ?
             """,

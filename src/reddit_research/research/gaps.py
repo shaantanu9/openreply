@@ -14,18 +14,8 @@ from typing import Any
 
 from ..analyze.providers.base import get_provider
 from .collect import corpus_for, corpus_temporal_split
+from .corpus_format import format_corpus as _format_corpus
 from .prompts import load_extractor
-
-
-def _format_corpus(rows: list[dict[str, Any]]) -> str:
-    parts = []
-    for r in rows:
-        selftext = (r.get("selftext") or "")[:600]
-        parts.append(
-            f"[{r['id']}] (r/{r['sub']}, {r.get('num_comments',0)}c {r.get('score',0)}↑) "
-            f"{r.get('title','')}\n{selftext}"
-        )
-    return "\n\n".join(parts)
 
 
 def _parse_json(raw: str) -> list[dict] | dict:

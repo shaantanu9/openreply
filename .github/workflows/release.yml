@@ -1,0 +1,167 @@
+name: release
+
+# Tag-driven release: push a tag like `v0.1.0` to trigger a cross-platform build.
+# Also runnable on demand via the Actions tab (workflow_dispatch).
+#
+# Each platform builds its own PyInstaller sidecar, copies it into
+# app-tauri/src-tauri/binaries/, then runs `tauri build` and uploads the
+# resulting bundle to a GitHub Release.
+#
+# Signing env vars (APPLE_*, TAURI_SIGNING_*) are wired up but optional —
+# set them as repo secrets to get signed/notarized artifacts. Unset = unsigned.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ''
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- Linux system deps ----------
+      - name: Install Linux WebKit + libs
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # ---------- Python sidecar build ----------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python deps
+        shell: bash
+        run: uv sync --frozen || uv sync
+
+      - name: Build reddit-cli sidecar (PyInstaller) — Unix
+        if: matrix.platform != 'windows-latest'
+        shell: bash
+        run: |
+          uv run pyinstaller \
+            --onefile \
+            --name reddit-cli \
+            --paths=src \
+            --collect-all reddit_research \
+            --collect-submodules praw \
+            --collect-submodules prawcore \
+            --collect-submodules sqlite_utils \
+            --collect-submodules openai \
+            --collect-submodules anthropic \
+            --collect-submodules httpx \
+            --hidden-import openai \
+            --hidden-import anthropic \
+            --add-data "prompts:prompts" \
+            --log-level WARN \
+            scripts/pyinstaller-entrypoint.py
+          mkdir -p app-tauri/src-tauri/binaries
+          cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}
+          chmod +x app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}
+
+      - name: Build reddit-cli sidecar (PyInstaller) — Windows
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          uv run pyinstaller `
+            --onefile `
+            --name reddit-cli `
+            --paths=src `
+            --collect-all reddit_research `
+            --collect-submodules praw `
+            --collect-submodules prawcore `
+            --collect-submodules sqlite_utils `
+            --collect-submodules openai `
+            --collect-submodules anthropic `
+            --collect-submodules httpx `
+            --hidden-import openai `
+            --hidden-import anthropic `
+            --add-data "prompts;prompts" `
+            --log-level WARN `
+            scripts/pyinstaller-entrypoint.py
+          New-Item -ItemType Directory -Force -Path app-tauri/src-tauri/binaries | Out-Null
+          Copy-Item dist/reddit-cli.exe "app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}.exe"
+
+      # ---------- Node + Rust toolchains ----------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app-tauri/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./app-tauri/src-tauri -> target
+
+      - name: Install frontend deps
+        working-directory: ./app-tauri
+        run: npm ci
+
+      # ---------- Tauri build + upload ----------
+      - name: Build and release Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS code signing + notarization (optional — unset = unsigned)
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Tauri updater signing (optional)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: ./app-tauri
+          tagName: v__VERSION__
+          releaseName: Gap Map v__VERSION__
+          releaseBody: |
+            Download the installer for your platform below.
+
+            - macOS (Apple Silicon): `*_aarch64.dmg`
+            - macOS (Intel): `*_x64.dmg`
+            - Windows: `*_x64_en-US.msi` / `*_x64-setup.exe`
+            - Linux: `*.AppImage` / `*.deb`
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

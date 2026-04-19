@@ -266,6 +266,36 @@ pub async fn quick_extract_gaps(app: AppHandle, topic: String) -> Result<Value, 
     .map_err(err_to_string)
 }
 
+/// Run an ad-hoc Reddit search via PRAW. Returns an array of post rows.
+#[tauri::command]
+pub async fn run_reddit_search(
+    app: AppHandle,
+    query: String,
+    sub: Option<String>,
+    sort: Option<String>,
+    time_filter: Option<String>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let limit_str = limit.unwrap_or(50).to_string();
+    let mut args: Vec<&str> = vec!["search", &query];
+    if let Some(s) = sub.as_ref() {
+        if !s.is_empty() {
+            args.push("--sub");
+            args.push(s.as_str());
+        }
+    }
+    let sort_v = sort.unwrap_or_else(|| "relevance".to_string());
+    args.push("--sort");
+    args.push(sort_v.as_str());
+    let time_v = time_filter.unwrap_or_else(|| "all".to_string());
+    args.push("--time");
+    args.push(time_v.as_str());
+    args.push("--limit");
+    args.push(&limit_str);
+    args.push("--json");
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Export the gap-map HTML for a topic. Returns absolute path.
 #[tauri::command]
 pub async fn export_html(app: AppHandle, topic: String) -> Result<String, String> {

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Gap Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* The window is transparent + decorationless (see tauri.conf.json splash
+     block). Anything that paints OUTSIDE the rounded card rectangle is what
+     macOS renders as a visible "square" around the curve — external shadows,
+     padded body backgrounds, etc. So: zero margin, zero padding, zero outer
+     shadow. The card fills the entire window. The curve IS the window. */
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+  }
+  .wrap {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 22px;
+    background: #F6F3EE;
+    color: #1A1614;
+    overflow: hidden;
+    /* INSET shadow only — any `0 10px 40px …` style outer shadow gets
+       clipped to the window rectangle and renders as a visible square.
+       The rim below reads as a softly lifted edge without any outer bleed. */
+    box-shadow:
+      inset 0 0 0 1px rgba(26, 22, 20, 0.06),
+      inset 0 -1px 0 rgba(26, 22, 20, 0.04);
+    font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mark {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #FF8C42 0%, #FFA563 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(255, 140, 66, 0.40);
+    margin-bottom: 18px;
+  }
+  .name { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 4px; }
+  .sub  { font-size: 11.5px; color: #8A8278; margin-bottom: 22px; letter-spacing: 0.02em; }
+  .bar {
+    width: 170px;
+    height: 3px;
+    border-radius: 2px;
+    background: #ECE6DC;
+    overflow: hidden;
+    position: relative;
+  }
+  .bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, #FF8C42, transparent);
+    animation: slide 1.2s ease-in-out infinite;
+  }
+  @keyframes slide {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bar::after { animation: none; width: 100%; opacity: .5; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="mark">G</div>
+    <div class="name">Gap Map</div>
+    <div class="sub">research workspace</div>
+    <div class="bar"></div>
+  </div>
+</body>
+</html>
