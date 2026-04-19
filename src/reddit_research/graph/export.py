@@ -256,28 +256,26 @@ _HTML_TEMPLATE = """<!doctype html>
 
     --v-radius:    18px;
     --v-radius-sm: 12px;
-
-    /* Aliases previously used in the dark template — kept so the old rules
-       continue to compile while we migrate them one by one in Task B2. */
-    --bg:     var(--v-bg);
-    --surface:var(--v-surface);
-    --text:   var(--v-ink);
-    --muted:  var(--v-ink-3);
-    --border: var(--v-line);
-    --accent: var(--v-orange);
-    --panel:  var(--v-surface);
   }
   :root {
-    /* Gap Map soft-dashboard palette — matches the surrounding app shell
-       (cream bg, orange accent). Tokens mirror app-tauri/src/style.css so
-       the iframe visually continues the main UI instead of clashing. */
-    --bg:#F6F3EE; --panel:#FFFFFF; --border:#ECE6DC; --text:#1A1614; --muted:#8A8278;
-    --accent:#FF8C42; --chronic:#E26A6A; --emerging:#E69447; --fading:#9C948A;
-    --surface-2:#FBF8F2; --line-2:#E2DBCF;
+    /* Legacy alias names still used by existing rules. Point them at the
+       --v-* tokens above so the palette has exactly one source of truth. */
+    --bg:        var(--v-bg);
+    --panel:     var(--v-surface);
+    --surface:   var(--v-surface);
+    --surface-2: var(--v-surface-2);
+    --border:    var(--v-line);
+    --line-2:    var(--v-line-2);
+    --text:      var(--v-ink);
+    --muted:     var(--v-ink-3);
+    --accent:    var(--v-orange);
+    --chronic:   var(--v-chronic);
+    --emerging:  var(--v-emerging);
+    --fading:    var(--v-fading);
   }
   * { box-sizing: border-box; }
   html, body { margin:0; padding:0; height:100%; width:100%; background:var(--bg);
-    color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",sans-serif;
+    color:var(--text); font-family:"Plus Jakarta Sans","Inter",system-ui,sans-serif;
     overflow:hidden; }
   header { padding:10px 16px; border-bottom:1px solid var(--border); background:var(--panel);
     display:flex; align-items:center; justify-content:space-between; }
@@ -301,21 +299,25 @@ _HTML_TEMPLATE = """<!doctype html>
   .card-title { font-size:12px; font-weight:600; line-height:1.35; }
   .card-meta { font-size:10px; color:var(--muted); margin-top:3px; display:flex; gap:8px;
     flex-wrap:wrap; }
-  .badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700;
-    letter-spacing:.3px; }
-  .badge.chronic  { background:var(--chronic);  color:#fff; }
-  .badge.emerging { background:var(--emerging); color:#fff; }
-  .badge.fading   { background:var(--fading);   color:#fff; }
-  /* Severity/saturation badges on cream bg — pastel background + dark text
-     (soft tokens from the app palette) so they read without harsh contrast. */
-  .badge.severity-high   { background:#FBE3E6; color:#B84747; border:1px solid #F4B6BD; }
-  .badge.severity-medium { background:#FBF1D4; color:#8A5A1A; border:1px solid #F0D78A; }
-  .badge.severity-low    { background:#E1F2EA; color:#2E7D5B; border:1px solid #A8DCC4; }
-  /* Saturation badges — Guest et al. (2006) thresholds */
-  .badge.sat-saturated { background:#E1F2EA; color:#2E7D5B; border:1px solid #A8DCC4; }
-  .badge.sat-adequate  { background:#E4F0FA; color:#1F5C99; border:1px solid #B5D4F0; }
-  .badge.sat-tentative { background:#FBF1D4; color:#8A5A1A; border:1px solid #F0D78A; }
-  .badge.sat-thin      { background:#F1ECE3; color:#8A8278; border:1px solid #E2DBCF; }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: var(--v-radius-sm);
+    text-transform: uppercase;
+    letter-spacing: .4px;
+  }
+  .badge.chronic  { background: #F9D9D9; color: var(--v-chronic); }
+  .badge.emerging { background: var(--v-gold-soft); color: var(--v-emerging); }
+  .badge.fading   { background: var(--v-line); color: var(--v-fading); }
+  .badge.severity-high   { background: var(--v-rose-soft);   color: var(--v-chronic); }
+  .badge.severity-medium { background: var(--v-gold-soft);   color: var(--v-emerging); }
+  .badge.severity-low    { background: var(--v-mint-soft);   color: #3D8A6A; }
+  .badge.sat-saturated   { background: var(--v-mint-soft);   color: #3D8A6A; }
+  .badge.sat-adequate    { background: var(--v-sky-soft);    color: #3B6FA3; }
+  .badge.sat-tentative   { background: var(--v-gold-soft);   color: var(--v-emerging); }
+  .badge.sat-thin        { background: var(--v-line);        color: var(--v-ink-3); }
   .card-evidence { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic;
     border-top:1px solid var(--border); padding-top:4px; }
   /* source distribution mini-bar on each card (triangulation at a glance) */
