@@ -2067,3 +2067,159 @@ kbd {
 .search-meta { display: flex; gap: 14px; font-size: 11px; color: var(--ink-3); flex-wrap: wrap; }
 .search-sub { color: var(--orange); text-decoration: none; }
 .search-sub:hover { text-decoration: underline; }
+
+/* ─── Chat polish (pill presets + typing dots + hover actions) ────────── */
+.chat-presets-pill {
+  display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 14px;
+  scrollbar-width: thin;
+}
+.chat-preset-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line);
+  font-size: 12px; font-weight: 500; color: var(--ink-2); cursor: pointer;
+  white-space: nowrap; transition: all .12s;
+}
+.chat-preset-pill:hover { background: var(--surface-2); border-color: var(--orange); color: var(--ink); }
+.chat-preset-pill:disabled { opacity: .45; cursor: not-allowed; }
+.chat-preset-pill svg { width: 13px; height: 13px; }
+
+/* Animated typing dots — shown in assistant bubble while streaming */
+.chat-typing-dots {
+  display: inline-flex; gap: 3px; padding: 4px 0;
+  align-items: center;
+}
+.chat-typing-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink-3);
+  animation: chat-dot-bounce 1.3s ease-in-out infinite;
+}
+.chat-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-dot-bounce {
+  0%, 70%, 100% { transform: scale(0.7); opacity: 0.45; }
+  35%           { transform: scale(1.0); opacity: 1.0; }
+}
+
+/* Per-message hover actions (copy / regenerate) */
+.chat-msg { position: relative; }
+.chat-msg-actions {
+  position: absolute; top: 6px; right: 8px;
+  display: flex; gap: 4px; opacity: 0; transition: opacity .15s;
+}
+.chat-msg:hover .chat-msg-actions { opacity: 1; }
+.chat-msg-action {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 3px 6px; cursor: pointer; color: var(--ink-3);
+  font-size: 11px; display: inline-flex; align-items: center; gap: 3px;
+}
+.chat-msg-action:hover { color: var(--ink); border-color: var(--orange); }
+.chat-msg-action svg { width: 11px; height: 11px; }
+.chat-msg-action.copied { background: #EAF6EE; color: #2E7D5B; border-color: #C9E5D2; }
+
+/* Relative timestamp shown on each message */
+.chat-msg-ts {
+  font-size: 10px; color: var(--ink-3); margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Auto-grow textarea — JS sets the height dynamically */
+#chat-input {
+  resize: none; min-height: 44px; max-height: 180px;
+  overflow-y: auto; line-height: 1.45;
+}
+
+/* Evidence search filter */
+.evidence-filter-row {
+  display: flex; gap: 8px; align-items: center;
+  margin-bottom: 14px; padding: 4px;
+}
+.evidence-filter-row input {
+  flex: 1; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: 13px; color: var(--ink);
+}
+.evidence-filter-row input:focus {
+  outline: none; border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(255, 140, 66, 0.12);
+}
+.evidence-filter-count {
+  font-size: 11px; color: var(--ink-3); font-weight: 600;
+}
+
+/* Research: sort toggle + copy citation */
+.research-sort-row {
+  display: flex; gap: 6px; align-items: center;
+  padding: 10px 18px 0; font-size: 11px; color: var(--ink-3);
+}
+.research-sort-btn {
+  padding: 4px 10px; border-radius: 999px;
+  background: transparent; border: 1px solid var(--line);
+  color: var(--ink-2); font-size: 11px; cursor: pointer; font-weight: 500;
+}
+.research-sort-btn.active {
+  background: var(--orange); color: #fff; border-color: var(--orange);
+}
+.research-sort-btn:hover:not(.active) { border-color: var(--orange); color: var(--ink); }
+
+.paper-cite-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 9px; border-radius: 6px;
+  background: transparent; border: 1px solid var(--line);
+  color: var(--ink-2); font-size: 11px; cursor: pointer;
+}
+.paper-cite-btn:hover { border-color: var(--orange); color: var(--ink); }
+.paper-cite-btn.copied { background: #EAF6EE; color: #2E7D5B; border-color: #C9E5D2; }
+.paper-cite-btn svg { width: 11px; height: 11px; }
+
+/* ─── Watch (live stream) screen ───────────────────────────────────── */
+.watch-tab { padding: 4px 0; }
+.watch-form {
+  display: grid; grid-template-columns: 1fr 2fr 1.2fr 1.2fr auto;
+  gap: 8px; margin-bottom: 14px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.watch-input {
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font-size: 13px;
+}
+.watch-input:disabled { opacity: 0.6; cursor: not-allowed; }
+@media (max-width: 1000px) { .watch-form { grid-template-columns: 1fr 1fr; } }
+
+.watch-mode-tabs {
+  display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.watch-mode-tab {
+  padding: 8px 14px; border-radius: 8px 8px 0 0;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  color: var(--ink-3); background: transparent; border: none;
+}
+.watch-mode-tab.active {
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-bottom-color: var(--surface);
+  margin-bottom: -1px;
+}
+
+.watch-feed { display: flex; flex-direction: column; gap: 8px; }
+.watch-hit {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px;
+}
+.watch-hit-post    { border-left: 3px solid var(--orange); }
+.watch-hit-comment { border-left: 3px solid #2E7D5B; }
+.watch-hit-system  { border-left: 3px solid #B84747; background: var(--rose-soft, #FBE7E7); }
+.watch-hit-head { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--ink-3); margin-bottom: 4px; flex-wrap: wrap; }
+.watch-hit-kind { font-weight: 700; color: var(--ink-2); font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); text-transform: uppercase; }
+.watch-hit-sub { color: var(--orange); text-decoration: none; }
+.watch-hit-sub:hover { text-decoration: underline; }
+.watch-hit-text {
+  display: block; font-size: 13px; color: var(--ink); text-decoration: none;
+  font-weight: 500; line-height: 1.4; margin: 4px 0;
+}
+.watch-hit-text:hover { color: var(--orange); }
+.watch-hit-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.watch-kw {
+  display: inline-block; padding: 1px 7px; border-radius: 999px;
+  background: var(--orange-soft); color: #B85A1E; font-size: 10.5px; font-weight: 600;
+}
+.watch-kw-firehose { background: var(--surface-2); color: var(--ink-3); }

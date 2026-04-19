@@ -231,6 +231,9 @@ export const api = {
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
   runRedditSearch:    (query, sub, sort, timeFilter, limit) =>
     invoke('run_reddit_search', { query, sub, sort, timeFilter, limit }),
+  startStream:        (sub, keywords, watch) => invoke('start_stream', { sub, keywords, watch }),
+  cancelStream:       () => invoke('cancel_stream'),
+  streamStatus:       () => invoke('stream_status'),
 
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),
@@ -244,6 +247,8 @@ export const api = {
   },
   onChatProgress:    (cb) => listen('chat:progress',    e => cb(e.payload)),
   onChatDone:        (cb) => listen('chat:done',        e => cb(e.payload)),
+  onStreamHit:       (cb) => listen('stream:hit',       e => cb(e.payload)),
+  onStreamDone:      (cb) => listen('stream:done',      e => cb(e.payload)),
 };
 
 // ---------- tiny DOM helpers ----------

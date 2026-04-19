@@ -4,8 +4,9 @@
 //! lifting stays in Python.
 
 use crate::cli::{
-    cancel_active_chat, cancel_active_job, data_dir, run_cli, run_cli_chat_streaming,
-    run_cli_streaming, ActiveChat, ActiveJob,
+    cancel_active_chat, cancel_active_job, cancel_active_stream, data_dir, run_cli,
+    run_cli_chat_streaming, run_cli_stream_streaming, run_cli_streaming,
+    ActiveChat, ActiveJob, ActiveStream,
 };
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
@@ -294,6 +295,46 @@ pub async fn run_reddit_search(
     args.push(&limit_str);
     args.push("--json");
     run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Start a live Reddit stream. Long-running — use cancel_stream to stop.
+/// Emits `stream:hit` event per matching post/comment, `stream:done` when ended.
+/// Empty `keywords` = firehose mode (every post/comment).
+#[tauri::command]
+pub async fn start_stream(
+    app: AppHandle,
+    sub: String,
+    keywords: String,
+    watch: String,
+) -> Result<(), String> {
+    let args: Vec<String> = vec![
+        "stream".into(),
+        "--sub".into(),
+        sub,
+        "--keywords".into(),
+        keywords,
+        "--watch".into(),
+        watch,
+        "--json".into(),
+    ];
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli_stream_streaming(&app, arg_refs, "stream:hit", "stream:done")
+        .await
+        .map_err(err_to_string)
+}
+
+/// Cancel the active stream (if any). Returns true if a stream was killed.
+#[tauri::command]
+pub async fn cancel_stream(app: AppHandle) -> Result<bool, String> {
+    Ok(cancel_active_stream(&app))
+}
+
+/// Is a stream currently active?
+#[tauri::command]
+pub async fn stream_status(app: AppHandle) -> Result<bool, String> {
+    let state = app.state::<ActiveStream>();
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(guard.is_some())
 }
 
 /// Export the gap-map HTML for a topic. Returns absolute path.

@@ -4,7 +4,7 @@
 mod cli;
 mod commands;
 
-use cli::{ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid};
+use cli::{ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid};
 
 fn main() {
     tauri::Builder::default()
@@ -14,6 +14,8 @@ fn main() {
         .manage(ActiveChat::default())
         .manage(ActiveJobPid::default())
         .manage(ActiveChatPid::default())
+        .manage(ActiveStream::default())
+        .manage(ActiveStreamPid::default())
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
             commands::list_topics,
@@ -47,6 +49,9 @@ fn main() {
             commands::run_temporal_gaps,
             commands::quick_extract_gaps,
             commands::run_reddit_search,
+            commands::start_stream,
+            commands::cancel_stream,
+            commands::stream_status,
             commands::ollama_start_service,
             commands::ollama_stop_service,
             commands::close_splash,

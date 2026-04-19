@@ -60,8 +60,8 @@ def start_stream(
                         break
                     continue
                 text = f"{submission.title}\n{getattr(submission, 'selftext', '')}"
-                matched = _match(text, patterns)
-                if matched:
+                matched = _match(text, patterns) if patterns else []
+                if matched or not patterns:
                     upsert_posts([post_row(submission)])
                     db["stream_hits"].insert(
                         {
@@ -86,8 +86,8 @@ def start_stream(
 
         if watch in ("comments", "both"):
             for c in subreddit.stream.comments(skip_existing=True):
-                matched = _match(c.body or "", patterns)
-                if matched:
+                matched = _match(c.body or "", patterns) if patterns else []
+                if matched or not patterns:
                     upsert_comments([comment_row(c, post_id=c.submission.id, depth=0)])
                     db["stream_hits"].insert(
                         {
