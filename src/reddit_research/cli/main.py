@@ -567,6 +567,39 @@ def cmd_research_gaps(
         _emit(report, as_json)
 
 
+@research_app.command("solutions")
+def cmd_research_solutions(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must already have painpoints in the graph)."),
+    provider: str | None = typer.Option(None, "--provider", help="Override LLM provider (anthropic/openai/ollama)."),
+    papers_per_painpoint: int = typer.Option(5, "--papers", help="Max papers per painpoint."),
+    as_json: bool = typer.Option(False, "--json", help="Emit summary as JSON."),
+) -> None:
+    """Run the Problem -> Why -> Science -> Solution loop for a topic."""
+    from ..analyze.providers.base import resolve_provider
+    from ..research import solutions_pipeline
+
+    # Resolve provider once so we get a clear error if no LLM configured,
+    # rather than failing inside the per-painpoint loop.
+    try:
+        resolved = resolve_provider(provider)
+    except Exception as e:  # noqa: BLE001 — surface the reason cleanly
+        out = {"ok": False, "skipped": True, "reason": f"no_llm_provider: {e}"}
+        if as_json:
+            typer.echo(json.dumps(out))
+        else:
+            typer.echo(f"Skipped: {out['reason']}")
+        raise typer.Exit(0)
+
+    summary = solutions_pipeline(
+        topic=topic, provider=resolved, papers_per_painpoint=papers_per_painpoint
+    )
+    if as_json:
+        typer.echo(json.dumps(summary))
+    else:
+        for k, v in summary.items():
+            typer.echo(f"{k}: {v}")
+
+
 @research_app.command("temporal-gaps")
 def cmd_research_temporal(
     topic: str = typer.Option(..., "--topic", "-t"),
