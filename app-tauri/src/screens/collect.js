@@ -119,6 +119,12 @@ export async function renderCollect(root, { params }) {
   //   "[i/N] [src] ✗ <error> (4.8s)"
   // We translate those into live chip state so the user sees all 11 sources
   // flip from pending → running → done/error in parallel.
+  // Keep in sync with Python `SOURCES` in
+  // src/reddit_research/sources/collect_adapter.py. Any source listed in
+  // that dict needs a pretty label here, otherwise the chip shows the
+  // raw id ("youtube", "github_issues", …). An unknown id falls back to
+  // `src` verbatim via the SOURCE_LABELS[src] || src pattern below, so
+  // a missing label never breaks the UI — it just looks rough.
   const SOURCE_LABELS = {
     hn: 'Hacker News', appstore: 'App Store', playstore: 'Play Store',
     arxiv: 'arXiv', openalex: 'OpenAlex', pubmed: 'PubMed',
@@ -126,6 +132,7 @@ export async function renderCollect(root, { params }) {
     github: 'GitHub', trends: 'Google Trends',
     scholar: 'Google Scholar', github_issues: 'GitHub Issues',
     lemmy: 'Lemmy', mastodon: 'Mastodon',
+    youtube: 'YouTube',
   };
   const sourceState = new Map();      // src → { status, count, error, elapsed }
   const sourcesGrid  = $('#sources-grid');
