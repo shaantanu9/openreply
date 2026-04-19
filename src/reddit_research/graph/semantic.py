@@ -57,6 +57,24 @@ def upsert_semantic(
     if db["graph_nodes"].count_where("id = ?", [topic_node]) == 0:
         _upsert_node(db, topic, "topic", topic, topic)
 
+    # Collapse near-duplicates before persisting — two painpoints that mean
+    # the same thing should be one node with aliases, not two separate cards.
+    # Clustering is best-effort (passthrough if chromadb isn't installed).
+    try:
+        from ..retrieval.cluster import cluster_findings
+        clustered = cluster_findings({
+            "painpoints": painpoints or [],
+            "feature_wishes": feature_wishes or [],
+            "product_complaints": product_complaints or [],
+            "diy_workarounds": diy_workarounds or [],
+        })
+        painpoints = clustered.get("painpoints") or painpoints
+        feature_wishes = clustered.get("feature_wishes") or feature_wishes
+        product_complaints = clustered.get("product_complaints") or product_complaints
+        diy_workarounds = clustered.get("diy_workarounds") or diy_workarounds
+    except Exception:
+        pass  # clustering is best-effort; never block enrich
+
     summary = {
         "painpoints_added": 0,
         "feature_wishes_added": 0,
@@ -78,6 +96,7 @@ def upsert_semantic(
                 "classification": pp.get("classification"),  # CHRONIC/EMERGING/FADING
                 "pre_2025_freq": pp.get("pre_2025_freq"),
                 "post_2025_freq": pp.get("post_2025_freq"),
+                "aliases": pp.get("aliases"),
             },
         )
         _upsert_edge(db, topic, topic_node, node, "has_painpoint")
@@ -96,6 +115,7 @@ def upsert_semantic(
             metadata={
                 "user_quote": fw.get("user_quote"),
                 "frequency": fw.get("frequency"),
+                "aliases": fw.get("aliases"),
             },
         )
         _upsert_edge(db, topic, topic_node, node, "has_feature_wish")
@@ -144,6 +164,7 @@ def upsert_semantic(
                 "gap": wa.get("gap"),
                 "user_quote": wa.get("user_quote"),
                 "frequency": wa.get("frequency"),
+                "aliases": wa.get("aliases"),
             },
         )
         _upsert_edge(db, topic, topic_node, wa_node, "has_workaround")

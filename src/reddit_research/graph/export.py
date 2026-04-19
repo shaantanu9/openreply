@@ -326,6 +326,7 @@ _HTML_TEMPLATE = """<!doctype html>
   .badge.sat-adequate    { background: var(--v-sky-soft);    color: #3B6FA3; }
   .badge.sat-tentative   { background: var(--v-gold-soft);   color: var(--v-emerging); }
   .badge.sat-thin        { background: var(--v-line);        color: var(--v-ink-3); }
+  .badge.variants        { background: var(--v-lavender-soft); color: #5C43A0; }
   .card-evidence { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic;
     border-top:1px solid var(--border); padding-top:4px; }
   /* Category accent — a 3px left border in the role color helps users scan
@@ -544,6 +545,11 @@ function renderFinding(node, onclick) {
   if (classification && classification !== "UNCLASSIFIED")
     badges += `<span class="badge ${classification.toLowerCase()}">${classification}</span>`;
   if (severity) badges += `<span class="badge severity-${severity}">${severity} sev</span>`;
+  if ((md.aliases || []).length) {
+    const count = md.aliases.length;
+    const tip = `Merged with: ${md.aliases.join(' · ')}`;
+    badges += `<span class="badge variants" title="${tip.replace(/"/g,'&quot;')}">+${count} variants</span>`;
+  }
   // Saturation badge — Guest/Bunce/Johnson 2006 confidence signal.
   // Explicit hover tooltip explains the math so users can verify.
   const sat = node.saturation;

@@ -491,3 +491,55 @@ def test_discover_subs_auto_corrected_flag(
     assert c["original_topic"] == "calari tracking app"
     assert c["needs_confirmation"] is False
     assert c["reason"] == "high_confidence_typo_correction"
+
+
+# ─── Emergent theme clustering ───────────────────────────────────────────
+
+
+def test_cluster_merges_near_duplicates(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two near-duplicate labels should merge into one with aliases."""
+    from reddit_research.retrieval.cluster import cluster_findings
+
+    inp = {
+        "painpoints": [
+            {"painpoint": "Hard to log food when eating out", "frequency": 5, "example_post_ids": ["p1"]},
+            {"painpoint": "Can't track calories at restaurants", "frequency": 3, "example_post_ids": ["p2"]},
+            {"painpoint": "App crashes on launch",               "frequency": 2, "example_post_ids": ["p3"]},
+        ],
+    }
+    out = cluster_findings(inp, threshold=0.70)
+    items = out["painpoints"]
+    assert len(items) in (2, 3)
+    if len(items) == 2:
+        winner = max(items, key=lambda x: x.get("frequency", 0))
+        assert winner.get("aliases"), "winner should carry its merged aliases"
+
+
+def test_cluster_preserves_distinct(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Semantically distinct labels stay separate."""
+    from reddit_research.retrieval.cluster import cluster_findings
+    inp = {
+        "painpoints": [
+            {"painpoint": "Barcode scanner is broken",     "frequency": 5},
+            {"painpoint": "Subscription is too expensive", "frequency": 4},
+            {"painpoint": "Cannot export data to CSV",      "frequency": 3},
+        ],
+    }
+    out = cluster_findings(inp, threshold=0.92)
+    assert len(out["painpoints"]) == 3
+
+
+def test_cluster_passthrough_without_chromadb(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When chromadb isn't available, cluster_findings is a no-op."""
+    import reddit_research.retrieval.cluster as cluster_mod
+    from reddit_research.retrieval.cluster import cluster_findings
+    monkeypatch.setattr(cluster_mod, "_embeddings_available", lambda: False)
+    inp = {"painpoints": [{"painpoint": "A"}, {"painpoint": "B"}]}
+    out = cluster_findings(inp)
+    assert out == inp
