@@ -288,8 +288,16 @@ _HTML_TEMPLATE = """<!doctype html>
   aside { overflow-y:auto; padding:12px 14px; border-right:1px solid var(--border);
     background:var(--panel); font-size:13px; }
   aside.right { border-right:none; border-left:1px solid var(--border); }
-  aside h2 { font-size:11px; font-weight:700; color:var(--text); margin:14px 0 6px;
-    text-transform:uppercase; letter-spacing:.6px; }
+  aside.left h2 {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 14px 0 8px;
+    color: var(--v-ink);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  aside.left h2 span { font-weight: 500; font-size: 11px; }
   aside h2:first-child { margin-top:0; }
 
   .card { background:var(--bg); border:1px solid var(--border); border-radius:5px;
@@ -320,6 +328,12 @@ _HTML_TEMPLATE = """<!doctype html>
   .badge.sat-thin        { background: var(--v-line);        color: var(--v-ink-3); }
   .card-evidence { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic;
     border-top:1px solid var(--border); padding-top:4px; }
+  /* Category accent — a 3px left border in the role color helps users scan
+     which kind of finding they're looking at without reading the pill. */
+  #painpoints  .card { border-left: 3px solid var(--v-chronic); }
+  #workarounds .card { border-left: 3px solid var(--v-mint); }
+  #products    .card { border-left: 3px solid var(--v-emerging); }
+  #features    .card { border-left: 3px solid var(--v-gold); }
   /* source distribution mini-bar on each card (triangulation at a glance) */
   .src-bar { display:flex; height:4px; border-radius:2px; overflow:hidden; margin-top:5px;
     background:var(--border); }
