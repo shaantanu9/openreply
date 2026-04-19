@@ -130,7 +130,35 @@ def collect(
                 "github",        # GitHub trending repos
                 "trends",        # Google Trends series (returns series, not posts)
             ]
+    # `result.topic` ends up being set to the canonical after canonicalization
+    # below. Populate with original here; we update after _canonicalize_topic
+    # resolves (handles the no-LLM-configured passthrough case cleanly).
     result = CollectResult(topic=topic)
+
+    # Canonicalize ONCE at the top so every downstream query (reddit sub
+    # discovery, reddit search, HN, arXiv, OpenAlex, PubMed, Scholar, etc.)
+    # hits the corrected domain. "calari tracking app" → "calorie tracking app"
+    # before anything fans out. We keep the user's original `topic` as the
+    # storage key so the UI still labels it with what they typed; only search
+    # queries use the canonical string.
+    try:
+        from .discover import _canonicalize_topic
+        _canon = _canonicalize_topic(topic)
+        search_topic = (
+            _canon.get("canonical") or topic
+            if (_canon.get("confidence") in ("high", "low"))
+            else topic
+        )
+    except Exception:
+        search_topic = topic
+    if search_topic != topic:
+        result.errors.append(
+            f"info: search using canonical '{search_topic}' (user typed '{topic}')"
+        )
+        # Canonical becomes the storage key too — otherwise Reddit data lands
+        # under the typo while arXiv/HN data lands under the corrected form,
+        # splitting the user's corpus across two topics.
+        result.topic = search_topic
 
     # Thread-safe log — prevents interleaved stdout writes when the parallel
     # stage has multiple workers emitting progress at once. Also guards
@@ -148,8 +176,8 @@ def collect(
         result.subs = []
         _log("skip_reddit=true → skipping Reddit discovery + fetch")
     elif subs is None:
-        _log(f"discovering subs for '{topic}'…")
-        found = discover_subs(topic, limit=8)
+        _log(f"discovering subs for '{search_topic}'…")
+        found = discover_subs(search_topic, limit=8)
         # New shape: {"subs": [...], "confirmation": {...}}. Tolerate the old
         # list form for backward-compat with mocked tests.
         found_subs = found.get("subs", found) if isinstance(found, dict) else found
@@ -167,7 +195,7 @@ def collect(
                 try:
                     _log(f"fetch r/{sub} top({tf}) limit={limit_per_sub}")
                     rows = fetch_posts(sub=sub, sort="top", limit=limit_per_sub, time_filter=tf)
-                    tagged = _tag_posts(topic, [r["id"] for r in rows], source=f"top:{sub}:{tf}")
+                    tagged = _tag_posts(search_topic, [r["id"] for r in rows], source=f"top:{sub}:{tf}")
                     result.posts_fetched += tagged
                     result.by_source[f"top:{sub}:{tf}"] = tagged
                 except Exception as e:
@@ -176,8 +204,9 @@ def collect(
                     result.errors.append(msg)
                 time.sleep(_SLEEP)
 
-        # 3. Parameterized searches
-        queries = render_queries(topic, categories=query_categories)
+        # 3. Parameterized searches (use canonical topic for query text so
+        # typos don't poison reddit search; storage key stays `topic`).
+        queries = render_queries(search_topic, categories=query_categories)
         for category, qs in queries.items():
             for q in qs:
                 # If sub_scope_search: search each sub individually (slower but higher signal)
@@ -193,7 +222,7 @@ def collect(
                             limit=limit_per_query,
                         )
                         tagged = _tag_posts(
-                            topic,
+                            search_topic,
                             [r["id"] for r in rows],
                             source=f"search:{category}:{target or 'all'}:{q}",
                         )
@@ -232,7 +261,10 @@ def collect(
             _log(f"[{src}] starting…")
             try:
                 fn = SOURCES[src]
-                out = fn(topic)
+                # Source adapters (arxiv, openalex, pubmed, hn, scholar, …) all
+                # use the topic string as a literal search query. Pass the
+                # canonical so "calari" doesn't fetch flight-tracking papers.
+                out = fn(search_topic)
                 return (src, out, None, time.monotonic() - t0)
             except Exception as e:
                 return (src, None, e, time.monotonic() - t0)
@@ -275,7 +307,7 @@ def collect(
                     days=historical_days,
                     limit=historical_limit_per_sub,
                 )
-                tagged = _tag_posts(topic, [r["id"] for r in hrows], source=f"pullpush:{sub}")
+                tagged = _tag_posts(search_topic, [r["id"] for r in hrows], source=f"pullpush:{sub}")
                 result.posts_fetched += tagged
                 result.by_source[f"pullpush:{sub}"] = tagged
             except Exception as e:
@@ -284,7 +316,7 @@ def collect(
                 result.errors.append(msg)
             time.sleep(_SLEEP)
 
-    _log(f"done. {result.posts_fetched} posts tagged for '{topic}'.")
+    _log(f"done. {result.posts_fetched} posts tagged for '{search_topic}'.")
     return result
 
 
