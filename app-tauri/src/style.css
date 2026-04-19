@@ -1226,6 +1226,25 @@ body {
 .finding-meta span {
   padding: 1px 7px; border-radius: 10px; background: var(--surface-alt);
 }
+/* Find-similar chip — slim button that routes to /find pre-filled */
+.finding-find-similar {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.finding-find-similar:hover {
+  background: var(--orange-soft);
+  border-color: var(--orange);
+  color: #B85A1E;
+}
 
 /* --- Ingest screen --- */
 .ingest-wrap {

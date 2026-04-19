@@ -383,6 +383,43 @@ AGENT_TOOLS = [
             "required": ["topic"],
         },
     },
+    {
+        "name": "semantic_search",
+        "description": (
+            "Hybrid semantic + keyword search over the posts corpus using a local "
+            "embedding model. Use when the user asks about a concept, complaint, or "
+            "pattern rather than an exact keyword — for example 'posts where users "
+            "lose their data' or 'complaints about slow performance'. Returns posts "
+            "ranked by meaning, even when they don't use the exact phrasing of the "
+            "query. Works across all topics unless `topic` is specified. Skips "
+            "silently (returns `{skipped: true}`) when the user hasn't enabled the "
+            "semantic-search model from Settings — in that case fall back to "
+            "`run_query` with a LIKE clause or `get_findings`."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Concept or question in natural language. Not a SQL clause.",
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Optional — restrict results to this research topic.",
+                },
+                "source": {
+                    "type": "string",
+                    "description": (
+                        "Optional — restrict to a single source_type "
+                        "(reddit / hn / appstore / playstore / arxiv / openalex / "
+                        "pubmed / gnews / devto / stackoverflow / github / trends)."
+                    ),
+                },
+                "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 30},
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -458,6 +495,48 @@ def _exec_tool(name: str, args: dict) -> dict:
             ))
             return {"posts": rows, "topic": topic}
 
+        if name == "semantic_search":
+            # Import lazily so the chat command still loads even when the
+            # retrieval extras aren't installed (the tool just returns a
+            # skip-stub in that case — see palace.search_posts).
+            try:
+                from ..retrieval.palace import (
+                    is_available, is_model_ready, search_posts,
+                )
+            except ImportError:
+                return {"skipped": True, "reason": "retrieval extras not installed"}
+            if not is_available():
+                return {"skipped": True, "reason": "chromadb not installed"}
+            if not is_model_ready():
+                return {
+                    "skipped": True,
+                    "reason": "semantic-search model not downloaded yet. "
+                              "The user can enable it from Settings → Semantic search. "
+                              "Fall back to run_query with a LIKE clause.",
+                }
+            query = (args.get("query") or "").strip()
+            if not query:
+                return {"error": "query is required"}
+            topic = args.get("topic") or None
+            source = args.get("source") or None
+            limit = min(int(args.get("limit") or 10), 30)
+            r = search_posts(query, topic=topic, source_type=source, k=limit)
+            if not r.get("ok"):
+                return {"error": r.get("error") or r.get("reason") or "semantic_search failed"}
+            # Strip giant text payloads down for the LLM context window —
+            # 300 chars per hit is enough to ground a citation.
+            hits = []
+            for h in r.get("results", []):
+                hits.append({
+                    "id": h.get("id"),
+                    "score": h.get("score"),
+                    "topic": (h.get("metadata") or {}).get("topic"),
+                    "source": (h.get("metadata") or {}).get("source_type"),
+                    "sub": (h.get("metadata") or {}).get("sub"),
+                    "text": (h.get("text") or "")[:300],
+                })
+            return {"hits": hits, "query": query, "count": len(hits)}
+
         return {"error": f"unknown tool: {name}"}
     except Exception as e:
         return {"error": str(e)}
@@ -468,7 +547,19 @@ AGENT_SYSTEM = (
     "multi-source data (Reddit, HN, app stores, arXiv, etc.) about user-specified topics. "
     "Use the tools to gather evidence BEFORE drawing conclusions — never invent data. "
     "Cite specific painpoints, workarounds, or evidence posts in your final answer. "
-    "Prefer the `get_findings` / `source_breakdown` tools over ad-hoc SQL when they fit. "
+    "\n\n"
+    "Tool selection heuristics:\n"
+    "• `get_findings` — when the user wants already-extracted painpoints / workarounds / "
+    "feature wishes / products for a specific topic. Fastest, cleanest.\n"
+    "• `semantic_search` — when the question is conceptual or cross-topic: "
+    "'posts about users losing data', 'complaints about slow sync', 'what else looks like "
+    "this painpoint?'. Hybrid embedding + BM25. Skip if it returns "
+    "`{skipped: true}` and fall back to `run_query` with LIKE.\n"
+    "• `source_breakdown` — when the user wants to know where the evidence comes from.\n"
+    "• `sample_posts` — raw post snippets for a topic, ordered by engagement. Use sparingly "
+    "(findings are usually more useful).\n"
+    "• `run_query` — last resort for ad-hoc aggregates / filters that don't fit the above.\n"
+    "\n"
     "When you're done gathering, stop calling tools and write a concise answer in markdown."
 )
 

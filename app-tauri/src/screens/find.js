@@ -131,11 +131,27 @@ async function runSearch(root) {
   }
 }
 
+// Pre-fill path: other screens (Topic → Evidence "Find similar" chip)
+// set `window.gapmapFindQuery = "some concept"` + optional topic filter
+// before navigating to `#/find`. We consume + clear it on mount so a later
+// navigation without a pre-fill starts clean.
+function consumePrefill() {
+  if (typeof window === 'undefined') return null;
+  const pre = window.gapmapFindQuery;
+  try { delete window.gapmapFindQuery; } catch {}
+  const topic = window.gapmapFindTopic;
+  try { delete window.gapmapFindTopic; } catch {}
+  if (!pre) return null;
+  return { query: String(pre), topic: topic ? String(topic) : '' };
+}
+
 export async function renderFind(root) {
   state.query = '';
   state.rows = null;
   state.error = null;
   state.loading = false;
+
+  const prefill = consumePrefill();
 
   root.innerHTML = `
     <header class="topbar">
@@ -201,19 +217,41 @@ export async function renderFind(root) {
 
   // Wire input + submit.
   const qEl = root.querySelector('#find-q');
+  const topicSel = root.querySelector('#find-topic');
+  const srcSel = root.querySelector('#find-source');
+  const kSel = root.querySelector('#find-k');
   const go = () => {
     state.query = qEl.value;
-    state.topic = root.querySelector('#find-topic').value;
-    state.source = root.querySelector('#find-source').value;
-    state.k = Number(root.querySelector('#find-k').value) || 10;
+    state.topic = topicSel.value;
+    state.source = srcSel.value;
+    state.k = Number(kSel.value) || 10;
     runSearch(root);
   };
   root.querySelector('#find-btn').onclick = go;
   qEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') go();
   });
-  // Focus input on mount for fast querying.
-  setTimeout(() => qEl.focus(), 30);
+
+  // Pre-filled query from another screen (Topic → Evidence "Find similar").
+  // Populate the form + auto-run so the user sees results immediately.
+  if (prefill?.query) {
+    qEl.value = prefill.query;
+    if (prefill.topic) {
+      // Select the topic if we pre-loaded its option; otherwise add + select.
+      const has = [...topicSel.options].some(o => o.value === prefill.topic);
+      if (!has) {
+        const o = document.createElement('option');
+        o.value = prefill.topic; o.textContent = prefill.topic;
+        topicSel.appendChild(o);
+      }
+      topicSel.value = prefill.topic;
+    }
+    // Run on the next tick so the form is in the DOM before we touch it.
+    setTimeout(go, 0);
+  } else {
+    // No prefill — focus input for fast querying.
+    setTimeout(() => qEl.focus(), 30);
+  }
 
   // Paint initial empty state.
   $('#find-body').innerHTML = renderResults();

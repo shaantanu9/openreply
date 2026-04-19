@@ -87,6 +87,163 @@ function errorCard(title, detail, actions = []) {
       </div>
     </div>`;
 }
+// ─── Source-picker modal (Rerun collect) ─────────────────────────────────────
+const ALL_SOURCES = [
+  // External sources from Python CLI's --sources help text. 'reddit' is
+  // special: gates the Reddit fetch stages via skipReddit param.
+  { id: 'reddit',        label: 'Reddit',          group: 'social',  defaultOn: true },
+  { id: 'hn',            label: 'Hacker News',     group: 'social',  defaultOn: true },
+  { id: 'lemmy',         label: 'Lemmy',           group: 'social',  defaultOn: false },
+  { id: 'mastodon',      label: 'Mastodon',        group: 'social',  defaultOn: false },
+  { id: 'devto',         label: 'Dev.to',          group: 'social',  defaultOn: true },
+  { id: 'stackoverflow', label: 'Stack Overflow',  group: 'social',  defaultOn: true },
+  { id: 'github',        label: 'GitHub trending', group: 'dev',     defaultOn: true },
+  { id: 'github_issues', label: 'GitHub issues',   group: 'dev',     defaultOn: false },
+  { id: 'arxiv',         label: 'arXiv',           group: 'science', defaultOn: true },
+  { id: 'pubmed',        label: 'PubMed',          group: 'science', defaultOn: true },
+  { id: 'openalex',      label: 'OpenAlex',        group: 'science', defaultOn: true },
+  { id: 'scholar',       label: 'Scholar',         group: 'science', defaultOn: false },
+  { id: 'gnews',         label: 'Google News',     group: 'web',     defaultOn: true },
+  { id: 'trends',        label: 'Google Trends',   group: 'web',     defaultOn: true },
+  { id: 'appstore',      label: 'App Store',       group: 'apps',    defaultOn: true },
+  { id: 'playstore',     label: 'Play Store',      group: 'apps',    defaultOn: true },
+];
+
+const GROUP_LABELS = {
+  social:  'Social / forums',
+  dev:     'Developer',
+  science: 'Scientific literature',
+  web:     'Web / news / trends',
+  apps:    'App stores',
+};
+
+async function detectExistingSources(topic) {
+  // Returns Set<sourceId> of sources that already have posts for this topic.
+  try {
+    const rows = await api.runQuery(
+      `SELECT DISTINCT coalesce(p.source_type, 'reddit') AS src
+         FROM topic_posts tp JOIN posts p ON p.id = tp.post_id
+         WHERE tp.topic = :topic`,
+      topic,
+    );
+    return new Set((rows || []).map(r => (r.src || 'reddit').toLowerCase()));
+  } catch (e) {
+    console.warn('detectExistingSources failed:', e);
+    return new Set();
+  }
+}
+
+async function openSourcePickerModal(topic) {
+  const existing = await detectExistingSources(topic);
+  // Default checked = whatever was already used. If nothing was found
+  // (shouldn't happen on Rerun, but safety net), fall back to defaults.
+  const initialChecked = existing.size > 0
+    ? existing
+    : new Set(ALL_SOURCES.filter(s => s.defaultOn).map(s => s.id));
+
+  const groups = {};
+  for (const src of ALL_SOURCES) {
+    if (!groups[src.group]) groups[src.group] = [];
+    groups[src.group].push(src);
+  }
+
+  const groupHtml = Object.entries(groups).map(([key, list]) => {
+    const items = list.map(src => {
+      const checked = initialChecked.has(src.id) ? 'checked' : '';
+      const wasFetched = existing.has(src.id);
+      return `
+        <label class="src-pick-row">
+          <input type="checkbox" data-src="${esc(src.id)}" ${checked} />
+          <span class="src-pick-label">${esc(src.label)}</span>
+          ${wasFetched ? '<span class="src-pick-badge">already fetched</span>' : ''}
+        </label>
+      `;
+    }).join('');
+    return `
+      <div class="src-pick-group">
+        <h5>${esc(GROUP_LABELS[key] || key)}</h5>
+        <div class="src-pick-rows">${items}</div>
+      </div>
+    `;
+  }).join('');
+
+  const host = document.createElement('div');
+  host.className = 'src-pick-backdrop';
+  host.innerHTML = `
+    <div class="src-pick-dialog">
+      <div class="src-pick-head">
+        <h3>Rerun collect for <em>${esc(topic)}</em></h3>
+        <button class="src-pick-close" aria-label="close"><i data-lucide="x"></i></button>
+      </div>
+      <p class="src-pick-sub">Pick which sources to fetch from. Sources you've already collected are pre-checked. Uncheck to skip them — Reddit's heavy stages run only if Reddit is checked.</p>
+      <div class="src-pick-toolbar">
+        <button type="button" class="btn btn-ghost btn-xs btn-bordered" id="src-pick-only-new">Only new (uncheck already-fetched)</button>
+        <button type="button" class="btn btn-ghost btn-xs btn-bordered" id="src-pick-all">All</button>
+        <button type="button" class="btn btn-ghost btn-xs btn-bordered" id="src-pick-none">None</button>
+      </div>
+      <div class="src-pick-grid">${groupHtml}</div>
+      <div class="src-pick-foot">
+        <label class="src-pick-aggressive">
+          <input type="checkbox" id="src-pick-aggressive" />
+          <span>Aggressive (max limits + historical archive — slower, deeper)</span>
+        </label>
+        <div class="src-pick-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="src-pick-cancel">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm icon-btn" id="src-pick-go">
+            <i data-lucide="play"></i> Run
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(host);
+  window.refreshIcons?.();
+
+  const close = () => host.remove();
+  host.querySelector('.src-pick-close').onclick = close;
+  host.querySelector('#src-pick-cancel').onclick = close;
+  host.addEventListener('click', (e) => { if (e.target === host) close(); });
+
+  // Bulk-toggle helpers
+  const setAll = (val) => host.querySelectorAll('input[data-src]').forEach(cb => { cb.checked = val; });
+  host.querySelector('#src-pick-all').onclick = () => setAll(true);
+  host.querySelector('#src-pick-none').onclick = () => setAll(false);
+  host.querySelector('#src-pick-only-new').onclick = () => {
+    host.querySelectorAll('input[data-src]').forEach(cb => {
+      cb.checked = !existing.has(cb.dataset.src);
+    });
+  };
+
+  host.querySelector('#src-pick-go').onclick = async () => {
+    const checked = Array.from(host.querySelectorAll('input[data-src]:checked'))
+      .map(cb => cb.dataset.src);
+    const includeReddit = checked.includes('reddit');
+    const externalSources = checked.filter(s => s !== 'reddit');
+    const aggressive = host.querySelector('#src-pick-aggressive').checked;
+
+    if (checked.length === 0) {
+      alert('Pick at least one source.');
+      return;
+    }
+
+    close();
+    // Navigate to the live progress screen FIRST so its event listeners attach
+    // before the sidecar emits its first event.
+    location.hash = `#/collect/${encodeURIComponent(topic)}`;
+    // Give the route + listeners a tick to mount, then fire collect.
+    setTimeout(() => {
+      api.startCollect(
+        topic,
+        aggressive,
+        externalSources.length > 0 ? externalSources.join(',') : null,
+        !includeReddit,
+      ).catch(err => {
+        showToast('Failed to start collect', err?.message || String(err), 'err');
+      });
+    }, 50);
+  };
+}
+
 function renderQuickExtract(result) {
   if (!result || typeof result !== 'object') {
     return `<div class="muted" style="padding:8px">No result.</div>`;
@@ -142,6 +299,9 @@ export async function renderTopic(root, { params }) {
   // Per-instance tab state (fix: module-level state leaked between topics).
   let activeTab = 'map';
   // Per-instance chat stream state.
+  // Per-tab interval for live-updating relative timestamps on chat messages.
+  let chatTsInterval = null;
+
   let chatStream = {
     active: false,
     buffer: '',
@@ -544,6 +704,10 @@ export async function renderTopic(root, { params }) {
   const evidenceVisible = { painpoint: 20, feature_wish: 20, product: 20, workaround: 20 };
   const PAGE = 20;
 
+  // Client-side filter applied across all four kinds on the Evidence tab.
+  // Persists for the life of the tab instance (not across route changes).
+  let evidenceFilter = '';
+
   async function loadEvidence() {
     contentEl.innerHTML = skeletonCards(3);
     try {
@@ -555,10 +719,23 @@ export async function renderTopic(root, { params }) {
       for (const r of rows || []) {
         if (byKind[r.kind]) byKind[r.kind].push(r);
       }
-      const painpoints = byKind.painpoint;
-      const features = byKind.feature_wish;
-      const products = byKind.product;
-      const workarounds = byKind.workaround;
+      // Apply search filter — case-insensitive, matches finding label.
+      const filter = evidenceFilter.trim().toLowerCase();
+      const filterRows = (arr) => filter
+        ? arr.filter(r => (r.label || '').toLowerCase().includes(filter))
+        : arr;
+      const painpoints  = filterRows(byKind.painpoint);
+      const features    = filterRows(byKind.feature_wish);
+      const products    = filterRows(byKind.product);
+      const workarounds = filterRows(byKind.workaround);
+      const totalAfter  = painpoints.length + features.length + products.length + workarounds.length;
+      const totalBefore = byKind.painpoint.length + byKind.feature_wish.length + byKind.product.length + byKind.workaround.length;
+
+      const filterBar = `
+        <div class="evidence-filter-row">
+          <input id="evidence-filter" type="search" placeholder="Filter findings by label…" value="${esc(evidenceFilter)}" autocomplete="off" />
+          <span class="evidence-filter-count">${filter ? `${totalAfter} of ${totalBefore}` : `${totalBefore} findings`}</span>
+        </div>`;
       const section = (label, items, cls, kind) => {
         if (!Array.isArray(items) || !items.length) return '';
         const visible = Math.min(evidenceVisible[kind] || PAGE, items.length);
@@ -575,6 +752,7 @@ export async function renderTopic(root, { params }) {
                     <div class="finding-meta">
                       ${it.evidence_count ? `<span>📎 ${it.evidence_count} evidence</span>` : ''}
                       ${it.metadata_json ? renderMetaPills(it.metadata_json) : ''}
+                      <button class="finding-find-similar" data-q="${esc(it.label || '')}" title="Find semantically-similar posts across the whole corpus">🔎 Find similar</button>
                     </div>
                   </div>
                 </div>
@@ -584,12 +762,21 @@ export async function renderTopic(root, { params }) {
           </div>
         `;
       };
-      const html = [
+      const sectionsHtml = [
         section('🔥 Painpoints',              painpoints,  'chronic',  'painpoint'),
         section('🛠 DIY workarounds',         workarounds, 'emerging', 'workaround'),
         section('😡 Products complained about', products,  'chronic',  'product'),
         section('💡 Feature wishes',          features,    'emerging', 'feature_wish'),
       ].filter(Boolean).join('');
+
+      // When a filter is active but matches nothing, show a cleaner state.
+      const filteredEmpty = filter && sectionsHtml === ''
+        ? `<div class="empty-state">No findings match "${esc(filter)}". Clear the filter to see all ${totalBefore}.</div>`
+        : '';
+      // Only render the filter bar if there are actual findings to filter.
+      const html = totalBefore > 0
+        ? (filterBar + (sectionsHtml || filteredEmpty))
+        : '';
       contentEl.innerHTML = html || `
         <div class="empty-big">
           <h3>No semantic extraction yet</h3>
@@ -604,6 +791,45 @@ export async function renderTopic(root, { params }) {
           loadEvidence();
         };
       });
+
+      // "Find similar" chips — route to the /find screen pre-filled with
+      // the finding label + scoped to this topic. find.js consumes the
+      // window globals on mount and auto-runs the search.
+      contentEl.querySelectorAll('.finding-find-similar').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const q = btn.dataset.q || '';
+          if (!q) return;
+          window.gapmapFindQuery = q;
+          window.gapmapFindTopic = topic;
+          location.hash = '#/find';
+        };
+      });
+
+      // Live filter: narrow findings by label. Debounced to 180 ms so each
+      // keystroke doesn't re-render the whole DOM on typed-in-fast input.
+      const filterInput = contentEl.querySelector('#evidence-filter');
+      if (filterInput) {
+        let debounceTimer = null;
+        filterInput.addEventListener('input', (e) => {
+          const v = e.target.value;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            evidenceFilter = v;
+            const pos = filterInput.selectionStart;
+            loadEvidence();
+            // Restore focus + caret position after re-render (fast path — element is recreated).
+            setTimeout(() => {
+              const fresh = contentEl.querySelector('#evidence-filter');
+              if (fresh) {
+                fresh.focus();
+                try { fresh.setSelectionRange(pos, pos); } catch {}
+              }
+            }, 0);
+          }, 180);
+        });
+      }
+
       // After the user saves a key, re-run the Evidence tab so the "add key"
       // empty-state is replaced with the newly-extracted findings.
       $('#btn-ev-keys')?.addEventListener('click', () => openByokModal(() => loadEvidence()));
@@ -705,6 +931,10 @@ export async function renderTopic(root, { params }) {
     ingest:   { bg: '#FBF1D4', fg: '#8A5A1A' },
   };
   let researchVisible = {};  // per-source visible count
+  // Sort mode for the Research tab. 'cites' = most-cited first (score DESC);
+  // 'newest' = newest first (created_utc DESC). Persisted for the life of
+  // the topic instance; resets when the user navigates away.
+  let researchSort = 'cites';
 
   async function loadResearch() {
     contentEl.innerHTML = skeletonCards(3);
@@ -755,11 +985,22 @@ export async function renderTopic(root, { params }) {
         return;
       }
 
-      // Group by source
+      // Group by source. Within each group, resort by the active toggle:
+      //   - 'cites' → score DESC (citation count for scholar/openalex; 0 for others, then date)
+      //   - 'newest' → created_utc DESC (newest-first; useful for arxiv where dates matter)
       const grouped = {};
       for (const r of rows) {
         (grouped[r.source] = grouped[r.source] || []).push(r);
       }
+      Object.values(grouped).forEach(arr => {
+        if (researchSort === 'newest') {
+          arr.sort((a, b) => (b.created_utc || 0) - (a.created_utc || 0));
+        } else {
+          arr.sort((a, b) =>
+            (b.score || 0) - (a.score || 0) ||
+            (b.created_utc || 0) - (a.created_utc || 0));
+        }
+      });
 
       const paperCard = (r) => {
         const c = SRC_BADGE_COLORS[r.source] || { bg: 'var(--surface-2)', fg: 'var(--ink-2)' };
@@ -780,6 +1021,24 @@ export async function renderTopic(root, { params }) {
         const openBtn = url
           ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" data-open="${esc(url)}" title="Open source"><i data-lucide="external-link"></i> Open</button>`
           : '';
+        // Copy-citation payload: markdown-formatted reference the user can
+        // paste into notes, PR descriptions, or a write-up. Includes title,
+        // source, date, citation count (when it applies), and the URL/DOI.
+        const srcLabelReadable = SRC_LABELS[r.source] || r.source;
+        const citeParts = [];
+        if (r.title) citeParts.push(`**${(r.title || '').trim()}**`);
+        if (author && author !== '[deleted]' && author !== '[pdf]' && author !== '[local]') {
+          citeParts.push(author);
+        }
+        const citeMeta = [srcLabelReadable];
+        if (date) citeMeta.push(date);
+        if ((r.source === 'scholar' || r.source === 'openalex') && r.score) {
+          citeMeta.push(`${r.score} cites`);
+        }
+        citeParts.push(`_${citeMeta.join(' · ')}_`);
+        if (url) citeParts.push(url);
+        const citation = citeParts.join(' — ');
+        const citeBtn = `<button class="paper-cite-btn" data-cite="${esc(citation)}" title="Copy citation markdown"><i data-lucide="quote"></i> Cite</button>`;
         return `
           <div class="card" style="margin-bottom:10px;padding:14px 18px">
             <div style="display:flex;gap:10px;align-items:flex-start">
@@ -788,10 +1047,18 @@ export async function renderTopic(root, { params }) {
                 <h4 style="font-size:14px;font-weight:700;line-height:1.35;margin-bottom:4px">${title}</h4>
                 ${excerpt ? `<p style="font-size:12px;color:var(--ink-2);line-height:1.5">${excerpt}…</p>` : ''}
               </div>
-              <div style="flex-shrink:0">${openBtn}</div>
+              <div style="flex-shrink:0;display:flex;gap:6px;align-items:flex-start">${citeBtn}${openBtn}</div>
             </div>
           </div>`;
       };
+
+      const sortToggle = `
+        <div class="research-sort-row">
+          <span>Sort:</span>
+          <button class="research-sort-btn ${researchSort === 'cites' ? 'active' : ''}" data-sort="cites">Most cited</button>
+          <button class="research-sort-btn ${researchSort === 'newest' ? 'active' : ''}" data-sort="newest">Newest</button>
+          <span style="margin-left:auto;font-size:11px;color:var(--ink-3)">${rows.length} paper${rows.length === 1 ? '' : 's'} total</span>
+        </div>`;
 
       const html = ACADEMIC_SOURCES.filter(s => grouped[s]).map(src => {
         const items = grouped[src];
@@ -813,7 +1080,7 @@ export async function renderTopic(root, { params }) {
           </div>`;
       }).join('');
 
-      contentEl.innerHTML = html;
+      contentEl.innerHTML = sortToggle + html;
 
       contentEl.querySelectorAll('[data-open]').forEach(btn => {
         btn.onclick = () => {
@@ -828,6 +1095,37 @@ export async function renderTopic(root, { params }) {
           loadResearch();
         };
       });
+      // Sort toggle → flip mode + re-render.
+      contentEl.querySelectorAll('.research-sort-btn').forEach(btn => {
+        btn.onclick = () => {
+          const next = btn.dataset.sort;
+          if (next && next !== researchSort) {
+            researchSort = next;
+            loadResearch();
+          }
+        };
+      });
+      // Copy citation → markdown to clipboard + transient "Copied!" state.
+      contentEl.querySelectorAll('.paper-cite-btn').forEach(btn => {
+        btn.onclick = async () => {
+          const cite = btn.dataset.cite || '';
+          try {
+            await navigator.clipboard.writeText(cite);
+            btn.classList.add('copied');
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="check"></i> Copied';
+            window.refreshIcons?.();
+            setTimeout(() => {
+              btn.classList.remove('copied');
+              btn.innerHTML = origHtml;
+              window.refreshIcons?.();
+            }, 1400);
+          } catch (err) {
+            showToast('Copy failed', err?.message || String(err), 'err');
+          }
+        };
+      });
+      window.refreshIcons?.();
     } catch (e) {
       const actions = [{ label: 'Retry', primary: true, onClick: () => loadResearch() }];
       contentEl.innerHTML = errorCard('Could not load research', e?.message || String(e), actions);
@@ -913,6 +1211,7 @@ export async function renderTopic(root, { params }) {
               <span>🤖 Agent</span>
             </label>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-keys"><i data-lucide="key-round"></i> Keys</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-export" title="Download the conversation as markdown"><i data-lucide="download"></i> Export</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-clear">Clear</button>
           </div>
         </div>
@@ -941,14 +1240,10 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-primary icon-btn" id="btn-chat-add-key" style="margin-top:14px"><i data-lucide="key-round"></i> ${configured.length ? 'Pick default' : 'Add a key'}</button>
           </div>`;
         })() : `
-          <div class="chat-presets">
+          <div class="chat-presets-pill">
             ${PRESETS.map(p => `
-              <button class="chat-preset" data-mode="${p.mode}" title="${esc(p.desc)}">
-                <span class="chat-preset-ic"><i data-lucide="${p.icon}"></i></span>
-                <div class="chat-preset-body">
-                  <b>${esc(p.label)}</b>
-                  <small>${esc(p.desc)}</small>
-                </div>
+              <button class="chat-preset-pill chat-preset" data-mode="${p.mode}" title="${esc(p.desc)}">
+                <i data-lucide="${p.icon}"></i>${esc(p.label)}
               </button>`).join('')}
           </div>
 
@@ -989,11 +1284,28 @@ export async function renderTopic(root, { params }) {
       const q = input.value.trim();
       if (!q || chatStream.active) return;
       input.value = '';
+      autoGrow();
       send('ask', q);
     };
     sendBtn.onclick = sendFromInput;
+
+    // Auto-grow textarea — resize as the user types, max 180px (CSS-enforced).
+    const autoGrow = () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+    };
+    input.addEventListener('input', autoGrow);
+    autoGrow();
+
     input.addEventListener('keydown', e => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); sendFromInput(); }
+      // Enter = send, Shift+Enter = newline. Cmd/Ctrl+Enter still works.
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendFromInput();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        sendFromInput();
+      }
     });
     cancelBtn.onclick = async () => {
       try { await api.cancelChat(); } catch {}
@@ -1004,6 +1316,62 @@ export async function renderTopic(root, { params }) {
         send(btn.dataset.mode, '');
       });
     });
+
+    // Export conversation as markdown — one-click download of the whole thread
+    // including source-aware citations the LLM produced.
+    $('#btn-chat-export')?.addEventListener('click', () => {
+      const hist = chatHistory.get(topic) || [];
+      if (!hist.length) {
+        showToast('Nothing to export', 'Start a conversation first.', 'warn');
+        return;
+      }
+      const md = [
+        `# Gap Map chat — ${topic}`,
+        `Exported: ${new Date().toISOString()}`,
+        '',
+      ];
+      for (const m of hist) {
+        const ts = m.ts ? new Date(m.ts).toISOString() : '';
+        if (m.role === 'user') {
+          md.push(`## 🧑 ${m.mode || 'ask'}${ts ? ` · ${ts}` : ''}`);
+          if (m.text) md.push(m.text);
+          md.push('');
+        } else {
+          md.push(`## 🤖 assistant${ts ? ` · ${ts}` : ''}`);
+          if (m.toolCalls && m.toolCalls.length) {
+            md.push('<details><summary>Tool calls</summary>\n');
+            for (const tc of m.toolCalls) {
+              md.push(`- **${tc.name}** \`${JSON.stringify(tc.input || {}).slice(0, 200)}\``);
+            }
+            md.push('\n</details>\n');
+          }
+          md.push(m.text || '_(empty reply)_');
+          md.push('');
+        }
+      }
+      const blob = new Blob([md.join('\n')], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const slug = (topic || 'gap-map').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      a.download = `gapmap-chat-${slug}-${Date.now()}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Exported', `${hist.length} messages saved as ${a.download}`, 'ok');
+    });
+
+    // Live-refresh relative timestamps every 30s while the Chat tab is active.
+    if (chatTsInterval) clearInterval(chatTsInterval);
+    chatTsInterval = setInterval(() => {
+      const box = $('#chat-messages');
+      if (!box) { clearInterval(chatTsInterval); chatTsInterval = null; return; }
+      box.querySelectorAll('.chat-msg-ts[data-ts]').forEach(el => {
+        const ts = parseInt(el.dataset.ts, 10);
+        if (Number.isFinite(ts)) el.textContent = timeAgo(ts / 1000);
+      });
+    }, 30000);
   }
 
   function renderMessages() {
@@ -1014,28 +1382,88 @@ export async function renderTopic(root, { params }) {
       box.innerHTML = `<div class="empty-state" style="padding:28px">Try a preset above, or type a question below.</div>`;
       return;
     }
-    box.innerHTML = hist.map(m => chatBubble(m)).join('');
+    box.innerHTML = hist.map((m, i) => chatBubble(m, i)).join('');
     box.scrollTop = box.scrollHeight;
+    window.refreshIcons?.();
+    wireChatMessageActions(box);
   }
 
-  function chatBubble(m) {
+  // Per-message hover actions: copy assistant reply, regenerate last.
+  function wireChatMessageActions(box) {
+    box.querySelectorAll('.chat-msg-action').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const bubble = btn.closest('.chat-msg');
+        const idx = parseInt(bubble?.dataset?.idx || '-1', 10);
+        const hist = chatHistory.get(topic) || [];
+        const msg = hist[idx];
+        if (!msg) return;
+        const action = btn.dataset.action;
+        if (action === 'copy') {
+          try {
+            await navigator.clipboard.writeText(msg.text || '');
+            btn.classList.add('copied');
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="check"></i>';
+            window.refreshIcons?.();
+            setTimeout(() => {
+              btn.classList.remove('copied');
+              btn.innerHTML = orig;
+              window.refreshIcons?.();
+            }, 1400);
+          } catch (err) {
+            showToast('Copy failed', err?.message || String(err), 'err');
+          }
+        } else if (action === 'regen') {
+          // Find the preceding user message and re-run it.
+          let userMsg = null;
+          for (let i = idx - 1; i >= 0; i--) {
+            if (hist[i]?.role === 'user') { userMsg = hist[i]; break; }
+          }
+          if (!userMsg) {
+            showToast('Nothing to regenerate', 'Could not find the preceding question.', 'warn');
+            return;
+          }
+          // Drop the current assistant message so send() appends a fresh one.
+          hist.splice(idx, 1);
+          saveChatHistory(topic);
+          const mode = (userMsg.mode || 'ask').replace(/^agent · /, '');
+          await send(mode, userMsg.text || '');
+        }
+      };
+    });
+  }
+
+  function chatBubble(m, index) {
+    const tsAttr = m.ts ? `data-ts="${m.ts}"` : '';
+    const tsHtml = m.ts ? `<div class="chat-msg-ts" ${tsAttr}>${timeAgo(m.ts / 1000)}</div>` : '';
     if (m.role === 'user') {
-      return `<div class="chat-msg chat-msg-user">
+      return `<div class="chat-msg chat-msg-user" data-idx="${index}">
         <div class="chat-msg-ic">🧑</div>
-        <div class="chat-msg-body"><b>${esc(m.mode || 'ask')}</b>${m.text ? `<div>${esc(m.text)}</div>` : ''}</div>
+        <div class="chat-msg-body"><b>${esc(m.mode || 'ask')}</b>${m.text ? `<div>${esc(m.text)}</div>` : ''}${tsHtml}</div>
       </div>`;
     }
-    return `<div class="chat-msg chat-msg-asst">
+    const isStreaming = chatStream.active && index === (chatHistory.get(topic) || []).length - 1;
+    // Per-assistant actions: copy the reply + regenerate (only on the last one + not while streaming).
+    const isLast = index === (chatHistory.get(topic) || []).length - 1;
+    const actions = `
+      <div class="chat-msg-actions">
+        <button class="chat-msg-action" data-action="copy" title="Copy reply"><i data-lucide="copy"></i></button>
+        ${isLast && !isStreaming ? '<button class="chat-msg-action" data-action="regen" title="Re-ask the last question"><i data-lucide="refresh-cw"></i></button>' : ''}
+      </div>`;
+    return `<div class="chat-msg chat-msg-asst" data-idx="${index}">
+      ${actions}
       <div class="chat-msg-ic">🤖</div>
-      <div class="chat-msg-body markdown-view">${assistantInnerHtml(m)}</div>
+      <div class="chat-msg-body markdown-view">${assistantInnerHtml(m, isStreaming)}${tsHtml}</div>
     </div>`;
   }
 
   async function send(mode, question) {
     const agent = document.getElementById('chat-agent')?.checked || false;
     const hist = loadChatHistory(topic);
-    hist.push({ role: 'user', mode: agent ? `agent · ${mode}` : mode, text: question });
-    hist.push({ role: 'assistant', mode, text: '', toolCalls: [] });
+    const now = Date.now();
+    hist.push({ role: 'user', mode: agent ? `agent · ${mode}` : mode, text: question, ts: now });
+    hist.push({ role: 'assistant', mode, text: '', toolCalls: [], ts: now });
     chatHistory.set(topic, hist);
     saveChatHistory(topic);
     renderMessages();
@@ -1120,11 +1548,16 @@ export async function renderTopic(root, { params }) {
     const bubbles = box.querySelectorAll('.chat-msg');
     const target = bubbles[bubbles.length - 1];
     if (!target) return;
-    target.querySelector('.chat-msg-body').innerHTML = assistantInnerHtml(last);
+    const bodyEl = target.querySelector('.chat-msg-body');
+    const tsHtml = last.ts
+      ? `<div class="chat-msg-ts" data-ts="${last.ts}">${timeAgo(last.ts / 1000)}</div>`
+      : '';
+    bodyEl.innerHTML = assistantInnerHtml(last, chatStream.active) + tsHtml;
     box.scrollTop = box.scrollHeight;
+    window.refreshIcons?.();
   }
 
-  function assistantInnerHtml(m) {
+  function assistantInnerHtml(m, isStreaming = false) {
     let html = '';
     if (m.toolCalls && m.toolCalls.length) {
       html += '<div class="tool-calls">';
@@ -1133,7 +1566,7 @@ export async function renderTopic(root, { params }) {
         const resolved = tc.output != null;
         const outPreview = resolved
           ? esc(JSON.stringify(tc.output).slice(0, 180))
-          : '<span class="chat-typing">running…</span>';
+          : '<span class="chat-typing-dots"><span></span><span></span><span></span></span>';
         html += `
           <details class="tool-call ${resolved ? 'done' : 'pending'}">
             <summary>
@@ -1147,7 +1580,13 @@ export async function renderTopic(root, { params }) {
       });
       html += '</div>';
     }
-    html += renderMarkdown(m.text || '') || '<span class="chat-typing">thinking…</span>';
+    const rendered = renderMarkdown(m.text || '');
+    if (rendered) {
+      html += rendered;
+    } else if (isStreaming) {
+      // Animated 3-dot indicator instead of a plain "thinking…" word.
+      html += '<div class="chat-typing-dots" aria-label="assistant is typing"><span></span><span></span><span></span></div>';
+    }
     return html;
   }
 
@@ -1252,6 +1691,7 @@ export async function renderTopic(root, { params }) {
     if (activeTab === 'chat' && name !== 'chat') {
       try { chatStream.unlistenProgress?.(); } catch {}
       try { chatStream.unlistenDone?.(); } catch {}
+      if (chatTsInterval) { clearInterval(chatTsInterval); chatTsInterval = null; }
     }
     activeTab = name;
     tabsEl.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
@@ -1263,7 +1703,7 @@ export async function renderTopic(root, { params }) {
     t.addEventListener('click', () => switchTab(t.dataset.tab));
   });
 
-  $('#btn-rerun').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
+  $('#btn-rerun').onclick = () => openSourcePickerModal(topic);
   $('#btn-delete').onclick = async () => {
     const confirmPref = localStorage.getItem('gapmap.pref.confirm_delete') !== 'false';
     if (confirmPref && !confirm(`Delete topic "${topic}"?`)) return;
@@ -1331,6 +1771,7 @@ export async function renderTopic(root, { params }) {
     try { chatStream.unlistenProgress?.(); } catch {}
     try { chatStream.unlistenDone?.(); } catch {}
     clearInterval(activeChipInterval);
+    if (chatTsInterval) { clearInterval(chatTsInterval); chatTsInterval = null; }
     window.removeEventListener('hashchange', hashCleanup);
   };
   window.addEventListener('hashchange', hashCleanup);
