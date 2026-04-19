@@ -830,6 +830,40 @@ def cmd_research_solutions(
             typer.echo(f"{k}: {v}")
 
 
+@research_app.command("sentiment-by-source")
+def cmd_research_sentiment_by_source(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must have a corpus collected)."),
+    provider: str | None = typer.Option(None, "--provider", help="Override LLM provider."),
+    as_json: bool = typer.Option(False, "--json", help="Emit summary as JSON."),
+) -> None:
+    """Aggregate sentiment + dominant emotions per source for a topic."""
+    from ..analyze.providers.base import resolve_provider
+    from ..research.sentiment_by_source import sentiment_for_topic
+
+    try:
+        resolved = resolve_provider(provider)
+    except Exception as e:  # noqa: BLE001
+        out = {"ok": False, "skipped": True, "reason": f"no_llm_provider: {e}"}
+        if as_json:
+            typer.echo(json.dumps(out))
+        else:
+            typer.echo(f"Skipped: {out['reason']}")
+        raise typer.Exit(0)
+
+    result = sentiment_for_topic(topic=topic, provider=resolved)
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+    else:
+        typer.echo(f"persisted={result.get('persisted', 0)}  skipped={result.get('skipped', 0)}")
+        for s in result.get("sources", []):
+            label = s.get("source_label") or s.get("source")
+            if s.get("_skipped"):
+                typer.echo(f"  - {label}: skipped — {s.get('reason')}")
+            else:
+                emos = ", ".join(s.get("dominant_emotions") or []) or "—"
+                typer.echo(f"  - {label} ({s.get('n_posts')}): {s.get('label')} · {emos}")
+
+
 @research_app.command("temporal-gaps")
 def cmd_research_temporal(
     topic: str = typer.Option(..., "--topic", "-t"),

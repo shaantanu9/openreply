@@ -253,6 +253,7 @@ export const api = {
   onPalaceWarmupDone:     (cb) => listen('palace:warmup:done',     e => cb(e.payload)),
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic) => invoke('run_temporal_gaps', { topic }),
+  runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
   runRedditSearch:    (query, sub, sort, timeFilter, limit) =>
     invoke('run_reddit_search', { query, sub, sort, timeFilter, limit }),

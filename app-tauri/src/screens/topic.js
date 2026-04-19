@@ -5,9 +5,11 @@
 import { api, $, esc, timeAgo } from '../api.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
+import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { loadSolutions } from './solutions.js';
 import { loadTrends } from './trends.js';
 import { loadPosts } from './posts.js';
+import { loadSentiment } from './sentiment.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
@@ -356,6 +358,7 @@ export async function renderTopic(root, { params }) {
       <button class="tab" data-tab="report"><i data-lucide="file-text"></i> Report</button>
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
       <button class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
+      <button class="tab" data-tab="sentiment"><i data-lucide="smile"></i> Sentiment</button>
       <button class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
       <button class="tab" data-tab="posts"><i data-lucide="list"></i> Posts</button>
       <button class="tab" data-tab="research"><i data-lucide="book-open"></i> Research</button>
@@ -510,14 +513,9 @@ export async function renderTopic(root, { params }) {
                 + (s.feature_wishes || 0) + (s.products || 0);
     return total;
   }
-  async function checkLlmReady() {
-    try {
-      const b = await api.byokStatus();
-      return !!(b?.anthropic?.set || b?.openai?.set || b?.openrouter?.set ||
-                b?.groq?.set || b?.deepseek?.set || b?.mistral?.set ||
-                b?.google?.set || b?.ollama_base_url);
-    } catch { return false; }
-  }
+  // Delegates to the shared helper in lib/llmStatus.js so every tab agrees on
+  // "is a provider configured" (local Ollama counts equally with cloud keys).
+  const checkLlmReady = hasLlmConfigured;
 
   async function runEnrichFromMap() {
     const btn = $('#btn-map-enrich');
@@ -1215,9 +1213,11 @@ export async function renderTopic(root, { params }) {
   ];
 
   async function loadChat() {
+    const set = (html) => { if (contentEl.dataset.tab === 'chat') contentEl.innerHTML = html; };
     // Gate 1: need an LLM key.
     let byok = {};
     try { byok = await api.byokStatus(); } catch {}
+    if (contentEl.dataset.tab !== 'chat') return;
     const anyReady =
       byok?.anthropic?.set || byok?.openai?.set || byok?.openrouter?.set ||
       byok?.groq?.set || byok?.deepseek?.set || byok?.mistral?.set ||
@@ -1236,7 +1236,8 @@ export async function renderTopic(root, { params }) {
       findingsCount = Array.isArray(rows) && rows[0]?.n ? Number(rows[0].n) : 0;
     } catch {}
     if (anyReady && findingsCount === 0) {
-      contentEl.innerHTML = `
+      if (contentEl.dataset.tab !== 'chat') return;
+      set(`
         <div class="empty-big" style="margin:18px 0">
           <h3>Gap map not built yet</h3>
           <p>Chat needs painpoints, features, and workarounds to ground its answers.
@@ -1245,7 +1246,7 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-primary" id="btn-chat-build">Build gap map now</button>
             <button class="btn btn-ghost" id="btn-chat-rerun" style="border:1px solid var(--line)">Re-run collect</button>
           </div>
-        </div>`;
+        </div>`);
       $('#btn-chat-build').onclick = async () => {
         const btn = $('#btn-chat-build');
         btn.disabled = true; btn.textContent = 'Building…';
@@ -1266,7 +1267,52 @@ export async function renderTopic(root, { params }) {
     const modelLabel = byok?.llm_model || 'default';
 
     const agentDefault = localStorage.getItem('gapmap.chat.agent') === 'true';
-    contentEl.innerHTML = `
+    if (contentEl.dataset.tab !== 'chat') return;
+
+    // Build chat body outside the outer template — nested ternary + IIFE inside a template
+    // literal breaks Vite import-analysis (parse error near closing backtick + brace).
+    let chatMainHtml;
+    if (!anyReady) {
+      const configured = [];
+      if (byok?.anthropic?.set)  configured.push('Anthropic');
+      if (byok?.openai?.set)     configured.push('OpenAI');
+      if (byok?.openrouter?.set) configured.push('OpenRouter');
+      if (byok?.groq?.set)       configured.push('Groq');
+      if (byok?.deepseek?.set)   configured.push('DeepSeek');
+      if (byok?.mistral?.set)    configured.push('Mistral');
+      if (byok?.google?.set)     configured.push('Google');
+      if (byok?.ollama_base_url) configured.push('Ollama');
+      const statusLine = configured.length
+        ? `<p style="color:var(--ink-2);font-size:13px;margin:6px 0 0"><b>${configured.length}</b> provider${configured.length>1?'s':''} configured: ${esc(configured.join(', '))} — but no default picked.</p>`
+        : '';
+      chatMainHtml = `
+          <div class="empty-big" style="margin:18px 0">
+            <h3>${configured.length ? 'Pick a default model' : 'No LLM key yet'}</h3>
+            <p>${configured.length
+        ? 'Open the key manager and click a model chip to set a default. Chat will grant access immediately.'
+        : "Add Anthropic, OpenAI, OpenRouter, Groq, DeepSeek, Gemini, or local Ollama — chat streams grounded answers from this topic's data."}</p>
+            ${statusLine}
+            <button class="btn btn-primary icon-btn" id="btn-chat-add-key" style="margin-top:14px"><i data-lucide="key-round"></i> ${configured.length ? 'Pick default' : 'Add a key'}</button>
+          </div>`;
+    } else {
+      chatMainHtml = `
+          <div class="chat-presets-pill">
+            ${PRESETS.map(p => `
+              <button class="chat-preset-pill chat-preset" data-mode="${p.mode}" title="${esc(p.desc)}">
+                <i data-lucide="${p.icon}"></i>${esc(p.label)}
+              </button>`).join('')}
+          </div>
+
+          <div class="chat-messages" id="chat-messages"></div>
+
+          <div class="chat-input-row">
+            <textarea id="chat-input" rows="2" placeholder='Ask a question about this topic — e.g. "what do users DIY today?"'></textarea>
+            <button class="btn btn-primary btn-sm" id="btn-chat-send">Send</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-cancel" hidden>Stop</button>
+          </div>`;
+    }
+
+    set(`
       <div class="chat-wrap">
         <div class="chat-head">
           <div>
@@ -1288,47 +1334,9 @@ export async function renderTopic(root, { params }) {
           </div>
         </div>
 
-        ${!anyReady ? (() => {
-          // List which keys ARE saved (even if default isn't picked yet).
-          const configured = [];
-          if (byok?.anthropic?.set)  configured.push('Anthropic');
-          if (byok?.openai?.set)     configured.push('OpenAI');
-          if (byok?.openrouter?.set) configured.push('OpenRouter');
-          if (byok?.groq?.set)       configured.push('Groq');
-          if (byok?.deepseek?.set)   configured.push('DeepSeek');
-          if (byok?.mistral?.set)    configured.push('Mistral');
-          if (byok?.google?.set)     configured.push('Google');
-          if (byok?.ollama_base_url) configured.push('Ollama');
-          const statusLine = configured.length
-            ? `<p style="color:var(--ink-2);font-size:13px;margin:6px 0 0"><b>${configured.length}</b> provider${configured.length>1?'s':''} configured: ${esc(configured.join(', '))} — but no default picked.</p>`
-            : '';
-          return `
-          <div class="empty-big" style="margin:18px 0">
-            <h3>${configured.length ? 'Pick a default model' : 'No LLM key yet'}</h3>
-            <p>${configured.length
-              ? 'Open the key manager and click a model chip to set a default. Chat will grant access immediately.'
-              : "Add Anthropic, OpenAI, OpenRouter, Groq, DeepSeek, Gemini, or local Ollama — chat streams grounded answers from this topic's data."}</p>
-            ${statusLine}
-            <button class="btn btn-primary icon-btn" id="btn-chat-add-key" style="margin-top:14px"><i data-lucide="key-round"></i> ${configured.length ? 'Pick default' : 'Add a key'}</button>
-          </div>`;
-        })() : `
-          <div class="chat-presets-pill">
-            ${PRESETS.map(p => `
-              <button class="chat-preset-pill chat-preset" data-mode="${p.mode}" title="${esc(p.desc)}">
-                <i data-lucide="${p.icon}"></i>${esc(p.label)}
-              </button>`).join('')}
-          </div>
-
-          <div class="chat-messages" id="chat-messages"></div>
-
-          <div class="chat-input-row">
-            <textarea id="chat-input" rows="2" placeholder='Ask a question about this topic — e.g. "what do users DIY today?"'></textarea>
-            <button class="btn btn-primary btn-sm" id="btn-chat-send">Send</button>
-            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-cancel" hidden>Stop</button>
-          </div>
-        `}
+        ${chatMainHtml}
       </div>
-    `;
+    `);
 
     // Header actions always available
     $('#btn-chat-keys')?.addEventListener('click', () => openByokModal(() => loadChat()));
@@ -1757,6 +1765,7 @@ export async function renderTopic(root, { params }) {
     solutions: () => loadSolutions(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
     posts: () => loadPosts(contentEl, topic),
+    sentiment: () => loadSentiment(contentEl, topic),
   };
   // Tab-generation counter. Every click bumps it. Loaders already close over
   // `activeTab` — they can check `activeTab === 'map'` before innerHTML writes

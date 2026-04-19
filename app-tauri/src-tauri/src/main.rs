@@ -5,10 +5,14 @@ mod cli;
 mod commands;
 mod schedule;
 
-use cli::{ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid};
+use cli::{
+    cancel_active_chat, cancel_active_job, cancel_active_stream,
+    ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
+};
+use tauri::RunEvent;
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ActiveJob::default())
@@ -49,6 +53,7 @@ fn main() {
             commands::list_provider_models,
             commands::run_solutions_pipeline,
             commands::run_temporal_gaps,
+            commands::run_sentiment_by_source,
             commands::quick_extract_gaps,
             commands::run_reddit_search,
             commands::start_stream,
@@ -71,6 +76,23 @@ fn main() {
             commands::schedule_enable_topic,
             commands::schedule_mark_seen,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running gapmap");
+        .build(tauri::generate_context!())
+        .expect("error while building gapmap");
+
+    // On app exit (window closed, Cmd-Q, process signal), terminate every
+    // tracked Python child so we don't orphan collect/chat/stream processes.
+    // This fires for BOTH paths:
+    //   - prod (PyInstaller sidecar, CommandChild::kill)
+    //   - dev  (raw tokio pid → SIGTERM)
+    // Without this the user's Activity Monitor fills up with zombie
+    // `reddit-cli` / `python -m reddit_research.cli.main` processes every
+    // time they quit mid-collect, and the fetches table keeps an
+    // `ended_at=NULL` row that the UI reads as "still running".
+    app.run(|app_handle, event| {
+        if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+            let _ = cancel_active_job(app_handle);
+            let _ = cancel_active_chat(app_handle);
+            let _ = cancel_active_stream(app_handle);
+        }
+    });
 }

@@ -272,6 +272,19 @@ pub async fn run_temporal_gaps(app: AppHandle, topic: String) -> Result<Value, S
     .map_err(err_to_string)
 }
 
+/// Per-source sentiment aggregation for a topic. One LLM call per source
+/// with ≥3 posts. Persists results as graph_nodes kind='source_sentiment'
+/// so the UI can re-render fast on next open without re-running the LLM.
+#[tauri::command]
+pub async fn run_sentiment_by_source(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "sentiment-by-source", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 /// Quick-extract — runs `research gaps` for a topic without building the
 /// graph. Returns the 4-category JSON for preview only. Use enrich_graph
 /// to persist the results into the knowledge graph.

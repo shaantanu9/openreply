@@ -16,6 +16,37 @@ Keep MVP focused. Resist the urge to bundle items from here into MVP — every r
 
 ---
 
+## Layer 0: Per-post sentiment column (Shape B from sentiment-by-source v1)
+
+**Sibling already shipped:** Per-source sentiment cards (Shape A) — see `app-tauri/src/screens/sentiment.js`. One LLM call per source, aggregated. Lives on the topic screen as a "Sentiment" tab.
+
+**This deferred shape (B):** per-POST sentiment + UI filter that lets users slice the corpus by source AND sentiment AND topic.
+
+### What it adds
+- New columns on `posts`: `sentiment_label` (positive/negative/neutral/mixed), `sentiment_score` (-1.0 to 1.0), `sentiment_emotions` (JSON list of Plutchik emotions)
+- Classifier pipeline that runs on collect (or as a one-shot reindex): one inference per post
+- Posts tab toolbar gains a sentiment dropdown alongside the existing sub + sort filters
+- Optional: new "negative-only" filter chip on Trends + Solutions tabs to surface emotional hot-spots
+
+### Why deferred
+- **Cost:** one classifier inference per post. A topic with 5,000 posts = 5,000 inferences. LLM-based is too slow/expensive at scale; needs a local CPU model (DistilBERT-base-sentiment ~80MB, ~300ms per post on M-series).
+- **Storage:** schema migration on `posts` (3 new columns) + backfill for existing data.
+- **UX uncertainty:** "filter posts by sentiment" sounds useful but the actual reading experience is still "scroll a long list." Shape A's per-source cards answer the question (*"how does each community feel?"*) more directly.
+
+### Promotion criteria (when to upgrade)
+Promote to its own spec when:
+1. Shape A has been in production ≥2 weeks AND ≥3 users have asked "can I filter posts by sentiment?"
+2. We have a local-model story (Palace already ships an ONNX setup — could reuse the same download/sign infrastructure for a sentiment model)
+3. The Posts tab is established as the primary "browse the corpus" UI (currently underused vs Solutions/Trends/Map)
+
+### Implementation sketch (when promoted)
+- **Python:** new `analyze/sentiment_post.py` — `classify_post(text) -> {label, score, emotions}` using a local ONNX model. New `core/db.py` migration adds 3 columns. Backfill CLI: `reddit-cli analyze sentiment --topic X --batch 200`.
+- **Rust:** `start_sentiment_classify(topic)` Tauri command using `run_cli_streaming` (long-running, needs progress events).
+- **JS:** Posts tab toolbar gains `<select>` for sentiment. SQL WHERE clause adds `AND coalesce(p.sentiment_label,'') IN (...)`.
+- **Model:** DistilBERT-base-uncased-finetuned-sst-2-english (English-only initially) or distilbert-base-multilingual-cased-sentiments-student for multi-lang.
+
+---
+
 ## Layer 1: Deeper "Why" extraction
 
 **MVP ships:** emotion (Plutchik 8) + JTBD (struggling moment, anxiety, desired outcome).
