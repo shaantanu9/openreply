@@ -1,7 +1,7 @@
 # Topic canonicalization & intent-validation — design
 
 **Date:** 2026-04-19
-**Status:** Approved, ready for implementation planning
+**Status:** Shipped 2026-04-19
 **Scope:** `discover_subs` pipeline — typo correction + weak-discovery detection
 
 ## Goal
