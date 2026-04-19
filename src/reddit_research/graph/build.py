@@ -24,7 +24,19 @@ def _upsert_node(
     label: str,
     metadata: dict | None = None,
 ) -> str:
+    from datetime import datetime, timezone
     node_id = make_node_id(topic, kind, key)
+    # Preserve existing ts on update — a re-extracted finding keeps its
+    # original creation timestamp so it doesn't flicker as "new" on re-run.
+    try:
+        existing = list(db.query("SELECT ts FROM graph_nodes WHERE id = ?", [node_id]))
+        ts = (existing[0].get("ts") if existing else "") \
+             or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    except Exception:
+        # Schema without ts column (pre-migration) or other DB hiccup —
+        # fall back to a fresh timestamp; lazy migration in init_schema
+        # will add the column on next startup.
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db["graph_nodes"].upsert(
         {
             "id": node_id,
@@ -32,6 +44,7 @@ def _upsert_node(
             "kind": kind,
             "label": label,
             "metadata_json": json.dumps(metadata or {}, default=str, ensure_ascii=False),
+            "ts": ts,
         },
         pk="id",
     )

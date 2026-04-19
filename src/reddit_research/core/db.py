@@ -248,12 +248,21 @@ def init_schema(db: Database) -> None:
                 "kind": str,
                 "label": str,
                 "metadata_json": str,
+                "ts": str,              # ISO UTC — set on first insert,
+                                        # preserved on update (see _upsert_node)
             },
             pk="id",
         )
         db["graph_nodes"].create_index(["topic"])
         db["graph_nodes"].create_index(["kind"])
         db["graph_nodes"].create_index(["topic", "kind"])
+    else:
+        # Lazy migration for pre-2026-04-19 installs. Existing rows get an
+        # empty ts → they bucket as "stable" in diff_findings, which is
+        # correct (we have no creation timestamp so treat as baseline).
+        _cols = {c.name for c in db["graph_nodes"].columns}
+        if "ts" not in _cols:
+            db.executescript("ALTER TABLE graph_nodes ADD COLUMN ts TEXT DEFAULT ''")
 
     if "graph_edges" not in db.table_names():
         db["graph_edges"].create(

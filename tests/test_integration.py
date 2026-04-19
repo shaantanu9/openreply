@@ -335,12 +335,15 @@ def test_canonicalize_no_llm_passthrough(
 ) -> None:
     """Without any LLM configured, canonicalize returns the topic unchanged."""
     from reddit_research.research import discover as discover_mod
+    from reddit_research.analyze.providers import base as provider_base
     for k in (
         "LLM_PROVIDER", "LLM_MODEL",
         "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
         "GROQ_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY", "GOOGLE_API_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
+    # Also hide any locally-running Ollama so this test is deterministic.
+    monkeypatch.setattr(provider_base, "_ollama_reachable", lambda: False)
 
     result = discover_mod._canonicalize_topic("calari tracking app")
     assert result["canonical"] == "calari tracking app"
@@ -620,3 +623,50 @@ def test_canonicalize_drops_malformed_keywords(
     assert keys.count("grafana") == 1  # duplicate dropped
     assert "prometheus" not in keys    # bad relevance dropped
     assert "" not in keys              # empty dropped
+
+
+# ─── Time-windowed diff of findings ────────────────────────────────────
+
+
+def test_diff_returns_recent_only(clean_env: Path) -> None:
+    from datetime import datetime, timezone, timedelta
+    from reddit_research.core.db import get_db
+    from reddit_research.graph.diff import diff_findings
+
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    old_ts = (now - timedelta(days=40)).isoformat(timespec="seconds")
+    new_ts = (now - timedelta(days=1)).isoformat(timespec="seconds")
+    db["graph_nodes"].insert_all([
+        {"id": "t::painpoint::old", "topic": "t", "kind": "painpoint",
+         "label": "Old pain", "metadata_json": "{}", "ts": old_ts},
+        {"id": "t::painpoint::new", "topic": "t", "kind": "painpoint",
+         "label": "New pain", "metadata_json": "{}", "ts": new_ts},
+        {"id": "t::workaround::fresh", "topic": "t", "kind": "workaround",
+         "label": "DIY hack", "metadata_json": "{}", "ts": new_ts},
+    ], pk="id")
+    r = diff_findings("t", window_days=7)
+    rec_labels = [x["label"] for x in r["recent"]]
+    sta_labels = [x["label"] for x in r["stable"]]
+    assert "New pain" in rec_labels
+    assert "DIY hack" in rec_labels
+    assert "Old pain" in sta_labels
+    assert r["summary"]["new_painpoints"] == 1
+    assert r["summary"]["new_workarounds"] == 1
+    assert r["summary"]["new_products"] == 0
+
+
+def test_diff_empty_ts_goes_to_stable(clean_env: Path) -> None:
+    """Pre-migration rows with empty ts should bucket as stable."""
+    from reddit_research.core.db import get_db
+    from reddit_research.graph.diff import diff_findings
+
+    db = get_db()
+    db["graph_nodes"].insert_all([
+        {"id": "u::painpoint::legacy", "topic": "u", "kind": "painpoint",
+         "label": "Legacy pain", "metadata_json": "{}", "ts": ""},
+    ], pk="id")
+    r = diff_findings("u", window_days=7)
+    assert [x["label"] for x in r["stable"]] == ["Legacy pain"]
+    assert r["recent"] == []
+    assert r["summary"]["new_painpoints"] == 0

@@ -167,12 +167,13 @@ export const api = {
   byokStatus:      ()        => cachedInvoke('byok_status',    null, 30000),
   getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 10000),
   runQuery:        (sql, topic, params) => cachedInvoke('run_query', { sql, topic, params }, 10000),
+  diffFindings:    (topic, windowDays = 7) => cachedInvoke('diff_findings', { topic, windowDays }, 30000),
 
   // ----- writes / side-effects (bypass + invalidate) -----
   discoverSubs:    (topic, limit = 10) => invoke('discover_subs', { topic, limit }),
-  startCollect:    (topic, aggressive = true) => {
+  startCollect:    (topic, aggressive = true, sources = null, skipReddit = false) => {
     invalidate('list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query');
-    return invoke('start_collect', { topic, aggressive });
+    return invoke('start_collect', { topic, aggressive, sources, skipReddit });
   },
   cancelCollect:   ()        => invoke('cancel_collect'),
   collectStatus:   ()        => invoke('collect_status'),

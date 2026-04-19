@@ -537,6 +537,36 @@ def cmd_research_discover(
         _emit(rows, as_json, table_title=f"subs for '{topic}'")
 
 
+@research_app.command("diff")
+def cmd_research_diff(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    window: int = typer.Option(7, "--window", help="Days in the 'recent' window"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show what findings appeared in the last N days vs the prior window.
+
+    recent: added in the last --window days.
+    prior:  added between --window and 4× --window days ago.
+    stable: older than that OR pre-2026-04-19 rows without a timestamp.
+    """
+    from ..graph.diff import diff_findings
+
+    r = diff_findings(topic, window_days=window)
+    if as_json:
+        _emit(r, as_json, table_title=f"diff for '{topic}' (±{window}d)")
+        return
+    s = r["summary"]
+    typer.echo(
+        f"'{topic}' — last {window} days:\n"
+        f"  +{s['new_painpoints']} painpoints  "
+        f"+{s['new_workarounds']} workarounds  "
+        f"+{s['new_products']} products  "
+        f"+{s['new_feature_wishes']} feature wishes"
+    )
+    for node in r["recent"]:
+        typer.echo(f"  NEW [{node['kind']}] {node['label']}  ({node['ts']})")
+
+
 @research_app.command("collect")
 def cmd_research_collect(
     topic: str = typer.Option(..., "--topic", "-t"),

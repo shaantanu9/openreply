@@ -2612,3 +2612,16 @@ kbd {
 .byok-default-models-grid::-webkit-scrollbar-thumb {
   background: var(--line-2); border-radius: 999px; border: 2px solid var(--surface-2);
 }
+
+/* ---------- Time-windowed diff banner (Part B) ---------- */
+.diff-banner {
+  background: var(--gold-soft);
+  border: 1px solid var(--gold);
+  color: var(--ink);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin-bottom: 10px;
+  display: inline-block;
+}
+.diff-banner b { font-weight: 700; }

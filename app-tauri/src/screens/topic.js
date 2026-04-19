@@ -614,8 +614,26 @@ export async function renderTopic(root, { params }) {
         ? `<span class="th-chip"><b>${findingsAfter}</b> findings</span>`
         : `<span class="th-chip" style="color:var(--ink-3)">0 findings</span>`;
 
+      // Time-windowed diff — "what's new since last week". Best-effort.
+      let diffBanner = '';
+      try {
+        const d = await api.diffFindings(topic, 7);
+        const s = (d && d.summary) || {};
+        const total = (s.new_painpoints || 0) + (s.new_workarounds || 0)
+                    + (s.new_products || 0) + (s.new_feature_wishes || 0);
+        if (total > 0) {
+          const parts = [];
+          if (s.new_painpoints)     parts.push(`<b>${s.new_painpoints}</b> new painpoint${s.new_painpoints === 1 ? '' : 's'}`);
+          if (s.new_workarounds)    parts.push(`<b>${s.new_workarounds}</b> new DIY`);
+          if (s.new_products)       parts.push(`<b>${s.new_products}</b> new product${s.new_products === 1 ? '' : 's'}`);
+          if (s.new_feature_wishes) parts.push(`<b>${s.new_feature_wishes}</b> new feature wish${s.new_feature_wishes === 1 ? '' : 'es'}`);
+          diffBanner = `<div class="diff-banner">✨ Since last week — ${parts.join(' · ')}</div>`;
+        }
+      } catch {}
+
       contentEl.innerHTML = `
         ${statsStripHtml}
+        ${diffBanner}
         <div class="map-toolbar">
           <div class="map-toolbar-info">
             <span class="th-chip"><b>${nodeCount.toLocaleString()}</b> nodes</span>

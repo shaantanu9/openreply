@@ -181,12 +181,21 @@ pub async fn discover_subs(app: AppHandle, topic: String, limit: u32) -> Result<
     .map_err(err_to_string)
 }
 
-/// Kick off an aggressive multi-source collect. Streams progress.
+/// Start a topic collect. Streams progress via `collect:progress` events
+/// and emits `collect:done` when complete.
+///
+/// `sources` (optional) — comma-separated external source names (e.g.
+/// "hn,arxiv,pubmed"). Forwarded as `--sources X,Y,Z`.
+///
+/// `skip_reddit` (default false) — skip the Reddit fetch stages entirely.
+/// Useful for topping up an existing topic with only externals.
 #[tauri::command]
 pub async fn start_collect(
     app: AppHandle,
     topic: String,
     aggressive: bool,
+    sources: Option<String>,
+    skip_reddit: Option<bool>,
 ) -> Result<(), String> {
     let mut args: Vec<String> = vec![
         "research".into(),
@@ -197,7 +206,16 @@ pub async fn start_collect(
     if aggressive {
         args.push("--aggressive".into());
     }
-    // Convert to &str slice for run_cli_streaming
+    if let Some(s) = sources.as_ref() {
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            args.push("--sources".into());
+            args.push(trimmed.into());
+        }
+    }
+    if skip_reddit.unwrap_or(false) {
+        args.push("--skip-reddit".into());
+    }
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     run_cli_streaming(&app, arg_refs, "collect:progress", "collect:done")
         .await
@@ -335,6 +353,24 @@ pub async fn stream_status(app: AppHandle) -> Result<bool, String> {
     let state = app.state::<ActiveStream>();
     let guard = state.0.lock().map_err(|e| e.to_string())?;
     Ok(guard.is_some())
+}
+
+/// Time-windowed diff of findings — "what's new in the last N days?".
+#[tauri::command]
+pub async fn diff_findings(
+    app: AppHandle,
+    topic: String,
+    window_days: Option<u32>,
+) -> Result<Value, String> {
+    let win = window_days.unwrap_or(7).to_string();
+    run_cli(
+        &app,
+        vec![
+            "research", "diff", "--topic", &topic, "--window", &win, "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
 }
 
 /// Export the gap-map HTML for a topic. Returns absolute path.
@@ -874,6 +910,13 @@ pub async fn byok_status(_app: AppHandle) -> Result<Value, String> {
         "reddit_client_id":     mask("REDDIT_CLIENT_ID"),
         "reddit_client_secret": mask("REDDIT_CLIENT_SECRET"),
         "reddit_refresh_token": mask("REDDIT_REFRESH_TOKEN"),
+        // Data-source API keys for non-Reddit fetchers. YouTube is required
+        // to collect video comments; the other two are optional rate-limit
+        // upgrades for Semantic Scholar + PubMed. All three surface in the
+        // BYOK modal's "Reddit + sources" tab.
+        "youtube_api_key":          mask("YOUTUBE_API_KEY"),
+        "semantic_scholar_api_key": mask("SEMANTIC_SCHOLAR_API_KEY"),
+        "ncbi_api_key":             mask("NCBI_API_KEY"),
         "llm_provider": raw("LLM_PROVIDER"),
         "llm_model":    raw("LLM_MODEL"),
     }))
