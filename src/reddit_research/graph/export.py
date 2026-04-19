@@ -226,8 +226,54 @@ _HTML_TEMPLATE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root {
-    --bg:#0b0e13; --panel:#141921; --border:#2a3340; --text:#e6edf3; --muted:#8b949e;
-    --accent:#58a6ff; --chronic:#f85149; --emerging:#ffa657; --fading:#8b949e;
+    /* Matches app CSS tokens (app-tauri/src/style.css). Single source of
+       truth for the exported viewer's palette. */
+    --v-bg:         #F6F3EE;
+    --v-surface:    #FFFFFF;
+    --v-surface-2:  #FBF8F2;
+    --v-ink:        #1A1614;
+    --v-ink-2:      #4A4339;
+    --v-ink-3:      #8A8278;
+    --v-line:       #ECE6DC;
+    --v-line-2:     #E2DBCF;
+
+    --v-orange:        #FF8C42;
+    --v-orange-soft:   #FFE9D6;
+    --v-lavender:      #C9B6F2;
+    --v-lavender-soft: #EFE7FB;
+    --v-mint:          #A8DCC4;
+    --v-mint-soft:     #E1F2EA;
+    --v-sky:           #B5D4F0;
+    --v-sky-soft:      #E4F0FA;
+    --v-rose:          #F4B6BD;
+    --v-rose-soft:     #FBE3E6;
+    --v-gold:          #F0D78A;
+    --v-gold-soft:     #FBF1D4;
+
+    --v-chronic:   #E26A6A;
+    --v-emerging:  #E69447;
+    --v-fading:    #9C948A;
+
+    --v-radius:    18px;
+    --v-radius-sm: 12px;
+
+    /* Aliases previously used in the dark template — kept so the old rules
+       continue to compile while we migrate them one by one in Task B2. */
+    --bg:     var(--v-bg);
+    --surface:var(--v-surface);
+    --text:   var(--v-ink);
+    --muted:  var(--v-ink-3);
+    --border: var(--v-line);
+    --accent: var(--v-orange);
+    --panel:  var(--v-surface);
+  }
+  :root {
+    /* Gap Map soft-dashboard palette — matches the surrounding app shell
+       (cream bg, orange accent). Tokens mirror app-tauri/src/style.css so
+       the iframe visually continues the main UI instead of clashing. */
+    --bg:#F6F3EE; --panel:#FFFFFF; --border:#ECE6DC; --text:#1A1614; --muted:#8A8278;
+    --accent:#FF8C42; --chronic:#E26A6A; --emerging:#E69447; --fading:#9C948A;
+    --surface-2:#FBF8F2; --line-2:#E2DBCF;
   }
   * { box-sizing: border-box; }
   html, body { margin:0; padding:0; height:100%; width:100%; background:var(--bg);
@@ -251,23 +297,25 @@ _HTML_TEMPLATE = """<!doctype html>
   .card { background:var(--bg); border:1px solid var(--border); border-radius:5px;
     padding:8px 10px; margin-bottom:6px; cursor:pointer; transition:border-color .15s; }
   .card:hover { border-color:var(--accent); }
-  .card.active { border-color:var(--accent); background:#0f1720; }
+  .card.active { border-color:var(--accent); background:#FFF4EA; }
   .card-title { font-size:12px; font-weight:600; line-height:1.35; }
   .card-meta { font-size:10px; color:var(--muted); margin-top:3px; display:flex; gap:8px;
     flex-wrap:wrap; }
   .badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700;
     letter-spacing:.3px; }
-  .badge.chronic { background:var(--chronic); color:white; }
-  .badge.emerging { background:var(--emerging); color:black; }
-  .badge.fading { background:var(--fading); color:white; }
-  .badge.severity-high { background:#3d1216; color:#ff6b6b; border:1px solid #5a1a20; }
-  .badge.severity-medium { background:#3d2a12; color:#ffa657; border:1px solid #5a401a; }
-  .badge.severity-low { background:#1a3512; color:#7ee787; border:1px solid #2a5020; }
+  .badge.chronic  { background:var(--chronic);  color:#fff; }
+  .badge.emerging { background:var(--emerging); color:#fff; }
+  .badge.fading   { background:var(--fading);   color:#fff; }
+  /* Severity/saturation badges on cream bg — pastel background + dark text
+     (soft tokens from the app palette) so they read without harsh contrast. */
+  .badge.severity-high   { background:#FBE3E6; color:#B84747; border:1px solid #F4B6BD; }
+  .badge.severity-medium { background:#FBF1D4; color:#8A5A1A; border:1px solid #F0D78A; }
+  .badge.severity-low    { background:#E1F2EA; color:#2E7D5B; border:1px solid #A8DCC4; }
   /* Saturation badges — Guest et al. (2006) thresholds */
-  .badge.sat-saturated { background:#153a24; color:#7ee787; border:1px solid #1f5a37; }
-  .badge.sat-adequate  { background:#153244; color:#58a6ff; border:1px solid #1f4764; }
-  .badge.sat-tentative { background:#3d2a12; color:#ffa657; border:1px solid #5a401a; }
-  .badge.sat-thin      { background:#2a2a2a; color:#8b949e; border:1px solid #3a3a3a; }
+  .badge.sat-saturated { background:#E1F2EA; color:#2E7D5B; border:1px solid #A8DCC4; }
+  .badge.sat-adequate  { background:#E4F0FA; color:#1F5C99; border:1px solid #B5D4F0; }
+  .badge.sat-tentative { background:#FBF1D4; color:#8A5A1A; border:1px solid #F0D78A; }
+  .badge.sat-thin      { background:#F1ECE3; color:#8A8278; border:1px solid #E2DBCF; }
   .card-evidence { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic;
     border-top:1px solid var(--border); padding-top:4px; }
   /* source distribution mini-bar on each card (triangulation at a glance) */
@@ -282,22 +330,23 @@ _HTML_TEMPLATE = """<!doctype html>
   /* Executive summary banner — always visible, addresses "stakeholders
      won't read long reports" (CHRONIC, 6 posts) */
   .exec {
-    margin:0 14px 14px; padding:14px; background:linear-gradient(135deg,#1a2332 0%,#141921 100%);
-    border:1px solid var(--accent); border-radius:6px;
+    margin:0 14px 14px; padding:14px;
+    background:linear-gradient(135deg,#FFF4EA 0%,#FBF8F2 100%);
+    border:1px solid var(--accent); border-radius:8px;
   }
   .exec h2 { font-size:10px; color:var(--accent); letter-spacing:1px;
     margin:0 0 8px; text-transform:uppercase; }
   .exec-tl { font-size:13px; line-height:1.5; color:var(--text); margin:0 0 8px; }
-  .exec-tl b { color:#fff; }
+  .exec-tl b { color:#1A1614; font-weight:700; }
   .exec-ul { font-size:11px; line-height:1.6; color:var(--text); margin:0; padding-left:18px; }
   .exec-ul li { margin-bottom:2px; }
   .exec-actions { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
   .exec-actions button {
-    background:var(--bg); color:var(--text); border:1px solid var(--border);
-    border-radius:4px; padding:4px 10px; cursor:pointer; font-size:11px;
+    background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:5px 10px; cursor:pointer; font-size:11px;
   }
   .exec-actions button:hover { border-color:var(--accent); color:var(--accent); }
-  .exec-actions button.copied { background:var(--accent); color:#0b0e13; border-color:var(--accent); }
+  .exec-actions button.copied { background:var(--accent); color:#fff; border-color:var(--accent); }
 
   .legend { display:flex; flex-wrap:wrap; gap:8px; font-size:10px; color:var(--muted);
     padding:6px 8px; background:var(--bg); border-radius:4px; border:1px solid var(--border);
@@ -308,10 +357,10 @@ _HTML_TEMPLATE = """<!doctype html>
   #graph { width:100%; height:100%; background:var(--bg); }
   .node { cursor:pointer; }
   .node circle { transition:stroke-width .15s; }
-  .node.highlighted circle { stroke:#fff; stroke-width:3px; }
-  .node.dimmed { opacity:0.15; }
-  .link { stroke-opacity:0.25; }
-  .link.highlighted { stroke:var(--accent); stroke-opacity:0.9; stroke-width:1.5px; }
+  .node.highlighted circle { stroke:#1A1614; stroke-width:3px; }
+  .node.dimmed { opacity:0.18; }
+  .link { stroke:#C9BEAA; stroke-opacity:0.45; }
+  .link.highlighted { stroke:var(--accent); stroke-opacity:0.95; stroke-width:1.5px; }
 
   .details h3 { font-size:13px; margin:0 0 4px; font-weight:700; }
   .details .kind-pill { display:inline-block; font-size:9px; font-weight:700;
@@ -395,11 +444,20 @@ _HTML_TEMPLATE = """<!doctype html>
 <script>
 const DATA = {GRAPH_JSON};
 
+// Tuned for the cream (#F6F3EE) background — saturated enough to stand out,
+// aligned with the app's soft-dashboard accent tokens (orange / lavender /
+// sky / mint / rose). Avoid light-on-light pairings that wash out on cream.
 const KIND_COLORS = {
-  topic:"#f778ba", subreddit:"#a371f7", post:"#58a6ff", comment:"#79c0ff",
-  user:"#3fb950", era:"#7d8590",
-  painpoint:"#f85149", feature_wish:"#ffa657",
-  product:"#d2a8ff", workaround:"#7ee787",
+  topic:"#FF8C42",        // app orange — the brand/root
+  subreddit:"#8B6FD4",    // deepened lavender (app lavender would wash out)
+  post:"#4A90C4",         // deepened sky (app sky too light)
+  comment:"#5FA6D9",      // sky-ish
+  user:"#5FB88C",         // deepened mint
+  era:"#9C948A",          // fading gray (app ink-3 adjacent)
+  painpoint:"#E26A6A",    // app chronic
+  feature_wish:"#E69447", // app emerging
+  product:"#D48BA6",      // deepened rose
+  workaround:"#7DC9A3",   // deepened mint
 };
 const KIND_LABEL = {
   topic:"Topic", subreddit:"Subreddit", post:"Post", comment:"Comment",
@@ -596,7 +654,7 @@ function renderExec() {
     btn.textContent = "rendering…";
     try {
       const dataUrl = await htmlToImage.toPng(document.getElementById("exec"), {
-        backgroundColor: "#0b0e13",
+        backgroundColor: "#F6F3EE",
         pixelRatio: 2,
       });
       const slug = (DATA.meta.topic || "gap-map").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
@@ -716,7 +774,7 @@ const sim = d3.forceSimulation(Object.values(nodesById))
   ).strength(0.35))
   .force("collide", d3.forceCollide(d => radiusOf(d) + 3));
 
-const linkSel = g.append("g").attr("stroke","#48505c")
+const linkSel = g.append("g").attr("stroke","#C9BEAA")
   .selectAll("line").data(links).join("line").attr("class","link");
 
 const nodeSel = g.append("g").selectAll("g")
@@ -724,12 +782,12 @@ const nodeSel = g.append("g").selectAll("g")
 nodeSel.append("circle")
   .attr("r", radiusOf)
   .attr("fill", d => KIND_COLORS[d.kind] || "#888")
-  .attr("stroke", "#0b0e13").attr("stroke-width", 1.2);
+  .attr("stroke", "#F6F3EE").attr("stroke-width", 1.2);
 
 nodeSel.append("title").text(d => `${d.label}  [${d.kind}]`);
 nodeSel.append("text")
   .attr("x", d => radiusOf(d) + 3).attr("y", 3)
-  .style("font-size","10px").style("fill","#c9d1d9").style("pointer-events","none")
+  .style("font-size","10px").style("fill","#1A1614").style("pointer-events","none")
   .text(d => (["topic","painpoint","product","workaround","feature_wish"].includes(d.kind))
               ? (d.label||"").slice(0,40) : "");
 
