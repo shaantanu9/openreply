@@ -113,6 +113,30 @@ const REDDIT_FIELDS = [
     help: 'Pairs with the client ID.',
     prefix: '',
   },
+  {
+    key: 'youtube_api_key',
+    envKey: 'YOUTUBE_API_KEY',
+    label: 'YouTube API key',
+    placeholder: 'AIza…',
+    help: 'Unlocks YouTube comment collection (real-user pain points from video threads). Create a free key at <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a> → enable <b>YouTube Data API v3</b>. Free quota: 10 000 units/day.',
+    prefix: '',
+  },
+  {
+    key: 'semantic_scholar_api_key',
+    envKey: 'SEMANTIC_SCHOLAR_API_KEY',
+    label: 'Semantic Scholar API key (optional)',
+    placeholder: '40-char id',
+    help: 'Without a key, Scholar fetches run at 1 request/second. With a free key the ceiling is 100 r/s. Request at <a href="https://www.semanticscholar.org/product/api#api-key-form" target="_blank">semanticscholar.org</a> — takes a few days to approve.',
+    prefix: '',
+  },
+  {
+    key: 'ncbi_api_key',
+    envKey: 'NCBI_API_KEY',
+    label: 'PubMed / NCBI API key (optional)',
+    placeholder: '36-char key',
+    help: 'Bumps PubMed (NCBI E-utilities) rate limit from 3 req/s → 10 req/s. Free, self-serve at <a href="https://www.ncbi.nlm.nih.gov/account/settings/" target="_blank">NCBI account settings</a>.',
+    prefix: '',
+  },
 ];
 
 // Curated "known-good" model lists for cloud providers. Click a chip to set
@@ -157,29 +181,118 @@ const PROVIDER_CURATED_MODELS = {
   ],
 };
 
+// A container shell with a placeholder. Live models are swapped in by
+// renderCuratedChips() once the fetch completes (or falls back to static).
 function renderCuratedChipsHtml(providerKey) {
-  const models = PROVIDER_CURATED_MODELS[providerKey];
-  if (!models || !models.length) return '';
   return `
-    <div class="byok-curated-models" data-provider="${esc(providerKey)}" style="margin-top:10px">
-      <div style="margin-bottom:6px;color:var(--ink-2);font-size:11px"><b>${models.length}</b> recommended models · click to set as default:</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px"></div>
-    </div>`;
+    <details class="byok-curated-models byok-models-accordion" data-provider="${esc(providerKey)}">
+      <summary class="byok-models-summary">
+        <span class="byok-models-summary-label">Models</span>
+        <span class="byok-models-header">Loading…</span>
+        <i data-lucide="chevron-down" class="byok-models-chevron"></i>
+      </summary>
+      <div class="byok-models-body">
+        <input type="search" class="byok-models-filter" placeholder="Filter models…" autocomplete="off" spellcheck="false" />
+        <div class="byok-models-grid"></div>
+      </div>
+    </details>`;
 }
 
-function renderCuratedChips(containerEl, providerKey, activeProvider, activeModel) {
-  const models = PROVIDER_CURATED_MODELS[providerKey];
-  if (!models || !containerEl) return;
-  const grid = containerEl.querySelector('div[style*="flex-wrap"]');
-  if (!grid) return;
-  grid.innerHTML = models.map(m => {
-    const isActive = (activeProvider === providerKey) && (activeModel === m.name);
-    return `<button class="byok-curated-chip" data-provider="${esc(providerKey)}" data-model="${esc(m.name)}" title="${esc(m.note)}"
+// Chip rendering used for BOTH live fetch results and static fallback.
+// Input: array of {id, label?, note?} objects, already filtered/sorted.
+function _renderChipHtml(providerKey, models, activeProvider, activeModel) {
+  return models.map(m => {
+    const id = m.id || m.name;
+    const label = m.label || m.id || m.name;
+    const note = m.note || m.description || '';
+    const isActive = (activeProvider === providerKey) && (activeModel === id);
+    return `<button class="byok-curated-chip" data-provider="${esc(providerKey)}" data-model="${esc(id)}" title="${esc(note)}"
       style="padding:6px 10px;font-size:11px;border:1px solid ${isActive ? '#2E7D5B' : 'var(--line)'};border-radius:999px;background:${isActive ? '#2E7D5B' : 'transparent'};color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap;font-family:inherit">
-      ${isActive ? '✓ ' : ''}${esc(m.label)}
-      <span style="color:${isActive ? 'rgba(255,255,255,0.75)' : 'var(--ink-3)'};margin-left:4px">${esc(m.note)}</span>
+      ${isActive ? '✓ ' : ''}${esc(label)}
+      ${note ? `<span style="color:${isActive ? 'rgba(255,255,255,0.75)' : 'var(--ink-3)'};margin-left:4px;font-weight:400">${esc(note)}</span>` : ''}
     </button>`;
   }).join('');
+}
+
+// Static fallback chips — used when no key is saved yet, or when a live
+// fetch fails. Keeps the curated list in PROVIDER_CURATED_MODELS as a
+// cheap "you can preview these even before you save a key" hint.
+function _staticModels(providerKey) {
+  const raw = PROVIDER_CURATED_MODELS[providerKey] || [];
+  return raw.map(m => ({ id: m.name, label: m.label, note: m.note }));
+}
+
+// Kick off (or reuse) a live fetch for a provider and paint chips in the
+// container. Falls back to static list on fetch error or when no key saved.
+async function renderCuratedChips(containerEl, providerKey, activeProvider, activeModel, keyIsSet) {
+  if (!containerEl) return;
+  const grid = containerEl.querySelector('.byok-models-grid');
+  const header = containerEl.querySelector('.byok-models-header');
+  const filterInp = containerEl.querySelector('.byok-models-filter');
+  if (!grid) return;
+
+  const paintStatic = (reason) => {
+    const staticList = _staticModels(providerKey);
+    if (!staticList.length) {
+      if (header) header.textContent = reason || 'No curated models yet.';
+      grid.innerHTML = '';
+      if (filterInp) filterInp.style.display = 'none';
+      return;
+    }
+    if (header) {
+      header.textContent = reason
+        ? `${reason} · showing ${staticList.length} curated picks below`
+        : `${staticList.length} recommended models · click to set as default`;
+    }
+    grid.innerHTML = _renderChipHtml(providerKey, staticList, activeProvider, activeModel);
+    if (filterInp) filterInp.classList.remove('is-shown');  // static list is short
+  };
+
+  // No key? Show static preview with a hint.
+  if (!keyIsSet) {
+    paintStatic('Save an API key to see every available model');
+    return;
+  }
+
+  // Have a key — try the live endpoint.
+  try {
+    if (header) header.textContent = 'Loading live models…';
+    const live = await api.listProviderModels(providerKey);
+    if (!Array.isArray(live) || live.length === 0) {
+      paintStatic('Live list returned no chat-capable models');
+      return;
+    }
+    // Keep the active model sticky at the top of the list so users see their
+    // current selection without scrolling through 200+ OpenRouter items.
+    const sorted = [...live].sort((a, b) => {
+      const aActive = (activeProvider === providerKey) && a.id === activeModel;
+      const bActive = (activeProvider === providerKey) && b.id === activeModel;
+      if (aActive !== bActive) return aActive ? -1 : 1;
+      return (a.id || '').localeCompare(b.id || '');
+    });
+    if (header) {
+      header.innerHTML = `<b>${sorted.length}</b> live models · click to set as default`;
+    }
+    grid.innerHTML = _renderChipHtml(providerKey, sorted, activeProvider, activeModel);
+    // Show filter once the list has more than 15 entries (OpenRouter has ~400).
+    if (filterInp) {
+      if (sorted.length > 15) {
+        filterInp.classList.add('is-shown');
+        filterInp.oninput = () => {
+          const q = filterInp.value.toLowerCase().trim();
+          const filtered = q ? sorted.filter(m => (m.id || '').toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q)) : sorted;
+          grid.innerHTML = _renderChipHtml(providerKey, filtered, activeProvider, activeModel);
+        };
+      } else {
+        filterInp.classList.remove('is-shown');
+      }
+    }
+  } catch (err) {
+    // Network / auth / rate-limit error. Surface the reason but keep the UI
+    // usable by painting the static list underneath.
+    const msg = (err && err.message ? err.message : String(err)).split('\n')[0].slice(0, 120);
+    paintStatic(`Live fetch failed: ${msg}`);
+  }
 }
 
 export async function openByokModal(onClose) {
@@ -208,7 +321,7 @@ export async function openByokModal(onClose) {
       <div class="byok-tabs">
         <button class="byok-tab active" data-section="llm">LLM providers</button>
         <button class="byok-tab" data-section="default">Default provider</button>
-        <button class="byok-tab" data-section="reddit">Reddit</button>
+        <button class="byok-tab" data-section="reddit">Data sources</button>
       </div>
 
       <div class="byok-section" data-section="llm">
@@ -266,11 +379,26 @@ export async function openByokModal(onClose) {
       <span style="color:var(--ink-2);margin-left:6px;font-weight:600">${esc(mdl)}</span>`;
   };
 
-  // Re-paints every curated-chip grid across the modal (for active marker flip).
-  const paintAllChips = (prov, model) => {
-    host.querySelectorAll('.byok-curated-models').forEach(container => {
-      renderCuratedChips(container, container.dataset.provider, prov, model);
-    });
+  // Re-paints every curated-chip grid across the modal. Now async because
+  // each provider's chip list is fetched live from its /models endpoint.
+  // Still idempotent: the API-layer cache (5 min TTL) prevents re-fetching
+  // when this runs after a chip click or a key change. Providers where the
+  // user has no key fall back instantly to the static preview list.
+  let latestStatus = status;
+  const paintAllChips = async (prov, model) => {
+    // Re-read status so newly-saved keys unlock live fetch without a modal
+    // reload. `byokSet` already invalidates the status cache.
+    try { latestStatus = await api.byokStatus(); } catch {}
+    const containers = [...host.querySelectorAll('.byok-curated-models')];
+    await Promise.all(containers.map(container => {
+      const pkey = container.dataset.provider;
+      const entry = latestStatus[pkey];
+      // Local providers (Ollama) have no `.set` — presence of the URL string means configured.
+      const keyIsSet = typeof entry === 'string'
+        ? !!entry
+        : !!(entry && entry.set);
+      return renderCuratedChips(container, pkey, prov, model, keyIsSet);
+    }));
   };
 
   // Single wire-up delegated on the modal root so re-renders still work.
@@ -724,31 +852,123 @@ export async function openByokModal(onClose) {
         saveDefaultBtn.disabled = false;
       }
     };
-    // When provider changes, suggest its default model.
-    // For Ollama we resolve from the live /api/tags list so the suggestion
-    // matches what is actually installed (no static fallback).
-    provSel.onchange = async () => {
-      const p = LLM_PROVIDERS.find(x => x.key === provSel.value);
-      if (!p) return;
+    // ── Dynamic model picker for the Default Provider tab ──
+    const defaultModelsBox = host.querySelector('#byok-default-models');
+    const defaultModelsGrid = host.querySelector('#byok-default-models-grid');
+    const defaultModelsHeader = defaultModelsBox?.querySelector('.byok-default-models-header');
+
+    const renderDefaultChips = (models, providerKey, label) => {
+      if (!defaultModelsBox || !defaultModelsGrid || !defaultModelsHeader) return;
+      if (!models || models.length === 0) {
+        defaultModelsBox.classList.remove('is-shown');
+        return;
+      }
+      defaultModelsHeader.innerHTML = `<b>${models.length}</b> ${esc(label)}`;
+      defaultModelsGrid.innerHTML = models.map(m => {
+        const id = m.id || m.name;
+        const lbl = m.label || m.id || m.name;
+        const note = m.note || m.description || '';
+        const isActive = (modelInput.value || '').trim() === id;
+        return `<button type="button" class="byok-curated-chip" data-model="${esc(id)}" title="${esc(note)}"
+          style="padding:6px 10px;font-size:11px;border:1px solid ${isActive ? '#2E7D5B' : 'var(--line)'};border-radius:999px;background:${isActive ? '#2E7D5B' : 'transparent'};color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap;font-family:inherit">
+          ${isActive ? '✓ ' : ''}${esc(lbl)}${note ? `<span style="color:${isActive ? 'rgba(255,255,255,0.75)' : 'var(--ink-3)'};margin-left:4px;font-weight:400">${esc(note)}</span>` : ''}
+        </button>`;
+      }).join('');
+      defaultModelsBox.classList.add('is-shown');
+      defaultModelsGrid.querySelectorAll('.byok-curated-chip').forEach(btn => {
+        btn.onclick = () => {
+          modelInput.value = btn.dataset.model || '';
+          // Re-render to show the new active state highlighted.
+          loadDefaultModelsForProvider(provSel.value);
+        };
+      });
+    };
+
+    const loadDefaultModelsForProvider = async (providerKey) => {
+      const p = LLM_PROVIDERS.find(x => x.key === providerKey);
+      if (!p || !defaultModelsBox) {
+        defaultModelsBox?.classList.remove('is-shown');
+        return;
+      }
+
+      // Ollama: live /api/tags
       if (p.key === 'ollama') {
-        // Live fetch — avoid suggesting a model the user doesn't have.
+        defaultModelsHeader.textContent = 'Loading installed Ollama models…';
+        defaultModelsBox.classList.add('is-shown');
         try {
           const baseUrl = (host.querySelector('.byok-row[data-provider="ollama"] input')?.value
                           || 'http://localhost:11434').replace(/\/$/, '');
           const resp = await fetch(`${baseUrl}/api/tags`);
           const data = await resp.json();
-          const first = (data.models || []).find(m => {
-            const fam = (m.details?.family) || '';
-            return fam !== 'bert' && fam !== 'nomic-bert' && !(m.name || '').toLowerCase().includes('embed');
-          });
-          if (first && !modelInput.value) modelInput.value = first.name || first.model || '';
-        } catch {
-          // Ollama not reachable — leave blank, user will see the status in the row above.
+          const list = (data.models || [])
+            .filter(m => {
+              const fam = (m.details?.family) || '';
+              return fam !== 'bert' && fam !== 'nomic-bert' && !(m.name || '').toLowerCase().includes('embed');
+            })
+            .map(m => ({ id: m.name || m.model, label: m.name || m.model, note: m.details?.parameter_size || '' }));
+          if (list.length === 0) {
+            defaultModelsHeader.textContent = 'Ollama is reachable but has no chat-capable models installed. Pull one from the LLM tab.';
+            defaultModelsGrid.innerHTML = '';
+            return;
+          }
+          renderDefaultChips(list, p.key, 'installed Ollama models · click to use');
+        } catch (err) {
+          defaultModelsHeader.textContent = 'Ollama not reachable — start it from the LLM tab.';
+          defaultModelsGrid.innerHTML = '';
         }
         return;
       }
-      if (!modelInput.value) modelInput.value = p.defaultModel;
+
+      // Cloud providers: live fetch if key is saved, else static curated picks.
+      const keyIsSet = providerReady(p, status);
+      if (keyIsSet && api.listProviderModels) {
+        defaultModelsHeader.textContent = `Loading live ${esc(p.label)} models…`;
+        defaultModelsBox.classList.add('is-shown');
+        try {
+          const live = await api.listProviderModels(providerKey);
+          if (Array.isArray(live) && live.length > 0) {
+            renderDefaultChips(live, p.key, `live ${esc(p.label)} models · click to use`);
+            return;
+          }
+        } catch (err) {
+          // Fall through to static.
+        }
+      }
+      // Static fallback (or no key saved yet)
+      const staticList = _staticModels(providerKey);
+      if (staticList.length === 0) {
+        defaultModelsBox.classList.remove('is-shown');
+        return;
+      }
+      const labelSuffix = keyIsSet ? 'curated picks' : 'curated picks (save key for live list)';
+      renderDefaultChips(staticList, p.key, labelSuffix);
     };
+
+    // When provider changes, populate the chip strip + suggest a default model
+    // in the input field if it's empty.
+    provSel.onchange = async () => {
+      const p = LLM_PROVIDERS.find(x => x.key === provSel.value);
+      // Clear the model input when switching providers so the chip click is
+      // unambiguous — keep it if user explicitly wants to carry over.
+      // Heuristic: clear if the current input is the previous provider's
+      // default model.
+      const currentVal = (modelInput.value || '').trim();
+      const looksLikeAutoFill = LLM_PROVIDERS.some(x => x.defaultModel === currentVal);
+      if (looksLikeAutoFill) modelInput.value = '';
+
+      // Render the chip strip
+      await loadDefaultModelsForProvider(provSel.value);
+
+      // Suggest default model if input is still empty
+      if (p && !modelInput.value && p.key !== 'ollama') {
+        modelInput.value = p.defaultModel;
+      }
+    };
+
+    // On modal open, if a provider is already selected, paint chips immediately.
+    if (provSel.value) {
+      loadDefaultModelsForProvider(provSel.value);
+    }
   }
 }
 
@@ -789,7 +1009,14 @@ function renderLlmField(p, st) {
             <button class="btn btn-primary btn-xs byok-pull-model icon-btn"><i data-lucide="download"></i> Pull model</button>
             <span class="byok-ollama-status" style="font-size:11px;color:var(--ink-3);margin-left:auto"></span>
           </div>
-          <div class="byok-ollama-models" style="font-size:11px;color:var(--ink-3)"></div>
+          <details class="byok-ollama-accordion" open>
+            <summary class="byok-models-summary">
+              <span class="byok-models-summary-label">Installed models</span>
+              <span class="byok-models-header">click to set as default</span>
+              <i data-lucide="chevron-down" class="byok-models-chevron"></i>
+            </summary>
+            <div class="byok-ollama-models"></div>
+          </details>
         </div>` : ''}
     </div>`;
 }
@@ -838,7 +1065,11 @@ function renderDefaultSelector(status) {
         <input id="byok-model-input" type="text" class="byok-model-input"
                placeholder="e.g. claude-sonnet-4-6 or llama3.1"
                value="${esc(currentModel)}" />
-        <div class="byok-help" style="margin-top:6px">Leave blank to use the provider's default. For OpenRouter use <code>provider/model</code> (e.g. <code>anthropic/claude-sonnet-4-6</code>).</div>
+        <div class="byok-help" style="margin-top:6px">Leave blank to use the provider's default. Click a chip below to fill the field, or type a custom value.</div>
+        <div id="byok-default-models" class="byok-default-models">
+          <div class="byok-default-models-header">Loading…</div>
+          <div id="byok-default-models-grid" class="byok-default-models-grid"></div>
+        </div>
       </div>
       <div>
         <button class="btn btn-primary btn-sm" id="byok-save-default">Save default</button>
