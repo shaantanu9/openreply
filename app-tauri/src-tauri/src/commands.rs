@@ -491,6 +491,67 @@ pub async fn app_data_dir(app: AppHandle) -> Result<String, String> {
         .map_err(err_to_string)
 }
 
+/// Local semantic search over the posts corpus — hybrid vector + BM25 via the
+/// ChromaDB palace. Offline (no external API). Returns up to `k` hits with
+/// score, text, and metadata. Topic / source filters are optional.
+#[tauri::command]
+pub async fn semantic_search(
+    app: AppHandle,
+    query: String,
+    topic: Option<String>,
+    source: Option<String>,
+    k: Option<u32>,
+) -> Result<Value, String> {
+    let k_str = k.unwrap_or(10).to_string();
+    let mut args: Vec<String> = vec![
+        "research".into(), "semantic-search".into(),
+        "--query".into(), query,
+        "--k".into(), k_str,
+        "--json".into(),
+    ];
+    if let Some(t) = topic { if !t.is_empty() { args.push("--topic".into()); args.push(t); } }
+    if let Some(s) = source { if !s.is_empty() { args.push("--source".into()); args.push(s); } }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+/// Find the k posts semantically closest to `post_id`.
+#[tauri::command]
+pub async fn related_posts(
+    app: AppHandle,
+    post_id: String,
+    k: Option<u32>,
+    topic: Option<String>,
+) -> Result<Value, String> {
+    let k_str = k.unwrap_or(10).to_string();
+    let mut args: Vec<String> = vec![
+        "research".into(), "related-posts".into(),
+        "--post-id".into(), post_id,
+        "--k".into(), k_str,
+        "--json".into(),
+    ];
+    if let Some(t) = topic { if !t.is_empty() { args.push("--topic".into()); args.push(t); } }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+/// One-shot reindex of every row in `posts` into the semantic palace. Used
+/// after enabling the retrieval extras on an existing corpus.
+#[tauri::command]
+pub async fn reindex_palace(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "reindex-palace", "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Palace doc count + path (for Settings → Data card).
+#[tauri::command]
+pub async fn palace_stats(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "palace-stats"])
+        .await
+        .map_err(err_to_string)
+}
+
 /// Return the SQLite file's last-modified time as a unix millisecond
 /// timestamp. Cheap (one stat syscall — no Python spawn), so the frontend can
 /// poll on a short interval and invalidate its in-memory cache when the DB

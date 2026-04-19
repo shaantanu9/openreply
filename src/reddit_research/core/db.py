@@ -6,6 +6,7 @@ track freshness without losing history.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -303,6 +304,16 @@ def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
     if not rows:
         return 0
     get_db()["posts"].upsert_all(rows, pk="id")
+    # Keep the semantic-search palace in sync, best-effort. A missing
+    # `chromadb` install or a palace error never breaks ingest — opt out
+    # via `GAPMAP_SKIP_PALACE=1` if needed (CI, tests, minimal deploys).
+    if os.getenv("GAPMAP_SKIP_PALACE") not in ("1", "true", "yes"):
+        try:
+            from ..retrieval.palace import is_available, upsert_posts_many
+            if is_available():
+                upsert_posts_many(rows)
+        except Exception:
+            pass
     return len(rows)
 
 

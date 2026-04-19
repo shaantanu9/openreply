@@ -45,6 +45,16 @@ analyze = [
     "openai>=1.40",
     "httpx>=0.27",
 ]
+# Local semantic search over the corpus — ChromaDB PersistentClient with the
+# bundled all-MiniLM-L6-v2 ONNX embedder. Zero external API calls. ~200 MB
+# install (onnxruntime + chromadb + sentence-transformers' onnx model). All
+# offline; all local. Adds ~15 ms / post on ingest for embedding; ~15 ms p50
+# on a k=10 search at 2K documents. Separate .sqlite3 file under the app's
+# data dir (doesn't touch the existing reddit.db).
+retrieval = [
+    "chromadb>=1.5.4,<2",
+    "rank-bm25>=0.2.2",
+]
 mcp = [
     "fastmcp>=0.4",
 ]

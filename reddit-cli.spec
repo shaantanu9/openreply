@@ -14,6 +14,20 @@ hiddenimports += collect_submodules('httpx')
 tmp_ret = collect_all('reddit_research')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# ─── Semantic-search palace (ChromaDB) ─────────────────────────────────────
+# collect_all pulls data files (the bundled ONNX model), binaries (the
+# C-ext SQLite + onnxruntime shared libs), and every submodule path. Wrapped
+# in try/except so builds still work if the `retrieval` extras group isn't
+# installed (e.g. CI that wants a slim binary).
+for _pkg in ('chromadb', 'chromadb.utils', 'onnxruntime', 'tokenizers',
+             'rank_bm25', 'sentence_transformers'):
+    try:
+        _d, _b, _h = collect_all(_pkg)
+        datas += _d; binaries += _b; hiddenimports += _h
+    except Exception:
+        pass
+hiddenimports += collect_submodules('chromadb')
+
 
 a = Analysis(
     ['scripts/pyinstaller-entrypoint.py'],

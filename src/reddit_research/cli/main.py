@@ -262,26 +262,36 @@ def cmd_search(
 @app.command("stream")
 def cmd_stream(
     sub: str = typer.Option(..., "--sub", "-s"),
-    keywords: str = typer.Option(..., "--keywords", "-k", help="comma-separated regex patterns"),
+    keywords: str = typer.Option("", "--keywords", "-k", help="comma-separated regex patterns. Empty = firehose mode (every post/comment)."),
     watch: str = typer.Option("both", "--watch", help="posts|comments|both"),
     name: Optional[str] = typer.Option(None, "--name"),
+    as_json: bool = typer.Option(False, "--json", help="Emit one JSON object per line (NDJSON) instead of rich text. For UI consumption."),
 ) -> None:
     """Blocking keyword stream. Prints hits + writes to SQLite. Ctrl+C to stop."""
     from ..fetch.stream import start_stream
 
     kws = [k.strip() for k in keywords.split(",") if k.strip()]
-    console.print(f"[bold]streaming r/{sub}[/bold] for: {kws}. Ctrl+C to stop.")
+    if not as_json:
+        mode = f"keywords={kws}" if kws else "firehose (no filter)"
+        console.print(f"[bold]streaming r/{sub}[/bold] · {mode}. Ctrl+C to stop.")
 
     def _on_hit(hit: dict) -> None:
-        console.print(
-            f"[green]HIT[/green] [{hit['kind']}] {hit.get('title') or hit.get('body','')} "
-            f"[dim]({', '.join(hit['keywords'])})[/dim]\n  {hit['permalink']}"
-        )
+        if as_json:
+            # NDJSON for the UI to parse; flush so the frontend sees each hit immediately.
+            print(json.dumps(hit, default=str), flush=True)
+        else:
+            body = hit.get('title') or hit.get('body', '')
+            tags = ', '.join(hit.get('keywords') or []) or 'firehose'
+            console.print(
+                f"[green]HIT[/green] [{hit['kind']}] {body} [dim]({tags})[/dim]\n  {hit.get('permalink', '')}"
+            )
 
     try:
+        # Pass empty list when no keywords → firehose mode (all posts/comments)
         start_stream(sub=sub, keywords=kws, name=name, watch=watch, on_hit=_on_hit)
     except KeyboardInterrupt:
-        console.print("\n[yellow]stopped.[/yellow]")
+        if not as_json:
+            console.print("\n[yellow]stopped.[/yellow]")
 
 
 @app.command("query")
@@ -788,6 +798,83 @@ def cmd_research_chat(
         typer.echo(json.dumps({"event": "done"}))
     else:
         typer.echo("")
+
+
+@research_app.command("semantic-search")
+def cmd_research_semantic_search(
+    query: str = typer.Option(..., "--query", "-q"),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t",
+        help="Restrict results to this topic. Omit = search all topics."),
+    source: Optional[str] = typer.Option(None, "--source", "-s",
+        help="Restrict to source_type (reddit/hn/arxiv/…)."),
+    k: int = typer.Option(10, "--k", "-n"),
+    no_rerank: bool = typer.Option(False, "--no-rerank",
+        help="Skip BM25 rerank (pure vector). Faster, usually worse recall."),
+    as_json: bool = typer.Option(True, "--json", hidden=True,
+        help="Flag kept for Rust wrapper compat — CLI always emits JSON."),
+) -> None:
+    """Semantic + BM25 hybrid search over the posts corpus. Offline, local."""
+    _ = as_json
+    from ..retrieval.palace import is_available, search_posts
+    if not is_available():
+        typer.echo(json.dumps({
+            "ok": False, "skipped": True,
+            "reason": "retrieval extras not installed — `uv sync --extra retrieval`",
+            "results": [],
+        }))
+        return
+    result = search_posts(
+        query=query, topic=topic, source_type=source,
+        k=k, rerank=not no_rerank,
+    )
+    typer.echo(json.dumps(result, default=str, ensure_ascii=False))
+
+
+@research_app.command("related-posts")
+def cmd_research_related_posts(
+    post_id: str = typer.Option(..., "--post-id", "-p"),
+    k: int = typer.Option(10, "--k", "-n"),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json", hidden=True),
+) -> None:
+    """Find posts semantically closest to --post-id."""
+    _ = as_json
+    from ..retrieval.palace import is_available, related_posts
+    if not is_available():
+        typer.echo(json.dumps({"ok": False, "skipped": True, "results": []}))
+        return
+    typer.echo(json.dumps(related_posts(post_id, k=k, topic=topic), default=str))
+
+
+@research_app.command("reindex-palace")
+def cmd_research_reindex_palace(
+    batch_size: int = typer.Option(200, "--batch"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Re-embed every row in `posts` into the semantic-search palace.
+    Run once after enabling the retrieval extras on an existing corpus."""
+    from ..retrieval.palace import is_available, reindex_all
+    if not is_available():
+        msg = {"ok": False, "skipped": True,
+               "reason": "retrieval extras not installed — `uv sync --extra retrieval`"}
+        if as_json: typer.echo(json.dumps(msg))
+        else: typer.echo(msg["reason"])
+        return
+    def _log(m: str) -> None: typer.echo(m)
+    result = reindex_all(batch_size=batch_size, progress=_log)
+    if as_json: typer.echo(json.dumps(result))
+    else: typer.echo(f"✓ upserted {result.get('upserted', 0)} posts "
+                     f"(skipped {result.get('skipped', 0)})")
+
+
+@research_app.command("palace-stats")
+def cmd_research_palace_stats(
+    as_json: bool = typer.Option(True, "--json", hidden=True),
+) -> None:
+    """Return the palace's doc count + path."""
+    _ = as_json
+    from ..retrieval.palace import stats
+    typer.echo(json.dumps(stats(), default=str))
 
 
 @research_app.command("test-llm")

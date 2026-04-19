@@ -217,6 +217,15 @@ export const api = {
   closeSplash:        ()     => invoke('close_splash'),
   // Cheap stat-only call — never cached, used by the freshness poller.
   dbMtime:            ()     => invoke('db_mtime'),
+  // Local semantic search via the ChromaDB palace. `topic` + `source` are
+  // optional filters. `k` defaults to 10. Results carry {id, score, text,
+  // metadata}.
+  semanticSearch:     (query, { topic, source, k = 10 } = {}) =>
+    invoke('semantic_search', { query, topic, source, k }),
+  relatedPosts:       (postId, { k = 10, topic } = {}) =>
+    invoke('related_posts', { postId, k, topic }),
+  reindexPalace:      ()     => invoke('reindex_palace'),
+  palaceStats:        ()     => invoke('palace_stats'),
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic) => invoke('run_temporal_gaps', { topic }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),

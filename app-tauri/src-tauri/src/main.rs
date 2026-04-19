@@ -51,6 +51,10 @@ fn main() {
             commands::ollama_stop_service,
             commands::close_splash,
             commands::db_mtime,
+            commands::semantic_search,
+            commands::related_posts,
+            commands::reindex_palace,
+            commands::palace_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gapmap");
