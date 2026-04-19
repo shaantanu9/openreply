@@ -240,6 +240,19 @@ pub async fn run_solutions_pipeline(app: AppHandle, topic: String) -> Result<Val
     .map_err(err_to_string)
 }
 
+/// Run the temporal-gaps classifier (CHRONIC / EMERGING / FADING).
+/// Returns either a list of classified painpoints, an `_error` dict when
+/// historical data is missing, or `{ok:false, skipped:true, ...}` on no LLM.
+#[tauri::command]
+pub async fn run_temporal_gaps(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "temporal-gaps", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 /// Export the gap-map HTML for a topic. Returns absolute path.
 #[tauri::command]
 pub async fn export_html(app: AppHandle, topic: String) -> Result<String, String> {

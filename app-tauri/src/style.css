@@ -1935,3 +1935,40 @@ kbd {
 .graph-stat-chip b { color: var(--ink); font-weight: 700; }
 .graph-stat-edges { color: var(--ink-3); font-size: 11.5px; margin-left: 4px; }
 .graph-stat-edges b { color: var(--ink-2); font-weight: 700; }
+
+/* ─── Trends tab (temporal-gaps: chronic / emerging / fading) ───────── */
+.trends-tab { padding: 4px 0; }
+.trends-toolbar { margin-bottom: 12px; text-align: right; }
+.trends-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1100px) {
+  .trends-grid { grid-template-columns: 1fr; }
+}
+.trends-col {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px;
+}
+.trends-col[data-cat="CHRONIC"]  { border-top: 3px solid #B85A1E; }
+.trends-col[data-cat="EMERGING"] { border-top: 3px solid #2E7D5B; }
+.trends-col[data-cat="FADING"]   { border-top: 3px solid #6b7280; }
+.trends-col-head { display: flex; align-items: center; gap: 8px; }
+.trends-col-head svg { width: 16px; height: 16px; }
+.trends-col-head h4 { margin: 0; font-size: 14px; }
+.trends-col-hint { font-size: 11.5px; margin: 4px 0 12px; line-height: 1.45; }
+.trends-col-body { display: flex; flex-direction: column; gap: 10px; }
+.trends-empty { font-size: 12px; padding: 8px 0; }
+.trends-card {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px;
+}
+.trends-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.trends-painpoint { font-weight: 600; font-size: 13px; flex: 1; }
+.trends-sev { font-size: 10px; padding: 1px 6px; border-radius: 999px; text-transform: uppercase; }
+.trends-sev.sev-high   { background: #FBE7E7; color: #B84747; }
+.trends-sev.sev-medium { background: #FFF1DA; color: #B85A1E; }
+.trends-sev.sev-low    { background: #EAF3EE; color: #2E7D5B; }
+.trends-evidence { font-size: 12px; color: var(--ink-2); font-style: italic; margin: 4px 0 6px; line-height: 1.45; }
+.trends-freq { font-size: 11px; color: var(--ink-3); display: flex; gap: 14px; }
+.trends-freq b { color: var(--ink); font-weight: 700; }

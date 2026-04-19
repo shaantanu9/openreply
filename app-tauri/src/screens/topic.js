@@ -6,6 +6,7 @@ import { api, $, esc, timeAgo } from '../api.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
 import { loadSolutions } from './solutions.js';
+import { loadTrends } from './trends.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
@@ -133,6 +134,7 @@ export async function renderTopic(root, { params }) {
       <button class="tab active" data-tab="map"><i data-lucide="network"></i> Map</button>
       <button class="tab" data-tab="report"><i data-lucide="file-text"></i> Report</button>
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
+      <button class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
       <button class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
       <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
       <button class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
@@ -995,6 +997,7 @@ export async function renderTopic(root, { params }) {
     map: loadMap, report: loadReport, evidence: loadEvidence,
     sources: loadSources, chat: loadChat, actions: loadActions,
     solutions: () => loadSolutions(contentEl, topic),
+    trends: () => loadTrends(contentEl, topic),
   };
   const switchTab = async (name) => {
     // Clean up chat listeners if we're leaving chat mid-stream

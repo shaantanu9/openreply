@@ -41,6 +41,7 @@ fn main() {
             commands::test_llm,
             commands::list_ollama_models,
             commands::run_solutions_pipeline,
+            commands::run_temporal_gaps,
             commands::ollama_start_service,
             commands::ollama_stop_service,
             commands::close_splash,

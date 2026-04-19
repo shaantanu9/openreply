@@ -217,6 +217,7 @@ export const api = {
   // Cheap stat-only call — never cached, used by the freshness poller.
   dbMtime:            ()     => invoke('db_mtime'),
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
+  runTemporalGaps:    (topic) => invoke('run_temporal_gaps', { topic }),
 
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),
