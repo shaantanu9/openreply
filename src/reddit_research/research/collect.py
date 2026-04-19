@@ -160,6 +160,27 @@ def collect(
         # splitting the user's corpus across two topics.
         result.topic = search_topic
 
+    # Query expansion — use the LLM-scored keywords from the canonicalize
+    # call to fan out per-source queries. Recall 3-5× vs the single canonical
+    # string. `high`-only by default; `aggressive` adds `medium` too. Cap via
+    # GAPMAP_MAX_KEYWORDS (default 5).
+    import os as _os
+    try:
+        _max_kw = int(_os.getenv("GAPMAP_MAX_KEYWORDS", "5") or "5")
+    except ValueError:
+        _max_kw = 5
+    _min_rel = "medium" if aggressive else "high"
+    _rel_rank = {"high": 3, "medium": 2, "low": 1}
+    _min_rank = _rel_rank.get(_min_rel, 3)
+    search_keywords = [
+        k["keyword"]
+        for k in (_canon.get("search_keywords") if isinstance(_canon, dict) else []) or []
+        if _rel_rank.get(k.get("relevance", "low"), 0) >= _min_rank
+    ][:_max_kw]
+    # Always guarantee at least the canonical topic.
+    if not search_keywords:
+        search_keywords = [search_topic]
+
     # Thread-safe log — prevents interleaved stdout writes when the parallel
     # stage has multiple workers emitting progress at once. Also guards
     # result.by_source / result.errors / result.posts_fetched mutations.
@@ -204,9 +225,17 @@ def collect(
                     result.errors.append(msg)
                 time.sleep(_SLEEP)
 
-        # 3. Parameterized searches (use canonical topic for query text so
-        # typos don't poison reddit search; storage key stays `topic`).
-        queries = render_queries(search_topic, categories=query_categories)
+        # 3. Parameterized searches — fan out across all expanded keywords.
+        # render_queries(kw) gives us 4 category buckets; merge + dedup across
+        # keywords so we don't hit the same exact query twice.
+        merged: dict[str, list[str]] = {}
+        for _kw in search_keywords:
+            for _cat, _qs in render_queries(_kw, categories=query_categories).items():
+                merged.setdefault(_cat, []).extend(_qs)
+        queries = {c: list(dict.fromkeys(qs)) for c, qs in merged.items()}
+        if len(search_keywords) > 1:
+            _log(f"query expansion: {len(search_keywords)} keywords → "
+                 f"{sum(len(v) for v in queries.values())} unique queries")
         for category, qs in queries.items():
             for q in qs:
                 # If sub_scope_search: search each sub individually (slower but higher signal)
@@ -261,10 +290,13 @@ def collect(
             _log(f"[{src}] starting…")
             try:
                 fn = SOURCES[src]
-                # Source adapters (arxiv, openalex, pubmed, hn, scholar, …) all
-                # use the topic string as a literal search query. Pass the
-                # canonical so "calari" doesn't fetch flight-tracking papers.
-                out = fn(search_topic)
+                # Adapters now accept either a single string (legacy) OR a
+                # list of keywords (fanout). TypeError fallback keeps compat
+                # with any adapter that hasn't been updated yet.
+                try:
+                    out = fn(search_keywords)
+                except TypeError:
+                    out = fn(search_keywords[0] if search_keywords else search_topic)
                 return (src, out, None, time.monotonic() - t0)
             except Exception as e:
                 return (src, None, e, time.monotonic() - t0)
