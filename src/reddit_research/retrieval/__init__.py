@@ -13,6 +13,9 @@ from .palace import (
     search_posts,
     related_posts,
     reindex_all,
+    stats,
+    upsert_post,
+    upsert_posts_many,
 )
 
 __all__ = [
@@ -22,4 +25,7 @@ __all__ = [
     "search_posts",
     "related_posts",
     "reindex_all",
+    "stats",
+    "upsert_post",
+    "upsert_posts_many",
 ]
