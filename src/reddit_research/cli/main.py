@@ -537,6 +537,132 @@ def cmd_research_discover(
         _emit(rows, as_json, table_title=f"subs for '{topic}'")
 
 
+@research_app.command("schedule-enable")
+def cmd_schedule_enable(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    enabled: bool = typer.Option(True, "--enabled/--disabled"),
+) -> None:
+    """Flag a topic to be included in scheduled re-runs (schedule-tick)."""
+    from datetime import datetime, timezone
+    from ..core.db import get_db
+
+    db = get_db()
+    db["topic_prefs"].upsert(
+        {
+            "topic": topic,
+            "scheduled": 1 if enabled else 0,
+            "last_run_seen": (
+                list(db.query("SELECT last_run_seen FROM topic_prefs WHERE topic=?", [topic]))
+                or [{}]
+            )[0].get("last_run_seen") or "",
+            "last_run_ts": (
+                list(db.query("SELECT last_run_ts FROM topic_prefs WHERE topic=?", [topic]))
+                or [{}]
+            )[0].get("last_run_ts") or "",
+        },
+        pk="topic",
+    )
+    typer.echo(
+        f"topic '{topic}' scheduled={'yes' if enabled else 'no'} "
+        f"at {datetime.now(timezone.utc).isoformat(timespec='seconds')}"
+    )
+
+
+@research_app.command("schedule-seen")
+def cmd_schedule_seen(
+    topic: str = typer.Option(..., "--topic", "-t"),
+) -> None:
+    """Mark the user's most-recent view of this topic.
+
+    Called by the frontend when the user opens the Map tab, so that the
+    'new since last viewed' banner only highlights changes since THEN."""
+    from datetime import datetime, timezone
+    from ..core.db import get_db
+
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    existing = list(db.query("SELECT * FROM topic_prefs WHERE topic=?", [topic]))
+    row = existing[0] if existing else {}
+    db["topic_prefs"].upsert(
+        {
+            "topic": topic,
+            "scheduled": int(row.get("scheduled") or 0),
+            "last_run_seen": now,
+            "last_run_ts": row.get("last_run_ts") or "",
+        },
+        pk="topic",
+    )
+    typer.echo(now)
+
+
+@research_app.command("schedule-tick")
+def cmd_schedule_tick(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Walk every topic with scheduled=1 and re-run its collect.
+
+    This is what the launchd plist calls on its interval. Skips any topic
+    whose active collect is already running (cheap check: a fresh fetches
+    row with ended_at NULL for the topic within the last 5 minutes).
+    """
+    from datetime import datetime, timezone, timedelta
+    from ..core.db import get_db
+    from ..research.collect import collect as run_collect
+
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    five_min_ago = (now - timedelta(minutes=5)).isoformat(timespec="seconds")
+
+    scheduled = [
+        r["topic"]
+        for r in db.query("SELECT topic FROM topic_prefs WHERE scheduled=1")
+    ]
+    ran: list[str] = []
+    skipped: list[dict] = []
+    errored: list[dict] = []
+
+    for topic in scheduled:
+        # Skip if a collect is already in-flight for this topic.
+        try:
+            busy = list(db.query(
+                "SELECT id FROM fetches "
+                "WHERE kind LIKE 'source:%' AND ended_at IS NULL "
+                "AND started_at >= ? AND params_json LIKE ?",
+                [five_min_ago, f'%"{topic}"%'],
+            ))
+        except Exception:
+            busy = []
+        if busy:
+            skipped.append({"topic": topic, "reason": "collect-in-flight"})
+            continue
+        try:
+            run_collect(topic=topic, aggressive=True)
+            ran.append(topic)
+            db["topic_prefs"].upsert(
+                {
+                    "topic": topic,
+                    "scheduled": 1,
+                    "last_run_seen": (
+                        list(db.query(
+                            "SELECT last_run_seen FROM topic_prefs WHERE topic=?",
+                            [topic],
+                        )) or [{}]
+                    )[0].get("last_run_seen") or "",
+                    "last_run_ts": now.isoformat(timespec="seconds"),
+                },
+                pk="topic",
+            )
+        except Exception as e:
+            errored.append({"topic": topic, "error": str(e)})
+
+    result = {
+        "ran_at": now.isoformat(timespec="seconds"),
+        "ran": ran, "skipped": skipped, "errored": errored,
+        "n_scheduled": len(scheduled),
+    }
+    _emit(result, as_json, table_title="schedule-tick")
+
+
 @research_app.command("diff")
 def cmd_research_diff(
     topic: str = typer.Option(..., "--topic", "-t"),

@@ -143,6 +143,25 @@ export async function renderSettings(root) {
         <div class="empty-state" style="padding:12px">loading…</div>
       </div>
 
+      <!-- Scheduled runs -->
+      <div class="settings-card" id="card-schedule">
+        <h4>Scheduled runs</h4>
+        <p>Re-run collect automatically for opted-in topics. macOS only (launchd).</p>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <select id="schedule-interval" class="select-sm">
+            <option value="0">Off</option>
+            <option value="6">Every 6 hours</option>
+            <option value="24">Every day</option>
+            <option value="168">Every week</option>
+          </select>
+          <span id="schedule-status-text" style="font-size:12px;color:var(--ink-3)">…</span>
+        </div>
+        <p style="font-size:11.5px;color:var(--ink-3);margin-top:8px">
+          Only topics you toggle on (from their page) will be refreshed. Logs go to
+          <code>~/Library/Application Support/com.shantanu.gapmap/reddit-myind/schedule.log</code>.
+        </p>
+      </div>
+
       <!-- Preferences -->
       <div class="settings-card">
         <h4>Preferences</h4>
@@ -273,6 +292,45 @@ function wireStaticButtons(root) {
   root.querySelector('#pref-aggressive')?.addEventListener('change', e => {
     localStorage.setItem('gapmap.pref.aggressive', e.target.checked ? 'true' : 'false');
   });
+
+  // --- Scheduled runs ---
+  (async () => {
+    const sel = root.querySelector('#schedule-interval');
+    const status = root.querySelector('#schedule-status-text');
+    if (!sel || !status) return;
+    try {
+      const s = await api.scheduleStatus();
+      if (s && s.reason) {
+        status.textContent = s.reason;
+        sel.disabled = true;
+      } else if (s && s.loaded) {
+        status.textContent = 'Enabled · launchd agent loaded';
+      } else if (s && s.installed) {
+        status.textContent = 'Plist exists but not loaded — try reselecting interval';
+      } else {
+        status.textContent = 'Off';
+      }
+    } catch (e) { status.textContent = 'status unavailable'; }
+    sel.addEventListener('change', async e => {
+      const hours = Number(e.target.value) || 0;
+      status.textContent = '…';
+      try {
+        if (hours === 0) {
+          const r = await api.scheduleUninstall();
+          status.textContent = r?.uninstalled ? 'Off' : (r?.reason || 'uninstall failed');
+        } else {
+          const r = await api.scheduleInstall(hours);
+          if (r && r.installed === false && r.reason) {
+            status.textContent = r.reason;
+          } else {
+            status.textContent = `Enabled · every ${hours}h`;
+          }
+        }
+      } catch (err) {
+        status.textContent = `error: ${err?.message || err}`;
+      }
+    });
+  })();
   root.querySelector('#pref-confirm-delete')?.addEventListener('change', e => {
     localStorage.setItem('gapmap.pref.confirm_delete', e.target.checked ? 'true' : 'false');
   });

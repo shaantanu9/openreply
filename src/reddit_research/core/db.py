@@ -301,6 +301,34 @@ def init_schema(db: Database) -> None:
                 "ALTER TABLE topic_canonicalizations ADD COLUMN keywords_json TEXT DEFAULT ''"
             )
 
+    if "topic_prefs" not in db.table_names():
+        db["topic_prefs"].create(
+            {
+                "topic": str,
+                "scheduled": int,         # 0 or 1; if 1, include in schedule-tick
+                "last_run_seen": str,     # ISO UTC, updated when user opens topic page
+                "last_run_ts": str,       # ISO UTC of most recent scheduled run
+            },
+            pk="topic",
+        )
+
+    # Zombie sweep: any fetch row with ended_at=NULL older than 10 min is a
+    # crashed/killed collect that never ran its teardown. Closing these out
+    # on startup prevents the UI from showing a stale "Collecting…" chip
+    # (and blocks "another collect is already running" errors from firing
+    # on a fresh process). 10 min is a safe floor — the longest legitimate
+    # single-source fetch we've seen (aggressive appstore) tops out at ~8.
+    try:
+        db.conn.execute(
+            "UPDATE fetches SET ended_at=?, error=COALESCE(error,'stale: auto-swept on startup') "
+            "WHERE ended_at IS NULL "
+            "AND datetime(started_at) < datetime('now', '-10 minutes')",
+            (_utc_now(),),
+        )
+        db.conn.commit()
+    except Exception:
+        pass
+
 
 # ── Fetch audit log ──────────────────────────────────────────────────────────
 

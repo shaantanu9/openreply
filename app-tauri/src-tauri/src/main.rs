@@ -3,6 +3,7 @@
 
 mod cli;
 mod commands;
+mod schedule;
 
 use cli::{ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid};
 
@@ -63,6 +64,12 @@ fn main() {
             commands::palace_stats,
             commands::palace_model_status,
             commands::palace_warmup,
+            commands::diff_findings,
+            commands::schedule_install,
+            commands::schedule_uninstall,
+            commands::schedule_status,
+            commands::schedule_enable_topic,
+            commands::schedule_mark_seen,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gapmap");

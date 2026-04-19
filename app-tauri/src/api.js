@@ -169,6 +169,13 @@ export const api = {
   runQuery:        (sql, topic, params) => cachedInvoke('run_query', { sql, topic, params }, 10000),
   diffFindings:    (topic, windowDays = 7) => cachedInvoke('diff_findings', { topic, windowDays }, 30000),
 
+  // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
+  scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),
+  scheduleInstall:   (intervalHours) => invoke('schedule_install', { intervalHours }),
+  scheduleUninstall: ()              => invoke('schedule_uninstall'),
+  scheduleEnableTopic: (topic, enabled) => invoke('schedule_enable_topic', { topic, enabled }),
+  scheduleMarkSeen:  (topic)         => invoke('schedule_mark_seen', { topic }),
+
   // ----- writes / side-effects (bypass + invalidate) -----
   discoverSubs:    (topic, limit = 10) => invoke('discover_subs', { topic, limit }),
   startCollect:    (topic, aggressive = true, sources = null, skipReddit = false) => {

@@ -320,10 +320,15 @@ export async function renderTopic(root, { params }) {
       <a href="#/collect/${encodeURIComponent(topic)}" class="topic-active-chip" id="topic-active-chip" hidden title="A collect is running for this topic — click to watch progress">
         <span class="pulse-dot sm"></span> Collecting…
       </a>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-cancel-collect" hidden style="color:#B84747;border-color:#E8C8C8" title="Stop the in-flight collect for this topic">Cancel fetch</button>
       <div class="topic-header-stats" id="topic-header-stats"></div>
       <button class="active-llm-pill none" id="topic-llm-pill" title="Click to change provider / model">
         <span class="dot"></span><span id="topic-llm-pill-label">No LLM</span>
       </button>
+      <label id="schedule-topic-toggle" style="margin:0;padding:4px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line);border-radius:8px" title="Include this topic in scheduled re-runs">
+        <input type="checkbox" id="cb-schedule-topic" style="margin:0" />
+        <span style="font-weight:500">Auto-refresh</span>
+      </label>
       <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun"><i data-lucide="rotate-cw"></i> Rerun collect</button>
       <button class="btn btn-ghost btn-sm btn-bordered" id="btn-delete" style="color:#B84747">Delete</button>
     </header>
@@ -1722,6 +1727,32 @@ export async function renderTopic(root, { params }) {
   });
 
   $('#btn-rerun').onclick = () => openSourcePickerModal(topic);
+
+  // Scheduled-refresh toggle per topic. Reads the current flag from
+  // topic_prefs and wires the checkbox to flip it via the Rust command.
+  (async () => {
+    const cb = $('#cb-schedule-topic');
+    if (!cb) return;
+    try {
+      const rows = await api.runQuery(
+        "SELECT scheduled FROM topic_prefs WHERE topic = :topic",
+        topic,
+      );
+      cb.checked = !!(Array.isArray(rows) && rows[0] && rows[0].scheduled);
+    } catch {}
+    cb.addEventListener('change', async e => {
+      try {
+        await api.scheduleEnableTopic(topic, !!e.target.checked);
+      } catch (err) {
+        e.target.checked = !e.target.checked;  // revert on failure
+        alert(`schedule toggle failed: ${err?.message || err}`);
+      }
+    });
+  })();
+
+  // Mark this visit so the "new since last viewed" banner can diff against
+  // it next time. Fire-and-forget; failure is non-fatal.
+  api.scheduleMarkSeen(topic).catch(() => {});
   $('#btn-delete').onclick = async () => {
     const confirmPref = localStorage.getItem('gapmap.pref.confirm_delete') !== 'false';
     if (confirmPref && !confirm(`Delete topic "${topic}"?`)) return;
@@ -1729,9 +1760,10 @@ export async function renderTopic(root, { params }) {
     location.hash = '#/';
   };
 
-  // Poll for an in-flight collect for THIS topic — show the header chip if
-  // ended_at IS NULL and params_json references the current topic.
+  // Poll for an in-flight collect for THIS topic — show the header chip +
+  // Cancel button if ended_at IS NULL and params_json references this topic.
   const chip = $('#topic-active-chip');
+  const cancelBtn = $('#btn-cancel-collect');
   let wasRunning = false;
   const pollActive = async () => {
     if (!document.body.contains(chip)) return;
@@ -1746,6 +1778,7 @@ export async function renderTopic(root, { params }) {
       );
       const running = Array.isArray(rows) && rows.length > 0;
       chip.hidden = !running;
+      if (cancelBtn) cancelBtn.hidden = !running;
       if (wasRunning && !running) {
         // Collect finished — refresh header stats + current tab.
         refreshHeaderStats();
@@ -1756,6 +1789,38 @@ export async function renderTopic(root, { params }) {
       wasRunning = running;
     } catch {}
   };
+
+  // Cancel-fetch button — kills the currently-tracked ActiveJob in Rust
+  // (which is this topic's collect because the button only shows when
+  // pollActive detected a live fetch with this topic in params_json).
+  // Both prod (CommandChild::kill) and dev (SIGTERM on the venv-python
+  // pid) paths are tried by cancel_active_job on the Rust side.
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async () => {
+      if (!confirm(`Stop the in-flight fetch for "${topic}"? Partial results stay in the corpus — you can Rerun anytime.`)) return;
+      cancelBtn.disabled = true;
+      const origText = cancelBtn.textContent;
+      cancelBtn.textContent = 'Cancelling…';
+      try {
+        const killed = await api.cancelCollect();
+        showToast(
+          killed ? 'Fetch cancelled' : 'No active fetch found',
+          killed ? 'The sidecar process was terminated. Partial rows are still in the DB.'
+                 : 'The fetch may have already finished — refresh to see the latest state.',
+          killed ? 'ok' : 'warn',
+          3500,
+        );
+        // Hide optimistically; the pollActive tick will confirm shortly.
+        chip.hidden = true;
+        cancelBtn.hidden = true;
+      } catch (e) {
+        showToast('Cancel failed', e?.message || String(e), 'err', 5000);
+      } finally {
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = origText;
+      }
+    });
+  }
   // Extracted so we can call it after a collect finishes.
   async function refreshHeaderStats() {
     try {

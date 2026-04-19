@@ -6,7 +6,7 @@
 use crate::cli::{
     cancel_active_chat, cancel_active_job, cancel_active_stream, data_dir, run_cli,
     run_cli_chat_streaming, run_cli_stream_streaming, run_cli_streaming,
-    ActiveChat, ActiveJob, ActiveStream,
+    ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
 };
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
@@ -355,6 +355,52 @@ pub async fn stream_status(app: AppHandle) -> Result<bool, String> {
     Ok(guard.is_some())
 }
 
+// ─── Scheduled runs ─────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn schedule_install(app: AppHandle, interval_hours: u32) -> Result<Value, String> {
+    let data = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let data_str = data.to_string_lossy().to_string();
+    crate::schedule::install(&app, interval_hours, &data_str)
+}
+
+#[tauri::command]
+pub async fn schedule_uninstall() -> Result<Value, String> {
+    crate::schedule::uninstall()
+}
+
+#[tauri::command]
+pub async fn schedule_status() -> Result<Value, String> {
+    crate::schedule::status()
+}
+
+#[tauri::command]
+pub async fn schedule_enable_topic(
+    app: AppHandle,
+    topic: String,
+    enabled: bool,
+) -> Result<Value, String> {
+    let flag = if enabled { "--enabled" } else { "--disabled" };
+    run_cli(
+        &app,
+        vec!["research", "schedule-enable", "--topic", &topic, flag],
+    )
+    .await
+    .map(|_| serde_json::json!({"ok": true, "topic": topic, "enabled": enabled}))
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn schedule_mark_seen(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "schedule-seen", "--topic", &topic],
+    )
+    .await
+    .map(|_| serde_json::json!({"ok": true, "topic": topic}))
+    .map_err(err_to_string)
+}
+
 /// Time-windowed diff of findings — "what's new in the last N days?".
 #[tauri::command]
 pub async fn diff_findings(
@@ -552,12 +598,21 @@ pub async fn cancel_collect(app: AppHandle) -> Result<bool, String> {
     Ok(cancel_active_job(&app))
 }
 
-/// Is a long-running collect currently active?
+/// Is a long-running collect currently active? Checks BOTH the prod sidecar
+/// slot and the dev-python pid slot so the UI chip is accurate either way.
 #[tauri::command]
 pub async fn collect_status(app: AppHandle) -> Result<bool, String> {
-    let state = app.state::<ActiveJob>();
-    let guard = state.0.lock().map_err(|e| e.to_string())?;
-    Ok(guard.is_some())
+    if let Some(s) = app.try_state::<ActiveJob>() {
+        if s.0.lock().map_err(|e| e.to_string())?.is_some() {
+            return Ok(true);
+        }
+    }
+    if let Some(s) = app.try_state::<ActiveJobPid>() {
+        if s.0.lock().map_err(|e| e.to_string())?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The app's persistent data dir (for "Reveal in Finder" etc.)
@@ -720,12 +775,20 @@ pub async fn cancel_chat(app: AppHandle) -> Result<bool, String> {
     Ok(cancel_active_chat(&app))
 }
 
-/// Is a chat currently streaming?
+/// Is a chat currently streaming? Checks both prod + dev-python slots.
 #[tauri::command]
 pub async fn chat_status(app: AppHandle) -> Result<bool, String> {
-    let state = app.state::<ActiveChat>();
-    let guard = state.0.lock().map_err(|e| e.to_string())?;
-    Ok(guard.is_some())
+    if let Some(s) = app.try_state::<ActiveChat>() {
+        if s.0.lock().map_err(|e| e.to_string())?.is_some() {
+            return Ok(true);
+        }
+    }
+    if let Some(s) = app.try_state::<ActiveChatPid>() {
+        if s.0.lock().map_err(|e| e.to_string())?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Send a "Reply with OK" ping to the chosen LLM — returns {ok, latency_ms, reply}.
