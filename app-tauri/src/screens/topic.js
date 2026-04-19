@@ -9,7 +9,88 @@ import { loadSolutions } from './solutions.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
+// Hydrated from localStorage on first access per topic (survives page reload).
 const chatHistory = new Map();
+
+const CHAT_HISTORY_KEY = (topic) => `gapmap.chat.${topic}`;
+function loadChatHistory(topic) {
+  if (chatHistory.has(topic)) return chatHistory.get(topic);
+  try {
+    const raw = localStorage.getItem(CHAT_HISTORY_KEY(topic));
+    const arr = raw ? JSON.parse(raw) : [];
+    chatHistory.set(topic, Array.isArray(arr) ? arr : []);
+  } catch { chatHistory.set(topic, []); }
+  return chatHistory.get(topic);
+}
+function saveChatHistory(topic) {
+  try {
+    const arr = chatHistory.get(topic) || [];
+    // Keep last 50 messages to avoid localStorage bloat on long sessions.
+    const trimmed = arr.slice(-50);
+    localStorage.setItem(CHAT_HISTORY_KEY(topic), JSON.stringify(trimmed));
+  } catch {}
+}
+
+// ─── Toast helper (replaces alert() for non-blocking feedback) ───────────
+function ensureToastStack() {
+  let stack = document.querySelector('.toast-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+  return stack;
+}
+function showToast(title, detail = '', kind = 'err', ms = 5000) {
+  const stack = ensureToastStack();
+  const el = document.createElement('div');
+  el.className = `toast toast-${kind}`;
+  const icMap = { err: '✗', warn: '⚠', ok: '✓' };
+  el.innerHTML = `
+    <span class="toast-ic">${icMap[kind] || '•'}</span>
+    <div class="toast-body">
+      <div class="toast-title">${esc(title)}</div>
+      ${detail ? `<div style="color:var(--ink-3);font-size:12px">${esc(detail)}</div>` : ''}
+    </div>
+    <button class="toast-close" aria-label="dismiss">×</button>`;
+  stack.appendChild(el);
+  const remove = () => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); };
+  el.querySelector('.toast-close').onclick = remove;
+  if (ms) setTimeout(remove, ms);
+}
+
+// ─── Skeleton + error-card renderers ─────────────────────────────────────
+function skeletonCards(n = 2) {
+  const card = `
+    <div class="skeleton-card">
+      <div class="skeleton skeleton-line"></div>
+      <div class="skeleton skeleton-line med"></div>
+      <div class="skeleton skeleton-line short"></div>
+      <div class="skeleton skeleton-line med"></div>
+    </div>`;
+  return Array(n).fill(card).join('');
+}
+function errorCard(title, detail, actions = []) {
+  const btns = actions.map((a, i) =>
+    `<button class="btn ${a.primary ? 'btn-primary' : 'btn-ghost btn-bordered'} btn-sm" data-eci="${i}">${esc(a.label)}</button>`
+  ).join('');
+  return `
+    <div class="error-card">
+      <div class="error-card-ic">✗</div>
+      <div class="error-card-body">
+        <div class="error-card-title">${esc(title)}</div>
+        <div class="error-card-detail">${esc(detail || '')}</div>
+        <div class="error-card-actions">${btns}</div>
+      </div>
+    </div>`;
+}
+function wireErrorCard(containerEl, actions) {
+  containerEl.querySelectorAll('[data-eci]').forEach(btn => {
+    const idx = parseInt(btn.dataset.eci, 10);
+    if (!Number.isFinite(idx)) return;
+    btn.onclick = () => actions[idx]?.onClick?.();
+  });
+}
 
 export async function renderTopic(root, { params }) {
   const topic = decodeURIComponent(params[0] || '');
@@ -31,9 +112,15 @@ export async function renderTopic(root, { params }) {
         <strong>${esc(topic)}</strong>
       </div>
       <div class="topbar-spacer"></div>
+      <a href="#/collect/${encodeURIComponent(topic)}" class="topic-active-chip" id="topic-active-chip" hidden title="A collect is running for this topic — click to watch progress">
+        <span class="pulse-dot sm"></span> Collecting…
+      </a>
       <div class="topic-header-stats" id="topic-header-stats"></div>
-      <button class="btn btn-ghost" id="btn-rerun" style="border:1px solid var(--line)">↻ Rerun collect</button>
-      <button class="btn btn-ghost" id="btn-delete" style="border:1px solid var(--line);color:#B84747">Delete</button>
+      <button class="active-llm-pill none" id="topic-llm-pill" title="Click to change provider / model">
+        <span class="dot"></span><span id="topic-llm-pill-label">No LLM</span>
+      </button>
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun"><i data-lucide="rotate-cw"></i> Rerun collect</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-delete" style="color:#B84747">Delete</button>
     </header>
 
     <div class="section-head">
@@ -59,15 +146,16 @@ export async function renderTopic(root, { params }) {
   // Fetch header counts + sub text once — non-blocking.
   (async () => {
     try {
-      const safe = topic.replace(/'/g, "''");
+      // Parameterized — topic string is bound safely as :topic, can't escape into SQL.
       const rows = await api.runQuery(
-        `SELECT \
-           (SELECT count(*) FROM topic_posts WHERE topic='${safe}') AS posts, \
-           (SELECT count(*) FROM graph_nodes WHERE topic='${safe}' AND kind='painpoint') AS painpoints, \
-           (SELECT count(*) FROM graph_nodes WHERE topic='${safe}' AND kind='workaround')  AS workarounds, \
-           (SELECT count(DISTINCT coalesce(p.source_type,'reddit')) \
-              FROM topic_posts tp JOIN posts p ON p.id=tp.post_id \
-              WHERE tp.topic='${safe}') AS sources`
+        `SELECT
+           (SELECT count(*) FROM topic_posts WHERE topic=:topic) AS posts,
+           (SELECT count(*) FROM graph_nodes WHERE topic=:topic AND kind='painpoint') AS painpoints,
+           (SELECT count(*) FROM graph_nodes WHERE topic=:topic AND kind='workaround')  AS workarounds,
+           (SELECT count(DISTINCT coalesce(p.source_type,'reddit'))
+              FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
+              WHERE tp.topic=:topic) AS sources`,
+        topic,
       );
       if (Array.isArray(rows) && rows[0]) {
         const r = rows[0];
@@ -80,7 +168,127 @@ export async function renderTopic(root, { params }) {
     } catch {}
   })();
 
+  // Paint the active-LLM pill in the header. Clicking opens the BYOK modal
+  // and on close re-paints so the user sees their new choice immediately.
+  async function paintLlmPill() {
+    const pill = $('#topic-llm-pill');
+    const label = $('#topic-llm-pill-label');
+    if (!pill || !label) return;
+    try {
+      const b = await api.byokStatus();
+      const prov = (b?.llm_provider || '').toString();
+      const model = (b?.llm_model || '').toString();
+      const anyReady = !!(b?.anthropic?.set || b?.openai?.set || b?.openrouter?.set ||
+                          b?.groq?.set || b?.deepseek?.set || b?.mistral?.set ||
+                          b?.google?.set || b?.ollama_base_url);
+      if (prov && anyReady) {
+        pill.classList.remove('none');
+        label.textContent = `${prov}${model ? ' · ' + model : ''}`;
+        pill.title = `Active LLM — click to change`;
+      } else if (anyReady) {
+        pill.classList.add('none');
+        label.textContent = 'No default set';
+        pill.title = 'A provider key is saved but no default picked — click to choose';
+      } else {
+        pill.classList.add('none');
+        label.textContent = 'No LLM';
+        pill.title = 'No provider configured — click to add a key';
+      }
+    } catch {
+      pill.classList.add('none');
+      label.textContent = 'LLM ?';
+    }
+  }
+  paintLlmPill();
+  $('#topic-llm-pill')?.addEventListener('click', () => openByokModal(() => {
+    paintLlmPill();
+    // If the currently-visible tab was gated on LLM (chat/evidence), refresh it.
+    if (activeTab === 'chat' || activeTab === 'evidence' || activeTab === 'map') {
+      loaders[activeTab]?.();
+    }
+  }));
+
+  // Preload tab data in the background — populates the api.js cache so that
+  // clicking Evidence / Sources / Chat paints instantly instead of waiting
+  // on a cold Python process spawn. Fire-and-forget; errors are swallowed
+  // (the tab-click path re-runs with proper UI feedback on failure).
+  const srcSql = `SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts,
+                         min(p.created_utc) AS earliest, max(p.created_utc) AS latest
+                  FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
+                  WHERE tp.topic=:topic
+                  GROUP BY coalesce(p.source_type,'reddit')
+                  ORDER BY posts DESC`;
+  const subsSql = `SELECT p.sub AS sub, count(*) AS posts
+                   FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
+                   WHERE tp.topic=:topic
+                     AND p.sub IS NOT NULL AND p.sub <> ''
+                   GROUP BY p.sub ORDER BY posts DESC LIMIT 12`;
+  // Evidence tab now uses a single combined SQL (was 4 separate getFindings
+  // calls, i.e. 4 Python spawns). One spawn, four kinds, top-100 per kind.
+  const combinedFindingsSql = `
+        WITH enriched AS (
+          SELECT n.kind, n.id, n.label, n.metadata_json,
+                 (SELECT count(*) FROM graph_edges e
+                  WHERE e.topic=n.topic AND (e.src=n.id OR e.dst=n.id)
+                    AND e.kind IN ('evidenced_by','wished_in','built_in','solves','about_product'))
+                 AS evidence_count
+          FROM graph_nodes n
+          WHERE n.topic=:topic
+            AND n.kind IN ('painpoint','feature_wish','product','workaround')
+        )
+        SELECT kind, id, label, metadata_json, evidence_count
+        FROM (
+          SELECT *,
+                 ROW_NUMBER() OVER (PARTITION BY kind ORDER BY evidence_count DESC, id) AS rn
+          FROM enriched
+        )
+        WHERE rn <= 100
+        ORDER BY kind, evidence_count DESC`;
+  Promise.all([
+    api.runQuery(combinedFindingsSql, topic).catch(() => null),
+    api.runQuery(srcSql, topic).catch(() => null),
+    api.runQuery(subsSql, topic).catch(() => null),
+    api.byokStatus().catch(() => null),
+  ]).catch(() => {});
+
   // ─── Map ──────────────────────────────────────────────────────────────
+  // Count semantic nodes (painpoints / features / workarounds / products)
+  // in graph_nodes — shared by Map and Chat gates.
+  async function countFindings() {
+    try {
+      const rows = await api.runQuery(
+        `SELECT count(*) AS n FROM graph_nodes
+         WHERE topic=:topic
+           AND kind IN ('painpoint','feature_wish','workaround','product')`,
+        topic,
+      );
+      return Array.isArray(rows) && rows[0]?.n ? Number(rows[0].n) : 0;
+    } catch { return 0; }
+  }
+  async function checkLlmReady() {
+    try {
+      const b = await api.byokStatus();
+      return !!(b?.anthropic?.set || b?.openai?.set || b?.openrouter?.set ||
+                b?.groq?.set || b?.deepseek?.set || b?.mistral?.set ||
+                b?.google?.set || b?.ollama_base_url);
+    } catch { return false; }
+  }
+
+  async function runEnrichFromMap() {
+    const btn = $('#btn-map-enrich');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2"></i> Enriching…'; window.refreshIcons?.(); }
+    let errMsg = '';
+    try {
+      const e = await api.enrichGraph(topic);
+      if (e?.skipped) errMsg = `Enrichment skipped: ${e.reason || 'no LLM configured'}`;
+      else if (e?.ok === false) errMsg = `Enrichment failed: ${e.error || 'unknown'}`;
+    } catch (err) {
+      errMsg = `Enrichment errored: ${err?.message || err}`;
+    }
+    if (errMsg) showToast('Enrichment issue', errMsg, 'warn');
+    loadMap();
+  }
+
   async function loadMap() {
     contentEl.innerHTML = `
       <div class="map-building">
@@ -90,27 +298,78 @@ export async function renderTopic(root, { params }) {
           <p id="map-detail">Running graph build on the corpus.</p>
         </div>
       </div>`;
+    const sub = $('#topic-sub');
+    if (sub) sub.textContent = 'Building gap map…';
+    let outPath = null;
+    let enrichBanner = '';
     try {
-      $('#map-stage').textContent = 'Building graph…';
-      await api.buildGraph(topic).catch(() => {});
-      const stage2 = $('#map-stage'); if (stage2) stage2.textContent = 'Exporting viewer…';
-      const outPath = await api.exportHtml(topic);
+      // 1. Structural graph — surface errors, don't swallow.
+      $('#map-stage').textContent = 'Building structural graph…';
+      if (sub) sub.textContent = 'Building structural graph…';
+      await api.buildGraph(topic);
+
+      // 2. Auto-enrich if we have an LLM key and no findings yet.
+      const [findingsBefore, anyReady] = await Promise.all([countFindings(), checkLlmReady()]);
+      if (findingsBefore === 0 && anyReady) {
+        const s = $('#map-stage'); if (s) s.textContent = 'Extracting painpoints (LLM)…';
+        const d = $('#map-detail'); if (d) d.textContent = 'First-run enrichment — 20–90s depending on corpus size.';
+        if (sub) sub.textContent = 'Extracting painpoints (LLM) — 20–90s…';
+        try {
+          const e = await api.enrichGraph(topic);
+          if (e?.skipped) {
+            enrichBanner = `<div class="map-enrich-banner warn">⚠ Enrichment skipped — ${esc(e.reason || 'no LLM configured')}</div>`;
+          } else if (e?.ok === false) {
+            enrichBanner = `<div class="map-enrich-banner err">✗ Enrichment failed — ${esc(e.error || 'unknown')}</div>`;
+          } else {
+            const np = e?.painpoints_added ?? e?.painpoints ?? 0;
+            const nf = e?.feature_wishes_added ?? e?.feature_wishes ?? 0;
+            const nw = e?.workarounds_added ?? e?.diy_workarounds ?? 0;
+            if ((np + nf + nw) === 0) {
+              enrichBanner = `<div class="map-enrich-banner warn">⚠ Enrichment ran but found no painpoints / features. Try <b>Rerun collect</b> to gather more posts.</div>`;
+            }
+          }
+        } catch (err) {
+          enrichBanner = `<div class="map-enrich-banner err">✗ Enrichment errored — ${esc(err?.message || err)}</div>`;
+        }
+      } else if (findingsBefore === 0 && !anyReady) {
+        enrichBanner = `<div class="map-enrich-banner warn">
+          ⚠ No LLM key — painpoints and feature wishes won't appear on the map.
+          <button class="btn btn-primary map-banner-btn" id="btn-map-add-key">Add key</button>
+        </div>`;
+      }
+
+      // 3. Export viewer.
+      const s2 = $('#map-stage'); if (s2) s2.textContent = 'Exporting viewer…';
+      if (sub) sub.textContent = 'Exporting viewer…';
+      outPath = await api.exportHtml(topic);
       const fileUrl = convertFileSrc(outPath);
       $('#topic-sub').textContent = outPath;
+
+      const findingsAfter = await countFindings();
+      const findingsChip = findingsAfter > 0
+        ? `<span class="th-chip"><b>${findingsAfter}</b> findings</span>`
+        : `<span class="th-chip" style="color:var(--ink-3)">0 findings</span>`;
+
       contentEl.innerHTML = `
         <div class="map-toolbar">
           <div class="map-toolbar-info">
             <span class="th-chip" title="Path on disk">${esc(outPath.split('/').pop())}</span>
+            ${findingsChip}
           </div>
           <div style="flex:1"></div>
-          <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)" id="btn-map-rebuild">↻ Rebuild</button>
-          <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)" id="btn-map-reveal">Reveal</button>
-          <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)" id="btn-map-open-ext">Open externally</button>
+          ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich" title="Re-run LLM extraction"><i data-lucide="sparkles"></i> Enrich</button>` : ''}
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open externally</button>
         </div>
+        ${enrichBanner}
         <iframe class="viewer-frame" src="${fileUrl}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`;
+      window.refreshIcons?.();
       $('#btn-map-rebuild').onclick  = () => loadMap();
       $('#btn-map-reveal').onclick   = () => api.revealInFinder(outPath);
       $('#btn-map-open-ext').onclick = () => api.openUrl(`file://${encodeURI(outPath)}`);
+      $('#btn-map-enrich')?.addEventListener('click', () => runEnrichFromMap());
+      $('#btn-map-add-key')?.addEventListener('click', () => openByokModal(() => loadMap()));
     } catch (e) {
       const msg = (e?.message || e || '').toString();
       const hasNoPosts = msg.includes('no posts') || msg.includes('0 nodes');
@@ -120,9 +379,10 @@ export async function renderTopic(root, { params }) {
           <p>${esc(msg)}</p>
           <div style="display:flex;gap:8px;justify-content:center;margin-top:14px">
             <button class="btn btn-primary" id="btn-map-run-collect">Run collect</button>
-            <button class="btn btn-ghost" id="btn-map-retry" style="border:1px solid var(--line)">↻ Retry</button>
+            <button class="btn btn-ghost icon-btn" id="btn-map-retry" style="border:1px solid var(--line)"><i data-lucide="rotate-cw"></i> Retry</button>
           </div>
         </div>`;
+      window.refreshIcons?.();
       $('#btn-map-run-collect').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
       $('#btn-map-retry').onclick = () => loadMap();
     }
@@ -130,7 +390,14 @@ export async function renderTopic(root, { params }) {
 
   // ─── Report ───────────────────────────────────────────────────────────
   async function loadReport() {
-    contentEl.innerHTML = `<div class="empty-state">Generating report…</div>`;
+    contentEl.innerHTML = `
+      <div class="skeleton-card">
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line med"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </div>
+      ${skeletonCards(2)}`;
     try {
       const path = await api.exportReportPro(topic);
       $('#topic-sub').textContent = path;
@@ -139,41 +406,62 @@ export async function renderTopic(root, { params }) {
       const md = await resp.text();
       contentEl.innerHTML = `
         <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-          <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-copy-md">📋 Copy markdown</button>
+          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-copy-md"><i data-lucide="copy"></i> Copy markdown</button>
           <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-reveal-md">Reveal in Finder</button>
-          <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-regen-md">↻ Regenerate</button>
+          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-regen-md"><i data-lucide="rotate-cw"></i> Regenerate</button>
         </div>
         <div class="markdown-view">${renderMarkdown(md)}</div>
       `;
+      window.refreshIcons?.();
       $('#btn-copy-md').onclick = () => {
         navigator.clipboard.writeText(md);
-        $('#btn-copy-md').textContent = '✓ Copied';
-        setTimeout(() => { $('#btn-copy-md').textContent = '📋 Copy markdown'; }, 1500);
+        const b = $('#btn-copy-md');
+        b.innerHTML = '<i data-lucide="check"></i> Copied';
+        window.refreshIcons?.();
+        setTimeout(() => { b.innerHTML = '<i data-lucide="copy"></i> Copy markdown'; window.refreshIcons?.(); }, 1500);
       };
       $('#btn-reveal-md').onclick = () => api.revealInFinder(path);
       $('#btn-regen-md').onclick  = () => loadReport();
     } catch (e) {
-      contentEl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}</div>`;
+      const actions = [
+        { label: '↻ Retry',       primary: true,  onClick: () => loadReport() },
+        { label: 'Build gap map', primary: false, onClick: () => switchTab('map') },
+        { label: 'Add LLM key',   primary: false, onClick: () => openByokModal(() => loadReport()) },
+      ];
+      contentEl.innerHTML = errorCard('Could not generate the report', e?.message || String(e), actions);
+      wireErrorCard(contentEl, actions);
     }
   }
 
   // ─── Evidence ─────────────────────────────────────────────────────────
+  // In-memory state so "show more" survives re-renders within the same tab view.
+  const evidenceVisible = { painpoint: 20, feature_wish: 20, product: 20, workaround: 20 };
+  const PAGE = 20;
+
   async function loadEvidence() {
-    contentEl.innerHTML = `<div class="empty-state">Loading painpoints + evidence…</div>`;
+    contentEl.innerHTML = skeletonCards(3);
     try {
-      const [painpoints, features, products, workarounds] = await Promise.all([
-        api.getFindings(topic, 'painpoint'),
-        api.getFindings(topic, 'feature_wish'),
-        api.getFindings(topic, 'product'),
-        api.getFindings(topic, 'workaround'),
-      ]);
-      const section = (label, items, cls) => {
+      // All four kinds in ONE sidecar call (was 4 parallel Python spawns).
+      // SQL is hoisted to `combinedFindingsSql` above so this call shares a
+      // cache key with the mount-time preload — first click paints instantly.
+      const rows = await api.runQuery(combinedFindingsSql, topic);
+      const byKind = { painpoint: [], feature_wish: [], product: [], workaround: [] };
+      for (const r of rows || []) {
+        if (byKind[r.kind]) byKind[r.kind].push(r);
+      }
+      const painpoints = byKind.painpoint;
+      const features = byKind.feature_wish;
+      const products = byKind.product;
+      const workarounds = byKind.workaround;
+      const section = (label, items, cls, kind) => {
         if (!Array.isArray(items) || !items.length) return '';
+        const visible = Math.min(evidenceVisible[kind] || PAGE, items.length);
+        const more = items.length - visible;
         return `
-          <div class="card" style="margin-bottom:14px">
-            <div class="card-head"><div><h3>${esc(label)}</h3><p>${items.length} items</p></div></div>
+          <div class="card" style="margin-bottom:14px" data-ev-kind="${esc(kind)}">
+            <div class="card-head"><div><h3>${esc(label)}</h3><p>${items.length} items${more > 0 ? ` · showing ${visible}` : ''}</p></div></div>
             <div class="findings-rail">
-              ${items.map((it, i) => `
+              ${items.slice(0, visible).map((it, i) => `
                 <div class="finding">
                   <div class="finding-bullet ${cls}">${i + 1}</div>
                   <div class="finding-body">
@@ -185,47 +473,65 @@ export async function renderTopic(root, { params }) {
                   </div>
                 </div>
               `).join('')}
+              ${more > 0 ? `<button class="show-more-btn" data-more="${esc(kind)}">Show ${Math.min(more, PAGE)} more · ${more} hidden</button>` : ''}
             </div>
           </div>
         `;
       };
       const html = [
-        section('🔥 Painpoints', painpoints, 'chronic'),
-        section('🛠 DIY workarounds', workarounds, 'emerging'),
-        section('😡 Products complained about', products, 'chronic'),
-        section('💡 Feature wishes', features, 'emerging'),
+        section('🔥 Painpoints',              painpoints,  'chronic',  'painpoint'),
+        section('🛠 DIY workarounds',         workarounds, 'emerging', 'workaround'),
+        section('😡 Products complained about', products,  'chronic',  'product'),
+        section('💡 Feature wishes',          features,    'emerging', 'feature_wish'),
       ].filter(Boolean).join('');
       contentEl.innerHTML = html || `
         <div class="empty-big">
           <h3>No semantic extraction yet</h3>
           <p>Add an LLM key to pull painpoints / products / DIY workarounds from the corpus.</p>
-          <button class="btn btn-primary" id="btn-ev-keys">🗝 Add LLM key</button>
+          <button class="btn btn-primary icon-btn" id="btn-ev-keys"><i data-lucide="key-round"></i> Add LLM key</button>
         </div>`;
-      $('#btn-ev-keys')?.addEventListener('click', () => openByokModal());
+      // "Show more" delegates — bumps the per-kind visible counter and re-renders.
+      contentEl.querySelectorAll('.show-more-btn').forEach(btn => {
+        btn.onclick = () => {
+          const k = btn.dataset.more;
+          evidenceVisible[k] = (evidenceVisible[k] || PAGE) + PAGE;
+          loadEvidence();
+        };
+      });
+      // After the user saves a key, re-run the Evidence tab so the "add key"
+      // empty-state is replaced with the newly-extracted findings.
+      $('#btn-ev-keys')?.addEventListener('click', () => openByokModal(() => loadEvidence()));
     } catch (e) {
-      contentEl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}</div>`;
+      const actions = [
+        { label: '↻ Retry',      primary: true, onClick: () => loadEvidence() },
+        { label: 'Add LLM key',              onClick: () => openByokModal(() => loadEvidence()) },
+      ];
+      contentEl.innerHTML = errorCard('Could not load evidence', e?.message || String(e), actions);
+      wireErrorCard(contentEl, actions);
     }
   }
 
   // ─── Sources ──────────────────────────────────────────────────────────
+  let subsVisible = 12;
   async function loadSources() {
-    contentEl.innerHTML = `<div class="empty-state">Counting sources…</div>`;
+    contentEl.innerHTML = skeletonCards(2);
     try {
-      const safe = topic.replace(/'/g, "''");
-      const srcSql = `SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts, \
-                             min(p.created_utc) AS earliest, max(p.created_utc) AS latest \
-                      FROM topic_posts tp JOIN posts p ON p.id=tp.post_id \
-                      WHERE tp.topic='${safe}' \
-                      GROUP BY coalesce(p.source_type,'reddit') \
+      // Parameterized — topic goes in safely via :topic, no string concat.
+      const srcSql = `SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts,
+                             min(p.created_utc) AS earliest, max(p.created_utc) AS latest
+                      FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
+                      WHERE tp.topic=:topic
+                      GROUP BY coalesce(p.source_type,'reddit')
                       ORDER BY posts DESC`;
-      const subsSql = `SELECT p.subreddit AS sub, count(*) AS posts \
-                       FROM topic_posts tp JOIN posts p ON p.id=tp.post_id \
-                       WHERE tp.topic='${safe}' \
-                         AND p.subreddit IS NOT NULL AND p.subreddit <> '' \
-                       GROUP BY p.subreddit ORDER BY posts DESC LIMIT 12`;
+      // Pull up to 60 subs — frontend paginates with a show-more button.
+      const subsSql = `SELECT p.sub AS sub, count(*) AS posts
+                       FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
+                       WHERE tp.topic=:topic
+                         AND p.sub IS NOT NULL AND p.sub <> ''
+                       GROUP BY p.sub ORDER BY posts DESC LIMIT 60`;
       const [sources, subs] = await Promise.all([
-        api.runQuery(srcSql),
-        api.runQuery(subsSql).catch(() => []),
+        api.runQuery(srcSql, topic),
+        api.runQuery(subsSql, topic).catch(() => []),
       ]);
       const total = (sources || []).reduce((a, r) => a + (r.posts || 0), 0);
       const sourceRow = (r) => {
@@ -254,35 +560,84 @@ export async function renderTopic(root, { params }) {
             ${(sources || []).length ? (sources || []).map(sourceRow).join('') : `<div class="empty-state">no posts tagged to this topic yet</div>`}
           </div>
         </div>
-        ${(subs || []).length ? `
+        ${(subs || []).length ? (() => {
+          const visible = Math.min(subsVisible, subs.length);
+          const more = subs.length - visible;
+          return `
           <div class="card">
-            <div class="card-head"><div><h3>Top subreddits</h3><p>${subs.length} subs contributing</p></div></div>
-            <div class="sub-grid">${subs.map(subTile).join('')}</div>
-          </div>
-        ` : ''}
+            <div class="card-head"><div><h3>Top subreddits</h3><p>${subs.length} subs contributing${more > 0 ? ` · showing ${visible}` : ''}</p></div></div>
+            <div class="sub-grid">${subs.slice(0, visible).map(subTile).join('')}</div>
+            ${more > 0 ? `<div style="padding:0 20px 16px"><button class="show-more-btn" id="btn-subs-more">Show ${Math.min(more, 12)} more · ${more} hidden</button></div>` : ''}
+          </div>`;
+        })() : ''}
       `;
+      $('#btn-subs-more')?.addEventListener('click', () => {
+        subsVisible += 12;
+        loadSources();
+      });
     } catch (e) {
-      contentEl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}</div>`;
+      const actions = [{ label: '↻ Retry', primary: true, onClick: () => loadSources() }];
+      contentEl.innerHTML = errorCard('Could not load sources', e?.message || String(e), actions);
+      wireErrorCard(contentEl, actions);
     }
   }
 
   // ─── Chat ─────────────────────────────────────────────────────────────
   const PRESETS = [
-    { mode: 'ask',      emoji: '❓', label: 'Ask anything',    desc: 'Free-form question about this topic' },
-    { mode: 'plan',     emoji: '📋', label: '1-week plan',     desc: 'Concrete validation plan with who to talk to' },
-    { mode: 'features', emoji: '🎯', label: 'Features to build', desc: 'Top 5 features sorted by pain × gap' },
-    { mode: 'sources',  emoji: '🔎', label: 'Source-wise',     desc: 'What each data source uniquely says' },
-    { mode: 'bullets',  emoji: '📝', label: 'Bullet learnings', desc: 'Key takeaways only — no intro/outro' },
+    { mode: 'ask',      icon: 'help-circle',   label: 'Ask anything',    desc: 'Free-form question about this topic' },
+    { mode: 'plan',     icon: 'clipboard-list',label: '1-week plan',     desc: 'Concrete validation plan with who to talk to' },
+    { mode: 'features', icon: 'target',        label: 'Features to build', desc: 'Top 5 features sorted by pain × gap' },
+    { mode: 'sources',  icon: 'search',        label: 'Source-wise',     desc: 'What each data source uniquely says' },
+    { mode: 'bullets',  icon: 'list',          label: 'Bullet learnings', desc: 'Key takeaways only — no intro/outro' },
   ];
 
   async function loadChat() {
-    // Gate: need an LLM key.
+    // Gate 1: need an LLM key.
     let byok = {};
     try { byok = await api.byokStatus(); } catch {}
     const anyReady =
       byok?.anthropic?.set || byok?.openai?.set || byok?.openrouter?.set ||
       byok?.groq?.set || byok?.deepseek?.set || byok?.mistral?.set ||
       byok?.google?.set || !!byok?.ollama_base_url;
+
+    // Gate 2: need a populated graph — chat reads painpoints/features/workarounds
+    // from graph_nodes. If count is 0 the LLM gets no data and returns garbage.
+    let findingsCount = 0;
+    try {
+      const rows = await api.runQuery(
+        `SELECT count(*) AS n FROM graph_nodes
+         WHERE topic=:topic
+           AND kind IN ('painpoint','feature_wish','workaround','product')`,
+        topic,
+      );
+      findingsCount = Array.isArray(rows) && rows[0]?.n ? Number(rows[0].n) : 0;
+    } catch {}
+    if (anyReady && findingsCount === 0) {
+      contentEl.innerHTML = `
+        <div class="empty-big" style="margin:18px 0">
+          <h3>Gap map not built yet</h3>
+          <p>Chat needs painpoints, features, and workarounds to ground its answers.
+             This topic has no semantic nodes yet — run the extractor against the corpus.</p>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:14px">
+            <button class="btn btn-primary" id="btn-chat-build">Build gap map now</button>
+            <button class="btn btn-ghost" id="btn-chat-rerun" style="border:1px solid var(--line)">Re-run collect</button>
+          </div>
+        </div>`;
+      $('#btn-chat-build').onclick = async () => {
+        const btn = $('#btn-chat-build');
+        btn.disabled = true; btn.textContent = 'Building…';
+        try {
+          await api.buildGraph(topic);
+          await api.enrichGraph(topic);
+          loadChat();  // re-check gates
+        } catch (e) {
+          showToast('Build failed', e?.message || String(e), 'err');
+          btn.disabled = false; btn.textContent = 'Build gap map now';
+        }
+      };
+      $('#btn-chat-rerun').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
+      return;
+    }
 
     const providerLabel = (byok?.llm_provider || '').toString().toUpperCase() || 'auto-detect';
     const modelLabel = byok?.llm_model || 'default';
@@ -304,22 +659,39 @@ export async function renderTopic(root, { params }) {
               <input type="checkbox" id="chat-agent" ${agentDefault ? 'checked' : ''} />
               <span>🤖 Agent</span>
             </label>
-            <button class="btn btn-ghost" id="btn-chat-keys" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)">🗝 Keys</button>
-            <button class="btn btn-ghost" id="btn-chat-clear" style="padding:7px 12px;font-size:12px;border:1px solid var(--line)">Clear</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-keys"><i data-lucide="key-round"></i> Keys</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-clear">Clear</button>
           </div>
         </div>
 
-        ${!anyReady ? `
+        ${!anyReady ? (() => {
+          // List which keys ARE saved (even if default isn't picked yet).
+          const configured = [];
+          if (byok?.anthropic?.set)  configured.push('Anthropic');
+          if (byok?.openai?.set)     configured.push('OpenAI');
+          if (byok?.openrouter?.set) configured.push('OpenRouter');
+          if (byok?.groq?.set)       configured.push('Groq');
+          if (byok?.deepseek?.set)   configured.push('DeepSeek');
+          if (byok?.mistral?.set)    configured.push('Mistral');
+          if (byok?.google?.set)     configured.push('Google');
+          if (byok?.ollama_base_url) configured.push('Ollama');
+          const statusLine = configured.length
+            ? `<p style="color:var(--ink-2);font-size:13px;margin:6px 0 0"><b>${configured.length}</b> provider${configured.length>1?'s':''} configured: ${esc(configured.join(', '))} — but no default picked.</p>`
+            : '';
+          return `
           <div class="empty-big" style="margin:18px 0">
-            <h3>No LLM key yet</h3>
-            <p>Add Anthropic, OpenAI, OpenRouter, Groq, DeepSeek, Gemini, or local Ollama — chat streams grounded answers from this topic's data.</p>
-            <button class="btn btn-primary" id="btn-chat-add-key">🗝 Add a key</button>
-          </div>
-        ` : `
+            <h3>${configured.length ? 'Pick a default model' : 'No LLM key yet'}</h3>
+            <p>${configured.length
+              ? 'Open the key manager and click a model chip to set a default. Chat will grant access immediately.'
+              : "Add Anthropic, OpenAI, OpenRouter, Groq, DeepSeek, Gemini, or local Ollama — chat streams grounded answers from this topic's data."}</p>
+            ${statusLine}
+            <button class="btn btn-primary icon-btn" id="btn-chat-add-key" style="margin-top:14px"><i data-lucide="key-round"></i> ${configured.length ? 'Pick default' : 'Add a key'}</button>
+          </div>`;
+        })() : `
           <div class="chat-presets">
             ${PRESETS.map(p => `
               <button class="chat-preset" data-mode="${p.mode}" title="${esc(p.desc)}">
-                <span class="chat-preset-ic">${p.emoji}</span>
+                <span class="chat-preset-ic"><i data-lucide="${p.icon}"></i></span>
                 <div class="chat-preset-body">
                   <b>${esc(p.label)}</b>
                   <small>${esc(p.desc)}</small>
@@ -331,8 +703,8 @@ export async function renderTopic(root, { params }) {
 
           <div class="chat-input-row">
             <textarea id="chat-input" rows="2" placeholder='Ask a question about this topic — e.g. "what do users DIY today?"'></textarea>
-            <button class="btn btn-primary" id="btn-chat-send" style="padding:10px 16px">Send</button>
-            <button class="btn btn-ghost" id="btn-chat-cancel" hidden style="padding:10px 16px;border:1px solid var(--line)">Stop</button>
+            <button class="btn btn-primary btn-sm" id="btn-chat-send">Send</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-cancel" hidden>Stop</button>
           </div>
         `}
       </div>
@@ -342,6 +714,7 @@ export async function renderTopic(root, { params }) {
     $('#btn-chat-keys')?.addEventListener('click', () => openByokModal(() => loadChat()));
     $('#btn-chat-clear')?.addEventListener('click', () => {
       chatHistory.set(topic, []);
+      saveChatHistory(topic);
       renderMessages();
     });
     $('#btn-chat-add-key')?.addEventListener('click', () => openByokModal(() => loadChat()));
@@ -383,7 +756,7 @@ export async function renderTopic(root, { params }) {
   function renderMessages() {
     const box = $('#chat-messages');
     if (!box) return;
-    const hist = chatHistory.get(topic) || [];
+    const hist = loadChatHistory(topic);
     if (!hist.length) {
       box.innerHTML = `<div class="empty-state" style="padding:28px">Try a preset above, or type a question below.</div>`;
       return;
@@ -407,10 +780,11 @@ export async function renderTopic(root, { params }) {
 
   async function send(mode, question) {
     const agent = document.getElementById('chat-agent')?.checked || false;
-    const hist = chatHistory.get(topic) || [];
+    const hist = loadChatHistory(topic);
     hist.push({ role: 'user', mode: agent ? `agent · ${mode}` : mode, text: question });
     hist.push({ role: 'assistant', mode, text: '', toolCalls: [] });
     chatHistory.set(topic, hist);
+    saveChatHistory(topic);
     renderMessages();
 
     // UI state
@@ -438,6 +812,8 @@ export async function renderTopic(root, { params }) {
       if (sendBtn)   sendBtn.disabled = false;
       if (cancelBtn) cancelBtn.hidden = true;
       presets.forEach(p => p.disabled = false);
+      // Persist the completed assistant turn to localStorage.
+      saveChatHistory(topic);
     });
 
     try {
@@ -529,26 +905,26 @@ export async function renderTopic(root, { params }) {
         <div class="settings-card">
           <h4>Re-run collect</h4>
           <p>Pull fresh data. Existing posts are kept (deduped).</p>
-          <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" data-route="collect">Re-run</button>
+          <button class="btn btn-primary btn-sm" data-route="collect">Re-run</button>
         </div>
         <div class="settings-card">
           <h4>Ingest local file</h4>
           <p>Drop your interview CSV, Slack export, or call transcript into this topic.</p>
-          <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" data-route="ingest">Open ingest</button>
+          <button class="btn btn-primary btn-sm" data-route="ingest">Open ingest</button>
         </div>
         <div class="settings-card">
           <h4>Export artifacts</h4>
           <p>Generate shareable HTML + citation-rich markdown.</p>
           <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="btn-export-html">Export HTML</button>
-            <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-export-md">Export report.md</button>
+            <button class="btn btn-primary btn-sm" id="btn-export-html">Export HTML</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-export-md">Export report.md</button>
           </div>
           <div id="export-status" style="margin-top:10px;font-size:12px;color:var(--ink-3)"></div>
         </div>
         <div class="settings-card" style="border-color:var(--rose)">
           <h4 style="color:#B84747">Danger zone</h4>
           <p>Delete this topic's tags and graph. Underlying posts in SQLite are kept (may be reused by other topics).</p>
-          <button class="btn" style="padding:8px 14px;font-size:12px;background:#B84747;color:white" id="btn-delete-topic">Delete topic</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-topic">Delete topic</button>
         </div>
       </div>
     `;
@@ -570,7 +946,7 @@ export async function renderTopic(root, { params }) {
       try {
         await api.deleteTopic(topic);
         location.hash = '#/';
-      } catch (e) { alert(`Delete failed: ${e?.message || e}`); }
+      } catch (e) { showToast('Delete failed', e?.message || String(e), 'err'); }
     };
   }
 
@@ -603,11 +979,66 @@ export async function renderTopic(root, { params }) {
     location.hash = '#/';
   };
 
+  // Poll for an in-flight collect for THIS topic — show the header chip if
+  // ended_at IS NULL and params_json references the current topic.
+  const chip = $('#topic-active-chip');
+  let wasRunning = false;
+  const pollActive = async () => {
+    if (!document.body.contains(chip)) return;
+    try {
+      const rows = await api.runQuery(
+        `SELECT 1 FROM fetches \
+         WHERE ended_at IS NULL \
+           AND params_json LIKE :needle \
+         LIMIT 1`,
+        undefined,
+        { needle: `%"topic":"${topic.replace(/"/g, '\\"')}"%` },
+      );
+      const running = Array.isArray(rows) && rows.length > 0;
+      chip.hidden = !running;
+      if (wasRunning && !running) {
+        // Collect finished — refresh header stats + current tab.
+        refreshHeaderStats();
+        if (activeTab === 'map' || activeTab === 'evidence' || activeTab === 'sources') {
+          loaders[activeTab]?.();
+        }
+      }
+      wasRunning = running;
+    } catch {}
+  };
+  // Extracted so we can call it after a collect finishes.
+  async function refreshHeaderStats() {
+    try {
+      const rows = await api.runQuery(
+        `SELECT
+           (SELECT count(*) FROM topic_posts WHERE topic=:topic) AS posts,
+           (SELECT count(*) FROM graph_nodes WHERE topic=:topic AND kind='painpoint') AS painpoints,
+           (SELECT count(*) FROM graph_nodes WHERE topic=:topic AND kind='workaround')  AS workarounds,
+           (SELECT count(DISTINCT coalesce(p.source_type,'reddit'))
+              FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
+              WHERE tp.topic=:topic) AS sources`,
+        topic,
+      );
+      if (Array.isArray(rows) && rows[0]) {
+        const r = rows[0];
+        const el = $('#topic-header-stats');
+        if (el) el.innerHTML = `
+          <span class="th-chip"><b>${(r.posts || 0).toLocaleString()}</b> posts</span>
+          <span class="th-chip"><b>${r.painpoints || 0}</b> pains</span>
+          <span class="th-chip"><b>${r.workarounds || 0}</b> DIY</span>
+          <span class="th-chip"><b>${r.sources || 0}</b> src</span>`;
+      }
+    } catch {}
+  }
+  pollActive();
+  const activeChipInterval = setInterval(pollActive, 4000);
+
   // Clean up on navigate away (hashchange) — otherwise a streaming chat
   // would keep pushing into a removed DOM node.
   const hashCleanup = () => {
     try { chatStream.unlistenProgress?.(); } catch {}
     try { chatStream.unlistenDone?.(); } catch {}
+    clearInterval(activeChipInterval);
     window.removeEventListener('hashchange', hashCleanup);
   };
   window.addEventListener('hashchange', hashCleanup);

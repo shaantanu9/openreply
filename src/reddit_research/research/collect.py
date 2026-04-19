@@ -11,7 +11,9 @@ Works in both auth and public mode; just uses the existing fetch modules.
 """
 from __future__ import annotations
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +27,12 @@ from .prompts import render_queries
 
 # Politeness delay between HTTP calls — Reddit's public endpoint is tight.
 _SLEEP = 2.0
+
+# Max concurrent workers for the "extra sources" stage. Each worker hits a
+# different provider (HN / arXiv / GitHub / …), so this is parallelism across
+# independent hosts — not hammering any single one. Reddit stages stay
+# sequential because Reddit does rate-limit aggressively.
+_PARALLEL_SOURCES = 6
 
 
 @dataclass
@@ -104,9 +112,15 @@ def collect(
             sources = ["hn", "appstore", "playstore"]  # highest-signal free sources
     result = CollectResult(topic=topic)
 
+    # Thread-safe log — prevents interleaved stdout writes when the parallel
+    # stage has multiple workers emitting progress at once. Also guards
+    # result.by_source / result.errors / result.posts_fetched mutations.
+    _log_lock = threading.Lock()
+
     def _log(msg: str) -> None:
         if progress:
-            progress(msg)
+            with _log_lock:
+                progress(msg)
 
     # 1. Discover if not provided
     if subs is None:
@@ -162,29 +176,63 @@ def collect(
                     result.errors.append(msg)
                 time.sleep(_SLEEP)
 
-    # 3b. Extra sources (HN / App Store / Play Store / Scholar / SO / Trends)
+    # 3b. Extra sources (HN / App Store / Play Store / Scholar / SO / Trends / arXiv / …)
+    # Fanned out in parallel — each worker hits a distinct provider, so there
+    # is no per-host rate contention. Reddit-touching stages above stay
+    # sequential (Reddit's rate limits don't tolerate concurrent hits from
+    # public mode). The _log lock keeps progress lines atomic so the UI can
+    # still split them. SQLite WAL mode (enabled in core.db) lets concurrent
+    # writers append without "database is locked" errors.
     if sources:
         from ..sources.collect_adapter import SOURCES
 
+        # Validate up-front so unknown names fail fast with a clear error,
+        # not after spending several seconds on valid ones.
+        valid: list[str] = []
         for src in sources:
-            fn = SOURCES.get(src)
-            if not fn:
+            if src in SOURCES:
+                valid.append(src)
+            else:
                 _log(f"  ! unknown source: {src}")
                 result.errors.append(f"unknown source: {src}")
-                continue
+
+        def _run_source(src: str) -> tuple[str, int | dict | None, Exception | None, float]:
+            """Run one source fetch; return (src, value, error, elapsed_s)."""
+            t0 = time.monotonic()
+            _log(f"[{src}] starting…")
             try:
-                _log(f"source:{src} — fetching…")
-                if src == "trends":
-                    result.by_source[f"source:{src}"] = fn(topic)  # dict
-                    continue
-                n = fn(topic)
-                result.posts_fetched += n
-                result.by_source[f"source:{src}"] = n
+                fn = SOURCES[src]
+                out = fn(topic)
+                return (src, out, None, time.monotonic() - t0)
             except Exception as e:
-                msg = f"source:{src}: {e}"
-                _log(f"  ! {msg}")
-                result.errors.append(msg)
-            time.sleep(_SLEEP)
+                return (src, None, e, time.monotonic() - t0)
+
+        if valid:
+            workers = min(_PARALLEL_SOURCES, len(valid))
+            _log(f"[parallel] fetching {len(valid)} sources across {workers} workers…")
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(_run_source, s): s for s in valid}
+                done_count = 0
+                for fut in as_completed(futures):
+                    src, out, err, elapsed = fut.result()
+                    done_count += 1
+                    prefix = f"[{done_count}/{len(valid)}] [{src}]"
+                    if err is not None:
+                        msg = f"{prefix} ✗ {err} ({elapsed:.1f}s)"
+                        _log(msg)
+                        with _log_lock:
+                            result.errors.append(f"source:{src}: {err}")
+                    elif src == "trends":
+                        # trends returns a dict of keyword → trend series, not a post count
+                        _log(f"{prefix} ✓ trends series collected ({elapsed:.1f}s)")
+                        with _log_lock:
+                            result.by_source[f"source:{src}"] = out
+                    else:
+                        n = int(out or 0)
+                        _log(f"{prefix} ✓ {n} posts ({elapsed:.1f}s)")
+                        with _log_lock:
+                            result.posts_fetched += n
+                            result.by_source[f"source:{src}"] = n
 
     # 4. Historical — pullpush (pre-May-2025)
     if include_historical:

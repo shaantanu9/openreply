@@ -5,15 +5,87 @@
 //!
 //! Long-running commands (collect) store the child handle in shared state
 //! so a Cancel button can actually terminate the subprocess.
+//!
+//! ## Dev-mode bypass
+//!
+//! On macOS, Gatekeeper verifies every `.so` inside the PyInstaller-bundled
+//! `reddit-cli` binary on every launch, which can take 2+ minutes per call.
+//! Unusable in dev. So in dev builds we detect a project `.venv/bin/python`
+//! relative to the Tauri working dir and invoke `python -m reddit_research.cli.main`
+//! directly, which launches in ~200 ms. Production bundles (no .venv nearby)
+//! fall through to the sidecar binary as before.
 
 use anyhow::{anyhow, Result};
-use serde_json::Value;
+use serde_json::{Value};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::{
-    process::{CommandChild, CommandEvent},
+    process::{Command, CommandChild, CommandEvent},
     ShellExt,
 };
+
+/// Walk up from CWD looking for `.venv/bin/python`. Returns its absolute path
+/// if found within a few parent dirs, or None. Used only in dev builds.
+fn find_dev_venv_python() -> Option<std::path::PathBuf> {
+    // Explicit override always wins.
+    if let Ok(p) = std::env::var("REDDIT_MYIND_DEV_PYTHON") {
+        let pb = std::path::PathBuf::from(p);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
+    let mut cur = std::env::current_dir().ok()?;
+    for _ in 0..5 {
+        let candidate = cur.join(".venv").join("bin").join("python");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if !cur.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Build a Tauri shell Command for the sidecar binary. Used for both dev
+/// and production — capabilities only whitelist `binaries/reddit-cli`, which
+/// keeps the DMG-shippable signature intact for any user.
+fn build_sidecar_cmd(app: &AppHandle, user_args: &[&str]) -> Result<Command> {
+    let mut cmd = app
+        .shell()
+        .sidecar("reddit-cli")
+        .map_err(|e| anyhow!("sidecar missing: {e}"))?;
+    for a in user_args {
+        cmd = cmd.arg(*a);
+    }
+    Ok(cmd)
+}
+
+/// Dev-only helper: spawn `python -m reddit_research.cli.main` via
+/// `tokio::process::Command` so we bypass macOS Gatekeeper's 2+ minute
+/// PyInstaller verification. Only runs if a `.venv/bin/python` is found
+/// near CWD — production DMG installs never see this.
+async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &str) -> Result<Value> {
+    let t0 = std::time::Instant::now();
+    eprintln!("[sidecar] dev-python {} args={:?}", py.display(), args);
+    let mut cmd = tokio::process::Command::new(&py);
+    cmd.arg("-m").arg("reddit_research.cli.main");
+    for a in args { cmd.arg(a); }
+    cmd.env("REDDIT_MYIND_DATA_DIR", data_dir)
+       .env("PYTHONUNBUFFERED", "1");
+    let output = cmd.output().await
+        .map_err(|e| anyhow!("dev python spawn failed: {e}"))?;
+    let elapsed = t0.elapsed().as_millis();
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        eprintln!("[sidecar] dev-python FAILED in {elapsed}ms: {stderr}");
+        return Err(anyhow!("cli exited {}: {}", output.status.code().unwrap_or(-1), stderr));
+    }
+    eprintln!("[sidecar] dev-python OK in {elapsed}ms");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    // Tolerate non-JSON stdout — exit code 0 already proved the command ran fine.
+    Ok(serde_json::from_str(&stdout).unwrap_or(Value::Null))
+}
 
 /// Shared handle to the currently-running long job (if any).
 /// `main.rs` inserts this as managed state; commands mutate it.
@@ -37,20 +109,25 @@ pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
     Ok(dir)
 }
 
-/// Run the sidecar with `args` + always `--json`, return parsed JSON.
-pub async fn run_cli(app: &AppHandle, mut args: Vec<&str>) -> Result<Value> {
-    if !args.iter().any(|a| *a == "--json") {
-        args.push("--json");
-    }
+/// Run the sidecar with `args`, return parsed JSON from stdout.
+///
+/// When stdout isn't valid JSON (e.g. `research graph export` prints a
+/// "wrote PATH" confirmation), we return `Value::Null` instead of erroring —
+/// exit code is the source of truth for success/failure. Callers that need
+/// the Value just check `.is_null()`.
+pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
 
-    let sidecar = app
-        .shell()
-        .sidecar("reddit-cli")
-        .map_err(|e| anyhow!("sidecar missing: {e}"))?
+    // Dev fast path — skip the bundled PyInstaller binary entirely when a
+    // .venv/bin/python exists near CWD. Avoids macOS Gatekeeper slow launches.
+    if let Some(py) = find_dev_venv_python() {
+        return run_dev_python_cli(py, &args, &data_str).await;
+    }
+
+    let sidecar = build_sidecar_cmd(app, &args)?
         .env("REDDIT_MYIND_DATA_DIR", &data_str)
-        .args(&args);
+        .env("PYTHONUNBUFFERED", "1");
 
     let output = sidecar
         .output()
@@ -67,7 +144,8 @@ pub async fn run_cli(app: &AppHandle, mut args: Vec<&str>) -> Result<Value> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    serde_json::from_str(&stdout).map_err(|e| anyhow!("bad json from cli: {e}\nstdout: {stdout}"))
+    // Non-JSON stdout → return null, don't error. Exit code already proved success.
+    Ok(serde_json::from_str(&stdout).unwrap_or(Value::Null))
 }
 
 /// Start the sidecar and stream output as Tauri events.
@@ -90,12 +168,9 @@ pub async fn run_cli_streaming(
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
 
-    let (mut rx, child) = app
-        .shell()
-        .sidecar("reddit-cli")
-        .map_err(|e| anyhow!("sidecar missing: {e}"))?
+    let (mut rx, child) = build_sidecar_cmd(app, &args)?
         .env("REDDIT_MYIND_DATA_DIR", &data_str)
-        .args(&args)
+        .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
 
@@ -106,25 +181,36 @@ pub async fn run_cli_streaming(
 
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
+        // Collect the last ~40 lines of output so we can classify failures.
+        // VecDeque with cap keeps memory bounded even on very long collects.
+        let mut recent_lines: std::collections::VecDeque<String> =
+            std::collections::VecDeque::with_capacity(40);
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stderr(bytes) | CommandEvent::Stdout(bytes) => {
                     if let Ok(s) = String::from_utf8(bytes) {
                         for line in s.lines() {
-                            if !line.trim().is_empty() {
-                                let _ = app_clone.emit(progress_event, line.to_string());
-                            }
+                            if line.trim().is_empty() { continue; }
+                            if recent_lines.len() == 40 { recent_lines.pop_front(); }
+                            recent_lines.push_back(line.to_string());
+                            let _ = app_clone.emit(progress_event, line.to_string());
                         }
                     }
                 }
                 CommandEvent::Terminated(payload) => {
-                    // Clear the active child handle
                     if let Some(state) = app_clone.try_state::<ActiveJob>() {
                         *state.0.lock().unwrap() = None;
                     }
                     let code = payload.code.unwrap_or(-1);
-                    let _ = app_clone
-                        .emit(done_event, serde_json::json!({"code": code}));
+                    let (class, hint) = classify_collect_error(code, &recent_lines);
+                    let _ = app_clone.emit(
+                        done_event,
+                        serde_json::json!({
+                            "code": code,
+                            "error_class": class,
+                            "hint": hint,
+                        }),
+                    );
                     break;
                 }
                 _ => {}
@@ -133,6 +219,65 @@ pub async fn run_cli_streaming(
     });
 
     Ok(())
+}
+
+/// Inspect the tail of a collect's stderr/stdout to classify WHY it failed,
+/// so the UI can show targeted advice instead of "Collect failed".
+fn classify_collect_error(
+    code: i32,
+    recent_lines: &std::collections::VecDeque<String>,
+) -> (&'static str, String) {
+    if code == 0 {
+        return ("ok", String::new());
+    }
+    // Join just the last 20 lines — enough context without flooding the payload.
+    let tail: String = recent_lines
+        .iter()
+        .rev()
+        .take(20)
+        .rev()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lower = tail.to_ascii_lowercase();
+    if lower.contains("ratelimit") || lower.contains("rate limit") || lower.contains("429") {
+        return (
+            "reddit_rate_limit",
+            "Reddit rate-limited us. Wait 60s and retry, or add Reddit creds in Settings to raise the limit (60→100/min).".into(),
+        );
+    }
+    if lower.contains("no such host") || lower.contains("name resolution")
+        || lower.contains("networkerror") || lower.contains("connection refused")
+        || lower.contains("timed out") {
+        return (
+            "network",
+            "Network unreachable. Check your internet connection and try again.".into(),
+        );
+    }
+    if lower.contains("anthropic_api_key") || lower.contains("openai_api_key")
+        || lower.contains("no llm provider configured") {
+        return (
+            "llm_key",
+            "No LLM key configured. Add one in Settings → API keys, then retry.".into(),
+        );
+    }
+    if lower.contains("unable to load model") || lower.contains("ollama") && lower.contains("500") {
+        return (
+            "llm_model",
+            "Ollama couldn't load the selected model. Pick a different one in Settings → BYOK → Ollama.".into(),
+        );
+    }
+    if lower.contains("databaseerror") || lower.contains("operationalerror")
+        || lower.contains("database is locked") {
+        return (
+            "db",
+            "DB error. Try closing other tools that may have the DB open, then retry.".into(),
+        );
+    }
+    (
+        "unknown",
+        format!("Collect exited {code}. Check the log above for the specific error."),
+    )
 }
 
 /// Kill the currently-running sidecar child, if any.
@@ -164,12 +309,9 @@ pub async fn run_cli_chat_streaming(
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
 
-    let (mut rx, child) = app
-        .shell()
-        .sidecar("reddit-cli")
-        .map_err(|e| anyhow!("sidecar missing: {e}"))?
+    let (mut rx, child) = build_sidecar_cmd(app, &args)?
         .env("REDDIT_MYIND_DATA_DIR", &data_str)
-        .args(&args)
+        .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
 
@@ -216,4 +358,90 @@ pub fn cancel_active_chat(app: &AppHandle) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_collect_error;
+    use std::collections::VecDeque;
+
+    fn tail(lines: &[&str]) -> VecDeque<String> {
+        lines.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn classify_ok_on_zero() {
+        let empty = VecDeque::new();
+        let (c, h) = classify_collect_error(0, &empty);
+        assert_eq!(c, "ok");
+        assert!(h.is_empty());
+    }
+
+    #[test]
+    fn classify_reddit_rate_limit() {
+        let q = tail(&["HTTP 429", "RateLimit exceeded"]);
+        let (c, _) = classify_collect_error(1, &q);
+        assert_eq!(c, "reddit_rate_limit");
+    }
+
+    #[test]
+    fn classify_network_errors() {
+        for msg in [
+            "No such host known",
+            "Temporary failure in name resolution",
+            "Connection refused",
+            "NetworkError when attempting to fetch",
+            "timed out",
+        ] {
+            let q = tail(&[msg]);
+            let (c, _) = classify_collect_error(2, &q);
+            assert_eq!(c, "network", "expected network for {msg:?}");
+        }
+    }
+
+    #[test]
+    fn classify_llm_key_missing() {
+        let q = tail(&["Error: ANTHROPIC_API_KEY not set"]);
+        assert_eq!(classify_collect_error(1, &q).0, "llm_key");
+        let q2 = tail(&["no llm provider configured"]);
+        assert_eq!(classify_collect_error(1, &q2).0, "llm_key");
+    }
+
+    #[test]
+    fn classify_ollama_model_load() {
+        let q = tail(&["Ollama returned 500", "unable to load model llama3"]);
+        assert_eq!(classify_collect_error(1, &q).0, "llm_model");
+    }
+
+    #[test]
+    fn classify_database_locked() {
+        let q = tail(&["sqlite3.OperationalError: database is locked"]);
+        assert_eq!(classify_collect_error(1, &q).0, "db");
+    }
+
+    #[test]
+    fn classify_unknown_fallback() {
+        let q = tail(&["something weird happened"]);
+        let (c, h) = classify_collect_error(9, &q);
+        assert_eq!(c, "unknown");
+        assert!(h.contains("9"));
+    }
+
+    #[test]
+    fn classify_llm_model_unable_to_load_without_status_line() {
+        let q = tail(&["POST /api/chat", "unable to load model 'missing'"]);
+        assert_eq!(classify_collect_error(1, &q).0, "llm_model");
+    }
+
+    #[test]
+    fn classify_llm_model_ollama_word_plus_500() {
+        let q = tail(&["ollama runner", "internal error 500"]);
+        assert_eq!(classify_collect_error(1, &q).0, "llm_model");
+    }
+
+    #[test]
+    fn classify_reddit_ratelimit_one_word() {
+        let q = tail(&["we got ratelimited by reddit"]);
+        assert_eq!(classify_collect_error(1, &q).0, "reddit_rate_limit");
+    }
 }

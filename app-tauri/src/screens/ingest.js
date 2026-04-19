@@ -45,7 +45,7 @@ export async function renderIngest(root) {
             <div id="drop-chosen" hidden>
               <b id="chosen-name"></b>
               <span id="chosen-meta"></span>
-              <button class="btn btn-ghost" id="btn-change-file" style="padding:5px 10px;font-size:11px;border:1px solid var(--line);margin-top:6px">Change file</button>
+              <button class="btn btn-ghost btn-xs btn-bordered" id="btn-change-file" style="margin-top:6px">Change file</button>
             </div>
           </div>
         </div>
@@ -103,7 +103,8 @@ export async function renderIngest(root) {
   // State
   let chosenPath = null;
 
-  // Populate existing topics
+  // Populate existing topics — surface failures so users know why the
+  // dropdown is empty instead of silently showing "pick existing" only.
   try {
     const topics = await api.listTopics();
     if (Array.isArray(topics)) {
@@ -114,7 +115,15 @@ export async function renderIngest(root) {
         sel.appendChild(o);
       });
     }
-  } catch {}
+  } catch (e) {
+    const sel = root.querySelector('#topic-sel');
+    if (sel) {
+      const o = document.createElement('option');
+      o.disabled = true;
+      o.textContent = `⚠ couldn't load topics: ${e?.message || e}`;
+      sel.appendChild(o);
+    }
+  }
 
   // File picker
   const pickFile = async () => {

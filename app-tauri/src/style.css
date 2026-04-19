@@ -83,10 +83,23 @@ body {
 .nav a.active { background: #FFF4EA; color: var(--ink); font-weight: 600; }
 .nav a.active .nav-ic { background: var(--orange); color: #fff; }
 .nav-ic {
-  width: 26px; height: 26px; border-radius: 8px;
+  width: 24px; height: 24px; border-radius: 7px;
   background: var(--surface-2); color: var(--ink-2);
   display: grid; place-items: center; font-size: 13px;
+  flex-shrink: 0;
 }
+.nav-ic svg {
+  width: 13px; height: 13px; stroke-width: 2;
+  display: block;
+}
+.nav a.active .nav-ic svg { color: #fff; }
+
+/* Inline icons in buttons — keeps icon + label aligned, sized consistently */
+.icon-btn { display: inline-flex; align-items: center; gap: 6px; }
+.icon-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.btn svg { vertical-align: middle; }
+/* When a lucide SVG is inline in a pill/state span, size it down */
+.llm-chip-state svg, .pill svg { width: 12px; height: 12px; }
 .nav-count {
   margin-left: auto; font-size: 11px; font-weight: 600; color: var(--ink-3);
   background: var(--surface-2); padding: 2px 8px; border-radius: 999px;
@@ -130,13 +143,17 @@ body {
   padding: 8px 14px; border-radius: 999px;
   width: 280px; font-size: 13px; color: var(--ink-3);
 }
-.icon-btn {
+/* 38x38 square icon container — used for the topbar bell and similar.
+   Renamed from `.icon-btn` to avoid colliding with the inline-flex icon+text
+   button class of the same name further up. */
+.icon-btn-square {
   width: 38px; height: 38px; border-radius: 12px;
   background: var(--surface); border: 1px solid var(--line);
   display: grid; place-items: center; cursor: pointer;
   position: relative;
 }
-.icon-btn .dot {
+.icon-btn-square svg { width: 16px; height: 16px; color: var(--ink-2); }
+.icon-btn-square .dot {
   position: absolute; top: 8px; right: 9px;
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--orange); border: 2px solid var(--surface);
@@ -151,7 +168,7 @@ body {
 .hero {
   background: linear-gradient(120deg, #FFE4CD 0%, #FFD1B0 60%, #FFC196 100%);
   border-radius: 22px; padding: 28px 32px;
-  display: grid; grid-template-columns: 1.4fr 1fr;
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 32px; margin-bottom: 24px;
   position: relative; overflow: hidden;
 }
@@ -186,6 +203,20 @@ body {
 .btn-ghost   { background: rgba(255,255,255,.7); color: #1A1614; backdrop-filter: blur(6px); }
 .btn-ghost:hover { background: rgba(255,255,255,.9); }
 
+/* Size modifiers for dense in-card buttons */
+.btn-sm { padding: 8px 14px; font-size: 12px; }
+.btn-xs { padding: 6px 10px; font-size: 11px; }
+
+/* Bordered variant — typically stacked with .btn-ghost for secondary actions */
+.btn-bordered { border: 1px solid var(--line); }
+.btn-bordered:hover { border-color: var(--line-2); }
+
+/* Danger variants for destructive actions (Clear profile, Reset prefs, etc.) */
+.btn-danger { background: #B84747; color: #fff; border: none; }
+.btn-danger:hover { background: #A03A3A; }
+.btn-danger-ghost { border: 1px solid #E8C8C8; color: #B84747; background: rgba(255,255,255,.7); }
+.btn-danger-ghost:hover { background: rgba(255,248,248,.95); border-color: #D8A8A8; }
+
 .hero-stat {
   background: rgba(255,255,255,.65);
   backdrop-filter: blur(8px);
@@ -200,7 +231,7 @@ body {
 .hero-bar { flex: 1; background: var(--orange); border-radius: 4px 4px 0 0; opacity: .85; }
 
 /* ---------- Stat grid ---------- */
-.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
 .stat-card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
@@ -210,6 +241,8 @@ body {
   width: 40px; height: 40px; border-radius: 12px;
   display: grid; place-items: center; font-size: 18px;
 }
+.stat-icon svg { width: 18px; height: 18px; display: block; }
+.activity-ic svg { width: 15px; height: 15px; display: block; }
 .stat-icon.peach    { background: var(--orange-soft);   color: #B85A1E; }
 .stat-icon.lavender { background: var(--lavender-soft); color: #6B4FA8; }
 .stat-icon.mint     { background: var(--mint-soft);     color: #2E7D5B; }
@@ -224,7 +257,7 @@ body {
 .stat-label { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 
 /* ---------- Two-column row ---------- */
-.two-col { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; margin-bottom: 24px; }
+.two-col { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 18px; margin-bottom: 24px; }
 .card    { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .card-head {
   padding: 18px 20px; display: flex; justify-content: space-between; align-items: center;
@@ -263,7 +296,7 @@ body {
 .section-head p  { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
 .filter-bar { display: flex; gap: 8px; }
 
-.topic-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.topic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; margin-bottom: 24px; }
 .topic-tile {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 18px;
@@ -271,12 +304,16 @@ body {
   transition: transform .2s, box-shadow .2s;
   cursor: pointer;
 }
-.topic-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(26,22,20,.08); }
+.topic-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(26,22,20,.08);
+  border-color: var(--orange);
+}
 .topic-cover {
   height: 80px; border-radius: 12px;
   display: grid; place-items: center; font-size: 28px;
-  margin-bottom: 14px;
 }
+.topic-cover svg { width: 28px; height: 28px; color: var(--ink-2); stroke-width: 1.75; display: block; }
 .cover-1 { background: linear-gradient(135deg, var(--orange-soft),   var(--gold-soft)); }
 .cover-2 { background: linear-gradient(135deg, var(--lavender-soft), var(--rose-soft)); }
 .cover-3 { background: linear-gradient(135deg, var(--mint-soft),     var(--sky-soft)); }
@@ -451,22 +488,38 @@ body {
 .markdown-view th { background: var(--surface-2); font-weight: 700; }
 
 /* Settings */
-.settings-grid { display: grid; grid-template-columns: 1fr; gap: 14px; max-width: 680px; }
-.settings-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+.settings-grid {
+  display: grid;
+  /* Auto-fit cards at ≥420px each — grid uses all available parent width,
+     cards flow 1/2/3 per row as the window grows. minmax-0 inside ensures
+     each cell can shrink below its intrinsic content width. */
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 14px;
+  width: 100%;
+}
+.settings-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px;
+  min-width: 0;   /* grid item: must be able to shrink below intrinsic content width */
+  /* No overflow:hidden — that was clipping button labels at the right edge */
+}
 .settings-card h4 { font-size: 14px; margin-bottom: 4px; }
 .settings-card p  { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; }
 .settings-card input {
   width: 100%; padding: 10px 12px; border-radius: 8px;
   border: 1px solid var(--line); font-family: inherit; font-size: 13px;
 }
-.kv-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.kv-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .kv-row:last-child { border-bottom: none; }
-.kv-row b { color: var(--ink-2); font-weight: 500; }
-.kv-row span { font-family: "SF Mono", monospace; font-size: 12px; color: var(--ink-3); }
+.kv-row b { color: var(--ink-2); font-weight: 500; flex-shrink: 0; }
+.kv-row span {
+  font-family: "SF Mono", monospace; font-size: 12px; color: var(--ink-3);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: right;
+}
 
 @media (max-width: 1100px) {
-  .stat-grid { grid-template-columns: repeat(2, 1fr); }
-  .topic-grid { grid-template-columns: repeat(2, 1fr); }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topic-grid { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
   .two-col { grid-template-columns: 1fr; }
   .hero { grid-template-columns: 1fr; }
 }
@@ -534,7 +587,7 @@ body {
 
 /* --- Database console --- */
 .db-grid {
-  display: grid; grid-template-columns: 320px 1fr; gap: 18px;
+  display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px;
 }
 .db-tables { }
 .db-tables h4 {
@@ -666,11 +719,22 @@ body {
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes nowspin { to { transform: rotate(360deg); } }
 
 .map-toolbar {
   display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
 }
 .map-toolbar-info { display: flex; gap: 6px; align-items: center; }
+
+.map-enrich-banner {
+  display: flex; gap: 10px; align-items: center;
+  padding: 10px 14px; margin: 0 0 10px; border-radius: 10px;
+  font-size: 13px; line-height: 1.4;
+}
+.map-enrich-banner.warn { background: var(--gold-soft); color: #6B5919; border: 1px solid var(--gold); }
+.map-enrich-banner.err  { background: var(--rose-soft); color: #7A2A34; border: 1px solid var(--rose); }
+.map-enrich-banner b    { font-weight: 700; }
+.map-banner-btn { margin-left: auto; padding: 6px 10px; font-size: 12px; }
 
 /* Chat tab */
 .chat-wrap {
@@ -700,7 +764,9 @@ body {
 }
 .chat-preset:hover:not(:disabled) { border-color: var(--ink-3); background: var(--surface-alt); }
 .chat-preset:disabled { opacity: 0.5; cursor: not-allowed; }
-.chat-preset-ic { font-size: 20px; line-height: 1; margin-top: 2px; }
+.chat-preset-ic { font-size: 20px; line-height: 1; margin-top: 2px; color: var(--ink-2); }
+.chat-preset-ic svg { width: 18px; height: 18px; display: block; }
+.byok-prompt-ic svg { width: 20px; height: 20px; display: block; }
 .chat-preset-body { flex: 1; min-width: 0; }
 .chat-preset-body b { display: block; font-size: 12.5px; color: var(--ink-1); margin-bottom: 3px; }
 .chat-preset-body small { display: block; font-size: 11px; color: var(--ink-3); line-height: 1.35; }
@@ -850,11 +916,15 @@ body {
 .sub-tile span { font-size: 11px; color: var(--ink-3); }
 
 /* --- Settings profile + LLM chips + toggles --- */
-.settings-profile { grid-column: span 2; }
-@media (max-width: 900px) { .settings-profile { grid-column: auto; } }
+/* Profile always spans every column in the grid (1/-1 works for any track count). */
+.settings-profile { grid-column: 1 / -1; }
 .settings-profile-head {
   display: flex; align-items: center; gap: 14px; margin-bottom: 16px;
+  min-width: 0;
 }
+.settings-profile-head > div { min-width: 0; flex: 1; }
+.settings-profile-head h4,
+.settings-profile-head p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-avatar {
   width: 56px; height: 56px; border-radius: 16px;
   display: grid; place-items: center; color: white;
@@ -863,7 +933,7 @@ body {
   box-shadow: 0 2px 8px rgba(30,22,14,0.08);
 }
 .settings-profile-fields {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
 }
 .settings-profile-fields label {
   display: flex; flex-direction: column; gap: 4px; font-size: 11px;
@@ -886,19 +956,29 @@ body {
 .settings-profile-status { font-size: 12px; font-weight: 600; }
 
 .llm-grid {
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
-  margin: 12px 0 4px;
+  display: grid;
+  /* One column by default — the card sits inside a settings-grid cell and
+     always has <~400px width once the grid goes 2-up. Prevents chips from
+     forcing the settings card wider than its allotted 1fr cell. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px; margin: 12px 0 4px;
 }
-@media (max-width: 720px) { .llm-grid { grid-template-columns: 1fr; } }
+/* Only go 2-col when the card is clearly wide (very large viewport,
+   settings-grid is still single-column capped at 760px → full-width LLM card). */
+@media (min-width: 1400px) { .llm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .llm-chip {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
-  background: var(--surface); font-size: 11.5px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); min-width: 0;
 }
 .llm-chip.on  { background: var(--mint-soft); border-color: #C9E5D2; }
 .llm-chip.on .llm-chip-state { color: #2E7D5B; font-weight: 600; }
 .llm-chip.off .llm-chip-state { color: var(--ink-3); }
-.llm-chip-name { font-weight: 700; color: var(--ink-1); }
+.llm-chip-name {
+  font-weight: 700; color: var(--ink-1); font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.llm-chip-state { font-size: 10.5px; letter-spacing: 0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .settings-toggle {
   display: flex; align-items: flex-start; gap: 10px; padding: 10px 0;
@@ -906,9 +986,13 @@ body {
 }
 .settings-toggle:first-of-type { border-top: none; padding-top: 2px; }
 .settings-toggle input {
-  margin-top: 3px;
+  margin-top: 3px; flex-shrink: 0;
 }
-.settings-toggle span { flex: 1; font-size: 13px; color: var(--ink-1); }
+.settings-toggle span {
+  flex: 1; min-width: 0;         /* critical: lets flex child shrink instead of overflowing */
+  font-size: 13px; color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
 .settings-toggle span b { display: block; margin-bottom: 2px; font-weight: 700; }
 .settings-toggle span small { display: block; font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
 
@@ -965,7 +1049,10 @@ body {
   background: #1E1A18; color: #D8D1C8;
   border-radius: 10px; padding: 12px 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px; line-height: 1.6; max-height: 440px; overflow-y: auto;
+  font-size: 12px; line-height: 1.6;
+  /* Scale with viewport — fits small laptops without cramping, stretches
+     on large monitors. Floor at 320px so we always show 10+ lines. */
+  min-height: 320px; max-height: max(320px, calc(100vh - 480px)); overflow-y: auto;
 }
 .progress-log .line { padding: 1px 0; }
 .progress-log .line-info { color: #A8C8E8; }
@@ -1045,7 +1132,7 @@ body {
 
 /* --- Ingest screen --- */
 .ingest-wrap {
-  display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px;
+  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 22px;
 }
 @media (max-width: 900px) { .ingest-wrap { grid-template-columns: 1fr; } }
 .ingest-form {
@@ -1140,7 +1227,7 @@ body {
 .reports-search:focus { outline: none; border-color: var(--ink-3); background: white; }
 
 .reports-layout {
-  display: grid; grid-template-columns: 340px 1fr; gap: 14px;
+  display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 14px;
   min-height: 520px;
 }
 @media (max-width: 960px) { .reports-layout { grid-template-columns: 1fr; } }
@@ -1194,6 +1281,39 @@ body {
 .skel-round{ width: 36px;  height: 36px; border-radius: 10px; }
 .hero-bar.skel { background: var(--surface-alt); border-radius: 3px; }
 
+/* Real content that replaces a skeleton fades in over 160 ms instead of
+   popping. Use by adding `fade-in` to a card/section on data load, or wrap
+   replaced markup in <div class="fade-in">…</div>. Any element that gets
+   added to the DOM with this class will fade from opacity 0 → 1. */
+.fade-in {
+  animation: fade-in 160ms ease-out both;
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: none; }
+}
+/* Respect users who opt out of motion */
+@media (prefers-reduced-motion: reduce) {
+  .fade-in { animation: none; }
+}
+
+/* --- Keyboard shortcuts help panel --- */
+.shortcuts-list { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 18px; }
+.shortcut-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--surface-2);
+}
+.shortcut-row span { font-size: 13px; color: var(--ink-2); }
+kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 24px; padding: 3px 7px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--ink-1); font-weight: 600;
+}
+
 /* --- Active collect banner --- */
 .active-collect-banner {
   display: flex; align-items: center; gap: 14px;
@@ -1208,11 +1328,51 @@ body {
   background: #2E7D5B; animation: pulse 1.4s infinite;
   box-shadow: 0 0 0 0 rgba(46, 125, 91, 0.6);
 }
+.pulse-dot.sm {
+  width: 7px; height: 7px;
+  display: inline-block; vertical-align: middle;
+  margin-right: 5px;
+}
 @keyframes pulse {
   0%   { box-shadow: 0 0 0 0 rgba(46, 125, 91, 0.55); }
   70%  { box-shadow: 0 0 0 10px rgba(46, 125, 91, 0); }
   100% { box-shadow: 0 0 0 0 rgba(46, 125, 91, 0); }
 }
+
+/* "running" status pill — used in activity list rows and table */
+.pill-running {
+  background: var(--mint-soft);
+  color: #1E4A37;
+  display: inline-flex; align-items: center;
+  font-weight: 600;
+}
+
+/* Topic header "Collecting…" chip — visible when a collect is in flight
+   for the current topic. Links to the collect screen. */
+.topic-active-chip {
+  display: inline-flex; align-items: center;
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--mint-soft); color: #1E4A37;
+  font-size: 11.5px; font-weight: 700;
+  text-decoration: none; white-space: nowrap;
+  border: 1px solid #C9E5D2;
+  flex-shrink: 0;
+}
+.topic-active-chip:hover { filter: brightness(0.97); }
+.topic-active-chip .pulse-dot.sm { background: #2E7D5B; }
+/* When Collecting chip is visible, hide Rerun since a run is already
+   in flight — prevents user starting a second concurrent collect. */
+.topic-active-chip:not([hidden]) ~ #btn-rerun { display: none; }
+/* Topic-header buttons must not get squeezed / text-clipped. */
+.topbar #btn-rerun, .topbar #btn-delete {
+  white-space: nowrap; flex-shrink: 0;
+}
+/* Under narrow widths, collapse the stats chips instead of the buttons. */
+@media (max-width: 1100px) {
+  .topbar .topic-header-stats { display: none; }
+}
+
+.activity-item.is-running { background: var(--mint-soft); }
 .acb-body { flex: 1; }
 .acb-body b { font-size: 13px; color: #1E4A37; display: block; }
 .acb-body span { font-size: 11.5px; color: #2E7D5B; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -1395,14 +1555,15 @@ body {
 
 @media (max-width: 1100px) {
   .app { grid-template-columns: 220px 1fr; }
-  .stat-grid { grid-template-columns: repeat(2, 1fr); }
-  .settings-grid { grid-template-columns: repeat(2, 1fr); }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* .settings-grid intentionally omitted here — the auto-fit rule on the base
+     selector is already responsive (cards reflow at ≤420px per cell). */
   .settings-profile { grid-column: 1 / -1; }
-  .science-src-list { grid-template-columns: repeat(2, 1fr); }
-  .science-pillars  { grid-template-columns: repeat(2, 1fr); }
-  .db-grid { grid-template-columns: 260px 1fr; gap: 12px; }
-  .chat-presets { grid-template-columns: repeat(2, 1fr); }
-  .topic-grid { grid-template-columns: repeat(3, 1fr); }
+  .science-src-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .science-pillars  { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .db-grid { grid-template-columns: 260px minmax(0, 1fr); gap: 12px; }
+  .chat-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topic-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sub-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
 
@@ -1439,7 +1600,7 @@ body {
 
   .hero { grid-template-columns: 1fr; gap: 20px; }
   .two-col { grid-template-columns: 1fr; }
-  .topic-grid { grid-template-columns: 1fr 1fr; }
+  .topic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .tabs {
     overflow-x: auto; -webkit-overflow-scrolling: touch;
@@ -1475,24 +1636,108 @@ body {
   .wizard-stepper .step-line { display: none; }
 }
 
-/* Solutions tab */
-.solutions-card { border: 1px solid var(--border, #ddd); border-radius: 6px; margin-bottom: 12px; padding: 12px; background: var(--card-bg, #fff); }
+/* ─── Toast notifications ─────────────────────────────────────────── */
+.toast-stack {
+  position: fixed; bottom: 24px; right: 24px; z-index: 10000;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  max-width: 380px;
+}
+.toast {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow);
+  font-size: 13px; line-height: 1.45; color: var(--ink);
+  pointer-events: auto;
+  animation: toast-in .22s ease-out;
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.toast-err  { border-left: 3px solid #B84747; }
+.toast-warn { border-left: 3px solid #E69447; }
+.toast-ok   { border-left: 3px solid #2E7D5B; }
+.toast-ic { flex-shrink: 0; margin-top: 1px; }
+.toast-body { flex: 1; min-width: 0; }
+.toast-title { font-weight: 700; margin-bottom: 2px; }
+.toast-close {
+  background: none; border: none; color: var(--ink-3); cursor: pointer;
+  padding: 0 4px; font-size: 14px; line-height: 1;
+}
+.toast-close:hover { color: var(--ink); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* ─── Skeleton loaders ────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--line) 0%, var(--line-2) 50%, var(--line) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.3s ease-in-out infinite;
+  border-radius: 6px;
+}
+@keyframes skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.skeleton-line { height: 12px; margin: 8px 0; }
+.skeleton-line.short { width: 40%; }
+.skeleton-line.med   { width: 70%; }
+.skeleton-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 20px; margin-bottom: 14px;
+}
+.skeleton-card .skeleton-line:first-child { height: 18px; width: 35%; margin-bottom: 14px; }
+
+/* ─── Error card with retry ───────────────────────────────────────── */
+.error-card {
+  background: var(--rose-soft); border: 1px solid var(--rose);
+  border-radius: var(--radius); padding: 18px 22px;
+  display: flex; gap: 14px; align-items: flex-start;
+}
+.error-card-ic { font-size: 20px; flex-shrink: 0; }
+.error-card-body { flex: 1; min-width: 0; }
+.error-card-title { font-weight: 700; margin-bottom: 4px; color: #7A2A34; font-size: 14px; }
+.error-card-detail {
+  font-size: 12px; color: #7A2A34; margin-bottom: 12px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  word-break: break-word;
+}
+.error-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ─── Active LLM pill (topic header) ──────────────────────────────── */
+.active-llm-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-2); font-weight: 600;
+  cursor: pointer; transition: background .15s;
+}
+.active-llm-pill:hover { background: var(--surface); }
+.active-llm-pill.none { color: var(--ink-3); }
+.active-llm-pill .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #2E7D5B;
+}
+.active-llm-pill.none .dot { background: var(--ink-3); }
+
+/* ─── Show-more button for paginated lists ────────────────────────── */
+.show-more-btn {
+  display: block; width: 100%; margin-top: 10px; padding: 10px;
+  background: var(--surface-2); border: 1px dashed var(--line-2);
+  border-radius: 10px; color: var(--ink-2); font-weight: 600; font-size: 12px;
+  cursor: pointer; transition: background .15s;
+}
+.show-more-btn:hover { background: var(--surface); color: var(--ink); }
+
+/* ─── Solutions tab (research-loop MVP) ───────────────────────────── */
+.solutions-card { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; padding: 14px; background: var(--surface); }
 .solutions-card summary { cursor: pointer; display: flex; gap: 12px; align-items: center; font-weight: 600; }
 .solutions-card .painpoint-title { flex: 1; }
 .solutions-card .card-body { margin-top: 12px; display: grid; gap: 16px; }
-.solutions-card section h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; color: var(--muted, #666); }
-.solutions-card .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--orange, #ff5722); color: #fff; font-size: 11px; margin-right: 4px; }
+.solutions-card section h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; color: var(--ink-3); }
+.solutions-card .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--orange); color: #fff; font-size: 11px; margin-right: 4px; }
 .tier-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-right: 6px; }
 .tier-meta { background: #6b21a8; color: #fff; }
 .tier-peer { background: #047857; color: #fff; }
 .tier-expert { background: #1d4ed8; color: #fff; }
 .tier-anec { background: #6b7280; color: #fff; }
 .tier-unknown { background: #d1d5db; color: #111; }
-.intervention { padding: 8px; border-left: 3px solid var(--orange, #ff5722); margin-bottom: 8px; background: #fafafa; }
+.intervention { padding: 8px; border-left: 3px solid var(--orange); margin-bottom: 8px; background: var(--surface-2); border-radius: 6px; }
 .intervention-label { font-weight: 500; }
-.intervention-meta { font-size: 12px; color: #666; margin-top: 2px; }
+.intervention-meta { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 .intervention-meta .effort { margin-left: 8px; }
-.rationale { font-size: 12px; color: #555; margin-top: 4px; }
+.rationale { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
 .papers { padding-left: 18px; font-size: 13px; }
 .solutions-toolbar { margin-bottom: 12px; text-align: right; }
 

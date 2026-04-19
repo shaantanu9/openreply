@@ -25,7 +25,7 @@ def extract_painpoints(
     sub: str | None = None,
     since_days: int | None = None,
     top: int = 50,
-    provider: str = "anthropic",
+    provider: str | None = None,
 ) -> list[dict]:
     db = get_db()
     where, params = [], []

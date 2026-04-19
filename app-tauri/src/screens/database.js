@@ -15,7 +15,7 @@ const CURATED_TABLES = [
 ];
 
 const PRESET_QUERIES = [
-  { label: 'Top subs across all topics',    sql: `SELECT subreddit, count(*) AS posts FROM posts WHERE subreddit IS NOT NULL GROUP BY subreddit ORDER BY posts DESC LIMIT 20` },
+  { label: 'Top subs across all topics',    sql: `SELECT sub AS subreddit, count(*) AS posts FROM posts WHERE sub IS NOT NULL AND sub <> '' GROUP BY sub ORDER BY posts DESC LIMIT 20` },
   { label: 'Post volume by source',         sql: `SELECT coalesce(source_type,'reddit') AS source, count(*) AS n FROM posts GROUP BY coalesce(source_type,'reddit') ORDER BY n DESC` },
   { label: 'Painpoints with most evidence', sql: `SELECT n.topic, n.label, (SELECT count(*) FROM graph_edges e WHERE e.topic=n.topic AND (e.src=n.id OR e.dst=n.id)) AS evidence FROM graph_nodes n WHERE n.kind='painpoint' ORDER BY evidence DESC LIMIT 20` },
   { label: 'Failed fetches (last 7d)',      sql: `SELECT kind, error, started_at FROM fetches WHERE error IS NOT NULL AND substr(started_at,1,10) >= date('now','-7 days') ORDER BY started_at DESC LIMIT 30` },
@@ -73,7 +73,7 @@ export async function renderDatabase(root) {
             <span class="db-hint">⌘/Ctrl + Enter runs</span>
             <div style="flex:1"></div>
             <span id="db-query-meta" class="db-hint"></span>
-            <button class="btn btn-ghost" id="btn-csv" hidden style="padding:6px 10px;font-size:11px;border:1px solid var(--line)">📋 CSV</button>
+            <button class="btn btn-ghost btn-xs btn-bordered icon-btn" id="btn-csv" hidden><i data-lucide="download"></i> CSV</button>
           </div>
           <div class="db-query-result" id="db-query-result">
             <div class="empty-state">Type a query above, or click a preset.</div>
@@ -273,16 +273,17 @@ function openRowModal(row) {
     <div class="byok-dialog" style="max-width:720px">
       <div class="byok-head">
         <h3>Row detail</h3>
-        <button class="byok-close">×</button>
+        <button class="byok-close"><i data-lucide="x"></i></button>
       </div>
       <div style="max-height:70vh;overflow-y:auto">${body}</div>
       <div class="byok-foot">
-        <button class="btn btn-ghost" id="row-copy-json" style="border:1px solid var(--line);padding:7px 12px;font-size:12px">📋 Copy JSON</button>
+        <button class="btn btn-ghost icon-btn" id="row-copy-json" style="border:1px solid var(--line);padding:7px 12px;font-size:12px"><i data-lucide="copy"></i> Copy JSON</button>
         <div style="flex:1"></div>
         <button class="btn btn-ghost" id="row-close" style="border:1px solid var(--line);padding:7px 12px;font-size:12px">Close</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
+  window.refreshIcons?.();
   const close = () => { modal.remove(); document.removeEventListener('keydown', escH); };
   modal.querySelector('.byok-close').onclick = close;
   modal.querySelector('#row-close').onclick = close;
@@ -290,8 +291,9 @@ function openRowModal(row) {
   modal.querySelector('#row-copy-json').onclick = () => {
     navigator.clipboard.writeText(JSON.stringify(row, null, 2));
     const b = modal.querySelector('#row-copy-json');
-    b.textContent = '✓ copied';
-    setTimeout(() => { b.textContent = '📋 Copy JSON'; }, 1400);
+    b.innerHTML = '<i data-lucide="check"></i> copied';
+    window.refreshIcons?.();
+    setTimeout(() => { b.innerHTML = '<i data-lucide="copy"></i> Copy JSON'; window.refreshIcons?.(); }, 1400);
   };
   function escH(e) { if (e.key === 'Escape') close(); }
   document.addEventListener('keydown', escH);

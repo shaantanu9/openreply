@@ -2,34 +2,12 @@
 // elapsed timer, error counter, copy/clear actions, and a post-run CTA row.
 
 import { api, $, esc } from '../api.js';
-
-const STAGES = [
-  { key: 'discover', label: 'Discover subs',   pattern: /(discovering|discover-subs|picking.*subs)/i },
-  { key: 'reddit',   label: 'Fetch Reddit',    pattern: /(fetching r\/|reddit fetch|fetch posts|pullpush|historical archive)/i },
-  { key: 'sources',  label: 'Other sources',   pattern: /(source:|hackernews|appstore|playstore|arxiv|scholar|github|news|wikipedia|pytrends)/i },
-  { key: 'enrich',   label: 'LLM extraction',  pattern: /(enrich|painpoint|feature|workaround|gap extraction|temporal-gaps)/i },
-  { key: 'graph',    label: 'Build graph',     pattern: /(building graph|graph built|structural graph)/i },
-  { key: 'export',   label: 'Export viewer',   pattern: /(exporting|gap-map\.html|ready:)/i },
-];
-
-function classifyLine(line) {
-  if (/✗|error|failed|fatal/i.test(line)) return 'err';
-  if (/✓|ready|done\.|done —|finished/i.test(line)) return 'done';
-  if (/^→|→ started|fetching|pulling|discovering|building|exporting/i.test(line)) return 'info';
-  if (/warn|skipped/i.test(line)) return 'warn';
-  return 'log';
-}
-
-function detectStage(line) {
-  for (const s of STAGES) if (s.pattern.test(line)) return s.key;
-  return null;
-}
-
-function fmtElapsed(ms) {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
-}
+import {
+  COLLECT_STAGES as STAGES,
+  classifyCollectLine as classifyLine,
+  detectCollectStage as detectStage,
+  fmtCollectElapsed as fmtElapsed,
+} from '../lib/collectFormat.js';
 
 export async function renderCollect(root, { params }) {
   const topic = decodeURIComponent(params[0] || '');
@@ -66,14 +44,22 @@ export async function renderCollect(root, { params }) {
         `).join('')}
       </div>
 
+      <div class="now-banner" id="now-banner" style="margin:14px 0 10px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;gap:10px">
+        <span id="now-spinner" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--orange);border-radius:50%;animation:nowspin 1s linear infinite;flex-shrink:0"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;margin-bottom:2px">Now</div>
+          <div id="now-text" style="font-size:13px;color:var(--ink-1);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Starting up…</div>
+        </div>
+      </div>
+
       <div class="log-toolbar">
         <label class="log-check">
           <input type="checkbox" id="log-autoscroll" checked />
           <span>Auto-scroll</span>
         </label>
         <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="btn-copy-log" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)">📋 Copy log</button>
-        <button class="btn btn-ghost" id="btn-clear-log" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)">Clear</button>
+        <button class="btn btn-ghost btn-xs btn-bordered icon-btn" id="btn-copy-log" aria-label="Copy log to clipboard" title="Copy log"><i data-lucide="copy"></i></button>
+        <button class="btn btn-ghost btn-xs btn-bordered icon-btn" id="btn-clear-log" aria-label="Clear log" title="Clear log"><i data-lucide="trash-2"></i></button>
       </div>
 
       <div class="progress-log" id="progress-log"></div>
@@ -130,11 +116,18 @@ export async function renderCollect(root, { params }) {
     elapsedEl.textContent = fmtElapsed(Date.now() - startTs);
   }, 1000);
 
+  const nowText = $('#now-text');
+  const nowSpinner = $('#now-spinner');
+
   // --- subscribe before starting ---
   const unlistenProgress = await api.onCollectProgress(line => {
     appendLine(line);
     const short = line.slice(0, 140);
     sub.textContent = short;
+    // Strip rich-formatting "• " prefix the sidecar prepends, then surface
+    // the most recent meaningful line as the big "Now" banner text.
+    const clean = line.replace(/^\s*[•·→]\s*/, '').trim();
+    if (clean && nowText) nowText.textContent = clean.slice(0, 120);
   });
 
   const setFinal = (label, bg, fg) => {
@@ -149,9 +142,15 @@ export async function renderCollect(root, { params }) {
     clearInterval(tick);
 
     if (payload?.code !== 0) {
-      appendLine(`✗ collect exited with code ${payload?.code}`, 'err');
-      setFinal('failed', 'var(--chronic, #B84747)', 'white');
-      sub.textContent = 'Collect failed. Check the log above, fix, and retry.';
+      const cls = payload?.error_class || 'unknown';
+      const hint = payload?.hint || `Collect exited ${payload?.code}.`;
+      appendLine(`✗ collect exited with code ${payload?.code} [${cls}]`, 'err');
+      appendLine(`  ${hint}`, 'err');
+      setFinal(cls === 'reddit_rate_limit' ? 'rate-limited' : 'failed',
+               'var(--chronic, #B84747)', 'white');
+      sub.textContent = hint;
+      if (nowText) nowText.textContent = `✗ ${cls.replace(/_/g, ' ')}`;
+      if (nowSpinner) nowSpinner.style.animation = 'none';
       showRetryAction();
       return;
     }
@@ -160,13 +159,37 @@ export async function renderCollect(root, { params }) {
     markStage('graph');
     try {
       const g = await api.buildGraph(topic);
-      appendLine(`✓ graph built: ${g.total_nodes} nodes / ${g.total_edges} edges`, 'done');
+      appendLine(`✓ structural graph built: ${g.total_nodes} nodes / ${g.total_edges} edges`, 'done');
+
+      // Enrichment — LLM extracts painpoints / features / workarounds.
+      // Safe even with no LLM configured: Python returns {ok:false, skipped:true}.
+      markStage('enrich');
+      appendLine('→ extracting painpoints via LLM…', 'info');
+      try {
+        const e = await api.enrichGraph(topic);
+        if (e?.skipped) {
+          appendLine(`⚠ enrichment skipped: ${e.reason || 'no LLM configured'}`, 'warn');
+          appendLine('  gap map will show posts only, no painpoints. Add a key in Settings → API keys.', 'warn');
+        } else if (e?.ok === false) {
+          appendLine(`⚠ enrichment failed: ${e.error || 'unknown'}`, 'warn');
+        } else {
+          const np = e?.painpoints_added ?? e?.painpoints ?? 0;
+          const nf = e?.feature_wishes_added ?? e?.feature_wishes ?? 0;
+          const nw = e?.workarounds_added ?? e?.diy_workarounds ?? 0;
+          appendLine(`✓ enrichment: +${np} painpoints, +${nf} feature wishes, +${nw} workarounds`, 'done');
+        }
+      } catch (err) {
+        appendLine(`⚠ enrichment errored: ${err?.message || err}`, 'warn');
+      }
+
       markStage('export');
       appendLine('✓ exporting HTML viewer…', 'done');
       exportPath = await api.exportHtml(topic);
       appendLine(`✓ ready: ${exportPath}`, 'done');
       setFinal('✓ ready', 'var(--mint)', '#1A3424');
       sub.textContent = `Completed in ${fmtElapsed(Date.now() - startTs)} · ${lineCount} log lines · ${errCount} errors`;
+      if (nowText) nowText.textContent = '✓ Done — gap map ready';
+      if (nowSpinner) nowSpinner.style.animation = 'none';
       openBtn.hidden = false;
     } catch (e) {
       appendLine(`✗ ${e?.message || e}`, 'err');
@@ -181,9 +204,10 @@ export async function renderCollect(root, { params }) {
     const text = [...log.querySelectorAll('.line')].map(l => l.textContent).join('\n');
     navigator.clipboard.writeText(text);
     const b = $('#btn-copy-log');
-    const orig = b.textContent;
-    b.textContent = '✓ copied';
-    setTimeout(() => { b.textContent = orig; }, 1400);
+    const orig = b.innerHTML;
+    b.innerHTML = '<i data-lucide="check"></i> copied';
+    window.refreshIcons?.();
+    setTimeout(() => { b.innerHTML = orig; window.refreshIcons?.(); }, 1400);
   };
   $('#btn-clear-log').onclick = () => {
     if (!confirm('Clear the on-screen log? (Doesn\'t cancel the collect.)')) return;
@@ -218,9 +242,9 @@ export async function renderCollect(root, { params }) {
     const actions = $('#collect-actions');
     if (actions.querySelector('#btn-retry')) return;
     const retry = document.createElement('button');
-    retry.className = 'btn btn-primary';
+    retry.className = 'btn btn-primary icon-btn';
     retry.id = 'btn-retry';
-    retry.textContent = '↻ Retry';
+    retry.innerHTML = '<i data-lucide="rotate-cw"></i> Retry';
     retry.onclick = () => { location.reload(); };
     actions.insertBefore(retry, $('#btn-open'));
     const home = document.createElement('button');
@@ -229,6 +253,7 @@ export async function renderCollect(root, { params }) {
     home.textContent = 'Back to dashboard';
     home.onclick = () => { location.hash = '#/'; };
     actions.appendChild(home);
+    window.refreshIcons?.();
   }
 
   // --- start collect ---

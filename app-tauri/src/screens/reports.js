@@ -28,7 +28,7 @@ export async function renderReports(root) {
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Reports</strong></div>
       <div class="topbar-spacer"></div>
-      <button class="btn btn-ghost" id="btn-refresh" style="border:1px solid var(--line)">↻ Refresh</button>
+      <button class="btn btn-ghost icon-btn" id="btn-refresh" style="border:1px solid var(--line)"><i data-lucide="rotate-cw"></i> Refresh</button>
       <button class="btn btn-ghost" id="btn-reveal-data" style="border:1px solid var(--line)">Reveal data dir</button>
     </header>
 
@@ -163,8 +163,8 @@ async function preview(root, path, ext) {
         <div class="report-preview-head">
           <b>${esc(name)}</b>
           <div>
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)" id="pv-open">Open externally</button>
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)" id="pv-reveal">Reveal</button>
+            <button class="btn btn-ghost btn-xs btn-bordered" id="pv-open">Open externally</button>
+            <button class="btn btn-ghost btn-xs btn-bordered" id="pv-reveal">Reveal</button>
           </div>
         </div>
         <iframe class="viewer-frame" src="${url}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`;
@@ -177,16 +177,19 @@ async function preview(root, path, ext) {
         <div class="report-preview-head">
           <b>${esc(name)}</b>
           <div>
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)" id="pv-copy">📋 Copy</button>
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)" id="pv-open">Open externally</button>
-            <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px;border:1px solid var(--line)" id="pv-reveal">Reveal</button>
+            <button class="btn btn-ghost btn-xs btn-bordered icon-btn" id="pv-copy"><i data-lucide="copy"></i> Copy</button>
+            <button class="btn btn-ghost btn-xs btn-bordered" id="pv-open">Open externally</button>
+            <button class="btn btn-ghost btn-xs btn-bordered" id="pv-reveal">Reveal</button>
           </div>
         </div>
         <div class="markdown-view" style="padding:18px 24px">${renderMd(md)}</div>`;
+      window.refreshIcons?.();
       pane.querySelector('#pv-copy').onclick = () => {
         navigator.clipboard.writeText(md);
-        pane.querySelector('#pv-copy').textContent = '✓ copied';
-        setTimeout(() => { pane.querySelector('#pv-copy').textContent = '📋 Copy'; }, 1500);
+        const b = pane.querySelector('#pv-copy');
+        b.innerHTML = '<i data-lucide="check"></i> copied';
+        window.refreshIcons?.();
+        setTimeout(() => { b.innerHTML = '<i data-lucide="copy"></i> Copy'; window.refreshIcons?.(); }, 1500);
       };
     }
     pane.querySelector('#pv-open').onclick   = () => api.openUrl(`file://${encodeURI(path)}`);

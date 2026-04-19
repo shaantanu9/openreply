@@ -4,10 +4,13 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('prompts', 'prompts')]
 binaries = []
-hiddenimports = []
+hiddenimports = ['openai', 'anthropic']
 hiddenimports += collect_submodules('praw')
 hiddenimports += collect_submodules('prawcore')
 hiddenimports += collect_submodules('sqlite_utils')
+hiddenimports += collect_submodules('openai')
+hiddenimports += collect_submodules('anthropic')
+hiddenimports += collect_submodules('httpx')
 tmp_ret = collect_all('reddit_research')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

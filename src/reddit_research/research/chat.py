@@ -29,7 +29,9 @@ _OPENAI_COMPATIBLE = {
     "deepseek":   ("DEEPSEEK_API_KEY",   "https://api.deepseek.com/v1",         "deepseek-chat"),
     "mistral":    ("MISTRAL_API_KEY",    "https://api.mistral.ai/v1",           "mistral-large-latest"),
     "google":     ("GOOGLE_API_KEY",     "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.0-flash"),
-    "ollama":     (None,                 None,                                  "llama3.1"),
+    # Last-resort default — only used if LLM_MODEL isn't set AND the live /api/tags
+    # autopick also returns nothing. `gemma3:4b` is a broadly-available chat model.
+    "ollama":     (None,                 None,                                  "gemma3:4b"),
 }
 
 
@@ -87,7 +89,7 @@ def _topic_context(topic: str, limit_posts: int = 8) -> str:
     # Painpoints / features / products / workarounds
     findings = {}
     for kind in ("painpoint", "feature_wish", "product", "workaround"):
-        rows = db.query(
+        rows = list(db.query(
             "SELECT label, metadata_json FROM graph_nodes "
             "WHERE topic=? AND kind=? "
             "ORDER BY (SELECT count(*) FROM graph_edges e "
@@ -95,29 +97,29 @@ def _topic_context(topic: str, limit_posts: int = 8) -> str:
             "            AND (e.src=graph_nodes.id OR e.dst=graph_nodes.id)) DESC "
             "LIMIT 12",
             (topic, kind),
-        )
+        ))
         findings[kind] = [r["label"] for r in rows]
 
     # Source breakdown
-    sources = db.query(
+    sources = list(db.query(
         "SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS n "
         "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
         "WHERE tp.topic=? "
         "GROUP BY coalesce(p.source_type,'reddit') "
         "ORDER BY n DESC",
         (topic,),
-    )
+    ))
 
     # A small sample of the most-engaged posts for concrete evidence
-    posts = db.query(
-        "SELECT p.title, p.subreddit, p.score, p.num_comments, "
+    posts = list(db.query(
+        "SELECT p.title, p.sub AS subreddit, p.score, p.num_comments, "
         "       coalesce(p.source_type,'reddit') AS source, substr(coalesce(p.selftext,''),1,400) AS snip "
         "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
         "WHERE tp.topic=? "
         "ORDER BY coalesce(p.score,0)+coalesce(p.num_comments,0) DESC "
         "LIMIT ?",
         (topic, limit_posts),
-    )
+    ))
 
     parts = [f"# Topic: {topic}", ""]
 
@@ -370,13 +372,13 @@ def _exec_tool(name: str, args: dict) -> dict:
     db = get_db()
     try:
         if name == "list_topics":
-            rows = db.query(
+            rows = list(db.query(
                 "SELECT tp.topic, count(DISTINCT tp.post_id) AS posts, "
                 "       count(DISTINCT coalesce(p.source_type,'reddit')) AS sources, "
                 "       (SELECT count(*) FROM graph_nodes n WHERE n.topic=tp.topic AND n.kind='painpoint') AS painpoints "
                 "FROM topic_posts tp LEFT JOIN posts p ON p.id=tp.post_id "
                 "GROUP BY tp.topic ORDER BY posts DESC LIMIT 50"
-            )
+            ))
             return {"topics": rows}
 
         if name == "run_query":
@@ -389,7 +391,7 @@ def _exec_tool(name: str, args: dict) -> dict:
                         "create ", "replace ", "truncate "):
                 if bad in lower:
                     return {"error": f"blocked keyword: {bad.strip()}"}
-            rows = db.query(sql)
+            rows = list(db.query(sql))
             truncated = len(rows) > 100
             return {"rows": rows[:100], "truncated": truncated, "row_count": len(rows)}
 
@@ -397,7 +399,7 @@ def _exec_tool(name: str, args: dict) -> dict:
             topic = args.get("topic") or ""
             kind = args.get("kind") or "painpoint"
             limit = min(int(args.get("limit") or 10), 30)
-            rows = db.query(
+            rows = list(db.query(
                 "SELECT n.label, n.metadata_json, "
                 "       (SELECT count(*) FROM graph_edges e "
                 "        WHERE e.topic=n.topic AND (e.src=n.id OR e.dst=n.id)) AS evidence_count "
@@ -405,32 +407,32 @@ def _exec_tool(name: str, args: dict) -> dict:
                 "WHERE n.topic=? AND n.kind=? "
                 "ORDER BY evidence_count DESC LIMIT ?",
                 (topic, kind, limit),
-            )
+            ))
             return {"findings": rows, "topic": topic, "kind": kind}
 
         if name == "source_breakdown":
             topic = args.get("topic") or ""
-            rows = db.query(
+            rows = list(db.query(
                 "SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts "
                 "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
                 "WHERE tp.topic=? "
                 "GROUP BY coalesce(p.source_type,'reddit') ORDER BY posts DESC",
                 (topic,),
-            )
+            ))
             return {"sources": rows, "topic": topic}
 
         if name == "sample_posts":
             topic = args.get("topic") or ""
             limit = min(int(args.get("limit") or 5), 20)
-            rows = db.query(
-                "SELECT p.title, p.subreddit, p.score, p.num_comments, "
+            rows = list(db.query(
+                "SELECT p.title, p.sub AS subreddit, p.score, p.num_comments, "
                 "       coalesce(p.source_type,'reddit') AS source, "
                 "       substr(coalesce(p.selftext,''),1,300) AS snippet "
                 "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
                 "WHERE tp.topic=? "
                 "ORDER BY coalesce(p.score,0)+coalesce(p.num_comments,0) DESC LIMIT ?",
                 (topic, limit),
-            )
+            ))
             return {"posts": rows, "topic": topic}
 
         return {"error": f"unknown tool: {name}"}
@@ -605,7 +607,7 @@ def chat_meta(topic: str, provider: str | None = None) -> dict:
     """Return a small dict describing what will be used + the current corpus size."""
     prov, model = _resolve_provider(provider)
     db = get_db()
-    posts = db.query("SELECT count(*) AS n FROM topic_posts WHERE topic=?", (topic,))
+    posts = list(db.query("SELECT count(*) AS n FROM topic_posts WHERE topic=?", (topic,)))
     return {
         "topic": topic,
         "provider": prov,

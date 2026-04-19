@@ -22,6 +22,7 @@ fn main() {
             commands::cancel_collect,
             commands::collect_status,
             commands::build_graph,
+            commands::enrich_graph,
             commands::export_html,
             commands::export_report_pro,
             commands::get_findings,
@@ -40,6 +41,10 @@ fn main() {
             commands::test_llm,
             commands::list_ollama_models,
             commands::run_solutions_pipeline,
+            commands::ollama_start_service,
+            commands::ollama_stop_service,
+            commands::close_splash,
+            commands::db_mtime,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gapmap");

@@ -15,7 +15,9 @@ SYSTEM = dedent(
 ).strip()
 
 
-def summarize_thread(post_id: str, provider: str = "anthropic") -> str:
+def summarize_thread(post_id: str, provider: str | None = None) -> str:
+    # `provider=None` → resolve_provider picks the user's configured default
+    # from LLM_PROVIDER env (BYOK Settings). Never hardcode "anthropic".
     db = get_db()
     post = db["posts"].get(post_id)
     comments = list(

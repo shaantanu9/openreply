@@ -164,20 +164,95 @@ def upsert_semantic(
 
 def enrich_from_llm(
     topic: str,
-    provider: str = "anthropic",
+    provider: str | None = None,
     corpus_limit: int = 120,
     min_score: int = 1,
 ) -> dict[str, Any]:
     """Run find_gaps() against the corpus, then persist to the graph.
 
-    Requires an LLM provider key (e.g. ANTHROPIC_API_KEY). Use upsert_semantic()
-    instead if Claude Code is the LLM (MCP path).
+    If `provider` is None (the default), resolve it from the user's saved
+    `LLM_PROVIDER` / env keys / reachable Ollama — *don't* silently fall back
+    to Anthropic just because it's the first alphabetic option. That caused a
+    bug where users with only Ollama configured got "ANTHROPIC_API_KEY not
+    set" errors.
+
+    If no provider is configured at all, returns `{ok: False, skipped: True,
+    reason: ...}` instead of raising — lets the UI call this optimistically
+    after every collect without needing to pre-check.
     """
-    report = find_gaps(
-        topic=topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
-    )
+    import os
+
+    # ── Resolve provider from the user's configured env (Settings writes
+    # LLM_PROVIDER + the matching *_API_KEY or OLLAMA_BASE_URL into the .env
+    # file that reddit-cli reads at startup).
+    configured_provider = (os.getenv("LLM_PROVIDER") or "").lower()
+    key_for = {
+        "anthropic":  "ANTHROPIC_API_KEY",
+        "openai":     "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "groq":       "GROQ_API_KEY",
+        "deepseek":   "DEEPSEEK_API_KEY",
+        "mistral":    "MISTRAL_API_KEY",
+        "google":     "GOOGLE_API_KEY",
+    }
+
+    def _ollama_reachable() -> bool:
+        try:
+            import urllib.request
+            base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+            with urllib.request.urlopen(f"{base}/api/version", timeout=1):
+                return True
+        except Exception:
+            return False
+
+    # Caller passed an explicit provider → trust them (test harness, etc.).
+    # Otherwise auto-detect: prefer saved LLM_PROVIDER, then first env key,
+    # then Ollama.
+    if not provider:
+        if configured_provider == "ollama" and _ollama_reachable():
+            provider = "ollama"
+        elif configured_provider in key_for and os.getenv(key_for[configured_provider]):
+            provider = configured_provider
+        else:
+            # Probe every known provider in a stable order.
+            for name, env_key in key_for.items():
+                if os.getenv(env_key):
+                    provider = name
+                    break
+            else:
+                if _ollama_reachable():
+                    provider = "ollama"
+
+    # Still nothing? Skip cleanly.
+    if not provider:
+        return {
+            "ok": False,
+            "skipped": True,
+            "reason": "no LLM configured — set a key in Settings → API keys, "
+                      "or start a local Ollama instance",
+            "topic": topic,
+        }
+
+    # Validate the chosen provider has its key (or Ollama is reachable).
+    if provider == "ollama" and not _ollama_reachable():
+        return {
+            "ok": False, "skipped": True, "topic": topic,
+            "reason": "Ollama is configured but not reachable — start the service in Settings",
+        }
+    elif provider in key_for and not os.getenv(key_for[provider]):
+        return {
+            "ok": False, "skipped": True, "topic": topic,
+            "reason": f"{key_for[provider]} not set — add it in Settings → API keys",
+        }
+
+    try:
+        report = find_gaps(
+            topic=topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"enrich failed: {e}", "topic": topic}
     if report.get("error"):
-        return {"error": report["error"]}
+        return {"ok": False, "error": report["error"], "topic": topic}
 
     summary = upsert_semantic(
         topic=topic,
@@ -196,6 +271,7 @@ def enrich_from_llm(
             else []
         ),
     )
+    summary["ok"] = True
     summary["corpus_size"] = report.get("corpus_size")
     summary["provider"] = provider
     return summary

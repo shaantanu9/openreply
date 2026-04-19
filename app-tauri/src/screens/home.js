@@ -10,19 +10,22 @@ function headerAvatar() {
 }
 
 const COVER_VARIANTS = ['cover-1', 'cover-2', 'cover-3', 'cover-4'];
-const COVER_EMOJIS = ['📄', '🎓', '🌱', '💸', '🎯', '🔧', '💡', '🚀'];
+const COVER_ICONS = [
+  'file-text', 'graduation-cap', 'sprout', 'receipt',
+  'target', 'wrench', 'lightbulb', 'rocket',
+];
 
 let momentumRange = 90; // days: 30 | 90 | 365
 
 function topicTile(t, idx) {
   const cover = COVER_VARIANTS[idx % COVER_VARIANTS.length];
-  const emoji = COVER_EMOJIS[idx % COVER_EMOJIS.length];
+  const icon = COVER_ICONS[idx % COVER_ICONS.length];
   const painpoints = t.painpoints || 0;
   const sources = t.sources || 0;
   const slug = encodeURIComponent(t.topic);
   return `
     <div class="topic-tile" data-href="#/topic/${slug}">
-      <div class="topic-cover ${cover}">${emoji}</div>
+      <div class="topic-cover ${cover}"><i data-lucide="${icon}"></i></div>
       <h4>${esc(t.topic)}</h4>
       <div class="topic-stats">
         <span><b>${fmtN(t.posts)}</b> posts</span>
@@ -34,38 +37,45 @@ function topicTile(t, idx) {
 }
 
 function activityItem(row) {
-  const { kind, params_json, started_at, rows, error } = row;
+  const { kind, params_json, started_at, ended_at, rows, error } = row;
   let params = {};
   try { params = JSON.parse(params_json || '{}'); } catch {}
-  let bgColor = 'var(--mint-soft)', fgColor = '#2E7D5B', ic = '↓';
+  let bgColor = 'var(--mint-soft)', fgColor = '#2E7D5B', ic = 'download';
   let title = kind;
-  let meta = `${rows || 0} rows · ${timeAgo(started_at)}`;
+  const running = !ended_at && !error;
+  let meta = running
+    ? `running · started ${timeAgo(started_at)}`
+    : `${rows || 0} rows · ${timeAgo(started_at)}`;
 
   if (error) {
-    bgColor = 'var(--rose-soft)'; fgColor = '#B84747'; ic = '!';
+    bgColor = 'var(--rose-soft)'; fgColor = '#B84747'; ic = 'alert-triangle';
     meta = `${error.slice(0, 60)} · ${timeAgo(started_at)}`;
   } else if (kind === 'posts') {
     title = `Reddit fetch · r/${params.sub || '?'}`;
-    ic = '↓';
+    ic = 'download';
   } else if (kind === 'historical') {
     title = `Pullpush archive · r/${params.sub || '?'}`;
-    bgColor = 'var(--lavender-soft)'; fgColor = '#6B4FA8'; ic = '✦';
+    bgColor = 'var(--lavender-soft)'; fgColor = '#6B4FA8'; ic = 'archive';
   } else if (kind && kind.startsWith('source:')) {
     title = `${kind.replace('source:', '').toUpperCase()} fetch`;
-    bgColor = 'var(--sky-soft)'; fgColor = '#2E5B8C'; ic = '▤';
+    bgColor = 'var(--sky-soft)'; fgColor = '#2E5B8C'; ic = 'globe';
   } else if (kind === 'search') {
     title = `Search: "${(params.query || '').slice(0, 50)}"`;
-    bgColor = 'var(--orange-soft)'; fgColor = '#B85A1E'; ic = '⌕';
+    bgColor = 'var(--orange-soft)'; fgColor = '#B85A1E'; ic = 'search';
   } else if (kind === 'local_file') {
     title = `Ingested ${(params.path || '').split('/').pop() || '?'}`;
-    bgColor = 'var(--gold-soft)'; fgColor = '#8A6E1E'; ic = '↑';
+    bgColor = 'var(--gold-soft)'; fgColor = '#8A6E1E'; ic = 'upload';
   }
 
+  const runningPill = running
+    ? `<span class="pill pill-running" style="margin-left:auto"><span class="pulse-dot sm"></span> running</span>`
+    : '';
+
   return `
-    <div class="activity-item">
-      <div class="activity-ic" style="background:${bgColor};color:${fgColor};">${ic}</div>
+    <div class="activity-item${running ? ' is-running' : ''}">
+      <div class="activity-ic" style="background:${bgColor};color:${fgColor};"><i data-lucide="${ic}"></i></div>
       <div class="activity-body">
-        <div class="activity-title">${esc(title)}</div>
+        <div class="activity-title">${esc(title)}${runningPill}</div>
         <div class="activity-meta">${esc(meta)}</div>
       </div>
     </div>
@@ -105,7 +115,7 @@ function renderHero(heroRoot, topTopic, stats, dailyCounts) {
     ? `Your latest topic has ${topTopic.painpoints || 0} painpoints across ${topTopic.sources || 0} source types from ${fmtN(topTopic.posts)} posts.`
     : 'Start a topic to see multi-source gap maps with citations, competitors, DIY workarounds, and more.';
   heroRoot.innerHTML = `
-    <section class="hero">
+    <section class="hero fade-in">
       <div>
         <div class="hero-eyebrow">${topTopic ? 'Active research' : 'Get started'}</div>
         <h1>${esc(heroTopic)}</h1>
@@ -155,23 +165,23 @@ function renderStatGrid(el, stats, deltas) {
     return `<span class="stat-trend trend-flat">·</span>`;
   };
   el.innerHTML = `
-    <div class="stat-card">
-      <div class="stat-head"><div class="stat-icon peach">◉</div>${trendPill(d.painpoints)}</div>
+    <div class="stat-card fade-in">
+      <div class="stat-head"><div class="stat-icon peach"><i data-lucide="target"></i></div>${trendPill(d.painpoints)}</div>
       <div class="stat-num">${fmtN(s.total_painpoints || 0)}</div>
       <div class="stat-label">Painpoints surfaced</div>
     </div>
-    <div class="stat-card">
-      <div class="stat-head"><div class="stat-icon lavender">✦</div>${trendPill(d.sources)}</div>
+    <div class="stat-card fade-in">
+      <div class="stat-head"><div class="stat-icon lavender"><i data-lucide="sparkles"></i></div>${trendPill(d.sources)}</div>
       <div class="stat-num">${fmtN(s.total_sources || 0)}</div>
       <div class="stat-label">Sources indexed</div>
     </div>
-    <div class="stat-card">
-      <div class="stat-head"><div class="stat-icon mint">◢</div>${trendPill(d.workarounds)}</div>
+    <div class="stat-card fade-in">
+      <div class="stat-head"><div class="stat-icon mint"><i data-lucide="wrench"></i></div>${trendPill(d.workarounds)}</div>
       <div class="stat-num">${fmtN(s.total_workarounds || 0)}</div>
       <div class="stat-label">DIY workarounds (gap signal)</div>
     </div>
-    <div class="stat-card">
-      <div class="stat-head"><div class="stat-icon sky">▭</div>${trendPill(d.posts)}</div>
+    <div class="stat-card fade-in">
+      <div class="stat-head"><div class="stat-icon sky"><i data-lucide="layers"></i></div>${trendPill(d.posts)}</div>
       <div class="stat-num">${fmtN(s.total_posts || 0)}</div>
       <div class="stat-label">Posts indexed</div>
     </div>
@@ -234,6 +244,29 @@ function momentumChart(rows, days) {
     </svg>`;
 }
 
+// ---- dashboard cache (stale-while-revalidate) ----------------------------
+// Every sidecar call spawns a fresh Python process (~500ms warm). The
+// dashboard fires ~6 of them in parallel, so a fresh visit is always
+// ~1-2s bounded by the slowest one. Caching the rendered data means
+// second+ visits paint instantly while a background refresh runs. TTL=none
+// (cache is invalidated only when data changes — a successful refresh
+// overwrites it).
+const DASH_CACHE_KEY = 'gapmap.dashboard.cache.v1';
+
+function readDashCache() {
+  try {
+    const raw = localStorage.getItem(DASH_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function writeDashCache(patch) {
+  try {
+    const cur = readDashCache() || {};
+    localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({ ...cur, ...patch, _ts: Date.now() }));
+  } catch {}
+}
+
 // ---- top-level ----
 export async function renderHome(root) {
   root.innerHTML = `
@@ -244,7 +277,7 @@ export async function renderHome(root) {
         <span>⌕</span>
         <span>Start a topic — type a market or problem…</span>
       </div>
-      <div class="icon-btn" id="home-bell" title="Pipeline activity" role="button" tabindex="0">🔔</div>
+      <div class="icon-btn-square" id="home-bell" title="Pipeline activity" role="button" tabindex="0"><i data-lucide="bell"></i></div>
       <div class="avatar" id="home-avatar" role="button" tabindex="0" title="Settings">${headerAvatar()}</div>
     </header>
 
@@ -289,7 +322,7 @@ export async function renderHome(root) {
         <p id="topics-subtitle">Active research projects</p>
       </div>
       <div class="filter-bar">
-        <button class="btn btn-primary" id="btn-new-topic" style="padding:8px 14px;font-size:12px">
+        <button class="btn btn-primary btn-sm" id="btn-new-topic">
           + New topic
         </button>
       </div>
@@ -316,13 +349,73 @@ export async function renderHome(root) {
     loadMomentum(root);
   });
 
-  // Kick off all data fetches in parallel. Each updates its own slot as it arrives.
+  // Instant paint from cache (if any) — skeletons never appear on repeat visits.
+  const cached = readDashCache();
+  if (cached) {
+    if (cached.topics && cached.stats) {
+      const topTopic = cached.topics[0] || null;
+      renderHero(root.querySelector('#hero-slot'), topTopic, cached.stats, cached.dailyCounts || []);
+      renderStatGrid(root.querySelector('#stat-grid'), cached.stats, null);
+    }
+    if (cached.momentumByRange?.[momentumRange]) {
+      root.querySelector('#momentum-body').innerHTML =
+        momentumChart(cached.momentumByRange[momentumRange], momentumRange);
+    }
+    if (Array.isArray(cached.activity) && cached.activity.length) {
+      root.querySelector('#activity-feed').innerHTML =
+        cached.activity.slice(0, 8).map(activityItem).join('');
+    }
+    if (Array.isArray(cached.topics) && cached.topics.length) {
+      const slot = root.querySelector('#topic-grid-slot');
+      const sub = root.querySelector('#topics-subtitle');
+      if (sub) sub.textContent = `${cached.topics.length} active ${cached.topics.length === 1 ? 'project' : 'projects'}`;
+      slot.innerHTML = `<section class="topic-grid">${cached.topics.slice(0, 8).map((t, i) => topicTile(t, i)).join('')}</section>`;
+      slot.querySelectorAll('.topic-tile').forEach(el => {
+        el.addEventListener('click', () => { location.hash = el.dataset.href; });
+      });
+    }
+    window.refreshIcons?.();
+  }
+
+  // Background refresh — fires all queries in parallel and rewrites slots
+  // when fresher data arrives. Per-call failures are per-slot, never kill
+  // the whole dashboard.
   loadHeroAndStats(root);
   loadMomentum(root);
   loadActivity(root);
   loadTopicGrid(root);
   loadActiveCollect(root);
   loadByokPrompt(root);
+
+  // Live-refresh hooks:
+  //   1. `gapmap:db-changed` fires when api.js's mtime poller detects an
+  //      external DB write. Re-fetch every slot so the user always sees
+  //      fresh data without clicking reload.
+  //   2. A 30 s background interval for belt-and-braces (covers intra-app
+  //      writes that don't bump mtime enough to trip the 5 s poller window).
+  //   Both guarded by isConnected so they stop firing once the user navigates
+  //   away (no leaked listeners / timers).
+  const myRouteGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myRouteGen && root.isConnected;
+  const refresh = () => {
+    if (!alive()) return;
+    loadHeroAndStats(root);
+    loadMomentum(root);
+    loadActivity(root);
+    loadTopicGrid(root);
+    loadActiveCollect(root);
+  };
+  const dbListener = () => refresh();
+  window.addEventListener('gapmap:db-changed', dbListener);
+  const bgTimer = setInterval(() => {
+    if (!alive()) {
+      clearInterval(bgTimer);
+      window.removeEventListener('gapmap:db-changed', dbListener);
+      return;
+    }
+    if (document.visibilityState !== 'visible') return;
+    refresh();
+  }, 30000);
 }
 
 async function loadHeroAndStats(root) {
@@ -340,13 +433,13 @@ async function loadHeroAndStats(root) {
   // Pull daily post counts for the top topic for the hero bars.
   if (topTopic?.topic) {
     try {
-      const safe = String(topTopic.topic).replace(/'/g, "''");
       const rows = await api.runQuery(
-        `SELECT substr(added_at,1,10) AS day, count(*) AS n \
-         FROM topic_posts \
-         WHERE topic='${safe}' \
-           AND substr(added_at,1,10) >= date('now','-6 days') \
-         GROUP BY substr(added_at,1,10) ORDER BY day ASC`
+        `SELECT substr(added_at,1,10) AS day, count(*) AS n
+         FROM topic_posts
+         WHERE topic=:topic
+           AND substr(added_at,1,10) >= date('now','-6 days')
+         GROUP BY substr(added_at,1,10) ORDER BY day ASC`,
+        String(topTopic.topic),
       );
       if (Array.isArray(rows)) {
         // Normalize to exactly the last 7 days, filling zeros.
@@ -365,11 +458,15 @@ async function loadHeroAndStats(root) {
 
   renderHero(root.querySelector('#hero-slot'), topTopic, stats, dailyCounts);
   renderStatGrid(root.querySelector('#stat-grid'), stats, null);
+  window.refreshIcons?.();
+  writeDashCache({ topics, stats, dailyCounts });
 }
 
 async function loadMomentum(root) {
   const body = root.querySelector('#momentum-body');
-  body.innerHTML = `<div class="empty-state">loading chart…</div>`;
+  // Only show skeleton if we have no cached chart for this range.
+  const cached = readDashCache()?.momentumByRange?.[momentumRange];
+  if (!cached) body.innerHTML = `<div class="empty-state">loading chart…</div>`;
   try {
     const rows = await api.runQuery(
       `SELECT substr(started_at,1,10) AS day, count(*) AS n \
@@ -378,31 +475,55 @@ async function loadMomentum(root) {
        GROUP BY substr(started_at,1,10) ORDER BY day ASC`
     );
     body.innerHTML = momentumChart(Array.isArray(rows) ? rows : [], momentumRange);
+    // Cache per-range so the 30/90/1Y toggle also benefits.
+    const prev = readDashCache()?.momentumByRange || {};
+    writeDashCache({ momentumByRange: { ...prev, [momentumRange]: rows || [] } });
   } catch (e) {
-    body.innerHTML = `<div class="empty-state">error loading chart: ${esc(e?.message || e)}</div>`;
+    if (!cached) {
+      body.innerHTML = `<div class="empty-state">error loading chart: ${esc(e?.message || e)}</div>`;
+    }
+    // With cache: keep the stale chart, don't overwrite with an error message.
   }
 }
 
 async function loadActivity(root) {
   const feed = root.querySelector('#activity-feed');
+  const hadCache = !!(readDashCache()?.activity?.length);
   try {
     const rows = await api.recentActivity();
     if (!Array.isArray(rows) || !rows.length) {
-      feed.innerHTML = `<div class="empty-state" style="padding:24px">no activity yet — start a topic to see fetches land here</div>`;
+      if (!hadCache) {
+        feed.innerHTML = `<div class="empty-state" style="padding:24px">no activity yet — start a topic to see fetches land here</div>`;
+      }
+      writeDashCache({ activity: [] });
       return;
     }
     feed.innerHTML = rows.slice(0, 8).map(activityItem).join('');
+    window.refreshIcons?.();
+    writeDashCache({ activity: rows });
   } catch (e) {
-    feed.innerHTML = `<div class="empty-state" style="padding:24px">error: ${esc(e?.message || e)}</div>`;
+    if (!hadCache) {
+      feed.innerHTML = `<div class="empty-state" style="padding:24px">error: ${esc(e?.message || e)}</div>`;
+    }
   }
 }
 
 async function loadTopicGrid(root) {
+  // Avoid a second sidecar spawn — loadHeroAndStats already fetched + cached topics.
+  // We wait up to 3s for that call to finish, then fall through to a fresh fetch
+  // only if nothing landed (handles the case where hero-stats failed).
   let topics = [];
-  try {
-    const r = await api.listTopics();
-    topics = Array.isArray(r) ? r : [];
-  } catch {}
+  for (let i = 0; i < 30 && !topics.length; i++) {
+    const cached = readDashCache()?.topics;
+    if (Array.isArray(cached)) { topics = cached; break; }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  if (!topics.length) {
+    try {
+      const r = await api.listTopics();
+      topics = Array.isArray(r) ? r : [];
+    } catch {}
+  }
 
   const slot = root.querySelector('#topic-grid-slot');
   const subtitle = root.querySelector('#topics-subtitle');
@@ -427,35 +548,169 @@ async function loadTopicGrid(root) {
 
 async function loadActiveCollect(root) {
   const slot = root.querySelector('#active-collect-slot');
+  if (!slot) return;
+
+  let lastTopic = '';
+  let lastWasRunning = false;
+
+  const tick = async () => {
+    if (!document.body.contains(slot)) return; // DOM unmounted
+    try {
+      // A running collect writes a `fetches` row with ended_at NULL.
+      const rows = await api.runQuery(
+        `SELECT kind, params_json, started_at FROM fetches \
+         WHERE ended_at IS NULL \
+         ORDER BY started_at DESC LIMIT 1`
+      );
+      const running = Array.isArray(rows) && rows.length > 0;
+      if (!running) {
+        if (lastWasRunning) {
+          // Collect just finished — refresh downstream panels so stats update.
+          loadActivity(root);
+          loadTopicGrid(root);
+          loadHeroAndStats(root);
+        }
+        slot.innerHTML = '';
+        lastWasRunning = false;
+        lastTopic = '';
+        return;
+      }
+      const row = rows[0];
+      let params = {};
+      try { params = JSON.parse(row.params_json || '{}'); } catch {}
+      const topic = params.topic || '';
+      const since = timeAgo(row.started_at);
+      // Only re-render when the row or topic actually changes — avoids
+      // losing focus on other parts of the page every poll.
+      const same = lastWasRunning && topic === lastTopic;
+      if (!same) {
+        slot.innerHTML = `
+          <div class="active-collect-banner" role="button" tabindex="0">
+            <div class="pulse-dot"></div>
+            <div class="acb-body">
+              <b>Collecting${topic ? ` "${esc(topic)}"` : ''}…</b>
+              <span>step: ${esc(row.kind || '…')} · started ${esc(since)}</span>
+            </div>
+            <div class="acb-cta">View progress →</div>
+          </div>`;
+        slot.querySelector('.active-collect-banner').addEventListener('click', () => {
+          if (topic) location.hash = `#/collect/${encodeURIComponent(topic)}`;
+          else location.hash = '#/activity';
+        });
+        lastWasRunning = true;
+        lastTopic = topic;
+      } else {
+        // Same collect still running — refresh the "started N ago" text cheaply.
+        const span = slot.querySelector('.acb-body span');
+        if (span) span.textContent = `step: ${row.kind || '…'} · started ${since}`;
+      }
+      // While a collect is running, keep the activity feed fresh so the user
+      // can watch new fetch rows land without refreshing the page.
+      loadActivity(root);
+    } catch {
+      slot.innerHTML = '';
+    }
+  };
+
+  await tick();
+  const intervalId = setInterval(tick, 4000);
+  window.addEventListener('hashchange', function once() {
+    clearInterval(intervalId);
+    window.removeEventListener('hashchange', once);
+  });
+}
+
+// ─── Dedicated Topics screen ──────────────────────────────────────────────
+
+export async function renderTopicsList(root) {
+  root.innerHTML = `
+    <header class="topbar">
+      <div class="crumbs">Workspace / <strong>Topics</strong></div>
+      <div class="topbar-spacer"></div>
+      <div class="search"><i data-lucide="search"></i> Start a topic — type a market or problem…</div>
+      <div class="icon-btn-square" id="topics-bell" title="Pipeline activity" role="button" tabindex="0">
+        <i data-lucide="bell"></i>
+      </div>
+      <div class="avatar" id="topics-avatar" role="button" tabindex="0" title="Settings">${headerAvatar()}</div>
+    </header>
+    <div class="section-head">
+      <div><h2>All topics</h2><p id="topics-count">Loading…</p></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="topics-filter" placeholder="Filter by name…" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-family:inherit;background:var(--surface)" />
+        <button class="btn btn-primary btn-sm icon-btn" id="topics-new"><i data-lucide="plus"></i> New topic</button>
+      </div>
+    </div>
+    <div id="topics-grid-slot"><div class="empty-state" style="padding:24px">loading…</div></div>
+  `;
+  root.querySelector('#topics-new').onclick = () => window.gapmapOpenNewTopic?.();
+  root.querySelector('#topics-bell').onclick = () => { location.hash = '#/activity'; };
+  root.querySelector('#topics-avatar').onclick = () => { location.hash = '#/settings'; };
+  window.refreshIcons?.();
+
+  const slot = root.querySelector('#topics-grid-slot');
+  const countEl = root.querySelector('#topics-count');
+  const filterInput = root.querySelector('#topics-filter');
+
+  let topics = [];
   try {
-    // A running collect writes a `fetches` row with ended_at NULL.
-    const rows = await api.runQuery(
-      `SELECT kind, params_json, started_at FROM fetches \
-       WHERE ended_at IS NULL \
-       ORDER BY started_at DESC LIMIT 1`
-    );
-    if (!Array.isArray(rows) || !rows.length) { slot.innerHTML = ''; return; }
-    const row = rows[0];
-    let params = {};
-    try { params = JSON.parse(row.params_json || '{}'); } catch {}
-    const topic = params.topic || '';
-    const since = timeAgo(row.started_at);
-    slot.innerHTML = `
-      <div class="active-collect-banner" role="button" tabindex="0">
-        <div class="pulse-dot"></div>
-        <div class="acb-body">
-          <b>Collecting${topic ? ` "${esc(topic)}"` : ''}…</b>
-          <span>step: ${esc(row.kind || '…')} · started ${esc(since)}</span>
-        </div>
-        <div class="acb-cta">View progress →</div>
-      </div>`;
-    slot.querySelector('.active-collect-banner').addEventListener('click', () => {
-      if (topic) location.hash = `#/collect/${encodeURIComponent(topic)}`;
-      else location.hash = '#/activity';
-    });
-  } catch {
-    slot.innerHTML = '';
+    const r = await api.listTopics();
+    topics = Array.isArray(r) ? r : [];
+  } catch (e) {
+    const msg = (e?.message || e || '').toString();
+    // "no such table: topic_posts" means no collect has ever been run —
+    // treat it as an empty workspace, not a crash.
+    const isEmptyDb = /no such table/i.test(msg);
+    countEl.textContent = isEmptyDb ? '0 topics' : 'error';
+    slot.innerHTML = isEmptyDb
+      ? `<div class="empty-big">
+          <h3>No topics yet</h3>
+          <p>Start your first research topic — we'll pull posts from Reddit, HN, Dev.to and more, then surface painpoints and DIY workarounds.</p>
+          <button class="btn btn-primary icon-btn" id="topics-empty-new"><i data-lucide="plus"></i> Start new topic</button>
+        </div>`
+      : `<div class="empty-big">
+          <h3>Couldn't load topics</h3>
+          <p style="white-space:pre-wrap;max-height:160px;overflow:auto;text-align:left;margin:8px auto;max-width:640px">${esc(msg)}</p>
+          <button class="btn btn-ghost icon-btn" id="topics-empty-retry" style="border:1px solid var(--line)"><i data-lucide="rotate-cw"></i> Retry</button>
+        </div>`;
+    slot.querySelector('#topics-empty-new')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
+    slot.querySelector('#topics-empty-retry')?.addEventListener('click', () => renderTopicsList(root));
+    window.refreshIcons?.();
+    return;
   }
+
+  const paint = (list) => {
+    countEl.textContent = `${list.length} ${list.length === 1 ? 'topic' : 'topics'}`;
+    if (!list.length) {
+      const filtering = filterInput.value.trim().length > 0;
+      slot.innerHTML = filtering
+        ? `<div class="empty-big">
+             <h3>No matching topics</h3>
+             <p>Try clearing the filter, or start a new one.</p>
+             <button class="btn btn-primary icon-btn" id="topics-empty-new"><i data-lucide="plus"></i> Start new topic</button>
+           </div>`
+        : `<div class="empty-big">
+             <h3>No topics yet</h3>
+             <p>Start your first research topic to collect posts and surface painpoints + DIY workarounds.</p>
+             <button class="btn btn-primary icon-btn" id="topics-empty-new"><i data-lucide="plus"></i> Start new topic</button>
+           </div>`;
+      slot.querySelector('#topics-empty-new')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
+      window.refreshIcons?.();
+      return;
+    }
+    slot.innerHTML = `<section class="topic-grid">${list.map((t, i) => topicTile(t, i)).join('')}</section>`;
+    slot.querySelectorAll('.topic-tile').forEach(el => {
+      el.addEventListener('click', () => { location.hash = el.dataset.href; });
+    });
+    window.refreshIcons?.();
+  };
+
+  paint(topics);
+
+  filterInput.addEventListener('input', () => {
+    const q = filterInput.value.trim().toLowerCase();
+    if (!q) return paint(topics);
+    paint(topics.filter(t => (t.topic || '').toLowerCase().includes(q)));
+  });
 }
 
 async function loadByokPrompt(root) {
@@ -469,12 +724,12 @@ async function loadByokPrompt(root) {
     if (anyReady) { slot.innerHTML = ''; return; }
     slot.innerHTML = `
       <div class="byok-prompt-card">
-        <div class="byok-prompt-ic">🗝</div>
+        <div class="byok-prompt-ic"><i data-lucide="key-round"></i></div>
         <div class="byok-prompt-body">
           <b>Add an LLM key to unlock painpoint extraction</b>
           <p>Gap Map can pull data without a key, but painpoints / features / DIY workarounds need an LLM. Anthropic, OpenAI, OpenRouter, Groq, DeepSeek, Gemini, or local Ollama all work.</p>
         </div>
-        <button class="btn btn-primary" id="byok-prompt-btn" style="padding:8px 14px;font-size:12px">Add key</button>
+        <button class="btn btn-primary btn-sm" id="byok-prompt-btn">Add key</button>
       </div>`;
     slot.querySelector('#byok-prompt-btn').addEventListener('click', () => {
       location.hash = '#/settings';

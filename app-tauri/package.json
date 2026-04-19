@@ -7,12 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "node --test src/api.test.mjs src/lib/collectFormat.test.mjs src/screens/settings.avatar.test.mjs src/screens/welcome.onboarding.test.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-dialog": "^2.2.0",
-    "@tauri-apps/plugin-shell": "^2.2.0"
+    "@tauri-apps/plugin-shell": "^2.2.0",
+    "lucide": "^1.8.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",

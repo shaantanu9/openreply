@@ -288,10 +288,31 @@ def cmd_stream(
 def cmd_query(
     sql: str = typer.Argument(..., help="SQL query against the SQLite store"),
     as_json: bool = typer.Option(False, "--json"),
+    topic: Optional[str] = typer.Option(
+        None, "--topic",
+        help="Bind this value as :topic placeholder in the SQL (safe param substitution, no injection).",
+    ),
+    param: list[str] = typer.Option(
+        [], "--param",
+        help="Additional named params as name=value. Multiple allowed. Referenced as :name in SQL.",
+    ),
 ) -> None:
-    """Run a raw SQL query. Tables: posts, comments, users, subreddits, fetches, streams, stream_hits."""
+    """Run a raw SQL query. Tables: posts, comments, users, subreddits, fetches, streams, stream_hits, topic_posts, graph_nodes, graph_edges.
+
+    Safe param substitution (prevents SQL injection on topic names etc.):
+      reddit-cli query "SELECT * FROM topic_posts WHERE topic = :topic" --topic "my app"
+      reddit-cli query "SELECT * FROM graph_nodes WHERE topic=:topic AND kind=:k" --topic X --param k=painpoint
+    """
     db = get_db()
-    rows = list(db.query(sql))
+    params: dict[str, str] = {}
+    if topic is not None:
+        params["topic"] = topic
+    for p in param:
+        if "=" not in p:
+            continue
+        k, _, v = p.partition("=")
+        params[k.strip()] = v
+    rows = list(db.query(sql, params) if params else db.query(sql))
     _emit(rows, as_json, table_title=f"{len(rows)} row(s)")
 
 
@@ -618,10 +639,13 @@ def cmd_research_temporal(
 def cmd_research_report_pro(
     topic: str = typer.Option(..., "--topic", "-t"),
     out: Optional[Path] = typer.Option(None, "--out", "-o"),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Accept --json from Rust wrapper (no-op; output is always markdown)."),
 ) -> None:
     """Premium citation-rich report: painpoints + evidence + build plan + users-to-DM."""
     from ..research.report_pro import render_citations_md
 
+    _ = as_json  # flag accepted for wrapper compat
     md = render_citations_md(topic)
     if out:
         out.write_text(md, encoding="utf-8")
@@ -636,10 +660,13 @@ def cmd_research_findings(
     top_n: int = typer.Option(5, "--top"),
     out: Optional[Path] = typer.Option(None, "--out", "-o"),
     tweet: bool = typer.Option(False, "--tweet", help="Render terse 3-finding tweet summary"),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Accept --json from Rust wrapper (no-op; output is always markdown)."),
 ) -> None:
     """Plain markdown findings report — no LLM required, reads from graph."""
     from ..research.text_report import render_text_report, render_tweet
 
+    _ = as_json
     md = render_tweet(topic) if tweet else render_text_report(topic, top_n=top_n)
     if out:
         out.write_text(md, encoding="utf-8")
@@ -797,11 +824,18 @@ def cmd_graph_build(
 @graph_app.command("enrich")
 def cmd_graph_enrich(
     topic: str = typer.Option(..., "--topic", "-t"),
-    provider: str = typer.Option("anthropic", "--provider"),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="Override provider (anthropic|openai|openrouter|groq|deepseek|mistral|google|ollama). "
+             "Omit to auto-detect from LLM_PROVIDER env or the first configured key.",
+    ),
     corpus_limit: int = typer.Option(120, "--limit", "-n"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Add semantic nodes (painpoints / products / workarounds) via LLM."""
+    """Add semantic nodes (painpoints / products / workarounds) via LLM.
+
+    Uses whatever the user configured in Settings. No hardcoded Anthropic fallback.
+    """
     from ..graph import enrich_from_llm
 
     r = enrich_from_llm(topic=topic, provider=provider, corpus_limit=corpus_limit)
@@ -879,7 +913,9 @@ def cmd_research_corpus(
 # ── info ─────────────────────────────────────────────────────────────────────
 
 @app.command("info")
-def cmd_info() -> None:
+def cmd_info(
+    as_json: bool = typer.Option(False, "--json", help="Output JSON (default is pretty-print JSON)."),
+) -> None:
     """Show config + DB stats + which backend mode is active."""
     cfg = load_config()
     db = get_db()
@@ -892,6 +928,10 @@ def cmd_info() -> None:
         "openai_key": bool(cfg.openai_api_key),
         "tables": {name: db[name].count for name in db.table_names()},
     }
+    # `--json` is a no-op here (we always emit JSON via console.print_json),
+    # but accepting the flag avoids typer errors from the Rust wrapper that
+    # auto-appends --json to every sidecar call.
+    _ = as_json
     console.print_json(data=stats)
 
 

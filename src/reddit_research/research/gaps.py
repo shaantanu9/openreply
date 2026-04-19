@@ -44,7 +44,7 @@ def _parse_json(raw: str) -> list[dict] | dict:
 def run_extractor(
     extractor: str,
     topic: str,
-    provider: str = "anthropic",
+    provider: str | None = None,
     corpus_limit: int = 120,
     min_score: int = 1,
     max_tokens: int = 2048,
@@ -67,7 +67,7 @@ def run_extractor(
 
 def find_temporal_gaps(
     topic: str,
-    provider: str = "anthropic",
+    provider: str | None = None,
     per_bucket: int = 80,
     min_score: int = 1,
     max_tokens: int = 3000,
@@ -102,11 +102,15 @@ def find_temporal_gaps(
 
 def find_gaps(
     topic: str,
-    provider: str = "anthropic",
+    provider: str | None = None,
     corpus_limit: int = 120,
     min_score: int = 1,
 ) -> dict[str, Any]:
     """Run all four extractors and return a consolidated gap report."""
+    from ..analyze.providers.base import resolve_provider
+    # Resolve once so the 4 extractors all agree on the same provider
+    # even if the env flips mid-run.
+    provider = resolve_provider(provider)
     out: dict[str, Any] = {"topic": topic, "provider": provider, "corpus_size": None}
     rows = corpus_for(topic, limit=corpus_limit, min_score=min_score)
     out["corpus_size"] = len(rows)

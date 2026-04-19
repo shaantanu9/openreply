@@ -27,7 +27,7 @@ export async function renderActivity(root) {
 
     <div class="section-head">
       <div><h2>Pipeline activity</h2><p id="activity-sub">All fetches + ingests + enrichment runs</p></div>
-      <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-activity-refresh">↻ Refresh</button>
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-activity-refresh"><i data-lucide="rotate-cw"></i> Refresh</button>
     </div>
 
     <div class="card" style="margin-bottom:18px">
@@ -115,8 +115,19 @@ export async function renderActivity(root) {
       }
     } catch {}
   }, 4000);
+
+  // Also refresh immediately when the DB-mtime poller detects an external
+  // write — covers the case where the user ran `reddit-cli` manually or an
+  // MCP server client wrote while we're on this page.
+  const dbChangedListener = () => {
+    if (document.visibilityState !== 'visible') return;
+    loadPage(root); loadSpark(root); checkLive(root);
+  };
+  window.addEventListener('gapmap:db-changed', dbChangedListener);
+
   window.addEventListener('hashchange', function once() {
     if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    window.removeEventListener('gapmap:db-changed', dbChangedListener);
     window.removeEventListener('hashchange', once);
   });
 
@@ -269,9 +280,19 @@ function activityRow(r) {
     .slice(0, 3)
     .map(([k, v]) => `${esc(k)}=${esc(String(v).slice(0, 40))}`)
     .join(' · ') || '—';
+  const running = !ended_at && !error;
   const dur = (() => {
     try {
-      if (!started_at || !ended_at) return '—';
+      if (!started_at) return '—';
+      if (running) {
+        const s = new Date(started_at).getTime();
+        if (!isFinite(s)) return '—';
+        const secs = Math.max(0, Math.floor((Date.now() - s) / 1000));
+        if (secs < 60) return `${secs}s…`;
+        if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s…`;
+        return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m…`;
+      }
+      if (!ended_at) return '—';
       const s = new Date(started_at).getTime();
       const e = new Date(ended_at).getTime();
       if (!isFinite(s) || !isFinite(e) || e < s) return '—';
@@ -283,7 +304,9 @@ function activityRow(r) {
   })();
   const statusPill = error
     ? `<span class="pill" style="background:var(--rose-soft);color:#B84747">✗ error</span>`
-    : `<span class="pill active">✓ ok</span>`;
+    : running
+      ? `<span class="pill pill-running"><span class="pulse-dot sm"></span> running</span>`
+      : `<span class="pill active">✓ ok</span>`;
   return `
     <tr>
       <td><span class="cell-kind">${esc(kind)}</span></td>

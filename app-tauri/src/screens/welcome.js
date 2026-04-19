@@ -27,12 +27,12 @@ export function markOnboardingComplete() {
 }
 
 const EXAMPLES = [
-  { t: 'ATS resume and job search apps',   e: '📄', cover: 'cover-1' },
-  { t: 'habit tracker apps',               e: '⏱', cover: 'cover-2' },
-  { t: 'freelance invoicing tools',        e: '💸', cover: 'cover-3' },
-  { t: 'note-taking apps',                 e: '🗒', cover: 'cover-4' },
-  { t: 'meditation apps',                  e: '🧘', cover: 'cover-1' },
-  { t: 'AI coding assistants',             e: '🤖', cover: 'cover-2' },
+  { t: 'ATS resume and job search apps',   icon: 'file-text',    cover: 'cover-1' },
+  { t: 'habit tracker apps',               icon: 'check-circle-2',cover: 'cover-2' },
+  { t: 'freelance invoicing tools',        icon: 'receipt',      cover: 'cover-3' },
+  { t: 'note-taking apps',                 icon: 'notebook-pen', cover: 'cover-4' },
+  { t: 'meditation apps',                  icon: 'flower-2',     cover: 'cover-1' },
+  { t: 'AI coding assistants',             icon: 'terminal',     cover: 'cover-2' },
 ];
 
 const STEPS = [
@@ -106,6 +106,7 @@ function renderStep(root, step, info) {
   if (step === 2) renderStep2(root, body, info);
   if (step === 3) renderStep3(root, body, info);
   if (step === 4) renderStep4(root, body, info);
+  window.refreshIcons?.();
 }
 
 // ─── Step 1 · Value prop ──────────────────────────────────────────────────
@@ -126,7 +127,7 @@ function renderStep1(root, body, info) {
           <li>🖥 Runs on your machine</li>
           <li>🔒 Your data never leaves</li>
           <li>🌐 Your IP, your rate limits</li>
-          <li>🗝 Bring your own keys (or skip)</li>
+          <li style="display:flex;align-items:center;gap:8px"><i data-lucide="key-round"></i> Bring your own keys (or skip)</li>
           <li>💾 All stored in local SQLite</li>
         </ul>
       </div>
@@ -244,6 +245,9 @@ async function renderStep3(root, body, info) {
   ];
   const isReady = (p) => p.isLocal ? (typeof byok[p.k] === 'string' && !!byok[p.k]) : !!byok[p.k]?.set;
   const readyCount = providers.filter(isReady).length;
+  // Live Ollama probe — we'll replace the "× not set" / "✓ ready" chip with
+  // the real service state (running / offline) once the fetch resolves.
+  const ollamaUrl = (byok.ollama || byok.ollama_base_url || 'http://localhost:11434').replace(/\/$/, '');
   const redditReady = byok?.reddit_client_id?.set && byok?.reddit_client_secret?.set;
   const mode = info?.mode || 'public';
 
@@ -272,9 +276,9 @@ async function renderStep3(root, body, info) {
               </div>`).join('')}
           </div>
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="ob-add-key">🗝 ${readyCount ? 'Manage keys' : 'Add a key'}</button>
-            <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="ob-anthropic">Anthropic console</button>
-            <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="ob-ollama">Install Ollama</button>
+            <button class="btn btn-primary btn-sm icon-btn" id="ob-add-key"><i data-lucide="key-round"></i> ${readyCount ? 'Manage keys' : 'Add a key'}</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="ob-anthropic"><i data-lucide="external-link"></i> Anthropic console</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="ob-ollama"><i data-lucide="download-cloud"></i> Install Ollama</button>
           </div>
         </div>
 
@@ -286,8 +290,8 @@ async function renderStep3(root, body, info) {
           </div>
           <p style="margin-top:4px">Public mode works (60/min). With credentials: 100/min + better metadata. Your password is never stored.</p>
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="ob-reddit-apps">Create Reddit app</button>
-            <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="ob-guide">Setup guide</button>
+            <button class="btn btn-primary btn-sm" id="ob-reddit-apps">Create Reddit app</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="ob-guide">Setup guide</button>
           </div>
         </div>
 
@@ -348,7 +352,7 @@ function renderStep4(root, body, info) {
       <section class="topic-grid" id="ob-examples">
         ${EXAMPLES.map(ex => `
           <div class="topic-tile" data-topic="${esc(ex.t)}">
-            <div class="topic-cover ${ex.cover}">${ex.e}</div>
+            <div class="topic-cover ${ex.cover}"><i data-lucide="${ex.icon}"></i></div>
             <h4>${esc(ex.t)}</h4>
             <div class="topic-stats"><span>Click to use this</span></div>
           </div>

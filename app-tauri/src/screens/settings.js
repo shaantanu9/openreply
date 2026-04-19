@@ -54,6 +54,10 @@ function fmtBytes(bytes) {
 }
 
 export async function renderSettings(root) {
+  // Stamp the route generation so async callbacks can detect navigation-away
+  // and skip DOM writes. Same pattern as science.js.
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   const profile = getProfile();
 
   root.innerHTML = `
@@ -92,7 +96,7 @@ export async function renderSettings(root) {
             </select>
           </label>
           <div class="settings-profile-actions">
-            <button class="btn btn-primary" id="profile-save" style="padding:8px 14px;font-size:12px">Save profile</button>
+            <button class="btn btn-primary btn-sm" id="profile-save">Save profile</button>
             <span class="settings-profile-status" id="profile-status"></span>
           </div>
         </div>
@@ -106,7 +110,7 @@ export async function renderSettings(root) {
         <div class="skel skel-line" style="width:85%"></div>
         <div class="skel skel-line" style="width:70%"></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="btn-manage-keys-eager">🗝 Manage keys</button>
+          <button class="btn btn-primary btn-sm icon-btn" id="btn-manage-keys-eager"><i data-lucide="key-round"></i> Manage keys</button>
         </div>
       </div>
 
@@ -151,9 +155,9 @@ export async function renderSettings(root) {
         <h4>Onboarding &amp; help</h4>
         <p>Re-run the welcome wizard or open the docs.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reset-onboarding">Reset onboarding</button>
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-open-science">Methodology →</button>
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-open-readme">GitHub readme</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-reset-onboarding">Reset onboarding</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-science">Methodology →</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-readme">GitHub readme</button>
         </div>
       </div>
 
@@ -162,8 +166,25 @@ export async function renderSettings(root) {
         <h4 style="color:#B84747">⚠ Danger zone</h4>
         <p>These actions can't be undone.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
-          <button class="btn" style="padding:8px 14px;font-size:12px;background:#B84747;color:white;border:none" id="btn-clear-profile">Clear profile</button>
-          <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid #E8C8C8;color:#B84747" id="btn-clear-prefs">Reset all preferences</button>
+          <button class="btn btn-danger btn-sm" id="btn-clear-profile">Clear profile</button>
+          <button class="btn btn-danger-ghost btn-sm" id="btn-clear-prefs">Reset all preferences</button>
+        </div>
+      </div>
+
+      <!-- MCP (for Claude Code / Claude.com integration) -->
+      <div class="settings-card">
+        <h4>Use with Claude Code</h4>
+        <p>Gap Map ships an MCP server so Claude Code and Claude.com can query your local corpus directly.</p>
+        <div style="font-family:ui-monospace,monospace;font-size:12px;background:var(--surface-2);padding:10px 12px;border-radius:8px;margin:10px 0">
+          <code># one-liner install (Claude Code)</code><br/>
+          <code>reddit-cli mcp install</code>
+        </div>
+        <p style="font-size:11.5px;color:var(--ink-3);margin-top:6px">
+          Exposes 40+ tools: <code>reddit_fetch_posts</code>, <code>reddit_discover_subs</code>,
+          <code>reddit_graph_build</code>, <code>reddit_query_db</code>, etc. No auto-start — launch on demand.
+        </p>
+        <div style="margin-top:10px">
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-mcp-docs">MCP spec →</button>
         </div>
       </div>
 
@@ -184,15 +205,16 @@ export async function renderSettings(root) {
   root.querySelector('#btn-manage-keys-eager').onclick = () => openByokModal(() => renderSettings(root));
 
   // Fetch everything in parallel; fill cards independently as each resolves.
+  // `alive()` guards every DOM write so a stale async response from a
+  // previous mount can't clobber the current screen.
   api.byokStatus()
-    .then(byok => fillLlmCard(root, byok))
-    .then(() => api.byokStatus())
-    .then(byok => fillRedditCard(root, byok))
-    .catch(e => reportError(root, 'keys', e));
+    .then(byok => { if (alive()) fillLlmCard(root, byok); return byok; })
+    .then(byok => { if (alive()) fillRedditCard(root, byok); })
+    .catch(e => { if (alive()) reportError(root, 'keys', e); });
 
   api.cliInfo()
-    .then(info => fillTablesCard(root, info))
-    .catch(e => reportError(root, 'info', e));
+    .then(info => { if (alive()) fillTablesCard(root, info); })
+    .catch(e => { if (alive()) reportError(root, 'info', e); });
 
   Promise.all([api.appDataDir(), api.cliInfo().catch(() => ({}))])
     .then(async ([dataDir, info]) => {
@@ -203,9 +225,9 @@ export async function renderSettings(root) {
         );
         if (Array.isArray(rows) && rows[0]?.bytes) dbSize = rows[0].bytes;
       } catch {}
-      fillDataCard(root, info, dataDir, dbSize);
+      if (alive()) fillDataCard(root, info, dataDir, dbSize);
     })
-    .catch(e => reportError(root, 'data', e));
+    .catch(e => { if (alive()) reportError(root, 'data', e); });
 }
 
 // --- Profile card (sync) ----------------------------------------------------
@@ -243,6 +265,7 @@ function wireStaticButtons(root) {
   });
   root.querySelector('#btn-open-science')?.addEventListener('click', () => { location.hash = '#/science'; });
   root.querySelector('#btn-open-readme')?.addEventListener('click', () => api.openUrl('https://github.com/shaantanu98/reddit-myind'));
+  root.querySelector('#btn-mcp-docs')?.addEventListener('click', () => api.openUrl('https://modelcontextprotocol.io/docs'));
   root.querySelector('#btn-clear-profile')?.addEventListener('click', () => {
     if (!confirm('Clear your local profile (name/email/role)? LLM keys stay.')) return;
     Object.values(PROFILE_KEYS).forEach(k => localStorage.removeItem(k));
@@ -293,11 +316,12 @@ function fillLlmCard(root, byok) {
     </div>
     ${llmModel ? `<div class="kv-row"><b>Default model</b><span>${esc(llmModel)}</span></div>` : ''}
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" id="btn-manage-keys">🗝 Manage keys</button>
-      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reveal-env">Reveal .env</button>
+      <button class="btn btn-primary btn-sm icon-btn" id="btn-manage-keys"><i data-lucide="key-round"></i> Manage keys</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-reveal-env">Reveal .env</button>
     </div>`;
   card.querySelector('#btn-manage-keys').onclick = () => openByokModal(() => renderSettings(root));
   card.querySelector('#btn-reveal-env').onclick = () => { if (byok?.path) api.revealInFinder(byok.path); };
+  window.refreshIcons?.();
 }
 
 function fillRedditCard(root, byok) {
@@ -311,8 +335,8 @@ function fillRedditCard(root, byok) {
     <div class="kv-row"><b>Client ID</b><span>${cid?.set ? `✓ ${esc(cid.preview)}` : '× not set'}</span></div>
     <div class="kv-row"><b>Client secret</b><span>${sec?.set ? `✓ ${esc(sec.preview)}` : '× not set'}</span></div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reddit-apps">Create Reddit app</button>
-      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-auth-docs">Setup guide</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-reddit-apps">Create Reddit app</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-auth-docs">Setup guide</button>
     </div>`;
   card.querySelector('#btn-reddit-apps').onclick = () => api.openUrl('https://www.reddit.com/prefs/apps');
   card.querySelector('#btn-auth-docs').onclick   = () => api.openUrl('https://github.com/shaantanu98/reddit-myind#readme');
@@ -321,18 +345,28 @@ function fillRedditCard(root, byok) {
 function fillDataCard(root, info, dataDir, dbSize) {
   const card = root.querySelector('#card-data');
   if (!card) return;
+  // dbSize>0 means the db actually opened and pragma_page_count returned —
+  // that's our positive proof of "connected".
+  const dbConnected = dbSize != null;
   card.innerHTML = `
-    <h4>Local data</h4>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h4>Local data</h4>
+      <span class="pill ${dbConnected ? 'active' : ''}" style="${dbConnected ? 'background:var(--mint-soft);color:#2E7D5B' : 'color:#B84747'}">
+        <i data-lucide="${dbConnected ? 'database' : 'database-zap'}"></i>
+        ${dbConnected ? 'DB connected' : 'DB unreachable'}
+      </span>
+    </div>
     <p>Everything Gap Map knows lives here.</p>
     <div class="kv-row"><b>Directory</b><span title="${esc(dataDir || '')}">${esc(dataDir || '—')}</span></div>
     <div class="kv-row"><b>SQLite DB</b><span title="${esc(info?.db_path || '')}">${esc(info?.db_path || '—')}</span></div>
     <div class="kv-row"><b>DB size</b><span>${dbSize != null ? fmtBytes(dbSize) : '—'}</span></div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-reveal-data">Reveal in Finder</button>
-      <button class="btn btn-ghost" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)" id="btn-open-db">Open Database console →</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-reveal-data">Reveal in Finder</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-db">Open Database console →</button>
     </div>`;
   card.querySelector('#btn-reveal-data').onclick = () => { if (dataDir) api.revealInFinder(dataDir); };
   card.querySelector('#btn-open-db').onclick     = () => { location.hash = '#/database'; };
+  window.refreshIcons?.();
 }
 
 function fillTablesCard(root, info) {

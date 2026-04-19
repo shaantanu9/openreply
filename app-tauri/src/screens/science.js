@@ -88,6 +88,10 @@ const SOURCES = [
 ];
 
 export async function renderScience(root) {
+  // Capture the route generation that this render belongs to, so late-arriving
+  // async results can bail out instead of writing to a stale DOM.
+  const myGen = root.dataset.routeGen;
+  const stillHere = () => root.dataset.routeGen === myGen;
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Science</strong></div>
@@ -190,8 +194,8 @@ export async function renderScience(root) {
     </section>
 
     <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="btn btn-primary" id="btn-science-db" style="padding:8px 14px;font-size:12px">Open database →</button>
-      <button class="btn btn-ghost" id="btn-science-activity" style="padding:8px 14px;font-size:12px;border:1px solid var(--line)">View activity log →</button>
+      <button class="btn btn-primary btn-sm" id="btn-science-db">Open database →</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-science-activity">View activity log →</button>
     </div>
   `;
 
@@ -204,12 +208,15 @@ export async function renderScience(root) {
       `SELECT coalesce(source_type,'reddit') AS source, count(*) AS n \
        FROM posts GROUP BY coalesce(source_type,'reddit')`
     );
+    if (!stillHere()) return; // user navigated away while sidecar was working
     const counts = {};
     if (Array.isArray(res)) res.forEach(r => { counts[r.source] = r.n; });
     const totalRows = Object.values(counts).reduce((a, b) => a + b, 0);
 
     const list = root.querySelector('#science-src-list');
-    root.querySelector('#science-sub').textContent =
+    const sub = root.querySelector('#science-sub');
+    if (!list || !sub) return; // DOM has been replaced; abort silently
+    sub.textContent =
       `${totalRows.toLocaleString()} posts indexed across ${Object.keys(counts).length} sources`;
 
     list.innerHTML = SOURCES.map(s => {
@@ -235,7 +242,9 @@ export async function renderScience(root) {
         </div>`;
     }).join('');
   } catch (e) {
-    root.querySelector('#science-src-list').innerHTML =
+    if (!stillHere()) return;
+    const list = root.querySelector('#science-src-list');
+    if (list) list.innerHTML =
       `<div class="empty-state">Error loading counts: ${esc(e?.message || e)}</div>`;
   }
 }

@@ -40,8 +40,11 @@ def analyze_themes(
     sub: str | None = None,
     since_days: int | None = None,
     limit: int = 100,
-    provider: str = "anthropic",
+    provider: str | None = None,
 ) -> list[dict]:
+    # `provider=None` → get_provider resolves from LLM_PROVIDER env /
+    # first-available key / Ollama. Never silently fall back to Anthropic
+    # when the user picked something else in Settings → BYOK.
     rows = _fetch_rows(sub, since_days, limit)
     if not rows:
         return []

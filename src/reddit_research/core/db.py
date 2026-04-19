@@ -6,8 +6,8 @@ track freshness without losing history.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -20,11 +20,34 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-@lru_cache(maxsize=1)
+# Per-thread Database instance. sqlite3 connections are NOT safe to share
+# across threads — they raise "SQLite objects created in a thread can only be
+# used in that same thread". When the collect pipeline fans out source
+# fetches in parallel, each worker needs its own connection. WAL mode (set
+# below) lets multiple writers append concurrently without "database is
+# locked". Schema init runs exactly once globally, guarded by a lock.
+_tls = threading.local()
+_schema_lock = threading.Lock()
+_schema_inited = False
+
+
 def get_db() -> Database:
-    cfg = load_config()
-    db = Database(cfg.db_path)
-    init_schema(db)
+    global _schema_inited
+    db = getattr(_tls, "db", None)
+    if db is None:
+        cfg = load_config()
+        db = Database(cfg.db_path)
+        # WAL: concurrent readers never block; concurrent writers serialize
+        # briefly on a filesystem-level lock (5s busy-timeout absorbs rare
+        # collisions). Set per-connection so the very first call in each
+        # thread flips the pragma.
+        db.conn.execute("PRAGMA journal_mode=WAL")
+        db.conn.execute("PRAGMA busy_timeout=5000")
+        _tls.db = db
+    with _schema_lock:
+        if not _schema_inited:
+            init_schema(db)
+            _schema_inited = True
     return db
 
 
@@ -159,6 +182,72 @@ def init_schema(db: Database) -> None:
             },
             pk=("stream_id", "item_type", "item_id"),
         )
+
+    # topic_posts: per-topic tag linking posts to research topics.
+    # Created here so the dashboard's "topics" query doesn't error on first run.
+    if "topic_posts" not in db.table_names():
+        db["topic_posts"].create(
+            {
+                "topic": str,
+                "post_id": str,
+                "source": str,
+                "added_at": str,
+            },
+            pk=("topic", "post_id"),
+        )
+        db["topic_posts"].create_index(["topic"])
+        db["topic_posts"].create_index(["post_id"])
+
+    # Migration: an earlier revision of this file created the graph tables
+    # with `meta_json` instead of `metadata_json` and, for graph_edges, with
+    # no `topic` column at all. Reconcile in place so we don't need to drop
+    # user data.
+    for _gt in ("graph_nodes", "graph_edges"):
+        if _gt in db.table_names():
+            _cols = {c.name for c in db[_gt].columns}
+            if "meta_json" in _cols and "metadata_json" not in _cols:
+                db.execute(
+                    f"ALTER TABLE {_gt} RENAME COLUMN meta_json TO metadata_json"
+                )
+            if "topic" not in _cols:
+                db.execute(f"ALTER TABLE {_gt} ADD COLUMN topic TEXT")
+                db[_gt].create_index(["topic"], if_not_exists=True)
+
+    # graph_nodes / graph_edges: populated later by `research graph build`
+    # but pre-created so the dashboard can COUNT(*) without a missing-table error.
+    # Schema MUST match graph/schema.py::ensure_graph_schema — that module still
+    # runs during build and will skip creation if the table already exists.
+    if "graph_nodes" not in db.table_names():
+        db["graph_nodes"].create(
+            {
+                "id": str,
+                "topic": str,
+                "kind": str,
+                "label": str,
+                "metadata_json": str,
+            },
+            pk="id",
+        )
+        db["graph_nodes"].create_index(["topic"])
+        db["graph_nodes"].create_index(["kind"])
+        db["graph_nodes"].create_index(["topic", "kind"])
+
+    if "graph_edges" not in db.table_names():
+        db["graph_edges"].create(
+            {
+                "src": str,
+                "dst": str,
+                "kind": str,
+                "topic": str,
+                "weight": float,
+                "metadata_json": str,
+            },
+            pk=("src", "dst", "kind"),
+        )
+        db["graph_edges"].create_index(["topic"])
+        db["graph_edges"].create_index(["src"])
+        db["graph_edges"].create_index(["dst"])
+        db["graph_edges"].create_index(["kind"])
 
 
 # ── Fetch audit log ──────────────────────────────────────────────────────────
