@@ -72,3 +72,81 @@ def synthesize_solutions_for_painpoint(
         prompt=user, system=ext["system"], max_tokens=1200, temperature=0.3
     )
     return _parse_json(raw)
+
+
+def solutions_pipeline(
+    topic: str,
+    provider: str | None = None,
+    papers_per_painpoint: int = 5,
+) -> dict[str, Any]:
+    """Run the full Problem -> Why -> Science -> Solution loop for a topic.
+
+    For every painpoint node in the topic:
+      1. extract_why_for_painpoint
+      2. persist why metadata
+      3. fetch_science_for_painpoint
+      4. persist evidence_paper nodes + has_evidence edges
+      5. synthesize_solutions_for_painpoint
+      6. persist mechanism + intervention + supported_by edges
+
+    Returns counts. Idempotent: re-running on the same topic upserts
+    rather than duplicates (slugs are stable).
+    """
+    from ..core.db import get_db
+    from .persist_solutions import (
+        persist_papers_for_painpoint,
+        persist_solutions_for_painpoint,
+        persist_why_for_painpoint,
+    )
+    from .science import fetch_science_for_painpoint
+    from .why import extract_why_for_painpoint, _evidence_posts_for
+
+    db = get_db()
+    pps = list(db.query(
+        "SELECT id, label FROM graph_nodes WHERE topic = :t AND kind = 'painpoint'",
+        {"t": topic},
+    ))
+
+    summary = {
+        "topic": topic,
+        "painpoints_processed": 0,
+        "why_extracted": 0,
+        "papers_persisted": 0,
+        "interventions_added": 0,
+    }
+
+    for pp in pps:
+        summary["painpoints_processed"] += 1
+        evidence_posts = _evidence_posts_for(db, topic, pp["id"])
+        why = extract_why_for_painpoint(
+            painpoint_label=pp["label"],
+            evidence_posts=evidence_posts,
+            provider=provider,
+        )
+        if not why.get("_skipped") and not why.get("_parse_error"):
+            summary["why_extracted"] += 1
+        persist_why_for_painpoint(topic=topic, painpoint_id=pp["id"], why=why)
+
+        jtbd_outcome = ((why.get("jtbd") or {}).get("desired_outcome") or "")
+        papers = fetch_science_for_painpoint(
+            painpoint_label=pp["label"],
+            jtbd_desired_outcome=jtbd_outcome,
+            limit=papers_per_painpoint,
+        )
+        n_papers = persist_papers_for_painpoint(
+            topic=topic, painpoint_id=pp["id"], papers=papers
+        )
+        summary["papers_persisted"] += n_papers
+
+        solution = synthesize_solutions_for_painpoint(
+            painpoint_label=pp["label"],
+            why=why,
+            papers=papers,
+            provider=provider,
+        )
+        per_pp = persist_solutions_for_painpoint(
+            topic=topic, painpoint_id=pp["id"], solution=solution
+        )
+        summary["interventions_added"] += per_pp["interventions_added"]
+
+    return summary
