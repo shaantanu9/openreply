@@ -8,7 +8,7 @@ import { openByokModal } from './byok.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { loadSolutions } from './solutions.js';
 import { loadTrends } from './trends.js';
-import { loadPosts } from './posts.js';
+import { loadPosts, setPostsFilter } from './posts.js';
 import { loadSentiment } from './sentiment.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
@@ -647,28 +647,61 @@ export async function renderTopic(root, { params }) {
       }
 
       // 2. Auto-enrich if we have an LLM key and no findings yet.
+      //    Runs IN BACKGROUND — the map renders immediately with structural
+      //    data, and the iframe reloads if enrich adds painpoints. Previously
+      //    this `await`ed enrich inline, so a slow/stuck Ollama (first-load
+      //    cold start, model pinned at 100% CPU on a prior request, etc.)
+      //    would block the map tab from ever rendering at all.
       const [findingsBefore, anyReady] = await Promise.all([countFindings(), checkLlmReady()]);
       if (findingsBefore === 0 && anyReady) {
-        const s = $('#map-stage'); if (s) s.textContent = 'Extracting painpoints (LLM)…';
-        const d = $('#map-detail'); if (d) d.textContent = 'First-run enrichment — 20–90s depending on corpus size.';
-        if (sub) sub.textContent = 'Extracting painpoints (LLM) — 20–90s…';
-        try {
-          const e = await api.enrichGraph(topic);
-          if (e?.skipped) {
-            enrichBanner = `<div class="map-enrich-banner warn">⚠ Enrichment skipped — ${esc(e.reason || 'no LLM configured')}</div>`;
-          } else if (e?.ok === false) {
-            enrichBanner = `<div class="map-enrich-banner err">✗ Enrichment failed — ${esc(e.error || 'unknown')}</div>`;
-          } else {
-            const np = e?.painpoints_added ?? e?.painpoints ?? 0;
-            const nf = e?.feature_wishes_added ?? e?.feature_wishes ?? 0;
-            const nw = e?.workarounds_added ?? e?.diy_workarounds ?? 0;
-            if ((np + nf + nw) === 0) {
-              enrichBanner = `<div class="map-enrich-banner warn">⚠ Enrichment ran but found no painpoints / features. Try <b>Rerun collect</b> to gather more posts.</div>`;
+        enrichBanner = `<div class="map-enrich-banner info" id="map-enrich-banner">
+          <span class="map-building-spinner" style="width:14px;height:14px;border-width:2px;flex-shrink:0"></span>
+          <span>Extracting painpoints in the background via LLM — the map will refresh when findings are ready (20–90s).</span>
+        </div>`;
+        // Fire-and-forget enrich. When it resolves we re-render the map so
+        // the new graph_node counts surface + iframe reloads with the
+        // updated gap-map HTML.
+        (async () => {
+          try {
+            const e = await api.enrichGraph(topic);
+            if (contentEl.dataset.tab !== 'map') return;
+            const banner = document.getElementById('map-enrich-banner');
+            if (!banner) return;
+            if (e?.skipped) {
+              banner.className = 'map-enrich-banner warn';
+              banner.innerHTML = `⚠ Enrichment skipped — ${esc(e.reason || 'no LLM configured')}`;
+            } else if (e?.ok === false) {
+              banner.className = 'map-enrich-banner err';
+              banner.innerHTML = `✗ Enrichment failed — ${esc(e.error || 'unknown')}`;
+            } else {
+              const np = e?.painpoints_added ?? e?.painpoints ?? 0;
+              const nf = e?.feature_wishes_added ?? e?.feature_wishes ?? 0;
+              const nw = e?.workarounds_added ?? e?.diy_workarounds ?? 0;
+              if ((np + nf + nw) === 0) {
+                banner.className = 'map-enrich-banner warn';
+                banner.innerHTML = `⚠ Enrichment found 0 painpoints. Try <b>Rerun collect</b> to gather more posts.`;
+              } else {
+                banner.className = 'map-enrich-banner ok';
+                banner.innerHTML = `✓ Enrichment added ${np} painpoints, ${nf} feature wishes, ${nw} workarounds — reloading map…`;
+                _topicStatsPromise = null;
+                // Rebuild export + reload iframe to surface the new findings.
+                try {
+                  const newPath = await api.exportHtml(topic);
+                  const iframe = contentEl.querySelector('iframe.viewer-frame');
+                  if (iframe && contentEl.dataset.tab === 'map') {
+                    iframe.src = convertFileSrc(newPath) + `?t=${Date.now()}`;
+                  }
+                } catch {}
+              }
+            }
+          } catch (err) {
+            const banner = document.getElementById('map-enrich-banner');
+            if (banner) {
+              banner.className = 'map-enrich-banner err';
+              banner.innerHTML = `✗ Enrichment errored — ${esc(err?.message || err)}`;
             }
           }
-        } catch (err) {
-          enrichBanner = `<div class="map-enrich-banner err">✗ Enrichment errored — ${esc(err?.message || err)}</div>`;
-        }
+        })();
       } else if (findingsBefore === 0 && !anyReady) {
         enrichBanner = `<div class="map-enrich-banner warn">
           ⚠ No LLM key — painpoints and feature wishes won't appear on the map.
@@ -925,6 +958,21 @@ export async function renderTopic(root, { params }) {
         };
       });
 
+      // Source-breakdown badges — clicking "7 reddit" or "3 arXiv" drills
+      // into Posts tab with a source filter applied. Stop-propagates so the
+      // card's own click handler (which opens the details modal) doesn't
+      // also fire. Same behaviour as the Sources-tab source rows — one
+      // consistent cross-tab drill gesture.
+      contentEl.querySelectorAll('.finding-src-badge').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const src = el.dataset.source;
+          if (!src) return;
+          setPostsFilter(topic, { source: src });
+          switchTab('posts');
+        });
+      });
+
       // "Find similar" chips — route to the /find screen pre-filled with
       // the finding label + scoped to this topic. find.js consumes the
       // window globals on mount and auto-runs the search.
@@ -1011,11 +1059,13 @@ export async function renderTopic(root, { params }) {
         const pct = total ? Math.round((r.posts / total) * 100) : 0;
         const earliestS = r.earliest ? new Date(r.earliest * 1000).toISOString().slice(0, 10) : '—';
         const latestS   = r.latest   ? new Date(r.latest   * 1000).toISOString().slice(0, 10) : '—';
+        // Clickable row — drills into Posts tab filtered to this source.
+        // Keyboard-accessible via role/tabindex so Enter / Space work.
         return `
-          <div class="source-row">
+          <div class="source-row source-row-clickable" data-source="${esc(r.source)}" role="button" tabindex="0" title="Click to see all ${esc(r.source)} posts for this topic">
             <div class="source-row-head">
               <b>${esc(r.source)}</b>
-              <span>${r.posts.toLocaleString()} posts · ${pct}%</span>
+              <span>${r.posts.toLocaleString()} posts · ${pct}% <span style="color:var(--ink-3);font-weight:500;font-size:11px">· view all →</span></span>
             </div>
             <div class="source-bar"><div class="source-bar-fill" style="width:${pct}%"></div></div>
             <div class="source-row-meta">First: ${earliestS} · Latest: ${latestS}</div>
@@ -1048,6 +1098,24 @@ export async function renderTopic(root, { params }) {
       $('#btn-subs-more')?.addEventListener('click', () => {
         subsVisible += 12;
         loadSources();
+      });
+
+      // Click / Enter / Space on a source row → filter Posts tab by that
+      // source and switch tabs. Same gesture works for every source
+      // (Reddit, App Store, HN, arXiv, …) since Posts renders any shape.
+      const drillIntoSource = (src) => {
+        if (!src) return;
+        setPostsFilter(topic, { source: src });
+        switchTab('posts');
+      };
+      contentEl.querySelectorAll('.source-row-clickable').forEach(el => {
+        el.addEventListener('click', () => drillIntoSource(el.dataset.source));
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            drillIntoSource(el.dataset.source);
+          }
+        });
       });
     } catch (e) {
       const actions = [{ label: 'Retry', icon: 'refresh-cw', primary: true, onClick: () => loadSources() }];
@@ -2118,6 +2186,40 @@ export async function renderTopic(root, { params }) {
   await switchTab('map');
 }
 
+// Badge colors per source type — matches the source badge palette used on
+// the Research tab so users get a consistent visual vocabulary across tabs.
+const SRC_BADGE = {
+  reddit:   { bg: '#FFE4D4', fg: '#8A3A12', label: 'reddit'   },
+  hn:       { bg: '#FFECDA', fg: '#8A4512', label: 'HN'       },
+  arxiv:    { bg: '#FBE3E6', fg: '#B84747', label: 'arXiv'    },
+  openalex: { bg: '#EFE7FB', fg: '#6E4DB3', label: 'OpenAlex' },
+  pubmed:   { bg: '#E4F0FA', fg: '#1F5C99', label: 'PubMed'   },
+  scholar:  { bg: '#E1F2EA', fg: '#2E7D5B', label: 'Scholar'  },
+  appstore: { bg: '#F0E8FA', fg: '#5B2C91', label: 'AppStore' },
+  playstore:{ bg: '#E0F2D9', fg: '#2F6B1F', label: 'PlayStore'},
+  devto:    { bg: '#E8E8E8', fg: '#222',    label: 'Dev.to'   },
+  stackoverflow:{ bg: '#FEE8D6', fg: '#C76114', label: 'SO'   },
+  github:   { bg: '#E8E8E8', fg: '#222',    label: 'GitHub'   },
+  ingest:   { bg: '#FBF1D4', fg: '#8A5A1A', label: 'Ingest'   },
+  gnews:    { bg: '#E1EEFC', fg: '#1F4E9A', label: 'Google News' },
+  trends:   { bg: '#E1F2EA', fg: '#2E7D5B', label: 'Trends'   },
+};
+
+function renderSourceBadges(breakdown) {
+  // breakdown = {reddit: 7, arxiv: 3, appstore: 2}. Sort by count desc.
+  // Each badge carries data-source so the click handler below can drill
+  // into the Posts tab filtered to that source type.
+  if (!breakdown || typeof breakdown !== 'object') return '';
+  const entries = Object.entries(breakdown).filter(([_, n]) => n > 0);
+  if (entries.length === 0) return '';
+  entries.sort((a, b) => b[1] - a[1]);
+  const badges = entries.map(([src, n]) => {
+    const cfg = SRC_BADGE[src] || { bg: '#E8E8E8', fg: '#222', label: src };
+    return `<span class="finding-src-badge" data-source="${esc(src)}" title="Click to see ${n} ${esc(cfg.label)} posts backing this finding" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:${cfg.bg};color:${cfg.fg};font-size:11px;font-weight:600;margin-right:4px;cursor:pointer;user-select:none"><b>${n}</b> ${esc(cfg.label)}</span>`;
+  }).join('');
+  return badges;
+}
+
 function renderMetaPills(metaJson) {
   try {
     const m = JSON.parse(metaJson || '{}');
@@ -2125,7 +2227,16 @@ function renderMetaPills(metaJson) {
     if (m.classification && m.classification !== 'UNCLASSIFIED') pills.push(`<span style="color:var(--chronic);font-weight:700">${esc(m.classification)}</span>`);
     if (m.severity) pills.push(`severity: ${esc(m.severity)}`);
     if (m.frequency) pills.push(`freq: ${m.frequency}`);
-    return pills.map(p => `<span>${p}</span>`).join('');
+    // Source diversity — "3 sources · saturated" signals cross-source evidence.
+    // Painpoints that appear in Reddit + arXiv + App Store are much stronger
+    // signals than Reddit-only ones. The color code nudges users toward the
+    // multi-source findings without requiring them to scan breakdown counts.
+    const diversity = m.source_diversity || 0;
+    if (diversity >= 3)       pills.push(`<span style="color:#1A7A4F;font-weight:700">★ ${diversity} sources</span>`);
+    else if (diversity === 2) pills.push(`<span style="color:#4A6FB3;font-weight:600">◆ ${diversity} sources</span>`);
+    const pillsHtml = pills.map(p => `<span>${p}</span>`).join('');
+    const badges = renderSourceBadges(m.source_breakdown);
+    return badges ? `${pillsHtml}<div style="margin-top:6px">${badges}</div>` : pillsHtml;
   } catch { return ''; }
 }
 

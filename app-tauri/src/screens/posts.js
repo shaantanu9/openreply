@@ -6,13 +6,27 @@ const $ = (sel, root = document) => root.querySelector(sel);
 
 const PAGE_SIZE = 50;
 
-const state = new Map(); // topic -> { page, sub, minScore, sort }
+const state = new Map(); // topic -> { page, sub, minScore, sort, source }
 
 function getState(topic) {
   if (!state.has(topic)) {
-    state.set(topic, { page: 0, sub: '', minScore: 0, sort: 'score' });
+    state.set(topic, { page: 0, sub: '', minScore: 0, sort: 'score', source: '' });
   }
-  return state.get(topic);
+  const s = state.get(topic);
+  // Back-compat: rows saved before the source filter existed might be missing it.
+  if (s.source === undefined) s.source = '';
+  return s;
+}
+
+/** Set a filter from outside (e.g. the Sources tab clicking into Posts).
+ *  Resets pagination to page 0 so the user sees the top of the filtered list. */
+export function setPostsFilter(topic, patch = {}) {
+  const s = getState(topic);
+  if ('source' in patch) s.source = (patch.source || '').toLowerCase();
+  if ('sub' in patch)    s.sub = patch.sub || '';
+  if ('minScore' in patch) s.minScore = Number(patch.minScore) || 0;
+  if ('sort' in patch)   s.sort = patch.sort || 'score';
+  s.page = 0;
 }
 
 async function fetchPosts(topic) {
@@ -30,6 +44,11 @@ async function fetchPosts(topic) {
   if (s.sub && s.sub.trim()) {
     conds.push('p.sub = :sub');
     params.sub = s.sub.trim().toLowerCase();
+  }
+  if (s.source && s.source.trim()) {
+    // coalesce so NULL source_type (old Reddit rows) match 'reddit'.
+    conds.push("coalesce(p.source_type, 'reddit') = :source");
+    params.source = s.source.trim().toLowerCase();
   }
   if (Number.isFinite(s.minScore) && s.minScore > 0) {
     conds.push(`p.score >= ${parseInt(s.minScore, 10)}`);
@@ -89,10 +108,30 @@ function renderRow(p) {
   `;
 }
 
+// Friendly display names for source chips. Unknown sources fall back to
+// their raw id (e.g. a future adapter lands with no label).
+const SOURCE_LABELS = {
+  reddit: 'Reddit', hn: 'Hacker News', appstore: 'App Store',
+  playstore: 'Play Store', arxiv: 'arXiv', openalex: 'OpenAlex',
+  pubmed: 'PubMed', scholar: 'Google Scholar', gnews: 'Google News',
+  devto: 'Dev.to', stackoverflow: 'Stack Overflow', github: 'GitHub',
+  github_issue: 'GitHub Issues', lemmy: 'Lemmy', mastodon: 'Mastodon',
+  youtube: 'YouTube', discourse: 'Discourse', local_file: 'Local file',
+};
+
 function renderToolbar(topic) {
   const s = getState(topic);
+  // Active-source chip appears only when a filter is set. Clicking the ×
+  // clears the filter and re-renders the unfiltered list.
+  const sourceChip = s.source
+    ? `<span class="posts-source-chip" title="Filtering to ${esc(s.source)}">
+         <span>Source: <b>${esc(SOURCE_LABELS[s.source] || s.source)}</b></span>
+         <button class="posts-source-clear" id="posts-source-clear" title="Clear source filter">×</button>
+       </span>`
+    : '';
   return `
     <div class="posts-toolbar">
+      ${sourceChip}
       <input type="text" id="posts-sub" class="posts-input" placeholder="filter by sub (e.g. python)" value="${esc(s.sub)}" />
       <input type="number" id="posts-min-score" class="posts-input posts-input-num" placeholder="min score" min="0" value="${s.minScore || ''}" />
       <select id="posts-sort" class="posts-input">
@@ -123,26 +162,30 @@ function renderPager(topic, total) {
 }
 
 async function rerender(contentEl, topic) {
-  contentEl.innerHTML = `<div class="empty-state">loading…</div>`;
+  // Gated writes — drop any render that would land after a rapid tab switch.
+  const set = (html) => { if (contentEl.dataset.tab === 'posts') contentEl.innerHTML = html; };
+  set(`<div class="empty-state">loading…</div>`);
   let data;
   try {
     data = await fetchPosts(topic);
   } catch (e) {
-    contentEl.innerHTML = `<div class="empty-state"><p>Error: ${esc(e?.message || String(e))}</p></div>`;
+    set(`<div class="empty-state"><p>Error: ${esc(e?.message || String(e))}</p></div>`);
     return;
   }
+  if (contentEl.dataset.tab !== 'posts') return;
 
   const body = data.rows.length === 0
     ? `<div class="empty-state"><p>No posts match the current filters.</p></div>`
     : data.rows.map(renderRow).join('');
 
-  contentEl.innerHTML = `
+  set(`
     <div class="posts-tab">
       ${renderToolbar(topic)}
       <div class="posts-list">${body}</div>
       ${renderPager(topic, data.total)}
     </div>
-  `;
+  `);
+  if (contentEl.dataset.tab !== 'posts') return;
   window.refreshIcons?.();
 
   // Wire toolbar
@@ -159,6 +202,14 @@ async function rerender(contentEl, topic) {
   $('#posts-sub', contentEl)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
   $('#posts-min-score', contentEl)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
   $('#posts-sort', contentEl)?.addEventListener('change', apply);
+
+  // Clear-source chip → reset to unfiltered posts list.
+  $('#posts-source-clear', contentEl)?.addEventListener('click', () => {
+    const s = getState(topic);
+    s.source = '';
+    s.page = 0;
+    rerender(contentEl, topic);
+  });
 
   // Pager
   $('#posts-prev', contentEl)?.addEventListener('click', () => { const s = getState(topic); s.page = Math.max(0, s.page - 1); rerender(contentEl, topic); });
