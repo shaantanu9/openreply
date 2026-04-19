@@ -82,8 +82,55 @@ def _default_model(provider: str) -> str:
 
 # --- topic context --------------------------------------------------------
 
-def _topic_context(topic: str, limit_posts: int = 8) -> str:
-    """Build a compact markdown context block for the LLM."""
+def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], str]:
+    """Use Palace (ChromaDB + BM25) to retrieve posts most semantically
+    relevant to the user's question.
+
+    Returns (posts, retrieval_label). Posts are dicts with the same shape
+    as the engagement-ranked SQL fallback so the renderer downstream
+    doesn't have to branch. retrieval_label is shown in the context so
+    the LLM (and the user reading the chat) knows whether retrieval was
+    semantic or fell back to engagement-ranking.
+    """
+    if not (question or "").strip():
+        return [], ""
+    try:
+        from ..retrieval import palace
+    except Exception:
+        return [], ""
+    if not palace.is_available() or not palace.is_model_ready():
+        return [], ""
+    res = palace.search_posts(query=question, topic=topic, k=k, rerank=True)
+    if not res or not res.get("ok") or not res.get("results"):
+        return [], ""
+
+    db = get_db()
+    posts: list[dict] = []
+    for r in res["results"]:
+        pid = r.get("id")
+        if not pid:
+            continue
+        # Pull canonical row from the posts table so we get title/url/etc.
+        row = next(iter(db.query(
+            "SELECT id, title, sub AS subreddit, score, num_comments, "
+            "       coalesce(source_type,'reddit') AS source, url, "
+            "       substr(coalesce(selftext,''),1,400) AS snip "
+            "FROM posts WHERE id = ? LIMIT 1",
+            (pid,),
+        )), None)
+        if row:
+            posts.append(row)
+    label = f"semantic (Palace · {len(posts)} hits for your question)"
+    return posts, label
+
+
+def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None) -> str:
+    """Build a compact markdown context block for the LLM.
+
+    If `question` is provided AND Palace (ChromaDB + ONNX model) is ready,
+    the evidence section uses semantic retrieval against the question.
+    Otherwise falls back to engagement-ranked SQL across all sources.
+    """
     db = get_db()
 
     # Painpoints / features / products / workarounds
@@ -133,7 +180,15 @@ def _topic_context(topic: str, limit_posts: int = 8) -> str:
         "LIMIT ?",
         (topic, max(limit_posts - len(reddit_sample), 1)),
     ))
-    posts = reddit_sample + other_sample
+    # Try Palace semantic retrieval first (only if a question was passed).
+    # On miss/no-model, fall back to the engagement-ranked sample below.
+    semantic_posts, retrieval_label = _semantic_evidence(topic, question or "", k=limit_posts)
+    if semantic_posts:
+        posts = semantic_posts
+        evidence_heading = f"## Evidence — {retrieval_label}"
+    else:
+        posts = reddit_sample + other_sample
+        evidence_heading = "## Evidence — top engagement (no semantic retrieval available)"
 
     parts = [f"# Topic: {topic}", ""]
 
@@ -158,7 +213,7 @@ def _topic_context(topic: str, limit_posts: int = 8) -> str:
 
     if posts:
         from .corpus_format import _format_row
-        parts.append("## Evidence (mixed sources)")
+        parts.append(evidence_heading)
         for p in posts:
             # Re-use the source-aware formatter so arxiv / pubmed / ingest
             # rows cite correctly instead of being mislabelled as r/reddit.
@@ -221,7 +276,9 @@ def system_prompt() -> str:
 
 
 def build_user_prompt(topic: str, question: str, mode: str) -> str:
-    context = _topic_context(topic)
+    # Pass the user's question into _topic_context so Palace can retrieve
+    # semantically-relevant evidence posts instead of blind top-engagement.
+    context = _topic_context(topic, question=question)
     instruction = MODE_PROMPTS.get(mode, MODE_PROMPTS["ask"])
     return (
         f"{instruction}\n\n"
@@ -722,9 +779,28 @@ def chat_meta(topic: str, provider: str | None = None) -> dict:
     prov, model = _resolve_provider(provider)
     db = get_db()
     posts = list(db.query("SELECT count(*) AS n FROM topic_posts WHERE topic=?", (topic,)))
+
+    # Surface Palace (semantic retrieval) status so the chat UI can show
+    # whether questions will be answered from semantic search or fall back
+    # to engagement-ranked SQL.
+    palace_status: dict = {"available": False, "model_ready": False, "indexed_for_topic": 0}
+    try:
+        from ..retrieval import palace
+        palace_status["available"] = palace.is_available()
+        palace_status["model_ready"] = palace_status["available"] and palace.is_model_ready()
+        if palace_status["model_ready"]:
+            stats = palace.stats() or {}
+            # stats may include a per-topic breakdown; surface this topic's count.
+            by_topic = (stats.get("by_topic") or {}) if isinstance(stats, dict) else {}
+            palace_status["indexed_for_topic"] = int(by_topic.get(topic, 0) or 0)
+            palace_status["indexed_total"] = int(stats.get("count", 0) or 0)
+    except Exception:
+        pass
+
     return {
         "topic": topic,
         "provider": prov,
         "model": model,
         "posts": posts[0]["n"] if posts else 0,
+        "palace": palace_status,
     }
