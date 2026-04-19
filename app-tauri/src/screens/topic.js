@@ -293,6 +293,42 @@ export async function renderTopic(root, { params }) {
   }
 
   async function loadMap() {
+    // Graph stats strip — fetched before render, shown above the map when graph has nodes.
+    let statsStripHtml = '';
+    try {
+      const [nodeRows, edgeRows] = await Promise.all([
+        api.runQuery(
+          "SELECT kind, count(*) AS n FROM graph_nodes WHERE topic = :topic AND kind NOT IN ('topic','post') GROUP BY kind ORDER BY n DESC",
+          topic,
+        ),
+        api.runQuery(
+          "SELECT count(*) AS n FROM graph_edges WHERE topic = :topic",
+          topic,
+        ),
+      ]);
+      const nodes = Array.isArray(nodeRows) ? nodeRows : [];
+      const edgeCount = (edgeRows?.[0]?.n) || 0;
+      if (nodes.length > 0) {
+        const labelMap = {
+          painpoint: 'painpoints',
+          feature_wish: 'feature wishes',
+          workaround: 'workarounds',
+          product: 'products',
+          mechanism: 'mechanisms',
+          intervention: 'interventions',
+          evidence_paper: 'papers',
+        };
+        const chips = nodes.map(r => {
+          const label = labelMap[r.kind] || r.kind;
+          return `<span class="graph-stat-chip"><b>${r.n}</b> ${esc(label)}</span>`;
+        }).join('');
+        statsStripHtml = `<div class="graph-stats-strip">${chips}<span class="graph-stat-edges">· <b>${edgeCount}</b> edges</span></div>`;
+      }
+    } catch (e) {
+      // Don't block the map render if stats fail.
+      console.warn('graph-stats query failed:', e);
+    }
+
     contentEl.innerHTML = `
       <div class="map-building">
         <div class="map-building-spinner"></div>
@@ -354,6 +390,7 @@ export async function renderTopic(root, { params }) {
         : `<span class="th-chip" style="color:var(--ink-3)">0 findings</span>`;
 
       contentEl.innerHTML = `
+        ${statsStripHtml}
         <div class="map-toolbar">
           <div class="map-toolbar-info">
             <span class="th-chip" title="Path on disk">${esc(outPath.split('/').pop())}</span>

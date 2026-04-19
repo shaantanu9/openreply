@@ -533,25 +533,97 @@ body {
 
 /* --- Activity screen --- */
 .activity-filters {
-  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
-  padding: 14px 16px; background: var(--surface-alt);
-  border: 1px solid var(--line); border-radius: 12px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: end;            /* selects + checkbox sit on the same baseline */
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 .activity-filters label {
-  display: flex; flex-direction: column; gap: 4px; font-size: 11px;
-  color: var(--ink-3); font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-weight: 700;
+  min-width: 180px;
+  flex: 1 1 180px;
 }
-.activity-filters label > span { text-transform: uppercase; letter-spacing: 0.04em; }
+.activity-filters label > span {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+/* Custom-styled select — strips the default OS chevron and draws our own
+   SVG caret via background-image, so the control matches the rest of the
+   design system across macOS / Windows / Linux. */
 .activity-filters select {
-  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
-  background: var(--surface); font-size: 13px; font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding: 9px 32px 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8278' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink-1);
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
 }
-.activity-check {
-  flex-direction: row !important; align-items: center; gap: 8px !important;
-  font-size: 13px !important; color: var(--ink-1) !important;
-  text-transform: none !important; font-weight: 500 !important;
-  padding-top: 18px;
+.activity-filters select:hover {
+  border-color: var(--line-2);
 }
+.activity-filters select:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(255, 140, 66, 0.18);
+}
+/* "Errors only" checkbox — scoped to .activity-filters so it wins over
+   the label defaults without needing !important. */
+.activity-filters label.activity-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-1);
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: 0;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-width: 140px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.activity-filters label.activity-check:hover {
+  border-color: var(--line-2);
+  background: var(--surface-2);
+}
+.activity-filters label.activity-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--orange);
+  cursor: pointer;
+  margin: 0;
+}
+.activity-filters label.activity-check > span {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--ink-1);
+}
+
 .activity-table-wrap {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 12px; overflow: hidden; margin-bottom: 14px;
@@ -560,9 +632,9 @@ body {
   width: 100%; border-collapse: collapse; font-size: 12.5px;
 }
 .activity-table th {
-  text-align: left; padding: 12px 14px; background: var(--surface-alt);
+  text-align: left; padding: 12px 14px; background: var(--surface-2);
   font-weight: 700; color: var(--ink-2); font-size: 11px;
-  text-transform: uppercase; letter-spacing: 0.04em;
+  text-transform: uppercase; letter-spacing: 0.06em;
   border-bottom: 1px solid var(--line);
 }
 .activity-table td {
@@ -570,22 +642,34 @@ body {
   vertical-align: top;
 }
 .activity-table tr:last-child td { border-bottom: none; }
+.activity-table tbody tr { transition: background .12s; }
+.activity-table tbody tr:hover { background: var(--surface-2); }
 .cell-kind {
+  display: inline-block;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px; background: var(--surface-alt); padding: 3px 8px;
+  font-size: 11px; background: var(--surface-2); padding: 3px 8px;
   border-radius: 6px; color: var(--ink-2);
+  border: 1px solid var(--line);
 }
 .cell-params {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px; color: var(--ink-3);
+  word-break: break-word;
 }
 .cell-err {
   margin-top: 4px; font-size: 11px; color: #B84747;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
 }
 .pager {
   display: flex; align-items: center; gap: 14px; justify-content: center;
-  margin: 14px 0;
+  margin: 18px 0;
+}
+.pager .pill { cursor: pointer; }
+.pager .pill[disabled],
+.pager .pill.disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* --- Database console --- */
@@ -1301,6 +1385,77 @@ body {
   .fade-in { animation: none; }
 }
 
+/* --- Collect: per-source status grid ---
+   One chip per parallel source (HN / arXiv / App Store / …). The whole grid
+   stays hidden until the first "[parallel] fetching N sources…" log line
+   arrives, then chips flip pending → running → done/error as the pool
+   resolves. Answers "is it fetching from everywhere or just Reddit?" at a
+   glance. */
+.sources-grid {
+  margin: 14px 0 10px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sources-grid-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 12px; color: var(--ink-2);
+}
+.sources-grid-head b { color: var(--ink-1); font-weight: 700; }
+.sources-grid-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+  gap: 8px;
+}
+.src-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  transition: background .15s, border-color .15s;
+  min-width: 0;
+}
+.src-chip .src-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink-3); opacity: .4;
+  flex-shrink: 0;
+}
+.src-chip .src-name {
+  font-weight: 600; color: var(--ink-1);
+  flex-shrink: 0;
+}
+.src-chip .src-meta {
+  font-size: 11px; color: var(--ink-3);
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.src-chip.running {
+  border-color: var(--orange);
+  background: var(--orange-soft);
+}
+.src-chip.running .src-dot {
+  background: var(--orange); opacity: 1;
+  animation: pulse 1.2s infinite;
+}
+.src-chip.running .src-meta { color: #B85A1E; font-weight: 600; }
+.src-chip.done {
+  border-color: #C9E5D2;
+  background: var(--mint-soft);
+}
+.src-chip.done .src-dot { background: #2E7D5B; opacity: 1; }
+.src-chip.done .src-meta { color: #2E7D5B; font-weight: 600; }
+.src-chip.error {
+  border-color: #F0C8C8;
+  background: #FFF2F2;
+}
+.src-chip.error .src-dot { background: #B84747; opacity: 1; }
+.src-chip.error .src-meta { color: #B84747; font-weight: 600; }
+
 /* --- Keyboard shortcuts help panel --- */
 .shortcuts-list { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 18px; }
 .shortcut-row {
@@ -1764,3 +1919,19 @@ kbd {
 #btn-run-solutions svg,
 #btn-rerun-solutions svg { width: 14px; height: 14px; flex-shrink: 0; }
 
+
+/* ─── Graph stats strip (Map tab header) ─── */
+.graph-stats-strip {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  padding: 8px 0 12px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-2);
+}
+.graph-stat-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.graph-stat-chip b { color: var(--ink); font-weight: 700; }
+.graph-stat-edges { color: var(--ink-3); font-size: 11.5px; margin-left: 4px; }
+.graph-stat-edges b { color: var(--ink-2); font-weight: 700; }
