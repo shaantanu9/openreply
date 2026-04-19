@@ -7,6 +7,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
 import { loadSolutions } from './solutions.js';
 import { loadTrends } from './trends.js';
+import { loadPosts } from './posts.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
@@ -177,6 +178,7 @@ export async function renderTopic(root, { params }) {
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
       <button class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
       <button class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
+      <button class="tab" data-tab="posts"><i data-lucide="list"></i> Posts</button>
       <button class="tab" data-tab="research"><i data-lucide="book-open"></i> Research</button>
       <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
       <button class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
@@ -426,7 +428,26 @@ export async function renderTopic(root, { params }) {
       if (sub) sub.textContent = 'Exporting viewer…';
       outPath = await api.exportHtml(topic);
       const fileUrl = convertFileSrc(outPath);
-      $('#topic-sub').textContent = outPath;
+
+      // Node + edge counts, for the clean summary + chips below.
+      let nodeCount = 0;
+      let edgeCount = 0;
+      try {
+        const rows = await api.runQuery(
+          `SELECT
+             (SELECT count(*) FROM graph_nodes WHERE topic=:topic) AS n_nodes,
+             (SELECT count(*) FROM graph_edges WHERE topic=:topic) AS n_edges`,
+          topic,
+        );
+        if (Array.isArray(rows) && rows[0]) {
+          nodeCount = Number(rows[0].n_nodes || 0);
+          edgeCount = Number(rows[0].n_edges || 0);
+        }
+      } catch {}
+
+      const updatedAgo = timeAgo(Date.now());
+      $('#topic-sub').textContent =
+        `${nodeCount.toLocaleString()} nodes · ${edgeCount.toLocaleString()} edges · updated ${updatedAgo}`;
 
       const findingsAfter = await countFindings();
       const findingsChip = findingsAfter > 0
@@ -437,14 +458,15 @@ export async function renderTopic(root, { params }) {
         ${statsStripHtml}
         <div class="map-toolbar">
           <div class="map-toolbar-info">
-            <span class="th-chip" title="Path on disk">${esc(outPath.split('/').pop())}</span>
+            <span class="th-chip"><b>${nodeCount.toLocaleString()}</b> nodes</span>
+            <span class="th-chip"><b>${edgeCount.toLocaleString()}</b> edges</span>
             ${findingsChip}
           </div>
           <div style="flex:1"></div>
           ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich" title="Re-run LLM extraction"><i data-lucide="sparkles"></i> Enrich</button>` : ''}
           <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>
-          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open externally</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
         </div>
         ${enrichBanner}
         <iframe class="viewer-frame" src="${fileUrl}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`;
@@ -1223,6 +1245,7 @@ export async function renderTopic(root, { params }) {
     sources: loadSources, research: loadResearch, chat: loadChat, actions: loadActions,
     solutions: () => loadSolutions(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
+    posts: () => loadPosts(contentEl, topic),
   };
   const switchTab = async (name) => {
     // Clean up chat listeners if we're leaving chat mid-stream
