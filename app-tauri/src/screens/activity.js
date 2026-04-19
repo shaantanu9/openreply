@@ -185,31 +185,43 @@ async function loadPage(root) {
   const tbl = root.querySelector('#activity-table');
   tbl.innerHTML = `<div class="empty-state">loading…</div>`;
 
+  // Parameterized WHERE — :kind / :topic bound via runQuery's param map
+  // (sqlite-utils binds safely). Never interpolate raw user input into SQL;
+  // topic/kind come from DB rows but a malicious topic name could still
+  // break out of quote-escaped string concat.
   const wheres = [];
+  const params = {};
   if (state.kind) {
     if (state.kind.endsWith(':')) {
-      // "source:" → any source adapter
-      wheres.push(`kind LIKE '${state.kind.replace("'", "''")}%'`);
+      // "source:" → any source adapter; pass the prefix + wildcard as one bind.
+      wheres.push(`kind LIKE :kind`);
+      params.kind = state.kind + '%';
     } else {
-      wheres.push(`kind='${state.kind.replace("'", "''")}'`);
+      wheres.push(`kind = :kind`);
+      params.kind = state.kind;
     }
   }
   if (state.topic) {
-    wheres.push(`params_json LIKE '%"topic":"${state.topic.replace("'", "''").replace('"', '\\"')}"%'`);
+    wheres.push(`params_json LIKE :topic_like`);
+    params.topic_like = `%"topic":"${state.topic}"%`;
   }
   if (state.errorsOnly) wheres.push(`error IS NOT NULL AND error <> ''`);
   const where = wheres.length ? ` WHERE ${wheres.join(' AND ')}` : '';
 
+  // LIMIT/OFFSET must be literals for sqlite — cast explicitly so the
+  // numbers can't be anything but integers.
+  const limit = Number(PAGE_SIZE) | 0;
+  const offset = (Number(state.page) | 0) * limit;
   const countSql = `SELECT count(*) AS n FROM fetches${where}`;
   const listSql  = `SELECT kind, params_json, started_at, ended_at, rows, error \
                     FROM fetches${where} \
                     ORDER BY started_at DESC \
-                    LIMIT ${PAGE_SIZE} OFFSET ${state.page * PAGE_SIZE}`;
+                    LIMIT ${limit} OFFSET ${offset}`;
 
   try {
     const [countRes, rowsRes] = await Promise.all([
-      api.runQuery(countSql),
-      api.runQuery(listSql),
+      api.runQuery(countSql, null, params),
+      api.runQuery(listSql, null, params),
     ]);
     state.totalCount = Array.isArray(countRes) && countRes[0] ? (countRes[0].n || 0) : 0;
     state.rows = Array.isArray(rowsRes) ? rowsRes : [];

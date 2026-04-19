@@ -184,10 +184,22 @@ export async function loadSolutions(contentEl, topic) {
 
   $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
     contentEl.innerHTML = '<div class="empty-state">Re-running…</div>';
+    let err = null;
     try {
       await api.runSolutionsPipeline(topic);
     } catch (e) {
-      console.error(e);
+      err = e;
+      console.error('solutions pipeline failed:', e);
+    }
+    if (err) {
+      contentEl.innerHTML =
+        `<div class="empty-big"><h3>Couldn't re-run solutions</h3>
+          <p>${(err && (err.message || String(err))) || 'unknown error'}</p>
+          <p style="margin-top:10px;color:var(--ink-3);font-size:12px">
+            Check your LLM key in Settings → API keys, or retry in a moment.
+          </p>
+        </div>`;
+      return;
     }
     await loadSolutions(contentEl, topic);
   });

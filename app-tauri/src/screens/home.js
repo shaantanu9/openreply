@@ -422,14 +422,18 @@ export async function renderHome(root) {
 
 async function loadHeroAndStats(root) {
   let topics = [], stats = {}, dailyCounts = [];
-  try {
-    const [tRes, sRes] = await Promise.all([
-      api.listTopics().catch(() => []),
-      api.overviewStats().catch(() => [{}]),
-    ]);
-    topics = Array.isArray(tRes) ? tRes : [];
-    stats = Array.isArray(sRes) && sRes[0] ? sRes[0] : {};
-  } catch {}
+  // Promise.allSettled instead of all — partial success beats a blank
+  // dashboard when one endpoint times out. Each catch below handles its
+  // own fallback; the outer allSettled is belt-and-braces against any
+  // unhandled rejection slipping through.
+  const settled = await Promise.allSettled([
+    api.listTopics().catch(() => []),
+    api.overviewStats().catch(() => [{}]),
+  ]);
+  const tRes = settled[0].status === 'fulfilled' ? settled[0].value : [];
+  const sRes = settled[1].status === 'fulfilled' ? settled[1].value : [{}];
+  topics = Array.isArray(tRes) ? tRes : [];
+  stats = Array.isArray(sRes) && sRes[0] ? sRes[0] : {};
 
   const topTopic = topics[0];
   // Pull daily post counts for the top topic for the hero bars.
@@ -587,17 +591,41 @@ async function loadActiveCollect(root) {
       const same = lastWasRunning && topic === lastTopic;
       if (!same) {
         slot.innerHTML = `
-          <div class="active-collect-banner" role="button" tabindex="0">
+          <div class="active-collect-banner">
             <div class="pulse-dot"></div>
-            <div class="acb-body">
+            <div class="acb-body" role="button" tabindex="0" title="Click to view progress">
               <b>Collecting${topic ? ` "${esc(topic)}"` : ''}…</b>
               <span>step: ${esc(row.kind || '…')} · started ${esc(since)}</span>
             </div>
-            <div class="acb-cta">View progress →</div>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="acb-cancel" style="color:#B84747;border-color:#E8C8C8">Cancel fetch</button>
+            <div class="acb-cta">View →</div>
           </div>`;
-        slot.querySelector('.active-collect-banner').addEventListener('click', () => {
+        const banner = slot.querySelector('.active-collect-banner');
+        const goToProgress = () => {
           if (topic) location.hash = `#/collect/${encodeURIComponent(topic)}`;
           else location.hash = '#/activity';
+        };
+        // Click body → navigate; cancel button stops propagation and kills.
+        slot.querySelector('.acb-body').addEventListener('click', goToProgress);
+        slot.querySelector('.acb-cta').addEventListener('click', goToProgress);
+        const cancelBtn = slot.querySelector('#acb-cancel');
+        cancelBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const label = topic ? `"${topic}"` : 'the active fetch';
+          if (!confirm(`Stop ${label}? Partial results stay in the corpus — you can Rerun anytime.`)) return;
+          cancelBtn.disabled = true;
+          const orig = cancelBtn.textContent;
+          cancelBtn.textContent = 'Cancelling…';
+          try {
+            await api.cancelCollect();
+            // Clear optimistically; loadActiveCollect's next poll confirms.
+            slot.innerHTML = '';
+            lastWasRunning = false; lastTopic = null;
+          } catch (err) {
+            cancelBtn.disabled = false;
+            cancelBtn.textContent = orig;
+            alert(`Cancel failed: ${err?.message || err}`);
+          }
         });
         lastWasRunning = true;
         lastTopic = topic;
