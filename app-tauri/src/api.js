@@ -188,6 +188,7 @@ export const api = {
     invalidate('list_exports');
     return invoke('export_html', { topic });
   },
+  exportGraphJson: (topic)   => invoke('export_graph_json', { topic }),
   exportReportPro: (topic)   => {
     invalidate('list_exports');
     return invoke('export_report_pro', { topic });

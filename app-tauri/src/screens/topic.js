@@ -1149,6 +1149,7 @@ export async function renderTopic(root, { params }) {
           <div style="display:flex;gap:8px;margin-top:8px">
             <button class="btn btn-primary btn-sm" id="btn-export-html">Export HTML</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-export-md">Export report.md</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-export-graph-json"><i data-lucide="braces"></i> Export graph JSON</button>
           </div>
           <div id="export-status" style="margin-top:10px;font-size:12px;color:var(--ink-3)"></div>
         </div>
@@ -1178,6 +1179,11 @@ export async function renderTopic(root, { params }) {
     $('#btn-export-html').onclick = async () => {
       $('#export-status').textContent = 'exporting HTML…';
       try { const p = await api.exportHtml(topic); $('#export-status').innerHTML = `✓ ${esc(p)}`; }
+      catch (e) { $('#export-status').textContent = `✗ ${e?.message || e}`; }
+    };
+    $('#btn-export-graph-json').onclick = async () => {
+      $('#export-status').textContent = 'exporting graph JSON…';
+      try { const p = await api.exportGraphJson(topic); $('#export-status').innerHTML = `✓ ${esc(p)}`; }
       catch (e) { $('#export-status').textContent = `✗ ${e?.message || e}`; }
     };
     $('#btn-export-md').onclick = async () => {

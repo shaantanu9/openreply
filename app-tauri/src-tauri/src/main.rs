@@ -26,6 +26,7 @@ fn main() {
             commands::build_graph,
             commands::enrich_graph,
             commands::export_html,
+            commands::export_graph_json,
             commands::export_report_pro,
             commands::get_findings,
             commands::ingest_file,

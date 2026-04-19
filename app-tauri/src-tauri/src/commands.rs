@@ -286,6 +286,27 @@ pub async fn export_html(app: AppHandle, topic: String) -> Result<String, String
     Ok(out_str)
 }
 
+/// Export the graph as raw JSON (D3-compatible). Returns absolute path.
+#[tauri::command]
+pub async fn export_graph_json(app: AppHandle, topic: String) -> Result<String, String> {
+    let data = data_dir(&app).map_err(err_to_string)?;
+    let out_path = data.join(format!(
+        "gap-graph-{}.json",
+        topic.replace(' ', "-").to_lowercase()
+    ));
+    let out_str = out_path.to_string_lossy().to_string();
+    run_cli(
+        &app,
+        vec![
+            "research", "graph", "export", "--topic", &topic,
+            "--format", "json", "--out", &out_str,
+        ],
+    )
+    .await
+    .map_err(err_to_string)?;
+    Ok(out_str)
+}
+
 /// Findings (painpoints / feature_wish / product / workaround) for a topic.
 /// Uses parameterized SQL so topic/kind strings can't break out of the query.
 #[tauri::command]
