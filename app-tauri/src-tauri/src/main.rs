@@ -39,6 +39,7 @@ fn main() {
             commands::chat_status,
             commands::test_llm,
             commands::list_ollama_models,
+            commands::run_solutions_pipeline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gapmap");

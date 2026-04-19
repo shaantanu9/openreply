@@ -103,6 +103,19 @@ pub async fn build_graph(app: AppHandle, topic: String) -> Result<Value, String>
     .map_err(err_to_string)
 }
 
+/// Run the Problem -> Why -> Science -> Solution pipeline for a topic.
+/// Returns a summary JSON or `{ok: false, skipped: true, reason}` if no
+/// LLM provider is configured.
+#[tauri::command]
+pub async fn run_solutions_pipeline(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "solutions", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 /// Export the gap-map HTML for a topic. Returns absolute path.
 #[tauri::command]
 pub async fn export_html(app: AppHandle, topic: String) -> Result<String, String> {
