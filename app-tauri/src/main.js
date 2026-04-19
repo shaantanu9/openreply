@@ -10,6 +10,7 @@ import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
 import { renderActivity } from './screens/activity.js';
 import { renderDatabase } from './screens/database.js';
 import { renderScience } from './screens/science.js';
+import { renderSearch } from './screens/search.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -23,6 +24,7 @@ const routes = [
   { match: /^\/activity\/?$/,       render: renderActivity },
   { match: /^\/database\/?$/,       render: renderDatabase },
   { match: /^\/science\/?$/,        render: renderScience },
+  { match: /^\/search\/?$/,         render: renderSearch },
 ];
 
 // Route generation counter — bumped on every navigation so screens can tell
