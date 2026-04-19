@@ -223,6 +223,8 @@ def test_enrich_uses_openrouter_when_configured(
     from reddit_research.analyze.providers.base import resolve_provider
 
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    # LLM_MODEL is set to mirror real user config; resolve_provider does
+    # NOT read it — included only so the test env matches what BYOK writes.
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-test-key")
     # Deliberately do NOT set OPENAI_API_KEY. If resolution is correct,
@@ -233,6 +235,20 @@ def test_enrich_uses_openrouter_when_configured(
     # Explicit arg wins: passing "openrouter" through must still resolve to
     # "openrouter" and never get coerced to "openai" via the model-slash path.
     assert resolve_provider("openrouter") == "openrouter"
+
+    # End-to-end: enrich_from_llm must reach find_gaps (which errors with
+    # "No corpus found" on a nonexistent topic) — NOT short-circuit to an
+    # OPENAI_API_KEY error via the drifted duplicate resolver.
+    from reddit_research.graph.semantic import enrich_from_llm
+
+    result = enrich_from_llm(topic="definitely-does-not-exist-topic-xyz")
+    assert isinstance(result, dict)
+    assert result.get("ok") is False
+    # If drift occurs, the reason will mention OPENAI_API_KEY; correct
+    # resolution produces a "No corpus found" error instead.
+    reason = str(result.get("error") or result.get("reason") or "")
+    assert "OPENAI_API_KEY" not in reason, f"resolver drifted to OpenAI path: {result}"
+    assert "OPENROUTER" not in reason, f"resolver flagged OPENROUTER key missing: {result}"
 
 
 def test_enrich_skip_gracefully_when_nothing_configured(
@@ -255,4 +271,10 @@ def test_enrich_skip_gracefully_when_nothing_configured(
     assert isinstance(result, dict)
     # Either skipped because no provider, OR skipped/errored because topic
     # has no corpus — both are "did not crash with OPENAI_API_KEY".
-    assert "OPENAI_API_KEY not set" not in str(result)
+    # Structural (not substring) regression guard — survives rewording.
+    # A correct resolve either skips gracefully or errors on "no corpus" /
+    # "no LLM provider"; it never mentions OPENAI specifically.
+    reason = str(result.get("error") or result.get("reason") or "")
+    assert "OPENAI" not in reason.upper(), (
+        f"resolver mentioned OPENAI when user configured no provider: {result}"
+    )
