@@ -278,3 +278,98 @@ def test_enrich_skip_gracefully_when_nothing_configured(
     assert "OPENAI" not in reason.upper(), (
         f"resolver mentioned OPENAI when user configured no provider: {result}"
     )
+
+
+# ─── Topic canonicalization (typo correction) ──────────────────────────────
+
+
+def test_canonicalize_typo_correction(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A known typo should be corrected via the LLM pathway."""
+    import json
+    from reddit_research.research import discover as discover_mod
+
+    # Pretend an LLM is configured.
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
+
+    def fake_llm(topic: str) -> str:
+        return json.dumps({
+            "canonical": "calorie tracking app",
+            "variants": ["macro tracking app", "food log"],
+            "confidence": "high",
+        })
+    monkeypatch.setattr(discover_mod, "_llm_canonical_call", fake_llm)
+
+    result = discover_mod._canonicalize_topic("calari tracking app")
+    assert result["canonical"] == "calorie tracking app"
+    assert result["confidence"] == "high"
+    assert "macro tracking app" in result["variants"]
+
+
+def test_canonicalize_preserves_real_topic(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A correctly-spelled topic should pass through unchanged."""
+    import json
+    from reddit_research.research import discover as discover_mod
+
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
+
+    def fake_llm(topic: str) -> str:
+        return json.dumps({
+            "canonical": "kubernetes monitoring",
+            "variants": ["cluster observability", "container metrics"],
+            "confidence": "high",
+        })
+    monkeypatch.setattr(discover_mod, "_llm_canonical_call", fake_llm)
+
+    result = discover_mod._canonicalize_topic("kubernetes monitoring")
+    assert result["canonical"] == "kubernetes monitoring"
+
+
+def test_canonicalize_no_llm_passthrough(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without any LLM configured, canonicalize returns the topic unchanged."""
+    from reddit_research.research import discover as discover_mod
+    for k in (
+        "LLM_PROVIDER", "LLM_MODEL",
+        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
+        "GROQ_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY", "GOOGLE_API_KEY",
+    ):
+        monkeypatch.delenv(k, raising=False)
+
+    result = discover_mod._canonicalize_topic("calari tracking app")
+    assert result["canonical"] == "calari tracking app"
+    assert result["confidence"] == "unknown"
+    assert result["variants"] == []
+
+
+def test_canonicalize_is_cached(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repeated calls for the same topic must not invoke the LLM twice."""
+    import json
+    from reddit_research.research import discover as discover_mod
+
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
+
+    call_count = {"n": 0}
+    def fake_llm(topic: str) -> str:
+        call_count["n"] += 1
+        return json.dumps({
+            "canonical": "calorie tracking app",
+            "variants": [],
+            "confidence": "high",
+        })
+    monkeypatch.setattr(discover_mod, "_llm_canonical_call", fake_llm)
+
+    discover_mod._canonicalize_topic("calari tracking app")
+    discover_mod._canonicalize_topic("calari tracking app")
+    assert call_count["n"] == 1, (
+        f"expected 1 LLM call, got {call_count['n']} — cache not working"
+    )
