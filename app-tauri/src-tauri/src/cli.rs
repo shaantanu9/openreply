@@ -108,6 +108,13 @@ pub struct ActiveJobPid(pub Arc<Mutex<Option<u32>>>);
 #[derive(Default, Clone)]
 pub struct ActiveChatPid(pub Arc<Mutex<Option<u32>>>);
 
+/// Same shape as ActiveJob — stores the live `reddit-cli stream` child handle so cancel can kill it.
+#[derive(Default)]
+pub struct ActiveStream(pub Arc<Mutex<Option<CommandChild>>>);
+
+#[derive(Default)]
+pub struct ActiveStreamPid(pub Arc<Mutex<Option<u32>>>);
+
 /// Resolve the data dir used by the Python CLI for this app.
 /// `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`.
 pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
@@ -173,13 +180,18 @@ async fn run_dev_python_streaming(
     py: std::path::PathBuf,
     args: &[&str],
     data_str: &str,
-    progress_event: &'static str,
-    done_event: &'static str,
+    progress_event: &str,
+    done_event: &str,
     pid_slot: Arc<Mutex<Option<u32>>>,
     on_exit: impl Fn(i32, &std::collections::VecDeque<String>) -> serde_json::Value + Send + 'static,
 ) -> Result<()> {
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, BufReader};
+
+    // Own the event names so the three tokio::spawn closures below don't
+    // need to borrow them across the `'static` boundary.
+    let progress_event = progress_event.to_string();
+    let done_event = done_event.to_string();
 
     let mut cmd = tokio::process::Command::new(&py);
     cmd.arg("-m").arg("reddit_research.cli.main");
@@ -202,6 +214,7 @@ async fn run_dev_python_streaming(
 
     let app_a = app.clone();
     let recent_a = recent.clone();
+    let progress_a = progress_event.clone();
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
@@ -211,12 +224,13 @@ async fn run_dev_python_streaming(
                 if r.len() == 40 { r.pop_front(); }
                 r.push_back(line.clone());
             }
-            let _ = app_a.emit(progress_event, line);
+            let _ = app_a.emit(progress_a.as_str(), line);
         }
     });
 
     let app_b = app.clone();
     let recent_b = recent.clone();
+    let progress_b = progress_event.clone();
     tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
@@ -226,19 +240,20 @@ async fn run_dev_python_streaming(
                 if r.len() == 40 { r.pop_front(); }
                 r.push_back(line.clone());
             }
-            let _ = app_b.emit(progress_event, line);
+            let _ = app_b.emit(progress_b.as_str(), line);
         }
     });
 
     let app_c = app.clone();
     let pid_slot_c = pid_slot.clone();
+    let done_c = done_event.clone();
     tokio::spawn(async move {
         let status = child.wait().await;
         *pid_slot_c.lock().unwrap() = None;
         let code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
         let r = recent.lock().unwrap();
         let payload = on_exit(code, &r);
-        let _ = app_c.emit(done_event, payload);
+        let _ = app_c.emit(done_c.as_str(), payload);
     });
 
     Ok(())
@@ -523,6 +538,106 @@ pub fn cancel_active_chat(app: &AppHandle) -> bool {
         }
     }
     killed
+}
+
+pub fn cancel_active_stream(app: &AppHandle) -> bool {
+    let mut killed = false;
+    if let Some(state) = app.try_state::<ActiveStream>() {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(child) = guard.take() {
+                let _ = child.kill();
+                killed = true;
+            }
+        }
+    }
+    if let Some(state) = app.try_state::<ActiveStreamPid>() {
+        if let Ok(mut guard) = state.0.lock() {
+            *guard = None;
+        }
+    }
+    killed
+}
+
+/// Start the sidecar for stream — streams NDJSON hits, uses its own state
+/// (doesn't conflict with a concurrent collect or chat).
+pub async fn run_cli_stream_streaming(
+    app: &AppHandle,
+    args: Vec<&str>,
+    progress_event: &'static str,
+    done_event: &'static str,
+) -> Result<()> {
+    if let Some(state) = app.try_state::<ActiveStream>() {
+        if state.0.lock().unwrap().is_some() {
+            return Err(anyhow!("another stream is already running. Cancel it first."));
+        }
+    }
+
+    let data = data_dir(app)?;
+    let data_str = data.to_string_lossy().to_string();
+
+    if let Some(py) = find_dev_venv_python() {
+        let pid_slot = if let Some(state) = app.try_state::<ActiveStreamPid>() {
+            state.0.clone()
+        } else {
+            Arc::new(Mutex::new(None))
+        };
+        return run_dev_python_streaming(
+            app, py, &args, &data_str, progress_event, done_event, pid_slot,
+            |code, recent| {
+                let (class, hint) = classify_collect_error(code, recent);
+                serde_json::json!({ "code": code, "error_class": class, "hint": hint })
+            },
+        ).await;
+    }
+
+    let (mut rx, child) = build_sidecar_cmd(app, &args)?
+        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("PYTHONUNBUFFERED", "1")
+        .spawn()
+        .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
+
+    if let Some(state) = app.try_state::<ActiveStream>() {
+        *state.0.lock().unwrap() = Some(child);
+    }
+
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut recent_lines: std::collections::VecDeque<String> =
+            std::collections::VecDeque::with_capacity(40);
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stderr(bytes) | CommandEvent::Stdout(bytes) => {
+                    if let Ok(s) = String::from_utf8(bytes) {
+                        for line in s.lines() {
+                            if line.trim().is_empty() { continue; }
+                            if recent_lines.len() == 40 { recent_lines.pop_front(); }
+                            recent_lines.push_back(line.to_string());
+                            let _ = app_clone.emit(progress_event, line.to_string());
+                        }
+                    }
+                }
+                CommandEvent::Terminated(payload) => {
+                    if let Some(state) = app_clone.try_state::<ActiveStream>() {
+                        *state.0.lock().unwrap() = None;
+                    }
+                    let code = payload.code.unwrap_or(-1);
+                    let (class, hint) = classify_collect_error(code, &recent_lines);
+                    let _ = app_clone.emit(
+                        done_event,
+                        serde_json::json!({
+                            "code": code,
+                            "error_class": class,
+                            "hint": hint,
+                        }),
+                    );
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(())
 }
 
 #[cfg(test)]
