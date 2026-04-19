@@ -125,12 +125,19 @@ def _load_canonical(topic: str) -> dict | None:
 
 
 def _cache_canonical(topic: str, result: dict) -> None:
-    """Persist the result. Uses `original` as PK so upserts replace cleanly."""
+    """Persist the result. Uses `original` as PK so upserts replace cleanly.
+
+    Silently skips the write if the schema hasn't been initialized yet —
+    symmetric with _load_canonical. init_schema() creates the table at
+    app startup, so this guard is belt-and-suspenders for stale DBs.
+    """
     import json
     from datetime import datetime, timezone
     from ..core.db import get_db
 
     db = get_db()
+    if "topic_canonicalizations" not in db.table_names():
+        return
     db["topic_canonicalizations"].upsert(
         {
             "original": topic.strip().lower(),
@@ -164,10 +171,14 @@ def _canonicalize_topic(topic: str) -> dict[str, Any]:
     if cached is not None:
         return cached
 
-    # Resolve provider; passthrough if no LLM.
+    # Gate the LLM call behind a provider check. We only care whether ANY
+    # provider is resolvable right now — the return value is ignored because
+    # _llm_canonical_call() will resolve again (lazily) at call time. If
+    # nothing is configured, resolve_provider raises → fall back to passthrough
+    # so collect flows still work without an API key.
     try:
         from ..analyze.providers.base import resolve_provider
-        resolve_provider(None)
+        _ = resolve_provider(None)
     except Exception:
         return {"canonical": topic, "variants": [], "confidence": "unknown"}
 
@@ -176,16 +187,28 @@ def _canonicalize_topic(topic: str) -> dict[str, Any]:
     except Exception:
         return {"canonical": topic, "variants": [], "confidence": "unknown"}
 
-    # Defensive parse — strip markdown fences, try JSON, else passthrough.
+    # Defensive parse — LLMs sometimes wrap JSON in markdown fences or prose.
+    # We try JSON as-is first; on failure, strip fences; on failure, extract
+    # the first {...} block via regex. Any parse failure → passthrough.
+    import re as _re
     text = (raw or "").strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        # Drop a possible "json\n" language marker.
-        if text.lstrip().lower().startswith("json"):
-            text = text.split("\n", 1)[1] if "\n" in text else ""
-    try:
-        parsed = _json.loads(text)
-    except Exception:
+    parsed = None
+    for attempt in (
+        lambda: _json.loads(text),
+        lambda: _json.loads(text.strip("`").lstrip("json").strip()),
+        lambda: _json.loads(
+            _re.search(r"\{.*\}", text, _re.DOTALL).group(0)
+            if _re.search(r"\{.*\}", text, _re.DOTALL) else ""
+        ),
+    ):
+        try:
+            parsed = attempt()
+            if isinstance(parsed, dict):
+                break
+            parsed = None
+        except Exception:
+            continue
+    if not isinstance(parsed, dict):
         return {"canonical": topic, "variants": [], "confidence": "unknown"}
 
     canonical = (parsed.get("canonical") or topic).strip()
