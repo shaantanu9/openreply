@@ -58,25 +58,32 @@ def _rank_score(sub: dict[str, Any], tokens: list[str]) -> float:
 # same typo only costs one API call per user.
 
 _CANONICAL_PROMPT_SYSTEM = (
-    "You validate whether a user's topic string represents a recognizable "
-    "product category or domain. If the string contains typos, abbreviations, "
-    "or ambiguity, return the most likely canonical form plus 2-3 plausible "
-    "alternatives. Return JSON only — no prose."
+    "You validate a user's topic string AND expand it into a search-keyword "
+    "set. Return the canonical form (with typo correction), alternative "
+    "interpretations, and 5-8 scored search keywords useful for querying "
+    "Reddit, academic search engines, HN, and app stores. Return JSON only."
 )
 _CANONICAL_PROMPT_USER = (
     "Topic: \"{topic}\"\n\n"
-    "Return JSON matching: "
-    "{{\"canonical\": \"<best guess>\", "
-    "\"variants\": [\"<alt1>\", \"<alt2>\"], "
-    "\"confidence\": \"high\" | \"low\"}}\n\n"
+    "Return JSON matching:\n"
+    "{{\n"
+    "  \"canonical\": \"<best guess>\",\n"
+    "  \"variants\": [\"<alt1>\", \"<alt2>\"],\n"
+    "  \"confidence\": \"high\" | \"low\",\n"
+    "  \"search_keywords\": ["
+    "{{\"keyword\": \"<term>\", \"relevance\": \"high\" | \"medium\" | \"low\"}}"
+    ", ...]\n"
+    "}}\n\n"
     "Rules:\n"
-    "- If the topic looks correct and clear, return it unchanged with confidence "
-    "\"high\" and 2 related variants.\n"
-    "- If you're confident about a typo fix (e.g., \"calari\" is almost "
-    "certainly \"calorie\"), return the fix with confidence \"high\".\n"
-    "- If ambiguous (could be interpreted multiple ways), set confidence \"low\" "
-    "and put multiple plausible readings in variants.\n"
-    "- Variants should be distinct product-category phrases, not synonyms."
+    "- Include the canonical itself as the FIRST keyword (relevance high).\n"
+    "- 5-8 keywords total. Each 1-4 words. No duplicates.\n"
+    "- high: a searcher would definitely use this term.\n"
+    "- medium: related, plausibly useful.\n"
+    "- low: tangentially related.\n"
+    "- Include common product names that dominate the domain.\n"
+    "- If the topic looks correct, confidence 'high' + 2 variants.\n"
+    "- If a typo is obvious (e.g. 'calari' → 'calorie'), fix it + confidence 'high'.\n"
+    "- If genuinely ambiguous, confidence 'low' + variants span distinct readings."
 )
 
 
@@ -92,7 +99,7 @@ def _llm_canonical_call(topic: str) -> str:
     return provider.complete(
         prompt=_CANONICAL_PROMPT_USER.format(topic=topic),
         system=_CANONICAL_PROMPT_SYSTEM,
-        max_tokens=200,
+        max_tokens=400,  # was 200 — room for the added search_keywords block
         temperature=0.1,
     )
 
@@ -106,8 +113,9 @@ def _load_canonical(topic: str) -> dict | None:
     if "topic_canonicalizations" not in db.table_names():
         return None
     rows = list(db.query(
-        "SELECT canonical, variants_json, confidence FROM topic_canonicalizations "
-        "WHERE original = ?",
+        "SELECT canonical, variants_json, confidence, "
+        "COALESCE(keywords_json, '') AS keywords_json "
+        "FROM topic_canonicalizations WHERE original = ?",
         [topic.strip().lower()],
     ))
     if not rows:
@@ -117,10 +125,18 @@ def _load_canonical(topic: str) -> dict | None:
         variants = json.loads(r["variants_json"])
     except Exception:
         variants = []
+    try:
+        search_keywords = json.loads(r["keywords_json"]) if r["keywords_json"] else []
+    except Exception:
+        search_keywords = []
+    # Stale cache from before keywords were introduced → force a re-LLM.
+    if not search_keywords:
+        return None
     return {
         "canonical": r["canonical"],
         "variants": variants,
         "confidence": r["confidence"],
+        "search_keywords": search_keywords,
     }
 
 
@@ -145,6 +161,7 @@ def _cache_canonical(topic: str, result: dict) -> None:
             "variants_json": json.dumps(result.get("variants") or []),
             "confidence": result.get("confidence") or "unknown",
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "keywords_json": json.dumps(result.get("search_keywords") or []),
         },
         pk="original",
     )
@@ -165,7 +182,8 @@ def _canonicalize_topic(topic: str) -> dict[str, Any]:
 
     topic = (topic or "").strip()
     if not topic:
-        return {"canonical": topic, "variants": [], "confidence": "unknown"}
+        return {"canonical": topic, "variants": [], "confidence": "unknown",
+                "search_keywords": []}
 
     cached = _load_canonical(topic)
     if cached is not None:
@@ -180,12 +198,14 @@ def _canonicalize_topic(topic: str) -> dict[str, Any]:
         from ..analyze.providers.base import resolve_provider
         _ = resolve_provider(None)
     except Exception:
-        return {"canonical": topic, "variants": [], "confidence": "unknown"}
+        return {"canonical": topic, "variants": [], "confidence": "unknown",
+                "search_keywords": []}
 
     try:
         raw = _llm_canonical_call(topic)
     except Exception:
-        return {"canonical": topic, "variants": [], "confidence": "unknown"}
+        return {"canonical": topic, "variants": [], "confidence": "unknown",
+                "search_keywords": []}
 
     # Defensive parse — LLMs sometimes wrap JSON in markdown fences or prose.
     # We try JSON as-is first; on failure, strip fences; on failure, extract
@@ -209,7 +229,8 @@ def _canonicalize_topic(topic: str) -> dict[str, Any]:
         except Exception:
             continue
     if not isinstance(parsed, dict):
-        return {"canonical": topic, "variants": [], "confidence": "unknown"}
+        return {"canonical": topic, "variants": [], "confidence": "unknown",
+                "search_keywords": []}
 
     canonical = (parsed.get("canonical") or topic).strip()
     variants = [v for v in (parsed.get("variants") or []) if isinstance(v, str) and v.strip()]
@@ -217,7 +238,31 @@ def _canonicalize_topic(topic: str) -> dict[str, Any]:
     if confidence not in ("high", "low", "unknown"):
         confidence = "unknown"
 
-    result = {"canonical": canonical, "variants": variants, "confidence": confidence}
+    # Parse + normalize search_keywords. Drop malformed entries silently.
+    raw_keywords = parsed.get("search_keywords") or []
+    search_keywords: list[dict] = []
+    seen_kw: set[str] = set()
+    for kw in raw_keywords:
+        if not isinstance(kw, dict):
+            continue
+        k = str(kw.get("keyword") or "").strip()
+        rel = str(kw.get("relevance") or "low").strip().lower()
+        if not k or rel not in ("high", "medium", "low"):
+            continue
+        if k.lower() in seen_kw:
+            continue
+        seen_kw.add(k.lower())
+        search_keywords.append({"keyword": k, "relevance": rel})
+    # Always ensure the canonical appears in the keyword list.
+    if search_keywords and canonical.lower() not in seen_kw:
+        search_keywords.insert(0, {"keyword": canonical, "relevance": "high"})
+
+    result = {
+        "canonical": canonical,
+        "variants": variants,
+        "confidence": confidence,
+        "search_keywords": search_keywords,
+    }
     try:
         _cache_canonical(topic, result)
     except Exception:

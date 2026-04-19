@@ -365,6 +365,10 @@ def test_canonicalize_is_cached(
             "canonical": "calorie tracking app",
             "variants": [],
             "confidence": "high",
+            "search_keywords": [
+                {"keyword": "calorie tracking app", "relevance": "high"},
+                {"keyword": "macro tracker", "relevance": "medium"},
+            ],
         })
     monkeypatch.setattr(discover_mod, "_llm_canonical_call", fake_llm)
 
@@ -543,3 +547,76 @@ def test_cluster_passthrough_without_chromadb(
     inp = {"painpoints": [{"painpoint": "A"}, {"painpoint": "B"}]}
     out = cluster_findings(inp)
     assert out == inp
+
+
+# ─── Query expansion (scored keywords on canonicalize) ──────────────────
+
+
+def test_canonicalize_returns_search_keywords(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Canonicalize should parse search_keywords from the LLM response."""
+    import json
+    from reddit_research.research import discover as discover_mod
+
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
+
+    def fake_llm(topic):
+        return json.dumps({
+            "canonical": "calorie tracking app",
+            "variants": ["macro tracking"],
+            "confidence": "high",
+            "search_keywords": [
+                {"keyword": "calorie tracking", "relevance": "high"},
+                {"keyword": "MyFitnessPal", "relevance": "high"},
+                {"keyword": "food log", "relevance": "medium"},
+                {"keyword": "weight loss", "relevance": "low"},
+            ],
+        })
+    monkeypatch.setattr(discover_mod, "_llm_canonical_call", fake_llm)
+
+    r = discover_mod._canonicalize_topic("calari tracking app")
+    kws = r.get("search_keywords") or []
+    assert kws, "expected non-empty keyword list"
+    assert any(k["keyword"] == "calorie tracking" and k["relevance"] == "high" for k in kws)
+    assert any(k["relevance"] == "low" for k in kws)
+    # Canonical should auto-prepend if the LLM forgot it.
+    # (In this test the LLM did include a close match so no prepend needed,
+    #  but the function must not crash if it had.)
+
+
+def test_canonicalize_drops_malformed_keywords(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed keyword entries (wrong types, bad relevance) are dropped."""
+    import json
+    from reddit_research.research import discover as discover_mod
+
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
+
+    def fake_llm(topic):
+        return json.dumps({
+            "canonical": "kubernetes monitoring",
+            "variants": [],
+            "confidence": "high",
+            "search_keywords": [
+                {"keyword": "kubernetes monitoring", "relevance": "high"},
+                "not a dict",
+                {"keyword": "", "relevance": "high"},         # empty
+                {"keyword": "prometheus", "relevance": "bogus"},  # bad relevance
+                {"keyword": "grafana", "relevance": "high"},
+                {"keyword": "grafana", "relevance": "medium"},   # duplicate
+            ],
+        })
+    monkeypatch.setattr(discover_mod, "_llm_canonical_call", fake_llm)
+
+    r = discover_mod._canonicalize_topic("kubernetes monitoring")
+    kws = r["search_keywords"]
+    keys = [k["keyword"] for k in kws]
+    assert "kubernetes monitoring" in keys
+    assert "grafana" in keys
+    assert keys.count("grafana") == 1  # duplicate dropped
+    assert "prometheus" not in keys    # bad relevance dropped
+    assert "" not in keys              # empty dropped

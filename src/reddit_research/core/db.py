@@ -277,12 +277,20 @@ def init_schema(db: Database) -> None:
             {
                 "original": str,
                 "canonical": str,
-                "variants_json": str,   # json.dumps of list[str]
-                "confidence": str,      # 'high' | 'low' | 'unknown'
-                "ts": str,              # ISO UTC
+                "variants_json": str,     # json.dumps of list[str]
+                "confidence": str,        # 'high' | 'low' | 'unknown'
+                "ts": str,                # ISO UTC
+                "keywords_json": str,     # json.dumps of list[{keyword, relevance}]
             },
             pk="original",
         )
+    else:
+        # Lazy migration for installs created before keywords_json existed.
+        cols = {c.name for c in db["topic_canonicalizations"].columns}
+        if "keywords_json" not in cols:
+            db.executescript(
+                "ALTER TABLE topic_canonicalizations ADD COLUMN keywords_json TEXT DEFAULT ''"
+            )
 
 
 # ── Fetch audit log ──────────────────────────────────────────────────────────
