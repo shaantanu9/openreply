@@ -250,7 +250,18 @@ def enrich_from_llm(
             topic=topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
         )
     except Exception as e:
-        return {"ok": False, "error": f"enrich failed: {e}", "topic": topic}
+        set_keys = [k for k in key_for.values() if os.getenv(k)]
+        diag = (
+            f"[resolved_provider={provider!r}, "
+            f"LLM_PROVIDER={os.getenv('LLM_PROVIDER')!r}, "
+            f"LLM_MODEL={os.getenv('LLM_MODEL')!r}, "
+            f"env_keys_set={set_keys}]"
+        )
+        return {
+            "ok": False,
+            "error": f"enrich failed: {e}  {diag}",
+            "topic": topic,
+        }
     if report.get("error"):
         return {"ok": False, "error": report["error"], "topic": topic}
 
