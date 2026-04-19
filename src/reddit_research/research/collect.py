@@ -130,6 +130,20 @@ def collect(
                 "github",        # GitHub trending repos
                 "trends",        # Google Trends series (returns series, not posts)
             ]
+    elif not sources:
+        # Non-aggressive default: still pull from a baseline of FAST FREE
+        # external sources so "quick" mode is never reddit-only. Users
+        # expect to see HN / arXiv / GitHub alongside Reddit even on a
+        # short collect. Historical pullpush + heavy stores (app/play/gnews
+        # /pubmed/openalex/trends) stay gated behind aggressive — those add
+        # minutes and aren't free-fast.
+        sources = [
+            "hn",            # Hacker News — fast, free, 1 call
+            "arxiv",         # arXiv — fast, free, 1 call
+            "devto",         # Dev.to — fast, free, 1 call
+            "stackoverflow", # Stack Overflow — fast, free, 1 call
+            "github",        # GitHub trending — fast, free, 1 call
+        ]
     # `result.topic` ends up being set to the canonical after canonicalization
     # below. Populate with original here; we update after _canonicalize_topic
     # resolves (handles the no-LLM-configured passthrough case cleanly).
@@ -163,12 +177,16 @@ def collect(
     # Query expansion — use the LLM-scored keywords from the canonicalize
     # call to fan out per-source queries. Recall 3-5× vs the single canonical
     # string. `high`-only by default; `aggressive` adds `medium` too. Cap via
-    # GAPMAP_MAX_KEYWORDS (default 5).
+    # GAPMAP_MAX_KEYWORDS.
+    # Default lowered to 1 on 2026-04-20 — 5 keywords × 11 sources × 1 s
+    # politeness ≈ 55 s added to every aggressive collect, which felt like
+    # a hang to users. Opt in to higher recall via the env var once you've
+    # seen the baseline latency.
     import os as _os
     try:
-        _max_kw = int(_os.getenv("GAPMAP_MAX_KEYWORDS", "5") or "5")
+        _max_kw = int(_os.getenv("GAPMAP_MAX_KEYWORDS", "1") or "1")
     except ValueError:
-        _max_kw = 5
+        _max_kw = 1
     _min_rel = "medium" if aggressive else "high"
     _rel_rank = {"high": 3, "medium": 2, "low": 1}
     _min_rank = _rel_rank.get(_min_rel, 3)
@@ -209,77 +227,22 @@ def collect(
     else:
         result.subs = subs
 
-    if not skip_reddit:
-        # 2. Top-of-month / top-of-year per sub
-        for sub in subs:
-            for tf in ("month", "year"):
-                try:
-                    _log(f"fetch r/{sub} top({tf}) limit={limit_per_sub}")
-                    rows = fetch_posts(sub=sub, sort="top", limit=limit_per_sub, time_filter=tf)
-                    tagged = _tag_posts(search_topic, [r["id"] for r in rows], source=f"top:{sub}:{tf}")
-                    result.posts_fetched += tagged
-                    result.by_source[f"top:{sub}:{tf}"] = tagged
-                except Exception as e:
-                    msg = f"top {sub}/{tf}: {e}"
-                    _log(f"  ! {msg}")
-                    result.errors.append(msg)
-                time.sleep(_SLEEP)
-
-        # 3. Parameterized searches — fan out across all expanded keywords.
-        # render_queries(kw) gives us 4 category buckets; merge + dedup across
-        # keywords so we don't hit the same exact query twice.
-        merged: dict[str, list[str]] = {}
-        for _kw in search_keywords:
-            for _cat, _qs in render_queries(_kw, categories=query_categories).items():
-                merged.setdefault(_cat, []).extend(_qs)
-        queries = {c: list(dict.fromkeys(qs)) for c, qs in merged.items()}
-        if len(search_keywords) > 1:
-            _log(f"query expansion: {len(search_keywords)} keywords → "
-                 f"{sum(len(v) for v in queries.values())} unique queries")
-        for category, qs in queries.items():
-            for q in qs:
-                # If sub_scope_search: search each sub individually (slower but higher signal)
-                targets: list[str | None] = subs if sub_scope_search else [None]
-                for target in targets:
-                    try:
-                        _log(f"search {category!r}: {q!r}" + (f" in r/{target}" if target else ""))
-                        rows = search_reddit(
-                            query=q,
-                            sub=target,
-                            sort="relevance",
-                            time_filter="year",
-                            limit=limit_per_query,
-                        )
-                        tagged = _tag_posts(
-                            search_topic,
-                            [r["id"] for r in rows],
-                            source=f"search:{category}:{target or 'all'}:{q}",
-                        )
-                        result.posts_fetched += tagged
-                        key = f"search:{category}"
-                        result.by_source[key] = result.by_source.get(key, 0) + tagged
-                    except Exception as e:
-                        msg = f"search {category} {q!r}: {e}"
-                        _log(f"  ! {msg}")
-                        result.errors.append(msg)
-                    time.sleep(_SLEEP)
-
-    # 3b. Extra sources (HN / App Store / Play Store / Scholar / SO / Trends / arXiv / …)
-    # Fanned out in parallel — each worker hits a distinct provider, so there
-    # is no per-host rate contention. Reddit-touching stages above stay
-    # sequential (Reddit's rate limits don't tolerate concurrent hits from
-    # public mode). The _log lock keeps progress lines atomic so the UI can
-    # still split them. SQLite WAL mode (enabled in core.db) lets concurrent
-    # writers append without "database is locked" errors.
+    # 3b setup. We kick the external-sources pool off IN PARALLEL with the
+    # Reddit stages below. Each external adapter hits a distinct host (HN,
+    # arXiv, App Store, …), so there's no rate-limit contention with Reddit.
+    # SQLite WAL (enabled in core.db) tolerates concurrent writers. Running
+    # them concurrently turns a ~5-minute sequential collect into ~2-3 min
+    # and — importantly — gives the user visible progress on ALL sources
+    # from the start, instead of staring at reddit-only logs for minutes.
+    ext_pool: ThreadPoolExecutor | None = None
+    ext_futures: dict = {}
+    ext_valid: list[str] = []
     if sources:
         from ..sources.collect_adapter import SOURCES
 
-        # Validate up-front so unknown names fail fast with a clear error,
-        # not after spending several seconds on valid ones.
-        valid: list[str] = []
         for src in sources:
             if src in SOURCES:
-                valid.append(src)
+                ext_valid.append(src)
             else:
                 _log(f"  ! unknown source: {src}")
                 result.errors.append(f"unknown source: {src}")
@@ -301,52 +264,129 @@ def collect(
             except Exception as e:
                 return (src, None, e, time.monotonic() - t0)
 
-        if valid:
-            workers = min(_PARALLEL_SOURCES, len(valid))
-            _log(f"[parallel] fetching {len(valid)} sources across {workers} workers…")
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = {pool.submit(_run_source, s): s for s in valid}
-                done_count = 0
-                for fut in as_completed(futures):
-                    src, out, err, elapsed = fut.result()
-                    done_count += 1
-                    prefix = f"[{done_count}/{len(valid)}] [{src}]"
-                    if err is not None:
-                        msg = f"{prefix} ✗ {err} ({elapsed:.1f}s)"
-                        _log(msg)
-                        with _log_lock:
-                            result.errors.append(f"source:{src}: {err}")
-                    elif src == "trends":
-                        # trends returns a dict of keyword → trend series, not a post count
-                        _log(f"{prefix} ✓ trends series collected ({elapsed:.1f}s)")
-                        with _log_lock:
-                            result.by_source[f"source:{src}"] = out
-                    else:
-                        n = int(out or 0)
-                        _log(f"{prefix} ✓ {n} posts ({elapsed:.1f}s)")
-                        with _log_lock:
-                            result.posts_fetched += n
-                            result.by_source[f"source:{src}"] = n
+        if ext_valid:
+            workers = min(_PARALLEL_SOURCES, len(ext_valid))
+            _log(f"[parallel] fetching {len(ext_valid)} sources across {workers} workers (concurrently with Reddit)…")
+            ext_pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="gap-src")
+            ext_futures = {ext_pool.submit(_run_source, s): s for s in ext_valid}
 
-    # 4. Historical — pullpush (pre-May-2025)
-    if include_historical:
-        for sub in subs:
-            try:
-                _log(f"historical r/{sub} last {historical_days}d pre-cutoff, limit={historical_limit_per_sub}")
-                hrows = fetch_historical(
-                    sub=sub,
-                    kind="submission",
-                    days=historical_days,
-                    limit=historical_limit_per_sub,
-                )
-                tagged = _tag_posts(search_topic, [r["id"] for r in hrows], source=f"pullpush:{sub}")
-                result.posts_fetched += tagged
-                result.by_source[f"pullpush:{sub}"] = tagged
-            except Exception as e:
-                msg = f"pullpush {sub}: {e}"
-                _log(f"  ! {msg}")
-                result.errors.append(msg)
-            time.sleep(_SLEEP)
+    # Wrap Reddit stages in try/finally so the external pool is always drained
+    # and shut down, even if a Reddit stage raises unexpectedly. Without this,
+    # an aborted collect could leak up to 6 daemon threads per abort.
+    try:
+        if not skip_reddit:
+            # 2. Top-of-month / top-of-year per sub
+            for sub in subs:
+                for tf in ("month", "year"):
+                    try:
+                        _log(f"fetch r/{sub} top({tf}) limit={limit_per_sub}")
+                        rows = fetch_posts(sub=sub, sort="top", limit=limit_per_sub, time_filter=tf)
+                        tagged = _tag_posts(search_topic, [r["id"] for r in rows], source=f"top:{sub}:{tf}")
+                        with _log_lock:
+                            result.posts_fetched += tagged
+                            result.by_source[f"top:{sub}:{tf}"] = tagged
+                    except Exception as e:
+                        msg = f"top {sub}/{tf}: {e}"
+                        _log(f"  ! {msg}")
+                        with _log_lock:
+                            result.errors.append(msg)
+                    time.sleep(_SLEEP)
+
+            # 3. Parameterized searches — fan out across all expanded keywords.
+            # render_queries(kw) gives us 4 category buckets; merge + dedup across
+            # keywords so we don't hit the same exact query twice.
+            merged: dict[str, list[str]] = {}
+            for _kw in search_keywords:
+                for _cat, _qs in render_queries(_kw, categories=query_categories).items():
+                    merged.setdefault(_cat, []).extend(_qs)
+            queries = {c: list(dict.fromkeys(qs)) for c, qs in merged.items()}
+            if len(search_keywords) > 1:
+                _log(f"query expansion: {len(search_keywords)} keywords → "
+                     f"{sum(len(v) for v in queries.values())} unique queries")
+            for category, qs in queries.items():
+                for q in qs:
+                    # If sub_scope_search: search each sub individually (slower but higher signal)
+                    targets: list[str | None] = subs if sub_scope_search else [None]
+                    for target in targets:
+                        try:
+                            _log(f"search {category!r}: {q!r}" + (f" in r/{target}" if target else ""))
+                            rows = search_reddit(
+                                query=q,
+                                sub=target,
+                                sort="relevance",
+                                time_filter="year",
+                                limit=limit_per_query,
+                            )
+                            tagged = _tag_posts(
+                                search_topic,
+                                [r["id"] for r in rows],
+                                source=f"search:{category}:{target or 'all'}:{q}",
+                            )
+                            with _log_lock:
+                                result.posts_fetched += tagged
+                                key = f"search:{category}"
+                                result.by_source[key] = result.by_source.get(key, 0) + tagged
+                        except Exception as e:
+                            msg = f"search {category} {q!r}: {e}"
+                            _log(f"  ! {msg}")
+                            with _log_lock:
+                                result.errors.append(msg)
+                        time.sleep(_SLEEP)
+
+        # 4. Historical — pullpush (pre-May-2025). Runs on main thread after
+        # Reddit stages finish; pullpush is a different host from Reddit's
+        # public API but keeping it sequential avoids contention with a
+        # still-running top/search burst. External-source pool keeps
+        # streaming in parallel.
+        if include_historical:
+            for sub in subs:
+                try:
+                    _log(f"historical r/{sub} last {historical_days}d pre-cutoff, limit={historical_limit_per_sub}")
+                    hrows = fetch_historical(
+                        sub=sub,
+                        kind="submission",
+                        days=historical_days,
+                        limit=historical_limit_per_sub,
+                    )
+                    tagged = _tag_posts(search_topic, [r["id"] for r in hrows], source=f"pullpush:{sub}")
+                    with _log_lock:
+                        result.posts_fetched += tagged
+                        result.by_source[f"pullpush:{sub}"] = tagged
+                except Exception as e:
+                    msg = f"pullpush {sub}: {e}"
+                    _log(f"  ! {msg}")
+                    with _log_lock:
+                        result.errors.append(msg)
+                time.sleep(_SLEEP)
+    finally:
+        # 3b (drain). Join the external-source pool — some workers may still
+        # be in flight while Reddit finished early, or the pool may already
+        # be done if Reddit took a long time. Collect per-source results so
+        # the final log line reflects every provider. Always executed, even
+        # if a Reddit stage raised — keeps the pool from leaking threads.
+        if ext_pool is not None and ext_futures:
+            done_count = 0
+            for fut in as_completed(ext_futures):
+                src, out, err, elapsed = fut.result()
+                done_count += 1
+                prefix = f"[{done_count}/{len(ext_valid)}] [{src}]"
+                if err is not None:
+                    msg = f"{prefix} ✗ {err} ({elapsed:.1f}s)"
+                    _log(msg)
+                    with _log_lock:
+                        result.errors.append(f"source:{src}: {err}")
+                elif src == "trends":
+                    # trends returns dict of keyword → trend series, not a post count
+                    _log(f"{prefix} ✓ trends series collected ({elapsed:.1f}s)")
+                    with _log_lock:
+                        result.by_source[f"source:{src}"] = out
+                else:
+                    n = int(out or 0)
+                    _log(f"{prefix} ✓ {n} posts ({elapsed:.1f}s)")
+                    with _log_lock:
+                        result.posts_fetched += n
+                        result.by_source[f"source:{src}"] = n
+            ext_pool.shutdown(wait=True)
 
     _log(f"done. {result.posts_fetched} posts tagged for '{search_topic}'.")
     return result
