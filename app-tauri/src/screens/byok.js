@@ -120,9 +120,10 @@ const REDDIT_FIELDS = [
 // separately via the live /api/tags fetch.
 const PROVIDER_CURATED_MODELS = {
   anthropic: [
-    { name: 'claude-sonnet-4-6', label: 'Sonnet 4.6', note: 'balanced — best default' },
-    { name: 'claude-opus-4-6',   label: 'Opus 4.6',   note: 'smartest, slower, pricier' },
-    { name: 'claude-haiku-4-5',  label: 'Haiku 4.5',  note: 'fastest, cheapest' },
+    { name: 'claude-opus-4-7',           label: 'Opus 4.7',         note: 'smartest, latest (1M ctx)' },
+    { name: 'claude-sonnet-4-6',         label: 'Sonnet 4.6',       note: 'balanced — best default' },
+    { name: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5',        note: 'fastest, cheapest' },
+    { name: 'claude-opus-4-6',           label: 'Opus 4.6',         note: 'previous-gen smartest' },
   ],
   openai: [
     { name: 'gpt-4o',      label: 'GPT-4o',      note: 'flagship multimodal' },
