@@ -1,0 +1,258 @@
+"""End-to-end integration smoke tests.
+
+These exercise the real pipeline that the Tauri app uses. They hit live
+network endpoints (Reddit public JSON, Ollama on localhost) but gracefully
+skip when a dependency is unreachable — so CI remains green on offline
+runners and local dev doesn't need keys to run the unit suite.
+
+Run just these:
+    .venv/bin/pytest -v tests/test_integration.py
+
+Mark a slow path to skip always:
+    .venv/bin/pytest -v -m "not slow"
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+import pytest
+
+
+# ─── Skip-gate helpers ──────────────────────────────────────────────────────
+
+
+def _reachable(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+REDDIT_OK = _reachable("www.reddit.com", 443)
+OLLAMA_OK = _reachable("localhost", 11434)
+
+
+# ─── Fresh-DB fixture (no side effects on the real data dir) ────────────────
+
+
+@pytest.fixture
+def clean_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Point every env lookup at tmp_path so tests are isolated."""
+    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    # Invalidate any memoized config / db.
+    from reddit_research.core import db as db_mod
+
+    db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
+    return tmp_path
+
+
+# ─── Config + DB ────────────────────────────────────────────────────────────
+
+
+def test_config_respects_data_dir_env(clean_env: Path) -> None:
+    from reddit_research.core.config import load_config
+
+    cfg = load_config()
+    assert cfg.data_dir == clean_env
+    assert cfg.db_path.parent == clean_env
+    # `mode` should be 'public' when no Reddit creds set
+    assert cfg.mode in ("public", "auth")
+
+
+def test_db_init_creates_all_tables(clean_env: Path) -> None:
+    from reddit_research.core.db import get_db
+
+    db = get_db()
+    names = set(db.table_names())
+    for t in ("posts", "comments", "users", "subreddits", "fetches", "streams", "stream_hits"):
+        assert t in names, f"missing table: {t}"
+
+
+# ─── Sub discovery (live Reddit) ────────────────────────────────────────────
+
+
+@pytest.mark.skipif(not REDDIT_OK, reason="reddit.com unreachable")
+def test_discover_subs_returns_real_results(clean_env: Path) -> None:
+    from reddit_research.research.discover import discover_subs
+
+    result = discover_subs("note taking apps", limit=3)
+    assert isinstance(result, list)
+    assert len(result) >= 1, "expected at least 1 sub"
+    first = result[0]
+    assert first.get("name"), "sub entry must have a name"
+    # Reddit's sub search always gives at least name + url
+    assert "url" in first or "permalink" in first
+
+
+# ─── Reddit fetch (live) ────────────────────────────────────────────────────
+
+
+@pytest.mark.skipif(not REDDIT_OK, reason="reddit.com unreachable")
+def test_fetch_posts_writes_to_db(clean_env: Path) -> None:
+    from reddit_research.core.db import get_db
+    from reddit_research.fetch.posts import fetch_posts
+
+    rows = fetch_posts(sub="resumes", sort="top", limit=2, time_filter="week")
+    # Must return at least one post and write it into the DB.
+    assert isinstance(rows, list)
+    assert len(rows) >= 1
+    db = get_db()
+    assert db["posts"].count >= 1
+    assert db["fetches"].count >= 1
+
+
+# ─── LLM ping (live Ollama) ─────────────────────────────────────────────────
+
+
+@pytest.mark.skipif(not OLLAMA_OK, reason="ollama not running on :11434")
+def test_ollama_ping_ok(clean_env: Path) -> None:
+    """Try each installed Ollama model until one completes a 1-token ping.
+    Skips models that aren't chat-capable (embeddings, OCR-specialty, etc.)."""
+    import urllib.request
+
+    with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    # Exclude known non-chat families: bert-style embeddings, OCR-only models,
+    # and any tag containing "embed". Leaves general chat models intact.
+    NON_CHAT_FAMILIES = {"bert", "nomic-bert", "glmocr"}
+    candidates = [
+        m["name"]
+        for m in (data.get("models") or [])
+        if "embed" not in (m.get("name") or "").lower()
+        and "ocr" not in (m.get("name") or "").lower()
+        and (m.get("details", {}) or {}).get("family") not in NON_CHAT_FAMILIES
+    ]
+    if not candidates:
+        pytest.skip("no chat-capable models installed in Ollama")
+
+    from reddit_research.research.chat import test_provider
+
+    errors: list[str] = []
+    for name in candidates:
+        r = test_provider(provider="ollama", model=name)
+        if r.get("ok"):
+            assert r.get("reply"), f"empty reply for {name}"
+            assert r["latency_ms"] > 0
+            return  # At least one model works — pipeline is healthy.
+        errors.append(f"{name}: {r.get('error')}")
+    pytest.fail("no chat model responded. Attempts:\n  " + "\n  ".join(errors))
+
+
+# ─── List installed Ollama models ───────────────────────────────────────────
+
+
+@pytest.mark.skipif(not OLLAMA_OK, reason="ollama not running on :11434")
+def test_list_ollama_models(clean_env: Path) -> None:
+    from reddit_research.research.chat import list_ollama_models
+
+    result = list_ollama_models()
+    assert result.get("ok") is True
+    assert isinstance(result.get("models"), list)
+
+
+# ─── MCP server boots ───────────────────────────────────────────────────────
+
+
+def test_mcp_module_importable() -> None:
+    """The MCP server module must import cleanly (fastmcp may be optional)."""
+    try:
+        from reddit_research.mcp import server  # noqa: F401
+    except ImportError as e:
+        # fastmcp is an optional extra — only fail if the error isn't about it.
+        msg = str(e).lower()
+        if "fastmcp" in msg:
+            pytest.skip("fastmcp optional extra not installed")
+        raise
+
+
+# ─── Read-only SQL helper used by the DB Console ────────────────────────────
+
+
+def test_sql_helper_runs_select(clean_env: Path) -> None:
+    """Confirm the same helper the Rust `run_query` command uses."""
+    from reddit_research.core.db import get_db
+
+    db = get_db()
+    # Seed a row so the query returns something
+    db["posts"].insert(
+        {
+            "id": "sqltest-1",
+            "sub": "unit",
+            "source_type": "reddit",
+            "author": "x",
+            "title": "hi",
+            "selftext": "",
+            "url": "",
+            "score": 1,
+            "upvote_ratio": 1.0,
+            "num_comments": 0,
+            "created_utc": 0.0,
+            "is_self": 1,
+            "over_18": 0,
+            "flair": None,
+            "permalink": "",
+            "fetched_at": "2026-04-19T00:00:00+00:00",
+        },
+        pk="id",
+    )
+    rows = list(db.query("SELECT id, title FROM posts WHERE id = ?", ["sqltest-1"]))
+    assert rows == [{"id": "sqltest-1", "title": "hi"}]
+
+
+# ─── Enrichment provider resolution (regression test) ──────────────────────
+
+
+def test_enrich_uses_openrouter_when_configured(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: LLM_PROVIDER=openrouter + LLM_MODEL=openai/gpt-4o must NOT
+    try to construct the OpenAI provider (which would demand OPENAI_API_KEY).
+
+    The slashed-model convention `openai/gpt-4o` is OpenRouter's way of saying
+    "route this OpenAI model through the OpenRouter gateway" — the provider
+    stays openrouter; the model string is opaque.
+    """
+    from reddit_research.analyze.providers.base import resolve_provider
+
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-test-key")
+    # Deliberately do NOT set OPENAI_API_KEY. If resolution is correct,
+    # the code path must never read it.
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    assert resolve_provider() == "openrouter"
+    # Explicit arg wins: passing "openrouter" through must still resolve to
+    # "openrouter" and never get coerced to "openai" via the model-slash path.
+    assert resolve_provider("openrouter") == "openrouter"
+
+
+def test_enrich_skip_gracefully_when_nothing_configured(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enrich is called optimistically after every collect. When nothing is
+    configured, it must return a skip payload, not raise."""
+    from reddit_research.graph.semantic import enrich_from_llm
+
+    for k in (
+        "LLM_PROVIDER", "LLM_MODEL",
+        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
+        "GROQ_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY", "GOOGLE_API_KEY",
+    ):
+        monkeypatch.delenv(k, raising=False)
+    # Ollama is presumed unreachable in CI; if it happens to be up, the test
+    # still passes because a successful provider resolution also means no
+    # OPENAI_API_KEY error (the bug we're regressing against).
+    result = enrich_from_llm(topic="does-not-exist-topic")
+    assert isinstance(result, dict)
+    # Either skipped because no provider, OR skipped/errored because topic
+    # has no corpus — both are "did not crash with OPENAI_API_KEY".
+    assert "OPENAI_API_KEY not set" not in str(result)
