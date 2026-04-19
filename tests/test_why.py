@@ -69,3 +69,50 @@ def test_extract_why_empty_evidence_returns_skip() -> None:
         provider="fake",
     )
     assert result == {"_skipped": True, "reason": "no_evidence"}
+
+
+def test_extract_why_for_topic_iterates_painpoints(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    """Per-topic loop: read painpoint nodes from DB, fetch their evidence
+    posts, call extract_why_for_painpoint per node, return list."""
+    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    from reddit_research.core import db as db_mod
+    db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
+    db = db_mod.get_db()
+
+    # Seed: 1 topic, 2 painpoints, 2 posts, evidence edges
+    from reddit_research.graph.schema import ensure_graph_schema, make_node_id
+    ensure_graph_schema()
+    topic = "focus"
+    pp1 = make_node_id(topic, "painpoint", "cant-focus")
+    pp2 = make_node_id(topic, "painpoint", "too-many-tabs")
+    post1 = make_node_id(topic, "post", "p1")
+    post2 = make_node_id(topic, "post", "p2")
+    db["graph_nodes"].insert_all([
+        {"id": pp1, "topic": topic, "kind": "painpoint", "label": "Can't focus", "metadata_json": "{}"},
+        {"id": pp2, "topic": topic, "kind": "painpoint", "label": "Too many tabs", "metadata_json": "{}"},
+        {"id": post1, "topic": topic, "kind": "post", "label": "p1", "metadata_json": "{}"},
+        {"id": post2, "topic": topic, "kind": "post", "label": "p2", "metadata_json": "{}"},
+    ], pk="id")
+    db["graph_edges"].insert_all([
+        {"src": pp1, "dst": post1, "kind": "evidenced_by", "topic": topic, "weight": 1.0, "metadata_json": "{}"},
+        {"src": pp2, "dst": post2, "kind": "evidenced_by", "topic": topic, "weight": 1.0, "metadata_json": "{}"},
+    ], pk=("src", "dst", "kind"))
+    # Seed posts table so evidence lookup finds them
+    db["posts"].insert_all([
+        {"id": "p1", "sub": "x", "author": "a", "title": "post 1 title", "selftext": "body 1",
+         "url": "", "score": 0, "upvote_ratio": None, "num_comments": 0, "created_utc": 0,
+         "is_self": 1, "over_18": 0, "flair": None, "permalink": "", "fetched_at": ""},
+        {"id": "p2", "sub": "x", "author": "a", "title": "post 2 title", "selftext": "body 2",
+         "url": "", "score": 0, "upvote_ratio": None, "num_comments": 0, "created_utc": 0,
+         "is_self": 1, "over_18": 0, "flair": None, "permalink": "", "fetched_at": ""},
+    ], pk="id", alter=True)
+
+    fake = FakeProvider({"emotions": ["fear"], "jtbd": {"struggling_moment": "x", "anxiety": "y", "desired_outcome": "z"}})
+    monkeypatch.setattr(why_mod, "get_provider", lambda _name=None: fake)
+
+    results = why_mod.extract_why_for_topic(topic=topic, provider="fake")
+    assert len(results) == 2
+    assert {r["painpoint_id"] for r in results} == {pp1, pp2}
+    assert all(r["why"]["emotions"] == ["fear"] for r in results)

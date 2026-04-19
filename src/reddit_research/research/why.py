@@ -59,3 +59,47 @@ def extract_why_for_painpoint(
         prompt=user, system=ext["system"], max_tokens=512, temperature=0.2
     )
     return _parse_json(raw)
+
+
+def _evidence_posts_for(db, topic: str, painpoint_id: str) -> list[dict[str, Any]]:
+    """Return up to 5 evidence posts for one painpoint by walking
+    `evidenced_by` edges from painpoint -> post and joining `posts`."""
+    rows = list(db.query(
+        """
+        SELECT p.id, p.title, p.selftext
+        FROM graph_edges e
+        JOIN graph_nodes n ON n.id = e.dst AND n.kind = 'post'
+        JOIN posts p ON p.id = substr(n.id, instr(n.id, '::post::') + 8)
+        WHERE e.src = :src AND e.kind = 'evidenced_by'
+        LIMIT 5
+        """,
+        {"src": painpoint_id},
+    ))
+    return rows
+
+
+def extract_why_for_topic(
+    topic: str,
+    provider: str | None = None,
+) -> list[dict[str, Any]]:
+    """Extract why-data for every painpoint in a topic.
+
+    Returns: [{painpoint_id, painpoint_label, why}, ...]
+    Painpoints with no evidence are skipped (why = {_skipped: True}).
+    """
+    from ..core.db import get_db
+    db = get_db()
+    pps = list(db.query(
+        "SELECT id, label FROM graph_nodes WHERE topic = :t AND kind = 'painpoint'",
+        {"t": topic},
+    ))
+    out = []
+    for pp in pps:
+        evidence = _evidence_posts_for(db, topic, pp["id"])
+        why = extract_why_for_painpoint(
+            painpoint_label=pp["label"],
+            evidence_posts=evidence,
+            provider=provider,
+        )
+        out.append({"painpoint_id": pp["id"], "painpoint_label": pp["label"], "why": why})
+    return out
