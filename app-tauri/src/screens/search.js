@@ -43,7 +43,18 @@ function renderRow(p) {
 
 function renderResults() {
   if (state.loading) {
-    return `<div class="empty-state">Searching Reddit…</div>`;
+    // Visible spinner + "this may take up to 10 s" hint. PRAW search can be
+    // slow on first call (token refresh + rate-limit dance); users hit
+    // Search again thinking the UI hung. Two-line copy makes the wait
+    // feel intentional.
+    return `
+      <div class="empty-state" style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px">
+        <div class="map-building-spinner"></div>
+        <div><b>Searching Reddit…</b></div>
+        <div style="font-size:12px;color:var(--ink-3)">
+          First call can take up to 10 s while PRAW refreshes its token.
+        </div>
+      </div>`;
   }
   if (state.error) {
     return `<div class="empty-state"><p>Error: ${esc(state.error)}</p></div>`;

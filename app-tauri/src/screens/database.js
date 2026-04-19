@@ -116,7 +116,22 @@ export async function renderDatabase(root) {
       renderResult(out, state.lastRows);
       if (state.lastRows.length) csvBtn.hidden = false;
     } catch (e) {
-      out.innerHTML = `<div class="db-error">✗ ${esc(e?.message || e)}</div>`;
+      // Parse sqlite's "near \"X\": syntax error" format into a friendlier
+      // two-line error with the offending token highlighted.
+      const raw = String(e?.message || e);
+      const nearMatch = raw.match(/near\s+"([^"]+)"/i);
+      const restart  = raw.match(/line\s+(\d+)/i);
+      const hint = [];
+      if (nearMatch) hint.push(`offending token: <code>${esc(nearMatch[1])}</code>`);
+      if (restart)   hint.push(`line ${esc(restart[1])}`);
+      const hintHtml = hint.length
+        ? `<div style="font-size:12px;color:var(--ink-3);margin-top:6px">${hint.join(' · ')}</div>`
+        : '';
+      // Gentle nudge toward the most common mistake in this read-only console.
+      const ro = /only SELECT|forbidden keyword/i.test(raw)
+        ? `<div style="font-size:12px;color:var(--ink-3);margin-top:6px">This console is read-only (SELECT / WITH / PRAGMA / EXPLAIN). Mutations are blocked on purpose.</div>`
+        : '';
+      out.innerHTML = `<div class="db-error">✗ ${esc(raw)}${hintHtml}${ro}</div>`;
     }
   };
   runBtn.onclick = runQuery;

@@ -107,20 +107,22 @@ window.addEventListener('DOMContentLoaded', async () => {
     try { await api.cliInfo(); } catch {}
   })();
 
-  // Fetch sidebar counts in the background (non-blocking).
-  (async () => {
+  // Sidebar counts — api.listTopics is cached in api.js, so this is cheap
+  // on every call, but wrap it in `refreshNavCounts` so collect:done can
+  // re-run it without a page reload. Called once at boot and on db-changed.
+  const refreshNavCounts = async () => {
     try {
       const topics = await api.listTopics();
       if (Array.isArray(topics)) {
-        $('#nav-topics-count').textContent = topics.length;
-        $('#nav-dash-count').textContent = topics.length;
-        // Re-check: first-ever user with no topics AND not marked onboarded.
-        if (!isOnboardingComplete() && topics.length === 0) {
-          // Already on /welcome from above — keep it.
-        }
+        const n = topics.length;
+        const a = $('#nav-topics-count'); if (a) a.textContent = n;
+        const b = $('#nav-dash-count');   if (b) b.textContent = n;
       }
     } catch {}
-  })();
+  };
+  refreshNavCounts();
+  // Re-fire when the sidecar / freshness-poller reports external DB writes.
+  window.addEventListener('gapmap:db-changed', refreshNavCounts);
 });
 
 // Helper — does the user have any LLM provider ready? Used by the new-topic

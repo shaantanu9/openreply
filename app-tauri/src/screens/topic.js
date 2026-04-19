@@ -117,8 +117,20 @@ const GROUP_LABELS = {
   apps:    'App stores',
 };
 
+// Per-topic cache for the source-picker modal. Re-opening the modal for
+// the same topic was re-firing this SQL every time (one sidecar spawn
+// per open). 60 s TTL — a fresh collect that just added a new source
+// will show up after the modal auto-refreshes on navigation; within a
+// modal session the cache is authoritative.
+const _existingSourcesCache = new Map(); // topic → { set, ts }
+const _EXISTING_SOURCES_TTL_MS = 60_000;
+
 async function detectExistingSources(topic) {
   // Returns Set<sourceId> of sources that already have posts for this topic.
+  const cached = _existingSourcesCache.get(topic);
+  if (cached && Date.now() - cached.ts < _EXISTING_SOURCES_TTL_MS) {
+    return cached.set;
+  }
   try {
     const rows = await api.runQuery(
       `SELECT DISTINCT coalesce(p.source_type, 'reddit') AS src
@@ -126,7 +138,9 @@ async function detectExistingSources(topic) {
          WHERE tp.topic = :topic`,
       topic,
     );
-    return new Set((rows || []).map(r => (r.src || 'reddit').toLowerCase()));
+    const set = new Set((rows || []).map(r => (r.src || 'reddit').toLowerCase()));
+    _existingSourcesCache.set(topic, { set, ts: Date.now() });
+    return set;
   } catch (e) {
     console.warn('detectExistingSources failed:', e);
     return new Set();

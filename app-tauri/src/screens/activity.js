@@ -272,8 +272,22 @@ function renderTable(root) {
     <button class="btn btn-ghost" style="border:1px solid var(--line);padding:8px 14px;font-size:12px" ${state.page >= pages - 1 ? 'disabled' : ''}>Next →</button>
   `;
   const [prev, _mid, next] = pager.querySelectorAll('button, span');
-  prev.onclick = () => { state.page = Math.max(0, state.page - 1); loadPage(root); };
-  next.onclick = () => { state.page = Math.min(pages - 1, state.page + 1); loadPage(root); };
+  // Dedup rapid-click: disable the button the moment it fires and let the
+  // next renderTable() pass re-enable it (or keep it disabled if we hit
+  // the page boundary). Prevents a spam-click from spawning concurrent
+  // sidecar SQL queries.
+  prev.onclick = () => {
+    if (prev.disabled || state.loading) return;
+    prev.disabled = true;
+    state.page = Math.max(0, state.page - 1);
+    loadPage(root);
+  };
+  next.onclick = () => {
+    if (next.disabled || state.loading) return;
+    next.disabled = true;
+    state.page = Math.min(pages - 1, state.page + 1);
+    loadPage(root);
+  };
 }
 
 function filterSummary() {
