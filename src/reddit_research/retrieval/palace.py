@@ -334,15 +334,28 @@ def related_posts(post_id: str, *, k: int = 10, topic: str | None = None) -> dic
     except Exception as e:
         return {"ok": False, "error": str(e), "results": []}
 
-    docs = got_item.get("documents") or []
-    embs = got_item.get("embeddings") or []
+    # Chromadb returns `embeddings` as a numpy array when present, so the
+    # old `X or []` shortcut raises "truth value of an array is ambiguous".
+    # Probe length/shape explicitly and fall back to re-embedding the text.
+    docs_raw = got_item.get("documents")
+    embs_raw = got_item.get("embeddings")
+    docs = list(docs_raw) if docs_raw is not None else []
     if not docs:
         return {"ok": True, "results": [], "reason": f"post {post_id} not indexed"}
 
+    # Pull out the first embedding if the array is non-empty.
+    first_emb = None
+    if embs_raw is not None:
+        try:
+            if hasattr(embs_raw, "__len__") and len(embs_raw) > 0:
+                first_emb = embs_raw[0]
+        except Exception:
+            first_emb = None
+
     where = {"topic": topic} if topic else None
     try:
-        if embs and embs[0] is not None:
-            raw = coll.query(query_embeddings=[embs[0]], n_results=k + 1, where=where)
+        if first_emb is not None:
+            raw = coll.query(query_embeddings=[first_emb], n_results=k + 1, where=where)
         else:
             raw = coll.query(query_texts=[docs[0]], n_results=k + 1, where=where)
     except Exception as e:
