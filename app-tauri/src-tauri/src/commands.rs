@@ -253,6 +253,19 @@ pub async fn run_temporal_gaps(app: AppHandle, topic: String) -> Result<Value, S
     .map_err(err_to_string)
 }
 
+/// Quick-extract — runs `research gaps` for a topic without building the
+/// graph. Returns the 4-category JSON for preview only. Use enrich_graph
+/// to persist the results into the knowledge graph.
+#[tauri::command]
+pub async fn quick_extract_gaps(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "gaps", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 /// Export the gap-map HTML for a topic. Returns absolute path.
 #[tauri::command]
 pub async fn export_html(app: AppHandle, topic: String) -> Result<String, String> {

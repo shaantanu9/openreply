@@ -218,6 +218,7 @@ export const api = {
   dbMtime:            ()     => invoke('db_mtime'),
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic) => invoke('run_temporal_gaps', { topic }),
+  quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
 
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),

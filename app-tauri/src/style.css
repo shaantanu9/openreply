@@ -1972,3 +1972,37 @@ kbd {
 .trends-evidence { font-size: 12px; color: var(--ink-2); font-style: italic; margin: 4px 0 6px; line-height: 1.45; }
 .trends-freq { font-size: 11px; color: var(--ink-3); display: flex; gap: 14px; }
 .trends-freq b { color: var(--ink); font-weight: 700; }
+
+/* ─── Quick-extract preview panel (Actions tab) ─── */
+.quick-extract-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.quick-extract-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--surface);
+}
+.quick-extract-section summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.quick-extract-body {
+  padding: 4px 12px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.quick-extract-item {
+  background: var(--surface-2); border-radius: 6px;
+  padding: 8px 10px; font-size: 12.5px;
+}
+.quick-extract-item.parse-err { color: #B84747; font-style: italic; }
+.quick-extract-title { font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.quick-extract-freq {
+  display: inline-block; padding: 1px 6px; border-radius: 999px;
+  background: var(--orange-soft); color: #B85A1E; font-size: 10.5px; font-weight: 700;
+}
+.quick-extract-ev { font-size: 11.5px; color: var(--ink-2); font-style: italic; margin-top: 4px; line-height: 1.45; }

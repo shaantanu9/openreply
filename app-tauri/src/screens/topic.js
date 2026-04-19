@@ -86,6 +86,47 @@ function errorCard(title, detail, actions = []) {
       </div>
     </div>`;
 }
+function renderQuickExtract(result) {
+  if (!result || typeof result !== 'object') {
+    return `<div class="muted" style="padding:8px">No result.</div>`;
+  }
+  if (result.error) {
+    return `<div class="error-card-detail" style="padding:8px">${esc(result.error)}</div>`;
+  }
+  if (result.skipped) {
+    return `<div class="muted" style="padding:8px">Skipped: ${esc(result.reason || 'no LLM provider')}. Add a key in Settings.</div>`;
+  }
+  const sections = [
+    { key: 'painpoints',         label: 'Pain points',        labelField: 'painpoint',  ev: 'evidence' },
+    { key: 'feature_wishes',     label: 'Feature wishes',     labelField: 'feature',    ev: 'user_quote' },
+    { key: 'product_complaints', label: 'Product complaints', labelField: 'product',    ev: 'complaint' },
+    { key: 'diy_workarounds',    label: 'DIY workarounds',    labelField: 'workaround', ev: 'user_quote' },
+  ];
+  const html = sections.map(s => {
+    const list = Array.isArray(result[s.key]) ? result[s.key] : [];
+    const items = list.length === 0
+      ? `<div class="muted" style="padding:6px 0">none extracted</div>`
+      : list.map(it => {
+          if (it && it._parse_error) {
+            return `<div class="quick-extract-item parse-err">parse error — see raw output</div>`;
+          }
+          const title = esc(it?.[s.labelField] || it?.title || '(unnamed)');
+          const ev = it?.[s.ev] ? `<div class="quick-extract-ev">"${esc(it[s.ev])}"</div>` : '';
+          const freq = it?.frequency != null ? `<span class="quick-extract-freq">×${it.frequency}</span>` : '';
+          return `<div class="quick-extract-item"><div class="quick-extract-title">${title}${freq}</div>${ev}</div>`;
+        }).join('');
+    return `
+      <details class="quick-extract-section" ${list.length > 0 ? 'open' : ''}>
+        <summary>${s.label} <span class="muted">(${list.length})</span></summary>
+        <div class="quick-extract-body">${items}</div>
+      </details>
+    `;
+  }).join('');
+  return `
+    <p class="muted" style="font-size:11px;margin:0 0 8px">Preview only — run <b>Build &amp; enrich</b> to persist these into the graph.</p>
+    ${html}
+  `;
+}
 function wireErrorCard(containerEl, actions) {
   containerEl.querySelectorAll('[data-eci]').forEach(btn => {
     const idx = parseInt(btn.dataset.eci, 10);
@@ -136,6 +177,7 @@ export async function renderTopic(root, { params }) {
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
       <button class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
       <button class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
+      <button class="tab" data-tab="research"><i data-lucide="book-open"></i> Research</button>
       <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
       <button class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
       <button class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
@@ -624,6 +666,153 @@ export async function renderTopic(root, { params }) {
     }
   }
 
+  // ─── Research (academic papers + ingested PDFs) ───────────────────────
+  // Shows arxiv / openalex / pubmed / scholar / ingest rows as first-class
+  // cards with title + abstract preview + citation count + open-link button.
+  // Only these sources surface here — Reddit lives in its own tabs.
+  const ACADEMIC_SOURCES = ['arxiv', 'openalex', 'pubmed', 'scholar', 'ingest'];
+  const SRC_LABELS = {
+    arxiv: 'arXiv', openalex: 'OpenAlex', pubmed: 'PubMed',
+    scholar: 'Semantic Scholar', ingest: 'Ingested docs',
+  };
+  const SRC_BADGE_COLORS = {
+    arxiv:    { bg: '#FBE3E6', fg: '#B84747' },
+    openalex: { bg: '#EFE7FB', fg: '#6E4DB3' },
+    pubmed:   { bg: '#E4F0FA', fg: '#1F5C99' },
+    scholar:  { bg: '#E1F2EA', fg: '#2E7D5B' },
+    ingest:   { bg: '#FBF1D4', fg: '#8A5A1A' },
+  };
+  let researchVisible = {};  // per-source visible count
+
+  async function loadResearch() {
+    contentEl.innerHTML = skeletonCards(3);
+    try {
+      const placeholders = ACADEMIC_SOURCES.map(() => '?').join(',');
+      const rows = await api.runQuery(
+        `SELECT p.id, p.title, p.url, p.permalink, p.author,
+                p.score, p.num_comments, p.created_utc, p.sub,
+                coalesce(p.source_type,'reddit') AS source,
+                substr(coalesce(p.selftext,''),1,400) AS excerpt
+         FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
+         WHERE tp.topic=:topic AND coalesce(p.source_type,'reddit') IN (${placeholders})
+         ORDER BY coalesce(p.score,0) DESC, p.created_utc DESC`,
+        topic,
+        Object.fromEntries(ACADEMIC_SOURCES.map((s, i) => [`__${i}`, s])),
+      ).catch(async () => {
+        // api.runQuery can't bind IN-list via named params in all drivers.
+        // Retry with a client-side filter — slower but always works.
+        const all = await api.runQuery(
+          `SELECT p.id, p.title, p.url, p.permalink, p.author,
+                  p.score, p.num_comments, p.created_utc, p.sub,
+                  coalesce(p.source_type,'reddit') AS source,
+                  substr(coalesce(p.selftext,''),1,400) AS excerpt
+           FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
+           WHERE tp.topic=:topic AND coalesce(p.source_type,'reddit') != 'reddit'
+           ORDER BY coalesce(p.score,0) DESC, p.created_utc DESC`,
+          topic,
+        );
+        return (all || []).filter(r => ACADEMIC_SOURCES.includes(r.source));
+      });
+
+      if (!rows || !rows.length) {
+        contentEl.innerHTML = `
+          <div class="empty-big">
+            <h3>No research yet</h3>
+            <p>Collect a topic with academic sources to populate this tab — arXiv, OpenAlex, PubMed, or Semantic Scholar. You can also drag a PDF into the Ingest screen to add your own papers and reports.</p>
+            <div style="display:flex;gap:10px;justify-content:center;margin-top:14px">
+              <button class="btn btn-primary" id="btn-research-collect">Rerun collect with --sources arxiv</button>
+              <button class="btn btn-ghost btn-bordered" id="btn-research-ingest">Ingest a PDF</button>
+            </div>
+          </div>`;
+        $('#btn-research-collect')?.addEventListener('click', () => {
+          location.hash = `#/collect/${encodeURIComponent(topic)}`;
+        });
+        $('#btn-research-ingest')?.addEventListener('click', () => {
+          location.hash = '#/ingest';
+        });
+        return;
+      }
+
+      // Group by source
+      const grouped = {};
+      for (const r of rows) {
+        (grouped[r.source] = grouped[r.source] || []).push(r);
+      }
+
+      const paperCard = (r) => {
+        const c = SRC_BADGE_COLORS[r.source] || { bg: 'var(--surface-2)', fg: 'var(--ink-2)' };
+        const badge = `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;letter-spacing:.03em">${esc(SRC_LABELS[r.source] || r.source)}</span>`;
+        const title = esc((r.title || '(untitled)').slice(0, 160));
+        const excerpt = esc((r.excerpt || '').trim().slice(0, 260));
+        const url = r.url || r.permalink || '';
+        const cites = r.source === 'scholar' || r.source === 'openalex'
+          ? (r.score ? `${r.score.toLocaleString()} cites · ` : '')
+          : '';
+        const date = r.created_utc
+          ? new Date(r.created_utc * 1000).toISOString().slice(0, 10)
+          : '';
+        const author = (r.author || '').trim();
+        const authorStr = (author && author !== '[deleted]' && author !== '[pdf]' && author !== '[local]')
+          ? `<span style="color:var(--ink-3)"> · ${esc(author.slice(0, 60))}</span>`
+          : '';
+        const openBtn = url
+          ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" data-open="${esc(url)}" title="Open source"><i data-lucide="external-link"></i> Open</button>`
+          : '';
+        return `
+          <div class="card" style="margin-bottom:10px;padding:14px 18px">
+            <div style="display:flex;gap:10px;align-items:flex-start">
+              <div style="flex:1;min-width:0">
+                <div style="margin-bottom:6px">${badge}<span style="color:var(--ink-3);font-size:11px;margin-left:8px">${cites}${esc(date)}${authorStr}</span></div>
+                <h4 style="font-size:14px;font-weight:700;line-height:1.35;margin-bottom:4px">${title}</h4>
+                ${excerpt ? `<p style="font-size:12px;color:var(--ink-2);line-height:1.5">${excerpt}…</p>` : ''}
+              </div>
+              <div style="flex-shrink:0">${openBtn}</div>
+            </div>
+          </div>`;
+      };
+
+      const html = ACADEMIC_SOURCES.filter(s => grouped[s]).map(src => {
+        const items = grouped[src];
+        const cap = researchVisible[src] || 10;
+        const visible = Math.min(cap, items.length);
+        const more = items.length - visible;
+        return `
+          <div class="card" style="margin-bottom:14px;padding:0">
+            <div class="card-head">
+              <div>
+                <h3>${esc(SRC_LABELS[src] || src)} <span style="color:var(--ink-3);font-weight:500;font-size:12px">· ${items.length} item${items.length === 1 ? '' : 's'}</span></h3>
+                <p>Click any card's Open button to read the full source.</p>
+              </div>
+            </div>
+            <div style="padding:14px 18px 4px">
+              ${items.slice(0, visible).map(paperCard).join('')}
+              ${more > 0 ? `<button class="show-more-btn" data-more-src="${esc(src)}">Show ${Math.min(more, 10)} more · ${more} hidden</button>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+
+      contentEl.innerHTML = html;
+
+      contentEl.querySelectorAll('[data-open]').forEach(btn => {
+        btn.onclick = () => {
+          const url = btn.dataset.open;
+          if (url) api.openUrl(url);
+        };
+      });
+      contentEl.querySelectorAll('[data-more-src]').forEach(btn => {
+        btn.onclick = () => {
+          const s = btn.dataset.moreSrc;
+          researchVisible[s] = (researchVisible[s] || 10) + 10;
+          loadResearch();
+        };
+      });
+    } catch (e) {
+      const actions = [{ label: 'Retry', primary: true, onClick: () => loadResearch() }];
+      contentEl.innerHTML = errorCard('Could not load research', e?.message || String(e), actions);
+      wireErrorCard(contentEl, actions);
+    }
+  }
+
   // ─── Chat ─────────────────────────────────────────────────────────────
   const PRESETS = [
     { mode: 'ask',      icon: 'help-circle',   label: 'Ask anything',    desc: 'Free-form question about this topic' },
@@ -970,6 +1159,20 @@ export async function renderTopic(root, { params }) {
         </div>
       </div>
     `;
+    const quickHtml = `
+      <div class="settings-card" style="margin-top:14px">
+        <h4><i data-lucide="zap"></i> Quick tools</h4>
+        <p class="muted" style="font-size:12px;margin-bottom:10px">
+          Preview-only LLM extraction without building the full graph. Use this to sniff-test LLM output before committing to a full <b>Build &amp; enrich</b>.
+        </p>
+        <button class="btn btn-primary btn-sm icon-btn" id="btn-quick-extract">
+          <i data-lucide="zap"></i> Quick extract gaps
+        </button>
+        <div id="quick-extract-status" class="muted" style="margin-top:8px;font-size:12px"></div>
+        <div id="quick-extract-panel" class="quick-extract-panel" hidden></div>
+      </div>
+    `;
+    contentEl.querySelector('.settings-grid').insertAdjacentHTML('afterend', quickHtml);
     contentEl.querySelector('[data-route="collect"]').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
     contentEl.querySelector('[data-route="ingest"]').onclick  = () => { location.hash = '#/ingest'; };
     $('#btn-export-html').onclick = async () => {
@@ -990,12 +1193,28 @@ export async function renderTopic(root, { params }) {
         location.hash = '#/';
       } catch (e) { showToast('Delete failed', e?.message || String(e), 'err'); }
     };
+    $('#btn-quick-extract', contentEl)?.addEventListener('click', async () => {
+      const status = $('#quick-extract-status', contentEl);
+      const panel  = $('#quick-extract-panel', contentEl);
+      status.textContent = 'Extracting… 30-90 seconds.';
+      panel.hidden = true;
+      try {
+        const result = await api.quickExtractGaps(topic);
+        status.textContent = '';
+        panel.hidden = false;
+        panel.innerHTML = renderQuickExtract(result);
+        window.refreshIcons?.();
+      } catch (e) {
+        status.textContent = `Error: ${e?.message || e}`;
+      }
+    });
+    window.refreshIcons?.();
   }
 
   // ─── tab switching ────────────────────────────────────────────────────
   const loaders = {
     map: loadMap, report: loadReport, evidence: loadEvidence,
-    sources: loadSources, chat: loadChat, actions: loadActions,
+    sources: loadSources, research: loadResearch, chat: loadChat, actions: loadActions,
     solutions: () => loadSolutions(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
   };

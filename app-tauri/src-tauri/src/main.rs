@@ -4,7 +4,7 @@
 mod cli;
 mod commands;
 
-use cli::{ActiveChat, ActiveJob};
+use cli::{ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid};
 
 fn main() {
     tauri::Builder::default()
@@ -12,6 +12,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(ActiveJob::default())
         .manage(ActiveChat::default())
+        .manage(ActiveJobPid::default())
+        .manage(ActiveChatPid::default())
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
             commands::list_topics,
@@ -42,6 +44,7 @@ fn main() {
             commands::list_ollama_models,
             commands::run_solutions_pipeline,
             commands::run_temporal_gaps,
+            commands::quick_extract_gaps,
             commands::ollama_start_service,
             commands::ollama_stop_service,
             commands::close_splash,
