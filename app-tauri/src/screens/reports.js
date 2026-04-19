@@ -42,8 +42,8 @@ export async function renderReports(root) {
     <div class="reports-toolbar">
       <div class="reports-filters">
         <button class="pill active" data-filter="all">All</button>
-        <button class="pill" data-filter="html">🕸 HTML</button>
-        <button class="pill" data-filter="md">📄 Markdown</button>
+        <button class="pill" data-filter="html"><i data-lucide="globe"></i> HTML</button>
+        <button class="pill" data-filter="md"><i data-lucide="file-text"></i> Markdown</button>
       </div>
       <input type="text" id="reports-search" placeholder="search name…" class="reports-search" />
     </div>
@@ -64,6 +64,7 @@ export async function renderReports(root) {
     await api.revealInFinder(dir);
   };
   root.querySelector('#btn-refresh').onclick = () => loadList(root);
+  window.refreshIcons?.();
 
   root.querySelectorAll('.reports-filters .pill').forEach(p => {
     p.onclick = () => {
@@ -117,7 +118,7 @@ function renderList(root) {
     const active = state.previewPath === f.path ? 'active' : '';
     return `
       <div class="report-item ${active}" data-path="${esc(f.path)}" data-ext="${esc(f.ext)}">
-        <div class="report-ic ${isHtml ? '' : 'md'}">${isHtml ? '🕸' : '📄'}</div>
+        <div class="report-ic ${isHtml ? '' : 'md'}"><i data-lucide="${isHtml ? 'globe' : 'file-text'}"></i></div>
         <div class="report-body">
           <div class="report-title">${esc(f.name)}</div>
           <div class="report-meta">${fmtSize(f.size)} · ${esc(timeAgo(new Date(f.modified * 1000).toISOString()))}</div>
@@ -129,6 +130,7 @@ function renderList(root) {
         </div>
       </div>`;
   }).join('');
+  window.refreshIcons?.();
 
   list.querySelectorAll('.report-item').forEach(item => {
     const path = item.dataset.path;

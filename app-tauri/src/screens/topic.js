@@ -45,9 +45,9 @@ function showToast(title, detail = '', kind = 'err', ms = 5000) {
   const stack = ensureToastStack();
   const el = document.createElement('div');
   el.className = `toast toast-${kind}`;
-  const icMap = { err: '✗', warn: '⚠', ok: '✓' };
+  const icMap = { err: 'x-circle', warn: 'alert-triangle', ok: 'check-circle-2' };
   el.innerHTML = `
-    <span class="toast-ic">${icMap[kind] || '•'}</span>
+    <span class="toast-ic"><i data-lucide="${icMap[kind] || 'info'}"></i></span>
     <div class="toast-body">
       <div class="toast-title">${esc(title)}</div>
       ${detail ? `<div style="color:var(--ink-3);font-size:12px">${esc(detail)}</div>` : ''}
@@ -71,12 +71,13 @@ function skeletonCards(n = 2) {
   return Array(n).fill(card).join('');
 }
 function errorCard(title, detail, actions = []) {
-  const btns = actions.map((a, i) =>
-    `<button class="btn ${a.primary ? 'btn-primary' : 'btn-ghost btn-bordered'} btn-sm" data-eci="${i}">${esc(a.label)}</button>`
-  ).join('');
+  const btns = actions.map((a, i) => {
+    const iconHtml = a.icon ? `<i data-lucide="${esc(a.icon)}"></i> ` : '';
+    return `<button class="btn ${a.primary ? 'btn-primary' : 'btn-ghost btn-bordered'} btn-sm icon-btn" data-eci="${i}">${iconHtml}${esc(a.label)}</button>`;
+  }).join('');
   return `
     <div class="error-card">
-      <div class="error-card-ic">✗</div>
+      <div class="error-card-ic"><i data-lucide="x-circle"></i></div>
       <div class="error-card-body">
         <div class="error-card-title">${esc(title)}</div>
         <div class="error-card-detail">${esc(detail || '')}</div>
@@ -90,6 +91,7 @@ function wireErrorCard(containerEl, actions) {
     if (!Number.isFinite(idx)) return;
     btn.onclick = () => actions[idx]?.onClick?.();
   });
+  window.refreshIcons?.();
 }
 
 export async function renderTopic(root, { params }) {
@@ -128,13 +130,13 @@ export async function renderTopic(root, { params }) {
     </div>
 
     <div class="tabs" id="topic-tabs">
-      <button class="tab active" data-tab="map">🕸 Map</button>
-      <button class="tab" data-tab="report">📄 Report</button>
-      <button class="tab" data-tab="evidence">🔎 Evidence</button>
-      <button class="tab" data-tab="sources">◈ Sources</button>
-      <button class="tab" data-tab="chat">💬 Chat</button>
-      <button class="tab" data-tab="solutions">🧪 Solutions</button>
-      <button class="tab" data-tab="actions">⚡ Actions</button>
+      <button class="tab active" data-tab="map"><i data-lucide="network"></i> Map</button>
+      <button class="tab" data-tab="report"><i data-lucide="file-text"></i> Report</button>
+      <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
+      <button class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
+      <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
+      <button class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
+      <button class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
     </div>
 
     <div id="tab-content"><div class="empty-state">loading…</div></div>
@@ -142,6 +144,7 @@ export async function renderTopic(root, { params }) {
 
   const tabsEl = $('#topic-tabs');
   const contentEl = $('#tab-content');
+  window.refreshIcons?.();
 
   // Fetch header counts + sub text once — non-blocking.
   (async () => {
@@ -424,7 +427,7 @@ export async function renderTopic(root, { params }) {
       $('#btn-regen-md').onclick  = () => loadReport();
     } catch (e) {
       const actions = [
-        { label: '↻ Retry',       primary: true,  onClick: () => loadReport() },
+        { label: 'Retry',         icon: 'refresh-cw', primary: true,  onClick: () => loadReport() },
         { label: 'Build gap map', primary: false, onClick: () => switchTab('map') },
         { label: 'Add LLM key',   primary: false, onClick: () => openByokModal(() => loadReport()) },
       ];
@@ -503,7 +506,7 @@ export async function renderTopic(root, { params }) {
       $('#btn-ev-keys')?.addEventListener('click', () => openByokModal(() => loadEvidence()));
     } catch (e) {
       const actions = [
-        { label: '↻ Retry',      primary: true, onClick: () => loadEvidence() },
+        { label: 'Retry',       icon: 'refresh-cw', primary: true, onClick: () => loadEvidence() },
         { label: 'Add LLM key',              onClick: () => openByokModal(() => loadEvidence()) },
       ];
       contentEl.innerHTML = errorCard('Could not load evidence', e?.message || String(e), actions);
@@ -576,7 +579,7 @@ export async function renderTopic(root, { params }) {
         loadSources();
       });
     } catch (e) {
-      const actions = [{ label: '↻ Retry', primary: true, onClick: () => loadSources() }];
+      const actions = [{ label: 'Retry', icon: 'refresh-cw', primary: true, onClick: () => loadSources() }];
       contentEl.innerHTML = errorCard('Could not load sources', e?.message || String(e), actions);
       wireErrorCard(contentEl, actions);
     }
@@ -965,6 +968,7 @@ export async function renderTopic(root, { params }) {
     activeTab = name;
     tabsEl.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     await loaders[name]?.();
+    window.refreshIcons?.();
   };
 
   tabsEl.querySelectorAll('.tab').forEach(t => {

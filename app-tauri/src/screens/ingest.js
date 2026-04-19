@@ -38,7 +38,7 @@ export async function renderIngest(root) {
           <label>File</label>
           <div class="ingest-drop" id="drop-zone" role="button" tabindex="0">
             <div id="drop-empty">
-              <div class="ingest-drop-ic">📄</div>
+              <div class="ingest-drop-ic"><i data-lucide="file-up"></i></div>
               <b>Choose a file</b>
               <span>CSV · JSON · TXT · VTT · SRT · MD — max 10 MB</span>
             </div>
@@ -99,6 +99,7 @@ export async function renderIngest(root) {
       </aside>
     </div>
   `;
+  window.refreshIcons?.();
 
   // State
   let chosenPath = null;

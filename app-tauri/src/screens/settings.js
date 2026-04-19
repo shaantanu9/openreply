@@ -163,7 +163,7 @@ export async function renderSettings(root) {
 
       <!-- Danger -->
       <div class="settings-card" style="border-color:#F5DADA;background:#FFFBFB">
-        <h4 style="color:#B84747">⚠ Danger zone</h4>
+        <h4 style="color:#B84747"><i data-lucide="alert-triangle"></i> Danger zone</h4>
         <p>These actions can't be undone.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn btn-danger btn-sm" id="btn-clear-profile">Clear profile</button>

@@ -64,7 +64,7 @@ function renderEmpty(topic) {
     <div class="empty-state">
       <p>No solutions yet for <b>${escape(topic)}</b>.</p>
       <p>Run the pipeline to generate science-backed interventions for each painpoint.</p>
-      <button class="btn primary" id="btn-run-solutions">▶ Run solutions pipeline</button>
+      <button class="btn primary" id="btn-run-solutions"><i data-lucide="play"></i> Run solutions pipeline</button>
       <div id="solutions-status" class="muted"></div>
     </div>
   `;
@@ -144,6 +144,7 @@ export async function loadSolutions(contentEl, topic) {
 
   if (!haveSolutions) {
     contentEl.innerHTML = renderEmpty(topic);
+    window.refreshIcons?.();
     $('#btn-run-solutions', contentEl)?.addEventListener('click', async () => {
       const status = $('#solutions-status', contentEl);
       status.textContent = 'Running… this may take 1-3 minutes.';
@@ -174,11 +175,12 @@ export async function loadSolutions(contentEl, topic) {
   contentEl.innerHTML = `
     <div class="solutions-tab">
       <div class="solutions-toolbar">
-        <button class="btn" id="btn-rerun-solutions">↻ Re-run pipeline</button>
+        <button class="btn" id="btn-rerun-solutions"><i data-lucide="refresh-cw"></i> Re-run pipeline</button>
       </div>
       <div class="solutions-list">${cards.join('')}</div>
     </div>
   `;
+  window.refreshIcons?.();
 
   $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
     contentEl.innerHTML = '<div class="empty-state">Re-running…</div>';
