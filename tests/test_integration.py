@@ -373,3 +373,121 @@ def test_canonicalize_is_cached(
     assert call_count["n"] == 1, (
         f"expected 1 LLM call, got {call_count['n']} — cache not working"
     )
+
+
+# ─── discover_subs return-shape regression ────────────────────────────────
+
+
+def test_discover_subs_direct_match_shape(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Well-formed topic with strong name matches → no confirmation needed."""
+    from reddit_research.research import discover as discover_mod
+
+    for k in ("LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    def fake_search(query, limit=25):
+        return [
+            {
+                "display_name": "nutrition",
+                "title": "Nutrition",
+                "public_description": "Nutrition discussion",
+                "subscribers": 500_000,
+                "subreddit_type": "public",
+                "over18": False,
+            },
+            {
+                "display_name": "loseit",
+                "title": "loseit",
+                "public_description": "Losing weight via calorie tracking",
+                "subscribers": 3_000_000,
+                "subreddit_type": "public",
+                "over18": False,
+            },
+        ]
+    monkeypatch.setattr(discover_mod, "_search_raw", fake_search)
+
+    result = discover_mod.discover_subs("nutrition tracking")
+    assert isinstance(result, dict)
+    assert "subs" in result
+    assert "confirmation" in result
+    c = result["confirmation"]
+    assert c["original_topic"] == "nutrition tracking"
+    assert c["auto_corrected"] is False
+
+
+def test_discover_subs_weak_relevance_flags_modal(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zero token-in-name matches → needs_confirmation=True."""
+    from reddit_research.research import discover as discover_mod
+
+    for k in ("LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    def fake_search(query, limit=25):
+        return [
+            {
+                "display_name": "programming",
+                "title": "programming",
+                "public_description": "random",
+                "subscribers": 1_000_000,
+                "subreddit_type": "public",
+                "over18": False,
+            },
+        ]
+    monkeypatch.setattr(discover_mod, "_search_raw", fake_search)
+
+    result = discover_mod.discover_subs("xyzqvw random")
+    c = result["confirmation"]
+    assert c["needs_confirmation"] is True
+    assert c["reason"] in ("weak_sub_relevance", "low_confidence_canonicalization")
+
+
+def test_discover_subs_auto_corrected_flag(
+    clean_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """High-confidence LLM correction → auto_corrected=True, no modal."""
+    import json
+    from reddit_research.research import discover as discover_mod
+
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
+
+    def fake_llm(topic):
+        return json.dumps({
+            "canonical": "calorie tracking app",
+            "variants": ["macro tracking", "food log"],
+            "confidence": "high",
+        })
+    monkeypatch.setattr(discover_mod, "_llm_canonical_call", fake_llm)
+
+    def fake_search(query, limit=25):
+        return [
+            {
+                "display_name": "caloriecounters",
+                "title": "Calorie counters",
+                "public_description": "count your calories",
+                "subscribers": 200_000,
+                "subreddit_type": "public",
+                "over18": False,
+            },
+            {
+                "display_name": "loseit",
+                "title": "loseit",
+                "public_description": "calorie tracking community",
+                "subscribers": 3_000_000,
+                "subreddit_type": "public",
+                "over18": False,
+            },
+        ]
+    monkeypatch.setattr(discover_mod, "_search_raw", fake_search)
+
+    result = discover_mod.discover_subs("calari tracking app")
+    c = result["confirmation"]
+    assert c["auto_corrected"] is True
+    assert c["canonical_topic"] == "calorie tracking app"
+    assert c["original_topic"] == "calari tracking app"
+    assert c["needs_confirmation"] is False
+    assert c["reason"] == "high_confidence_typo_correction"
