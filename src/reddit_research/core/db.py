@@ -272,6 +272,18 @@ def init_schema(db: Database) -> None:
         db["graph_edges"].create_index(["dst"])
         db["graph_edges"].create_index(["kind"])
 
+    if "topic_canonicalizations" not in db.table_names():
+        db["topic_canonicalizations"].create(
+            {
+                "original": str,
+                "canonical": str,
+                "variants_json": str,   # json.dumps of list[str]
+                "confidence": str,      # 'high' | 'low' | 'unknown'
+                "ts": str,              # ISO UTC
+            },
+            pk="original",
+        )
+
 
 # ── Fetch audit log ──────────────────────────────────────────────────────────
 
