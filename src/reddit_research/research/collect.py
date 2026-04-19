@@ -85,6 +85,7 @@ def collect(
     historical_limit_per_sub: int = 500,
     aggressive: bool = False,
     sources: list[str] | None = None,  # extra sources: hn/appstore/playstore/scholar/stackoverflow/trends
+    skip_reddit: bool = False,  # skip Reddit fetch stages (2+3); useful for external-only reruns
     progress=None,  # optional callable(message: str) for CLI progress
 ) -> CollectResult:
     """Run the full collection for a topic.
@@ -141,59 +142,69 @@ def collect(
             with _log_lock:
                 progress(msg)
 
-    # 1. Discover if not provided
-    if subs is None:
+    # 1. Discover if not provided (skip if skip_reddit and no subs given)
+    if skip_reddit and not subs:
+        # No need to discover subs if we're not fetching from Reddit at all.
+        result.subs = []
+        _log("skip_reddit=true → skipping Reddit discovery + fetch")
+    elif subs is None:
         _log(f"discovering subs for '{topic}'…")
         found = discover_subs(topic, limit=8)
-        subs = [s["name"] for s in found if s.get("name")]
+        # New shape: {"subs": [...], "confirmation": {...}}. Tolerate the old
+        # list form for backward-compat with mocked tests.
+        found_subs = found.get("subs", found) if isinstance(found, dict) else found
+        subs = [s["name"] for s in found_subs if s.get("name")]
         _log(f"  → {subs}")
         time.sleep(_SLEEP)
-    result.subs = subs
+        result.subs = subs
+    else:
+        result.subs = subs
 
-    # 2. Top-of-month / top-of-year per sub
-    for sub in subs:
-        for tf in ("month", "year"):
-            try:
-                _log(f"fetch r/{sub} top({tf}) limit={limit_per_sub}")
-                rows = fetch_posts(sub=sub, sort="top", limit=limit_per_sub, time_filter=tf)
-                tagged = _tag_posts(topic, [r["id"] for r in rows], source=f"top:{sub}:{tf}")
-                result.posts_fetched += tagged
-                result.by_source[f"top:{sub}:{tf}"] = tagged
-            except Exception as e:
-                msg = f"top {sub}/{tf}: {e}"
-                _log(f"  ! {msg}")
-                result.errors.append(msg)
-            time.sleep(_SLEEP)
-
-    # 3. Parameterized searches
-    queries = render_queries(topic, categories=query_categories)
-    for category, qs in queries.items():
-        for q in qs:
-            # If sub_scope_search: search each sub individually (slower but higher signal)
-            targets: list[str | None] = subs if sub_scope_search else [None]
-            for target in targets:
+    if not skip_reddit:
+        # 2. Top-of-month / top-of-year per sub
+        for sub in subs:
+            for tf in ("month", "year"):
                 try:
-                    _log(f"search {category!r}: {q!r}" + (f" in r/{target}" if target else ""))
-                    rows = search_reddit(
-                        query=q,
-                        sub=target,
-                        sort="relevance",
-                        time_filter="year",
-                        limit=limit_per_query,
-                    )
-                    tagged = _tag_posts(
-                        topic,
-                        [r["id"] for r in rows],
-                        source=f"search:{category}:{target or 'all'}:{q}",
-                    )
+                    _log(f"fetch r/{sub} top({tf}) limit={limit_per_sub}")
+                    rows = fetch_posts(sub=sub, sort="top", limit=limit_per_sub, time_filter=tf)
+                    tagged = _tag_posts(topic, [r["id"] for r in rows], source=f"top:{sub}:{tf}")
                     result.posts_fetched += tagged
-                    key = f"search:{category}"
-                    result.by_source[key] = result.by_source.get(key, 0) + tagged
+                    result.by_source[f"top:{sub}:{tf}"] = tagged
                 except Exception as e:
-                    msg = f"search {category} {q!r}: {e}"
+                    msg = f"top {sub}/{tf}: {e}"
                     _log(f"  ! {msg}")
                     result.errors.append(msg)
                 time.sleep(_SLEEP)
+
+        # 3. Parameterized searches
+        queries = render_queries(topic, categories=query_categories)
+        for category, qs in queries.items():
+            for q in qs:
+                # If sub_scope_search: search each sub individually (slower but higher signal)
+                targets: list[str | None] = subs if sub_scope_search else [None]
+                for target in targets:
+                    try:
+                        _log(f"search {category!r}: {q!r}" + (f" in r/{target}" if target else ""))
+                        rows = search_reddit(
+                            query=q,
+                            sub=target,
+                            sort="relevance",
+                            time_filter="year",
+                            limit=limit_per_query,
+                        )
+                        tagged = _tag_posts(
+                            topic,
+                            [r["id"] for r in rows],
+                            source=f"search:{category}:{target or 'all'}:{q}",
+                        )
+                        result.posts_fetched += tagged
+                        key = f"search:{category}"
+                        result.by_source[key] = result.by_source.get(key, 0) + tagged
+                    except Exception as e:
+                        msg = f"search {category} {q!r}: {e}"
+                        _log(f"  ! {msg}")
+                        result.errors.append(msg)
+                    time.sleep(_SLEEP)
 
     # 3b. Extra sources (HN / App Store / Play Store / Scholar / SO / Trends / arXiv / …)
     # Fanned out in parallel — each worker hits a distinct provider, so there

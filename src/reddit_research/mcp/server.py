@@ -150,7 +150,12 @@ def reddit_discover_subs(topic: str, limit: int = 10) -> list[dict]:
         topic: e.g. "meditation apps", "freelance invoicing", "resume ATS".
         limit: max subs to return (default 10).
     """
-    return research_discover(topic=topic, limit=limit)
+    result = research_discover(topic=topic, limit=limit)
+    # research_discover now returns {subs, confirmation}. MCP consumers
+    # expect a plain list — unwrap so the external contract stays stable.
+    if isinstance(result, dict):
+        return result.get("subs", [])
+    return result
 
 
 @mcp.tool()

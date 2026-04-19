@@ -517,8 +517,24 @@ def cmd_research_discover(
     """List the most relevant subreddits for a topic."""
     from ..research import discover_subs
 
-    rows = discover_subs(topic, limit=limit)
-    _emit(rows, as_json, table_title=f"subs for '{topic}'")
+    result = discover_subs(topic, limit=limit)
+    rows = result["subs"] if isinstance(result, dict) else result
+    conf = result.get("confirmation") if isinstance(result, dict) else None
+    if conf and conf.get("auto_corrected") and not as_json:
+        typer.echo(
+            f"Note: corrected '{conf['original_topic']}' → '{conf['canonical_topic']}'",
+            err=True,
+        )
+    if conf and conf.get("needs_confirmation") and not as_json:
+        typer.echo(
+            f"Warning: weak match for '{conf['canonical_topic']}'. "
+            f"Suggested variants: {', '.join(conf.get('suggested_variants') or [])}",
+            err=True,
+        )
+    if as_json:
+        _emit(result, as_json, table_title=f"subs for '{topic}'")
+    else:
+        _emit(rows, as_json, table_title=f"subs for '{topic}'")
 
 
 @research_app.command("collect")
@@ -558,6 +574,10 @@ def cmd_research_collect(
             "Google Trends)."
         ),
     ),
+    skip_reddit: bool = typer.Option(
+        False, "--skip-reddit/--no-skip-reddit",
+        help="Skip the Reddit fetch stages entirely. Useful for topping up an existing topic with only external sources (HN, arxiv, etc.).",
+    ),
 ) -> None:
     """Build a topic-scoped corpus in SQLite (discover + fetch + search [+ history])."""
     from ..research import collect
@@ -578,6 +598,7 @@ def cmd_research_collect(
         historical_limit_per_sub=historical_per_sub,
         sources=src_list,
         aggressive=aggressive,
+        skip_reddit=skip_reddit,
         progress=lambda m: console.print(f"[dim]• {m}[/dim]"),
     )
     console.print(
