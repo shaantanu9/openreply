@@ -37,6 +37,7 @@ export const api = {
   chatStatus:      ()        => invoke('chat_status'),
   testLlm:         (provider, model) => invoke('test_llm', { provider, model }),
   listOllamaModels: ()       => invoke('list_ollama_models'),
+  runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),
   onCollectDone:     (cb) => listen('collect:done',     e => cb(e.payload)),
   onChatProgress:    (cb) => listen('chat:progress',    e => cb(e.payload)),

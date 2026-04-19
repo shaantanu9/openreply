@@ -1475,3 +1475,24 @@ body {
   .wizard-stepper .step-line { display: none; }
 }
 
+/* Solutions tab */
+.solutions-card { border: 1px solid var(--border, #ddd); border-radius: 6px; margin-bottom: 12px; padding: 12px; background: var(--card-bg, #fff); }
+.solutions-card summary { cursor: pointer; display: flex; gap: 12px; align-items: center; font-weight: 600; }
+.solutions-card .painpoint-title { flex: 1; }
+.solutions-card .card-body { margin-top: 12px; display: grid; gap: 16px; }
+.solutions-card section h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; color: var(--muted, #666); }
+.solutions-card .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--orange, #ff5722); color: #fff; font-size: 11px; margin-right: 4px; }
+.tier-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-right: 6px; }
+.tier-meta { background: #6b21a8; color: #fff; }
+.tier-peer { background: #047857; color: #fff; }
+.tier-expert { background: #1d4ed8; color: #fff; }
+.tier-anec { background: #6b7280; color: #fff; }
+.tier-unknown { background: #d1d5db; color: #111; }
+.intervention { padding: 8px; border-left: 3px solid var(--orange, #ff5722); margin-bottom: 8px; background: #fafafa; }
+.intervention-label { font-weight: 500; }
+.intervention-meta { font-size: 12px; color: #666; margin-top: 2px; }
+.intervention-meta .effort { margin-left: 8px; }
+.rationale { font-size: 12px; color: #555; margin-top: 4px; }
+.papers { padding-left: 18px; font-size: 13px; }
+.solutions-toolbar { margin-bottom: 12px; text-align: right; }
+
