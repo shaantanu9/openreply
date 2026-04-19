@@ -35,7 +35,7 @@ All three are fixed together because they live in the same user flow and the sam
 | Hide file path + `.html` chip | `app-tauri/src/screens/topic.js` | `#topic-sub` shows node/edge/updated summary. Filename chip replaced with counter chips. Relabel "Open externally" → "Open in browser". |
 | Add integration test | `tests/test_integration.py` | `test_enrich_uses_openrouter_when_configured`. |
 | Update skill gotchas | `~/.claude/skills/tauri-python-sidecar-app/SKILL.md` | Append openrouter slashed-model bug to Gotchas table per CLAUDE.md skill-evolution rule. |
-| Sidecar rebuild | `src-tauri/binaries/reddit-cli-aarch64-apple-darwin` | Routine after any Python change: `pyinstaller reddit-cli.spec` → copy → `codesign --force --deep --sign -`. |
+| Sidecar rebuild | `src-tauri/binaries/reddit-cli-aarch64-apple-darwin` | Required before DMG export. Not required for `tauri dev` verification (dev-python bypass reads source directly). |
 
 **No new capabilities.** `capabilities/default.json` stays as-is.
 **No CSS changes in `app-tauri/src/style.css`.** `.th-chip` and `.viewer-frame` are already styled.
@@ -133,7 +133,7 @@ Apply the tauri-python-sidecar-app skill's Phase 4 pattern end-to-end:
 1. **Python — provider fix.** Edit `enrich_from_llm` to call `resolve_provider(provider)` and stop any slashed-model misparse. Confirm `research/gaps.py` resolution path is clean. Confirm `analyze/providers/openai.py` is only constructed when resolved provider is literally `"openai"`.
 2. **Python — integration test.** Add `test_enrich_uses_openrouter_when_configured` to `tests/test_integration.py`. Run the suite.
 3. **Python — viewer theme.** Refactor the embedded `<style>` block in `export_graph_html` to declare `--v-*` CSS variables and swap the palette to the app tokens mapped in §2. Add colored-accent treatment to finding sections. Visual diff: export → open `gap-map-<topic>.html` → compare to screenshot reference.
-4. **Sidecar rebuild.** `pyinstaller reddit-cli.spec` → `cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin` → `codesign --force --deep --sign -`. (Per Phase 9 of the skill.)
+4. **Sidecar rebuild (optional for dev verification — required before DMG).** `pyinstaller reddit-cli.spec` → `cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin` → `codesign --force --deep --sign -`. Per skill Phase 2, `npm run tauri dev` uses `.venv/bin/python` and reads the Python source directly — the bundled binary is NOT required to verify the fix in dev. Rebuild before any production build or DMG export.
 5. **Frontend — topic.js.** Replace `#topic-sub` path with summary line. Replace filename chip with counter chips. Relabel "Open externally" → "Open in browser".
 6. **Skill update.** Append the openrouter slashed-model bug to the Gotchas table in `~/.claude/skills/tauri-python-sidecar-app/SKILL.md` (per CLAUDE.md skill-evolution rule).
 7. **Verify end-to-end.** `npm run tauri dev` → Topic: calari tracking app → Map tab. Expect: cream viewer matches app; no path visible; clicking **Enrich** with OpenRouter configured produces a non-zero findings count.
