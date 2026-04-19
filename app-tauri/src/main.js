@@ -97,20 +97,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Failure is non-fatal (non-Tauri dev preview etc.).
   try { await api.closeSplash(); } catch {}
 
-  // Pre-warm the Python sidecar in the background. Right after splash is a
-  // perfect moment — the first real user action (clicking a topic, opening
-  // Settings) then hits a warm Python process (~500 ms warm-start) instead
-  // of paying macOS Gatekeeper's 2-minute cold-verify on the very first
-  // sidecar spawn. `cliInfo` is the cheapest command available — it just
-  // prints config. Fire-and-forget; errors don't affect UX.
+  // NEUTRALIZED 2026-04-20: the sidecar pre-warm + db-changed nav-refresh
+  // hook were suspected of contributing to an app-wide hang. Re-enable
+  // piece-by-piece once we've confirmed the root cause. Keeping the
+  // one-time boot fetch so the nav counts still populate on launch.
   (async () => {
-    try { await api.cliInfo(); } catch {}
-  })();
-
-  // Sidebar counts — api.listTopics is cached in api.js, so this is cheap
-  // on every call, but wrap it in `refreshNavCounts` so collect:done can
-  // re-run it without a page reload. Called once at boot and on db-changed.
-  const refreshNavCounts = async () => {
     try {
       const topics = await api.listTopics();
       if (Array.isArray(topics)) {
@@ -119,10 +110,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         const b = $('#nav-dash-count');   if (b) b.textContent = n;
       }
     } catch {}
-  };
-  refreshNavCounts();
-  // Re-fire when the sidecar / freshness-poller reports external DB writes.
-  window.addEventListener('gapmap:db-changed', refreshNavCounts);
+  })();
 });
 
 // Helper — does the user have any LLM provider ready? Used by the new-topic

@@ -535,6 +535,10 @@ export async function renderTopic(root, { params }) {
   }
 
   async function loadMap(force = false) {
+    // Gated write — drop any innerHTML write that would land after the user
+    // already clicked away to another tab. Keeps loadMap's slow post-await
+    // graph-build render from overwriting, say, loadReport's skeleton.
+    const set = (html) => { if (contentEl.dataset.tab === 'map') contentEl.innerHTML = html; };
     // Graph stats strip — fetched before render, shown above the map when graph has nodes.
     let statsStripHtml = '';
     try {
@@ -571,14 +575,15 @@ export async function renderTopic(root, { params }) {
       console.warn('graph-stats query failed:', e);
     }
 
-    contentEl.innerHTML = `
+    set(`
       <div class="map-building">
         <div class="map-building-spinner"></div>
         <div>
           <b id="map-stage">Building gap map…</b>
           <p id="map-detail">Running graph build on the corpus.</p>
         </div>
-      </div>`;
+      </div>`);
+    if (contentEl.dataset.tab !== 'map') return;
     const sub = $('#topic-sub');
     if (sub) sub.textContent = 'Building gap map…';
     let outPath = null;
@@ -654,24 +659,15 @@ export async function renderTopic(root, { params }) {
         ? `<span class="th-chip"><b>${findingsAfter}</b> findings</span>`
         : `<span class="th-chip" style="color:var(--ink-3)">0 findings</span>`;
 
-      // Time-windowed diff — "what's new since last week". Best-effort.
-      let diffBanner = '';
-      try {
-        const d = await api.diffFindings(topic, 7);
-        const s = (d && d.summary) || {};
-        const total = (s.new_painpoints || 0) + (s.new_workarounds || 0)
-                    + (s.new_products || 0) + (s.new_feature_wishes || 0);
-        if (total > 0) {
-          const parts = [];
-          if (s.new_painpoints)     parts.push(`<b>${s.new_painpoints}</b> new painpoint${s.new_painpoints === 1 ? '' : 's'}`);
-          if (s.new_workarounds)    parts.push(`<b>${s.new_workarounds}</b> new DIY`);
-          if (s.new_products)       parts.push(`<b>${s.new_products}</b> new product${s.new_products === 1 ? '' : 's'}`);
-          if (s.new_feature_wishes) parts.push(`<b>${s.new_feature_wishes}</b> new feature wish${s.new_feature_wishes === 1 ? '' : 'es'}`);
-          diffBanner = `<div class="diff-banner">✨ Since last week — ${parts.join(' · ')}</div>`;
-        }
-      } catch {}
+      // NEUTRALIZED 2026-04-20 — diffFindings added a sidecar spawn on
+      // every Map-tab open; suspected of stacking onto an already-busy
+      // pipeline and contributing to app-wide hang. Re-enable once the
+      // root cause is found. Until then the banner is empty and the Map
+      // tab renders without waiting on this call.
+      const diffBanner = '';
 
-      contentEl.innerHTML = `
+      if (contentEl.dataset.tab !== 'map') return;
+      set(`
         ${statsStripHtml}
         ${diffBanner}
         <div class="map-toolbar">
@@ -687,7 +683,8 @@ export async function renderTopic(root, { params }) {
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
         </div>
         ${enrichBanner}
-        <iframe class="viewer-frame" src="${fileUrl}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`;
+        <iframe class="viewer-frame" src="${fileUrl}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`);
+      if (contentEl.dataset.tab !== 'map') return;
       window.refreshIcons?.();
       $('#btn-map-rebuild').onclick  = () => loadMap(true);
       $('#btn-map-reveal').onclick   = () => api.revealInFinder(outPath);
@@ -697,7 +694,7 @@ export async function renderTopic(root, { params }) {
     } catch (e) {
       const msg = (e?.message || e || '').toString();
       const hasNoPosts = msg.includes('no posts') || msg.includes('0 nodes');
-      contentEl.innerHTML = `
+      set(`
         <div class="empty-big">
           <h3>${hasNoPosts ? 'No data for this topic yet' : "Couldn't render the gap map"}</h3>
           <p>${esc(msg)}</p>
@@ -705,7 +702,8 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-primary" id="btn-map-run-collect">Run collect</button>
             <button class="btn btn-ghost icon-btn" id="btn-map-retry" style="border:1px solid var(--line)"><i data-lucide="rotate-cw"></i> Retry</button>
           </div>
-        </div>`;
+        </div>`);
+      if (contentEl.dataset.tab !== 'map') return;
       window.refreshIcons?.();
       $('#btn-map-run-collect').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
       $('#btn-map-retry').onclick = () => loadMap();
@@ -714,28 +712,33 @@ export async function renderTopic(root, { params }) {
 
   // ─── Report ───────────────────────────────────────────────────────────
   async function loadReport() {
-    contentEl.innerHTML = `
+    // Gated write — see note in loadMap.
+    const set = (html) => { if (contentEl.dataset.tab === 'report') contentEl.innerHTML = html; };
+    set(`
       <div class="skeleton-card">
         <div class="skeleton skeleton-line"></div>
         <div class="skeleton skeleton-line med"></div>
         <div class="skeleton skeleton-line"></div>
         <div class="skeleton skeleton-line short"></div>
       </div>
-      ${skeletonCards(2)}`;
+      ${skeletonCards(2)}`);
     try {
       const path = await api.exportReportPro(topic);
+      if (contentEl.dataset.tab !== 'report') return;
       $('#topic-sub').textContent = path;
       const fileUrl = convertFileSrc(path);
       const resp = await fetch(fileUrl);
       const md = await resp.text();
-      contentEl.innerHTML = `
+      if (contentEl.dataset.tab !== 'report') return;
+      set(`
         <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
           <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-copy-md"><i data-lucide="copy"></i> Copy markdown</button>
           <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-reveal-md">Reveal in Finder</button>
           <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-regen-md"><i data-lucide="rotate-cw"></i> Regenerate</button>
         </div>
         <div class="markdown-view">${renderMarkdown(md)}</div>
-      `;
+      `);
+      if (contentEl.dataset.tab !== 'report') return;
       window.refreshIcons?.();
       $('#btn-copy-md').onclick = () => {
         navigator.clipboard.writeText(md);
@@ -752,7 +755,8 @@ export async function renderTopic(root, { params }) {
         { label: 'Build gap map', primary: false, onClick: () => switchTab('map') },
         { label: 'Add LLM key',   primary: false, onClick: () => openByokModal(() => loadReport()) },
       ];
-      contentEl.innerHTML = errorCard('Could not generate the report', e?.message || String(e), actions);
+      set(errorCard('Could not generate the report', e?.message || String(e), actions));
+      if (contentEl.dataset.tab !== 'report') return;
       wireErrorCard(contentEl, actions);
     }
   }
@@ -767,7 +771,8 @@ export async function renderTopic(root, { params }) {
   let evidenceFilter = '';
 
   async function loadEvidence() {
-    contentEl.innerHTML = skeletonCards(3);
+    const set = (html) => { if (contentEl.dataset.tab === 'evidence') contentEl.innerHTML = html; };
+    set(skeletonCards(3));
     try {
       // All four kinds in ONE sidecar call (was 4 parallel Python spawns).
       // SQL is hoisted to `combinedFindingsSql` above so this call shares a
@@ -835,12 +840,13 @@ export async function renderTopic(root, { params }) {
       const html = totalBefore > 0
         ? (filterBar + (sectionsHtml || filteredEmpty))
         : '';
-      contentEl.innerHTML = html || `
+      if (contentEl.dataset.tab !== 'evidence') return;
+      set(html || `
         <div class="empty-big">
           <h3>No semantic extraction yet</h3>
           <p>Add an LLM key to pull painpoints / products / DIY workarounds from the corpus.</p>
           <button class="btn btn-primary icon-btn" id="btn-ev-keys"><i data-lucide="key-round"></i> Add LLM key</button>
-        </div>`;
+        </div>`);
       // "Show more" delegates — bumps the per-kind visible counter and re-renders.
       contentEl.querySelectorAll('.show-more-btn').forEach(btn => {
         btn.onclick = () => {
@@ -896,7 +902,8 @@ export async function renderTopic(root, { params }) {
         { label: 'Retry',       icon: 'refresh-cw', primary: true, onClick: () => loadEvidence() },
         { label: 'Add LLM key',              onClick: () => openByokModal(() => loadEvidence()) },
       ];
-      contentEl.innerHTML = errorCard('Could not load evidence', e?.message || String(e), actions);
+      set(errorCard('Could not load evidence', e?.message || String(e), actions));
+      if (contentEl.dataset.tab !== 'evidence') return;
       wireErrorCard(contentEl, actions);
     }
   }
@@ -904,7 +911,8 @@ export async function renderTopic(root, { params }) {
   // ─── Sources ──────────────────────────────────────────────────────────
   let subsVisible = 12;
   async function loadSources() {
-    contentEl.innerHTML = skeletonCards(2);
+    const set = (html) => { if (contentEl.dataset.tab === 'sources') contentEl.innerHTML = html; };
+    set(skeletonCards(2));
     try {
       // Parameterized — topic goes in safely via :topic, no string concat.
       const srcSql = `SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts,
@@ -943,7 +951,8 @@ export async function renderTopic(root, { params }) {
           <h5>r/${esc(r.sub)}</h5>
           <span>${r.posts.toLocaleString()} posts</span>
         </div>`;
-      contentEl.innerHTML = `
+      if (contentEl.dataset.tab !== 'sources') return;
+      set(`
         <div class="card" style="margin-bottom:14px">
           <div class="card-head"><div><h3>Sources</h3><p>${total.toLocaleString()} posts across ${(sources || []).length} source types</p></div></div>
           <div class="sources-list">
@@ -960,14 +969,15 @@ export async function renderTopic(root, { params }) {
             ${more > 0 ? `<div style="padding:0 20px 16px"><button class="show-more-btn" id="btn-subs-more">Show ${Math.min(more, 12)} more · ${more} hidden</button></div>` : ''}
           </div>`;
         })() : ''}
-      `;
+      `);
       $('#btn-subs-more')?.addEventListener('click', () => {
         subsVisible += 12;
         loadSources();
       });
     } catch (e) {
       const actions = [{ label: 'Retry', icon: 'refresh-cw', primary: true, onClick: () => loadSources() }];
-      contentEl.innerHTML = errorCard('Could not load sources', e?.message || String(e), actions);
+      set(errorCard('Could not load sources', e?.message || String(e), actions));
+      if (contentEl.dataset.tab !== 'sources') return;
       wireErrorCard(contentEl, actions);
     }
   }
@@ -995,7 +1005,8 @@ export async function renderTopic(root, { params }) {
   let researchSort = 'cites';
 
   async function loadResearch() {
-    contentEl.innerHTML = skeletonCards(3);
+    const set = (html) => { if (contentEl.dataset.tab === 'research') contentEl.innerHTML = html; };
+    set(skeletonCards(3));
     try {
       const placeholders = ACADEMIC_SOURCES.map(() => '?').join(',');
       const rows = await api.runQuery(
@@ -1025,7 +1036,8 @@ export async function renderTopic(root, { params }) {
       });
 
       if (!rows || !rows.length) {
-        contentEl.innerHTML = `
+        if (contentEl.dataset.tab !== 'research') return;
+        set(`
           <div class="empty-big">
             <h3>No research yet</h3>
             <p>Collect a topic with academic sources to populate this tab — arXiv, OpenAlex, PubMed, or Semantic Scholar. You can also drag a PDF into the Ingest screen to add your own papers and reports.</p>
@@ -1033,7 +1045,7 @@ export async function renderTopic(root, { params }) {
               <button class="btn btn-primary" id="btn-research-collect">Rerun collect with --sources arxiv</button>
               <button class="btn btn-ghost btn-bordered" id="btn-research-ingest">Ingest a PDF</button>
             </div>
-          </div>`;
+          </div>`);
         $('#btn-research-collect')?.addEventListener('click', () => {
           location.hash = `#/collect/${encodeURIComponent(topic)}`;
         });
@@ -1138,7 +1150,8 @@ export async function renderTopic(root, { params }) {
           </div>`;
       }).join('');
 
-      contentEl.innerHTML = sortToggle + html;
+      if (contentEl.dataset.tab !== 'research') return;
+      set(sortToggle + html);
 
       contentEl.querySelectorAll('[data-open]').forEach(btn => {
         btn.onclick = () => {
@@ -1186,7 +1199,8 @@ export async function renderTopic(root, { params }) {
       window.refreshIcons?.();
     } catch (e) {
       const actions = [{ label: 'Retry', primary: true, onClick: () => loadResearch() }];
-      contentEl.innerHTML = errorCard('Could not load research', e?.message || String(e), actions);
+      set(errorCard('Could not load research', e?.message || String(e), actions));
+      if (contentEl.dataset.tab !== 'research') return;
       wireErrorCard(contentEl, actions);
     }
   }
@@ -1744,7 +1758,15 @@ export async function renderTopic(root, { params }) {
     trends: () => loadTrends(contentEl, topic),
     posts: () => loadPosts(contentEl, topic),
   };
+  // Tab-generation counter. Every click bumps it. Loaders already close over
+  // `activeTab` — they can check `activeTab === 'map'` before innerHTML writes
+  // to self-suppress once the user moved on. What this counter adds: the
+  // switchTab caller only refreshes icons + applies final style if its gen
+  // is still current, so rapid clicks (B before A's async work settles) don't
+  // trigger ghost renders.
+  let tabGen = 0;
   const switchTab = async (name) => {
+    const myGen = ++tabGen;
     // Clean up chat listeners if we're leaving chat mid-stream
     if (activeTab === 'chat' && name !== 'chat') {
       try { chatStream.unlistenProgress?.(); } catch {}
@@ -1752,9 +1774,39 @@ export async function renderTopic(root, { params }) {
       if (chatTsInterval) { clearInterval(chatTsInterval); chatTsInterval = null; }
     }
     activeTab = name;
+    // Stamp the content container with the current tab name so any loader's
+    // deferred DOM write (finished after a rapid tab switch) can self-check
+    // `contentEl.dataset.tab === 'map'` before stomping on the new tab's
+    // render. See `writeIfTab()` helper further down — the fix for stale
+    // tab content was spec'd here on 2026-04-20.
+    contentEl.dataset.tab = name;
     tabsEl.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-    await loaders[name]?.();
-    window.refreshIcons?.();
+    // Synchronous placeholder so the old tab's content disappears the moment
+    // the user clicks — before the loader's first await. Without this the
+    // screen looks hung if the loader takes more than ~100 ms to produce
+    // its first innerHTML write (which map/evidence often do on cold cache).
+    contentEl.innerHTML = `
+      <div class="empty-state" style="padding:40px;text-align:center">
+        <div class="map-building-spinner" style="margin:0 auto 10px"></div>
+        <div style="color:var(--ink-3);font-size:13px">Loading ${esc(name)}…</div>
+      </div>`;
+    try {
+      await loaders[name]?.();
+    } catch (e) {
+      if (tabGen === myGen && contentEl.dataset.tab === name) {
+        contentEl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || String(e))}</div>`;
+      }
+    }
+    if (tabGen === myGen) window.refreshIcons?.();
+  };
+
+  // Gated DOM write — loaders use this to render into contentEl only if the
+  // user is still looking at their tab. If the user already clicked another
+  // tab, the write is silently dropped so we don't stomp the new render.
+  // Prevents the "click tab B, see tab A's content flash in" race when
+  // loaders await slow sidecar calls in parallel.
+  const writeIfTab = (expected, html) => {
+    if (contentEl.dataset.tab === expected) contentEl.innerHTML = html;
   };
 
   tabsEl.querySelectorAll('.tab').forEach(t => {
@@ -1785,9 +1837,10 @@ export async function renderTopic(root, { params }) {
     });
   })();
 
-  // Mark this visit so the "new since last viewed" banner can diff against
-  // it next time. Fire-and-forget; failure is non-fatal.
-  api.scheduleMarkSeen(topic).catch(() => {});
+  // NEUTRALIZED 2026-04-20 — scheduleMarkSeen spawned a sidecar on every
+  // topic open. Fire-and-forget still uses the Tauri handler queue;
+  // suspected of contributing to app-wide hang.
+  // api.scheduleMarkSeen(topic).catch(() => {});
   $('#btn-delete').onclick = async () => {
     const confirmPref = localStorage.getItem('gapmap.pref.confirm_delete') !== 'false';
     if (confirmPref && !confirm(`Delete topic "${topic}"?`)) return;
