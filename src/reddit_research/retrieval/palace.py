@@ -487,15 +487,82 @@ def _model_expanded_file() -> str:
     return os.path.join(_model_cache_dir(), "onnx", "model.onnx")
 
 
+def _bundled_onnx_tar() -> str | None:
+    """Path to the pre-bundled ONNX tarball inside the PyInstaller sidecar,
+    or None if the build didn't ship it.
+
+    The PyInstaller spec (`reddit-cli.spec`) downloads the tar once per
+    build host and places it under `bundled_onnx/onnx.tar.gz` inside the
+    sidecar's `_MEIPASS` temp-extract dir. Dev (running from source) has
+    no `_MEIPASS` — returns None, and we fall through to the live
+    download path.
+    """
+    import sys
+    meipass = getattr(sys, "_MEIPASS", None)
+    if not meipass:
+        return None
+    candidate = os.path.join(meipass, "bundled_onnx", "onnx.tar.gz")
+    if os.path.isfile(candidate) and os.path.getsize(candidate) > 70_000_000:
+        return candidate
+    return None
+
+
+def _seed_model_from_bundle() -> bool:
+    """If the sidecar bundle ships the ONNX tar AND the user's cache is
+    empty, copy the bundled tar into the cache dir. Returns True if a copy
+    happened. Called lazily from is_model_ready() / warmup_model() so dev
+    (no _MEIPASS) and prod (with bundle) both work seamlessly.
+    """
+    src = _bundled_onnx_tar()
+    if not src:
+        return False
+    dst = _model_archive_path()
+    # Already have it (possibly from a prior run) — nothing to do.
+    if os.path.isfile(dst) and os.path.getsize(dst) > 70_000_000:
+        return False
+    try:
+        os.makedirs(_model_cache_dir(), exist_ok=True)
+        import shutil
+        shutil.copy2(src, dst)
+        logger.info("palace: seeded ONNX model from bundle → %s", dst)
+        return True
+    except Exception as e:
+        logger.warning("palace: seed-from-bundle failed: %s", e)
+        return False
+
+
 def is_model_ready() -> bool:
-    """True iff the ONNX graph file exists + non-empty. Cheap (one stat)."""
+    """True iff the ONNX graph file exists + non-empty. Cheap (one stat).
+
+    Also triggers a bundle → cache seed on first call, so users running
+    a DMG that shipped the model get a True result without an explicit
+    Enable click. Dev / lean builds (no bundle) just see False until
+    the user runs warmup_model().
+    """
     if not is_available():
         return False
+    # Fast path — weights already extracted.
     p = _model_expanded_file()
     try:
-        return os.path.isfile(p) and os.path.getsize(p) > 1024
+        if os.path.isfile(p) and os.path.getsize(p) > 1024:
+            return True
     except OSError:
-        return False
+        pass
+    # Check if we have the tar but haven't extracted yet — could be from
+    # a prior run or from the bundle seed. Either way, we can't use it
+    # until chromadb extracts on next embed(). Return False so the UI
+    # shows "Enable" which will trigger extraction (fast — <2 s).
+    try:
+        tar = _model_archive_path()
+        if os.path.isfile(tar) and os.path.getsize(tar) > 70_000_000:
+            return False  # tar present, weights not yet extracted
+    except OSError:
+        pass
+    # No weights, no tar — try seeding from the PyInstaller bundle
+    # (no-op in dev). If seeded, caller sees False but a subsequent
+    # warmup_model() completes instantly (no network).
+    _seed_model_from_bundle()
+    return False
 
 
 def model_status() -> dict:
@@ -552,6 +619,15 @@ def warmup_model(progress=None, chunk_size: int = 262_144) -> dict:
         ev = {"event": "done", "ok": True, "already": True}
         if progress: progress(ev)
         return ev
+    # If the PyInstaller bundle shipped the tar, seed the cache from
+    # it (fast, local copy) BEFORE we reach for the network. That turns
+    # the prod DMG experience from "wait for 80 MB download" into
+    # "wait 2 s for extraction".
+    if _seed_model_from_bundle():
+        # Tar now in the cache; skip network and fall through to the
+        # extraction step below.
+        if progress:
+            progress({"event": "progress", "bytes": _MODEL_TAR_BYTES, "total": _MODEL_TAR_BYTES, "pct": 99})
 
     import httpx
 

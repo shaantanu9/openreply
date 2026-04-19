@@ -283,6 +283,7 @@ export async function renderHome(root) {
 
     <div id="active-collect-slot"></div>
     <div id="byok-prompt-slot"></div>
+    <div id="palace-nudge-slot"></div>
 
     <div id="hero-slot">${skelHero()}</div>
     <section class="stat-grid" id="stat-grid">${skelStats()}</section>
@@ -386,6 +387,7 @@ export async function renderHome(root) {
   loadTopicGrid(root);
   loadActiveCollect(root);
   loadByokPrompt(root);
+  loadPalaceNudge(root);
 
   // Live-refresh hooks:
   //   1. `gapmap:db-changed` fires when api.js's mtime poller detects an
@@ -733,6 +735,46 @@ async function loadByokPrompt(root) {
       </div>`;
     slot.querySelector('#byok-prompt-btn').addEventListener('click', () => {
       location.hash = '#/settings';
+    });
+  } catch {
+    slot.innerHTML = '';
+  }
+}
+
+// First-time nudge for the opt-in semantic-search download. Shows only when:
+//   - retrieval extras are installed (build has chromadb wheels)
+//   - ONNX model NOT yet cached
+//   - user hasn't permanently dismissed the nudge
+// Dismissed state persists in localStorage so repeat Dashboard visits
+// don't nag. Enabling from Settings → Semantic search clears the flag
+// automatically (see settings.js → palace reload), so this banner never
+// reappears after the model is ready.
+async function loadPalaceNudge(root) {
+  const slot = root.querySelector('#palace-nudge-slot');
+  if (!slot) return;
+  const DISMISS_KEY = 'gapmap.palace.nudge.dismissed';
+  if (localStorage.getItem(DISMISS_KEY) === 'true') { slot.innerHTML = ''; return; }
+  try {
+    const ms = await api.palaceModelStatus();
+    if (!ms?.installed || ms?.ready) { slot.innerHTML = ''; return; }
+    slot.innerHTML = `
+      <div class="byok-prompt-card palace-nudge-card">
+        <div class="byok-prompt-ic" style="background:var(--orange-soft);color:#B85A1E"><i data-lucide="sparkles"></i></div>
+        <div class="byok-prompt-body">
+          <b>Unlock semantic search (optional · 80 MB)</b>
+          <p>One-time download of a tiny embedding model lets you search your corpus by <i>meaning</i> — find similar painpoints across topics, get smarter chat answers, zero cloud calls. Everything stays local.</p>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm btn-bordered" id="palace-nudge-skip" title="Hide this banner">Skip</button>
+          <button class="btn btn-primary btn-sm" id="palace-nudge-enable">Enable →</button>
+        </div>
+      </div>`;
+    slot.querySelector('#palace-nudge-enable').addEventListener('click', () => {
+      location.hash = '#/settings';
+    });
+    slot.querySelector('#palace-nudge-skip').addEventListener('click', () => {
+      localStorage.setItem(DISMISS_KEY, 'true');
+      slot.innerHTML = '';
     });
   } catch {
     slot.innerHTML = '';
