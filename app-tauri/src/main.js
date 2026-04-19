@@ -1,5 +1,6 @@
 import { api, $, $$, esc } from './api.js';
 import { refreshIcons } from './icons.js';
+import { showCorrectionToast, showTopicConfirmModal } from './lib/topicConfirm.js';
 import { renderHome, renderTopicsList } from './screens/home.js';
 import { renderTopic } from './screens/topic.js';
 import { renderCollect } from './screens/collect.js';
@@ -205,15 +206,63 @@ function wireModal() {
 
     localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
     localStorage.setItem('gapmap.pref.aggressive',          aggressive ? 'true' : 'false');
+
+    // Typo-correction / intent-validation gate before kicking off collect.
+    // Fast-path if the user already clicked a variant (force=true) OR the
+    // discover call fails — we don't block the flow on this safety net.
+    const finalTopic = await resolveTopicWithConfirmation(topic);
+    if (finalTopic === null) {
+      // User cancelled via the modal's Esc/backdrop path. Keep the modal open.
+      return;
+    }
+
     close();
-    const slug = encodeURIComponent(topic);
+    const slug = encodeURIComponent(finalTopic);
     location.hash = `#/collect/${slug}`;
     setTimeout(() =>
-      window.dispatchEvent(new CustomEvent('gapmap:start-collect', { detail: { topic, aggressive } })),
+      window.dispatchEvent(new CustomEvent('gapmap:start-collect', { detail: { topic: finalTopic, aggressive } })),
       100,
     );
   };
   window.gapmapOpenNewTopic = open;
+}
+
+// Ask discover_subs for a confirmation preview before committing to collect.
+// Returns the topic string to use, or null if the user cancelled.
+async function resolveTopicWithConfirmation(topic, { force = false } = {}) {
+  let res;
+  try {
+    res = await api.discoverSubs(topic, 10);
+  } catch {
+    return topic;  // degrade gracefully — collect still works on the backend
+  }
+  if (Array.isArray(res)) return topic;  // legacy shape — nothing to confirm
+  const confirmation = res && res.confirmation;
+  if (!confirmation || force) return topic;
+
+  if (confirmation.needs_confirmation) {
+    return new Promise((resolve) => {
+      showTopicConfirmModal({
+        original: confirmation.original_topic,
+        canonical: confirmation.canonical_topic,
+        variants: confirmation.suggested_variants || [],
+        onPick: (chosen) => resolve(chosen || topic),
+        onKeepAsIs: () => resolve(confirmation.original_topic),
+      });
+    });
+  }
+
+  if (confirmation.auto_corrected) {
+    const original = confirmation.original_topic;
+    showCorrectionToast({
+      original,
+      canonical: confirmation.canonical_topic,
+      onUndo: () => { /* already navigating; no-op until a more advanced undo lands */ },
+    });
+    return confirmation.canonical_topic;
+  }
+
+  return topic;
 }
 
 function wireKeyboard() {
