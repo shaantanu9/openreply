@@ -347,12 +347,20 @@ pub async fn cancel_stream(app: AppHandle) -> Result<bool, String> {
     Ok(cancel_active_stream(&app))
 }
 
-/// Is a stream currently active?
+/// Is a stream currently active? Checks both prod + dev-python slots.
 #[tauri::command]
 pub async fn stream_status(app: AppHandle) -> Result<bool, String> {
-    let state = app.state::<ActiveStream>();
-    let guard = state.0.lock().map_err(|e| e.to_string())?;
-    Ok(guard.is_some())
+    if let Some(s) = app.try_state::<ActiveStream>() {
+        if s.0.lock().map_err(|e| e.to_string())?.is_some() {
+            return Ok(true);
+        }
+    }
+    if let Some(s) = app.try_state::<ActiveStreamPid>() {
+        if s.0.lock().map_err(|e| e.to_string())?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 // ─── Scheduled runs ─────────────────────────────────────────────────
@@ -421,13 +429,30 @@ pub async fn diff_findings(
 
 /// Export the gap-map HTML for a topic. Returns absolute path.
 #[tauri::command]
-pub async fn export_html(app: AppHandle, topic: String) -> Result<String, String> {
+pub async fn export_html(
+    app: AppHandle,
+    topic: String,
+    force: Option<bool>,
+) -> Result<String, String> {
     let data = data_dir(&app).map_err(err_to_string)?;
     let out_path = data.join(format!(
         "gap-map-{}.html",
         topic.replace(' ', "-").to_lowercase()
     ));
     let out_str = out_path.to_string_lossy().to_string();
+
+    // Fast path — skip the sidecar spawn if we already have a non-empty
+    // export file. `force=true` bypasses this (wired to the Rebuild button).
+    // Freshness vs graph_nodes.ts is checked in the frontend (one cheap
+    // SQL round-trip) so we don't need to do it here too.
+    if !force.unwrap_or(false) {
+        if let Ok(meta) = std::fs::metadata(&out_path) {
+            if meta.is_file() && meta.len() > 0 {
+                return Ok(out_str);
+            }
+        }
+    }
+
     run_cli(
         &app,
         vec![

@@ -97,6 +97,16 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Failure is non-fatal (non-Tauri dev preview etc.).
   try { await api.closeSplash(); } catch {}
 
+  // Pre-warm the Python sidecar in the background. Right after splash is a
+  // perfect moment — the first real user action (clicking a topic, opening
+  // Settings) then hits a warm Python process (~500 ms warm-start) instead
+  // of paying macOS Gatekeeper's 2-minute cold-verify on the very first
+  // sidecar spawn. `cliInfo` is the cheapest command available — it just
+  // prints config. Fire-and-forget; errors don't affect UX.
+  (async () => {
+    try { await api.cliInfo(); } catch {}
+  })();
+
   // Fetch sidebar counts in the background (non-blocking).
   (async () => {
     try {
@@ -176,15 +186,18 @@ function wireModal() {
     }
   });
   $('#modal-start').onclick = async () => {
-    const topic = $('#new-topic-input').value.trim();
+    const startBtn = $('#modal-start');
+    const cancelBtn = $('#modal-cancel');
+    const input = $('#new-topic-input');
+    const topic = input.value.trim();
     if (!topic) {
-      $('#new-topic-input').focus();
+      input.focus();
       return;
     }
     // P1-5 — reject topic names that'll break downstream SQL/URLs.
     if (!/^[a-zA-Z0-9 _\-]{2,60}$/.test(topic)) {
       alert('Topic name must be 2-60 chars, letters/numbers/spaces/hyphens/underscores only.');
-      $('#new-topic-input').focus();
+      input.focus();
       return;
     }
     const aggressive = $('#new-topic-aggressive').checked;
@@ -207,10 +220,26 @@ function wireModal() {
     localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
     localStorage.setItem('gapmap.pref.aggressive',          aggressive ? 'true' : 'false');
 
+    // Freeze the button + show a loading state so the user knows we're not
+    // hung while the Reddit /discover call runs (can take 5–15 s, longer if
+    // PRAW is rate-limited). Without this the modal looks frozen.
+    const origLabel = startBtn.innerHTML;
+    startBtn.disabled = true;
+    cancelBtn.disabled = false;  // Cancel stays clickable
+    input.disabled = true;
+    startBtn.innerHTML = '<span class="spinner-inline"></span> Checking topic…';
+
     // Typo-correction / intent-validation gate before kicking off collect.
     // Fast-path if the user already clicked a variant (force=true) OR the
     // discover call fails — we don't block the flow on this safety net.
-    const finalTopic = await resolveTopicWithConfirmation(topic);
+    let finalTopic;
+    try {
+      finalTopic = await resolveTopicWithConfirmation(topic);
+    } finally {
+      startBtn.disabled = false;
+      input.disabled = false;
+      startBtn.innerHTML = origLabel;
+    }
     if (finalTopic === null) {
       // User cancelled via the modal's Esc/backdrop path. Keep the modal open.
       return;
@@ -232,7 +261,13 @@ function wireModal() {
 async function resolveTopicWithConfirmation(topic, { force = false } = {}) {
   let res;
   try {
-    res = await api.discoverSubs(topic, 10);
+    // 20 s hard timeout — Reddit /discover is usually <5 s but can get stuck
+    // behind rate-limits or a slow PRAW auth handshake. Better to fall
+    // through to a raw collect than leave the user staring at a modal.
+    res = await Promise.race([
+      api.discoverSubs(topic, 10),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('discover timeout')), 20000)),
+    ]);
   } catch {
     return topic;  // degrade gracefully — collect still works on the backend
   }

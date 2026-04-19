@@ -192,9 +192,9 @@ export const api = {
     invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query');
     return invoke('enrich_graph', { topic });
   },
-  exportHtml:      (topic)   => {
+  exportHtml:      (topic, force = false) => {
     invalidate('list_exports');
-    return invoke('export_html', { topic });
+    return invoke('export_html', { topic, force });
   },
   exportGraphJson: (topic)   => invoke('export_graph_json', { topic }),
   exportReportPro: (topic)   => {
