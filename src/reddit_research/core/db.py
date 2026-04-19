@@ -316,16 +316,24 @@ def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
     if not rows:
         return 0
     get_db()["posts"].upsert_all(rows, pk="id")
-    # Keep the semantic-search palace in sync, best-effort. A missing
-    # `chromadb` install or a palace error never breaks ingest — opt out
-    # via `GAPMAP_SKIP_PALACE=1` if needed (CI, tests, minimal deploys).
-    if os.getenv("GAPMAP_SKIP_PALACE") not in ("1", "true", "yes"):
-        try:
-            from ..retrieval.palace import is_available, upsert_posts_many
-            if is_available():
-                upsert_posts_many(rows)
-        except Exception:
-            pass
+    # Keep the semantic-search palace in sync, best-effort. Strict gates:
+    #   1. GAPMAP_SKIP_PALACE=1 → always skip (CI / tests / minimal deploys)
+    #   2. retrieval extras missing → skip silently
+    #   3. ONNX model not cached yet → skip silently. Critical: without
+    #      this gate, the FIRST collect after install triggers 6 parallel
+    #      download attempts (one per source worker) for the 79 MB ONNX
+    #      file — they race, corrupt each other, and dump tqdm progress
+    #      bars into the collect log. The palace is opt-in — user must
+    #      click Enable in Settings → Semantic search (single serialized
+    #      warmup), then a Reindex backfills the existing corpus.
+    if os.getenv("GAPMAP_SKIP_PALACE") in ("1", "true", "yes"):
+        return len(rows)
+    try:
+        from ..retrieval.palace import is_available, is_model_ready, upsert_posts_many
+        if is_available() and is_model_ready():
+            upsert_posts_many(rows)
+    except Exception:
+        pass
     return len(rows)
 
 
