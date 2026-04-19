@@ -26,3 +26,6 @@ data/
 .vscode/
 .idea/
 .DS_Store
+
+# Git worktrees (created by superpowers:using-git-worktrees)
+.worktrees/
