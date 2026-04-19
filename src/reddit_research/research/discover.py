@@ -202,16 +202,41 @@ def _canonicalize_topic(topic: str) -> dict[str, Any]:
     return result
 
 
-def discover_subs(topic: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Return top-N relevant subs for a topic, best-first."""
-    tokens = _tokens(topic)
+def discover_subs(topic: str, limit: int = 10) -> dict[str, Any]:
+    """Return top-N relevant subs for a topic plus a confirmation payload.
+
+    Return shape:
+        {
+            "subs": list[dict],                # same shape as before
+            "confirmation": {
+                "original_topic": str,
+                "canonical_topic": str,
+                "auto_corrected": bool,
+                "needs_confirmation": bool,
+                "suggested_variants": list[str],
+                "reason": str,                 # see reason codes below
+            },
+        }
+
+    Reason codes:
+      - "direct_match"                       — no correction, strong matches
+      - "high_confidence_typo_correction"    — corrected silently
+      - "low_confidence_canonicalization"    — LLM was unsure → confirm
+      - "weak_sub_relevance"                 — no strong name matches → confirm
+      - "canonicalization_unavailable"       — no LLM; falls back silently
+    """
+    canon = _canonicalize_topic(topic)
+    canonical_topic = canon["canonical"] or topic
+    auto_corrected = (
+        canon["confidence"] != "unknown"
+        and canonical_topic.strip().lower() != (topic or "").strip().lower()
+    )
+
+    # Search against the canonical form.
+    tokens = _tokens(canonical_topic)
     seen: dict[str, dict[str, Any]] = {}
-
-    # Try exact query first
-    for s in _search_raw(topic):
+    for s in _search_raw(canonical_topic):
         seen[s.get("display_name", "").lower()] = s
-
-    # If that was thin, search each non-stopword term and merge
     if len(seen) < 8 and tokens:
         for t in tokens:
             for s in _search_raw(t):
@@ -219,17 +244,15 @@ def discover_subs(topic: str, limit: int = 10) -> list[dict[str, Any]]:
                 if key and key not in seen:
                     seen[key] = s
 
-    # Filter: public only, not NSFW
     candidates = [
-        s
-        for s in seen.values()
+        s for s in seen.values()
         if not s.get("over18") and s.get("subreddit_type") == "public"
     ]
     ranked = sorted(candidates, key=lambda s: _rank_score(s, tokens), reverse=True)
 
-    out: list[dict[str, Any]] = []
+    subs: list[dict[str, Any]] = []
     for s in ranked[:limit]:
-        out.append(
+        subs.append(
             {
                 "name": s.get("display_name"),
                 "title": s.get("title"),
@@ -239,4 +262,42 @@ def discover_subs(topic: str, limit: int = 10) -> list[dict[str, Any]]:
                 "relevance": round(_relevance_bonus(s, tokens), 2),
             }
         )
-    return out
+
+    # Weakness check — "no discovered sub has a token in its name AND all
+    # top-3 bonuses are below 0.5" means users probably fell through to
+    # generic-keyword-fallback hell (e.g. "tracking" matched flight subs).
+    any_name_match = any(
+        any(t in (s["name"] or "").lower() for t in tokens)
+        for s in subs
+    )
+    top3_weak = all((s.get("relevance") or 0.0) < 0.5 for s in subs[:3])
+    weak = (not any_name_match) and top3_weak and len(subs) > 0
+
+    # Decide reason + needs_confirmation.
+    if canon["confidence"] == "low":
+        reason = "low_confidence_canonicalization"
+        needs_confirmation = True
+    elif weak:
+        reason = "weak_sub_relevance"
+        needs_confirmation = True
+    elif canon["confidence"] == "unknown":
+        reason = "canonicalization_unavailable"
+        needs_confirmation = False
+    elif auto_corrected:
+        reason = "high_confidence_typo_correction"
+        needs_confirmation = False
+    else:
+        reason = "direct_match"
+        needs_confirmation = False
+
+    return {
+        "subs": subs,
+        "confirmation": {
+            "original_topic": topic,
+            "canonical_topic": canonical_topic,
+            "auto_corrected": auto_corrected,
+            "needs_confirmation": needs_confirmation,
+            "suggested_variants": canon.get("variants", []),
+            "reason": reason,
+        },
+    }
