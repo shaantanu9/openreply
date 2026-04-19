@@ -521,23 +521,28 @@ def model_status() -> dict:
     }
 
 
-def warmup_model(progress=None, poll_interval: float = 0.4) -> dict:
-    """Force the ONNX model download by asking chromadb to embed one string.
+_MODEL_URL = (
+    "https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz"
+)
 
-    Chromadb blocks the current thread while it fetches + extracts, so we do
-    the embed call on a worker thread and poll the filesystem from the main
-    thread to emit progress. Progress is reported as a dict:
+
+def warmup_model(progress=None, chunk_size: int = 262_144) -> dict:
+    """Download + extract the all-MiniLM-L6-v2 ONNX model for first use.
+
+    Replaces chromadb's built-in downloader (which goes through the same S3
+    URL but has no resume, no retry, and consistently times out at 50 %
+    from this host). Streams the tarball with httpx — supports resume via
+    an explicit ``Range: bytes=N-`` header so the user can hit Enable twice
+    after a network blip and the second attempt picks up where the first
+    left off. Emits one progress event per chunk:
 
         {"event": "progress", "bytes": N, "total": T, "pct": P}
-        {"event": "done",     "ok": True}          # success
+        {"event": "done",     "ok": True}
         {"event": "error",    "ok": False, "error": "..."}
 
-    Args:
-        progress: optional callable that receives those dicts.
-        poll_interval: seconds between filesystem stat polls.
-
-    Returns:
-        The final event dict. Also emitted via `progress` just before return.
+    Once the tarball lands we run one throwaway embed call to let chromadb
+    extract it and compile the ONNX session — so ``is_model_ready()`` flips
+    True by the time the function returns.
     """
     if not is_available():
         ev = {"event": "error", "ok": False, "error": "retrieval extras not installed — uv sync --extra retrieval"}
@@ -548,44 +553,103 @@ def warmup_model(progress=None, poll_interval: float = 0.4) -> dict:
         if progress: progress(ev)
         return ev
 
-    import threading
-    import time
+    import httpx
 
-    err_box: dict[str, Any] = {}
-    done_box: dict[str, bool] = {"done": False}
+    cache_dir = _model_cache_dir()
+    os.makedirs(cache_dir, exist_ok=True)
+    archive = _model_archive_path()
+    tmp = archive + ".part"
 
-    def _worker():
+    # Resume support — if a previous Enable got partway, pick up from the
+    # existing byte offset. Users hitting Enable twice in a row should never
+    # re-download what they already have.
+    already = 0
+    for candidate in (tmp, archive):
         try:
-            # Build a throwaway embedder (same class chromadb uses by default)
-            # and run it once. That triggers download + extract if missing.
-            from chromadb.utils import embedding_functions
-            ef = embedding_functions.ONNXMiniLM_L6_V2()
-            _ = ef(["hello"])  # forces init + download
-        except Exception as e:
-            err_box["err"] = str(e)
-        finally:
-            done_box["done"] = True
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
+            size = os.path.getsize(candidate)
+            if size > 0 and size < _MODEL_TAR_BYTES:
+                already = size
+                if candidate != tmp:
+                    os.rename(candidate, tmp)
+                break
+        except OSError:
+            continue
+    # If the existing file is already the expected size, skip straight to
+    # the extract step.
+    if already >= _MODEL_TAR_BYTES:
+        try: os.rename(tmp, archive)
+        except OSError: pass
+        already = _MODEL_TAR_BYTES
 
     last_pct = -1
-    while not done_box["done"]:
-        try:
-            b = os.path.getsize(_model_archive_path())
-        except OSError:
-            b = 0
-        total = _MODEL_TAR_BYTES or 1
-        pct = min(99, int(b * 100 / total))  # cap until `done` flag set
+    total = _MODEL_TAR_BYTES
+
+    def _emit_progress(b: int) -> None:
+        nonlocal last_pct
+        pct = min(99, int(b * 100 / total))
         if pct != last_pct and progress:
             progress({"event": "progress", "bytes": b, "total": total, "pct": pct})
             last_pct = pct
-        time.sleep(poll_interval)
 
-    t.join(timeout=5)
+    if already < total:
+        headers = {}
+        if already > 0:
+            headers["Range"] = f"bytes={already}-"
+        mode = "ab" if already > 0 else "wb"
+        try:
+            # Long read timeout: the S3 endpoint throttles hard, but we
+            # DO want to fail fast on connection problems. Retry once
+            # implicitly via the 2-attempt loop if the first stream dies.
+            for attempt in range(2):
+                try:
+                    with httpx.stream(
+                        "GET", _MODEL_URL,
+                        headers=headers,
+                        timeout=httpx.Timeout(connect=20.0, read=120.0, write=60.0, pool=20.0),
+                        follow_redirects=True,
+                    ) as resp:
+                        resp.raise_for_status()
+                        downloaded = already
+                        with open(tmp, mode) as f:
+                            for chunk in resp.iter_bytes(chunk_size):
+                                if not chunk:
+                                    continue
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                _emit_progress(downloaded)
+                        break
+                except (httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.ReadError) as e:
+                    if attempt >= 1:
+                        raise
+                    # Retry from wherever we got to.
+                    try:
+                        already = os.path.getsize(tmp)
+                    except OSError:
+                        already = 0
+                    headers = {"Range": f"bytes={already}-"} if already > 0 else {}
+                    mode = "ab" if already > 0 else "wb"
+        except Exception as e:
+            ev = {"event": "error", "ok": False, "error": f"download failed: {e}"}
+            if progress: progress(ev)
+            return ev
+        # Atomic rename once the full tarball is on disk.
+        try:
+            os.rename(tmp, archive)
+        except OSError as e:
+            ev = {"event": "error", "ok": False, "error": f"rename {tmp} → {archive}: {e}"}
+            if progress: progress(ev)
+            return ev
 
-    if err_box.get("err"):
-        ev = {"event": "error", "ok": False, "error": err_box["err"]}
+    # Tarball is on disk — now have chromadb extract + compile the ONNX
+    # graph so is_model_ready() flips True.
+    try:
+        if progress:
+            progress({"event": "progress", "bytes": total, "total": total, "pct": 99})
+        from chromadb.utils import embedding_functions
+        ef = embedding_functions.ONNXMiniLM_L6_V2()
+        _ = ef(["hello"])  # triggers extract + ONNX session init
+    except Exception as e:
+        ev = {"event": "error", "ok": False, "error": f"extract: {e}"}
         if progress: progress(ev)
         return ev
 
