@@ -593,6 +593,36 @@ pub async fn palace_stats(app: AppHandle) -> Result<Value, String> {
         .map_err(err_to_string)
 }
 
+/// Has the ONNX embedding model been downloaded yet? Cheap (one stat), no
+/// Python spawn beyond checking the cache dir. Returned shape:
+/// `{installed, ready, archive_bytes, expected_bytes, cache_dir}`.
+/// `installed` = retrieval extras present; `ready` = ONNX weights cached.
+#[tauri::command]
+pub async fn palace_model_status(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "palace-model-status"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Kick off the one-time ~80 MB ONNX model download. Streams progress via
+/// `palace:warmup:progress` events (one JSON object per line) and emits
+/// `palace:warmup:done` when finished. Safe to call when the model is
+/// already cached — emits `{event:"done", ok:true, already:true}` instantly.
+#[tauri::command]
+pub async fn palace_warmup(app: AppHandle) -> Result<(), String> {
+    // Reuse the chat streaming helper — same contract (JSON per line on
+    // stdout, done event on exit). Event namespace is per-command so the
+    // UI can subscribe to just palace progress without noise from chat.
+    run_cli_chat_streaming(
+        &app,
+        vec!["research", "palace-warmup"],
+        "palace:warmup:progress",
+        "palace:warmup:done",
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 /// Return the SQLite file's last-modified time as a unix millisecond
 /// timestamp. Cheap (one stat syscall — no Python spawn), so the frontend can
 /// poll on a short interval and invalidate its in-memory cache when the DB
@@ -921,6 +951,243 @@ pub async fn close_splash(app: AppHandle) -> Result<(), String> {
         let _ = main.set_focus();
     }
     Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Dynamic model list per cloud provider
+//
+// Replaces the hardcoded curated lists in the BYOK modal. Called server-side
+// (from Rust) because several provider APIs (Anthropic, OpenAI, Groq, etc.)
+// don't set CORS headers for arbitrary webview origins, so a direct browser
+// fetch gets blocked. Running here through reqwest means one consistent
+// code path regardless of provider, no CORS shenanigans, and the API key
+// stays on the Rust side rather than leaking into the JS call.
+// ─────────────────────────────────────────────────────────────────────────
+
+fn read_byok_value(key: &str) -> Result<String, String> {
+    let path = byok_env_path()?;
+    let contents = std::fs::read_to_string(&path).unwrap_or_default();
+    parse_env(&contents)
+        .get(key)
+        .cloned()
+        .ok_or_else(|| format!("{} not set", key))
+}
+
+/// List available models from a cloud provider's /models endpoint.
+///
+/// Providers that return an OpenAI-style `{data: [{id, ...}]}` payload
+/// (OpenAI, OpenRouter, Groq, DeepSeek, Mistral) are handled uniformly.
+/// Anthropic and Google Gemini have their own shapes — parsed individually.
+///
+/// Returns `Vec<{id, context_length?, description?, created?, pricing?}>`
+/// where fields beyond `id` are best-effort (not every provider exposes them).
+#[tauri::command]
+pub async fn list_provider_models(provider: String) -> Result<Value, String> {
+    let prov = provider.to_lowercase();
+
+    // Build request (url + headers + api-key location) per provider.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let models_json: Value = match prov.as_str() {
+        "anthropic" => {
+            let key = read_byok_value("ANTHROPIC_API_KEY")?;
+            let resp = client
+                .get("https://api.anthropic.com/v1/models")
+                .header("x-api-key", &key)
+                .header("anthropic-version", "2023-06-01")
+                .send()
+                .await
+                .map_err(|e| format!("anthropic request failed: {}", e))?;
+            if !resp.status().is_success() {
+                let code = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                return Err(format!("anthropic returned {}: {}", code, body));
+            }
+            resp.json().await.map_err(|e| e.to_string())?
+        }
+        "openai" => fetch_openai_compat(&client, "https://api.openai.com/v1/models", "OPENAI_API_KEY").await?,
+        "openrouter" => fetch_openai_compat(&client, "https://openrouter.ai/api/v1/models", "OPENROUTER_API_KEY").await?,
+        "groq" => fetch_openai_compat(&client, "https://api.groq.com/openai/v1/models", "GROQ_API_KEY").await?,
+        "deepseek" => fetch_openai_compat(&client, "https://api.deepseek.com/v1/models", "DEEPSEEK_API_KEY").await?,
+        "mistral" => fetch_openai_compat(&client, "https://api.mistral.ai/v1/models", "MISTRAL_API_KEY").await?,
+        "google" => {
+            let key = read_byok_value("GOOGLE_API_KEY")?;
+            let url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+                key
+            );
+            let resp = client
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| format!("google request failed: {}", e))?;
+            if !resp.status().is_success() {
+                let code = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                return Err(format!("google returned {}: {}", code, body));
+            }
+            resp.json().await.map_err(|e| e.to_string())?
+        }
+        "ollama" => {
+            // Uses local /api/tags and does not require auth. Included so
+            // the frontend can share one code path across providers.
+            let base = std::env::var("OLLAMA_BASE_URL")
+                .ok()
+                .or_else(|| read_byok_value("OLLAMA_BASE_URL").ok())
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            let url = format!("{}/api/tags", base.trim_end_matches('/'));
+            let resp = client
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| format!("ollama request failed: {}", e))?;
+            if !resp.status().is_success() {
+                return Err(format!("ollama returned {}", resp.status()));
+            }
+            resp.json().await.map_err(|e| e.to_string())?
+        }
+        other => return Err(format!("unknown provider: {}", other)),
+    };
+
+    // Normalize each provider's shape into [{id, context_length?, description?, created?}].
+    let normalized = normalize_models(&prov, &models_json);
+    Ok(Value::Array(normalized))
+}
+
+/// Shared helper for OpenAI-compatible endpoints.
+async fn fetch_openai_compat(
+    client: &reqwest::Client,
+    url: &str,
+    env_key: &str,
+) -> Result<Value, String> {
+    let api_key = read_byok_value(env_key)?;
+    let resp = client
+        .get(url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("{} request failed: {}", env_key, e))?;
+    if !resp.status().is_success() {
+        let code = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("{} returned {}: {}", url, code, body));
+    }
+    resp.json().await.map_err(|e| e.to_string())
+}
+
+/// Flatten provider-specific response shapes into a uniform list of
+/// `{id, context_length?, description?, created?}` JSON objects that
+/// the frontend can render identically across providers.
+fn normalize_models(provider: &str, raw: &Value) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+
+    match provider {
+        "anthropic" => {
+            // {"data": [{"id": "...", "display_name": "..."}, ...]}
+            if let Some(arr) = raw.get("data").and_then(|v| v.as_array()) {
+                for m in arr {
+                    let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let desc = m.get("display_name").and_then(|v| v.as_str()).map(String::from);
+                    out.push(serde_json::json!({ "id": id, "description": desc }));
+                }
+            }
+        }
+        "google" => {
+            // {"models": [{"name": "models/gemini-...", "displayName": "...",
+            //              "inputTokenLimit": 2000000, "supportedGenerationMethods": [...]}]}
+            if let Some(arr) = raw.get("models").and_then(|v| v.as_array()) {
+                for m in arr {
+                    let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    // Strip "models/" prefix so frontend displays just the model name.
+                    let id = name.strip_prefix("models/").unwrap_or(name).to_string();
+                    let desc = m
+                        .get("displayName")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    let ctx = m.get("inputTokenLimit").cloned().unwrap_or(Value::Null);
+                    // Only surface models that can generate content (filter out embedding-only).
+                    let methods = m
+                        .get("supportedGenerationMethods")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| x.as_str())
+                                .any(|s| s == "generateContent")
+                        })
+                        .unwrap_or(true);
+                    if !methods {
+                        continue;
+                    }
+                    out.push(serde_json::json!({
+                        "id": id, "description": desc, "context_length": ctx,
+                    }));
+                }
+            }
+        }
+        "ollama" => {
+            // {"models": [{"name": "gemma3:4b", "details": {"family": "...", "parameter_size": "..."}}]}
+            if let Some(arr) = raw.get("models").and_then(|v| v.as_array()) {
+                for m in arr {
+                    let id = m.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    // Skip embedding / OCR / BERT families — not chat-capable.
+                    let family = m
+                        .get("details")
+                        .and_then(|d| d.get("family"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if matches!(family, "bert" | "nomic-bert")
+                        || id.to_lowercase().contains("embed")
+                    {
+                        continue;
+                    }
+                    let param_size = m
+                        .get("details")
+                        .and_then(|d| d.get("parameter_size"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    out.push(serde_json::json!({ "id": id, "description": param_size }));
+                }
+            }
+        }
+        _ => {
+            // OpenAI-compatible: {"data": [{"id": "...", "context_length"?: ..., ...}]}
+            // (OpenRouter also sets "context_length" + "pricing". Groq/Mistral/DeepSeek
+            // just return a minimal {id}.)
+            if let Some(arr) = raw.get("data").and_then(|v| v.as_array()) {
+                for m in arr {
+                    let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if id.is_empty() {
+                        continue;
+                    }
+                    // Skip non-chat OpenAI models: embeddings, whisper, dall-e, tts.
+                    // Cheap heuristic — id substring match. Users that really want
+                    // them can type the ID in the default-provider tab.
+                    let low = id.to_lowercase();
+                    let blocklist = [
+                        "embedding", "whisper", "dall-e", "tts-", "text-moderation",
+                        "omni-moderation", "babbage", "davinci",
+                    ];
+                    if blocklist.iter().any(|s| low.contains(s)) {
+                        continue;
+                    }
+                    let ctx = m.get("context_length").cloned().unwrap_or(Value::Null);
+                    let desc = m
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                        .or_else(|| m.get("name").and_then(|v| v.as_str()).map(String::from));
+                    out.push(serde_json::json!({
+                        "id": id, "context_length": ctx, "description": desc,
+                    }));
+                }
+            }
+        }
+    }
+
+    out
 }
 
 #[cfg(test)]

@@ -129,6 +129,13 @@ export async function renderSettings(root) {
         <div class="skel skel-line" style="width:65%"></div>
       </div>
 
+      <!-- Semantic search (palace) — opt-in on-device model download -->
+      <div class="settings-card" id="card-palace">
+        <h4>Semantic search <span style="color:var(--ink-3);font-size:12px;font-weight:500">loading…</span></h4>
+        <p style="color:var(--ink-3)">Checking model status…</p>
+        <div class="skel skel-line" style="width:70%;margin-top:10px"></div>
+      </div>
+
       <!-- Tables -->
       <div class="settings-card" id="card-tables">
         <h4>Table counts</h4>
@@ -228,6 +235,16 @@ export async function renderSettings(root) {
       if (alive()) fillDataCard(root, info, dataDir, dbSize);
     })
     .catch(e => { if (alive()) reportError(root, 'data', e); });
+
+  // Palace / semantic-search card. Pull status + current doc count in
+  // parallel, then render the right state (not-installed | not-ready |
+  // ready).
+  Promise.all([
+    api.palaceModelStatus().catch(() => ({ installed: false, ready: false })),
+    api.palaceStats().catch(() => ({ ok: false, count: 0 })),
+  ])
+    .then(([ms, ps]) => { if (alive()) fillPalaceCard(root, ms, ps); })
+    .catch(e => { if (alive()) reportError(root, 'palace', e); });
 }
 
 // --- Profile card (sync) ----------------------------------------------------
@@ -380,6 +397,164 @@ function fillTablesCard(root, info) {
       ? Object.entries(t).map(([k, v]) => `<div class="kv-row"><b>${esc(k)}</b><span>${v}</span></div>`).join('')
       : `<div class="empty-state" style="padding:12px">No table info yet — run a collect to populate.</div>`}
   `;
+}
+
+// ─── Palace (semantic search) card ──────────────────────────────────────────
+// Three visible states:
+//   1. "not installed" — retrieval extras wheel missing from the sidecar.
+//      This happens on lean prod builds. Show why, skip the Enable button.
+//   2. "ready to enable" — extras installed, ONNX model not cached yet.
+//      Shows the opt-in "Enable — 80 MB download" button. Progress bar
+//      takes over when the button is clicked.
+//   3. "enabled" — model cached. Show doc count + Reindex action.
+//
+// localStorage flag `gapmap.palace.declined` lets the user opt out; we
+// render a muted "Enable anyway" link instead of the primary button.
+const PALACE_DECLINED_KEY = 'gapmap.palace.declined';
+
+function fillPalaceCard(root, ms, ps) {
+  const card = root.querySelector('#card-palace');
+  if (!card) return;
+
+  const installed = !!ms?.installed;
+  const ready     = !!ms?.ready;
+  const docCount  = ps?.count ?? 0;
+  const archive   = ms?.archive_bytes ?? 0;
+  const expected  = ms?.expected_bytes ?? 82_837_504;
+  const declined  = localStorage.getItem(PALACE_DECLINED_KEY) === 'true';
+  const partialPct = expected > 0 ? Math.min(99, Math.round(archive * 100 / expected)) : 0;
+
+  if (!installed) {
+    card.innerHTML = `
+      <h4>Semantic search <span style="color:var(--ink-3);font-size:12px;font-weight:500">not available</span></h4>
+      <p style="color:var(--ink-3);font-size:13px">This build wasn't shipped with the retrieval extras (chromadb). Rebuild the sidecar with the <code>retrieval</code> extras group to enable local semantic search + RAG-style chat grounding.</p>
+      <div class="kv-row"><b>Cache dir</b><span>—</span></div>
+    `;
+    return;
+  }
+
+  if (ready) {
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h4>Semantic search <span class="pill active" style="background:var(--mint-soft);color:#2E7D5B">✓ enabled</span></h4>
+      </div>
+      <p>Hybrid vector + BM25 search over your posts corpus. Runs fully offline — no keys, no cloud.</p>
+      <div class="kv-row"><b>Indexed posts</b><span>${(docCount || 0).toLocaleString()}</span></div>
+      <div class="kv-row"><b>Model</b><span>all-MiniLM-L6-v2 (384-dim, ONNX)</span></div>
+      <div class="kv-row"><b>Cache</b><span title="${esc(ms?.cache_dir || '')}">${esc((ms?.cache_dir || '').split('/').slice(-3).join('/'))}</span></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-palace-reindex">Reindex corpus</button>
+      </div>
+      <div id="palace-reindex-status" style="margin-top:10px;font-size:12px;color:var(--ink-3)"></div>
+    `;
+    card.querySelector('#btn-palace-reindex')?.addEventListener('click', () => doReindex(root));
+    return;
+  }
+
+  // Not ready — either fresh install or a user who declined previously.
+  const ctaLabel = declined ? 'Enable anyway' : 'Enable — 80 MB';
+  const ctaClass = declined ? 'btn btn-ghost btn-sm btn-bordered' : 'btn btn-primary btn-sm';
+  const resumeHint = archive > 1_000_000
+    ? `<p style="color:var(--ink-3);font-size:12px;margin-top:6px">Partial download detected (${(archive/1024/1024).toFixed(1)} MB of ~80 MB) — will resume.</p>`
+    : '';
+
+  card.innerHTML = `
+    <h4>Semantic search <span style="color:var(--ink-3);font-size:12px;font-weight:500">optional · 80 MB</span></h4>
+    <p>Cross-topic search, "related posts" links, and smarter chat grounding — all offline after a one-time download of the embedding model (<code>all-MiniLM-L6-v2</code>, ~80 MB, cached forever).</p>
+    ${resumeHint}
+    <div class="palace-progress" id="palace-progress" hidden style="margin-top:10px">
+      <div class="palace-bar"><div class="palace-bar-fill" id="palace-bar-fill" style="width:${partialPct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3);margin-top:4px">
+        <span id="palace-progress-label">Downloading…</span>
+        <span id="palace-progress-pct">${partialPct}%</span>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" id="palace-actions">
+      <button class="${ctaClass}" id="btn-palace-enable">${esc(ctaLabel)}</button>
+      ${declined ? '' : `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-palace-skip">Maybe later</button>`}
+    </div>
+    <div id="palace-error" style="margin-top:10px;font-size:12px;color:#B84747"></div>
+  `;
+  card.querySelector('#btn-palace-enable')?.addEventListener('click', () => startWarmup(root));
+  card.querySelector('#btn-palace-skip')?.addEventListener('click', () => {
+    localStorage.setItem(PALACE_DECLINED_KEY, 'true');
+    // Re-render the card so the secondary Enable-anyway appears instead.
+    fillPalaceCard(root, ms, ps);
+  });
+}
+
+async function startWarmup(root) {
+  const card = root.querySelector('#card-palace');
+  if (!card) return;
+  const actions = card.querySelector('#palace-actions');
+  const progress = card.querySelector('#palace-progress');
+  const barFill = card.querySelector('#palace-bar-fill');
+  const pctEl = card.querySelector('#palace-progress-pct');
+  const labelEl = card.querySelector('#palace-progress-label');
+  const errEl = card.querySelector('#palace-error');
+
+  if (actions) actions.style.display = 'none';
+  if (progress) progress.hidden = false;
+  if (errEl) errEl.textContent = '';
+
+  // Subscribe BEFORE invoking so we don't miss early progress events.
+  let unlistenProg, unlistenDone;
+  try {
+    unlistenProg = await api.onPalaceWarmupProgress(line => {
+      try {
+        const ev = JSON.parse(line);
+        if (ev.event === 'progress') {
+          const pct = Number.isFinite(ev.pct) ? ev.pct : 0;
+          if (barFill) barFill.style.width = `${pct}%`;
+          if (pctEl) pctEl.textContent = `${pct}%`;
+          if (labelEl) labelEl.textContent = `Downloading model — ${(ev.bytes/1024/1024).toFixed(1)} MB`;
+        } else if (ev.event === 'done') {
+          if (barFill) barFill.style.width = '100%';
+          if (pctEl) pctEl.textContent = '100%';
+          if (labelEl) labelEl.textContent = 'Ready';
+        } else if (ev.event === 'error') {
+          if (errEl) errEl.textContent = `✗ ${ev.error}`;
+        }
+      } catch {}
+    });
+    unlistenDone = await api.onPalaceWarmupDone(async () => {
+      // Cleanup + re-render the card with the fresh status.
+      try { unlistenProg?.(); } catch {}
+      try { unlistenDone?.(); } catch {}
+      const [ms, ps] = await Promise.all([
+        api.palaceModelStatus().catch(() => ({ installed: false, ready: false })),
+        api.palaceStats().catch(() => ({ count: 0 })),
+      ]);
+      // Clear the declined flag on a successful install — user obviously
+      // enabled it, don't keep showing the muted CTA next time.
+      if (ms?.ready) localStorage.removeItem(PALACE_DECLINED_KEY);
+      fillPalaceCard(root, ms, ps);
+    });
+    await api.palaceWarmup();
+  } catch (e) {
+    if (errEl) errEl.textContent = `✗ ${e?.message || e}`;
+    try { unlistenProg?.(); } catch {}
+    try { unlistenDone?.(); } catch {}
+    if (actions) actions.style.display = '';
+    if (progress) progress.hidden = true;
+  }
+}
+
+async function doReindex(root) {
+  const card = root.querySelector('#card-palace');
+  const status = card?.querySelector('#palace-reindex-status');
+  const btn = card?.querySelector('#btn-palace-reindex');
+  if (status) status.textContent = 'Re-embedding every post — this can take a couple of minutes…';
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api.reindexPalace();
+    if (status) status.textContent = `✓ upserted ${r?.upserted ?? 0} posts (skipped ${r?.skipped ?? 0}).`;
+    const [ms, ps] = await Promise.all([api.palaceModelStatus(), api.palaceStats()]);
+    fillPalaceCard(root, ms, ps);
+  } catch (e) {
+    if (status) status.textContent = `✗ ${e?.message || e}`;
+    if (btn) btn.disabled = false;
+  }
 }
 
 function reportError(root, section, e) {

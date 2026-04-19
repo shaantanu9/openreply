@@ -45,6 +45,7 @@ fn main() {
             commands::chat_status,
             commands::test_llm,
             commands::list_ollama_models,
+            commands::list_provider_models,
             commands::run_solutions_pipeline,
             commands::run_temporal_gaps,
             commands::quick_extract_gaps,
@@ -60,6 +61,8 @@ fn main() {
             commands::related_posts,
             commands::reindex_palace,
             commands::palace_stats,
+            commands::palace_model_status,
+            commands::palace_warmup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gapmap");

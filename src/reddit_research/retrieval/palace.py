@@ -436,3 +436,153 @@ def stats() -> dict:
     except Exception as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "count": count, "path": _palace_path()}
+
+
+# ─── model download / warmup ───────────────────────────────────────────────
+#
+# ChromaDB ships its default embedder (all-MiniLM-L6-v2, 384 dims) but does
+# NOT bundle the ONNX weights inside the wheel — it fetches them the first
+# time an embedding is requested, from https://chroma-onnx-models.s3.amazonaws.com/
+# into `~/.cache/chroma/onnx_models/all-MiniLM-L6-v2/`. The tar.gz is ~79 MB;
+# it expands to a directory with `onnx/model.onnx` + `tokenizer.json` etc.
+#
+# Hybrid strategy: ship the Python runtime (onnxruntime, chromadb,
+# rank-bm25) in the DMG so the app is never broken at rest, but let the
+# user opt in to the model download with explicit UI. Functions below let
+# the frontend show a "Enable semantic search — 80 MB" card and monitor
+# the download progress.
+
+# Total size of the downloaded tar (chromadb 1.5.x shipped this file size).
+# Used only as the denominator for progress %. If the real download differs,
+# we cap pct at 99 until the extraction is actually finished.
+_MODEL_TAR_BYTES = 79 * 1024 * 1024
+
+
+def _model_cache_dir() -> str:
+    return os.path.join(
+        os.path.expanduser("~"),
+        ".cache", "chroma", "onnx_models", "all-MiniLM-L6-v2",
+    )
+
+
+def _model_archive_path() -> str:
+    return os.path.join(_model_cache_dir(), "onnx.tar.gz")
+
+
+def _model_expanded_file() -> str:
+    # chromadb unpacks the tar into an `onnx/` subdir; the actual graph is here.
+    return os.path.join(_model_cache_dir(), "onnx", "model.onnx")
+
+
+def is_model_ready() -> bool:
+    """True iff the ONNX graph file exists + non-empty. Cheap (one stat)."""
+    if not is_available():
+        return False
+    p = _model_expanded_file()
+    try:
+        return os.path.isfile(p) and os.path.getsize(p) > 1024
+    except OSError:
+        return False
+
+
+def model_status() -> dict:
+    """UI-facing status payload. Works whether retrieval extras are
+    installed or not — so the Settings card can show an accurate state on
+    any sidecar build."""
+    installed = is_available()
+    ready = is_model_ready() if installed else False
+    # Current on-disk size of the download, for the "partial download — Resume"
+    # hint on resumed warmups.
+    archive_bytes = 0
+    try:
+        archive_bytes = os.path.getsize(_model_archive_path())
+    except OSError:
+        pass
+    return {
+        "ok": True,
+        "installed": installed,  # retrieval extras wheel installed in Python
+        "ready": ready,          # ONNX weights cached locally
+        "archive_bytes": archive_bytes,
+        "expected_bytes": _MODEL_TAR_BYTES,
+        "cache_dir": _model_cache_dir() if installed else None,
+    }
+
+
+def warmup_model(progress=None, poll_interval: float = 0.4) -> dict:
+    """Force the ONNX model download by asking chromadb to embed one string.
+
+    Chromadb blocks the current thread while it fetches + extracts, so we do
+    the embed call on a worker thread and poll the filesystem from the main
+    thread to emit progress. Progress is reported as a dict:
+
+        {"event": "progress", "bytes": N, "total": T, "pct": P}
+        {"event": "done",     "ok": True}          # success
+        {"event": "error",    "ok": False, "error": "..."}
+
+    Args:
+        progress: optional callable that receives those dicts.
+        poll_interval: seconds between filesystem stat polls.
+
+    Returns:
+        The final event dict. Also emitted via `progress` just before return.
+    """
+    if not is_available():
+        ev = {"event": "error", "ok": False, "error": "retrieval extras not installed — uv sync --extra retrieval"}
+        if progress: progress(ev)
+        return ev
+    if is_model_ready():
+        ev = {"event": "done", "ok": True, "already": True}
+        if progress: progress(ev)
+        return ev
+
+    import threading
+    import time
+
+    err_box: dict[str, Any] = {}
+    done_box: dict[str, bool] = {"done": False}
+
+    def _worker():
+        try:
+            # Build a throwaway embedder (same class chromadb uses by default)
+            # and run it once. That triggers download + extract if missing.
+            from chromadb.utils import embedding_functions
+            ef = embedding_functions.ONNXMiniLM_L6_V2()
+            _ = ef(["hello"])  # forces init + download
+        except Exception as e:
+            err_box["err"] = str(e)
+        finally:
+            done_box["done"] = True
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+    last_pct = -1
+    while not done_box["done"]:
+        try:
+            b = os.path.getsize(_model_archive_path())
+        except OSError:
+            b = 0
+        total = _MODEL_TAR_BYTES or 1
+        pct = min(99, int(b * 100 / total))  # cap until `done` flag set
+        if pct != last_pct and progress:
+            progress({"event": "progress", "bytes": b, "total": total, "pct": pct})
+            last_pct = pct
+        time.sleep(poll_interval)
+
+    t.join(timeout=5)
+
+    if err_box.get("err"):
+        ev = {"event": "error", "ok": False, "error": err_box["err"]}
+        if progress: progress(ev)
+        return ev
+
+    # Confirm file actually landed.
+    if not is_model_ready():
+        ev = {"event": "error", "ok": False,
+              "error": "download finished but ONNX file is missing"}
+        if progress: progress(ev)
+        return ev
+
+    ev = {"event": "done", "ok": True, "pct": 100}
+    if progress: progress(ev)
+    return ev

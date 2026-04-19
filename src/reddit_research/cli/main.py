@@ -877,6 +877,35 @@ def cmd_research_palace_stats(
     typer.echo(json.dumps(stats(), default=str))
 
 
+@research_app.command("palace-model-status")
+def cmd_research_palace_model_status() -> None:
+    """Report whether the semantic-search ONNX model has been downloaded.
+    Returns {installed, ready, archive_bytes, expected_bytes, cache_dir}."""
+    import sys as _sys
+    from ..retrieval.palace import model_status
+    typer.echo(json.dumps(model_status(), default=str))
+    _sys.stdout.flush()
+
+
+@research_app.command("palace-warmup")
+def cmd_research_palace_warmup() -> None:
+    """Download the all-MiniLM-L6-v2 ONNX model (~80 MB, one-time, cached).
+
+    Streams progress as JSON events, one per line:
+      {"event":"progress","bytes":N,"total":T,"pct":P}
+      {"event":"done","ok":true}               # success
+      {"event":"error","ok":false,"error":...} # failure
+    """
+    import sys as _sys
+    from ..retrieval.palace import warmup_model
+
+    def emit(ev: dict) -> None:
+        typer.echo(json.dumps(ev, default=str))
+        _sys.stdout.flush()
+
+    warmup_model(progress=emit)
+
+
 @research_app.command("test-llm")
 def cmd_research_test_llm(
     provider: Optional[str] = typer.Option(None, "--provider"),

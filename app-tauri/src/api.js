@@ -204,7 +204,9 @@ export const api = {
   revealInFinder:  (path)    => invoke('reveal_in_finder', { path }),
   openUrl:         (url)     => invoke('open_url', { url }),
   byokSet:         (name, value) => {
-    invalidate('byok_status');
+    // Any key change can unlock or lock a provider's /models endpoint — nuke
+    // both caches so the next modal open fetches fresh.
+    invalidate('byok_status', 'list_provider_models');
     return invoke('byok_set', { name, value });
   },
   startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
@@ -212,6 +214,12 @@ export const api = {
   chatStatus:      ()        => invoke('chat_status'),
   testLlm:         (provider, model) => invoke('test_llm', { provider, model }),
   listOllamaModels: ()       => cachedInvoke('list_ollama_models', null, 10000),
+  // Dynamic model list from any configured cloud provider's /models endpoint.
+  // Cached for 5 minutes so opening the BYOK modal repeatedly doesn't hammer
+  // the provider's API (most enforce a rate limit). Fresh fetch on first open
+  // after a new API key is saved — the cache key includes the provider name
+  // only, so clearing the cache after a byokSet is how we pick up changes.
+  listProviderModels: (provider) => cachedInvoke('list_provider_models', { provider }, 5 * 60 * 1000),
   ollamaStartService: ()     => invoke('ollama_start_service'),
   ollamaStopService:  ()     => invoke('ollama_stop_service'),
   closeSplash:        ()     => invoke('close_splash'),
@@ -226,6 +234,15 @@ export const api = {
     invoke('related_posts', { postId, k, topic }),
   reindexPalace:      ()     => invoke('reindex_palace'),
   palaceStats:        ()     => invoke('palace_stats'),
+  // Hybrid-download opt-in. `installed` = retrieval extras wheels present,
+  // `ready` = ONNX model file cached. UI renders different cards per state.
+  palaceModelStatus:  ()     => invoke('palace_model_status'),
+  // Kicks off the ~80 MB ONNX model download; subscribe to
+  // `palace:warmup:progress` for {event, bytes, total, pct} events and
+  // `palace:warmup:done` for the {code} exit.
+  palaceWarmup:       ()     => invoke('palace_warmup'),
+  onPalaceWarmupProgress: (cb) => listen('palace:warmup:progress', e => cb(e.payload)),
+  onPalaceWarmupDone:     (cb) => listen('palace:warmup:done',     e => cb(e.payload)),
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic) => invoke('run_temporal_gaps', { topic }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),

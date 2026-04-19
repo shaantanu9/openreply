@@ -16,6 +16,9 @@ from .palace import (
     stats,
     upsert_post,
     upsert_posts_many,
+    is_model_ready,
+    model_status,
+    warmup_model,
 )
 
 __all__ = [
@@ -28,4 +31,7 @@ __all__ = [
     "stats",
     "upsert_post",
     "upsert_posts_many",
+    "is_model_ready",
+    "model_status",
+    "warmup_model",
 ]
