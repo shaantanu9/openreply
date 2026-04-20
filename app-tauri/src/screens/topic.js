@@ -45,6 +45,11 @@ function ensureToastStack() {
   }
   return stack;
 }
+// Tracks pending toast auto-remove timers so renderTopic's cleanup can nuke
+// them when the user navigates away mid-toast — otherwise zombie setTimeouts
+// try to remove DOM nodes belonging to screens that no longer exist.
+const _activeToastTimers = new Set();
+
 function showToast(title, detail = '', kind = 'err', ms = 5000) {
   const stack = ensureToastStack();
   const el = document.createElement('div');
@@ -58,9 +63,17 @@ function showToast(title, detail = '', kind = 'err', ms = 5000) {
     </div>
     <button class="toast-close" aria-label="dismiss">×</button>`;
   stack.appendChild(el);
-  const remove = () => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); };
+  let fadeTimer = null;
+  const remove = () => {
+    el.style.opacity = '0';
+    fadeTimer = setTimeout(() => el.remove(), 200);
+    _activeToastTimers.add(fadeTimer);
+  };
   el.querySelector('.toast-close').onclick = remove;
-  if (ms) setTimeout(remove, ms);
+  if (ms) {
+    const autoTimer = setTimeout(remove, ms);
+    _activeToastTimers.add(autoTimer);
+  }
 }
 
 // ─── Skeleton + error-card renderers ─────────────────────────────────────
@@ -243,20 +256,21 @@ async function openSourcePickerModal(topic) {
     }
 
     close();
-    // Navigate to the live progress screen FIRST so its event listeners attach
-    // before the sidecar emits its first event.
+    // Stash the picker state in localStorage so collect.js (which auto-fires
+    // startCollect on mount) can pick up our chosen source filter + skip-reddit
+    // flag. Otherwise collect.js's 2-arg startCollect call would fire FIRST
+    // and ignore the source filter entirely (root cause: bug 2026-04-20 where
+    // selecting only playstore still searched Reddit).
+    localStorage.setItem('gapmap.collect.last_aggressive', String(aggressive));
+    localStorage.setItem(
+      'gapmap.collect.last_sources',
+      externalSources.length > 0 ? externalSources.join(',') : '',
+    );
+    localStorage.setItem('gapmap.collect.last_skip_reddit', String(!includeReddit));
+
+    // Navigate to the live progress screen — collect.js will read the
+    // localStorage values and fire startCollect with the correct args.
     location.hash = `#/collect/${encodeURIComponent(topic)}`;
-    // Give the route + listeners a tick to mount, then fire collect.
-    setTimeout(() => {
-      api.startCollect(
-        topic,
-        aggressive,
-        externalSources.length > 0 ? externalSources.join(',') : null,
-        !includeReddit,
-      ).catch(err => {
-        showToast('Failed to start collect', err?.message || String(err), 'err');
-      });
-    }, 50);
   };
 }
 
@@ -495,11 +509,41 @@ export async function renderTopic(root, { params }) {
         )
         WHERE rn <= 100
         ORDER BY kind, evidence_count DESC`;
+
+  // First page of Posts — lets the Posts tab paint instantly on click.
+  const postsPageSql = `
+    SELECT p.id, p.sub, p.source_type, p.author, p.title,
+           substr(p.selftext, 1, 280) AS excerpt,
+           p.url, p.permalink, p.score, p.num_comments, p.created_utc
+    FROM topic_posts tp JOIN posts p ON p.id = tp.post_id
+    WHERE tp.topic = :topic
+    ORDER BY p.score DESC
+    LIMIT 50 OFFSET 0`;
+
+  // Research papers — same IN-list the Research tab builds, hoisted so the
+  // cache is warm by the time the user clicks.
+  const researchSql = `
+    SELECT p.id, p.title, p.url, p.permalink, p.author,
+           p.score, p.num_comments, p.created_utc, p.sub,
+           coalesce(p.source_type,'reddit') AS source,
+           substr(coalesce(p.selftext,''),1,400) AS excerpt
+    FROM posts p JOIN topic_posts tp ON tp.post_id = p.id
+    WHERE tp.topic=:topic
+      AND coalesce(p.source_type,'reddit') IN ('arxiv','openalex','pubmed','scholar','ingest')
+    ORDER BY coalesce(p.score,0) DESC, p.created_utc DESC
+    LIMIT 200`;
+
+  // Fire all prefetches in parallel. `cachedInvoke` dedups + TTLs the
+  // results, so each loader reads the warm cache instead of spawning a
+  // cold Python process. Errors swallowed — loaders will re-fetch with UI
+  // feedback on any real failure.
   Promise.all([
-    api.runQuery(combinedFindingsSql, topic).catch(() => null),
-    api.runQuery(srcSql, topic).catch(() => null),
-    api.runQuery(subsSql, topic).catch(() => null),
-    api.byokStatus().catch(() => null),
+    api.runQuery(combinedFindingsSql, topic).catch(() => null),  // Evidence
+    api.runQuery(srcSql, topic).catch(() => null),               // Sources (types)
+    api.runQuery(subsSql, topic).catch(() => null),              // Sources (subreddits)
+    api.runQuery(postsPageSql, topic).catch(() => null),         // Posts page 0
+    api.runQuery(researchSql, topic).catch(() => null),          // Research papers
+    api.byokStatus().catch(() => null),                          // LLM config
   ]).catch(() => {});
 
   // ─── Map ──────────────────────────────────────────────────────────────
@@ -714,7 +758,17 @@ export async function renderTopic(root, { params }) {
       if (sub) sub.textContent = 'Exporting viewer…';
       // Reuse the existing exported HTML if it's still on disk (skips a
       // sidecar spawn). Rebuild button passes force=true to regenerate.
-      outPath = await api.exportHtml(topic, force);
+      // 60s timeout — if the sidecar hangs (DB lock, Python import crash,
+      // Gatekeeper pause), surface an actionable error card instead of a
+      // forever "Exporting viewer…" spinner. The Promise.race throws a
+      // tagged Error that the catch block below turns into a retry UI.
+      outPath = await Promise.race([
+        api.exportHtml(topic, force),
+        new Promise((_, reject) => setTimeout(
+          () => reject(Object.assign(new Error('Exporting the viewer timed out after 60s. Python sidecar is stuck — usually a DB lock from a still-running enrich.'), { __timeout: true })),
+          60000
+        )),
+      ]);
       const fileUrl = convertFileSrc(outPath);
 
       // Node + edge counts come from the unified topicStats() call — no
@@ -769,19 +823,31 @@ export async function renderTopic(root, { params }) {
     } catch (e) {
       const msg = (e?.message || e || '').toString();
       const hasNoPosts = msg.includes('no posts') || msg.includes('0 nodes');
+      const isTimeout = !!e?.__timeout;
+      // Timeout gets its own copy + a "Skip to findings" escape hatch so
+      // users aren't stuck staring at the Map tab when the graph export is
+      // wedged on DB lock or an Ollama pileup.
+      const title = isTimeout
+        ? 'Map export is stuck'
+        : (hasNoPosts ? 'No data for this topic yet' : "Couldn't render the gap map");
+      const extraBtn = isTimeout
+        ? `<button class="btn btn-ghost btn-bordered" id="btn-map-skip-findings"><i data-lucide="search"></i> Skip to findings</button>`
+        : '';
       set(`
         <div class="empty-big">
-          <h3>${hasNoPosts ? 'No data for this topic yet' : "Couldn't render the gap map"}</h3>
+          <h3>${title}</h3>
           <p>${esc(msg)}</p>
-          <div style="display:flex;gap:8px;justify-content:center;margin-top:14px">
+          <div style="display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap">
             <button class="btn btn-primary" id="btn-map-run-collect">Run collect</button>
             <button class="btn btn-ghost icon-btn" id="btn-map-retry" style="border:1px solid var(--line)"><i data-lucide="rotate-cw"></i> Retry</button>
+            ${extraBtn}
           </div>
         </div>`);
       if (contentEl.dataset.tab !== 'map') return;
       window.refreshIcons?.();
       $('#btn-map-run-collect').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
       $('#btn-map-retry').onclick = () => loadMap();
+      $('#btn-map-skip-findings')?.addEventListener('click', () => switchTab('evidence'));
     }
   }
 
@@ -2178,6 +2244,10 @@ export async function renderTopic(root, { params }) {
     try { chatStream.unlistenDone?.(); } catch {}
     clearInterval(activeChipInterval);
     if (chatTsInterval) { clearInterval(chatTsInterval); chatTsInterval = null; }
+    // Nuke any in-flight toast auto-remove timers — they'd otherwise try to
+    // remove() DOM nodes that belong to this (now-unmounted) screen.
+    for (const t of _activeToastTimers) clearTimeout(t);
+    _activeToastTimers.clear();
     window.removeEventListener('hashchange', hashCleanup);
   };
   window.addEventListener('hashchange', hashCleanup);

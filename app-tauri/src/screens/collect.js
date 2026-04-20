@@ -392,11 +392,33 @@ export async function renderCollect(root, { params }) {
   }
 
   // --- start collect ---
+  // Read the source-picker output from localStorage. The topic-page Rerun
+  // modal stashes its choices here BEFORE navigating; the new-topic flow
+  // (no picker) leaves them unset → defaults below.
   const aggressive = localStorage.getItem('gapmap.collect.last_aggressive') !== 'false';
+  const sourcesStr = localStorage.getItem('gapmap.collect.last_sources') || '';
+  const skipReddit = localStorage.getItem('gapmap.collect.last_skip_reddit') === 'true';
+  // One-shot — clear so a manual reload doesn't carry the previous filter.
   localStorage.removeItem('gapmap.collect.last_aggressive');
+  localStorage.removeItem('gapmap.collect.last_sources');
+  localStorage.removeItem('gapmap.collect.last_skip_reddit');
+
+  // Build a human-readable filter summary for the log line.
+  const sourcesArg = sourcesStr ? sourcesStr : null;
+  let filterSummary;
+  if (skipReddit && sourcesArg) {
+    filterSummary = `skip-reddit · only ${sourcesArg}`;
+  } else if (sourcesArg) {
+    filterSummary = `reddit + ${sourcesArg}`;
+  } else if (aggressive) {
+    filterSummary = 'aggressive — all sources + history';
+  } else {
+    filterSummary = 'quick — reddit only';
+  }
+
   try {
-    await api.startCollect(topic, aggressive);
-    appendLine(`→ started collect for "${topic}" (${aggressive ? 'aggressive — all sources + history' : 'quick — reddit only'})…`, 'info');
+    await api.startCollect(topic, aggressive, sourcesArg, skipReddit);
+    appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
   } catch (e) {
     appendLine(`✗ failed to start: ${e?.message || e}`, 'err');
     setFinal('failed', 'var(--chronic, #B84747)', 'white');
