@@ -286,6 +286,8 @@ export async function renderHome(root) {
     <div id="palace-nudge-slot"></div>
     <!-- Phase-4 weekly-delta card. Populated async by loadWeeklyDeltas() -->
     <div id="weekly-deltas-slot"></div>
+    <!-- Phase-3 active bets summary. Populated async by loadBetsSummary() -->
+    <div id="bets-summary-slot"></div>
 
     <div id="hero-slot">${skelHero()}</div>
     <section class="stat-grid" id="stat-grid">${skelStats()}</section>
@@ -391,6 +393,7 @@ export async function renderHome(root) {
   loadByokPrompt(root);
   loadPalaceNudge(root);
   loadWeeklyDeltas(root);
+  loadBetsSummary(root);
 
   // Live-refresh hooks:
   //   1. `gapmap:db-changed` fires when api.js's mtime poller detects an
@@ -889,5 +892,76 @@ async function loadWeeklyDeltas(root) {
   slot.querySelector('#btn-dismiss-deltas')?.addEventListener('click', () => {
     slot.innerHTML = '';
   });
+  window.refreshIcons?.();
+}
+
+// ─── Phase 3 — Active bets summary card on Dashboard ────────────────
+// Shows "My bets" aggregated across all topics when any tracked
+// hypothesis exists. Reads hypothesisStats({topic:null}) — the global
+// cross-topic count bucket.
+async function loadBetsSummary(root) {
+  const slot = root.querySelector('#bets-summary-slot');
+  if (!slot) return;
+  let resp;
+  try {
+    resp = await api.hypothesisStats(null);
+  } catch {
+    slot.innerHTML = '';
+    return;
+  }
+  const stats = (resp && resp.stats) || {};
+  const total = Object.values(stats).reduce((a, b) => a + (b || 0), 0);
+  if (total === 0) { slot.innerHTML = ''; return; }
+
+  // Fetch recent running/drafted bets so the card can surface the
+  // most-recently-updated one as a "pick up where you left off" nudge.
+  let recent = [];
+  try {
+    recent = await api.hypothesisList(null, null, false);
+  } catch { recent = []; }
+  recent = (recent || []).slice(0, 3);
+
+  const statEntries = [
+    { key: 'running',     icon: '🏃', color: '#1F5C99' },
+    { key: 'validated',   icon: '✓',  color: '#1A7A4F' },
+    { key: 'invalidated', icon: '✗',  color: '#B84747' },
+    { key: 'paused',      icon: '⏸',  color: '#C47A14' },
+    { key: 'draft',       icon: '📝', color: '#8A8178' },
+  ].filter(s => (stats[s.key] || 0) > 0);
+
+  const pills = statEntries.map(s =>
+    `<span class="bet-summary-pill" style="background:${s.color}22;color:${s.color}">
+       ${s.icon} <b>${stats[s.key]}</b> ${esc(s.key)}
+     </span>`
+  ).join('');
+
+  const rows = recent.map(r => {
+    const card = r.card || {};
+    const title = card.finding_title || card.experiences || '(untitled)';
+    const encoded = encodeURIComponent(r.topic);
+    return `
+      <a class="bet-summary-row" href="#/topic/${encoded}" title="Open ${esc(r.topic)}'s Bets tab">
+        <span class="bet-summary-state state-${esc(r.status)}">${esc(r.status)}</span>
+        <span class="bet-summary-title">${esc(title)}</span>
+        <span class="bet-summary-topic muted">${esc(r.topic)}</span>
+      </a>
+    `;
+  }).join('');
+
+  slot.innerHTML = `
+    <section class="card bets-summary-card">
+      <div class="card-head">
+        <div>
+          <h3>
+            <i data-lucide="target"></i>
+            My bets
+          </h3>
+          <p class="muted">${total} tracked hypothes${total === 1 ? 'is' : 'es'} across all topics</p>
+        </div>
+        <div class="bet-summary-pills">${pills}</div>
+      </div>
+      ${rows ? `<div class="bet-summary-rows">${rows}</div>` : ''}
+    </section>
+  `;
   window.refreshIcons?.();
 }

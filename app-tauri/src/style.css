@@ -3249,3 +3249,73 @@ kbd {
   text-transform: uppercase;
 }
 .delta-chip-new { background: #E0F2EA; color: #1A7A4F; }
+
+/* ─── Phase-3 bets-summary card on Dashboard ─────────────────────── */
+.bets-summary-card {
+  margin-bottom: 16px;
+  border-left: 4px solid #6E4DB3;
+}
+.bets-summary-card h3 {
+  display: flex; align-items: center; gap: 8px;
+}
+.bets-summary-card h3 svg {
+  width: 18px; height: 18px; color: #6E4DB3;
+}
+.bets-summary-card .card-head {
+  display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+}
+.bet-summary-pills {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto;
+}
+.bet-summary-pill {
+  padding: 4px 12px; border-radius: 12px;
+  font-size: 12px; font-weight: 600;
+}
+.bet-summary-pill b { font-weight: 700; }
+.bet-summary-rows {
+  display: flex; flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.bet-summary-row {
+  display: grid; grid-template-columns: 100px 1fr auto;
+  gap: 12px; padding: 10px 20px; align-items: center;
+  text-decoration: none; color: var(--ink-1);
+  border-bottom: 1px solid var(--line);
+  transition: background 0.1s;
+}
+.bet-summary-row:last-child { border-bottom: none; }
+.bet-summary-row:hover { background: rgba(110,77,179,0.05); }
+.bet-summary-state {
+  padding: 2px 8px; border-radius: 8px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; text-align: center;
+}
+.bet-summary-state.state-running      { background: #D6E6F4; color: #1F5C99; }
+.bet-summary-state.state-validated    { background: #D6EDE0; color: #1A7A4F; }
+.bet-summary-state.state-invalidated  { background: #F4D6D6; color: #B84747; }
+.bet-summary-state.state-paused       { background: #F4E6C8; color: #8A5A1A; }
+.bet-summary-state.state-draft        { background: #EAE6DC; color: #8A8178; }
+.bet-summary-title {
+  font-size: 13.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bet-summary-topic {
+  font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;
+}
+
+/* ─── Phase-3 per-topic bet-stats pill ─────────────────────────────── */
+.topic-bet-stats {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  margin-left: auto;
+}
+.tbs-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 8px; border-radius: 10px;
+  font-size: 11.5px; font-weight: 600;
+}
+.tbs-running      { background: #D6E6F4; color: #1F5C99; }
+.tbs-validated    { background: #D6EDE0; color: #1A7A4F; }
+.tbs-invalidated  { background: #F4D6D6; color: #B84747; }
+.tbs-paused       { background: #F4E6C8; color: #8A5A1A; }
+.tbs-draft        { background: #EAE6DC; color: #8A8178; }

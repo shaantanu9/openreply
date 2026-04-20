@@ -383,6 +383,8 @@ export async function renderTopic(root, { params }) {
 
     <div class="section-head">
       <div><h2>${esc(topic)}</h2><p id="topic-sub">Loading topic…</p></div>
+      <!-- Phase-3 bet stats pill. Populated by loadBetStatsPill(); hidden when no bets. -->
+      <div id="topic-bet-stats" class="topic-bet-stats" hidden></div>
     </div>
 
     <div class="tabs" id="topic-tabs">
@@ -451,6 +453,30 @@ export async function renderTopic(root, { params }) {
       <span class="th-chip"><b>${r.painpoints || 0}</b> pains</span>
       <span class="th-chip"><b>${r.workarounds || 0}</b> DIY</span>
       <span class="th-chip"><b>${r.sources || 0}</b> src</span>`;
+  })();
+
+  // Phase-3 per-topic bet stats pill next to the topic name. Hidden on
+  // topics with zero tracked bets. Click → Bets tab.
+  (async () => {
+    const pill = $('#topic-bet-stats');
+    if (!pill) return;
+    try {
+      const r = await api.hypothesisStats(topic);
+      const stats = (r && r.stats) || {};
+      const total = Object.values(stats).reduce((a, b) => a + (b || 0), 0);
+      if (total === 0) { pill.hidden = true; return; }
+      const parts = [];
+      if (stats.running)     parts.push(`<span class="tbs-chip tbs-running">🏃 ${stats.running}</span>`);
+      if (stats.validated)   parts.push(`<span class="tbs-chip tbs-validated">✓ ${stats.validated}</span>`);
+      if (stats.invalidated) parts.push(`<span class="tbs-chip tbs-invalidated">✗ ${stats.invalidated}</span>`);
+      if (stats.paused)      parts.push(`<span class="tbs-chip tbs-paused">⏸ ${stats.paused}</span>`);
+      if (stats.draft)       parts.push(`<span class="tbs-chip tbs-draft">📝 ${stats.draft}</span>`);
+      pill.innerHTML = parts.join('');
+      pill.title = 'Click to open the Bets tab';
+      pill.hidden = false;
+      pill.style.cursor = 'pointer';
+      pill.addEventListener('click', () => switchTab('bets'));
+    } catch { pill.hidden = true; }
   })();
 
   // Paint the active-LLM pill in the header. Clicking opens the BYOK modal
