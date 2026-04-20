@@ -88,6 +88,9 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests that spawn real subprocesses or hit the network (deselect via -m 'not slow')",
+]
 
 [tool.uv]
 package = true
