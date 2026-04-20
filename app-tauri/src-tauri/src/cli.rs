@@ -26,6 +26,11 @@ use tauri_plugin_shell::{
 
 /// Walk up from CWD looking for `.venv/bin/python`. Returns its absolute path
 /// if found within a few parent dirs, or None. Used only in dev builds.
+///
+/// Hardened against symlink loops: we canonicalize each step and track the
+/// set of visited paths. A pathological symlink that creates a cycle
+/// (`a -> b -> a`) breaks the walk early rather than revisiting dirs within
+/// the 5-parent budget.
 fn find_dev_venv_python() -> Option<std::path::PathBuf> {
     // Explicit override always wins.
     if let Ok(p) = std::env::var("REDDIT_MYIND_DEV_PYTHON") {
@@ -34,15 +39,28 @@ fn find_dev_venv_python() -> Option<std::path::PathBuf> {
             return Some(pb);
         }
     }
-    let mut cur = std::env::current_dir().ok()?;
+    let mut cur = std::env::current_dir().ok()?.canonicalize().ok()?;
+    let mut visited: std::collections::HashSet<std::path::PathBuf> =
+        std::collections::HashSet::new();
     for _ in 0..5 {
+        // Symlink-loop guard: if we've visited this canonical path before,
+        // bail out rather than walking in a circle.
+        if !visited.insert(cur.clone()) {
+            break;
+        }
         let candidate = cur.join(".venv").join("bin").join("python");
         if candidate.exists() {
             return Some(candidate);
         }
-        if !cur.pop() {
-            break;
-        }
+        let parent = match cur.parent() {
+            Some(p) => p.to_path_buf(),
+            None => break,
+        };
+        // Canonicalize the parent too so symlinks don't confuse dedup.
+        cur = match parent.canonicalize() {
+            Ok(p) => p,
+            Err(_) => break,
+        };
     }
     None
 }
