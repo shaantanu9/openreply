@@ -51,14 +51,32 @@ function isTransient(e) {
   return TRANSIENT_PATTERNS.some(re => re.test(msg));
 }
 
+// Detect the parse-error sentinel the Rust `parse_or_diagnostic` helper
+// returns when the Python sidecar emitted non-JSON stdout (traceback,
+// Rich-formatted output, empty stdout). Throwing here lets existing
+// .catch() blocks render the real Python error instead of the silently-
+// null UI we used to get. See cli.rs::parse_or_diagnostic + the
+// 2026-04-20 audit-fixes plan, Fix 3.
+function throwIfParseError(name, result) {
+  if (result && typeof result === 'object' && result._parse_error) {
+    const raw = String(result._raw || '').slice(0, 800);
+    const msg = result._parse_error_message || 'non-JSON output';
+    const err = new Error(`[${name}] sidecar returned non-JSON: ${msg}\n--- raw output ---\n${raw}`);
+    err.parseError = true;
+    err.raw = result._raw;
+    throw err;
+  }
+  return result;
+}
+
 async function invokeWithRetry(name, args) {
   try {
-    return await invoke(name, args);
+    return throwIfParseError(name, await invoke(name, args));
   } catch (e) {
     if (!isTransient(e)) throw e;
     // Back off once, then try again. If it still fails, surface the error.
     await new Promise(r => setTimeout(r, 500));
-    return await invoke(name, args);
+    return throwIfParseError(name, await invoke(name, args));
   }
 }
 
@@ -305,6 +323,31 @@ export const api = {
   },
   monitorDeltas: (topic = null, limit = 10, sinceDays = 7) =>
     cachedInvoke('monitor_deltas', { topic, limit, sinceDays }, 30000),
+
+  // Phase-5 — cross-topic queries
+  topOpportunities: (limit = 20, minScore = 0) =>
+    cachedInvoke('top_opportunities', { limit, minScore }, 30000),
+  searchFindingsGlobal: (query, topic = null, limit = 30) =>
+    cachedInvoke('search_findings_global', { query, topic, limit }, 15000),
+  relatedTopicsFor: (topic, limit = 5) =>
+    cachedInvoke('related_topics_for', { topic, limit }, 60000),
+
+  // Phase-7 — export formats. Returns plain string (markdown/text).
+  // format ∈ 'markdown' | 'hypotheses' | 'slack'.
+  exportBrief: (topic, format = 'markdown') =>
+    invoke('export_brief', { topic, format }),
+
+  // Phase-9 — competitor matrix
+  competitorMatrix: (topic) =>
+    cachedInvoke('competitor_matrix', { topic }, 30000),
+
+  // Phase-10 — research↔finding palace linking
+  linkResearch: (topic, k = 3) => {
+    invalidate('research_links');
+    return invoke('link_research', { topic, k });
+  },
+  researchLinks: (topic, finding = null) =>
+    cachedInvoke('research_links', { topic, finding }, 30000),
 
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic, force = false) => invoke('run_temporal_gaps', { topic, force }),

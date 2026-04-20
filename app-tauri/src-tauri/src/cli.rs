@@ -83,8 +83,31 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
     }
     eprintln!("[sidecar] dev-python OK in {elapsed}ms");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    // Tolerate non-JSON stdout — exit code 0 already proved the command ran fine.
-    Ok(serde_json::from_str(&stdout).unwrap_or(Value::Null))
+    // Parse-failure path: surface the raw output as a structured sentinel so
+    // the frontend can distinguish "no data" from "Python printed a traceback
+    // instead of JSON and we silently dropped it". Previously used
+    // `.unwrap_or(Value::Null)` which masked every Python crash as an empty
+    // UI card. See docs/superpowers/specs/2026-04-20-audit-fixes-plan.md Fix 3.
+    Ok(parse_or_diagnostic(&stdout))
+}
+
+/// Parse stdout as JSON; on failure return `{_parse_error, _raw, _parse_error_message}`
+/// so the frontend can render a real diagnostic instead of silently showing empty state.
+fn parse_or_diagnostic(stdout: &str) -> Value {
+    match serde_json::from_str::<Value>(stdout) {
+        Ok(v) => v,
+        Err(err) => {
+            let preview: String = stdout.chars().take(500).collect();
+            eprintln!(
+                "[sidecar] JSON parse failed: {err}. Raw stdout (first 500 chars):\n{preview}"
+            );
+            serde_json::json!({
+                "_parse_error": true,
+                "_raw": stdout,
+                "_parse_error_message": err.to_string(),
+            })
+        }
+    }
 }
 
 /// Shared handle to the currently-running long job (if any).
@@ -177,8 +200,10 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    // Non-JSON stdout → return null, don't error. Exit code already proved success.
-    Ok(serde_json::from_str(&stdout).unwrap_or(Value::Null))
+    // See `parse_or_diagnostic` above — returns a `{_parse_error, _raw}` sentinel
+    // on non-JSON stdout instead of the old silent `null`. Frontend detects
+    // this sentinel and renders a real diagnostic.
+    Ok(parse_or_diagnostic(&stdout))
 }
 
 /// Dev-only streaming bypass — spawn `.venv/bin/python -m reddit_research.cli.main`

@@ -74,6 +74,12 @@ function renderFindingCard(f) {
   const academic = (f.academic_backing || []).length > 0
     ? `<span class="insight-chip academic" title="${(f.academic_backing || []).slice(0,5).map(esc).join(' · ')}">📄 ${f.academic_backing.length} papers</span>`
     : '';
+  // Phase-10 research link chip — clickable, opens modal with linked papers.
+  // Renders only when the linker has run and found matches for this finding.
+  const linkedPapers = f._linked_papers_count || 0;
+  const researchChip = linkedPapers > 0
+    ? `<span class="insight-chip research-link" data-research-title="${esc(f.title || '')}" title="Click to see academic papers linked to this finding (Phase-10 linker)">📚 ${linkedPapers} research</span>`
+    : '';
   // Counter-evidence chip — biggest credibility feature from the methodology
   // doc. Click → modal with the disconfirming quotes (handled in wireCards).
   const disconfirmIds = f.disconfirming_evidence || [];
@@ -109,6 +115,7 @@ function renderFindingCard(f) {
         ${academic}
         ${ciChip}
         ${counterChip}
+        ${researchChip}
         ${renderCitationChips(f.evidence_post_ids)}
       </div>
 
@@ -310,6 +317,23 @@ function renderFull(report, contentEl, topic) {
           ${generatedAt ? `<span class="muted">· generated ${esc(new Date(generatedAt).toLocaleString())}</span>` : ''}
         </div>
         <div style="flex:1"></div>
+        <div class="export-dropdown-wrap">
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-insights-export"><i data-lucide="download"></i> Export</button>
+          <div class="export-dropdown-menu" id="export-dropdown-menu" hidden>
+            <button class="export-dropdown-item" data-format="markdown">
+              <b><i data-lucide="file-text"></i> Full brief (markdown)</b>
+              <span>Minto-structured — paste into Notion / Linear / Docs</span>
+            </button>
+            <button class="export-dropdown-item" data-format="hypotheses">
+              <b><i data-lucide="target"></i> Hypothesis cards</b>
+              <span>Each bet as its own markdown block</span>
+            </button>
+            <button class="export-dropdown-item" data-format="slack">
+              <b><i data-lucide="message-square"></i> Slack summary</b>
+              <span>5-line DM-friendly version</span>
+            </button>
+          </div>
+        </div>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-insights-regen"><i data-lucide="refresh-cw"></i> Regenerate</button>
       </div>
 
@@ -349,8 +373,76 @@ function renderFull(report, contentEl, topic) {
           ${competitors.map(renderCompetitor).join('')}
         </div>
       ` : ''}
+
+      <!-- Phase-9 feature × competitor matrix. Populated async by loadCompetitorMatrix() -->
+      <div id="competitor-matrix-slot"></div>
     </div>
   `;
+}
+
+// ─── Phase 9 — Competitor matrix (feature × competitor table) ─────────
+function renderCompetitorMatrix(data) {
+  const competitors = data.competitors || [];
+  const features = data.features || [];
+  const matrix = data.matrix || {};
+  const gaps = data.gap_features || [];
+  if (!competitors.length || !features.length) return '';
+
+  const cellIcon = (status) => {
+    if (status === 'has')      return '<span class="matrix-cell has">✓</span>';
+    if (status === 'missing')  return '<span class="matrix-cell missing">✗ missing</span>';
+    if (status === 'weakness') return '<span class="matrix-cell weakness">⚠ weak</span>';
+    return '<span class="matrix-cell unknown">—</span>';
+  };
+
+  const rows = features.map(feat => {
+    const cells = competitors.map(c => {
+      const status = matrix[feat]?.[c.name] || 'unknown';
+      return `<td>${cellIcon(status)}</td>`;
+    }).join('');
+    return `
+      <tr>
+        <td class="matrix-feature-col">${esc(feat)}</td>
+        ${cells}
+      </tr>
+    `;
+  }).join('');
+
+  const headCells = competitors.map(c => `<th>${esc(c.name)}</th>`).join('');
+
+  const gapBox = gaps.length ? `
+    <div class="matrix-gap-features">
+      <b>Gap features</b> (no competitor has these): ${gaps.map(esc).join(' · ')}
+    </div>
+  ` : '';
+
+  return `
+    <section class="competitor-matrix">
+      <h2>Competitor matrix <span class="muted">(${features.length} features × ${competitors.length} competitors)</span></h2>
+      <p class="muted">✓ has · ✗ missing · ⚠ weakness · — unknown. Gaps = greenfield features no one covers.</p>
+      ${gapBox}
+      <div class="matrix-scroll">
+        <table class="matrix-table">
+          <thead>
+            <tr><th class="matrix-feature-col">Feature</th>${headCells}</tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+async function loadCompetitorMatrix(contentEl, topic) {
+  const slot = contentEl.querySelector('#competitor-matrix-slot');
+  if (!slot) return;
+  let data;
+  try {
+    data = await api.competitorMatrix(topic);
+  } catch { slot.innerHTML = ''; return; }
+  if (!data || !data.ok || !(data.features || []).length) { slot.innerHTML = ''; return; }
+  slot.innerHTML = renderCompetitorMatrix(data);
+  window.refreshIcons?.();
 }
 
 // Counter-evidence modal — click "⚖ N disagree" chip, see the actual
@@ -431,6 +523,7 @@ export async function loadInsights(contentEl, topic) {
 
   // If we got a real report, render it.
   if (cached && cached.ok && (cached.findings || cached.executive_summary)) {
+    await annotateWithResearchLinks(cached, topic);
     set(renderFull(cached, contentEl, topic));
     wireCards(contentEl, topic, cached);
     $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
@@ -474,6 +567,11 @@ async function runSynth(contentEl, topic) {
     return;
   }
   const report = runResult.report;
+  // Phase-10 — fire-and-forget link refresh. Runs the palace linker in the
+  // background so next insights load shows research chips. Failure here is
+  // silent (palace may not be available in user's env).
+  api.linkResearch(topic, 3).catch(() => {});
+  await annotateWithResearchLinks(report, topic);
   set(renderFull(report, contentEl, topic));
   wireCards(contentEl, topic, report);
   $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
@@ -494,7 +592,117 @@ function wireRunButton(contentEl, topic) {
   $('#btn-insights-run', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
 }
 
+// ─── Phase 10 — Research link annotation + modal ─────────────────────
+// Fetches per-finding paper counts ONCE and decorates findings in-place
+// so the chip appears during the main render pass.
+async function annotateWithResearchLinks(report, topic) {
+  let summary = {};
+  try {
+    summary = await api.researchLinks(topic, null) || {};
+  } catch { return; }
+  if (!summary || typeof summary !== 'object') return;
+  // Case-insensitive lookup — linker stores titles lowercased
+  const lower = {};
+  for (const [k, v] of Object.entries(summary)) lower[k.toLowerCase()] = v;
+  (report.findings || []).forEach(f => {
+    const key = (f.title || '').toLowerCase();
+    if (lower[key]) f._linked_papers_count = lower[key];
+  });
+}
+
+async function showResearchLinksModal(topic, findingTitle) {
+  let rows = [];
+  try {
+    rows = await api.researchLinks(topic, findingTitle);
+  } catch { rows = []; }
+  if (!Array.isArray(rows)) rows = [];
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.hidden = false;
+  backdrop.innerHTML = `
+    <div class="modal" style="max-width:680px;max-height:80vh;overflow:auto">
+      <h3 style="margin-top:0">📚 Research linked to this finding</h3>
+      <p class="muted">Academic papers in your corpus that semantically match <b>${esc(findingTitle)}</b> (Phase-10 palace linker).</p>
+      <div class="research-links-list">
+        ${rows.length === 0
+          ? `<p class="muted">No linked papers yet. Run <code>research link-research --topic "${esc(topic)}"</code> or collect academic sources (arxiv/openalex/pubmed).</p>`
+          : rows.map(r => {
+              const sim = r.similarity != null ? (Math.round(r.similarity * 100) + '%') : '';
+              const href = r.url || (r.permalink ? 'https://reddit.com' + r.permalink : '#');
+              return `
+                <div class="research-link-row">
+                  <a href="${esc(href)}" target="_blank" rel="noopener" class="rlr-title">${esc(r.title || '(untitled paper)')}</a>
+                  <div class="rlr-meta">
+                    <span class="rlr-sim">sim ${sim}</span>
+                    <span>${esc(r.source_type || 'unknown')}</span>
+                    ${r.author ? `<span>${esc(r.author)}</span>` : ''}
+                  </div>
+                  ${r.excerpt ? `<p class="cep-excerpt" style="margin-top:6px;font-size:12px;color:var(--ink-2)">${esc(r.excerpt)}${r.excerpt.length >= 300 ? '…' : ''}</p>` : ''}
+                </div>
+              `;
+            }).join('')}
+      </div>
+      <div class="modal-actions" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost btn-bordered" id="rlm-close">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector('#rlm-close')?.addEventListener('click', close);
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  window.refreshIcons?.();
+}
+
 function wireCards(contentEl, topic, report) {
+  // Phase-9 — load competitor matrix asynchronously (doesn't block main render).
+  loadCompetitorMatrix(contentEl, topic);
+
+  // Phase-7 — Export dropdown. Click toggles menu; item copies to clipboard.
+  const exportBtn = contentEl.querySelector('#btn-insights-export');
+  const exportMenu = contentEl.querySelector('#export-dropdown-menu');
+  if (exportBtn && exportMenu) {
+    exportBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportMenu.hidden = !exportMenu.hidden;
+      if (!exportMenu.hidden) window.refreshIcons?.();
+    });
+    document.addEventListener('click', (e) => {
+      if (!exportMenu.contains(e.target) && e.target !== exportBtn) exportMenu.hidden = true;
+    });
+    exportMenu.querySelectorAll('.export-dropdown-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        const format = item.dataset.format;
+        exportMenu.hidden = true;
+        try {
+          const md = await api.exportBrief(topic, format);
+          await navigator.clipboard.writeText(md || '');
+          const toast = document.createElement('div');
+          toast.className = 'toast toast-success';
+          toast.innerHTML = `📋 ${format} brief copied to clipboard (${(md || '').length.toLocaleString()} chars)`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 3500);
+        } catch (err) {
+          const toast = document.createElement('div');
+          toast.className = 'toast toast-error';
+          toast.innerHTML = `Export failed: ${esc(err?.message || String(err))}`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 4000);
+        }
+      });
+    });
+  }
+
+  // Phase-10 — research-link chip opens a modal listing academic papers
+  // matched to this finding via the palace-based linker.
+  contentEl.querySelectorAll('.insight-chip.research-link').forEach(el => {
+    el.addEventListener('click', () => {
+      const title = el.dataset.researchTitle || '(unnamed finding)';
+      showResearchLinksModal(topic, title);
+    });
+  });
+
   // Citation chips → drill into Posts tab with the evidence post_ids.
   contentEl.querySelectorAll('.insight-cite-chip').forEach(el => {
     el.addEventListener('click', () => {

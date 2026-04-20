@@ -288,6 +288,8 @@ export async function renderHome(root) {
     <div id="weekly-deltas-slot"></div>
     <!-- Phase-3 active bets summary. Populated async by loadBetsSummary() -->
     <div id="bets-summary-slot"></div>
+    <!-- Phase-5 cross-topic leaderboard. Populated async by loadTopOpportunities() -->
+    <div id="top-opportunities-slot"></div>
 
     <div id="hero-slot">${skelHero()}</div>
     <section class="stat-grid" id="stat-grid">${skelStats()}</section>
@@ -394,6 +396,7 @@ export async function renderHome(root) {
   loadPalaceNudge(root);
   loadWeeklyDeltas(root);
   loadBetsSummary(root);
+  loadTopOpportunities(root);
 
   // Live-refresh hooks:
   //   1. `gapmap:db-changed` fires when api.js's mtime poller detects an
@@ -961,6 +964,49 @@ async function loadBetsSummary(root) {
         <div class="bet-summary-pills">${pills}</div>
       </div>
       ${rows ? `<div class="bet-summary-rows">${rows}</div>` : ''}
+    </section>
+  `;
+  window.refreshIcons?.();
+}
+
+// ─── Phase 5 — Cross-topic top-opportunities card on Dashboard ───────
+// Leaderboard of highest Ulwick-scored findings across every topic the
+// user has synthesized. Silent until ≥1 finding exists globally.
+async function loadTopOpportunities(root) {
+  const slot = root.querySelector('#top-opportunities-slot');
+  if (!slot) return;
+  let rows = [];
+  try {
+    rows = await api.topOpportunities(8, 0);
+  } catch { slot.innerHTML = ''; return; }
+  if (!Array.isArray(rows) || rows.length === 0) { slot.innerHTML = ''; return; }
+
+  const scoreClass = (s) => s >= 15 ? 'score-high' : s >= 10 ? 'score-mid' : 'score-low';
+  const items = rows.map(r => {
+    const encoded = encodeURIComponent(r.topic);
+    const kind = { painpoint: '🔥', feature_wish: '💡', workaround: '🛠' }[r.kind] || '•';
+    const cls = scoreClass(r.opportunity_score || 0);
+    const tri = { strong: '🟢', moderate: '🟡', narrow: '🔴' }[r.triangulation_strength] || '';
+    return `
+      <a class="top-opp-row" href="#/topic/${encoded}">
+        <span class="top-opp-score ${cls}"><b>${(r.opportunity_score || 0).toFixed(1)}</b></span>
+        <span class="top-opp-kind">${kind}</span>
+        <span class="top-opp-title">${esc(r.title || '(untitled)')}</span>
+        <span class="top-opp-topic muted">${esc(r.topic)}</span>
+        <span class="top-opp-tri" title="triangulation: ${esc(r.triangulation_strength || '')}">${tri}</span>
+      </a>
+    `;
+  }).join('');
+
+  slot.innerHTML = `
+    <section class="card top-opps-card">
+      <div class="card-head">
+        <div>
+          <h3><i data-lucide="trophy"></i> Top opportunities across all topics</h3>
+          <p class="muted">Ranked by Ulwick opportunity score · click to open the topic</p>
+        </div>
+      </div>
+      <div class="top-opps-rows">${items}</div>
     </section>
   `;
   window.refreshIcons?.();

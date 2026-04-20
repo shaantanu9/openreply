@@ -820,6 +820,103 @@ def cmd_research_gaps(
         _emit(report, as_json)
 
 
+@research_app.command("top-opportunities")
+def cmd_top_opportunities(
+    limit: int = typer.Option(20, "--limit", "-n"),
+    min_score: float = typer.Option(0.0, "--min-score"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-5 — cross-topic leaderboard of opportunities."""
+    from ..research.cross_topic import top_opportunities_across_topics
+    _emit(top_opportunities_across_topics(limit=limit, min_score=min_score), as_json)
+
+
+@research_app.command("search-findings")
+def cmd_search_findings(
+    query: str = typer.Option(..., "--query", "-q"),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    limit: int = typer.Option(30, "--limit", "-n"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-5 — global substring search across all findings."""
+    from ..research.cross_topic import search_findings
+    _emit(search_findings(query=query, topic_filter=topic, limit=limit), as_json)
+
+
+@research_app.command("related-topics")
+def cmd_related_topics(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    limit: int = typer.Option(5, "--limit", "-n"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-5 — topics with overlapping painpoints."""
+    from ..research.cross_topic import related_topics
+    _emit(related_topics(topic=topic, limit=limit), as_json)
+
+
+@research_app.command("export-brief")
+def cmd_export_brief(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    format: str = typer.Option("markdown", "--format", "-f",
+        help="markdown | hypotheses | slack"),
+    out: Optional[str] = typer.Option(None, "--out", "-o",
+        help="Write to file; default is stdout"),
+) -> None:
+    """Phase-7 — Export a shareable brief (markdown for Notion/Linear)."""
+    from ..research.export_brief import export_markdown, export_hypothesis_cards, export_slack_summary
+    if format == "markdown":
+        content = export_markdown(topic)
+    elif format == "hypotheses":
+        content = export_hypothesis_cards(topic)
+    elif format == "slack":
+        content = export_slack_summary(topic)
+    else:
+        typer.echo(f"Unknown format: {format}. Use markdown | hypotheses | slack.", err=True)
+        raise typer.Exit(1)
+    if out:
+        from pathlib import Path
+        Path(out).write_text(content, encoding="utf-8")
+        typer.echo(f"Wrote {len(content)} chars to {out}")
+    else:
+        typer.echo(content)
+
+
+@research_app.command("competitor-matrix")
+def cmd_competitor_matrix(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-9 — feature × competitor matrix from the synthesis report."""
+    from ..research.competitors import build_matrix
+    _emit(build_matrix(topic=topic), as_json)
+
+
+@research_app.command("link-research")
+def cmd_link_research(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    k: int = typer.Option(3, "--k", help="Papers per finding"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-10 — Match findings to academic papers via the semantic palace."""
+    from ..research.research_linker import link_findings_for_topic
+    _emit(link_findings_for_topic(topic=topic, k=k), as_json)
+
+
+@research_app.command("research-links")
+def cmd_research_links(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    finding: Optional[str] = typer.Option(None, "--finding",
+        help="Finding title (case-insensitive); omit for per-finding count summary"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-10 — Get linked papers for a finding, or count summary."""
+    from ..research.research_linker import get_links_for_finding, get_links_summary
+    if finding:
+        _emit(get_links_for_finding(topic=topic, finding_title=finding), as_json)
+    else:
+        _emit(get_links_summary(topic=topic), as_json)
+
+
 @research_app.command("monitor-run")
 def cmd_monitor_run(
     topic: str = typer.Option(..., "--topic", "-t"),

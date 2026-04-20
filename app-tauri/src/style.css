@@ -3357,3 +3357,149 @@ kbd {
 .tab-more-item i[data-lucide] {
   width: 15px; height: 15px; flex-shrink: 0;
 }
+
+/* ── Phase 5 — Dashboard top-opportunities leaderboard ───────────────── */
+.top-opps-card { margin-top: 16px; }
+.top-opps-rows {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-top: 8px;
+}
+.top-opp-row {
+  display: grid;
+  grid-template-columns: 58px 22px minmax(0, 1fr) minmax(100px, auto) 22px;
+  align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  color: var(--ink-1); text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.top-opp-row:hover {
+  background: var(--surface-2, #FAF4EA);
+  border-color: var(--border-soft, #EADFC8);
+}
+.top-opp-score {
+  display: inline-flex; justify-content: center; align-items: center;
+  padding: 4px 8px; border-radius: 6px; font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.top-opp-score.score-high { background: #FEE4DC; color: #C2381B; }
+.top-opp-score.score-mid  { background: #FEF0D5; color: #A36112; }
+.top-opp-score.score-low  { background: #EDEDED; color: #555; }
+.top-opp-kind { text-align: center; font-size: 14px; }
+.top-opp-title {
+  font-size: 13px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.top-opp-topic {
+  font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.top-opp-tri { text-align: center; font-size: 13px; }
+
+/* ── Phase 7 — Export dropdown in Insights toolbar ───────────────────── */
+.export-dropdown-wrap { position: relative; display: inline-block; }
+.export-dropdown-menu {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  background: var(--surface-1, #FFFDF7);
+  border: 1px solid var(--border-soft, #EADFC8);
+  border-radius: 8px;
+  min-width: 200px;
+  padding: 4px; z-index: 100;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+  animation: tab-more-in 0.12s ease-out;
+}
+.export-dropdown-item {
+  display: flex; flex-direction: column; gap: 2px;
+  width: 100%; padding: 8px 10px;
+  border: 0; background: transparent;
+  text-align: left; cursor: pointer; border-radius: 6px;
+  font-family: inherit;
+}
+.export-dropdown-item:hover { background: var(--surface-2, #FAF4EA); }
+.export-dropdown-item b { font-size: 13px; color: var(--ink-1); }
+.export-dropdown-item span { font-size: 11px; color: var(--ink-3); }
+
+/* ── Phase 9 — Competitor matrix table ───────────────────────────────── */
+.competitor-matrix {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--surface-1, #FFFDF7);
+  border: 1px solid var(--border-soft, #EADFC8);
+  border-radius: 10px;
+}
+.competitor-matrix h2 { margin: 0 0 4px 0; }
+.competitor-matrix .muted { font-size: 12px; }
+.matrix-gap-features {
+  margin-top: 10px; padding: 10px 12px;
+  background: #FEF0D5;
+  border-left: 3px solid #C2381B;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.matrix-gap-features b { color: #C2381B; }
+.matrix-scroll { overflow-x: auto; margin-top: 12px; }
+.matrix-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.matrix-table th,
+.matrix-table td {
+  padding: 8px 10px; text-align: left;
+  border-bottom: 1px solid var(--border-soft, #EADFC8);
+  vertical-align: top;
+}
+.matrix-table th {
+  background: var(--surface-2, #FAF4EA);
+  font-weight: 600; white-space: nowrap;
+  position: sticky; top: 0;
+}
+.matrix-table th.matrix-feature-col,
+.matrix-table td.matrix-feature-col {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--surface-1, #FFFDF7);
+  min-width: 180px; max-width: 260px;
+  font-weight: 500;
+}
+.matrix-table th.matrix-feature-col { background: var(--surface-2, #FAF4EA); z-index: 2; }
+.matrix-cell {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px;
+}
+.matrix-cell.has        { color: #1D7A3C; }
+.matrix-cell.missing    { color: #C2381B; font-weight: 600; }
+.matrix-cell.weakness   { color: #A36112; }
+.matrix-cell.unknown    { color: var(--ink-3); opacity: 0.6; }
+
+/* ── Phase 10 — Research link chip on finding cards ──────────────────── */
+.insight-chip.research-link {
+  cursor: pointer;
+  background: #EFE7FB;
+  color: #5B2D9B;
+  border: 1px solid #D9C8F5;
+}
+.insight-chip.research-link:hover {
+  background: #E4D6F7;
+}
+.research-links-list {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 12px;
+}
+.research-link-row {
+  padding: 10px 12px;
+  background: var(--surface-2, #FAF4EA);
+  border-radius: 8px;
+  border-left: 3px solid #5B2D9B;
+}
+.research-link-row .rlr-title {
+  font-size: 13px; font-weight: 500; color: var(--ink-1);
+  text-decoration: none; display: block;
+}
+.research-link-row .rlr-title:hover { color: var(--orange, #B84F14); }
+.research-link-row .rlr-meta {
+  font-size: 11px; color: var(--ink-3); margin-top: 4px;
+  display: flex; gap: 10px; flex-wrap: wrap;
+}
+.research-link-row .rlr-sim {
+  padding: 1px 6px; border-radius: 3px;
+  background: #EFE7FB; color: #5B2D9B;
+  font-variant-numeric: tabular-nums;
+}

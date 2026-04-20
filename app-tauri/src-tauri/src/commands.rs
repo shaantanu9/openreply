@@ -320,6 +320,152 @@ pub async fn synthesize_insights(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+// ─── Phase 5-10 bundle — cross-topic, export, matrix, research linking ─
+
+#[tauri::command]
+pub async fn top_opportunities(
+    app: AppHandle,
+    limit: Option<u32>,
+    min_score: Option<f64>,
+) -> Result<Value, String> {
+    let limit_s = limit.unwrap_or(20).to_string();
+    let ms = min_score.unwrap_or(0.0).to_string();
+    run_cli(
+        &app,
+        vec!["research", "top-opportunities",
+             "--limit", &limit_s, "--min-score", &ms, "--json"],
+    )
+    .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn search_findings_global(
+    app: AppHandle,
+    query: String,
+    topic: Option<String>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let limit_s = limit.unwrap_or(30).to_string();
+    let mut args: Vec<&str> = vec![
+        "research", "search-findings",
+        "--query", &query, "--limit", &limit_s, "--json",
+    ];
+    let t = topic.unwrap_or_default();
+    if !t.is_empty() { args.push("--topic"); args.push(t.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn related_topics_for(
+    app: AppHandle,
+    topic: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let limit_s = limit.unwrap_or(5).to_string();
+    run_cli(
+        &app,
+        vec!["research", "related-topics",
+             "--topic", &topic, "--limit", &limit_s, "--json"],
+    )
+    .await.map_err(err_to_string)
+}
+
+/// Phase-7 export. `format` = "markdown" | "hypotheses" | "slack".
+/// Returns the full content string; the UI can copy to clipboard or
+/// save-file dialog. No --json flag since the outputs are free-form text.
+#[tauri::command]
+pub async fn export_brief(
+    app: AppHandle,
+    topic: String,
+    format: Option<String>,
+) -> Result<String, String> {
+    let fmt = format.unwrap_or_else(|| "markdown".to_string());
+    // Export command emits plain markdown on stdout (no --json wrapper).
+    // We invoke CLI raw and return the string.
+    let data_dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let data_str = data_dir.to_string_lossy().to_string();
+    let py = std::env::var("REDDIT_MYIND_DEV_PYTHON").ok().and_then(|p| {
+        let pb = std::path::PathBuf::from(p);
+        if pb.exists() { Some(pb) } else { None }
+    }).or_else(|| {
+        let mut cur = std::env::current_dir().ok()?;
+        for _ in 0..5 {
+            let c = cur.join(".venv").join("bin").join("python");
+            if c.exists() { return Some(c); }
+            if !cur.pop() { break; }
+        }
+        None
+    });
+    if let Some(py) = py {
+        // Dev path — tokio::process for direct stdout capture
+        let output = tokio::process::Command::new(&py)
+            .arg("-m").arg("reddit_research.cli.main")
+            .arg("research").arg("export-brief")
+            .arg("--topic").arg(&topic)
+            .arg("--format").arg(&fmt)
+            .env("REDDIT_MYIND_DATA_DIR", &data_str)
+            .env("PYTHONUNBUFFERED", "1")
+            .output().await.map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        }
+        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+    }
+    // Prod path — sidecar. The sidecar returns plain markdown; run_cli
+    // wraps it in serde_json::from_str and returns Value::Null on parse
+    // failure. We want the raw string, so we use shell().sidecar().
+    use tauri_plugin_shell::ShellExt;
+    let output = app.shell().sidecar("reddit-cli")
+        .map_err(|e| e.to_string())?
+        .args(["research", "export-brief", "--topic", &topic, "--format", &fmt])
+        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("PYTHONUNBUFFERED", "1")
+        .output().await.map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[tauri::command]
+pub async fn competitor_matrix(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "competitor-matrix", "--topic", &topic, "--json"],
+    )
+    .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn link_research(
+    app: AppHandle,
+    topic: String,
+    k: Option<u32>,
+) -> Result<Value, String> {
+    let k_s = k.unwrap_or(3).to_string();
+    run_cli(
+        &app,
+        vec!["research", "link-research", "--topic", &topic, "--k", &k_s, "--json"],
+    )
+    .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn research_links(
+    app: AppHandle,
+    topic: String,
+    finding: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec!["research", "research-links",
+                                    "--topic", &topic, "--json"];
+    let f = finding.unwrap_or_default();
+    if !f.is_empty() { args.push("--finding"); args.push(f.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 // ─── Phase 4 — Monitoring + Weekly Delta View ─────────────────────────
 //
 // Runs `research monitor-*` CLI commands. Drives the Dashboard's
