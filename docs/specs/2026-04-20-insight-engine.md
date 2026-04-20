@@ -171,18 +171,95 @@ the entire relevant corpus at once and produces a **structured market report**:
 - Single call completes in <60 s on 2000 posts
 - Citations link back to real posts in the DB
 
-### Phase 2 — Build recommendations
+### Phase 2 — Methodology-grade rigor layer (this week)
 
-For each top-5 opportunity, generate a concrete feature spec:
-- MVP scope (what to build first)
-- Differentiator vs named competitors
-- Cited research / papers that support the approach
-- Unit economics hint (what competitors charge for lesser solutions)
+**Informed by `docs/GAP_MAP_METHODOLOGY.md` review.** Ships 6 concrete
+additions that transform Insights from an "opportunity list" into a
+**consulting-grade research brief** — Minto-structured, hypothesis-anchored,
+credibility-honest. Builds on the Phase-1 synthesis; same provider-agnostic
+call, extended output schema, extended UI.
+
+Each item is evaluated for ROI vs. methodology-doc noise. What's IN:
+
+**2.1 Minto pyramid header (~1 day)**
+- Single `governing_thought` (1 sentence, action-oriented) + 3 `key_arguments`
+  (1 sentence each, with evidence citations) baked into the synthesis output.
+- Rendered as the FIRST section on Insights tab, above executive summary.
+- Minto rule: reader should get the answer in the first sentence.
+- Anchor: Minto (1987) *The Pyramid Principle*.
+
+**2.2 Hypothesis cards (~2 days)** — biggest conceptual upgrade
+- Top-5 opportunities each generate a falsifiable hypothesis card:
+  ```
+  WE BELIEVE:   [segment]
+  EXPERIENCES:  [painpoint]
+  BECAUSE:      [mechanism / root cause]
+  AND WOULD:    [behavior: pay / switch / adopt]
+  FOR:          [proposed solution]
+  WE'LL KNOW WE'RE WRONG IF:
+    • [falsifier 1 — specific, measurable]
+    • [falsifier 2]
+  CHEAPEST TEST: [smoke test / 5 customer interviews / landing page]
+  TIME BOX: 2 weeks · BUDGET: $X
+  ```
+- No falsifiers → reject (Popper's criterion programmatically enforced).
+- Stored in `topic_insights.report_json` (no new table — hypotheses are part of the report).
+- Exportable to markdown / Notion in Phase 6.
+- Anchor: Popper (1959); Ries (2011) *The Lean Startup*; Blank (2013).
+
+**2.3 Counter-evidence surfacing (~1 day)** — biggest credibility win per hour
+- Each finding gets `disconfirming_evidence`: top 3 post_ids that disagree
+  or defend the status quo. Asked in the same synthesis call (one round-trip).
+- UI: "N posts disagree" link on every finding card; click opens a modal
+  with the actual disconfirming quotes.
+- No competitor in the space does this. Massive trust signal.
+
+**2.4 Ulwick Opportunity Score (~0.5 day)** — replace ad-hoc formula
+- Switch from `opportunity_score = pain × (1-coverage) × academic_bonus`
+  to `importance + max(importance − satisfaction, 0)` on a 0–20 scale.
+- Cleaner, citable (Ulwick 2005), simpler to explain in UI tooltip.
+- `importance` (1–10) inferred from language intensity + frequency + WTP signals.
+- `satisfaction` (1–10) inferred from sentiment toward current tools + DIY
+  workaround complexity.
+- Keep the 2×2 quadrant; just swap the x-axis source.
+
+**2.5 Triangulation badge (~0.5 day)** — pure UI
+- `source_diversity` already in metadata from Phase 1. Render as colored chip:
+  🟢 Strong (≥3 source types), 🟡 Moderate (2), 🔴 Narrow (1).
+- Shows up on finding cards + quadrant tooltip.
+- Anchor: Denzin (1978) triangulation theory.
+
+**2.6 Credible intervals on evidence counts (~0.5 day)**
+- Replace "N=14" with "87% CI: 5.2–11.8% of relevant posts mention this."
+- Beta-binomial posterior, 10 lines of Python in `insights.py::_credible_interval`.
+- Displayed as a subtle chip next to evidence count.
+- Anchor: classic Bayesian statistics; makes Gap Map *statistically honest*.
 
 **Files:**
-- `prompts/build_recs.yaml` — prompt template
-- `src/reddit_research/research/build_recs.py` — per-finding generator
-- New **Recommendations tab** OR inline in Insights finding card (expandable)
+- `prompts/insights_synthesis.yaml` — schema extended for Minto + hypotheses +
+  counter-evidence + Ulwick importance/satisfaction.
+- `src/reddit_research/research/insights.py` — `_credible_interval`,
+  `_validate_hypothesis` (Popper check), schema normalization updated.
+- `app-tauri/src/screens/insights.js` — Minto header section, hypothesis
+  card section, counter-evidence modal, triangulation badges.
+- `app-tauri/src/style.css` — Minto + hypothesis + badge styles.
+- No Rust changes, no DB schema changes (all fits in `topic_insights.report_json`).
+
+**Total: ~5.5 days.** Ships as one coherent commit — all additions share
+the same LLM call and output schema, so piecemeal shipping is wasteful.
+
+**Explicitly rejected from the methodology doc as noise/scope-creep:**
+- Issue trees / SCQA as user-facing Phase-1 step (too consulting-heavy for founders)
+- Dual-model adjudication + Cohen's κ dashboard (doubles cost, marginal precision gain)
+- 30-source expansion (we have 13, diminishing returns; ~6-month engineering)
+- Neo4j/ArangoDB migration (SQLite works at scale; premature)
+- Weekly human QA dashboard with Krippendorff's α (ship a "flag as wrong" button instead)
+- BibTeX citation export / reproducibility snapshots (academic-use, zero founder value)
+- Adversarial testing harness (post-PMF concern)
+
+Deferred to later phases (not now but worth revisiting):
+- Three-pass open→axial→selective coding (Phase 3 methodology) — pilot A/B later
+- Saturation *curves* (Phase 4 methodology) — we have labels; curves are polish
 
 ### Phase 3 — Competitor matrix
 

@@ -10,10 +10,25 @@ import { api, esc } from '../api.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
+// Ulwick opportunity score is 0-20 scale (importance + max(imp-sat, 0)).
+// Thresholds match the methodology doc: >15 extreme, 10-15 clear, <10 overserved.
 function scoreClass(score) {
-  if (score >= 7.5) return 'score-high';
-  if (score >= 5)   return 'score-mid';
+  if (score >= 15) return 'score-high';
+  if (score >= 10) return 'score-mid';
   return 'score-low';
+}
+
+// Triangulation strength → colored chip per Denzin 1978 (doc Phase 2).
+// Data comes from the LLM (string) or we derive from source_breakdown count.
+function triangulationChip(strength) {
+  const map = {
+    strong:   { cls: 'strong',   icon: '🟢', label: 'strong triangulation' },
+    moderate: { cls: 'moderate', icon: '🟡', label: 'moderate triangulation' },
+    narrow:   { cls: 'narrow',   icon: '🔴', label: 'narrow — single source' },
+  };
+  const cfg = map[strength];
+  if (!cfg) return '';
+  return `<span class="insight-chip triang-${cfg.cls}" title="${esc(cfg.label)}">${cfg.icon} ${esc(strength)}</span>`;
 }
 
 function renderCitationChips(evidencePostIds, topic) {
@@ -43,7 +58,8 @@ function renderSourceBadges(breakdown) {
 
 function renderFindingCard(f) {
   const op = f.opportunity_score || 0;
-  const pw = f.pain_weight || 0;
+  const imp = f.importance ?? f.pain_weight ?? 0;
+  const sat = f.satisfaction ?? 0;
   const cc = f.competitor_coverage ?? 0.5;
   const cls = scoreClass(op);
   const kindEmoji = { painpoint: '🔥', feature_wish: '💡', workaround: '🛠' }[f.kind] || '•';
@@ -58,6 +74,19 @@ function renderFindingCard(f) {
   const academic = (f.academic_backing || []).length > 0
     ? `<span class="insight-chip academic" title="${(f.academic_backing || []).slice(0,5).map(esc).join(' · ')}">📄 ${f.academic_backing.length} papers</span>`
     : '';
+  // Counter-evidence chip — biggest credibility feature from the methodology
+  // doc. Click → modal with the disconfirming quotes (handled in wireCards).
+  const disconfirmIds = f.disconfirming_evidence || [];
+  const counterChip = disconfirmIds.length > 0
+    ? `<span class="insight-chip counter-evidence" data-disconfirm="${esc(disconfirmIds.join(','))}" data-title="${esc(f.title || '')}" title="Click to see posts that disagree — counter-evidence strengthens analysis">⚖ ${disconfirmIds.length} disagree</span>`
+    : '';
+  // Bayesian credible interval on evidence prevalence (from _normalize_scores)
+  const ci = f.evidence_prevalence_ci;
+  const ciChip = ci
+    ? `<span class="insight-chip ci-chip" title="Beta-binomial ${Math.round(ci.confidence * 100)}% credible interval — honest statistical range, not raw N">📊 ${ci.lower_pct}%–${ci.upper_pct}% of corpus</span>`
+    : '';
+  const triangChip = triangulationChip(f.triangulation_strength);
+
   return `
     <div class="insight-card ${cls}" data-finding="${esc(f.title || '')}">
       <div class="insight-head">
@@ -65,17 +94,21 @@ function renderFindingCard(f) {
           <span class="insight-kind">${kindEmoji}</span>
           <h3>${esc(f.title || '(untitled)')}</h3>
         </div>
-        <div class="insight-score ${cls}" title="opportunity = pain × (1 - competitor_coverage) × academic bonus">
+        <div class="insight-score ${cls}" title="Ulwick Opportunity = importance + max(importance − satisfaction, 0). >15 extreme, 10–15 clear, <10 overserved.">
           <b>${op.toFixed(1)}</b>
           <span>opportunity</span>
         </div>
       </div>
 
       <div class="insight-meta">
-        <span title="severity × frequency × source diversity">🔥 pain <b>${pw.toFixed(1)}</b></span>
-        <span title="0 = greenfield, 1 = saturated">🏭 coverage <b>${cc.toFixed(2)}</b></span>
+        <span title="Ulwick importance 1-10 — inferred from language intensity, frequency, WTP signals">🔥 imp <b>${imp.toFixed(1)}</b></span>
+        <span title="Ulwick satisfaction with current solutions 1-10 — inferred from sentiment toward existing tools">🛋 sat <b>${sat.toFixed(1)}</b></span>
+        <span title="0 = greenfield, 1 = saturated competitor landscape">🏭 cov <b>${cc.toFixed(2)}</b></span>
+        ${triangChip}
         ${classification}
         ${academic}
+        ${ciChip}
+        ${counterChip}
         ${renderCitationChips(f.evidence_post_ids)}
       </div>
 
@@ -85,6 +118,72 @@ function renderFindingCard(f) {
 
       <div class="insight-sources">${renderSourceBadges(f.source_breakdown)}</div>
     </div>
+  `;
+}
+
+// ─── Minto pyramid header ─────────────────────────────────────────────
+// Phase-2 addition. This IS the answer the user came for — rendered as
+// the first thing they see on the Insights tab. Minto's rule: reader
+// should be able to stop after sentence one and have the decision-prompt.
+function renderMinto(report) {
+  const gt = (report.governing_thought || '').trim();
+  const args = (report.key_arguments || []).slice(0, 3);
+  if (!gt && args.length === 0) return '';
+  const argHtml = args.map((a, i) => {
+    const claim = esc(a.claim || '');
+    const ev = renderCitationChips(a.evidence_post_ids);
+    return `
+      <div class="minto-arg">
+        <div class="minto-arg-num">${i + 1}</div>
+        <div class="minto-arg-body">
+          <p class="minto-arg-claim">${claim}</p>
+          <div class="minto-arg-ev">${ev}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  return `
+    <section class="minto-pyramid">
+      <div class="minto-gt">
+        <div class="minto-gt-label">The answer</div>
+        <p class="minto-gt-text">${esc(gt || '(no governing thought — synthesis returned empty top)')}</p>
+      </div>
+      ${args.length ? `<div class="minto-args">${argHtml}</div>` : ''}
+    </section>
+  `;
+}
+
+// ─── Hypothesis card (Popper-validated) ───────────────────────────────
+function renderHypothesisCard(h, idx) {
+  const falsifiers = (h.falsifiers || []).map(f => `<li>${esc(f)}</li>`).join('');
+  const budget = h.budget_usd != null ? `$${Number(h.budget_usd).toLocaleString()}` : '—';
+  const days = h.time_box_days != null ? `${h.time_box_days} days` : '—';
+  return `
+    <details class="hyp-card" ${idx === 0 ? 'open' : ''}>
+      <summary>
+        <span class="hyp-num">H${idx + 1}</span>
+        <span class="hyp-title">${esc(h.finding_title || h.experiences || '(untitled hypothesis)')}</span>
+        <span class="hyp-test-chip">${esc(days)} · ${esc(budget)}</span>
+      </summary>
+      <div class="hyp-body">
+        <div class="hyp-row"><b>WE BELIEVE</b><span>${esc(h.we_believe || '')}</span></div>
+        <div class="hyp-row"><b>EXPERIENCES</b><span>${esc(h.experiences || '')}</span></div>
+        ${h.because ? `<div class="hyp-row"><b>BECAUSE</b><span>${esc(h.because)}</span></div>` : ''}
+        <div class="hyp-row"><b>AND WOULD</b><span>${esc(h.and_would || '')}</span></div>
+        <div class="hyp-row"><b>FOR</b><span>${esc(h.for || '')}</span></div>
+        <div class="hyp-divider"></div>
+        <div class="hyp-falsify">
+          <b>We'll know we're wrong if:</b>
+          <ul>${falsifiers || '<li class="muted">(missing — card was rejected by Popper validator)</li>'}</ul>
+        </div>
+        ${h.cheapest_test ? `
+          <div class="hyp-test">
+            <b>Cheapest test:</b> ${esc(h.cheapest_test)}
+            <span class="hyp-test-meta">Time box ${esc(days)} · Budget ${esc(budget)}</span>
+          </div>
+        ` : ''}
+      </div>
+    </details>
   `;
 }
 
@@ -115,16 +214,19 @@ function renderQuadrant(report) {
   const findings = report.findings || [];
   if (!findings.length) return '';
   // SVG 2×2 grid. x = competitor_coverage (0 left → 1 right),
-  // y = pain_weight (0 bottom → 10 top). Top-left = greenfield.
+  // y = importance (0 bottom → 10 top, Ulwick scale). Top-left = greenfield
+  // (high importance, low coverage). Dot colors reflect Ulwick opportunity
+  // score (0-20 scale after Phase-2 rescoring).
   const W = 520, H = 340, PAD = 44;
   const plot = (f) => {
+    const imp = f.importance ?? f.pain_weight ?? 0;
     const x = PAD + (f.competitor_coverage || 0) * (W - 2 * PAD);
-    const y = H - PAD - ((f.pain_weight || 0) / 10) * (H - 2 * PAD);
+    const y = H - PAD - (imp / 10) * (H - 2 * PAD);
     const cls = scoreClass(f.opportunity_score || 0);
     return `
       <g class="quad-dot ${cls}" transform="translate(${x},${y})">
         <circle r="7" />
-        <title>${esc(f.title)} — opp ${f.opportunity_score?.toFixed(1)}, pain ${f.pain_weight?.toFixed(1)}, cov ${f.competitor_coverage?.toFixed(2)}</title>
+        <title>${esc(f.title)} — opp ${f.opportunity_score?.toFixed(1)}/20, imp ${imp.toFixed(1)}, cov ${f.competitor_coverage?.toFixed(2)}</title>
       </g>
     `;
   };
@@ -190,6 +292,9 @@ function renderFull(report, contentEl, topic) {
     ? `<span class="insight-chip cached" title="Cached report. Click Regenerate to re-run the LLM.">cached</span>`
     : '';
 
+  const hypotheses = report.hypotheses || [];
+  const dropped = report._dropped_hypotheses || [];
+
   return `
     <div class="insights-tab">
       <div class="insights-toolbar">
@@ -202,14 +307,30 @@ function renderFull(report, contentEl, topic) {
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-insights-regen"><i data-lucide="refresh-cw"></i> Regenerate</button>
       </div>
 
+      ${renderMinto(report)}
+
       ${report.executive_summary ? `
-        <div class="insight-exec">
-          <h2>Executive summary</h2>
+        <details class="insight-exec-fold">
+          <summary>Full executive summary</summary>
           <div class="insight-exec-body">${esc(report.executive_summary).split('\n\n').map(p => `<p>${p}</p>`).join('')}</div>
-        </div>
+        </details>
       ` : ''}
 
       ${renderQuadrant(report)}
+
+      ${hypotheses.length ? `
+        <div class="insights-hypotheses">
+          <h2>Hypothesis cards <span class="muted">(${hypotheses.length} · Popper-validated)</span></h2>
+          <p class="muted hyp-intro">Each card is a falsifiable bet with a 2-week cheapest test. If you can't name how you'd be wrong, it isn't a hypothesis.</p>
+          ${hypotheses.map(renderHypothesisCard).join('')}
+          ${dropped.length ? `
+            <details class="hyp-dropped">
+              <summary>${dropped.length} hypothesis card(s) dropped by Popper validator</summary>
+              <ul>${dropped.map(d => `<li><b>${esc(d.hypothesis?.finding_title || d.hypothesis?.experiences || 'unnamed')}</b> — ${esc((d.errors || []).join('; '))}</li>`).join('')}</ul>
+            </details>
+          ` : ''}
+        </div>
+      ` : ''}
 
       <div class="insights-findings">
         <h2>Top opportunities <span class="muted">(${findings.length})</span></h2>
@@ -224,6 +345,61 @@ function renderFull(report, contentEl, topic) {
       ` : ''}
     </div>
   `;
+}
+
+// Counter-evidence modal — click "⚖ N disagree" chip, see the actual
+// disconfirming posts in a dialog. Queries the posts table by the
+// stored post_ids. Biggest credibility feature per methodology doc §6.2.
+async function showCounterEvidenceModal(topic, findingTitle, postIds) {
+  const { api } = await import('../api.js');
+  let rows = [];
+  try {
+    // runQuery has injection-safe `:ids` param support via the --param
+    // flag on the CLI; we inline-join because post IDs are non-user-facing
+    // (come from the LLM's synthesis output).
+    const placeholders = postIds.map((_, i) => `:p${i}`).join(',');
+    const params = {};
+    postIds.forEach((id, i) => { params[`p${i}`] = id; });
+    rows = await api.runQuery(
+      `SELECT id, title, substr(selftext, 1, 400) AS excerpt, author,
+              coalesce(source_type,'reddit') AS source, permalink, url
+       FROM posts WHERE id IN (${placeholders}) LIMIT 20`,
+      topic, params,
+    );
+  } catch (e) {
+    rows = [];
+  }
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.hidden = false;
+  backdrop.innerHTML = `
+    <div class="modal" style="max-width:640px;max-height:80vh;overflow:auto">
+      <h3 style="margin-top:0">⚖ Counter-evidence</h3>
+      <p class="muted">${esc(rows.length)} post(s) that disagree with <b>${esc(findingTitle)}</b> or defend the status quo. Important for avoiding confirmation bias.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">
+        ${rows.length === 0 ? `<p class="muted">(No matching posts found — IDs may have been pruned from the corpus.)</p>` :
+          rows.map(r => `
+            <div class="counter-evidence-post">
+              <div class="cep-head">
+                <span class="posts-source">${esc(r.source)}</span>
+                <span class="muted">u/${esc(r.author || 'anon')}</span>
+              </div>
+              <a href="${esc(r.permalink ? 'https://reddit.com' + r.permalink : (r.url || '#'))}" target="_blank" rel="noopener" class="cep-title">${esc(r.title || '(untitled)')}</a>
+              ${r.excerpt ? `<p class="cep-excerpt">${esc(r.excerpt)}${r.excerpt.length >= 400 ? '…' : ''}</p>` : ''}
+            </div>
+          `).join('')}
+      </div>
+      <div class="modal-actions" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost btn-bordered" id="cep-close">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector('#cep-close')?.addEventListener('click', close);
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  window.refreshIcons?.();
 }
 
 export async function loadInsights(contentEl, topic) {
@@ -302,14 +478,22 @@ function wireCards(contentEl, topic) {
   // Citation chips → drill into Posts tab with the evidence post_ids.
   // We can't filter Posts by post-id directly without a new API; for now
   // we just show the count and log on click so users see we're aware.
-  // TODO Phase-2: add setPostsFilter({ postIds: [...] }) for true drill.
+  // TODO Phase-3: add setPostsFilter({ postIds: [...] }) for true drill.
   contentEl.querySelectorAll('.insight-cite-chip').forEach(el => {
     el.addEventListener('click', () => {
       const ids = (el.dataset.ev || '').split(',').filter(Boolean);
       if (!ids.length) return;
-      // Open the first cited post in a new tab as a minimal affordance.
-      // Better UX lands in Phase 2.
       console.info('[insights] evidence post_ids:', ids);
+    });
+  });
+
+  // Counter-evidence chips → modal with the disconfirming posts.
+  // Phase-2 credibility feature — no competitor in the space does this.
+  contentEl.querySelectorAll('.counter-evidence').forEach(el => {
+    el.addEventListener('click', () => {
+      const ids = (el.dataset.disconfirm || '').split(',').filter(Boolean);
+      const title = el.dataset.title || '(unnamed finding)';
+      if (ids.length) showCounterEvidenceModal(topic, title, ids);
     });
   });
 }
