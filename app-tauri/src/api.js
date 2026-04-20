@@ -291,6 +291,21 @@ export const api = {
   hypothesisStats: (topic) =>
     cachedInvoke('hypothesis_stats', { topic }, 5000),
 
+  // Phase-4 Monitoring — weekly delta tracking. `monitorRunTopic` re-runs
+  // synthesize (and optionally collect) for a single topic, recording
+  // what changed. `monitorDeltas(null)` returns the cross-topic dashboard
+  // view; `monitorDeltas(topic)` returns that topic's run history.
+  monitorRunTopic: (topic, skipCollect = true) => {
+    invalidate('monitor_deltas', 'list_topics');
+    return invoke('monitor_run_topic', { topic, skipCollect });
+  },
+  monitorTick: (skipCollect = true) => {
+    invalidate('monitor_deltas', 'list_topics');
+    return invoke('monitor_tick', { skipCollect });
+  },
+  monitorDeltas: (topic = null, limit = 10, sinceDays = 7) =>
+    cachedInvoke('monitor_deltas', { topic, limit, sinceDays }, 30000),
+
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic, force = false) => invoke('run_temporal_gaps', { topic, force }),
   runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),

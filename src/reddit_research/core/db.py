@@ -328,6 +328,32 @@ def init_schema(db: Database) -> None:
         )
         db["paper_analyses"].create_index(["topic"])
 
+    # Phase 4 — Monitoring / weekly delta tracking.
+    # One row per topic refresh (manual or scheduled). The `delta_json`
+    # blob captures what changed vs. the previous run: findings added,
+    # findings removed, opportunity-score deltas per finding, new
+    # competitors, new academic_backing. Dashboard's "What's changed this
+    # week" reads from here. See docs/ROADMAP.md §Phase 4.
+    if "topic_runs" not in db.table_names():
+        db["topic_runs"].create(
+            {
+                "id": int,                  # autoincrement
+                "topic": str,
+                "run_at": str,              # ISO UTC, when refresh started
+                "ended_at": str,            # ISO UTC, when refresh completed (null = in-flight)
+                "trigger": str,             # 'manual' | 'scheduled' | 'post-collect'
+                "corpus_size": int,         # posts considered at synth time
+                "findings_count": int,      # total findings in this run
+                "delta_json": str,          # JSON blob of deltas vs. previous run
+                "report_hash": str,         # stable hash of report_json (dedup re-runs)
+                "error": str,               # non-null if the refresh failed
+            },
+            pk="id",
+        )
+        db["topic_runs"].create_index(["topic"])
+        db["topic_runs"].create_index(["topic", "run_at"])
+        db["topic_runs"].create_index(["run_at"])
+
     # Phase 3 — Hypothesis tracking / decision journal.
     # Each hypothesis card produced by the Insight Engine (Phase 2) can be
     # promoted to a tracked "bet" via the UI's "Save as bet" button. Bets

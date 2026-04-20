@@ -3212,3 +3212,40 @@ kbd {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ─── Phase-4 weekly delta card on Dashboard ─────────────────────── */
+.weekly-deltas-card {
+  margin-bottom: 16px;
+  border-left: 4px solid var(--orange, #FF8C42);
+}
+.weekly-deltas-card h3 {
+  display: flex; align-items: center; gap: 8px;
+}
+.weekly-deltas-card h3 svg {
+  width: 18px; height: 18px; color: var(--orange, #FF8C42);
+}
+.delta-rows {
+  display: flex; flex-direction: column;
+  padding: 4px 0 16px;
+}
+.delta-row {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 20px;
+  text-decoration: none; color: var(--ink-1);
+  border-top: 1px solid var(--line);
+  transition: background 0.1s;
+}
+.delta-row:first-child { border-top: none; }
+.delta-row:hover { background: rgba(255,140,66,0.05); }
+.delta-row-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.delta-row-head b { font-weight: 600; }
+.delta-row-body { font-size: 12.5px; line-height: 1.4; }
+.delta-row-body b { color: var(--ink-1); font-weight: 700; }
+.delta-row-foot { font-size: 11px; }
+.delta-chip {
+  display: inline-block;
+  padding: 1px 8px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.delta-chip-new { background: #E0F2EA; color: #1A7A4F; }

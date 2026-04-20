@@ -453,9 +453,12 @@ async function runSynth(contentEl, topic) {
       <div style="color:var(--ink-3);font-size:13px">Packing your full corpus into one synthesis call. 30–90 s.</div>
     </div>
   `);
-  let report;
+  // Use monitor_run_topic instead of raw synthesize — same synthesis call,
+  // but wrapped in the Phase-4 delta recorder. Every regenerate now
+  // writes a topic_runs row, which populates the Dashboard weekly card.
+  let runResult;
   try {
-    report = await api.synthesizeInsights(topic, false);
+    runResult = await api.monitorRunTopic(topic, true);  // skip_collect=true for speed
   } catch (e) {
     if (contentEl.dataset.tab !== 'insights') return;
     set(renderError(e?.message || String(e)));
@@ -464,15 +467,26 @@ async function runSynth(contentEl, topic) {
     return;
   }
   if (contentEl.dataset.tab !== 'insights') return;
-  if (!report || !report.ok) {
-    set(renderError(report?.error || report?.reason || 'Synthesis returned no report.'));
+  if (!runResult || !runResult.ok) {
+    set(renderError(runResult?.error || 'Synthesis returned no report.'));
     wireRunButton(contentEl, topic);
     window.refreshIcons?.();
     return;
   }
+  const report = runResult.report;
   set(renderFull(report, contentEl, topic));
   wireCards(contentEl, topic, report);
   $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
+  // Flash a small delta summary if any changes — reinforces the "weekly ritual"
+  const d = runResult.delta || {};
+  const changed = (d.findings_added || []).length + (d.findings_removed || []).length + (d.score_changes || []).length;
+  if (!d.is_first_run && changed > 0) {
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-success';
+    toast.innerHTML = `✨ ${changed} change${changed === 1 ? '' : 's'} this run — see <a href="#/">Dashboard</a> for the delta digest.`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+  }
   window.refreshIcons?.();
 }
 

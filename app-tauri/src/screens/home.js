@@ -284,6 +284,8 @@ export async function renderHome(root) {
     <div id="active-collect-slot"></div>
     <div id="byok-prompt-slot"></div>
     <div id="palace-nudge-slot"></div>
+    <!-- Phase-4 weekly-delta card. Populated async by loadWeeklyDeltas() -->
+    <div id="weekly-deltas-slot"></div>
 
     <div id="hero-slot">${skelHero()}</div>
     <section class="stat-grid" id="stat-grid">${skelStats()}</section>
@@ -388,6 +390,7 @@ export async function renderHome(root) {
   loadActiveCollect(root);
   loadByokPrompt(root);
   loadPalaceNudge(root);
+  loadWeeklyDeltas(root);
 
   // Live-refresh hooks:
   //   1. `gapmap:db-changed` fires when api.js's mtime poller detects an
@@ -807,4 +810,84 @@ async function loadPalaceNudge(root) {
   } catch {
     slot.innerHTML = '';
   }
+}
+
+// ─── Phase 4 — Weekly delta card ────────────────────────────────────
+// Renders "What's changed this week" on the dashboard when any topic
+// has recorded deltas in the last 7 days. Silent if none. The biggest
+// single retention hook we have — reason for users to open on Monday.
+async function loadWeeklyDeltas(root) {
+  const slot = root.querySelector('#weekly-deltas-slot');
+  if (!slot) return;
+  let deltas;
+  try {
+    deltas = await api.monitorDeltas(null, 5, 7);
+  } catch {
+    slot.innerHTML = '';
+    return;
+  }
+  // Filter to runs that actually changed something (first-runs show N adds;
+  // subsequent runs with 0 magnitude are silent)
+  const meaningful = (deltas || []).filter(r => {
+    const d = r?.delta || {};
+    return d.is_first_run
+      ? (d.findings_added || []).length > 0
+      : (d.total_change_magnitude || 0) >= 1;
+  });
+  if (!meaningful.length) { slot.innerHTML = ''; return; }
+
+  const rows = meaningful.map(r => {
+    const d = r.delta || {};
+    const t = r.topic;
+    const encoded = encodeURIComponent(t);
+    const added = (d.findings_added || []).length;
+    const removed = (d.findings_removed || []).length;
+    const scored = (d.score_changes || []).length;
+    const compAdded = (d.competitors_added || []).length;
+    const newPapers = d.new_academic_papers || 0;
+    const parts = [];
+    if (added)     parts.push(`<b>${added}</b> new finding${added === 1 ? '' : 's'}`);
+    if (scored)    parts.push(`<b>${scored}</b> score change${scored === 1 ? '' : 's'}`);
+    if (compAdded) parts.push(`<b>${compAdded}</b> new competitor${compAdded === 1 ? '' : 's'}`);
+    if (newPapers) parts.push(`<b>${newPapers}</b> new paper${newPapers === 1 ? '' : 's'}`);
+    if (removed)   parts.push(`<b>${removed}</b> dropped`);
+    const summary = parts.length ? parts.join(' · ') : 'refreshed';
+    const when = r.run_at ? timeAgo(r.run_at) : '';
+    const firstChip = d.is_first_run
+      ? '<span class="delta-chip delta-chip-new">first run</span>' : '';
+    return `
+      <a class="delta-row" href="#/topic/${encoded}" title="Open topic">
+        <div class="delta-row-head">
+          <b>${esc(t)}</b>
+          ${firstChip}
+        </div>
+        <div class="delta-row-body muted">${summary}</div>
+        <div class="delta-row-foot muted">${esc(when)}</div>
+      </a>
+    `;
+  }).join('');
+
+  slot.innerHTML = `
+    <section class="card weekly-deltas-card">
+      <div class="card-head">
+        <div>
+          <h3>
+            <i data-lucide="activity"></i>
+            What's changed this week
+          </h3>
+          <p class="muted">${meaningful.length} topic${meaningful.length === 1 ? '' : 's'} with fresh signals · last 7 days</p>
+        </div>
+        <div class="filter-bar">
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-dismiss-deltas" title="Hide this week">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+      </div>
+      <div class="delta-rows">${rows}</div>
+    </section>
+  `;
+  slot.querySelector('#btn-dismiss-deltas')?.addEventListener('click', () => {
+    slot.innerHTML = '';
+  });
+  window.refreshIcons?.();
 }

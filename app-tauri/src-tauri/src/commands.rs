@@ -320,6 +320,61 @@ pub async fn synthesize_insights(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+// ─── Phase 4 — Monitoring + Weekly Delta View ─────────────────────────
+//
+// Runs `research monitor-*` CLI commands. Drives the Dashboard's
+// "What's changed this week" card and per-topic delta indicators.
+// See src/reddit_research/research/monitor.py.
+
+#[tauri::command]
+pub async fn monitor_run_topic(
+    app: AppHandle,
+    topic: String,
+    skip_collect: Option<bool>,
+) -> Result<Value, String> {
+    let flag = if skip_collect.unwrap_or(true) { "--skip-collect" } else { "--with-collect" };
+    run_cli(
+        &app,
+        vec!["research", "monitor-run", "--topic", &topic, flag, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn monitor_tick(
+    app: AppHandle,
+    skip_collect: Option<bool>,
+) -> Result<Value, String> {
+    let flag = if skip_collect.unwrap_or(true) { "--skip-collect" } else { "--with-collect" };
+    run_cli(&app, vec!["research", "monitor-tick", flag, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Topic-scoped run history. Omit `topic` for the dashboard view across
+/// all topics (returns top-N by delta magnitude within `since_days`).
+#[tauri::command]
+pub async fn monitor_deltas(
+    app: AppHandle,
+    topic: Option<String>,
+    limit: Option<u32>,
+    since_days: Option<u32>,
+) -> Result<Value, String> {
+    let limit_s = limit.unwrap_or(10).to_string();
+    let since_s = since_days.unwrap_or(7).to_string();
+    let mut args: Vec<&str> = vec!["research", "monitor-deltas", "--limit", &limit_s, "--json"];
+    if let Some(t) = topic.as_ref() {
+        if !t.is_empty() {
+            args.push("--topic");
+            args.push(t.as_str());
+        }
+    }
+    args.push("--since-days");
+    args.push(&since_s);
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 // ─── Phase 3 — Hypothesis Tracking / Decision Journal ───────────────────
 //
 // Promote synthesize_insights hypothesis cards to stateful, trackable bets

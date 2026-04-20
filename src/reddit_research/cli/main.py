@@ -820,6 +820,50 @@ def cmd_research_gaps(
         _emit(report, as_json)
 
 
+@research_app.command("monitor-run")
+def cmd_monitor_run(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    skip_collect: bool = typer.Option(True, "--skip-collect/--with-collect",
+        help="Default skips collect (reuses existing corpus). --with-collect re-fetches."),
+    trigger: str = typer.Option("manual", "--trigger",
+        help="manual | scheduled | post-collect"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-4 — Re-run synthesize + record delta for a single topic."""
+    from ..research.monitor import run_topic_refresh
+    out = run_topic_refresh(topic=topic, trigger=trigger, skip_collect=skip_collect)
+    _emit(out, as_json)
+
+
+@research_app.command("monitor-tick")
+def cmd_monitor_tick(
+    skip_collect: bool = typer.Option(True, "--skip-collect/--with-collect"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-4 — Process ALL scheduled topics. Called by launchd cron."""
+    from ..research.monitor import tick
+    out = tick(skip_collect=skip_collect)
+    _emit(out, as_json)
+
+
+@research_app.command("monitor-deltas")
+def cmd_monitor_deltas(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t",
+        help="List a single topic's deltas; omit for dashboard view across all topics"),
+    limit: int = typer.Option(10, "--limit", "-n"),
+    since_days: int = typer.Option(7, "--since-days",
+        help="Dashboard-mode only: window size for recent deltas"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-4 — Recent monitoring runs + deltas."""
+    from ..research.monitor import list_recent_runs, dashboard_deltas
+    if topic:
+        out = list_recent_runs(topic=topic, limit=limit)
+    else:
+        out = dashboard_deltas(limit=limit, since_days=since_days)
+    _emit(out, as_json)
+
+
 @research_app.command("hypothesis-create")
 def cmd_hypothesis_create(
     topic: str = typer.Option(..., "--topic", "-t"),
