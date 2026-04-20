@@ -132,11 +132,25 @@ def build_fallback_chain(preferred: str | None = None) -> list[str]:
 
 
 def resolve_provider(explicit: str | None = None) -> str:
-    """Return the *name* of the preferred provider (first of the fallback chain).
+    """Return the *name string* of the preferred provider (first of the chain).
 
-    Kept for back-compat with callers that want a single string (e.g.
-    discover.py's pre-flight gate). New code should prefer `get_provider()`
-    which returns a FallbackProvider with transparent fall-through.
+    ⚠️  Do NOT use this to actually call an LLM — it returns just the name
+        like "anthropic" / "openai" / "ollama". If you instantiate a raw
+        provider off this name you LOSE the FallbackProvider chain that
+        makes "cloud dead → fall through to Ollama" work transparently.
+
+    Correct uses (all of these want the *name*, not a provider instance):
+      - Pre-flight gate: `resolve_provider(None)` to raise if no LLM configured
+      - Branching on provider name: `if resolve_provider() == "ollama": ...`
+      - CLI arg construction: `args.append(resolve_provider())` for a subprocess
+      - Logging: `log.info(f"using {resolve_provider()}")`
+
+    For everything else — actual LLM calls — use `get_provider(name=None)`
+    which returns a FallbackProvider walking the full chain. That's the
+    canonical path; this function is only the naming helper.
+
+    Raises RuntimeError with a user-facing message if no provider is
+    configured at all.
     """
     chain = build_fallback_chain(explicit)
     if not chain:
