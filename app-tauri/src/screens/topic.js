@@ -387,20 +387,31 @@ export async function renderTopic(root, { params }) {
       <div id="topic-bet-stats" class="topic-bet-stats" hidden></div>
     </div>
 
+    <!-- Phase-11 tab cleanup: 4 primary tabs always visible, everything
+         else in a "More ▾" dropdown. Primaries were picked from actual
+         usage (Insights=core output, Bets=weekly ritual,
+         Evidence=drilldown, Chat=follow-up) per PRODUCT_GAPS.md §3.1 -->
     <div class="tabs" id="topic-tabs">
       <button class="tab active" data-tab="insights"><i data-lucide="sparkles"></i> Insights</button>
       <button class="tab" data-tab="bets"><i data-lucide="target"></i> Bets</button>
-      <button class="tab" data-tab="map"><i data-lucide="network"></i> Map</button>
-      <button class="tab" data-tab="report"><i data-lucide="file-text"></i> Report</button>
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
-      <button class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
-      <button class="tab" data-tab="sentiment"><i data-lucide="smile"></i> Sentiment</button>
-      <button class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
-      <button class="tab" data-tab="posts"><i data-lucide="list"></i> Posts</button>
-      <button class="tab" data-tab="research"><i data-lucide="book-open"></i> Research</button>
       <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
-      <button class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
-      <button class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
+      <div class="tab-more-wrap">
+        <button class="tab tab-more" id="tab-more-toggle" aria-haspopup="true" aria-expanded="false">
+          <i data-lucide="more-horizontal"></i> More <i data-lucide="chevron-down"></i>
+        </button>
+        <div class="tab-more-menu" id="tab-more-menu" hidden>
+          <button class="tab-more-item" data-tab="map"><i data-lucide="network"></i> Map</button>
+          <button class="tab-more-item" data-tab="report"><i data-lucide="file-text"></i> Report</button>
+          <button class="tab-more-item" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
+          <button class="tab-more-item" data-tab="sentiment"><i data-lucide="smile"></i> Sentiment</button>
+          <button class="tab-more-item" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
+          <button class="tab-more-item" data-tab="posts"><i data-lucide="list"></i> Posts</button>
+          <button class="tab-more-item" data-tab="research"><i data-lucide="book-open"></i> Research</button>
+          <button class="tab-more-item" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
+          <button class="tab-more-item" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
+        </div>
+      </div>
     </div>
 
     <div id="tab-content"><div class="empty-state">loading…</div></div>
@@ -2129,7 +2140,15 @@ export async function renderTopic(root, { params }) {
     // render. See `writeIfTab()` helper further down — the fix for stale
     // tab content was spec'd here on 2026-04-20.
     contentEl.dataset.tab = name;
-    tabsEl.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    // Highlight primary tabs by data-tab match. Also highlight the More
+    // button when a non-primary tab is active, so the user can see their
+    // current location even for tabs inside the dropdown.
+    const primaryTabs = new Set(['insights', 'bets', 'evidence', 'chat']);
+    tabsEl.querySelectorAll('.tab:not(.tab-more)').forEach(t =>
+      t.classList.toggle('active', t.dataset.tab === name)
+    );
+    const moreBtn = tabsEl.querySelector('.tab-more');
+    if (moreBtn) moreBtn.classList.toggle('active', !primaryTabs.has(name));
     // Synchronous placeholder so the old tab's content disappears the moment
     // the user clicks — before the loader's first await. Without this the
     // screen looks hung if the loader takes more than ~100 ms to produce
@@ -2158,8 +2177,41 @@ export async function renderTopic(root, { params }) {
     if (contentEl.dataset.tab === expected) contentEl.innerHTML = html;
   };
 
-  tabsEl.querySelectorAll('.tab').forEach(t => {
+  // Primary tab buttons (Insights / Bets / Evidence / Chat + the More toggle)
+  tabsEl.querySelectorAll('.tab:not(.tab-more)').forEach(t => {
     t.addEventListener('click', () => switchTab(t.dataset.tab));
+  });
+
+  // More ▾ dropdown — toggles on click, closes on outside-click + Escape,
+  // items switch tabs AND close the menu.
+  const moreToggle = $('#tab-more-toggle');
+  const moreMenu = $('#tab-more-menu');
+  const closeMoreMenu = () => {
+    if (!moreMenu || moreMenu.hidden) return;
+    moreMenu.hidden = true;
+    moreToggle?.setAttribute('aria-expanded', 'false');
+    moreToggle?.classList.remove('active');
+  };
+  moreToggle?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = moreMenu.hidden;
+    moreMenu.hidden = !open;
+    moreToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    moreToggle.classList.toggle('active', open);
+  });
+  moreMenu?.querySelectorAll('.tab-more-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const name = item.dataset.tab;
+      closeMoreMenu();
+      switchTab(name);
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!moreMenu || moreMenu.hidden) return;
+    if (!e.target.closest('.tab-more-wrap')) closeMoreMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMoreMenu();
   });
 
   $('#btn-rerun').onclick = () => openSourcePickerModal(topic);

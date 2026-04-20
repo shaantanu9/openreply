@@ -3319,3 +3319,41 @@ kbd {
 .tbs-invalidated  { background: #F4D6D6; color: #B84747; }
 .tbs-paused       { background: #F4E6C8; color: #8A5A1A; }
 .tbs-draft        { background: #EAE6DC; color: #8A8178; }
+
+/* ─── Phase-11 tab cleanup: More ▾ dropdown ─────────────────────── */
+.tab-more-wrap { position: relative; display: inline-block; }
+.tab.tab-more {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tab.tab-more i[data-lucide="chevron-down"] {
+  width: 14px; height: 14px; margin-left: 2px;
+}
+.tab-more-menu {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  padding: 4px;
+  z-index: 200;
+  animation: tab-more-in 0.12s ease-out;
+}
+@keyframes tab-more-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.tab-more-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 12px; border: 0; background: transparent;
+  text-align: left; cursor: pointer; border-radius: 6px;
+  font-size: 13px; color: var(--ink-1);
+  font-family: inherit;
+}
+.tab-more-item:hover {
+  background: var(--surface-2, #FAF4EA);
+  color: var(--orange, #B84F14);
+}
+.tab-more-item i[data-lucide] {
+  width: 15px; height: 15px; flex-shrink: 0;
+}

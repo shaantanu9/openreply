@@ -62,7 +62,9 @@ _HARD_CAP = int(os.getenv("INSIGHTS_HARD_CAP", "2000"))
 _PROVIDER_CAPS = {
     "anthropic":  2000,  # 1M ctx (Opus 4.7) — full budget
     "openai":     1500,  # GPT-4 128K ctx — still plenty
-    "openrouter": 1500,  # routes to any — conservative default
+    # OpenRouter free tier caps prompt tokens ~16K. ~400 posts keeps
+    # input under that. Paid users can bump via INSIGHTS_HARD_CAP=N.
+    "openrouter":  400,
     "google":     2000,  # Gemini 1M+ ctx
     "groq":        300,  # ~32K ctx on most models
     "deepseek":    800,  # ~128K on DeepSeek-V3
@@ -140,24 +142,112 @@ def _select_corpus(topic: str, min_score: int = 0) -> list[dict[str, Any]]:
 
 
 def _parse_insight_json(raw: str) -> dict:
-    """Parse Claude's JSON output. Strip code fences if present; tolerate
-    a leading preamble sentence the model occasionally emits despite the
-    'JSON only' instruction."""
+    """Parse Claude's JSON output with truncation-recovery.
+
+    Handles three realities:
+      1. Clean JSON (normal case) — direct json.loads.
+      2. Code-fenced + preamble — strip fences, find first `{`.
+      3. Truncated output (free-tier LLMs cut off mid-string) — attempt
+         progressive trimming: peel back character-by-character looking
+         for a balanced `}` that parses. Recovers however much of the
+         schema landed before the cutoff; the rest of the fields are
+         just absent and the UI degrades gracefully.
+    """
     cleaned = raw.strip()
     for fence in ("```json", "```"):
         if cleaned.startswith(fence):
             cleaned = cleaned[len(fence):].lstrip()
     if cleaned.endswith("```"):
         cleaned = cleaned[:-3].rstrip()
-    # If the model emitted preamble, find the first {.
     if not cleaned.startswith("{"):
         brace = cleaned.find("{")
         if brace >= 0:
             cleaned = cleaned[brace:]
+
+    # Fast path — clean JSON
     try:
         return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Recovery path — trim from the end until we find a balanced, parseable
+    # prefix. Most truncations end mid-string or mid-array inside a deeply-
+    # nested field (findings[5].narrative). Closing the brackets on the
+    # spot almost always recovers findings[0..4] intact.
+    recovered = _try_recover_truncated_json(cleaned)
+    if recovered is not None:
+        recovered["_truncated"] = True
+        return recovered
+
+    try:
+        return json.loads(cleaned)  # re-raise with same error for diagnostics
     except json.JSONDecodeError as e:
         return {"_parse_error": True, "_raw": raw[:2000], "_error": str(e)}
+
+
+def _try_recover_truncated_json(s: str) -> dict | None:
+    """Attempt to recover a truncated JSON object.
+
+    Strategy: for each possible cut-point from end toward start, try
+    closing any open strings/arrays/objects and parsing. Return the first
+    successful parse. Caps work at 50 attempts so a garbage string fails
+    fast instead of iterating 10000 chars.
+    """
+    if not s.strip().startswith("{"):
+        return None
+    # Try cutting at promising boundaries first — commas and brackets —
+    # before falling back to arbitrary character positions.
+    # Candidates: every index where s[i] is in ',' ']' '}'
+    boundaries = [i for i, ch in enumerate(s) if ch in ',]}]']
+    boundaries.reverse()  # try from end inward
+    for cut in boundaries[:50]:
+        prefix = s[: cut + 1]
+        candidate = _balance_json(prefix)
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _balance_json(s: str) -> str:
+    """Close any open strings, arrays, and objects in `s` so it parses
+    as valid JSON. Best-effort — doesn't fix invalid syntax inside, only
+    missing closing brackets at the tail."""
+    in_str = False
+    escape = False
+    stack: list[str] = []
+    for ch in s:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_str:
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "]}":
+            if stack and stack[-1] == ch:
+                stack.pop()
+    out = s
+    # Close an open string first
+    if in_str:
+        out = out + '"'
+    # Trim dangling comma before closing
+    out = out.rstrip()
+    if out.endswith(","):
+        out = out[:-1]
+    # Close containers LIFO
+    while stack:
+        out += stack.pop()
+    return out
 
 
 def _ensure_topic_insights_table() -> None:
@@ -242,23 +332,84 @@ def synthesize_insights(
         source_count=len(sources_present),
     )
 
-    # Claude Opus 4.7 for best synthesis quality. Fall back to the provider's
-    # default model if the user has overridden. max_tokens=12000 accommodates
-    # Phase-2 schema (Minto header + 5 hypothesis cards + per-finding
-    # disconfirming_evidence on top of the original findings/competitors).
+    # Adaptive max_tokens per provider. Phase-2's richer JSON schema
+    # (Minto + hypothesis cards + disconfirming_evidence) wants ~12000
+    # tokens of output budget on paid tiers, but free-tier OpenRouter
+    # accounts cap well below that (observed: 2681). Rather than fail
+    # hard, we:
+    #   1. Pick a provider-appropriate max_tokens ceiling
+    #   2. Auto-retry with 2x smaller budget on 402/credit errors
+    # The LLM may truncate the JSON at smaller budgets, but `format:json`
+    # (Ollama) + Claude's tolerance for partial JSON usually still
+    # produces a usable report. See OLLAMA_CORPUS_LIMIT-style env override.
     from ..analyze.providers.base import get_provider
     prov = get_provider(provider)
-    # Attempt to pin a high-quality Claude model when on Anthropic. Everyone
-    # else gets their default (OpenRouter user can select Claude via LLM_MODEL).
+    # Default budget per provider. Paid-account users can override via
+    # INSIGHTS_MAX_TOKENS. Free-tier OpenRouter gets the smallest budget.
+    provider_budget = {
+        "anthropic":  12000,
+        "openai":     10000,
+        "google":     12000,
+        "openrouter":  4000,   # free tier cap ≈ 2681; 4000 is safe for $5 credit
+        "groq":        4000,
+        "deepseek":    8000,
+        "mistral":     6000,
+        "ollama":      6000,
+    }.get(provider, 6000)
     try:
-        raw = prov.complete(
+        provider_budget = int(os.getenv("INSIGHTS_MAX_TOKENS") or provider_budget)
+    except ValueError:
+        pass
+
+    def _complete(max_tokens: int):
+        return prov.complete(
             prompt=user_prompt,
             system=ext["system"],
-            max_tokens=12000,
+            max_tokens=max_tokens,
             temperature=0.2,
         )
-    except Exception as e:
-        return {"ok": False, "topic": topic, "error": f"LLM call failed: {e}"}
+
+    raw = None
+    last_err = None
+    # Two-dimensional retry:
+    #   • output budget (max_tokens): shrink on 402 / credit errors
+    #   • input size (corpus rows):   shrink on "prompt tokens limit exceeded"
+    # Each retry halves whichever dimension caused the failure.
+    budgets = [provider_budget, max(2000, provider_budget // 2), 2000]
+    current_rows = rows
+    for attempt_budget in budgets:
+        try:
+            raw = _complete(attempt_budget)
+            break
+        except Exception as e:
+            last_err = str(e).lower()
+            # Output-budget overflow → try smaller max_tokens next iter
+            if any(kw in last_err for kw in ("fewer max", "token limit", "you requested up to")):
+                continue
+            # Input-size overflow → halve corpus and re-format the user prompt
+            if any(kw in last_err for kw in ("prompt tokens", "context length", "input too long", "too many tokens")):
+                current_rows = current_rows[: max(50, len(current_rows) // 2)]
+                user_prompt = ext["user_template"].format(
+                    topic=topic,
+                    corpus=_format_corpus(current_rows),
+                    corpus_size=len(current_rows),
+                    source_count=len(sources_present),
+                )
+                continue
+            # Credit error (no retry helps if the plan is exhausted) — bail fast
+            if "402" in last_err or "credits" in last_err:
+                # But try one more time with smallest budget in case it's max_tokens not prompt
+                continue
+            # Any other error — network, auth, parsing — bail
+            break
+    if raw is None:
+        err_str = str(last_err or "unknown")
+        hint = ""
+        if "402" in err_str or "credits" in err_str:
+            hint = " — add credits at your provider, or switch to a free one (Ollama / Groq)"
+        elif "prompt tokens" in err_str or "context length" in err_str:
+            hint = f" — corpus still too large for this model's context window; set INSIGHTS_HARD_CAP to a smaller value"
+        return {"ok": False, "topic": topic, "error": f"LLM call failed: {err_str[:200]}{hint}"}
 
     report = _parse_insight_json(raw)
     if report.get("_parse_error"):
