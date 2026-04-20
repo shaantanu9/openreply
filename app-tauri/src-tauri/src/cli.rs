@@ -115,6 +115,21 @@ pub struct ActiveStream(pub Arc<Mutex<Option<CommandChild>>>);
 #[derive(Default)]
 pub struct ActiveStreamPid(pub Arc<Mutex<Option<u32>>>);
 
+/// In-flight dedup for graph operations (enrich / build). Unlike
+/// ActiveJob/ActiveChat these are fire-and-forget sidecar calls without a
+/// cancel button — if the user double-clicks "Enrich" or `loadMap` re-fires
+/// while one is still running, we want the second call to return immediately
+/// with `{already_running: true}` instead of spawning a duplicate Python
+/// process. Duplicates compound until Ollama's inference queue + SQLite
+/// write-lock starves everything else (observed: 11 stacked enrichments
+/// blocking "Build gap map" indefinitely).
+///
+/// Key format: `"<op>:<topic>"`, e.g. `"enrich:calari tracking app"`. Same
+/// topic under different ops (build vs enrich) runs concurrently, which is
+/// fine — they touch different parts of the schema.
+#[derive(Default, Clone)]
+pub struct ActiveGraphOps(pub Arc<Mutex<std::collections::HashSet<String>>>);
+
 /// Resolve the data dir used by the Python CLI for this app.
 /// `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`.
 pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
@@ -267,8 +282,20 @@ pub async fn run_cli_streaming(
     progress_event: &'static str,
     done_event: &'static str,
 ) -> Result<()> {
-    // Refuse to start a second job while one is running
+    // Refuse to start a second job while one is running. Check BOTH branches:
+    //   - ActiveJob      → prod (PyInstaller sidecar, CommandChild)
+    //   - ActiveJobPid   → dev  (`.venv/bin/python`, raw pid)
+    // Without the second check, the dev bypass could stack a second collect on
+    // top of a still-running first one (two Python processes writing to the
+    // same SQLite in parallel) and starve SIGTERM semantics on cancel.
     if let Some(state) = app.try_state::<ActiveJob>() {
+        if state.0.lock().unwrap().is_some() {
+            return Err(anyhow!(
+                "another collect is already running. Cancel it first."
+            ));
+        }
+    }
+    if let Some(state) = app.try_state::<ActiveJobPid>() {
         if state.0.lock().unwrap().is_some() {
             return Err(anyhow!(
                 "another collect is already running. Cancel it first."
@@ -460,6 +487,11 @@ pub async fn run_cli_chat_streaming(
             return Err(anyhow!("another chat is already streaming. Cancel it first."));
         }
     }
+    if let Some(state) = app.try_state::<ActiveChatPid>() {
+        if state.0.lock().unwrap().is_some() {
+            return Err(anyhow!("another chat is already streaming. Cancel it first."));
+        }
+    }
 
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
@@ -567,6 +599,11 @@ pub async fn run_cli_stream_streaming(
     done_event: &'static str,
 ) -> Result<()> {
     if let Some(state) = app.try_state::<ActiveStream>() {
+        if state.0.lock().unwrap().is_some() {
+            return Err(anyhow!("another stream is already running. Cancel it first."));
+        }
+    }
+    if let Some(state) = app.try_state::<ActiveStreamPid>() {
         if state.0.lock().unwrap().is_some() {
             return Err(anyhow!("another stream is already running. Cancel it first."));
         }

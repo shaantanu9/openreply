@@ -392,6 +392,74 @@ def run_youtube(
         return 0
 
 
+def run_rss(
+    topic_or_keywords: str | list[str],
+    categories: list[str] | None = None,
+    urls: list[str] | None = None,
+    limit_per_feed: int = 20,
+) -> int:
+    """Fetch curated RSS feeds for one or more category buckets.
+
+    `categories` — list of keys from rss_catalog.CATALOG. None → default set.
+    `urls` — optional extra feed URLs appended to the category list.
+
+    Entries are filtered by topic keyword match (case-insensitive substring
+    in title/summary) so a `langchain` topic doesn't drown in unrelated
+    TechCrunch stories. Each feed is a distinct host so a short inter-feed
+    sleep is enough politeness.
+    """
+    from .rss import fetch_rss
+    from .rss_catalog import feeds_for_categories
+
+    kws, stopic = _as_keywords(topic_or_keywords)
+    fid = log_fetch_start(
+        "source:rss",
+        {"keywords": kws, "categories": categories, "extra_urls": urls or []},
+    )
+    total = 0
+    feeds: list[tuple[str, str, str]] = feeds_for_categories(categories)
+    # Tag extra URLs as category="custom".
+    for u in urls or []:
+        if u:
+            feeds.append(("custom", "custom", u))
+    try:
+        for i, (cat, publication, url) in enumerate(feeds):
+            # Use the first keyword for filtering — matches storage_topic
+            # semantics used by every other adapter in this file.
+            kw = kws[0] if kws else ""
+            try:
+                rows = fetch_rss(
+                    url,
+                    query=kw,
+                    publication=publication,
+                    category=cat,
+                    limit=limit_per_feed,
+                )
+            except Exception:
+                # One flaky feed shouldn't kill the rest.
+                rows = []
+            total += _persist(stopic, rows, source_tag=f"rss:{cat}:{publication}")
+            if i < len(feeds) - 1:
+                time.sleep(0.3)  # per-feed politeness, different hosts
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def _rss_category_runner(cat: str):
+    """Bind `run_rss` to a specific category so it can be registered
+    as its own SOURCES entry (rss_startup, rss_ml, …). The wizard CSV
+    source flag stays simple — one id per category — while the underlying
+    fetch logic is shared.
+    """
+    def _run(topic_or_keywords, *args, **kwargs):
+        return run_rss(topic_or_keywords, categories=[cat], **kwargs)
+    _run.__name__ = f"run_rss_{cat}"
+    return _run
+
+
 # Dispatch map for the collect orchestrator
 SOURCES: dict[str, Any] = {
     "hn": run_hn,
@@ -410,4 +478,18 @@ SOURCES: dict[str, Any] = {
     "github": run_github_trending,
     "github_issues": run_github_issues,
     "youtube": run_youtube,
+    # RSS bundle — one entry per category so the UI picker can offer
+    # granular opt-in. All delegate to run_rss under the hood.
+    "rss": run_rss,  # default bundle (see rss_catalog.DEFAULT_CATEGORIES)
+    "rss_learning": _rss_category_runner("learning"),
+    "rss_startup": _rss_category_runner("startup"),
+    "rss_tech_news": _rss_category_runner("tech_news"),
+    "rss_products": _rss_category_runner("products"),
+    "rss_engineering": _rss_category_runner("engineering"),
+    "rss_ml": _rss_category_runner("ml"),
+    "rss_design": _rss_category_runner("design"),
+    "rss_psychology": _rss_category_runner("psychology"),
+    "rss_neuroscience": _rss_category_runner("neuroscience"),
+    "rss_science": _rss_category_runner("science"),
+    "rss_marketing": _rss_category_runner("marketing"),
 }

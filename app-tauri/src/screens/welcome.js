@@ -14,6 +14,7 @@
 import { api, esc } from '../api.js';
 import { openByokModal } from './byok.js';
 import { avatarInitials } from './settings.js';
+import { runHealthCheck, renderHealthCard } from '../lib/healthCheck.js';
 
 const ONBOARDING_KEY = 'gapmap.onboarding.completed';
 const STEP_KEY       = 'gapmap.onboarding.step';
@@ -260,6 +261,8 @@ async function renderStep3(root, body, info) {
         </div>
       </div>
 
+      <div id="ob-health-host"></div>
+
       <div class="settings-grid">
         <!-- LLM -->
         <div class="settings-card">
@@ -325,6 +328,22 @@ async function renderStep3(root, body, info) {
   document.getElementById('ob-guide').onclick = () => api.openUrl('https://github.com/shaantanu98/reddit-myind#readme');
   document.getElementById('back-3').onclick = () => renderStep(root, 2, info);
   document.getElementById('next-3').onclick = () => renderStep(root, 4, info);
+
+  // Auto-run system diagnostics — shows a pass/fail card above the provider
+  // chips so users on a fresh DMG install see immediately whether the
+  // Python sidecar + DB + semantic model came up cleanly.
+  const healthHost = document.getElementById('ob-health-host');
+  if (healthHost) {
+    healthHost.innerHTML = `<div class="hc-card"><div class="hc-card-head"><strong>Running system check…</strong></div></div>`;
+    const runOnce = async () => {
+      const payload = await runHealthCheck();
+      renderHealthCard(healthHost, payload, {
+        title: payload.ok ? 'System check passed' : 'System check — fix any red items',
+        onRerun: runOnce,
+      });
+    };
+    runOnce();
+  }
 }
 
 // ─── Step 4 · First topic ─────────────────────────────────────────────────

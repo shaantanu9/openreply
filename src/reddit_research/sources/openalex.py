@@ -63,6 +63,12 @@ def _reconstruct_abstract(inverted: dict[str, list[int]]) -> str:
 
 
 def fetch_openalex(query: str, limit: int = 30, year_from: int | None = None) -> list[dict]:
+    # OpenAlex's "polite pool" gives requests that include a mailto contact
+    # higher rate-limit priority (10 req/sec vs 5 req/sec anonymous). Free —
+    # no signup. See https://docs.openalex.org/how-to-use-the-api/rate-limits
+    from ._http import polite_get, USER_AGENT  # noqa: F401 (USER_AGENT is applied by polite_get)
+    from ._http import _DEFAULT_CONTACT as _CONTACT
+
     collected: list[dict] = []
     cursor = "*"
     while len(collected) < limit:
@@ -70,11 +76,12 @@ def fetch_openalex(query: str, limit: int = 30, year_from: int | None = None) ->
             "search": query,
             "per_page": min(200, limit - len(collected)),
             "cursor": cursor,
+            "mailto": _CONTACT,  # polite pool opt-in
         }
         if year_from:
             params["filter"] = f"publication_year:>={year_from}"
         try:
-            r = httpx.get(f"{_BASE}/works", params=params, timeout=20)
+            r = polite_get(f"{_BASE}/works", params=params)
             r.raise_for_status()
         except httpx.HTTPError:
             break

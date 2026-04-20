@@ -29,3 +29,9 @@ data/
 
 # Git worktrees (created by superpowers:using-git-worktrees)
 .worktrees/
+
+# Local-only Claude Code per-worktree settings
+app-tauri/.claude/
+
+# 80 MB ONNX model cache — regenerates via palace warmup on first use
+scripts/onnx-model-cache/

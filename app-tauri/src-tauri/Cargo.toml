@@ -17,6 +17,10 @@ serde_json = "1"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 dirs = "5"
+# Used by list_provider_models to call cloud LLM /models endpoints
+# server-side — bypasses browser CORS for Anthropic/OpenAI/Groq/etc. which
+# don't allow webview origins. rustls-tls avoids pulling in OpenSSL at build.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [features]
 default = ["custom-protocol"]

@@ -1,6 +1,7 @@
 import { api, $, $$, esc } from './api.js';
 import { refreshIcons } from './icons.js';
 import { showCorrectionToast, showTopicConfirmModal } from './lib/topicConfirm.js';
+import { hasLlmConfigured } from './lib/llmStatus.js';
 import { renderHome, renderTopicsList } from './screens/home.js';
 import { renderTopic } from './screens/topic.js';
 import { renderCollect } from './screens/collect.js';
@@ -14,6 +15,7 @@ import { renderScience } from './screens/science.js';
 import { renderSearch } from './screens/search.js';
 import { renderWatch } from './screens/watch.js';
 import { renderFind } from './screens/find.js';
+import { runHealthCheck, healthIsBlocking } from './lib/healthCheck.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -111,22 +113,37 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     } catch {}
   })();
+
+  // Boot-time health probe: on every launch, confirm the sidecar spawns and
+  // the DB/data-dir are writable. If a blocker is detected (sidecar can't
+  // start, DB corrupted, etc.) inject a red topbar with a "Run setup again"
+  // link. Warnings (LLM not configured) stay silent — welcome step 3 and
+  // settings surface those.
+  runStartupHealthProbe();
 });
 
-// Helper — does the user have any LLM provider ready? Used by the new-topic
-// warning modal before kicking off an aggressive collect.
-async function hasLlmConfigured() {
-  try {
-    const s = await api.byokStatus();
-    return !!(
-      s?.anthropic?.set || s?.openai?.set || s?.openrouter?.set ||
-      s?.groq?.set || s?.deepseek?.set || s?.mistral?.set || s?.google?.set ||
-      s?.ollama || s?.ollama_base_url
-    );
-  } catch {
-    return false;
-  }
+async function runStartupHealthProbe() {
+  let payload;
+  try { payload = await runHealthCheck(); }
+  catch (e) { payload = { ok: false, sidecar_ok: false, checks: [{ id: 'sidecar', ok: false, detail: String(e) }] }; }
+  if (!healthIsBlocking(payload)) return;
+  const blocker = (payload.checks || []).find(c => !c.ok && c.level !== 'warn' && c.level !== 'info');
+  const detail = blocker?.detail || 'The Python engine did not start. The app cannot fetch or query.';
+  const host = document.createElement('div');
+  host.className = 'hc-topbar';
+  host.innerHTML = `
+    <span>⚠ ${esc(detail)}</span>
+    <button id="hc-run-setup">Run setup check</button>
+  `;
+  document.body.insertBefore(host, document.body.firstChild);
+  host.querySelector('#hc-run-setup').onclick = () => {
+    location.hash = '#/welcome';
+    localStorage.setItem('gapmap.onboarding.step', '3');
+  };
 }
+
+// `hasLlmConfigured` now lives in ./lib/llmStatus.js — imported above so
+// every consumer (main, topic, welcome, home) reads the same status shape.
 
 function wireModal() {
   const bd = $('#modal-backdrop');

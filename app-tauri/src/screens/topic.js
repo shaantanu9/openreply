@@ -10,6 +10,7 @@ import { loadSolutions } from './solutions.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
 import { loadSentiment } from './sentiment.js';
+import { loadInsights } from './insights.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
@@ -122,6 +123,20 @@ const ALL_SOURCES = [
   { id: 'trends',        label: 'Google Trends',   group: 'web',     defaultOn: true },
   { id: 'appstore',      label: 'App Store',       group: 'apps',    defaultOn: true },
   { id: 'playstore',     label: 'Play Store',      group: 'apps',    defaultOn: true },
+  // Curated RSS feed bundles. Each category fans out to ~5-10 feeds, filtered
+  // by topic-keyword match in title/summary so unrelated posts are dropped.
+  // defaultOn=false — these only run when the user explicitly opts in.
+  { id: 'rss_startup',     label: 'RSS: Startup / founder',   group: 'rss', defaultOn: false },
+  { id: 'rss_tech_news',   label: 'RSS: Tech news',           group: 'rss', defaultOn: false },
+  { id: 'rss_products',    label: 'RSS: Products / launches', group: 'rss', defaultOn: false },
+  { id: 'rss_ml',          label: 'RSS: ML / AI research',    group: 'rss', defaultOn: false },
+  { id: 'rss_science',     label: 'RSS: Science (general)',   group: 'rss', defaultOn: false },
+  { id: 'rss_engineering', label: 'RSS: Engineering blogs',   group: 'rss', defaultOn: false },
+  { id: 'rss_learning',    label: 'RSS: Learning / essays',   group: 'rss', defaultOn: false },
+  { id: 'rss_design',      label: 'RSS: Design / UX',         group: 'rss', defaultOn: false },
+  { id: 'rss_psychology',  label: 'RSS: Psychology',          group: 'rss', defaultOn: false },
+  { id: 'rss_neuroscience',label: 'RSS: Neuroscience',        group: 'rss', defaultOn: false },
+  { id: 'rss_marketing',   label: 'RSS: Marketing / growth',  group: 'rss', defaultOn: false },
 ];
 
 const GROUP_LABELS = {
@@ -130,6 +145,7 @@ const GROUP_LABELS = {
   science: 'Scientific literature',
   web:     'Web / news / trends',
   apps:    'App stores',
+  rss:     'RSS feeds (curated)',
 };
 
 // Per-topic cache for the source-picker modal. Re-opening the modal for
@@ -327,7 +343,8 @@ function wireErrorCard(containerEl, actions) {
 export async function renderTopic(root, { params }) {
   const topic = decodeURIComponent(params[0] || '');
   // Per-instance tab state (fix: module-level state leaked between topics).
-  let activeTab = 'map';
+  // Default to 'insights' — the Phase-1 synthesis tab is the new primary UX.
+  let activeTab = 'insights';
   // Per-instance chat stream state.
   // Per-tab interval for live-updating relative timestamps on chat messages.
   let chatTsInterval = null;
@@ -368,7 +385,8 @@ export async function renderTopic(root, { params }) {
     </div>
 
     <div class="tabs" id="topic-tabs">
-      <button class="tab active" data-tab="map"><i data-lucide="network"></i> Map</button>
+      <button class="tab active" data-tab="insights"><i data-lucide="sparkles"></i> Insights</button>
+      <button class="tab" data-tab="map"><i data-lucide="network"></i> Map</button>
       <button class="tab" data-tab="report"><i data-lucide="file-text"></i> Report</button>
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
       <button class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
@@ -2052,6 +2070,7 @@ export async function renderTopic(root, { params }) {
 
   // ─── tab switching ────────────────────────────────────────────────────
   const loaders = {
+    insights: () => loadInsights(contentEl, topic),
     map: loadMap, report: loadReport, evidence: loadEvidence,
     sources: loadSources, research: loadResearch, chat: loadChat, actions: loadActions,
     solutions: () => loadSolutions(contentEl, topic),
@@ -2252,8 +2271,8 @@ export async function renderTopic(root, { params }) {
   };
   window.addEventListener('hashchange', hashCleanup);
 
-  // Initial load
-  await switchTab('map');
+  // Initial load — Insights is the new primary tab (Phase-1 synthesis).
+  await switchTab('insights');
 }
 
 // Badge colors per source type — matches the source badge palette used on

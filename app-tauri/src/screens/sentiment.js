@@ -110,14 +110,30 @@ async function runAndRender(contentEl, topic) {
   }
 }
 
+// Per-topic guard so auto-run on first view doesn't re-fire if the user
+// flips away from the Sentiment tab and back while the first call is still
+// in flight (a second call would queue behind Ollama's inference lock and
+// stall the UI the same way the enrich pileup did).
+const _sentimentRunning = new Set();  // topic
+
 export async function loadSentiment(contentEl, topic) {
   contentEl.innerHTML = `<div class="empty-state">loading…</div>`;
   const sources = await fetchSentimentData(topic);
 
   if (!sources.length) {
-    contentEl.innerHTML = renderEmptyCta(topic);
-    window.refreshIcons?.();
-    $('#btn-run-sent', contentEl)?.addEventListener('click', () => runAndRender(contentEl, topic));
+    // Auto-run on first view: persistence means subsequent opens pull the
+    // DB rows directly (fast path above). If an auto-run is already in
+    // flight, show the running-spinner rather than re-firing.
+    if (_sentimentRunning.has(topic)) {
+      contentEl.innerHTML = `<div class="empty-state">Analyzing sentiment per source… 30–90 seconds. Tab will auto-refresh.</div>`;
+      return;
+    }
+    _sentimentRunning.add(topic);
+    try {
+      await runAndRender(contentEl, topic);
+    } finally {
+      _sentimentRunning.delete(topic);
+    }
     return;
   }
 

@@ -163,6 +163,7 @@ export const api = {
   overviewStats:   ()        => cachedInvoke('overview_stats', null, 15000),
   recentActivity:  ()        => cachedInvoke('recent_activity', null, 2000),
   appDataDir:      ()        => cachedInvoke('app_data_dir',   null, 300000),
+  healthCheck:     ()        => invoke('health_check'),
   listExports:     ()        => cachedInvoke('list_exports',   null, 30000),
   byokStatus:      ()        => cachedInvoke('byok_status',    null, 30000),
   getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 10000),
@@ -262,8 +263,13 @@ export const api = {
   palaceWarmup:       ()     => invoke('palace_warmup'),
   onPalaceWarmupProgress: (cb) => listen('palace:warmup:progress', e => cb(e.payload)),
   onPalaceWarmupDone:     (cb) => listen('palace:warmup:done',     e => cb(e.payload)),
+  // Phase-1 Insight Engine — one long-context synthesis call across the
+  // full multi-source corpus. `cached=true` returns the last persisted
+  // report without re-running the LLM (cheap for tab re-renders). First
+  // call per topic writes to the `topic_insights` table.
+  synthesizeInsights: (topic, cached = false) => invoke('synthesize_insights', { topic, cached }),
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
-  runTemporalGaps:    (topic) => invoke('run_temporal_gaps', { topic }),
+  runTemporalGaps:    (topic, force = false) => invoke('run_temporal_gaps', { topic, force }),
   runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
   runRedditSearch:    (query, sub, sort, timeFilter, limit) =>

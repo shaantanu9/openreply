@@ -174,6 +174,30 @@ def export_graph_json(topic: str, mode: str = "skeleton", max_post_nodes: int = 
         top_posts = sorted(post_scores.items(), key=lambda p: -p[1])[:max_post_nodes]
         keep_ids.update(pid for pid, _ in top_posts)
 
+        # Fallback — if enrichment hasn't run yet, there are no evidence edges
+        # and the graph would collapse to just topic↔sub/era. In that state,
+        # include the top posts by engagement so the user sees a meaningful
+        # sub↔post structure instead of a bare hub-and-spoke. Ranked by
+        # (score + num_comments) from the `posts` table (joined by post_id).
+        if not post_scores:
+            post_prefix = f"{topic}::post::"
+            top_rows = list(db.query(
+                """
+                SELECT tp.post_id AS pid,
+                       coalesce(p.score,0) + coalesce(p.num_comments,0)*2 AS engagement
+                FROM topic_posts tp
+                LEFT JOIN posts p ON p.id = tp.post_id
+                WHERE tp.topic = ?
+                ORDER BY engagement DESC
+                LIMIT ?
+                """,
+                [topic, max_post_nodes],
+            ))
+            for r in top_rows:
+                nid = post_prefix + str(r["pid"])
+                if nid in all_nodes:
+                    keep_ids.add(nid)
+
     nodes_out = []
     for nid in keep_ids:
         if nid not in all_nodes:
@@ -781,6 +805,7 @@ const sim = d3.forceSimulation(Object.values(nodesById))
   .force("link", d3.forceLink(links).id(d => d.id).distance(d => {
     if (d.kind === "evidenced_by" || d.kind === "wished_in" || d.kind === "built_in") return 35;
     if (d.kind === "about_product" || d.kind === "solves") return 30;
+    if (d.kind === "source_evidence") return 90;  // painpoint ↔ source — keep distinct from post citations
     return 50;
   }).strength(0.4))
   .force("charge", d3.forceManyBody().strength(d => {
@@ -797,7 +822,21 @@ const sim = d3.forceSimulation(Object.values(nodesById))
   .force("collide", d3.forceCollide(d => radiusOf(d) + 3));
 
 const linkSel = g.append("g").attr("stroke","#C9BEAA")
-  .selectAll("line").data(links).join("line").attr("class","link");
+  .selectAll("line").data(links).join("line")
+  .attr("class", d => d.kind === "source_evidence" ? "link source-link" : "link")
+  // Cross-source edges (painpoint ↔ source) get stroke width proportional
+  // to weight — a painpoint backed by 12 reddit posts gets a thicker edge
+  // than one with 3 arxiv hits. Caps at 5px so a viral painpoint doesn't
+  // obliterate the rest of the graph. Other edges stay at default 1px.
+  .attr("stroke-width", d => {
+    if (d.kind === "source_evidence") {
+      const w = Math.max(1, Math.min(5, Math.log2((d.weight || 1) + 1) + 1));
+      return w;
+    }
+    return 1;
+  })
+  .attr("stroke", d => d.kind === "source_evidence" ? "#FF8C42" : "#C9BEAA")
+  .attr("stroke-opacity", d => d.kind === "source_evidence" ? 0.65 : 0.45);
 
 const nodeSel = g.append("g").selectAll("g")
   .data(Object.values(nodesById)).join("g").attr("class","node");

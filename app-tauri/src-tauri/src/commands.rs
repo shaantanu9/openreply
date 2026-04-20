@@ -301,6 +301,25 @@ pub async fn enrich_graph(app: AppHandle, topic: String) -> Result<Value, String
     .await
 }
 
+/// Phase-1 Insight Engine — one-shot long-context synthesis across all sources.
+///
+/// Runs `research insights --topic T --json`, returning the full structured
+/// market report (opportunity-scored findings, competitors, quadrant).
+/// Pass `cached=true` to return the last persisted report without hitting
+/// the LLM — cheap for re-renders / tab revisits.
+#[tauri::command]
+pub async fn synthesize_insights(
+    app: AppHandle,
+    topic: String,
+    cached: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec!["research", "insights", "--topic", &topic, "--json"];
+    if cached.unwrap_or(false) {
+        args.push("--cached");
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Run the Problem -> Why -> Science -> Solution pipeline for a topic.
 /// Returns a summary JSON or `{ok: false, skipped: true, reason}` if no
 /// LLM provider is configured.
@@ -318,13 +337,19 @@ pub async fn run_solutions_pipeline(app: AppHandle, topic: String) -> Result<Val
 /// Returns either a list of classified painpoints, an `_error` dict when
 /// historical data is missing, or `{ok:false, skipped:true, ...}` on no LLM.
 #[tauri::command]
-pub async fn run_temporal_gaps(app: AppHandle, topic: String) -> Result<Value, String> {
-    run_cli(
-        &app,
-        vec!["research", "temporal-gaps", "--topic", &topic, "--json"],
-    )
-    .await
-    .map_err(err_to_string)
+pub async fn run_temporal_gaps(
+    app: AppHandle,
+    topic: String,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    // `force=true` invalidates the graph_nodes cache before re-running.
+    // Default is cache-hit: subsequent tab opens return persisted rows in
+    // milliseconds instead of re-calling the 30-90s LLM pass.
+    let mut args: Vec<&str> = vec!["research", "temporal-gaps", "--topic", &topic, "--json"];
+    if force.unwrap_or(false) {
+        args.push("--force");
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
 }
 
 /// Per-source sentiment aggregation for a topic. One LLM call per source
@@ -770,6 +795,43 @@ pub async fn app_data_dir(app: AppHandle) -> Result<String, String> {
     data_dir(&app)
         .map(|p| p.to_string_lossy().to_string())
         .map_err(err_to_string)
+}
+
+/// Onboarding / startup diagnostics. Wraps `reddit-cli health --json` with a
+/// sidecar-spawn probe so the frontend can distinguish three failure modes:
+///   (a) sidecar binary can't even launch (permissions / notarization / arch)
+///   (b) sidecar launches but individual checks fail (data dir, DB, model, LLM)
+///   (c) everything passes
+#[tauri::command]
+pub async fn health_check(app: AppHandle) -> Result<Value, String> {
+    let t0 = std::time::Instant::now();
+    match run_cli(&app, vec!["health", "--json"]).await {
+        Ok(v) => {
+            // Python always emits JSON; if we got Null the binary printed
+            // something else (e.g. Typer complaint) — treat as broken.
+            if v.is_null() {
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "sidecar_ok": false,
+                    "detail": "sidecar ran but returned no JSON — check binary integrity",
+                    "elapsed_ms": t0.elapsed().as_millis() as u64,
+                }));
+            }
+            let mut obj = v;
+            if let Some(map) = obj.as_object_mut() {
+                map.insert("sidecar_ok".into(), Value::Bool(true));
+                map.insert("elapsed_ms".into(),
+                           Value::from(t0.elapsed().as_millis() as u64));
+            }
+            Ok(obj)
+        }
+        Err(e) => Ok(serde_json::json!({
+            "ok": false,
+            "sidecar_ok": false,
+            "detail": format!("sidecar failed to spawn: {e}"),
+            "elapsed_ms": t0.elapsed().as_millis() as u64,
+        })),
+    }
 }
 
 /// Local semantic search over the posts corpus — hybrid vector + BM25 via the

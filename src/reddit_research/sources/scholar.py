@@ -47,7 +47,20 @@ def _row(p: dict[str, Any]) -> dict[str, Any]:
 
 
 def fetch_scholar(query: str, limit: int = 30, year_from: int | None = None) -> list[dict]:
-    """Search Semantic Scholar for papers matching a query."""
+    """Search Semantic Scholar for papers matching a query.
+
+    Semantic Scholar's free tier is rate-limited to ~1 req/s; exceeding it
+    gets a 429 with a Retry-After header. polite_get handles the first 429,
+    and between successful pages we sleep 1.1 s (just above the floor).
+    If the user has a `SEMANTIC_SCHOLAR_API_KEY` the request can go up to
+    100 req/s, so we include it when set (otherwise omitted cleanly).
+    """
+    from ._http import polite_get
+
+    import os as _os
+    api_key = _os.getenv("SEMANTIC_SCHOLAR_API_KEY") or ""
+    extra_headers = {"x-api-key": api_key} if api_key else {}
+
     collected: list[dict] = []
     offset = 0
     while len(collected) < limit:
@@ -60,10 +73,15 @@ def fetch_scholar(query: str, limit: int = 30, year_from: int | None = None) -> 
         if year_from:
             params["year"] = f"{year_from}-"
         try:
-            r = httpx.get(f"{_BASE}/paper/search", params=params, timeout=30)
+            r = polite_get(
+                f"{_BASE}/paper/search",
+                params=params,
+                headers=extra_headers,
+                timeout=30,
+            )
             if r.status_code == 429:
-                time.sleep(2)
-                continue
+                # polite_get already retried once; give up this page cleanly.
+                break
             r.raise_for_status()
         except httpx.HTTPError:
             break
@@ -75,5 +93,6 @@ def fetch_scholar(query: str, limit: int = 30, year_from: int | None = None) -> 
         offset += len(papers)
         if offset >= (data.get("total") or 0):
             break
-        time.sleep(0.5)
+        # Respect the 1 req/s free-tier floor with a 100 ms safety margin.
+        time.sleep(0.1 if api_key else 1.1)
     return collected[:limit]

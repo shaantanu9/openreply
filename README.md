@@ -3,8 +3,8 @@
 Reddit research toolkit — **PRAW fetch → SQLite store → optional LLM analysis**.
 Two surfaces: a `reddit-cli` for humans/scripts, and an MCP server for Claude Code.
 
-> **New:** for an end-to-end walk-through of collecting a topic, ingesting PDFs,
-> and reading the build-guide Report, see [`docs/HOW_TO_USE.md`](docs/HOW_TO_USE.md).
+> **Full guide:** [`docs/GAP_MAP_GUIDE.md`](docs/GAP_MAP_GUIDE.md) — every feature, every data source, every knob. Start there.
+> Quick walk-through: [`docs/HOW_TO_USE.md`](docs/HOW_TO_USE.md).
 
 ## Install (uv — one command)
 

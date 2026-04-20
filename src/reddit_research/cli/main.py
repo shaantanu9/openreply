@@ -820,6 +820,32 @@ def cmd_research_gaps(
         _emit(report, as_json)
 
 
+@research_app.command("insights")
+def cmd_research_insights(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must be collected first)."),
+    provider: str | None = typer.Option(None, "--provider", help="Override LLM provider; Claude recommended for best synthesis."),
+    cached: bool = typer.Option(False, "--cached", help="Return the last cached report instead of re-running the LLM."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Phase-1 Insight Engine — one-shot long-context synthesis across all sources.
+
+    Produces a structured market report: opportunity-scored findings,
+    competitor landscape, greenfield quadrant, citation-grounded narrative.
+    See docs/specs/2026-04-20-insight-engine.md for the schema.
+    """
+    from ..research.insights import load_insights, synthesize_insights
+
+    if cached:
+        report = load_insights(topic)
+        if report is None:
+            out = {"ok": False, "topic": topic, "error": "No cached insight — run without --cached to generate."}
+        else:
+            out = report
+    else:
+        out = synthesize_insights(topic=topic, provider=provider)
+    _emit(out, as_json)
+
+
 @research_app.command("solutions")
 def cmd_research_solutions(
     topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must already have painpoints in the graph)."),
@@ -895,12 +921,25 @@ def cmd_research_temporal(
         help="omit → use Settings → BYOK default (LLM_PROVIDER env)",
     ),
     per_bucket: int = typer.Option(80, "--per-bucket"),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Ignore the graph_nodes cache and re-call the LLM.",
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Classify pain points as CHRONIC / EMERGING / FADING via pre/post-May-2025 split."""
-    from ..research import find_temporal_gaps
+    """Classify pain points as CHRONIC / EMERGING / FADING via pre/post-May-2025 split.
 
-    result = find_temporal_gaps(topic=topic, provider=provider, per_bucket=per_bucket)
+    Results are cached in graph_nodes (kind='temporal_gap'). Re-running
+    without --force returns the cached rows in under 100 ms instead of the
+    30–90 s LLM pass. Pass --force to invalidate and re-run.
+    """
+    from ..research.gaps import find_temporal_gaps, clear_temporal_gaps
+
+    if force:
+        clear_temporal_gaps(topic)
+    result = find_temporal_gaps(
+        topic=topic, provider=provider, per_bucket=per_bucket, force=force,
+    )
     _emit(result, as_json)
 
 
@@ -1289,6 +1328,111 @@ def cmd_research_corpus(
 
 
 # ── info ─────────────────────────────────────────────────────────────────────
+
+_EXPECTED_TABLES = (
+    "posts", "comments", "fetches", "streams", "stream_hits", "subreddits",
+    "users", "topic_posts", "topic_canonicalizations", "topic_prefs",
+    "paper_analyses", "graph_nodes", "graph_edges", "trend_series",
+)
+
+
+@app.command("health")
+def cmd_health(
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Accept --json from Rust wrapper (no-op)."),
+) -> None:
+    """Diagnostics: data dir, DB schema, ONNX model, LLM provider.
+
+    Returns JSON with per-check status. Exit code is always 0 so the Rust
+    wrapper can parse the payload regardless of whether individual checks
+    passed."""
+    _ = as_json
+    import time
+    checks: list[dict] = []
+
+    cfg = load_config()
+
+    # 1. Data dir writable --------------------------------------------------
+    t0 = time.time()
+    try:
+        cfg.data_dir.mkdir(parents=True, exist_ok=True)
+        probe = cfg.data_dir / ".health-probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        checks.append({"id": "data_dir", "ok": True,
+                       "detail": str(cfg.data_dir), "ms": int((time.time()-t0)*1000)})
+    except Exception as e:
+        checks.append({"id": "data_dir", "ok": False,
+                       "detail": f"{cfg.data_dir}: {e}", "ms": int((time.time()-t0)*1000)})
+
+    # 2. DB opens + all expected tables present -----------------------------
+    t0 = time.time()
+    try:
+        db = get_db()
+        present = set(db.table_names())
+        missing = [t for t in _EXPECTED_TABLES if t not in present]
+        if missing:
+            checks.append({"id": "db", "ok": False,
+                           "detail": f"missing tables: {', '.join(missing)}",
+                           "ms": int((time.time()-t0)*1000)})
+        else:
+            checks.append({"id": "db", "ok": True,
+                           "detail": f"{len(present)} tables at {cfg.db_path}",
+                           "ms": int((time.time()-t0)*1000)})
+    except Exception as e:
+        checks.append({"id": "db", "ok": False,
+                       "detail": str(e), "ms": int((time.time()-t0)*1000)})
+
+    # 3. Palace (ONNX) model ------------------------------------------------
+    t0 = time.time()
+    try:
+        from ..retrieval import palace
+        ms = palace.model_status()
+        if not ms.get("installed"):
+            checks.append({"id": "palace", "ok": False, "level": "warn",
+                           "detail": "retrieval extras not installed in sidecar",
+                           "ms": int((time.time()-t0)*1000)})
+        elif ms.get("ready"):
+            checks.append({"id": "palace", "ok": True,
+                           "detail": f"ONNX ready at {ms.get('cache_dir')}",
+                           "ms": int((time.time()-t0)*1000)})
+        else:
+            checks.append({"id": "palace", "ok": False, "level": "warn",
+                           "detail": "ONNX not cached — run research palace-warmup",
+                           "ms": int((time.time()-t0)*1000)})
+    except Exception as e:
+        checks.append({"id": "palace", "ok": False, "level": "warn",
+                       "detail": str(e), "ms": int((time.time()-t0)*1000)})
+
+    # 4. LLM provider -------------------------------------------------------
+    t0 = time.time()
+    try:
+        from ..analyze.providers.base import resolve_provider
+        provider = resolve_provider()
+        checks.append({"id": "llm", "ok": True,
+                       "detail": f"provider={provider} model={os.getenv('LLM_MODEL') or '(default)'}",
+                       "ms": int((time.time()-t0)*1000)})
+    except Exception as e:
+        checks.append({"id": "llm", "ok": False, "level": "warn",
+                       "detail": str(e), "ms": int((time.time()-t0)*1000)})
+
+    # 5. Reddit OAuth (informational) --------------------------------------
+    t0 = time.time()
+    checks.append({"id": "reddit", "ok": cfg.has_oauth,
+                   "level": "info",
+                   "detail": "OAuth token present" if cfg.has_oauth
+                             else "no OAuth — public JSON fallback used",
+                   "ms": int((time.time()-t0)*1000)})
+
+    blockers = [c for c in checks if not c.get("ok") and c.get("level") not in ("warn", "info")]
+    payload = {
+        "ok": not blockers,
+        "data_dir": str(cfg.data_dir),
+        "db_path": str(cfg.db_path),
+        "checks": checks,
+    }
+    console.print_json(data=payload)
+
 
 @app.command("info")
 def cmd_info(

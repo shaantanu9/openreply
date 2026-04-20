@@ -76,6 +76,31 @@ for _pkg in ('chromadb', 'chromadb.utils', 'onnxruntime', 'tokenizers',
         pass
 hiddenimports += collect_submodules('chromadb')
 
+# ─── [sources] extras — pulled in by the per-source adapters ───────────────
+# These are imported LAZILY inside adapter functions (e.g.
+# `from .playstore import fetch_playstore_reviews` only runs when the
+# playstore source actually fires), so PyInstaller's static analysis misses
+# them. Without explicit collect_all, the DMG ships a sidecar that fails
+# with `ModuleNotFoundError: google_play_scraper` at runtime on first
+# Play-Store collect. Same story for pytrends, feedparser (gnews),
+# lxml (html parsing in multiple sources), pypdf (PDF ingest).
+for _pkg in (
+    'google_play_scraper',      # Play Store reviews
+    'pytrends',                  # Google Trends
+    'feedparser',                # RSS parsing (gnews, devto)
+    'lxml',                      # HTML parsing
+    'pypdf',                     # local PDF ingest
+    'pandas',                    # pytrends dep
+    'scipy',                     # sentence-transformers dep
+    'networkx',                  # graph analysis (pagerank, bridges)
+    'sgmllib3k',                 # feedparser dep on 3.12
+):
+    try:
+        _d, _b, _h = collect_all(_pkg)
+        datas += _d; binaries += _b; hiddenimports += _h
+    except Exception:
+        pass
+
 
 a = Analysis(
     ['scripts/pyinstaller-entrypoint.py'],

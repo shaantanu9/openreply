@@ -300,11 +300,34 @@ def discover_subs(topic: str, limit: int = 10) -> dict[str, Any]:
         and canonical_topic.strip().lower() != (topic or "").strip().lower()
     )
 
-    # Search against the canonical form.
+    # Search against the canonical form first, then widen the net using the
+    # LLM-expanded keyword set (high + medium relevance). Each keyword is a
+    # short natural-language phrase ("sleep tracker", "wearable ring") —
+    # strictly broader than the fallback single-token search below. Union
+    # all three sources so the downstream ranker has ~3× the candidate pool.
     tokens = _tokens(canonical_topic)
     seen: dict[str, dict[str, Any]] = {}
     for s in _search_raw(canonical_topic):
         seen[s.get("display_name", "").lower()] = s
+
+    # LLM keyword sweep — skip when canonicalization is unavailable
+    # (no LLM configured) or returned an empty keyword list.
+    llm_kws = [
+        str(k.get("keyword") or "").strip()
+        for k in (canon.get("search_keywords") or [])
+        if k.get("relevance") in ("high", "medium") and str(k.get("keyword") or "").strip()
+    ]
+    # Skip the canonical itself (already queried above) to avoid wasted calls.
+    llm_kws = [k for k in llm_kws if k.lower() != canonical_topic.strip().lower()]
+    # Cap at 6 — Reddit's /subreddits/search is lightly rate-limited and
+    # returns diminishing marginal subs per extra query beyond ~6.
+    for kw in llm_kws[:6]:
+        for s in _search_raw(kw):
+            key = s.get("display_name", "").lower()
+            if key and key not in seen:
+                seen[key] = s
+
+    # Legacy single-token fallback — only needed if we STILL have too few.
     if len(seen) < 8 and tokens:
         for t in tokens:
             for s in _search_raw(t):

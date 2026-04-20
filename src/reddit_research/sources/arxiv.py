@@ -60,6 +60,7 @@ def fetch_arxiv(
     limit: int = 30,
     sort_by: str = "relevance",  # relevance | submittedDate | lastUpdatedDate
 ) -> list[dict]:
+    from ._http import DEFAULT_HEADERS
     try:
         r = httpx.get(
             _BASE,
@@ -71,6 +72,7 @@ def fetch_arxiv(
             },
             timeout=20,
             follow_redirects=True,
+            headers=DEFAULT_HEADERS,
         )
         r.raise_for_status()
     except httpx.HTTPError:

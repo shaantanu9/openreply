@@ -127,11 +127,14 @@ function renderPainpointCard(pp, interventions, papers) {
 }
 
 export async function loadSolutions(contentEl, topic) {
-  contentEl.innerHTML = '<div class="empty-state">loading…</div>';
+  // Gated writes — drop renders that would land after a rapid tab switch.
+  const set = (html) => { if (contentEl.dataset.tab === 'solutions') contentEl.innerHTML = html; };
+  set('<div class="empty-state">loading…</div>');
   const painpoints = await fetchSolutionsData(topic);
+  if (contentEl.dataset.tab !== 'solutions') return;
 
   if (!painpoints.length) {
-    contentEl.innerHTML = `<div class="empty-state"><p>No painpoints found for <b>${escape(topic)}</b>. Build the gap map first.</p></div>`;
+    set(`<div class="empty-state"><p>No painpoints found for <b>${escape(topic)}</b>. Build the gap map first.</p></div>`);
     return;
   }
 
@@ -140,10 +143,12 @@ export async function loadSolutions(contentEl, topic) {
     "SELECT count(*) AS c FROM graph_nodes WHERE topic = :topic AND kind = 'intervention'",
     topic,
   );
+  if (contentEl.dataset.tab !== 'solutions') return;
   const haveSolutions = (anySolutions?.[0]?.c || 0) > 0;
 
   if (!haveSolutions) {
-    contentEl.innerHTML = renderEmpty(topic);
+    set(renderEmpty(topic));
+    if (contentEl.dataset.tab !== 'solutions') return;
     window.refreshIcons?.();
     $('#btn-run-solutions', contentEl)?.addEventListener('click', async () => {
       const status = $('#solutions-status', contentEl);
@@ -171,19 +176,21 @@ export async function loadSolutions(contentEl, topic) {
     ]);
     return renderPainpointCard(pp, interventions, papers);
   }));
+  if (contentEl.dataset.tab !== 'solutions') return;
 
-  contentEl.innerHTML = `
+  set(`
     <div class="solutions-tab">
       <div class="solutions-toolbar">
         <button class="btn" id="btn-rerun-solutions"><i data-lucide="refresh-cw"></i> Re-run pipeline</button>
       </div>
       <div class="solutions-list">${cards.join('')}</div>
     </div>
-  `;
+  `);
+  if (contentEl.dataset.tab !== 'solutions') return;
   window.refreshIcons?.();
 
   $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
-    contentEl.innerHTML = '<div class="empty-state">Re-running…</div>';
+    set('<div class="empty-state">Re-running…</div>');
     let err = null;
     try {
       await api.runSolutionsPipeline(topic);
@@ -192,13 +199,13 @@ export async function loadSolutions(contentEl, topic) {
       console.error('solutions pipeline failed:', e);
     }
     if (err) {
-      contentEl.innerHTML =
+      set(
         `<div class="empty-big"><h3>Couldn't re-run solutions</h3>
           <p>${(err && (err.message || String(err))) || 'unknown error'}</p>
           <p style="margin-top:10px;color:var(--ink-3);font-size:12px">
             Check your LLM key in Settings → API keys, or retry in a moment.
           </p>
-        </div>`;
+        </div>`);
       return;
     }
     await loadSolutions(contentEl, topic);

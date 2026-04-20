@@ -20,11 +20,12 @@ def _now_iso() -> str:
 
 
 def _get(path: str, params: dict[str, Any]) -> str | None:
+    from ._http import DEFAULT_HEADERS
     key = os.getenv("NCBI_API_KEY")
     if key:
         params = {**params, "api_key": key}
     try:
-        r = httpx.get(f"{_BASE}{path}", params=params, timeout=20)
+        r = httpx.get(f"{_BASE}{path}", params=params, timeout=20, headers=DEFAULT_HEADERS)
         r.raise_for_status()
         return r.text
     except httpx.HTTPError:
