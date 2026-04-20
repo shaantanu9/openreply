@@ -320,6 +320,103 @@ pub async fn synthesize_insights(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+// ─── Phase 3 — Hypothesis Tracking / Decision Journal ───────────────────
+//
+// Promote synthesize_insights hypothesis cards to stateful, trackable bets
+// stored in the `hypothesis_tests` SQLite table. The UI's "Save as bet"
+// button calls `hypothesis_create`; the Bets tab + state pills call
+// `hypothesis_update_status` and `hypothesis_list`. See
+// src/reddit_research/research/hypothesis_tracker.py for the state machine.
+
+#[tauri::command]
+pub async fn hypothesis_create(
+    app: AppHandle,
+    topic: String,
+    card_json: String,
+    status: Option<String>,
+) -> Result<Value, String> {
+    let s = status.unwrap_or_else(|| "draft".to_string());
+    run_cli(
+        &app,
+        vec![
+            "research", "hypothesis-create",
+            "--topic", &topic,
+            "--card", &card_json,
+            "--status", &s,
+            "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn hypothesis_update_status(
+    app: AppHandle,
+    id: String,
+    status: String,
+    notes: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec![
+        "research", "hypothesis-update",
+        "--id", &id,
+        "--status", &status,
+        "--json",
+    ];
+    let n = notes.unwrap_or_default();
+    if !n.is_empty() {
+        args.push("--notes");
+        args.push(n.as_str());
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn hypothesis_list(
+    app: AppHandle,
+    topic: Option<String>,
+    status: Option<String>,
+    include_archived: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<String> = vec![
+        "research".into(), "hypothesis-list".into(), "--json".into(),
+    ];
+    if let Some(t) = topic.as_ref() {
+        if !t.is_empty() { args.push("--topic".into()); args.push(t.clone()); }
+    }
+    if let Some(s) = status.as_ref() {
+        if !s.is_empty() { args.push("--status".into()); args.push(s.clone()); }
+    }
+    if include_archived.unwrap_or(false) {
+        args.push("--include-archived".into());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn hypothesis_delete(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "hypothesis-delete", "--id", &id, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn hypothesis_stats(
+    app: AppHandle,
+    topic: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<String> = vec!["research".into(), "hypothesis-stats".into(), "--json".into()];
+    if let Some(t) = topic.as_ref() {
+        if !t.is_empty() { args.push("--topic".into()); args.push(t.clone()); }
+    }
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
 /// Run the Problem -> Why -> Science -> Solution pipeline for a topic.
 /// Returns a summary JSON or `{ok: false, skipped: true, reason}` if no
 /// LLM provider is configured.

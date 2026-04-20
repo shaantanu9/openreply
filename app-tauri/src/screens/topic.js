@@ -11,6 +11,7 @@ import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
 import { loadSentiment } from './sentiment.js';
 import { loadInsights } from './insights.js';
+import { loadBets } from './bets.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
@@ -386,6 +387,7 @@ export async function renderTopic(root, { params }) {
 
     <div class="tabs" id="topic-tabs">
       <button class="tab active" data-tab="insights"><i data-lucide="sparkles"></i> Insights</button>
+      <button class="tab" data-tab="bets"><i data-lucide="target"></i> Bets</button>
       <button class="tab" data-tab="map"><i data-lucide="network"></i> Map</button>
       <button class="tab" data-tab="report"><i data-lucide="file-text"></i> Report</button>
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
@@ -2071,6 +2073,7 @@ export async function renderTopic(root, { params }) {
   // ─── tab switching ────────────────────────────────────────────────────
   const loaders = {
     insights: () => loadInsights(contentEl, topic),
+    bets: () => loadBets(contentEl, topic),
     map: loadMap, report: loadReport, evidence: loadEvidence,
     sources: loadSources, research: loadResearch, chat: loadChat, actions: loadActions,
     solutions: () => loadSolutions(contentEl, topic),

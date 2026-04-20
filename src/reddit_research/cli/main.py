@@ -820,6 +820,82 @@ def cmd_research_gaps(
         _emit(report, as_json)
 
 
+@research_app.command("hypothesis-create")
+def cmd_hypothesis_create(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    card_json: str = typer.Option(..., "--card", help="JSON of the hypothesis card to freeze"),
+    status: str = typer.Option("draft", "--status", help="draft | running | paused"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Promote an Insight Engine hypothesis card to a tracked bet."""
+    from ..research.hypothesis_tracker import create_hypothesis_test
+    try:
+        card = json.loads(card_json)
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid card JSON: {e}"}, as_json)
+        raise typer.Exit(1)
+    try:
+        row = create_hypothesis_test(topic=topic, card=card, status=status)
+    except ValueError as e:
+        _emit({"ok": False, "error": str(e)}, as_json)
+        raise typer.Exit(1)
+    _emit({"ok": True, **row}, as_json)
+
+
+@research_app.command("hypothesis-update")
+def cmd_hypothesis_update(
+    hypothesis_id: str = typer.Option(..., "--id"),
+    status: str = typer.Option(..., "--status",
+        help="draft | running | validated | invalidated | paused | archived"),
+    notes: Optional[str] = typer.Option(None, "--notes"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Update a tracked bet's status. Notes are appended to the journal."""
+    from ..research.hypothesis_tracker import update_status
+    try:
+        row = update_status(hypothesis_id, status, notes=notes)
+    except ValueError as e:
+        _emit({"ok": False, "error": str(e)}, as_json)
+        raise typer.Exit(1)
+    _emit({"ok": True, **row}, as_json)
+
+
+@research_app.command("hypothesis-list")
+def cmd_hypothesis_list(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    status: Optional[str] = typer.Option(None, "--status"),
+    include_archived: bool = typer.Option(False, "--include-archived"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List tracked bets. Default excludes archived."""
+    from ..research.hypothesis_tracker import list_hypotheses
+    rows = list_hypotheses(topic=topic, status=status, include_archived=include_archived)
+    _emit(rows, as_json)
+
+
+@research_app.command("hypothesis-delete")
+def cmd_hypothesis_delete(
+    hypothesis_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Soft-delete (archive) a tracked bet."""
+    from ..research.hypothesis_tracker import delete_hypothesis
+    row = delete_hypothesis(hypothesis_id)
+    _emit({"ok": True, **row}, as_json)
+
+
+@research_app.command("hypothesis-stats")
+def cmd_hypothesis_stats(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t",
+        help="Per-topic counts; omit for global across all topics"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Status-bucket counts for the dashboard 'My bets' card."""
+    from ..research.hypothesis_tracker import stats_by_topic, global_stats
+    stats = stats_by_topic(topic) if topic else global_stats()
+    _emit({"ok": True, "topic": topic, "stats": stats}, as_json)
+
+
 @research_app.command("insights")
 def cmd_research_insights(
     topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must be collected first)."),

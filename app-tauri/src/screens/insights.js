@@ -182,6 +182,12 @@ function renderHypothesisCard(h, idx) {
             <span class="hyp-test-meta">Time box ${esc(days)} · Budget ${esc(budget)}</span>
           </div>
         ` : ''}
+        <div class="hyp-save-row">
+          <button class="btn btn-primary btn-sm hyp-save-btn" data-hyp-idx="${idx}">
+            <i data-lucide="target"></i> Save as bet
+          </button>
+          <span class="muted hyp-save-hint">Track this in the Bets tab — update state as you run the test</span>
+        </div>
       </div>
     </details>
   `;
@@ -426,7 +432,7 @@ export async function loadInsights(contentEl, topic) {
   // If we got a real report, render it.
   if (cached && cached.ok && (cached.findings || cached.executive_summary)) {
     set(renderFull(cached, contentEl, topic));
-    wireCards(contentEl, topic);
+    wireCards(contentEl, topic, cached);
     $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
     window.refreshIcons?.();
     return;
@@ -465,7 +471,7 @@ async function runSynth(contentEl, topic) {
     return;
   }
   set(renderFull(report, contentEl, topic));
-  wireCards(contentEl, topic);
+  wireCards(contentEl, topic, report);
   $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
   window.refreshIcons?.();
 }
@@ -474,11 +480,8 @@ function wireRunButton(contentEl, topic) {
   $('#btn-insights-run', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
 }
 
-function wireCards(contentEl, topic) {
+function wireCards(contentEl, topic, report) {
   // Citation chips → drill into Posts tab with the evidence post_ids.
-  // We can't filter Posts by post-id directly without a new API; for now
-  // we just show the count and log on click so users see we're aware.
-  // TODO Phase-3: add setPostsFilter({ postIds: [...] }) for true drill.
   contentEl.querySelectorAll('.insight-cite-chip').forEach(el => {
     el.addEventListener('click', () => {
       const ids = (el.dataset.ev || '').split(',').filter(Boolean);
@@ -488,12 +491,42 @@ function wireCards(contentEl, topic) {
   });
 
   // Counter-evidence chips → modal with the disconfirming posts.
-  // Phase-2 credibility feature — no competitor in the space does this.
   contentEl.querySelectorAll('.counter-evidence').forEach(el => {
     el.addEventListener('click', () => {
       const ids = (el.dataset.disconfirm || '').split(',').filter(Boolean);
       const title = el.dataset.title || '(unnamed finding)';
       if (ids.length) showCounterEvidenceModal(topic, title, ids);
+    });
+  });
+
+  // Phase-3 "Save as bet" — promote a hypothesis card to a tracked bet.
+  // Freezes the card at save time; Bets tab picks it up immediately.
+  const hypotheses = (report && report.hypotheses) || [];
+  contentEl.querySelectorAll('.hyp-save-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = Number(btn.dataset.hypIdx);
+      const card = hypotheses[idx];
+      if (!card) return;
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader"></i> Saving…';
+      window.refreshIcons?.();
+      try {
+        const { saveBetFromCard } = await import('./bets.js');
+        await saveBetFromCard(topic, card);
+        btn.innerHTML = '<i data-lucide="check"></i> Saved';
+        window.refreshIcons?.();
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="target"></i> Save as bet';
+          window.refreshIcons?.();
+        }, 2500);
+      } catch {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="target"></i> Save as bet';
+        window.refreshIcons?.();
+      }
     });
   });
 }

@@ -268,6 +268,29 @@ export const api = {
   // report without re-running the LLM (cheap for tab re-renders). First
   // call per topic writes to the `topic_insights` table.
   synthesizeInsights: (topic, cached = false) => invoke('synthesize_insights', { topic, cached }),
+
+  // Phase-3 Hypothesis Tracking — tracked bets for user-validated research
+  // findings. `cardJson` is the JSON-stringified hypothesis card from the
+  // Insight Engine synthesis output. Status values: draft / running /
+  // validated / invalidated / paused / archived. See
+  // src/reddit_research/research/hypothesis_tracker.py for the state machine.
+  hypothesisCreate: (topic, cardJson, status = 'draft') => {
+    invalidate('hypothesis_list', 'hypothesis_stats');
+    return invoke('hypothesis_create', { topic, cardJson, status });
+  },
+  hypothesisUpdateStatus: (id, status, notes) => {
+    invalidate('hypothesis_list', 'hypothesis_stats');
+    return invoke('hypothesis_update_status', { id, status, notes });
+  },
+  hypothesisList: (topic, status, includeArchived = false) =>
+    cachedInvoke('hypothesis_list', { topic, status, includeArchived }, 5000),
+  hypothesisDelete: (id) => {
+    invalidate('hypothesis_list', 'hypothesis_stats');
+    return invoke('hypothesis_delete', { id });
+  },
+  hypothesisStats: (topic) =>
+    cachedInvoke('hypothesis_stats', { topic }, 5000),
+
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic, force = false) => invoke('run_temporal_gaps', { topic, force }),
   runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),

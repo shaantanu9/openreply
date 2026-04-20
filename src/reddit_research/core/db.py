@@ -328,6 +328,32 @@ def init_schema(db: Database) -> None:
         )
         db["paper_analyses"].create_index(["topic"])
 
+    # Phase 3 — Hypothesis tracking / decision journal.
+    # Each hypothesis card produced by the Insight Engine (Phase 2) can be
+    # promoted to a tracked "bet" via the UI's "Save as bet" button. Bets
+    # persist across sessions and become the weekly-ritual surface: users
+    # come back to mark them running / validated / invalidated with notes.
+    # See docs/ROADMAP.md §"Phase 3" for the full spec.
+    if "hypothesis_tests" not in db.table_names():
+        db["hypothesis_tests"].create(
+            {
+                "id": str,                  # uuid4 hex, frontend-stable
+                "topic": str,               # owning topic
+                "card_json": str,           # full hypothesis card, frozen at save
+                "status": str,              # draft | running | validated | invalidated | paused | archived
+                "started_at": str,          # ISO UTC, set when status→running
+                "resolved_at": str,         # ISO UTC, set when validated/invalidated
+                "resolution_notes": str,    # free-form user notes
+                "linked_evidence": str,     # JSON list of {kind, url, note} entries
+                "last_updated": str,        # ISO UTC, any mutation bumps this
+                "created_at": str,          # ISO UTC, set on insert
+            },
+            pk="id",
+        )
+        db["hypothesis_tests"].create_index(["topic"])
+        db["hypothesis_tests"].create_index(["status"])
+        db["hypothesis_tests"].create_index(["topic", "status"])
+
     # Zombie sweep: any fetch row with ended_at=NULL older than 10 min is a
     # crashed/killed collect that never ran its teardown. Closing these out
     # on startup prevents the UI from showing a stale "Collecting…" chip

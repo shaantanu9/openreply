@@ -12,6 +12,7 @@
 
 ## Table of contents
 
+- [The Dual-Mode Fork — decision point after Phase 4](#the-dual-mode-fork--decision-point-after-phase-4)
 - [Phase index & status](#phase-index--status)
 - [Phase 3 — Hypothesis Tracking / Decision Journal](#phase-3--hypothesis-tracking--decision-journal)
 - [Phase 4 — Monitoring Mode + Weekly Delta View](#phase-4--monitoring-mode--weekly-delta-view)
@@ -24,6 +25,75 @@
 - [Phase 11 — UI Polish Cluster](#phase-11--ui-polish-cluster)
 - [Cross-phase concerns](#cross-phase-concerns)
 - [Explicitly out of scope](#explicitly-out-of-scope)
+
+---
+
+## The Dual-Mode Fork — decision point after Phase 4
+
+`docs/DUAL_MODE_PIVOT.md` (2026-04-20) proposes a major product bet:
+add a second "Product Mode" for continuous monitoring of a user's own
+product + competitors, repricing at $79/$199/$499 tiers targeting
+post-MVP founders instead of $20/mo indie hackers. It's a strong
+strategic doc but has two open questions that deserve data before we
+commit 8+ months of work:
+
+1. **Is the thesis true?** Do 3 of 3 target founders engage weekly with
+   a manually-built Product Mode dashboard? Validation playbook lives
+   at `docs/VALIDATION_PLAN.md`.
+2. **Cloud vs. desktop architecture.** Product Mode needs always-on
+   sweeps + OAuth to private sources + multi-seat billing, which push
+   toward hosted infra. Today Gap Map is local-only Tauri + SQLite.
+
+**The fork lives here:** after shipping **Phase 3 (Hypothesis Tracking)**
+and **Phase 4 (Monitoring Mode + Weekly Delta)**, both paths have the
+same prerequisites. Those two features are load-bearing regardless —
+they ship as Topic-Mode enhancements and 100% become Product-Mode
+primitives later. No wasted work.
+
+```
+                          [ Phase 1 + 2 SHIPPED ]
+                                   │
+                                   ▼
+                    [ Phase 3 — Hypothesis Tracking ]   ←── next
+                                   │
+                                   ▼
+                   [ Phase 4 — Monitoring + Delta ]
+                                   │
+                                   ▼
+                      [ 3-founder VALIDATION ]
+                                   │
+                  ┌────────────────┴─────────────────┐
+                  │                                  │
+                  ▼                                  ▼
+          ✓  Thesis holds                   ✗  Thesis fails
+          (≥ 2/3 engage weekly)             (≤ 1/3 engage)
+                  │                                  │
+                  ▼                                  ▼
+        DUAL-MODE PIVOT PATH              ROADMAP PATH (unchanged)
+        ─────────────────────             ─────────────────────
+        Phase A: Product/Competitor       Phase 5: Cross-topic search
+                data model                Phase 6: Onboarding polish
+        Phase B: Cloud infra + auth       Phase 7: Export formats
+        Phase C: Connected sources        Phase 8: Chat sidebar
+                (Intercom/Zendesk/Stripe) Phase 9: Competitor matrix
+        Phase D: Billing + tiers          Phase 10: Palace linking
+        Phase E: Team seats + Slack       Phase 11: UI polish
+        Phase F: Topic→Product convert
+        (~8–10 mo solo, or ~5 mo w/ 3 devs)    (~5 weeks solo)
+```
+
+**The Phase 5–11 sequencing below is the ROADMAP PATH** — the
+conservative default that Gap Map becomes a high-quality research
+tool with hypothesis tracking + weekly delta monitoring, priced at
+$20–40/mo for Topic Mode users.
+
+If validation succeeds, phases 5–11 get DEPRIORITIZED (not rejected)
+in favor of the Dual-Mode roadmap in `DUAL_MODE_PIVOT.md` §11.
+Hypothesis tracking + monitoring stay; onboarding + exports + chat +
+polish ship later as quality-of-life improvements once Product Mode
+is live.
+
+See `docs/VALIDATION_PLAN.md` for the concrete experiment design.
 
 ---
 
