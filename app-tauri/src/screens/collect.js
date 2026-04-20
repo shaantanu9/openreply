@@ -133,6 +133,8 @@ export async function renderCollect(root, { params }) {
     scholar: 'Google Scholar', github_issues: 'GitHub Issues',
     lemmy: 'Lemmy', mastodon: 'Mastodon',
     youtube: 'YouTube',
+    trustpilot: 'Trustpilot', producthunt: 'Product Hunt',
+    alternativeto: 'AlternativeTo',
   };
   const sourceState = new Map();      // src → { status, count, error, elapsed }
   const sourcesGrid  = $('#sources-grid');
@@ -190,7 +192,8 @@ export async function renderCollect(root, { params }) {
   // parallel stage begins, even though only _PARALLEL_SOURCES=6 can run
   // at a time.
   const AGGRESSIVE_SOURCES = [
-    'hn', 'appstore', 'playstore', 'arxiv', 'openalex', 'pubmed',
+    'hn', 'appstore', 'playstore', 'producthunt',
+    'arxiv', 'openalex', 'pubmed',
     'gnews', 'devto', 'stackoverflow', 'github', 'trends',
   ];
 

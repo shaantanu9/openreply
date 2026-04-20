@@ -448,6 +448,91 @@ def run_rss(
         return 0
 
 
+def run_trustpilot(
+    topic_or_keywords: str | list[str],
+    pages_per_brand: int = 3,
+    limit_per_brand: int = 60,
+) -> int:
+    """Trustpilot consumer reviews — highest-value non-app-store customer
+    feedback source. Searches for each keyword as a brand name; pages
+    through reviews for each resolved brand.
+
+    Legal caveat baked into sources/trustpilot.py: ToS grey area. Polite
+    UA, rate-limited, degrades to 0 on any failure. For production use,
+    contact Trustpilot for API access.
+    """
+    from .trustpilot import fetch_trustpilot
+
+    kws, stopic = _as_keywords(topic_or_keywords)
+    fid = log_fetch_start(
+        "source:trustpilot",
+        {"keywords": kws, "pages_per_brand": pages_per_brand},
+    )
+    total = 0
+    try:
+        for i, kw in enumerate(kws):
+            rows = fetch_trustpilot(kw, pages=pages_per_brand, limit=limit_per_brand)
+            total += _persist(stopic, rows, source_tag=f"trustpilot:{kw}")
+            if i < len(kws) - 1:
+                time.sleep(_KW_SLEEP)
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_producthunt(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    """Product Hunt launch posts + comments. Needs PH_TOKEN env (free
+    developer tier). Degrades to 0 if not configured.
+
+    Signal value: launch-window consumer + indie-hacker reactions to new
+    products in the user's category. Complements App Store (mature) with
+    fresher early-adopter feedback.
+    """
+    from .producthunt import fetch_producthunt
+
+    kws, stopic = _as_keywords(topic_or_keywords)
+    fid = log_fetch_start("source:producthunt", {"keywords": kws, "limit": limit})
+    total = 0
+    try:
+        for i, kw in enumerate(kws):
+            rows = fetch_producthunt(query=kw, limit=limit)
+            total += _persist(stopic, rows, source_tag=f"producthunt:{kw}")
+            if i < len(kws) - 1:
+                time.sleep(_KW_SLEEP)
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_alternativeto(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    """AlternativeTo.net — "what's the alternative to X" signal, useful
+    for competitor discovery in the Insight Engine.
+
+    Known flaky: Cloudflare bot-protects the API. Adapter degrades to
+    empty on 403 without crashing the rest of the collect.
+    """
+    from .alternativeto import fetch_alternativeto
+
+    kws, stopic = _as_keywords(topic_or_keywords)
+    fid = log_fetch_start("source:alternativeto", {"keywords": kws, "limit": limit})
+    total = 0
+    try:
+        for i, kw in enumerate(kws):
+            rows = fetch_alternativeto(kw, limit=limit)
+            total += _persist(stopic, rows, source_tag=f"alternativeto:{kw}")
+            if i < len(kws) - 1:
+                time.sleep(_KW_SLEEP)
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
 def _rss_category_runner(cat: str):
     """Bind `run_rss` to a specific category so it can be registered
     as its own SOURCES entry (rss_startup, rss_ml, …). The wizard CSV
@@ -478,6 +563,13 @@ SOURCES: dict[str, Any] = {
     "github": run_github_trending,
     "github_issues": run_github_issues,
     "youtube": run_youtube,
+    # Phase-4-era customer-feedback additions. Each is an independent
+    # host so parallelizes cleanly with the existing fan-out. Trustpilot
+    # + Product Hunt close the consumer-feedback gap; AlternativeTo gives
+    # competitor-discovery signal for the Insight Engine's competitor map.
+    "trustpilot":    run_trustpilot,
+    "producthunt":   run_producthunt,
+    "alternativeto": run_alternativeto,
     # RSS bundle — one entry per category so the UI picker can offer
     # granular opt-in. All delegate to run_rss under the hood.
     "rss": run_rss,  # default bundle (see rss_catalog.DEFAULT_CATEGORIES)

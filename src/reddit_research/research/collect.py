@@ -118,17 +118,26 @@ def collect(
             # instance URLs; github_issues + scholar hit rate limits without
             # tokens) are left opt-in via `--sources` instead of aggressive.
             sources = [
-                "hn",            # Hacker News
-                "appstore",      # App Store reviews
-                "playstore",     # Play Store reviews
-                "arxiv",         # arXiv preprints
-                "openalex",      # OpenAlex academic catalogue
-                "pubmed",        # PubMed (biomed literature)
-                "gnews",         # Google News
-                "devto",         # Dev.to posts
-                "stackoverflow", # Stack Overflow Q&A
-                "github",        # GitHub trending repos
-                "trends",        # Google Trends series (returns series, not posts)
+                "hn",             # Hacker News
+                "appstore",       # App Store reviews (iOS consumer)
+                "playstore",      # Play Store reviews (Android consumer)
+                "producthunt",    # Product Hunt launches + early-adopter reactions
+                "arxiv",          # arXiv preprints
+                "openalex",       # OpenAlex academic catalogue
+                "pubmed",         # PubMed (biomed literature)
+                "gnews",          # Google News
+                "devto",          # Dev.to posts
+                "stackoverflow",  # Stack Overflow Q&A
+                "github",         # GitHub trending repos
+                "trends",         # Google Trends series (returns series, not posts)
+                # Opt-in via explicit --sources flag (not in aggressive default):
+                #   trustpilot     — Cloudflare/TLS-level blocks non-browser clients;
+                #                    requires Trustpilot API partnership for real use
+                #   alternativeto  — Cloudflare blocks unauth clients (known flaky)
+                #   lemmy/mastodon — need explicit instance URLs
+                #   github_issues  — rate-limited without GITHUB_TOKEN
+                #   youtube        — needs YOUTUBE_API_KEY
+                #   scholar        — Google Scholar blocks aggressively
             ]
     elif not sources:
         # Non-aggressive default: still pull from a baseline of FAST FREE

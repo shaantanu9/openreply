@@ -41,6 +41,10 @@ _PER_SOURCE_CAPS = {
     "stackoverflow": int(os.getenv("INSIGHTS_CAP_SO", "15")),
     "github":        int(os.getenv("INSIGHTS_CAP_GITHUB", "10")),
     "ingest":        int(os.getenv("INSIGHTS_CAP_INGEST", "30")),
+    # Phase-4-era customer-feedback sources
+    "trustpilot":    int(os.getenv("INSIGHTS_CAP_TRUSTPILOT", "40")),
+    "producthunt":   int(os.getenv("INSIGHTS_CAP_PRODUCTHUNT", "25")),
+    "alternativeto": int(os.getenv("INSIGHTS_CAP_ALTERNATIVETO", "15")),
 }
 # Hard upper bound on total selected posts — keeps token cost bounded even
 # if every cap above is cranked up. Claude 4.7 (1M ctx) handles 2000

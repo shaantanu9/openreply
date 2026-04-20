@@ -2295,6 +2295,9 @@ const SRC_BADGE = {
   ingest:   { bg: '#FBF1D4', fg: '#8A5A1A', label: 'Ingest'   },
   gnews:    { bg: '#E1EEFC', fg: '#1F4E9A', label: 'Google News' },
   trends:   { bg: '#E1F2EA', fg: '#2E7D5B', label: 'Trends'   },
+  trustpilot:    { bg: '#E0F2EA', fg: '#0F5E37', label: 'Trustpilot'    },
+  producthunt:   { bg: '#FFE0CC', fg: '#B44500', label: 'Product Hunt'  },
+  alternativeto: { bg: '#E8E0F2', fg: '#4B2C8A', label: 'AlternativeTo' },
 };
 
 function renderSourceBadges(breakdown) {
