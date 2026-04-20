@@ -545,13 +545,31 @@ async function loadTopicGrid(root) {
   subtitle.textContent = `${topics.length} active ${topics.length === 1 ? 'project' : 'projects'}`;
 
   if (!topics.length) {
+    // Phase 6 — replace bland empty with 5 quick-start chips for <30s first Minto.
+    const quickstarts = [
+      'AI coding assistants', 'sleep tracking apps', 'no-code website builders',
+      'meditation apps', 'resume builders',
+    ];
     slot.innerHTML = `
       <div class="empty-big">
-        <h3>No topics yet</h3>
-        <p>Give Gap Map a topic — "meditation apps", "freelance invoicing", "ATS resume tools" — and it'll pull multi-source data and render a gap map.</p>
-        <button class="btn btn-primary" id="empty-new-topic">+ Start your first topic</button>
+        <h3>Let's find your first opportunity</h3>
+        <p>Pick a problem space below — Gap Map pulls Reddit + HN + App Store + Play Store + arXiv in one run, then synthesizes a Minto-structured brief.</p>
+        <div class="quick-start-chips">
+          ${quickstarts.map(q => `<button class="quick-start-chip" data-q="${esc(q)}">${esc(q)}</button>`).join('')}
+        </div>
+        <div style="margin-top:18px">
+          <button class="btn btn-primary icon-btn" id="empty-new-topic"><i data-lucide="plus"></i> Start a custom topic</button>
+        </div>
       </div>`;
     slot.querySelector('#empty-new-topic')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
+    slot.querySelectorAll('.quick-start-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const q = btn.dataset.q;
+        if (!q) return;
+        location.hash = `#/collect/${encodeURIComponent(q)}`;
+      });
+    });
+    window.refreshIcons?.();
     return;
   }
 

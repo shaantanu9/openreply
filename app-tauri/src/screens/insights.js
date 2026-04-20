@@ -272,14 +272,19 @@ function renderQuadrant(report) {
 }
 
 function renderEmpty(reason) {
+  // Phase 6 — if the backend tells us why (e.g. no-posts or no-LLM-key), surface
+  // that verbatim so the empty state is actionable, not generic.
+  const isKeyIssue = (reason || '').toLowerCase().includes('key') || (reason || '').toLowerCase().includes('llm');
+  const isPostIssue = (reason || '').toLowerCase().includes('no post') || (reason || '').toLowerCase().includes('corpus');
   return `
     <div class="empty-big">
       <h3>No insight report yet</h3>
-      <p>${esc(reason || 'Click the button below to run a one-shot Claude synthesis across your full corpus.')}</p>
-      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px">
-        <button class="btn btn-primary icon-btn" id="btn-insights-run"><i data-lucide="sparkles"></i> Generate insights</button>
+      <p>${esc(reason || 'Run a one-shot synthesis across your full corpus to get a Minto-structured brief (governing thought + 3 key arguments + hypothesis cards + opportunity quadrant).')}</p>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-primary icon-btn" id="btn-insights-run"><i data-lucide="sparkles"></i> ${isPostIssue ? 'Collect posts first' : 'Generate insights'}</button>
+        ${isKeyIssue ? `<button class="btn btn-ghost btn-bordered icon-btn" onclick="location.hash='#/settings'"><i data-lucide="key-round"></i> Open Settings</button>` : ''}
       </div>
-      <p class="muted" style="font-size:12px;margin-top:10px">Uses Claude by default. Takes 30–90 s on a full topic corpus.</p>
+      <p class="muted" style="font-size:12px;margin-top:10px">Works with any LLM provider (Anthropic, OpenAI, OpenRouter, Ollama …). Takes 30–90 s on a full topic corpus.</p>
     </div>
   `;
 }
@@ -309,7 +314,8 @@ function renderFull(report, contentEl, topic) {
   const dropped = report._dropped_hypotheses || [];
 
   return `
-    <div class="insights-tab">
+    <div class="insights-tab insights-with-sidebar">
+      <div class="insights-main">
       <div class="insights-toolbar">
         <div class="insights-meta">
           ${cachedBadge}
@@ -317,6 +323,7 @@ function renderFull(report, contentEl, topic) {
           ${generatedAt ? `<span class="muted">· generated ${esc(new Date(generatedAt).toLocaleString())}</span>` : ''}
         </div>
         <div style="flex:1"></div>
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-insights-chat-toggle" title="Toggle chat sidebar (⌘/)"><i data-lucide="message-circle-question"></i> Ask</button>
         <div class="export-dropdown-wrap">
           <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-insights-export"><i data-lucide="download"></i> Export</button>
           <div class="export-dropdown-menu" id="export-dropdown-menu" hidden>
@@ -376,6 +383,26 @@ function renderFull(report, contentEl, topic) {
 
       <!-- Phase-9 feature × competitor matrix. Populated async by loadCompetitorMatrix() -->
       <div id="competitor-matrix-slot"></div>
+      </div><!-- /.insights-main -->
+
+      <!-- Phase-8 chat sidebar. Collapsible via #btn-insights-chat-toggle. -->
+      <aside class="insights-chat-aside" id="insights-chat-aside" hidden>
+        <div class="ica-head">
+          <h3><i data-lucide="message-circle-question"></i> Ask</h3>
+          <button class="btn btn-ghost btn-sm" id="ica-close" title="Close (⌘/)"><i data-lucide="x"></i></button>
+        </div>
+        <div class="ica-prompt-chips">
+          <button class="ica-prompt-chip" data-q="What are the top 3 risks of the top opportunity?">Top 3 risks</button>
+          <button class="ica-prompt-chip" data-q="Who's the incumbent I'd compete against?">Main incumbent?</button>
+          <button class="ica-prompt-chip" data-q="What's the smallest experiment to validate the top hypothesis?">Cheapest test?</button>
+          <button class="ica-prompt-chip" data-q="Is this market bigger in US or EU?">US vs EU?</button>
+        </div>
+        <div class="ica-history" id="ica-history"></div>
+        <div class="ica-input-row">
+          <textarea id="ica-input" placeholder="Ask a follow-up…" rows="2"></textarea>
+          <button class="btn btn-primary btn-sm icon-btn" id="ica-send"><i data-lucide="send"></i></button>
+        </div>
+      </aside>
     </div>
   `;
 }
@@ -592,6 +619,134 @@ function wireRunButton(contentEl, topic) {
   $('#btn-insights-run', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
 }
 
+// ─── Phase 8 — Chat sidebar on Insights tab ──────────────────────────
+// Collapsible right-hand panel; reuses the same chat streaming events as
+// the Chat tab so both UIs stay in sync if the user opens them together.
+// State is persisted per-topic in localStorage so users return to their
+// Q&A history the next time they open the topic.
+function wireChatSidebar(contentEl, topic) {
+  const aside = contentEl.querySelector('#insights-chat-aside');
+  const toggleBtn = contentEl.querySelector('#btn-insights-chat-toggle');
+  const closeBtn = aside?.querySelector('#ica-close');
+  const input = aside?.querySelector('#ica-input');
+  const sendBtn = aside?.querySelector('#ica-send');
+  const historyEl = aside?.querySelector('#ica-history');
+  const chips = aside?.querySelectorAll('.ica-prompt-chip');
+  if (!aside || !toggleBtn || !input || !sendBtn || !historyEl) return;
+
+  const STORAGE_KEY = `gapmap.insights.chat.${topic}`;
+  const VISIBLE_KEY = `gapmap.insights.chat.visible.${topic}`;
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch {}
+
+  function persist() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(-40))); } catch {}
+  }
+  function render() {
+    historyEl.innerHTML = history.map(m => `
+      <div class="ica-msg ica-${m.role}">
+        <div class="ica-msg-role">${m.role === 'user' ? 'You' : 'Gap Map'}</div>
+        <div class="ica-msg-text">${esc(m.text || '')}</div>
+      </div>
+    `).join('');
+    historyEl.scrollTop = historyEl.scrollHeight;
+  }
+  function show(visible) {
+    aside.hidden = !visible;
+    contentEl.querySelector('.insights-tab')?.classList.toggle('chat-open', !!visible);
+    localStorage.setItem(VISIBLE_KEY, visible ? '1' : '0');
+    if (visible) input.focus();
+  }
+
+  // Restore visibility preference
+  if (localStorage.getItem(VISIBLE_KEY) === '1') show(true);
+  render();
+
+  toggleBtn.addEventListener('click', () => show(aside.hidden));
+  closeBtn?.addEventListener('click', () => show(false));
+
+  let stream = { active: false, unlistenProgress: null, unlistenDone: null };
+
+  async function send(question) {
+    if (!question || stream.active) return;
+    history.push({ role: 'user', text: question });
+    history.push({ role: 'assistant', text: '' });
+    persist();
+    render();
+    sendBtn.disabled = true;
+    stream.active = true;
+    try {
+      stream.unlistenProgress = await api.onChatProgress(line => {
+        let ev; try { ev = JSON.parse(line); } catch { return; }
+        const last = history[history.length - 1];
+        if (!last || last.role !== 'assistant') return;
+        if (ev.event === 'token' || ev.event === 'text') {
+          last.text += ev.text || ev.token || '';
+          render();
+        } else if (ev.event === 'error') {
+          last.text = `✗ ${ev.error || 'chat error'}`;
+          render();
+        } else if (ev.event === 'tool_call') {
+          last.text += `\n\n🛠 using tool: ${ev.tool || ev.name || '?'}`;
+          render();
+        }
+      });
+      stream.unlistenDone = await api.onChatDone(() => {
+        try { stream.unlistenProgress?.(); } catch {}
+        try { stream.unlistenDone?.(); } catch {}
+        stream.unlistenProgress = null;
+        stream.unlistenDone = null;
+        stream.active = false;
+        sendBtn.disabled = false;
+        persist();
+      });
+      // agent=true so tool-use is available (run_query, sample_posts, etc.)
+      await api.startChat(topic, question, 'agent', true);
+    } catch (err) {
+      const last = history[history.length - 1];
+      if (last && last.role === 'assistant') last.text = `✗ ${err?.message || err}`;
+      try { stream.unlistenProgress?.(); } catch {}
+      try { stream.unlistenDone?.(); } catch {}
+      stream.active = false;
+      sendBtn.disabled = false;
+      render();
+    }
+  }
+
+  sendBtn.addEventListener('click', () => {
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = '';
+    send(q);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendBtn.click();
+    }
+  });
+  chips?.forEach(c => c.addEventListener('click', () => send(c.dataset.q)));
+
+  // Keyboard shortcut: ⌘/ toggles the sidebar (Phase 11.5).
+  const kbd = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+      e.preventDefault();
+      show(aside.hidden);
+    }
+  };
+  document.addEventListener('keydown', kbd);
+  // Clean up listener when tab changes — contentEl dataset.tab flips.
+  const observer = new MutationObserver(() => {
+    if (contentEl.dataset.tab !== 'insights') {
+      document.removeEventListener('keydown', kbd);
+      observer.disconnect();
+    }
+  });
+  observer.observe(contentEl, { attributes: true, attributeFilter: ['data-tab'] });
+
+  window.refreshIcons?.();
+}
+
 // ─── Phase 10 — Research link annotation + modal ─────────────────────
 // Fetches per-finding paper counts ONCE and decorates findings in-place
 // so the chip appears during the main render pass.
@@ -658,6 +813,9 @@ async function showResearchLinksModal(topic, findingTitle) {
 function wireCards(contentEl, topic, report) {
   // Phase-9 — load competitor matrix asynchronously (doesn't block main render).
   loadCompetitorMatrix(contentEl, topic);
+
+  // Phase-8 — chat sidebar wiring.
+  wireChatSidebar(contentEl, topic);
 
   // Phase-7 — Export dropdown. Click toggles menu; item copies to clipboard.
   const exportBtn = contentEl.querySelector('#btn-insights-export');

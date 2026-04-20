@@ -3503,3 +3503,187 @@ kbd {
   background: #EFE7FB; color: #5B2D9B;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Phase 6 — Dashboard quick-start chips in empty state ────────────── */
+.quick-start-chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: center; margin-top: 14px;
+  max-width: 560px; margin-left: auto; margin-right: auto;
+}
+.quick-start-chip {
+  padding: 8px 14px;
+  background: var(--surface-2, #FAF4EA);
+  border: 1px solid var(--border-soft, #EADFC8);
+  border-radius: 20px;
+  font-family: inherit; font-size: 13px;
+  color: var(--ink-1); cursor: pointer;
+  transition: all 0.12s ease;
+}
+.quick-start-chip:hover {
+  background: var(--orange, #B84F14);
+  color: white;
+  border-color: var(--orange, #B84F14);
+}
+
+/* ── Phase 8 — Insights chat sidebar ─────────────────────────────────── */
+.insights-with-sidebar { display: block; }
+.insights-with-sidebar.chat-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+.insights-main { min-width: 0; }
+
+.insights-chat-aside {
+  position: sticky; top: 12px;
+  max-height: calc(100vh - 80px);
+  display: flex; flex-direction: column;
+  background: var(--surface-1, #FFFDF7);
+  border: 1px solid var(--border-soft, #EADFC8);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.insights-chat-aside .ica-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft, #EADFC8);
+  background: var(--surface-2, #FAF4EA);
+}
+.insights-chat-aside .ica-head h3 {
+  margin: 0; font-size: 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.insights-chat-aside .ica-prompt-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft, #EADFC8);
+}
+.insights-chat-aside .ica-prompt-chip {
+  padding: 5px 10px; font-size: 11.5px;
+  background: var(--surface-2, #FAF4EA);
+  border: 1px solid var(--border-soft, #EADFC8);
+  border-radius: 14px;
+  color: var(--ink-2); cursor: pointer;
+  font-family: inherit;
+}
+.insights-chat-aside .ica-prompt-chip:hover {
+  background: var(--orange, #B84F14);
+  color: white; border-color: var(--orange, #B84F14);
+}
+.insights-chat-aside .ica-history {
+  flex: 1; overflow-y: auto;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 12px;
+  min-height: 120px;
+}
+.insights-chat-aside .ica-msg { font-size: 13px; line-height: 1.5; }
+.insights-chat-aside .ica-msg-role {
+  font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--ink-3); margin-bottom: 3px;
+}
+.insights-chat-aside .ica-msg-text { white-space: pre-wrap; word-break: break-word; }
+.insights-chat-aside .ica-user .ica-msg-text {
+  padding: 8px 10px;
+  background: var(--surface-2, #FAF4EA);
+  border-radius: 8px;
+}
+.insights-chat-aside .ica-assistant .ica-msg-text {
+  padding: 8px 10px;
+  background: transparent;
+  border-left: 3px solid var(--orange, #B84F14);
+  padding-left: 10px;
+}
+.insights-chat-aside .ica-input-row {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 6px; padding: 10px 12px;
+  border-top: 1px solid var(--border-soft, #EADFC8);
+  background: var(--surface-2, #FAF4EA);
+}
+.insights-chat-aside .ica-input-row textarea {
+  font-family: inherit; font-size: 13px;
+  padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--border-soft, #EADFC8);
+  background: var(--surface-1, #FFFDF7);
+  resize: vertical; min-height: 42px; max-height: 120px;
+}
+
+/* ── Phase 11 — Dense finding cards (pref toggle) ────────────────────── */
+html.dense-cards .insight-card .insight-meta > span,
+html.dense-cards .insight-card .insight-meta .insight-cite-chip,
+html.dense-cards .insight-card .insight-meta .insight-chip.academic,
+html.dense-cards .insight-card .insight-meta .insight-chip.chronic,
+html.dense-cards .insight-card .insight-meta .insight-chip.ci-chip {
+  display: none;
+}
+html.dense-cards .insight-card .insight-meta .triang-strong,
+html.dense-cards .insight-card .insight-meta .triang-moderate,
+html.dense-cards .insight-card .insight-meta .triang-narrow,
+html.dense-cards .insight-card .insight-meta .counter-evidence,
+html.dense-cards .insight-card .insight-meta .research-link {
+  display: inline-flex;
+}
+html.dense-cards .insight-card:hover .insight-meta > span,
+html.dense-cards .insight-card:hover .insight-meta > .insight-chip,
+html.dense-cards .insight-card:hover .insight-meta > .insight-cite-chip {
+  display: inline-flex;
+}
+
+/* ── Phase 11 — Dark mode ────────────────────────────────────────────── */
+html.dark {
+  --surface:        #12110E;
+  --surface-1:      #1A1915;
+  --surface-2:      #25231D;
+  --ink-1:          #E8E4D8;
+  --ink-2:          #B8B3A3;
+  --ink-3:          #7A7565;
+  --line:           #3A362C;
+  --border-soft:    #3A362C;
+  --orange:         #E67E3C;
+  color-scheme: dark;
+}
+html.dark body { background: var(--surface); color: var(--ink-1); }
+html.dark .card,
+html.dark .settings-card,
+html.dark .stat-card,
+html.dark .insight-card,
+html.dark .competitor-card,
+html.dark .hyp-card,
+html.dark .minto-pyramid,
+html.dark .competitor-matrix,
+html.dark .top-opps-card,
+html.dark .insights-chat-aside {
+  background: var(--surface-1);
+  border-color: var(--line);
+  color: var(--ink-1);
+}
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background: var(--surface-2);
+  color: var(--ink-1);
+  border-color: var(--line);
+}
+html.dark .pill,
+html.dark .tab-more-item:hover,
+html.dark .quick-start-chip {
+  background: var(--surface-2);
+  color: var(--ink-1);
+  border-color: var(--line);
+}
+html.dark .muted { color: var(--ink-3); }
+html.dark kbd {
+  background: var(--surface-2);
+  color: var(--ink-1);
+  border-color: var(--line);
+}
+html.dark .matrix-table th { background: var(--surface-2); }
+html.dark .matrix-table td.matrix-feature-col { background: var(--surface-1); }
+html.dark .modal { background: var(--surface-1); color: var(--ink-1); }
+html.dark .counter-evidence-post,
+html.dark .research-link-row { background: var(--surface-2); }
+html.dark .export-dropdown-menu {
+  background: var(--surface-1); border-color: var(--line);
+}
+html.dark .tab-more-menu { background: var(--surface-1); border-color: var(--line); }

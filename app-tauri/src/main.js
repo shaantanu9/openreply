@@ -73,6 +73,19 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+// Phase-11 polish prefs — applied before any render so the very first paint
+// uses the correct palette/density (no dark→light flash on boot).
+(function applyEarlyPrefs() {
+  try {
+    if (localStorage.getItem('gapmap.pref.dark_mode') === 'true') {
+      document.documentElement.classList.add('dark');
+    }
+    if (localStorage.getItem('gapmap.pref.dense_cards') === 'true') {
+      document.documentElement.classList.add('dense-cards');
+    }
+  } catch {}
+})();
+
 window.addEventListener('DOMContentLoaded', async () => {
   // Wire modal + keyboard FIRST so Cancel / Escape work even before any data loads.
   // (The Python sidecar can take 5–10s to spin up the first time.)
@@ -319,10 +332,35 @@ function wireKeyboard() {
       window.gapmapOpenNewTopic?.();
       return;
     }
+    // Cmd/Ctrl+, → settings
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+      e.preventDefault();
+      location.hash = '#/settings';
+      return;
+    }
+    // Cmd/Ctrl+K → global search (Phase 5 surface) — routes to /find, which
+    // is the existing global-search screen.
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      location.hash = '#/find';
+      return;
+    }
     // ? (shift+/) → shortcuts help, unless the user is typing.
     if (!typing && (e.key === '?' || (e.shiftKey && e.key === '/'))) {
       e.preventDefault();
       openShortcutsHelp();
+    }
+    // J/K — navigate expanded hypothesis cards on Insights tab.
+    if (!typing && (e.key === 'j' || e.key === 'k')) {
+      const cards = Array.from(document.querySelectorAll('.hyp-card'));
+      if (!cards.length) return;
+      const openIdx = cards.findIndex(c => c.hasAttribute('open'));
+      let nextIdx = e.key === 'j'
+        ? Math.min(cards.length - 1, (openIdx < 0 ? -1 : openIdx) + 1)
+        : Math.max(0, (openIdx < 0 ? cards.length : openIdx) - 1);
+      cards.forEach((c, i) => { if (i === nextIdx) c.setAttribute('open', ''); else c.removeAttribute('open'); });
+      cards[nextIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      e.preventDefault();
     }
   });
 }
@@ -339,6 +377,10 @@ function openShortcutsHelp() {
       <p class="modal-sub">The basics — more coming soon.</p>
       <div class="shortcuts-list">
         <div class="shortcut-row"><kbd>⌘ N</kbd> <span>New topic</span></div>
+        <div class="shortcut-row"><kbd>⌘ K</kbd> <span>Global search / find anything</span></div>
+        <div class="shortcut-row"><kbd>⌘ ,</kbd> <span>Open Settings</span></div>
+        <div class="shortcut-row"><kbd>⌘ /</kbd> <span>Toggle chat sidebar on Insights</span></div>
+        <div class="shortcut-row"><kbd>J</kbd> / <kbd>K</kbd> <span>Next / previous hypothesis card</span></div>
         <div class="shortcut-row"><kbd>?</kbd> <span>Open this panel</span></div>
         <div class="shortcut-row"><kbd>Esc</kbd> <span>Close any open dialog</span></div>
         <div class="shortcut-row"><kbd>Enter</kbd> <span>Submit the focused form</span></div>

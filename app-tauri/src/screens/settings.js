@@ -174,6 +174,14 @@ export async function renderSettings(root) {
           <input type="checkbox" id="pref-confirm-delete" ${localStorage.getItem('gapmap.pref.confirm_delete') === 'false' ? '' : 'checked'} />
           <span><b>Confirm before deleting a topic</b><small>Uncheck for one-click deletes.</small></span>
         </label>
+        <label class="settings-toggle">
+          <input type="checkbox" id="pref-dark-mode" ${localStorage.getItem('gapmap.pref.dark_mode') === 'true' ? 'checked' : ''} />
+          <span><b>Dark mode</b><small>Switch the UI palette to a dark scheme. Applied instantly.</small></span>
+        </label>
+        <label class="settings-toggle">
+          <input type="checkbox" id="pref-dense-cards" ${localStorage.getItem('gapmap.pref.dense_cards') === 'true' ? 'checked' : ''} />
+          <span><b>Dense finding cards</b><small>Show only Tier-1 chips (Ulwick / triangulation / counter-evidence). Hover to see the rest.</small></span>
+        </label>
       </div>
 
       <!-- Onboarding + help -->
@@ -333,6 +341,16 @@ function wireStaticButtons(root) {
   })();
   root.querySelector('#pref-confirm-delete')?.addEventListener('change', e => {
     localStorage.setItem('gapmap.pref.confirm_delete', e.target.checked ? 'true' : 'false');
+  });
+  root.querySelector('#pref-dark-mode')?.addEventListener('change', e => {
+    const on = e.target.checked;
+    localStorage.setItem('gapmap.pref.dark_mode', on ? 'true' : 'false');
+    document.documentElement.classList.toggle('dark', on);
+  });
+  root.querySelector('#pref-dense-cards')?.addEventListener('change', e => {
+    const on = e.target.checked;
+    localStorage.setItem('gapmap.pref.dense_cards', on ? 'true' : 'false');
+    document.documentElement.classList.toggle('dense-cards', on);
   });
   root.querySelector('#btn-reset-onboarding')?.addEventListener('click', () => {
     try { localStorage.removeItem('gapmap.onboarding.completed'); } catch {}
