@@ -10,15 +10,15 @@ This doc is both a **plan** (what to do, in what order) and a **living changelog
 
 ## Priority ladder
 
-| # | Severity | Fix | Est. effort | Risk | Status |
-|---|----------|-----|-------------|------|--------|
-| 1 | 🔴 Critical | Narrow CSP `connect-src: https://*` to exact origins | 10 min | Low | ⬜ pending |
-| 2 | 🔴 Critical | Add `tests/conftest.py` for fresh-checkout pytest | 2 min | None | ⬜ pending |
-| 3 | 🔴 Critical | Replace `unwrap_or(Value::Null)` silent swallow with `{_raw, _parse_error}` + UI diagnostic | 45 min | Medium | ⬜ pending |
-| 4 | 🟠 High | `setHTMLWithIcons(el, html)` helper + audit every `innerHTML` with `data-lucide` | 1–2 hr | Medium | ⬜ pending |
-| 5 | 🟡 Medium | Provider resolver cleanup — clear docstring + single canonical call | 20 min | Low | ⬜ pending |
-| 6 | 🟡 Medium | Guard `find_dev_venv_python` against symlink loops | 15 min | None | ⬜ pending |
-| 7 | 🟠 High | Integration test: `ActiveJob`/`ActiveChat`/`ActiveStream` cancel actually kills the child | 1 hr | Low | ⬜ pending |
+| # | Severity | Fix | Est. effort | Risk | Status | Commit |
+|---|----------|-----|-------------|------|--------|--------|
+| 1 | 🔴 Critical | Narrow CSP `connect-src: https://*` to exact origins | 10 min | Low | ✅ done | `765dfa9` |
+| 2 | 🔴 Critical | Add `tests/conftest.py` for fresh-checkout pytest | 2 min | None | ✅ done | `3f97640` |
+| 3 | 🔴 Critical | Replace `unwrap_or(Value::Null)` silent swallow with `{_raw, _parse_error}` + UI diagnostic | 45 min | Medium | ✅ done | `1f79a8a` |
+| 4 | 🟠 High | `setHTMLWithIcons(el, html)` helper + audit every `innerHTML` with `data-lucide` | 1–2 hr | Medium | ✅ done (audit: all 18 existing sites already correct; helper added for new code) | `46a9004` |
+| 5 | 🟡 Medium | Provider resolver cleanup — clear docstring + single canonical call | 20 min | Low | ✅ done (audit: all callers use `resolve_provider` correctly; strengthened docstring) | `b19c0c3` |
+| 6 | 🟡 Medium | Guard `find_dev_venv_python` against symlink loops | 15 min | None | ✅ done | `2a7d9e9` |
+| 7 | 🟠 High | Integration test: `ActiveJob`/`ActiveChat`/`ActiveStream` cancel actually kills the child | 1 hr | Low | ✅ done | `a2c79b2` |
 
 Order rationale: stand-alone, low-risk, high-value fixes first (#1 CSP, #2 conftest), then the foundational error-surfacing fix that lights up every subsequent fix's diagnostics (#3), then the biggest scope-creep risk (#4 refreshIcons audit) while fresh, then the lower-stakes cleanups, then the test (#7 — the one test that actually needs to run the rebuilt Rust to prove anything).
 
@@ -291,16 +291,16 @@ After all 7 fixes land:
 
 Work through these in order. Don't batch. Each = one commit.
 
-- [ ] Fix 1 · CSP narrowing
-- [ ] Fix 2 · conftest.py
-- [ ] Fix 3 · unwrap_or null-swallow → diagnostic
-- [ ] Fix 4 · setHTMLWithIcons helper + audit
-- [ ] Fix 5 · provider resolver docstrings
-- [ ] Fix 6 · symlink-loop guard
-- [ ] Fix 7 · cancel contract test
-- [ ] Post: skill doc updates
-- [ ] Post: UI guidelines update
-- [ ] Post: changelog entry
-- [ ] Post: final `pytest tests/ -q` — confirm no new regressions
+- [x] Fix 1 · CSP narrowing — `765dfa9`
+- [x] Fix 2 · conftest.py — `3f97640`
+- [x] Fix 3 · unwrap_or null-swallow → diagnostic — `1f79a8a`
+- [x] Fix 4 · setHTMLWithIcons helper + audit — `46a9004`
+- [x] Fix 5 · provider resolver docstrings — `b19c0c3`
+- [x] Fix 6 · symlink-loop guard — `2a7d9e9`
+- [x] Fix 7 · cancel contract test — `a2c79b2`
+- [ ] Post: skill doc updates (skill already includes the 6 audit gotchas from this session; optional polish later)
+- [ ] Post: UI guidelines update (add `setHTMLWithIcons` as canonical pattern in §5)
+- [ ] Post: changelog entry (add `changelogs/2026-04-20_NN_audit-fixes-bundle.md`)
+- [x] Post: final `pytest tests/ -q` — 41 passed, 3 pre-existing integration failures unchanged by these fixes
 
 Update the Status column of the priority ladder as each item ships.
