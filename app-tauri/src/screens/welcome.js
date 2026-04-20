@@ -118,9 +118,14 @@ function renderStep1(root, body, info) {
         <div class="hero-eyebrow">Your research workspace</div>
         <h1>Map the gap<br/>in any market.</h1>
         <p>Drop a topic in, Gap Map pulls multi-source data (Reddit + HN + App Store + Play Store + academic + news), synthesises painpoints / DIY workarounds / competitor weaknesses, and renders an interactive graph with real citations.</p>
-        <div class="hero-actions">
-          <button class="btn btn-primary" id="next-1">Continue →</button>
+        <div class="hero-actions" style="gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="next-1">Continue with exploring →</button>
+          <button class="btn btn-ghost btn-bordered" id="next-1-product">I have a product → Product Mode</button>
         </div>
+        <p class="muted" style="font-size:12px;margin-top:10px">
+          <b>Exploring:</b> one-shot research briefs per topic.
+          <b>Product:</b> daily-use dashboard + signals for your product + competitors.
+        </p>
       </div>
       <div class="hero-stat">
         <div class="hero-stat-row"><div><h4>Everything is local</h4></div></div>
@@ -159,6 +164,10 @@ function renderStep1(root, body, info) {
     </section>
   `;
   document.getElementById('next-1').onclick = () => renderStep(root, 2, info);
+  document.getElementById('next-1-product').onclick = () => {
+    markOnboardingComplete();
+    location.hash = '#/product/new/setup';
+  };
 }
 
 // ─── Step 2 · Profile ─────────────────────────────────────────────────────

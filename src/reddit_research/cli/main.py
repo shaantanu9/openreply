@@ -1037,6 +1037,195 @@ def cmd_hypothesis_stats(
     _emit({"ok": True, "topic": topic, "stats": stats}, as_json)
 
 
+# ─── Dual-Mode Pivot — Product Mode commands ─────────────────────────────
+@research_app.command("product-create")
+def cmd_product_create(
+    name: str = typer.Option(..., "--name", "-n"),
+    one_liner: str = typer.Option("", "--one-liner"),
+    category: str = typer.Option("", "--category"),
+    topic: str = typer.Option("", "--topic",
+        help="Existing topic slug to link (shares corpus). Default: slugified name."),
+    competitors_json: str = typer.Option("[]", "--competitors",
+        help="JSON list of {name, urls, category}"),
+    monitoring_cadence: str = typer.Option("daily", "--cadence"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-A — register a Product (your app + competitors)."""
+    import json as _json
+    from ..research.product import create_product
+    try:
+        competitors = _json.loads(competitors_json or "[]")
+    except Exception:
+        competitors = []
+    out = create_product(
+        name=name, one_liner=one_liner, category=category, topic=topic,
+        competitors=competitors, monitoring_cadence=monitoring_cadence,
+    )
+    _emit(out, as_json)
+
+
+@research_app.command("product-list")
+def cmd_product_list(
+    active_only: bool = typer.Option(True, "--active-only/--all"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import list_products
+    _emit({"ok": True, "products": list_products(active_only=active_only)}, as_json)
+
+
+@research_app.command("product-get")
+def cmd_product_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import get_product
+    _emit(get_product(product_id), as_json)
+
+
+@research_app.command("product-update")
+def cmd_product_update(
+    product_id: str = typer.Option(..., "--id"),
+    fields_json: str = typer.Option("{}", "--fields"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    import json as _json
+    from ..research.product import update_product
+    try:
+        fields = _json.loads(fields_json or "{}")
+    except Exception:
+        fields = {}
+    _emit(update_product(product_id, fields), as_json)
+
+
+@research_app.command("product-add-competitor")
+def cmd_product_add_competitor(
+    product_id: str = typer.Option(..., "--id"),
+    name: str = typer.Option(..., "--name"),
+    urls_json: str = typer.Option("{}", "--urls"),
+    category: str = typer.Option("", "--category"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    import json as _json
+    from ..research.product import add_competitor
+    try:
+        urls = _json.loads(urls_json or "{}")
+    except Exception:
+        urls = {}
+    _emit(add_competitor(product_id, name, urls, category), as_json)
+
+
+@research_app.command("product-remove-competitor")
+def cmd_product_remove_competitor(
+    product_id: str = typer.Option(..., "--id"),
+    name: str = typer.Option(..., "--name"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import remove_competitor
+    _emit(remove_competitor(product_id, name), as_json)
+
+
+@research_app.command("product-delete")
+def cmd_product_delete(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import delete_product
+    _emit(delete_product(product_id), as_json)
+
+
+@research_app.command("product-sweep")
+def cmd_product_sweep(
+    product_id: str = typer.Option(..., "--id"),
+    trigger: str = typer.Option("manual", "--trigger"),
+    skip_collect: bool = typer.Option(True, "--skip-collect/--with-collect"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-B — run a daily sweep for a product. Generates typed signals."""
+    from ..research.product_sweep import run_product_sweep
+    _emit(run_product_sweep(product_id, trigger=trigger, skip_collect=skip_collect), as_json)
+
+
+@research_app.command("product-signals")
+def cmd_product_signals(
+    product_id: str = typer.Option(..., "--id"),
+    since_days: Optional[int] = typer.Option(None, "--since-days"),
+    include_resolved: bool = typer.Option(False, "--include-resolved"),
+    limit: int = typer.Option(100, "--limit"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product_sweep import list_signals
+    _emit({"ok": True, "signals": list_signals(product_id, since_days, include_resolved, limit)}, as_json)
+
+
+@research_app.command("product-signal-action")
+def cmd_product_signal_action(
+    signal_id: str = typer.Option(..., "--id"),
+    action: str = typer.Option(..., "--action",
+        help="dismissed | acted | snoozed | hypothesis"),
+    notes: str = typer.Option("", "--notes"),
+    snooze_days: int = typer.Option(7, "--snooze-days"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product_sweep import signal_action
+    _emit(signal_action(signal_id, action, notes, snooze_days), as_json)
+
+
+@research_app.command("product-digest")
+def cmd_product_digest(
+    product_id: str = typer.Option(..., "--id"),
+    days: int = typer.Option(7, "--days"),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+        help="Digest is plain markdown; --json accepted for wrapper compat."),
+) -> None:
+    """Phase-C — weekly markdown digest for Slack/Notion paste."""
+    from ..research.product_digest import build_digest
+    md = build_digest(product_id, days=days)
+    # Print as plain stdout; Rust tolerates non-JSON.
+    typer.echo(md)
+
+
+@research_app.command("product-dashboard")
+def cmd_product_dashboard(
+    product_id: str = typer.Option(..., "--id"),
+    days: int = typer.Option(7, "--days"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """One-call fetch for the Product Dashboard — mirror + lens + field + signals."""
+    from ..research.product import get_product
+    from ..research.product_digest import (
+        build_mirror_section, build_lens_section, build_field_section,
+    )
+    from ..research.product_sweep import list_signals
+    pinfo = get_product(product_id)
+    if not pinfo.get("ok"):
+        _emit(pinfo, as_json)
+        return
+    out = {
+        "ok": True,
+        "product": pinfo["product"],
+        "competitors": pinfo["competitors"],
+        "recent_sweeps": pinfo["recent_sweeps"],
+        "mirror": build_mirror_section(product_id, days=days),
+        "lens": build_lens_section(product_id, days=days),
+        "field": build_field_section(product_id, days=days),
+        "signals": list_signals(product_id, since_days=days, include_resolved=False, limit=50),
+    }
+    _emit(out, as_json)
+
+
+@research_app.command("product-convert-topic")
+def cmd_product_convert_topic(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    name: Optional[str] = typer.Option(None, "--name"),
+    one_liner: str = typer.Option("", "--one-liner"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Phase-F — seed a Product from an existing Topic's graph.
+    Auto-suggests competitors from graph_nodes kind in (product, company, competitor)."""
+    from ..research.product import convert_topic_to_product
+    _emit(convert_topic_to_product(topic, name=name, one_liner=one_liner), as_json)
+
+
 @research_app.command("insights")
 def cmd_research_insights(
     topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must be collected first)."),

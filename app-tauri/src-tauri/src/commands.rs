@@ -618,6 +618,221 @@ pub async fn hypothesis_stats(
     run_cli(&app, arg_refs).await.map_err(err_to_string)
 }
 
+// ─── Dual-Mode Pivot — Product Mode commands ─────────────────────────────
+// Commands for the new product-centric surface. See research/product.py,
+// product_sweep.py, product_digest.py. Every command uses run_cli which
+// routes dev→venv python, prod→PyInstaller sidecar automatically.
+
+#[tauri::command]
+pub async fn product_create(
+    app: AppHandle,
+    name: String,
+    one_liner: Option<String>,
+    category: Option<String>,
+    topic: Option<String>,
+    competitors: Option<serde_json::Value>,
+    monitoring_cadence: Option<String>,
+) -> Result<Value, String> {
+    let competitors_json = competitors
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "[]".to_string());
+    let ol = one_liner.unwrap_or_default();
+    let cat = category.unwrap_or_default();
+    let tp = topic.unwrap_or_default();
+    let cad = monitoring_cadence.unwrap_or_else(|| "daily".to_string());
+    let args: Vec<&str> = vec![
+        "research", "product-create",
+        "--name", &name,
+        "--one-liner", &ol,
+        "--category", &cat,
+        "--topic", &tp,
+        "--competitors", &competitors_json,
+        "--cadence", &cad,
+        "--json",
+    ];
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_list(
+    app: AppHandle,
+    active_only: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec!["research", "product-list", "--json"];
+    if !active_only.unwrap_or(true) { args.push("--all"); } else { args.push("--active-only"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_get(
+    app: AppHandle,
+    product_id: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "product-get", "--id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_update(
+    app: AppHandle,
+    product_id: String,
+    fields: serde_json::Value,
+) -> Result<Value, String> {
+    let fields_json = fields.to_string();
+    run_cli(
+        &app,
+        vec!["research", "product-update", "--id", &product_id,
+             "--fields", &fields_json, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_add_competitor(
+    app: AppHandle,
+    product_id: String,
+    name: String,
+    urls: Option<serde_json::Value>,
+    category: Option<String>,
+) -> Result<Value, String> {
+    let urls_json = urls.map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+    let cat = category.unwrap_or_default();
+    run_cli(
+        &app,
+        vec!["research", "product-add-competitor", "--id", &product_id,
+             "--name", &name, "--urls", &urls_json, "--category", &cat, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_remove_competitor(
+    app: AppHandle,
+    product_id: String,
+    name: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "product-remove-competitor", "--id", &product_id,
+             "--name", &name, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_delete(
+    app: AppHandle,
+    product_id: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "product-delete", "--id", &product_id, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_sweep(
+    app: AppHandle,
+    product_id: String,
+    trigger: Option<String>,
+    skip_collect: Option<bool>,
+) -> Result<Value, String> {
+    let t = trigger.unwrap_or_else(|| "manual".to_string());
+    let flag = if skip_collect.unwrap_or(true) { "--skip-collect" } else { "--with-collect" };
+    run_cli(
+        &app,
+        vec!["research", "product-sweep", "--id", &product_id,
+             "--trigger", &t, flag, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_signals(
+    app: AppHandle,
+    product_id: String,
+    since_days: Option<i64>,
+    include_resolved: Option<bool>,
+    limit: Option<i64>,
+) -> Result<Value, String> {
+    let sd = since_days.unwrap_or(7).to_string();
+    let lim = limit.unwrap_or(100).to_string();
+    let mut args: Vec<&str> = vec![
+        "research", "product-signals", "--id", &product_id,
+        "--since-days", &sd, "--limit", &lim, "--json",
+    ];
+    if include_resolved.unwrap_or(false) { args.push("--include-resolved"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_signal_action(
+    app: AppHandle,
+    signal_id: String,
+    action: String,
+    notes: Option<String>,
+    snooze_days: Option<i64>,
+) -> Result<Value, String> {
+    let n = notes.unwrap_or_default();
+    let sd = snooze_days.unwrap_or(7).to_string();
+    run_cli(
+        &app,
+        vec!["research", "product-signal-action", "--id", &signal_id,
+             "--action", &action, "--notes", &n, "--snooze-days", &sd, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_digest(
+    app: AppHandle,
+    product_id: String,
+    days: Option<i64>,
+) -> Result<Value, String> {
+    // Digest is plain markdown, not JSON — surface through the same
+    // plain-text path as export_brief. Reusing the run_cli infrastructure
+    // with tolerant parsing: sidecar emits markdown on stdout, run_cli's
+    // parse_or_diagnostic wraps it in a `{_parse_error:true, _raw}` shape
+    // which the frontend detects and renders as plain string.
+    let d = days.unwrap_or(7).to_string();
+    let out = run_cli(
+        &app,
+        vec!["research", "product-digest", "--id", &product_id, "--days", &d],
+    ).await.map_err(err_to_string)?;
+    // Return the raw string wrapped in a known shape.
+    if let Some(raw) = out.get("_raw").and_then(|v| v.as_str()) {
+        return Ok(serde_json::json!({"ok": true, "markdown": raw}));
+    }
+    // If somehow valid JSON came back, still pass through.
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn product_dashboard(
+    app: AppHandle,
+    product_id: String,
+    days: Option<i64>,
+) -> Result<Value, String> {
+    let d = days.unwrap_or(7).to_string();
+    run_cli(
+        &app,
+        vec!["research", "product-dashboard", "--id", &product_id,
+             "--days", &d, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_convert_topic(
+    app: AppHandle,
+    topic: String,
+    name: Option<String>,
+    one_liner: Option<String>,
+) -> Result<Value, String> {
+    let n = name.unwrap_or_default();
+    let ol = one_liner.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "product-convert-topic", "--topic", &topic,
+        "--one-liner", &ol, "--json",
+    ];
+    if !n.is_empty() { args.push("--name"); args.push(&n); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Run the Problem -> Why -> Science -> Solution pipeline for a topic.
 /// Returns a summary JSON or `{ok: false, skipped: true, reason}` if no
 /// LLM provider is configured.

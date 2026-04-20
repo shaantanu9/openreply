@@ -97,6 +97,20 @@ fn main() {
             commands::schedule_status,
             commands::schedule_enable_topic,
             commands::schedule_mark_seen,
+            // Dual-Mode Pivot — Product Mode
+            commands::product_create,
+            commands::product_list,
+            commands::product_get,
+            commands::product_update,
+            commands::product_add_competitor,
+            commands::product_remove_competitor,
+            commands::product_delete,
+            commands::product_sweep,
+            commands::product_signals,
+            commands::product_signal_action,
+            commands::product_digest,
+            commands::product_dashboard,
+            commands::product_convert_topic,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");

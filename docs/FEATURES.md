@@ -2,8 +2,8 @@
 
 > A complete inventory of what's shipped, how to use it, and an honest coverage map against the Dual-Mode Pivot.
 
-**Version:** 2026-04-20 (post-ROADMAP-completion)
-**Status:** All 11 ROADMAP phases shipped. Dual-Mode Product Mode NOT yet shipped (see §15).
+**Version:** 2026-04-20 (post-Dual-Mode-foundation)
+**Status:** All 11 ROADMAP phases + DUAL_MODE_PIVOT Phases A/B/C/F shipped. Phases D (OAuth), E (billing), G (cloud/share) deferred — see §15.
 **Related:** `docs/ROADMAP.md`, `docs/DUAL_MODE_PIVOT.md`, `docs/GAP_MAP_METHODOLOGY.md`, `docs/GAP_MAP_GUIDE.md`
 
 ---
@@ -525,7 +525,35 @@ Degrades gracefully when not installed — palace calls return empty results, no
 
 ## 15. Coverage vs Dual-Mode Pivot
 
-**Short answer:** No. The ROADMAP phases (1–11) we just shipped are the **Topic Mode enhancement** roadmap. The Dual-Mode Pivot describes a separate **Product Mode** (§4 of DUAL_MODE_PIVOT.md) that is roughly **5 months of additional work** (Phases A–G in that doc, ~weeks 1–20).
+**Updated 2026-04-20 after shipping Product Mode foundation.**
+
+Phases **A + B + C + F** from `docs/DUAL_MODE_PIVOT.md` are now shipped (local-first). Phases **D + E + G** remain deferred — they require architectural shifts (OAuth, accounts, cloud backend) that are out of scope for a local desktop app today.
+
+### 15.0 What Product Mode looks like now
+
+- **Register a product:** `#/products` → "Register a product" → name, one-liner, category, competitors, linked topic. Or: "Convert an existing topic" → auto-extracts competitors from the graph.
+- **Daily Dashboard:** `#/product/<id>` shows 5 sections in one scroll:
+  - **The Mirror** — your product's regression signals + mention spikes
+  - **The Lens** — per-competitor release/vulnerability counts
+  - **The Field** — category emerging / rising / top findings
+  - **The Signals** — ranked by severity × confidence with 4 action verbs (Acted / Convert to bet / Snooze 7d / Dismiss)
+  - **Recent sweeps** — timestamped run history
+- **Run a sweep:** button on the dashboard header — runs `daily_product_sweep` which re-synthesizes, diffs, emits typed signals.
+- **Copy weekly digest:** same header — markdown digest copies to clipboard for Slack/Notion.
+- **Signal → Bet:** clicking "Convert to bet" on any signal creates a `hypothesis_tests` row (Phase 3 state machine) with the signal title/description as the WE BELIEVE text and a 14-day time box.
+
+### 15.0.1 Six typed signals (canonical)
+
+| Emoji | Type | When it fires | Suggested action |
+|---|---|---|---|
+| 🚀 | `competitor_release` | Tracked competitor ships something | "Position against or consider migration CTA" |
+| ⚠ | `chronic_emergence` | New painpoint crosses chronic threshold (Ulwick ≥12) | "Add to roadmap; consider cheapest-test hypothesis" |
+| 🔻 | `your_product_regression` | Your product's complaint velocity +30%+ WoW | "Immediate engineering attention" |
+| 📈 | `unmet_need_intensifying` | Existing need's Ulwick score jumped ≥1.0 | "Prioritize in next planning cycle" |
+| 🎯 | `competitor_vulnerability` | Competitor has evidenced weakness | "Run a positioning campaign" |
+| 🔊 | `mention_spike` | Entity mentioned 4×+ normal rate | "Check the thread" |
+
+**Severity scale:** 0–1. Dashboard renders high (combined ≥0.5) with a red left border, mid (≥0.3) with orange, low with gray.
 
 ### 15.1 What's shipped that IS foundational for Product Mode
 
@@ -541,23 +569,28 @@ These phases lay groundwork Product Mode can lean on:
 | Phase 10 — research linker | Academic backing in signals | Generalizes to any semantic match |
 | Phase 11 — dark mode, dense cards | UI polish for daily-use context | Required for a tool users open every morning |
 
-### 15.2 What's NOT shipped that Product Mode requires
-
-From `docs/DUAL_MODE_PIVOT.md`:
+### 15.2 Current coverage against DUAL_MODE_PIVOT.md
 
 | DUAL_MODE_PIVOT section | Required for Product Mode | Shipped? |
 |---|---|---|
-| §4.1 Onboarding branch (exploring vs have-a-product) | New wizard path | ❌ |
-| §4.2 Daily Dashboard (The Mirror / Lens / Field / Signals / Hypotheses) | Full new dashboard shell | ❌ (we only have topic Dashboard) |
-| §4.3 Connected private sources (Intercom/Stripe/Zendesk OAuth) | OAuth flows + private ingestion | ❌ |
-| §4.4 Weekly digest email/Slack | Email templating + delivery infra | ❌ |
-| §7.1 New entities (Product, Competitor, ConnectedSource, Signal) | Full schema addition | ❌ |
-| §7.2 `product_id` nullable FK on Topic/Finding/Collection | Migration | ❌ |
-| §7.3 Delta engine (`daily_product_sweep`) | Scheduled sweep + typed signals | ⚠️ partial — `topic_runs` exists but no product-sweep |
-| §8 Pricing tiers (Founder/Team/Growth/Enterprise) | Stripe + account system + seat gating | ❌ |
+| §4.1 Onboarding branch (exploring vs have-a-product) | New wizard path | ✅ step 1 branches |
+| §4.2 Daily Dashboard (Mirror / Lens / Field / Signals / Hypotheses) | 5-section dashboard shell | ✅ `#/product/<id>` |
+| §4.2 Signal types + action verbs | 6 typed constructors, 4 verbs | ✅ + severity × confidence ranking |
+| §4.3 Connected private sources (Intercom/Stripe/Zendesk OAuth) | OAuth + vault + private ingestion | ❌ **deferred — needs cloud/credential vault** |
+| §4.4 Weekly digest — email/Slack delivery | SMTP + webhook infra | ⚠️ markdown → clipboard only |
+| §7.1 New entities (Product, Competitor, ConnectedSource, Signal) | Full schema | ✅ 4 tables (ConnectedSource deferred) |
+| §7.2 `product_id` nullable FK on Topic/Finding | Migration | ⚠️ product.topic links the two; Finding-level FK not needed |
+| §7.3 Delta engine (`daily_product_sweep`) | Scheduled sweep + typed signals | ✅ via `run_product_sweep` + launchd cron scaffolded |
+| §8 Pricing tiers (Founder/Team/Growth/Enterprise) | Stripe + account system | ❌ **deferred — single-user local today** |
 | §9.2 Acquisition channels | LinkedIn / Indie Hackers / PH launch | N/A (not engineering) |
-| §10 Validation plan (3 founders, 2 weeks) | Design-partner experiment | ❌ not yet run |
-| §11 Implementation Phases A–G | ~5 months of work | ❌ |
+| §10 Validation plan (3 founders, 2 weeks) | Design-partner experiment | ❌ ready to run — product is shippable |
+| §11 Implementation Phase A (weeks 1–3) | Dual-mode foundation | ✅ |
+| §11 Implementation Phase B (weeks 4–6) | Delta engine + dashboard | ✅ |
+| §11 Implementation Phase C (weeks 7–9) | Signals + weekly digest | ✅ (local digest; email/Slack deferred) |
+| §11 Implementation Phase D (weeks 10–13) | Connected sources | ❌ deferred |
+| §11 Implementation Phase E (weeks 14–16) | Pricing + billing | ❌ deferred |
+| §11 Implementation Phase F (week 17) | Topic → Product conversion | ✅ |
+| §11 Implementation Phase G (weeks 18–20) | Export/share/virality | ⚠️ markdown export only |
 
 ### 15.3 Honest gap assessment
 

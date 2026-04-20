@@ -15,6 +15,7 @@ import { renderScience } from './screens/science.js';
 import { renderSearch } from './screens/search.js';
 import { renderWatch } from './screens/watch.js';
 import { renderFind } from './screens/find.js';
+import { renderProductsList, renderProductDashboard, renderProductSetup } from './screens/product.js';
 import { runHealthCheck, healthIsBlocking } from './lib/healthCheck.js';
 
 const routes = [
@@ -32,6 +33,10 @@ const routes = [
   { match: /^\/search\/?$/,         render: renderSearch },
   { match: /^\/find\/?$/,           render: renderFind },
   { match: /^\/watch\/?$/,          render: renderWatch },
+  // Dual-Mode Pivot — Product Mode routes
+  { match: /^\/products\/?$/,               render: renderProductsList },
+  { match: /^\/product\/([^/]+)\/setup$/,   render: renderProductSetup },
+  { match: /^\/product\/([^/]+)$/,          render: renderProductDashboard },
 ];
 
 // Route generation counter — bumped on every navigation so screens can tell
@@ -124,6 +129,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         const a = $('#nav-topics-count'); if (a) a.textContent = n;
         const b = $('#nav-dash-count');   if (b) b.textContent = n;
       }
+    } catch {}
+    try {
+      const resp = await api.productList(true);
+      const products = resp?.products || [];
+      const el = $('#nav-products-count');
+      if (el) el.textContent = products.length;
     } catch {}
   })();
 

@@ -380,6 +380,89 @@ def init_schema(db: Database) -> None:
         db["hypothesis_tests"].create_index(["status"])
         db["hypothesis_tests"].create_index(["topic", "status"])
 
+    # ── Dual-Mode Pivot — Product Mode tables (2026-04-20) ───────────────
+    # Adds a product-centric surface alongside the existing topic-centric
+    # one. A Product is a first-class entity a PM/CEO opens every morning;
+    # it owns a set of competitors, connected sources, and an append-only
+    # signal stream produced by daily_product_sweep(). See
+    # docs/DUAL_MODE_PIVOT.md §7 for the entity design.
+    if "products" not in db.table_names():
+        db["products"].create(
+            {
+                "id": str,                   # slug, e.g. "mindwave-pro"
+                "name": str,
+                "one_liner": str,
+                "category": str,
+                "topic": str,                # linked topic (for shared corpus + synthesis)
+                "created_at": str,
+                "last_swept_at": str,
+                "monitoring_cadence": str,   # 'daily' | 'weekly'
+                "is_active": int,            # 1/0
+                "metadata_json": str,        # pricing notes, urls, etc.
+            },
+            pk="id",
+        )
+        db["products"].create_index(["is_active"])
+
+    if "product_competitors" not in db.table_names():
+        db["product_competitors"].create(
+            {
+                "product_id": str,
+                "competitor_name": str,
+                "urls_json": str,            # {"website":..,"appstore":..,"subreddit":..}
+                "category": str,
+                "tracked_since": str,
+                "is_active": int,
+            },
+            pk=("product_id", "competitor_name"),
+        )
+        db["product_competitors"].create_index(["product_id"])
+
+    if "product_signals" not in db.table_names():
+        db["product_signals"].create(
+            {
+                "id": str,                   # uuid
+                "product_id": str,
+                "signal_type": str,          # competitor_release|chronic_emergence|your_product_regression|unmet_need_intensifying|competitor_vulnerability|mention_spike
+                "severity": float,           # 0-1
+                "confidence": float,         # 0-1
+                "detected_at": str,
+                "title": str,
+                "description": str,
+                "evidence_post_ids": str,    # JSON array
+                "related_competitor": str,   # nullable
+                "suggested_action": str,
+                "user_action": str,          # nullable | dismissed | acted | snoozed | hypothesis
+                "user_action_at": str,
+                "snoozed_until": str,        # ISO UTC
+                "resolution_notes": str,
+                "created_at": str,
+            },
+            pk="id",
+        )
+        db["product_signals"].create_index(["product_id"])
+        db["product_signals"].create_index(["product_id", "user_action"])
+        db["product_signals"].create_index(["signal_type"])
+        db["product_signals"].create_index(["detected_at"])
+
+    if "product_sweeps" not in db.table_names():
+        db["product_sweeps"].create(
+            {
+                "id": int,
+                "product_id": str,
+                "run_at": str,
+                "trigger": str,              # manual | scheduled | initial
+                "signals_generated": int,
+                "posts_added": int,
+                "duration_ms": int,
+                "error": str,
+                "notes": str,
+            },
+            pk="id",
+        )
+        db["product_sweeps"].create_index(["product_id"])
+        db["product_sweeps"].create_index(["product_id", "run_at"])
+
     # Zombie sweep: any fetch row with ended_at=NULL older than 10 min is a
     # crashed/killed collect that never ran its teardown. Closing these out
     # on startup prevents the UI from showing a stale "Collecting…" chip

@@ -349,6 +349,50 @@ export const api = {
   researchLinks: (topic, finding = null) =>
     cachedInvoke('research_links', { topic, finding }, 30000),
 
+  // ── Dual-Mode Pivot — Product Mode ─────────────────────────────────
+  productCreate: (payload) => {
+    invalidate('product_list'); invalidate('product_dashboard');
+    return invoke('product_create', payload);
+  },
+  productList: (activeOnly = true) =>
+    cachedInvoke('product_list', { activeOnly }, 10000),
+  productGet: (productId) =>
+    cachedInvoke('product_get', { productId }, 10000),
+  productUpdate: (productId, fields) => {
+    invalidate('product_list'); invalidate('product_get'); invalidate('product_dashboard');
+    return invoke('product_update', { productId, fields });
+  },
+  productAddCompetitor: (productId, name, urls = {}, category = '') => {
+    invalidate('product_get'); invalidate('product_dashboard');
+    return invoke('product_add_competitor', { productId, name, urls, category });
+  },
+  productRemoveCompetitor: (productId, name) => {
+    invalidate('product_get'); invalidate('product_dashboard');
+    return invoke('product_remove_competitor', { productId, name });
+  },
+  productDelete: (productId) => {
+    invalidate('product_list'); invalidate('product_get'); invalidate('product_dashboard');
+    return invoke('product_delete', { productId });
+  },
+  productSweep: (productId, trigger = 'manual', skipCollect = true) => {
+    invalidate('product_dashboard'); invalidate('product_signals');
+    return invoke('product_sweep', { productId, trigger, skipCollect });
+  },
+  productSignals: (productId, sinceDays = 7, includeResolved = false, limit = 100) =>
+    cachedInvoke('product_signals', { productId, sinceDays, includeResolved, limit }, 10000),
+  productSignalAction: (signalId, action, notes = '', snoozeDays = 7) => {
+    invalidate('product_signals'); invalidate('product_dashboard');
+    return invoke('product_signal_action', { signalId, action, notes, snoozeDays });
+  },
+  productDigest: (productId, days = 7) =>
+    invoke('product_digest', { productId, days }),
+  productDashboard: (productId, days = 7) =>
+    cachedInvoke('product_dashboard', { productId, days }, 15000),
+  productConvertTopic: (topic, name = null, oneLiner = '') => {
+    invalidate('product_list');
+    return invoke('product_convert_topic', { topic, name, oneLiner });
+  },
+
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic, force = false) => invoke('run_temporal_gaps', { topic, force }),
   runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),

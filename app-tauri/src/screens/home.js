@@ -284,6 +284,8 @@ export async function renderHome(root) {
     <div id="active-collect-slot"></div>
     <div id="byok-prompt-slot"></div>
     <div id="palace-nudge-slot"></div>
+    <!-- Dual-Mode Pivot — Your Products card. Populated async by loadProductsCard(). Silent when none. -->
+    <div id="products-card-slot"></div>
     <!-- Phase-4 weekly-delta card. Populated async by loadWeeklyDeltas() -->
     <div id="weekly-deltas-slot"></div>
     <!-- Phase-3 active bets summary. Populated async by loadBetsSummary() -->
@@ -394,6 +396,7 @@ export async function renderHome(root) {
   loadActiveCollect(root);
   loadByokPrompt(root);
   loadPalaceNudge(root);
+  loadProductsCard(root);
   loadWeeklyDeltas(root);
   loadBetsSummary(root);
   loadTopOpportunities(root);
@@ -1025,6 +1028,50 @@ async function loadTopOpportunities(root) {
         </div>
       </div>
       <div class="top-opps-rows">${items}</div>
+    </section>
+  `;
+  window.refreshIcons?.();
+}
+
+// ─── Dual-Mode Pivot — "Your products" Dashboard card ────────────────
+// Silent when user has no products. When ≥1, shows each registered product
+// with open-signal count + last-sweep freshness + click-to-open.
+async function loadProductsCard(root) {
+  const slot = root.querySelector('#products-card-slot');
+  if (!slot) return;
+  let resp;
+  try {
+    resp = await api.productList(true);
+  } catch { slot.innerHTML = ''; return; }
+  const products = resp?.products || [];
+  if (!products.length) { slot.innerHTML = ''; return; }
+
+  const tile = (p) => {
+    const open = p.open_signal_count || 0;
+    const last = p.last_swept_at ? new Date(p.last_swept_at).toLocaleDateString() : 'never';
+    return `
+      <a class="prod-card-row" href="#/product/${encodeURIComponent(p.id)}">
+        <div class="prod-card-title">
+          <b>${esc(p.name)}</b>
+          ${open > 0 ? `<span class="prod-open-pill">${open} open</span>` : ''}
+        </div>
+        <div class="muted prod-card-meta">
+          ${p.competitor_count || 0} competitors · last sweep: ${esc(last)}
+        </div>
+      </a>
+    `;
+  };
+
+  slot.innerHTML = `
+    <section class="card products-home-card">
+      <div class="card-head">
+        <div>
+          <h3><i data-lucide="package"></i> Your products <span class="muted">(${products.length})</span></h3>
+          <p class="muted">Daily-use monitoring surface · click a product to open its dashboard</p>
+        </div>
+        <a class="pill" href="#/products" style="text-decoration:none;color:inherit">See all →</a>
+      </div>
+      <div class="prod-card-grid">${products.slice(0, 6).map(tile).join('')}</div>
     </section>
   `;
   window.refreshIcons?.();
