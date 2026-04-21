@@ -224,8 +224,32 @@ Log each milestone completion below:
 - [x] L1.4 — button system available (.btn + .btn--{primary|secondary|ghost|danger})
 - [x] L1.5 — motion/shadow/focus utilities
 - [x] **L1 sign-off** (user approved "ok now start l2")
-- [x] L2 — topic-page stage rail + breadcrumbs (commit TBD)
-- [ ] L3 — started (not yet)
+- [x] L2 — topic-page stage rail + breadcrumbs (commit 21f23dd)
+- [x] L3 — canonical empty-state component + 14 presets (commit TBD)
+
+## L3 completion notes
+
+Shipped the **infrastructure** for teaching empty states — not a
+screen-by-screen rewrite. Every screen can now replace its ad-hoc
+"No data" HTML with a single `renderEmpty(EMPTY_PRESETS.<key>())`
+call and get:
+
+- Icon + headline + 2-line teaching body + primary CTA + optional
+  secondary + optional footer link
+- Consistent sizing, spacing, typography (uses the Layer-1 scale)
+- rg-reveal fade-slide on mount
+- Dark-mode automatically (tokens only)
+- 14 pre-written presets covering every major screen:
+    topic_no_corpus · insights_no_report · insights_credits_exhausted
+    map_no_graph · evidence_no_findings · research_no_papers
+    solutions_not_run · trends_no_temporal · sentiment_not_run
+    chat_first_message · home_no_topics · posts_empty · sources_empty
+    bets_none · activity_empty · generic
+
+Per-screen migration (swapping the old `<div class="empty-big">` /
+`empty-state` HTML to `renderEmpty(...)` calls) is the **next pass**
+— not part of L3's core scope. Each screen is a one-line change and
+can land as small follow-ups without re-opening the scope doc.
 
 ### L1 exit notes
 
