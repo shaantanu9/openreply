@@ -93,6 +93,19 @@ function renderFindingCard(f) {
     : '';
   const triangChip = triangulationChip(f.triangulation_strength);
 
+  // AG-C T2.4 — 👎 feedback button. Verdict + optional note flow back
+  // into the next synthesize prompt as a negative-examples block so the
+  // LLM stops re-surfacing things the user already rejected.
+  const feedbackBtn = `
+    <button
+      class="insight-feedback-btn"
+      data-fb-title="${esc(f.title || '')}"
+      data-fb-kind="${esc(f.kind || 'painpoint')}"
+      title="Flag this finding as wrong / off-topic / spam. Feeds the next synthesis."
+      aria-label="Flag finding">
+      <span aria-hidden="true">👎</span>
+    </button>
+  `;
   return `
     <div class="insight-card ${cls}" data-finding="${esc(f.title || '')}">
       <div class="insight-head">
@@ -100,9 +113,12 @@ function renderFindingCard(f) {
           <span class="insight-kind">${kindEmoji}</span>
           <h3>${esc(f.title || '(untitled)')}</h3>
         </div>
-        <div class="insight-score ${cls}" title="Ulwick Opportunity = importance + max(importance − satisfaction, 0). >15 extreme, 10–15 clear, <10 overserved.">
-          <b>${op.toFixed(1)}</b>
-          <span>opportunity</span>
+        <div class="insight-head-right">
+          ${feedbackBtn}
+          <div class="insight-score ${cls}" title="Ulwick Opportunity = importance + max(importance − satisfaction, 0). >15 extreme, 10–15 clear, <10 overserved.">
+            <b>${op.toFixed(1)}</b>
+            <span>opportunity</span>
+          </div>
         </div>
       </div>
 
@@ -289,12 +305,45 @@ function renderEmpty(reason) {
   `;
 }
 
-function renderError(err) {
+function renderError(err, errCode = null, provider = null) {
+  // Explicit CTA paths for known error classes. Generic retry is the
+  // fallback — but if we know exactly what went wrong, send the user to
+  // the fix with one click instead of making them diagnose from the
+  // error text.
+  let extraBtn = '';
+  let chunkedBtn = '';
+  if (errCode === 'credits_exhausted' || errCode === 'context_overflow') {
+    extraBtn = `
+      <button class="btn btn-ghost btn-bordered icon-btn" onclick="location.hash='#/settings'">
+        <i data-lucide="key-round"></i> Switch provider in Settings
+      </button>`;
+    // Chunked mode is THE fix for credit/context errors — send many small
+    // requests instead of one big one. Promote it to the primary action.
+    chunkedBtn = `
+      <button class="btn btn-primary icon-btn" id="btn-insights-chunked" title="Split the corpus into small chunks and synthesize each separately. Works even with low credits.">
+        <i data-lucide="layers"></i> Try Deep scan (chunked)
+      </button>`;
+  } else if (errCode === 'invalid_key') {
+    extraBtn = `
+      <button class="btn btn-primary icon-btn" onclick="location.hash='#/settings'">
+        <i data-lucide="key-round"></i> Re-enter API key
+      </button>`;
+  }
+  const providerPill = provider
+    ? `<span class="muted" style="font-size:11px">provider: <code>${esc(provider)}</code></span>`
+    : '';
   return `
     <div class="empty-big">
       <h3>Couldn't generate insights</h3>
       <p>${esc(err || 'unknown error')}</p>
-      <button class="btn btn-primary icon-btn" id="btn-insights-run"><i data-lucide="refresh-cw"></i> Retry</button>
+      ${providerPill}
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">
+        ${chunkedBtn}
+        <button class="btn btn-ghost btn-bordered icon-btn" id="btn-insights-run">
+          <i data-lucide="refresh-cw"></i> Retry
+        </button>
+        ${extraBtn}
+      </div>
     </div>
   `;
 }
@@ -371,7 +420,40 @@ function renderFull(report, contentEl, topic) {
 
       <div class="insights-findings">
         <h2>Top opportunities <span class="muted">(${findings.length})</span></h2>
+        <!-- AG-E saved views mount -->
+        <div class="saved-views-bar" id="ag-e-saved-views-bar" data-topic="${esc(topic || '')}"
+          style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px">
+          <label style="font-size:12px;color:var(--ink-3)">Saved view:</label>
+          <select id="ag-e-saved-views-select" class="select-sm" style="min-width:180px">
+            <option value="">All findings</option>
+          </select>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="ag-e-saved-views-save"
+            title="Save the current filter as a view">Save current…</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="ag-e-saved-views-clear"
+            title="Show every finding" hidden>Clear filter</button>
+          <span id="ag-e-saved-views-status" style="font-size:11px;color:var(--ink-3)"></span>
+        </div>
+        <!-- /AG-E saved views mount -->
         ${findings.length ? findings.map(renderFindingCard).join('') : '<p class="muted">No findings extracted.</p>'}
+        ${(report._relevance_dropped_findings && report._relevance_dropped_findings.length) ? `
+          <!-- T1.6: dropped-findings fold. Surfaces which findings the relevance gate dropped + why. -->
+          <details class="dropped-findings-fold" style="margin-top:14px;padding:10px 14px;background:var(--surface-2,#FAF4EA);border-radius:8px">
+            <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-2)">
+              ⚖ ${report._relevance_dropped_count} off-topic finding${report._relevance_dropped_count === 1 ? '' : 's'} dropped by relevance gate
+              (threshold ${report._relevance_threshold?.toFixed?.(2) ?? '—'})
+            </summary>
+            <ul style="margin:8px 0 0;padding-left:20px;font-size:12px">
+              ${report._relevance_dropped_findings.map(f => `
+                <li style="margin:4px 0">
+                  <b>${esc(f.title || '(untitled)')}</b>
+                  <span class="muted">— ${esc(f._dropped_reason || `score ${(f._relevance_score ?? 0).toFixed(2)}`)}</span>
+                </li>`).join('')}
+            </ul>
+            <p class="muted" style="font-size:11px;margin:8px 0 0">
+              Tune: <code>GAPMAP_FINDING_RELEVANCE_THRESHOLD</code> env (0 disables the gate).
+            </p>
+          </details>
+        ` : ''}
       </div>
 
       ${competitors.length ? `
@@ -588,7 +670,11 @@ async function runSynth(contentEl, topic) {
   }
   if (contentEl.dataset.tab !== 'insights') return;
   if (!runResult || !runResult.ok) {
-    set(renderError(runResult?.error || 'Synthesis returned no report.'));
+    set(renderError(
+      runResult?.error || 'Synthesis returned no report.',
+      runResult?.error_code,
+      runResult?.provider,
+    ));
     wireRunButton(contentEl, topic);
     window.refreshIcons?.();
     return;
@@ -617,6 +703,54 @@ async function runSynth(contentEl, topic) {
 
 function wireRunButton(contentEl, topic) {
   $('#btn-insights-run', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
+  $('#btn-insights-chunked', contentEl)?.addEventListener('click', () => runChunkedSynth(contentEl, topic));
+}
+
+// Map-reduce chunked synth. Used when the single-call path hits 402/credit
+// or context-overflow errors, or when the user explicitly wants a deeper
+// scan. Each chunk is a small LLM call (default 800 output tokens, ~600
+// input tokens of corpus) so low-credit providers can still produce
+// findings. Deterministic merge on the Python side dedupes across chunks.
+async function runChunkedSynth(contentEl, topic) {
+  const set = (html) => { if (contentEl.dataset.tab === 'insights') contentEl.innerHTML = html; };
+  set(`
+    <div class="empty-state" style="padding:40px;text-align:center">
+      <div class="map-building-spinner" style="margin:0 auto 10px"></div>
+      <div style="font-weight:600;margin-bottom:4px">Deep scan (chunked mode)…</div>
+      <div style="color:var(--ink-3);font-size:13px">Splitting the corpus into small chunks and synthesizing each in parallel. Longer than the fast path but works on low-credit providers.</div>
+    </div>
+  `);
+  let report;
+  try {
+    report = await api.synthesizeInsightsChunked(topic, {
+      chunkSize: 40,
+      maxWorkers: null,       // auto per provider
+      maxTokensPerChunk: 800,
+    });
+  } catch (e) {
+    if (contentEl.dataset.tab !== 'insights') return;
+    set(renderError(e?.message || String(e)));
+    wireRunButton(contentEl, topic);
+    window.refreshIcons?.();
+    return;
+  }
+  if (contentEl.dataset.tab !== 'insights') return;
+  if (!report || !report.ok) {
+    set(renderError(
+      report?.error || 'Chunked synth returned no report.',
+      report?.error_code,
+      report?.provider,
+    ));
+    wireRunButton(contentEl, topic);
+    window.refreshIcons?.();
+    return;
+  }
+  api.linkResearch(topic, 3).catch(() => {});
+  await annotateWithResearchLinks(report, topic);
+  set(renderFull(report, contentEl, topic));
+  wireCards(contentEl, topic, report);
+  $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
+  window.refreshIcons?.();
 }
 
 // ─── Phase 8 — Chat sidebar on Insights tab ──────────────────────────
@@ -906,6 +1040,52 @@ function wireCards(contentEl, topic, report) {
         btn.disabled = false;
         btn.innerHTML = '<i data-lucide="target"></i> Save as bet';
         window.refreshIcons?.();
+      }
+    });
+  });
+
+  // ── AG-C T2.4 — Finding feedback 👎 wiring. Prompt user for verdict
+  // + optional note, persist via api.feedbackRecord, disable button on
+  // success so double-click doesn't double-record. Uses `prompt()` for
+  // verdict (keeps implementation minimal — a polished modal can land
+  // later without changing the backend contract).
+  contentEl.querySelectorAll('.insight-feedback-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (btn.disabled) return;
+      const title = btn.dataset.fbTitle || '';
+      const kind = btn.dataset.fbKind || 'painpoint';
+      if (!title) return;
+      const verdictRaw = window.prompt(
+        'Why is this finding wrong?\n\n' +
+        'Enter one of:\n' +
+        '  wrong      — the claim is incorrect\n' +
+        '  off_topic  — not relevant to this topic\n' +
+        '  spam       — low-signal / marketing noise',
+        'wrong',
+      );
+      if (verdictRaw == null) return;  // user cancelled
+      const verdict = verdictRaw.trim().toLowerCase();
+      if (!['wrong', 'off_topic', 'spam'].includes(verdict)) {
+        alert('Verdict must be one of: wrong, off_topic, spam');
+        return;
+      }
+      const note = window.prompt(
+        'Optional note (leave blank to skip). This is stored with the feedback.',
+        '',
+      ) || '';
+      btn.disabled = true;
+      btn.title = 'Saving feedback…';
+      try {
+        await api.feedbackRecord(topic, title, kind, verdict, note.trim());
+        btn.innerHTML = '<span aria-hidden="true">✓</span>';
+        btn.title = `Flagged as ${verdict}. Will be excluded from the next synthesize.`;
+        btn.classList.add('insight-feedback-btn-done');
+      } catch (err) {
+        btn.disabled = false;
+        btn.title = 'Click to flag this finding';
+        alert(`Failed to record feedback: ${err?.message || err}`);
       }
     });
   });

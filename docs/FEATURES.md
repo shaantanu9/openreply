@@ -521,6 +521,10 @@ Optional retrieval layer at `palace/` directory. Used by:
 
 Degrades gracefully when not installed — palace calls return empty results, nothing crashes.
 
+### 14.6 LFS operations
+
+The PyInstaller sidecar (~220 MB per rebuild) is tracked via Git LFS. Quarterly prune cadence, exact commands, and the quota-exhaustion runbook live in **[docs/ops/lfs-maintenance.md](ops/lfs-maintenance.md)**. CI jobs check out with `lfs: false` to stay inside the 1 GB/mo free-tier bandwidth budget.
+
 ---
 
 ## 15. Coverage vs Dual-Mode Pivot
@@ -620,6 +624,81 @@ These phases lay groundwork Product Mode can lean on:
 Timeline: 2 weeks. De-risks the entire 5-month Phase A–G build.
 
 This experiment requires zero new code. Everything needed (collection, synthesis, competitor extraction, hypothesis cards, weekly deltas) is already shipped. The test is **whether users want a product-centric surface, not whether we can build one.**
+
+---
+
+## 15.5 Quality & safety layers (2026-04-21)
+
+Four cross-cutting fixes shipped in the quality-pass session. These are
+not phases on the main ROADMAP but are critical to making the output
+trustworthy.
+
+### 15.5.1 Dense graph relations
+
+Was: `topic → finding → post` tree only. Two painpoints about the same
+concept never linked. Users saw disconnected islands in the gap map.
+
+Now: after `upsert_semantic` persists findings, a post-pass uses ChromaDB
+MiniLM ONNX embeddings + shared-evidence signal to emit four new edge kinds:
+
+- `relates_to` — any pair of findings with cosine ≥ 0.55. Weight = similarity.
+- `potentially_solves` — workaround↔painpoint ≥ 0.50.
+- `could_address` — feature_wish↔painpoint ≥ 0.50.
+- `co_evidenced` — two findings sharing ≥2 evidence posts.
+
+Per-node top-N cap (default 8) prevents hairballs. Env-tunable. Hooked
+into both `upsert_semantic` and `build_structural`. See
+`graph/relations.py` and `~/.claude/skills/dense-graph-relations/`.
+
+### 15.5.2 Relevance gate (anti-garbage)
+
+Was: Reddit / HN search on "meditation sound frequency brainwave app"
+token-matched r/politics threads about ICE, Epstein, Disney+. The LLM
+extractor faithfully surfaced "Lack of transparency in law enforcement"
+as a meditation-app painpoint.
+
+Now: three-layer relevance filter using the same MiniLM embedder:
+
+| Layer | Threshold env | Default | What it does |
+|---|---|---|---|
+| Collect-time | `GAPMAP_RELEVANCE_GATE_THRESHOLD` | 0.28 | `_tag_posts` gates by cosine-to-topic before inserting into `topic_posts`. Recall-leaning. |
+| LLM-output | `GAPMAP_FINDING_RELEVANCE_THRESHOLD` | 0.40 | `synthesize_insights` drops findings whose label is off-topic. Precision-leaning. |
+| Retroactive | `research clean-corpus --topic T --threshold 0.30` | user | Cleans existing corpora. Dry-run by default; inspect `sample_dropped` first. |
+
+Set any threshold to 0 to disable. Graceful chromadb-missing skip.
+
+### 15.5.3 Topic resolver (anti-duplicate)
+
+Was: typing `Indian student exam stress` could land three rows — user-typed
++ LLM-lowercased + slug-only. Each split the corpus.
+
+Now: explicit user-respecting contract.
+- `resolve_topic(user_input, register=False)` is read-only. Never
+  auto-lowercases or silently redirects user input.
+- `topic_aliases` table populated ONLY by the LLM canonicalize path or
+  explicit merges. User retyping a variant is never auto-merged.
+- `find_existing_topic(user_input)` pre-check on the New Topic modal →
+  user prompted with "open existing / create separate" when a duplicate
+  is detected.
+- `merge_duplicate_topics(apply)` — retroactive cleanup scoped to
+  system-caused dupes only (traced via `topic_canonicalizations`).
+- `collect.py` moved the `topic_prefs` insert to AFTER canonicalize
+  resolves → only one row is ever written per collect.
+
+See `research/topic_resolver.py`, CLI: `research find-existing-topic`,
+`research merge-duplicate-topics`.
+
+### 15.5.4 Type-to-confirm delete
+
+Was: `confirm('Delete topic?')` one-click-away accidental loss.
+
+Now: reusable `confirmDestructiveAction({title, body, matchText,
+confirmLabel, confirmDanger, hint})` modal. User must type the exact
+topic name to unlock the Delete button. Escape / backdrop / Cancel all
+abort. Enter submits when matched. Lives in `lib/deleteConfirm.js` —
+reusable for Delete Product, Clear Data, Reset DB, etc.
+
+Wired on both Delete Topic sites in `screens/topic.js`.
 
 ---
 

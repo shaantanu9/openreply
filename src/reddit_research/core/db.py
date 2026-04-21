@@ -380,6 +380,93 @@ def init_schema(db: Database) -> None:
         db["hypothesis_tests"].create_index(["status"])
         db["hypothesis_tests"].create_index(["topic", "status"])
 
+    # ── 2026-04-21 Tier-1..6 build — additive schema for new features ────
+    # Soft-delete state on topic_prefs (T1.3). Nullable; NULL = not deleted.
+    # Populated with ISO timestamp when a user deletes; nightly sweep
+    # hard-purges rows older than 7 days.
+    try:
+        if "topic_prefs" in db.table_names():
+            cols = {c.name for c in db["topic_prefs"].columns}
+            if "deleted_at" not in cols:
+                db.executescript("ALTER TABLE topic_prefs ADD COLUMN deleted_at TEXT DEFAULT ''")
+    except Exception:
+        pass
+
+    # Finding feedback (T2.4) — user 👎 marking a finding as wrong / off-topic.
+    # Fed back into next synthesize prompt as a negative-example block.
+    if "finding_feedback" not in db.table_names():
+        db["finding_feedback"].create(
+            {
+                "id": int,
+                "topic": str,
+                "finding_title": str,
+                "finding_kind": str,      # painpoint | feature_wish | workaround | product
+                "verdict": str,           # 'wrong' | 'off_topic' | 'spam' | 'ok'
+                "note": str,
+                "created_at": str,
+            },
+            pk="id",
+        )
+        db["finding_feedback"].create_index(["topic"])
+        db["finding_feedback"].create_index(["topic", "verdict"])
+
+    # Saved views (T3.1) — persisted filter expressions.
+    if "saved_views" not in db.table_names():
+        db["saved_views"].create(
+            {
+                "id": int,
+                "scope": str,             # 'global' | 'topic:<slug>' | 'product:<id>'
+                "name": str,
+                "filter_json": str,
+                "pinned": int,
+                "created_at": str,
+                "updated_at": str,
+            },
+            pk="id",
+        )
+        db["saved_views"].create_index(["scope"])
+        db["saved_views"].create_index(["pinned"])
+
+    # Favorites / pinned topics (T6.6).
+    if "topic_favorites" not in db.table_names():
+        db["topic_favorites"].create(
+            {
+                "topic": str,
+                "position": int,
+                "added_at": str,
+            },
+            pk="topic",
+        )
+        db["topic_favorites"].create_index(["position"])
+
+    # Perf trace (T5.4) — rolling measurement of key sidecar calls.
+    if "perf_traces" not in db.table_names():
+        db["perf_traces"].create(
+            {
+                "id": int,
+                "op": str,
+                "topic": str,
+                "duration_ms": int,
+                "status": str,
+                "notes": str,
+                "ts": str,
+            },
+            pk="id",
+        )
+        db["perf_traces"].create_index(["op"])
+        db["perf_traces"].create_index(["topic"])
+
+    # Custom prompt overrides (T3.7) — per-template override set in Settings.
+    if "prompt_overrides" not in db.table_names():
+        db["prompt_overrides"].create(
+            {
+                "key": str,
+                "override_text": str,
+                "updated_at": str,
+            },
+            pk="key",
+        )
+
     # ── Dual-Mode Pivot — Product Mode tables (2026-04-20) ───────────────
     # Adds a product-centric surface alongside the existing topic-centric
     # one. A Product is a first-class entity a PM/CEO opens every morning;
@@ -526,6 +613,11 @@ def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
         return len(rows)
     try:
         from ..retrieval.palace import is_available, is_model_ready, upsert_posts_many
+        # is_model_ready() also probes for the bundled / on-disk tar and
+        # seeds it into the Chroma cache automatically — so a fresh MCP
+        # process sees True the moment ChromaDB is ready to extract on
+        # first embed. Callers that fetched-then-MCP-restarted will pick
+        # the index up too.
         if is_available() and is_model_ready():
             upsert_posts_many(rows)
     except Exception:

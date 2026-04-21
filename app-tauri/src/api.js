@@ -178,6 +178,9 @@ export const api = {
   //   - list_exports: changes only after export button click (invalidated there) → 30s
   cliInfo:         ()        => cachedInvoke('cli_info',       null, 30000),
   listTopics:      ()        => cachedInvoke('list_topics',    null, 30000),
+  // Short TTL — banner polls this, and a just-completed collect should
+  // disappear from it within a couple seconds.
+  activeCollects:  ()        => cachedInvoke('active_collects', null, 1500),
   overviewStats:   ()        => cachedInvoke('overview_stats', null, 15000),
   recentActivity:  ()        => cachedInvoke('recent_activity', null, 2000),
   appDataDir:      ()        => cachedInvoke('app_data_dir',   null, 300000),
@@ -235,9 +238,19 @@ export const api = {
     invalidate('list_topics', 'overview_stats', 'recent_activity', 'run_query');
     return invoke('ingest_file', { path, topic, sourceType });
   },
+  // Soft-delete (T1.3): 7-day undo window via api.restoreTopic + listTrash.
   deleteTopic:     (topic)   => {
-    invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query');
+    invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query', 'list_trash');
     return invoke('delete_topic', { topic });
+  },
+  restoreTopic:    (topic)   => {
+    invalidate('list_topics', 'overview_stats', 'list_trash');
+    return invoke('restore_topic', { topic });
+  },
+  listTrash:       ()        => cachedInvoke('list_trash', null, 10000),
+  purgeDeletedTopics: (minAgeDays = 7) => {
+    invalidate('list_trash');
+    return invoke('purge_deleted_topics', { minAgeDays });
   },
   revealInFinder:  (path)    => invoke('reveal_in_finder', { path }),
   openUrl:         (url)     => invoke('open_url', { url }),
@@ -286,6 +299,40 @@ export const api = {
   // report without re-running the LLM (cheap for tab re-renders). First
   // call per topic writes to the `topic_insights` table.
   synthesizeInsights: (topic, cached = false) => invoke('synthesize_insights', { topic, cached }),
+
+  // Map-reduce chunked synth — N small LLM calls instead of one big one.
+  // Use when the provider is low on credits (sidesteps 402 errors) or for
+  // very large corpora. Returns a report with findings only (hypotheses/
+  // exec_summary empty in chunked mode; deterministic merge on the Python
+  // side does the cross-chunk dedup).
+  //
+  //   chunkSize           — rows per chunk; default 40
+  //   maxWorkers          — null = auto per provider; 1 = sequential
+  //   maxTokensPerChunk   — small (300-800) for low-credit providers
+  synthesizeInsightsChunked: (topic, { chunkSize = 40, maxWorkers = null, maxTokensPerChunk = 800 } = {}) =>
+    invoke('synthesize_insights_chunked', {
+      topic,
+      chunkSize,
+      maxWorkers,
+      maxTokensPerChunk,
+    }),
+
+  // Unified end-to-end gap-discovery — chunked LLM synth + palace
+  // cross-source evidence + science fetch + solutions (Why + interventions)
+  // + experiment proposals. Everything persists; Map/Insights/Research
+  // pick up the new nodes automatically.
+  runGapDiscovery: (topic, opts = {}) => {
+    invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get', 'research_links');
+    return invoke('run_gap_discovery', {
+      topic,
+      chunkSize: opts.chunkSize ?? null,
+      maxWorkers: opts.maxWorkers ?? null,
+      papersPerPainpoint: opts.papersPerPainpoint ?? 5,
+      noExperiments: opts.noExperiments ?? false,
+    });
+  },
+  listExperiments: (topic) => cachedInvoke('list_experiments', { topic }, 30000),
+  personaView: (topic, persona) => invoke('persona_view', { topic, persona }),
 
   // Phase-3 Hypothesis Tracking — tracked bets for user-validated research
   // findings. `cardJson` is the JSON-stringified hypothesis card from the
@@ -349,6 +396,30 @@ export const api = {
   researchLinks: (topic, finding = null) =>
     cachedInvoke('research_links', { topic, finding }, 30000),
 
+  // Pre-check a user-entered topic string against existing corpus. Returns
+  // {match: {existing_topic, posts}} if a semantically-identical topic
+  // already exists (case/slug variant), else {match: null}. The UI should
+  // use this to offer "Open existing · N posts" vs "Fetch new data into it"
+  // vs "Create separate topic" instead of silently merging.
+  findExistingTopic: (userInput) =>
+    invoke('find_existing_topic', { userInput }),
+
+  // Merge LLM-caused duplicate topic rows (retroactive). ONLY merges rows
+  // whose duplication is traceable to a topic_canonicalizations / LLM-alias
+  // binding — user-created re-searches are left alone.
+  mergeDuplicateTopics: (apply = false) => {
+    if (apply) invalidate('list_topics', 'overview_stats');
+    return invoke('merge_duplicate_topics', { apply });
+  },
+
+  // Relevance-gate retroactive cleanup. apply=false → dry-run inspect.
+  cleanCorpus: (topic, threshold = 0.30, apply = false, minKeep = 20) => {
+    if (apply) {
+      invalidate('list_topics', 'overview_stats', 'run_query', 'get_findings');
+    }
+    return invoke('clean_corpus', { topic, threshold, apply, minKeep });
+  },
+
   // ── Dual-Mode Pivot — Product Mode ─────────────────────────────────
   productCreate: (payload) => {
     invalidate('product_list'); invalidate('product_dashboard');
@@ -396,12 +467,70 @@ export const api = {
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic, force = false) => invoke('run_temporal_gaps', { topic, force }),
   runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),
+  runConcepts:        (topic) => invoke('run_concepts', { topic }),
+
+  // ----- MCP ↔ App integration (multi-client) -----
+  mcpClients:   ()        => invoke('mcp_clients'),
+  mcpStatus:    (client)  => invoke('mcp_status',    { client: client || null }),
+  mcpInstall:   (client)  => invoke('mcp_install',   { client: client || null }),
+  mcpUninstall: (client)  => invoke('mcp_uninstall', { client: client || null }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
   runRedditSearch:    (query, sub, sort, timeFilter, limit) =>
     invoke('run_reddit_search', { query, sub, sort, timeFilter, limit }),
   startStream:        (sub, keywords, watch) => invoke('start_stream', { sub, keywords, watch }),
   cancelStream:       () => invoke('cancel_stream'),
   streamStatus:       () => invoke('stream_status'),
+
+  // ── AG-C: global-competitors (T2.5) + finding feedback (T2.4) ─────
+  // Cross-topic competitor dedup. Reads product-kind graph nodes across
+  // ALL topics and clusters by label embedding cosine ≥ threshold.
+  // `minTopics` default 2 keeps single-topic products out of the grid.
+  globalCompetitors: (minTopics = 2, threshold = 0.80) =>
+    cachedInvoke('global_competitors', { minTopics, threshold }, 60000),
+
+  // Record 👎 feedback on a finding. Next synthesize call for this topic
+  // injects flagged titles into the prompt as negative examples.
+  //   verdict ∈ 'wrong' | 'off_topic' | 'spam' | 'ok'
+  feedbackRecord: (topic, title, kind = 'painpoint', verdict = 'wrong', note = '') => {
+    // Next synth should see the new feedback — invalidate cached insights.
+    invalidate('synthesize_insights');
+    return invoke('feedback_record', { topic, title, kind, verdict, note });
+  },
+
+  // ── AG-E: prompt overrides (T3.7) ───────────────────────────────────
+  // Thin wrappers — no caching (Settings reads them on demand and writes
+  // should appear immediately on reload).
+  promptList:  ()              => invoke('prompt_list'),
+  promptGet:   (key)           => invoke('prompt_get',  { key }),
+  promptSet:   (key, text)     => invoke('prompt_set',  { key, text: text || '' }),
+  promptClear: (key)           => invoke('prompt_clear', { key }),
+
+  // ── AG-E: saved views (T3.1) ────────────────────────────────────────
+  // Short TTL so a view saved on one screen appears on another almost
+  // immediately. `scope` matches the DB: 'global' | 'topic:<slug>' | 'product:<id>'.
+  savedViews:       (scope = null) => cachedInvoke('saved_views', { scope: scope || null }, 5000),
+  savedViewCreate:  (scope, name, filterJson = {}, pinned = false) => {
+    invalidate('saved_views');
+    return invoke('saved_view_create', { scope, name, filterJson, pinned });
+  },
+  savedViewUpdate:  (id, fields = {}) => {
+    invalidate('saved_views');
+    const { name = null, scope = null, filterJson = null, pinned = null } = fields;
+    return invoke('saved_view_update', { id, name, scope, filterJson, pinned });
+  },
+  savedViewDelete:  (id) => {
+    invalidate('saved_views');
+    return invoke('saved_view_delete', { id });
+  },
+
+  // ── AG-D: CSV ingest ──
+  // Bulk-ingest a structured CSV into a topic corpus. Python expects the
+  // columns post_id,title,body,author,url,created_utc,source_type — only
+  // `title` is required. Returns {ok, parsed, skipped, tagged, ...}.
+  ingestCsv: (topic, path) => {
+    invalidate('list_topics', 'overview_stats', 'recent_activity', 'run_query', 'get_findings');
+    return invoke('ingest_csv_file', { topic, path });
+  },
 
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),
@@ -455,4 +584,177 @@ export function timeAgo(ts) {
   if (secs < 3600) return `${Math.floor(secs/60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs/3600)}h ago`;
   return `${Math.floor(secs/86400)}d ago`;
+}
+
+// ── AG-E: saved views client-side filter (T3.1) ────────────────────────
+//
+// insights.js drops the saved-views DOM via a single 18-line <!-- AG-E
+// saved views mount --> block. That block has no JS wiring of its own —
+// this module attaches the behaviour via a MutationObserver so we stay
+// out of insights.js's extractor/fetch/render code paths.
+//
+// Semantics (mirrors research/saved_views.apply_filter):
+//   - missing key in filter ⇒ no constraint on that axis
+//   - min_opportunity_score / kinds / triangulation_strength_in / classification_in
+//
+// We derive the finding's attributes from data-* that insights.js already
+// emits on each .insight-card (title) plus its meta chips. For attributes
+// not present in the DOM (opportunity_score, classification), we fall
+// back to text-scraping the card content — best effort; users can always
+// "Clear filter" to restore.
+function _parseFindingCard(card) {
+  // Opportunity score sits in .insight-score <b>
+  const opEl = card.querySelector('.insight-score b');
+  const op = opEl ? parseFloat(opEl.textContent || '0') : 0;
+  // Kind emoji → kind slug
+  const kindEl = card.querySelector('.insight-kind');
+  const e = (kindEl?.textContent || '').trim();
+  const kind = e === '🔥' ? 'painpoint'
+             : e === '💡' ? 'feature_wish'
+             : e === '🛠' ? 'workaround'
+             : '';
+  // Triangulation + classification chips live in .insight-meta
+  let triang = '';
+  let cls = '';
+  card.querySelectorAll('.insight-chip').forEach(chip => {
+    const t = (chip.textContent || '').trim();
+    if (/triang/i.test(t)) {
+      if (/strong/i.test(t)) triang = 'strong';
+      else if (/moderate/i.test(t)) triang = 'moderate';
+      else if (/weak/i.test(t)) triang = 'weak';
+    }
+    if (chip.classList.contains('chronic')) {
+      cls = t.toUpperCase();
+    }
+  });
+  return { op, kind, triang, classification: cls };
+}
+
+function _applyFilterToDom(contentEl, spec) {
+  const cards = contentEl.querySelectorAll('.insights-findings .insight-card');
+  const minOp = spec && spec.min_opportunity_score != null
+    ? Number(spec.min_opportunity_score) : null;
+  const kinds = new Set(spec?.kinds || []);
+  const tri   = new Set(spec?.triangulation_strength_in || []);
+  const cls   = new Set(spec?.classification_in || []);
+  let shown = 0;
+  cards.forEach(card => {
+    const f = _parseFindingCard(card);
+    let ok = true;
+    if (minOp != null && !(f.op >= minOp)) ok = false;
+    if (ok && kinds.size && !kinds.has(f.kind)) ok = false;
+    if (ok && tri.size && !tri.has(f.triang)) ok = false;
+    if (ok && cls.size && !cls.has(f.classification)) ok = false;
+    card.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  return shown;
+}
+
+function _wireSavedViewsBar(bar) {
+  if (bar.dataset.agEWired === '1') return;
+  bar.dataset.agEWired = '1';
+  const contentEl = bar.closest('.insights-tab') || bar.parentElement || document;
+  const topic = bar.dataset.topic || '';
+  const scope = topic ? `topic:${topic}` : 'global';
+  const sel    = bar.querySelector('#ag-e-saved-views-select');
+  const status = bar.querySelector('#ag-e-saved-views-status');
+  const btnSave  = bar.querySelector('#ag-e-saved-views-save');
+  const btnClear = bar.querySelector('#ag-e-saved-views-clear');
+  if (!sel) return;
+
+  const state = { views: [] };
+
+  const refresh = async () => {
+    try {
+      const r = await api.savedViews(scope);
+      state.views = (r && r.views) || [];
+      const current = sel.value;
+      sel.innerHTML = `<option value="">All findings</option>` +
+        state.views.map(v =>
+          `<option value="${v.id}">${v.pinned ? '★ ' : ''}${esc(v.name)}</option>`
+        ).join('');
+      if (current && state.views.some(v => String(v.id) === String(current))) {
+        sel.value = current;
+      }
+    } catch (e) {
+      if (status) status.textContent = `✗ ${e?.message || e}`;
+    }
+  };
+
+  sel.addEventListener('change', () => {
+    const id = sel.value;
+    if (!id) {
+      // Clear — show everything
+      _applyFilterToDom(contentEl, {});
+      if (status) status.textContent = '';
+      if (btnClear) btnClear.hidden = true;
+      return;
+    }
+    const v = state.views.find(x => String(x.id) === String(id));
+    const spec = (v && v.filter) || {};
+    const shown = _applyFilterToDom(contentEl, spec);
+    if (status) status.textContent = `showing ${shown} / ${contentEl.querySelectorAll('.insights-findings .insight-card').length}`;
+    if (btnClear) btnClear.hidden = false;
+  });
+
+  if (btnClear) btnClear.addEventListener('click', () => {
+    sel.value = '';
+    sel.dispatchEvent(new Event('change'));
+  });
+
+  if (btnSave) btnSave.addEventListener('click', async () => {
+    const name = window.prompt('Name this saved view:');
+    if (!name || !name.trim()) return;
+    const minStr = window.prompt('Minimum opportunity score (blank = any):', '10');
+    const min = minStr && !Number.isNaN(parseFloat(minStr)) ? parseFloat(minStr) : null;
+    const kindsStr = window.prompt(
+      'Kinds (comma-sep: painpoint, feature_wish, workaround — blank = any):', ''
+    );
+    const kinds = (kindsStr || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+    const spec = {};
+    if (min != null) spec.min_opportunity_score = min;
+    if (kinds.length) spec.kinds = kinds;
+    try {
+      await api.savedViewCreate(scope, name.trim(), spec, false);
+      await refresh();
+      if (status) status.textContent = '✓ saved';
+      setTimeout(() => {
+        if (status && status.textContent === '✓ saved') status.textContent = '';
+      }, 2000);
+    } catch (e) {
+      if (status) status.textContent = `✗ ${e?.message || e}`;
+    }
+  });
+
+  refresh();
+}
+
+if (typeof window !== 'undefined' && typeof MutationObserver !== 'undefined') {
+  const scan = (root) => {
+    const els = (root && root.querySelectorAll)
+      ? root.querySelectorAll('#ag-e-saved-views-bar')
+      : [];
+    els.forEach(_wireSavedViewsBar);
+    if (root && root.id === 'ag-e-saved-views-bar') _wireSavedViewsBar(root);
+  };
+  const mo = new MutationObserver(muts => {
+    for (const m of muts) {
+      m.addedNodes && m.addedNodes.forEach(n => {
+        if (n && n.nodeType === 1) scan(n);
+      });
+    }
+  });
+  const start = () => {
+    try {
+      mo.observe(document.body, { childList: true, subtree: true });
+      scan(document.body);
+    } catch {}
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
 }

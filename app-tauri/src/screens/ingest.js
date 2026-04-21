@@ -98,6 +98,61 @@ export async function renderIngest(root) {
   --source-type SOURCE</pre>
       </aside>
     </div>
+
+    <!-- AG-D: CSV ingest. Canonical post-column headers
+         (post_id, title, body, author, url, created_utc, source_type).
+         Only the title column is required. -->
+    <div class="section-head" style="margin-top:28px">
+      <div>
+        <h2>Bulk CSV ingest</h2>
+        <p>For CSVs that already match the post schema: <code>post_id, title, body, author, url, created_utc, source_type</code>. Only <b>title</b> is required; existing post IDs are preserved so re-imports deduplicate.</p>
+      </div>
+    </div>
+
+    <div class="ingest-wrap">
+      <div class="ingest-form">
+        <div class="ingest-row">
+          <label>CSV file</label>
+          <div class="ingest-drop" id="bulk-drop-zone" role="button" tabindex="0">
+            <div id="bulk-drop-empty">
+              <div class="ingest-drop-ic"><i data-lucide="file-spreadsheet"></i></div>
+              <b>Choose a CSV</b>
+              <span>Structured CSV with post-column headers</span>
+            </div>
+            <div id="bulk-drop-chosen" hidden>
+              <b id="bulk-chosen-name"></b>
+              <span id="bulk-chosen-meta"></span>
+              <button class="btn btn-ghost btn-xs btn-bordered" id="bulk-btn-change" style="margin-top:6px">Change file</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ingest-row">
+          <label>Target topic</label>
+          <select id="bulk-topic-sel" style="width:100%">
+            <option value="">— pick an existing topic —</option>
+          </select>
+          <p class="ingest-hint">Every row gets tagged to this topic via the same relevance gate as Reddit fetches.</p>
+        </div>
+
+        <div class="ingest-actions">
+          <button class="btn btn-primary" id="bulk-btn-submit" disabled>Ingest CSV</button>
+          <span id="bulk-ingest-status" class="ingest-status"></span>
+        </div>
+      </div>
+      <aside class="ingest-side">
+        <h4>Expected columns</h4>
+        <ul style="padding-left:18px;margin:6px 0">
+          <li><code>post_id</code> — optional, synthesised if missing</li>
+          <li><code>title</code> — <b>required</b></li>
+          <li><code>body</code>, <code>author</code>, <code>url</code>, <code>created_utc</code>, <code>source_type</code> — optional</li>
+        </ul>
+        <h4 style="margin-top:14px">CLI equivalent</h4>
+        <pre class="ingest-cli">reddit-cli research ingest-csv \\
+  --path FILE.csv \\
+  --topic "YOUR TOPIC"</pre>
+      </aside>
+    </div>
   `;
   window.refreshIcons?.();
 
@@ -205,6 +260,80 @@ export async function renderIngest(root) {
     } finally {
       submitBtn.textContent = origText;
       updateSubmit();
+    }
+  });
+
+  // ── AG-D: CSV ingest ── wire the bulk-CSV card. Mirrors the single-file
+  // picker above but posts to api.ingestCsv which goes through the new
+  // `research ingest-csv` command on the Python side.
+  let bulkPath = null;
+  const bulkTopicSel = root.querySelector('#bulk-topic-sel');
+  const bulkBtn      = root.querySelector('#bulk-btn-submit');
+  const bulkStatusEl = root.querySelector('#bulk-ingest-status');
+  try {
+    const topics = await api.listTopics();
+    if (Array.isArray(topics)) {
+      topics.forEach(t => {
+        const o = document.createElement('option');
+        const name = typeof t === 'string' ? t : t?.topic;
+        if (!name) return;
+        o.value = name; o.textContent = name;
+        bulkTopicSel.appendChild(o);
+      });
+    }
+  } catch { /* silent — single-file picker surfaces the same error */ }
+
+  function bulkUpdate() {
+    bulkBtn.disabled = !(bulkPath && bulkTopicSel.value);
+  }
+  function bulkStatus(msg, ok = true) {
+    if (!bulkStatusEl) return;
+    bulkStatusEl.textContent = msg;
+    bulkStatusEl.style.color = ok ? '#2E7D5B' : '#B84747';
+  }
+
+  const bulkPick = async () => {
+    try {
+      const file = await openDialog({
+        multiple: false,
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      });
+      if (!file || typeof file !== 'string') return;
+      bulkPath = file;
+      const name = file.split('/').pop();
+      root.querySelector('#bulk-drop-empty').hidden = true;
+      root.querySelector('#bulk-drop-chosen').hidden = false;
+      root.querySelector('#bulk-chosen-name').textContent = name;
+      root.querySelector('#bulk-chosen-meta').textContent = `CSV · ${esc(file)}`;
+      bulkUpdate();
+    } catch (e) {
+      bulkStatus(`pick failed: ${e?.message || e}`, false);
+    }
+  };
+  root.querySelector('#bulk-drop-zone').addEventListener('click', bulkPick);
+  root.querySelector('#bulk-btn-change').addEventListener('click', (e) => { e.stopPropagation(); bulkPick(); });
+  bulkTopicSel.addEventListener('change', bulkUpdate);
+
+  bulkBtn.addEventListener('click', async () => {
+    if (!bulkPath || !bulkTopicSel.value) return;
+    bulkBtn.disabled = true;
+    const orig = bulkBtn.textContent;
+    bulkBtn.textContent = 'ingesting…';
+    bulkStatus('');
+    try {
+      const res = await api.ingestCsv(bulkTopicSel.value, bulkPath);
+      const parsed  = res?.parsed  ?? 0;
+      const skipped = res?.skipped ?? 0;
+      const tagged  = res?.tagged  ?? 0;
+      bulkStatus(`✓ parsed ${parsed}, skipped ${skipped}, tagged ${tagged} into "${bulkTopicSel.value}" — run Rerun collect to rebuild the map.`);
+      bulkPath = null;
+      root.querySelector('#bulk-drop-empty').hidden = false;
+      root.querySelector('#bulk-drop-chosen').hidden = true;
+    } catch (e) {
+      bulkStatus(`✗ ${e?.message || e}`, false);
+    } finally {
+      bulkBtn.textContent = orig;
+      bulkUpdate();
     }
   });
 }

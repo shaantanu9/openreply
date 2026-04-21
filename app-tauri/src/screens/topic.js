@@ -7,6 +7,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { loadSolutions } from './solutions.js';
+import { loadConcepts } from './concepts.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
 import { loadSentiment } from './sentiment.js';
@@ -378,6 +379,7 @@ export async function renderTopic(root, { params }) {
         <span style="font-weight:500">Auto-refresh</span>
       </label>
       <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun"><i data-lucide="rotate-cw"></i> Rerun collect</button>
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-compare-topic" title="Compare this topic's insights with another topic side-by-side"><i data-lucide="git-compare"></i> Compare</button>
       <button class="btn btn-ghost btn-sm btn-bordered" id="btn-delete" style="color:#B84747">Delete</button>
     </header>
 
@@ -409,6 +411,7 @@ export async function renderTopic(root, { params }) {
           <button class="tab-more-item" data-tab="posts"><i data-lucide="list"></i> Posts</button>
           <button class="tab-more-item" data-tab="research"><i data-lucide="book-open"></i> Research</button>
           <button class="tab-more-item" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
+          <button class="tab-more-item" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts</button>
           <button class="tab-more-item" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
         </div>
       </div>
@@ -869,7 +872,7 @@ export async function renderTopic(root, { params }) {
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
         </div>
         ${enrichBanner}
-        <iframe class="viewer-frame" src="${fileUrl}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`);
+        <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`);
       if (contentEl.dataset.tab !== 'map') return;
       window.refreshIcons?.();
       $('#btn-map-rebuild').onclick  = () => loadMap(true);
@@ -2082,11 +2085,43 @@ export async function renderTopic(root, { params }) {
       catch (e) { $('#export-status').textContent = `✗ ${e?.message || e}`; }
     };
     $('#btn-delete-topic').onclick = async () => {
-      const confirmPref = localStorage.getItem('gapmap.pref.confirm_delete') !== 'false';
-      if (confirmPref && !confirm(`Delete topic "${topic}"? Graph + tags removed; underlying posts kept.`)) return;
+      const { confirmDestructiveAction } = await import('../lib/deleteConfirm.js');
+      const ok = await confirmDestructiveAction({
+        title: `Delete topic "${topic}"?`,
+        body: 'Soft-deleted — hidden from the dashboard but recoverable for 7 days from Settings → Trash.',
+        matchText: topic,
+        confirmLabel: 'Delete topic',
+        confirmDanger: true,
+        hint: `type the topic name to confirm`,
+      });
+      if (!ok) return;
       try {
         await api.deleteTopic(topic);
-        location.hash = '#/';
+        // T1.3: undo toast with 10-second window. Clicking Undo flips the
+        // deleted_at back to empty string and the topic reappears.
+        const t = document.createElement('div');
+        t.className = 'toast toast-success';
+        t.style.display = 'flex';
+        t.style.alignItems = 'center';
+        t.style.gap = '12px';
+        t.innerHTML = `🗑 Moved "${esc(topic)}" to trash · recoverable 7 days <button class="btn btn-xs btn-primary" id="undo-del-${CSS.escape(topic)}">Undo</button>`;
+        document.body.appendChild(t);
+        const undoBtn = t.querySelector(`#undo-del-${CSS.escape(topic)}`);
+        let undone = false;
+        undoBtn.onclick = async () => {
+          undone = true;
+          try {
+            await api.restoreTopic(topic);
+            t.innerHTML = `✓ Restored "${esc(topic)}"`;
+            setTimeout(() => t.remove(), 1500);
+            location.hash = `#/topic/${encodeURIComponent(topic)}`;
+          } catch {
+            t.innerHTML = `✗ Restore failed`;
+            setTimeout(() => t.remove(), 2000);
+          }
+        };
+        setTimeout(() => { if (!undone) t.remove(); }, 10000);
+        if (!undone) location.hash = '#/';
       } catch (e) { showToast('Delete failed', e?.message || String(e), 'err'); }
     };
     $('#btn-quick-extract', contentEl)?.addEventListener('click', async () => {
@@ -2114,6 +2149,7 @@ export async function renderTopic(root, { params }) {
     map: loadMap, report: loadReport, evidence: loadEvidence,
     sources: loadSources, research: loadResearch, chat: loadChat, actions: loadActions,
     solutions: () => loadSolutions(contentEl, topic),
+    concepts: () => loadConcepts(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
     posts: () => loadPosts(contentEl, topic),
     sentiment: () => loadSentiment(contentEl, topic),
@@ -2216,6 +2252,46 @@ export async function renderTopic(root, { params }) {
 
   $('#btn-rerun').onclick = () => openSourcePickerModal(topic);
 
+  // ── AG-D: compare view ── picks a second topic via a minimal modal, then
+  // navigates to #/compare/<this>/<other>. Uses the existing list_topics cache.
+  $('#btn-compare-topic').onclick = async () => {
+    let others = [];
+    try {
+      const all = await api.listTopics();
+      others = (Array.isArray(all) ? all : [])
+        .map(t => (typeof t === 'string' ? t : t?.topic))
+        .filter(t => t && t !== topic);
+    } catch {}
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.hidden = false;
+    backdrop.innerHTML = `
+      <div class="modal" style="max-width:440px">
+        <h3 style="margin-top:0">Compare <b>${esc(topic)}</b> with…</h3>
+        <p class="muted" style="margin-top:0">Pick another topic to see both synthesis reports side-by-side.</p>
+        ${others.length === 0
+          ? `<p class="muted">No other topics yet. Create another topic first.</p>`
+          : `<select id="cmp-other-topic" style="width:100%;padding:8px">
+               ${others.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}
+             </select>`}
+        <div class="modal-actions" style="justify-content:flex-end;margin-top:14px;display:flex;gap:8px">
+          <button class="btn btn-ghost btn-bordered" id="cmp-cancel">Cancel</button>
+          <button class="btn btn-primary" id="cmp-go" ${others.length === 0 ? 'disabled' : ''}>Compare</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.querySelector('#cmp-cancel').onclick = close;
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+    backdrop.querySelector('#cmp-go')?.addEventListener('click', () => {
+      const other = backdrop.querySelector('#cmp-other-topic')?.value;
+      if (!other) return;
+      close();
+      location.hash = `#/compare/${encodeURIComponent(topic)}/${encodeURIComponent(other)}`;
+    });
+  };
+
   // Scheduled-refresh toggle per topic. Reads the current flag from
   // topic_prefs and wires the checkbox to flip it via the Rust command.
   (async () => {
@@ -2243,10 +2319,38 @@ export async function renderTopic(root, { params }) {
   // suspected of contributing to app-wide hang.
   // api.scheduleMarkSeen(topic).catch(() => {});
   $('#btn-delete').onclick = async () => {
-    const confirmPref = localStorage.getItem('gapmap.pref.confirm_delete') !== 'false';
-    if (confirmPref && !confirm(`Delete topic "${topic}"?`)) return;
-    await api.deleteTopic(topic);
-    location.hash = '#/';
+    const { confirmDestructiveAction } = await import('../lib/deleteConfirm.js');
+    const ok = await confirmDestructiveAction({
+      title: `Delete topic "${topic}"?`,
+      body: 'Soft-deleted — recoverable for 7 days from Settings → Trash.',
+      matchText: topic,
+      confirmLabel: 'Delete topic',
+      confirmDanger: true,
+      hint: `type the topic name to confirm`,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteTopic(topic);
+      // T1.3 undo toast (10s). Clicking Undo restores and re-opens the topic.
+      const t = document.createElement('div');
+      t.className = 'toast toast-success';
+      t.style.display = 'flex'; t.style.alignItems = 'center'; t.style.gap = '12px';
+      t.innerHTML = `🗑 Moved "${esc(topic)}" to trash · recoverable 7 days <button class="btn btn-xs btn-primary" id="undo-del-pri">Undo</button>`;
+      document.body.appendChild(t);
+      let undone = false;
+      t.querySelector('#undo-del-pri').onclick = async () => {
+        undone = true;
+        try {
+          await api.restoreTopic(topic);
+          location.hash = `#/topic/${encodeURIComponent(topic)}`;
+          t.remove();
+        } catch { t.innerHTML = '✗ Restore failed'; setTimeout(() => t.remove(), 2000); }
+      };
+      setTimeout(() => { if (!undone) t.remove(); }, 10000);
+      if (!undone) location.hash = '#/';
+    } catch (e) {
+      alert(`Delete failed: ${e?.message || e}`);
+    }
   };
 
   // Poll for an in-flight collect for THIS topic — show the header chip +

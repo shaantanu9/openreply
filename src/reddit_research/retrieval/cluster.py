@@ -50,10 +50,12 @@ def _freq(item: dict) -> int:
 
 
 def _embed_labels(labels: list[str]) -> list[list[float]] | None:
-    """Embed via chromadb's default ONNX embedder. None on any failure."""
+    """Embed via the shared embedder (default MiniLM or multilingual). None on any failure."""
     try:
-        from chromadb.utils import embedding_functions
-        fn = embedding_functions.DefaultEmbeddingFunction()
+        from .embedder import get_embedding_function
+        fn = get_embedding_function()
+        if fn is None:
+            return None
         return fn(labels)
     except Exception as e:
         logger.debug("cluster: embedding failed, passthrough: %s", e)

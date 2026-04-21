@@ -3,12 +3,13 @@
 
 mod cli;
 mod commands;
+mod db;
 mod schedule;
 
 use cli::{
     cancel_active_chat, cancel_active_job, cancel_active_stream,
-    ActiveChat, ActiveChatPid, ActiveGraphOps, ActiveJob, ActiveJobPid, ActiveStream,
-    ActiveStreamPid,
+    ActiveChat, ActiveChatPid, ActiveCollects, ActiveGraphOps, ActiveJob, ActiveJobPid,
+    ActiveStream, ActiveStreamPid,
 };
 use tauri::RunEvent;
 
@@ -23,9 +24,11 @@ fn main() {
         .manage(ActiveStream::default())
         .manage(ActiveStreamPid::default())
         .manage(ActiveGraphOps::default())
+        .manage(ActiveCollects::default())
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
             commands::list_topics,
+            commands::active_collects,
             commands::overview_stats,
             commands::recent_activity,
             commands::discover_subs,
@@ -55,6 +58,10 @@ fn main() {
             commands::list_ollama_models,
             commands::list_provider_models,
             commands::synthesize_insights,
+            commands::synthesize_insights_chunked,
+            commands::run_gap_discovery,
+            commands::list_experiments,
+            commands::persona_view,
             commands::hypothesis_create,
             commands::hypothesis_update_status,
             commands::hypothesis_list,
@@ -73,6 +80,7 @@ fn main() {
             commands::run_solutions_pipeline,
             commands::run_temporal_gaps,
             commands::run_sentiment_by_source,
+            commands::run_concepts,
             commands::quick_extract_gaps,
             commands::run_reddit_search,
             commands::start_stream,
@@ -97,6 +105,12 @@ fn main() {
             commands::schedule_status,
             commands::schedule_enable_topic,
             commands::schedule_mark_seen,
+            commands::clean_corpus,
+            commands::merge_duplicate_topics,
+            commands::find_existing_topic,
+            commands::restore_topic,
+            commands::list_trash,
+            commands::purge_deleted_topics,
             // Dual-Mode Pivot — Product Mode
             commands::product_create,
             commands::product_list,
@@ -111,6 +125,26 @@ fn main() {
             commands::product_digest,
             commands::product_dashboard,
             commands::product_convert_topic,
+            // MCP ↔ App integration (one-click connect to any MCP client)
+            commands::mcp_clients,
+            commands::mcp_status,
+            commands::mcp_install,
+            commands::mcp_uninstall,
+            // ── AG-C: global-competitors (T2.5) + finding feedback (T2.4) ──
+            commands::global_competitors,
+            commands::feedback_record,
+            // ── AG-E: prompt overrides (T3.7) ──────────────────────────
+            commands::prompt_list,
+            commands::prompt_get,
+            commands::prompt_set,
+            commands::prompt_clear,
+            // ── AG-E: saved views (T3.1) ───────────────────────────────
+            commands::saved_views,
+            commands::saved_view_create,
+            commands::saved_view_update,
+            commands::saved_view_delete,
+            // ── AG-D: CSV ingest ───────────────────────────────────────
+            commands::ingest_csv_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");

@@ -47,9 +47,37 @@ def load_yaml(name: str) -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
+def _load_yaml_or_override(name: str) -> dict[str, Any]:
+    """Return the parsed YAML for ``name``, honouring a user override if set.
+
+    Overrides are stored as raw YAML text in the ``prompt_overrides`` table
+    (see research.prompt_store). Falls back to the bundled ``prompts/*.yaml``
+    when no override exists, the override is blank, or parsing fails.
+    """
+    def _default() -> dict[str, Any]:
+        return load_yaml(name)
+
+    try:
+        from .prompt_store import get_prompt
+    except Exception:
+        return _default()
+
+    val = get_prompt(name, default_loader=_default)
+    if isinstance(val, dict):
+        return val
+    # Override returned as raw text — parse as YAML.
+    try:
+        parsed = yaml.safe_load(val) or {}
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return _default()
+
+
 def render_queries(topic: str, categories: list[str] | None = None) -> dict[str, list[str]]:
     """Render query templates for a topic. categories default to all (pain/features/complaints/diy)."""
-    cfg = load_yaml("queries")
+    cfg = _load_yaml_or_override("queries")
     out: dict[str, list[str]] = {}
     wanted = categories or [k for k in cfg.keys() if k != "version"]
     for cat in wanted:
@@ -59,8 +87,14 @@ def render_queries(topic: str, categories: list[str] | None = None) -> dict[str,
 
 
 def load_extractor(name: str) -> dict[str, str]:
-    """Return {'system': ..., 'user_template': ...} for an extractor prompt."""
-    cfg = load_yaml(name)
+    """Return {'system': ..., 'user_template': ...} for an extractor prompt.
+
+    Honours user-editable overrides stored in the ``prompt_overrides``
+    table (T3.7). Overrides are expected to be raw YAML in the same
+    schema as the bundled files; malformed overrides fall back to
+    bundled silently.
+    """
+    cfg = _load_yaml_or_override(name)
     return {
         "name": cfg.get("name", name),
         "system": cfg.get("system", "").strip(),

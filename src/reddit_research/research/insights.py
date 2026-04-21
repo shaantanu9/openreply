@@ -332,6 +332,26 @@ def synthesize_insights(
         source_count=len(sources_present),
     )
 
+    # AG-C T2.4 — inject user feedback as a negative-examples block so
+    # the LLM doesn't re-surface findings the user already flagged as
+    # wrong / off-topic / spam. Best-effort: failures here never block
+    # synthesis (e.g. finding_feedback table absent in legacy DBs).
+    try:
+        from .feedback import feedback_for_prompt
+        fb = feedback_for_prompt(topic=topic, limit=10)
+        neg_lines: list[str] = []
+        for verdict, titles in fb.items():
+            for t in titles:
+                neg_lines.append(f'- "{t}" — user marked as {verdict}')
+        if neg_lines:
+            user_prompt = (
+                user_prompt
+                + "\n\n## Previously-flagged mistakes on this topic — DO NOT repeat\n"
+                + "\n".join(neg_lines)
+            )
+    except Exception:
+        pass
+
     # Adaptive max_tokens per provider. Phase-2's richer JSON schema
     # (Minto + hypothesis cards + disconfirming_evidence) wants ~12000
     # tokens of output budget on paid tiers, but free-tier OpenRouter
@@ -374,16 +394,30 @@ def synthesize_insights(
     # Two-dimensional retry:
     #   • output budget (max_tokens): shrink on 402 / credit errors
     #   • input size (corpus rows):   shrink on "prompt tokens limit exceeded"
-    # Each retry halves whichever dimension caused the failure.
-    budgets = [provider_budget, max(2000, provider_budget // 2), 2000]
+    # Each retry halves whichever dimension caused the failure. The final
+    # floor is 300 rather than 2000 so a credit-capped provider (OpenRouter
+    # free tier with <500 tokens remaining) can still get one last try.
+    budgets = [provider_budget, max(2000, provider_budget // 2), 2000, 300]
     current_rows = rows
+    import re as _re
     for attempt_budget in budgets:
         try:
             raw = _complete(attempt_budget)
             break
         except Exception as e:
             last_err = str(e).lower()
-            # Output-budget overflow → try smaller max_tokens next iter
+            # Output-budget overflow → try smaller max_tokens next iter.
+            # OpenRouter specifically reports "can only afford N" — parse that
+            # number and retry with exactly that budget minus a safety margin.
+            afford = _re.search(r"can only afford\s+(\d+)", last_err)
+            if afford:
+                try:
+                    exact = max(100, int(afford.group(1)) - 20)
+                    raw = _complete(exact)
+                    break
+                except Exception as ee:
+                    last_err = str(ee).lower()
+                    # fall through to generic 402 path below
             if any(kw in last_err for kw in ("fewer max", "token limit", "you requested up to")):
                 continue
             # Input-size overflow → halve corpus and re-format the user prompt
@@ -404,12 +438,24 @@ def synthesize_insights(
             break
     if raw is None:
         err_str = str(last_err or "unknown")
+        err_code = None
         hint = ""
         if "402" in err_str or "credits" in err_str:
-            hint = " — add credits at your provider, or switch to a free one (Ollama / Groq)"
+            err_code = "credits_exhausted"
+            hint = " — your provider is out of credits. Add credits, or switch to a free local provider (Ollama) in Settings → AI Keys."
+        elif "401" in err_str or "invalid api" in err_str or "unauthorized" in err_str:
+            err_code = "invalid_key"
+            hint = " — the API key appears invalid. Re-save it in Settings → AI Keys."
         elif "prompt tokens" in err_str or "context length" in err_str:
-            hint = f" — corpus still too large for this model's context window; set INSIGHTS_HARD_CAP to a smaller value"
-        return {"ok": False, "topic": topic, "error": f"LLM call failed: {err_str[:200]}{hint}"}
+            err_code = "context_overflow"
+            hint = " — corpus still too large for this model's context window; set INSIGHTS_HARD_CAP to a smaller value."
+        return {
+            "ok": False,
+            "topic": topic,
+            "error": f"LLM call failed: {err_str[:200]}{hint}",
+            "error_code": err_code,
+            "provider": provider,
+        }
 
     report = _parse_insight_json(raw)
     if report.get("_parse_error"):
@@ -436,10 +482,519 @@ def synthesize_insights(
     # actually sent to the LLM — drives the Bayesian CI math.
     _normalize_scores(report, total_corpus=len(rows))
 
+    # Relevance gate on findings — drops hallucinated / off-topic findings
+    # the LLM produced from garbage corpus (see research/relevance.py). Uses
+    # ChromaDB MiniLM to score each finding.title against the topic and drops
+    # anything below GAPMAP_FINDING_RELEVANCE_THRESHOLD (default 0.40).
+    # Precision-leaning so we don't drop real findings on borderline semantic
+    # distance — only clearly off-topic ones.
+    try:
+        threshold = float(os.getenv("GAPMAP_FINDING_RELEVANCE_THRESHOLD", "0.40"))
+    except (TypeError, ValueError):
+        threshold = 0.40
+    if threshold > 0 and isinstance(report.get("findings"), list):
+        try:
+            from .relevance import filter_findings
+            gate = filter_findings(topic, report["findings"], threshold=threshold)
+            if gate.get("ok") and not gate.get("skipped"):
+                report["findings"] = gate["kept"]
+                if gate.get("dropped"):
+                    report["_relevance_dropped_findings"] = gate["dropped"]
+                    report["_relevance_dropped_count"] = gate["dropped_count"]
+                    report["_relevance_threshold"] = threshold
+        except Exception as e:
+            report["_relevance_gate_error"] = str(e)
+
     if persist:
         model = os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or ""
         _persist(topic, report, provider, model, len(rows))
 
+    return report
+
+
+# ─────────────────────────────────────────────────────────── chunked synth ──
+
+
+# Provider-adaptive parallelism. Bumping this past what the vendor allows
+# leads to 429 bursts or (on local Ollama) CPU-scheduler thrash. Keys match
+# `resolve_provider()` return values. Missing key falls back to 2.
+_PARALLEL_WORKERS = {
+    "anthropic":  4,
+    "openai":     4,
+    "google":     4,
+    "openrouter": 3,   # stricter per-key RPM on free tier
+    "groq":       2,   # RPM limits are tight
+    "deepseek":   4,
+    "mistral":    3,
+    "ollama":     1,   # one inference at a time locally
+}
+
+
+_CHUNK_PROMPT_SYSTEM = (
+    "You extract user pain points from a batch of posts about a specific "
+    "topic. Return STRICT JSON with one key `findings` — a list of objects, "
+    "each with: title (5-10 words, verb-first), evidence (one quoted line "
+    "from the posts), frequency (1-N = how many posts mention this pain), "
+    "importance (1-10), satisfaction (1-10, how well current solutions "
+    "address this). No prose outside the JSON."
+)
+
+_CHUNK_USER_TEMPLATE = (
+    "Topic: {topic}\n\n"
+    "Chunk {chunk_idx} of {chunk_total} ({n_rows} posts).\n\n"
+    "Posts:\n{corpus}\n\n"
+    'Return JSON: {{"findings": [{{"title": "...", "evidence": "...", '
+    '"frequency": 3, "importance": 8, "satisfaction": 3}}, ...]}}'
+)
+
+
+def _chunk_rows(rows: list[dict], chunk_size: int) -> list[list[dict]]:
+    """Split rows into fixed-size chunks preserving source diversity.
+
+    Greedy round-robin by source_type so each chunk sees multiple sources
+    instead of one chunk of all-Reddit followed by one of all-arXiv. This
+    gives the LLM cross-source signal inside every chunk.
+    """
+    by_src: dict[str, list[dict]] = {}
+    for r in rows:
+        by_src.setdefault(r.get("source_type") or "reddit", []).append(r)
+    # Round-robin append
+    interleaved: list[dict] = []
+    while any(by_src.values()):
+        for src in list(by_src.keys()):
+            if by_src[src]:
+                interleaved.append(by_src[src].pop(0))
+    return [interleaved[i:i + chunk_size] for i in range(0, len(interleaved), chunk_size)]
+
+
+def _normalize_title(title: str) -> str:
+    """Deterministic key for dedup. Strips punctuation + lowercases +
+    drops common filler words + de-pluralizes so "can't find healthy
+    recipes" and "cant find healthy recipe" hash to the same bucket."""
+    import re as _re
+    t = (title or "").lower().strip()
+    # Strip apostrophes WITHOUT inserting a space, so "can't" → "cant"
+    # instead of "can t".
+    t = t.replace("'", "").replace("\u2019", "")
+    t = _re.sub(r"[^a-z0-9 ]+", " ", t)
+    t = _re.sub(r"\s+", " ", t).strip()
+    fillers = {"a", "an", "the", "to", "for", "of", "my", "on", "is", "in"}
+    # Crude de-pluralization: drop trailing 's' from words > 3 chars.
+    # Catches recipes/recipe, features/feature, apps/app without mangling
+    # "ios", "pass", "class" (<= 3 char after 's' strip is still 3+).
+    def _singular(w: str) -> str:
+        if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+            return w[:-1]
+        return w
+    return " ".join(_singular(w) for w in t.split() if w not in fillers)
+
+
+def _merge_findings(partial_findings_per_chunk: list[list[dict]]) -> list[dict]:
+    """Fold N per-chunk finding lists into one deterministically.
+
+    Keyed by `_normalize_title`. For duplicates:
+      - frequency: sum (represents combined evidence across chunks)
+      - importance: max (most urgent wins)
+      - satisfaction: min (least-served wins)
+      - evidence: keep the longest non-empty quote
+      - chunk_sources: set of chunk indices that produced this finding
+    """
+    merged: dict[str, dict] = {}
+    for chunk_idx, findings in enumerate(partial_findings_per_chunk):
+        for f in findings or []:
+            if not isinstance(f, dict):
+                continue
+            title = str(f.get("title") or "").strip()
+            if not title:
+                continue
+            key = _normalize_title(title)
+            if not key:
+                continue
+            freq = int(f.get("frequency") or 1)
+            imp = int(f.get("importance") or 5)
+            sat = int(f.get("satisfaction") or 5)
+            ev = str(f.get("evidence") or "").strip()
+            if key not in merged:
+                merged[key] = {
+                    "title": title,
+                    "evidence": ev,
+                    "frequency": freq,
+                    "importance": imp,
+                    "satisfaction": sat,
+                    "chunk_sources": {chunk_idx},
+                }
+            else:
+                m = merged[key]
+                m["frequency"] += freq
+                m["importance"] = max(m["importance"], imp)
+                m["satisfaction"] = min(m["satisfaction"], sat)
+                m["chunk_sources"].add(chunk_idx)
+                if len(ev) > len(m["evidence"]):
+                    m["evidence"] = ev
+    # Post-process: compute opportunity_score (Ulwick) + serialize chunk_sources.
+    out: list[dict] = []
+    for m in merged.values():
+        m["opportunity_score"] = m["importance"] + max(m["importance"] - m["satisfaction"], 0)
+        m["chunk_sources"] = sorted(m["chunk_sources"])
+        out.append(m)
+    # Sort by opportunity_score DESC, then frequency DESC
+    out.sort(key=lambda x: (x.get("opportunity_score", 0), x.get("frequency", 0)), reverse=True)
+    return out
+
+
+# Per-provider default chunk size. OpenRouter free-tier caps input at
+# ~1358 tokens, so a chunk at 40 rows (~4000 tokens) is guaranteed to
+# fail even after halving. Start small — the retry ladder can shrink,
+# but cannot grow. Users can override via --chunk-size.
+_DEFAULT_CHUNK_SIZE = {
+    "anthropic":  40,
+    "openai":     40,
+    "google":     40,
+    "openrouter": 8,    # free tier: ~1358 token input cap
+    "groq":       15,
+    "deepseek":   30,
+    "mistral":    20,
+    "ollama":     20,   # depends on num_ctx, but 20 is safe for 4k models
+}
+
+
+def _strip_html(s: str) -> str:
+    """Convert RSS/HTML `selftext` to Markdown via `markdownify`.
+
+    RSS feeds ship full `<p>`/`<a>`/`<ul>` markup which bloats chunk
+    char-count 3-5× with near-zero signal for LLMs. Markdown preserves
+    the useful structure (lists / bold / inline links) in a form the
+    LLM parses naturally, while collapsing the wrapper tags.
+
+    We strip `<a>` and `<img>` entirely (UTM-laden URLs are pure noise
+    for our use case — titles/descriptions already contain the real
+    signal). Collapses whitespace at the end.
+
+    Falls back to the original string if markdownify / bs4 aren't
+    installed — the `sources` extra pulls them in, but we keep this
+    resilient so importing this module never raises in minimal envs.
+    Also short-circuits on obviously non-HTML content to avoid
+    unnecessary bs4 parsing cost.
+    """
+    if not s or "<" not in s:
+        return s
+    try:
+        from markdownify import markdownify as _md
+    except ImportError:
+        # No markdownify → cheap regex fallback.
+        import re as _re
+        s2 = _re.sub(r"<[^>]+>", " ", s)
+        s2 = _re.sub(r"&(nbsp|amp|lt|gt|quot|#\d+);", " ", s2)
+        s2 = _re.sub(r"\s+", " ", s2).strip()
+        return s2
+    try:
+        import re as _re
+        out = _md(s, heading_style="ATX", strip=["a", "img"])
+        # Collapse runs of blank lines / whitespace that markdownify
+        # leaves around stripped tags.
+        out = _re.sub(r"\n{3,}", "\n\n", out)
+        out = _re.sub(r"[ \t]{2,}", " ", out)
+        return out.strip()
+    except Exception:
+        # Malformed HTML → fall back to returning the raw string; the
+        # corpus-excerpt truncation downstream still bounds its size.
+        return s
+
+
+def synthesize_insights_chunked(
+    topic: str,
+    provider: str | None = None,
+    chunk_size: int | None = None,
+    max_workers: int | None = None,
+    max_tokens_per_chunk: int = 800,
+    persist: bool = True,
+    min_score: int = 0,
+    progress=None,
+) -> dict[str, Any]:
+    """Chunked synth — map-reduce over the corpus.
+
+    Each chunk is one small LLM call (800 max_tokens by default) that
+    returns a partial `findings` list. Chunks run in parallel up to
+    `max_workers`. Then a deterministic merge unions findings by
+    normalized title, sums frequencies, keeps max importance / min
+    satisfaction, and the longest evidence snippet.
+
+    No final synthesis LLM call — the merge is pure code so the output is
+    stable, cheap, and sidesteps the 402/credit issue that kills the
+    single-call path when the provider has low credits.
+
+    `max_workers=1` = sequential. `None` = auto (provider-adaptive).
+    `progress(msg: str)` — optional callback for per-chunk status lines.
+    """
+    import concurrent.futures as _cf
+    import threading as _threading
+    import time as _time
+
+    try:
+        provider = resolve_provider(provider)
+    except RuntimeError as e:
+        return {"ok": False, "skipped": True, "topic": topic, "reason": str(e)}
+
+    rows = _select_corpus(topic, min_score=min_score)
+    if not rows:
+        return {
+            "ok": False, "topic": topic,
+            "error": f"No corpus for topic={topic!r}. Run `research collect` first.",
+        }
+
+    # Strip HTML from selftext BEFORE chunking. RSS feeds shove full markup
+    # into the summary, bloating chunk char-count 3-5× — on OpenRouter's
+    # 1358-token free-tier cap, that's the difference between "chunk fits"
+    # and "another 402". Do this once up-front so every chunk benefits.
+    for r in rows:
+        if isinstance(r.get("selftext"), str):
+            r["selftext"] = _strip_html(r["selftext"])
+        if isinstance(r.get("title"), str):
+            r["title"] = _strip_html(r["title"])
+
+    # Same provider-aware cap as single-call mode — if the user has a huge
+    # corpus, we still bound the total work. Chunking buys us FASTER output
+    # per chunk, not infinite scale.
+    provider_cap = _cap_for_provider(provider)
+    if len(rows) > provider_cap:
+        rows.sort(
+            key=lambda r: (r.get("score") or 0) + 2 * (r.get("num_comments") or 0),
+            reverse=True,
+        )
+        rows = rows[:provider_cap]
+
+    # Provider-adaptive chunk size — defaults are conservative on
+    # low-credit providers. Explicit chunk_size arg wins.
+    if chunk_size is None:
+        chunk_size = _DEFAULT_CHUNK_SIZE.get(provider, 20)
+
+    chunks = _chunk_rows(rows, chunk_size)
+    workers = max_workers if max_workers is not None else _PARALLEL_WORKERS.get(provider, 2)
+    workers = max(1, min(workers, len(chunks)))
+
+    def _log(msg: str) -> None:
+        if progress:
+            try:
+                progress(msg)
+            except Exception:
+                pass
+
+    _log(f"[chunked] {len(rows)} rows → {len(chunks)} chunks × {chunk_size} rows, workers={workers}, provider={provider}")
+
+    from ..analyze.providers.base import get_provider
+    prov = get_provider(provider)
+
+    sources_present = sorted({r.get("source_type") or "reddit" for r in rows})
+
+    # Stable lock so logs don't interleave mid-word when workers write back
+    _lock = _threading.Lock()
+
+    def _run_chunk(idx: int, chunk_rows: list[dict]) -> tuple[int, list[dict], str | None]:
+        import re as _re
+        _debug = os.getenv("CHUNK_DEBUG") == "1"
+        t0 = _time.monotonic()
+        # One unified shrink loop. Each error adjusts one or more of:
+        #   current_rows       — input corpus size
+        #   current_excerpt    — per-row char budget
+        #   current_max_tokens — output cap
+        # Next iteration rebuilds the prompt with the new values and retries.
+        # This handles cascading errors cleanly: "can only afford 96" → lower
+        # max_tokens → retry → "prompt tokens exceeded" → shrink corpus →
+        # retry → eventually fits.
+        current_rows = list(chunk_rows)
+        current_excerpt = 180
+        current_max_tokens = max_tokens_per_chunk
+        raw: str | None = None
+        last_err: str | None = None
+        MAX_ATTEMPTS = 7
+        for attempt in range(MAX_ATTEMPTS):
+            corpus_text = _format_corpus(current_rows, excerpt_chars=current_excerpt)
+            user = _CHUNK_USER_TEMPLATE.format(
+                topic=topic,
+                chunk_idx=idx + 1,
+                chunk_total=len(chunks),
+                n_rows=len(current_rows),
+                corpus=corpus_text,
+            )
+            if _debug:
+                with _lock:
+                    _log(
+                        f"[chunk {idx + 1} attempt {attempt}] "
+                        f"rows={len(current_rows)} ex={current_excerpt} "
+                        f"max_tokens={current_max_tokens} "
+                        f"prompt_chars={len(user) + len(_CHUNK_PROMPT_SYSTEM)}"
+                    )
+            try:
+                raw = prov.complete(
+                    prompt=user,
+                    system=_CHUNK_PROMPT_SYSTEM,
+                    max_tokens=current_max_tokens,
+                    temperature=0.2,
+                )
+                break
+            except Exception as e:
+                last_err = str(e)
+                msg = last_err.lower()
+                if _debug:
+                    with _lock:
+                        _log(f"[chunk {idx + 1} attempt {attempt}] ERR: {last_err[:180]}")
+                adjusted = False
+                # --- Output side: "can only afford N" ---
+                # Floor 30, margin 4 — aggressively small so ~96-token
+                # OpenRouter remainders still pass the floor check.
+                afford = _re.search(r"can only afford\s+(\d+)", msg)
+                if afford:
+                    new_mt = max(30, int(afford.group(1)) - 4)
+                    if new_mt < current_max_tokens:
+                        current_max_tokens = new_mt
+                        adjusted = True
+                # --- Input side: "limit exceeded: X > Y" ---
+                overflow = _re.search(r"(?:limit exceeded|token[s]? limit)[:\s]+(\d+)\s*>\s*(\d+)", msg)
+                if overflow:
+                    current_tokens = int(overflow.group(1))
+                    allowed_tokens = int(overflow.group(2))
+                    # Keep 30% headroom for system prompt + JSON overhead.
+                    target_ratio = (allowed_tokens * 0.7) / max(current_tokens, 1)
+                    new_rows = max(1, int(len(current_rows) * target_ratio))
+                    new_excerpt = max(60, int(current_excerpt * target_ratio))
+                    if new_rows < len(current_rows) or new_excerpt < current_excerpt:
+                        current_rows = current_rows[:new_rows]
+                        current_excerpt = new_excerpt
+                        adjusted = True
+                elif any(k in msg for k in ("prompt tokens", "context length", "input too long", "too many tokens")):
+                    # Generic input-too-big (no parseable numbers) → halve.
+                    if len(current_rows) > 1:
+                        current_rows = current_rows[: max(1, len(current_rows) // 2)]
+                        current_excerpt = max(60, current_excerpt // 2)
+                        adjusted = True
+                if not adjusted:
+                    # Nothing we recognize → bail this chunk.
+                    break
+                # else: continue to next attempt with adjusted values
+        if raw is None:
+            return (idx, [], (last_err or "unknown")[:200])
+
+        # Reuse the tolerant JSON parser — chunk output is plain
+        # {"findings": [...]} so extracting the list is trivial.
+        parsed = _parse_insight_json(raw)
+        if parsed.get("_parse_error"):
+            with _lock:
+                _log(f"[chunk {idx + 1}/{len(chunks)}] parse error; skipping")
+            return (idx, [], parsed.get("_error") or "parse error")
+        findings = parsed.get("findings") if isinstance(parsed, dict) else None
+        findings = findings if isinstance(findings, list) else []
+        dt = _time.monotonic() - t0
+        with _lock:
+            _log(f"[chunk {idx + 1}/{len(chunks)}] ✓ {len(findings)} findings ({dt:.1f}s)")
+        return (idx, findings, None)
+
+    per_chunk: list[list[dict]] = [[] for _ in range(len(chunks))]
+    errors: list[str] = []
+
+    if workers == 1:
+        # Sequential
+        for i, ch in enumerate(chunks):
+            idx, findings, err = _run_chunk(i, ch)
+            per_chunk[idx] = findings
+            if err:
+                errors.append(f"chunk {idx + 1}: {err}")
+    else:
+        # Parallel
+        with _cf.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="insights-chunk") as pool:
+            futures = {pool.submit(_run_chunk, i, ch): i for i, ch in enumerate(chunks)}
+            for fut in _cf.as_completed(futures):
+                try:
+                    idx, findings, err = fut.result()
+                    per_chunk[idx] = findings
+                    if err:
+                        errors.append(f"chunk {idx + 1}: {err}")
+                except Exception as e:
+                    errors.append(f"chunk worker crashed: {e}")
+
+    merged_findings = _merge_findings(per_chunk)
+
+    # If EVERY chunk failed → surface a real error. Previously we returned
+    # ok:True with an empty findings list, which silently painted an empty
+    # report. Classify the root cause from the first error so the UI shows
+    # the right CTA (Switch provider / Retry / Deep scan already-on).
+    if not merged_findings and errors:
+        first_err = errors[0]
+        low = first_err.lower()
+        err_code = None
+        hint = ""
+        if "can only afford" in low or "credits" in low or "402" in low:
+            err_code = "credits_exhausted"
+            hint = " — all chunks hit credit limits. Switch to Ollama (local, free) in Settings → AI Keys."
+        elif any(k in low for k in ("prompt tokens", "context length", "input too long")):
+            err_code = "context_overflow"
+            hint = " — all chunks still too big even after shrinking. Re-run with --chunk-size 2 or switch to Ollama."
+        elif "401" in low or "invalid api" in low or "unauthorized" in low:
+            err_code = "invalid_key"
+            hint = " — the API key appears invalid. Re-save it in Settings → AI Keys."
+        return {
+            "ok": False,
+            "topic": topic,
+            "provider": provider,
+            "error": f"All {len(chunks)} chunks failed. First error: {first_err[:220]}{hint}",
+            "error_code": err_code,
+            "_chunk_errors": errors[:5],
+            "corpus_coverage": {
+                "total_posts_considered": len(rows),
+                "chunks_run": len(chunks),
+                "chunks_failed": len(chunks),
+                "workers": workers,
+                "mode": "chunked",
+            },
+        }
+
+    report: dict[str, Any] = {
+        "ok": True,
+        "topic": topic,
+        "provider": provider,
+        "findings": merged_findings,
+        "competitors": [],       # chunked mode doesn't synthesize these
+        "hypotheses": [],
+        "executive_summary": "",
+        "disconfirming_evidence": [],
+        "corpus_coverage": {
+            "total_posts_considered": len(rows),
+            "sources_represented": sources_present,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "chunks_run": len(chunks),
+            "chunks_failed": sum(1 for ch in per_chunk if not ch),
+            "workers": workers,
+            "mode": "chunked",
+        },
+        "_mode": "chunked",
+        "_partial": True,  # UI can show "chunked scan — findings only" badge
+        "_chunk_errors": errors[:5],
+    }
+
+    _normalize_scores(report, total_corpus=len(rows))
+
+    # Same relevance gate as the single-shot path (see ~line 466 for rationale).
+    try:
+        threshold = float(os.getenv("GAPMAP_FINDING_RELEVANCE_THRESHOLD", "0.40"))
+    except (TypeError, ValueError):
+        threshold = 0.40
+    if threshold > 0 and isinstance(report.get("findings"), list):
+        try:
+            from .relevance import filter_findings
+            gate = filter_findings(topic, report["findings"], threshold=threshold)
+            if gate.get("ok") and not gate.get("skipped"):
+                report["findings"] = gate["kept"]
+                if gate.get("dropped"):
+                    report["_relevance_dropped_findings"] = gate["dropped"]
+                    report["_relevance_dropped_count"] = gate["dropped_count"]
+                    report["_relevance_threshold"] = threshold
+        except Exception as e:
+            report["_relevance_gate_error"] = str(e)
+
+    if persist and merged_findings:
+        model = os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or ""
+        _persist(topic, report, provider, model, len(rows))
+
+    _log(f"[chunked] merged → {len(merged_findings)} findings, {len(errors)} chunk error(s)")
     return report
 
 

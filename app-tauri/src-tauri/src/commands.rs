@@ -8,6 +8,7 @@ use crate::cli::{
     run_cli_chat_streaming, run_cli_stream_streaming, run_cli_streaming,
     ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
 };
+use tauri::Listener;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
@@ -133,19 +134,42 @@ pub async fn cli_info(app: AppHandle) -> Result<Value, String> {
 }
 
 /// Per-topic inventory for the home screen.
+///
+/// Historically this SQL joined `topic_posts` and showed only topics that had
+/// at least one post. That made newly-created topics invisible for 30-60 s
+/// while the sidecar fetched data. We now UNION in `topic_prefs` — every
+/// collect upserts that table as its first action, so the row appears in
+/// listing as soon as the user hits "Start", even if no posts have landed.
+/// `COALESCE` fills post counts with 0 for brand-new topics.
 #[tauri::command]
 pub async fn list_topics(app: AppHandle) -> Result<Value, String> {
-    let sql = "SELECT tp.topic, \
-                      count(DISTINCT tp.post_id) AS posts, \
-                      count(DISTINCT coalesce(p.source_type,'reddit')) AS sources, \
-                      max(tp.added_at) AS last_collect, \
+    // Filter soft-deleted rows (T1.3). A topic counts as deleted when its
+    // topic_prefs row has a non-empty deleted_at. The LEFT JOIN picks up
+    // rows that have no topic_prefs entry at all — those stay visible.
+    let sql = "WITH t AS ( \
+                 SELECT topic FROM topic_posts \
+                 UNION SELECT topic FROM topic_prefs \
+               ) \
+               SELECT t.topic, \
+                      COALESCE(stats.posts, 0) AS posts, \
+                      COALESCE(stats.sources, 0) AS sources, \
+                      COALESCE(stats.last_collect, pref.last_run_ts) AS last_collect, \
                       (SELECT count(*) FROM graph_nodes n \
-                       WHERE n.topic=tp.topic AND n.kind='painpoint') AS painpoints \
-               FROM topic_posts tp \
-               LEFT JOIN posts p ON p.id=tp.post_id \
-               GROUP BY tp.topic \
-               ORDER BY last_collect DESC";
-    run_cli(&app, vec!["query", sql, "--json"]).await.map_err(err_to_string)
+                       WHERE n.topic=t.topic AND n.kind='painpoint') AS painpoints \
+               FROM t \
+               LEFT JOIN ( \
+                 SELECT tp.topic, \
+                        count(DISTINCT tp.post_id) AS posts, \
+                        count(DISTINCT coalesce(p.source_type,'reddit')) AS sources, \
+                        max(tp.added_at) AS last_collect \
+                 FROM topic_posts tp \
+                 LEFT JOIN posts p ON p.id=tp.post_id \
+                 GROUP BY tp.topic \
+               ) stats ON stats.topic = t.topic \
+               LEFT JOIN topic_prefs pref ON pref.topic = t.topic \
+               WHERE coalesce(pref.deleted_at, '') = '' \
+               ORDER BY last_collect DESC NULLS LAST";
+    native_query(&app, sql).await
 }
 
 /// Global overview stats (sum across topics) for the hero banner.
@@ -158,7 +182,14 @@ pub async fn overview_stats(app: AppHandle) -> Result<Value, String> {
                  (SELECT count(*) FROM graph_nodes WHERE kind='painpoint') AS total_painpoints, \
                  (SELECT count(*) FROM graph_nodes WHERE kind='workaround') AS total_workarounds, \
                  (SELECT count(DISTINCT coalesce(source_type,'reddit')) FROM posts) AS total_sources";
-    run_cli(&app, vec!["query", sql, "--json"]).await.map_err(err_to_string)
+    // overview_stats returns a single-row shape, not an array — unwrap.
+    let rows = native_query(&app, sql).await?;
+    if let Some(arr) = rows.as_array() {
+        if let Some(first) = arr.first() {
+            return Ok(first.clone());
+        }
+    }
+    Ok(Value::Object(serde_json::Map::new()))
 }
 
 /// Recent fetch events for the activity feed.
@@ -166,7 +197,25 @@ pub async fn overview_stats(app: AppHandle) -> Result<Value, String> {
 pub async fn recent_activity(app: AppHandle) -> Result<Value, String> {
     let sql = "SELECT kind, params_json, started_at, ended_at, rows, error \
                FROM fetches ORDER BY started_at DESC LIMIT 12";
-    run_cli(&app, vec!["query", sql, "--json"]).await.map_err(err_to_string)
+    native_query(&app, sql).await
+}
+
+/// Native-SQLite helper — same fallback shape as `run_query` (empty array
+/// if DB doesn't exist yet) but without the read-only SQL validator (these
+/// queries are hardcoded string literals above, not user-supplied).
+async fn native_query(app: &AppHandle, sql: &str) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Ok(Value::Array(vec![]));
+    }
+    let sql_owned = sql.to_string();
+    tokio::task::spawn_blocking(move || {
+        crate::db::query_db(&db_path, &sql_owned, None).map(Value::from)
+    })
+    .await
+    .map_err(|e| format!("query task failed: {e}"))?
+    .map_err(|e| e.to_string())
 }
 
 /// Discover sub candidates for a topic.
@@ -196,7 +245,35 @@ pub async fn start_collect(
     aggressive: bool,
     sources: Option<String>,
     skip_reddit: Option<bool>,
-) -> Result<(), String> {
+) -> Result<Value, String> {
+    use crate::cli::ActiveCollects;
+
+    // Single-flight dedup. If the user navigates away from `#/collect/X` and
+    // comes back, renderCollect will call start_collect again. Without this
+    // we'd spawn a duplicate Python sidecar for the same topic — two parallel
+    // writers stomping on the schema. Instead, return already_running so the
+    // UI subscribes to the already-streaming events.
+    //
+    // We clone the inner Arc once and release the State borrow immediately —
+    // keeping a long-lived `state` binding would block the subsequent
+    // `app.listen_any(...)` and `app.unlisten(...)` calls from borrowing app.
+    let active_arc = {
+        let state = app.state::<ActiveCollects>();
+        state.0.clone()
+    };
+    {
+        let map = active_arc.lock().map_err(|e| e.to_string())?;
+        if map.contains_key(&topic) {
+            let started_at = map.get(&topic).copied().unwrap_or(0);
+            return Ok(serde_json::json!({
+                "ok": true,
+                "already_running": true,
+                "topic": topic,
+                "started_at": started_at,
+            }));
+        }
+    }
+
     let mut args: Vec<String> = vec![
         "research".into(),
         "collect".into(),
@@ -216,10 +293,72 @@ pub async fn start_collect(
     if skip_reddit.unwrap_or(false) {
         args.push("--skip-reddit".into());
     }
+
+    // Register the topic as in-flight BEFORE spawning the sidecar. We remove
+    // it when `collect:done` fires (via the listener below).
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    {
+        let mut map = active_arc.lock().map_err(|e| e.to_string())?;
+        map.insert(topic.clone(), now_secs);
+    }
+
+    // Subscribe to collect:done so we can auto-remove the topic from the
+    // active set. Since only one collect runs per topic at a time (enforced
+    // by this map), clearing `topic_clone` on any collect:done event is safe.
+    let active_for_listener = active_arc.clone();
+    let topic_clone = topic.clone();
+    let unlisten = app.listen_any("collect:done", move |_event| {
+        if let Ok(mut map) = active_for_listener.lock() {
+            map.remove(&topic_clone);
+        }
+    });
+
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    run_cli_streaming(&app, arg_refs, "collect:progress", "collect:done")
-        .await
+    let stream_result =
+        run_cli_streaming(&app, arg_refs, "collect:progress", "collect:done").await;
+
+    // Always unlisten + ensure topic is cleared, regardless of outcome.
+    // On success the listener has already cleared the topic (collect:done
+    // fired which is why run_cli_streaming returned); the remove below is a
+    // no-op. On failure (sidecar refused to start, etc.) the listener may
+    // have never fired — we manually clear so a user retry doesn't return
+    // {already_running: true} for a ghost process.
+    app.unlisten(unlisten);
+    if let Ok(mut map) = active_arc.lock() {
+        map.remove(&topic);
+    }
+
+    stream_result
+        .map(|_| {
+            serde_json::json!({
+                "ok": true,
+                "already_running": false,
+                "topic": topic,
+                "started_at": now_secs,
+            })
+        })
         .map_err(err_to_string)
+}
+
+/// Return the set of topics that have an in-flight collect, with their start
+/// timestamps. Empty object = nothing running. Used by the home screen to
+/// pin a "Collecting now" banner with click-to-view-log.
+#[tauri::command]
+pub async fn active_collects(app: AppHandle) -> Result<Value, String> {
+    use crate::cli::ActiveCollects;
+    let arc = {
+        let state = app.state::<ActiveCollects>();
+        state.0.clone()
+    };
+    let map = arc.lock().map_err(|e| e.to_string())?;
+    let out: serde_json::Map<String, Value> = map
+        .iter()
+        .map(|(k, v)| (k.clone(), Value::from(*v)))
+        .collect();
+    Ok(Value::Object(out))
 }
 
 /// Run a graph operation (build/enrich) with per-(op, topic) dedup.
@@ -318,6 +457,76 @@ pub async fn synthesize_insights(
         args.push("--cached");
     }
     run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Chunked (map-reduce) synthesis — splits the corpus into N small chunks,
+/// runs one LLM call per chunk (parallel up to `max_workers`), merges
+/// findings deterministically. Use this when the single-call path hits
+/// 402/credit errors — each chunk uses `max_tokens_per_chunk` (default 800)
+/// so low-budget providers can still produce findings.
+///
+/// `max_workers=None` picks a provider-adaptive default (Ollama=1, Groq=2,
+/// others=4). Set to 1 for strictly sequential execution.
+#[tauri::command]
+pub async fn synthesize_insights_chunked(
+    app: AppHandle,
+    topic: String,
+    chunk_size: Option<u32>,
+    max_workers: Option<u32>,
+    max_tokens_per_chunk: Option<u32>,
+) -> Result<Value, String> {
+    let cs = chunk_size.unwrap_or(40).to_string();
+    let mtp = max_tokens_per_chunk.unwrap_or(800).to_string();
+    let mut args: Vec<&str> = vec![
+        "research", "insights", "--topic", &topic,
+        "--chunked",
+        "--chunk-size", &cs,
+        "--max-tokens-per-chunk", &mtp,
+        "--json",
+    ];
+    let mw_str: String;
+    if let Some(mw) = max_workers {
+        mw_str = mw.to_string();
+        args.push("--max-workers");
+        args.push(&mw_str);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Unified end-to-end gap-discovery pipeline: chunked LLM synth + palace
+/// cross-source evidence + science fetch + solutions pipeline + experiment
+/// proposals. Every step persists to SQLite so Map/Insights/Research pick
+/// up the new nodes without needing a separate refresh.
+#[tauri::command]
+pub async fn run_gap_discovery(
+    app: AppHandle,
+    topic: String,
+    chunk_size: Option<u32>,
+    max_workers: Option<u32>,
+    papers_per_painpoint: Option<u32>,
+    no_experiments: Option<bool>,
+) -> Result<Value, String> {
+    let cs = chunk_size.map(|n| n.to_string());
+    let mw = max_workers.map(|n| n.to_string());
+    let pp = papers_per_painpoint.unwrap_or(5).to_string();
+    let mut args: Vec<&str> = vec!["research", "gap-discovery", "--topic", &topic, "--json"];
+    if let Some(s) = cs.as_deref() { args.push("--chunk-size"); args.push(s); }
+    if let Some(s) = mw.as_deref() { args.push("--max-workers"); args.push(s); }
+    args.push("--papers"); args.push(&pp);
+    if no_experiments.unwrap_or(false) { args.push("--no-experiments"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn list_experiments(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "experiments-list", "--topic", &topic, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn persona_view(app: AppHandle, topic: String, persona: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "persona-view", "--topic", &topic, "--persona", &persona, "--json"])
+        .await.map_err(err_to_string)
 }
 
 // ─── Phase 5-10 bundle — cross-topic, export, matrix, research linking ─
@@ -618,6 +827,50 @@ pub async fn hypothesis_stats(
     run_cli(&app, arg_refs).await.map_err(err_to_string)
 }
 
+/// Pre-check before starting a collect — "does this topic already exist?"
+/// UI uses the result to offer Open / Augment / New-fresh choices.
+#[tauri::command]
+pub async fn find_existing_topic(
+    app: AppHandle,
+    user_input: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "find-existing-topic", "--input", &user_input, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+/// Merge LLM-canonicalization-caused duplicate topic rows. Dry-run by default.
+/// Does NOT merge rows that differ purely in user casing — those stay separate.
+#[tauri::command]
+pub async fn merge_duplicate_topics(
+    app: AppHandle,
+    apply: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec!["research", "merge-duplicate-topics", "--json"];
+    if apply.unwrap_or(false) { args.push("--apply"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Relevance-gate cleanup for an existing topic. Dry-run by default.
+#[tauri::command]
+pub async fn clean_corpus(
+    app: AppHandle,
+    topic: String,
+    threshold: Option<f64>,
+    apply: Option<bool>,
+    min_keep: Option<i64>,
+) -> Result<Value, String> {
+    let t = threshold.unwrap_or(0.30).to_string();
+    let mk = min_keep.unwrap_or(20).to_string();
+    let mut args: Vec<&str> = vec![
+        "research", "clean-corpus", "--topic", &topic,
+        "--threshold", &t, "--min-keep", &mk, "--json",
+    ];
+    if apply.unwrap_or(false) { args.push("--apply"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 // ─── Dual-Mode Pivot — Product Mode commands ─────────────────────────────
 // Commands for the new product-centric surface. See research/product.py,
 // product_sweep.py, product_digest.py. Every command uses run_cli which
@@ -873,6 +1126,20 @@ pub async fn run_sentiment_by_source(app: AppHandle, topic: String) -> Result<Va
     run_cli(
         &app,
         vec!["research", "sentiment-by-source", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// Concept Agent — synthesize 3-5 evidence-backed product concepts from a
+/// topic's painpoints. Returns {topic, concepts, persisted, reason?}.
+/// Concepts are persisted as graph_nodes kind='concept' with edges back to
+/// their source painpoints so the UI can render clickable citations.
+#[tauri::command]
+pub async fn run_concepts(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "concepts", "--topic", &topic, "--json"],
     )
     .await
     .map_err(err_to_string)
@@ -1242,20 +1509,56 @@ pub async fn list_exports(app: AppHandle) -> Result<Value, String> {
     Ok(Value::Array(out))
 }
 
-/// Delete a topic — removes its topic_posts + graph nodes/edges, keeps posts.
-/// sqlite-utils' query() only runs a single statement, so we issue three calls.
+/// Soft-delete a topic (T1.3). Sets topic_prefs.deleted_at and hides the
+/// topic from list_topics / the graph. Reversible via restore_topic for 7
+/// days; after that purge_deleted moves it to hard-delete during a nightly
+/// sweep. If the topic has no topic_prefs row (rare — graph-only topic),
+/// we fall back to an immediate hard-delete since there's nowhere to stash
+/// a tombstone.
 #[tauri::command]
 pub async fn delete_topic(app: AppHandle, topic: String) -> Result<Value, String> {
-    for table in ["topic_posts", "graph_nodes", "graph_edges"] {
-        let sql = format!("DELETE FROM {table} WHERE topic=:topic");
-        run_cli(
-            &app,
-            vec!["query", &sql, "--topic", &topic, "--json"],
-        )
+    run_cli(
+        &app,
+        vec!["research", "topic-soft-delete", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// Restore a soft-deleted topic by clearing deleted_at.
+#[tauri::command]
+pub async fn restore_topic(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "topic-restore", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// List soft-deleted topics (within the restore window).
+#[tauri::command]
+pub async fn list_trash(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "topic-trash-list", "--json"])
         .await
-        .map_err(err_to_string)?;
-    }
-    Ok(serde_json::json!({ "ok": true, "topic": topic }))
+        .map_err(err_to_string)
+}
+
+/// Hard-purge soft-deleted topics older than `min_age_days` (default 7).
+/// Typically called from a launchd nightly sweep; exposed here for a
+/// Settings "Empty trash now" button.
+#[tauri::command]
+pub async fn purge_deleted_topics(
+    app: AppHandle,
+    min_age_days: Option<i64>,
+) -> Result<Value, String> {
+    let d = min_age_days.unwrap_or(7).to_string();
+    run_cli(
+        &app,
+        vec!["research", "topic-trash-purge", "--min-age-days", &d, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
 }
 
 /// Reveal a file in Finder / Explorer.
@@ -1609,22 +1912,41 @@ pub async fn run_query(
     topic: Option<String>,
     params: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Value, String> {
-    let trimmed = sql.trim();
-    validate_read_only_sql(trimmed)?;
-    // Build arg vec dynamically — `--topic` and `--param name=value` are optional.
-    let mut args: Vec<String> = vec!["query".into(), trimmed.into(), "--json".into()];
-    if let Some(t) = &topic {
-        args.push("--topic".into());
-        args.push(t.clone());
+    let trimmed = sql.trim().to_string();
+    validate_read_only_sql(&trimmed)?;
+
+    // Native SQLite path — no sidecar spawn. Opens the WAL-mode DB file
+    // read-only and runs the prepared statement directly. Typical query
+    // goes from 30-70s (bundled sidecar cold start on a fresh DMG) to
+    // sub-10ms. See src/db.rs for the connection cache + param binding.
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        // No DB yet — return an empty array so the UI doesn't error out
+        // on a fresh install before the first collect has landed.
+        return Ok(serde_json::Value::Array(vec![]));
     }
-    if let Some(p) = &params {
-        for (k, v) in p {
-            args.push("--param".into());
-            args.push(format!("{k}={v}"));
+
+    // Build the named-params map the way Python did it: merge `--topic`
+    // into `params` under key `topic`, then pass the whole thing through.
+    let mut p_map: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    if let Some(t) = topic {
+        p_map.insert("topic".into(), serde_json::Value::String(t));
+    }
+    if let Some(extra) = params {
+        for (k, v) in extra {
+            p_map.insert(k, serde_json::Value::String(v));
         }
     }
-    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    run_cli(&app, arg_refs).await.map_err(err_to_string)
+
+    tokio::task::spawn_blocking(move || {
+        let params_ref = if p_map.is_empty() { None } else { Some(&p_map) };
+        crate::db::query_db(&db_path, &trimmed, params_ref)
+            .map(Value::from)
+    })
+    .await
+    .map_err(|e| format!("query task failed: {e}"))?
+    .map_err(|e| e.to_string())
 }
 
 /// Path to the user's BYOK env file (`~/.config/reddit-myind/.env`).
@@ -2018,6 +2340,341 @@ fn normalize_models(provider: &str, raw: &Value) -> Vec<Value> {
     }
 
     out
+}
+
+// ─── MCP ↔ App integration (one-click connect to Claude Code) ─────────────────
+//
+// Spec: docs/superpowers/specs/2026-04-21-mcp-app-integration.md (v1).
+// We shell out to `reddit-cli mcp {install,uninstall,status} --json` so all
+// the JSON-merge / token-gen / atomic-write logic stays in one place
+// (src/reddit_research/mcp/install.py), testable from CLI.
+//
+// Two execution modes for the MCP entry's command:
+//   - Dev:  if `.venv/bin/python` is found near CWD → register as
+//           `uv --directory <repo> run reddit-cli mcp serve` (current dev flow).
+//   - Prod: bundled binary → register the absolute path to the sidecar exe
+//           inside Contents/MacOS so Claude Code spawns it directly without
+//           needing `uv` on the user's PATH.
+
+fn resolve_sidecar_bin_path() -> Option<std::path::PathBuf> {
+    // In a packaged Tauri app, the sidecar lives next to the main exe in
+    // Contents/MacOS/. `current_exe()` gives us the main app binary; its
+    // sibling `reddit-cli` (or `reddit-cli.exe` on Windows) is the sidecar.
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    for name in ["reddit-cli", "reddit-cli.exe"] {
+        let candidate = dir.join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn dev_project_dir() -> Option<std::path::PathBuf> {
+    // Walk up looking for a `pyproject.toml` to mark the repo root. Same
+    // 5-step budget as find_dev_venv_python so behaviour is consistent.
+    let mut cur = std::env::current_dir().ok()?.canonicalize().ok()?;
+    let mut visited: std::collections::HashSet<std::path::PathBuf> =
+        std::collections::HashSet::new();
+    for _ in 0..5 {
+        if !visited.insert(cur.clone()) { break; }
+        if cur.join("pyproject.toml").exists() && cur.join(".venv").exists() {
+            return Some(cur);
+        }
+        cur = cur.parent()?.canonicalize().ok()?;
+    }
+    None
+}
+
+/// List known MCP clients (Claude Code, Cursor, Cline, …) and which configs exist.
+#[tauri::command]
+pub async fn mcp_clients(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["mcp", "clients", "--json"]).await.map_err(err_to_string)
+}
+
+/// Check whether Gap Map is connected to the chosen MCP client and DB-aligned.
+/// `client` defaults to `claude-code` when None/empty.
+#[tauri::command]
+pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    let dd = data_dir(&app).map_err(err_to_string)?;
+    let dd_str = dd.to_string_lossy().to_string();
+    let mut args: Vec<String> = vec![
+        "mcp".into(), "status".into(),
+        "--data-dir".into(), dd_str,
+        "--json".into(),
+    ];
+    if let Some(c) = client.as_deref().filter(|s| !s.is_empty()) {
+        args.push("--client".into()); args.push(c.into());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+/// Connect (or re-sync) Gap Map's MCP entry in the chosen client's config.
+/// Aligns REDDIT_MYIND_DATA_DIR and writes a token to the data dir.
+#[tauri::command]
+pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    let dd = data_dir(&app).map_err(err_to_string)?;
+    let dd_str = dd.to_string_lossy().to_string();
+
+    let mut args: Vec<String> = vec![
+        "mcp".into(), "install".into(),
+        "--data-dir".into(), dd_str,
+        "--json".into(),
+    ];
+    if let Some(c) = client.as_deref().filter(|s| !s.is_empty()) {
+        args.push("--client".into()); args.push(c.into());
+    }
+    if let Some(bin) = resolve_sidecar_bin_path() {
+        args.push("--bin".into());
+        args.push(bin.to_string_lossy().to_string());
+    } else if let Some(proj) = dev_project_dir() {
+        args.push("--project-dir".into());
+        args.push(proj.to_string_lossy().to_string());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+/// Remove Gap Map's MCP entry from the chosen client's config + delete the token.
+#[tauri::command]
+pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    let dd = data_dir(&app).map_err(err_to_string)?;
+    let dd_str = dd.to_string_lossy().to_string();
+    let mut args: Vec<String> = vec![
+        "mcp".into(), "uninstall".into(),
+        "--data-dir".into(), dd_str,
+        "--json".into(),
+    ];
+    if let Some(c) = client.as_deref().filter(|s| !s.is_empty()) {
+        args.push("--client".into()); args.push(c.into());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+// ── AG-C: global-competitors (T2.5) + finding feedback (T2.4) ─────────
+
+/// T2.5 — Cross-topic competitor dedup. Reads product-kind graph nodes
+/// across all topics and clusters them by label embedding similarity.
+#[tauri::command]
+pub async fn global_competitors(
+    app: AppHandle,
+    min_topics: Option<u32>,
+    threshold: Option<f32>,
+) -> Result<Value, String> {
+    let mt = min_topics.unwrap_or(2).to_string();
+    let th = threshold.unwrap_or(0.80).to_string();
+    run_cli(
+        &app,
+        vec![
+            "research", "global-competitors",
+            "--min-topics", &mt,
+            "--threshold", &th,
+            "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// T2.4 — Persist user feedback on a finding (wrong/off_topic/spam/ok).
+/// Next synthesize call for the topic splices these titles into the
+/// prompt as a negative-examples block.
+#[tauri::command]
+pub async fn feedback_record(
+    app: AppHandle,
+    topic: String,
+    title: String,
+    kind: Option<String>,
+    verdict: String,
+    note: Option<String>,
+) -> Result<Value, String> {
+    let kind_s = kind.unwrap_or_else(|| "painpoint".into());
+    let note_s = note.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "feedback-record",
+        "--topic", &topic,
+        "--title", &title,
+        "--kind", &kind_s,
+        "--verdict", &verdict,
+        "--json",
+    ];
+    if !note_s.is_empty() {
+        args.push("--note");
+        args.push(note_s.as_str());
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+// ── AG-E: prompt overrides (T3.7) ──────────────────────────────────────
+#[tauri::command]
+pub async fn prompt_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "prompt-list", "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn prompt_get(app: AppHandle, key: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "prompt-get", "--key", &key, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Set a prompt override. `text` is the full override body; empty clears it.
+#[tauri::command]
+pub async fn prompt_set(app: AppHandle, key: String, text: String) -> Result<Value, String> {
+    // Stream the override through a tempfile so we never pass large prompts
+    // on the command line (arg-list limits on some platforms) and avoid
+    // shell-quoting issues with newlines / backticks / quotes.
+    use std::io::Write;
+    let mut tmp = std::env::temp_dir();
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    tmp.push(format!("gapmap_prompt_{}_{}.txt", key.replace('/', "_"), ts));
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| format!("tmpfile: {e}"))?;
+        f.write_all(text.as_bytes()).map_err(|e| format!("write: {e}"))?;
+    }
+    let tmp_s = tmp.to_string_lossy().to_string();
+    let result = run_cli(
+        &app,
+        vec!["research", "prompt-set", "--key", &key, "--file", &tmp_s, "--json"],
+    )
+    .await
+    .map_err(err_to_string);
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
+#[tauri::command]
+pub async fn prompt_clear(app: AppHandle, key: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "prompt-clear", "--key", &key, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+// ── AG-E: saved views (T3.1) ──────────────────────────────────────────
+#[tauri::command]
+pub async fn saved_views(app: AppHandle, scope: Option<String>) -> Result<Value, String> {
+    let mut args: Vec<String> = vec!["research".into(), "saved-view-list".into()];
+    if let Some(s) = scope.as_ref() {
+        let t = s.trim();
+        if !t.is_empty() {
+            args.push("--scope".into());
+            args.push(t.into());
+        }
+    }
+    args.push("--json".into());
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn saved_view_create(
+    app: AppHandle,
+    scope: String,
+    name: String,
+    filter_json: Value,
+    pinned: Option<bool>,
+) -> Result<Value, String> {
+    let flt = serde_json::to_string(&filter_json).unwrap_or_else(|_| "{}".into());
+    let mut args: Vec<String> = vec![
+        "research".into(),
+        "saved-view-create".into(),
+        "--scope".into(),
+        scope,
+        "--name".into(),
+        name,
+        "--filter".into(),
+        flt,
+    ];
+    if pinned.unwrap_or(false) {
+        args.push("--pinned".into());
+    }
+    args.push("--json".into());
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn saved_view_update(
+    app: AppHandle,
+    id: i64,
+    name: Option<String>,
+    scope: Option<String>,
+    filter_json: Option<Value>,
+    pinned: Option<bool>,
+) -> Result<Value, String> {
+    let id_s = id.to_string();
+    let mut args: Vec<String> = vec![
+        "research".into(),
+        "saved-view-update".into(),
+        "--id".into(),
+        id_s,
+    ];
+    if let Some(n) = name {
+        args.push("--name".into());
+        args.push(n);
+    }
+    if let Some(s) = scope {
+        args.push("--scope".into());
+        args.push(s);
+    }
+    if let Some(f) = filter_json {
+        let flt = serde_json::to_string(&f).unwrap_or_else(|_| "{}".into());
+        args.push("--filter".into());
+        args.push(flt);
+    }
+    if let Some(p) = pinned {
+        args.push(if p { "--pinned".into() } else { "--unpinned".into() });
+    }
+    args.push("--json".into());
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn saved_view_delete(app: AppHandle, id: i64) -> Result<Value, String> {
+    let id_s = id.to_string();
+    run_cli(
+        &app,
+        vec!["research", "saved-view-delete", "--id", &id_s, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+// ── AG-D: CSV ingest ──
+/// Bulk-ingest a structured CSV into a topic corpus.
+///
+/// Expected headers: `post_id,title,body,author,url,created_utc,source_type`.
+/// Missing columns are tolerated except `title`. Delegates to the Python
+/// `research ingest-csv` subcommand, which runs the relevance gate via
+/// `_tag_posts`. Returns the JSON envelope the Python side emits:
+/// `{ok, parsed, skipped, tagged, dry_run, path, topic}`.
+#[tauri::command]
+pub async fn ingest_csv_file(
+    app: AppHandle,
+    topic: String,
+    path: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec![
+            "research", "ingest-csv",
+            "--path", &path,
+            "--topic", &topic,
+            "--source", "csv",
+            "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
 }
 
 #[cfg(test)]

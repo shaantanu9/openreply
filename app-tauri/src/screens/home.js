@@ -584,7 +584,90 @@ async function loadTopicGrid(root) {
   slot.innerHTML = `<section class="topic-grid">${topics.slice(0, 8).map((t, i) => topicTile(t, i)).join('')}</section>`;
   slot.querySelectorAll('.topic-tile').forEach(el => {
     el.addEventListener('click', () => { location.hash = el.dataset.href; });
+    // T1.1: right-click on a topic tile → context menu with Delete + Re-collect.
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const href = el.dataset.href || '';
+      const topic = decodeURIComponent(href.replace('#/topic/', ''));
+      if (!topic) return;
+      showTopicContextMenu(e.clientX, e.clientY, topic);
+    });
   });
+}
+
+// T1.1: tile context menu — Delete (type-to-confirm) + Re-collect.
+function showTopicContextMenu(x, y, topic) {
+  // Remove any existing menu first
+  document.querySelector('.home-topic-ctx-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'home-topic-ctx-menu';
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:1000;
+    background:var(--surface-1,#FFFDF7);border:1px solid var(--border-soft,#EADFC8);
+    border-radius:8px;padding:4px;min-width:200px;box-shadow:0 6px 20px rgba(0,0,0,0.1)`;
+  menu.innerHTML = `
+    <button class="ctx-open"   style="display:flex;width:100%;gap:8px;padding:8px 10px;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit">
+      <i data-lucide="external-link"></i><span>Open topic</span>
+    </button>
+    <button class="ctx-recol"  style="display:flex;width:100%;gap:8px;padding:8px 10px;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit">
+      <i data-lucide="refresh-cw"></i><span>Re-collect fresh data</span>
+    </button>
+    <div style="height:1px;background:var(--border-soft,#EADFC8);margin:4px 0"></div>
+    <button class="ctx-delete" style="display:flex;width:100%;gap:8px;padding:8px 10px;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit;color:#B84747">
+      <i data-lucide="trash-2"></i><span>Delete (soft, 7-day undo)</span>
+    </button>
+  `;
+  document.body.appendChild(menu);
+  window.refreshIcons?.();
+  const close = () => menu.remove();
+  menu.querySelector('.ctx-open').onclick = () => {
+    location.hash = `#/topic/${encodeURIComponent(topic)}`; close();
+  };
+  menu.querySelector('.ctx-recol').onclick = () => {
+    location.hash = `#/collect/${encodeURIComponent(topic)}`;
+    setTimeout(() => window.dispatchEvent(new CustomEvent('gapmap:start-collect',
+      { detail: { topic, aggressive: true } })), 100);
+    close();
+  };
+  menu.querySelector('.ctx-delete').onclick = async () => {
+    close();
+    const { confirmDestructiveAction } = await import('../lib/deleteConfirm.js');
+    const ok = await confirmDestructiveAction({
+      title: `Delete topic "${topic}"?`,
+      body: 'Soft-deleted — recoverable for 7 days from Settings → Trash.',
+      matchText: topic, confirmLabel: 'Delete topic', confirmDanger: true,
+      hint: `type the topic name to confirm`,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteTopic(topic);
+      const t = document.createElement('div');
+      t.className = 'toast toast-success';
+      t.style.cssText = 'display:flex;align-items:center;gap:12px';
+      t.innerHTML = `🗑 "${esc(topic)}" moved to trash <button class="btn btn-xs btn-primary" id="undo-home">Undo</button>`;
+      document.body.appendChild(t);
+      let undone = false;
+      t.querySelector('#undo-home').onclick = async () => {
+        undone = true;
+        try { await api.restoreTopic(topic); t.remove(); } catch {}
+        // Re-render the topic grid
+        const root = document.querySelector('#main-content') || document;
+        loadTopicGrid(root);
+      };
+      setTimeout(() => { if (!undone) t.remove(); }, 10000);
+      // Immediate grid refresh — row is hidden by list_topics right away.
+      const root = document.querySelector('#main-content') || document;
+      loadTopicGrid(root);
+    } catch (err) {
+      alert(`Delete failed: ${err?.message || err}`);
+    }
+  };
+  // Close on outside click or Escape
+  const outside = (e) => { if (!menu.contains(e.target)) { close(); document.removeEventListener('click', outside); } };
+  const onKey = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+  setTimeout(() => {
+    document.addEventListener('click', outside);
+    document.addEventListener('keydown', onKey);
+  }, 0);
 }
 
 async function loadActiveCollect(root) {

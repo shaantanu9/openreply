@@ -17,6 +17,10 @@ import { renderFind } from './screens/find.js';
 import { renderProductsList, renderProductDashboard, renderProductSetup } from './screens/product.js';
 import { runHealthCheck, healthIsBlocking } from './lib/healthCheck.js';
 import { tabStore, renderTabStrip, titleForHash, iconForHash } from './lib/tabs.js';
+// ── AG-D: compare view ──
+import { renderCompare } from './screens/compare.js';
+// ── AG-C: global competitors (T2.5) ──
+import { renderGlobalCompetitors } from './screens/global_competitors.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -37,6 +41,10 @@ const routes = [
   { match: /^\/products\/?$/,               render: renderProductsList },
   { match: /^\/product\/([^/]+)\/setup$/,   render: renderProductSetup },
   { match: /^\/product\/([^/]+)$/,          render: renderProductDashboard },
+  // ── AG-D: compare view ──
+  { match: /^\/compare\/([^/]+)\/([^/]+)$/, render: renderCompare },
+  // ── AG-C: global competitors (T2.5) ──
+  { match: /^\/competitors\/?$/,            render: renderGlobalCompetitors },
 ];
 
 // Route generation counter — bumped on every navigation so screens can tell
@@ -358,21 +366,38 @@ function wireModal() {
     localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
     localStorage.setItem('gapmap.pref.aggressive',          aggressive ? 'true' : 'false');
 
-    // Instant-feedback path: close the modal + navigate to the collect log
-    // screen immediately. The Python CLI runs its own `_canonicalize_topic`
-    // call at the top of `research collect` (collect.py:168), so the typo
-    // correction is NOT lost — it just happens a second later, inside the
-    // visible log, where the user sees "info: search using canonical 'X'
-    // (user typed 'Y')" instead of staring at a frozen modal for 5-15 s.
-    //
-    // The DB upsert of topic_prefs(topic) happens inside that same CLI call
-    // BEFORE canonicalize, so the topic shows in `list_topics` within a
-    // second (instant once the sidecar warm-boots — no cold-start pause).
+    // Pre-check: does a semantically-identical topic (same loose / slug
+    // normalization) already exist? If yes, ASK the user — we never
+    // silently merge. They get three choices: open the existing one,
+    // augment it with more data, or create a separate topic anyway.
+    let effectiveTopic = topic;
+    try {
+      const chk = await api.findExistingTopic(topic);
+      const existing = chk?.match?.existing_topic;
+      const existingPosts = chk?.match?.posts || 0;
+      if (existing) {
+        const msg = `A topic "${existing}" with ${existingPosts} posts already exists.\n\n`
+          + `Click OK to open the existing topic (recommended).\n`
+          + `Click Cancel to create a separate new topic anyway.\n\n`
+          + `(To add more data to the existing one, open it then click "Re-collect".)`;
+        const useExisting = confirm(msg);
+        if (useExisting) {
+          close();
+          location.hash = `#/topic/${encodeURIComponent(existing)}`;
+          return;
+        }
+        // else: user explicitly wants a separate topic — use their typed form
+        effectiveTopic = topic;
+      }
+    } catch {
+      // Pre-check best-effort — don't block the collect on a sidecar hiccup
+    }
+
     close();
-    const slug = encodeURIComponent(topic);
+    const slug = encodeURIComponent(effectiveTopic);
     location.hash = `#/collect/${slug}`;
     setTimeout(() =>
-      window.dispatchEvent(new CustomEvent('gapmap:start-collect', { detail: { topic, aggressive } })),
+      window.dispatchEvent(new CustomEvent('gapmap:start-collect', { detail: { topic: effectiveTopic, aggressive } })),
       100,
     );
   };

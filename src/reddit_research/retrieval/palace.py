@@ -83,10 +83,25 @@ def get_palace():
             path=path,
             settings=Settings(anonymized_telemetry=False, allow_reset=False),
         )
-        # Cosine is what the default all-MiniLM-L6-v2 is trained for.
+        # Cosine is what the default all-MiniLM-L6-v2 is trained for; the
+        # multilingual MiniLM-L12-v2 is also cosine-normalised so the same
+        # space metric holds across both modes. The embedding_function is
+        # resolved via the shared helper so GAPMAP_EMBEDDING_MODEL controls
+        # every ChromaDB consumer uniformly.
+        kwargs: dict[str, Any] = {"metadata": {"hnsw:space": "cosine"}}
+        try:
+            from .embedder import get_embedding_function
+            ef = get_embedding_function()
+            if ef is not None:
+                kwargs["embedding_function"] = ef
+        except Exception:
+            # Fall through and let Chroma use its bundled default — keeps
+            # palace functional even if the helper import fails on an
+            # unusual install.
+            pass
         collection = client.get_or_create_collection(
             _POSTS_COLLECTION,
-            metadata={"hnsw:space": "cosine"},
+            **kwargs,
         )
         _CLIENT_CACHE[path] = (client, collection)
         return _CLIENT_CACHE[path]

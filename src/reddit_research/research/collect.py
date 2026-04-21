@@ -15,7 +15,12 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
+
+
+def _ts_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 from ..core.db import get_db
 from ..core.pullpush_client import CUTOFF_UTC
@@ -56,12 +61,87 @@ def _ensure_topics_table() -> None:
 
 
 def _tag_posts(topic: str, post_ids: list[str], source: str) -> int:
+    """Insert (topic, post_id) rows into topic_posts.
+
+    Passes the candidate post_ids through a relevance gate first — Reddit
+    / HN search routinely over-matches on short topic phrases ("meditation
+    sound frequency brainwave" surfaces r/politics threads), and without
+    a gate those garbage posts end up in the corpus and the LLM extractor
+    dutifully reports "ICE accountability" as a meditation-app painpoint.
+
+    The gate is best-effort: if the embedder isn't available (chromadb
+    missing or transient failure), we fall through to the un-gated insert
+    so collect keeps working. Use GAPMAP_RELEVANCE_GATE_THRESHOLD to tune;
+    set to 0 to disable.
+    """
     if not post_ids:
         return 0
     _ensure_topics_table()
+    # Alias lookup (read-only) — if this topic was previously bound by an
+    # LLM canonicalization, redirect to the canonical. For un-aliased inputs
+    # we leave the topic as-is: user's word stands.
+    try:
+        from .topic_resolver import resolve_topic
+        topic = resolve_topic(topic, register=False)
+    except Exception:
+        pass
     db = get_db()
     from datetime import datetime, timezone
+    import os
 
+    # ── Relevance gate ────────────────────────────────────────────────
+    # Threshold of 0 disables the gate. Default 0.28 is recall-leaning —
+    # tuned to keep borderline posts in while still stopping the "meditation
+    # → Epstein threads" over-match pattern.
+    try:
+        gate_threshold = float(os.getenv("GAPMAP_RELEVANCE_GATE_THRESHOLD", "0.28"))
+    except (TypeError, ValueError):
+        gate_threshold = 0.28
+
+    if gate_threshold > 0 and post_ids:
+        try:
+            from .relevance import score_posts
+            rows_for_scoring = list(db.query(
+                f"SELECT id, title, selftext FROM posts WHERE id IN ({','.join(['?']*len(post_ids))})",
+                post_ids,
+            ))
+            scored = score_posts(topic, rows_for_scoring)
+            if scored:
+                passing = {pid for pid, sc in scored if sc >= gate_threshold}
+                # Keep any post we couldn't score (unknown IDs) — better to
+                # admit than to silently drop on a bookkeeping miss.
+                known_ids = {r["id"] for r in rows_for_scoring}
+                post_ids = [pid for pid in post_ids
+                            if pid in passing or pid not in known_ids]
+        except Exception:
+            # Embedder failed or chromadb missing — fall through un-gated.
+            pass
+
+    # ── Quality gate (opt-in, strict mode only) ──────────────────────
+    # Runs AFTER relevance so we only spend quality-check cycles on posts
+    # already known to be on-topic. Lenient-mode quality is not applied
+    # here — the CLI diagnostic (`research collect-quality-check`) can
+    # surface lenient-level drops on demand without changing the default
+    # ingest behaviour.
+    strict_quality = (os.getenv("GAPMAP_STRICT_QUALITY") or "").strip() in ("1", "true", "yes", "on")
+    if strict_quality and post_ids:
+        try:
+            from .quality_gate import passes_quality
+            rows_for_quality = list(db.query(
+                f"SELECT id, title, selftext, score, author "
+                f"FROM posts WHERE id IN ({','.join(['?']*len(post_ids))})",
+                post_ids,
+            ))
+            quality_pass = {r["id"] for r in rows_for_quality if passes_quality(dict(r), strict=True)}
+            known_ids = {r["id"] for r in rows_for_quality}
+            post_ids = [pid for pid in post_ids
+                        if pid in quality_pass or pid not in known_ids]
+        except Exception:
+            # Never let a quality-gate bug block ingest — fall through.
+            pass
+
+    if not post_ids:
+        return 0
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = [
         {"topic": topic, "post_id": pid, "source": source, "added_at": now}
@@ -158,6 +238,27 @@ def collect(
     # resolves (handles the no-LLM-configured passthrough case cleanly).
     result = CollectResult(topic=topic)
 
+    # Alias lookup — if a PRIOR LLM canonicalization bound this input to
+    # another form (e.g. user previously typed "calari tracking" which was
+    # canonicalized to "calorie tracking"), reuse that canonical so the
+    # second collect augments the existing corpus instead of forking a new
+    # topic. Read-only check — does NOT auto-normalize user input.
+    try:
+        from .topic_resolver import resolve_topic
+        resolved = resolve_topic(topic, register=False)
+        if resolved and resolved != topic:
+            # Alias exists → collapse onto existing topic.
+            topic = resolved
+            result.topic = resolved
+    except Exception:
+        pass
+
+    # Defer the topic_prefs insert until AFTER canonicalize runs below.
+    # Previously we inserted the user-typed form immediately (for instant
+    # list_topics visibility) then re-inserted the canonical later — that
+    # left a phantom row if tag_posts raced the canonicalize LLM window.
+    # See Phase "3-duplicate-rows" fix 2026-04-21.
+
     # Canonicalize ONCE at the top so every downstream query (reddit sub
     # discovery, reddit search, HN, arXiv, OpenAlex, PubMed, Scholar, etc.)
     # hits the corrected domain. "calari tracking app" → "calorie tracking app"
@@ -178,10 +279,35 @@ def collect(
         result.errors.append(
             f"info: search using canonical '{search_topic}' (user typed '{topic}')"
         )
-        # Canonical becomes the storage key too — otherwise Reddit data lands
-        # under the typo while arXiv/HN data lands under the corrected form,
-        # splitting the user's corpus across two topics.
+        # LLM rewrote the input. Use the canonical as the storage key; any
+        # future search with the original typed form will now resolve to
+        # this canonical via the alias binding, so the user never sees two
+        # rows for the same concept.
+        topic = search_topic
         result.topic = search_topic
+        try:
+            from .topic_resolver import register_alias
+            register_alias(search_topic, search_topic, source="llm")
+            # Bind the user-typed original to the canonical — this is the
+            # ONLY place aliases get populated, which is why merges stay
+            # system-only (user re-searches never create alias rows).
+            register_alias(result.topic, search_topic, source="llm")
+        except Exception:
+            pass
+
+    # Now that the canonical is settled, do the ONE topic_prefs insert.
+    try:
+        from ..core.db import get_db as _get_db
+        _db = _get_db()
+        _db.conn.execute(
+            "INSERT INTO topic_prefs (topic, scheduled, last_run_seen, last_run_ts) "
+            "VALUES (?, 0, ?, ?) "
+            "ON CONFLICT(topic) DO UPDATE SET last_run_ts=excluded.last_run_ts",
+            (topic, _now_iso(), _now_iso()),
+        )
+        _db.conn.commit()
+    except Exception:
+        pass
 
     # Query expansion — use the LLM-scored keywords from the canonicalize
     # call to fan out per-source queries. Recall 3-5× vs the single canonical
@@ -225,14 +351,25 @@ def collect(
         _log("skip_reddit=true → skipping Reddit discovery + fetch")
     elif subs is None:
         _log(f"discovering subs for '{search_topic}'…")
-        found = discover_subs(search_topic, limit=8)
-        # New shape: {"subs": [...], "confirmation": {...}}. Tolerate the old
-        # list form for backward-compat with mocked tests.
-        found_subs = found.get("subs", found) if isinstance(found, dict) else found
-        subs = [s["name"] for s in found_subs if s.get("name")]
-        _log(f"  → {subs}")
-        time.sleep(_SLEEP)
-        result.subs = subs
+        try:
+            found = discover_subs(search_topic, limit=8)
+            # New shape: {"subs": [...], "confirmation": {...}}. Tolerate the
+            # old list form for backward-compat with mocked tests.
+            found_subs = found.get("subs", found) if isinstance(found, dict) else found
+            subs = [s["name"] for s in found_subs if s.get("name")]
+            _log(f"  → {subs}")
+            time.sleep(_SLEEP)
+            result.subs = subs
+        except Exception as e:
+            # Reddit public JSON intermittently returns empty / 403 / 429 —
+            # don't kill the entire collect (HN / arXiv / App Store / gnews /
+            # trends etc. are all independent of Reddit and should still run).
+            _log(f"  ! discover failed: {type(e).__name__}: {e}. "
+                 f"Continuing with non-Reddit sources only.")
+            result.errors.append(f"discover_subs: {e}")
+            subs = []
+            result.subs = []
+            skip_reddit = True  # don't let step 2/3 try to use empty subs
     else:
         result.subs = subs
 

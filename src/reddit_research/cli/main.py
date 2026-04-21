@@ -53,6 +53,37 @@ def cmd_ingest_file(
     n = ingest_and_persist(path=path, topic=topic, source_type=source_type, sub=sub)
     console.print(f"[green]ingested {n} rows[/green] from {path} as source_type={source_type!r}")
 
+
+# ── AG-D: CSV ingest ──
+@research_app.command("ingest-csv")
+def cmd_research_ingest_csv(
+    path: Path = typer.Option(..., "--path", "-p", help="CSV file: post_id,title,body,author,url,created_utc,source_type"),
+    topic: str = typer.Option(..., "--topic", "-t"),
+    source: str = typer.Option("csv", "--source", "-s", help="Default source_type for rows missing one"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Parse + count only, no DB writes"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Bulk-ingest a structured CSV into a topic corpus.
+
+    Required column: `title`. Everything else is tolerated. Existing post
+    IDs are preserved when `post_id` is provided; otherwise a content-
+    hashed ID is synthesised so re-imports deduplicate.
+
+    Example:
+      reddit-cli research ingest-csv --path corpus.csv --topic "my topic"
+    """
+    from ..research.ingest import ingest_csv
+
+    result = ingest_csv(path=path, topic=topic, source_type_default=source, dry_run=dry_run)
+    _emit(result, as_json=as_json)
+    if not as_json:
+        mode = "dry-run" if dry_run else "ingested"
+        console.print(
+            f"[green]{mode}[/green]: parsed {result['parsed']} row(s), "
+            f"skipped {result['skipped']}, tagged {result['tagged']} into topic '{topic}'"
+        )
+
+
 app.add_typer(fetch_app, name="fetch")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(mcp_app, name="mcp")
@@ -447,61 +478,156 @@ def cmd_mcp_serve() -> None:
     run()
 
 
+@mcp_app.command("clients")
+def cmd_mcp_clients(as_json: bool = typer.Option(False, "--json")) -> None:
+    """List known MCP clients (Claude Code, Cursor, Cline, …) and which configs exist."""
+    from ..mcp.install import list_clients
+
+    rows = list_clients()
+    if as_json:
+        typer.echo(json.dumps(rows))
+        return
+    for r in rows:
+        marker = "✓" if r["present"] else "·"
+        typer.echo(f"  {marker} {r['key']:<16} {r['label']:<30} {r['path']}")
+
+
 @mcp_app.command("install")
 def cmd_mcp_install(
     claude_config: Optional[Path] = typer.Option(
-        None, "--config", help="Claude Code config path (default: ~/.claude.json)"
+        None, "--config", help="Override config path (else --client default; else ~/.claude.json)"
+    ),
+    client: Optional[str] = typer.Option(
+        None, "--client",
+        help="MCP client preset: claude-code | claude-desktop | cursor | windsurf | cline. "
+             "Default: claude-code. Same install flow works for any client; only the config path differs.",
+    ),
+    data_dir: Optional[Path] = typer.Option(
+        None, "--data-dir",
+        help="Data dir to align Claude with (default: REDDIT_MYIND_DATA_DIR or CWD/data).",
     ),
     project_dir: Optional[Path] = typer.Option(
-        None, "--project-dir", help="Absolute path to this repo (default: CWD)"
+        None, "--project-dir",
+        help="Repo dir for `uv run` invocation (dev mode). Mutually exclusive with --bin.",
+    ),
+    bin_path: Optional[Path] = typer.Option(
+        None, "--bin",
+        help="Bundled reddit-cli binary path (prod mode). Mutually exclusive with --project-dir.",
     ),
     server_name: str = typer.Option("reddit-myind", "--name"),
-    force: bool = typer.Option(False, "--force", help="Overwrite an existing entry"),
+    rotate_token: bool = typer.Option(
+        False, "--rotate-token", help="Generate a fresh token even if one already exists.",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Register reddit-myind's MCP server in Claude Code's config.
+    """Connect (or re-sync) Gap Map's MCP entry in Claude Code's config.
 
-    Adds a `mcpServers.<name>` entry that launches via `uv run` from this repo,
-    so Claude Code boots the server with the right venv automatically.
+    Aligns REDDIT_MYIND_DATA_DIR so MCP tools write to the same SQLite the
+    desktop app reads. Generates a token (kept under <data_dir>/mcp_token)
+    and injects it into the entry's env block for future v2 gating.
+
+    Idempotent: re-running after the app moves just rewrites command/args/env
+    without rotating the token (use --rotate-token to force a new one).
     """
-    import json
+    from ..mcp.install import install as do_install
 
-    cfg_path = (claude_config or (Path.home() / ".claude.json")).expanduser()
-    proj = (project_dir or Path.cwd()).expanduser().resolve()
-
-    if not (proj / "pyproject.toml").exists():
-        console.print(f"[red]{proj} doesn't look like the reddit-myind repo (no pyproject.toml).[/red]")
+    if project_dir and (project_dir / "pyproject.toml").exists() is False and not bin_path:
+        console.print(f"[red]{project_dir} doesn't look like the reddit-myind repo.[/red]")
         raise typer.Exit(1)
 
-    entry = {
-        "command": "uv",
-        "args": ["--directory", str(proj), "run", "reddit-cli", "mcp", "serve"],
-    }
-
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8") or "{}")
-        except json.JSONDecodeError:
-            console.print(f"[red]{cfg_path} is not valid JSON.[/red]")
-            raise typer.Exit(1)
-    else:
-        cfg = {}
-
-    servers = cfg.setdefault("mcpServers", {})
-    if server_name in servers and not force:
-        console.print(
-            f"[yellow]{server_name!r} already registered in {cfg_path}.[/yellow] "
-            "Use --force to overwrite."
+    try:
+        result = do_install(
+            config_path=claude_config,
+            client=client,
+            data_dir=data_dir,
+            bin_path=bin_path,
+            project_dir=project_dir,
+            server_name=server_name,
+            rotate_token=rotate_token,
         )
-        console.print_json(data=servers[server_name])
-        raise typer.Exit(0)
+    except Exception as e:  # noqa: BLE001 — surface anything as a clean error
+        result = {"ok": False, "reason": f"install failed: {e}"}
 
-    servers[server_name] = entry
-    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    console.print(f"[green]registered[/green] {server_name!r} → {cfg_path}")
-    console.print_json(data=entry)
-    console.print(
-        "\n[dim]Restart Claude Code (or your MCP-capable client) to pick up the new server.[/dim]"
-    )
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+        raise typer.Exit(0 if result.get("ok") else 1)
+
+    if not result.get("ok"):
+        console.print(f"[red]{result.get('reason', 'install failed')}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]connected[/green] → {result['config_path']}")
+    console.print_json(data=result["entry"])
+    console.print(f"\n[dim]{result['message']}[/dim]")
+
+
+@mcp_app.command("uninstall")
+def cmd_mcp_uninstall(
+    claude_config: Optional[Path] = typer.Option(None, "--config"),
+    client: Optional[str] = typer.Option(None, "--client"),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+    server_name: str = typer.Option("reddit-myind", "--name"),
+    keep_token: bool = typer.Option(False, "--keep-token", help="Don't delete <data_dir>/mcp_token."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Remove Gap Map's MCP entry. Other mcpServers entries stay untouched."""
+    from ..mcp.install import uninstall as do_uninstall
+
+    try:
+        result = do_uninstall(
+            config_path=claude_config,
+            client=client,
+            data_dir=data_dir,
+            server_name=server_name,
+            delete_token=not keep_token,
+        )
+    except Exception as e:  # noqa: BLE001
+        result = {"ok": False, "reason": f"uninstall failed: {e}"}
+
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+        raise typer.Exit(0 if result.get("ok") else 1)
+
+    if not result.get("ok"):
+        console.print(f"[red]{result.get('reason', 'uninstall failed')}[/red]")
+        raise typer.Exit(1)
+    style = "green" if result.get("removed") else "yellow"
+    console.print(f"[{style}]{result['message']}[/{style}]")
+
+
+@mcp_app.command("status")
+def cmd_mcp_status(
+    claude_config: Optional[Path] = typer.Option(None, "--config"),
+    client: Optional[str] = typer.Option(None, "--client"),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+    server_name: str = typer.Option("reddit-myind", "--name"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Report whether Gap Map is connected to the chosen MCP client and DB-aligned."""
+    from ..mcp.install import status as do_status
+
+    try:
+        result = do_status(
+            config_path=claude_config,
+            client=client,
+            data_dir=data_dir,
+            server_name=server_name,
+        )
+    except Exception as e:  # noqa: BLE001
+        result = {"ok": False, "reason": f"status failed: {e}"}
+
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+        return
+
+    typer.echo(f"config:        {result['config_path']}")
+    typer.echo(f"data_dir:      {result['data_dir']}")
+    typer.echo(f"connected:     {result.get('connected')}")
+    typer.echo(f"db_aligned:    {result.get('db_aligned')}")
+    typer.echo(f"has_token:     {result.get('has_token')}")
+    typer.echo(f"token_in_env:  {result.get('token_in_env')}")
+    if result.get("reason"):
+        typer.echo(f"note: {result['reason']}")
 
 
 # ── info ─────────────────────────────────────────────────────────────────────
@@ -891,6 +1017,50 @@ def cmd_competitor_matrix(
     _emit(build_matrix(topic=topic), as_json)
 
 
+# ── AG-C: global-competitors (T2.5) + feedback-record (T2.4) ───────────
+
+
+@research_app.command("global-competitors")
+def cmd_global_competitors(
+    min_topics: int = typer.Option(
+        2, "--min-topics",
+        help="Only return clusters appearing in at least this many topics",
+    ),
+    threshold: float = typer.Option(
+        0.80, "--threshold",
+        help="Cosine similarity floor for clustering product labels",
+    ),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """T2.5 — Cluster competitor products across all topics by label similarity."""
+    from ..research.competitors import global_competitors
+    _emit(global_competitors(min_topics=min_topics, threshold=threshold), as_json)
+
+
+@research_app.command("feedback-record")
+def cmd_feedback_record(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    title: str = typer.Option(..., "--title", help="Exact finding title"),
+    kind: str = typer.Option(
+        "painpoint", "--kind",
+        help="painpoint | feature_wish | workaround | product",
+    ),
+    verdict: str = typer.Option(
+        "wrong", "--verdict",
+        help="wrong | off_topic | spam | ok",
+    ),
+    note: str = typer.Option("", "--note", help="Optional free-text note"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """T2.4 — Record user feedback on a finding; feeds next synthesize prompt."""
+    from ..research.feedback import record_feedback
+    _emit(
+        record_feedback(topic=topic, title=title, kind=kind,
+                        verdict=verdict, note=note),
+        as_json,
+    )
+
+
 @research_app.command("link-research")
 def cmd_link_research(
     topic: str = typer.Option(..., "--topic", "-t"),
@@ -1035,6 +1205,158 @@ def cmd_hypothesis_stats(
     from ..research.hypothesis_tracker import stats_by_topic, global_stats
     stats = stats_by_topic(topic) if topic else global_stats()
     _emit({"ok": True, "topic": topic, "stats": stats}, as_json)
+
+
+@research_app.command("find-existing-topic")
+def cmd_find_existing_topic(
+    user_input: str = typer.Option(..., "--input", "-i"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Pre-check before starting a collect: does a semantically-identical
+    topic already exist in the DB? Returns {existing_topic, posts} or null.
+    UI uses this to prompt 'Open existing with N posts?' vs 'New topic'."""
+    from ..research.topic_resolver import find_existing_topic
+    out = find_existing_topic(user_input) or {}
+    _emit({"ok": True, "user_input": user_input, "match": out or None}, as_json)
+
+
+# ─── FG: T1.3 soft-delete / restore / purge ───────────────────────────────
+@research_app.command("topic-soft-delete")
+def cmd_topic_soft_delete(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Soft-delete a topic. Hidden from list_topics; recoverable for 7 days."""
+    from ..research.trash import soft_delete
+    _emit(soft_delete(topic), as_json)
+
+
+@research_app.command("topic-restore")
+def cmd_topic_restore(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Restore a soft-deleted topic."""
+    from ..research.trash import restore
+    _emit(restore(topic), as_json)
+
+
+@research_app.command("topic-trash-list")
+def cmd_topic_trash_list(
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List soft-deleted topics + age + post count."""
+    from ..research.trash import list_trash
+    _emit({"ok": True, "trash": list_trash()}, as_json)
+
+
+@research_app.command("topic-trash-purge")
+def cmd_topic_trash_purge(
+    min_age_days: int = typer.Option(7, "--min-age-days"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Hard-delete soft-deleted topics older than N days. Default 7."""
+    from ..research.trash import purge_older_than
+    _emit(purge_older_than(min_age_days=min_age_days), as_json)
+
+
+@research_app.command("merge-duplicate-topics")
+def cmd_merge_duplicate_topics(
+    apply: bool = typer.Option(False, "--apply",
+        help="Actually merge. Default dry-run shows what would merge."),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Merge topic_prefs / topic_posts / graph_nodes / graph_edges rows that
+    are case-only or slug-only variants of the same topic.
+
+    Fixes the "3 rows for one search" problem — e.g. 'Indian student exam
+    stress' + 'indian student exam stress' + 'indian-student-exam-pain' all
+    collapse onto the variant with the most posts. Winner chosen by post
+    count (ties broken lexicographically). Dry-run by default.
+    """
+    from ..research.topic_resolver import merge_duplicate_topics
+    out = merge_duplicate_topics(dry_run=not apply)
+    _emit(out, as_json)
+
+
+@research_app.command("clean-corpus")
+def cmd_clean_corpus(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    threshold: float = typer.Option(0.30, "--threshold",
+        help="Min cosine-to-topic to keep. 0.30 = recall, 0.40 = precision"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Actually delete. Default is dry-run (shows what WOULD be dropped)."),
+    min_keep: int = typer.Option(20, "--min-keep",
+        help="Never drop below this many posts (safety floor)"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Retroactively drop off-topic posts from topic_posts for a topic.
+
+    Use when a past collect over-matched (e.g. "meditation app" pulled
+    r/politics threads). Dry-run by default — inspect sample_dropped,
+    then re-run with --apply.
+    """
+    from ..research.relevance import filter_topic_posts
+    out = filter_topic_posts(topic=topic, threshold=threshold, apply=apply,
+                             min_keep=min_keep)
+    _emit(out, as_json)
+
+
+@research_app.command("collect-quality-check")
+def cmd_collect_quality_check(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Report how many currently-tagged posts would fail the quality gate.
+
+    Does NOT modify the corpus — it just scores every post already tagged
+    to the topic against the lenient and strict gates and returns counts.
+
+    Use this to decide whether to re-collect with GAPMAP_STRICT_QUALITY=1:
+    if the strict-drop share is high, your corpus has a lot of noise and
+    strict mode is worth enabling on the next collect.
+    """
+    from ..research.quality_gate import passes_quality
+
+    db = get_db()
+    rows = list(db.query(
+        "SELECT p.id, p.title, p.selftext, p.score, p.author "
+        "FROM posts p JOIN topic_posts tp ON tp.post_id = p.id "
+        "WHERE tp.topic = ?",
+        [topic],
+    ))
+    total = len(rows)
+    lenient_pass = 0
+    strict_pass = 0
+    lenient_fail_ids: list[str] = []
+    strict_fail_ids: list[str] = []
+    for r in rows:
+        row = dict(r)
+        if passes_quality(row, strict=False):
+            lenient_pass += 1
+        else:
+            lenient_fail_ids.append(row["id"])
+        if passes_quality(row, strict=True):
+            strict_pass += 1
+        else:
+            strict_fail_ids.append(row["id"])
+
+    out = {
+        "ok": True,
+        "topic": topic,
+        "total": total,
+        "lenient": {
+            "passed": lenient_pass,
+            "failed": total - lenient_pass,
+            "sample_failed_ids": lenient_fail_ids[:20],
+        },
+        "strict": {
+            "passed": strict_pass,
+            "failed": total - strict_pass,
+            "sample_failed_ids": strict_fail_ids[:20],
+        },
+    }
+    _emit(out, as_json)
 
 
 # ─── Dual-Mode Pivot — Product Mode commands ─────────────────────────────
@@ -1231,6 +1553,10 @@ def cmd_research_insights(
     topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must be collected first)."),
     provider: str | None = typer.Option(None, "--provider", help="Override LLM provider; Claude recommended for best synthesis."),
     cached: bool = typer.Option(False, "--cached", help="Return the last cached report instead of re-running the LLM."),
+    chunked: bool = typer.Option(False, "--chunked", help="Use map-reduce chunked synth — N small LLM calls instead of one big one. Works when the provider is low on credits."),
+    chunk_size: int = typer.Option(40, "--chunk-size", help="Rows per chunk (chunked mode only)."),
+    max_workers: int | None = typer.Option(None, "--max-workers", help="Chunk parallelism. 1 = sequential. None = auto per provider (Ollama=1, Groq=2, others=4)."),
+    max_tokens_per_chunk: int = typer.Option(800, "--max-tokens-per-chunk", help="Output budget per chunk. Keep small (300-800) for low-credit providers."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Phase-1 Insight Engine — one-shot long-context synthesis across all sources.
@@ -1238,8 +1564,18 @@ def cmd_research_insights(
     Produces a structured market report: opportunity-scored findings,
     competitor landscape, greenfield quadrant, citation-grounded narrative.
     See docs/specs/2026-04-20-insight-engine.md for the schema.
+
+    `--chunked` switches to map-reduce mode: the corpus is split into
+    `--chunk-size` chunks, each chunk goes through a small LLM call
+    (bounded by `--max-tokens-per-chunk`), and findings are merged
+    deterministically. This sidesteps the 402/credit errors that the
+    single-call path hits on low-budget providers.
     """
-    from ..research.insights import load_insights, synthesize_insights
+    from ..research.insights import (
+        load_insights,
+        synthesize_insights,
+        synthesize_insights_chunked,
+    )
 
     if cached:
         report = load_insights(topic)
@@ -1247,6 +1583,19 @@ def cmd_research_insights(
             out = {"ok": False, "topic": topic, "error": "No cached insight — run without --cached to generate."}
         else:
             out = report
+    elif chunked:
+        def _p(msg: str) -> None:
+            # In non-JSON mode print progress; in --json mode stay silent.
+            if not as_json:
+                typer.echo(msg)
+        out = synthesize_insights_chunked(
+            topic=topic,
+            provider=provider,
+            chunk_size=chunk_size,
+            max_workers=max_workers,
+            max_tokens_per_chunk=max_tokens_per_chunk,
+            progress=_p,
+        )
     else:
         out = synthesize_insights(topic=topic, provider=provider)
     _emit(out, as_json)
@@ -1317,6 +1666,44 @@ def cmd_research_sentiment_by_source(
             else:
                 emos = ", ".join(s.get("dominant_emotions") or []) or "—"
                 typer.echo(f"  - {label} ({s.get('n_posts')}): {s.get('label')} · {emos}")
+
+
+@research_app.command("concepts")
+def cmd_research_concepts(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must already have painpoints in the graph)."),
+    provider: str | None = typer.Option(None, "--provider", help="Override LLM provider."),
+    max_concepts: int = typer.Option(5, "--max", help="Cap number of concepts returned (3-5 recommended)."),
+    as_json: bool = typer.Option(False, "--json", help="Emit concepts as JSON."),
+) -> None:
+    """Generate 3-5 evidence-backed product concepts from a topic's painpoints.
+
+    Reads painpoints + sentiment + workarounds, runs one LLM call, persists
+    each concept as a graph node with 'has_concept' and 'based_on' edges so
+    the UI can render citations back to the source painpoints.
+    """
+    from ..analyze.providers.base import resolve_provider
+    from ..research.concept import concepts_for_topic
+
+    try:
+        resolved = resolve_provider(provider)
+    except Exception as e:  # noqa: BLE001
+        out = {"ok": False, "skipped": True, "reason": f"no_llm_provider: {e}"}
+        if as_json:
+            typer.echo(json.dumps(out))
+        else:
+            typer.echo(f"Skipped: {out['reason']}")
+        raise typer.Exit(0)
+
+    result = concepts_for_topic(topic=topic, provider=resolved, max_concepts=max_concepts)
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+    else:
+        if result.get("reason"):
+            typer.echo(f"Skipped: {result['reason']}")
+            return
+        typer.echo(f"persisted={result.get('persisted', 0)} concepts for topic={topic}")
+        for c in result.get("concepts", []):
+            typer.echo(f"  • {c.get('title')} — {c.get('headline')}")
 
 
 @research_app.command("temporal-gaps")
@@ -1564,6 +1951,60 @@ def cmd_research_palace_model_status() -> None:
     from ..retrieval.palace import model_status
     typer.echo(json.dumps(model_status(), default=str))
     _sys.stdout.flush()
+
+
+@research_app.command("gap-discovery")
+def cmd_gap_discovery(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str | None = typer.Option(None, "--provider"),
+    chunk_size: int | None = typer.Option(None, "--chunk-size"),
+    max_workers: int | None = typer.Option(None, "--max-workers"),
+    papers_per_painpoint: int = typer.Option(5, "--papers"),
+    no_experiments: bool = typer.Option(False, "--no-experiments"),
+    as_json: bool = typer.Option(True, "--json/--no-json"),
+) -> None:
+    """End-to-end: chunked LLM synth → palace cross-source evidence attach
+    → science fetch → solutions (why + interventions) → experiment
+    proposals. Every step persists to SQLite so Map / Insights / Research
+    / Solutions tabs pick up the new nodes."""
+    from ..research.gap_discovery import run_gap_discovery
+
+    def _p(msg: str) -> None:
+        if not as_json:
+            typer.echo(msg)
+
+    out = run_gap_discovery(
+        topic=topic, provider=provider,
+        chunk_size=chunk_size, max_workers=max_workers,
+        papers_per_painpoint=papers_per_painpoint,
+        propose_experiments=not no_experiments,
+        progress=_p,
+    )
+    _emit(out, as_json)
+
+
+@research_app.command("experiments-list")
+def cmd_experiments_list(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json/--no-json"),
+) -> None:
+    """List persisted experiment proposals for a topic."""
+    from ..research.gap_discovery import list_experiments
+    _emit({"topic": topic, "experiments": list_experiments(topic)}, as_json)
+
+
+@research_app.command("persona-view")
+def cmd_persona_view(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    persona: str = typer.Option(..., "--persona",
+        help="designer / ceo / cto / cfo / pm / marketer"),
+    provider: str | None = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json/--no-json"),
+) -> None:
+    """Re-view existing findings + experiments through a role-specific lens.
+    Run `research gap-discovery` first so there's something to re-view."""
+    from ..research.gap_discovery import apply_persona
+    _emit(apply_persona(topic=topic, persona=persona, provider=provider), as_json)
 
 
 @research_app.command("palace-warmup")
@@ -1861,6 +2302,134 @@ def cmd_info(
     # auto-appends --json to every sidecar call.
     _ = as_json
     console.print_json(data=stats)
+
+
+# ── AG-E: prompt overrides (T3.7) ──────────────────────────────────────
+@research_app.command("prompt-list")
+def cmd_prompt_list(
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List every known extractor/prompt key with override status + previews."""
+    from ..research.prompt_store import list_prompts
+    _emit({"ok": True, "prompts": list_prompts()}, as_json)
+
+
+@research_app.command("prompt-get")
+def cmd_prompt_get(
+    key: str = typer.Option(..., "--key", "-k"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Return the effective + bundled text for a single prompt key."""
+    from ..research.prompt_store import list_prompts
+    entry = list_prompts().get(key)
+    if entry is None:
+        _emit({"ok": False, "error": f"unknown prompt key: {key}"}, as_json)
+        return
+    _emit({"ok": True, "key": key, **entry}, as_json)
+
+
+@research_app.command("prompt-set")
+def cmd_prompt_set(
+    key: str = typer.Option(..., "--key", "-k"),
+    file: Optional[Path] = typer.Option(None, "--file", "-f",
+        help="Path to a file whose contents become the override. Use --text or --file."),
+    text: Optional[str] = typer.Option(None, "--text",
+        help="Inline override text (alternative to --file)."),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Set a custom prompt override. Empty text clears the override."""
+    from ..research.prompt_store import set_prompt
+    payload = ""
+    if file is not None:
+        payload = Path(file).read_text(encoding="utf-8")
+    elif text is not None:
+        payload = text
+    else:
+        _emit({"ok": False, "error": "pass --file or --text"}, as_json)
+        return
+    _emit(set_prompt(key, payload), as_json)
+
+
+@research_app.command("prompt-clear")
+def cmd_prompt_clear(
+    key: str = typer.Option(..., "--key", "-k"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Clear a prompt override (revert to bundled default)."""
+    from ..research.prompt_store import clear_prompt
+    _emit(clear_prompt(key), as_json)
+
+
+# ── AG-E: saved views (T3.1) ──────────────────────────────────────────
+@research_app.command("saved-view-create")
+def cmd_saved_view_create(
+    scope: str = typer.Option("global", "--scope", "-s",
+        help="'global' | 'topic:<slug>' | 'product:<id>'"),
+    name: str = typer.Option(..., "--name", "-n"),
+    filter_json: str = typer.Option("{}", "--filter",
+        help="JSON filter spec (see saved_views.apply_filter)."),
+    pinned: bool = typer.Option(False, "--pinned"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Create a saved view (filter preset) scoped to global/topic/product."""
+    from ..research.saved_views import create_view
+    try:
+        flt = json.loads(filter_json) if filter_json else {}
+    except Exception as e:
+        _emit({"ok": False, "error": f"invalid --filter JSON: {e}"}, as_json)
+        return
+    _emit({"ok": True, "view": create_view(scope, name, flt, pinned=pinned)}, as_json)
+
+
+@research_app.command("saved-view-list")
+def cmd_saved_view_list(
+    scope: Optional[str] = typer.Option(None, "--scope", "-s"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List saved views, optionally filtered by scope."""
+    from ..research.saved_views import list_views
+    _emit({"ok": True, "views": list_views(scope=scope)}, as_json)
+
+
+@research_app.command("saved-view-update")
+def cmd_saved_view_update(
+    view_id: int = typer.Option(..., "--id"),
+    name: Optional[str] = typer.Option(None, "--name", "-n"),
+    scope: Optional[str] = typer.Option(None, "--scope", "-s"),
+    filter_json: Optional[str] = typer.Option(None, "--filter"),
+    pinned: Optional[bool] = typer.Option(None, "--pinned/--unpinned"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Partially update a saved view. Only supplied fields change."""
+    from ..research.saved_views import update_view
+    patch: dict = {}
+    if name is not None:
+        patch["name"] = name
+    if scope is not None:
+        patch["scope"] = scope
+    if filter_json is not None:
+        try:
+            patch["filter_json"] = json.loads(filter_json)
+        except Exception as e:
+            _emit({"ok": False, "error": f"invalid --filter JSON: {e}"}, as_json)
+            return
+    if pinned is not None:
+        patch["pinned"] = pinned
+    updated = update_view(view_id, **patch)
+    if updated is None:
+        _emit({"ok": False, "error": f"no such view id: {view_id}"}, as_json)
+        return
+    _emit({"ok": True, "view": updated}, as_json)
+
+
+@research_app.command("saved-view-delete")
+def cmd_saved_view_delete(
+    view_id: int = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Delete a saved view."""
+    from ..research.saved_views import delete_view
+    _emit(delete_view(view_id), as_json)
 
 
 if __name__ == "__main__":

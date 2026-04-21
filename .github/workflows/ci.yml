@@ -1,0 +1,110 @@
+name: ci
+
+# Lightweight CI for pull requests into main and for pushes on main / multi-source.
+#
+# Design goals:
+# - Fast: no sidecar build, no Tauri bundle, no LFS download.
+# - Cheap: LFS bandwidth is 1GB/mo on free tier — never fetch LFS in CI.
+# - Catch the common mistakes early: Python syntax errors, missing Rust deps,
+#   broken JS syntax, obvious test failures.
+#
+# The heavy cross-platform bundle build lives in release.yml and runs only on
+# tags (v*) or workflow_dispatch.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, multi-source]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-check:
+    name: Python — install + parse + tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (no LFS — sidecar binary not needed for CI)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install project (editable, with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          # pyproject.toml drives deps; install the dev extra to pull in pytest.
+          pip install -e ".[dev]"
+
+      - name: Parse-check every Python source file
+        run: |
+          python -c "import ast, glob, sys; [ast.parse(open(f).read()) for f in glob.glob('src/**/*.py', recursive=True)]"
+
+      - name: Run pytest (if tests/ exists)
+        run: |
+          if [ -d tests ]; then
+            # -m 'not slow' keeps the run CI-friendly: no real subprocesses, no network.
+            python -m pytest tests/ -q --no-header -m "not slow"
+          else
+            echo "::warning::no tests yet — skipping pytest"
+          fi
+
+  rust-check:
+    name: Rust — cargo check
+    runs-on: macos-latest
+    steps:
+      - name: Checkout (no LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache (scoped to app-tauri/src-tauri)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./app-tauri/src-tauri -> target
+
+      - name: cargo check
+        working-directory: ./app-tauri/src-tauri
+        run: cargo check --message-format short
+
+  js-check:
+    name: JS — install + syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (no LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app-tauri/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: ./app-tauri
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Syntax-check every JS file under src/
+        working-directory: ./app-tauri
+        run: |
+          # `find ... -exec node --check {} \;` fails the step on any syntax error
+          # because find's exit status is non-zero when an -exec command fails.
+          find src -type f -name "*.js" -exec node --check {} \;

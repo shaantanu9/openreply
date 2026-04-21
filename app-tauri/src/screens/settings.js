@@ -195,6 +195,16 @@ export async function renderSettings(root) {
         </div>
       </div>
 
+      <!-- T1.3 Trash — soft-deleted topics with restore + purge -->
+      <div class="settings-card" id="card-trash">
+        <h4><i data-lucide="trash-2"></i> Trash</h4>
+        <p>Soft-deleted topics — recoverable for 7 days before nightly purge.</p>
+        <div id="trash-list" style="margin-top:8px">Loading…</div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-trash-purge">Empty trash now (older than 7 days)</button>
+        </div>
+      </div>
+
       <!-- Danger -->
       <div class="settings-card" style="border-color:#F5DADA;background:#FFFBFB">
         <h4 style="color:#B84747"><i data-lucide="alert-triangle"></i> Danger zone</h4>
@@ -205,21 +215,44 @@ export async function renderSettings(root) {
         </div>
       </div>
 
-      <!-- MCP (for Claude Code / Claude.com integration) -->
-      <div class="settings-card">
-        <h4>Use with Claude Code</h4>
-        <p>Gap Map ships an MCP server so Claude Code and Claude.com can query your local corpus directly.</p>
-        <div style="font-family:ui-monospace,monospace;font-size:12px;background:var(--surface-2);padding:10px 12px;border-radius:8px;margin:10px 0">
-          <code># one-liner install (Claude Code)</code><br/>
-          <code>reddit-cli mcp install</code>
+      <!-- MCP ↔ App integration (one-click connect to any MCP client) -->
+      <div class="settings-card" id="card-mcp">
+        <h4><i data-lucide="plug"></i> Use with an MCP client</h4>
+        <p>Connect Gap Map's MCP server to Claude Code, Claude Desktop,
+        Cursor, Cline, or Windsurf — anything they scrape / fetch / ingest
+        writes to <b>this app's database</b> and shows up in your topics,
+        posts, and graph immediately.</p>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
+          <label style="font-size:12px;color:var(--ink-3)">Client:</label>
+          <select id="mcp-client" class="select-sm" style="min-width:180px">
+            <option value="">loading…</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" id="btn-mcp-refresh" title="Re-check status">
+            <i data-lucide="rotate-cw"></i>
+          </button>
         </div>
-        <p style="font-size:11.5px;color:var(--ink-3);margin-top:6px">
-          Exposes 40+ tools: <code>reddit_fetch_posts</code>, <code>reddit_discover_subs</code>,
-          <code>reddit_graph_build</code>, <code>reddit_query_db</code>, etc. No auto-start — launch on demand.
-        </p>
-        <div style="margin-top:10px">
+
+        <div id="mcp-status-row" class="mcp-status-row" style="margin-top:12px">
+          <span class="mcp-status-dot" data-state="loading"></span>
+          <span id="mcp-status-text" style="font-size:13px">checking…</span>
+        </div>
+
+        <div id="mcp-detail" style="font-size:11.5px;color:var(--ink-3);margin-top:6px"></div>
+
+        <div id="mcp-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <button class="btn primary btn-sm" id="btn-mcp-connect" hidden><i data-lucide="link"></i> Connect</button>
+          <button class="btn btn-sm btn-bordered" id="btn-mcp-resync" hidden><i data-lucide="refresh-cw"></i> Re-sync paths</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-mcp-disconnect" hidden><i data-lucide="unlink"></i> Disconnect</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-mcp-docs">MCP spec →</button>
         </div>
+
+        <p style="font-size:11px;color:var(--ink-3);margin-top:10px">
+          Anyone with this app installed can wire it into any MCP client —
+          but they need this app to do it (token + sidecar binary).
+          Token gating is plumbed but not enforced in v1.
+          Restart the chosen client after Connect / Disconnect.
+        </p>
       </div>
 
       <!-- About -->
@@ -228,12 +261,46 @@ export async function renderSettings(root) {
         <p>Gap Map · v0.1.0 · Python sidecar + Tauri · variant-6 soft-dashboard</p>
       </div>
 
+      <!-- ── AG-E: Advanced extractor prompts (T3.7) ───────────────────── -->
+      <div class="settings-card" id="card-advanced-prompts" style="grid-column:1/-1">
+        <h4><i data-lucide="sparkles"></i> Advanced: extractor prompts</h4>
+        <p style="color:var(--ink-3)">
+          Override the bundled YAML rubrics that drive extraction
+          (painpoints, features, concepts, insights synthesis, …).
+          Malformed overrides silently fall back to the bundled default.
+          Not recommended unless you've read the prompt source.
+        </p>
+        <label class="settings-toggle" style="margin-top:6px">
+          <input type="checkbox" id="pref-advanced-prompts"
+            ${localStorage.getItem('gapmap.pref.advanced_prompts') === 'true' ? 'checked' : ''} />
+          <span><b>I know what I'm doing</b><small>Unlocks the prompt editor below.</small></span>
+        </label>
+        <div id="advanced-prompts-body" hidden style="margin-top:10px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:12px;color:var(--ink-3)">Prompt:</label>
+            <select id="prompt-key-select" class="select-sm" style="min-width:200px">
+              <option value="">loading…</option>
+            </select>
+            <span id="prompt-key-badge" style="font-size:11px;color:var(--ink-3)"></span>
+          </div>
+          <textarea id="prompt-editor" spellcheck="false"
+            style="width:100%;margin-top:10px;min-height:260px;font-family:ui-monospace,Menlo,Monaco,'Courier New',monospace;font-size:12px;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg-1)"
+            placeholder="Loading…"></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn btn-primary btn-sm" id="btn-prompt-save">Save override</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-prompt-reset">Reset to default</button>
+            <span id="prompt-save-status" style="font-size:12px;color:var(--ink-3);align-self:center"></span>
+          </div>
+        </div>
+      </div>
+
       <div id="settings-err" style="grid-column:1/-1;color:#B84747;font-size:12px"></div>
     </div>
   `;
 
   wireProfileCard(root);
   wireStaticButtons(root);
+  wireAdvancedPromptsCard(root, alive);
 
   // Always-available buttons while the async data loads
   root.querySelector('#btn-manage-keys-eager').onclick = () => openByokModal(() => renderSettings(root));
@@ -339,6 +406,149 @@ function wireStaticButtons(root) {
       }
     });
   })();
+
+  // --- MCP ↔ App integration (multi-client) ---
+  // Three states (not connected / connected & aligned / connected but DB
+  // drift) wired to api.mcp{Status,Install,Uninstall}, with a client picker
+  // so the same flow installs into Claude Code, Cursor, Cline, Windsurf, or
+  // Claude Desktop. The selected client is remembered in localStorage.
+  // Spec: docs/superpowers/specs/2026-04-21-mcp-app-integration.md.
+  (async () => {
+    const card    = root.querySelector('#card-mcp');
+    if (!card) return;
+    const sel     = card.querySelector('#mcp-client');
+    const btnRef  = card.querySelector('#btn-mcp-refresh');
+    const txt     = card.querySelector('#mcp-status-text');
+    const detail  = card.querySelector('#mcp-detail');
+    const dot     = card.querySelector('.mcp-status-dot');
+    const btnConn = card.querySelector('#btn-mcp-connect');
+    const btnSync = card.querySelector('#btn-mcp-resync');
+    const btnDis  = card.querySelector('#btn-mcp-disconnect');
+
+    const STORAGE_KEY = 'gapmap.mcp.client';
+    const clientLabels = {};   // key → human label
+    const clientUrls = {       // where to go install the client when not present
+      'claude-code':    'https://claude.com/claude-code',
+      'claude-desktop': 'https://claude.ai/download',
+      'cursor':         'https://cursor.com',
+      'windsurf':       'https://windsurf.com',
+      'cline':          'https://cline.bot',
+    };
+
+    const currentClient = () => sel.value || 'claude-code';
+
+    const renderState = (s) => {
+      const cl = currentClient();
+      const label = clientLabels[cl] || cl;
+      if (!s || s.ok === false) {
+        dot.dataset.state = 'error';
+        txt.textContent = s?.reason || 'unable to read status';
+        detail.textContent = '';
+        btnConn.hidden = true; btnSync.hidden = true; btnDis.hidden = true;
+        return;
+      }
+      if (!s.client_present && !s.claude_present) {
+        dot.dataset.state = 'warn';
+        txt.textContent = `${label} not detected`;
+        const url = clientUrls[cl];
+        detail.innerHTML = url
+          ? `Install <a href="#" id="mcp-install-client-link">${esc(label)}</a>, then come back.`
+          : `Config not found at <code>${esc(s.config_path)}</code>.`;
+        btnConn.hidden = true; btnSync.hidden = true; btnDis.hidden = true;
+        const link = card.querySelector('#mcp-install-client-link');
+        link?.addEventListener('click', e => { e.preventDefault(); api.openUrl(url); });
+        return;
+      }
+      if (!s.connected) {
+        dot.dataset.state = 'off';
+        txt.textContent = `Not connected to ${label}`;
+        detail.innerHTML = `Once connected, MCP tools in ${esc(label)} will write to <code>${esc(s.data_dir)}</code>.`;
+        btnConn.hidden = false; btnSync.hidden = true; btnDis.hidden = true;
+        return;
+      }
+      if (!s.db_aligned) {
+        dot.dataset.state = 'warn';
+        txt.textContent = `Connected to ${label} · DB mismatch`;
+        detail.innerHTML =
+          `${esc(label)} is reading <code>${esc(s.entry_data_dir || '?')}</code><br/>` +
+          `App writes to <code>${esc(s.data_dir)}</code>. Re-sync to align.`;
+        btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
+        return;
+      }
+      dot.dataset.state = 'ok';
+      txt.textContent = `Connected to ${label} · DB aligned`;
+      const tokenNote = s.token_in_env ? '· token saved' : '· token will refresh on Re-sync';
+      detail.innerHTML =
+        `Config: <code>${esc(s.config_path)}</code><br/>` +
+        `Path: <code>${esc(s.data_dir)}</code> ${tokenNote}`;
+      btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
+    };
+
+    const refresh = async () => {
+      dot.dataset.state = 'loading';
+      txt.textContent = 'checking…';
+      detail.textContent = '';
+      try {
+        const s = await api.mcpStatus(currentClient());
+        renderState(s);
+      } catch (e) {
+        renderState({ ok: false, reason: e?.message || String(e) });
+      }
+    };
+
+    const runWith = async (label, fn) => {
+      btnConn.disabled = btnSync.disabled = btnDis.disabled = true;
+      sel.disabled = true;
+      txt.textContent = label;
+      try {
+        const r = await fn();
+        if (r && r.ok === false) {
+          renderState({ ok: false, reason: r.reason || `${label} failed` });
+        } else {
+          await refresh();
+        }
+      } catch (e) {
+        renderState({ ok: false, reason: e?.message || String(e) });
+      } finally {
+        btnConn.disabled = btnSync.disabled = btnDis.disabled = false;
+        sel.disabled = false;
+      }
+    };
+
+    // Populate client dropdown from the Python-resolved list (so OS-specific
+    // paths stay in one place). Mark detected ones with a ✓ in the label.
+    try {
+      const clients = await api.mcpClients();
+      const remembered = localStorage.getItem(STORAGE_KEY) || 'claude-code';
+      sel.innerHTML = '';
+      for (const c of clients) {
+        clientLabels[c.key] = c.label;
+        const opt = document.createElement('option');
+        opt.value = c.key;
+        opt.textContent = `${c.present ? '✓ ' : ''}${c.label}`;
+        if (c.key === remembered) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    } catch (e) {
+      sel.innerHTML = '<option value="claude-code">Claude Code</option>';
+    }
+
+    sel.addEventListener('change', () => {
+      localStorage.setItem(STORAGE_KEY, currentClient());
+      refresh();
+    });
+    btnRef .addEventListener('click', refresh);
+    btnConn.addEventListener('click', () => runWith('connecting…', () => api.mcpInstall(currentClient())));
+    btnSync.addEventListener('click', () => runWith('re-syncing…', () => api.mcpInstall(currentClient())));
+    btnDis .addEventListener('click', () => {
+      const cl = currentClient();
+      if (!confirm(`Disconnect Gap Map from ${clientLabels[cl] || cl}? Other MCP servers stay registered.`)) return;
+      runWith('disconnecting…', () => api.mcpUninstall(cl));
+    });
+
+    refresh();
+  })();
+
   root.querySelector('#pref-confirm-delete')?.addEventListener('change', e => {
     localStorage.setItem('gapmap.pref.confirm_delete', e.target.checked ? 'true' : 'false');
   });
@@ -346,6 +556,12 @@ function wireStaticButtons(root) {
     const on = e.target.checked;
     localStorage.setItem('gapmap.pref.dark_mode', on ? 'true' : 'false');
     document.documentElement.classList.toggle('dark', on);
+    // Notify canvas-rendered screens (map, graph, trend charts) that
+    // read CSS vars at paint time — they need a re-render to pick up
+    // the new tokens since `getComputedStyle` was cached at draw time.
+    try {
+      window.dispatchEvent(new CustomEvent('gapmap:theme-changed', { detail: { dark: on } }));
+    } catch {}
   });
   root.querySelector('#pref-dense-cards')?.addEventListener('change', e => {
     const on = e.target.checked;
@@ -371,6 +587,42 @@ function wireStaticButtons(root) {
       .filter(k => !k.startsWith('gapmap.onboarding'))
       .forEach(k => localStorage.removeItem(k));
     renderSettings(root);
+  });
+  // T1.3 trash card — restore / purge
+  fillTrashCard(root);
+  root.querySelector('#btn-trash-purge')?.addEventListener('click', async () => {
+    if (!confirm('Hard-delete trashed topics older than 7 days? This cannot be undone.')) return;
+    try {
+      const out = await api.purgeDeletedTopics(7);
+      alert(`Purged ${out?.purged || 0} topic(s).`);
+      fillTrashCard(root);
+    } catch (e) { alert(`Purge failed: ${e?.message || e}`); }
+  });
+}
+
+async function fillTrashCard(root) {
+  const host = root.querySelector('#trash-list');
+  if (!host) return;
+  let resp;
+  try { resp = await api.listTrash(); } catch (e) { host.innerHTML = `<span class="muted">load failed: ${esc(e?.message || e)}</span>`; return; }
+  const trash = resp?.trash || [];
+  if (!trash.length) { host.innerHTML = `<p class="muted" style="margin:0">No topics in trash.</p>`; return; }
+  host.innerHTML = trash.map(t => `
+    <div class="trash-row" data-topic="${esc(t.topic)}" style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-soft,#EADFC8)">
+      <span style="flex:1;font-weight:500">${esc(t.topic)}</span>
+      <span class="muted" style="font-size:11.5px">${t.post_count || 0} posts · expires in ${t.expires_in_days || 0}d</span>
+      <button class="btn btn-ghost btn-xs" data-action="restore">Restore</button>
+    </div>
+  `).join('');
+  host.querySelectorAll('[data-action="restore"]').forEach(btn => {
+    btn.onclick = async () => {
+      const row = btn.closest('.trash-row');
+      const topic = row.dataset.topic;
+      try {
+        await api.restoreTopic(topic);
+        row.remove();
+      } catch (e) { alert(`Restore failed: ${e?.message || e}`); }
+    };
   });
 }
 
@@ -639,4 +891,119 @@ function reportError(root, section, e) {
     err.textContent = `${err.textContent ? err.textContent + ' · ' : ''}${section}: ${e?.message || e}`;
   }
   console.warn('[settings]', section, e);
+}
+
+// ── AG-E: Advanced extractor prompts (T3.7) ────────────────────────────
+//
+// Gated by a localStorage flag (`gapmap.pref.advanced_prompts`) so casual
+// users can't accidentally blow up their extractor rubrics. When unlocked,
+// we lazy-load `api.promptList()` and populate a dropdown + textarea. Save
+// writes back to the `prompt_overrides` DB table via `api.promptSet`, and
+// Reset removes the override so the bundled prompt takes over again.
+function wireAdvancedPromptsCard(root, alive) {
+  const card = root.querySelector('#card-advanced-prompts');
+  if (!card) return;
+  const toggle = card.querySelector('#pref-advanced-prompts');
+  const body   = card.querySelector('#advanced-prompts-body');
+  const sel    = card.querySelector('#prompt-key-select');
+  const editor = card.querySelector('#prompt-editor');
+  const badge  = card.querySelector('#prompt-key-badge');
+  const status = card.querySelector('#prompt-save-status');
+  const btnSave  = card.querySelector('#btn-prompt-save');
+  const btnReset = card.querySelector('#btn-prompt-reset');
+  if (!toggle || !body) return;
+
+  let listing = null;   // last-known { key: entry } from api.promptList()
+
+  const setUnlocked = (on) => {
+    body.hidden = !on;
+    localStorage.setItem('gapmap.pref.advanced_prompts', on ? 'true' : 'false');
+    if (on && listing == null) loadPrompts();
+  };
+
+  async function loadPrompts() {
+    sel.innerHTML = '<option value="">loading…</option>';
+    try {
+      const r = await api.promptList();
+      if (!alive || alive()) {
+        listing = (r && r.prompts) || {};
+        const keys = Object.keys(listing).sort();
+        if (!keys.length) {
+          sel.innerHTML = '<option value="">(no prompts found)</option>';
+          editor.value = '';
+          return;
+        }
+        sel.innerHTML = keys.map(k => {
+          const flag = listing[k]?.has_override ? '● ' : '';
+          return `<option value="${esc(k)}">${flag}${esc(k)}</option>`;
+        }).join('');
+        sel.value = keys[0];
+        showKey(keys[0]);
+      }
+    } catch (e) {
+      sel.innerHTML = '<option value="">error</option>';
+      status.textContent = `✗ ${e?.message || e}`;
+    }
+  }
+
+  function showKey(key) {
+    const entry = listing && listing[key];
+    if (!entry) {
+      editor.value = '';
+      badge.textContent = '';
+      return;
+    }
+    editor.value = entry.has_override
+      ? (entry.override_text || '')
+      : (entry.bundled_text || '');
+    badge.textContent = entry.has_override
+      ? `override · updated ${entry.updated_at || ''}`
+      : 'bundled (no override)';
+    status.textContent = '';
+  }
+
+  toggle.addEventListener('change', e => setUnlocked(e.target.checked));
+  sel.addEventListener('change', e => showKey(e.target.value));
+
+  btnSave.addEventListener('click', async () => {
+    const key = sel.value;
+    if (!key) return;
+    btnSave.disabled = true;
+    status.textContent = 'saving…';
+    try {
+      await api.promptSet(key, editor.value || '');
+      status.textContent = '✓ saved';
+      await loadPrompts();
+      sel.value = key;
+      showKey(key);
+    } catch (e) {
+      status.textContent = `✗ ${e?.message || e}`;
+    } finally {
+      btnSave.disabled = false;
+      setTimeout(() => { if (status.textContent === '✓ saved') status.textContent = ''; }, 2500);
+    }
+  });
+
+  btnReset.addEventListener('click', async () => {
+    const key = sel.value;
+    if (!key) return;
+    if (!confirm(`Reset "${key}" to the bundled default? Your override will be deleted.`)) return;
+    btnReset.disabled = true;
+    status.textContent = 'resetting…';
+    try {
+      await api.promptClear(key);
+      status.textContent = '✓ reset to bundled';
+      await loadPrompts();
+      sel.value = key;
+      showKey(key);
+    } catch (e) {
+      status.textContent = `✗ ${e?.message || e}`;
+    } finally {
+      btnReset.disabled = false;
+      setTimeout(() => { if (status.textContent === '✓ reset to bundled') status.textContent = ''; }, 2500);
+    }
+  });
+
+  // Initial visibility
+  setUnlocked(toggle.checked);
 }
