@@ -518,6 +518,16 @@ export const api = {
   runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),
   runConcepts:        (topic) => invoke('run_concepts', { topic }),
 
+  // ----- Paper research (BibTeX/RIS/APA/MD export, Unpaywall OA lookup) -----
+  papersList:   (topic, limit = 200) => invoke('papers_list', { topic, limit }),
+  papersExport: (topic, fmt = 'bibtex', limit = null) => invoke('papers_export', { topic, fmt, limit }),
+  oaLookup:     (doi) => invoke('oa_lookup', { doi }),
+
+  // ----- Intent layer (per-topic deliverable routing) -----
+  listIntents:     ()              => cachedInvoke('list_intents', null, 300000),
+  topicIntentGet:  (topic)         => invoke('topic_intent_get', { topic }),
+  topicIntentSet:  (topic, intent) => { invalidate('topic_intent_get'); return invoke('topic_intent_set', { topic, intent }); },
+
   // ----- MCP ↔ App integration (multi-client) -----
   mcpClients:   ()        => invoke('mcp_clients'),
   mcpStatus:    (client)  => invoke('mcp_status',    { client: client || null }),

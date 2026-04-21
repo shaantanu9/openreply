@@ -150,6 +150,34 @@ def _tag_posts(topic: str, post_ids: list[str], source: str) -> int:
     ]
     # Ignore-on-conflict so rerunning a topic doesn't error
     db["topic_posts"].insert_all(rows, pk=("topic", "post_id"), ignore=True)
+
+    # Enqueue for async extraction by the long-lived worker. Idempotent via
+    # composite PK (topic, post_id, kind) — rerunning collect doesn't create
+    # duplicate queue rows. The worker picks these up in FIFO batches of 5
+    # and extracts findings into graph_nodes incrementally. See
+    # docs/superpowers/plans/2026-04-21-incremental-enrichment.md Task 2.
+    try:
+        db["extraction_queue"].insert_all(
+            [
+                {
+                    "topic": topic,
+                    "post_id": pid,
+                    "kind": "post",
+                    "queued_at": now,
+                    "attempts": 0,
+                }
+                for pid in post_ids
+                if pid
+            ],
+            pk=("topic", "post_id", "kind"),
+            ignore=True,
+        )
+    except Exception:
+        # Queue table may not exist on first-run-before-schema paths; never
+        # let an enqueue failure break collect itself (the data is the
+        # source of truth — worker will backfill via init_schema's
+        # INSERT OR IGNORE on next boot).
+        pass
     return len(rows)
 
 
@@ -166,6 +194,7 @@ def collect(
     aggressive: bool = False,
     sources: list[str] | None = None,  # extra sources: hn/appstore/playstore/scholar/stackoverflow/trends
     skip_reddit: bool = False,  # skip Reddit fetch stages (2+3); useful for external-only reruns
+    skip_extraction: bool = False,  # skip inline LLM extraction at end of collect
     progress=None,  # optional callable(message: str) for CLI progress
 ) -> CollectResult:
     """Run the full collection for a topic.
@@ -533,6 +562,25 @@ def collect(
                         result.posts_fetched += n
                         result.by_source[f"source:{src}"] = n
             ext_pool.shutdown(wait=True)
+
+    # Legacy inline-extraction path. Preserved for CLI back-compat with
+    # callers that don't run the long-lived enrich worker. Tauri's
+    # `start_collect` command sets `skip_extraction=True` because the
+    # frontend supervises the worker which incrementally drains the
+    # `extraction_queue` we populated in `_tag_posts`. Keeping this gated
+    # also means the DMG footprint doesn't block on a 2-minute LLM call
+    # at the tail of every collect.
+    #
+    # Current tree no longer has a direct `enrich_from_llm(topic=...)` call
+    # here (removed during the multi-source refactor), but we keep the flag
+    # plumbed so any future inline step inherits the opt-out automatically
+    # — and so the contract documented in the plan holds.
+    if not skip_extraction and aggressive:
+        try:
+            from ..graph.semantic import enrich_from_llm
+            enrich_from_llm(topic=search_topic)
+        except Exception as e:
+            result.errors.append(f"inline_enrich: {e}")
 
     _log(f"done. {result.posts_fetched} posts tagged for '{search_topic}'.")
     return result

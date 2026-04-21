@@ -883,6 +883,16 @@ def cmd_research_collect(
         False, "--skip-reddit/--no-skip-reddit",
         help="Skip the Reddit fetch stages entirely. Useful for topping up an existing topic with only external sources (HN, arxiv, etc.).",
     ),
+    skip_extraction: bool = typer.Option(
+        False, "--skip-extraction/--no-skip-extraction",
+        help=(
+            "Skip the inline LLM extraction pass at the tail of collect. "
+            "Default False preserves CLI back-compat (aggressive collects "
+            "still run the one-shot extractor). The Tauri desktop app passes "
+            "--skip-extraction because it runs a long-lived worker that "
+            "drains the extraction_queue incrementally."
+        ),
+    ),
 ) -> None:
     """Build a topic-scoped corpus in SQLite (discover + fetch + search [+ history])."""
     from ..research import collect
@@ -904,6 +914,7 @@ def cmd_research_collect(
         sources=src_list,
         aggressive=aggressive,
         skip_reddit=skip_reddit,
+        skip_extraction=skip_extraction,
         progress=lambda m: console.print(f"[dim]• {m}[/dim]"),
     )
     console.print(
@@ -1668,6 +1679,134 @@ def cmd_research_sentiment_by_source(
                 typer.echo(f"  - {label} ({s.get('n_posts')}): {s.get('label')} · {emos}")
 
 
+# ─── Intent layer ───────────────────────────────────────────────────────────
+
+@research_app.command("intents")
+def cmd_research_intents_list(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List the 5 intent presets (product-new / product-improve / thesis / ux-research / market-report)."""
+    from ..research.intents import list_intents
+    presets = list_intents()
+    if as_json:
+        typer.echo(json.dumps(presets, default=str))
+        return
+    for p in presets:
+        typer.echo(f"  {p['key']:<18} {p['label']:<36} → {p['default_tab']:<10} · {p['deliverable']}")
+
+
+@research_app.command("intent-get")
+def cmd_research_intent_get(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Read the stored intent for a topic, plus action-ladder completion state."""
+    from ..research.intents import get_topic_intent, get_intent, completion_state
+    key = get_topic_intent(topic)
+    preset = get_intent(key)
+    state = completion_state(topic)
+    out = {"topic": topic, "intent": key, "preset": preset, "completion": state}
+    if as_json:
+        typer.echo(json.dumps(out, default=str))
+        return
+    typer.echo(f"topic={topic} intent={key} → default_tab={preset['default_tab']}")
+    for k, v in state.items():
+        typer.echo(f"  {'✓' if v else ' '} {k}")
+
+
+@research_app.command("intent-set")
+def cmd_research_intent_set(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    intent: str = typer.Option(..., "--intent", "-i",
+                               help="product-new | product-improve | thesis | ux-research | market-report"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Set or change the intent for a topic. Non-destructive — just metadata."""
+    from ..research.intents import set_topic_intent
+    r = set_topic_intent(topic, intent)
+    if as_json:
+        typer.echo(json.dumps(r, default=str))
+        raise typer.Exit(0 if r.get("ok") else 1)
+    if not r.get("ok"):
+        typer.echo(f"Error: {r.get('reason')}", err=True)
+        raise typer.Exit(1)
+    verb = "created" if r.get("created") else "updated"
+    typer.echo(f"{verb} {topic} → intent={intent}")
+
+
+@research_app.command("papers-export")
+def cmd_research_papers_export(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    fmt: str = typer.Option("bibtex", "--fmt", help="bibtex | ris | apa | md"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write to file; else stdout"),
+    limit: Optional[int] = typer.Option(None, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Export a topic's academic papers as BibTeX / RIS / APA / Markdown."""
+    from ..research.paper_export import export_topic
+    result = export_topic(topic=topic, fmt=fmt, limit=limit)
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+        return
+    if not result.get("ok"):
+        typer.echo(f"Error: {result.get('reason')}", err=True)
+        raise typer.Exit(1)
+    text = result.get("text", "")
+    if out:
+        out.write_text(text, encoding="utf-8")
+        typer.echo(f"wrote {result['count']} papers → {out}")
+    else:
+        typer.echo(text)
+
+
+@research_app.command("papers-list")
+def cmd_research_papers_list(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    limit: int = typer.Option(100, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List every academic paper tagged to a topic, ordered by citation count."""
+    from ..research.paper_export import _papers_for_topic
+    posts = _papers_for_topic(topic, limit=limit)
+    if as_json:
+        out = []
+        for p in posts:
+            out.append({
+                "id":          p.get("id"),
+                "title":       p.get("title"),
+                "author":      p.get("author"),
+                "url":         p.get("url"),
+                "source_type": p.get("source_type"),
+                "score":       p.get("score"),
+                "num_comments": p.get("num_comments"),
+                "created_utc": p.get("created_utc"),
+                "flair":       p.get("flair"),
+                "selftext":    (p.get("selftext") or "")[:500],
+            })
+        typer.echo(json.dumps(out, default=str))
+        return
+    typer.echo(f"{len(posts)} papers for topic={topic}")
+    for p in posts[:20]:
+        typer.echo(f"  · [{p.get('source_type')}] cites={p.get('score')}  {(p.get('title') or '')[:120]}")
+
+
+@research_app.command("oa-lookup")
+def cmd_research_oa_lookup(
+    doi: str = typer.Option(..., "--doi"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Unpaywall — find a legal free PDF for a DOI."""
+    from ..sources.unpaywall import lookup_doi
+    r = lookup_doi(doi)
+    if as_json:
+        typer.echo(json.dumps(r, default=str))
+        return
+    if not r:
+        typer.echo("not found")
+        raise typer.Exit(1)
+    typer.echo(f"is_oa={r.get('is_oa')}  status={r.get('oa_status')}  url={r.get('best_oa_url')}")
+
+
 @research_app.command("concepts")
 def cmd_research_concepts(
     topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must already have painpoints in the graph)."),
@@ -2104,6 +2243,32 @@ def cmd_graph_enrich(
 
     r = enrich_from_llm(topic=topic, provider=provider, corpus_limit=corpus_limit)
     _emit(r, as_json)
+
+
+@research_app.command("enrich-worker")
+def cmd_enrich_worker(
+    serve: bool = typer.Option(False, "--serve", help="Start the long-lived extraction worker (blocks)."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Long-lived extraction worker. Emits NDJSON events on stdout.
+
+    The Rust supervisor launches this via ``run_cli_stream_streaming`` and
+    consumes the event stream (``enrich:started`` / ``enrich:tick`` /
+    ``enrich:idle`` / ``enrich:error`` / ``enrich:oom`` / ``enrich:stopped``).
+    SIGTERM / SIGINT trigger a clean shutdown between batches.
+
+    Without ``--serve`` this prints a usage hint and exits 1 — the command
+    only makes sense as a supervised long-running process. Callers can
+    also invoke it manually for debugging:
+
+      REDDIT_MYIND_DATA_DIR=/tmp/gm reddit-cli research enrich-worker --serve
+    """
+    _ = as_json  # reserved for future structured status output
+    if not serve:
+        typer.echo("use --serve to start the worker")
+        raise typer.Exit(1)
+    from ..research.enrich_worker import serve as _serve
+    _serve()
 
 
 @graph_app.command("stats")

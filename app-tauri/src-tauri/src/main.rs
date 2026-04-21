@@ -81,6 +81,14 @@ fn main() {
             commands::run_temporal_gaps,
             commands::run_sentiment_by_source,
             commands::run_concepts,
+            // Paper research (Papers tab, BibTeX/RIS export, Unpaywall OA lookup)
+            commands::papers_list,
+            commands::papers_export,
+            commands::oa_lookup,
+            // Intent layer (per-topic deliverable routing)
+            commands::list_intents,
+            commands::topic_intent_get,
+            commands::topic_intent_set,
             commands::quick_extract_gaps,
             commands::run_reddit_search,
             commands::start_stream,

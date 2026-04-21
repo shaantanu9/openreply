@@ -2682,6 +2682,206 @@ kbd {
 .papers { padding-left: 18px; font-size: var(--fs-13); }
 .solutions-toolbar { margin-bottom: 12px; text-align: right; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 
+/* ─── Intent layer — action-ladder card on topic page + picker in new-topic modal ─── */
+.intent-ladder {
+  margin: 6px 0 14px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.intent-ladder-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap;
+}
+.intent-ladder-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.intent-ladder-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--orange); color: #fff;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; user-select: none;
+  transition: opacity 0.15s;
+}
+.intent-ladder-badge:hover { opacity: 0.88; }
+.intent-ladder-badge svg { width: 13px; height: 13px; }
+.intent-swap-caret { margin-left: 2px; }
+.intent-ladder-deliverable {
+  font-size: 12.5px; color: var(--ink-2); font-weight: 500;
+}
+.intent-ladder-progress {
+  font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums;
+  padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface);
+}
+.intent-ladder-tagline {
+  font-size: 12px; color: var(--ink-3); margin: 6px 0 10px;
+}
+.intent-ladder-steps {
+  list-style: none; padding: 0; margin: 8px 0 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.intent-step {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.intent-step-done    { background: #F0F9F4; border-color: #C4E7D1; }
+.intent-step-available { background: #FFF9F2; border-color: #F3D6AE; }
+.intent-step-locked  { opacity: 0.55; }
+.intent-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--surface-2); color: var(--ink-2);
+  font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+}
+.intent-step-done .intent-step-num    { background: #2E7D5B; color: #fff; }
+.intent-step-available .intent-step-num { background: var(--orange); color: #fff; }
+.intent-step-label { flex: 1; color: var(--ink-1); font-weight: 500; }
+.intent-step-action .btn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 10px; }
+.intent-step-done-chip, .intent-step-done span,
+.intent-step-done .intent-step-action span { color: #2E7D5B; font-weight: 600; }
+.intent-step-locked .intent-step-action span { color: var(--ink-3); font-size: 11px; }
+.intent-step-action svg { width: 13px; height: 13px; }
+
+.intent-toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  padding: 10px 18px; background: var(--ink-1); color: #fff;
+  border-radius: 999px; font-size: 13px;
+  z-index: 10000; opacity: 0; animation: intentToastIn 0.3s ease forwards;
+}
+@keyframes intentToastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* Intent-swap popup (below the badge) */
+.intent-swap-popup {
+  position: fixed;
+  min-width: 320px; max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+  z-index: 9998;
+  overflow: hidden;
+}
+.intent-swap-head {
+  padding: 10px 14px;
+  font-size: 12px; color: var(--ink-3); font-weight: 600;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+.intent-swap-popup ul { list-style: none; margin: 0; padding: 4px; }
+.intent-swap-opt {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  transition: background 0.1s;
+}
+.intent-swap-opt:hover { background: var(--surface-2); }
+.intent-swap-opt.is-current { background: #FFF9F2; }
+.intent-swap-opt svg { width: 18px; height: 18px; color: var(--orange); flex-shrink: 0; }
+.intent-swap-opt .opt-main { flex: 1; display: flex; flex-direction: column; }
+.intent-swap-opt b { font-size: 13px; color: var(--ink-1); }
+.intent-swap-opt small { font-size: 11.5px; color: var(--ink-3); margin-top: 1px; }
+.intent-swap-opt .opt-check { color: #2E7D5B; }
+
+/* Intent pills in the new-topic modal */
+.modal-intent { margin: 12px 0 14px; }
+.modal-intent-label {
+  display: block; font-size: 12px; color: var(--ink-3);
+  font-weight: 600; margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.intent-pills {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px;
+}
+.intent-pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px; color: var(--ink-2); cursor: pointer;
+  transition: all 0.12s;
+  text-align: left;
+}
+.intent-pill:hover { border-color: var(--ink-3); background: var(--surface-2); }
+.intent-pill.is-selected {
+  background: var(--orange); color: #fff; border-color: var(--orange);
+  font-weight: 600;
+}
+.intent-pill svg { width: 14px; height: 14px; flex-shrink: 0; }
+.intent-ladder-error {
+  padding: 10px; background: #FBE3E6; color: #B84747; border-radius: 8px;
+  font-size: 12px;
+}
+
+/* ─── Papers tab (academic corpus browser + bibliography export) ─── */
+.papers-tab { padding: 4px 0 16px; }
+.papers-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.papers-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.papers-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.papers-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden;
+}
+.papers-table thead th {
+  text-align: left; padding: 10px 12px; background: var(--surface-2);
+  border-bottom: 1px solid var(--line); font-weight: 600; color: var(--ink-3);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.papers-table tbody td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.papers-table tbody tr:last-child td { border-bottom: 0; }
+.papers-table tbody tr:hover { background: var(--surface-2); }
+.papers-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.papers-table .paper-title a { color: var(--ink-1); font-weight: 500; text-decoration: none; }
+.papers-table .paper-title a:hover { text-decoration: underline; }
+.papers-table .paper-authors { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.src-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  color: #fff; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.btn-oa { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 8px; }
+
+/* Bibliography export modal */
+.papers-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+}
+.papers-modal {
+  width: min(760px, 92vw); max-height: 85vh; background: var(--surface);
+  border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.papers-modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px; border-bottom: 1px solid var(--line);
+}
+.papers-modal-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.papers-modal-text {
+  flex: 1; width: 100%; min-height: 300px; padding: 14px 18px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  border: 0; resize: none; background: var(--surface-2); color: var(--ink-1);
+}
+.papers-modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px;
+  border-top: 1px solid var(--line);
+}
+.papers-modal-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+
 /* ─── MCP integration card (Settings → Use with Claude Code) ─── */
 .mcp-status-row { display: inline-flex; align-items: center; gap: 8px; }
 .mcp-status-dot {
