@@ -4231,3 +4231,12 @@ html.dark .context-menu-separator { background: var(--line, #2E2824); }
 @media (max-width: 820px) {
   .app .main-col { min-height: auto; }
 }
+
+/* Tab drag-and-drop visual feedback */
+.tab-pill.dragging { opacity: 0.4; }
+.tab-pill.drop-target {
+  box-shadow: inset 3px 0 0 var(--orange, #E5614E);
+}
+html.dark .tab-pill.drop-target {
+  box-shadow: inset 3px 0 0 var(--orange, #E5614E);
+}

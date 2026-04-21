@@ -229,22 +229,45 @@ export function renderTabStrip(host) {
     const pill = e.target.closest('.tab-pill');
     if (!pill) return;
     dragId = pill.dataset.id;
-    e.dataTransfer.effectAllowed = 'move';
+    // WebKit (Tauri's Wry webview) silently aborts drag if no data is set.
+    // `text/plain` is the universally-accepted MIME for drag payloads.
+    try {
+      e.dataTransfer.setData('text/plain', dragId);
+      e.dataTransfer.effectAllowed = 'move';
+    } catch {}
+    pill.classList.add('dragging');
   });
   host.addEventListener('dragover', e => {
     if (!dragId) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    // Visual insertion hint — highlight the pill we'd swap with
+    host.querySelectorAll('.tab-pill.drop-target')
+        .forEach(el => el.classList.remove('drop-target'));
+    const target = e.target.closest('.tab-pill');
+    if (target && target.dataset.id !== dragId) target.classList.add('drop-target');
+  });
+  host.addEventListener('dragleave', e => {
+    const target = e.target.closest('.tab-pill');
+    if (target) target.classList.remove('drop-target');
   });
   host.addEventListener('drop', e => {
     if (!dragId) return;
     e.preventDefault();
     const target = e.target.closest('.tab-pill');
+    host.querySelectorAll('.tab-pill.drop-target')
+        .forEach(el => el.classList.remove('drop-target'));
     if (!target || target.dataset.id === dragId) { dragId = null; return; }
     const all = tabStore.getAll();
     const fromIdx = all.findIndex(t => t.id === dragId);
     const toIdx   = all.findIndex(t => t.id === target.dataset.id);
     if (fromIdx !== -1 && toIdx !== -1) tabStore.move(fromIdx, toIdx);
+    dragId = null;
+  });
+  // Clear state if drag is aborted (Escape, off-window drop).
+  host.addEventListener('dragend', () => {
+    host.querySelectorAll('.tab-pill.dragging, .tab-pill.drop-target')
+        .forEach(el => el.classList.remove('dragging', 'drop-target'));
     dragId = null;
   });
 }
