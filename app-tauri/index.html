@@ -107,6 +107,16 @@
   <div class="modal">
     <h3>New research topic</h3>
     <p class="modal-sub">We'll discover the right subs, pull multi-source data, and build a gap map.</p>
+
+    <!-- Intent picker — spec: docs/superpowers/specs/2026-04-21-intent-layer.md.
+         Drives default tab + action ladder for the created topic. -->
+    <div class="modal-intent" id="new-topic-intent-wrap">
+      <label class="modal-intent-label">What do you want from this research?</label>
+      <div class="intent-pills" id="new-topic-intent-pills">
+        <!-- Populated by main.js wireModal() from api.listIntents(). -->
+      </div>
+    </div>
+
     <input id="new-topic-input" type="text" placeholder='e.g. "ATS resume and job search apps"' autofocus />
     <label class="modal-check">
       <input type="checkbox" id="new-topic-aggressive" checked>

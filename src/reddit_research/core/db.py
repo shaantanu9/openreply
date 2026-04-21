@@ -250,12 +250,15 @@ def init_schema(db: Database) -> None:
                 "metadata_json": str,
                 "ts": str,              # ISO UTC — set on first insert,
                                         # preserved on update (see _upsert_node)
+                "evidence_post_id": str,  # incremental-enrichment — the post
+                                          # that triggered this finding (Task 4)
             },
             pk="id",
         )
         db["graph_nodes"].create_index(["topic"])
         db["graph_nodes"].create_index(["kind"])
         db["graph_nodes"].create_index(["topic", "kind"])
+        db["graph_nodes"].create_index(["evidence_post_id"])
     else:
         # Lazy migration for pre-2026-04-19 installs. Existing rows get an
         # empty ts → they bucket as "stable" in diff_findings, which is
@@ -263,6 +266,17 @@ def init_schema(db: Database) -> None:
         _cols = {c.name for c in db["graph_nodes"].columns}
         if "ts" not in _cols:
             db.executescript("ALTER TABLE graph_nodes ADD COLUMN ts TEXT DEFAULT ''")
+        # 2026-04-21 incremental-enrichment (Task 4): per-finding evidence
+        # post pointer. Nullable TEXT; populated by enrich_from_llm_for_posts.
+        # Indexed because the backfill in _ensure_extraction_queue joins on it.
+        if "evidence_post_id" not in _cols:
+            try:
+                db.executescript(
+                    "ALTER TABLE graph_nodes ADD COLUMN evidence_post_id TEXT DEFAULT ''"
+                )
+                db["graph_nodes"].create_index(["evidence_post_id"], if_not_exists=True)
+            except Exception:
+                pass
 
     if "graph_edges" not in db.table_names():
         db["graph_edges"].create(
@@ -389,6 +403,11 @@ def init_schema(db: Database) -> None:
             cols = {c.name for c in db["topic_prefs"].columns}
             if "deleted_at" not in cols:
                 db.executescript("ALTER TABLE topic_prefs ADD COLUMN deleted_at TEXT DEFAULT ''")
+            # Intent layer (2026-04-21 intent-layer spec). One nullable column
+            # drives per-topic deliverable routing in the UI. NULL → treat as
+            # 'product-new' so old topics behave identically to pre-migration.
+            if "intent" not in cols:
+                db.executescript("ALTER TABLE topic_prefs ADD COLUMN intent TEXT DEFAULT 'product-new'")
     except Exception:
         pass
 

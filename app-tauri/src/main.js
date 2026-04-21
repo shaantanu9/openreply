@@ -315,8 +315,45 @@ function wireModal() {
     if (cb) cb.checked = aggPref;
     returnFocusTo = document.activeElement;
     bd.hidden = false;
+    // Populate intent picker on every open so new presets appear without
+    // refresh. Idempotent — api.listIntents() is TTL-cached.
+    renderIntentPills();
     setTimeout(() => $('#new-topic-input')?.focus(), 50);
   };
+
+  // Intent pill renderer — single source of truth lives in Python's
+  // `research/intents.py`, surfaced here via api.listIntents(). Selected
+  // intent is stored in localStorage so consecutive new-topics default to
+  // the user's most recent choice.
+  async function renderIntentPills() {
+    const host = $('#new-topic-intent-pills');
+    if (!host) return;
+    let presets = [];
+    try { presets = await api.listIntents(); } catch { presets = []; }
+    if (!presets.length) {
+      // Graceful degradation if the Python side isn't available — hide the
+      // picker and let the user create a topic like before (defaults apply).
+      $('#new-topic-intent-wrap')?.setAttribute('hidden', '');
+      return;
+    }
+    const picked = localStorage.getItem('gapmap.new_topic.intent') || 'product-new';
+    host.innerHTML = presets.map(p => `
+      <button type="button" class="intent-pill ${p.key === picked ? 'is-selected' : ''}"
+              data-intent="${p.key}"
+              title="${(p.tagline || '').replace(/"/g, '&quot;')}">
+        <i data-lucide="${p.icon || 'target'}"></i>
+        <span>${p.label}</span>
+      </button>
+    `).join('');
+    window.refreshIcons?.();
+    host.querySelectorAll('.intent-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        host.querySelectorAll('.intent-pill').forEach(b => b.classList.remove('is-selected'));
+        btn.classList.add('is-selected');
+        localStorage.setItem('gapmap.new_topic.intent', btn.dataset.intent);
+      });
+    });
+  }
   const close = () => {
     bd.hidden = true;
     $('#new-topic-input').value = '';
@@ -409,6 +446,15 @@ function wireModal() {
       }
     } catch {
       // Pre-check best-effort — don't block the collect on a sidecar hiccup
+    }
+
+    // Persist the picked intent BEFORE the collect kicks off so the topic
+    // opens to the right default tab the first time the user visits it.
+    const pickedIntent = localStorage.getItem('gapmap.new_topic.intent') || 'product-new';
+    try {
+      await api.topicIntentSet(effectiveTopic, pickedIntent);
+    } catch {
+      // Non-fatal — default is 'product-new' when missing, matching current behaviour.
     }
 
     close();

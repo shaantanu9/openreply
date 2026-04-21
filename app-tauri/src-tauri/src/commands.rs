@@ -1187,6 +1187,33 @@ pub async fn oa_lookup(app: AppHandle, doi: String) -> Result<Value, String> {
     ).await.map_err(err_to_string)
 }
 
+// ─── Intent layer (per-topic deliverable routing) ──────────────────────────────
+
+#[tauri::command]
+pub async fn list_intents(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "intents", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn topic_intent_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "intent-get", "--topic", &topic, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn topic_intent_set(
+    app: AppHandle,
+    topic: String,
+    intent: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "intent-set", "--topic", &topic, "--intent", &intent, "--json"],
+    ).await.map_err(err_to_string)
+}
+
 /// Quick-extract — runs `research gaps` for a topic without building the
 /// graph. Returns the 4-category JSON for preview only. Use enrich_graph
 /// to persist the results into the knowledge graph.

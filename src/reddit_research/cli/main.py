@@ -1679,6 +1679,61 @@ def cmd_research_sentiment_by_source(
                 typer.echo(f"  - {label} ({s.get('n_posts')}): {s.get('label')} · {emos}")
 
 
+# ─── Intent layer ───────────────────────────────────────────────────────────
+
+@research_app.command("intents")
+def cmd_research_intents_list(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List the 5 intent presets (product-new / product-improve / thesis / ux-research / market-report)."""
+    from ..research.intents import list_intents
+    presets = list_intents()
+    if as_json:
+        typer.echo(json.dumps(presets, default=str))
+        return
+    for p in presets:
+        typer.echo(f"  {p['key']:<18} {p['label']:<36} → {p['default_tab']:<10} · {p['deliverable']}")
+
+
+@research_app.command("intent-get")
+def cmd_research_intent_get(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Read the stored intent for a topic, plus action-ladder completion state."""
+    from ..research.intents import get_topic_intent, get_intent, completion_state
+    key = get_topic_intent(topic)
+    preset = get_intent(key)
+    state = completion_state(topic)
+    out = {"topic": topic, "intent": key, "preset": preset, "completion": state}
+    if as_json:
+        typer.echo(json.dumps(out, default=str))
+        return
+    typer.echo(f"topic={topic} intent={key} → default_tab={preset['default_tab']}")
+    for k, v in state.items():
+        typer.echo(f"  {'✓' if v else ' '} {k}")
+
+
+@research_app.command("intent-set")
+def cmd_research_intent_set(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    intent: str = typer.Option(..., "--intent", "-i",
+                               help="product-new | product-improve | thesis | ux-research | market-report"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Set or change the intent for a topic. Non-destructive — just metadata."""
+    from ..research.intents import set_topic_intent
+    r = set_topic_intent(topic, intent)
+    if as_json:
+        typer.echo(json.dumps(r, default=str))
+        raise typer.Exit(0 if r.get("ok") else 1)
+    if not r.get("ok"):
+        typer.echo(f"Error: {r.get('reason')}", err=True)
+        raise typer.Exit(1)
+    verb = "created" if r.get("created") else "updated"
+    typer.echo(f"{verb} {topic} → intent={intent}")
+
+
 @research_app.command("papers-export")
 def cmd_research_papers_export(
     topic: str = typer.Option(..., "--topic", "-t"),

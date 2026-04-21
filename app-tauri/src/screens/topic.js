@@ -8,6 +8,8 @@ import { openByokModal } from './byok.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
+import { loadPapers } from './papers.js';
+import { mountIntentLadder } from './intent_ladder.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
 import { loadSentiment } from './sentiment.js';
@@ -389,6 +391,12 @@ export async function renderTopic(root, { params }) {
       <div id="topic-bet-stats" class="topic-bet-stats" hidden></div>
     </div>
 
+    <!-- Intent action-ladder card (per-topic deliverable routing).
+         Spec: docs/superpowers/specs/2026-04-21-intent-layer.md.
+         Shows the user WHAT they're producing and a 3-4 step path to get
+         there. Every tab stays accessible — intent is a lens, not a gate. -->
+    <div id="intent-ladder-host"></div>
+
     <!-- Phase-11 tab cleanup: 4 primary tabs always visible, everything
          else in a "More ▾" dropdown. Primaries were picked from actual
          usage (Insights=core output, Bets=weekly ritual,
@@ -412,6 +420,7 @@ export async function renderTopic(root, { params }) {
           <button class="tab-more-item" data-tab="research"><i data-lucide="book-open"></i> Research</button>
           <button class="tab-more-item" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
           <button class="tab-more-item" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts</button>
+          <button class="tab-more-item" data-tab="papers"><i data-lucide="book-marked"></i> Papers</button>
           <button class="tab-more-item" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
         </div>
       </div>
@@ -2150,6 +2159,7 @@ export async function renderTopic(root, { params }) {
     sources: loadSources, research: loadResearch, chat: loadChat, actions: loadActions,
     solutions: () => loadSolutions(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
+    papers:   () => loadPapers(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
     posts: () => loadPosts(contentEl, topic),
     sentiment: () => loadSentiment(contentEl, topic),
@@ -2456,8 +2466,23 @@ export async function renderTopic(root, { params }) {
   };
   window.addEventListener('hashchange', hashCleanup);
 
-  // Initial load — Insights is the new primary tab (Phase-1 synthesis).
-  await switchTab('insights');
+  // Intent-driven default tab + action-ladder mount. Falls back cleanly to
+  // 'insights' on any failure so pre-migration topics + first-run installs
+  // stay on their current landing.
+  let defaultTab = 'insights';
+  try {
+    const intentPayload = await api.topicIntentGet(topic);
+    defaultTab = intentPayload?.preset?.default_tab || 'insights';
+    const ladderHost = document.getElementById('intent-ladder-host');
+    if (ladderHost) {
+      mountIntentLadder(ladderHost, topic, {
+        goToTab: (name) => switchTab(name),
+      });
+    }
+  } catch {
+    // Intent layer is additive — any failure falls back to pre-intent flow.
+  }
+  await switchTab(defaultTab);
 }
 
 // Badge colors per source type — matches the source badge palette used on
