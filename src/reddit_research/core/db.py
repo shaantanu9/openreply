@@ -567,6 +567,72 @@ def init_schema(db: Database) -> None:
     except Exception:
         pass
 
+    # Incremental enrichment — extraction_queue (2026-04-21).
+    # Populated by collect + ingest; drained by the long-lived worker
+    # (see research/enrich_worker.py). See
+    # docs/superpowers/specs/2026-04-21-incremental-enrichment-design.md §3.
+    _ensure_extraction_queue(db)
+
+
+def _ensure_extraction_queue(db: Database) -> None:
+    """Create the extraction_queue table + indexes, then backfill existing
+    topic_posts that have no graph evidence yet. Idempotent: safe to call
+    on every init_schema(), safe to call on installs that already have
+    the table. INSERT OR IGNORE keeps the backfill safe across restarts."""
+    if "extraction_queue" not in db.table_names():
+        db["extraction_queue"].create(
+            {
+                "topic": str,
+                "post_id": str,
+                "kind": str,
+                "queued_at": str,
+                "attempted_at": str,
+                "attempts": int,
+                "last_error": str,
+            },
+            pk=("topic", "post_id", "kind"),
+            defaults={"kind": "post", "attempts": 0},
+        )
+        db["extraction_queue"].create_index(["queued_at"])
+        db["extraction_queue"].create_index(["topic"])
+
+    # One-time (per-install) backfill: queue every existing topic_post that
+    # has no graph evidence yet. Guarded on both tables existing AND on
+    # graph_nodes.evidence_post_id existing — that column is added later in
+    # the incremental-enrichment plan (Task 4). Until then, backfill is a
+    # no-op; INSERT OR IGNORE makes repeated runs cheap.
+    try:
+        if "topic_posts" in db.table_names() and "graph_nodes" in db.table_names():
+            gn_cols = {c.name for c in db["graph_nodes"].columns}
+            if "evidence_post_id" in gn_cols:
+                db.conn.execute(
+                    """
+                    INSERT OR IGNORE INTO extraction_queue (topic, post_id, kind, queued_at, attempts)
+                    SELECT tp.topic, tp.post_id, 'post', datetime('now'), 0
+                      FROM topic_posts tp
+                      LEFT JOIN graph_nodes gn ON gn.evidence_post_id = tp.post_id
+                        AND gn.topic = tp.topic
+                     WHERE gn.id IS NULL
+                    """
+                )
+            else:
+                # Fallback until evidence_post_id ships: queue every
+                # topic_post. The worker de-dups via the composite PK, so
+                # re-running a topic that was already extracted inline is
+                # harmless (rows just sit in the queue; worker drains them
+                # and re-upserts findings idempotently).
+                db.conn.execute(
+                    """
+                    INSERT OR IGNORE INTO extraction_queue (topic, post_id, kind, queued_at, attempts)
+                    SELECT topic, post_id, 'post', datetime('now'), 0
+                      FROM topic_posts
+                    """
+                )
+            db.conn.commit()
+    except Exception:
+        # Backfill is best-effort. A failure here must NOT break app boot.
+        pass
+
 
 # ── Fetch audit log ──────────────────────────────────────────────────────────
 
