@@ -78,3 +78,49 @@ def test_tag_posts_enqueues(tmp_path, monkeypatch):
     assert len(rows2) == 3, (
         f"composite PK should dedupe on re-tag; got {len(rows2)} rows"
     )
+
+
+def test_drain_batch_removes_on_success(tmp_path, monkeypatch):
+    """_drain_batch must remove successfully-processed rows from the queue.
+
+    We monkeypatch ``enrich_from_llm_for_posts`` to a no-op that reports
+    the number of post_ids it saw — the real extractor lands in Task 4 and
+    pulls an LLM provider, which is out of scope for a unit test of the
+    drain loop. Queue should be empty after one batch of two rows.
+    """
+    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+
+    from reddit_research.core.db import get_db
+
+    get_db.cache_clear()
+    db = get_db()
+
+    # Prime queue with two rows. Use the sqlite-utils insert_all path so the
+    # composite PK is respected and queued_at is a real string (matches
+    # what _tag_posts writes in production).
+    db["extraction_queue"].insert_all(
+        [
+            {"topic": "t", "post_id": "p1", "kind": "post", "queued_at": "2026-01-01T00:00:00", "attempts": 0},
+            {"topic": "t", "post_id": "p2", "kind": "post", "queued_at": "2026-01-01T00:00:00", "attempts": 0},
+        ],
+        pk=("topic", "post_id", "kind"),
+    )
+    assert db["extraction_queue"].count == 2
+
+    # Stub the extractor on the semantic module — the worker re-imports it
+    # from that module every batch so a monkeypatch takes effect without
+    # a worker restart.
+    import reddit_research.graph.semantic as sem
+
+    def _fake(topic, post_ids):
+        return len(post_ids)
+
+    monkeypatch.setattr(sem, "enrich_from_llm_for_posts", _fake, raising=False)
+
+    from reddit_research.research.enrich_worker import _drain_batch
+
+    n = _drain_batch(db)
+    assert n == 2, f"expected 2 rows drained, got {n}"
+    assert db["extraction_queue"].count == 0, (
+        f"queue should be empty after successful drain; got {db['extraction_queue'].count} rows"
+    )

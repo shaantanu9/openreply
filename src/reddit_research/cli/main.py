@@ -2190,6 +2190,32 @@ def cmd_graph_enrich(
     _emit(r, as_json)
 
 
+@research_app.command("enrich-worker")
+def cmd_enrich_worker(
+    serve: bool = typer.Option(False, "--serve", help="Start the long-lived extraction worker (blocks)."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Long-lived extraction worker. Emits NDJSON events on stdout.
+
+    The Rust supervisor launches this via ``run_cli_stream_streaming`` and
+    consumes the event stream (``enrich:started`` / ``enrich:tick`` /
+    ``enrich:idle`` / ``enrich:error`` / ``enrich:oom`` / ``enrich:stopped``).
+    SIGTERM / SIGINT trigger a clean shutdown between batches.
+
+    Without ``--serve`` this prints a usage hint and exits 1 — the command
+    only makes sense as a supervised long-running process. Callers can
+    also invoke it manually for debugging:
+
+      REDDIT_MYIND_DATA_DIR=/tmp/gm reddit-cli research enrich-worker --serve
+    """
+    _ = as_json  # reserved for future structured status output
+    if not serve:
+        typer.echo("use --serve to start the worker")
+        raise typer.Exit(1)
+    from ..research.enrich_worker import serve as _serve
+    _serve()
+
+
 @graph_app.command("stats")
 def cmd_graph_stats(
     topic: str = typer.Option(..., "--topic", "-t"),
