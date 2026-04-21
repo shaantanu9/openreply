@@ -294,6 +294,15 @@ pub async fn start_collect(
         args.push("--skip-reddit".into());
     }
 
+    // The desktop app always skips the CLI's legacy inline LLM extraction
+    // pass. Incremental extraction runs in a separate long-lived worker
+    // process that drains `extraction_queue` in batches of 5 — see
+    // docs/superpowers/plans/2026-04-21-incremental-enrichment.md Task 2.
+    // Leaving the inline pass on would block `collect:done` for minutes
+    // on aggressive collects and starve the worker's writer of the SQLite
+    // busy window.
+    args.push("--skip-extraction".into());
+
     // Register the topic as in-flight BEFORE spawning the sidecar. We remove
     // it when `collect:done` fires (via the listener below).
     let now_secs = std::time::SystemTime::now()
@@ -1143,6 +1152,39 @@ pub async fn run_concepts(app: AppHandle, topic: String) -> Result<Value, String
     )
     .await
     .map_err(err_to_string)
+}
+
+// ─── Paper-research (students / UX research / evidence-backed reports) ────────
+
+#[tauri::command]
+pub async fn papers_list(app: AppHandle, topic: String, limit: Option<u32>) -> Result<Value, String> {
+    let lim = limit.unwrap_or(200).to_string();
+    run_cli(
+        &app,
+        vec!["research", "papers-list", "--topic", &topic, "--limit", &lim, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn papers_export(
+    app: AppHandle,
+    topic: String,
+    fmt: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let lim_s = limit.map(|n| n.to_string());
+    let mut args: Vec<&str> = vec!["research", "papers-export",
+                                    "--topic", &topic, "--fmt", &fmt, "--json"];
+    if let Some(ref s) = lim_s { args.push("--limit"); args.push(s); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn oa_lookup(app: AppHandle, doi: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "oa-lookup", "--doi", &doi, "--json"],
+    ).await.map_err(err_to_string)
 }
 
 /// Quick-extract — runs `research gaps` for a topic without building the

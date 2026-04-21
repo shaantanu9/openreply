@@ -883,6 +883,16 @@ def cmd_research_collect(
         False, "--skip-reddit/--no-skip-reddit",
         help="Skip the Reddit fetch stages entirely. Useful for topping up an existing topic with only external sources (HN, arxiv, etc.).",
     ),
+    skip_extraction: bool = typer.Option(
+        False, "--skip-extraction/--no-skip-extraction",
+        help=(
+            "Skip the inline LLM extraction pass at the tail of collect. "
+            "Default False preserves CLI back-compat (aggressive collects "
+            "still run the one-shot extractor). The Tauri desktop app passes "
+            "--skip-extraction because it runs a long-lived worker that "
+            "drains the extraction_queue incrementally."
+        ),
+    ),
 ) -> None:
     """Build a topic-scoped corpus in SQLite (discover + fetch + search [+ history])."""
     from ..research import collect
@@ -904,6 +914,7 @@ def cmd_research_collect(
         sources=src_list,
         aggressive=aggressive,
         skip_reddit=skip_reddit,
+        skip_extraction=skip_extraction,
         progress=lambda m: console.print(f"[dim]• {m}[/dim]"),
     )
     console.print(
@@ -1666,6 +1677,79 @@ def cmd_research_sentiment_by_source(
             else:
                 emos = ", ".join(s.get("dominant_emotions") or []) or "—"
                 typer.echo(f"  - {label} ({s.get('n_posts')}): {s.get('label')} · {emos}")
+
+
+@research_app.command("papers-export")
+def cmd_research_papers_export(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    fmt: str = typer.Option("bibtex", "--fmt", help="bibtex | ris | apa | md"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Write to file; else stdout"),
+    limit: Optional[int] = typer.Option(None, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Export a topic's academic papers as BibTeX / RIS / APA / Markdown."""
+    from ..research.paper_export import export_topic
+    result = export_topic(topic=topic, fmt=fmt, limit=limit)
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+        return
+    if not result.get("ok"):
+        typer.echo(f"Error: {result.get('reason')}", err=True)
+        raise typer.Exit(1)
+    text = result.get("text", "")
+    if out:
+        out.write_text(text, encoding="utf-8")
+        typer.echo(f"wrote {result['count']} papers → {out}")
+    else:
+        typer.echo(text)
+
+
+@research_app.command("papers-list")
+def cmd_research_papers_list(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    limit: int = typer.Option(100, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List every academic paper tagged to a topic, ordered by citation count."""
+    from ..research.paper_export import _papers_for_topic
+    posts = _papers_for_topic(topic, limit=limit)
+    if as_json:
+        out = []
+        for p in posts:
+            out.append({
+                "id":          p.get("id"),
+                "title":       p.get("title"),
+                "author":      p.get("author"),
+                "url":         p.get("url"),
+                "source_type": p.get("source_type"),
+                "score":       p.get("score"),
+                "num_comments": p.get("num_comments"),
+                "created_utc": p.get("created_utc"),
+                "flair":       p.get("flair"),
+                "selftext":    (p.get("selftext") or "")[:500],
+            })
+        typer.echo(json.dumps(out, default=str))
+        return
+    typer.echo(f"{len(posts)} papers for topic={topic}")
+    for p in posts[:20]:
+        typer.echo(f"  · [{p.get('source_type')}] cites={p.get('score')}  {(p.get('title') or '')[:120]}")
+
+
+@research_app.command("oa-lookup")
+def cmd_research_oa_lookup(
+    doi: str = typer.Option(..., "--doi"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Unpaywall — find a legal free PDF for a DOI."""
+    from ..sources.unpaywall import lookup_doi
+    r = lookup_doi(doi)
+    if as_json:
+        typer.echo(json.dumps(r, default=str))
+        return
+    if not r:
+        typer.echo("not found")
+        raise typer.Exit(1)
+    typer.echo(f"is_oa={r.get('is_oa')}  status={r.get('oa_status')}  url={r.get('best_oa_url')}")
 
 
 @research_app.command("concepts")
