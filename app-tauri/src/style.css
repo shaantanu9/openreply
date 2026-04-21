@@ -159,6 +159,67 @@
 .rg-t-eyebrow       { font-size: var(--fs-11); font-weight: var(--fw-semibold); line-height: var(--lh-tight); text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--color-text-subtle); }
 .rg-t-mono          { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
+/* ─────────── Spacing utilities (Layer-1 canonical) ─────────── */
+/* Use on NEW components to enforce the 8-step scale. Legacy rules
+   below still use literal pixel values — not touching them avoids
+   pixel drift across 369 existing declarations.
+
+   Stack (vertical): children get margin-top of the given size.
+   Inline (horizontal): flex container with gap.                      */
+.rg-stack-1 > * + * { margin-top: var(--sp-1); }
+.rg-stack-2 > * + * { margin-top: var(--sp-2); }
+.rg-stack-3 > * + * { margin-top: var(--sp-3); }
+.rg-stack-4 > * + * { margin-top: var(--sp-4); }
+.rg-stack-5 > * + * { margin-top: var(--sp-5); }
+.rg-stack-6 > * + * { margin-top: var(--sp-6); }
+.rg-inline-1 { display: flex; align-items: center; gap: var(--sp-1); }
+.rg-inline-2 { display: flex; align-items: center; gap: var(--sp-2); }
+.rg-inline-3 { display: flex; align-items: center; gap: var(--sp-3); }
+.rg-inline-4 { display: flex; align-items: center; gap: var(--sp-4); }
+.rg-inline-5 { display: flex; align-items: center; gap: var(--sp-5); }
+/* Padding helpers on surfaces — .rg-pad-{inline}-{block} (16/12 = 4-3).   */
+.rg-pad-2-1 { padding: var(--sp-1) var(--sp-2); }
+.rg-pad-3-2 { padding: var(--sp-2) var(--sp-3); }
+.rg-pad-4-3 { padding: var(--sp-3) var(--sp-4); }
+.rg-pad-5-4 { padding: var(--sp-4) var(--sp-5); }
+.rg-pad-4   { padding: var(--sp-4); }
+.rg-pad-5   { padding: var(--sp-5); }
+.rg-pad-6   { padding: var(--sp-6); }
+
+/* ─────────── Motion utilities (Layer-1 canonical) ─────────── */
+.rg-motion-interactive {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color     var(--dur-fast) var(--ease-out),
+    color            var(--dur-fast) var(--ease-out),
+    box-shadow       var(--dur-fast) var(--ease-out),
+    transform        var(--dur-fast) var(--ease-out);
+}
+.rg-motion-panel {
+  transition:
+    opacity   var(--dur-med) var(--ease-out),
+    transform var(--dur-med) var(--ease-out);
+}
+@keyframes rgFadeSlide {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rg-reveal { animation: rgFadeSlide var(--dur-med) var(--ease-out) both; }
+
+/* ─────────── Surface + elevation helpers ─────────── */
+.rg-surface         { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.rg-surface--raised { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.rg-shadow-sm       { box-shadow: var(--shadow-sm); }
+.rg-shadow-md       { box-shadow: var(--shadow-md); }
+.rg-shadow-lg       { box-shadow: var(--shadow-lg); }
+
+/* ─────────── Focus ring (canonical) ─────────── */
+.rg-focusable:focus-visible,
+.rg-focusable:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+
 /* ─────────── Button system (Layer-1 canonical) ───────────
    Old variants (.btn-primary, .btn-ghost, .btn-bordered, .btn-xs,
    .icon-btn as standalone) still exist below — keep them until every

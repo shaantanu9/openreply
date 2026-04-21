@@ -218,11 +218,23 @@ The features are solid. The surface is not.
 
 Log each milestone completion below:
 
-- [ ] L1.1 — token block + legacy aliases
-- [ ] L1.2 — typography utility classes + literal cleanup
-- [ ] L1.3 — spacing scale + literal cleanup
-- [ ] L1.4 — button system consolidation
-- [ ] L1.5 — motion + shadow + focus tokens
-- [ ] **L1 sign-off** ← wait for user approval
+- [x] L1.1 — token block + legacy aliases (commit c4ac951)
+- [x] L1.2 — typography literal cleanup (commit 77023c8) — 528 literals snapped to --fs-* scale
+- [x] L1.3 — spacing utility classes (part of L1.3-5 bundle)
+- [x] L1.4 — button system available (.btn + .btn--{primary|secondary|ghost|danger})
+- [x] L1.5 — motion/shadow/focus utilities
+- [ ] **L1 sign-off** ← wait for user approval before L2
 - [ ] L2 — started (not yet)
 - [ ] L3 — started (not yet)
+
+### L1 exit notes
+
+User feedback mid-pass: "don't make new font changes, keep old feel."
+Decision: L1.3/L1.4/L1.5 are ADDITIVE ONLY. New utility classes + the
+new .btn system are available for future components; we do NOT rewrite
+the 369 legacy padding/margin literals, the 6 legacy button shapes, or
+the 39 legacy transitions. Zero further visual drift during L1.
+
+New components reach for the new system; legacy components stay
+untouched until a component is explicitly migrated (a future
+per-screen effort outside L1's scope).
