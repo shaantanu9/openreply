@@ -4485,3 +4485,120 @@ html.dark .compare-unique {
   border-color: var(--line, #2b2b2b);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   UI declutter pass (2026-04-21) — compact topic-page header
+   ══════════════════════════════════════════════════════════════════════
+   Before the pass: topbar (breadcrumb + chips) + buttons row +
+   section-head (h2 + subtitle + bet-stats pill) = 3 wide rows of
+   chrome before the intent-ladder + tabs + content. After: 2 tight
+   rows. Saves ~120 px of vertical space. */
+
+.topic-header-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-soft, #EADFC8);
+}
+
+.topic-header-row-1,
+.topic-header-row-2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topic-header-spacer { flex: 1 1 auto; min-width: 4px; }
+
+.topic-back {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--ink-3, #7A7565);
+  text-decoration: none; white-space: nowrap;
+  padding: 2px 6px; border-radius: 6px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.topic-back:hover { background: var(--surface-2, #FAF4EA); color: var(--ink-1); }
+.topic-back i[data-lucide] { width: 13px; height: 13px; }
+
+.topic-title-inline {
+  font-size: 18px; font-weight: 600; line-height: 1.2;
+  margin: 0; color: var(--ink-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 48ch;
+}
+
+.topic-meta-line {
+  font-size: 12px; color: var(--ink-3);
+  display: inline-flex; align-items: center; gap: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 62ch;
+}
+
+.topic-header-compact .topic-header-stats {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 12px; color: var(--ink-3);
+}
+.topic-header-compact .topic-header-stats b {
+  color: var(--ink-1); font-variant-numeric: tabular-nums;
+}
+.topic-header-compact .topic-active-chip {
+  padding: 3px 9px; font-size: 11.5px; border-radius: 12px;
+}
+
+.topic-header-compact .btn.icon-btn {
+  padding: 4px 9px; font-size: 12px; line-height: 1.4;
+}
+.topic-header-compact .btn.icon-btn i[data-lucide] {
+  width: 13px; height: 13px;
+}
+
+.topic-header-compact #btn-delete {
+  padding: 5px 8px;
+}
+.topic-header-compact #btn-delete i[data-lucide] {
+  width: 14px; height: 14px;
+}
+
+.topic-header-compact .active-llm-pill {
+  padding: 3px 10px; font-size: 11.5px; border-radius: 10px;
+}
+
+.topic-header-compact .compact-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin: 0; padding: 3px 9px;
+  font-size: 11.5px; font-weight: 500;
+  border: 1px solid var(--line, #EADFC8);
+  border-radius: 10px; cursor: pointer; user-select: none;
+  background: transparent;
+}
+.topic-header-compact .compact-toggle input[type="checkbox"] {
+  margin: 0; width: 13px; height: 13px;
+}
+
+.topic-header-compact .topic-bet-stats {
+  font-size: 11.5px; padding: 2px 8px; border-radius: 10px;
+}
+
+@media (max-width: 900px) {
+  .topic-title-inline { max-width: 28ch; }
+  .topic-meta-line    { max-width: 38ch; }
+}
+
+html.dark .topic-header-compact { border-bottom-color: var(--line); }
+html.dark .topic-back:hover      { background: var(--surface-2); }
+html.dark .topic-header-compact .compact-toggle {
+  border-color: var(--line);
+}
+
+/* Tighter intent-ladder + tabs to match */
+#intent-ladder-host + .tabs,
+.tabs {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+#intent-ladder-host > * {
+  margin-bottom: 10px;
+}
+

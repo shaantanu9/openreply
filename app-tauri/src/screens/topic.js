@@ -362,34 +362,40 @@ export async function renderTopic(root, { params }) {
   };
 
   root.innerHTML = `
-    <header class="topbar">
-      <div class="crumbs">
-        <a href="#/" style="color:var(--ink-3);text-decoration:none">Workspace</a> /
-        <strong>${esc(topic)}</strong>
+    <!-- Compact 2-row header (UI clean-up 2026-04-21):
+         Row 1 = title + status chip + primary stats inline.
+         Row 2 = action buttons + provider pill + auto-refresh toggle.
+         Breadcrumb folded into the tiny back-link; "Loading topic…"
+         subtitle removed (it was redundant with the Collecting chip). -->
+    <header class="topic-header-compact">
+      <div class="topic-header-row-1">
+        <a class="topic-back" href="#/" title="Back to workspace">
+          <i data-lucide="arrow-left"></i><span>Workspace</span>
+        </a>
+        <h1 class="topic-title-inline">${esc(topic)}</h1>
+        <a href="#/collect/${encodeURIComponent(topic)}" class="topic-active-chip" id="topic-active-chip" hidden title="A collect is running for this topic — click to watch progress">
+          <span class="pulse-dot sm"></span> Collecting…
+        </a>
+        <div class="topic-header-stats" id="topic-header-stats"></div>
+        <div id="topic-bet-stats" class="topic-bet-stats" hidden></div>
+        <div class="topic-header-spacer"></div>
+        <button class="btn btn-ghost btn-sm btn-bordered" id="btn-cancel-collect" hidden style="color:#B84747;border-color:#E8C8C8" title="Stop the in-flight collect for this topic">Cancel fetch</button>
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun" title="Rerun collect — pick sources"><i data-lucide="rotate-cw"></i> Rerun</button>
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-compare-topic" title="Compare this topic's insights with another topic side-by-side"><i data-lucide="git-compare"></i> Compare</button>
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-delete" title="Delete topic (soft-delete, 7-day undo)" style="color:#B84747"><i data-lucide="trash-2"></i></button>
       </div>
-      <div class="topbar-spacer"></div>
-      <a href="#/collect/${encodeURIComponent(topic)}" class="topic-active-chip" id="topic-active-chip" hidden title="A collect is running for this topic — click to watch progress">
-        <span class="pulse-dot sm"></span> Collecting…
-      </a>
-      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-cancel-collect" hidden style="color:#B84747;border-color:#E8C8C8" title="Stop the in-flight collect for this topic">Cancel fetch</button>
-      <div class="topic-header-stats" id="topic-header-stats"></div>
-      <button class="active-llm-pill none" id="topic-llm-pill" title="Click to change provider / model">
-        <span class="dot"></span><span id="topic-llm-pill-label">No LLM</span>
-      </button>
-      <label id="schedule-topic-toggle" style="margin:0;padding:4px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line);border-radius:8px" title="Include this topic in scheduled re-runs">
-        <input type="checkbox" id="cb-schedule-topic" style="margin:0" />
-        <span style="font-weight:500">Auto-refresh</span>
-      </label>
-      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun"><i data-lucide="rotate-cw"></i> Rerun collect</button>
-      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-compare-topic" title="Compare this topic's insights with another topic side-by-side"><i data-lucide="git-compare"></i> Compare</button>
-      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-delete" style="color:#B84747">Delete</button>
+      <div class="topic-header-row-2">
+        <span id="topic-sub" class="topic-meta-line">${esc(topic)}</span>
+        <div class="topic-header-spacer"></div>
+        <button class="active-llm-pill none" id="topic-llm-pill" title="Click to change provider / model">
+          <span class="dot"></span><span id="topic-llm-pill-label">No LLM</span>
+        </button>
+        <label id="schedule-topic-toggle" class="compact-toggle" title="Include this topic in scheduled re-runs">
+          <input type="checkbox" id="cb-schedule-topic" />
+          <span>Auto-refresh</span>
+        </label>
+      </div>
     </header>
-
-    <div class="section-head">
-      <div><h2>${esc(topic)}</h2><p id="topic-sub">Loading topic…</p></div>
-      <!-- Phase-3 bet stats pill. Populated by loadBetStatsPill(); hidden when no bets. -->
-      <div id="topic-bet-stats" class="topic-bet-stats" hidden></div>
-    </div>
 
     <!-- Intent action-ladder card (per-topic deliverable routing).
          Spec: docs/superpowers/specs/2026-04-21-intent-layer.md.
