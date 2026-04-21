@@ -175,6 +175,49 @@ window.addEventListener('DOMContentLoaded', async () => {
       location.hash = '#/';
     }
   }
+
+  // Delegated link interceptors for cmd-click / middle-click / right-click on
+  // any route link (sidebar <a>, in-screen <a>, or topic tiles with
+  // data-topic-href). Default clicks still fall through to hashchange so the
+  // existing router keeps working untouched.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#/"]');
+    if (!a) return;
+    const href = a.getAttribute('href');
+    const middle = e.button === 1;
+    const meta = e.metaKey || e.ctrlKey;
+    if (!middle && !meta) return;     // default click handled by hashchange
+    e.preventDefault();
+    tabStore.open({
+      hash: href,
+      foreground: e.shiftKey || middle ? !middle : true,
+    });
+  });
+
+  document.addEventListener('auxclick', (e) => {
+    if (e.button !== 1) return;       // middle click only
+    const a = e.target.closest('a[href^="#/"]');
+    if (!a) return;
+    e.preventDefault();
+    tabStore.open({ hash: a.getAttribute('href'), foreground: false });
+  });
+
+  // Right-click on any route link → "Open / Open in new tab" menu.
+  // Also targets [data-topic-href] so non-<a> topic tiles get the menu.
+  document.addEventListener('contextmenu', (e) => {
+    const a = e.target.closest('a[href^="#/"], [data-topic-href]');
+    if (!a) return;
+    const hash = a.getAttribute('href') || a.getAttribute('data-topic-href');
+    if (!hash) return;
+    e.preventDefault();
+    import('./lib/contextMenu.js').then(({ openContextMenu }) => {
+      openContextMenu(e.clientX, e.clientY, [
+        { label: 'Open',            icon: 'arrow-right', onClick: () => { location.hash = hash; } },
+        { label: 'Open in new tab', icon: 'plus-square', onClick: () => tabStore.open({ hash, foreground: false }) },
+      ]);
+    });
+  });
+
   await route();
 
   // First route rendered — tell Rust to close splash + show main window.

@@ -24,7 +24,7 @@ function topicTile(t, idx) {
   const sources = t.sources || 0;
   const slug = encodeURIComponent(t.topic);
   return `
-    <div class="topic-tile" data-href="#/topic/${slug}">
+    <div class="topic-tile" data-href="#/topic/${slug}" data-topic-href="#/topic/${slug}">
       <div class="topic-cover ${cover}"><i data-lucide="${icon}"></i></div>
       <h4>${esc(t.topic)}</h4>
       <div class="topic-stats">
@@ -440,12 +440,17 @@ async function loadHeroAndStats(root) {
   // unhandled rejection slipping through.
   const settled = await Promise.allSettled([
     api.listTopics().catch(() => []),
-    api.overviewStats().catch(() => [{}]),
+    api.overviewStats().catch(() => ({})),
   ]);
   const tRes = settled[0].status === 'fulfilled' ? settled[0].value : [];
-  const sRes = settled[1].status === 'fulfilled' ? settled[1].value : [{}];
+  const sRes = settled[1].status === 'fulfilled' ? settled[1].value : {};
   topics = Array.isArray(tRes) ? tRes : [];
-  stats = Array.isArray(sRes) && sRes[0] ? sRes[0] : {};
+  // Rust overview_stats unwraps the single-row SQL result to a plain object.
+  // Tolerate both shapes (array-of-rows from older builds, object from current)
+  // so the stat grid never silently shows zeros when the backend is fine.
+  if (Array.isArray(sRes)) stats = sRes[0] || {};
+  else if (sRes && typeof sRes === 'object') stats = sRes;
+  else stats = {};
 
   const topTopic = topics[0];
   // Pull daily post counts for the top topic for the hero bars.
@@ -592,13 +597,34 @@ async function loadActiveCollect(root) {
   const tick = async () => {
     if (!document.body.contains(slot)) return; // DOM unmounted
     try {
-      // A running collect writes a `fetches` row with ended_at NULL.
-      const rows = await api.runQuery(
-        `SELECT kind, params_json, started_at FROM fetches \
-         WHERE ended_at IS NULL \
-         ORDER BY started_at DESC LIMIT 1`
-      );
-      const running = Array.isArray(rows) && rows.length > 0;
+      // Primary source: Rust's ActiveCollects map is keyed by topic and is
+      // authoritative about what `start_collect` calls are live. Fall back
+      // to the fetches-table heuristic only if the Rust map is empty (e.g.
+      // after an app restart that killed the Tauri side but left the sidecar
+      // still streaming to stdout — unlikely but not impossible).
+      let activeTopic = '';
+      let activeStartedSecs = 0;
+      try {
+        const active = await api.activeCollects();
+        if (active && typeof active === 'object') {
+          const keys = Object.keys(active);
+          if (keys.length > 0) {
+            activeTopic = keys[0];
+            activeStartedSecs = Number(active[activeTopic]) || 0;
+          }
+        }
+      } catch {
+        // Rust command failed — fall through to DB-based detection.
+      }
+
+      const rows = activeTopic
+        ? null
+        : await api.runQuery(
+            `SELECT kind, params_json, started_at FROM fetches \
+             WHERE ended_at IS NULL \
+             ORDER BY started_at DESC LIMIT 1`
+          );
+      const running = !!activeTopic || (Array.isArray(rows) && rows.length > 0);
       if (!running) {
         if (lastWasRunning) {
           // Collect just finished — refresh downstream panels so stats update.
@@ -611,11 +637,21 @@ async function loadActiveCollect(root) {
         lastTopic = '';
         return;
       }
-      const row = rows[0];
-      let params = {};
-      try { params = JSON.parse(row.params_json || '{}'); } catch {}
-      const topic = params.topic || '';
-      const since = timeAgo(row.started_at);
+      let topic, kind, since;
+      if (activeTopic) {
+        topic = activeTopic;
+        kind = 'collecting…';
+        // activeStartedSecs is Unix epoch seconds from Rust SystemTime.
+        const startedIso = new Date(activeStartedSecs * 1000).toISOString();
+        since = timeAgo(startedIso);
+      } else {
+        const row = rows[0];
+        let params = {};
+        try { params = JSON.parse(row.params_json || '{}'); } catch {}
+        topic = params.topic || '';
+        kind = row.kind || '…';
+        since = timeAgo(row.started_at);
+      }
       // Only re-render when the row or topic actually changes — avoids
       // losing focus on other parts of the page every poll.
       const same = lastWasRunning && topic === lastTopic;
@@ -625,7 +661,7 @@ async function loadActiveCollect(root) {
             <div class="pulse-dot"></div>
             <div class="acb-body" role="button" tabindex="0" title="Click to view progress">
               <b>Collecting${topic ? ` "${esc(topic)}"` : ''}…</b>
-              <span>step: ${esc(row.kind || '…')} · started ${esc(since)}</span>
+              <span>step: ${esc(kind)} · started ${esc(since)}</span>
             </div>
             <button class="btn btn-ghost btn-sm btn-bordered" id="acb-cancel" style="color:#B84747;border-color:#E8C8C8">Cancel fetch</button>
             <div class="acb-cta">View →</div>
@@ -662,7 +698,7 @@ async function loadActiveCollect(root) {
       } else {
         // Same collect still running — refresh the "started N ago" text cheaply.
         const span = slot.querySelector('.acb-body span');
-        if (span) span.textContent = `step: ${row.kind || '…'} · started ${since}`;
+        if (span) span.textContent = `step: ${kind} · started ${since}`;
       }
       // While a collect is running, keep the activity feed fresh so the user
       // can watch new fetch rows land without refreshing the page.
