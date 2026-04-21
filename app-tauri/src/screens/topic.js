@@ -383,10 +383,50 @@ export async function renderTopic(root, { params }) {
       <button class="btn btn-ghost btn-sm btn-bordered" id="btn-delete" style="color:#B84747">Delete</button>
     </header>
 
+    <!-- L2 breadcrumbs — Workspace › Topic › Stage › Tab -->
+    <nav class="topic-breadcrumbs rg-t-meta" id="topic-breadcrumbs" aria-label="breadcrumb">
+      <a href="#/" class="tb-crumb">Workspace</a>
+      <span class="tb-sep" aria-hidden="true">›</span>
+      <span class="tb-crumb tb-crumb-current" id="tb-topic">${esc(topic)}</span>
+      <span class="tb-sep" aria-hidden="true">›</span>
+      <span class="tb-crumb" id="tb-stage">—</span>
+      <span class="tb-sep" aria-hidden="true">›</span>
+      <span class="tb-crumb tb-crumb-strong" id="tb-tab">—</span>
+    </nav>
+
     <div class="section-head">
       <div><h2>${esc(topic)}</h2><p id="topic-sub">Loading topic…</p></div>
       <!-- Phase-3 bet stats pill. Populated by loadBetStatsPill(); hidden when no bets. -->
       <div id="topic-bet-stats" class="topic-bet-stats" hidden></div>
+    </div>
+
+    <!-- L2 stage rail — COLLECT → DISCOVER → ACT. Each stage highlights
+         when the active tab belongs to it. Clicking a stage jumps to
+         that stage's first tab. -->
+    <div class="topic-stages rg-reveal" id="topic-stages" role="tablist" aria-label="Workflow stage">
+      <button class="stage-pill" data-stage="collect" role="tab" aria-selected="false">
+        <span class="stage-index">1</span>
+        <span class="stage-body">
+          <span class="stage-name">Collect</span>
+          <span class="stage-hint rg-t-meta">gather sources</span>
+        </span>
+      </button>
+      <span class="stage-connector" aria-hidden="true"></span>
+      <button class="stage-pill" data-stage="discover" role="tab" aria-selected="false">
+        <span class="stage-index">2</span>
+        <span class="stage-body">
+          <span class="stage-name">Discover</span>
+          <span class="stage-hint rg-t-meta">explore findings</span>
+        </span>
+      </button>
+      <span class="stage-connector" aria-hidden="true"></span>
+      <button class="stage-pill" data-stage="act" role="tab" aria-selected="false">
+        <span class="stage-index">3</span>
+        <span class="stage-body">
+          <span class="stage-name">Act</span>
+          <span class="stage-hint rg-t-meta">decide &amp; ship</span>
+        </span>
+      </button>
     </div>
 
     <!-- Phase-11 tab cleanup: 4 primary tabs always visible, everything
@@ -2161,6 +2201,83 @@ export async function renderTopic(root, { params }) {
   // is still current, so rapid clicks (B before A's async work settles) don't
   // trigger ghost renders.
   let tabGen = 0;
+
+  // L2 — stage grouping. Each existing tab belongs to exactly one stage.
+  // Rail state updates live on every switchTab call. Click a stage pill
+  // to jump to its first tab.
+  const TAB_STAGE_MAP = {
+    // Collect — what was fetched
+    sources: 'collect',
+    posts:   'collect',
+    // Discover — explore the corpus
+    map:      'discover',
+    evidence: 'discover',
+    research: 'discover',
+    trends:   'discover',
+    sentiment:'discover',
+    chat:     'discover',
+    // Act — the output side
+    insights: 'act',
+    solutions:'act',
+    bets:     'act',
+    concepts: 'act',
+    actions:  'act',
+    report:   'act',
+  };
+  const STAGE_LABELS = {
+    collect:  'Collect',
+    discover: 'Discover',
+    act:      'Act',
+  };
+  const STAGE_ORDER = ['collect', 'discover', 'act'];
+  const STAGE_FIRST_TAB = {
+    collect:  'sources',
+    discover: 'map',
+    act:      'insights',
+  };
+  const TAB_LABELS = {
+    sources: 'Sources', posts: 'Posts',
+    map: 'Map', evidence: 'Evidence', research: 'Research',
+    trends: 'Trends', sentiment: 'Sentiment', chat: 'Chat',
+    insights: 'Insights', solutions: 'Solutions', bets: 'Bets',
+    concepts: 'Concepts', actions: 'Actions', report: 'Report',
+  };
+  const stagesRoot = $('#topic-stages', root) || document.getElementById('topic-stages');
+  const crumbStage = document.getElementById('tb-stage');
+  const crumbTab   = document.getElementById('tb-tab');
+
+  function syncTopicStage(tabName) {
+    const stage = TAB_STAGE_MAP[tabName] || 'discover';
+    if (crumbStage) crumbStage.textContent = STAGE_LABELS[stage] || '—';
+    if (crumbTab)   crumbTab.textContent   = TAB_LABELS[tabName] || tabName;
+    if (!stagesRoot) return;
+    const stageIdx = STAGE_ORDER.indexOf(stage);
+    stagesRoot.querySelectorAll('.stage-pill').forEach(p => {
+      const pStage = p.dataset.stage;
+      const pIdx = STAGE_ORDER.indexOf(pStage);
+      p.classList.toggle('stage-pill-active', pStage === stage);
+      p.classList.toggle('stage-pill-done',   pIdx >= 0 && pIdx < stageIdx);
+      p.setAttribute('aria-selected', pStage === stage ? 'true' : 'false');
+    });
+    stagesRoot.querySelectorAll('.stage-connector').forEach((c, i) => {
+      // i=0 between stages 0-1, i=1 between stages 1-2
+      c.classList.toggle('stage-connector-done', stageIdx > i);
+    });
+  }
+
+  // Wire stage clicks — jump to the stage's first tab.
+  stagesRoot?.querySelectorAll('.stage-pill').forEach(p => {
+    p.addEventListener('click', () => {
+      const s = p.dataset.stage;
+      const t = STAGE_FIRST_TAB[s];
+      if (t) switchTabViaStage(t);
+    });
+  });
+  function switchTabViaStage(t) {
+    // Defer to the real switchTab (defined a few lines below). Use a
+    // micro-queue so the function is available by the time this fires.
+    queueMicrotask(() => switchTab?.(t));
+  }
   const switchTab = async (name) => {
     const myGen = ++tabGen;
     // Clean up chat listeners if we're leaving chat mid-stream
@@ -2185,6 +2302,9 @@ export async function renderTopic(root, { params }) {
     );
     const moreBtn = tabsEl.querySelector('.tab-more');
     if (moreBtn) moreBtn.classList.toggle('active', !primaryTabs.has(name));
+
+    // L2 — keep stage rail + breadcrumbs in sync with the active tab.
+    syncTopicStage(name);
     // Synchronous placeholder so the old tab's content disappears the moment
     // the user clicks — before the loader's first await. Without this the
     // screen looks hung if the loader takes more than ~100 ms to produce

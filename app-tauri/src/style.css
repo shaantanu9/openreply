@@ -220,6 +220,137 @@
   box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
+/* ============================================================
+   LAYER 2 — Topic flow narrative (stages + breadcrumbs)
+   ============================================================ */
+
+/* Breadcrumb row. Sits right under the topbar, above the section-head. */
+.topic-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-6);
+  color: var(--color-text-subtle);
+}
+.topic-breadcrumbs .tb-crumb {
+  text-decoration: none;
+  color: var(--color-text-subtle);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.topic-breadcrumbs a.tb-crumb:hover { color: var(--color-text); }
+.topic-breadcrumbs .tb-crumb-current { color: var(--color-text-muted); }
+.topic-breadcrumbs .tb-crumb-strong  { color: var(--color-text); font-weight: var(--fw-semibold); }
+.topic-breadcrumbs .tb-sep           { color: var(--color-text-subtle); opacity: .6; }
+
+/* Stage rail — 3 pills + 2 connectors. */
+.topic-stages {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) var(--sp-6) var(--sp-4);
+  padding: var(--sp-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.stage-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--color-text-subtle);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color     var(--dur-fast) var(--ease-out),
+    color            var(--dur-fast) var(--ease-out);
+  flex: 1 1 0;
+  min-width: 0;
+}
+.stage-pill:hover { background: var(--color-surface-raised); color: var(--color-text); }
+.stage-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring); }
+
+.stage-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color     var(--dur-fast) var(--ease-out),
+    color            var(--dur-fast) var(--ease-out);
+}
+.stage-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.stage-name {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text);
+  letter-spacing: var(--tracking-tight);
+}
+.stage-hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.stage-connector {
+  flex: 0 0 32px;
+  height: 2px;
+  background: var(--color-border);
+  border-radius: 2px;
+  transition: background-color var(--dur-med) var(--ease-out);
+}
+.stage-connector-done { background: var(--color-action); }
+
+.stage-pill-active {
+  background: var(--color-action-soft);
+  color: var(--color-text);
+  border-color: transparent;
+}
+.stage-pill-active .stage-index {
+  background: var(--color-action);
+  border-color: var(--color-action);
+  color: var(--color-action-text);
+}
+.stage-pill-active .stage-name { color: var(--color-text); }
+
+.stage-pill-done .stage-index {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #FFFFFF;
+}
+.stage-pill-done .stage-name  { color: var(--color-text-muted); }
+.stage-pill-done .stage-hint  { color: var(--color-text-subtle); }
+
+/* Narrow viewport — hide stage hints to keep pills readable. */
+@media (max-width: 900px) {
+  .stage-hint { display: none; }
+  .topic-stages { gap: var(--sp-1); }
+  .stage-connector { flex-basis: 16px; }
+}
+@media (max-width: 640px) {
+  .stage-body { display: none; }
+  .topic-stages { justify-content: center; }
+  .stage-pill { flex: 0 0 auto; }
+  .topic-breadcrumbs { padding-inline: var(--sp-4); }
+}
+
 /* ─────────── Button system (Layer-1 canonical) ───────────
    Old variants (.btn-primary, .btn-ghost, .btn-bordered, .btn-xs,
    .icon-btn as standalone) still exist below — keep them until every

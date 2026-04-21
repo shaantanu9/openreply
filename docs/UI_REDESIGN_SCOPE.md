@@ -223,8 +223,8 @@ Log each milestone completion below:
 - [x] L1.3 — spacing utility classes (part of L1.3-5 bundle)
 - [x] L1.4 — button system available (.btn + .btn--{primary|secondary|ghost|danger})
 - [x] L1.5 — motion/shadow/focus utilities
-- [ ] **L1 sign-off** ← wait for user approval before L2
-- [ ] L2 — started (not yet)
+- [x] **L1 sign-off** (user approved "ok now start l2")
+- [x] L2 — topic-page stage rail + breadcrumbs (commit TBD)
 - [ ] L3 — started (not yet)
 
 ### L1 exit notes
