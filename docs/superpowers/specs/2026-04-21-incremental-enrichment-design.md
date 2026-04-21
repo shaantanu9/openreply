@@ -88,7 +88,7 @@ Rules enforced in the worker:
 1. **Batch size = 5 posts** — 1 LLM call per batch. Sweet spot for token utilization and peak RAM.
 2. **One worker, never parallel** — LLM + embedder fight for CPU/GPU. Serial batches mean predictable memory.
 3. **ChromaDB lazy-init** — `from ..retrieval import palace` only on first embed call per batch. Client dropped after 5 min idle via `atexit` + timer.
-4. **Ollama auto-unload** — 10-min idle timer sends `POST /api/generate {"keep_alive": 0}` to free the model. Reload on next call (~8s warmup, one-time).
+4. **LLM idle handling is the provider's job** — we do NOT force-unload Ollama or any other provider. Users who run local Ollama accept the RAM cost in exchange for zero per-token spend. Cloud providers have no local memory footprint. Never send `keep_alive: 0` unless the user explicitly toggles "Release LLM when idle" in Settings (off by default).
 5. **Worker sleep ladder:**
    - Queue non-empty: 0s between batches (back-to-back)
    - Queue empty, active topic: 30s poll interval
@@ -219,10 +219,56 @@ New events (frontend listens):
 4. Worker survives app background/foreground cycles, topic deletion, and LLM provider changes.
 5. Closing the app terminates the worker cleanly; reopening resumes from the queue.
 
-## 12. Confirm before planning
+## 12. Token-cost controls (Settings → Extraction)
 
-- **100-post threshold** — fixed, or settings-configurable (50-200)?
-- **Ollama auto-unload at 10 min** — accept 8s reload pain for the RAM savings, or keep model loaded?
-- **Always-on worker while topic active** — or require explicit "Build insights" button click for first extraction per topic?
+LLM tokens are the main cost. The user must be able to control when extraction runs and how aggressively it spends tokens. Five Settings toggles:
 
-Default picks if no edits: 100 / 10-min unload / always-on while active.
+### 12.1 Extraction mode
+
+Radio group, stored in `topic_prefs.extraction_mode` (global default in `gapmap.pref.extraction_mode`):
+
+| Mode | Behavior | When to use |
+|---|---|---|
+| **Auto (default)** | Worker drains queue as soon as topic crosses 100 posts. | Cloud LLM with budget, or local Ollama (free). |
+| **Manual** | Nothing runs until user clicks "Extract now" on the topic page. | Strict token budget, or user wants to review corpus first. |
+| **Scheduled** | Worker drains only during user-defined windows (e.g. 11pm-6am). | Cloud API with off-peak pricing, or local Ollama so the laptop isn't hot during the day. |
+
+### 12.2 Post threshold
+
+Slider 50 → 500 (default 100). `gapmap.pref.extraction_threshold`. Users with cheap providers or small topics can drop to 50 for faster feedback; users with premium models can raise to 200-500 for higher-quality first pass.
+
+### 12.3 Batch size
+
+Slider 1 → 20 (default 5). `gapmap.pref.extraction_batch_size`. Larger batches = fewer LLM calls per 100 posts (cheaper per post due to fixed prompt overhead) but higher peak RAM + longer tail latency per batch. Smaller batches = more responsive UI but more total tokens spent on prompt scaffolding.
+
+### 12.4 Daily token budget (optional)
+
+Numeric input + "no limit" checkbox. `gapmap.pref.daily_token_cap`. When the worker's cumulative token usage for the current day (reset at local midnight) hits the cap, it pauses and emits `enrich:cap-reached`. UI surfaces a banner with "Resume" and "Raise cap" buttons. Tracked in a new `extraction_daily_usage` table (date, provider, tokens_in, tokens_out, est_usd).
+
+### 12.5 Release LLM when idle
+
+Checkbox, off by default. `gapmap.pref.release_llm_idle`. ONLY when on, the worker sends `keep_alive: 0` to Ollama after 10 min idle. For users on a RAM-tight machine who want Ollama offloaded between bursts. Default off because most users don't want the 8s reload lag.
+
+### 12.6 Cost estimator (informational, always visible)
+
+Every topic page and the Settings → Extraction pane shows a live estimate:
+> *Estimated cost to extract your queue: 3,412 posts × ~350 tokens/batch × $0.15/1M = **$0.18** (via OpenRouter → google/gemini-3.1-flash-lite-preview)*
+> *Ollama is selected — $0 spend, ~12 min on local model.*
+
+Derived from: queued row count, current provider/model, batch size, typical prompt size. Not authoritative but within 20%. Ships as a UI helper, not a hard gate.
+
+## 13. Settings persistence
+
+Extraction settings live in `topic_prefs` per-topic (override) AND `localStorage` for global default. Global takes effect when a topic has no `extraction_mode` set in `topic_prefs`. Rust reads global from a new `config/extraction.json` file that the Settings UI writes.
+
+## 14. Confirm before planning
+
+Defaults now locked:
+- **Mode: Auto** (start at 100 posts automatically)
+- **Threshold: 100** (slider, user-adjustable)
+- **Batch size: 5**
+- **Daily cap: none** (opt-in)
+- **Release LLM when idle: off**
+- **Backfill existing installs: per-topic on first open** (migration runs when user opens a topic whose posts have no extraction history)
+
+If any of these should change, say so. Otherwise the plan proceeds.

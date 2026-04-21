@@ -501,6 +501,52 @@ listen('enrich:error', (e) => window.dispatchEvent(new CustomEvent('gapmap:enric
 
 ---
 
+## Task 9.5 — Settings → Extraction pane (token controls)
+
+**Files:** modify `app-tauri/src/screens/settings.js`, add `app-tauri/src-tauri/src/commands.rs::extraction_prefs_get/set`, migrate `extraction_daily_usage` table in `db.py`.
+
+- [ ] **Step 1: DB migration for `extraction_daily_usage`**
+
+```python
+if "extraction_daily_usage" not in db.table_names():
+    db["extraction_daily_usage"].create({
+        "day": str, "provider": str, "model": str,
+        "tokens_in": int, "tokens_out": int, "est_usd": float,
+    }, pk=("day","provider","model"))
+```
+
+- [ ] **Step 2: `topic_prefs` extension**
+
+Add nullable columns `extraction_mode TEXT`, `extraction_threshold INTEGER`, `extraction_batch_size INTEGER`, `extraction_window_start TEXT`, `extraction_window_end TEXT`, `daily_token_cap INTEGER`, `release_llm_idle INTEGER`. ALTER TABLE ... ADD COLUMN with `try/except` for existing installs.
+
+- [ ] **Step 3: Worker reads prefs**
+
+`enrich_worker.py::_load_prefs(topic)` returns effective config (topic override → global → hardcoded default). Used before every batch. Mode=manual → skip topic. Mode=scheduled with current time outside window → skip topic. daily_token_cap reached → skip + emit `enrich:cap-reached`.
+
+- [ ] **Step 4: Rust `extraction_prefs_get/set` commands**
+
+Read/write a `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/extraction.json` global config file + per-topic rows in `topic_prefs`.
+
+- [ ] **Step 5: Settings UI**
+
+New `Extraction` card in Settings with the 5 toggles from spec §12. Cost estimator at the bottom reading `list_topics` + current provider + batch size.
+
+- [ ] **Step 6: Topic page override row**
+
+Above the tabs: "This topic uses: **Auto · 100 posts · batch 5** · [Override]". Override opens a popover with the same 3 sliders scoped to this topic.
+
+- [ ] **Step 7: `enrich:cap-reached` banner**
+
+Red topbar: "Daily token cap reached (10k). Extraction paused for this topic. [Raise cap] [Pause until tomorrow]".
+
+- [ ] **Step 8: Token counter in worker**
+
+`enrich_from_llm_for_posts` returns `(n_findings, tokens_in, tokens_out)`. Worker writes into `extraction_daily_usage` per batch. Rust surfaces via a new `today_token_spend` command.
+
+- [ ] **Step 9: Commit** `feat(enrich): settings pane + per-topic overrides + daily token cap + scheduled windows`
+
+---
+
 ## Task 10 — E2E smoke + DMG + skill + changelog
 
 - [ ] **Step 1: Smoke test — dev**
