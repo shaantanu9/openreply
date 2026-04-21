@@ -1,7 +1,30 @@
-"""Config loading — env vars + .env files (CWD and ~/.config/reddit-myind/)."""
+"""Config loading — env vars + .env files.
+
+Single source of truth for `data_dir`: the Tauri app's platform-standard
+app-data folder, regardless of CWD. This ensures the MCP server (spawned
+by Claude Code / Cursor from *their* CWD), the CLI (spawned from
+anywhere), and the desktop app all land on the SAME SQLite file + palace
+store + exports folder.
+
+Resolution order (first non-empty wins):
+  1. REDDIT_MYIND_DATA_DIR env var (set by the Tauri sidecar)
+  2. Platform app-data dir:
+       macOS:   ~/Library/Application Support/com.shantanu.gapmap/reddit-myind
+       Linux:   ~/.local/share/com.shantanu.gapmap/reddit-myind
+                (or $XDG_DATA_HOME if set)
+       Windows: %APPDATA%\\com.shantanu.gapmap\\reddit-myind
+  3. ~/.config/reddit-myind/data (legacy fallback)
+  4. CWD / "data" (dev-only, discouraged)
+
+Prior behavior (`cwd/data`) caused MCP-created reports + DB state to land
+in whatever folder the MCP client happened to be running from. The
+desktop app would then render stale / empty views because its DB handle
+pointed at the real app-data folder. Unifying at step 2 fixes it.
+"""
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +34,76 @@ from dotenv import load_dotenv
 _USER_CONFIG_DIR = Path.home() / ".config" / "reddit-myind"
 load_dotenv(Path.cwd() / ".env", override=False)
 load_dotenv(_USER_CONFIG_DIR / ".env", override=False)
+
+
+# Tauri bundle identifier — must match tauri.conf.json's `identifier`.
+# Hardcoded here (not read from the Rust side) because the Python CLI
+# may be invoked standalone (tests, MCP serve) without the Tauri context.
+_TAURI_BUNDLE_ID = "com.shantanu.gapmap"
+_APP_SUBDIR = "reddit-myind"
+
+
+def _canonical_app_data_dir() -> Path:
+    """Platform-standard app-data folder for Gap Map.
+
+    Mirrors what Tauri's `app.path().app_data_dir()` returns so the
+    Python side agrees with the Rust side without needing IPC. If any
+    step raises (odd filesystem, headless CI), falls back down the chain.
+    """
+    # macOS: ~/Library/Application Support/<bundle>/<app>
+    if sys.platform == "darwin":
+        return (Path.home() / "Library" / "Application Support"
+                / _TAURI_BUNDLE_ID / _APP_SUBDIR)
+
+    # Linux: $XDG_DATA_HOME/<bundle>/<app> or ~/.local/share/<bundle>/<app>
+    if sys.platform.startswith("linux"):
+        xdg = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+        return Path(xdg) / _TAURI_BUNDLE_ID / _APP_SUBDIR
+
+    # Windows: %APPDATA%\<bundle>\<app>
+    if sys.platform.startswith("win"):
+        appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(appdata) / _TAURI_BUNDLE_ID / _APP_SUBDIR
+
+    # Unknown platform — fall through to the legacy ~/.config location
+    return _USER_CONFIG_DIR / "data"
+
+
+def _resolve_data_dir() -> Path:
+    """Single-source-of-truth resolver. Always returns an existing dir."""
+    # 1. Explicit env override (Tauri sidecar sets this)
+    env_override = os.getenv("REDDIT_MYIND_DATA_DIR")
+    if env_override:
+        p = Path(env_override).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    # 2. Platform app-data folder (primary path — matches Tauri)
+    app_dir = _canonical_app_data_dir()
+    try:
+        app_dir.mkdir(parents=True, exist_ok=True)
+        return app_dir
+    except OSError:
+        pass
+
+    # 3. Legacy ~/.config/reddit-myind/data
+    legacy = _USER_CONFIG_DIR / "data"
+    try:
+        legacy.mkdir(parents=True, exist_ok=True)
+        return legacy
+    except OSError:
+        pass
+
+    # 4. Absolute last resort — CWD. Loud warning so dev knows.
+    fallback = Path.cwd() / "data"
+    fallback.mkdir(parents=True, exist_ok=True)
+    import warnings
+    warnings.warn(
+        f"Using CWD-local data dir {fallback} — all other locations failed. "
+        "Set REDDIT_MYIND_DATA_DIR to pin to a canonical location.",
+        stacklevel=2,
+    )
+    return fallback
 
 
 @dataclass(frozen=True)
@@ -72,8 +165,7 @@ class Config:
 
 
 def load_config() -> Config:
-    data_dir = Path(os.getenv("REDDIT_MYIND_DATA_DIR") or (Path.cwd() / "data")).expanduser()
-    data_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = _resolve_data_dir()
     return Config(
         reddit_client_id=os.getenv("REDDIT_CLIENT_ID") or None,
         reddit_client_secret=os.getenv("REDDIT_CLIENT_SECRET") or None,

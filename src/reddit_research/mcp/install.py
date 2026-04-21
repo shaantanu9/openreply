@@ -107,11 +107,12 @@ def default_claude_config_path() -> Path:
 
 
 def default_data_dir() -> Path:
-    """Same logic as core.config — honour env, else cwd/data."""
-    env = os.environ.get("REDDIT_MYIND_DATA_DIR")
-    if env:
-        return Path(env).expanduser()
-    return Path.cwd() / "data"
+    """Delegates to core.config._resolve_data_dir — the single source of
+    truth. Ensures MCP-install writes the token file AND the MCP server
+    reads its state from the SAME directory as the desktop app, no matter
+    where the installer was invoked from."""
+    from ..core.config import _resolve_data_dir
+    return _resolve_data_dir()
 
 
 def _read_json(path: Path) -> dict[str, Any]:

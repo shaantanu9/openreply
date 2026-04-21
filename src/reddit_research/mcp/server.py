@@ -1327,14 +1327,17 @@ def reddit_research_links(topic: str, finding: str | None = None) -> list[dict] 
 
 def _pidfile_path() -> "object":
     """Path to the MCP server's PID file, alongside the app's data dir.
-    Living next to reddit.db ensures each data-dir gets its own lock."""
+    Living next to reddit.db ensures each data-dir gets its own lock.
+    Uses the single-source-of-truth resolver in core.config so the PID
+    file always lands in the same folder as the SQLite DB — regardless
+    of how or where the MCP server was spawned."""
     from pathlib import Path
-    from ..core.db import _DATA_DIR  # type: ignore[attr-defined]
     try:
-        base = Path(_DATA_DIR)
+        from ..core.config import _resolve_data_dir
+        base = _resolve_data_dir()
     except Exception:
         base = Path.home() / ".gapmap"
-    base.mkdir(parents=True, exist_ok=True)
+        base.mkdir(parents=True, exist_ok=True)
     return base / "mcp-server.pid"
 
 
