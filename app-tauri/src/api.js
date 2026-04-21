@@ -110,6 +110,45 @@ function invalidate(...nameOrPrefixes) {
 
 export function clearApiCache() { _cache.clear(); _inflight.clear(); }
 
+/**
+ * Broadcast an in-app mutation so every open screen can refresh.
+ *
+ * Problem this solves: `invalidate()` clears the cache but doesn't tell
+ * listeners anything changed — they keep showing stale data until something
+ * else re-fetches. After any write (startCollect, deleteTopic, ingestFile,
+ * enrichGraph, byokSet, hypothesis*, productSweep, …) call `mutated(kind)`
+ * to invalidate the right cache keys AND dispatch `gapmap:changed` with
+ * `{ kind, ts }`. Nav counts refresh. Screens that care (home, topics,
+ * dashboard, sidebar counts) subscribe and re-render immediately.
+ *
+ * `kind` is one of: 'topics' | 'findings' | 'collect' | 'graph' | 'findings'
+ * | 'exports' | 'byok' | 'hypothesis' | 'product' | 'schedule' | 'ingest'.
+ * Custom strings are fine — listeners can match specific kinds or treat all
+ * changes the same. Always broadcast; never skip. Cheap event dispatch.
+ */
+const INVALIDATE_MAP = {
+  topics:     ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'list_trash'],
+  collect:    ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'get_findings'],
+  ingest:     ['list_topics', 'overview_stats', 'recent_activity', 'run_query'],
+  graph:      ['list_topics', 'overview_stats', 'get_findings', 'run_query'],
+  findings:   ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get'],
+  exports:    ['list_exports'],
+  byok:       ['byok_status', 'list_provider_models', 'cli_info'],
+  hypothesis: ['hypothesis_list', 'hypothesis_stats'],
+  product:    ['list_products', 'product_get', 'product_signals', 'product_digest', 'overview_stats'],
+  schedule:   ['schedule_status'],
+  trash:      ['list_trash', 'list_topics', 'overview_stats'],
+};
+export function mutated(kind, extra = {}) {
+  const keys = INVALIDATE_MAP[kind] || [];
+  invalidate(...keys);
+  try {
+    window.dispatchEvent(new CustomEvent('gapmap:changed', {
+      detail: { kind, ts: Date.now(), ...extra },
+    }));
+  } catch {}
+}
+
 // ---------- DB-freshness poller ----------
 //
 // Polls `db_mtime` (a cheap stat syscall — no Python spawn) every 5 s while
@@ -212,53 +251,63 @@ export const api = {
   // ----- writes / side-effects (bypass + invalidate) -----
   discoverSubs:    (topic, limit = 10) => invoke('discover_subs', { topic, limit }),
   startCollect:    (topic, aggressive = true, sources = null, skipReddit = false) => {
-    invalidate('list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query');
-    return invoke('start_collect', { topic, aggressive, sources, skipReddit });
+    const p = invoke('start_collect', { topic, aggressive, sources, skipReddit });
+    mutated('collect', { topic });
+    return p;
   },
   cancelCollect:   ()        => invoke('cancel_collect'),
   collectStatus:   ()        => invoke('collect_status'),
   buildGraph:      (topic)   => {
-    invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query');
-    return invoke('build_graph', { topic });
+    const p = invoke('build_graph', { topic });
+    mutated('graph', { topic });
+    return p;
   },
   enrichGraph:     (topic)   => {
-    invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query');
-    return invoke('enrich_graph', { topic });
+    const p = invoke('enrich_graph', { topic });
+    mutated('graph', { topic });
+    return p;
   },
   exportHtml:      (topic, force = false) => {
-    invalidate('list_exports');
-    return invoke('export_html', { topic, force });
+    const p = invoke('export_html', { topic, force });
+    mutated('exports', { topic });
+    return p;
   },
   exportGraphJson: (topic)   => invoke('export_graph_json', { topic }),
   exportReportPro: (topic)   => {
-    invalidate('list_exports');
-    return invoke('export_report_pro', { topic });
+    const p = invoke('export_report_pro', { topic });
+    mutated('exports', { topic });
+    return p;
   },
   ingestFile:      (path, topic, sourceType) => {
-    invalidate('list_topics', 'overview_stats', 'recent_activity', 'run_query');
-    return invoke('ingest_file', { path, topic, sourceType });
+    const p = invoke('ingest_file', { path, topic, sourceType });
+    mutated('ingest', { topic });
+    return p;
   },
   // Soft-delete (T1.3): 7-day undo window via api.restoreTopic + listTrash.
   deleteTopic:     (topic)   => {
-    invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query', 'list_trash');
-    return invoke('delete_topic', { topic });
+    const p = invoke('delete_topic', { topic });
+    mutated('topics', { topic, action: 'delete' });
+    return p;
   },
   restoreTopic:    (topic)   => {
-    invalidate('list_topics', 'overview_stats', 'list_trash');
-    return invoke('restore_topic', { topic });
+    const p = invoke('restore_topic', { topic });
+    mutated('topics', { topic, action: 'restore' });
+    return p;
   },
   listTrash:       ()        => cachedInvoke('list_trash', null, 10000),
   purgeDeletedTopics: (minAgeDays = 7) => {
-    invalidate('list_trash');
-    return invoke('purge_deleted_topics', { minAgeDays });
+    const p = invoke('purge_deleted_topics', { minAgeDays });
+    mutated('trash');
+    return p;
   },
   revealInFinder:  (path)    => invoke('reveal_in_finder', { path }),
   openUrl:         (url)     => invoke('open_url', { url }),
   byokSet:         (name, value) => {
     // Any key change can unlock or lock a provider's /models endpoint — nuke
     // both caches so the next modal open fetches fresh.
-    invalidate('byok_status', 'list_provider_models');
-    return invoke('byok_set', { name, value });
+    const p = invoke('byok_set', { name, value });
+    mutated('byok');
+    return p;
   },
   startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
   cancelChat:      ()        => invoke('cancel_chat'),

@@ -232,11 +232,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Failure is non-fatal (non-Tauri dev preview etc.).
   try { await api.closeSplash(); } catch {}
 
-  // NEUTRALIZED 2026-04-20: the sidecar pre-warm + db-changed nav-refresh
-  // hook were suspected of contributing to an app-wide hang. Re-enable
-  // piece-by-piece once we've confirmed the root cause. Keeping the
-  // one-time boot fetch so the nav counts still populate on launch.
-  (async () => {
+  // Sidebar counters — populate on boot AND refresh on every `gapmap:changed`
+  // mutation so adding/deleting a topic updates the count immediately.
+  async function refreshNavCounts() {
     try {
       const topics = await api.listTopics();
       if (Array.isArray(topics)) {
@@ -251,7 +249,27 @@ window.addEventListener('DOMContentLoaded', async () => {
       const el = $('#nav-products-count');
       if (el) el.textContent = products.length;
     } catch {}
-  })();
+  }
+  refreshNavCounts();
+
+  // Reactive re-render: any in-app mutation fires `gapmap:changed`. We refresh
+  // the sidebar counters AND ask the currently-visible screen to re-render
+  // itself (by re-running route() — cached reads are already invalidated
+  // inside `mutated()`, so screens get fresh data without a full page swap).
+  window.addEventListener('gapmap:changed', (e) => {
+    const kind = e?.detail?.kind;
+    refreshNavCounts();
+    // Topic/collect/ingest/graph changes affect the currently-visible screen's
+    // data set (Home's topic grid, Topics list, Activity feed, Topic page
+    // findings, etc.). Re-running route() triggers the screen's renderer,
+    // which reads through the (now-invalidated) cache and pulls fresh data.
+    if (['topics', 'collect', 'ingest', 'graph', 'findings', 'trash'].includes(kind)) {
+      // Also wipe home's stale-while-revalidate localStorage cache so a
+      // deleted topic doesn't flash before the fresh fetch returns.
+      try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
+      route();
+    }
+  });
 
   // Boot-time health probe: on every launch, confirm the sidecar spawns and
   // the DB/data-dir are writable. If a blocker is detected (sidecar can't
