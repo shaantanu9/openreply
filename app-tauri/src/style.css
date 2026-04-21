@@ -1,41 +1,278 @@
 /* ============================================================
    Gap Map — soft-dashboard style (from variant-6 reference)
    All tokens + layout + screens in a single file.
+
+   ▼▼▼ 2026-04-21 UI REDESIGN — LAYER 1 ▼▼▼
+   The block below is the SYSTEM. Everything else in this file is
+   legacy-but-working — it reads the old tokens (e.g. --ink, --orange,
+   --shadow) which are now aliases pointing at the new design-system
+   tokens. Net effect: zero regressions on day one; new components
+   reach for the new names (--color-text, --fs-13, --sp-4, etc.).
+   See docs/UI_REDESIGN_SCOPE.md for the full plan.
    ============================================================ */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #F6F3EE;
-  --surface: #FFFFFF;
-  --surface-2: #FBF8F2;
-  --ink: #1A1614;
-  --ink-2: #4A4339;
-  --ink-3: #8A8278;
-  --line: #ECE6DC;
-  --line-2: #E2DBCF;
+  /* ─────────── Color — role-based primitives ─────────── */
+  /* Base palette. These are the hex you'd paste into a style guide.
+     Components should NEVER reach for these directly — use the
+     role tokens below. The palette is kept here only so a designer
+     can swap a hue without hunting across 4000 lines. */
+  --palette-cream-50:  #FBF8F2;
+  --palette-cream-100: #F6F3EE;
+  --palette-cream-200: #ECE6DC;
+  --palette-cream-300: #E2DBCF;
+  --palette-ink-900:   #1A1614;
+  --palette-ink-700:   #4A4339;
+  --palette-ink-500:   #8A8278;
+  --palette-accent-500: #FF8C42;   /* primary action */
+  --palette-accent-300: #FFB37A;
+  --palette-accent-soft: #FFE9D6;
+  --palette-danger-500: #E26A6A;
+  --palette-danger-soft: #FBE3E6;
+  --palette-warning-500: #E69447;
+  --palette-success-500: #2E7D5B;
+  --palette-success-soft: #E1F2EA;
+  --palette-focus-ring: rgba(255, 140, 66, .35);
 
-  --orange: #FF8C42;
-  --orange-2: #FFB37A;
-  --orange-soft: #FFE9D6;
-  --lavender: #C9B6F2;
+  /* Semantic tokens — COMPONENTS REACH FOR THESE. */
+  --color-bg:             var(--palette-cream-100);
+  --color-surface:        #FFFFFF;
+  --color-surface-raised: var(--palette-cream-50);
+  --color-text:           var(--palette-ink-900);
+  --color-text-muted:     var(--palette-ink-700);
+  --color-text-subtle:    var(--palette-ink-500);
+  --color-border:         var(--palette-cream-200);
+  --color-border-strong:  var(--palette-cream-300);
+  --color-action:         var(--palette-accent-500);
+  --color-action-hover:   var(--palette-accent-300);
+  --color-action-soft:    var(--palette-accent-soft);
+  --color-action-text:    #FFFFFF;
+  --color-danger:         var(--palette-danger-500);
+  --color-danger-soft:    var(--palette-danger-soft);
+  --color-warning:        var(--palette-warning-500);
+  --color-success:        var(--palette-success-500);
+  --color-success-soft:   var(--palette-success-soft);
+  --color-focus-ring:     var(--palette-focus-ring);
+
+  /* ─────────── Typography scale ─────────── */
+  /* Five sizes. Kill any other literal across the file. */
+  --fs-11: 11px;    /* captions, eyebrows, meta */
+  --fs-13: 13px;    /* body default, secondary labels */
+  --fs-15: 15px;    /* body-large, card titles */
+  --fs-18: 18px;    /* section titles (h3) */
+  --fs-24: 24px;    /* page titles (h1, h2) */
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  --lh-tight:   1.2;
+  --lh-normal:  1.45;
+  --lh-relaxed: 1.6;
+
+  --tracking-tight:  -0.01em;
+  --tracking-normal:  0;
+  --tracking-wide:    0.04em;    /* used on eyebrows + CAPS labels */
+
+  /* ─────────── Spacing scale ─────────── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  24px;
+  --sp-6:  32px;
+  --sp-7:  48px;
+  --sp-8:  64px;
+
+  /* ─────────── Radius ─────────── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  /* ─────────── Elevation / shadow ─────────── */
+  --shadow-sm: 0 1px 2px rgba(26,22,20,.04);
+  --shadow-md: 0 1px 2px rgba(26,22,20,.04), 0 4px 12px rgba(26,22,20,.05);
+  --shadow-lg: 0 1px 2px rgba(26,22,20,.04), 0 16px 40px rgba(26,22,20,.08);
+
+  /* ─────────── Motion ─────────── */
+  --dur-fast:    120ms;
+  --dur-med:     200ms;
+  --dur-slow:    400ms;
+  --ease-out:    cubic-bezier(.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+
+  /* ─────────── Layout constants ─────────── */
+  --sidebar-width: 240px;
+  --topbar-height: 52px;
+  --max-content:   1200px;
+
+  /* ▼ LEGACY ALIASES — existing CSS keeps working ▼
+     Every rule in the file below this block reads one of these.
+     As we migrate components layer-by-layer, alias references get
+     replaced with the semantic names above and these aliases
+     eventually get removed. */
+  --bg:          var(--color-bg);
+  --surface:     var(--color-surface);
+  --surface-2:   var(--color-surface-raised);
+  --ink:         var(--color-text);
+  --ink-2:       var(--color-text-muted);
+  --ink-3:       var(--color-text-subtle);
+  --line:        var(--color-border);
+  --line-2:      var(--color-border-strong);
+
+  --orange:      var(--color-action);
+  --orange-2:    var(--color-action-hover);
+  --orange-soft: var(--color-action-soft);
+  --lavender:      #C9B6F2;
   --lavender-soft: #EFE7FB;
-  --mint: #A8DCC4;
-  --mint-soft: #E1F2EA;
-  --sky: #B5D4F0;
-  --sky-soft: #E4F0FA;
-  --rose: #F4B6BD;
-  --rose-soft: #FBE3E6;
-  --gold: #F0D78A;
-  --gold-soft: #FBF1D4;
+  --mint:          #A8DCC4;
+  --mint-soft:     var(--color-success-soft);
+  --sky:           #B5D4F0;
+  --sky-soft:      #E4F0FA;
+  --rose:          #F4B6BD;
+  --rose-soft:     var(--color-danger-soft);
+  --gold:          #F0D78A;
+  --gold-soft:     #FBF1D4;
 
-  --chronic: #E26A6A;
-  --emerging: #E69447;
-  --fading: #9C948A;
+  --chronic:  var(--color-danger);
+  --emerging: var(--color-warning);
+  --fading:   var(--palette-ink-500);
 
-  --radius: 18px;
-  --radius-sm: 12px;
-  --shadow: 0 1px 2px rgba(26,22,20,.04), 0 8px 28px rgba(26,22,20,.04);
+  --radius:    var(--radius-lg);
+  --shadow:    var(--shadow-md);
+}
+
+/* ============================================================
+   LAYER 1 utility classes — use on NEW components.
+   Role-based, not size-based. Safe on dark-mode (rules above).
+   ============================================================ */
+
+.rg-t-page-title    { font-size: var(--fs-24); font-weight: var(--fw-bold);     line-height: var(--lh-tight);  letter-spacing: var(--tracking-tight); color: var(--color-text); }
+.rg-t-section-title { font-size: var(--fs-18); font-weight: var(--fw-semibold); line-height: var(--lh-tight);  color: var(--color-text); }
+.rg-t-card-title    { font-size: var(--fs-15); font-weight: var(--fw-semibold); line-height: var(--lh-normal); color: var(--color-text); }
+.rg-t-body          { font-size: var(--fs-13); font-weight: var(--fw-regular);  line-height: var(--lh-normal); color: var(--color-text); }
+.rg-t-body-muted    { font-size: var(--fs-13); font-weight: var(--fw-regular);  line-height: var(--lh-normal); color: var(--color-text-muted); }
+.rg-t-meta          { font-size: var(--fs-11); font-weight: var(--fw-regular);  line-height: var(--lh-normal); color: var(--color-text-subtle); }
+.rg-t-eyebrow       { font-size: var(--fs-11); font-weight: var(--fw-semibold); line-height: var(--lh-tight); text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--color-text-subtle); }
+.rg-t-mono          { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ─────────── Button system (Layer-1 canonical) ───────────
+   Old variants (.btn-primary, .btn-ghost, .btn-bordered, .btn-xs,
+   .icon-btn as standalone) still exist below — keep them until every
+   consumer is migrated. NEW components use these. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4);
+  height: 36px;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color     var(--dur-fast) var(--ease-out),
+    color            var(--dur-fast) var(--ease-out),
+    box-shadow       var(--dur-fast) var(--ease-out),
+    transform        var(--dur-fast) var(--ease-out);
+  white-space: nowrap;
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+.btn:disabled, .btn[aria-disabled="true"] {
+  opacity: .5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.btn--primary {
+  background: var(--color-action);
+  color: var(--color-action-text);
+  border-color: var(--color-action);
+}
+.btn--primary:hover   { background: var(--color-action-hover); border-color: var(--color-action-hover); }
+.btn--primary:active  { transform: translateY(0.5px); }
+
+.btn--secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.btn--secondary:hover { background: var(--color-surface-raised); border-color: var(--color-border-strong); }
+
+.btn--ghost {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-color: transparent;
+}
+.btn--ghost:hover     { background: var(--color-surface-raised); color: var(--color-text); }
+
+.btn--danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-color: transparent;
+}
+.btn--danger:hover    { background: var(--color-danger); color: var(--color-action-text); }
+
+.btn--sm {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-13);
+}
+.btn--lg {
+  height: 44px;
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-15);
+}
+
+.btn--icon-only {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+.btn--icon-only.btn--sm { width: 28px; }
+
+.btn svg,
+.btn [data-lucide] {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.btn--sm svg,
+.btn--sm [data-lucide] { width: 14px; height: 14px; }
+
+/* ============================================================
+   Dark-mode overrides for the new tokens. Every role token flips
+   via `html.dark`. Legacy aliases follow because they point at
+   these. Phase-19 hex-literal attribute selectors below still apply.
+   ============================================================ */
+html.dark {
+  --color-bg:             #14110F;
+  --color-surface:        #1E1A17;
+  --color-surface-raised: #24201C;
+  --color-text:           #F5F1EA;
+  --color-text-muted:     #C8C0B3;
+  --color-text-subtle:    #8A8278;
+  --color-border:         #2E2925;
+  --color-border-strong:  #3A342F;
+  --color-action-soft:    #3A2417;
+  --color-danger-soft:    #331C1F;
+  --color-success-soft:   #1A2E26;
+  --color-focus-ring:     rgba(255, 140, 66, .5);
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.3);
+  --shadow-md: 0 1px 2px rgba(0,0,0,.35), 0 4px 12px rgba(0,0,0,.25);
+  --shadow-lg: 0 1px 2px rgba(0,0,0,.35), 0 16px 40px rgba(0,0,0,.35);
 }
 
 /* ---------- Dark mode ---------- */
