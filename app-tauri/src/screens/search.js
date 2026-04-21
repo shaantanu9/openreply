@@ -51,7 +51,7 @@ function renderResults() {
       <div class="empty-state" style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px">
         <div class="map-building-spinner"></div>
         <div><b>Searching Reddit…</b></div>
-        <div style="font-size:12px;color:var(--ink-3)">
+        <div style="font-size:var(--fs-13);color:var(--ink-3)">
           First call can take up to 10 s while PRAW refreshes its token.
         </div>
       </div>`;

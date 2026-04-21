@@ -112,7 +112,7 @@ export async function renderScience(root) {
           <p>Why Gap Map isn't just scraping Reddit</p>
         </div>
       </div>
-      <div style="padding:4px 22px 22px;color:var(--ink-2);font-size:14px;line-height:1.75">
+      <div style="padding:4px 22px 22px;color:var(--ink-2);font-size:var(--fs-15);line-height:1.75">
         <p>Every topic you collect runs through a four-stage pipeline:
         <b>(1) multi-source fetch</b> from up to 10 independent corpora,
         <b>(2) structural graph build</b> that links every post to subs, threads, and authors,
@@ -142,35 +142,35 @@ export async function renderScience(root) {
       <div class="settings-card">
         <h4><i data-lucide="flask-conical"></i> Saturation math (Guest et al. 2006)</h4>
         <p>A painpoint earns the CHRONIC label only after <b>≥12 evidence items</b> across <b>≥2 independent sources</b>. Below that it's "emerging" — worth watching but not bankable. This threshold comes from the qualitative-research saturation literature and is the reason Gap Map fetches from 10 sources, not one.</p>
-        <p style="color:var(--ink-3);font-size:12px;margin-top:8px"><em>Guest, Bunce & Johnson (2006). How Many Interviews Are Enough? — Field Methods, 18(1).</em></p>
+        <p style="color:var(--ink-3);font-size:var(--fs-13);margin-top:8px"><em>Guest, Bunce & Johnson (2006). How Many Interviews Are Enough? — Field Methods, 18(1).</em></p>
       </div>
 
       <div class="settings-card">
         <h4><i data-lucide="clock"></i> Temporal tiers (pullpush 2025-05-19 cutoff)</h4>
         <p>Pullpush's historical index froze in May 2025. We exploit this as a natural experiment:</p>
-        <ul style="font-size:12.5px;color:var(--ink-2);padding-left:22px;margin-top:4px;line-height:1.75">
+        <ul style="font-size:var(--fs-13);color:var(--ink-2);padding-left:22px;margin-top:4px;line-height:1.75">
           <li><b>CHRONIC</b> — painpoint present in both pre-May-2025 and post-May-2025 corpora</li>
           <li><b>EMERGING</b> — only post-May-2025 — genuinely new pain</li>
           <li><b>FADING</b> — only pre-May-2025 — already solved or abandoned</li>
         </ul>
-        <p style="color:var(--ink-3);font-size:12px;margin-top:8px"><em>Inspired by Kano's attractive-vs-must-be dynamics model.</em></p>
+        <p style="color:var(--ink-3);font-size:var(--fs-13);margin-top:8px"><em>Inspired by Kano's attractive-vs-must-be dynamics model.</em></p>
       </div>
 
       <div class="settings-card">
         <h4><i data-lucide="share-2"></i> Shneiderman's mantra</h4>
         <p>Overview first → zoom + filter → details on demand. Every screen in Gap Map follows this:</p>
-        <ul style="font-size:12.5px;color:var(--ink-2);padding-left:22px;margin-top:4px;line-height:1.75">
+        <ul style="font-size:var(--fs-13);color:var(--ink-2);padding-left:22px;margin-top:4px;line-height:1.75">
           <li><b>Overview</b> — dashboard hero + topic tiles</li>
           <li><b>Zoom</b> — topic detail with filtered views</li>
           <li><b>Details</b> — click a node → jump to exact post citation</li>
         </ul>
-        <p style="color:var(--ink-3);font-size:12px;margin-top:8px"><em>Shneiderman (1996). The eyes have it: a task by data type taxonomy for information visualizations.</em></p>
+        <p style="color:var(--ink-3);font-size:var(--fs-13);margin-top:8px"><em>Shneiderman (1996). The eyes have it: a task by data type taxonomy for information visualizations.</em></p>
       </div>
 
       <div class="settings-card">
         <h4><i data-lucide="bar-chart-3"></i> Tufte information density</h4>
         <p>Every chart earns its pixels. No 3D pies, no decorative gradients. The sparklines in the dashboard show momentum in 60 px; the gap-map uses force layout because spatial proximity encodes semantic proximity — nothing is decorative.</p>
-        <p style="color:var(--ink-3);font-size:12px;margin-top:8px"><em>Tufte (2001). The Visual Display of Quantitative Information.</em></p>
+        <p style="color:var(--ink-3);font-size:var(--fs-13);margin-top:8px"><em>Tufte (2001). The Visual Display of Quantitative Information.</em></p>
       </div>
     </section>
 
@@ -180,7 +180,7 @@ export async function renderScience(root) {
 
     <section class="card" style="margin-bottom:18px">
       <div style="padding:4px 22px 22px">
-        <table class="db-rows" style="font-size:12.5px">
+        <table class="db-rows" style="font-size:var(--fs-13)">
           <thead><tr><th>Table</th><th>What it holds</th></tr></thead>
           <tbody>
             <tr><td><code>posts</code></td><td>Raw fetched posts from every source. Content, metadata, timestamp, source_type.</td></tr>

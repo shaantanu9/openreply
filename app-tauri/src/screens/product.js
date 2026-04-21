@@ -93,7 +93,7 @@ function renderProductsEmpty() {
         <button class="btn btn-primary icon-btn" id="btn-register"><i data-lucide="plus"></i> Register a product</button>
         <button class="btn btn-ghost btn-bordered icon-btn" id="btn-convert-topic"><i data-lucide="arrow-right-circle"></i> Convert an existing topic</button>
       </div>
-      <p class="muted" style="font-size:12px;margin-top:12px">
+      <p class="muted" style="font-size:var(--fs-13);margin-top:12px">
         Topic Mode (one-shot research) stays unchanged — Product Mode is the always-on surface on top of it.
       </p>
     </div>
@@ -140,7 +140,7 @@ export async function renderProductSetup(root, { params }) {
     <section class="hero" style="grid-template-columns:1fr;max-width:760px">
       <div>
         <div class="hero-eyebrow">Product registration</div>
-        <h1 style="font-size:30px">What are we monitoring?</h1>
+        <h1 style="font-size:var(--fs-24)">What are we monitoring?</h1>
         <p>Gap Map will continuously collect posts, reviews, and news around your product and its competitors, then surface typed signals every day.</p>
       </div>
     </section>
@@ -168,7 +168,7 @@ export async function renderProductSetup(root, { params }) {
     </section>
 
     <section style="margin-top:20px;max-width:760px">
-      <div class="section-head"><div><h2 style="font-size:16px">Competitors</h2><p>Start with 3–10. You can add more later.</p></div></div>
+      <div class="section-head"><div><h2 style="font-size:var(--fs-15)">Competitors</h2><p>Start with 3–10. You can add more later.</p></div></div>
       <div id="ps-competitors" class="ps-competitor-list"></div>
       <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="ps-add-competitor">
         <i data-lucide="plus"></i> Add competitor
@@ -182,7 +182,7 @@ export async function renderProductSetup(root, { params }) {
       </button>
     </div>
 
-    <p class="muted" style="max-width:760px;margin-top:14px;font-size:12px">
+    <p class="muted" style="max-width:760px;margin-top:14px;font-size:var(--fs-13)">
       💡 No competitors yet? Click <b>Cancel</b>, run a Topic Mode collection first, then use
       <b>Convert topic</b> from the Products list — competitors are auto-extracted from the graph.
     </p>
@@ -442,8 +442,8 @@ function renderHeader(product, signals) {
         </div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:28px;font-weight:600;line-height:1">${openCount}</div>
-        <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px">open signals</div>
+        <div style="font-size:var(--fs-24);font-weight:600;line-height:1">${openCount}</div>
+        <div class="muted" style="font-size:var(--fs-11);text-transform:uppercase;letter-spacing:0.6px">open signals</div>
       </div>
     </section>
   `;
@@ -463,7 +463,7 @@ function renderSignalsSection(signals) {
   return `
     <section class="pd-section card">
       <h3><i data-lucide="inbox"></i> The Signals <span class="muted">(${openSignals.length} open)</span></h3>
-      <p class="muted" style="font-size:12px">Ranked by severity × confidence. Dismiss / snooze / convert to hypothesis per signal.</p>
+      <p class="muted" style="font-size:var(--fs-13)">Ranked by severity × confidence. Dismiss / snooze / convert to hypothesis per signal.</p>
       <div class="pd-signal-list">${rows}</div>
     </section>
   `;
@@ -479,7 +479,7 @@ function signalCard(s) {
         <span class="pd-signal-emoji">${emoji}</span>
         <div class="pd-signal-title">
           <b>${esc(s.title || '(untitled)')}</b>
-          <div class="muted" style="font-size:11px">${esc(type)}
+          <div class="muted" style="font-size:var(--fs-11)">${esc(type)}
             ${s.related_competitor ? ` · ${esc(s.related_competitor)}` : ''}
             · sev ${Number(s.severity || 0).toFixed(2)} · conf ${Number(s.confidence || 0).toFixed(2)}</div>
         </div>
@@ -550,7 +550,7 @@ function renderLensSection(lens, competitors) {
     return `
       <div class="pd-competitor-row">
         <b>${esc(c.name)}</b>
-        <span class="muted" style="font-size:11px">
+        <span class="muted" style="font-size:var(--fs-11)">
           ${rel ? `🚀 ${rel} release${rel === 1 ? '' : 's'}` : ''}
           ${rel && vul ? ' · ' : ''}
           ${vul ? `🎯 ${vul} weakness${vul === 1 ? '' : 'es'}` : ''}
@@ -608,7 +608,7 @@ function renderSweepsSection(sweeps) {
               <td>${esc(s.trigger)}</td>
               <td>${s.signals_generated || 0}</td>
               <td>${s.duration_ms ? (s.duration_ms / 1000).toFixed(1) + 's' : '—'}</td>
-              <td class="muted" style="font-size:11px">${esc(s.error || s.notes || '')}</td>
+              <td class="muted" style="font-size:var(--fs-11)">${esc(s.error || s.notes || '')}</td>
             </tr>
           `).join('')}
         </tbody>

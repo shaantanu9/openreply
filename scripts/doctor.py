@@ -118,11 +118,15 @@ def check_db_schema() -> list[str]:
             db = get_db()
             init_schema(db)
 
+            # topic_insights + experiments are created lazily on first use
+            # (insights.py::_ensure_topic_insights_table,
+            # gap_discovery.py::_ensure_experiments_table). Don't flag as
+            # missing at boot — only fail on tables init_schema itself owns.
             required_tables = [
                 "posts", "topic_posts", "comments", "users", "subreddits",
                 "graph_nodes", "graph_edges",
                 "fetches", "topic_runs", "topic_prefs",
-                "paper_analyses", "topic_insights",
+                "paper_analyses",
                 "topic_canonicalizations", "trend_series",
                 "streams", "stream_hits", "hypothesis_tests",
             ]

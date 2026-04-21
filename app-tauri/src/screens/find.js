@@ -81,9 +81,9 @@ function renderNotReady(root, ms) {
   const archiveMB = ms?.archive_bytes ? (ms.archive_bytes / 1024 / 1024).toFixed(1) : '0';
   const cta = installed
     ? `<button class="btn btn-primary" id="find-goto-settings">Enable in Settings →</button>`
-    : `<p style="color:var(--ink-3);font-size:13px">This build shipped without the retrieval extras (chromadb). Rebuild the sidecar with the <code>retrieval</code> extras group to unlock semantic search.</p>`;
+    : `<p style="color:var(--ink-3);font-size:var(--fs-13)">This build shipped without the retrieval extras (chromadb). Rebuild the sidecar with the <code>retrieval</code> extras group to unlock semantic search.</p>`;
   const resume = ms?.archive_bytes > 1_000_000
-    ? `<p style="color:var(--ink-3);font-size:12px">Partial download detected: ${archiveMB} MB of ~80 MB. Settings will pick up where it left off.</p>`
+    ? `<p style="color:var(--ink-3);font-size:var(--fs-13)">Partial download detected: ${archiveMB} MB of ~80 MB. Settings will pick up where it left off.</p>`
     : '';
   root.querySelector('#find-body').innerHTML = `
     <div class="empty-big">

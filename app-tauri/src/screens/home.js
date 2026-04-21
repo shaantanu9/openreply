@@ -815,7 +815,7 @@ export async function renderTopicsList(root) {
     <div class="section-head">
       <div><h2>All topics</h2><p id="topics-count">Loading…</p></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <input id="topics-filter" placeholder="Filter by name…" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-family:inherit;background:var(--surface)" />
+        <input id="topics-filter" placeholder="Filter by name…" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;font-size:var(--fs-13);font-family:inherit;background:var(--surface)" />
         <button class="btn btn-primary btn-sm icon-btn" id="topics-new"><i data-lucide="plus"></i> New topic</button>
       </div>
     </div>

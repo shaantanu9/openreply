@@ -57,7 +57,7 @@ export async function renderIngest(root) {
             <select id="topic-sel" style="flex:1">
               <option value="">— pick an existing topic —</option>
             </select>
-            <span style="color:var(--ink-3);font-size:12px">or</span>
+            <span style="color:var(--ink-3);font-size:var(--fs-13)">or</span>
             <input type="text" id="topic-new" placeholder="new topic name" style="flex:1" />
           </div>
           <p class="ingest-hint">If both are filled, the typed name wins. Topics are just tags — one file can be tagged to several topics over time.</p>

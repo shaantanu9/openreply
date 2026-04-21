@@ -122,14 +122,14 @@ function renderStep1(root, body, info) {
           <button class="btn btn-primary" id="next-1">Continue with exploring →</button>
           <button class="btn btn-ghost btn-bordered" id="next-1-product">I have a product → Product Mode</button>
         </div>
-        <p class="muted" style="font-size:12px;margin-top:10px">
+        <p class="muted" style="font-size:var(--fs-13);margin-top:10px">
           <b>Exploring:</b> one-shot research briefs per topic.
           <b>Product:</b> daily-use dashboard + signals for your product + competitors.
         </p>
       </div>
       <div class="hero-stat">
         <div class="hero-stat-row"><div><h4>Everything is local</h4></div></div>
-        <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:#4A3729;line-height:1.9">
+        <ul style="list-style:none;padding:0;margin:0;font-size:var(--fs-13);color:#4A3729;line-height:1.9">
           <li>🖥 Runs on your machine</li>
           <li>🔒 Your data never leaves</li>
           <li>🌐 Your IP, your rate limits</li>
@@ -143,22 +143,22 @@ function renderStep1(root, body, info) {
     <section class="stat-grid">
       <div class="stat-card">
         <div class="stat-head"><div class="stat-icon peach">1</div></div>
-        <div class="stat-num" style="font-size:14px;line-height:1.35">Type a topic</div>
+        <div class="stat-num" style="font-size:var(--fs-15);line-height:1.35">Type a topic</div>
         <div class="stat-label" style="margin-top:6px">e.g. "resume ATS" or "habit tracker"</div>
       </div>
       <div class="stat-card">
         <div class="stat-head"><div class="stat-icon lavender">2</div></div>
-        <div class="stat-num" style="font-size:14px;line-height:1.35">We fetch</div>
+        <div class="stat-num" style="font-size:var(--fs-15);line-height:1.35">We fetch</div>
         <div class="stat-label" style="margin-top:6px">Reddit · HN · App Store · Play Store · arXiv · Scholar · GitHub · News</div>
       </div>
       <div class="stat-card">
         <div class="stat-head"><div class="stat-icon mint">3</div></div>
-        <div class="stat-num" style="font-size:14px;line-height:1.35">We synthesise</div>
+        <div class="stat-num" style="font-size:var(--fs-15);line-height:1.35">We synthesise</div>
         <div class="stat-label" style="margin-top:6px">LLM extracts gap signals with real post evidence</div>
       </div>
       <div class="stat-card">
         <div class="stat-head"><div class="stat-icon sky">4</div></div>
-        <div class="stat-num" style="font-size:14px;line-height:1.35">Interactive map</div>
+        <div class="stat-num" style="font-size:var(--fs-15);line-height:1.35">Interactive map</div>
         <div class="stat-label" style="margin-top:6px">Graph + findings + copy to tweet / PNG / Markdown</div>
       </div>
     </section>
@@ -180,14 +180,14 @@ function renderStep2(root, body, info) {
     <section class="hero" style="grid-template-columns:1fr;max-width:720px">
       <div>
         <div class="hero-eyebrow">Welcome</div>
-        <h1 style="font-size:34px">Who are you?</h1>
+        <h1 style="font-size:var(--fs-24)">Who are you?</h1>
         <p>Gap Map is 100% local — there's no sign-up. This is just for your avatar in the top-right and to personalize empty states. You can change it later in Settings.</p>
 
         <div class="settings-profile-head" style="margin:24px 0 18px">
           <div class="settings-avatar" id="ob-avatar" style="background:#FF8C42">${esc(avatarInitials(name))}</div>
           <div>
             <h4 style="margin:0">${esc(name || 'Your name here')}</h4>
-            <p style="margin:2px 0 0;color:var(--ink-3);font-size:12px">${esc(email || 'optional email')}</p>
+            <p style="margin:2px 0 0;color:var(--ink-3);font-size:var(--fs-13)">${esc(email || 'optional email')}</p>
           </div>
         </div>
 
@@ -265,7 +265,7 @@ async function renderStep3(root, body, info) {
     <section>
       <div class="section-head">
         <div>
-          <h2>Connect your sources <span style="color:var(--ink-3);font-size:14px;font-weight:600">(all optional)</span></h2>
+          <h2>Connect your sources <span style="color:var(--ink-3);font-size:var(--fs-15);font-weight:600">(all optional)</span></h2>
           <p>Gap Map works out of the box — these just unlock more signal.</p>
         </div>
       </div>
@@ -276,7 +276,7 @@ async function renderStep3(root, body, info) {
         <!-- LLM -->
         <div class="settings-card">
           <div style="display:flex;align-items:center;justify-content:space-between">
-            <h4>AI extraction <span style="color:var(--ink-3);font-size:12px;font-weight:500">(recommended)</span></h4>
+            <h4>AI extraction <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">(recommended)</span></h4>
             <span class="pill ${readyCount ? 'active' : ''}">${readyCount ? `✓ ${readyCount} ready` : 'none set'}</span>
           </div>
           <p style="margin-top:4px">Painpoints / features / DIY workarounds need an LLM. You can use any of 8 providers (incl. free local Ollama).</p>
@@ -297,7 +297,7 @@ async function renderStep3(root, body, info) {
         <!-- Reddit -->
         <div class="settings-card">
           <div style="display:flex;align-items:center;justify-content:space-between">
-            <h4>Reddit credentials <span style="color:var(--ink-3);font-size:12px;font-weight:500">(optional)</span></h4>
+            <h4>Reddit credentials <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">(optional)</span></h4>
             <span class="pill ${redditReady ? 'active' : ''}">${redditReady ? '✓ connected' : 'public mode'}</span>
           </div>
           <p style="margin-top:4px">Public mode works (60/min). With credentials: 100/min + better metadata. Your password is never stored.</p>
@@ -313,7 +313,7 @@ async function renderStep3(root, body, info) {
           <p>All data stays on your machine. Nothing uploaded.</p>
           <div class="kv-row"><b>SQLite DB</b><span>${esc(info?.db_path || '—')}</span></div>
           <div class="kv-row"><b>Current mode</b><span>${esc(mode)}</span></div>
-          <p style="color:var(--ink-3);font-size:11.5px;margin-top:8px">You can change any of this later from Settings.</p>
+          <p style="color:var(--ink-3);font-size:var(--fs-11);margin-top:8px">You can change any of this later from Settings.</p>
         </div>
       </div>
 
@@ -368,7 +368,7 @@ function renderStep4(root, body, info) {
       </div>
 
       <input id="ob-topic-input" type="text" placeholder='e.g. "meditation apps"'
-             style="width:100%;padding:16px 20px;border-radius:14px;font-family:inherit;font-size:16px;border:1px solid var(--line);background:var(--surface);margin-bottom:18px"
+             style="width:100%;padding:16px 20px;border-radius:14px;font-family:inherit;font-size:var(--fs-15);border:1px solid var(--line);background:var(--surface);margin-bottom:18px"
              autofocus />
 
       <label class="modal-check" style="padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:24px">
@@ -376,7 +376,7 @@ function renderStep4(root, body, info) {
         <span><b>Aggressive mode</b> — pulls all 10 sources + historical archive (~15 min first run, much faster after)</span>
       </label>
 
-      <div class="section-head"><div><h2 style="font-size:15px">Or try an example</h2></div></div>
+      <div class="section-head"><div><h2 style="font-size:var(--fs-15)">Or try an example</h2></div></div>
       <section class="topic-grid" id="ob-examples">
         ${EXAMPLES.map(ex => `
           <div class="topic-tile" data-topic="${esc(ex.t)}">

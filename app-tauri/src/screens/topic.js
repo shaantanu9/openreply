@@ -62,7 +62,7 @@ function showToast(title, detail = '', kind = 'err', ms = 5000) {
     <span class="toast-ic"><i data-lucide="${icMap[kind] || 'info'}"></i></span>
     <div class="toast-body">
       <div class="toast-title">${esc(title)}</div>
-      ${detail ? `<div style="color:var(--ink-3);font-size:12px">${esc(detail)}</div>` : ''}
+      ${detail ? `<div style="color:var(--ink-3);font-size:var(--fs-13)">${esc(detail)}</div>` : ''}
     </div>
     <button class="toast-close" aria-label="dismiss">×</button>`;
   stack.appendChild(el);
@@ -329,7 +329,7 @@ function renderQuickExtract(result) {
     `;
   }).join('');
   return `
-    <p class="muted" style="font-size:11px;margin:0 0 8px">Preview only — run <b>Build &amp; enrich</b> to persist these into the graph.</p>
+    <p class="muted" style="font-size:var(--fs-11);margin:0 0 8px">Preview only — run <b>Build &amp; enrich</b> to persist these into the graph.</p>
     ${html}
   `;
 }
@@ -374,7 +374,7 @@ export async function renderTopic(root, { params }) {
       <button class="active-llm-pill none" id="topic-llm-pill" title="Click to change provider / model">
         <span class="dot"></span><span id="topic-llm-pill-label">No LLM</span>
       </button>
-      <label id="schedule-topic-toggle" style="margin:0;padding:4px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line);border-radius:8px" title="Include this topic in scheduled re-runs">
+      <label id="schedule-topic-toggle" style="margin:0;padding:4px 10px;font-size:var(--fs-13);display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line);border-radius:8px" title="Include this topic in scheduled re-runs">
         <input type="checkbox" id="cb-schedule-topic" style="margin:0" />
         <span style="font-weight:500">Auto-refresh</span>
       </label>
@@ -1191,7 +1191,7 @@ export async function renderTopic(root, { params }) {
           <div class="source-row source-row-clickable" data-source="${esc(r.source)}" role="button" tabindex="0" title="Click to see all ${esc(r.source)} posts for this topic">
             <div class="source-row-head">
               <b>${esc(r.source)}</b>
-              <span>${r.posts.toLocaleString()} posts · ${pct}% <span style="color:var(--ink-3);font-weight:500;font-size:11px">· view all →</span></span>
+              <span>${r.posts.toLocaleString()} posts · ${pct}% <span style="color:var(--ink-3);font-weight:500;font-size:var(--fs-11)">· view all →</span></span>
             </div>
             <div class="source-bar"><div class="source-bar-fill" style="width:${pct}%"></div></div>
             <div class="source-row-meta">First: ${earliestS} · Latest: ${latestS}</div>
@@ -1354,18 +1354,18 @@ export async function renderTopic(root, { params }) {
 
       const paperCard = (r) => {
         const c = SRC_BADGE_COLORS[r.source] || { bg: 'var(--surface-2)', fg: 'var(--ink-2)' };
-        const badge = `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${c.bg};color:${c.fg};font-size:10px;font-weight:700;letter-spacing:.03em">${esc(SRC_LABELS[r.source] || r.source)}</span>`;
+        const badge = `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${c.bg};color:${c.fg};font-size:var(--fs-11);font-weight:700;letter-spacing:.03em">${esc(SRC_LABELS[r.source] || r.source)}</span>`;
         const title = esc((r.title || '(untitled)').slice(0, 160));
         const excerpt = esc((r.excerpt || '').trim().slice(0, 260));
         const analysis = analysesByPostId.get(r.id);
         const analysisHtml = analysis ? `
           <div class="paper-analysis" data-post-id="${esc(r.id)}" style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:var(--radius-sm);border:1px solid var(--line)">
-            <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">📘 Summary</div>
-            <div style="font-size:12.5px;color:var(--ink);line-height:1.5;margin-bottom:8px">${esc(analysis.summary || '')}</div>
-            <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">🎯 Why this matters for "${esc(topic)}"</div>
-            <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5;margin-bottom:8px">${esc(analysis.relevance || '')}</div>
-            <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">🔨 Builder takeaway</div>
-            <div style="font-size:12.5px;color:var(--ink);line-height:1.5;background:var(--gold-soft);padding:6px 10px;border-radius:8px;border-left:3px solid var(--gold)"><b>${esc(analysis.takeaway || '')}</b></div>
+            <div style="font-size:var(--fs-11);color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">📘 Summary</div>
+            <div style="font-size:var(--fs-13);color:var(--ink);line-height:1.5;margin-bottom:8px">${esc(analysis.summary || '')}</div>
+            <div style="font-size:var(--fs-11);color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">🎯 Why this matters for "${esc(topic)}"</div>
+            <div style="font-size:var(--fs-13);color:var(--ink-2);line-height:1.5;margin-bottom:8px">${esc(analysis.relevance || '')}</div>
+            <div style="font-size:var(--fs-11);color:var(--ink-3);margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase">🔨 Builder takeaway</div>
+            <div style="font-size:var(--fs-13);color:var(--ink);line-height:1.5;background:var(--gold-soft);padding:6px 10px;border-radius:8px;border-left:3px solid var(--gold)"><b>${esc(analysis.takeaway || '')}</b></div>
           </div>` : `
           <div class="paper-analyze-row" data-post-id="${esc(r.id)}" style="margin-top:10px">
             <button class="btn btn-ghost btn-sm btn-bordered paper-analyze-btn" data-analyze="${esc(r.id)}"><i data-lucide="sparkles"></i> Analyze</button>
@@ -1406,9 +1406,9 @@ export async function renderTopic(root, { params }) {
           <div class="card" style="margin-bottom:10px;padding:14px 18px">
             <div style="display:flex;gap:10px;align-items:flex-start">
               <div style="flex:1;min-width:0">
-                <div style="margin-bottom:6px">${badge}<span style="color:var(--ink-3);font-size:11px;margin-left:8px">${cites}${esc(date)}${authorStr}</span></div>
-                <h4 style="font-size:14px;font-weight:700;line-height:1.35;margin-bottom:4px">${title}</h4>
-                ${excerpt ? `<p style="font-size:12px;color:var(--ink-2);line-height:1.5">${excerpt}…</p>` : ''}
+                <div style="margin-bottom:6px">${badge}<span style="color:var(--ink-3);font-size:var(--fs-11);margin-left:8px">${cites}${esc(date)}${authorStr}</span></div>
+                <h4 style="font-size:var(--fs-15);font-weight:700;line-height:1.35;margin-bottom:4px">${title}</h4>
+                ${excerpt ? `<p style="font-size:var(--fs-13);color:var(--ink-2);line-height:1.5">${excerpt}…</p>` : ''}
                 ${analysisHtml}
               </div>
               <div style="flex-shrink:0;display:flex;gap:6px;align-items:flex-start">${citeBtn}${openBtn}</div>
@@ -1424,7 +1424,7 @@ export async function renderTopic(root, { params }) {
           <span>Sort:</span>
           <button class="research-sort-btn ${researchSort === 'cites' ? 'active' : ''}" data-sort="cites">Most cited</button>
           <button class="research-sort-btn ${researchSort === 'newest' ? 'active' : ''}" data-sort="newest">Newest</button>
-          <span style="margin-left:auto;font-size:11px;color:var(--ink-3);margin-right:10px">${rows.length} paper${rows.length === 1 ? '' : 's'} total · ${analysesByPostId.size} analyzed</span>
+          <span style="margin-left:auto;font-size:var(--fs-11);color:var(--ink-3);margin-right:10px">${rows.length} paper${rows.length === 1 ? '' : 's'} total · ${analysesByPostId.size} analyzed</span>
           ${analyzeAllBtn}
         </div>`;
 
@@ -1437,7 +1437,7 @@ export async function renderTopic(root, { params }) {
           <div class="card" style="margin-bottom:14px;padding:0">
             <div class="card-head">
               <div>
-                <h3>${esc(SRC_LABELS[src] || src)} <span style="color:var(--ink-3);font-weight:500;font-size:12px">· ${items.length} item${items.length === 1 ? '' : 's'}</span></h3>
+                <h3>${esc(SRC_LABELS[src] || src)} <span style="color:var(--ink-3);font-weight:500;font-size:var(--fs-13)">· ${items.length} item${items.length === 1 ? '' : 's'}</span></h3>
                 <p>Click any card's Open button to read the full source.</p>
               </div>
             </div>
@@ -1635,7 +1635,7 @@ export async function renderTopic(root, { params }) {
       if (byok?.google?.set)     configured.push('Google');
       if (byok?.ollama_base_url) configured.push('Ollama');
       const statusLine = configured.length
-        ? `<p style="color:var(--ink-2);font-size:13px;margin:6px 0 0"><b>${configured.length}</b> provider${configured.length>1?'s':''} configured: ${esc(configured.join(', '))} — but no default picked.</p>`
+        ? `<p style="color:var(--ink-2);font-size:var(--fs-13);margin:6px 0 0"><b>${configured.length}</b> provider${configured.length>1?'s':''} configured: ${esc(configured.join(', '))} — but no default picked.</p>`
         : '';
       chatMainHtml = `
           <div class="empty-big" style="margin:18px 0">
@@ -1669,7 +1669,7 @@ export async function renderTopic(root, { params }) {
         <div class="chat-head">
           <div>
             <h3 style="margin:0 0 2px">Chat with this gap map</h3>
-            <p style="margin:0;color:var(--ink-3);font-size:12px">
+            <p style="margin:0;color:var(--ink-3);font-size:var(--fs-13)">
               ${anyReady
                 ? `Provider: <b>${esc(providerLabel)}</b> · Model: <b>${esc(modelLabel)}</b>`
                 : '<span style="color:#B84747">No LLM key configured yet.</span>'}
@@ -2044,7 +2044,7 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-export-md">Export report.md</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-export-graph-json"><i data-lucide="braces"></i> Export graph JSON</button>
           </div>
-          <div id="export-status" style="margin-top:10px;font-size:12px;color:var(--ink-3)"></div>
+          <div id="export-status" style="margin-top:10px;font-size:var(--fs-13);color:var(--ink-3)"></div>
         </div>
         <div class="settings-card" style="border-color:var(--rose)">
           <h4 style="color:#B84747">Danger zone</h4>
@@ -2056,13 +2056,13 @@ export async function renderTopic(root, { params }) {
     const quickHtml = `
       <div class="settings-card" style="margin-top:14px">
         <h4><i data-lucide="zap"></i> Quick tools</h4>
-        <p class="muted" style="font-size:12px;margin-bottom:10px">
+        <p class="muted" style="font-size:var(--fs-13);margin-bottom:10px">
           Preview-only LLM extraction without building the full graph. Use this to sniff-test LLM output before committing to a full <b>Build &amp; enrich</b>.
         </p>
         <button class="btn btn-primary btn-sm icon-btn" id="btn-quick-extract">
           <i data-lucide="zap"></i> Quick extract gaps
         </button>
-        <div id="quick-extract-status" class="muted" style="margin-top:8px;font-size:12px"></div>
+        <div id="quick-extract-status" class="muted" style="margin-top:8px;font-size:var(--fs-13)"></div>
         <div id="quick-extract-panel" class="quick-extract-panel" hidden></div>
       </div>
     `;
@@ -2192,7 +2192,7 @@ export async function renderTopic(root, { params }) {
     contentEl.innerHTML = `
       <div class="empty-state" style="padding:40px;text-align:center">
         <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-        <div style="color:var(--ink-3);font-size:13px">Loading ${esc(name)}…</div>
+        <div style="color:var(--ink-3);font-size:var(--fs-13)">Loading ${esc(name)}…</div>
       </div>`;
     try {
       await loaders[name]?.();
@@ -2492,7 +2492,7 @@ function renderSourceBadges(breakdown) {
   entries.sort((a, b) => b[1] - a[1]);
   const badges = entries.map(([src, n]) => {
     const cfg = SRC_BADGE[src] || { bg: '#E8E8E8', fg: '#222', label: src };
-    return `<span class="finding-src-badge" data-source="${esc(src)}" title="Click to see ${n} ${esc(cfg.label)} posts backing this finding" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:${cfg.bg};color:${cfg.fg};font-size:11px;font-weight:600;margin-right:4px;cursor:pointer;user-select:none"><b>${n}</b> ${esc(cfg.label)}</span>`;
+    return `<span class="finding-src-badge" data-source="${esc(src)}" title="Click to see ${n} ${esc(cfg.label)} posts backing this finding" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:${cfg.bg};color:${cfg.fg};font-size:var(--fs-11);font-weight:600;margin-right:4px;cursor:pointer;user-select:none"><b>${n}</b> ${esc(cfg.label)}</span>`;
   }).join('');
   return badges;
 }

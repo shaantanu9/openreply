@@ -106,7 +106,7 @@ export async function loadBets(contentEl, topic) {
   set(`
     <div class="empty-state" style="padding:40px;text-align:center">
       <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-      <div style="color:var(--ink-3);font-size:13px">Loading your bets…</div>
+      <div style="color:var(--ink-3);font-size:var(--fs-13)">Loading your bets…</div>
     </div>
   `);
 
@@ -125,7 +125,7 @@ export async function loadBets(contentEl, topic) {
       <div class="empty-big">
         <h3>No tracked bets yet</h3>
         <p>Promote any hypothesis card from the <b>Insights</b> tab to track it here. Each bet has a state machine (draft → running → validated / invalidated) and a journal for notes.</p>
-        <p class="muted" style="font-size:12px;margin-top:10px">This is your weekly-ritual surface — come back to update states as you run real-world tests.</p>
+        <p class="muted" style="font-size:var(--fs-13);margin-top:10px">This is your weekly-ritual surface — come back to update states as you run real-world tests.</p>
       </div>
     `);
     return;

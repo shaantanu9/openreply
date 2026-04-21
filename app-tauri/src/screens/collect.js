@@ -47,7 +47,7 @@ export async function renderCollect(root, { params }) {
       <div class="progress-head">
         <div>
           <h2>Collecting: ${esc(topic)}</h2>
-          <p style="color:var(--ink-3);font-size:13px;margin-top:4px" id="progress-sub">Preparing…</p>
+          <p style="color:var(--ink-3);font-size:var(--fs-13);margin-top:4px" id="progress-sub">Preparing…</p>
         </div>
         <div class="progress-stats">
           <span class="pchip"><b id="pchip-elapsed">0s</b><span>elapsed</span></span>
@@ -81,8 +81,8 @@ export async function renderCollect(root, { params }) {
       <div class="now-banner" id="now-banner" style="margin:14px 0 10px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;gap:10px">
         <span id="now-spinner" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--orange);border-radius:50%;animation:nowspin 1s linear infinite;flex-shrink:0"></span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;margin-bottom:2px">Now</div>
-          <div id="now-text" style="font-size:13px;color:var(--ink-1);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Starting up…</div>
+          <div style="font-size:var(--fs-11);color:var(--ink-3);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;margin-bottom:2px">Now</div>
+          <div id="now-text" style="font-size:var(--fs-13);color:var(--ink-1);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Starting up…</div>
         </div>
       </div>
 

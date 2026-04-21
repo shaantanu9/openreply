@@ -76,7 +76,7 @@ export async function renderSettings(root) {
           </div>
           <div>
             <h4 style="margin:0">${esc(profile.name || 'Your profile')}</h4>
-            <p style="margin:2px 0 0;color:var(--ink-3);font-size:12px">${esc(profile.email || 'no email set')}</p>
+            <p style="margin:2px 0 0;color:var(--ink-3);font-size:var(--fs-13)">${esc(profile.email || 'no email set')}</p>
           </div>
         </div>
         <div class="settings-profile-fields">
@@ -104,7 +104,7 @@ export async function renderSettings(root) {
 
       <!-- LLM card (skeleton → filled) -->
       <div class="settings-card" id="card-llm">
-        <h4>LLM providers <span style="color:var(--ink-3);font-size:12px;font-weight:500">loading…</span></h4>
+        <h4>LLM providers <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">loading…</span></h4>
         <p style="color:var(--ink-3)">Reading your .env file…</p>
         <div class="skel skel-line" style="width:100%;margin-top:10px"></div>
         <div class="skel skel-line" style="width:85%"></div>
@@ -131,7 +131,7 @@ export async function renderSettings(root) {
 
       <!-- Semantic search (palace) — opt-in on-device model download -->
       <div class="settings-card" id="card-palace">
-        <h4>Semantic search <span style="color:var(--ink-3);font-size:12px;font-weight:500">loading…</span></h4>
+        <h4>Semantic search <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">loading…</span></h4>
         <p style="color:var(--ink-3)">Checking model status…</p>
         <div class="skel skel-line" style="width:70%;margin-top:10px"></div>
       </div>
@@ -154,9 +154,9 @@ export async function renderSettings(root) {
             <option value="24">Every day</option>
             <option value="168">Every week</option>
           </select>
-          <span id="schedule-status-text" style="font-size:12px;color:var(--ink-3)">…</span>
+          <span id="schedule-status-text" style="font-size:var(--fs-13);color:var(--ink-3)">…</span>
         </div>
-        <p style="font-size:11.5px;color:var(--ink-3);margin-top:8px">
+        <p style="font-size:var(--fs-11);color:var(--ink-3);margin-top:8px">
           Only topics you toggle on (from their page) will be refreshed. Logs go to
           <code>~/Library/Application Support/com.shantanu.gapmap/reddit-myind/schedule.log</code>.
         </p>
@@ -224,7 +224,7 @@ export async function renderSettings(root) {
         posts, and graph immediately.</p>
 
         <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
-          <label style="font-size:12px;color:var(--ink-3)">Client:</label>
+          <label style="font-size:var(--fs-13);color:var(--ink-3)">Client:</label>
           <select id="mcp-client" class="select-sm" style="min-width:180px">
             <option value="">loading…</option>
           </select>
@@ -235,10 +235,10 @@ export async function renderSettings(root) {
 
         <div id="mcp-status-row" class="mcp-status-row" style="margin-top:12px">
           <span class="mcp-status-dot" data-state="loading"></span>
-          <span id="mcp-status-text" style="font-size:13px">checking…</span>
+          <span id="mcp-status-text" style="font-size:var(--fs-13)">checking…</span>
         </div>
 
-        <div id="mcp-detail" style="font-size:11.5px;color:var(--ink-3);margin-top:6px"></div>
+        <div id="mcp-detail" style="font-size:var(--fs-11);color:var(--ink-3);margin-top:6px"></div>
 
         <div id="mcp-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
           <button class="btn primary btn-sm" id="btn-mcp-connect" hidden><i data-lucide="link"></i> Connect</button>
@@ -247,7 +247,7 @@ export async function renderSettings(root) {
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-mcp-docs">MCP spec →</button>
         </div>
 
-        <p style="font-size:11px;color:var(--ink-3);margin-top:10px">
+        <p style="font-size:var(--fs-11);color:var(--ink-3);margin-top:10px">
           Anyone with this app installed can wire it into any MCP client —
           but they need this app to do it (token + sidecar binary).
           Token gating is plumbed but not enforced in v1.
@@ -277,24 +277,24 @@ export async function renderSettings(root) {
         </label>
         <div id="advanced-prompts-body" hidden style="margin-top:10px">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <label style="font-size:12px;color:var(--ink-3)">Prompt:</label>
+            <label style="font-size:var(--fs-13);color:var(--ink-3)">Prompt:</label>
             <select id="prompt-key-select" class="select-sm" style="min-width:200px">
               <option value="">loading…</option>
             </select>
-            <span id="prompt-key-badge" style="font-size:11px;color:var(--ink-3)"></span>
+            <span id="prompt-key-badge" style="font-size:var(--fs-11);color:var(--ink-3)"></span>
           </div>
           <textarea id="prompt-editor" spellcheck="false"
-            style="width:100%;margin-top:10px;min-height:260px;font-family:ui-monospace,Menlo,Monaco,'Courier New',monospace;font-size:12px;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg-1)"
+            style="width:100%;margin-top:10px;min-height:260px;font-family:ui-monospace,Menlo,Monaco,'Courier New',monospace;font-size:var(--fs-13);padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg-1)"
             placeholder="Loading…"></textarea>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="btn btn-primary btn-sm" id="btn-prompt-save">Save override</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-prompt-reset">Reset to default</button>
-            <span id="prompt-save-status" style="font-size:12px;color:var(--ink-3);align-self:center"></span>
+            <span id="prompt-save-status" style="font-size:var(--fs-13);color:var(--ink-3);align-self:center"></span>
           </div>
         </div>
       </div>
 
-      <div id="settings-err" style="grid-column:1/-1;color:#B84747;font-size:12px"></div>
+      <div id="settings-err" style="grid-column:1/-1;color:#B84747;font-size:var(--fs-13)"></div>
     </div>
   `;
 
@@ -610,7 +610,7 @@ async function fillTrashCard(root) {
   host.innerHTML = trash.map(t => `
     <div class="trash-row" data-topic="${esc(t.topic)}" style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-soft,#EADFC8)">
       <span style="flex:1;font-weight:500">${esc(t.topic)}</span>
-      <span class="muted" style="font-size:11.5px">${t.post_count || 0} posts · expires in ${t.expires_in_days || 0}d</span>
+      <span class="muted" style="font-size:var(--fs-11)">${t.post_count || 0} posts · expires in ${t.expires_in_days || 0}d</span>
       <button class="btn btn-ghost btn-xs" data-action="restore">Restore</button>
     </div>
   `).join('');
@@ -641,7 +641,7 @@ function fillLlmCard(root, byok) {
   const card = root.querySelector('#card-llm');
   if (!card) return;
   card.innerHTML = `
-    <h4>LLM providers <span style="color:var(--ink-3);font-size:12px;font-weight:500">${readyCount} ready</span></h4>
+    <h4>LLM providers <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">${readyCount} ready</span></h4>
     <p>${esc(byok?.path || '~/.config/reddit-myind/.env')}</p>
     <div class="llm-grid">
       ${providers.map(k => {
@@ -754,8 +754,8 @@ function fillPalaceCard(root, ms, ps) {
 
   if (!installed) {
     card.innerHTML = `
-      <h4>Semantic search <span style="color:var(--ink-3);font-size:12px;font-weight:500">not available</span></h4>
-      <p style="color:var(--ink-3);font-size:13px">This build wasn't shipped with the retrieval extras (chromadb). Rebuild the sidecar with the <code>retrieval</code> extras group to enable local semantic search + RAG-style chat grounding.</p>
+      <h4>Semantic search <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">not available</span></h4>
+      <p style="color:var(--ink-3);font-size:var(--fs-13)">This build wasn't shipped with the retrieval extras (chromadb). Rebuild the sidecar with the <code>retrieval</code> extras group to enable local semantic search + RAG-style chat grounding.</p>
       <div class="kv-row"><b>Cache dir</b><span>—</span></div>
     `;
     return;
@@ -773,7 +773,7 @@ function fillPalaceCard(root, ms, ps) {
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-palace-reindex">Reindex corpus</button>
       </div>
-      <div id="palace-reindex-status" style="margin-top:10px;font-size:12px;color:var(--ink-3)"></div>
+      <div id="palace-reindex-status" style="margin-top:10px;font-size:var(--fs-13);color:var(--ink-3)"></div>
     `;
     card.querySelector('#btn-palace-reindex')?.addEventListener('click', () => doReindex(root));
     return;
@@ -783,16 +783,16 @@ function fillPalaceCard(root, ms, ps) {
   const ctaLabel = declined ? 'Enable anyway' : 'Enable — 80 MB';
   const ctaClass = declined ? 'btn btn-ghost btn-sm btn-bordered' : 'btn btn-primary btn-sm';
   const resumeHint = archive > 1_000_000
-    ? `<p style="color:var(--ink-3);font-size:12px;margin-top:6px">Partial download detected (${(archive/1024/1024).toFixed(1)} MB of ~80 MB) — will resume.</p>`
+    ? `<p style="color:var(--ink-3);font-size:var(--fs-13);margin-top:6px">Partial download detected (${(archive/1024/1024).toFixed(1)} MB of ~80 MB) — will resume.</p>`
     : '';
 
   card.innerHTML = `
-    <h4>Semantic search <span style="color:var(--ink-3);font-size:12px;font-weight:500">optional · 80 MB</span></h4>
+    <h4>Semantic search <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">optional · 80 MB</span></h4>
     <p>Cross-topic search, "related posts" links, and smarter chat grounding — all offline after a one-time download of the embedding model (<code>all-MiniLM-L6-v2</code>, ~80 MB, cached forever).</p>
     ${resumeHint}
     <div class="palace-progress" id="palace-progress" hidden style="margin-top:10px">
       <div class="palace-bar"><div class="palace-bar-fill" id="palace-bar-fill" style="width:${partialPct}%"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3);margin-top:4px">
+      <div style="display:flex;justify-content:space-between;font-size:var(--fs-11);color:var(--ink-3);margin-top:4px">
         <span id="palace-progress-label">Downloading…</span>
         <span id="palace-progress-pct">${partialPct}%</span>
       </div>
@@ -801,7 +801,7 @@ function fillPalaceCard(root, ms, ps) {
       <button class="${ctaClass}" id="btn-palace-enable">${esc(ctaLabel)}</button>
       ${declined ? '' : `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-palace-skip">Maybe later</button>`}
     </div>
-    <div id="palace-error" style="margin-top:10px;font-size:12px;color:#B84747"></div>
+    <div id="palace-error" style="margin-top:10px;font-size:var(--fs-13);color:#B84747"></div>
   `;
   card.querySelector('#btn-palace-enable')?.addEventListener('click', () => startWarmup(root));
   card.querySelector('#btn-palace-skip')?.addEventListener('click', () => {

@@ -125,11 +125,11 @@ export async function renderDatabase(root) {
       if (nearMatch) hint.push(`offending token: <code>${esc(nearMatch[1])}</code>`);
       if (restart)   hint.push(`line ${esc(restart[1])}`);
       const hintHtml = hint.length
-        ? `<div style="font-size:12px;color:var(--ink-3);margin-top:6px">${hint.join(' · ')}</div>`
+        ? `<div style="font-size:var(--fs-13);color:var(--ink-3);margin-top:6px">${hint.join(' · ')}</div>`
         : '';
       // Gentle nudge toward the most common mistake in this read-only console.
       const ro = /only SELECT|forbidden keyword/i.test(raw)
-        ? `<div style="font-size:12px;color:var(--ink-3);margin-top:6px">This console is read-only (SELECT / WITH / PRAGMA / EXPLAIN). Mutations are blocked on purpose.</div>`
+        ? `<div style="font-size:var(--fs-13);color:var(--ink-3);margin-top:6px">This console is read-only (SELECT / WITH / PRAGMA / EXPLAIN). Mutations are blocked on purpose.</div>`
         : '';
       out.innerHTML = `<div class="db-error">✗ ${esc(raw)}${hintHtml}${ro}</div>`;
     }
@@ -205,7 +205,7 @@ async function browseTable(root, table) {
           <p>${count.toLocaleString()} rows total · showing latest ${rows.length}</p>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost" style="border:1px solid var(--line);padding:8px 14px;font-size:12px" id="btn-query-this">Query this table →</button>
+          <button class="btn btn-ghost" style="border:1px solid var(--line);padding:8px 14px;font-size:var(--fs-13)" id="btn-query-this">Query this table →</button>
         </div>
       </div>
       <details class="db-schema" ${schema.length ? '' : 'hidden'}>
@@ -292,9 +292,9 @@ function openRowModal(row) {
       </div>
       <div style="max-height:70vh;overflow-y:auto">${body}</div>
       <div class="byok-foot">
-        <button class="btn btn-ghost icon-btn" id="row-copy-json" style="border:1px solid var(--line);padding:7px 12px;font-size:12px"><i data-lucide="copy"></i> Copy JSON</button>
+        <button class="btn btn-ghost icon-btn" id="row-copy-json" style="border:1px solid var(--line);padding:7px 12px;font-size:var(--fs-13)"><i data-lucide="copy"></i> Copy JSON</button>
         <div style="flex:1"></div>
-        <button class="btn btn-ghost" id="row-close" style="border:1px solid var(--line);padding:7px 12px;font-size:12px">Close</button>
+        <button class="btn btn-ghost" id="row-close" style="border:1px solid var(--line);padding:7px 12px;font-size:var(--fs-13)">Close</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
