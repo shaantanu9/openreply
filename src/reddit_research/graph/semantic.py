@@ -1,11 +1,16 @@
 """Semantic enrichment — persists LLM-extracted painpoints / feature wishes /
 product complaints / DIY workarounds as graph nodes + edges.
 
-Two entry points:
-  - enrich_from_llm(topic, provider):  runs find_gaps() (CLI path, needs LLM key)
-  - upsert_semantic(topic, ...):       accepts pre-extracted payloads (MCP path,
-                                       Claude is the LLM and passes structured
-                                       data in)
+Entry points:
+  - enrich_from_llm(topic, provider):             runs find_gaps() against the
+                                                  whole topic corpus (CLI path,
+                                                  needs LLM key)
+  - enrich_from_llm_for_posts(topic, post_ids):   runs the same 4 extractors
+                                                  but scoped to a 5-post batch
+                                                  (incremental-enrichment worker)
+  - upsert_semantic(topic, ...):                  accepts pre-extracted payloads
+                                                  (MCP path, Claude is the LLM
+                                                  and passes structured data in)
 """
 from __future__ import annotations
 
@@ -360,3 +365,221 @@ def enrich_from_llm(
     summary["provider"] = chain[0] if chain else None
     summary["provider_chain"] = chain
     return summary
+
+
+# ─── per-post extractor (incremental-enrichment worker path) ───────────────
+
+def _corpus_rows_for_posts(topic: str, post_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch post rows scoped to a specific set of post_ids joined through
+    ``topic_posts`` for the given topic. Mirrors the SELECT shape of
+    ``collect.corpus_for`` so the existing ``corpus_format`` helper renders
+    the rows identically. Empty list if nothing matches — the caller skips
+    the LLM call in that case.
+
+    Uses an IN clause with a bounded placeholder count; batches above ~900
+    would hit SQLite's variable limit, but the worker enforces
+    ``BATCH_SIZE=5`` so we'll never approach that ceiling.
+    """
+    post_ids = [p for p in (post_ids or []) if p]
+    if not post_ids:
+        return []
+    db = get_db()
+    placeholders = ",".join("?" for _ in post_ids)
+    sql = f"""
+        SELECT p.id, p.sub, p.author, p.title, p.selftext,
+               p.score, p.num_comments, p.created_utc, p.permalink,
+               p.url, coalesce(p.source_type, 'reddit') AS source_type
+        FROM posts p
+        JOIN topic_posts tp ON tp.post_id = p.id
+        WHERE tp.topic = ?
+          AND p.id IN ({placeholders})
+    """
+    return list(db.query(sql, [topic, *post_ids]))
+
+
+def _run_extractor_on_rows(
+    extractor_name: str,
+    topic: str,
+    rows: list[dict[str, Any]],
+    provider: str | None = None,
+) -> list[dict] | dict:
+    """Run a single extractor prompt against a pre-fetched corpus.
+
+    Parallel to ``research.gaps.run_extractor`` but bypasses ``corpus_for``
+    so we can scope the prompt to just the N posts in the current batch.
+    Keeps the same Ollama-tuning heuristics (shorter excerpts, lower
+    ``max_tokens``) so a local model doesn't fall over on the per-post path.
+    """
+    import os as _os
+
+    from ..analyze.providers.base import get_provider, resolve_provider
+    from ..research.corpus_format import format_corpus as _format_corpus
+    from ..research.gaps import _parse_json
+    from ..research.prompts import load_extractor
+
+    if not rows:
+        return []
+    ext = load_extractor(extractor_name)
+    resolved = resolve_provider(provider)
+    default_excerpt = 250 if resolved == "ollama" else 600
+    try:
+        excerpt_chars = int(_os.getenv("CORPUS_EXCERPT_CHARS") or default_excerpt)
+    except ValueError:
+        excerpt_chars = default_excerpt
+    corpus = _format_corpus(rows, excerpt_chars=excerpt_chars)
+    max_tokens = 2048
+    if resolved == "ollama":
+        try:
+            max_tokens = min(max_tokens, int(_os.getenv("EXTRACTOR_MAX_TOKENS") or 1024))
+        except ValueError:
+            max_tokens = 1024
+    user = ext["user_template"].format(topic=topic, corpus=corpus)
+    raw = get_provider(provider).complete(
+        prompt=user,
+        system=ext["system"],
+        max_tokens=max_tokens,
+        temperature=0.2,
+    )
+    return _parse_json(raw)
+
+
+def _stamp_evidence_post_ids(
+    topic: str,
+    post_ids: list[str],
+    summary_before: dict[str, Any] | None,
+) -> int:
+    """After ``upsert_semantic``, stamp ``evidence_post_id`` on every semantic
+    node whose ``evidenced_by|wished_in|built_in`` edge points to one of the
+    batch's posts. Only writes when the column is currently empty, so a node
+    that was first evidenced by post_A keeps A as its "origin post" even if a
+    later batch adds post_B as additional evidence.
+
+    Returns the count of rows updated — used for the summary dict only.
+    """
+    _ = summary_before  # reserved for future delta reporting
+    post_ids = [p for p in (post_ids or []) if p]
+    if not post_ids:
+        return 0
+    db = get_db()
+    placeholders = ",".join("?" for _ in post_ids)
+    # Build a set of (semantic_node_id, first_evidence_post_id) pairs from
+    # graph_edges. A single query — much cheaper than per-node updates when
+    # the batch yields 20+ findings.
+    sql = f"""
+        SELECT ge.src AS node_id, MIN(tp.post_id) AS first_post_id
+          FROM graph_edges ge
+          JOIN topic_posts tp ON tp.post_id IN ({placeholders})
+         WHERE ge.topic = ?
+           AND ge.kind IN ('evidenced_by', 'wished_in', 'built_in')
+           AND ge.dst IN (
+                 SELECT id FROM graph_nodes
+                  WHERE topic = ? AND kind = 'post'
+                    AND id IN ({",".join(['?'] * len(post_ids))})
+               )
+         GROUP BY ge.src
+    """
+    # We need node_ids for the post graph nodes to match ge.dst. The post
+    # node id format is ``<topic>::post::<post_id>`` (see schema.make_node_id).
+    post_node_ids = [make_node_id(topic, "post", pid) for pid in post_ids]
+    try:
+        rows = list(db.query(sql, [*post_ids, topic, topic, *post_node_ids]))
+    except Exception:
+        return 0
+    updated = 0
+    for r in rows:
+        node_id = r.get("node_id")
+        first_pid = r.get("first_post_id")
+        if not node_id or not first_pid:
+            continue
+        try:
+            db.conn.execute(
+                "UPDATE graph_nodes SET evidence_post_id = ? "
+                "WHERE id = ? AND (evidence_post_id IS NULL OR evidence_post_id = '')",
+                (first_pid, node_id),
+            )
+            updated += db.conn.total_changes and 1 or 0
+        except Exception:
+            continue
+    try:
+        db.conn.commit()
+    except Exception:
+        pass
+    return updated
+
+
+def enrich_from_llm_for_posts(
+    topic: str,
+    post_ids: list[str],
+    provider: str | None = None,
+) -> tuple[int, int, int]:
+    """Per-post LLM enrichment — the entry point used by
+    ``research.enrich_worker``.
+
+    Pulls the ``posts`` rows for ``post_ids`` (joined through ``topic_posts``
+    so the topic scope is enforced), runs the 4 extractors
+    (painpoints / feature_wishes / product_complaints / diy_workarounds) with
+    the batch as the corpus, then upserts findings via ``upsert_semantic``.
+    Stamps ``evidence_post_id`` on every freshly-written semantic node so the
+    Task 1 backfill query ``LEFT JOIN … ON gn.evidence_post_id = tp.post_id``
+    can tell which posts have been extracted.
+
+    Palace embedding is handled inside ``upsert_semantic`` (it runs
+    ``cluster_findings`` which calls the shared embedder). When chromadb
+    isn't installed clustering is a passthrough — graph writes still land
+    and the function returns a meaningful finding count.
+
+    Returns ``(n_findings, tokens_in, tokens_out)``. The base ``LLMProvider``
+    surface doesn't expose token usage yet (``complete()`` returns a bare
+    string), so ``tokens_in`` and ``tokens_out`` are always ``0`` for now —
+    wiring those through is Task 9.5 of the incremental-enrichment plan.
+    Returning the tuple from the start lets the worker write usage rows once
+    the provider API is extended without a caller-side refactor.
+    """
+    ensure_graph_schema()
+
+    rows = _corpus_rows_for_posts(topic, post_ids)
+    if not rows:
+        return (0, 0, 0)
+
+    # Run the same 4 extractors the whole-topic path uses. Each may return a
+    # dict (parse failure) — we filter those out so ``upsert_semantic``
+    # always sees a list.
+    def _as_list(val: Any) -> list[dict]:
+        return val if isinstance(val, list) else []
+
+    painpoints = _as_list(_run_extractor_on_rows("painpoints", topic, rows, provider))
+    feature_wishes = _as_list(_run_extractor_on_rows("features", topic, rows, provider))
+    product_complaints = _as_list(_run_extractor_on_rows("complaints", topic, rows, provider))
+    diy_workarounds = _as_list(_run_extractor_on_rows("diy", topic, rows, provider))
+
+    summary = upsert_semantic(
+        topic=topic,
+        painpoints=painpoints,
+        feature_wishes=feature_wishes,
+        product_complaints=product_complaints,
+        diy_workarounds=diy_workarounds,
+    )
+
+    # Stamp evidence_post_id — best-effort, never blocks the worker. The
+    # column is nullable so a failure here just means the next backfill run
+    # will re-queue these posts (harmless — upserts are idempotent).
+    try:
+        _stamp_evidence_post_ids(topic, post_ids, summary)
+    except Exception:
+        pass
+
+    # Palace upsert for the newly extracted findings is already handled via
+    # ``cluster_findings`` inside ``upsert_semantic`` (it runs the shared
+    # embedder over every finding label). If chromadb isn't installed, the
+    # cluster step passes through untouched — findings still land in
+    # graph_nodes, just without duplicate collapsing.
+
+    n_findings = int(
+        (summary.get("painpoints_added") or 0)
+        + (summary.get("feature_wishes_added") or 0)
+        + (summary.get("products_added") or 0)
+        + (summary.get("workarounds_added") or 0)
+    )
+    # Token accounting: the base provider returns a bare string; surface zero
+    # until the provider interface is extended to return usage metadata.
+    return (n_findings, 0, 0)

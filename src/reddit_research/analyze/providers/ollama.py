@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 from ...core.config import load_config
 from .base import LLMProvider
@@ -10,6 +11,25 @@ from .base import LLMProvider
 # auto-picking a default model. OCR = specialty models like glm-ocr;
 # bert/nomic-bert = embedding models; most names with "embed" are vectors.
 _NON_CHAT_FAMILIES = {"bert", "nomic-bert", "glmocr"}
+
+
+# Incremental-enrichment (2026-04-21, Task 4): opt-in Ollama keep-alive
+# release. When ``GAPMAP_RELEASE_LLM_IDLE`` is truthy AND the last call was
+# more than ``_IDLE_KEEPALIVE_SECS`` ago, the next generate request sends
+# ``keep_alive: 0`` so Ollama unloads the model as soon as the response is
+# back. Default is unchanged (keep-alive left to Ollama's own default,
+# usually 5 minutes). The timer is module-level because the provider is
+# re-instantiated per call — tracking it on the instance wouldn't persist.
+_LAST_OLLAMA_CALL_TS: float = 0.0
+_IDLE_KEEPALIVE_SECS: float = 600.0  # 10 minutes
+
+
+def _release_on_idle_enabled() -> bool:
+    """Read the opt-in toggle each call so a user flipping the Settings
+    switch takes effect immediately. Accepts the common truthy strings
+    so both the Rust preferences writer and a manual env override work."""
+    v = (os.getenv("GAPMAP_RELEASE_LLM_IDLE") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
 
 
 def _autopick_ollama_model(base_url: str) -> str | None:
@@ -103,6 +123,19 @@ class OllamaProvider(LLMProvider):
                 "num_ctx": num_ctx,
             },
         }
+        # Opt-in idle release: when the user has flipped ``release_llm_idle``
+        # on and we've been idle >10 min, tell Ollama to unload the model
+        # once this response is finished (``keep_alive: 0``). On a long-idle
+        # research session the 3–4 GB model sits pinned in RAM by Ollama's
+        # default 5-minute keep-alive; this toggle releases it aggressively.
+        # Pass-through when disabled so Ollama's default behaviour is
+        # preserved. See docs/…incremental-enrichment.md §Task 4 Step 4.
+        global _LAST_OLLAMA_CALL_TS
+        now = time.time()
+        if _release_on_idle_enabled() and _LAST_OLLAMA_CALL_TS > 0 \
+                and (now - _LAST_OLLAMA_CALL_TS) > _IDLE_KEEPALIVE_SECS:
+            payload["keep_alive"] = 0
+        _LAST_OLLAMA_CALL_TS = now
         # Structured-output mode for small models. Every extractor in this
         # codebase asks the model to emit a JSON list/object — small models
         # (llama3.2:3b, gemma3:4b) frequently ignore that and add prose,

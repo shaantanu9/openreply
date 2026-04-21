@@ -24,6 +24,7 @@ import logging
 import math
 import os
 import threading
+import time
 from typing import Any, Iterable
 
 from ..core.config import load_config
@@ -34,8 +35,86 @@ logger = logging.getLogger(__name__)
 # Module-level state — we want the ChromaDB PersistentClient + collection
 # cached, since cold-start is ~2–5 s. Keyed by data_dir so multiple test
 # palaces don't collide.
+#
+# The historical name ``_CLIENT_CACHE`` is kept for back-compat; callers
+# that need to drop the cache should use ``_drop_client_if_any()`` below,
+# which handles multi-keyed caches and client teardown safely.
 _CLIENT_CACHE: dict[str, Any] = {}
 _LOCK = threading.Lock()
+
+# Incremental-enrichment (2026-04-21, Task 4): lazy memory eviction for the
+# ChromaDB singleton. The ONNX + client together pin ~150–200 MB of RSS; on
+# a long-idle worker that balloon becomes the dominant process cost. Every
+# embed-path function updates ``_LAST_EMBED_TS``; on next access, if we've
+# been idle for more than ``_IDLE_EVICT_SECS`` we drop the cache before
+# re-initializing. Pure lazy — no background timer thread to manage.
+_LAST_EMBED_TS: float = 0.0
+_IDLE_EVICT_SECS: float = 300.0  # 5 minutes
+
+
+def _drop_client_if_any() -> None:
+    """Drop every cached ChromaDB PersistentClient + its collection.
+
+    Called by the enrichment worker's memory governor when RSS crosses its
+    ceiling, and lazily by ``_maybe_evict_idle`` after long idle periods.
+
+    Each entry in ``_CLIENT_CACHE`` is a ``(client, collection)`` tuple.
+    ``client.reset()`` would wipe user data, so we only ``clear_system_cache``
+    (if available) and drop the reference — the next ``get_palace()`` call
+    re-creates a fresh client handle pointing at the same on-disk store.
+
+    Swallows every exception: this runs on a hot path and must never raise.
+    """
+    global _CLIENT_CACHE
+    with _LOCK:
+        if not _CLIENT_CACHE:
+            return
+        for _path, entry in list(_CLIENT_CACHE.items()):
+            try:
+                client, _coll = entry
+            except Exception:
+                client = None
+            # Best-effort teardown. ChromaDB doesn't expose a public "close",
+            # but recent versions have a module-level ``clear_system_cache``
+            # that releases the OnxRuntime session + HNSW index from RAM.
+            try:
+                import chromadb  # type: ignore
+                if hasattr(chromadb.api.client.SharedSystemClient, "clear_system_cache"):
+                    chromadb.api.client.SharedSystemClient.clear_system_cache()
+            except Exception:
+                pass
+            # Drop our own reference either way — garbage collector handles
+            # the rest once the tuple refcount hits zero.
+            _ = client
+        _CLIENT_CACHE = {}
+
+
+def _maybe_evict_idle() -> None:
+    """If the cache has a live client but we haven't embedded in
+    ``_IDLE_EVICT_SECS`` seconds, drop it before anyone else touches it.
+
+    Called at the top of every embed-path entry point. Cheap — one monotonic
+    read + one dict emptiness check when not idle. Resets ``_LAST_EMBED_TS``
+    to "now" after eviction so a cold-start burst doesn't re-trigger the
+    same eviction on the next call.
+    """
+    global _LAST_EMBED_TS
+    # No client live or nothing to evict — nothing to do.
+    if not _CLIENT_CACHE:
+        return
+    if _LAST_EMBED_TS <= 0:
+        # First-ever embed; just stamp the timer.
+        _LAST_EMBED_TS = time.monotonic()
+        return
+    if (time.monotonic() - _LAST_EMBED_TS) > _IDLE_EVICT_SECS:
+        _drop_client_if_any()
+        _LAST_EMBED_TS = time.monotonic()
+
+
+def _bump_embed_ts() -> None:
+    """Stamp the idle timer — called after every embed/search/upsert path."""
+    global _LAST_EMBED_TS
+    _LAST_EMBED_TS = time.monotonic()
 
 # Collection name inside the palace. Kept separate from "memories" etc. in
 # case we later want to add a second collection for, say, LLM-extracted
@@ -71,6 +150,11 @@ def get_palace():
     if chromadb isn't installed (caller should check ``is_available()``)."""
     if not is_available():
         return None
+    # Lazy idle eviction: drops the cache if we haven't embedded in 5 min.
+    # Cheap when fresh. Runs OUTSIDE the lock so a long eviction can't block
+    # the happy path; the follow-up cache-hit check inside the lock catches
+    # the race where two threads arrive at the same time.
+    _maybe_evict_idle()
     path = _palace_path()
     with _LOCK:
         entry = _CLIENT_CACHE.get(path)
@@ -211,6 +295,7 @@ def upsert_posts_many(posts: Iterable[dict], *, topic: str | None = None) -> dic
     except Exception as e:
         logger.warning("palace upsert failed: %s", e)
         return {"ok": False, "error": str(e), "upserted": 0, "skipped": skipped + len(ids)}
+    _bump_embed_ts()
     return {"ok": True, "upserted": len(ids), "skipped": skipped}
 
 
@@ -292,6 +377,7 @@ def search_posts(
     except Exception as e:
         logger.warning("palace query failed: %s", e)
         return {"ok": False, "error": str(e), "results": []}
+    _bump_embed_ts()
 
     # Chroma returns lists of lists (one per query). We only have 1 query.
     ids = (raw.get("ids") or [[]])[0]
@@ -375,6 +461,7 @@ def related_posts(post_id: str, *, k: int = 10, topic: str | None = None) -> dic
             raw = coll.query(query_texts=[docs[0]], n_results=k + 1, where=where)
     except Exception as e:
         return {"ok": False, "error": str(e), "results": []}
+    _bump_embed_ts()
 
     ids = (raw.get("ids") or [[]])[0]
     rdocs = (raw.get("documents") or [[]])[0]
