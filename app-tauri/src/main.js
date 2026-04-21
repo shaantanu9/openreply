@@ -1,6 +1,5 @@
 import { api, $, $$, esc } from './api.js';
 import { refreshIcons } from './icons.js';
-import { showCorrectionToast, showTopicConfirmModal } from './lib/topicConfirm.js';
 import { hasLlmConfigured } from './lib/llmStatus.js';
 import { renderHome, renderTopicsList } from './screens/home.js';
 import { renderTopic } from './screens/topic.js';
@@ -17,6 +16,7 @@ import { renderWatch } from './screens/watch.js';
 import { renderFind } from './screens/find.js';
 import { renderProductsList, renderProductDashboard, renderProductSetup } from './screens/product.js';
 import { runHealthCheck, healthIsBlocking } from './lib/healthCheck.js';
+import { tabStore, renderTabStrip, titleForHash, iconForHash } from './lib/tabs.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -47,9 +47,46 @@ const routes = [
 let routeGen = 0;
 export function currentRouteGen() { return routeGen; }
 
+let _lastHash = null;
 async function route() {
-  const hash = (location.hash || '#/').replace(/^#/, '');
+  // Full hash (with leading `#`) for tab-store ops; stripped hash for regex match.
+  const fullHash = location.hash || '#/';
+  const hash = fullHash.replace(/^#/, '');
   const main = $('#main-content');
+
+  // Save scroll of the outgoing tab before we re-render.
+  if (_lastHash) {
+    const prev = tabStore.getActive();
+    if (prev) tabStore.saveScroll(prev.id, main.scrollTop);
+  }
+
+  // Reconcile: the hash we're landing on must belong to the active tab.
+  // If user clicked a sidebar link (which changed the hash directly), open
+  // it in the current tab by rewriting the active tab's hash. If another
+  // tab already owns this hash, focus that tab instead.
+  const active = tabStore.getActive();
+  if (active && active.hash !== fullHash) {
+    const owner = tabStore.getAll().find(t => t.hash === fullHash);
+    if (owner) {
+      tabStore.focus(owner.id);
+    } else {
+      // Replace current tab's hash in-place (Chrome-like default). Write
+      // directly to localStorage so we don't trigger a notify loop here —
+      // the route itself will render and the strip repaints via setTitle below.
+      try {
+        const s = JSON.parse(localStorage.getItem('gapmap.tabs.v1'));
+        const t = s?.tabs?.find(x => x.id === s.activeId);
+        if (t) {
+          t.hash = fullHash;
+          t.title = titleForHash(fullHash);
+          t.icon = iconForHash(fullHash);
+          localStorage.setItem('gapmap.tabs.v1', JSON.stringify(s));
+        }
+      } catch {}
+    }
+  }
+
+  _lastHash = fullHash;
   const myGen = ++routeGen;
   for (const r of routes) {
     const m = hash.match(r.match);
@@ -71,6 +108,14 @@ async function route() {
         }
       }
       if (routeGen === myGen) refreshIcons();
+      // After render succeeds, update tab title + restore scroll for this tab.
+      if (routeGen === myGen) {
+        const cur = tabStore.getActive();
+        if (cur) {
+          tabStore.setTitle(cur.id, titleForHash(cur.hash));
+          requestAnimationFrame(() => { main.scrollTop = cur.scroll || 0; });
+        }
+      }
       return;
     }
   }
@@ -96,6 +141,25 @@ window.addEventListener('DOMContentLoaded', async () => {
   // (The Python sidecar can take 5–10s to spin up the first time.)
   wireModal();
   wireKeyboard();
+
+  // Mount tab strip. Hide during onboarding — the welcome flow should feel
+  // like a clean first-run, not a multi-tab browser.
+  const strip = document.getElementById('tab-strip');
+  if (strip) {
+    strip.style.display = isOnboardingComplete() ? '' : 'none';
+    renderTabStrip(strip);
+  }
+
+  // Subscribe router to active-tab changes. When user focuses a different tab
+  // (click/keyboard), sync location.hash and re-run route() once.
+  tabStore.subscribe(() => {
+    const active = tabStore.getActive();
+    if (!active) return;
+    if (location.hash !== active.hash) {
+      history.replaceState(null, '', active.hash);
+      route();
+    }
+  });
 
   // Explicit safety: ensure the modal is hidden on boot no matter what.
   const bd = $('#modal-backdrop');
@@ -251,84 +315,25 @@ function wireModal() {
     localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
     localStorage.setItem('gapmap.pref.aggressive',          aggressive ? 'true' : 'false');
 
-    // Freeze the button + show a loading state so the user knows we're not
-    // hung while the Reddit /discover call runs (can take 5–15 s, longer if
-    // PRAW is rate-limited). Without this the modal looks frozen.
-    const origLabel = startBtn.innerHTML;
-    startBtn.disabled = true;
-    cancelBtn.disabled = false;  // Cancel stays clickable
-    input.disabled = true;
-    startBtn.innerHTML = '<span class="spinner-inline"></span> Checking topic…';
-
-    // Typo-correction / intent-validation gate before kicking off collect.
-    // Fast-path if the user already clicked a variant (force=true) OR the
-    // discover call fails — we don't block the flow on this safety net.
-    let finalTopic;
-    try {
-      finalTopic = await resolveTopicWithConfirmation(topic);
-    } finally {
-      startBtn.disabled = false;
-      input.disabled = false;
-      startBtn.innerHTML = origLabel;
-    }
-    if (finalTopic === null) {
-      // User cancelled via the modal's Esc/backdrop path. Keep the modal open.
-      return;
-    }
-
+    // Instant-feedback path: close the modal + navigate to the collect log
+    // screen immediately. The Python CLI runs its own `_canonicalize_topic`
+    // call at the top of `research collect` (collect.py:168), so the typo
+    // correction is NOT lost — it just happens a second later, inside the
+    // visible log, where the user sees "info: search using canonical 'X'
+    // (user typed 'Y')" instead of staring at a frozen modal for 5-15 s.
+    //
+    // The DB upsert of topic_prefs(topic) happens inside that same CLI call
+    // BEFORE canonicalize, so the topic shows in `list_topics` within a
+    // second (instant once the sidecar warm-boots — no cold-start pause).
     close();
-    const slug = encodeURIComponent(finalTopic);
+    const slug = encodeURIComponent(topic);
     location.hash = `#/collect/${slug}`;
     setTimeout(() =>
-      window.dispatchEvent(new CustomEvent('gapmap:start-collect', { detail: { topic: finalTopic, aggressive } })),
+      window.dispatchEvent(new CustomEvent('gapmap:start-collect', { detail: { topic, aggressive } })),
       100,
     );
   };
   window.gapmapOpenNewTopic = open;
-}
-
-// Ask discover_subs for a confirmation preview before committing to collect.
-// Returns the topic string to use, or null if the user cancelled.
-async function resolveTopicWithConfirmation(topic, { force = false } = {}) {
-  let res;
-  try {
-    // 20 s hard timeout — Reddit /discover is usually <5 s but can get stuck
-    // behind rate-limits or a slow PRAW auth handshake. Better to fall
-    // through to a raw collect than leave the user staring at a modal.
-    res = await Promise.race([
-      api.discoverSubs(topic, 10),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('discover timeout')), 20000)),
-    ]);
-  } catch {
-    return topic;  // degrade gracefully — collect still works on the backend
-  }
-  if (Array.isArray(res)) return topic;  // legacy shape — nothing to confirm
-  const confirmation = res && res.confirmation;
-  if (!confirmation || force) return topic;
-
-  if (confirmation.needs_confirmation) {
-    return new Promise((resolve) => {
-      showTopicConfirmModal({
-        original: confirmation.original_topic,
-        canonical: confirmation.canonical_topic,
-        variants: confirmation.suggested_variants || [],
-        onPick: (chosen) => resolve(chosen || topic),
-        onKeepAsIs: () => resolve(confirmation.original_topic),
-      });
-    });
-  }
-
-  if (confirmation.auto_corrected) {
-    const original = confirmation.original_topic;
-    showCorrectionToast({
-      original,
-      canonical: confirmation.canonical_topic,
-      onUndo: () => { /* already navigating; no-op until a more advanced undo lands */ },
-    });
-    return confirmation.canonical_topic;
-  }
-
-  return topic;
 }
 
 function wireKeyboard() {
