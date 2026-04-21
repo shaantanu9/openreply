@@ -31,6 +31,13 @@ use tauri_plugin_shell::{
 /// set of visited paths. A pathological symlink that creates a cycle
 /// (`a -> b -> a`) breaks the walk early rather than revisiting dirs within
 /// the 5-parent budget.
+/// Public re-export for the worker supervisor — same dev bypass logic so
+/// the long-lived extraction worker also skips macOS Gatekeeper verification
+/// in development. See `find_dev_venv_python` for the actual walk.
+pub fn find_dev_venv_python_pub() -> Option<std::path::PathBuf> {
+    find_dev_venv_python()
+}
+
 fn find_dev_venv_python() -> Option<std::path::PathBuf> {
     // Explicit override always wins.
     if let Ok(p) = std::env::var("REDDIT_MYIND_DEV_PYTHON") {

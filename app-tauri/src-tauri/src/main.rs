@@ -5,13 +5,16 @@ mod cli;
 mod commands;
 mod db;
 mod schedule;
+mod worker;
 
 use cli::{
     cancel_active_chat, cancel_active_job, cancel_active_stream,
     ActiveChat, ActiveChatPid, ActiveCollects, ActiveGraphOps, ActiveJob, ActiveJobPid,
     ActiveStream, ActiveStreamPid,
 };
+use std::sync::Arc;
 use tauri::RunEvent;
+use worker::ExtractionWorker;
 
 fn main() {
     let app = tauri::Builder::default()
@@ -25,6 +28,7 @@ fn main() {
         .manage(ActiveStreamPid::default())
         .manage(ActiveGraphOps::default())
         .manage(ActiveCollects::default())
+        .manage(Arc::new(ExtractionWorker::default()))
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
             commands::list_topics,
@@ -153,6 +157,12 @@ fn main() {
             commands::saved_view_delete,
             // ── AG-D: CSV ingest ───────────────────────────────────────
             commands::ingest_csv_file,
+            // ── Incremental enrichment: extraction worker supervisor ──
+            worker::start_extraction_worker,
+            worker::stop_extraction_worker,
+            worker::extraction_worker_status,
+            worker::mark_topic_active,
+            worker::enqueue_extraction,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");
@@ -171,6 +181,11 @@ fn main() {
             let _ = cancel_active_job(app_handle);
             let _ = cancel_active_chat(app_handle);
             let _ = cancel_active_stream(app_handle);
+            // Extraction worker has its own state slot (not ActiveJob) so it's
+            // NOT reaped by cancel_active_job. Fire SIGTERM explicitly so the
+            // long-lived Python process exits cleanly instead of being
+            // orphaned and re-summoned on next boot as a zombie.
+            worker::stop_worker_blocking(app_handle);
         }
     });
 }
