@@ -951,6 +951,40 @@ body {
 }
 .th-chip b { color: var(--ink-1); font-weight: 700; }
 
+/* Task 8 — saturation sparkline chip (header) + coverage-gaps panel.  */
+.topic-saturation {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--surface-alt); border: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-2);
+}
+.coverage-gaps {
+  margin: 8px 0 12px; padding: 10px 12px;
+  border: 1px dashed var(--line); border-radius: 10px;
+  background: var(--surface-alt);
+}
+.coverage-gaps .cg-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink-2); margin-bottom: 6px;
+}
+.coverage-gaps .cg-head b { color: var(--ink-1); }
+.coverage-gaps .cg-head svg { width: 14px; height: 14px; }
+.coverage-gaps .cg-list {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.coverage-gaps .cg-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line);
+  font-size: 12px;
+}
+.coverage-gaps .cg-label { color: var(--ink-2); }
+.coverage-gaps .cg-label b { color: var(--ink-1); font-weight: 600; }
+.coverage-gaps .cg-btns { display: inline-flex; gap: 4px; }
+.coverage-gaps .cg-btn {
+  font-size: 11px; padding: 3px 8px; border-radius: 999px;
+}
+
 .map-building {
   display: flex; gap: 16px; align-items: center;
   padding: 40px 28px; border: 1px solid var(--line);

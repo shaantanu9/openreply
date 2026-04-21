@@ -128,10 +128,10 @@ export function clearApiCache() { _cache.clear(); _inflight.clear(); }
  */
 const INVALIDATE_MAP = {
   topics:     ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'list_trash'],
-  collect:    ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'get_findings'],
-  ingest:     ['list_topics', 'overview_stats', 'recent_activity', 'run_query'],
-  graph:      ['list_topics', 'overview_stats', 'get_findings', 'run_query'],
-  findings:   ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get'],
+  collect:    ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'get_findings', 'topic_saturation', 'topic_coverage_gaps'],
+  ingest:     ['list_topics', 'overview_stats', 'recent_activity', 'run_query', 'topic_coverage_gaps'],
+  graph:      ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'topic_saturation', 'topic_coverage_gaps'],
+  findings:   ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get', 'topic_saturation', 'topic_coverage_gaps'],
   exports:    ['list_exports'],
   byok:       ['byok_status', 'list_provider_models', 'cli_info'],
   hypothesis: ['hypothesis_list', 'hypothesis_stats'],
@@ -534,6 +534,12 @@ export const api = {
   mcpInstall:   (client)  => invoke('mcp_install',   { client: client || null }),
   mcpUninstall: (client)  => invoke('mcp_uninstall', { client: client || null }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
+
+  // ── Task 8: saturation v1 + coverage gaps panel ───────────────────
+  // Both are pure-SQL reads so a 30s cache is plenty — they auto-refresh
+  // anyway when any screen fires `gapmap:changed` (see main.js).
+  topicSaturation:    (topic) => cachedInvoke('topic_saturation',    { topic }, 30000),
+  topicCoverageGaps:  (topic) => cachedInvoke('topic_coverage_gaps', { topic }, 30000),
   runRedditSearch:    (query, sub, sort, timeFilter, limit) =>
     invoke('run_reddit_search', { query, sub, sort, timeFilter, limit }),
   startStream:        (sub, keywords, watch) => invoke('start_stream', { sub, keywords, watch }),

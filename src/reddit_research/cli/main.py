@@ -957,6 +957,28 @@ def cmd_research_gaps(
         _emit(report, as_json)
 
 
+@research_app.command("saturation")
+def cmd_saturation(
+    topic: str = typer.Option(..., "--topic"),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Saturation v1 — distinct clusters per last 50 posts (pure SQL, no LLM)."""
+    _ = as_json  # Always JSON output; flag kept for Tauri command parity.
+    from ..research.saturation import compute
+    console.print_json(data=compute(topic))
+
+
+@research_app.command("coverage-gaps")
+def cmd_coverage_gaps(
+    topic: str = typer.Option(..., "--topic"),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Coverage gap analyzer — which dimensions are under-represented."""
+    _ = as_json
+    from ..research.coverage import compute
+    console.print_json(data=compute(topic))
+
+
 @research_app.command("top-opportunities")
 def cmd_top_opportunities(
     limit: int = typer.Option(20, "--limit", "-n"),

@@ -377,6 +377,10 @@ export async function renderTopic(root, { params }) {
           <span class="pulse-dot sm"></span> Collecting…
         </a>
         <div class="topic-header-stats" id="topic-header-stats"></div>
+        <!-- Task 8: saturation v1 sparkline + hint. Hidden until first
+             read returns — avoids layout flicker on every topic open. -->
+        <div class="topic-saturation" id="topic-saturation" hidden
+             title="How much new signal the graph is picking up — higher = every new post adds a distinct insight"></div>
         <div id="topic-bet-stats" class="topic-bet-stats" hidden></div>
         <div class="topic-header-spacer"></div>
         <button class="btn btn-ghost btn-sm btn-bordered" id="btn-cancel-collect" hidden style="color:#B84747;border-color:#E8C8C8" title="Stop the in-flight collect for this topic">Cancel fetch</button>
@@ -431,6 +435,11 @@ export async function renderTopic(root, { params }) {
         </div>
       </div>
     </div>
+
+    <!-- Task 8: Coverage gaps panel. Always-visible suggestion strip below
+         the tabs. Hidden when there are no gaps. "+ Add X" buttons fire
+         api.startCollect(topic, false, [src], false). -->
+    <div class="coverage-gaps" id="coverage-gaps" hidden></div>
 
     <div id="tab-content"><div class="empty-state">loading…</div></div>
   `;
@@ -507,6 +516,116 @@ export async function renderTopic(root, { params }) {
       pill.addEventListener('click', () => switchTab('bets'));
     } catch { pill.hidden = true; }
   })();
+
+  // ─── Task 8: saturation + coverage-gaps painters ─────────────────────
+  // Both read tiny JSON blobs from the Python SQL helpers. Cached 30s in
+  // api.js; re-fetched whenever we hear `gapmap:changed`.
+  const HINT_COPY = {
+    rich:       'Rich signal — keep going',
+    converging: 'Converging — new posts add depth',
+    saturated:  'Saturated — try a new source for fresh angles',
+  };
+
+  async function paintSaturation() {
+    const host = $('#topic-saturation');
+    if (!host) return;
+    try {
+      const r = await api.topicSaturation(topic) || {};
+      const score = Math.max(0, Math.min(1, Number(r.score) || 0));
+      const hint = r.hint || 'saturated';
+      const n = Number(r.new_clusters_last_50_posts || 0);
+      // Tiny inline sparkline: one 28-wide SVG with a bar whose width
+      // reflects the score. Deliberately minimal — no time-series yet.
+      const w = Math.max(2, Math.round(score * 28));
+      const color = hint === 'rich' ? '#2EA043'
+                  : hint === 'converging' ? '#D97706'
+                  : '#8B7E74';
+      host.innerHTML = `
+        <svg width="28" height="10" viewBox="0 0 28 10" aria-hidden="true" style="margin-right:4px">
+          <rect x="0" y="3" width="28" height="4" rx="2" fill="#E4E0DB" />
+          <rect x="0" y="3" width="${w}" height="4" rx="2" fill="${color}" />
+        </svg>
+        <span style="color:${color};font-weight:600;font-size:11px">${HINT_COPY[hint] || hint}</span>
+        <span class="muted" style="font-size:10.5px;margin-left:6px">${n}/50</span>`;
+      host.title = `Saturation score ${score.toFixed(2)} — ${n} distinct clusters across the last 50 posts.`;
+      host.hidden = false;
+    } catch {
+      host.hidden = true;
+    }
+  }
+
+  async function paintCoverageGaps() {
+    const host = $('#coverage-gaps');
+    if (!host) return;
+    try {
+      const r = await api.topicCoverageGaps(topic) || {};
+      const gaps = Array.isArray(r.gaps) ? r.gaps : [];
+      if (!gaps.length) { host.hidden = true; host.innerHTML = ''; return; }
+      const chips = gaps.map(g => {
+        const pct = (g.pct === null || g.pct === undefined) ? '' : ` · ${g.pct}%`;
+        const btns = (g.suggested_sources || []).map(s => {
+          const label = s === 'deepen_products' ? 'Deepen products' : `+ Add ${s}`;
+          return `<button class="btn btn-ghost btn-xs btn-bordered cg-btn"
+                          data-source="${esc(s)}">${label}</button>`;
+        }).join('');
+        return `
+          <div class="cg-chip">
+            <span class="cg-label"><b>${esc(g.label)}</b>
+              <span class="muted">· ${g.posts} posts${pct}</span></span>
+            <span class="cg-btns">${btns}</span>
+          </div>`;
+      }).join('');
+      host.innerHTML = `
+        <div class="cg-head">
+          <i data-lucide="compass"></i>
+          <span><b>Coverage gaps</b> · one-click enrichments to broaden your corpus</span>
+        </div>
+        <div class="cg-list">${chips}</div>`;
+      host.hidden = false;
+      window.refreshIcons?.();
+
+      host.querySelectorAll('.cg-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const src = btn.getAttribute('data-source');
+          if (!src) return;
+          btn.disabled = true;
+          btn.textContent = '…';
+          try {
+            if (src === 'deepen_products') {
+              // Deepen-products isn't a collect source — fire a rebuild-
+              // graph / enrich so the LLM re-passes the corpus for more
+              // product mentions. Falls back to startCollect if the API
+              // doesn't expose enrichGraph (old builds).
+              if (typeof api.enrichGraph === 'function') {
+                await api.enrichGraph(topic);
+              } else {
+                await api.startCollect(topic, false, null, true);
+              }
+            } else {
+              // aggressive=false, sources=[src], skipReddit=false.
+              await api.startCollect(topic, false, [src], false);
+            }
+          } catch (e) {
+            btn.textContent = `✗ ${(e?.message || e).toString().slice(0, 40)}`;
+            setTimeout(() => { btn.disabled = false; btn.textContent = src === 'deepen_products' ? 'Deepen products' : `+ Add ${src}`; }, 2500);
+            return;
+          }
+          btn.textContent = '✓ queued';
+          // startCollect already fires gapmap:changed (kind=collect), which
+          // re-runs paintCoverageGaps + paintSaturation automatically.
+        });
+      });
+    } catch {
+      host.hidden = true;
+    }
+  }
+
+  paintSaturation();
+  paintCoverageGaps();
+  const onGapmapChangedTask8 = () => { paintSaturation(); paintCoverageGaps(); };
+  window.addEventListener('gapmap:changed', onGapmapChangedTask8);
+  // renderTopic owns no explicit teardown hook, but re-renders replace
+  // #topic-saturation / #coverage-gaps — stale listeners just no-op.
 
   // Paint the active-LLM pill in the header. Clicking opens the BYOK modal
   // and on close re-paints so the user sees their new choice immediately.

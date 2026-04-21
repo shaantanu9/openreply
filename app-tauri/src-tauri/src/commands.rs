@@ -2746,6 +2746,34 @@ pub async fn ingest_csv_file(
     .map_err(err_to_string)
 }
 
+// ─── Task 8 — saturation v1 + coverage gaps panel ──────────────────────────
+
+/// Saturation metric v1 — distinct graph clusters per last 50 posts.
+/// Pure SQL; no LLM. Returns `{score, hint, new_clusters_last_50_posts,
+/// window_start}` where hint ∈ rich | converging | saturated.
+#[tauri::command]
+pub async fn topic_saturation(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "saturation", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// Coverage gap analyzer — which data dimensions are underrepresented.
+/// Returns `{total_posts, by_source, gaps: [...]}` where each gap has
+/// `suggested_sources` the UI turns into one-click "+ Add X" buttons.
+#[tauri::command]
+pub async fn topic_coverage_gaps(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "coverage-gaps", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
