@@ -29,6 +29,56 @@ fn main() {
         .manage(ActiveGraphOps::default())
         .manage(ActiveCollects::default())
         .manage(Arc::new(ExtractionWorker::default()))
+        .setup(|app| {
+            // Auto-start the extraction worker on boot IFF any topic already
+            // has ≥ ENRICH_THRESHOLD posts. This gates Phase-B (async
+            // findings extraction) on having enough signal. On fresh
+            // installs the worker stays asleep until a collect crosses the
+            // threshold; main.js re-triggers the start via
+            // `api.startExtractionWorker()` on `gapmap:changed` kind=collect.
+            //
+            // Dispatched on `async_runtime::spawn` so a slow disk / locked
+            // DB never stalls `setup()` — boot is non-blocking.
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Resolve the DB path using the same helper Rust commands use
+                // so we hit the exact file the Python sidecar writes.
+                let dir = match crate::cli::data_dir(&app_handle) {
+                    Ok(d) => d,
+                    Err(_) => return,
+                };
+                let db_path = dir.join("reddit.db");
+                if !db_path.exists() {
+                    return;
+                }
+                // Native rusqlite — avoids spawning a sidecar just to count.
+                // tokio::task::spawn_blocking because rusqlite is synchronous.
+                let db_path_clone = db_path.clone();
+                let max_count = tokio::task::spawn_blocking(move || {
+                    crate::db::query_db(
+                        &db_path_clone,
+                        "SELECT COALESCE(MAX(c), 0) AS m FROM \
+                         (SELECT count(*) AS c FROM topic_posts GROUP BY topic)",
+                        None,
+                    )
+                })
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+                .and_then(|rows| {
+                    rows.first()
+                        .and_then(|v| v.get("m").and_then(|m| m.as_u64()))
+                })
+                .unwrap_or(0);
+
+                if max_count >= worker::ENRICH_THRESHOLD {
+                    // start_worker is idempotent, so if another boot path
+                    // raced ahead we'll just return Ok(()).
+                    let _ = worker::start_worker(app_handle.clone()).await;
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
             commands::list_topics,

@@ -591,6 +591,16 @@ export const api = {
     return invoke('ingest_csv_file', { topic, path });
   },
 
+  // ── Incremental enrichment: extraction-worker supervisor ───────────────
+  // `start_extraction_worker` is idempotent on the Rust side — calling it
+  // when the worker is already running is a no-op. That makes it safe to
+  // wire to `gapmap:changed` kind=collect without guarding state here.
+  startExtractionWorker: () => invoke('start_extraction_worker'),
+  stopExtractionWorker:  () => invoke('stop_extraction_worker'),
+  // Short TTL — Settings / topic-page freshness badge poll this and want
+  // to see a just-fired tick reflected quickly.
+  extractionWorkerStatus: () => cachedInvoke('extraction_worker_status', null, 2000),
+
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),
   onCollectDone:     (cb) => {

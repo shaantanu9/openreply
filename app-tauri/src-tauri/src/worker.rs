@@ -31,6 +31,12 @@ const RESTART_WINDOW: Duration = Duration::from_secs(300);
 /// Backoff ladder — index = restart attempt number.
 const BACKOFF_LADDER: [u64; 3] = [1, 5, 30];
 
+/// Post-count threshold beyond which the incremental extraction worker
+/// auto-starts. Any topic with ≥ this many rows in `topic_posts` unlocks
+/// Phase-B (async extraction). Below this, the collect-screen still
+/// accumulates posts but findings aren't extracted yet.
+pub const ENRICH_THRESHOLD: u64 = 100;
+
 /// Shared state for the extraction worker. Exposed as Tauri managed state
 /// (wrap in `Arc` when registering via `.manage()`).
 #[derive(Default)]

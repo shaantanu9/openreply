@@ -269,6 +269,14 @@ window.addEventListener('DOMContentLoaded', async () => {
       try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
       route();
     }
+    // Incremental enrichment: when a collect finishes, the topic may have
+    // just crossed the 100-post threshold. Poke the Rust supervisor — it's
+    // idempotent, so starting an already-running worker is a no-op, and
+    // below-threshold topics will be filtered naturally by the worker's
+    // drain query (empty extraction_queue → immediate idle).
+    if (kind === 'collect') {
+      api.startExtractionWorker().catch(() => {});
+    }
   });
 
   // Boot-time health probe: on every launch, confirm the sidecar spawns and
