@@ -1,4 +1,7 @@
 // app-tauri/src/lib/tabs.js
+import { refreshIcons } from '../icons.js';
+import { openContextMenu } from './contextMenu.js';
+
 const KEY = 'gapmap.tabs.v1';
 const MAX_TABS = 50;
 const MAX_CLOSED = 10;
@@ -165,3 +168,58 @@ Object.assign(tabStore, {
     writeStore(s); notify();
   },
 });
+
+export function renderTabStrip(host) {
+  if (!host) return;
+  const paint = () => {
+    const s = readStore();
+    host.innerHTML = `
+      <div class="tab-strip" role="tablist">
+        ${s.tabs.map(t => `
+          <div class="tab-pill ${t.id === s.activeId ? 'active' : ''}"
+               role="tab" data-id="${t.id}" title="${t.title.replace(/"/g,'&quot;')}">
+            <i data-lucide="${t.icon || 'circle'}"></i>
+            <span class="tab-title">${t.title}</span>
+            <span class="tab-close" data-close="${t.id}" title="Close (⌘W)">
+              <i data-lucide="x"></i>
+            </span>
+          </div>
+        `).join('')}
+        <div class="tab-new" title="New tab (⌘T)"><i data-lucide="plus"></i></div>
+      </div>
+    `;
+    refreshIcons?.();
+  };
+  paint();
+  tabStore.subscribe(paint);
+
+  host.addEventListener('click', (e) => {
+    const close = e.target.closest('[data-close]');
+    if (close) { e.stopPropagation(); tabStore.close(close.dataset.close); return; }
+    const nu = e.target.closest('.tab-new');
+    if (nu) { tabStore.open({ hash: '#/' }); return; }
+    const pill = e.target.closest('.tab-pill');
+    if (pill) tabStore.focus(pill.dataset.id);
+  });
+
+  host.addEventListener('auxclick', (e) => {
+    if (e.button !== 1) return;
+    const pill = e.target.closest('.tab-pill');
+    if (pill) { e.preventDefault(); tabStore.close(pill.dataset.id); }
+  });
+
+  host.addEventListener('contextmenu', (e) => {
+    const pill = e.target.closest('.tab-pill');
+    if (!pill) return;
+    e.preventDefault();
+    const id = pill.dataset.id;
+    openContextMenu(e.clientX, e.clientY, [
+      { label: 'Reload',         icon: 'refresh-cw',   onClick: () => tabStore.reload(id) },
+      { label: 'Duplicate',      icon: 'copy',         onClick: () => tabStore.duplicate(id) },
+      { separator: true },
+      { label: 'Close',          icon: 'x',            onClick: () => tabStore.close(id) },
+      { label: 'Close others',   icon: 'minus-square', onClick: () => tabStore.closeOthers(id) },
+      { label: 'Close to right', icon: 'chevron-right',onClick: () => tabStore.closeToRight(id) },
+    ]);
+  });
+}
