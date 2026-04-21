@@ -55,6 +55,23 @@ from ..core.db import get_db, init_schema
 # docs/superpowers/specs/2026-04-21-incremental-enrichment-design.md §4.
 BATCH_SIZE = 5
 
+# Hardcoded defaults for Task 9.5's three-tier fallback (topic row →
+# extraction.json → these). Mirrors the defaults in the spec §14.
+_EXTRACTION_DEFAULTS = {
+    "mode": "auto",
+    "threshold": 100,
+    "batch_size": 5,
+    "window_start": None,
+    "window_end": None,
+    "daily_token_cap": None,     # None = unlimited
+    "release_llm_idle": False,
+}
+
+# Per-topic, per-day "cap reached" de-dup set so the worker only emits
+# ``enrich:cap-reached`` once per day per topic. Keyed by
+# ``(topic, YYYY-MM-DD)``.
+_cap_fired_today: set[tuple[str, str]] = set()
+
 # After 3 failed attempts, a row is "poisoned" — skipped in the SELECT until
 # the user explicitly re-queues it from Settings. last_error surfaces in the
 # UI so they can see why. Tuned low because LLM failures cluster on prompt
@@ -174,6 +191,241 @@ except ImportError:  # pragma: no cover — only hit before Task 4
         )
 
 
+# ── Extraction prefs (Task 9.5) ────────────────────────────────────────────
+#
+# Three-tier resolution: per-topic row in ``topic_prefs`` → global JSON file
+# in the app's data_dir → hardcoded defaults. Each tier provides only the
+# keys the user overrode; missing keys fall through to the next tier.
+#
+# The per-topic columns are added lazily by ``init_schema`` via
+# ``_ensure_extraction_prefs_schema``; on an older database where the ALTER
+# hasn't run yet, the SELECT below will either succeed (sqlite is forgiving
+# about missing columns in `SELECT *`) or raise — we swallow the error and
+# fall through to the global + defaults layer. That keeps CLI back-compat
+# intact across upgrades.
+
+
+def _global_prefs_path() -> Path:
+    """Path to ``extraction.json`` — the global extraction-prefs file.
+
+    Lives alongside ``reddit.db`` inside the resolved data dir so Rust's
+    ``extraction_prefs_get/set`` commands and the Python worker touch the
+    same file. Creation is deferred until first write; reads tolerate a
+    missing file (fall through to defaults).
+    """
+    return _data_dir() / "extraction.json"
+
+
+def _read_global_prefs() -> dict:
+    """Best-effort JSON read. Never raises — returns {} on any failure."""
+    try:
+        p = _global_prefs_path()
+        if not p.exists():
+            return {}
+        raw = p.read_text()
+        if not raw.strip():
+            return {}
+        out = json.loads(raw)
+        return out if isinstance(out, dict) else {}
+    except Exception:
+        return {}
+
+
+def _read_topic_prefs(db, topic: str) -> dict:  # noqa: ANN001
+    """Read the topic's override row from ``topic_prefs``. Returns only the
+    extraction-related columns that are non-null. Missing columns (old
+    schema) are silently ignored.
+    """
+    if not topic:
+        return {}
+    # Column list mirrors the ALTER TABLE set in _ensure_extraction_prefs_schema.
+    # We select one at a time-ish via a COALESCE pattern so a missing column
+    # on an old DB surfaces as "no override" rather than an exception.
+    try:
+        cols = {c.name for c in db["topic_prefs"].columns}
+    except Exception:
+        return {}
+    wanted = {
+        "extraction_mode": "mode",
+        "extraction_threshold": "threshold",
+        "extraction_batch_size": "batch_size",
+        "extraction_window_start": "window_start",
+        "extraction_window_end": "window_end",
+        "daily_token_cap": "daily_token_cap",
+        "release_llm_idle": "release_llm_idle",
+    }
+    present = [c for c in wanted if c in cols]
+    if not present:
+        return {}
+    col_list = ", ".join(present)
+    try:
+        rows = list(
+            db.query(f"SELECT {col_list} FROM topic_prefs WHERE topic = ?", [topic])
+        )
+    except Exception:
+        return {}
+    if not rows:
+        return {}
+    row = rows[0]
+    out: dict = {}
+    for src_col, out_key in wanted.items():
+        if src_col not in present:
+            continue
+        val = row.get(src_col)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            continue
+        if out_key == "release_llm_idle":
+            out[out_key] = bool(int(val))
+        else:
+            out[out_key] = val
+    return out
+
+
+def _load_prefs(topic: str, db=None) -> dict:  # noqa: ANN001
+    """Effective extraction prefs for ``topic``. Three-tier resolution.
+
+    topic row > extraction.json > hardcoded _EXTRACTION_DEFAULTS. Missing
+    values fall through to the next tier; no KeyError is possible because
+    every key lives in the defaults. Cap + scheduled-window checks in the
+    main loop read only from the returned dict.
+    """
+    if db is None:
+        db = get_db()
+    prefs = dict(_EXTRACTION_DEFAULTS)
+    # Tier 2 — global JSON
+    g = _read_global_prefs()
+    for k in prefs.keys():
+        if k in g and g[k] is not None:
+            prefs[k] = g[k]
+    # Tier 1 — per-topic (highest priority)
+    t = _read_topic_prefs(db, topic)
+    for k, v in t.items():
+        if v is not None:
+            prefs[k] = v
+    return prefs
+
+
+def _is_within_window(now_hhmm: str, start: str | None, end: str | None) -> bool:
+    """HH:MM string range check. Supports overnight windows (e.g. 23:00–06:00).
+
+    If either bound is missing, treats the window as "always active". That
+    matches the UX: users who flip to "scheduled" but forget to set the
+    start/end deserve a sensible fallback rather than a permanent skip.
+    """
+    if not start or not end:
+        return True
+    try:
+        # Pad "9:00" to "09:00" so lexical compare works.
+        def _n(s: str) -> str:
+            parts = (s or "").split(":")
+            if len(parts) < 2:
+                return "00:00"
+            return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+
+        s = _n(start)
+        e = _n(end)
+        n = _n(now_hhmm)
+        if s == e:
+            return True
+        if s < e:
+            return s <= n < e
+        # Overnight: e.g. 23:00–06:00.
+        return n >= s or n < e
+    except Exception:
+        return True
+
+
+def _today_local_iso() -> str:
+    """Local calendar date as YYYY-MM-DD (midnight reset for cap tracking)."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _now_local_hhmm() -> str:
+    return datetime.now().strftime("%H:%M")
+
+
+def _today_token_total(db, provider: str, model: str) -> int:  # noqa: ANN001
+    """Sum of tokens_in + tokens_out spent today for (provider, model)."""
+    try:
+        rows = list(db.query(
+            "SELECT coalesce(sum(tokens_in),0) AS ti, "
+            "       coalesce(sum(tokens_out),0) AS to_ "
+            "  FROM extraction_daily_usage "
+            " WHERE day = ? AND provider = ? AND model = ?",
+            [_today_local_iso(), provider, model],
+        ))
+        if not rows:
+            return 0
+        r = rows[0]
+        return int(r.get("ti") or 0) + int(r.get("to_") or 0)
+    except Exception:
+        return 0
+
+
+def _filter_rows_by_prefs(db, rows: list[dict]) -> list[dict]:  # noqa: ANN001
+    """Drop any rows whose topic's prefs say "don't extract right now".
+
+    Rules:
+      * mode == 'manual'     → skip (user hasn't clicked Extract now)
+      * mode == 'scheduled'  → skip unless local clock is inside the window
+      * daily_token_cap set AND today's spend ≥ cap → skip + emit cap event
+
+    Emits ``enrich:cap-reached`` once per topic per day the first time the
+    cap is hit — the UI banner uses this to surface the paused state.
+    """
+    if not rows:
+        return rows
+    from ..analyze.providers.base import resolve_provider  # local import — cheap
+    try:
+        provider = resolve_provider(None) or ""
+    except Exception:
+        provider = ""
+    model = os.getenv("LLM_MODEL") or ""
+
+    now_hhmm = _now_local_hhmm()
+    today = _today_local_iso()
+    kept: list[dict] = []
+    # Group & resolve prefs once per topic per call for efficiency.
+    seen: dict[str, dict] = {}
+    for r in rows:
+        topic = r.get("topic") or ""
+        if topic not in seen:
+            seen[topic] = _load_prefs(topic, db=db)
+        prefs = seen[topic]
+        mode = (prefs.get("mode") or "auto").lower()
+        if mode == "manual":
+            continue
+        if mode == "scheduled":
+            if not _is_within_window(
+                now_hhmm, prefs.get("window_start"), prefs.get("window_end")
+            ):
+                continue
+        cap = prefs.get("daily_token_cap")
+        if cap:
+            try:
+                cap_n = int(cap)
+            except Exception:
+                cap_n = 0
+            if cap_n > 0:
+                spent = _today_token_total(db, provider, model)
+                if spent >= cap_n:
+                    key = (topic, today)
+                    if key not in _cap_fired_today:
+                        _cap_fired_today.add(key)
+                        _emit(
+                            "enrich:cap-reached",
+                            topic=topic,
+                            cap=cap_n,
+                            spent=spent,
+                            provider=provider,
+                            model=model,
+                            day=today,
+                        )
+                    continue
+        kept.append(r)
+    return kept
+
+
 # ── Drain loop ──────────────────────────────────────────────────────────────
 
 def _drain_batch(db) -> int:  # noqa: ANN001 — sqlite-utils Database has no public type
@@ -212,6 +464,15 @@ def _drain_batch(db) -> int:  # noqa: ANN001 — sqlite-utils Database has no pu
         params = [MAX_ATTEMPTS, BATCH_SIZE]
 
     rows = list(db.query(sql, params))
+    if not rows:
+        return 0
+
+    # Task 9.5: filter by per-topic extraction prefs (manual / scheduled /
+    # daily_token_cap). A topic in manual mode OR outside its scheduled
+    # window OR over its daily cap yields no rows — we simply sleep this
+    # tick instead of extracting. Cap-reached emits `enrich:cap-reached`
+    # at most once per topic per day.
+    rows = _filter_rows_by_prefs(db, rows)
     if not rows:
         return 0
 

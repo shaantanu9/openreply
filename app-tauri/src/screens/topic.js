@@ -408,6 +408,13 @@ export async function renderTopic(root, { params }) {
          there. Every tab stays accessible — intent is a lens, not a gate. -->
     <div id="intent-ladder-host"></div>
 
+    <!-- Task 9.5 — Extraction prefs override row. Tiny one-liner above the
+         tabs: "This topic uses: Auto · 100 posts · batch 5 · [Override]".
+         The Override button toggles an inline popover with the 3 core
+         sliders scoped to this topic. Writes through extractionPrefsSet
+         with scope="topic:<slug>". -->
+    <div id="extract-override-row" style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:6px 0 4px;font-size:12.5px;color:var(--ink-3);border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);display:none" data-role="extract-override"></div>
+
     <!-- Phase-11 tab cleanup: 4 primary tabs always visible, everything
          else in a "More ▾" dropdown. Primaries were picked from actual
          usage (Insights=core output, Bets=weekly ritual,
@@ -448,6 +455,10 @@ export async function renderTopic(root, { params }) {
   const tabsEl = $('#topic-tabs');
   const contentEl = $('#tab-content');
   window.refreshIcons?.();
+
+  // Task 9.5 — fire-and-forget render of the extraction prefs override row.
+  // Best-effort: any error just hides the row (it's purely informational).
+  _renderExtractionOverrideRow(root, topic).catch(() => {});
 
   // ─── Freshness badges (Findings / Map / Gaps / Solutions) ──────────────
   // Each badge re-computes every 1 s off the last `enrich:tick` timestamp
@@ -2732,4 +2743,108 @@ function inlineMd(s) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
+// ── Task 9.5: Topic-level extraction overrides ─────────────────────────
+// Reads the resolved prefs for this topic, renders a one-liner summary,
+// and (on Override click) swaps in an inline popover with the 3 core
+// sliders (mode / threshold / batch). Saving writes with scope=topic:<slug>
+// and re-renders the summary. Clear reverts the row to global defaults.
+async function _renderExtractionOverrideRow(root, topic) {
+  const host = root.querySelector('[data-role="extract-override"]');
+  if (!host || !topic) return;
+  let data;
+  try { data = await api.extractionPrefsGet(topic); }
+  catch { return; }  // silently skip on transient failure — row stays hidden
+  if (!data) return;
+
+  const eff = data.effective || {};
+  const topicOverride = data.topic || null;
+  const hasOverride = !!topicOverride;
+
+  const mode = (eff.mode || 'auto');
+  const threshold = Number(eff.threshold) || 100;
+  const batch = Number(eff.batch_size) || 5;
+
+  const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
+  host.style.display = 'flex';
+  host.innerHTML = `
+    <span>This topic uses: <b>${esc(modeLabel)}</b> · <b>${threshold}</b> posts · batch <b>${batch}</b></span>
+    ${hasOverride ? '<span style="color:var(--accent,#FF8C42);font-weight:500">· override active</span>' : ''}
+    <span style="flex:1"></span>
+    <button class="btn btn-ghost btn-xs btn-bordered" id="extract-override-btn">Override</button>
+    ${hasOverride ? '<button class="btn btn-ghost btn-xs" id="extract-override-clear">Reset</button>' : ''}
+  `;
+
+  host.querySelector('#extract-override-btn')?.addEventListener('click', () => {
+    _openExtractionOverridePopover(host, topic, data);
+  });
+  host.querySelector('#extract-override-clear')?.addEventListener('click', async () => {
+    try {
+      await api.extractionPrefsSet(`topic:${topic}`, {
+        mode: null, threshold: null, batch_size: null,
+        window_start: null, window_end: null,
+        daily_token_cap: null, release_llm_idle: null,
+      });
+      await _renderExtractionOverrideRow(root, topic);
+    } catch (e) { alert(`Reset failed: ${e?.message || e}`); }
+  });
+}
+
+function _openExtractionOverridePopover(host, topic, data) {
+  const eff = data?.effective || {};
+  const mode = (eff.mode || 'auto');
+  const threshold = Number(eff.threshold) || 100;
+  const batch = Number(eff.batch_size) || 5;
+
+  host.innerHTML = `
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;width:100%">
+      <span style="flex-basis:100%;font-weight:500">Override for "${esc(topic)}"</span>
+      <label style="display:flex;gap:4px;align-items:center">
+        <span>Mode</span>
+        <select id="ovr-mode" class="select-sm">
+          ${['auto','manual','scheduled'].map(m =>
+            `<option value="${m}" ${mode === m ? 'selected' : ''}>${m}</option>`
+          ).join('')}
+        </select>
+      </label>
+      <label style="display:flex;gap:4px;align-items:center">
+        <span>Threshold</span>
+        <input type="range" id="ovr-threshold" min="50" max="500" step="10" value="${threshold}" style="width:120px" />
+        <b id="ovr-threshold-val">${threshold}</b>
+      </label>
+      <label style="display:flex;gap:4px;align-items:center">
+        <span>Batch</span>
+        <input type="range" id="ovr-batch" min="1" max="20" step="1" value="${batch}" style="width:80px" />
+        <b id="ovr-batch-val">${batch}</b>
+      </label>
+      <button class="btn btn-primary btn-xs" id="ovr-save">Save</button>
+      <button class="btn btn-ghost btn-xs btn-bordered" id="ovr-cancel">Cancel</button>
+    </div>
+  `;
+  const thrIn = host.querySelector('#ovr-threshold');
+  const thrV = host.querySelector('#ovr-threshold-val');
+  thrIn?.addEventListener('input', e => thrV.textContent = e.target.value);
+  const bIn = host.querySelector('#ovr-batch');
+  const bV = host.querySelector('#ovr-batch-val');
+  bIn?.addEventListener('input', e => bV.textContent = e.target.value);
+
+  host.querySelector('#ovr-cancel')?.addEventListener('click', () => {
+    const root = host.closest('#main-content, [data-view], body') || document.body;
+    _renderExtractionOverrideRow(root, topic);
+  });
+  host.querySelector('#ovr-save')?.addEventListener('click', async () => {
+    const modeVal = host.querySelector('#ovr-mode')?.value || 'auto';
+    const thr = Number(thrIn?.value) || 100;
+    const bs = Number(bIn?.value) || 5;
+    try {
+      await api.extractionPrefsSet(`topic:${topic}`, {
+        mode: modeVal,
+        threshold: thr,
+        batch_size: bs,
+      });
+      const root = host.closest('#main-content, [data-view], body') || document.body;
+      await _renderExtractionOverrideRow(root, topic);
+    } catch (e) { alert(`Save failed: ${e?.message || e}`); }
+  });
 }

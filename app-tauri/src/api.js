@@ -138,6 +138,9 @@ const INVALIDATE_MAP = {
   product:    ['list_products', 'product_get', 'product_signals', 'product_digest', 'overview_stats'],
   schedule:   ['schedule_status'],
   trash:      ['list_trash', 'list_topics', 'overview_stats'],
+  // Task 9.5 — extraction prefs + daily token spend live in Rust-native
+  // SQLite + extraction.json; any write mutates both caches.
+  extraction_prefs: ['extraction_prefs_get', 'today_token_spend'],
 };
 export function mutated(kind, extra = {}) {
   const keys = INVALIDATE_MAP[kind] || [];
@@ -247,6 +250,26 @@ export const api = {
   scheduleUninstall: ()              => invoke('schedule_uninstall'),
   scheduleEnableTopic: (topic, enabled) => invoke('schedule_enable_topic', { topic, enabled }),
   scheduleMarkSeen:  (topic)         => invoke('schedule_mark_seen', { topic }),
+
+  // ----- video ingest: yt-dlp + faster-whisper -----
+  videoPreview:       (url)                  => invoke('ingest_video_preview', { url }),
+  ingestVideo:        (url, topic, model, language) => {
+    invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query');
+    return invoke('ingest_video', { url, topic, model, language });
+  },
+  whisperList:        ()                     => cachedInvoke('whisper_list',     null, 10000),
+  whisperCatalogue:   ()                     => cachedInvoke('whisper_catalogue', null, 10000),
+  whisperDownload:    (tier)                 => invoke('whisper_download', { tier }),
+  whisperDelete:      (tier) => {
+    invalidate('whisper_list', 'whisper_catalogue');
+    return invoke('whisper_delete', { tier });
+  },
+  whisperSetDefault:  (tier) => {
+    invalidate('whisper_list', 'whisper_catalogue');
+    return invoke('whisper_set_default', { tier });
+  },
+  ytdlpVersion:       ()                     => cachedInvoke('ytdlp_version',     null, 60000),
+  ytdlpUpdate:        (force = false)        => invoke('ytdlp_update', { force }),
 
   // ----- writes / side-effects (bypass + invalidate) -----
   discoverSubs:    (topic, limit = 10) => invoke('discover_subs', { topic, limit }),
@@ -611,6 +634,25 @@ export const api = {
   // Returning `{ok:true}` from Rust keeps this callable without surfacing
   // a blocking error toast while the stub is in place.
   retryAllExtraction: () => invoke('retry_extraction_failures'),
+
+  // ── Task 9.5: Settings → Extraction pane (token controls) ───────────────
+  // `extractionPrefsGet` returns the 3-layer resolved prefs: global JSON,
+  // per-topic row (null if topic omitted), and the effective merge. The
+  // Settings card reads without a topic; the Topic-page override row reads
+  // with a topic.
+  extractionPrefsGet: (topic = null) =>
+    cachedInvoke('extraction_prefs_get', { topic }, 10000),
+  // scope is either "global" or "topic:<name>". Partial updates are
+  // supported — only the keys you send are written.
+  extractionPrefsSet: (scope, prefs) => {
+    const p = invoke('extraction_prefs_set', { scope, prefs });
+    mutated('extraction_prefs', { scope });
+    return p;
+  },
+  // Running total of today's LLM spend, grouped by (provider, model).
+  // Short TTL because the worker writes rows during active extraction and
+  // the Settings card wants to feel live.
+  todayTokenSpend: () => cachedInvoke('today_token_spend', null, 30000),
 
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),

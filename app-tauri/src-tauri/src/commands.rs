@@ -2774,6 +2774,486 @@ pub async fn topic_coverage_gaps(app: AppHandle, topic: String) -> Result<Value,
     .map_err(err_to_string)
 }
 
+// ── Video ingest (yt-dlp + faster-whisper) ──────────────────────────────────
+//
+// Design: docs/video-ingest.md. Flow:
+//   ingest_video_preview → yt_dlp.extract_info(download=False) — fast metadata
+//   ingest_video         → streaming: download audio, transcribe, insert rows
+//   whisper_*            → model catalogue / download / delete / default
+//   ytdlp_version|update → overlay auto-updater controls
+//
+// All wrap the Python CLI (src/reddit_research/cli/main.py → ingest video /
+// whisper / ytdlp subcommands). Streaming commands emit events the webview
+// listens to via @tauri-apps/api/event::listen().
+
+#[tauri::command]
+pub async fn ingest_video_preview(app: AppHandle, url: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["ingest", "video", "--url", &url, "--preview", "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn ingest_video(
+    app: AppHandle,
+    url: String,
+    topic: Option<String>,
+    model: Option<String>,
+    language: Option<String>,
+) -> Result<(), String> {
+    let model = model.unwrap_or_else(|| "auto".into());
+    let language = language.unwrap_or_else(|| "auto".into());
+    let mut args: Vec<String> = vec![
+        "ingest".into(), "video".into(),
+        "--url".into(), url,
+        "--model".into(), model,
+        "--language".into(), language,
+        "--json".into(),
+    ];
+    if let Some(t) = topic {
+        args.push("--topic".into());
+        args.push(t);
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli_streaming(&app, arg_refs, "video:progress", "video:done")
+        .await
+        .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn whisper_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["whisper", "list", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn whisper_catalogue(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["whisper", "catalogue", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn whisper_download(app: AppHandle, tier: String) -> Result<(), String> {
+    run_cli_streaming(
+        &app,
+        vec!["whisper", "download", &tier, "--json"],
+        "whisper:download-progress",
+        "whisper:download-done",
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn whisper_delete(app: AppHandle, tier: String) -> Result<Value, String> {
+    run_cli(&app, vec!["whisper", "delete", &tier, "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn whisper_set_default(app: AppHandle, tier: String) -> Result<Value, String> {
+    run_cli(&app, vec!["whisper", "default", &tier, "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn ytdlp_version(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["ytdlp", "version", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn ytdlp_update(
+    app: AppHandle,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec!["ytdlp", "update", "--json"];
+    if force.unwrap_or(false) {
+        args.push("--force");
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+// ─── Task 9.5 — Extraction prefs pane + token usage ─────────────────────────
+//
+// Three surface commands:
+//   * extraction_prefs_get(topic?) — effective config for the Settings pane
+//     and the per-topic override row. Reads extraction.json + topic_prefs.
+//   * extraction_prefs_set(scope, prefs) — writes either the global JSON
+//     (scope="global") or upserts the topic_prefs row (scope="topic:<name>").
+//   * today_token_spend() — aggregate cost for the running day, broken down
+//     by (provider, model) for the Settings card.
+//
+// All three are designed to tolerate a fresh install (missing file, missing
+// table, missing columns on old topic_prefs rows). Write paths use native
+// rusqlite so the UI can refresh without paying the Python sidecar boot cost.
+
+/// Global extraction-prefs defaults. Mirrors
+/// ``enrich_worker._EXTRACTION_DEFAULTS`` on the Python side so a fresh
+/// install (no ``extraction.json``) behaves identically no matter which
+/// reader touches it first.
+fn extraction_defaults() -> serde_json::Value {
+    serde_json::json!({
+        "mode": "auto",
+        "threshold": 100,
+        "batch_size": 5,
+        "window_start": null,
+        "window_end": null,
+        "daily_token_cap": null,
+        "release_llm_idle": false,
+        "paused_until": null,
+    })
+}
+
+/// Merge b into a (shallow). Values in b override a; nulls in b clear keys.
+fn merge_json_shallow(a: &mut serde_json::Map<String, Value>, b: &serde_json::Map<String, Value>) {
+    for (k, v) in b {
+        a.insert(k.clone(), v.clone());
+    }
+}
+
+/// Compute the effective prefs for a topic by merging defaults → global → topic.
+fn compute_effective(
+    global: &serde_json::Map<String, Value>,
+    topic_row: Option<&serde_json::Map<String, Value>>,
+) -> Value {
+    let mut eff = extraction_defaults().as_object().cloned().unwrap_or_default();
+    merge_json_shallow(&mut eff, global);
+    if let Some(t) = topic_row {
+        // Only merge non-null keys — NULL columns mean "use global".
+        for (k, v) in t {
+            if !v.is_null() {
+                eff.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    Value::Object(eff)
+}
+
+/// Read the global extraction.json file. Returns an empty object if missing.
+fn read_global_prefs(app: &AppHandle) -> Result<serde_json::Map<String, Value>, String> {
+    let dir = data_dir(app).map_err(err_to_string)?;
+    let path = dir.join("extraction.json");
+    if !path.exists() {
+        return Ok(serde_json::Map::new());
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("read extraction.json: {e}"))?;
+    if raw.trim().is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+    let v: Value = serde_json::from_str(&raw).map_err(|e| format!("parse extraction.json: {e}"))?;
+    Ok(v.as_object().cloned().unwrap_or_default())
+}
+
+/// Atomic write of extraction.json via tmp-file + rename. POSIX-safe; on
+/// Windows the rename call isn't atomic across crashes but good enough.
+fn write_global_prefs(app: &AppHandle, prefs: &serde_json::Map<String, Value>) -> Result<(), String> {
+    let dir = data_dir(app).map_err(err_to_string)?;
+    let path = dir.join("extraction.json");
+    let tmp = dir.join("extraction.json.tmp");
+    let body = serde_json::to_string_pretty(prefs).map_err(|e| format!("serialize: {e}"))?;
+    std::fs::write(&tmp, body).map_err(|e| format!("write tmp: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))
+}
+
+/// Topic-pref columns we expose via extraction_prefs. Mirrors the ALTER
+/// TABLE list in ``db.py::_ensure_extraction_prefs_schema``.
+const TOPIC_PREF_COLS: &[(&str, &str)] = &[
+    ("extraction_mode",         "mode"),
+    ("extraction_threshold",    "threshold"),
+    ("extraction_batch_size",   "batch_size"),
+    ("extraction_window_start", "window_start"),
+    ("extraction_window_end",   "window_end"),
+    ("daily_token_cap",         "daily_token_cap"),
+    ("release_llm_idle",        "release_llm_idle"),
+];
+
+/// Read the topic's row from topic_prefs. Returns None if the row doesn't
+/// exist, or Some(map) with only the columns that are currently non-null.
+fn read_topic_prefs_row(
+    db_path: &std::path::Path,
+    topic: &str,
+) -> Result<Option<serde_json::Map<String, Value>>, String> {
+    use rusqlite::OpenFlags;
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ).map_err(|e| format!("open db: {e}"))?;
+    // Detect which columns actually exist — an older schema may not have
+    // all the extraction_* columns yet.
+    let mut stmt = conn.prepare("PRAGMA table_info(topic_prefs)")
+        .map_err(|e| format!("pragma: {e}"))?;
+    let cols_iter = stmt.query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("query cols: {e}"))?;
+    let mut have_cols: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for c in cols_iter {
+        if let Ok(name) = c {
+            have_cols.insert(name);
+        }
+    }
+    drop(stmt);
+    let available: Vec<(&str, &str)> = TOPIC_PREF_COLS.iter()
+        .filter(|(src, _)| have_cols.contains(*src))
+        .copied()
+        .collect();
+    if available.is_empty() {
+        return Ok(None);
+    }
+    let col_list = available.iter().map(|(s, _)| *s).collect::<Vec<_>>().join(", ");
+    let sql = format!("SELECT {} FROM topic_prefs WHERE topic = ?1", col_list);
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("prepare select: {e}"))?;
+    let mut rows = stmt.query([topic]).map_err(|e| format!("query: {e}"))?;
+    let row = match rows.next().map_err(|e| format!("row: {e}"))? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    let mut out = serde_json::Map::new();
+    for (i, (_, out_key)) in available.iter().enumerate() {
+        let vref = row.get_ref(i).map_err(|e| format!("col: {e}"))?;
+        let v: Value = match vref {
+            rusqlite::types::ValueRef::Null => Value::Null,
+            rusqlite::types::ValueRef::Integer(n) => {
+                // release_llm_idle is stored as 0/1 — coerce to bool for the UI.
+                if *out_key == "release_llm_idle" {
+                    Value::Bool(n != 0)
+                } else {
+                    Value::from(n)
+                }
+            }
+            rusqlite::types::ValueRef::Real(f) => {
+                serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+            }
+            rusqlite::types::ValueRef::Text(t) => {
+                String::from_utf8_lossy(t).into_owned().into()
+            }
+            rusqlite::types::ValueRef::Blob(_) => Value::Null,
+        };
+        out.insert((*out_key).to_string(), v);
+    }
+    Ok(Some(out))
+}
+
+/// Write topic_prefs overrides. Each key in `prefs` corresponds to one of
+/// TOPIC_PREF_COLS's out_key slots. NULL values clear the override.
+fn write_topic_prefs_row(
+    db_path: &std::path::Path,
+    topic: &str,
+    prefs: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    use rusqlite::OpenFlags;
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ).map_err(|e| format!("open db rw: {e}"))?;
+    conn.busy_timeout(std::time::Duration::from_millis(2000))
+        .map_err(|e| format!("busy_timeout: {e}"))?;
+    // Ensure the row exists — new topics may not have a prefs entry yet.
+    conn.execute(
+        "INSERT OR IGNORE INTO topic_prefs (topic, scheduled, deleted_at) VALUES (?1, 0, '')",
+        [topic],
+    ).map_err(|e| format!("insert row: {e}"))?;
+    // Introspect columns so we only UPDATE what exists.
+    let mut stmt = conn.prepare("PRAGMA table_info(topic_prefs)")
+        .map_err(|e| format!("pragma: {e}"))?;
+    let rows_iter = stmt.query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("pragma query: {e}"))?;
+    let mut have_cols: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for c in rows_iter {
+        if let Ok(name) = c { have_cols.insert(name); }
+    }
+    drop(stmt);
+    for (src_col, out_key) in TOPIC_PREF_COLS {
+        if !have_cols.contains(*src_col) { continue; }
+        let Some(v) = prefs.get(*out_key) else { continue; };
+        let set_sql = format!("UPDATE topic_prefs SET {} = ?1 WHERE topic = ?2", src_col);
+        let topic_s = topic.to_string();
+        let result = match v {
+            Value::Null => {
+                let none: Option<String> = None;
+                conn.execute(&set_sql, rusqlite::params![none, &topic_s])
+            }
+            Value::Bool(b) => {
+                let as_int = if *b { 1_i64 } else { 0_i64 };
+                conn.execute(&set_sql, rusqlite::params![as_int, &topic_s])
+            }
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    conn.execute(&set_sql, rusqlite::params![i, &topic_s])
+                } else if let Some(f) = n.as_f64() {
+                    conn.execute(&set_sql, rusqlite::params![f, &topic_s])
+                } else {
+                    let s = n.to_string();
+                    conn.execute(&set_sql, rusqlite::params![s, &topic_s])
+                }
+            }
+            Value::String(s) => {
+                conn.execute(&set_sql, rusqlite::params![s, &topic_s])
+            }
+            _ => continue,
+        };
+        result.map_err(|e| format!("update {src_col}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Read effective extraction prefs. With `topic=None` returns only the
+/// global layer merged onto defaults. With a topic, also reads the
+/// per-topic row and merges on top.
+///
+/// Response shape: `{global: {...}, topic: {...|null}, effective: {...}}`.
+#[tauri::command]
+pub async fn extraction_prefs_get(
+    app: AppHandle,
+    topic: Option<String>,
+) -> Result<Value, String> {
+    let global_map = read_global_prefs(&app)?;
+    // Merge global onto defaults to produce the "display global" shape.
+    let mut display_global = extraction_defaults().as_object().cloned().unwrap_or_default();
+    merge_json_shallow(&mut display_global, &global_map);
+
+    let mut topic_val = Value::Null;
+    let mut effective = compute_effective(&global_map, None);
+    if let Some(t) = topic.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        let dir = data_dir(&app).map_err(err_to_string)?;
+        let db_path = dir.join("reddit.db");
+        if db_path.exists() {
+            match read_topic_prefs_row(&db_path, &t) {
+                Ok(Some(row)) => {
+                    effective = compute_effective(&global_map, Some(&row));
+                    topic_val = Value::Object(row);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    return Ok(serde_json::json!({
+                        "global": Value::Object(display_global),
+                        "topic": Value::Null,
+                        "effective": effective,
+                        "warning": e,
+                    }));
+                }
+            }
+        }
+    }
+    Ok(serde_json::json!({
+        "global": Value::Object(display_global),
+        "topic": topic_val,
+        "effective": effective,
+    }))
+}
+
+/// Write extraction prefs. `scope` is either `"global"` or `"topic:<name>"`.
+/// `prefs` is a shallow object whose keys mirror the effective prefs shape.
+#[tauri::command]
+pub async fn extraction_prefs_set(
+    app: AppHandle,
+    scope: String,
+    prefs: Value,
+) -> Result<Value, String> {
+    let prefs_map = prefs.as_object()
+        .cloned()
+        .ok_or_else(|| "prefs must be a JSON object".to_string())?;
+    if scope == "global" {
+        // Read-modify-write so callers can send partial updates.
+        let mut existing = read_global_prefs(&app)?;
+        merge_json_shallow(&mut existing, &prefs_map);
+        write_global_prefs(&app, &existing)?;
+        return Ok(serde_json::json!({ "ok": true, "scope": "global" }));
+    }
+    if let Some(topic) = scope.strip_prefix("topic:") {
+        let t = topic.trim();
+        if t.is_empty() {
+            return Err("scope 'topic:' must include a topic name".into());
+        }
+        let dir = data_dir(&app).map_err(err_to_string)?;
+        let db_path = dir.join("reddit.db");
+        if !db_path.exists() {
+            return Err("db not initialized yet — run a collect first".into());
+        }
+        write_topic_prefs_row(&db_path, t, &prefs_map)?;
+        return Ok(serde_json::json!({ "ok": true, "scope": scope }));
+    }
+    Err(format!("unknown scope: {scope} (expected 'global' or 'topic:<name>')"))
+}
+
+/// Today's aggregate token spend across providers. Returns:
+/// `{tokens_in, tokens_out, est_usd, breakdown: [{provider, model, ...}]}`.
+#[tauri::command]
+pub async fn today_token_spend(app: AppHandle) -> Result<Value, String> {
+    let dir = data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({
+            "tokens_in": 0, "tokens_out": 0, "est_usd": 0.0, "breakdown": []
+        }));
+    }
+    let today = local_today_iso();
+    let mut params = serde_json::Map::new();
+    params.insert("day".to_string(), Value::String(today.clone()));
+    let breakdown = match crate::db::query_db(
+        &db_path,
+        "SELECT provider, model, tokens_in, tokens_out, est_usd \
+           FROM extraction_daily_usage WHERE day = :day \
+          ORDER BY est_usd DESC",
+        Some(&params),
+    ) {
+        Ok(rows) => rows,
+        Err(_) => vec![],
+    };
+    let mut tokens_in: i64 = 0;
+    let mut tokens_out: i64 = 0;
+    let mut est_usd: f64 = 0.0;
+    for row in &breakdown {
+        if let Some(v) = row.get("tokens_in").and_then(|v| v.as_i64()) { tokens_in += v; }
+        if let Some(v) = row.get("tokens_out").and_then(|v| v.as_i64()) { tokens_out += v; }
+        if let Some(v) = row.get("est_usd").and_then(|v| v.as_f64()) { est_usd += v; }
+    }
+    Ok(serde_json::json!({
+        "day": today,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "est_usd": est_usd,
+        "breakdown": breakdown,
+    }))
+}
+
+/// Local-calendar YYYY-MM-DD. Shells out to `date` on Unix so we always
+/// match the Python worker's `datetime.now().strftime("%Y-%m-%d")` (also
+/// local). Falls back to a UTC computation if `date` is unavailable (which
+/// only happens in sandboxed test runs).
+fn local_today_iso() -> String {
+    #[cfg(unix)]
+    {
+        if let Ok(out) = std::process::Command::new("date").arg("+%Y-%m-%d").output() {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() { return s; }
+            }
+        }
+    }
+    // UTC fallback — acceptable drift at day boundaries for a cost UI.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let (y, m, d) = days_to_ymd(days);
+    format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
+/// Days-since-Unix-epoch → (year, month, day). Gregorian, Howard Hinnant's
+/// civil-from-days algorithm.
+fn days_to_ymd(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

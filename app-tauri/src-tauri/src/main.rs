@@ -217,6 +217,20 @@ fn main() {
             // ── Task 8: saturation v1 + coverage gaps panel ──
             commands::topic_saturation,
             commands::topic_coverage_gaps,
+            // ── Task 9.5: extraction prefs + daily token spend ──
+            commands::extraction_prefs_get,
+            commands::extraction_prefs_set,
+            commands::today_token_spend,
+            // ── Video ingest: yt-dlp + faster-whisper (docs/video-ingest.md) ──
+            commands::ingest_video_preview,
+            commands::ingest_video,
+            commands::whisper_list,
+            commands::whisper_catalogue,
+            commands::whisper_download,
+            commands::whisper_delete,
+            commands::whisper_set_default,
+            commands::ytdlp_version,
+            commands::ytdlp_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");

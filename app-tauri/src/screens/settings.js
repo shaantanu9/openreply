@@ -136,11 +136,37 @@ export async function renderSettings(root) {
         <div class="skel skel-line" style="width:70%;margin-top:10px"></div>
       </div>
 
+      <!-- Whisper models -->
+      <div class="settings-card" id="card-whisper" style="grid-column:1/-1">
+        <h4>Whisper models <span style="color:var(--ink-3);font-size:12px;font-weight:500">loading…</span></h4>
+        <p style="color:var(--ink-3)">For video transcription — pull any YouTube/Vimeo/podcast URL, audio stays local.</p>
+        <div id="whisper-card-body"><div class="empty-state" style="padding:12px">loading…</div></div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div>
+              <div style="font-weight:600;font-size:13px">yt-dlp auto-updater</div>
+              <div style="color:var(--ink-3);font-size:12px" id="ytdlp-version-line">checking…</div>
+            </div>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-ytdlp-update">Check now</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Tables -->
       <div class="settings-card" id="card-tables">
         <h4>Table counts</h4>
         <p>As reported by the CLI at launch</p>
         <div class="empty-state" style="padding:12px">loading…</div>
+      </div>
+
+      <!-- Task 9.5 — Extraction mode + token-cost controls.
+           Persisted to ~/Library/Application Support/…/extraction.json via
+           the extraction_prefs_{get,set} Rust commands. Per-topic overrides
+           live in topic_prefs; the Settings pane only writes globals. -->
+      <div class="settings-card" id="card-extraction">
+        <h4><i data-lucide="gauge"></i> Extraction <span style="color:var(--ink-3);font-size:12px;font-weight:500" id="extraction-head-note">loading…</span></h4>
+        <p style="color:var(--ink-3)">When the worker runs and how aggressively it spends tokens. Topics can override these individually from their own page.</p>
+        <div id="extraction-body" style="margin-top:10px"><div class="skel skel-line" style="width:60%"></div></div>
       </div>
 
       <!-- Scheduled runs -->
@@ -330,6 +356,23 @@ export async function renderSettings(root) {
     })
     .catch(e => { if (alive()) reportError(root, 'data', e); });
 
+  // Task 9.5 — Extraction pane. Loads global prefs + today's token spend
+  // in parallel; renders the mode radios / sliders / cap input / cost
+  // estimator as soon as both land. Individual Save clicks invoke
+  // extractionPrefsSet({global}) and re-render the cost line in place.
+  Promise.all([
+    api.extractionPrefsGet(null).catch(() => null),
+    api.todayTokenSpend().catch(() => null),
+    api.byokStatus().catch(() => null),
+    api.runQuery(
+      "SELECT COALESCE(sum(1),0) AS n FROM extraction_queue"
+    ).catch(() => null),
+  ])
+    .then(([prefs, spend, byok, qRows]) => {
+      if (alive()) fillExtractionCard(root, prefs, spend, byok, qRows);
+    })
+    .catch(e => { if (alive()) reportError(root, 'extraction', e); });
+
   // Palace / semantic-search card. Pull status + current doc count in
   // parallel, then render the right state (not-installed | not-ready |
   // ready).
@@ -339,6 +382,15 @@ export async function renderSettings(root) {
   ])
     .then(([ms, ps]) => { if (alive()) fillPalaceCard(root, ms, ps); })
     .catch(e => { if (alive()) reportError(root, 'palace', e); });
+
+  // Whisper card — catalogue drives the installed/available table; yt-dlp
+  // version line below it shows the overlay status.
+  Promise.all([
+    api.whisperCatalogue().catch(() => []),
+    api.ytdlpVersion().catch(() => ({ installed: '—', latest: '—' })),
+  ])
+    .then(([cat, ver]) => { if (alive()) fillWhisperCard(root, cat, ver); })
+    .catch(e => { if (alive()) reportError(root, 'whisper', e); });
 }
 
 // --- Profile card (sync) ----------------------------------------------------
@@ -885,6 +937,262 @@ async function doReindex(root) {
   }
 }
 
+// ── Task 9.5: Extraction pane (mode / threshold / batch / cap / idle-release / cost) ──
+//
+// Reads the 3-tier resolved prefs from `extraction_prefs_get(null)` (no
+// topic) + today's token spend + BYOK for provider-label rendering. Writes
+// go through `extractionPrefsSet('global', {...})`; each slider commits on
+// `input` with a 400ms debounce so the user sees the cost estimator refresh
+// as they drag.
+//
+// Spec: docs/superpowers/specs/2026-04-21-incremental-enrichment-design.md §12.
+const EXTRACTION_MODES = [
+  { key: 'auto',      label: 'Auto',      hint: 'Worker drains queue as soon as a topic crosses the threshold.' },
+  { key: 'manual',    label: 'Manual',    hint: 'Nothing runs until you click "Extract now" on a topic.' },
+  { key: 'scheduled', label: 'Scheduled', hint: 'Worker only runs during the window below.' },
+];
+
+// Rough per-batch prompt+response size. Varies by extractor — averaged
+// across the 4 (painpoints/features/complaints/diy) from production logs.
+const EXTRACT_TOKENS_PER_BATCH_POST = 350;
+
+function _fmtUsd(n) {
+  if (!Number.isFinite(n)) return '$0.00';
+  if (n < 0.01) return '< $0.01';
+  if (n < 1)   return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function _providerLabel(byok) {
+  const key = byok?.llm_provider || '';
+  return LLM_LABELS[key] || key || 'auto-detect';
+}
+
+function _estimateCost(queued, effective, byok) {
+  // Rough: (queued / batch_size) × tokens_per_batch × price/1M.
+  const batch = Math.max(1, Number(effective?.batch_size) || 5);
+  const nBatches = Math.ceil((queued || 0) / batch);
+  const tokens = nBatches * Math.max(batch, 1) * EXTRACT_TOKENS_PER_BATCH_POST;
+  const provider = (byok?.llm_provider || '').toLowerCase();
+  // Price per 1M tokens, using the same table the Python side uses. Kept
+  // intentionally small — users tweak providers often; this lives in JS
+  // for responsiveness and is only ever indicative.
+  const PRICE_PER_1M = {
+    'anthropic':  3.0,
+    'openai':     0.8,
+    'openrouter': 0.15,
+    'groq':       0.6,
+    'deepseek':   0.5,
+    'mistral':    1.0,
+    'google':     0.3,
+    'ollama':     0.0,
+    '':           0.15,
+  };
+  const rate = PRICE_PER_1M[provider] ?? 0.15;
+  const usd = (tokens * rate) / 1_000_000;
+  return { tokens, usd, provider: provider || 'auto', nBatches };
+}
+
+function fillExtractionCard(root, prefs, spend, byok, queuedRows) {
+  const card = root.querySelector('#card-extraction');
+  const body = card?.querySelector('#extraction-body');
+  const head = card?.querySelector('#extraction-head-note');
+  if (!card || !body) return;
+
+  const effective = prefs?.effective || prefs?.global || {};
+  const mode = (effective.mode || 'auto').toLowerCase();
+  const threshold = Number(effective.threshold) || 100;
+  const batchSize = Number(effective.batch_size) || 5;
+  const winStart = effective.window_start || '23:00';
+  const winEnd   = effective.window_end   || '06:00';
+  const capVal   = effective.daily_token_cap;
+  const capSet   = capVal != null && capVal !== '' && Number(capVal) > 0;
+  const idleRel  = !!effective.release_llm_idle;
+
+  const queuedN = Array.isArray(queuedRows) && queuedRows[0]?.n || 0;
+  const est = _estimateCost(queuedN, effective, byok);
+  const providerLabel = _providerLabel(byok);
+
+  const todayUsd = Number(spend?.est_usd || 0);
+  const todayIn  = Number(spend?.tokens_in || 0);
+  const todayOut = Number(spend?.tokens_out || 0);
+
+  if (head) head.textContent = `mode: ${mode}`;
+  body.innerHTML = `
+    <div class="extract-modes" id="extract-modes" style="display:flex;gap:8px;flex-wrap:wrap">
+      ${EXTRACTION_MODES.map(m => `
+        <label class="extract-mode-chip ${mode === m.key ? 'on' : ''}" data-mode="${m.key}"
+          style="flex:1;min-width:150px;border:1px solid ${mode === m.key ? 'var(--accent,#FF8C42)' : 'var(--line)'};border-radius:8px;padding:8px 10px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
+          <input type="radio" name="extraction-mode" value="${m.key}" ${mode === m.key ? 'checked' : ''}
+            style="margin-top:3px" />
+          <span>
+            <b style="display:block;font-size:13px">${esc(m.label)}</b>
+            <span style="color:var(--ink-3);font-size:11.5px">${esc(m.hint)}</span>
+          </span>
+        </label>
+      `).join('')}
+    </div>
+
+    <div id="extract-schedule" ${mode === 'scheduled' ? '' : 'hidden'}
+         style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <label style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+        <span>Window start</span>
+        <input type="time" id="extract-win-start" value="${esc(winStart)}" />
+      </label>
+      <label style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+        <span>end</span>
+        <input type="time" id="extract-win-end"   value="${esc(winEnd)}" />
+      </label>
+      <span style="color:var(--ink-3);font-size:11.5px">Overnight windows (23:00 → 06:00) are supported.</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:14px">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px">
+        <span>Post threshold (<b id="extract-threshold-val">${threshold}</b> posts)</span>
+        <input type="range" id="extract-threshold" min="50" max="500" step="10" value="${threshold}" />
+        <small style="color:var(--ink-3)">Below this, the worker stays asleep for a topic.</small>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px">
+        <span>Batch size (<b id="extract-batch-val">${batchSize}</b> posts per LLM call)</span>
+        <input type="range" id="extract-batch" min="1" max="20" step="1" value="${batchSize}" />
+        <small style="color:var(--ink-3)">Larger = cheaper per post, higher peak RAM.</small>
+      </label>
+    </div>
+
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:14px">
+      <label style="display:flex;gap:6px;align-items:center;font-size:12.5px">
+        <input type="checkbox" id="extract-cap-enabled" ${capSet ? 'checked' : ''} />
+        <span>Daily token cap</span>
+      </label>
+      <input type="number" id="extract-cap-value" min="1000" step="1000"
+             value="${capSet ? Number(capVal) : 100000}"
+             ${capSet ? '' : 'disabled'}
+             style="width:120px" />
+      <span style="color:var(--ink-3);font-size:11.5px" id="extract-cap-note">
+        ${capSet ? `Pauses when spent ≥ cap. Today: ${todayIn + todayOut} tokens.` : 'No limit (default).'}
+      </span>
+    </div>
+
+    <label class="settings-toggle" style="margin-top:10px">
+      <input type="checkbox" id="extract-idle-release" ${idleRel ? 'checked' : ''} />
+      <span>
+        <b>Release LLM when idle</b>
+        <small>Sends <code>keep_alive=0</code> to Ollama after 10 min idle so it unloads. Cloud providers ignore this. Also controlled by <code>GAPMAP_RELEASE_LLM_IDLE</code>.</small>
+      </span>
+    </label>
+
+    <div id="extract-cost" style="margin-top:14px;padding:10px 12px;border-radius:6px;background:var(--bg-1);border:1px solid var(--line);font-size:12.5px;line-height:1.5">
+      <div id="extract-cost-estimate">${_formatCostLine(queuedN, est, providerLabel)}</div>
+      <div style="color:var(--ink-3);margin-top:4px">
+        Today’s spend: <b>${todayIn.toLocaleString()} in · ${todayOut.toLocaleString()} out · ${esc(_fmtUsd(todayUsd))}</b>
+        ${(spend?.breakdown || []).length
+          ? ` — <span style="color:var(--ink-3)">${(spend.breakdown || []).map(r => `${esc(r.provider || '?')}/${esc(r.model || '?')}: ${esc(_fmtUsd(Number(r.est_usd) || 0))}`).join(' · ')}</span>`
+          : ''}
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn btn-primary btn-sm" id="extract-save">Save defaults</button>
+      <span id="extract-save-status" style="font-size:12px;color:var(--ink-3);align-self:center"></span>
+    </div>
+  `;
+  window.refreshIcons?.();
+
+  // Local mutable state so "Save defaults" only writes one shape.
+  let pending = {
+    mode,
+    threshold,
+    batch_size: batchSize,
+    window_start: winStart,
+    window_end: winEnd,
+    daily_token_cap: capSet ? Number(capVal) : null,
+    release_llm_idle: idleRel,
+  };
+
+  const refreshCostLine = () => {
+    const est2 = _estimateCost(queuedN, pending, byok);
+    const el = card.querySelector('#extract-cost-estimate');
+    if (el) el.innerHTML = _formatCostLine(queuedN, est2, providerLabel);
+  };
+
+  card.querySelectorAll('input[name="extraction-mode"]').forEach(r => {
+    r.addEventListener('change', e => {
+      pending.mode = e.target.value;
+      card.querySelectorAll('.extract-mode-chip').forEach(c =>
+        c.classList.toggle('on', c.dataset.mode === pending.mode));
+      const sch = card.querySelector('#extract-schedule');
+      if (sch) sch.hidden = pending.mode !== 'scheduled';
+      if (head) head.textContent = `mode: ${pending.mode}`;
+    });
+  });
+
+  const thresholdInput = card.querySelector('#extract-threshold');
+  const thresholdVal   = card.querySelector('#extract-threshold-val');
+  thresholdInput?.addEventListener('input', e => {
+    pending.threshold = Number(e.target.value);
+    if (thresholdVal) thresholdVal.textContent = pending.threshold;
+    refreshCostLine();
+  });
+
+  const batchInput = card.querySelector('#extract-batch');
+  const batchVal   = card.querySelector('#extract-batch-val');
+  batchInput?.addEventListener('input', e => {
+    pending.batch_size = Number(e.target.value);
+    if (batchVal) batchVal.textContent = pending.batch_size;
+    refreshCostLine();
+  });
+
+  const winS = card.querySelector('#extract-win-start');
+  const winE = card.querySelector('#extract-win-end');
+  winS?.addEventListener('change', e => { pending.window_start = e.target.value; });
+  winE?.addEventListener('change', e => { pending.window_end   = e.target.value; });
+
+  const capEn  = card.querySelector('#extract-cap-enabled');
+  const capVal2 = card.querySelector('#extract-cap-value');
+  capEn?.addEventListener('change', e => {
+    const on = e.target.checked;
+    if (capVal2) capVal2.disabled = !on;
+    pending.daily_token_cap = on ? Number(capVal2?.value) || 100000 : null;
+  });
+  capVal2?.addEventListener('input', e => {
+    const n = Number(e.target.value);
+    pending.daily_token_cap = n > 0 ? n : null;
+  });
+
+  const idle = card.querySelector('#extract-idle-release');
+  idle?.addEventListener('change', e => { pending.release_llm_idle = !!e.target.checked; });
+
+  card.querySelector('#extract-save')?.addEventListener('click', async () => {
+    const btn = card.querySelector('#extract-save');
+    const status = card.querySelector('#extract-save-status');
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'saving…';
+    try {
+      await api.extractionPrefsSet('global', pending);
+      if (status) { status.textContent = '✓ saved'; status.style.color = '#2E7D5B'; }
+      setTimeout(() => { if (status && status.textContent === '✓ saved') status.textContent = ''; }, 2500);
+      // Notify open topic pages so their override row picks up the new defaults.
+      window.dispatchEvent(new CustomEvent('gapmap:changed', { detail: { kind: 'extraction_prefs' } }));
+    } catch (e) {
+      if (status) { status.textContent = `✗ ${e?.message || e}`; status.style.color = '#B84747'; }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+}
+
+function _formatCostLine(queuedN, est, providerLabel) {
+  if (!queuedN) {
+    return `Queue is empty — nothing pending to extract. Provider: <b>${esc(providerLabel)}</b>.`;
+  }
+  const tokens = est.tokens.toLocaleString();
+  const usd = _fmtUsd(est.usd);
+  if (est.provider === 'ollama') {
+    return `Estimated cost to extract queue: <b>${queuedN.toLocaleString()}</b> posts × ~${EXTRACT_TOKENS_PER_BATCH_POST} tokens/batch = <b>$0</b> (Ollama — local, free).`;
+  }
+  return `Estimated cost to extract queue: <b>${queuedN.toLocaleString()}</b> posts × ~${EXTRACT_TOKENS_PER_BATCH_POST} tokens/batch ≈ <b>${tokens}</b> tokens ≈ <b>${esc(usd)}</b> via ${esc(providerLabel)}.`;
+}
+
 function reportError(root, section, e) {
   const err = root.querySelector('#settings-err');
   if (err) {
@@ -1006,4 +1314,156 @@ function wireAdvancedPromptsCard(root, alive) {
 
   // Initial visibility
   setUnlocked(toggle.checked);
+}
+
+// ── Whisper models card (docs/video-ingest.md) ───────────────────────────────
+async function fillWhisperCard(root, catalogueRows, ytdlpVer) {
+  const card = root.querySelector('#card-whisper');
+  if (!card) return;
+  const body = card.querySelector('#whisper-card-body');
+  const headSpan = card.querySelector('h4 span');
+  const rows = Array.isArray(catalogueRows) ? catalogueRows : [];
+  const installed = rows.filter(r => r.installed);
+  const available = rows.filter(r => !r.installed);
+  if (headSpan) {
+    headSpan.textContent = installed.length ? `${installed.length} installed` : 'none installed';
+  }
+
+  function rowHtml(m) {
+    const size = m.size_mb >= 1000 ? `${(m.size_mb / 1000).toFixed(1)} GB` : `${m.size_mb} MB`;
+    const rec = m.tier === 'small.en' ? ' <span class="pill" style="margin-left:6px">recommended</span>' : '';
+    const action = m.installed
+      ? `<button class="btn btn-ghost btn-xs btn-bordered" data-act="default" data-tier="${m.tier}">Set default</button>
+         <button class="btn btn-ghost btn-xs btn-bordered" data-act="delete"  data-tier="${m.tier}" style="color:var(--chronic,#B84747)">Delete</button>`
+      : `<button class="btn btn-primary btn-xs icon-btn" data-act="download" data-tier="${m.tier}">
+           <i data-lucide="download"></i> Download
+         </button>`;
+    return `
+      <div class="whisper-row" data-tier="${m.tier}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px dashed var(--line)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px">${m.tier}${rec}</div>
+          <div style="color:var(--ink-3);font-size:12px">${size} · ${m.rtf}× realtime · ${m.repo}</div>
+          <div class="whisper-progress" style="display:none;margin-top:6px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--ink-3)"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">${action}</div>
+      </div>`;
+  }
+
+  body.innerHTML = `
+    <div style="display:flex;gap:10px;margin-bottom:6px;font-size:12px;color:var(--ink-3)">
+      <span><b>${installed.length}</b> installed</span>
+      <span>·</span>
+      <span><b>${available.length}</b> available</span>
+    </div>
+    ${rows.map(rowHtml).join('')}
+    ${rows.length === 0 ? '<div class="empty-state" style="padding:12px">Catalogue unavailable — is the Python sidecar running?</div>' : ''}
+    <p style="color:var(--ink-3);font-size:12px;margin-top:10px">
+      Pick <code>medium.en</code> or <code>large-v3</code> for max accuracy on accents / noisy audio. <code>small.en</code> is fine for most clear-English talks and podcasts.
+    </p>`;
+  window.refreshIcons?.();
+
+  const verLine = card.querySelector('#ytdlp-version-line');
+  if (verLine && ytdlpVer) {
+    const installedV = ytdlpVer.installed || '—';
+    const latestV = ytdlpVer.latest || '—';
+    const stale = installedV !== '0' && latestV !== '—' && installedV !== latestV;
+    verLine.innerHTML = stale
+      ? `Installed <b>${installedV}</b> · latest <b>${latestV}</b> <span class="pill" style="margin-left:6px;background:rgba(184,130,47,0.18);color:#8a5f1f">update available</span>`
+      : `Installed <b>${installedV}</b> · latest <b>${latestV}</b>`;
+  }
+
+  body.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    const tier = btn.dataset.tier;
+    const row = body.querySelector(`.whisper-row[data-tier="${tier}"]`);
+    const prog = row?.querySelector('.whisper-progress');
+
+    if (act === 'download') {
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2"></i> Downloading…';
+      window.refreshIcons?.();
+      if (prog) { prog.style.display = 'block'; prog.textContent = 'Starting…'; }
+      const { listen } = await import('@tauri-apps/api/event');
+      const un1 = await listen('whisper:download-progress', (ev) => {
+        if (!prog) return;
+        const raw = typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload);
+        prog.textContent = raw.slice(0, 200);
+      });
+      const un2 = await listen('whisper:download-done', async (ev) => {
+        try { un1(); un2(); } catch {}
+        const ok = (ev.payload?.code ?? 0) === 0;
+        if (prog) prog.textContent = ok ? '✓ installed' : `✗ download failed (exit ${ev.payload?.code})`;
+        if (ok) {
+          const [cat, ver] = await Promise.all([
+            api.whisperCatalogue().catch(() => []),
+            api.ytdlpVersion().catch(() => ({})),
+          ]);
+          fillWhisperCard(root, cat, ver);
+        } else {
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="download"></i> Download';
+          window.refreshIcons?.();
+        }
+      });
+      try { await api.whisperDownload(tier); } catch (err) {
+        if (prog) prog.textContent = `✗ ${err?.message || err}`;
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="download"></i> Download';
+        window.refreshIcons?.();
+      }
+    }
+
+    if (act === 'delete') {
+      if (!confirm(`Delete the ${tier} model? You'll need to re-download to transcribe with it.`)) return;
+      btn.disabled = true;
+      try {
+        await api.whisperDelete(tier);
+        const [cat, ver] = await Promise.all([
+          api.whisperCatalogue().catch(() => []),
+          api.ytdlpVersion().catch(() => ({})),
+        ]);
+        fillWhisperCard(root, cat, ver);
+      } catch (err) {
+        alert(`Delete failed: ${err?.message || err}`);
+        btn.disabled = false;
+      }
+    }
+
+    if (act === 'default') {
+      btn.disabled = true;
+      try {
+        await api.whisperSetDefault(tier);
+        btn.textContent = 'Default ✓';
+      } catch (err) {
+        alert(`Set-default failed: ${err?.message || err}`);
+        btn.disabled = false;
+      }
+    }
+  });
+
+  const updBtn = card.querySelector('#btn-ytdlp-update');
+  updBtn?.addEventListener('click', async () => {
+    updBtn.disabled = true;
+    const orig = updBtn.textContent;
+    updBtn.textContent = 'Checking…';
+    try {
+      const r = await api.ytdlpUpdate(true);
+      if (r?.ok && r.updated) {
+        alert(`Updated yt-dlp ${r.from} → ${r.to}.`);
+      } else if (r?.ok && !r.updated) {
+        alert(`Already on latest (${r.installed || 'current'}).`);
+      } else {
+        alert(`yt-dlp update: ${r?.reason || 'unknown'}`);
+      }
+      const ver = await api.ytdlpVersion().catch(() => ({}));
+      if (verLine) verLine.innerHTML = `Installed <b>${ver.installed || '—'}</b> · latest <b>${ver.latest || '—'}</b>`;
+    } catch (err) {
+      alert(`Check failed: ${err?.message || err}`);
+    } finally {
+      updBtn.disabled = false;
+      updBtn.textContent = orig;
+    }
+  });
 }

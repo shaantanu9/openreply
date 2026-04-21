@@ -6,6 +6,7 @@ import { renderTopic } from './screens/topic.js';
 import { renderCollect } from './screens/collect.js';
 import { renderSettings } from './screens/settings.js';
 import { renderIngest } from './screens/ingest.js';
+import { renderIngestVideo } from './screens/ingest_video.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
 import { renderActivity } from './screens/activity.js';
@@ -30,6 +31,7 @@ const routes = [
   { match: /^\/collect\/([^/]+)$/,  render: renderCollect },
   { match: /^\/settings\/?$/,       render: renderSettings },
   { match: /^\/ingest\/?$/,         render: renderIngest },
+  { match: /^\/ingest-video\/?$/,   render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },
   { match: /^\/activity\/?$/,       render: renderActivity },
   { match: /^\/database\/?$/,       render: renderDatabase },
@@ -386,6 +388,49 @@ function wireEnrichErrorBanner() {
   });
   // A successful idle or tick means the worker is healthy — auto-clear.
   window.addEventListener('gapmap:enrich-idle', clearBanner);
+
+  // Task 9.5 — daily token-cap banner. Separate from the enrich-error
+  // banner because the recovery path is different: cap-reached means the
+  // user needs to raise the cap or wait for midnight; no "retry" button.
+  let capEl = null;
+  const _capShown = new Set();
+  window.addEventListener('gapmap:enrich-cap', (e) => {
+    const d = e?.detail || {};
+    const topic = d.topic || 'a topic';
+    const cap = Number(d.cap || 0).toLocaleString();
+    const key = `${d.topic || '*'}@${d.day || ''}`;
+    if (_capShown.has(key)) return;
+    _capShown.add(key);
+    const mainEl = document.getElementById('main-content');
+    if (!mainEl) return;
+    if (!capEl) {
+      capEl = document.createElement('div');
+      capEl.className = 'hc-topbar enrich-cap-topbar';
+      mainEl.insertBefore(capEl, mainEl.firstChild);
+    }
+    capEl.innerHTML = `
+      <span>⚠ Daily token cap reached for <b>${esc(topic)}</b>${cap ? ` (${esc(cap)} tokens).` : '.'} Extraction paused for this topic.</span>
+      <button id="cap-raise">Raise cap</button>
+      <button id="cap-pause">Pause until tomorrow</button>
+      <button id="cap-dismiss" aria-label="Dismiss">Dismiss</button>
+    `;
+    capEl.querySelector('#cap-raise').onclick = () => {
+      location.hash = '#/settings';
+    };
+    capEl.querySelector('#cap-pause').onclick = async () => {
+      try {
+        const until = new Date();
+        until.setHours(24, 0, 0, 0);  // next local midnight
+        await api.extractionPrefsSet('global', { paused_until: until.toISOString() });
+      } catch (err) {
+        console.warn('[cap] pause failed:', err);
+      }
+      capEl?.remove(); capEl = null;
+    };
+    capEl.querySelector('#cap-dismiss').onclick = () => {
+      capEl?.remove(); capEl = null;
+    };
+  });
 }
 
 async function runStartupHealthProbe() {

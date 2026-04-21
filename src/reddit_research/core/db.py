@@ -592,6 +592,12 @@ def init_schema(db: Database) -> None:
     # docs/superpowers/specs/2026-04-21-incremental-enrichment-design.md §3.
     _ensure_extraction_queue(db)
 
+    # Task 9.5 — extraction_daily_usage + topic_prefs extraction columns.
+    # Tracks daily LLM token spend per (provider, model) so the worker can
+    # enforce the user's daily_token_cap and the Settings pane can surface
+    # a running cost estimate. See design spec §12.
+    _ensure_extraction_prefs_schema(db)
+
 
 def _ensure_extraction_queue(db: Database) -> None:
     """Create the extraction_queue table + indexes, then backfill existing
@@ -650,6 +656,69 @@ def _ensure_extraction_queue(db: Database) -> None:
             db.conn.commit()
     except Exception:
         # Backfill is best-effort. A failure here must NOT break app boot.
+        pass
+
+
+def _ensure_extraction_prefs_schema(db: Database) -> None:
+    """Task 9.5 — daily token usage tracking + per-topic extraction overrides.
+
+    Two additive migrations:
+
+    1. Create ``extraction_daily_usage`` keyed by ``(day, provider, model)``.
+       Each row tracks cumulative tokens-in / tokens-out / est-USD for one
+       calendar day (local midnight reset). The worker runs UPSERT-style
+       writes (INSERT OR IGNORE then UPDATE … SET x=x+?) after every
+       successful LLM call.
+    2. Extend ``topic_prefs`` with nullable extraction-override columns so
+       a user can override the global defaults per-topic. NULL means "use
+       the global default from extraction.json". Every ALTER is wrapped in
+       try/except so pre-existing rows survive.
+    """
+    if "extraction_daily_usage" not in db.table_names():
+        db["extraction_daily_usage"].create(
+            {
+                "day": str,           # ISO date, e.g. 2026-04-21 (local)
+                "provider": str,      # resolved LLM provider name
+                "model": str,         # LLM_MODEL env value at write-time
+                "tokens_in": int,
+                "tokens_out": int,
+                "est_usd": float,
+            },
+            pk=("day", "provider", "model"),
+            defaults={"tokens_in": 0, "tokens_out": 0, "est_usd": 0.0},
+        )
+        db["extraction_daily_usage"].create_index(["day"])
+
+    # Per-topic extraction overrides. All nullable — absent values fall back
+    # to the global default stored in ``extraction.json``. Old databases
+    # created before this migration have `topic_prefs` without these
+    # columns; the try/except handles that.
+    try:
+        if "topic_prefs" in db.table_names():
+            cols = {c.name for c in db["topic_prefs"].columns}
+            # (column, python type) — sqlite-utils maps to TEXT / INTEGER / REAL.
+            add_cols = [
+                ("extraction_mode", str),           # 'auto' | 'manual' | 'scheduled'
+                ("extraction_threshold", int),      # 50–500
+                ("extraction_batch_size", int),     # 1–20
+                ("extraction_window_start", str),   # HH:MM local (scheduled mode)
+                ("extraction_window_end", str),     # HH:MM local
+                ("daily_token_cap", int),           # tokens per day, NULL = unlimited
+                ("release_llm_idle", int),          # 0/1, send keep_alive:0 to Ollama
+            ]
+            for name, typ in add_cols:
+                if name not in cols:
+                    try:
+                        db["topic_prefs"].add_column(name, typ)
+                    except Exception:
+                        # Some sqlite-utils versions raise when the column
+                        # raced in via another connection. Harmless — the
+                        # schema is converging.
+                        pass
+    except Exception:
+        # Table missing entirely is fine — the block above creates it with
+        # the original columns; these extras just won't exist on very old
+        # rows (and the worker tolerates missing columns).
         pass
 
 

@@ -397,6 +397,109 @@ def _corpus_rows_for_posts(topic: str, post_ids: list[str]) -> list[dict[str, An
     return list(db.query(sql, [topic, *post_ids]))
 
 
+# Task 9.5 — Provider / model pricing. Values are $/1M tokens for (input,
+# output). Sourced from each vendor's public pricing page at 2026-04-21.
+# Missing entries default to (0.0, 0.0) — the token count still lands in
+# extraction_daily_usage but est_usd stays 0 so users aren't misled into
+# thinking we're charging a free model.
+_PROVIDER_PRICING: dict[tuple[str, str], tuple[float, float]] = {
+    # Anthropic
+    ("anthropic", "claude-haiku-4-5"):  (1.00, 5.00),
+    ("anthropic", "claude-3-5-haiku"):  (0.80, 4.00),
+    ("anthropic", "claude-sonnet-4-5"): (3.00, 15.00),
+    ("anthropic", "claude-sonnet-4-6"): (3.00, 15.00),
+    ("anthropic", "claude-opus-4-7"):   (15.00, 75.00),
+    # OpenAI
+    ("openai", "gpt-4o-mini"):          (0.15, 0.60),
+    ("openai", "gpt-4o"):                (2.50, 10.00),
+    ("openai", "gpt-4.1-mini"):          (0.40, 1.60),
+    # OpenRouter (widely-used cheap models)
+    ("openrouter", "google/gemini-2.5-flash"):          (0.075, 0.30),
+    ("openrouter", "google/gemini-3.1-flash-lite"):     (0.075, 0.30),
+    ("openrouter", "meta-llama/llama-3.3-70b-instruct"):(0.60, 0.80),
+    # Groq
+    ("groq", "llama-3.3-70b-versatile"): (0.59, 0.79),
+    ("groq", "llama-3.1-70b-versatile"): (0.59, 0.79),
+    ("groq", "llama-3.3-8b-instant"):    (0.05, 0.08),
+    # DeepSeek
+    ("deepseek", "deepseek-chat"):       (0.27, 1.10),
+    ("deepseek", "deepseek-reasoner"):   (0.55, 2.19),
+    # Google Gemini (direct)
+    ("google", "gemini-2.5-flash"):      (0.075, 0.30),
+    ("google", "gemini-2.5-pro"):        (1.25, 5.00),
+    # Local — free
+    ("ollama", "*"):                     (0.0, 0.0),
+}
+
+
+def _lookup_pricing(provider: str, model: str) -> tuple[float, float]:
+    """Best-effort pricing lookup. Falls back to (0,0) when the exact
+    (provider, model) pair isn't mapped."""
+    if not provider:
+        return (0.0, 0.0)
+    p = provider.lower()
+    m = (model or "").lower()
+    if (p, m) in _PROVIDER_PRICING:
+        return _PROVIDER_PRICING[(p, m)]
+    # ollama (local) — price zero regardless of model name.
+    if p == "ollama":
+        return (0.0, 0.0)
+    return (0.0, 0.0)
+
+
+def _record_token_usage(
+    tokens_in: int,
+    tokens_out: int,
+    provider: str | None,
+    model: str | None,
+) -> None:
+    """Upsert today's row in ``extraction_daily_usage``. Never raises — token
+    accounting is best-effort; a transient SQLite error must not break the
+    extraction pipeline."""
+    if not tokens_in and not tokens_out:
+        return
+    try:
+        import os as _os
+        from datetime import datetime as _dt
+        prov = (provider or "unknown").lower()
+        mdl = (model or _os.getenv("LLM_MODEL") or "unknown")
+        day = _dt.now().strftime("%Y-%m-%d")
+        p_in, p_out = _lookup_pricing(prov, mdl)
+        est = (tokens_in * p_in + tokens_out * p_out) / 1_000_000.0
+        db = get_db()
+        # Ensure a row exists with zero counters, then additive UPDATE. Cheap
+        # — the PK makes INSERT OR IGNORE a pure constraint check on hit.
+        db.conn.execute(
+            "INSERT OR IGNORE INTO extraction_daily_usage "
+            "(day, provider, model, tokens_in, tokens_out, est_usd) "
+            "VALUES (?, ?, ?, 0, 0, 0)",
+            (day, prov, mdl),
+        )
+        db.conn.execute(
+            "UPDATE extraction_daily_usage "
+            "SET tokens_in = tokens_in + ?, "
+            "    tokens_out = tokens_out + ?, "
+            "    est_usd = est_usd + ? "
+            "WHERE day = ? AND provider = ? AND model = ?",
+            (int(tokens_in), int(tokens_out), float(est), day, prov, mdl),
+        )
+        db.conn.commit()
+    except Exception:
+        pass
+
+
+def _estimate_tokens(prompt: str, response: str) -> tuple[int, int]:
+    """Fallback token estimator: `chars // 4` per OpenAI's rule of thumb.
+
+    Used when the provider doesn't expose a usage object. Accurate enough
+    for the Settings cost estimator (within ~20% of real usage on English
+    text); no one uses this to bill customers, so the drift is acceptable.
+    """
+    def _est(s: str) -> int:
+        return max(0, (len(s or "")) // 4)
+    return (_est(prompt), _est(response))
+
+
 def _run_extractor_on_rows(
     extractor_name: str,
     topic: str,
@@ -440,6 +543,16 @@ def _run_extractor_on_rows(
         max_tokens=max_tokens,
         temperature=0.2,
     )
+    # Task 9.5 — record daily token usage. The LLMProvider.complete surface
+    # returns a bare string so we can't read vendor usage blocks; fall back
+    # to the char-count estimator. Best-effort: any failure is swallowed by
+    # _record_token_usage.
+    try:
+        sys_text = ext.get("system") or ""
+        in_tok, out_tok = _estimate_tokens(sys_text + "\n" + user, raw or "")
+        _record_token_usage(in_tok, out_tok, resolved, _os.getenv("LLM_MODEL"))
+    except Exception:
+        pass
     return _parse_json(raw)
 
 
