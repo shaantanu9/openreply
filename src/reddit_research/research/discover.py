@@ -24,10 +24,17 @@ def _tokens(topic: str) -> list[str]:
 
 
 def _search_raw(query: str, limit: int = 25) -> list[dict[str, Any]]:
-    j = _get(
-        "/subreddits/search.json",
-        params={"q": query, "limit": limit, "raw_json": 1, "include_over_18": "off"},
-    )
+    try:
+        j = _get(
+            "/subreddits/search.json",
+            params={"q": query, "limit": limit, "raw_json": 1, "include_over_18": "off"},
+        )
+    except Exception:
+        # Reddit public JSON flakes (429, 403 behind UA filter, DNS hiccup).
+        # Return empty so discover_subs degrades gracefully — the caller
+        # unions results across 6+ keyword queries, so one failing query
+        # shouldn't abort the whole run.
+        return []
     children = j.get("data", {}).get("children", [])
     return [c["data"] for c in children if c.get("kind") == "t5"]
 

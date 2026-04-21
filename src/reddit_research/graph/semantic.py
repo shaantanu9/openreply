@@ -110,6 +110,14 @@ def upsert_semantic(
     """
     ensure_graph_schema()
     db = get_db()
+    # Alias lookup only — if a prior LLM canonicalization bound this topic
+    # to another form, collapse onto the canonical. No auto-rewriting of
+    # user input.
+    try:
+        from ..research.topic_resolver import resolve_topic
+        topic = resolve_topic(topic, register=False) or topic
+    except Exception:
+        pass
     topic_node = make_node_id(topic, "topic", topic)
     # Ensure topic node exists so edges are valid
     if db["graph_nodes"].count_where("id = ?", [topic_node]) == 0:
@@ -237,6 +245,24 @@ def upsert_semantic(
             gap_pp = make_node_id(topic, "painpoint", gap_slug)
             if db["graph_nodes"].count_where("id = ?", [gap_pp]) > 0:
                 _upsert_edge(db, topic, wa_node, gap_pp, "solves")
+
+    # Dense cross-finding relations — the old tree-only graph shows the user
+    # disconnected islands for every finding. This post-pass uses ChromaDB's
+    # MiniLM embedder to create relates_to / potentially_solves / could_address
+    # / co_evidenced edges across the finding set, so the map forms proper
+    # connections instead of a hairball. Best-effort: silent skip if chromadb
+    # is missing (graph still works, just sparse). See graph/relations.py.
+    try:
+        from .relations import build_semantic_relations
+        rel_summary = build_semantic_relations(topic)
+        if rel_summary.get("ok") and not rel_summary.get("skipped"):
+            summary["relates_to_edges"] = rel_summary.get("relates_to_edges", 0)
+            summary["co_evidenced_edges"] = rel_summary.get("co_evidenced_edges", 0)
+            summary["evidence_edges"] += rel_summary.get("edges_written", 0)
+        elif rel_summary.get("skipped"):
+            summary["semantic_relations_skipped"] = rel_summary.get("reason")
+    except Exception as e:
+        summary["semantic_relations_error"] = str(e)
 
     return summary
 

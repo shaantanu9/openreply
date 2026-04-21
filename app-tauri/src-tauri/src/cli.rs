@@ -171,6 +171,20 @@ pub struct ActiveStreamPid(pub Arc<Mutex<Option<u32>>>);
 #[derive(Default, Clone)]
 pub struct ActiveGraphOps(pub Arc<Mutex<std::collections::HashSet<String>>>);
 
+/// In-flight `start_collect` dedup + visibility registry.
+///
+/// Two problems solved:
+///   1. If the user navigates away from `#/collect/X` and back, `renderCollect`
+///      would re-call `start_collect`, spawning a DUPLICATE Python sidecar for
+///      the same topic. The first call's events are still streaming — the
+///      second one stomps on the schema with parallel writes.
+///   2. The home screen has no way to know "is any collect running right now?".
+///      A pinned "Collecting now: X — click to open log" banner needs this.
+///
+/// Keyed by topic string. Tracks start timestamp so the UI can show elapsed.
+#[derive(Default, Clone)]
+pub struct ActiveCollects(pub Arc<Mutex<std::collections::HashMap<String, u64>>>);
+
 /// Resolve the data dir used by the Python CLI for this app.
 /// `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`.
 pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {

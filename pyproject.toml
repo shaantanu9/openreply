@@ -39,6 +39,10 @@ sources = [
     "networkx>=3.1",
     "scipy>=1.11",
     "pypdf>=4.0",
+    # HTML → Markdown for RSS/web-page selftext. Cuts LLM prompt char-count
+    # 3-5× vs raw HTML with no loss of signal. See insights.py::_strip_html.
+    "markdownify>=0.13",
+    "beautifulsoup4>=4.12",
 ]
 # Structure-aware PDF extraction (headings / tables / references preserved).
 # Needs Java 11+ on the machine; falls back to pypdf transparently if

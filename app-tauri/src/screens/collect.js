@@ -9,6 +9,27 @@ import {
   fmtCollectElapsed as fmtElapsed,
 } from '../lib/collectFormat.js';
 
+// Module-scope persistence. When the user navigates away from #/collect/<topic>
+// and comes back mid-collect, renderCollect remounts fresh — but the Python
+// sidecar is still streaming `collect:progress` events. Without these maps
+// we'd lose every log line emitted between unmount and remount. Each entry
+// keyed by topic; cleared on collect:done so a fresh collect for the same
+// topic starts clean. Capped at 5000 lines per topic to bound memory if a
+// pathologically long collect spews logs.
+const _collectLogs   = new Map();   // topic → [{text, cls}, …]  up to 5000
+const _collectStatus = new Map();   // topic → 'running' | 'done' | 'failed'
+const _collectStart  = new Map();   // topic → ms timestamp of first line
+const MAX_PERSISTED_LINES = 5000;
+
+function pushPersistedLine(topic, text, cls) {
+  if (!_collectLogs.has(topic)) _collectLogs.set(topic, []);
+  const arr = _collectLogs.get(topic);
+  arr.push({ text, cls });
+  if (arr.length > MAX_PERSISTED_LINES) {
+    arr.splice(0, arr.length - MAX_PERSISTED_LINES);
+  }
+}
+
 export async function renderCollect(root, { params }) {
   const topic = decodeURIComponent(params[0] || '');
   const slug = params[0];
@@ -231,7 +252,7 @@ export async function renderCollect(root, { params }) {
     return false;
   }
 
-  const appendLine = (text, cls = null) => {
+  const appendLine = (text, cls = null, { persist = true } = {}) => {
     lineCount++;
     const klass = cls || classifyLine(text);
     const stage = detectStage(text);
@@ -246,6 +267,10 @@ export async function renderCollect(root, { params }) {
     div.textContent = text;
     log.appendChild(div);
     if (autoscroll.checked) log.scrollTop = log.scrollHeight;
+    // Persist so navigating away + back rehydrates the same log. On rehydrate
+    // we pass persist=false so we don't double-count lines into the backing
+    // array.
+    if (persist) pushPersistedLine(topic, text, klass);
   };
 
   // Elapsed timer
@@ -329,10 +354,12 @@ export async function renderCollect(root, { params }) {
       if (nowText) nowText.textContent = '✓ Done — gap map ready';
       if (nowSpinner) nowSpinner.style.animation = 'none';
       openBtn.hidden = false;
+      _collectStatus.set(topic, 'done');
     } catch (e) {
       appendLine(`✗ ${e?.message || e}`, 'err');
       setFinal('failed', 'var(--chronic, #B84747)', 'white');
       sub.textContent = 'Graph build failed.';
+      _collectStatus.set(topic, 'failed');
       showRetryAction();
     }
   });
@@ -419,14 +446,39 @@ export async function renderCollect(root, { params }) {
     filterSummary = 'quick — reddit only';
   }
 
+  // Rehydrate persisted log first, BEFORE calling startCollect — if we're
+  // revisiting an in-flight collect, the user should see the full history
+  // immediately instead of an empty log until the next line ticks in.
+  const persisted = _collectLogs.get(topic);
+  let isRevisit = false;
+  if (persisted && persisted.length) {
+    isRevisit = true;
+    for (const { text, cls } of persisted) {
+      appendLine(text, cls, { persist: false });
+    }
+  }
+
   try {
-    await api.startCollect(topic, aggressive, sourcesArg, skipReddit);
-    appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
+    const result = await api.startCollect(topic, aggressive, sourcesArg, skipReddit);
+    if (result && result.already_running) {
+      // Another tab / earlier session of this very topic is already streaming.
+      // Don't log "→ started…" — the log above already has the history and
+      // new events will land via the collect:progress subscription set up
+      // earlier in renderCollect.
+      if (!isRevisit) {
+        appendLine(`↻ attached to in-flight collect for "${topic}"…`, 'info');
+      }
+    } else {
+      appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
+    }
+    _collectStatus.set(topic, 'running');
+    _collectStart.set(topic, Date.now());
   } catch (e) {
     appendLine(`✗ failed to start: ${e?.message || e}`, 'err');
     setFinal('failed', 'var(--chronic, #B84747)', 'white');
     collectDone = true;
     clearInterval(tick);
+    _collectStatus.set(topic, 'failed');
     showRetryAction();
   }
 

@@ -334,7 +334,17 @@ def run_topic_refresh(
     if not report or not report.get("ok"):
         err = (report or {}).get("error") or (report or {}).get("reason") or "synth returned no report"
         run_id = record_run(topic, trigger, None, error=err)
-        return {"ok": False, "topic": topic, "error": err, "run_id": run_id}
+        # Propagate structured error fields (error_code, provider) so the UI
+        # can render a direct-action CTA — e.g. "Switch provider in Settings"
+        # when error_code='credits_exhausted' instead of a generic Retry.
+        return {
+            "ok": False,
+            "topic": topic,
+            "error": err,
+            "run_id": run_id,
+            "error_code": (report or {}).get("error_code"),
+            "provider": (report or {}).get("provider"),
+        }
 
     run_id = record_run(topic, trigger, report, prev_report=prev)
     delta = compute_delta(prev, report)

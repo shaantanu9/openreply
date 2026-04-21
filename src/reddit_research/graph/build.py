@@ -243,6 +243,25 @@ def build_structural(topic: str) -> dict[str, Any]:
     total_nodes = sum(node_counts.values())
     total_edges = sum(edge_counts.values())
 
+    # If semantic nodes already exist (enrich has run), re-run the
+    # relations pass so structural rebuilds pick up any new findings
+    # without requiring a full re-enrich. Cheap when finding count is
+    # small; silent skip when chromadb isn't installed.
+    try:
+        has_semantic = db["graph_nodes"].count_where(
+            "topic = ? AND kind IN ('painpoint','feature_wish','workaround','product')",
+            [topic],
+        )
+        if has_semantic > 1:
+            from .relations import build_semantic_relations
+            rel_summary = build_semantic_relations(topic)
+            if rel_summary.get("ok") and not rel_summary.get("skipped"):
+                edge_counts["relates_to"] = rel_summary.get("relates_to_edges", 0)
+                edge_counts["co_evidenced"] = rel_summary.get("co_evidenced_edges", 0)
+                total_edges += rel_summary.get("edges_written", 0)
+    except Exception:
+        pass  # relations layer is best-effort; never block structural build
+
     return {
         "topic": topic,
         "total_nodes": total_nodes,

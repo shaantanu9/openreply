@@ -35,3 +35,8 @@ app-tauri/.claude/
 
 # 80 MB ONNX model cache — regenerates via palace warmup on first use
 scripts/onnx-model-cache/
+
+# License-mint private key — NEVER commit. Public key is embedded in the
+# built app; the private key stays on your laptop (or webhook server).
+scripts/licenses/.keys/
+

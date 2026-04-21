@@ -416,6 +416,42 @@ _HTML_TEMPLATE = """<!doctype html>
     color:var(--text); text-decoration:none; font-size:11px; line-height:1.35; }
   .details .evidence-list a:hover { border-color:var(--accent); color:var(--accent); }
   .details .evidence-list .ev-meta { color:var(--muted); font-size:10px; margin-top:2px; }
+  .details .muted { color:var(--muted); }
+
+  /* Node-detail panel — redesigned 2026-04-21 so clicks always show
+     a meaningful "Linked to" section grouped by edge kind. */
+  .details .node-detail-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .details .node-id { font-family:ui-monospace,monospace; font-size:10px; color:var(--muted); }
+  .details .node-title { font-size:14px; font-weight:700; margin:4px 0 8px; line-height:1.3; }
+  .details .node-meta-block { background:var(--bg); border:1px solid var(--border);
+    border-radius:4px; padding:8px 10px; margin:6px 0 10px; font-size:12px; }
+  .details .node-meta-row { display:flex; gap:8px; margin:2px 0; line-height:1.4; }
+  .details .node-meta-row b { flex:0 0 88px; color:var(--muted); font-weight:600;
+    text-transform:uppercase; font-size:10px; letter-spacing:.4px; padding-top:2px; }
+  .details .node-meta-row span { flex:1; color:var(--text); }
+  .details .node-section-title { font-size:11px; margin:14px 0 6px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.4px; font-weight:700; }
+  .details .edge-group { margin-bottom:8px; }
+  .details .edge-group-head { font-size:11px; font-weight:700; color:var(--text);
+    margin-bottom:4px; padding:2px 0; }
+  .details .edge-group-body { display:flex; flex-direction:column; gap:2px; }
+  .details .neighbor-row { display:flex; align-items:center; gap:6px; padding:4px 6px;
+    background:var(--bg); border:1px solid var(--border); border-radius:3px;
+    cursor:pointer; font-size:11px; transition:border-color .12s, background .12s; }
+  .details .neighbor-row:hover { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+  .details .neighbor-arrow { color:var(--muted); font-weight:600; flex:0 0 12px; }
+  .details .neighbor-kind { color:var(--muted); font-size:9px; text-transform:uppercase;
+    letter-spacing:.4px; flex:0 0 auto; background:var(--border); padding:1px 5px;
+    border-radius:2px; }
+  .details .neighbor-label { flex:1; color:var(--text); overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  .details .neighbor-row .ext-link { flex:0 0 auto; color:var(--accent);
+    text-decoration:none; font-size:12px; }
+  .details .node-meta-raw { margin-top:12px; }
+  .details .node-meta-raw summary { font-size:10px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.4px; cursor:pointer; padding:4px 0;
+    font-weight:700; }
+  .details .node-meta-raw[open] summary { margin-bottom:4px; }
 
   .controls { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
   .controls button, .controls label { background:var(--bg); color:var(--text);
@@ -905,15 +941,108 @@ function highlightNode(node) {
 }
 
 // ── details panel ──
+// Human-readable labels for common edge kinds. Unknown edges fall back
+// to the raw kind string so nothing is silently hidden.
+const EDGE_LABEL = {
+  evidenced_by:      "Evidenced by",
+  wished_in:         "Wished in",
+  about_product:     "About product",
+  built_in:          "Built in",
+  has_painpoint:     "Has painpoint",
+  has_feature_wish:  "Feature wish",
+  has_workaround:    "Workaround",
+  has_product:       "Product",
+  has_temporal_gap:  "Temporal gap",
+  addresses:         "Addresses",
+  cites:             "Cites",
+  similar_to:        "Similar to",
+  mentions:          "Mentions",
+  posted_by:         "Posted by",
+  posted_in:         "Posted in",
+};
+
+function esc(s) { return (s == null ? "" : String(s)).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+
+function _neighborsOf(nodeId) {
+  // Returns { edgeKind: [{ neighbor, dir }] } for every edge touching nodeId.
+  const out = {};
+  links.forEach(l => {
+    const sid = typeof l.source === "object" ? l.source.id : l.source;
+    const tid = typeof l.target === "object" ? l.target.id : l.target;
+    if (sid !== nodeId && tid !== nodeId) return;
+    const neighborId = sid === nodeId ? tid : sid;
+    const neighbor = nodesById[neighborId];
+    if (!neighbor) return;
+    const kind = l.kind || "related_to";
+    (out[kind] ??= []).push({ neighbor, dir: sid === nodeId ? "out" : "in" });
+  });
+  return out;
+}
+
 function showNodeDetails(node) {
   const md = node.metadata || {};
   const host = document.getElementById("details");
-  const title = (node.label || "").replace(/</g,"&lt;");
-  let html = `<div><span class="kind-pill">${KIND_LABEL[node.kind]||node.kind}</span></div>
-    <h3 style="margin-top:8px">${title}</h3>`;
+  const title = esc(node.label || "(unnamed)");
+  const kindLabel = esc(KIND_LABEL[node.kind] || node.kind);
 
-  // Evidence posts (for semantic nodes)
-  if (["painpoint","product","workaround","feature_wish"].includes(node.kind)) {
+  let html = `
+    <div class="node-detail-head">
+      <span class="kind-pill">${kindLabel}</span>
+      ${node.id ? `<span class="node-id" title="${esc(node.id)}">${esc((node.id || "").slice(0, 12))}${(node.id || "").length > 12 ? "…" : ""}</span>` : ""}
+    </div>
+    <h3 class="node-title">${title}</h3>
+  `;
+
+  // High-value metadata promoted to the top for semantic nodes.
+  const preview = [];
+  if (md.summary)    preview.push(`<div class="node-meta-row"><b>Summary</b><span>${esc(md.summary)}</span></div>`);
+  if (md.evidence)   preview.push(`<div class="node-meta-row"><b>Evidence</b><span>"${esc(md.evidence)}"</span></div>`);
+  if (md.importance != null) preview.push(`<div class="node-meta-row"><b>Importance</b><span>${esc(md.importance)}/10</span></div>`);
+  if (md.satisfaction != null) preview.push(`<div class="node-meta-row"><b>Satisfaction</b><span>${esc(md.satisfaction)}/10</span></div>`);
+  if (md.frequency != null) preview.push(`<div class="node-meta-row"><b>Frequency</b><span>${esc(md.frequency)} posts</span></div>`);
+  if (md.classification) preview.push(`<div class="node-meta-row"><b>Classification</b><span>${esc(md.classification)}</span></div>`);
+  if (preview.length) html += `<div class="node-meta-block">${preview.join("")}</div>`;
+
+  // Neighbors grouped by edge kind — this is the "linked to" section.
+  const groups = _neighborsOf(node.id);
+  const groupKeys = Object.keys(groups).sort((a, b) => (groups[b].length - groups[a].length));
+  if (groupKeys.length) {
+    html += `<h3 class="node-section-title">Linked to · <span class="muted">${groupKeys.reduce((n, k) => n + groups[k].length, 0)} edges</span></h3>`;
+    groupKeys.forEach(kind => {
+      const items = groups[kind];
+      const label = esc(EDGE_LABEL[kind] || kind.replace(/_/g, " "));
+      const rows = items.slice(0, 12).map(({ neighbor, dir }) => {
+        const nkLabel = esc(KIND_LABEL[neighbor.kind] || neighbor.kind);
+        const nTitle = esc(neighbor.label || "(unnamed)");
+        const arrow = dir === "out" ? "→" : "←";
+        const nmd = neighbor.metadata || {};
+        const permalink = nmd.permalink || nmd.url;
+        const permalinkHtml = permalink
+          ? ` <a href="${esc(permalink)}" target="_blank" rel="noopener" class="ext-link" title="Open source">↗</a>`
+          : "";
+        return `<div class="neighbor-row" data-node-id="${esc(neighbor.id)}">
+          <span class="neighbor-arrow">${arrow}</span>
+          <span class="neighbor-kind">${nkLabel}</span>
+          <span class="neighbor-label">${nTitle}</span>${permalinkHtml}
+        </div>`;
+      }).join("");
+      const overflow = items.length > 12
+        ? `<div class="muted" style="font-size:11px;padding:4px 2px">+ ${items.length - 12} more</div>`
+        : "";
+      html += `
+        <div class="edge-group">
+          <div class="edge-group-head">${label} <span class="muted">(${items.length})</span></div>
+          <div class="edge-group-body">${rows}${overflow}</div>
+        </div>
+      `;
+    });
+  } else {
+    html += `<div class="muted" style="font-size:12px;margin-top:10px">No edges touch this node yet. Re-run enrich or rebuild to connect it.</div>`;
+  }
+
+  // Evidence posts — kept as a dedicated section for semantic nodes so
+  // posts stay quick to scan even if other edge kinds dominate the list.
+  if (["painpoint","product","workaround","feature_wish","temporal_gap"].includes(node.kind)) {
     const evidenceIds = new Set();
     links.forEach(l => {
       const sid = typeof l.source === "object" ? l.source.id : l.source;
@@ -925,23 +1054,31 @@ function showNodeDetails(node) {
     });
     const posts = [...evidenceIds].map(id => nodesById[id]).filter(n => n && n.kind === "post");
     if (posts.length) {
-      html += `<div class="evidence-list"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">📎 ${posts.length} evidence posts</div>`;
+      html += `<h3 class="node-section-title">📎 Evidence posts <span class="muted">(${posts.length})</span></h3>`;
+      html += `<div class="evidence-list">`;
       posts.forEach(p => {
         const pmd = p.metadata || {};
         const score = pmd.score != null ? `${pmd.score}↑` : "";
         const comments = pmd.num_comments != null ? `${pmd.num_comments}💬` : "";
-        html += `<a href="${pmd.permalink||'#'}" target="_blank" rel="noopener">
-          <div>${(p.label||'').replace(/</g,'&lt;')}</div>
-          <div class="ev-meta">r/${(pmd.sub||'?')} · ${score} ${comments}</div>
+        const src = pmd.sub || pmd.source_type || "?";
+        html += `<a href="${esc(pmd.permalink || pmd.url || '#')}" target="_blank" rel="noopener">
+          <div>${esc(p.label || '')}</div>
+          <div class="ev-meta">${esc(src)} · ${esc(score)} ${esc(comments)}</div>
         </a>`;
       });
       html += `</div>`;
     }
   }
-  html += `<h3 style="font-size:11px;margin-top:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Metadata</h3>`;
-  html += `<pre>${JSON.stringify(md, null, 2).replace(/</g,"&lt;")}</pre>`;
-  if (md.permalink) html += `<div style="margin-top:8px"><a href="${md.permalink}" target="_blank" style="color:var(--accent)">Open on Reddit ↗</a></div>`;
+
+  html += `<details class="node-meta-raw"><summary>Raw metadata</summary><pre>${esc(JSON.stringify(md, null, 2))}</pre></details>`;
+  if (md.permalink) html += `<div style="margin-top:8px"><a href="${esc(md.permalink)}" target="_blank" style="color:var(--accent)">Open source ↗</a></div>`;
   host.innerHTML = html;
+
+  // Clicking a neighbor row jumps to that node — turns the panel into
+  // a keyboard-free way to walk the graph.
+  host.querySelectorAll(".neighbor-row[data-node-id]").forEach(el => {
+    el.addEventListener("click", () => selectNodeById(el.dataset.nodeId));
+  });
 }
 </script>
 </body>
