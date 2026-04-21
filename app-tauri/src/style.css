@@ -614,6 +614,22 @@ body {
 .tab.active { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-bottom-color: var(--surface); margin-bottom: -9px; }
 .tab:hover:not(.active) { color: var(--ink); }
 
+/* Freshness badge — small muted "Updated Xs ago" string on Findings / Map
+   / Gaps / Solutions tab headers. Kept tiny so it never visually competes
+   with the tab label itself. Empty until the enrichStatus listener records
+   the first tick for this topic. */
+.tab-freshness {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-3, #6B7280);
+  white-space: nowrap;
+}
+.tab-freshness:empty { display: none; }
+/* Freshness badge inside the More ▾ dropdown items — push right so the
+   age reads as a secondary piece of info on its own line-end. */
+.tab-more-item .tab-freshness { margin-left: auto; padding-left: 10px; }
+
 /* Report markdown viewer */
 .markdown-view {
   padding: 24px 28px; background: var(--surface);

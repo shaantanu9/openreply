@@ -213,6 +213,7 @@ fn main() {
             worker::extraction_worker_status,
             worker::mark_topic_active,
             worker::enqueue_extraction,
+            worker::retry_extraction_failures,
             // ── Task 8: saturation v1 + coverage gaps panel ──
             commands::topic_saturation,
             commands::topic_coverage_gaps,

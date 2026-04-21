@@ -563,6 +563,21 @@ pub async fn mark_topic_active(app: AppHandle, topic: String) -> Result<(), Stri
     mark_active(&app, &topic)
 }
 
+/// Stub for the "Retry all failed" button on the enrichment error banner.
+/// Returns `{ok:true}` so the UI has something to invoke while the real
+/// requeue-failed-rows logic is still being designed. Keeping the command
+/// registered (vs. returning an error) means the button is fully wired —
+/// the only part we haven't implemented is the "find every failed row and
+/// push it back onto extraction_queue" step on the Python side.
+#[tauri::command]
+pub async fn retry_extraction_failures(_app: AppHandle) -> Result<Value, String> {
+    // TODO(Task 9.x follow-up): drive a `research enrich-worker --retry-failed`
+    // subcommand that re-enqueues rows in `extraction_queue` with state='error'
+    // and resets their attempt counter. For now this is a no-op so the frontend
+    // banner stays functional end-to-end.
+    Ok(serde_json::json!({ "ok": true, "stub": true }))
+}
+
 /// Manually re-enqueue every post of a topic (re-runs extraction even for
 /// posts already in graph_nodes when `force=true`). Uses a one-shot sidecar
 /// spawn, *not* the long-lived worker.

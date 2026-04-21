@@ -15,6 +15,7 @@ import { loadPosts, setPostsFilter } from './posts.js';
 import { loadSentiment } from './sentiment.js';
 import { loadInsights } from './insights.js';
 import { loadBets } from './bets.js';
+import { wireFreshnessBadge } from '../lib/enrichStatus.js';
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
@@ -412,23 +413,23 @@ export async function renderTopic(root, { params }) {
          usage (Insights=core output, Bets=weekly ritual,
          Evidence=drilldown, Chat=follow-up) per PRODUCT_GAPS.md §3.1 -->
     <div class="tabs" id="topic-tabs">
-      <button class="tab active" data-tab="insights"><i data-lucide="sparkles"></i> Insights</button>
+      <button class="tab active" data-tab="insights"><i data-lucide="sparkles"></i> Insights<span class="tab-freshness" id="tab-fresh-insights"></span></button>
       <button class="tab" data-tab="bets"><i data-lucide="target"></i> Bets</button>
-      <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
+      <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence<span class="tab-freshness" id="tab-fresh-evidence"></span></button>
       <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
       <div class="tab-more-wrap">
         <button class="tab tab-more" id="tab-more-toggle" aria-haspopup="true" aria-expanded="false">
           <i data-lucide="more-horizontal"></i> More <i data-lucide="chevron-down"></i>
         </button>
         <div class="tab-more-menu" id="tab-more-menu" hidden>
-          <button class="tab-more-item" data-tab="map"><i data-lucide="network"></i> Map</button>
+          <button class="tab-more-item" data-tab="map"><i data-lucide="network"></i> Map<span class="tab-freshness" id="tab-fresh-map"></span></button>
           <button class="tab-more-item" data-tab="report"><i data-lucide="file-text"></i> Report</button>
           <button class="tab-more-item" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
           <button class="tab-more-item" data-tab="sentiment"><i data-lucide="smile"></i> Sentiment</button>
           <button class="tab-more-item" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
           <button class="tab-more-item" data-tab="posts"><i data-lucide="list"></i> Posts</button>
           <button class="tab-more-item" data-tab="research"><i data-lucide="book-open"></i> Research</button>
-          <button class="tab-more-item" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions</button>
+          <button class="tab-more-item" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions<span class="tab-freshness" id="tab-fresh-solutions"></span></button>
           <button class="tab-more-item" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts</button>
           <button class="tab-more-item" data-tab="papers"><i data-lucide="book-marked"></i> Papers</button>
           <button class="tab-more-item" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
@@ -447,6 +448,29 @@ export async function renderTopic(root, { params }) {
   const tabsEl = $('#topic-tabs');
   const contentEl = $('#tab-content');
   window.refreshIcons?.();
+
+  // ─── Freshness badges (Findings / Map / Gaps / Solutions) ──────────────
+  // Each badge re-computes every 1 s off the last `enrich:tick` timestamp
+  // tracked in enrichStatus.js. `getCounts` is an optional sidecar read
+  // that appends a count string; we only enable it on tabs where the
+  // count is semantically meaningful ("12 findings", "42 nodes"). All
+  // intervals self-clear when the tab header detaches from the DOM.
+  const freshGetCount = (kind) => async () => {
+    try {
+      const rows = await api.runQuery(
+        'SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic'
+          + (kind ? ` AND kind='${kind.replace(/'/g, '')}'` : ''),
+        topic,
+      );
+      const n = Array.isArray(rows) && rows[0]?.n || 0;
+      if (!n) return '';
+      return kind ? `${n} ${kind}${n === 1 ? '' : 's'}` : `${n} findings`;
+    } catch { return ''; }
+  };
+  wireFreshnessBadge($('#tab-fresh-evidence'), topic, { getCounts: freshGetCount(null) });
+  wireFreshnessBadge($('#tab-fresh-map'),      topic, { getCounts: freshGetCount(null) });
+  wireFreshnessBadge($('#tab-fresh-insights'), topic, { getCounts: freshGetCount('painpoint') });
+  wireFreshnessBadge($('#tab-fresh-solutions'),topic, { getCounts: freshGetCount('workaround') });
 
   // ─── Unified topic stats (one SQL round-trip, shared across the render) ──
   // Before: 3 separate runQuery calls (header stats, countFindings,

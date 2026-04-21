@@ -606,6 +606,11 @@ export const api = {
   // Short TTL — Settings / topic-page freshness badge poll this and want
   // to see a just-fired tick reflected quickly.
   extractionWorkerStatus: () => cachedInvoke('extraction_worker_status', null, 2000),
+  // Wired to the error-banner "Retry all failed" button. The Rust side is
+  // a no-op stub today — real re-queueing logic lands in a follow-up task.
+  // Returning `{ok:true}` from Rust keeps this callable without surfacing
+  // a blocking error toast while the stub is in place.
+  retryAllExtraction: () => invoke('retry_extraction_failures'),
 
   // ----- event listeners -----
   onCollectProgress: (cb) => listen('collect:progress', e => cb(e.payload)),

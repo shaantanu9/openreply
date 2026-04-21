@@ -285,7 +285,108 @@ window.addEventListener('DOMContentLoaded', async () => {
   // link. Warnings (LLM not configured) stay silent — welcome step 3 and
   // settings surface those.
   runStartupHealthProbe();
+
+  // ── Incremental enrichment: Tauri worker events → reactive pipeline ──
+  //
+  // Each `enrich:tick` means the Python enrich-worker drained a batch — any
+  // topic whose posts were in that batch now has fresh findings in
+  // graph_nodes. We bridge to `mutated('findings', …)` so every open screen
+  // (findings cache invalidated, gapmap:changed dispatched) re-renders
+  // through the existing reactive listener above — no duplicate re-render
+  // logic here.
+  //
+  // `enrich:idle`, `enrich:error`, `enrich:cap-reached`, `enrich:supervisor-
+  // gave-up` are dispatched as custom DOM events so specific screens
+  // (topic page, settings) can react without listening to the raw Tauri
+  // channel. The error / supervisor-gave-up events also drive the
+  // dismissible red banner wired up below.
+  (async () => {
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      await listen('enrich:tick', (ev) => {
+        import('./api.js').then(({ mutated }) => mutated('findings', ev.payload));
+      });
+      await listen('enrich:idle', (ev) => {
+        window.dispatchEvent(new CustomEvent('gapmap:enrich-idle', { detail: ev.payload }));
+      });
+      await listen('enrich:error', (ev) => {
+        window.dispatchEvent(new CustomEvent('gapmap:enrich-error', { detail: ev.payload }));
+        console.warn('[enrich] error:', ev.payload);
+      });
+      await listen('enrich:cap-reached', (ev) => {
+        window.dispatchEvent(new CustomEvent('gapmap:enrich-cap', { detail: ev.payload }));
+      });
+      await listen('enrich:supervisor-gave-up', (ev) => {
+        window.dispatchEvent(new CustomEvent('gapmap:enrich-dead', { detail: ev.payload }));
+      });
+    } catch (e) {
+      // Non-Tauri dev preview or import failure — reactive pipeline will
+      // still work for same-process mutations, just not for worker ticks.
+      console.warn('[enrich] listener setup failed:', e);
+    }
+  })();
+
+  // ── Incremental enrichment: dismissible worker-error topbar ──
+  //
+  // Renders a red banner at the top of #main-content when the worker emits
+  // `enrich:error` or the supervisor has given up after MAX restarts. Reuses
+  // the `.hc-topbar` style from Phase 16 of the sidecar skill so we don't
+  // fork a second red-banner class. "Retry all failed" invokes the (stubbed)
+  // `retry_extraction_failures` Rust command; real requeue logic lands in a
+  // follow-up task.
+  wireEnrichErrorBanner();
 });
+
+// ── Enrichment worker error banner ───────────────────────────────────────
+//
+// Reuses the red `.hc-topbar` CSS. One banner at a time: if the worker
+// errors repeatedly the message is updated in place rather than stacking.
+// Dismissing removes the banner until the next error event — it will
+// re-appear on the next `gapmap:enrich-error` / `gapmap:enrich-dead`.
+function wireEnrichErrorBanner() {
+  let hostEl = null;
+  const render = (msg, { dead = false } = {}) => {
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    if (!hostEl) {
+      hostEl = document.createElement('div');
+      hostEl.className = 'hc-topbar enrich-err-topbar';
+      main.insertBefore(hostEl, main.firstChild);
+    }
+    const label = dead
+      ? 'Extraction worker stopped after repeated crashes.'
+      : 'Extraction error — some posts failed to process.';
+    const detail = msg ? ` ${esc(msg)}` : '';
+    hostEl.innerHTML = `
+      <span>⚠ ${esc(label)}${detail}</span>
+      <button id="enrich-err-retry">Retry all failed</button>
+      <button id="enrich-err-dismiss" aria-label="Dismiss">Dismiss</button>
+    `;
+    hostEl.querySelector('#enrich-err-retry').onclick = async () => {
+      try { await api.retryAllExtraction(); }
+      catch (e) { console.warn('[enrich] retry failed:', e); }
+      // Banner stays — the next tick or idle will clear it via clearBanner()
+      // once the worker successfully drains or returns idle.
+    };
+    hostEl.querySelector('#enrich-err-dismiss').onclick = clearBanner;
+  };
+  const clearBanner = () => {
+    if (hostEl && hostEl.parentNode) hostEl.parentNode.removeChild(hostEl);
+    hostEl = null;
+  };
+
+  window.addEventListener('gapmap:enrich-error', (e) => {
+    const msg = e?.detail?.message || e?.detail?.detail || '';
+    render(msg, { dead: false });
+  });
+  window.addEventListener('gapmap:enrich-dead', (e) => {
+    const msg = e?.detail?.message
+      || `Gave up after ${e?.detail?.restarts ?? 3} restarts in ${(e?.detail?.window_secs ?? 300)}s.`;
+    render(msg, { dead: true });
+  });
+  // A successful idle or tick means the worker is healthy — auto-clear.
+  window.addEventListener('gapmap:enrich-idle', clearBanner);
+}
 
 async function runStartupHealthProbe() {
   let payload;
