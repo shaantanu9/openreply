@@ -379,6 +379,39 @@ function wireKeyboard() {
       e.preventDefault();
     }
   });
+
+  // Tab shortcuts (⌘T / ⌘W / ⌘⇧T / ⌘1..⌘9) live in their own listener because
+  // they're window-level operations that should fire even while the user is
+  // typing — unlike the editor-style shortcuts above (?, j/k) which must
+  // respect the typing guard. preventDefault() runs BEFORE tabStore ops so
+  // the browser/macOS never gets a chance to handle ⌘W as "close window".
+  document.addEventListener('keydown', e => {
+    const meta = e.metaKey || e.ctrlKey;
+    if (!meta) return;
+
+    if (e.key === 't' && !e.shiftKey) {
+      e.preventDefault();
+      tabStore.open({ hash: '#/' });
+      return;
+    }
+    if (e.key === 'w') {
+      e.preventDefault();
+      const a = tabStore.getActive();
+      if (a) tabStore.close(a.id);
+      return;
+    }
+    if (e.shiftKey && (e.key === 'T' || e.key === 't')) {
+      e.preventDefault();
+      tabStore.reopenLastClosed();
+      return;
+    }
+    if (/^[1-9]$/.test(e.key)) {
+      e.preventDefault();
+      const idx = parseInt(e.key, 10) - 1;
+      const tab = tabStore.getAll()[idx];
+      if (tab) tabStore.focus(tab.id);
+    }
+  });
 }
 
 function openShortcutsHelp() {
