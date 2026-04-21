@@ -72,11 +72,14 @@ def create_view(
         "created_at": now,
         "updated_at": now,
     }
-    db[_TABLE].insert(row, pk="id")
-    # sqlite-utils auto-fills the PK on insert; fetch the freshly-inserted
-    # row id via last_pk to avoid a SELECT.
-    last_id = db[_TABLE].last_pk
-    created = db[_TABLE].get(last_id)
+    # Fetch the next id explicitly and pass it in. sqlite-utils' auto-id
+    # behavior for int PKs is inconsistent (last_pk can be None when the
+    # schema was declared with `id: int` up-front), so we own it here.
+    max_row = list(db.query(f"SELECT coalesce(max(id), 0) AS m FROM {_TABLE}"))
+    next_id = (max_row[0]["m"] if max_row else 0) + 1
+    row["id"] = next_id
+    db[_TABLE].insert(row, pk="id", alter=True)
+    created = db[_TABLE].get(next_id)
     return _to_public(created)
 
 
