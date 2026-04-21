@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Topic detail — prototype</title>
+
+<!--
+  Gap Map · Topic Detail page — clean-slate prototype
+  ---------------------------------------------------
+  Purpose: settle the layout + hierarchy BEFORE porting to the live
+  topic.js. The live page accreted 7 rows of chrome over 11 phases;
+  this file answers "what should it look like fresh?"
+
+  Design principles:
+    1. Chrome ≤ 180 px. Content starts above the fold.
+    2. Three horizontal bands: Context · Action · Content.
+    3. One visual weight per band (no competing oranges / greens /
+       darks side-by-side).
+    4. Progressive disclosure — secondary meta collapsed behind a
+       subtle link; power-user features behind "More".
+    5. Every primary action is one click from the header.
+    6. Pipeline state (collect / enrich / synthesize) is always
+       visible but doesn't dominate.
+
+  Open this file in a browser to preview. Responsive at 1440 / 1024 /
+  640 widths. Dark mode via :root.dark class toggle (try DevTools).
+-->
+
+<style>
+  :root {
+    --orange:       #B84F14;
+    --orange-soft:  #FEE8D4;
+    --ink-1:        #2D241C;
+    --ink-2:        #4A3729;
+    --ink-3:        #7A6B5D;
+    --surface-0:    #FAF7F0;
+    --surface-1:    #FFFDF7;
+    --surface-2:    #F4EEDF;
+    --line:         #EADFC8;
+    --mint:         #2E7D5B;
+    --mint-soft:    #E3F1E9;
+    --rose:         #B84747;
+    --rose-soft:    #F9DFDF;
+    --lavender:     #6B4FA8;
+    --lavender-soft:#EFE7FB;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --shadow-sm: 0 1px 2px rgba(40, 30, 20, 0.04);
+    --shadow-md: 0 4px 12px rgba(40, 30, 20, 0.08);
+    --font: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", Inter,
+            system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  :root.dark {
+    --orange: #E67E3C;
+    --orange-soft: #3A2418;
+    --ink-1: #E8E4D8;
+    --ink-2: #B8B3A3;
+    --ink-3: #7A7565;
+    --surface-0: #0F0E0C;
+    --surface-1: #1A1915;
+    --surface-2: #25231D;
+    --line: #3A362C;
+    --mint-soft: #102E21;
+    --rose-soft: #3A1410;
+    --lavender-soft: #1F1733;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-family: var(--font); color: var(--ink-1); background: var(--surface-0); }
+  body { padding: 20px 28px 120px; max-width: 1440px; margin: 0 auto; }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; border: 0; background: none; cursor: pointer; color: inherit; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  ul { list-style: none; }
+
+  /* ─────── BAND 1 — CONTEXT ─────── */
+  /* One row. Tells the user WHERE they are + WHAT they have. */
+  .context-band {
+    display: flex; align-items: center; gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--ink-3);
+    padding: 4px 8px; border-radius: var(--radius-sm);
+  }
+  .back-link:hover { background: var(--surface-2); color: var(--ink-1); }
+  .ctx-icon { width: 13px; height: 13px; }
+  .topic-title {
+    font-size: 22px; font-weight: 700; line-height: 1.15;
+    color: var(--ink-1);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 52ch;
+  }
+  .status-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 9px;
+    background: var(--mint-soft); color: var(--mint);
+    font-size: 11.5px; font-weight: 600; border-radius: 999px;
+  }
+  .status-chip.collecting {
+    background: var(--orange-soft); color: var(--orange);
+  }
+  .status-chip .pulse {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: currentColor;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.5; transform: scale(0.9); }
+    50%      { opacity: 1;   transform: scale(1.15); }
+  }
+  .stat-inline {
+    display: inline-flex; align-items: center; gap: 14px;
+    font-size: 12.5px; color: var(--ink-3);
+    margin-left: 8px;
+  }
+  .stat-inline b { color: var(--ink-1); font-variant-numeric: tabular-nums; margin-right: 2px; }
+  .spacer { flex: 1; }
+  .action-group { display: inline-flex; gap: 6px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 10px; font-size: 12px; font-weight: 500;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--line);
+    background: var(--surface-1);
+    color: var(--ink-1);
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .btn:hover { background: var(--surface-2); border-color: var(--ink-3); }
+  .btn.primary {
+    background: var(--orange); color: white; border-color: var(--orange);
+  }
+  .btn.primary:hover { background: #A04310; }
+  .btn.danger { color: var(--rose); }
+  .btn.danger:hover { background: var(--rose-soft); border-color: var(--rose); }
+  .btn .ic { width: 13px; height: 13px; }
+  .icon-only { padding: 5px 7px; }
+
+  /* ─────── BAND 2 — ACTION ─────── */
+  /* The pipeline state + primary CTA for the current phase.
+     Compact card that collapses when nothing's in progress. */
+  .action-band {
+    display: grid;
+    grid-template-columns: minmax(260px, auto) 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+  .phase-selector {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    background: var(--orange-soft); color: var(--orange);
+    border-radius: var(--radius-md);
+    font-size: 13px; font-weight: 600;
+  }
+  .phase-selector .ic-large { width: 14px; height: 14px; }
+  .steps-compact {
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    gap: 6px; min-width: 0;
+  }
+  .step {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    background: var(--surface-2);
+    border-radius: var(--radius-md);
+    font-size: 12px; color: var(--ink-2);
+    min-width: 0;
+  }
+  .step.done  { background: var(--mint-soft); color: var(--mint); }
+  .step.active {
+    background: var(--orange-soft); color: var(--orange);
+    box-shadow: 0 0 0 1px var(--orange) inset;
+  }
+  .step.locked { opacity: 0.5; }
+  .step-num {
+    flex-shrink: 0;
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    background: rgba(0,0,0,0.08);
+  }
+  .step.done  .step-num { background: var(--mint);   color: white; }
+  .step.active .step-num { background: var(--orange); color: white; }
+  .step-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .step-status {
+    margin-left: auto;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .cta-primary {
+    padding: 8px 14px;
+    font-size: 13px; font-weight: 600;
+    background: var(--orange); color: white;
+    border-radius: var(--radius-md);
+    border: 0;
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .cta-primary:hover { background: #A04310; }
+
+  /* ─────── BAND 3 — TABS + CONTENT ─────── */
+  .tabs {
+    display: flex; gap: 2px;
+    border-bottom: 1px solid var(--line);
+    margin-top: 14px;
+  }
+  .tab {
+    padding: 8px 14px;
+    font-size: 13px; font-weight: 500;
+    color: var(--ink-3);
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .tab:hover { color: var(--ink-2); }
+  .tab.active {
+    color: var(--ink-1);
+    border-bottom-color: var(--orange);
+  }
+  .tab .ic { width: 14px; height: 14px; }
+  .tab-more {
+    margin-left: auto;
+    color: var(--ink-3);
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .content {
+    padding: 22px 0 0;
+    min-height: 360px;
+  }
+
+  /* ─────── Content preview (example Insights tab) ─────── */
+  .minto-header {
+    padding: 16px 18px;
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    margin-bottom: 16px;
+  }
+  .minto-label {
+    display: inline-block;
+    padding: 2px 8px; border-radius: 4px;
+    background: var(--orange-soft); color: var(--orange);
+    font-size: 10.5px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .minto-answer {
+    font-size: 17px; font-weight: 600; line-height: 1.4;
+    color: var(--ink-1);
+  }
+  .minto-args {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px; margin-top: 14px;
+  }
+  .minto-arg {
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    display: flex; gap: 8px;
+  }
+  .minto-arg b { color: var(--orange); flex-shrink: 0; font-weight: 700; }
+
+  /* Findings strip */
+  .findings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+    gap: 12px;
+  }
+  .finding-card {
+    padding: 14px 16px;
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.12s, border-color 0.12s;
+  }
+  .finding-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--orange);
+  }
+  .finding-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 10px; margin-bottom: 8px;
+  }
+  .finding-kind { font-size: 18px; flex-shrink: 0; }
+  .finding-title {
+    font-size: 14px; font-weight: 600; line-height: 1.35;
+    color: var(--ink-1);
+    flex: 1;
+  }
+  .finding-score {
+    flex-shrink: 0;
+    display: inline-flex; flex-direction: column; align-items: center;
+    padding: 4px 10px;
+    border-radius: var(--radius-md);
+    background: var(--rose-soft); color: var(--rose);
+  }
+  .finding-score.mid { background: var(--orange-soft); color: var(--orange); }
+  .finding-score.low { background: var(--surface-2); color: var(--ink-3); }
+  .finding-score b { font-size: 14px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .finding-score span { font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .finding-meta {
+    display: flex; flex-wrap: wrap; gap: 4px 6px;
+    margin-bottom: 8px;
+    font-size: 11px;
+  }
+  .chip {
+    padding: 1px 7px;
+    background: var(--surface-2); color: var(--ink-2);
+    border-radius: 999px;
+  }
+  .chip.triang-strong   { background: #E3F1E9; color: var(--mint); }
+  .chip.triang-moderate { background: #FEF0D5; color: #A36112; }
+  .chip.triang-narrow   { background: #F9DFDF; color: var(--rose); }
+  .chip.counter { background: var(--lavender-soft); color: var(--lavender); cursor: pointer; }
+  .chip.research { background: var(--lavender-soft); color: var(--lavender); cursor: pointer; }
+  .finding-narrative {
+    font-size: 12.5px; line-height: 1.5; color: var(--ink-2);
+    margin-bottom: 8px;
+  }
+  .finding-quote {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-left: 3px solid var(--orange);
+    border-radius: var(--radius-sm);
+    font-size: 12px; line-height: 1.5; font-style: italic;
+    color: var(--ink-2);
+  }
+  .finding-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-size: 11px; color: var(--ink-3);
+  }
+  .source-badges { display: inline-flex; gap: 3px; }
+  .src-badge {
+    padding: 1px 6px; border-radius: 3px;
+    background: var(--surface-2);
+    font-size: 10px;
+  }
+  .src-badge b { color: var(--ink-1); }
+  .fb-btn {
+    padding: 2px 6px; border-radius: 4px;
+    font-size: 13px;
+  }
+  .fb-btn:hover { background: var(--rose-soft); }
+
+  /* ─────── Narrow ─────── */
+  @media (max-width: 1024px) {
+    body { padding: 14px 18px 80px; }
+    .action-band { grid-template-columns: 1fr; }
+    .steps-compact { grid-auto-columns: minmax(140px, 1fr); overflow-x: auto; }
+    .minto-args { grid-template-columns: 1fr; }
+    .topic-title { font-size: 19px; max-width: 24ch; }
+    .stat-inline { gap: 10px; font-size: 11.5px; }
+  }
+  @media (max-width: 640px) {
+    .context-band { flex-wrap: wrap; }
+    .tabs { overflow-x: auto; }
+    .tab { flex-shrink: 0; }
+  }
+
+  /* theme toggle helper */
+  .theme-toggle {
+    position: fixed; top: 12px; right: 16px; z-index: 100;
+    padding: 6px 12px;
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11.5px;
+    box-shadow: var(--shadow-sm);
+  }
+</style>
+</head>
+
+<body>
+
+<!-- Dev-only theme toggle for previewing dark mode -->
+<button class="theme-toggle" onclick="document.documentElement.classList.toggle('dark')">
+  ☾ Dark mode
+</button>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     BAND 1 — CONTEXT (single row, ≤ 52 px)
+     ══════════════════════════════════════════════════════════════════ -->
+<nav class="context-band" aria-label="topic-context">
+  <a class="back-link" href="#" title="Back to workspace">
+    <svg class="ctx-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M19 12H5M5 12l6 6M5 12l6-6"/>
+    </svg>
+    <span>Workspace</span>
+  </a>
+
+  <h1 class="topic-title">meditation and sound frequency brainwave app</h1>
+
+  <span class="status-chip collecting">
+    <span class="pulse"></span>
+    Collecting
+  </span>
+
+  <span class="stat-inline">
+    <span><b>5,193</b>posts</span>
+    <span><b>11</b>pains</span>
+    <span><b>0</b>DIY</span>
+    <span><b>8</b>sources</span>
+  </span>
+
+  <span class="spacer"></span>
+
+  <div class="action-group">
+    <button class="btn danger" title="Stop the in-flight collect">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      Cancel
+    </button>
+    <button class="btn" title="Rerun collect">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></svg>
+      Rerun
+    </button>
+    <button class="btn" title="Compare with another topic">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M11 18H8a2 2 0 0 1-2-2V9"/></svg>
+      Compare
+    </button>
+    <button class="btn icon-only danger" title="Delete topic (soft-delete, 7-day undo)">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg>
+    </button>
+  </div>
+</nav>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     BAND 2 — ACTION (pipeline state + primary CTA)
+     ══════════════════════════════════════════════════════════════════ -->
+<section class="action-band" aria-label="topic-pipeline">
+  <!-- Phase selector + label on the left -->
+  <div>
+    <button class="phase-selector">
+      <svg class="ic-large" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5l3.5-7 5 3 6-10M21 3v5h-5"/></svg>
+      <span>Build a new product</span>
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div style="font-size: 11px; color: var(--ink-3); margin-top: 6px;">
+      Turn user pain into evidence-backed product concepts
+    </div>
+  </div>
+
+  <!-- Compact 4-step chip row -->
+  <div class="steps-compact">
+    <div class="step done">
+      <span class="step-num">1</span>
+      <span class="step-label">Collect corpus</span>
+      <span class="step-status">✓</span>
+    </div>
+    <div class="step done">
+      <span class="step-num">2</span>
+      <span class="step-label">Run Solutions</span>
+      <span class="step-status">✓</span>
+    </div>
+    <div class="step active">
+      <span class="step-num">3</span>
+      <span class="step-label">Generate concepts</span>
+      <span class="step-status">Now</span>
+    </div>
+    <div class="step locked">
+      <span class="step-num">4</span>
+      <span class="step-label">Export brief</span>
+      <span class="step-status">🔒</span>
+    </div>
+  </div>
+
+  <!-- Primary CTA -->
+  <button class="cta-primary">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/></svg>
+    Ideate concepts
+  </button>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     BAND 3 — TABS + CONTENT
+     ══════════════════════════════════════════════════════════════════ -->
+<nav class="tabs" role="tablist">
+  <button class="tab active" role="tab" aria-selected="true">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v1M12 20v1M3 12h1M20 12h1M5.6 5.6l.7.7M17.7 17.7l.7.7M5.6 18.4l.7-.7M17.7 6.3l.7-.7"/><circle cx="12" cy="12" r="5"/></svg>
+    Insights
+  </button>
+  <button class="tab" role="tab">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
+    Bets <span class="chip" style="margin-left:4px;font-size:10px">3</span>
+  </button>
+  <button class="tab" role="tab">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    Evidence
+  </button>
+  <button class="tab" role="tab">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    Chat
+  </button>
+  <button class="tab-more" role="tab">
+    More
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px;display:inline-block;vertical-align:-2px"><polyline points="6 9 12 15 18 9"/></svg>
+  </button>
+</nav>
+
+
+<main class="content" role="tabpanel">
+
+  <!-- Minto header (Phase 2 methodology) -->
+  <section class="minto-header">
+    <div class="minto-label">The answer</div>
+    <p class="minto-answer">
+      Binaural-beat meditation apps have a clear opportunity in frequency-customization
+      and stress-response tracking — users abandon existing apps because the sound
+      library is generic and progress metrics are missing.
+    </p>
+    <div class="minto-args">
+      <div class="minto-arg">
+        <b>1.</b>
+        <span>43 % of reviews mention "cannot customize frequency for my condition" as a quit trigger.</span>
+      </div>
+      <div class="minto-arg">
+        <b>2.</b>
+        <span>Power users DIY with Audacity + generators because apps lack a per-session frequency log.</span>
+      </div>
+      <div class="minto-arg">
+        <b>3.</b>
+        <span>Clinical studies (arXiv 2023–2025) validate the frequency-response link apps ignore.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Findings grid -->
+  <section>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
+      <h2 style="font-size:14px;font-weight:600;color:var(--ink-1)">
+        Top opportunities
+        <span style="color:var(--ink-3);font-weight:400;margin-left:6px">(11)</span>
+      </h2>
+      <div style="display:flex;gap:6px;font-size:11.5px">
+        <button class="btn" style="font-size:11.5px;padding:4px 8px">
+          Sort: Opportunity
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button class="btn" style="font-size:11.5px;padding:4px 8px">
+          Filter
+        </button>
+      </div>
+    </div>
+
+    <div class="findings-grid">
+
+      <article class="finding-card">
+        <div class="finding-head">
+          <span class="finding-kind">🔥</span>
+          <h3 class="finding-title">No custom frequency generation for specific conditions</h3>
+          <div class="finding-score">
+            <b>17.8</b><span>opp</span>
+          </div>
+        </div>
+        <div class="finding-meta">
+          <span class="chip">imp <b>9.2</b></span>
+          <span class="chip">sat <b>3.1</b></span>
+          <span class="chip triang-strong">🟢 strong</span>
+          <span class="chip counter">⚖ 4 disagree</span>
+          <span class="chip research">📚 5 research</span>
+        </div>
+        <p class="finding-narrative">
+          Users with specific needs (focus, sleep, anxiety) repeatedly ask for
+          per-condition frequency generators. Current apps ship a fixed library.
+        </p>
+        <blockquote class="finding-quote">
+          "I literally use Audacity because no app lets me dial in 8.3 Hz for ADHD focus."
+        </blockquote>
+        <div class="finding-foot">
+          <div class="source-badges">
+            <span class="src-badge"><b>28</b> reddit</span>
+            <span class="src-badge"><b>12</b> appstore</span>
+            <span class="src-badge"><b>5</b> arxiv</span>
+          </div>
+          <button class="fb-btn" title="Flag as wrong / off-topic">👎</button>
+        </div>
+      </article>
+
+      <article class="finding-card">
+        <div class="finding-head">
+          <span class="finding-kind">💡</span>
+          <h3 class="finding-title">Session progress + HRV integration</h3>
+          <div class="finding-score mid">
+            <b>13.4</b><span>opp</span>
+          </div>
+        </div>
+        <div class="finding-meta">
+          <span class="chip">imp <b>7.8</b></span>
+          <span class="chip">sat <b>4.2</b></span>
+          <span class="chip triang-moderate">🟡 moderate</span>
+          <span class="chip">CHRONIC</span>
+        </div>
+        <p class="finding-narrative">
+          "I don't know if this actually works" — users want biometric validation
+          (heart-rate variability, stress score) tied to each session.
+        </p>
+        <div class="finding-foot">
+          <div class="source-badges">
+            <span class="src-badge"><b>15</b> reddit</span>
+            <span class="src-badge"><b>7</b> hn</span>
+          </div>
+          <button class="fb-btn">👎</button>
+        </div>
+      </article>
+
+      <article class="finding-card">
+        <div class="finding-head">
+          <span class="finding-kind">🛠</span>
+          <h3 class="finding-title">Audacity + brain.fm workaround</h3>
+          <div class="finding-score mid">
+            <b>11.2</b><span>opp</span>
+          </div>
+        </div>
+        <div class="finding-meta">
+          <span class="chip">imp <b>6.5</b></span>
+          <span class="chip">freq <b>14</b></span>
+          <span class="chip triang-narrow">🔴 narrow</span>
+        </div>
+        <p class="finding-narrative">
+          Power users generate frequencies in Audacity, layer with music from
+          brain.fm, and sideload — a clear indicator of unmet demand.
+        </p>
+        <div class="finding-foot">
+          <div class="source-badges">
+            <span class="src-badge"><b>14</b> reddit</span>
+          </div>
+          <button class="fb-btn">👎</button>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+</main>
+
+<!-- End of prototype -->
+</body>
+</html>
