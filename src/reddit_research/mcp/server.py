@@ -613,6 +613,480 @@ def reddit_graph_structural_summary(topic: str) -> dict:
     return graph_summary(topic=topic)
 
 
+# ─── Palace (semantic search) tools ────────────────────────────────────────────
+# Same ChromaDB + ONNX MiniLM-L6-v2 the desktop app uses (sibling of reddit.db).
+# The MCP server pre-warms Palace in run() so the first call here doesn't pay
+# the 2-5s cold start. Embeddings flow back into the same `<data_dir>/palace/`
+# the app reads — Claude search → app sees → identical hybrid (vector + BM25)
+# ranking on both sides.
+
+@mcp.tool()
+def reddit_palace_status() -> dict:
+    """Is the local semantic index (ChromaDB + ONNX MiniLM-L6-v2) ready?
+
+    Returns: {installed, ready, count, archive_bytes, expected_bytes,
+    cache_dir, palace_dir}. If `ready` is False, the user needs to enable
+    semantic search in the app (Settings → Semantic search → Enable).
+    Use reddit_palace_warmup to trigger that from here.
+    """
+    from ..retrieval import palace
+    s = palace.model_status()
+    s.update(palace.stats())
+    return s
+
+
+@mcp.tool()
+def reddit_palace_warmup() -> dict:
+    """Download + cache the ONNX embedding model (~80 MB, one-time).
+
+    No-op if already cached. After this the palace can answer semantic
+    queries in 15-30 ms p50. Returns the final progress event.
+    """
+    from ..retrieval import palace
+    return palace.warmup_model()
+
+
+@mcp.tool()
+def reddit_semantic_search(
+    query: str,
+    topic: str | None = None,
+    source_type: str | None = None,
+    k: int = 10,
+    rerank: bool = True,
+) -> dict:
+    """Hybrid semantic + BM25 search over the post corpus (vectorised).
+
+    Args:
+        query: free-text query — meaning matches, not just keywords.
+        topic: filter to one topic (must match how it was collected).
+        source_type: filter to e.g. 'reddit' / 'hn' / 'arxiv' / 'pubmed'.
+        k: max results.
+        rerank: if True, blend cosine + BM25 (vector_weight=0.6, bm25=0.4).
+
+    Returns: {ok, results: [{id, score, vector_score, bm25_score, text,
+    metadata: {topic, source_type, sub, url, author, score, num_comments,
+    created_utc}}]}. Each post has the first 600 chars in `text`; use
+    reddit_query_db to fetch full body when needed.
+    """
+    from ..retrieval import palace
+    return palace.search_posts(
+        query, topic=topic, source_type=source_type, k=k, rerank=rerank,
+    )
+
+
+@mcp.tool()
+def reddit_related_posts(post_id: str, k: int = 10, topic: str | None = None) -> dict:
+    """Find posts semantically nearest to a given post_id (vector cosine).
+
+    Useful for "more like this" — Claude can pick a high-signal post then
+    expand the search radius without thinking up new keywords. Filters
+    by topic if provided.
+    """
+    from ..retrieval import palace
+    return palace.related_posts(post_id, k=k, topic=topic)
+
+
+@mcp.tool()
+def reddit_palace_reindex() -> dict:
+    """Re-embed every row in `posts` into the palace. Idempotent (~2K posts/min).
+
+    Use after a bulk fetch when the model wasn't ready at upsert time, or
+    after changing what fields go into the embedding text. Safe to interrupt;
+    next run picks up where it left off because Chroma upserts by id.
+    """
+    from ..retrieval import palace
+    return palace.reindex_all()
+
+
+# ─── 2026-04-21 Tier-1..6 build — MCP surface for new features ────────
+# Exposes every feature we shipped across AG-B..F + FG so external MCP
+# clients (Claude Code, Cursor, Claude Desktop) can drive the full app
+# programmatically, not just via the desktop UI.
+
+@mcp.tool()
+def reddit_topic_soft_delete(topic: str) -> dict:
+    """T1.3 — Soft-delete a topic. Hidden from list_topics; recoverable
+    for 7 days via `reddit_topic_restore`. Returns
+    `{ok, topic, deleted_at, recoverable_until, hidden_posts,
+    hidden_graph_nodes}`."""
+    from ..research.trash import soft_delete
+    return soft_delete(topic)
+
+
+@mcp.tool()
+def reddit_topic_restore(topic: str) -> dict:
+    """Restore a soft-deleted topic. Clears topic_prefs.deleted_at."""
+    from ..research.trash import restore
+    return restore(topic)
+
+
+@mcp.tool()
+def reddit_topic_trash_list() -> list[dict]:
+    """List soft-deleted topics with age + post count + expires_in_days."""
+    from ..research.trash import list_trash
+    return list_trash()
+
+
+@mcp.tool()
+def reddit_topic_trash_purge(min_age_days: int = 7) -> dict:
+    """Hard-delete soft-deleted topics older than N days. Default 7."""
+    from ..research.trash import purge_older_than
+    return purge_older_than(min_age_days=min_age_days)
+
+
+@mcp.tool()
+def reddit_clean_corpus(
+    topic: str,
+    threshold: float = 0.30,
+    apply: bool = False,
+    min_keep: int = 20,
+) -> dict:
+    """Relevance-gate retroactive cleanup. Drops topic_posts rows whose
+    cosine-to-topic falls below `threshold`. Dry-run by default; set
+    apply=True to actually delete. Guarded by `min_keep` safety floor.
+    Returns `{ok, scored, kept, dropped, sample_dropped[]}`."""
+    from ..research.relevance import filter_topic_posts
+    return filter_topic_posts(topic=topic, threshold=threshold,
+                              apply=apply, min_keep=min_keep)
+
+
+@mcp.tool()
+def reddit_find_existing_topic(user_input: str) -> dict:
+    """Pre-check before starting a collect — does a semantically-identical
+    topic already exist? Returns `{match: {existing_topic, posts}}` or
+    `{match: null}`."""
+    from ..research.topic_resolver import find_existing_topic
+    match = find_existing_topic(user_input) or {}
+    return {"ok": True, "user_input": user_input, "match": match or None}
+
+
+@mcp.tool()
+def reddit_merge_duplicate_topics(apply: bool = False) -> dict:
+    """Merge LLM-canonicalization-caused duplicate topic rows. Scoped to
+    system-caused dupes only (traced via topic_canonicalizations).
+    Dry-run by default."""
+    from ..research.topic_resolver import merge_duplicate_topics
+    return merge_duplicate_topics(dry_run=not apply)
+
+
+@mcp.tool()
+def reddit_collect_quality_check(topic: str) -> dict:
+    """T2.2 — Report how many currently-tagged posts would fail the
+    lenient vs strict quality gate. Non-mutating diagnostic."""
+    from ..core.db import get_db
+    from ..research.quality_gate import passes_quality
+    db = get_db()
+    rows = list(db.query(
+        "SELECT p.id, p.title, p.selftext, p.score, p.author "
+        "FROM posts p JOIN topic_posts tp ON tp.post_id = p.id "
+        "WHERE tp.topic = ?",
+        [topic],
+    ))
+    lenient_fail = [r["id"] for r in rows if not passes_quality(dict(r), strict=False)]
+    strict_fail = [r["id"] for r in rows if not passes_quality(dict(r), strict=True)]
+    return {
+        "ok": True, "topic": topic, "total": len(rows),
+        "lenient_fail": len(lenient_fail),
+        "strict_fail": len(strict_fail),
+        "sample_lenient_fail": lenient_fail[:20],
+        "sample_strict_fail": strict_fail[:20],
+    }
+
+
+@mcp.tool()
+def reddit_global_competitors(min_topics: int = 2, threshold: float = 0.80) -> list[dict]:
+    """T2.5 — Unify competitor mentions across ALL topics. Clusters
+    graph_nodes WHERE kind='product' by embedding cosine ≥ threshold.
+    Returns `[{canonical_name, aliases[], topics[], total_mentions}]`."""
+    from ..research.competitors import global_competitors
+    try:
+        return global_competitors(min_topics=min_topics, threshold=threshold)
+    except TypeError:
+        # Older signature fallback
+        return global_competitors(min_topics=min_topics)
+
+
+@mcp.tool()
+def reddit_feedback_record(
+    topic: str,
+    finding_title: str,
+    finding_kind: str = "painpoint",
+    verdict: str = "wrong",
+    note: str = "",
+) -> dict:
+    """T2.4 — Flag a finding as wrong / off-topic / spam / ok. Fed back
+    into next synthesize prompt as a negative-examples block so the LLM
+    stops repeating the same mistake."""
+    from ..research.feedback import record_feedback
+    return record_feedback(
+        topic=topic, title=finding_title, kind=finding_kind,
+        verdict=verdict, note=note,
+    )
+
+
+@mcp.tool()
+def reddit_feedback_list(topic: str | None = None) -> list[dict]:
+    """Read back recorded feedback for one topic or globally."""
+    from ..core.db import get_db
+    db = get_db()
+    if "finding_feedback" not in db.table_names():
+        return []
+    if topic:
+        rows = db.query(
+            "SELECT id, topic, finding_title, finding_kind, verdict, note, created_at "
+            "FROM finding_feedback WHERE topic = ? ORDER BY created_at DESC",
+            [topic],
+        )
+    else:
+        rows = db.query(
+            "SELECT id, topic, finding_title, finding_kind, verdict, note, created_at "
+            "FROM finding_feedback ORDER BY created_at DESC LIMIT 200"
+        )
+    return list(rows)
+
+
+@mcp.tool()
+def reddit_saved_view_create(
+    scope: str,
+    name: str,
+    filter_json: str,
+    pinned: bool = False,
+) -> dict:
+    """T3.1 — Create a saved-view filter. Scope ∈ 'global' | 'topic:<slug>'
+    | 'product:<id>'. filter_json is a JSON string with keys like
+    min_opportunity_score / kinds / triangulation_strength_in /
+    classification_in."""
+    from ..research.saved_views import create_view
+    return create_view(
+        scope=scope, name=name, filter_json=filter_json, pinned=pinned,
+    )
+
+
+@mcp.tool()
+def reddit_saved_view_list(scope: str | None = None) -> list[dict]:
+    """List saved views, optionally scoped."""
+    from ..research.saved_views import list_views
+    return list_views(scope=scope)
+
+
+@mcp.tool()
+def reddit_prompt_list() -> dict:
+    """T3.7 — List every extractor prompt key + whether it has an override
+    set + previews of bundled and override text."""
+    from ..research.prompt_store import list_prompts
+    return list_prompts()
+
+
+@mcp.tool()
+def reddit_prompt_get(key: str) -> str:
+    """Return the effective prompt text for `key` (override if set,
+    otherwise the bundled version)."""
+    from ..research.prompt_store import get_prompt
+    # Loader returns raw bundled text when no override exists.
+    from ..research.prompts import load_extractor
+
+    def _loader():
+        try:
+            return load_extractor(key)
+        except Exception:
+            return ""
+    result = get_prompt(key, default_loader=_loader)
+    if isinstance(result, dict):
+        # If bundled returns parsed YAML, re-serialize as a readable string
+        import yaml
+        return yaml.safe_dump(result, sort_keys=False)
+    return str(result or "")
+
+
+@mcp.tool()
+def reddit_prompt_set(key: str, override_text: str) -> dict:
+    """Set an extractor prompt override. Empty string clears."""
+    from ..research.prompt_store import set_prompt
+    set_prompt(key, override_text)
+    return {"ok": True, "key": key, "cleared": not override_text}
+
+
+@mcp.tool()
+def reddit_ingest_csv(path: str, topic: str, source_type: str = "csv") -> dict:
+    """T3.6 — Bulk-import posts from a CSV with canonical headers
+    (post_id, title, body, author, url, created_utc, source_type).
+    Only `title` is required. Re-imports deduplicate by post_id.
+    Returns `{ok, inserted, tagged, skipped, errors}`."""
+    from ..research.ingest import ingest_csv
+    return ingest_csv(path=path, topic=topic, source_type_default=source_type)
+
+
+# ─── Dual-Mode Pivot — Product Mode MCP surface (2026-04-20) ──────────
+# The desktop UI is the primary surface but MCP clients (Claude Code,
+# Cursor) should also be able to register products, run sweeps, and read
+# the daily dashboard programmatically. This adds the most-used endpoints.
+
+@mcp.tool()
+def reddit_product_create(
+    name: str,
+    one_liner: str = "",
+    category: str = "",
+    topic: str = "",
+    competitors: list[dict] | None = None,
+) -> dict:
+    """Register a Product (your app + competitors)."""
+    from ..research.product import create_product
+    return create_product(
+        name=name, one_liner=one_liner, category=category, topic=topic,
+        competitors=competitors or [],
+    )
+
+
+@mcp.tool()
+def reddit_product_list(active_only: bool = True) -> list[dict]:
+    from ..research.product import list_products
+    return list_products(active_only=active_only)
+
+
+@mcp.tool()
+def reddit_product_sweep(
+    product_id: str,
+    trigger: str = "manual",
+    skip_collect: bool = True,
+) -> dict:
+    """Run the daily sweep for a product. Returns signals generated."""
+    from ..research.product_sweep import run_product_sweep
+    return run_product_sweep(
+        product_id=product_id, trigger=trigger, skip_collect=skip_collect,
+    )
+
+
+@mcp.tool()
+def reddit_product_signals(
+    product_id: str,
+    since_days: int = 7,
+    include_resolved: bool = False,
+    limit: int = 50,
+) -> list[dict]:
+    """List open signals for a product, ranked by severity × confidence."""
+    from ..research.product_sweep import list_signals
+    return list_signals(
+        product_id, since_days=since_days,
+        include_resolved=include_resolved, limit=limit,
+    )
+
+
+@mcp.tool()
+def reddit_product_signal_action(
+    signal_id: str,
+    action: str,
+    notes: str = "",
+    snooze_days: int = 7,
+) -> dict:
+    """Apply a user action to a signal. action ∈ dismissed | acted |
+    snoozed | hypothesis. 'hypothesis' seeds a hypothesis_tests row."""
+    from ..research.product_sweep import signal_action
+    return signal_action(signal_id, action, notes, snooze_days)
+
+
+@mcp.tool()
+def reddit_product_dashboard(product_id: str, days: int = 7) -> dict:
+    """One-call fetch for the full product dashboard — product metadata,
+    mirror / lens / field sections, recent sweeps, open signals."""
+    from ..research.product import get_product
+    from ..research.product_digest import (
+        build_mirror_section, build_lens_section, build_field_section,
+    )
+    from ..research.product_sweep import list_signals
+    pinfo = get_product(product_id)
+    if not pinfo.get("ok"):
+        return pinfo
+    return {
+        "ok": True,
+        "product": pinfo["product"],
+        "competitors": pinfo["competitors"],
+        "recent_sweeps": pinfo["recent_sweeps"],
+        "mirror": build_mirror_section(product_id, days=days),
+        "lens": build_lens_section(product_id, days=days),
+        "field": build_field_section(product_id, days=days),
+        "signals": list_signals(product_id, since_days=days,
+                                include_resolved=False, limit=50),
+    }
+
+
+@mcp.tool()
+def reddit_product_digest(product_id: str, days: int = 7) -> str:
+    """Weekly markdown digest for Slack/Notion. Returns plain markdown."""
+    from ..research.product_digest import build_digest
+    return build_digest(product_id, days=days)
+
+
+@mcp.tool()
+def reddit_product_convert_topic(
+    topic: str,
+    name: str | None = None,
+    one_liner: str = "",
+) -> dict:
+    """Seed a Product from an existing Topic's graph. Competitors
+    auto-extracted from graph_nodes kind in (product, company, competitor)."""
+    from ..research.product import convert_topic_to_product
+    return convert_topic_to_product(topic=topic, name=name, one_liner=one_liner)
+
+
+# ─── Graph densification + research linking (2026-04-20 / 04-21) ──────
+@mcp.tool()
+def reddit_graph_build_relations(topic: str) -> dict:
+    """Run the post-pass that emits relates_to / potentially_solves /
+    could_address / co_evidenced edges across findings. No LLM cost —
+    uses ChromaDB MiniLM. Safe to re-run (upserts)."""
+    from ..graph.relations import build_semantic_relations
+    return build_semantic_relations(topic)
+
+
+@mcp.tool()
+def reddit_research_link(topic: str, k: int = 3) -> dict:
+    """Link each finding to top-K semantically similar academic papers
+    in the corpus. Persists to finding_research_links."""
+    from ..research.research_linker import link_findings_for_topic
+    return link_findings_for_topic(topic=topic, k=k)
+
+
+@mcp.tool()
+def reddit_research_links(topic: str, finding: str | None = None) -> list[dict] | dict:
+    """Get linked papers. finding=None → per-finding count summary;
+    finding=<title> → list of linked papers with similarity + metadata."""
+    from ..research.research_linker import get_links_for_finding, get_links_summary
+    if finding:
+        return get_links_for_finding(topic=topic, finding_title=finding)
+    return get_links_summary(topic=topic)
+
+
 def run() -> None:
-    """Start the server on stdio."""
+    """Start the server on stdio.
+
+    Two startup-time optimisations matter for MCP:
+
+    1. Pre-warm Palace (lazy-init the ChromaDB client + collection handle).
+       Costs ~50ms but means the first `reddit_semantic_search` call doesn't
+       eat the cold-start. We DON'T eagerly run an embedding here — that's
+       a 2-5s ONNX compile and most MCP sessions never touch semantic.
+       Set REDDIT_MYIND_PALACE_EAGER=1 to force the embed-warm too.
+
+    2. Read REDDIT_MYIND_TOKEN env var (provisioning marker — plumbed for v2
+       enforcement, no-op today).
+    """
+    import os
+
+    _ = os.environ.get("REDDIT_MYIND_TOKEN", "")
+
+    # Lazy palace client init — opens the SQLite-backed Chroma store but does
+    # NOT load the ONNX model yet. Worst case: chromadb extras missing →
+    # silent skip, semantic tools return graceful "not installed" responses.
+    try:
+        from ..retrieval import palace
+        palace.get_palace()  # opens persistent client, ~50ms
+        if os.environ.get("REDDIT_MYIND_PALACE_EAGER") in ("1", "true", "yes"):
+            if palace.is_model_ready():
+                # One throwaway embed → ONNX session compiled + cached for
+                # the lifetime of this process. Subsequent semantic calls
+                # are pure vector lookups (~15-30 ms p50).
+                palace.search_posts("warmup probe", k=1)
+    except Exception:
+        pass
+
     mcp.run()
