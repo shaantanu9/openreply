@@ -177,6 +177,7 @@ export function renderTabStrip(host) {
       <div class="tab-strip" role="tablist">
         ${s.tabs.map(t => `
           <div class="tab-pill ${t.id === s.activeId ? 'active' : ''}"
+               draggable="true"
                role="tab" data-id="${t.id}" title="${t.title.replace(/"/g,'&quot;')}">
             <i data-lucide="${t.icon || 'circle'}"></i>
             <span class="tab-title">${t.title}</span>
@@ -221,5 +222,29 @@ export function renderTabStrip(host) {
       { label: 'Close others',   icon: 'minus-square', onClick: () => tabStore.closeOthers(id) },
       { label: 'Close to right', icon: 'chevron-right',onClick: () => tabStore.closeToRight(id) },
     ]);
+  });
+
+  let dragId = null;
+  host.addEventListener('dragstart', e => {
+    const pill = e.target.closest('.tab-pill');
+    if (!pill) return;
+    dragId = pill.dataset.id;
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  host.addEventListener('dragover', e => {
+    if (!dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+  host.addEventListener('drop', e => {
+    if (!dragId) return;
+    e.preventDefault();
+    const target = e.target.closest('.tab-pill');
+    if (!target || target.dataset.id === dragId) { dragId = null; return; }
+    const all = tabStore.getAll();
+    const fromIdx = all.findIndex(t => t.id === dragId);
+    const toIdx   = all.findIndex(t => t.id === target.dataset.id);
+    if (fromIdx !== -1 && toIdx !== -1) tabStore.move(fromIdx, toIdx);
+    dragId = null;
   });
 }
