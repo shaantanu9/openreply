@@ -492,6 +492,257 @@ def reddit_fetch_pubmed(query: str, limit: int = 30) -> list[dict]:
     return fetch_pubmed(query=query, limit=limit)
 
 
+# ── Paper-research toolkit ────────────────────────────────────────────────────
+# Turns Gap Map's MCP into a first-class research tool: citation graphs,
+# canonical DOI lookup, LLM paper analysis, and a "search across all 6
+# paper sources at once" helper. All results land in `posts` with a
+# `source_type='arxiv|pubmed|openalex|scholar|semantic_scholar|crossref'`
+# tag so Palace, the graph, and the Solutions Agent pick them up for free.
+
+@mcp.tool()
+def reddit_fetch_semantic_scholar(
+    query: str,
+    limit: int = 30,
+    year_from: int | None = None,
+    open_access_only: bool = False,
+) -> list[dict]:
+    """Semantic Scholar — 220M papers, citation graph, influential-citation
+    metric (fraction of citations that actually build on the work), TLDR
+    summaries. Free; set S2_API_KEY env var to raise rate limits.
+
+    `score` = total citations; `num_comments` = influential citations;
+    `upvote_ratio` = influential/total ratio. Use `open_access_only=True`
+    when you want to follow through to full text immediately.
+    """
+    from ..sources.semantic_scholar import fetch_semantic_scholar
+    return fetch_semantic_scholar(
+        query=query, limit=limit, year_from=year_from,
+        open_access_only=open_access_only,
+    )
+
+
+@mcp.tool()
+def reddit_paper_citations(paper_id: str, limit: int = 30) -> list[dict]:
+    """Papers that cite `paper_id`. Accepts S2 paper_id, DOI (raw '10.xxxx/yy'),
+    or arXiv id. Returns row-shaped results ready for upsert. Core
+    literature-review move — 'what was built on this?'
+    """
+    from ..sources.semantic_scholar import fetch_citations
+    return fetch_citations(paper_id=paper_id, limit=limit)
+
+
+@mcp.tool()
+def reddit_paper_references(paper_id: str, limit: int = 30) -> list[dict]:
+    """Reference list of `paper_id` — papers this one cites. Walk backwards
+    through the literature to find foundational work. DOI / S2 / arXiv ids all accepted.
+    """
+    from ..sources.semantic_scholar import fetch_references
+    return fetch_references(paper_id=paper_id, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_crossref(
+    query: str,
+    limit: int = 30,
+    year_from: int | None = None,
+    filter_type: str | None = None,
+) -> list[dict]:
+    """Crossref — authoritative DOI metadata for nearly every published
+    paper. Best source for venue / page / funder / grant info. `filter_type`
+    examples: 'journal-article', 'proceedings-article', 'book-chapter',
+    'posted-content' (preprints). Set CROSSREF_MAILTO env var for the
+    polite pool (higher rate limits).
+    """
+    from ..sources.crossref import fetch_crossref
+    return fetch_crossref(
+        query=query, limit=limit, year_from=year_from, filter_type=filter_type,
+    )
+
+
+@mcp.tool()
+def reddit_fetch_by_doi(doi: str) -> dict | None:
+    """One-shot canonical Crossref lookup by DOI. Accepts '10.xxxx/yy' or
+    'https://doi.org/10.xxxx/yy'. Returns a single row (ready to upsert) or
+    null on miss. Use when you have a DOI from somewhere and want full metadata.
+    """
+    from ..sources.crossref import fetch_by_doi
+    return fetch_by_doi(doi)
+
+
+@mcp.tool()
+def reddit_research_papers(
+    query: str,
+    topic: str | None = None,
+    limit_per_source: int = 20,
+    sources: list[str] | None = None,
+    year_from: int | None = None,
+    persist: bool = True,
+) -> dict:
+    """Multi-source paper search across arXiv, PubMed, OpenAlex, Semantic
+    Scholar, Crossref, Scholar in parallel. Deduplicated, persisted (unless
+    `persist=False`), tagged to `topic` if provided, and indexed into Palace.
+
+    The paper-research counterpart of `reddit_research_collect`. Use this
+    as the first step of any literature review — Claude gets a merged,
+    ranked list of papers from every major open source in one call.
+
+    Args:
+        query: free-text topic / question.
+        topic: optional tag so later tools (semantic_search, graph_build,
+            analyze_papers_bulk) can filter to just this slice.
+        limit_per_source: papers per source (total ≤ 6× this).
+        sources: subset of ['arxiv','pubmed','openalex','semantic_scholar',
+            'crossref','scholar']. Defaults to all six.
+        year_from: year lower-bound where the source supports it.
+        persist: upsert into `posts` + `topic_posts`. Turn off for
+            exploratory/read-only previews.
+
+    Returns {ok, query, topic, total, by_source, sample, persisted}.
+    """
+    from ..sources.arxiv import fetch_arxiv
+    from ..sources.pubmed import fetch_pubmed
+    from ..sources.openalex import fetch_openalex
+    from ..sources.semantic_scholar import fetch_semantic_scholar
+    from ..sources.crossref import fetch_crossref
+    from ..sources.scholar import fetch_scholar
+    from ..core.db import upsert_posts, get_db
+
+    runners = {
+        "arxiv":            lambda: fetch_arxiv(query=query, limit=limit_per_source),
+        "pubmed":           lambda: fetch_pubmed(query=query, limit=limit_per_source),
+        "openalex":         lambda: fetch_openalex(query=query, limit=limit_per_source, year_from=year_from),
+        "semantic_scholar": lambda: fetch_semantic_scholar(query=query, limit=limit_per_source, year_from=year_from),
+        "crossref":         lambda: fetch_crossref(query=query, limit=limit_per_source, year_from=year_from),
+        "scholar":          lambda: fetch_scholar(query=query, limit=limit_per_source, year_from=year_from),
+    }
+    wanted = [s for s in (sources or list(runners.keys())) if s in runners]
+
+    by_source: dict[str, int] = {}
+    all_rows: list[dict] = []
+    errors: dict[str, str] = {}
+    for src in wanted:
+        try:
+            rows = runners[src]() or []
+            by_source[src] = len(rows)
+            all_rows.extend(rows)
+        except Exception as e:  # noqa: BLE001
+            errors[src] = str(e)[:200]
+            by_source[src] = 0
+
+    # Dedupe by id — cross-source overlaps (e.g. arXiv + OpenAlex both
+    # indexing the same preprint) keep the first occurrence.
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for r in all_rows:
+        pid = r.get("id")
+        if pid and pid not in seen:
+            seen.add(pid)
+            unique.append(r)
+
+    persisted = 0
+    if persist and unique:
+        persisted = upsert_posts(unique)
+        if topic:
+            db = get_db()
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            db["topic_posts"].insert_all(
+                [{"topic": topic, "post_id": r["id"], "source": r.get("source_type", ""),
+                  "added_at": now} for r in unique],
+                pk=("topic", "post_id"), replace=True,
+            )
+
+    sample = [
+        {"id": r["id"], "title": r.get("title", "")[:140],
+         "source_type": r.get("source_type"), "score": r.get("score"),
+         "url": r.get("url")}
+        for r in sorted(unique, key=lambda r: r.get("score") or 0, reverse=True)[:10]
+    ]
+    return {
+        "ok": True,
+        "query": query,
+        "topic": topic,
+        "total": len(unique),
+        "by_source": by_source,
+        "errors": errors,
+        "persisted": persisted,
+        "sample": sample,
+    }
+
+
+@mcp.tool()
+def reddit_analyze_paper(topic: str, post_id: str, force: bool = False) -> dict:
+    """LLM analysis of one paper — summary, claims, methods, tier, applicability.
+
+    Reads the paper row from `posts` (any academic source_type works) and
+    asks the configured LLM to extract:
+      - one-paragraph summary
+      - key claims (bulleted)
+      - methods + sample size
+      - evidence tier (meta-analysis / peer-reviewed / expert / anecdote)
+      - relevance to `topic`
+      - caveats + counter-evidence
+
+    Cached in `paper_analyses` table; pass `force=True` to re-run. Requires
+    a configured LLM provider (BYOK). Skip-stub if none configured.
+    """
+    from ..research.paper_analyze import analyze_paper
+    return analyze_paper(topic=topic, post_id=post_id, force=force)
+
+
+@mcp.tool()
+def reddit_analyze_papers_bulk(topic: str, limit: int | None = None, force: bool = False) -> dict:
+    """Analyze every academic-source paper tagged to `topic` that doesn't
+    already have an analysis. Returns {ok, analyzed, skipped, errored, total}.
+    Ordered by citation/score desc so the highest-signal papers go first.
+    """
+    from ..research.paper_analyze import analyze_papers_bulk
+    return analyze_papers_bulk(topic=topic, limit=limit, force=force)
+
+
+@mcp.tool()
+def reddit_paper_analyses(topic: str, limit: int = 50) -> list[dict]:
+    """Return cached LLM analyses for all papers on `topic`. Fast read —
+    no LLM call. Use to pull your growing evidence base into a summary.
+    """
+    from ..core.db import get_db
+    sql = """
+        SELECT pa.*, p.title, p.url, p.source_type, p.score
+        FROM paper_analyses pa
+        JOIN posts p ON p.id = pa.post_id
+        WHERE pa.topic = :topic
+        ORDER BY coalesce(p.score, 0) DESC
+        LIMIT :lim
+    """
+    return list(get_db().query(sql, {"topic": topic, "lim": limit}))
+
+
+@mcp.tool()
+def reddit_papers_export(topic: str, fmt: str = "bibtex", limit: int | None = None) -> dict:
+    """Export a topic's academic papers as BibTeX / RIS / APA / Markdown.
+
+    Perfect for students + researchers: paste the result straight into
+    LaTeX (BibTeX), Zotero/Mendeley (RIS), a blog post (APA), or a
+    comparison table (Markdown). Reads from `posts` — no LLM call, no
+    network. Returns {ok, fmt, topic, count, text}.
+    """
+    from ..research.paper_export import export_topic
+    return export_topic(topic=topic, fmt=fmt, limit=limit)
+
+
+@mcp.tool()
+def reddit_oa_lookup(doi: str) -> dict | None:
+    """Unpaywall — find a legal free OA PDF for any DOI.
+
+    ~40% of paywalled papers have a legitimate free copy (author's
+    university page, institutional repo, preprint server). Returns
+    {doi, is_oa, oa_status, best_oa_url, best_oa_host, ...} or null
+    on miss. Set `UNPAYWALL_EMAIL` env var for the polite pool.
+    """
+    from ..sources.unpaywall import lookup_doi
+    return lookup_doi(doi)
+
+
 @mcp.tool()
 def reddit_fetch_gnews(query: str, limit: int = 30, country: str = "US") -> list[dict]:
     """Google News via free RSS — mainstream attention overlay."""
@@ -1056,10 +1307,174 @@ def reddit_research_links(topic: str, finding: str | None = None) -> list[dict] 
     return get_links_summary(topic=topic)
 
 
+# ─── Production guards — prevents the "18 zombie MCP servers" bug ───
+# Shipping lessons from 2026-04-21 — a user session accumulated 18
+# `reddit-cli mcp serve` processes over 2 days (Claude Code / Cursor
+# reconnects leaked child processes). Each held file locks on the
+# palace SQLite + HNSW index; ChromaDB's Rust backend ran continuous
+# compaction across all of them, pegging CPU and backing up the Tauri
+# sidecar queue. Users saw it as "the app hangs."
+#
+# Three defensive layers below:
+#   1. PID-file lock — refuse to start (or replace) if another MCP
+#      server is already running for the same data dir.
+#   2. Idle-timeout — self-terminate after N minutes of stdin silence.
+#      Catches the case where the MCP client crashes/disconnects
+#      without a clean EOF (Cursor restart, Claude Code window close).
+#   3. Stale-process sweep — on startup, kill any sibling MCP server
+#      that's older than N days AND not the current PID.
+
+
+def _pidfile_path() -> "object":
+    """Path to the MCP server's PID file, alongside the app's data dir.
+    Living next to reddit.db ensures each data-dir gets its own lock."""
+    from pathlib import Path
+    from ..core.db import _DATA_DIR  # type: ignore[attr-defined]
+    try:
+        base = Path(_DATA_DIR)
+    except Exception:
+        base = Path.home() / ".gapmap"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "mcp-server.pid"
+
+
+def _is_alive(pid: int) -> bool:
+    """Kill-0 to check if a PID is alive without touching it."""
+    import os
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _acquire_pidfile_lock() -> bool:
+    """Write our PID to the lock file. Returns True if we got the lock,
+    False if another live MCP server already has it.
+
+    Policy: if the stored PID is dead (crash, kill -9), steal the lock.
+    If the stored PID is alive, return False — the caller should exit
+    with a diagnostic, not race.
+    """
+    import os
+    pf = _pidfile_path()
+    if pf.exists():
+        try:
+            prior = int(pf.read_text().strip())
+        except (ValueError, OSError):
+            prior = 0
+        if prior and prior != os.getpid() and _is_alive(prior):
+            return False
+    try:
+        pf.write_text(str(os.getpid()))
+    except OSError:
+        return True  # best-effort — don't block startup on a write failure
+    return True
+
+
+def _release_pidfile_lock() -> None:
+    """Remove the lock on clean exit. atexit-hooked."""
+    import os
+    pf = _pidfile_path()
+    try:
+        if pf.exists():
+            try:
+                stored = int(pf.read_text().strip())
+            except (ValueError, OSError):
+                stored = 0
+            if stored == os.getpid():
+                pf.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _sweep_stale_siblings(max_age_days: int = 1) -> int:
+    """Kill `reddit-cli mcp serve` processes older than `max_age_days`
+    that aren't us. Defensive — in practice users should never have more
+    than one running, but past versions leaked them.
+
+    Returns count killed. Best-effort: if `psutil` isn't available or
+    the process scan fails, silently returns 0 so we never block startup.
+    """
+    import os
+    import time
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        return 0
+    me = os.getpid()
+    cutoff = time.time() - (max_age_days * 86400)
+    killed = 0
+    for p in psutil.process_iter(["pid", "cmdline", "create_time"]):
+        try:
+            if p.info["pid"] == me:
+                continue
+            cmd = " ".join(p.info.get("cmdline") or [])
+            if "reddit-cli" not in cmd or "mcp" not in cmd or "serve" not in cmd:
+                continue
+            if (p.info.get("create_time") or 0) > cutoff:
+                continue  # too young — might be legit parallel session
+            p.terminate()
+            killed += 1
+        except Exception:
+            continue
+    return killed
+
+
+def _start_idle_timeout_guard(timeout_seconds: int) -> None:
+    """Background daemon thread — os._exit(0) if stdin has been silent
+    AND no tool calls have landed for `timeout_seconds`.
+
+    Why: MCP clients (Claude Code / Cursor) occasionally fail to close
+    stdin cleanly on window close / crash — the child hangs forever.
+    Self-terminate so we don't accumulate zombies.
+
+    Tracks activity by hooking `sys.stdin.read`; FastMCP's I/O runs
+    through stdio and bumps `_last_activity` whenever something arrives.
+    """
+    import os
+    import sys
+    import threading
+    import time
+
+    # Module-level mutable container so the watcher + hook share state.
+    state = {"last": time.time()}
+
+    # Monkey-patch stdin.read* to update last-activity on every read.
+    # Cheap and invisible to FastMCP.
+    orig_readline = sys.stdin.readline
+
+    def _wrapped_readline(*a, **kw):
+        state["last"] = time.time()
+        return orig_readline(*a, **kw)
+
+    try:
+        sys.stdin.readline = _wrapped_readline  # type: ignore[method-assign]
+    except (AttributeError, TypeError):
+        pass  # stdin is read-only on some platforms — skip
+
+    def _watcher():
+        while True:
+            time.sleep(60)
+            if time.time() - state["last"] > timeout_seconds:
+                sys.stderr.write(
+                    f"[mcp] idle-timeout: no stdin activity for {timeout_seconds}s; "
+                    f"exiting to prevent zombie accumulation\n"
+                )
+                sys.stderr.flush()
+                os._exit(0)
+
+    t = threading.Thread(target=_watcher, daemon=True, name="mcp-idle-watcher")
+    t.start()
+
+
 def run() -> None:
     """Start the server on stdio.
 
-    Two startup-time optimisations matter for MCP:
+    Hardened (2026-04-21) against zombie accumulation — see Production
+    guards block above for the three-layer defense.
+
+    Startup-time optimisations:
 
     1. Pre-warm Palace (lazy-init the ChromaDB client + collection handle).
        Costs ~50ms but means the first `reddit_semantic_search` call doesn't
@@ -1069,10 +1484,56 @@ def run() -> None:
 
     2. Read REDDIT_MYIND_TOKEN env var (provisioning marker — plumbed for v2
        enforcement, no-op today).
+
+    3. Tunable idle-timeout via REDDIT_MYIND_IDLE_TIMEOUT (seconds, default
+       1800 = 30 min). Set to 0 to disable.
+
+    4. Tunable stale-sibling sweep via REDDIT_MYIND_SWEEP_STALE_DAYS
+       (default 1). Set to 0 to disable.
     """
+    import atexit
     import os
+    import sys
 
     _ = os.environ.get("REDDIT_MYIND_TOKEN", "")
+
+    # Guard 1 — PID-file lock. If another live instance owns the lock,
+    # exit with a clear diagnostic rather than racing.
+    if not _acquire_pidfile_lock():
+        import json
+        sys.stderr.write(json.dumps({
+            "error": "another_mcp_server_running",
+            "hint": "Kill the other instance or remove "
+                    f"{_pidfile_path()} if you're sure it's dead.",
+        }) + "\n")
+        sys.stderr.flush()
+        raise SystemExit(2)
+    atexit.register(_release_pidfile_lock)
+
+    # Guard 3 — sweep stale siblings. Non-blocking; swallows all errors.
+    try:
+        sweep_days = int(os.environ.get("REDDIT_MYIND_SWEEP_STALE_DAYS", "1"))
+    except ValueError:
+        sweep_days = 1
+    if sweep_days > 0:
+        try:
+            killed = _sweep_stale_siblings(max_age_days=sweep_days)
+            if killed:
+                sys.stderr.write(
+                    f"[mcp] swept {killed} stale sibling MCP server(s) "
+                    f"older than {sweep_days}d\n"
+                )
+        except Exception:
+            pass
+
+    # Guard 2 — idle timeout. Skip when running inside the Tauri sidecar
+    # (which already owns process lifecycle) or when disabled via env.
+    try:
+        idle_seconds = int(os.environ.get("REDDIT_MYIND_IDLE_TIMEOUT", "1800"))
+    except ValueError:
+        idle_seconds = 1800
+    if idle_seconds > 0 and os.environ.get("REDDIT_MYIND_NO_IDLE_GUARD") != "1":
+        _start_idle_timeout_guard(idle_seconds)
 
     # Lazy palace client init — opens the SQLite-backed Chroma store but does
     # NOT load the ONNX model yet. Worst case: chromadb extras missing →
