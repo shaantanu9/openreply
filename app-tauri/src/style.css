@@ -454,6 +454,77 @@ body {
 .progress-log .line.done { color: #2E7D5B; font-weight: 600; }
 .progress-log .line.err  { color: #B84747; font-weight: 600; }
 
+/* Phase-A / Phase-B hero card (collect screen top).
+   Default border is the neutral line colour (Phase A). When .phase-b
+   is added mid-render, border transitions to orange. .phase-flipping
+   is a transient class that drops after the animation completes. */
+.phase-card {
+  margin-bottom: 18px;
+  border-width: 2px;
+  transition: border-color 400ms ease, box-shadow 400ms ease;
+}
+.phase-card.phase-b {
+  border-color: var(--orange, #E07A24);
+  box-shadow: 0 0 0 2px rgba(224, 122, 36, 0.08);
+}
+.phase-card.phase-flipping {
+  animation: phaseFlipIn 900ms ease;
+}
+@keyframes phaseFlipIn {
+  0%   { transform: scale(1);     box-shadow: 0 0 0 0 rgba(224, 122, 36, 0.00); }
+  30%  { transform: scale(1.005); box-shadow: 0 0 0 6px rgba(224, 122, 36, 0.14); }
+  100% { transform: scale(1);     box-shadow: 0 0 0 2px rgba(224, 122, 36, 0.08); }
+}
+.phase-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 14px;
+}
+.phase-title { font-size: 22px; font-weight: 800; color: var(--ink-1); margin: 0; }
+.phase-stats { gap: 8px; }
+.phase-bar-wrap {
+  display: flex; align-items: center; gap: 12px; margin: 14px 0 10px;
+}
+.phase-bar {
+  position: relative; flex: 1;
+  height: 10px; border-radius: 999px;
+  background: var(--surface-2, #F5F0E8);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.phase-bar-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--orange, #E07A24), #F59A4C);
+  border-radius: 999px;
+  transition: width 400ms ease;
+}
+.phase-card.phase-b .phase-bar-fill {
+  background: linear-gradient(90deg, #2E7D5B, #49B07F);
+}
+.phase-bar-tick {
+  position: absolute; top: -3px; width: 2px; height: 16px;
+  background: var(--ink-3); opacity: 0.35; border-radius: 2px;
+}
+.phase-bar-label {
+  font-size: 12px; color: var(--ink-3); font-weight: 600;
+  min-width: 64px; text-align: right; font-variant-numeric: tabular-nums;
+}
+.phase-copy { margin-top: 6px; }
+.phase-copy-line {
+  margin: 2px 0; font-size: 13px; color: var(--ink-2); font-weight: 500;
+}
+.phase-copy-muted { color: var(--ink-3); font-weight: 400; }
+.phase-freshness {
+  margin: 10px 0 0; font-size: 11px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* Brief pop on the findings chip each time enrich:tick lands. */
+.phase-findings-pop { animation: phaseFindingsPop 320ms ease; }
+@keyframes phaseFindingsPop {
+  0%   { transform: scale(1);     color: var(--ink-1); }
+  40%  { transform: scale(1.18);  color: var(--orange, #E07A24); }
+  100% { transform: scale(1);     color: var(--ink-1); }
+}
+
 /* Topic detail — embedded gap-map viewer */
 .viewer-frame {
   width: 100%; height: calc(100vh - 180px);

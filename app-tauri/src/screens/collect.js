@@ -1,5 +1,19 @@
 // Collect — streams sidecar output with colorized log lines, stage tracker,
 // elapsed timer, error counter, copy/clear actions, and a post-run CTA row.
+//
+// Phase-A / Phase-B progress card (spec §2 + §6.1):
+//
+//   • Phase-A (posts < threshold=100): big "Gathering evidence" heading,
+//     progress bar N/100, per-source chips, "Insights begin at 100 posts.
+//     ETA ~X min." copy with rough estimate from live posts/sec rate.
+//
+//   • Phase-B (posts ≥ 100, can flip mid-collect): heading becomes
+//     "Extracting insights…", shows live findings counter from
+//     graph_nodes, plus "Keep collecting — new posts auto-improve the
+//     graph." The card border animates to orange on the flip.
+//
+// Below the hero card we keep the full log + stage strip intact for power
+// users. Cancel still works. Cleanup on hashchange.
 
 import { api, $, esc } from '../api.js';
 import {
@@ -8,6 +22,10 @@ import {
   detectCollectStage as detectStage,
   fmtCollectElapsed as fmtElapsed,
 } from '../lib/collectFormat.js';
+
+// Threshold at which Phase A → B flip happens. Spec §2.1 / §2.3 locks this
+// at 100 posts (user-adjustable later via Settings — Task 9.5).
+const PHASE_B_THRESHOLD = 100;
 
 // Module-scope persistence. When the user navigates away from #/collect/<topic>
 // and comes back mid-collect, renderCollect remounts fresh — but the Python
@@ -42,6 +60,43 @@ export async function renderCollect(root, { params }) {
       <div class="topbar-spacer"></div>
       <span class="pill active" id="collect-status-pill">● running</span>
     </header>
+
+    <!-- Phase-A / Phase-B hero card. Sits above the log for glanceability.
+         Starts in phase-a (below threshold) and flips to phase-b when the
+         post count crosses PHASE_B_THRESHOLD — border animates orange and
+         the heading + body copy change via CSS classes. Kept in the same
+         .progress-card container so the whole block shares a background. -->
+    <div class="progress-card phase-card phase-a" id="phase-card">
+      <div class="phase-head">
+        <h2 class="phase-title" id="phase-title">Gathering evidence for "${esc(topic)}"</h2>
+        <div class="progress-stats phase-stats">
+          <span class="pchip"><b id="pchip-phase-elapsed">0s</b><span>elapsed</span></span>
+          <span class="pchip"><b id="pchip-posts">0</b><span>posts</span></span>
+          <span class="pchip" id="pchip-findings-wrap" hidden><b id="pchip-findings">0</b><span>findings</span></span>
+        </div>
+      </div>
+
+      <!-- Threshold progress bar. Clamped to PHASE_B_THRESHOLD for display;
+           once over we swap to a "Phase B" tint but keep the bar full. -->
+      <div class="phase-bar-wrap">
+        <div class="phase-bar" id="phase-bar">
+          <div class="phase-bar-fill" id="phase-bar-fill" style="width:0%"></div>
+          <div class="phase-bar-tick" style="left:100%"></div>
+        </div>
+        <div class="phase-bar-label"><span id="phase-bar-count">0</span> / ${PHASE_B_THRESHOLD}</div>
+      </div>
+
+      <!-- Flip-copy. Phase A = ETA + threshold hint. Phase B = findings +
+           keep-collecting nudge. Findings counter is live-driven by
+           enrich:tick + gapmap:changed + initial runQuery. -->
+      <div class="phase-copy" id="phase-copy">
+        <p class="phase-copy-line" id="phase-copy-primary">Insights begin at ${PHASE_B_THRESHOLD} posts. ETA —</p>
+        <p class="phase-copy-line phase-copy-muted" id="phase-copy-secondary" hidden>Keep collecting — new posts auto-improve the graph.</p>
+      </div>
+
+      <!-- Freshness badge — updated each time enrich:tick fires. -->
+      <p class="phase-freshness" id="phase-freshness" hidden>Last finding: just now</p>
+    </div>
 
     <div class="progress-card">
       <div class="progress-head">
@@ -112,6 +167,14 @@ export async function renderCollect(root, { params }) {
   let collectDone = false;
   let exportPath = null;
 
+  // Phase-card state. Post count is authoritative from runQuery polling;
+  // we seed it from the incoming log lines so the bar climbs visibly in
+  // the first few seconds before the first poll returns.
+  let postCount = 0;
+  let findingsCount = 0;
+  let phaseB = false;                 // flipped once postCount ≥ threshold
+  let lastFindingTs = 0;              // ms; powers the freshness badge
+
   const log = $('#progress-log');
   const statusPill = $('#collect-status-pill');
   const sub = $('#progress-sub');
@@ -121,6 +184,107 @@ export async function renderCollect(root, { params }) {
   const linesEl = $('#pchip-lines');
   const errsEl = $('#pchip-errs');
   const errsWrap = $('#pchip-errs-wrap');
+
+  // Phase-card handles.
+  const phaseCard    = $('#phase-card');
+  const phaseTitle   = $('#phase-title');
+  const phaseElapsed = $('#pchip-phase-elapsed');
+  const phasePosts   = $('#pchip-posts');
+  const phaseBarFill = $('#phase-bar-fill');
+  const phaseBarCount= $('#phase-bar-count');
+  const phaseCopyP   = $('#phase-copy-primary');
+  const phaseCopyS   = $('#phase-copy-secondary');
+  const phaseFindingsWrap = $('#pchip-findings-wrap');
+  const phaseFindings     = $('#pchip-findings');
+  const phaseFreshness    = $('#phase-freshness');
+
+  function fmtEtaMinutes(seconds) {
+    if (!isFinite(seconds) || seconds <= 0) return '—';
+    if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
+    const m = seconds / 60;
+    if (m < 1.5) return '~1 min';
+    if (m < 10)  return `~${Math.round(m)} min`;
+    return `~${Math.round(m)} min`;
+  }
+
+  function repaintPhaseCard() {
+    // Clamp the bar at threshold for Phase A; once in B the bar stays
+    // visually full (100%) — the findings chip is the new signal of life.
+    const pct = Math.min(100, (postCount / PHASE_B_THRESHOLD) * 100);
+    phaseBarFill.style.width = `${pct}%`;
+    phaseBarCount.textContent = String(postCount);
+    phasePosts.textContent = String(postCount);
+
+    // Flip. Only fires once per screen mount — we gate on `phaseB` so we
+    // don't re-animate every repaint. Flip is mid-render: no reload,
+    // DOM nodes persist, we just toggle a class + swap copy.
+    const nowInB = postCount >= PHASE_B_THRESHOLD;
+    if (nowInB && !phaseB) {
+      phaseB = true;
+      phaseCard.classList.remove('phase-a');
+      phaseCard.classList.add('phase-b', 'phase-flipping');
+      phaseTitle.textContent = 'Extracting insights…';
+      phaseFindingsWrap.hidden = false;
+      phaseCopyS.hidden = false;
+      phaseFreshness.hidden = false;
+      // Drop the transient animation class once the border-color
+      // transition finishes (400ms in CSS). Guarded by a timeout so
+      // repaints during the transition don't re-trigger.
+      setTimeout(() => { phaseCard.classList.remove('phase-flipping'); }, 900);
+    }
+
+    // Phase-A copy: keep the ETA fresh. Use the overall posts/sec rate
+    // since the screen mounted as a rough estimate. Avoids dividing by
+    // zero in the first second.
+    if (!phaseB) {
+      const elapsedSec = Math.max(1, (Date.now() - startTs) / 1000);
+      const rate = postCount / elapsedSec;        // posts/sec
+      if (rate > 0) {
+        const remaining = Math.max(0, PHASE_B_THRESHOLD - postCount);
+        const etaSec = remaining / rate;
+        phaseCopyP.textContent =
+          `Insights begin at ${PHASE_B_THRESHOLD} posts. ETA ${fmtEtaMinutes(etaSec)}.`;
+      } else {
+        phaseCopyP.textContent =
+          `Insights begin at ${PHASE_B_THRESHOLD} posts. ETA —`;
+      }
+    } else {
+      // Phase-B copy. Uses the live findings counter.
+      phaseCopyP.textContent = `${findingsCount} findings so far.`;
+    }
+  }
+
+  function setFindings(n) {
+    if (typeof n !== 'number' || !isFinite(n)) return;
+    const changed = n !== findingsCount;
+    findingsCount = n;
+    phaseFindings.textContent = String(n);
+    if (changed) {
+      // Brief fade-in so the new count is noticed without being noisy.
+      phaseFindings.classList.remove('phase-findings-pop');
+      // Force reflow so the animation restarts when the number changes
+      // back-to-back (e.g. two enrich:tick events within 300ms).
+      void phaseFindings.offsetWidth;
+      phaseFindings.classList.add('phase-findings-pop');
+      lastFindingTs = Date.now();
+      updateFreshnessBadge();
+    }
+    repaintPhaseCard();
+  }
+
+  function updateFreshnessBadge() {
+    if (!phaseFreshness || phaseFreshness.hidden) return;
+    if (!lastFindingTs) {
+      phaseFreshness.textContent = 'Last finding: —';
+      return;
+    }
+    const secs = Math.max(0, Math.floor((Date.now() - lastFindingTs) / 1000));
+    const t = secs < 5  ? 'just now'
+            : secs < 60 ? `${secs}s ago`
+            : secs < 3600 ? `${Math.floor(secs/60)}m ago`
+            : `${Math.floor(secs/3600)}h ago`;
+    phaseFreshness.textContent = `Last finding: ${t}`;
+  }
 
   const markStage = (key) => {
     if (!key) return;
@@ -198,6 +362,20 @@ export async function renderCollect(root, { params }) {
     } else if (next.status === 'error') meta.textContent = `✗ ${(next.error || 'failed').slice(0, 28)}`;
     else meta.textContent = 'pending';
     repaintCount();
+
+    // Seed the phase-card post count eagerly from per-source totals. This
+    // is optimistic (server-side dedupe may reduce it) — the 2s DB poll
+    // corrects it shortly after. Without this, the bar would sit at 0
+    // until the first poll returns, feeling dead in the first few seconds.
+    if (next.status === 'done' && typeof next.count === 'number' && next.count > 0) {
+      const sumFromSources = [...sourceState.values()]
+        .filter(s => s.status === 'done' && typeof s.count === 'number')
+        .reduce((acc, s) => acc + s.count, 0);
+      if (sumFromSources > postCount) {
+        postCount = sumFromSources;
+        repaintPhaseCard();
+      }
+    }
   }
 
   // Match the exact log shapes emitted by research/collect.py.
@@ -273,10 +451,15 @@ export async function renderCollect(root, { params }) {
     if (persist) pushPersistedLine(topic, text, klass);
   };
 
-  // Elapsed timer
+  // Elapsed timer — updates both the detailed-card elapsed chip and the
+  // phase-card elapsed chip. We also recompute the ETA every second so it
+  // moves smoothly as the rate stabilises during Phase A.
   const tick = setInterval(() => {
-    if (collectDone) return;
-    elapsedEl.textContent = fmtElapsed(Date.now() - startTs);
+    const s = fmtElapsed(Date.now() - startTs);
+    if (!collectDone) elapsedEl.textContent = s;
+    if (phaseElapsed) phaseElapsed.textContent = s;
+    if (!phaseB) repaintPhaseCard();
+    updateFreshnessBadge();
   }, 1000);
 
   const nowText = $('#now-text');
@@ -482,11 +665,104 @@ export async function renderCollect(root, { params }) {
     showRetryAction();
   }
 
+  // --- phase-card data plumbing ---
+  //
+  // 1) Poll `topic_posts` + `graph_nodes` every 2s for authoritative counts.
+  //    The collect log gives an optimistic post count (summed from `[src] ✓
+  //    N posts` markers) but dedupe happens server-side, so the DB number
+  //    is what we trust for the threshold flip.
+  //
+  // 2) Listen for `enrich:tick` — Python emits
+  //    {batch_size, processed, queued, duration_ms, topics:[...]}.
+  //    We don't trust its findings number; instead we re-query the DB
+  //    (it's < 1ms) so we always match what the topic page will show.
+  //
+  // 3) Listen for `gapmap:changed` (our own in-app broadcast) — the same
+  //    re-query path. Collect-done and topic views fire this.
+  //
+  // routeGen gate: each async callback bails if the user has navigated
+  // away. That way late-arriving events don't mutate DOM belonging to the
+  // next screen.
+  const myRouteGen = root.dataset.routeGen;
+  const stillHere  = () => root.dataset.routeGen === myRouteGen && root.isConnected;
+
+  async function refetchPhaseCounts() {
+    if (!stillHere()) return;
+    try {
+      const rows = await api.runQuery(
+        `SELECT
+           (SELECT count(*) FROM topic_posts WHERE topic=:topic) AS posts,
+           (SELECT count(*) FROM graph_nodes WHERE topic=:topic
+              AND kind IN ('painpoint','feature_wish','workaround','product')) AS findings`,
+        topic,
+      );
+      if (!stillHere()) return;
+      const r = (Array.isArray(rows) && rows[0]) || {};
+      const nPosts = Number(r.posts) || 0;
+      const nFind  = Number(r.findings) || 0;
+      if (nPosts > postCount) postCount = nPosts;
+      repaintPhaseCard();
+      if (nFind !== findingsCount) setFindings(nFind);
+    } catch {
+      // graph_nodes / topic_posts may not exist until first write — that's
+      // fine, bar will seed from log lines until the DB query succeeds.
+    }
+  }
+
+  // Prime counts as soon as possible (revisit case may already have posts).
+  refetchPhaseCounts();
+  const pollTimer = setInterval(refetchPhaseCounts, 2000);
+
+  // Subscribe to enrich:tick via a dynamic import. Dynamic so this module
+  // works in node tests without pulling in the Tauri SDK. Cleanup guard
+  // (`detached`) prevents stale listeners from mutating DOM after unmount.
+  let unlistenEnrich = null;
+  let detached = false;
+  (async () => {
+    try {
+      const mod = await import('@tauri-apps/api/event');
+      if (detached) return;
+      unlistenEnrich = await mod.listen('enrich:tick', (e) => {
+        if (!stillHere()) return;
+        // Only refetch if the tick is for a topic we care about. Worker
+        // emits topics:[...]. If the payload isn't scoped we still
+        // refetch — it's a 1ms query.
+        const topics = e?.payload?.topics;
+        if (topics && Array.isArray(topics) && !topics.includes(topic)) {
+          // Not our topic — refresh freshness timestamp anyway so the
+          // badge reflects worker activity, but skip the DB roundtrip.
+          lastFindingTs = Date.now();
+          updateFreshnessBadge();
+          return;
+        }
+        refetchPhaseCounts();
+      });
+    } catch {
+      // Non-Tauri runtime (tests, preview) — no-op.
+    }
+  })();
+
+  // `mutated('findings'|'collect'|'graph', …)` fires via the api layer on
+  // every relevant write. Cheap re-query on each — the 10s runQuery cache
+  // is busted by the invalidate inside mutated().
+  const onGapmapChanged = (ev) => {
+    if (!stillHere()) return;
+    const k = ev?.detail?.kind;
+    if (k === 'findings' || k === 'collect' || k === 'graph') {
+      refetchPhaseCounts();
+    }
+  };
+  window.addEventListener('gapmap:changed', onGapmapChanged);
+
   // --- cleanup ---
   const cleanup = () => {
+    detached = true;
     clearInterval(tick);
+    clearInterval(pollTimer);
     try { unlistenProgress?.(); } catch {}
     try { unlistenDone?.();     } catch {}
+    try { unlistenEnrich?.();   } catch {}
+    window.removeEventListener('gapmap:changed', onGapmapChanged);
     window.removeEventListener('hashchange', cleanup);
   };
   window.addEventListener('hashchange', cleanup);
