@@ -40,3 +40,6 @@ scripts/onnx-model-cache/
 # built app; the private key stays on your laptop (or webhook server).
 scripts/licenses/.keys/
 
+
+# Per-worktree venv symlink (ui-redesign worktree)
+/.venv
