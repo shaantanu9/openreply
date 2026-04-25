@@ -404,6 +404,9 @@ export async function renderCollect(root, { params }) {
     youtube: 'YouTube',
     trustpilot: 'Trustpilot', producthunt: 'Product Hunt',
     alternativeto: 'AlternativeTo',
+    oc_bluesky: 'Bluesky (authors)',
+    oc_substack: 'Substack',
+    oc_producthunt_today: 'Product Hunt — today',
   };
   const sourceState = new Map();      // src → { status, count, error, elapsed }
   const sourcesGrid  = $('#sources-grid');
