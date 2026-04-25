@@ -19,6 +19,7 @@ from typing import Any, Iterable
 
 from ..core.db import get_db
 from ..research.gaps import find_gaps
+from ..research.relevance import filter_findings
 from .build import _upsert_edge, _upsert_node
 from .schema import ensure_graph_schema, make_node_id
 
@@ -26,6 +27,13 @@ from .schema import ensure_graph_schema, make_node_id
 def _slug(label: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", (label or "").lower()).strip("-")
     return s[:60] or "unnamed"
+
+
+def _ensure_source_node(db, topic: str, source_label: str) -> str:
+    """Ensure a canonical source node exists for a source_type label."""
+    key = _slug(source_label or "unknown")
+    _upsert_node(db, topic, "source", key, source_label or "unknown")
+    return make_node_id(topic, "source", key)
 
 
 def _link_evidence(db, topic: str, sem_node: str, post_ids: Iterable[str], kind: str) -> int:
@@ -74,9 +82,8 @@ def _link_evidence(db, topic: str, sem_node: str, post_ids: Iterable[str], kind:
         # of the graph cross-source-meaningful without dragging 9k post
         # nodes in. Edge kind = "source_evidence".
         for src, count in source_counts.items():
-            source_node = make_node_id(topic, "source", src)
-            if db["graph_nodes"].count_where("id = ?", [source_node]) > 0:
-                _upsert_edge(db, topic, sem_node, source_node, "source_evidence", weight=float(count))
+            source_node = _ensure_source_node(db, topic, src)
+            _upsert_edge(db, topic, sem_node, source_node, "source_evidence", weight=float(count))
 
         # Stamp source breakdown + diversity into the semantic node metadata
         # so the UI can render source badges directly from the node row.
@@ -98,7 +105,114 @@ def _link_evidence(db, topic: str, sem_node: str, post_ids: Iterable[str], kind:
         )
         db.conn.commit()
 
+        # Link semantic finding to concrete document elements for provenance
+        # jumps (page/bbox) when local-file artifacts exist for the evidence
+        # posts. Edges are best-effort and additive.
+        try:
+            placeholders = ",".join(["?"] * len(real_pids))
+            elem_rows = list(
+                db.query(
+                    f"""
+                    SELECT id, document_id, post_id
+                    FROM document_elements
+                    WHERE topic = ?
+                      AND post_id IN ({placeholders})
+                    """,
+                    [topic, *real_pids],
+                )
+            )
+            for er in elem_rows:
+                elem_node = make_node_id(topic, "document_element", str(er["id"]))
+                if db["graph_nodes"].count_where("id = ?", [elem_node]) == 0:
+                    continue
+                _upsert_edge(
+                    db,
+                    topic,
+                    sem_node,
+                    elem_node,
+                    "supports",
+                    metadata={"post_id": er.get("post_id"), "document_id": er.get("document_id")},
+                )
+        except Exception:
+            pass
+
     return n
+
+
+def backfill_source_evidence(topic: str) -> dict[str, Any]:
+    """Retrofit source_evidence edges + source_breakdown metadata for existing
+    semantic findings that already have post-level evidence edges.
+
+    Useful for older topics created before source_evidence was added, where the
+    graph has findings but no finding->source links in Map.
+    """
+    db = get_db()
+    evidence_kinds = ("evidenced_by", "wished_in", "about_product", "built_in", "solves")
+    sem_kinds = ("painpoint", "feature_wish", "product", "workaround")
+    ph_e = ",".join(["?"] * len(evidence_kinds))
+    ph_s = ",".join(["?"] * len(sem_kinds))
+
+    rows = list(
+        db.query(
+            f"""
+            SELECT e.src AS sem_id, p.id AS post_id, coalesce(p.source_type, 'reddit') AS src
+            FROM graph_edges e
+            JOIN posts p ON p.id = replace(e.dst, ?, '')
+            JOIN graph_nodes n ON n.id = e.src
+            WHERE e.topic = ?
+              AND e.kind IN ({ph_e})
+              AND n.kind IN ({ph_s})
+              AND e.dst LIKE ?
+            """,
+            [f"{topic}::post::", topic, *evidence_kinds, *sem_kinds, f"{topic}::post::%"],
+        )
+    )
+
+    if not rows:
+        return {"ok": True, "topic": topic, "updated_nodes": 0, "source_edges_added": 0}
+
+    by_sem: dict[str, dict[str, int]] = {}
+    for r in rows:
+        sem_id = r.get("sem_id")
+        src = r.get("src") or "reddit"
+        if not sem_id:
+            continue
+        by_sem.setdefault(sem_id, {})
+        by_sem[sem_id][src] = by_sem[sem_id].get(src, 0) + 1
+
+    import json
+    updated_nodes = 0
+    source_edges_added = 0
+    for sem_id, src_counts in by_sem.items():
+        for src, count in src_counts.items():
+            source_node = _ensure_source_node(db, topic, src)
+            _upsert_edge(db, topic, sem_id, source_node, "source_evidence", weight=float(count))
+            source_edges_added += 1
+        diversity = len([v for v in src_counts.values() if v > 0])
+        db.conn.execute(
+            """UPDATE graph_nodes SET metadata_json = json_patch(
+                  coalesce(metadata_json, '{}'),
+                  json(:patch)
+               ) WHERE id = :id""",
+            {
+                "id": sem_id,
+                "patch": json.dumps(
+                    {
+                        "source_breakdown": src_counts,
+                        "source_diversity": diversity,
+                        "evidence_count": int(sum(src_counts.values())),
+                    }
+                ),
+            },
+        )
+        updated_nodes += 1
+    db.conn.commit()
+    return {
+        "ok": True,
+        "topic": topic,
+        "updated_nodes": updated_nodes,
+        "source_edges_added": source_edges_added,
+    }
 
 
 def upsert_semantic(
@@ -277,6 +391,9 @@ def enrich_from_llm(
     provider: str | None = None,
     corpus_limit: int = 120,
     min_score: int = 1,
+    only: str | None = None,
+    parallel: bool = False,
+    progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Run find_gaps() against the corpus, then persist to the graph.
 
@@ -323,6 +440,9 @@ def enrich_from_llm(
             provider=(provider if provider else None),
             corpus_limit=corpus_limit,
             min_score=min_score,
+            only=only,
+            parallel=parallel,
+            progress_cb=progress_cb,
         )
     except Exception as e:
         set_keys = [k for k in key_for.values() if os.getenv(k)]
@@ -341,22 +461,42 @@ def enrich_from_llm(
     if report.get("error"):
         return {"ok": False, "error": report["error"], "topic": topic}
 
+    finding_threshold = float(os.getenv("GAPMAP_FINDING_REL_THRESHOLD", "0.45"))
+    pain_res = filter_findings(
+        topic,
+        report.get("painpoints") if isinstance(report.get("painpoints"), list) else [],
+        threshold=finding_threshold,
+        label_key="painpoint",
+        alt_keys=("title", "name"),
+    )
+    wish_res = filter_findings(
+        topic,
+        report.get("feature_wishes") if isinstance(report.get("feature_wishes"), list) else [],
+        threshold=finding_threshold,
+        label_key="feature",
+        alt_keys=("title", "name"),
+    )
+    complaint_res = filter_findings(
+        topic,
+        report.get("product_complaints") if isinstance(report.get("product_complaints"), list) else [],
+        threshold=finding_threshold,
+        label_key="complaint",
+        alt_keys=("title", "painpoint", "name"),
+    )
+    workaround_res = filter_findings(
+        topic,
+        report.get("diy_workarounds") if isinstance(report.get("diy_workarounds"), list) else [],
+        threshold=finding_threshold,
+        label_key="workaround",
+        alt_keys=("title", "name"),
+    )
+
     summary = upsert_semantic(
         topic=topic,
-        painpoints=report.get("painpoints") if isinstance(report.get("painpoints"), list) else [],
-        feature_wishes=(
-            report.get("feature_wishes") if isinstance(report.get("feature_wishes"), list) else []
-        ),
-        product_complaints=(
-            report.get("product_complaints")
-            if isinstance(report.get("product_complaints"), list)
-            else []
-        ),
-        diy_workarounds=(
-            report.get("diy_workarounds")
-            if isinstance(report.get("diy_workarounds"), list)
-            else []
-        ),
+        painpoints=pain_res.get("kept", []),
+        feature_wishes=wish_res.get("kept", []),
+        product_complaints=complaint_res.get("kept", []),
+        diy_workarounds=workaround_res.get("kept", []),
     )
     summary["ok"] = True
     summary["corpus_size"] = report.get("corpus_size")
@@ -364,6 +504,13 @@ def enrich_from_llm(
     # back-compat (first entry of chain, or the explicit pin).
     summary["provider"] = chain[0] if chain else None
     summary["provider_chain"] = chain
+    summary["finding_relevance_threshold"] = finding_threshold
+    summary["dropped_off_topic_findings"] = {
+        "painpoints": len(pain_res.get("dropped", [])),
+        "feature_wishes": len(wish_res.get("dropped", [])),
+        "product_complaints": len(complaint_res.get("dropped", [])),
+        "diy_workarounds": len(workaround_res.get("dropped", [])),
+    }
     return summary
 
 
@@ -664,6 +811,19 @@ def enrich_from_llm_for_posts(
     feature_wishes = _as_list(_run_extractor_on_rows("features", topic, rows, provider))
     product_complaints = _as_list(_run_extractor_on_rows("complaints", topic, rows, provider))
     diy_workarounds = _as_list(_run_extractor_on_rows("diy", topic, rows, provider))
+    finding_threshold = 0.45
+    painpoints = filter_findings(
+        topic, painpoints, threshold=finding_threshold, label_key="painpoint", alt_keys=("title", "name")
+    ).get("kept", [])
+    feature_wishes = filter_findings(
+        topic, feature_wishes, threshold=finding_threshold, label_key="feature", alt_keys=("title", "name")
+    ).get("kept", [])
+    product_complaints = filter_findings(
+        topic, product_complaints, threshold=finding_threshold, label_key="complaint", alt_keys=("title", "painpoint", "name")
+    ).get("kept", [])
+    diy_workarounds = filter_findings(
+        topic, diy_workarounds, threshold=finding_threshold, label_key="workaround", alt_keys=("title", "name")
+    ).get("kept", [])
 
     summary = upsert_semantic(
         topic=topic,

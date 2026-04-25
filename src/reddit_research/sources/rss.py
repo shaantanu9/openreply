@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import calendar
 import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -76,10 +77,41 @@ def _entry_to_row(entry, feed_url: str, publication: str, category: str) -> dict
     }
 
 
+def _matches_query(row: dict[str, Any], query: str | list[str] | None) -> bool:
+    """RSS relevance matcher.
+
+    Old behavior required the full query phrase as a literal substring in
+    title/summary, which over-filtered feeds for normal topics
+    ("ai product analytics", "calorie tracking app", etc.). We now accept:
+      - full-phrase hit, OR
+      - token overlap hit:
+          * single-token query  -> at least 1 token match
+          * multi-token query   -> at least 2 token matches
+    """
+    if query is None:
+        return True
+    queries = [query] if isinstance(query, str) else list(query or [])
+    queries = [str(q).strip().lower() for q in queries if str(q).strip()]
+    if not queries:
+        return True
+    hay = f"{row.get('title') or ''} {row.get('selftext') or ''}".lower()
+    for q in queries:
+        if q in hay:
+            return True
+        tokens = [t for t in re.findall(r"[a-z0-9]+", q) if len(t) >= 3]
+        if not tokens:
+            continue
+        hits = sum(1 for t in set(tokens) if t in hay)
+        need = 1 if len(set(tokens)) == 1 else 2
+        if hits >= need:
+            return True
+    return False
+
+
 def fetch_rss(
     feed_url: str,
     *,
-    query: str | None = None,
+    query: str | list[str] | None = None,
     publication: str = "",
     category: str = "rss",
     limit: int = 30,
@@ -95,7 +127,9 @@ def fetch_rss(
         r = httpx.get(
             feed_url,
             headers=DEFAULT_HEADERS,
-            timeout=DEFAULT_TIMEOUT,
+            # RSS endpoints vary wildly in latency; keep per-feed timeout short
+            # so one dead publication doesn't stall the entire category bundle.
+            timeout=min(DEFAULT_TIMEOUT, 10.0),
             follow_redirects=True,
         )
         r.raise_for_status()
@@ -109,11 +143,5 @@ def fetch_rss(
 
     rows = [_entry_to_row(e, feed_url, publication, category) for e in entries]
     if query:
-        q = query.lower().strip()
-        if q:
-            rows = [
-                row for row in rows
-                if q in (row["title"] or "").lower()
-                or q in (row["selftext"] or "").lower()
-            ]
+        rows = [row for row in rows if _matches_query(row, query)]
     return rows[:limit]

@@ -11,6 +11,8 @@ Works in both auth and public mode; just uses the existing fetch modules.
 """
 from __future__ import annotations
 
+import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -38,6 +40,40 @@ _SLEEP = 2.0
 # independent hosts — not hammering any single one. Reddit stages stay
 # sequential because Reddit does rate-limit aggressively.
 _PARALLEL_SOURCES = 6
+
+
+def _fallback_keyword_candidates(topic: str) -> list[str]:
+    """Generate deterministic keyword fanout when LLM expansion is weak/missing."""
+    topic = (topic or "").strip()
+    if not topic:
+        return []
+    low = topic.lower()
+    tokens = [t for t in re.findall(r"[a-z0-9]+", low) if len(t) >= 2]
+    stop = {"the", "and", "for", "with", "from", "that", "this", "app", "tool", "software", "service"}
+    core = [t for t in tokens if t not in stop]
+    out: list[str] = [topic]
+    if core:
+        out.append(" ".join(core[:2]))
+        out.append(" ".join(core))
+        if len(core) >= 2:
+            out.extend([f"{core[0]} {core[-1]}", f"{core[0]} problems", f"{core[0]} alternatives"])
+        else:
+            out.extend([f"{core[0]} problems", f"{core[0]} alternatives", f"{core[0]} reviews"])
+    else:
+        # Ultra-short user input (e.g. "a"): still fan out instead of a dead-end single query.
+        out.extend([f"{topic} problems", f"{topic} alternatives", f"{topic} reviews", f"{topic} community"])
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for k in out:
+        s = " ".join(k.split()).strip()
+        if not s:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(s)
+    return deduped
 
 
 @dataclass
@@ -98,7 +134,11 @@ def _tag_posts(topic: str, post_ids: list[str], source: str) -> int:
     except (TypeError, ValueError):
         gate_threshold = 0.28
 
-    if gate_threshold > 0 and post_ids:
+    # Local-file ingestion already carries explicit user intent ("ingest this
+    # file into this topic"), so semantic relevance gating can incorrectly
+    # drop the synthetic local_doc post and break provenance linking.
+    skip_relevance_gate = str(source or "").startswith("local:")
+    if (not skip_relevance_gate) and gate_threshold > 0 and post_ids:
         try:
             from .relevance import score_posts
             rows_for_scoring = list(db.query(
@@ -230,7 +270,10 @@ def collect(
                 "hn",             # Hacker News
                 "appstore",       # App Store reviews (iOS consumer)
                 "playstore",      # Play Store reviews (Android consumer)
+                "trustpilot",     # Customer reviews (non-app-store web)
                 "producthunt",    # Product Hunt launches + early-adopter reactions
+                "rss_products",   # Product launch/news RSS bundle
+                "rss_tech_news",  # Tech news RSS bundle
                 "arxiv",          # arXiv preprints
                 "openalex",       # OpenAlex academic catalogue
                 "pubmed",         # PubMed (biomed literature)
@@ -240,8 +283,6 @@ def collect(
                 "github",         # GitHub trending repos
                 "trends",         # Google Trends series (returns series, not posts)
                 # Opt-in via explicit --sources flag (not in aggressive default):
-                #   trustpilot     — Cloudflare/TLS-level blocks non-browser clients;
-                #                    requires Trustpilot API partnership for real use
                 #   alternativeto  — Cloudflare blocks unauth clients (known flaky)
                 #   lemmy/mastodon — need explicit instance URLs
                 #   github_issues  — rate-limited without GITHUB_TOKEN
@@ -261,6 +302,9 @@ def collect(
             "devto",         # Dev.to — fast, free, 1 call
             "stackoverflow", # Stack Overflow — fast, free, 1 call
             "github",        # GitHub trending — fast, free, 1 call
+            "rss_tech_news", # RSS tech bundle for broad market chatter
+            "rss_products",  # RSS product bundle for launch/feedback signal
+            "gnews",         # Google News for general-topic recall
         ]
     # `result.topic` ends up being set to the canonical after canonicalization
     # below. Populate with original here; we update after _canonicalize_topic
@@ -341,27 +385,57 @@ def collect(
     # Query expansion — use the LLM-scored keywords from the canonicalize
     # call to fan out per-source queries. Recall 3-5× vs the single canonical
     # string. `high`-only by default; `aggressive` adds `medium` too. Cap via
-    # GAPMAP_MAX_KEYWORDS.
+    # GAPMAP_MAX_KEYWORDS. For RSS sources we widen keyword fanout because
+    # feeds are broad and strict phrase-only matching under-recalls.
     # Default lowered to 1 on 2026-04-20 — 5 keywords × 11 sources × 1 s
     # politeness ≈ 55 s added to every aggressive collect, which felt like
     # a hang to users. Opt in to higher recall via the env var once you've
     # seen the baseline latency.
-    import os as _os
     try:
-        _max_kw = int(_os.getenv("GAPMAP_MAX_KEYWORDS", "1") or "1")
+        # Raised default 1 -> 4 -> 6 on 2026-04-24 so topics like "public
+        # speaking anxiety app" capture synonyms (confident speaking,
+        # speaking tricks, etc) out of the box. 6 × 1 s per-keyword
+        # politeness adds ~5 s to external-source fan-out which is
+        # negligible vs the collection's total wall-time. Tune via env.
+        _max_kw = int(os.getenv("GAPMAP_MAX_KEYWORDS", "6") or "6")
     except ValueError:
-        _max_kw = 1
+        _max_kw = 6
+    try:
+        _min_kw = int(os.getenv("GAPMAP_MIN_KEYWORDS", "3") or "3")
+    except ValueError:
+        _min_kw = 3
+    _max_kw = max(1, _max_kw)
+    _min_kw = max(1, min(_min_kw, _max_kw))
     _min_rel = "medium" if aggressive else "high"
     _rel_rank = {"high": 3, "medium": 2, "low": 1}
     _min_rank = _rel_rank.get(_min_rel, 3)
+    _all_canon_keywords = [
+        k["keyword"]
+        for k in (_canon.get("search_keywords") if isinstance(_canon, dict) else []) or []
+        if k.get("keyword")
+    ]
     search_keywords = [
         k["keyword"]
         for k in (_canon.get("search_keywords") if isinstance(_canon, dict) else []) or []
         if _rel_rank.get(k.get("relevance", "low"), 0) >= _min_rank
     ][:_max_kw]
+    fallback_keywords = _fallback_keyword_candidates(search_topic)
+    if len(search_keywords) < _min_kw:
+        merged = list(dict.fromkeys([*search_keywords, *fallback_keywords]))
+        search_keywords = merged[:_max_kw]
     # Always guarantee at least the canonical topic.
     if not search_keywords:
         search_keywords = [search_topic]
+    # RSS-only enhancement: ensure enough LLM-derived terms are available for
+    # feed matching, even when GAPMAP_MAX_KEYWORDS is globally conservative.
+    if sources and any(str(s).startswith("rss") for s in sources):
+        try:
+            _rss_kw_cap = int(os.getenv("GAPMAP_RSS_KEYWORDS", "5") or "5")
+        except ValueError:
+            _rss_kw_cap = 5
+        _rss_kw_cap = max(1, _rss_kw_cap)
+        _dedup = list(dict.fromkeys([*search_keywords, *_all_canon_keywords, *fallback_keywords, search_topic]))
+        search_keywords = _dedup[: max(len(search_keywords), _rss_kw_cap)]
 
     # Thread-safe log — prevents interleaved stdout writes when the parallel
     # stage has multiple workers emitting progress at once. Also guards
@@ -386,6 +460,18 @@ def collect(
             # old list form for backward-compat with mocked tests.
             found_subs = found.get("subs", found) if isinstance(found, dict) else found
             subs = [s["name"] for s in found_subs if s.get("name")]
+            # Expand subreddit discovery using top alternate keywords.
+            for kw in search_keywords[1:4]:
+                try:
+                    alt = discover_subs(kw, limit=6)
+                    alt_subs = alt.get("subs", alt) if isinstance(alt, dict) else alt
+                    for s in alt_subs:
+                        n = s.get("name")
+                        if n and n not in subs:
+                            subs.append(n)
+                except Exception:
+                    pass
+            subs = subs[:12]
             _log(f"  → {subs}")
             time.sleep(_SLEEP)
             result.subs = subs

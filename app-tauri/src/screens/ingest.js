@@ -5,6 +5,8 @@ import { api, esc } from '../api.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
 const SOURCE_TYPES = [
+  { v: 'learning_material', label: 'Learning material',  hint: 'Design docs, README, notes, specs in .md' },
+  { v: 'test_doc',          label: 'Test docs',          hint: 'QA reports, regression notes, bug write-ups' },
   { v: 'interviews',    label: 'Interview transcripts', hint: 'CSV/JSON/TXT export from Otter, Rev, etc.' },
   { v: 'slack',         label: 'Slack export',          hint: 'JSON from /admin/export' },
   { v: 'calls',         label: 'Call transcripts',      hint: 'VTT / SRT subtitle files' },
@@ -24,30 +26,48 @@ export async function renderIngest(root) {
       <div class="topbar-spacer"></div>
     </header>
 
-    <div class="section-head">
+    <div class="section-head" style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px">
       <div>
         <h2>Ingest local files</h2>
         <p>Drop interview CSVs, Slack exports, call transcripts, or notes into a topic — they get tagged, indexed, and show up in the Evidence tab just like Reddit posts.</p>
       </div>
+      <a href="#/ingest-video" class="btn btn-ghost btn-sm btn-bordered icon-btn" style="flex-shrink:0" title="Ingest any YouTube / Vimeo / podcast URL — audio pulled locally, transcribed with Whisper">
+        <i data-lucide="video"></i> Video URL →
+      </a>
     </div>
 
     <div class="ingest-wrap">
       <div class="ingest-form">
-        <!-- FILE -->
+        <!-- FILE / FOLDER -->
         <div class="ingest-row">
-          <label>File</label>
-          <div class="ingest-drop" id="drop-zone" role="button" tabindex="0">
-            <div id="drop-empty">
-              <div class="ingest-drop-ic"><i data-lucide="file-up"></i></div>
-              <b>Choose a file</b>
-              <span>CSV · JSON · TXT · VTT · SRT · MD — max 10 MB</span>
+          <label>Source</label>
+          <div style="display:flex;gap:10px">
+            <div class="ingest-drop" id="drop-zone" role="button" tabindex="0" style="flex:1">
+              <div id="drop-empty">
+                <div class="ingest-drop-ic"><i data-lucide="file-up"></i></div>
+                <b>Choose a file</b>
+                <span>CSV · JSON · TXT · VTT · SRT · MD · PDF — max 10 MB</span>
+              </div>
+              <div id="drop-chosen" hidden>
+                <b id="chosen-name"></b>
+                <span id="chosen-meta"></span>
+                <button class="btn btn-ghost btn-xs btn-bordered" id="btn-change-file" style="margin-top:6px">Change file</button>
+              </div>
             </div>
-            <div id="drop-chosen" hidden>
-              <b id="chosen-name"></b>
-              <span id="chosen-meta"></span>
-              <button class="btn btn-ghost btn-xs btn-bordered" id="btn-change-file" style="margin-top:6px">Change file</button>
+            <div class="ingest-drop" id="drop-folder" role="button" tabindex="0" style="flex:1">
+              <div id="drop-folder-empty">
+                <div class="ingest-drop-ic"><i data-lucide="folder-up"></i></div>
+                <b>Or pick a folder</b>
+                <span>Recursive — every .md / .pdf / .txt etc inside</span>
+              </div>
+              <div id="drop-folder-chosen" hidden>
+                <b id="chosen-folder-name"></b>
+                <span id="chosen-folder-meta"></span>
+                <button class="btn btn-ghost btn-xs btn-bordered" id="btn-change-folder" style="margin-top:6px">Change folder</button>
+              </div>
             </div>
           </div>
+          <p class="ingest-hint">Folder mode walks recursively — skips <code>.git</code>, <code>node_modules</code>, hidden dirs. Cap: 500 files (override below).</p>
         </div>
 
         <!-- TOPIC -->
@@ -156,8 +176,11 @@ export async function renderIngest(root) {
   `;
   window.refreshIcons?.();
 
-  // State
+  // State — exactly one of chosenPath / chosenFolderPath is set at a time.
+  // Picking the other clears its sibling so the submit handler can branch on
+  // whichever is non-null without a separate mode flag.
   let chosenPath = null;
+  let chosenFolderPath = null;
 
   // Populate existing topics — surface failures so users know why the
   // dropdown is empty instead of silently showing "pick existing" only.
@@ -187,12 +210,17 @@ export async function renderIngest(root) {
       const file = await openDialog({ multiple: false, filters: EXT_FILTER });
       if (!file || typeof file !== 'string') return;
       chosenPath = file;
+      // Picking a file unsets folder mode (mutually exclusive).
+      chosenFolderPath = null;
+      root.querySelector('#drop-folder-empty').hidden = false;
+      root.querySelector('#drop-folder-chosen').hidden = true;
       const name = file.split('/').pop();
       const ext  = (name.split('.').pop() || '').toUpperCase();
       root.querySelector('#drop-empty').hidden = true;
       root.querySelector('#drop-chosen').hidden = false;
       root.querySelector('#chosen-name').textContent = name;
       root.querySelector('#chosen-meta').textContent = `${ext} · ${esc(file)}`;
+      submitBtn.textContent = 'Ingest file';
       updateSubmit();
     } catch (e) {
       setStatus(`pick failed: ${e?.message || e}`, false);
@@ -200,6 +228,30 @@ export async function renderIngest(root) {
   };
   root.querySelector('#drop-zone').addEventListener('click', pickFile);
   root.querySelector('#btn-change-file').addEventListener('click', (e) => { e.stopPropagation(); pickFile(); });
+
+  // Folder picker — same dialog, `directory: true` flag.
+  const pickFolder = async () => {
+    try {
+      const folder = await openDialog({ directory: true, multiple: false });
+      if (!folder || typeof folder !== 'string') return;
+      chosenFolderPath = folder;
+      // Picking a folder mode unsets file mode so submit branches cleanly.
+      chosenPath = null;
+      root.querySelector('#drop-empty').hidden = false;
+      root.querySelector('#drop-chosen').hidden = true;
+      const name = folder.split('/').filter(Boolean).pop();
+      root.querySelector('#drop-folder-empty').hidden = true;
+      root.querySelector('#drop-folder-chosen').hidden = false;
+      root.querySelector('#chosen-folder-name').textContent = name;
+      root.querySelector('#chosen-folder-meta').textContent = esc(folder);
+      submitBtn.textContent = 'Ingest folder';
+      updateSubmit();
+    } catch (e) {
+      setStatus(`pick failed: ${e?.message || e}`, false);
+    }
+  };
+  root.querySelector('#drop-folder').addEventListener('click', pickFolder);
+  root.querySelector('#btn-change-folder').addEventListener('click', (e) => { e.stopPropagation(); pickFolder(); });
 
   // Source tiles
   root.querySelectorAll('.source-tile').forEach(t => {
@@ -233,7 +285,7 @@ export async function renderIngest(root) {
     return v;
   }
   function updateSubmit() {
-    const ok = !!chosenPath && !!resolveTopic();
+    const ok = (!!chosenPath || !!chosenFolderPath) && !!resolveTopic();
     submitBtn.disabled = !ok;
   }
   function setStatus(msg, ok = true) {
@@ -247,14 +299,37 @@ export async function renderIngest(root) {
     const origText = submitBtn.textContent;
     submitBtn.textContent = 'ingesting…';
     setStatus('');
+    const topic = resolveTopic();
+    const sourceType = resolveSourceType();
     try {
-      const res = await api.ingestFile(chosenPath, resolveTopic(), resolveSourceType());
-      const n = res?.rows ?? res?.count ?? '';
-      setStatus(`✓ ingested${n !== '' ? ` ${n} rows` : ''} — run "Rerun collect" on the topic to rebuild the map.`);
-      // Reset file picker only
-      chosenPath = null;
-      root.querySelector('#drop-empty').hidden = false;
-      root.querySelector('#drop-chosen').hidden = true;
+      if (chosenFolderPath) {
+        const res = await api.ingestFolder({
+          path: chosenFolderPath, topic, sourceType,
+        });
+        if (res?.ok === false) {
+          setStatus(`✗ ${res.error || 'folder ingest failed'}`, false);
+        } else {
+          const ing = res?.files_ingested ?? 0;
+          const seen = res?.files_seen ?? 0;
+          const rows = res?.rows_total ?? 0;
+          const failed = res?.files_failed ?? 0;
+          setStatus(
+            `✓ ingested ${ing}/${seen} files · ${rows} rows`
+            + (failed ? ` · ${failed} failed` : '')
+            + ` — extraction worker will pick them up automatically; click "Map" on the topic to see findings appear.`
+          );
+          chosenFolderPath = null;
+          root.querySelector('#drop-folder-empty').hidden = false;
+          root.querySelector('#drop-folder-chosen').hidden = true;
+        }
+      } else {
+        const res = await api.ingestFile(chosenPath, topic, sourceType);
+        const n = res?.rows ?? res?.count ?? '';
+        setStatus(`✓ ingested${n !== '' ? ` ${n} rows` : ''} — run "Rerun collect" on the topic to rebuild the map.`);
+        chosenPath = null;
+        root.querySelector('#drop-empty').hidden = false;
+        root.querySelector('#drop-chosen').hidden = true;
+      }
     } catch (e) {
       setStatus(`✗ ${e?.message || e}`, false);
     } finally {

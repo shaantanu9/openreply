@@ -2,7 +2,7 @@
 //
 // Single source of truth for "does the user have any LLM provider set up?"
 // Accepts either:
-//   - a cloud key (anthropic / openai / openrouter / groq / deepseek / mistral / google)
+//   - a cloud key (anthropic / openai / openrouter / groq / deepseek / mistral / google / nvidia)
 //   - local Ollama (detected via ollama_base_url, or the `ollama` boolean flag)
 //
 // Reads through api.byokStatus, which is cache-invalidated by api.byokSet on
@@ -13,7 +13,7 @@ import { api } from '../api.js';
 
 const CLOUD_PROVIDERS = [
   'anthropic', 'openai', 'openrouter',
-  'groq', 'deepseek', 'mistral', 'google',
+  'groq', 'deepseek', 'mistral', 'google', 'nvidia',
 ];
 
 export async function hasLlmConfigured() {

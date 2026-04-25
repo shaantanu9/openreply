@@ -218,4 +218,19 @@ def sentiment_for_topic(
             out["persisted"] += 1
         else:
             out["skipped"] += 1
+
+    try:
+        from ..core.db import save_mcp_analysis
+        save_mcp_analysis(
+            topic=topic, source="app", kind="sentiment",
+            tool="run_sentiment_by_source",
+            content=json.dumps(out, ensure_ascii=False, default=str),
+            content_type="json",
+            provider=provider or "",
+            model="",
+            params={"source_count": len(sources)},
+        )
+    except Exception:
+        pass
+
     return out

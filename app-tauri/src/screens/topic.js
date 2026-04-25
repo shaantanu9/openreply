@@ -16,11 +16,363 @@ import { loadSentiment } from './sentiment.js';
 import { loadInsights } from './insights.js';
 import { loadBets } from './bets.js';
 import { wireFreshnessBadge } from '../lib/enrichStatus.js';
+import { TAB_PIPELINES, TAB_READONLY, runAllForTopic, runTabPipeline, tabHasData, isAutoRunEnabled, setAutoRunEnabled } from '../lib/tabPipelines.js';
+
+const TOPIC_QUERY_TIMEOUT_MS = 25000;
+const TAB_LOAD_TIMEOUT_MS = 70000;
+async function withTimeout(promise, ms, label = 'request') {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
 // Hydrated from localStorage on first access per topic (survives page reload).
 const chatHistory = new Map();
+
+// ─── Per-topic stats cache (instant first-paint) ───────────────────────────
+// Persists the last `topicStats()` result to localStorage keyed by topic so
+// the header chips ("345 posts · 0 pains · 0 DIY · 8 src") paint INSTANTLY
+// when the user re-opens a topic page. Without this, every topic open spawns
+// a fresh Python-sidecar sub-query bundle (~300-800 ms warm, 2+ s cold) and
+// the header sits blank during that window. Stale-while-revalidate: cache is
+// shown immediately, the real fetch then overwrites it with fresh values.
+//
+// Why localStorage and not sessionStorage: the user-perceived "second app
+// open" win comes specifically from cross-session persistence — first paint
+// after a fresh app launch should reflect the LAST observed state, not a
+// blank skeleton. Quotas are fine — each entry is a single ~200-byte JSON.
+//
+// Cache is best-effort. Any read/write/parse error silently no-ops.
+const TOPIC_STATS_CACHE_PREFIX = 'gapmap.topic.stats.cache.';
+function readTopicStatsCache(topic) {
+  if (!topic) return null;
+  try {
+    const raw = localStorage.getItem(TOPIC_STATS_CACHE_PREFIX + topic);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+function writeTopicStatsCache(topic, stats) {
+  if (!topic || !stats || typeof stats !== 'object') return;
+  try {
+    localStorage.setItem(
+      TOPIC_STATS_CACHE_PREFIX + topic,
+      JSON.stringify({ ...stats, _ts: Date.now() }),
+    );
+  } catch {}
+}
+
+// Per-topic memo of the last enrich attempt — lets empty-state cards on Map /
+// Evidence tabs distinguish "never ran" from "ran but LLM produced 0". Without
+// this, a weak Ollama model that returns zero findings looks identical to a
+// fresh topic with no extraction at all, so the user can't tell they need a
+// bigger model or a cloud key. key = topic, value = { ts, provider, model,
+// providerChain, added, error, skipped, corpusSize, droppedOffTopic }.
+const _lastEnrichResult = new Map();
+function recordEnrichResult(topic, res, err) {
+  const np = res?.painpoints_added     ?? res?.painpoints     ?? 0;
+  const nf = res?.feature_wishes_added ?? res?.feature_wishes ?? 0;
+  const nw = res?.workarounds_added    ?? res?.diy_workarounds ?? 0;
+  const npr = res?.products_added      ?? res?.products       ?? 0;
+  _lastEnrichResult.set(topic, {
+    ts: Date.now(),
+    provider: res?.provider || '',
+    providerChain: res?.provider_chain || [],
+    model: res?.model || '',
+    added: np + nf + nw + npr,
+    painpoints: np,
+    feature_wishes: nf,
+    workarounds: nw,
+    products: npr,
+    error: err || res?.error || '',
+    skipped: !!res?.skipped,
+    corpusSize: res?.corpus_size ?? null,
+    droppedOffTopic: res?.dropped_off_topic_findings || null,
+  });
+}
+
+// Friendly labels for per-extractor banner copy. Keys match the Python
+// `kind` field emitted in `extractor:start` / `extractor:done` events.
+const _ENRICH_KIND_LABEL = {
+  painpoints:  'painpoints',
+  features:    'feature wishes',
+  workarounds: 'workarounds',
+  complaints:  'product complaints',
+};
+
+/**
+ * Subscribe to the streaming enrich pipeline for a topic and render progress
+ * into the `#map-enrich-banner` element. Returns a promise that resolves
+ * after `enrich:stream:done` fires, regardless of outcome (parse-error,
+ * crash, clean exit). The `onComplete(summary)` callback runs inside the
+ * done handler AFTER the banner is updated, so callers (Map tab) can kick
+ * off a map-iframe reload without racing the DOM update.
+ *
+ * Why this helper instead of inlining: the auto-enrich path AND the manual
+ * "Run" button both need the same listener wiring + banner updates. Without
+ * a shared helper, the two paths drift + leak listeners.
+ *
+ * Listeners are unregistered on `enrich:stream:done` (one-shot). The Map
+ * tab also kills them on navigation-away via `_activeEnrichUnlistens` so a
+ * mid-stream tab-switch doesn't leave background handlers writing to a
+ * detached DOM.
+ */
+const _activeEnrichUnlistens = new Set();
+
+// ─── Map-tab cross-navigation cache ────────────────────────────────────────
+// Per-topic in-memory cache of the last rendered Map tab. Survives navigation
+// away from the topic and back so re-opening a topic doesn't replay
+// buildGraph + relate + exportHtml (3 sidecar spawns, ~1-3s warm). The
+// per-`renderTopic`-closure `_mapRender` was lost on every nav; this Map
+// outlives the closure.
+//
+// Entries: { html, outPath, mapMode, ts, stale, statsKey }.
+//   - statsKey = "<n_nodes>:<n_edges>" sampled at render time. On revisit
+//     we re-fetch topicStats; if the new key differs OR a `gapmap:changed`
+//     event fired since render time, the entry is marked stale (keeps
+//     serving cache + adds the "stale — Rebuild" chip), and the user can
+//     manually rebuild OR auto-update will rebuild on the next open.
+//   - ts: epoch ms; entries older than MAP_RENDER_CACHE_TTL_MS are evicted.
+const _mapRenderCache = new Map();
+const MAP_RENDER_CACHE_TTL_MS = 30 * 60 * 1000;  // 30 min
+
+// Topics whose Map cache has been invalidated by a write since render time.
+// Populated by the global `gapmap:changed` listener below — survives nav.
+const _mapDirtyTopics = new Set();
+
+(function installMapCacheInvalidator() {
+  if (typeof window === 'undefined') return;
+  if (window.__gapmapMapCacheInvalidatorInstalled) return;
+  window.__gapmapMapCacheInvalidatorInstalled = true;
+  window.addEventListener('gapmap:changed', (ev) => {
+    const detail = ev?.detail || {};
+    const kind = detail.kind;
+    const topic = detail.topic;
+    // Only graph/collect/ingest writes change graph_nodes/edges. byok,
+    // exports, schedule, etc. don't affect the map render content.
+    if (kind !== 'graph' && kind !== 'collect' && kind !== 'ingest' && kind !== 'findings') return;
+    if (topic) {
+      _mapDirtyTopics.add(topic);
+    } else {
+      // Mutation without a topic field (e.g. global trash/byok action) —
+      // play safe and mark every cached map dirty rather than miss one.
+      for (const k of _mapRenderCache.keys()) _mapDirtyTopics.add(k);
+    }
+  });
+})();
+async function runEnrichStreamForTopic(topic, { onComplete, only = null, parallel = false, bannerId = 'map-enrich-banner' } = {}) {
+  const mod = await import('@tauri-apps/api/event');
+  const bannerSelector = `#${bannerId}`;
+  const banner = () => document.querySelector(bannerSelector);
+  const statusEl = () => document.getElementById('map-enrich-status');
+  const samplesEl = () => document.getElementById('map-enrich-samples');
+
+  const firstSamples = []; // accumulator so we can show "5 painpoints: …, …"
+  const counts = { painpoints: 0, features: 0, workarounds: 0, complaints: 0 };
+  let lastSummary = null;
+  let provider = '';
+  let corpusSize = '?';
+
+  const setStatus = (text) => {
+    const el = statusEl();
+    if (el) el.textContent = text;
+  };
+
+  const renderSamples = () => {
+    const el = samplesEl();
+    if (!el) return;
+    if (!firstSamples.length) { el.innerHTML = ''; return; }
+    // Show the first 6 finding titles we've seen so the user sees that real
+    // content is coming through, even before all 4 extractors finish.
+    const chips = firstSamples.slice(0, 6).map(s =>
+      `<span class="map-enrich-sample-chip" title="${esc(s.kind)}">${esc(s.text)}</span>`
+    ).join('');
+    el.innerHTML = chips;
+  };
+
+  const handleProgressLine = (line) => {
+    if (typeof line !== 'string' || !line.trim()) return;
+    let ev;
+    try { ev = JSON.parse(line); }
+    catch { return; } // Non-JSON stderr from a provider — ignore.
+    if (!ev || typeof ev !== 'object') return;
+    const name = ev._event;
+    if (name === 'enrich:start') {
+      provider = ev.provider || '';
+      corpusSize = ev.corpus_size ?? '?';
+      const mode = ev.parallel ? 'parallel' : 'sequential';
+      const extractors = Array.isArray(ev.extractors) ? ev.extractors : [];
+      setStatus(`${provider || 'LLM'} extracting over ${corpusSize} posts · ${extractors.length} categor${extractors.length === 1 ? 'y' : 'ies'} · ${mode}`);
+    } else if (name === 'extractor:start') {
+      const label = _ENRICH_KIND_LABEL[ev.kind] || ev.kind;
+      setStatus(`Extracting ${label}…  (provider: ${provider || '?'})`);
+    } else if (name === 'extractor:done') {
+      const kind = ev.kind;
+      const count = Number(ev.count || 0);
+      counts[kind] = count;
+      const samples = Array.isArray(ev.sample) ? ev.sample : [];
+      for (const s of samples) {
+        if (firstSamples.length >= 12) break;
+        firstSamples.push({ kind, text: s });
+      }
+      renderSamples();
+      const label = _ENRICH_KIND_LABEL[kind] || kind;
+      setStatus(`✓ ${count} ${label} · continuing…`);
+    } else if (name === 'extractor:error') {
+      const label = _ENRICH_KIND_LABEL[ev.kind] || ev.kind;
+      setStatus(`⚠ ${label} extractor failed — continuing with others`);
+      console.warn(`extractor:error ${ev.kind}:`, ev.error);
+    } else if (name === 'enrich:done') {
+      lastSummary = ev.summary || null;
+    }
+  };
+
+  return new Promise(async (resolve) => {
+    let finalized = false;
+    // Watchdog timer for the piggy-back path. Declared up here so finalize()
+    // can clear it when the stream really terminates.
+    let piggyWatchdog = null;
+    const finalize = async () => {
+      if (finalized) return;
+      finalized = true;
+      if (piggyWatchdog) { clearTimeout(piggyWatchdog); piggyWatchdog = null; }
+      // Update banner with final state.
+      const b = banner();
+      if (b) {
+        const total = counts.painpoints + counts.features + counts.workarounds + counts.complaints;
+        if (lastSummary?.skipped) {
+          b.className = 'map-enrich-banner warn';
+          b.innerHTML = `⚠ Enrichment skipped — ${esc(lastSummary.reason || 'no LLM configured')}`;
+        } else if (lastSummary?.ok === false) {
+          b.className = 'map-enrich-banner err';
+          b.innerHTML = `✗ Enrichment failed — ${esc(String(lastSummary.error || 'unknown').slice(0, 180))}
+            <button class="btn btn-ghost btn-sm btn-bordered map-banner-btn" id="banner-change-llm" type="button">Change LLM</button>`;
+          document.getElementById('banner-change-llm')?.addEventListener('click', () =>
+            openByokModal(() => location.reload()));
+        } else if (total === 0) {
+          b.className = 'map-enrich-banner warn';
+          b.innerHTML = `⚠ <code>${esc(provider || 'LLM')}</code> ran over <b>${esc(String(corpusSize))}</b> posts but extracted 0 findings.
+            <button class="btn btn-ghost btn-sm btn-bordered map-banner-btn" id="banner-change-llm" type="button">Change LLM</button>
+            <button class="btn btn-ghost btn-sm btn-bordered map-banner-btn" id="banner-retry-painpoints" type="button">Retry painpoints only</button>`;
+          document.getElementById('banner-change-llm')?.addEventListener('click', () =>
+            openByokModal(() => location.reload()));
+          document.getElementById('banner-retry-painpoints')?.addEventListener('click', () =>
+            runEnrichStreamForTopic(topic, { onComplete, only: 'painpoints' }));
+        } else {
+          b.className = 'map-enrich-banner ok';
+          const parts = [];
+          if (counts.painpoints)  parts.push(`${counts.painpoints} painpoints`);
+          if (counts.features)    parts.push(`${counts.features} feature wishes`);
+          if (counts.workarounds) parts.push(`${counts.workarounds} workarounds`);
+          if (counts.complaints)  parts.push(`${counts.complaints} complaints`);
+          b.innerHTML = `✓ Extracted ${parts.join(', ')} — refreshing map…`;
+        }
+      }
+      recordEnrichResult(topic, lastSummary, lastSummary?.ok === false ? lastSummary?.error : null);
+      try { await onComplete?.(lastSummary); }
+      catch (e) { console.warn('enrich onComplete errored:', e); }
+      resolve(lastSummary);
+    };
+
+    // Subscribe FIRST so we don't miss events from a fast-starting process.
+    const unlistenProgress = await mod.listen('enrich:progress', (e) => handleProgressLine(e?.payload));
+    const unlistenDone = await mod.listen('enrich:stream:done', async (_e) => {
+      try { unlistenProgress(); } catch {}
+      try { unlistenDone(); } catch {}
+      _activeEnrichUnlistens.delete(unlistenProgress);
+      _activeEnrichUnlistens.delete(unlistenDone);
+      await finalize();
+    });
+    _activeEnrichUnlistens.add(unlistenProgress);
+    _activeEnrichUnlistens.add(unlistenDone);
+
+    // Kick off the stream. The call returns immediately with metadata about
+    // the stream (or `already_running:true` if another is in flight, which
+    // we surface with an inline Unstick button + a safety timeout).
+    //
+    // Why safety timeout: piggy-backing assumes the "other" enrich is
+    // genuinely alive and will emit `enrich:stream:done`. If that sidecar
+    // crashed between `ActiveGraphOps.insert(key)` and done-event emit
+    // (SIGKILL, panic, parent Tauri quit mid-stream), the done event NEVER
+    // fires — so this promise would otherwise hang forever. 3 min is
+    // longer than any healthy enrich needs (Ollama cold-start + 4
+    // extractors ≈ 60-120 s worst case) so a real run will resolve first.
+    try {
+      const start = await api.enrichGraphStream(topic, { only, parallel });
+      if (start?.already_running) {
+        const age = Number(start.age_seconds || 0);
+        const remaining = Number(start.auto_clears_in_seconds || 0);
+        const ageLabel = age > 0 ? ` (started ${age}s ago)` : '';
+        setStatus(`Another enrichment for this topic is already running${ageLabel} — piggy-backing on it…`);
+        // Inject an inline Unstick button into the banner so users don't
+        // have to dig into dev tools or wait for the Rust-side 10 min
+        // stale reclaim. Click → force-clear the lock, unlisten, retry.
+        const b = banner();
+        if (b) {
+          const unstickBtn = document.createElement('button');
+          unstickBtn.className = 'btn btn-ghost btn-sm btn-bordered map-banner-btn';
+          unstickBtn.type = 'button';
+          unstickBtn.id = 'banner-piggyback-unstick';
+          unstickBtn.textContent = `Unstick & retry${remaining > 0 ? ` (auto in ${remaining}s)` : ''}`;
+          unstickBtn.onclick = async () => {
+            try {
+              if (piggyWatchdog) { clearTimeout(piggyWatchdog); piggyWatchdog = null; }
+              try { unlistenProgress(); } catch {}
+              try { unlistenDone(); } catch {}
+              _activeEnrichUnlistens.delete(unlistenProgress);
+              _activeEnrichUnlistens.delete(unlistenDone);
+              await api.clearGraphInflight(topic, 'enrich');
+              setStatus('Inflight lock cleared — restarting enrich…');
+              // Kick off a fresh stream. The outer promise is already
+              // resolved via finalize() at the end of the retry chain,
+              // so we call the helper and resolve this outer promise
+              // to its result.
+              const retry = await runEnrichStreamForTopic(topic, { onComplete, only, parallel, bannerId });
+              resolve(retry);
+            } catch (e) {
+              setStatus(`✗ Unstick failed: ${e?.message || e}`);
+              lastSummary = { ok: false, error: e?.message || String(e) };
+              await finalize();
+            }
+          };
+          b.appendChild(document.createTextNode(' '));
+          b.appendChild(unstickBtn);
+        }
+        // Watchdog — if NO progress event arrives in 3 min, assume the
+        // other enrich is dead and prompt the user via the banner.
+        piggyWatchdog = setTimeout(() => {
+          if (finalized) return;
+          const b2 = banner();
+          if (b2) {
+            setStatus('No progress in 3 min — the other enrichment may be stuck. Click Unstick & retry.');
+            // Re-emphasise the button if it's still there.
+            const btn = document.getElementById('banner-piggyback-unstick');
+            if (btn) { btn.className = 'btn btn-primary btn-sm map-banner-btn'; }
+          }
+        }, 180000);
+      }
+    } catch (err) {
+      setStatus(`✗ Failed to start: ${err?.message || err}`);
+      lastSummary = { ok: false, error: err?.message || String(err) };
+      try { unlistenProgress(); } catch {}
+      try { unlistenDone(); } catch {}
+      _activeEnrichUnlistens.delete(unlistenProgress);
+      _activeEnrichUnlistens.delete(unlistenDone);
+      await finalize();
+    }
+  });
+}
 
 const CHAT_HISTORY_KEY = (topic) => `gapmap.chat.${topic}`;
 function loadChatHistory(topic) {
@@ -128,12 +480,15 @@ const ALL_SOURCES = [
   { id: 'trends',        label: 'Google Trends',   group: 'web',     defaultOn: true },
   { id: 'appstore',      label: 'App Store',       group: 'apps',    defaultOn: true },
   { id: 'playstore',     label: 'Play Store',      group: 'apps',    defaultOn: true },
+  { id: 'trustpilot',    label: 'Trustpilot',      group: 'apps',    defaultOn: true },
+  { id: 'producthunt',   label: 'Product Hunt',    group: 'apps',    defaultOn: true },
   // Curated RSS feed bundles. Each category fans out to ~5-10 feeds, filtered
   // by topic-keyword match in title/summary so unrelated posts are dropped.
-  // defaultOn=false — these only run when the user explicitly opts in.
+  // Keep two RSS bundles on by default so "other sources" aren't silently
+  // excluded on reruns; the rest remain opt-in to control volume/noise.
   { id: 'rss_startup',     label: 'RSS: Startup / founder',   group: 'rss', defaultOn: false },
-  { id: 'rss_tech_news',   label: 'RSS: Tech news',           group: 'rss', defaultOn: false },
-  { id: 'rss_products',    label: 'RSS: Products / launches', group: 'rss', defaultOn: false },
+  { id: 'rss_tech_news',   label: 'RSS: Tech news',           group: 'rss', defaultOn: true },
+  { id: 'rss_products',    label: 'RSS: Products / launches', group: 'rss', defaultOn: true },
   { id: 'rss_ml',          label: 'RSS: ML / AI research',    group: 'rss', defaultOn: false },
   { id: 'rss_science',     label: 'RSS: Science (general)',   group: 'rss', defaultOn: false },
   { id: 'rss_engineering', label: 'RSS: Engineering blogs',   group: 'rss', defaultOn: false },
@@ -185,11 +540,11 @@ async function detectExistingSources(topic) {
 
 async function openSourcePickerModal(topic) {
   const existing = await detectExistingSources(topic);
-  // Default checked = whatever was already used. If nothing was found
-  // (shouldn't happen on Rerun, but safety net), fall back to defaults.
-  const initialChecked = existing.size > 0
-    ? existing
-    : new Set(ALL_SOURCES.filter(s => s.defaultOn).map(s => s.id));
+  // Default checked = union(existing, defaults). Reruns should keep prior
+  // successful sources selected while still including newly-added defaults
+  // (e.g. app reviews + RSS bundles) so source coverage expands over time.
+  const defaultSet = new Set(ALL_SOURCES.filter(s => s.defaultOn).map(s => s.id));
+  const initialChecked = new Set([...defaultSet, ...existing]);
 
   const groups = {};
   for (const src of ALL_SOURCES) {
@@ -345,11 +700,175 @@ function wireErrorCard(containerEl, actions) {
   window.refreshIcons?.();
 }
 
+function normalizeTopicLabel(value) {
+  const s = String(value ?? '');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function topicCompareKey(value) {
+  return normalizeTopicLabel(value).toLocaleLowerCase();
+}
+
+function safeDecodeTopicSlug(value) {
+  const s = String(value ?? '');
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 export async function renderTopic(root, { params }) {
-  const topic = decodeURIComponent(params[0] || '');
+  const routeTopic = safeDecodeTopicSlug(params[0] || '');
+  let topic = routeTopic;
+  try {
+    const topics = await api.listTopics();
+    const routeKey = topicCompareKey(routeTopic);
+    if (routeKey) {
+      const matched = (Array.isArray(topics) ? topics : []).find((t) =>
+        topicCompareKey(t?.topic) === routeKey
+      );
+      if (matched?.topic) topic = String(matched.topic);
+    }
+  } catch {}
+  const topicLabel = normalizeTopicLabel(topic) || topic;
+  if (topic && routeTopic && topic !== routeTopic) {
+    const canonicalHash = `#/topic/${encodeURIComponent(topic)}`;
+    if (location.hash !== canonicalHash) {
+      history.replaceState(null, '', canonicalHash);
+    }
+  }
+  const TAB_STATE_KEY = `gapmap.topic.tab.${topic}`;
+  const TAB_HTML_CACHE_KEY = `gapmap.topic.tab.html.${topic}.`;
+  const MAP_MODE_KEY = `gapmap.topic.mapMode.${topic}`;
+  const MAP_AUTO_UPDATE_KEY = `gapmap.topic.mapAutoUpdate.${topic}`;
+  const TAB_HTML_CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
   // Per-instance tab state (fix: module-level state leaked between topics).
-  // Default to 'insights' — the Phase-1 synthesis tab is the new primary UX.
-  let activeTab = 'insights';
+  // Default to topic home (implemented by the insights renderer).
+  let activeTab = 'home';
+  // Keep tab DOM alive between switches so revisits are instant.
+  // We move real DOM nodes in/out (not cloned HTML), so event listeners
+  // attached by loaders survive round-trips.
+  const tabDomCache = new Map(); // tab -> holder element containing cached nodes
+  const dirtyTabs = new Set();   // tabs that must reload from source
+  // Tabs with live streams/iframes should always mount fresh.
+  // Re-parenting cached iframe DOM (Map) can produce blank/stale graph renders.
+  const NON_CACHEABLE_TABS = new Set(['chat', 'map']);
+  // Map tab does heavy async work (graph build/relate/export + iframe render).
+  // Guard against re-entrant loads triggered by rapid events/clicks; those can
+  // stack sidecar jobs, balloon memory, and leave the tab "loading..." forever.
+  let mapLoadInFlight = false;
+  let mapReloadQueued = false;
+  let mapReloadQueuedForce = false;
+  // In-session Map render cache. Stores the full innerHTML string + the
+  // exported HTML file path + the mode it was rendered in. loadMap short-
+  // circuits to this cache on repeat opens UNLESS:
+  //   * force === true (Rebuild button / mode-toggle / key-change)
+  //   * dirtyTabs.has('map') AND auto-update is ON (new collect / enrich just
+  //     landed and the user opted in to automatic refresh)
+  // When the map is dirty but auto-update is OFF, we still serve from cache
+  // and surface a "Data changed — click Rebuild" chip so the user knows they
+  // can refresh manually. This collapses the ~3 Python sidecar spawns +
+  // iframe re-render per Map open down to 0 spawns on steady-state revisits.
+  // Pull from the module-level cache so the Map tab survives nav-away/back.
+  // Evict if older than TTL — a 30-min-old map is almost certainly stale by
+  // some signal we missed (background daemon write, manual sqlite poke).
+  let _mapRender = null;  // { html, outPath, mapMode, ts, stale, statsKey } — single-topic scope.
+  {
+    const cached = _mapRenderCache.get(topic);
+    if (cached && (Date.now() - (cached.ts || 0)) < MAP_RENDER_CACHE_TTL_MS) {
+      // Share the reference — `stale` mutations from the cache short-
+      // circuit below should persist to subsequent re-entries on this topic.
+      _mapRender = cached;
+    } else if (cached) {
+      _mapRenderCache.delete(topic);
+    }
+  }
+  const PERSISTED_CACHEABLE_TABS = new Set([
+    // Cache every visible topic tab so re-open always paints immediately.
+    'home', 'map', 'report', 'trends', 'sentiment', 'sources',
+    'posts', 'research', 'solutions', 'concepts', 'papers', 'bets',
+    'evidence', 'chat', 'actions', 'ai_analyses',
+  ]);
+
+  function getTabHtmlCacheKey(name) {
+    return `${TAB_HTML_CACHE_KEY}${name}`;
+  }
+
+  function readTabHtmlSnapshot(name) {
+    if (!PERSISTED_CACHEABLE_TABS.has(name)) return null;
+    try {
+      const raw = sessionStorage.getItem(getTabHtmlCacheKey(name));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      const ts = Number(parsed.ts || 0);
+      const html = String(parsed.html || '');
+      if (!html || !Number.isFinite(ts)) return null;
+      if (Date.now() - ts > TAB_HTML_CACHE_TTL_MS) return null;
+      return { ts, html };
+    } catch {
+      return null;
+    }
+  }
+
+  function writeTabHtmlSnapshot(name) {
+    if (!PERSISTED_CACHEABLE_TABS.has(name)) return;
+    try {
+      const html = String(contentEl.innerHTML || '');
+      if (!html) return;
+      // Avoid persisting transient skeleton / error shells.
+      if (
+        html.includes('Loading ') ||
+        html.includes('map-building-spinner') ||
+        html.includes('empty-state">Error:') ||
+        html.includes('error-card')
+      ) {
+        return;
+      }
+      sessionStorage.setItem(
+        getTabHtmlCacheKey(name),
+        JSON.stringify({ ts: Date.now(), html })
+      );
+    } catch {}
+  }
+
+  function invalidateTabCache(names) {
+    const list = Array.isArray(names) ? names : [names];
+    for (const n of list) {
+      if (!n) continue;
+      dirtyTabs.add(n);
+      tabDomCache.delete(n);
+    }
+  }
+
+  function stashTabDom(name) {
+    if (!name || NON_CACHEABLE_TABS.has(name)) return;
+    if (contentEl.dataset.tab !== name) return;
+    if (!contentEl.hasChildNodes()) return;
+    const holder = document.createElement('div');
+    while (contentEl.firstChild) holder.appendChild(contentEl.firstChild);
+    tabDomCache.set(name, holder);
+  }
+
+  function restoreTabDom(name) {
+    if (!name || NON_CACHEABLE_TABS.has(name)) return false;
+    if (dirtyTabs.has(name)) return false;
+    const holder = tabDomCache.get(name);
+    if (!holder || !holder.hasChildNodes()) return false;
+    while (contentEl.firstChild) contentEl.removeChild(contentEl.firstChild);
+    while (holder.firstChild) contentEl.appendChild(holder.firstChild);
+    return true;
+  }
+
+  function isMapAutoUpdateEnabled() {
+    try {
+      const raw = localStorage.getItem(MAP_AUTO_UPDATE_KEY);
+      return raw !== 'false';
+    } catch {
+      return true;
+    }
+  }
   // Per-instance chat stream state.
   // Per-tab interval for live-updating relative timestamps on chat messages.
   let chatTsInterval = null;
@@ -373,7 +892,7 @@ export async function renderTopic(root, { params }) {
         <a class="topic-back" href="#/" title="Back to workspace">
           <i data-lucide="arrow-left"></i><span>Workspace</span>
         </a>
-        <h1 class="topic-title-inline">${esc(topic)}</h1>
+        <h1 class="topic-title-inline">${esc(topicLabel)}</h1>
         <a href="#/collect/${encodeURIComponent(topic)}" class="topic-active-chip" id="topic-active-chip" hidden title="A collect is running for this topic — click to watch progress">
           <span class="pulse-dot sm"></span> Collecting…
         </a>
@@ -390,7 +909,7 @@ export async function renderTopic(root, { params }) {
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-delete" title="Delete topic (soft-delete, 7-day undo)" style="color:#B84747"><i data-lucide="trash-2"></i></button>
       </div>
       <div class="topic-header-row-2">
-        <span id="topic-sub" class="topic-meta-line">${esc(topic)}</span>
+        <span id="topic-sub" class="topic-meta-line">${esc(topicLabel)}</span>
         <div class="topic-header-spacer"></div>
         <button class="active-llm-pill none" id="topic-llm-pill" title="Click to change provider / model">
           <span class="dot"></span><span id="topic-llm-pill-label">No LLM</span>
@@ -402,52 +921,56 @@ export async function renderTopic(root, { params }) {
       </div>
     </header>
 
-    <!-- Intent action-ladder card (per-topic deliverable routing).
-         Spec: docs/superpowers/specs/2026-04-21-intent-layer.md.
-         Shows the user WHAT they're producing and a 3-4 step path to get
-         there. Every tab stays accessible — intent is a lens, not a gate. -->
-    <div id="intent-ladder-host"></div>
+    <!-- Home-tab chrome. Wraps three panels (intent ladder, extraction
+         prefs override row, coverage gaps) that used to sit globally above
+         the tab strip and were cluttering every non-Home tab. Now one
+         hideable block, shown only when activeTab equals home. Painters
+         (mountIntentLadder, _renderExtractionOverrideRow, coverage-gaps)
+         keep their existing id hooks so none of them need to change. -->
+    <div id="topic-home-chrome" data-home-chrome="1">
+      <!-- Intent action-ladder card (per-topic deliverable routing).
+           Spec: docs/superpowers/specs/2026-04-21-intent-layer.md. Shows
+           the user WHAT they're producing and a 3-4 step path to get
+           there. Every tab stays accessible — intent is a lens, not a gate. -->
+      <div id="intent-ladder-host"></div>
 
-    <!-- Task 9.5 — Extraction prefs override row. Tiny one-liner above the
-         tabs: "This topic uses: Auto · 100 posts · batch 5 · [Override]".
-         The Override button toggles an inline popover with the 3 core
-         sliders scoped to this topic. Writes through extractionPrefsSet
-         with scope="topic:<slug>". -->
-    <div id="extract-override-row" style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:6px 0 4px;font-size:12.5px;color:var(--ink-3);border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);display:none" data-role="extract-override"></div>
+      <!-- Task 9.5 — Extraction prefs override row. Tiny one-liner:
+           "This topic uses: Auto · 100 posts · batch 5 · [Override]".
+           The Override button toggles an inline popover with the 3 core
+           sliders scoped to this topic. Writes through extractionPrefsSet
+           with scope="topic:<slug>". -->
+      <div id="extract-override-row" style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:6px 0 4px;font-size:12.5px;color:var(--ink-3);border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);display:none" data-role="extract-override"></div>
 
-    <!-- Phase-11 tab cleanup: 4 primary tabs always visible, everything
-         else in a "More ▾" dropdown. Primaries were picked from actual
-         usage (Insights=core output, Bets=weekly ritual,
-         Evidence=drilldown, Chat=follow-up) per PRODUCT_GAPS.md §3.1 -->
-    <div class="tabs" id="topic-tabs">
-      <button class="tab active" data-tab="insights"><i data-lucide="sparkles"></i> Insights<span class="tab-freshness" id="tab-fresh-insights"></span></button>
-      <button class="tab" data-tab="bets"><i data-lucide="target"></i> Bets</button>
-      <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence<span class="tab-freshness" id="tab-fresh-evidence"></span></button>
-      <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
-      <div class="tab-more-wrap">
-        <button class="tab tab-more" id="tab-more-toggle" aria-haspopup="true" aria-expanded="false">
-          <i data-lucide="more-horizontal"></i> More <i data-lucide="chevron-down"></i>
-        </button>
-        <div class="tab-more-menu" id="tab-more-menu" hidden>
-          <button class="tab-more-item" data-tab="map"><i data-lucide="network"></i> Map<span class="tab-freshness" id="tab-fresh-map"></span></button>
-          <button class="tab-more-item" data-tab="report"><i data-lucide="file-text"></i> Report</button>
-          <button class="tab-more-item" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
-          <button class="tab-more-item" data-tab="sentiment"><i data-lucide="smile"></i> Sentiment</button>
-          <button class="tab-more-item" data-tab="sources"><i data-lucide="boxes"></i> Sources</button>
-          <button class="tab-more-item" data-tab="posts"><i data-lucide="list"></i> Posts</button>
-          <button class="tab-more-item" data-tab="research"><i data-lucide="book-open"></i> Research</button>
-          <button class="tab-more-item" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions<span class="tab-freshness" id="tab-fresh-solutions"></span></button>
-          <button class="tab-more-item" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts</button>
-          <button class="tab-more-item" data-tab="papers"><i data-lucide="book-marked"></i> Papers</button>
-          <button class="tab-more-item" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
-        </div>
-      </div>
+      <!-- Coverage gaps panel. "+ Add X" buttons fire
+           api.startCollect(topic, false, [src], false). Hidden when there
+           are no gaps. Moved inside the home-chrome wrapper 2026-04-24 so
+           Map/Report/etc don't show an enrichment strip that belongs to
+           the Home overview. -->
+      <div class="coverage-gaps" id="coverage-gaps" hidden></div>
     </div>
 
-    <!-- Task 8: Coverage gaps panel. Always-visible suggestion strip below
-         the tabs. Hidden when there are no gaps. "+ Add X" buttons fire
-         api.startCollect(topic, false, [src], false). -->
-    <div class="coverage-gaps" id="coverage-gaps" hidden></div>
+    <!-- Topic tabs: always visible, horizontally scrollable.
+         Restores the pre-dropdown flow so Home/Map/Evidence/etc are directly
+         discoverable without hidden menu interaction. -->
+    <div class="tabs" id="topic-tabs">
+      <button type="button" class="tab active" data-tab="home"><i data-lucide="house"></i> Home<span class="tab-freshness" id="tab-fresh-insights"></span></button>
+      <button type="button" class="tab" data-tab="map"><i data-lucide="network"></i> Map<span class="tab-freshness" id="tab-fresh-map"></span></button>
+      <button type="button" class="tab" data-tab="report"><i data-lucide="file-text"></i> Report<span class="tab-freshness" id="tab-fresh-report"></span></button>
+      <button type="button" class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends<span class="tab-freshness" id="tab-fresh-trends"></span></button>
+      <button type="button" class="tab" data-tab="sentiment"><i data-lucide="smile"></i> Sentiment<span class="tab-freshness" id="tab-fresh-sentiment"></span></button>
+      <button type="button" class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources<span class="tab-freshness" id="tab-fresh-sources"></span></button>
+      <button type="button" class="tab" data-tab="posts"><i data-lucide="list"></i> Posts<span class="tab-freshness" id="tab-fresh-posts"></span></button>
+      <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
+      <button type="button" class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions<span class="tab-freshness" id="tab-fresh-solutions"></span></button>
+      <button type="button" class="tab" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts<span class="tab-freshness" id="tab-fresh-concepts"></span></button>
+      <button type="button" class="tab" data-tab="papers"><i data-lucide="book-marked"></i> Papers<span class="tab-freshness" id="tab-fresh-papers"></span></button>
+      <button type="button" class="tab" data-tab="bets"><i data-lucide="target"></i> Bets<span class="tab-freshness" id="tab-fresh-bets"></span></button>
+      <button type="button" class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence<span class="tab-freshness" id="tab-fresh-evidence"></span></button>
+      <button type="button" class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
+      <button type="button" class="tab" data-tab="search"><i data-lucide="search-code"></i> Search<span class="tab-freshness" id="tab-fresh-search"></span></button>
+      <button type="button" class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
+      <button type="button" class="tab" data-tab="ai_analyses"><i data-lucide="sparkles"></i> AI Analyses<span class="tab-freshness" id="tab-fresh-ai"></span></button>
+    </div>
 
     <div id="tab-content"><div class="empty-state">loading…</div></div>
   `;
@@ -459,6 +982,19 @@ export async function renderTopic(root, { params }) {
   // Task 9.5 — fire-and-forget render of the extraction prefs override row.
   // Best-effort: any error just hides the row (it's purely informational).
   _renderExtractionOverrideRow(root, topic).catch(() => {});
+
+  // Home-tab chrome visibility. Shows the wrapper (intent ladder + extraction
+  // override + coverage gaps) on Home, hides on every other tab. The
+  // painters inside still run — we just toggle the container display so the
+  // DOM stays warm for instant re-reveal. Called from switchTab() on every
+  // tab change and once at mount below so the initial paint is correct.
+  function syncHomeChromeVisibility(tabName) {
+    const chrome = root.querySelector('#topic-home-chrome');
+    if (!chrome) return;
+    chrome.style.display = (tabName === 'home') ? '' : 'none';
+  }
+  // Initial call — activeTab is 'home' at mount unless overridden later.
+  syncHomeChromeVisibility(activeTab);
 
   // ─── Freshness badges (Findings / Map / Gaps / Solutions) ──────────────
   // Each badge re-computes every 1 s off the last `enrich:tick` timestamp
@@ -483,6 +1019,59 @@ export async function renderTopic(root, { params }) {
   wireFreshnessBadge($('#tab-fresh-insights'), topic, { getCounts: freshGetCount('painpoint') });
   wireFreshnessBadge($('#tab-fresh-solutions'),topic, { getCounts: freshGetCount('workaround') });
 
+  // Freshness badges for every remaining tab. Counts come from the shared
+  // pipeline registry so adding a new tab only requires registering there.
+  const freshFromRegistry = (tabId) => async () => {
+    try {
+      const spec = TAB_PIPELINES[tabId] || TAB_READONLY[tabId];
+      if (!spec?.countSql) return '';
+      const rows = await api.runQuery(spec.countSql, topic);
+      const n = Number(Array.isArray(rows) && rows[0]?.n) || 0;
+      if (!n) return '';
+      const noun = {
+        trends: 'posts', sentiment: 'posts', sources: 'sources',
+        posts: 'posts', research: 'posts', concepts: 'concepts',
+        papers: 'papers', ai_analyses: 'analyses', report: '',
+      }[tabId] || '';
+      return noun ? `${n} ${noun}` : `${n}`;
+    } catch { return ''; }
+  };
+  wireFreshnessBadge($('#tab-fresh-trends'),    topic, { getCounts: freshFromRegistry('trends') });
+  wireFreshnessBadge($('#tab-fresh-sentiment'), topic, { getCounts: freshFromRegistry('sentiment') });
+  wireFreshnessBadge($('#tab-fresh-sources'),   topic, { getCounts: freshFromRegistry('sources') });
+  wireFreshnessBadge($('#tab-fresh-posts'),     topic, { getCounts: freshFromRegistry('posts') });
+  wireFreshnessBadge($('#tab-fresh-research'),  topic, { getCounts: freshFromRegistry('research') });
+  wireFreshnessBadge($('#tab-fresh-concepts'),  topic, { getCounts: freshFromRegistry('concepts') });
+  wireFreshnessBadge($('#tab-fresh-papers'),    topic, { getCounts: freshFromRegistry('papers') });
+  wireFreshnessBadge($('#tab-fresh-ai'),        topic, { getCounts: freshFromRegistry('ai_analyses') });
+  // Bets: read from hypothesisStats so the badge matches the header pill.
+  wireFreshnessBadge($('#tab-fresh-bets'), topic, {
+    getCounts: async () => {
+      try {
+        const r = await api.hypothesisStats(topic);
+        const total = Object.values((r && r.stats) || {}).reduce((a, b) => a + (b || 0), 0);
+        return total ? `${total} bets` : '';
+      } catch { return ''; }
+    },
+  });
+  // Report freshness: "has markdown" is hard to check via run_query — rely
+  // on global enrich tick + whatever `export_report_pro` wrote into exports.
+  wireFreshnessBadge($('#tab-fresh-report'), topic, { getCounts: async () => '' });
+  // Search freshness: how many persisted searches this topic has — a
+  // gentle nudge toward re-using saved context instead of re-running.
+  wireFreshnessBadge($('#tab-fresh-search'), topic, {
+    getCounts: async () => {
+      try {
+        const rows = await api.runQuery(
+          "SELECT count(*) AS n FROM mcp_analyses WHERE topic=:topic AND kind='search'",
+          topic,
+        );
+        const n = Array.isArray(rows) && rows[0]?.n || 0;
+        return n ? `${n} saved` : '';
+      } catch { return ''; }
+    },
+  });
+
   // ─── Unified topic stats (one SQL round-trip, shared across the render) ──
   // Before: 3 separate runQuery calls (header stats, countFindings,
   // node/edge chips). Each spawned its own Python sidecar (~500 ms warm,
@@ -493,7 +1082,7 @@ export async function renderTopic(root, { params }) {
     if (_topicStatsPromise) return _topicStatsPromise;
     _topicStatsPromise = (async () => {
       try {
-        const rows = await api.runQuery(
+        const rows = await withTimeout(api.runQuery(
           `SELECT
              (SELECT count(*) FROM topic_posts WHERE topic=:topic) AS posts,
              (SELECT count(*) FROM graph_nodes WHERE topic=:topic AND kind='painpoint') AS painpoints,
@@ -507,8 +1096,13 @@ export async function renderTopic(root, { params }) {
                 FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
                 WHERE tp.topic=:topic) AS sources`,
           topic,
-        );
-        return (Array.isArray(rows) && rows[0]) || {};
+        ), TOPIC_QUERY_TIMEOUT_MS, 'topic stats');
+        const out = (Array.isArray(rows) && rows[0]) || {};
+        // Persist for instant first-paint on next topic open. Write-through
+        // covers every successful fetch; failed fetches keep the previous
+        // cache unchanged so transient sidecar timeouts don't blank it.
+        writeTopicStatsCache(topic, out);
+        return out;
       } catch {
         return {};
       }
@@ -516,16 +1110,32 @@ export async function renderTopic(root, { params }) {
     return _topicStatsPromise;
   }
 
-  // Fetch header counts + sub text once — non-blocking.
+  // Render the header stats. `paint(stats)` is reused by both the cached
+  // first paint (synchronous from localStorage) and the fresh fetch path.
+  // Stamps `data-cached="1"` on the host while showing stale values so
+  // CSS can fade them; cleared once the real fetch lands.
+  function paintTopicHeaderStats(stats, { cached = false } = {}) {
+    const host = $('#topic-header-stats');
+    if (!host || !stats) return;
+    host.dataset.cached = cached ? '1' : '';
+    host.innerHTML = `
+      <span class="th-chip"><b>${(stats.posts || 0).toLocaleString()}</b> posts</span>
+      <span class="th-chip"><b>${stats.painpoints || 0}</b> pains</span>
+      <span class="th-chip"><b>${stats.workarounds || 0}</b> DIY</span>
+      <span class="th-chip"><b>${stats.sources || 0}</b> src</span>`;
+  }
+
+  // Synchronous first paint from localStorage — runs BEFORE any await so
+  // the user sees real numbers within the same JS task as topic-page
+  // mount, not after a 300-800 ms sidecar round-trip.
+  const _cachedStats = readTopicStatsCache(topic);
+  if (_cachedStats) paintTopicHeaderStats(_cachedStats, { cached: true });
+
+  // Background refresh — overwrites the cached paint with fresh values
+  // when the real query lands. Errors keep the cached paint intact.
   (async () => {
     const r = await topicStats();
-    const host = $('#topic-header-stats');
-    if (!host) return;
-    host.innerHTML = `
-      <span class="th-chip"><b>${(r.posts || 0).toLocaleString()}</b> posts</span>
-      <span class="th-chip"><b>${r.painpoints || 0}</b> pains</span>
-      <span class="th-chip"><b>${r.workarounds || 0}</b> DIY</span>
-      <span class="th-chip"><b>${r.sources || 0}</b> src</span>`;
+    paintTopicHeaderStats(r, { cached: false });
   })();
 
   // Phase-3 per-topic bet stats pill next to the topic name. Hidden on
@@ -657,8 +1267,60 @@ export async function renderTopic(root, { params }) {
 
   paintSaturation();
   paintCoverageGaps();
-  const onGapmapChangedTask8 = () => { paintSaturation(); paintCoverageGaps(); };
+  let changedRefreshTimer = null;
+  const onGapmapChangedTask8 = (ev) => {
+    const kind = (ev?.detail?.kind || '').toString();
+    const changedTopic = (ev?.detail?.topic || '').toString();
+    // Ignore mutation broadcasts for other topics so we keep this topic's
+    // tab DOM/session snapshots warm and avoid unnecessary re-fetches.
+    if (changedTopic && changedTopic !== topic) return;
+
+    // Incremental cache invalidation by mutation kind. This keeps unaffected
+    // tab snapshots intact so reopening the topic is fast, while still
+    // forcing fresh loads where underlying data actually changed.
+    const tabsByKind = {
+      collect:  ['home', 'map', 'report', 'evidence', 'sources', 'research', 'posts', 'trends', 'sentiment', 'actions'],
+      ingest:   ['home', 'map', 'report', 'evidence', 'sources', 'research', 'posts', 'trends', 'sentiment', 'actions'],
+      findings: ['home', 'map', 'report', 'evidence', 'solutions', 'concepts', 'papers', 'actions', 'bets'],
+      graph:    ['home', 'map', 'report', 'evidence', 'solutions', 'concepts', 'papers', 'actions', 'bets'],
+      // Export events are emitted by render actions (e.g. report generation).
+      // Treating them as broad DB mutations causes report-tab self-reload loops.
+      exports:  ['actions'],
+      byok:     ['map', 'evidence', 'chat', 'report', 'solutions', 'concepts', 'papers'],
+      schedule: ['home'],
+      topics:   ['home'],
+      trash:    ['home'],
+      extraction_prefs: ['home', 'actions', 'bets'],
+      // External DB writes (MCP/CLI/freshness poller) land here without a
+      // semantic kind; use a broad-but-not-total refresh set.
+      db: ['home', 'map', 'report', 'evidence', 'sources', 'research', 'posts', 'solutions', 'concepts', 'papers', 'trends', 'sentiment', 'actions', 'bets'],
+    };
+    const dirty = tabsByKind[kind] || tabsByKind.db;
+    invalidateTabCache(dirty);
+    paintSaturation();
+    paintCoverageGaps();
+    // Keep cache continuously fresh: if the user is currently viewing a tab,
+    // rerun that tab loader shortly after the mutation event so the visible
+    // UI and persisted snapshot both advance to the latest data.
+    if (changedRefreshTimer) clearTimeout(changedRefreshTimer);
+    changedRefreshTimer = setTimeout(() => {
+      const curr = normalizeTabName(activeTab);
+      if (!curr || !loaders[curr]) return;
+      if (!dirty.includes(curr)) return;
+      // Prevent report tab from recursively reloading itself when it emits
+      // kind=exports while generating markdown.
+      if (kind === 'exports' && curr === 'report') return;
+      // Avoid self-triggered map reload loops while enrichment/graph updates
+      // are streaming events. Map handles its own in-tab refresh path.
+      if (curr === 'map') return;
+      switchTab(curr);
+    }, 250);
+  };
   window.addEventListener('gapmap:changed', onGapmapChangedTask8);
+  // External DB writers (CLI/MCP) emit this via api freshness poller.
+  // Route through the same incremental invalidation path.
+  const onDbChangedTask8 = () => onGapmapChangedTask8({ detail: { kind: 'db', topic } });
+  window.addEventListener('gapmap:db-changed', onDbChangedTask8);
   // renderTopic owns no explicit teardown hook, but re-renders replace
   // #topic-saturation / #coverage-gaps — stale listeners just no-op.
 
@@ -674,7 +1336,7 @@ export async function renderTopic(root, { params }) {
       const model = (b?.llm_model || '').toString();
       const anyReady = !!(b?.anthropic?.set || b?.openai?.set || b?.openrouter?.set ||
                           b?.groq?.set || b?.deepseek?.set || b?.mistral?.set ||
-                          b?.google?.set || b?.ollama_base_url);
+                          b?.google?.set || b?.nvidia?.set || b?.ollama_base_url);
       if (prov && anyReady) {
         pill.classList.remove('none');
         label.textContent = `${prov}${model ? ' · ' + model : ''}`;
@@ -696,6 +1358,7 @@ export async function renderTopic(root, { params }) {
   paintLlmPill();
   $('#topic-llm-pill')?.addEventListener('click', () => openByokModal(() => {
     paintLlmPill();
+    invalidateTabCache(['map', 'evidence', 'chat', 'report', 'solutions', 'concepts', 'papers']);
     // If the currently-visible tab was gated on LLM (chat/evidence), refresh it.
     if (activeTab === 'chat' || activeTab === 'evidence' || activeTab === 'map') {
       loaders[activeTab]?.();
@@ -801,21 +1464,45 @@ export async function renderTopic(root, { params }) {
         alreadyRunning = true;
       } else if (e?.skipped) {
         errMsg = `Enrichment skipped: ${e.reason || 'no LLM configured'}`;
+        recordEnrichResult(topic, e, null);
       } else if (e?.ok === false) {
         errMsg = `Enrichment failed: ${e.error || 'unknown'}`;
+        recordEnrichResult(topic, e, e.error || 'unknown');
+      } else {
+        recordEnrichResult(topic, e, null);
       }
     } catch (err) {
       errMsg = `Enrichment errored: ${err?.message || err}`;
+      recordEnrichResult(topic, null, err?.message || String(err));
     }
     // Rust-side dedup guard: another enrich for this topic is already in
-    // flight. Friendly info toast, don't reload the Map (that would reset
-    // the "Enriching…" spinner and invite a re-click).
+    // flight. We still want to let the user recover from stuck locks
+    // (crashed sidecar, killed dev server mid-run) — offer an "Unstick"
+    // path that calls clear_graph_inflight + retries immediately.
     if (alreadyRunning) {
-      showToast('Already running', 'Another enrichment for this topic is in progress. Wait for it to finish.', 'warn');
+      const proceed = confirm(
+        'Another enrichment for this topic is already running. ' +
+        'If it\'s stuck (e.g. you killed the sidecar), click OK to force-clear and retry. ' +
+        'Click Cancel to wait.'
+      );
+      if (proceed) {
+        try {
+          await api.clearGraphInflight(topic, 'enrich');
+          showToast('Inflight lock cleared', 'Retrying enrichment…', 'ok', 2000);
+          return runEnrichFromMap();
+        } catch (e) {
+          showToast('Unstick failed', `${e?.message || e}`, 'err');
+          return;
+        }
+      }
+      showToast('Waiting', 'Enrichment lock will auto-clear after 10 minutes if truly stuck.', 'warn');
       return;
     }
     if (errMsg) showToast('Enrichment issue', errMsg, 'warn');
-    loadMap();
+    // Force a fresh rebuild — enrich just landed, the user clicked the
+    // button specifically to see new findings. Without force=true the
+    // in-session cache would short-circuit back to the pre-enrich render.
+    loadMap(true);
   }
 
   // Same shape as runEnrichFromMap but reloads the caller instead of the Map.
@@ -832,43 +1519,243 @@ export async function renderTopic(root, { params }) {
       // buildGraph is idempotent — no-op when the graph already exists.
       await api.buildGraph(topic).catch(() => {});
       const e = await api.enrichGraph(topic);
-      if (e?.skipped)      errMsg = `Extraction skipped: ${e.reason || 'no LLM configured'}`;
-      else if (e?.ok === false) errMsg = `Extraction failed: ${e.error || 'unknown'}`;
-      else {
+      if (e?.skipped) {
+        errMsg = `Extraction skipped: ${e.reason || 'no LLM configured'}`;
+        recordEnrichResult(topic, e, null);
+      } else if (e?.ok === false) {
+        errMsg = `Extraction failed: ${e.error || 'unknown'}`;
+        recordEnrichResult(topic, e, e.error || 'unknown');
+      } else {
+        recordEnrichResult(topic, e, null);
         const np = e?.painpoints_added     ?? e?.painpoints     ?? 0;
         const nf = e?.feature_wishes_added ?? e?.feature_wishes ?? 0;
         const nw = e?.workarounds_added    ?? e?.diy_workarounds ?? 0;
         added = np + nf + nw;
-        if (added === 0) errMsg = 'Extraction ran but found no painpoints/features — try Re-run collect to gather more posts.';
+        if (added === 0) {
+          const prov = e?.provider || 'LLM';
+          errMsg = `${prov} ran over ${e?.corpus_size ?? '?'} posts but extracted 0 findings. Try a stronger model (e.g. Anthropic / OpenRouter / ollama qwen2.5:7b) or Re-run collect to gather more on-topic posts.`;
+        }
       }
     } catch (err) {
       errMsg = `Extraction errored: ${err?.message || err}`;
+      recordEnrichResult(topic, null, err?.message || String(err));
     }
     if (errMsg) showToast('Extraction issue', errMsg, 'warn');
     else if (added > 0) showToast('Extraction complete', `${added} new finding${added === 1 ? '' : 's'}`, 'ok');
     onDone?.();
   }
 
+  // Sequentially enrich every topic that has ≥ MIN_POSTS in topic_posts but 0
+  // findings. Lets a user unblock many topics in one click — the per-topic
+  // Map/Evidence auto-enrich requires opening each topic individually. Runs in
+  // sequence because the Python sidecar holds a write lock during enrich;
+  // parallel calls just serialize at the lock and waste process spawn cost.
+  async function runEnrichAllTopics(onProgress) {
+    const MIN_POSTS = 50;
+    let targets = [];
+    try {
+      // run_query binds NAMED params (HashMap<String,String>); inline the
+      // numeric threshold since it's static. Filter: topics whose corpus ≥
+      // MIN_POSTS and whose graph_nodes has zero semantic-finding rows.
+      const rows = await api.runQuery(
+        `SELECT tp.topic AS topic, count(*) AS posts,
+                (SELECT count(*) FROM graph_nodes n
+                  WHERE n.topic = tp.topic
+                    AND n.kind IN ('painpoint','feature_wish','product','workaround')) AS findings
+           FROM topic_posts tp
+          GROUP BY tp.topic
+         HAVING posts >= ${MIN_POSTS} AND findings = 0
+          ORDER BY posts DESC`,
+        null,
+      );
+      targets = Array.isArray(rows) ? rows.map(r => r.topic).filter(Boolean) : [];
+    } catch (err) {
+      showToast('Enrich-all failed', `Could not list topics: ${err?.message || err}`, 'err');
+      return { ok: false, error: String(err?.message || err), targets: [], results: [] };
+    }
+    if (targets.length === 0) {
+      showToast('Nothing to enrich', 'Every topic with ≥50 posts already has findings.', 'ok');
+      return { ok: true, targets: [], results: [] };
+    }
+    showToast('Enriching all topics', `Starting ${targets.length} topics (sequential, ~20-90s each).`, 'ok', 3000);
+    const results = [];
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
+      onProgress?.({ phase: 'start', index: i, total: targets.length, topic: t });
+      try {
+        await api.buildGraph(t).catch(() => {});
+        const e = await api.enrichGraph(t);
+        recordEnrichResult(t, e, e?.ok === false ? (e?.error || 'unknown') : null);
+        const added = (e?.painpoints_added ?? 0) + (e?.feature_wishes_added ?? 0)
+                    + (e?.workarounds_added ?? 0) + (e?.products_added ?? 0);
+        results.push({ topic: t, added, error: e?.ok === false ? (e?.error || 'unknown') : null });
+        onProgress?.({ phase: 'done', index: i, total: targets.length, topic: t, added, error: results[results.length-1].error });
+      } catch (err) {
+        const msg = err?.message || String(err);
+        recordEnrichResult(t, null, msg);
+        results.push({ topic: t, added: 0, error: msg });
+        onProgress?.({ phase: 'done', index: i, total: targets.length, topic: t, added: 0, error: msg });
+      }
+    }
+    const totalAdded = results.reduce((s, r) => s + (r.added || 0), 0);
+    const successTopics = results.filter(r => (r.added || 0) > 0).length;
+    showToast(
+      'Enrich all complete',
+      `${successTopics} of ${targets.length} topics produced findings · ${totalAdded} total extracted.`,
+      successTopics > 0 ? 'ok' : 'warn',
+      6000,
+    );
+    return { ok: true, targets, results, totalAdded, successTopics };
+  }
+  // Expose to main.js + console for cross-screen triggering.
+  try { window.runEnrichAllTopics = runEnrichAllTopics; } catch {}
+
+  // Shared button wiring. Called from BOTH the full-render path and the
+  // cache-restore path so click handlers hang off whichever iframe /
+  // toolbar is currently in the DOM. outPath comes from the cache or the
+  // fresh export; mapMode / mapAutoUpdate from their respective getters.
+  function _wireMapToolbarButtons(outPath, mapMode, mapAutoUpdate) {
+    window.refreshIcons?.();
+    const modeBtn = $('#btn-map-mode');
+    if (modeBtn) modeBtn.onclick = () => {
+      const next = mapMode === 'full' ? 'skeleton' : 'full';
+      localStorage.setItem(MAP_MODE_KEY, next);
+      loadMap(true);
+    };
+    const autoBtn = $('#btn-map-auto');
+    if (autoBtn) autoBtn.onclick = () => {
+      const next = !mapAutoUpdate;
+      localStorage.setItem(MAP_AUTO_UPDATE_KEY, next ? 'true' : 'false');
+      showToast(
+        'Map auto-update',
+        next
+          ? 'Enabled: map refreshes automatically when new data arrives.'
+          : 'Disabled: new data will show a rebuild notice; refresh manually.',
+        'ok', 2600,
+      );
+      loadMap(false);
+    };
+    const rebuildBtn = $('#btn-map-rebuild');
+    if (rebuildBtn) rebuildBtn.onclick = () => loadMap(true);
+    const revealBtn = $('#btn-map-reveal');
+    if (revealBtn && outPath) revealBtn.onclick = () => api.revealInFinder(outPath);
+    const openExtBtn = $('#btn-map-open-ext');
+    if (openExtBtn && outPath) openExtBtn.onclick = () => api.openUrl(`file://${encodeURI(outPath)}`);
+    $('#btn-map-enrich')?.addEventListener('click', () => runEnrichFromMap());
+    $('#btn-map-enrich-all')?.addEventListener('click', async () => {
+      const btn = $('#btn-map-enrich-all');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2"></i> Enriching all…'; window.refreshIcons?.(); }
+      await runEnrichAllTopics(({ phase, index, total, topic: t, added }) => {
+        if (phase === 'done' && btn) {
+          btn.innerHTML = `<i data-lucide="loader-2"></i> ${index + 1}/${total} · +${added}`;
+          window.refreshIcons?.();
+        }
+      });
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="layers"></i> Enrich all'; window.refreshIcons?.(); }
+      loadMap(true);
+    });
+    $('#btn-map-add-key')?.addEventListener('click', () => openByokModal(() => loadMap()));
+    $('#btn-map-rebuild-stale')?.addEventListener('click', () => loadMap(true));
+  }
+
   async function loadMap(force = false) {
+    if (mapLoadInFlight) {
+      mapReloadQueued = true;
+      mapReloadQueuedForce = mapReloadQueuedForce || !!force;
+      return;
+    }
+    // ─── Cache short-circuit ──────────────────────────────────────────────
+    // If we have a rendered map in memory AND the caller didn't force, serve
+    // it instantly without any sidecar work. The ONLY paths that invalidate:
+    //   * force === true — Rebuild button, mode toggle, or an explicit
+    //     loadMap(true) from downstream code (enrich completion, etc.)
+    //   * dirtyTabs.has('map') AND isMapAutoUpdateEnabled() — new data
+    //     landed AND user wants auto-refresh.
+    // When dirty but auto-off: still serve cache, flip _mapRender.stale
+    // true so the header shows a "data changed — click Rebuild" chip.
+    if (!force && _mapRender && contentEl.dataset.tab === 'map') {
+      // Two dirty signals feed in:
+      //   1. `dirtyTabs` — same-session writes (collect/enrich completed
+      //      while the topic page was open).
+      //   2. `_mapDirtyTopics` — cross-navigation writes (user collected on
+      //      topic A, navigated to topic B, came back to A — A's map is
+      //      stale even though dirtyTabs is fresh).
+      // Either one trips dirty.
+      const dirty = dirtyTabs.has('map') || _mapDirtyTopics.has(topic);
+      const autoUpdate = isMapAutoUpdateEnabled();
+      if (!dirty || !autoUpdate) {
+        if (dirty) _mapRender.stale = true;
+        contentEl.innerHTML = _mapRender.html;
+        // Inject / swap the stale chip if needed without redoing the whole
+        // toolbar, so we don't lose the iframe's scroll+layout state.
+        if (_mapRender.stale) {
+          const toolbar = contentEl.querySelector('.map-toolbar-info');
+          if (toolbar && !toolbar.querySelector('[data-stale-chip]')) {
+            const chip = document.createElement('span');
+            chip.className = 'th-chip';
+            chip.dataset.staleChip = '1';
+            chip.style.color = 'var(--warn, #d97706)';
+            chip.title = 'New data has landed since this map was built. Click Rebuild to refresh.';
+            chip.innerHTML = '⚠ stale';
+            toolbar.appendChild(chip);
+          }
+        }
+        _wireMapToolbarButtons(_mapRender.outPath, _mapRender.mapMode, isMapAutoUpdateEnabled());
+        return;
+      }
+      // else: dirty + auto on → fall through to full rebuild below.
+    }
+    mapLoadInFlight = true;
+    // Clear the in-session cache at the start of a real rebuild so a mid-
+    // rebuild tab switch doesn't serve a stale snapshot on re-entry.
+    _mapRender = null;
+    // Clear any stashed DOM holder (we manage our own iframe cache above).
+    invalidateTabCache('map');
     // Gated write — drop any innerHTML write that would land after the user
     // already clicked away to another tab. Keeps loadMap's slow post-await
     // graph-build render from overwriting, say, loadReport's skeleton.
     const set = (html) => { if (contentEl.dataset.tab === 'map') contentEl.innerHTML = html; };
+    const mapMode = (localStorage.getItem(MAP_MODE_KEY) || 'skeleton').toLowerCase() === 'full'
+      ? 'full'
+      : 'skeleton';
+    const mapAutoUpdate = isMapAutoUpdateEnabled();
     // Graph stats strip — fetched before render, shown above the map when graph has nodes.
     let statsStripHtml = '';
+    let sourceEvidenceEdgeCount = 0;
+    let topicSourceTypeCount = 0;
     try {
       // Edge count comes from the unified topicStats round-trip; only the
       // per-kind breakdown needs its own sidecar spawn since topicStats
       // only carries the four main finding kinds.
-      const [nodeRows, stats] = await Promise.all([
-        api.runQuery(
+      const [nodeRows, stats, relRows, srcRows] = await Promise.all([
+        withTimeout(api.runQuery(
           "SELECT kind, count(*) AS n FROM graph_nodes WHERE topic = :topic AND kind NOT IN ('topic','post') GROUP BY kind ORDER BY n DESC",
           topic,
-        ),
+        ), TOPIC_QUERY_TIMEOUT_MS, 'map graph stats'),
         topicStats(),
+        withTimeout(api.runQuery(
+          "SELECT kind, count(*) AS n FROM graph_edges WHERE topic = :topic AND kind IN ('source_evidence','relates_to','potentially_solves','could_address','co_evidenced') GROUP BY kind",
+          topic,
+        ), TOPIC_QUERY_TIMEOUT_MS, 'map relation stats'),
+        // Per-source contribution to this topic — fuels the "📡 N sources"
+        // chip so users can see at a glance that the graph is multi-source,
+        // not just reddit. Tooltip lists source → post count breakdown.
+        withTimeout(api.runQuery(
+          "SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts FROM topic_posts tp JOIN posts p ON p.id=tp.post_id WHERE tp.topic=:topic GROUP BY coalesce(p.source_type,'reddit') ORDER BY posts DESC",
+          topic,
+        ), TOPIC_QUERY_TIMEOUT_MS, 'map source breakdown'),
       ]);
       const nodes = Array.isArray(nodeRows) ? nodeRows : [];
       const edgeCount = Number(stats.n_edges || 0);
+      topicSourceTypeCount = Number(stats.sources || 0);
+      const rel = Array.isArray(relRows) ? relRows : [];
+      const relCount = (k) => Number((rel.find(r => r.kind === k) || {}).n || 0);
+      sourceEvidenceEdgeCount = relCount('source_evidence');
+      const relatesTo = relCount('relates_to');
+      const potentiallySolves = relCount('potentially_solves');
+      const couldAddress = relCount('could_address');
+      const coEvidenced = relCount('co_evidenced');
+      const denseRelTotal = relatesTo + potentiallySolves + couldAddress + coEvidenced;
       if (nodes.length > 0) {
         const labelMap = {
           painpoint: 'painpoints',
@@ -883,7 +1770,46 @@ export async function renderTopic(root, { params }) {
           const label = labelMap[r.kind] || r.kind;
           return `<span class="graph-stat-chip"><b>${r.n}</b> ${esc(label)}</span>`;
         }).join('');
-        statsStripHtml = `<div class="graph-stats-strip">${chips}<span class="graph-stat-edges">· <b>${edgeCount}</b> edges</span></div>`;
+        // Dense relation chip(s) — shown only when the relations pass produced edges.
+        // Tooltip enumerates per-kind counts so users can see the 4 kinds.
+        let relChipHtml = '';
+        if (denseRelTotal > 0) {
+          const parts = [];
+          if (relatesTo) parts.push(`${relatesTo} relates_to`);
+          if (potentiallySolves) parts.push(`${potentiallySolves} potentially_solves`);
+          if (couldAddress) parts.push(`${couldAddress} could_address`);
+          if (coEvidenced) parts.push(`${coEvidenced} co_evidenced`);
+          const tip = `Cross-finding semantic relations (ChromaDB MiniLM + shared-evidence):\n· ${parts.join('\n· ')}`;
+          relChipHtml = `<span class="graph-stat-chip graph-stat-relations" title="${esc(tip)}">🔗 <b>${denseRelTotal}</b> relations</span>`;
+        } else {
+          // Zero-state hint: if chromadb isn't installed the relations pass silently skips.
+          relChipHtml = `<span class="graph-stat-chip graph-stat-relations-empty" title="No semantic relation edges. If you expected them, run 'Rebuild' or check that chromadb is installed on the Python sidecar.">0 relations</span>`;
+        }
+        // Source-coverage chip — count of distinct sources feeding this topic,
+        // with a tooltip enumerating src → post count. Gives the user instant
+        // confidence the graph is drawing on all configured sources, not just
+        // reddit. If a source with an API key didn't contribute, it won't
+        // appear here → the user knows something went wrong upstream.
+        let srcChipHtml = '';
+        const srcList = Array.isArray(srcRows) ? srcRows : [];
+        if (srcList.length > 0) {
+          const sourceLabel = {
+            hn: 'Hacker News', appstore: 'App Store', playstore: 'Play Store',
+            arxiv: 'arXiv', openalex: 'OpenAlex', pubmed: 'PubMed',
+            gnews: 'Google News', devto: 'Dev.to', stackoverflow: 'Stack Overflow',
+            github: 'GitHub', github_issues: 'GitHub Issues',
+            trends: 'Google Trends', scholar: 'Scholar',
+            lemmy: 'Lemmy', mastodon: 'Mastodon', youtube: 'YouTube',
+            trustpilot: 'Trustpilot', producthunt: 'Product Hunt',
+            alternativeto: 'AlternativeTo', reddit: 'Reddit',
+          };
+          const tipLines = srcList.map(r =>
+            `${sourceLabel[r.source] || r.source}: ${r.posts} post${r.posts === 1 ? '' : 's'}`
+          );
+          const tip = `Evidence fed into this graph from ${srcList.length} source${srcList.length === 1 ? '' : 's'}:\n· ${tipLines.join('\n· ')}`;
+          srcChipHtml = `<span class="graph-stat-chip graph-stat-sources" title="${esc(tip)}">📡 <b>${srcList.length}</b> sources</span>`;
+        }
+        statsStripHtml = `<div class="graph-stats-strip">${chips}${srcChipHtml}${relChipHtml}<span class="graph-stat-edges">· <b>${edgeCount}</b> edges</span></div>`;
       }
     } catch (e) {
       // Don't block the map render if stats fail.
@@ -903,6 +1829,7 @@ export async function renderTopic(root, { params }) {
     if (sub) sub.textContent = 'Building gap map…';
     let outPath = null;
     let enrichBanner = '';
+    let forceExport = !!force;
     try {
       // Fast path — if the graph already exists for this topic, skip
       // buildGraph + enrich + exportHtml. Rebuild button forces a fresh
@@ -917,6 +1844,19 @@ export async function renderTopic(root, { params }) {
         if (sub) sub.textContent = 'Building structural graph…';
         await api.buildGraph(topic);
         _topicStatsPromise = null;  // invalidate — graph just changed
+        forceExport = true;
+      }
+
+      // Always run a fast relation pass before export so older topics that
+      // predate dense edges get proper finding-to-finding/source linkage.
+      // Idempotent in DB (edge upsert), so safe on repeated Map opens.
+      try {
+        await withTimeout(api.relateGraph(topic), TOPIC_QUERY_TIMEOUT_MS, 'map relate graph');
+        _topicStatsPromise = null;
+        forceExport = true;
+      } catch (relErr) {
+        // Best-effort: relation pass can skip when embeddings aren't installed.
+        console.warn('graph relation pass skipped/failed:', relErr);
       }
 
       // 2. Auto-enrich if we have an LLM key and no findings yet.
@@ -927,46 +1867,58 @@ export async function renderTopic(root, { params }) {
       //    would block the map tab from ever rendering at all.
       const [findingsBefore, anyReady] = await Promise.all([countFindings(), checkLlmReady()]);
       if (findingsBefore === 0 && anyReady) {
-        enrichBanner = `<div class="map-enrich-banner info" id="map-enrich-banner">
-          <span class="map-building-spinner" style="width:14px;height:14px;border-width:2px;flex-shrink:0"></span>
-          <span>Extracting painpoints in the background via LLM — the map will refresh when findings are ready (20–90s).</span>
+        // Progressive streaming banner. The old path awaited the full 4-LLM-call
+        // `enrichGraph` — on Ollama that's 2-6 minutes of dead silence. Now we
+        // subscribe to `enrich:progress` NDJSON events and update the banner
+        // as each extractor finishes, so the user sees painpoint titles while
+        // features/workarounds are still running.
+        enrichBanner = `<div class="map-enrich-banner info" id="map-enrich-banner" data-stream="1">
+          <div class="map-enrich-row">
+            <span class="map-building-spinner" style="width:14px;height:14px;border-width:2px;flex-shrink:0"></span>
+            <span id="map-enrich-status">Starting LLM extraction…</span>
+          </div>
+          <div id="map-enrich-samples" class="map-enrich-samples"></div>
+          <div class="map-enrich-actions">
+            <label class="map-enrich-picker">Extract:
+              <select id="map-enrich-source" class="btn btn-ghost btn-sm btn-bordered">
+                <option value="">All categories (sequential)</option>
+                <option value="painpoints">Painpoints only (fastest)</option>
+                <option value="features">Feature wishes only</option>
+                <option value="workarounds">Workarounds only</option>
+                <option value="complaints">Product complaints only</option>
+                <option value="__parallel">All categories (parallel — cloud)</option>
+              </select>
+            </label>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="banner-rerun-enrich" type="button">Run</button>
+          </div>
         </div>`;
-        // Fire-and-forget enrich. When it resolves we re-render the map so
-        // the new graph_node counts surface + iframe reloads with the
-        // updated gap-map HTML.
+        // Fire-and-forget stream. `enrich:progress` lines update the banner;
+        // `enrich:stream:done` triggers the map reload. The listeners
+        // auto-unbind on stream completion so we don't leak handlers across
+        // repeated Map-tab opens.
         (async () => {
           try {
-            const e = await api.enrichGraph(topic);
-            if (contentEl.dataset.tab !== 'map') return;
-            const banner = document.getElementById('map-enrich-banner');
-            if (!banner) return;
-            if (e?.skipped) {
-              banner.className = 'map-enrich-banner warn';
-              banner.innerHTML = `⚠ Enrichment skipped — ${esc(e.reason || 'no LLM configured')}`;
-            } else if (e?.ok === false) {
-              banner.className = 'map-enrich-banner err';
-              banner.innerHTML = `✗ Enrichment failed — ${esc(e.error || 'unknown')}`;
-            } else {
-              const np = e?.painpoints_added ?? e?.painpoints ?? 0;
-              const nf = e?.feature_wishes_added ?? e?.feature_wishes ?? 0;
-              const nw = e?.workarounds_added ?? e?.diy_workarounds ?? 0;
-              if ((np + nf + nw) === 0) {
-                banner.className = 'map-enrich-banner warn';
-                banner.innerHTML = `⚠ Enrichment found 0 painpoints. Try <b>Rerun collect</b> to gather more posts.`;
-              } else {
-                banner.className = 'map-enrich-banner ok';
-                banner.innerHTML = `✓ Enrichment added ${np} painpoints, ${nf} feature wishes, ${nw} workarounds — reloading map…`;
+            await runEnrichStreamForTopic(topic, {
+              onComplete: async () => {
                 _topicStatsPromise = null;
-                // Rebuild export + reload iframe to surface the new findings.
+                // Post-stream, rebuild the relation pass + map export so the
+                // iframe picks up the new semantic nodes. Skipped when the
+                // user navigates away from the Map tab mid-stream.
+                if (contentEl.dataset.tab !== 'map') return;
                 try {
-                  const newPath = await api.exportHtml(topic);
+                  await api.relateGraph(topic);
+                } catch (relErr) { console.warn('post-enrich relate skipped:', relErr); }
+                try {
+                  const newPath = await api.exportHtml(topic, {
+                    force: true, mode: mapMode, maxPostNodes: 120,
+                  });
                   const iframe = contentEl.querySelector('iframe.viewer-frame');
                   if (iframe && contentEl.dataset.tab === 'map') {
                     iframe.src = convertFileSrc(newPath) + `?t=${Date.now()}`;
                   }
                 } catch {}
-              }
-            }
+              },
+            });
           } catch (err) {
             const banner = document.getElementById('map-enrich-banner');
             if (banner) {
@@ -992,7 +1944,11 @@ export async function renderTopic(root, { params }) {
       // forever "Exporting viewer…" spinner. The Promise.race throws a
       // tagged Error that the catch block below turns into a retry UI.
       outPath = await Promise.race([
-        api.exportHtml(topic, force),
+        withTimeout(api.exportHtml(topic, {
+          force: forceExport,
+          mode: mapMode,
+          maxPostNodes: 120,
+        }), 60000, 'map export'),
         new Promise((_, reject) => setTimeout(
           () => reject(Object.assign(new Error('Exporting the viewer timed out after 60s. Python sidecar is stuck — usually a DB lock from a still-running enrich.'), { __timeout: true })),
           60000
@@ -1016,6 +1972,22 @@ export async function renderTopic(root, { params }) {
       const findingsChip = findingsAfter > 0
         ? `<span class="th-chip"><b>${findingsAfter}</b> findings</span>`
         : `<span class="th-chip" style="color:var(--ink-3)">0 findings</span>`;
+      const relationHealthChip = `<span class="th-chip" title="Finding-to-source relationship edges used for cross-source conclusions"><b>${sourceEvidenceEdgeCount}</b> source-links</span>`;
+
+      // If findings exist AND we have data from multiple sources AND no
+      // finding->source edges have been built yet, surface a direct
+      // explanation. Gated on findings > 0 because saying "connect findings
+      // across sources" when there are 0 findings is nonsensical — that
+      // case is already covered by the auto-enrich banner below. Reading
+      // `findingsAfter` so the banner reflects post-enrich state on a
+      // re-render, with fallback to pre-enrich count.
+      const findingsForRelate = (typeof findingsAfter === 'number' ? findingsAfter : findingsBefore) || 0;
+      const relationBanner = (findingsForRelate > 0 && topicSourceTypeCount > 1 && sourceEvidenceEdgeCount === 0)
+        ? `<div class="map-enrich-banner warn">
+            ⚠ Multi-source data found (<b>${topicSourceTypeCount}</b> sources) but cross-source finding links are not built yet.
+            Run <b>Enrich</b> then <b>Rebuild</b> to connect findings across sources.
+          </div>`
+        : '';
 
       // NEUTRALIZED 2026-04-20 — diffFindings added a sidecar spawn on
       // every Map-tab open; suspected of stacking onto an already-busy
@@ -1028,14 +2000,21 @@ export async function renderTopic(root, { params }) {
       set(`
         ${statsStripHtml}
         ${diffBanner}
+        ${relationBanner}
         <div class="map-toolbar">
           <div class="map-toolbar-info">
             <span class="th-chip"><b>${nodeCount.toLocaleString()}</b> nodes</span>
             <span class="th-chip"><b>${edgeCount.toLocaleString()}</b> edges</span>
             ${findingsChip}
+            ${relationHealthChip}
+            <span class="th-chip" title="skeleton is faster; full shows every node and relationship">mode: <b>${mapMode}</b></span>
+            <span class="th-chip" title="When off, map stays cached until you click Rebuild">auto-update: <b>${mapAutoUpdate ? 'on' : 'off'}</b></span>
           </div>
           <div style="flex:1"></div>
-          ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich" title="Re-run LLM extraction"><i data-lucide="sparkles"></i> Enrich</button>` : ''}
+          ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich" title="Re-run LLM extraction for this topic"><i data-lucide="sparkles"></i> Enrich</button>` : ''}
+          ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich-all" title="Enrich every topic with ≥50 posts and 0 findings"><i data-lucide="layers"></i> Enrich all</button>` : ''}
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-mode" title="Toggle graph density (skeleton/full)">Mode: ${mapMode === 'full' ? 'Full' : 'Skeleton'}</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
           <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
@@ -1043,12 +2022,65 @@ export async function renderTopic(root, { params }) {
         ${enrichBanner}
         <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`);
       if (contentEl.dataset.tab !== 'map') return;
-      window.refreshIcons?.();
-      $('#btn-map-rebuild').onclick  = () => loadMap(true);
-      $('#btn-map-reveal').onclick   = () => api.revealInFinder(outPath);
-      $('#btn-map-open-ext').onclick = () => api.openUrl(`file://${encodeURI(outPath)}`);
-      $('#btn-map-enrich')?.addEventListener('click', () => runEnrichFromMap());
-      $('#btn-map-add-key')?.addEventListener('click', () => openByokModal(() => loadMap()));
+      // Populate the in-session Map cache — next Map-tab open (on this
+      // topic, in this session) short-circuits here without any sidecar
+      // calls. Cleared on: force rebuild, auto-update dirty revisit, or
+      // topic-page unmount (scope is the outer renderTopic closure).
+      _mapRender = {
+        html: contentEl.innerHTML,
+        outPath,
+        mapMode,
+        ts: Date.now(),
+        stale: false,
+        statsKey: `${nodeCount}:${edgeCount}`,
+      };
+      // Persist to the module-level cache so leaving and returning to this
+      // topic short-circuits the 3 sidecar spawns. Single-entry per topic;
+      // overwriting is fine since renderTopic always seeds `_mapRender`
+      // from this Map at the top.
+      _mapRenderCache.set(topic, _mapRender);
+      // Any dirty flag that landed during the rebuild is now resolved.
+      dirtyTabs.delete('map');
+      _mapDirtyTopics.delete(topic);
+      _wireMapToolbarButtons(outPath, mapMode, mapAutoUpdate);
+      // Wire the streaming-banner Run button (source selector). The banner
+      // only exists when the auto-enrich path created it — otherwise these
+      // lookups no-op. The button re-kicks a streaming enrich with whatever
+      // category the user picked from the dropdown.
+      const runBtn = document.getElementById('banner-rerun-enrich');
+      const picker = document.getElementById('map-enrich-source');
+      if (runBtn && picker) {
+        runBtn.addEventListener('click', async () => {
+          const sel = picker.value || '';
+          const parallel = sel === '__parallel';
+          const only = parallel ? null : (sel || null);
+          const banner = document.getElementById('map-enrich-banner');
+          if (banner) {
+            banner.className = 'map-enrich-banner info';
+            banner.innerHTML = `<div class="map-enrich-row">
+              <span class="map-building-spinner" style="width:14px;height:14px;border-width:2px;flex-shrink:0"></span>
+              <span id="map-enrich-status">Starting…</span>
+            </div>
+            <div id="map-enrich-samples" class="map-enrich-samples"></div>`;
+          }
+          await runEnrichStreamForTopic(topic, {
+            only, parallel,
+            onComplete: async () => {
+              _topicStatsPromise = null;
+              try { await api.relateGraph(topic); } catch {}
+              try {
+                const newPath = await api.exportHtml(topic, {
+                  force: true, mode: mapMode, maxPostNodes: 120,
+                });
+                const iframe = contentEl.querySelector('iframe.viewer-frame');
+                if (iframe && contentEl.dataset.tab === 'map') {
+                  iframe.src = convertFileSrc(newPath) + `?t=${Date.now()}`;
+                }
+              } catch {}
+            },
+          });
+        });
+      }
     } catch (e) {
       const msg = (e?.message || e || '').toString();
       const hasNoPosts = msg.includes('no posts') || msg.includes('0 nodes');
@@ -1077,6 +2109,14 @@ export async function renderTopic(root, { params }) {
       $('#btn-map-run-collect').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
       $('#btn-map-retry').onclick = () => loadMap();
       $('#btn-map-skip-findings')?.addEventListener('click', () => switchTab('evidence'));
+    } finally {
+      mapLoadInFlight = false;
+      if (mapReloadQueued && contentEl.dataset.tab === 'map') {
+        const nextForce = mapReloadQueuedForce;
+        mapReloadQueued = false;
+        mapReloadQueuedForce = false;
+        queueMicrotask(() => loadMap(nextForce));
+      }
     }
   }
 
@@ -1150,7 +2190,11 @@ export async function renderTopic(root, { params }) {
       // All four kinds in ONE sidecar call (was 4 parallel Python spawns).
       // SQL is hoisted to `combinedFindingsSql` above so this call shares a
       // cache key with the mount-time preload — first click paints instantly.
-      const rows = await api.runQuery(combinedFindingsSql, topic);
+      const rows = await withTimeout(
+        api.runQuery(combinedFindingsSql, topic),
+        TOPIC_QUERY_TIMEOUT_MS,
+        'evidence query'
+      );
       const byKind = { painpoint: [], feature_wish: [], product: [], workaround: [] };
       for (const r of rows || []) {
         if (byKind[r.kind]) byKind[r.kind].push(r);
@@ -1224,15 +2268,68 @@ export async function renderTopic(root, { params }) {
       let emptyWire = null;
       if (!html) {
         const llmReady = await hasLlmConfigured();
-        if (llmReady) {
+        const last = _lastEnrichResult.get(topic);
+        // Four distinct empty-state branches, picked by what actually happened:
+        //   1. Never ran + LLM ready    → "Run extraction now"
+        //   2. Never ran + LLM missing  → "Add LLM key"
+        //   3. Ran but 0 findings       → model-weak guidance + retry + switch provider
+        //   4. Ran and errored          → surface provider + error + retry
+        if (last && last.error) {
+          const prov = last.provider || 'LLM';
+          emptyHtml = `
+            <div class="empty-big">
+              <h3>Extraction failed on this topic</h3>
+              <p>Provider: <code>${esc(prov)}</code>${last.model ? ` · Model: <code>${esc(last.model)}</code>` : ''}</p>
+              <p style="color:var(--ink-3); font-size:13px; word-break:break-word; max-width:600px">${esc(String(last.error).slice(0, 400))}</p>
+              <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+                <button class="btn btn-primary icon-btn" id="btn-ev-enrich"><i data-lucide="rotate-cw"></i> Retry</button>
+                <button class="btn btn-ghost btn-bordered icon-btn" id="btn-ev-keys"><i data-lucide="key-round"></i> Change LLM</button>
+                <button class="btn btn-ghost btn-bordered icon-btn" id="btn-ev-all"><i data-lucide="sparkles"></i> Enrich all topics</button>
+              </div>
+            </div>`;
+          emptyWire = () => {
+            $('#btn-ev-enrich')?.addEventListener('click', () => runEnrichHere('#btn-ev-enrich', () => loadEvidence()));
+            $('#btn-ev-keys')?.addEventListener('click', () => openByokModal(() => loadEvidence()));
+            $('#btn-ev-all')?.addEventListener('click', () => runEnrichAllTopics().then(() => loadEvidence()));
+          };
+        } else if (last && last.added === 0) {
+          const prov = last.provider || 'LLM';
+          const drop = last.droppedOffTopic;
+          const dropTotal = drop ? (drop.painpoints + drop.feature_wishes + drop.product_complaints + drop.diy_workarounds) : 0;
+          const dropLine = dropTotal > 0
+            ? `<p style="color:var(--ink-3); font-size:12px">${dropTotal} findings were dropped as off-topic (similarity < 0.45).</p>`
+            : '';
+          emptyHtml = `
+            <div class="empty-big">
+              <h3>Extraction ran — LLM returned 0 findings</h3>
+              <p>Provider: <code>${esc(prov)}</code>${last.model ? ` · Model: <code>${esc(last.model)}</code>` : ''} · Corpus sampled: <b>${last.corpusSize ?? '?'}</b> posts</p>
+              <p style="max-width:600px">Small local models (llama3.2:3b, gemma4:e2b) often can't extract structured findings. Try a stronger model — Anthropic Claude, OpenRouter, or <code>ollama pull qwen2.5:7b</code> — or <b>Re-run collect</b> to gather more on-topic posts.</p>
+              ${dropLine}
+              <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+                <button class="btn btn-primary icon-btn" id="btn-ev-enrich"><i data-lucide="rotate-cw"></i> Retry extraction</button>
+                <button class="btn btn-ghost btn-bordered icon-btn" id="btn-ev-keys"><i data-lucide="key-round"></i> Change LLM</button>
+                <button class="btn btn-ghost btn-bordered icon-btn" id="btn-ev-all"><i data-lucide="sparkles"></i> Enrich all topics</button>
+              </div>
+            </div>`;
+          emptyWire = () => {
+            $('#btn-ev-enrich')?.addEventListener('click', () => runEnrichHere('#btn-ev-enrich', () => loadEvidence()));
+            $('#btn-ev-keys')?.addEventListener('click', () => openByokModal(() => loadEvidence()));
+            $('#btn-ev-all')?.addEventListener('click', () => runEnrichAllTopics().then(() => loadEvidence()));
+          };
+        } else if (llmReady) {
           emptyHtml = `
             <div class="empty-big">
               <h3>No extraction has run yet on this topic</h3>
               <p>Your LLM provider is configured. Run extraction now to pull painpoints, DIY workarounds, competitor mentions, and feature wishes out of the corpus.</p>
-              <button class="btn btn-primary icon-btn" id="btn-ev-enrich"><i data-lucide="sparkles"></i> Run extraction now</button>
+              <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+                <button class="btn btn-primary icon-btn" id="btn-ev-enrich"><i data-lucide="sparkles"></i> Run extraction now</button>
+                <button class="btn btn-ghost btn-bordered icon-btn" id="btn-ev-all"><i data-lucide="layers"></i> Enrich all topics</button>
+              </div>
             </div>`;
-          emptyWire = () => $('#btn-ev-enrich')?.addEventListener('click', () =>
-            runEnrichHere('#btn-ev-enrich', () => loadEvidence()));
+          emptyWire = () => {
+            $('#btn-ev-enrich')?.addEventListener('click', () => runEnrichHere('#btn-ev-enrich', () => loadEvidence()));
+            $('#btn-ev-all')?.addEventListener('click', () => runEnrichAllTopics().then(() => loadEvidence()));
+          };
         } else {
           emptyHtml = `
             <div class="empty-big">
@@ -1733,6 +2830,40 @@ export async function renderTopic(root, { params }) {
     { mode: 'bullets',  icon: 'list',          label: 'Bullet learnings', desc: 'Key takeaways only — no intro/outro' },
   ];
 
+  // Toggle busy/idle state on the chat composer. Hoisted to renderTopic
+  // scope so BOTH `loadChat()` (which uses it inline while wiring the UI)
+  // AND the sibling-scope `send()` function (which fires it on every
+  // chat:start, chat:done, chat:error) can call it. Re-queries the DOM
+  // each call rather than capturing element references at definition
+  // time — that lets it survive a chat-tab re-render between calls.
+  function setBusyUi(busy, msg = null) {
+    const chatWrap = contentEl.querySelector('.chat-wrap');
+    const statusText = contentEl.querySelector('#chat-status-text');
+    const sendBtn = contentEl.querySelector('#btn-chat-send');
+    const cancelBtn = contentEl.querySelector('#btn-chat-cancel');
+    const input = contentEl.querySelector('#chat-input');
+    const presetBtns = contentEl.querySelectorAll('.chat-preset');
+    if (chatWrap) chatWrap.classList.toggle('chat-busy', !!busy);
+    if (statusText && msg) statusText.textContent = msg;
+    if (sendBtn) {
+      sendBtn.disabled = !!busy;
+      sendBtn.textContent = busy ? 'Working…' : 'Send';
+      sendBtn.hidden = !!busy;
+    }
+    if (cancelBtn) {
+      cancelBtn.hidden = !busy;
+      cancelBtn.disabled = !busy;
+    }
+    presetBtns.forEach(p => p.disabled = !!busy);
+    if (input) {
+      // Keep input focusable so Enter behavior is consistent before/after
+      // a run; we still gate duplicate sends via `chatStream.active`.
+      input.readOnly = !!busy;
+      if (busy) input.setAttribute('aria-busy', 'true');
+      else input.removeAttribute('aria-busy');
+    }
+  }
+
   async function loadChat() {
     const set = (html) => { if (contentEl.dataset.tab === 'chat') contentEl.innerHTML = html; };
     // Gate 1: need an LLM key.
@@ -1742,47 +2873,55 @@ export async function renderTopic(root, { params }) {
     const anyReady =
       byok?.anthropic?.set || byok?.openai?.set || byok?.openrouter?.set ||
       byok?.groq?.set || byok?.deepseek?.set || byok?.mistral?.set ||
-      byok?.google?.set || !!byok?.ollama_base_url;
+      byok?.google?.set || byok?.nvidia?.set || !!byok?.ollama_base_url;
 
-    // Gate 2: need a populated graph — chat reads painpoints/features/workarounds
-    // from graph_nodes. If count is 0 the LLM gets no data and returns garbage.
+    // Two evidence sources back chat answers:
+    //   1) Palace retrieval (ChromaDB MiniLM-L6-v2 ONNX + BM25) over every
+    //      indexed post — the primary, always-available grounding.
+    //   2) Pre-extracted findings (graph_nodes painpoints / features /
+    //      workarounds / products) — secondary; layered onto the prompt
+    //      when present.
+    //
+    // Old code blocked chat when (2) was empty. That was wrong: palace
+    // ALONE produces grounded answers from raw posts (`_semantic_evidence`
+    // in research/chat.py:87 fires before any findings lookup). The only
+    // genuine empty state is "no posts at all" — we still block that.
+    // When findings=0 but posts exist, surface a soft inline notice so
+    // the user knows enrichment would tighten answers, but let the chat
+    // proceed normally via palace.
+    let postCount = 0;
     let findingsCount = 0;
     try {
       const rows = await api.runQuery(
-        `SELECT count(*) AS n FROM graph_nodes
-         WHERE topic=:topic
-           AND kind IN ('painpoint','feature_wish','workaround','product')`,
+        `SELECT
+           (SELECT count(*) FROM topic_posts WHERE topic=:topic) AS posts,
+           (SELECT count(*) FROM graph_nodes
+              WHERE topic=:topic
+                AND kind IN ('painpoint','feature_wish','workaround','product')) AS findings`,
         topic,
       );
-      findingsCount = Array.isArray(rows) && rows[0]?.n ? Number(rows[0].n) : 0;
+      const r = (Array.isArray(rows) && rows[0]) || {};
+      postCount     = Number(r.posts || 0);
+      findingsCount = Number(r.findings || 0);
     } catch {}
-    if (anyReady && findingsCount === 0) {
+    if (anyReady && postCount === 0) {
       if (contentEl.dataset.tab !== 'chat') return;
       set(`
         <div class="empty-big" style="margin:18px 0">
-          <h3>Gap map not built yet</h3>
-          <p>Chat needs painpoints, features, and workarounds to ground its answers.
-             This topic has no semantic nodes yet — run the extractor against the corpus.</p>
+          <h3>No corpus yet</h3>
+          <p>Chat retrieves evidence from indexed posts in this topic, but no posts have been collected.
+             Run a collect first — palace (ChromaDB + MiniLM ONNX) will index them automatically and
+             chat will work even without LLM-extracted findings.</p>
           <div style="display:flex;gap:10px;justify-content:center;margin-top:14px">
-            <button class="btn btn-primary" id="btn-chat-build">Build gap map now</button>
-            <button class="btn btn-ghost" id="btn-chat-rerun" style="border:1px solid var(--line)">Re-run collect</button>
+            <button class="btn btn-primary" id="btn-chat-rerun">Run collect</button>
           </div>
         </div>`);
-      $('#btn-chat-build').onclick = async () => {
-        const btn = $('#btn-chat-build');
-        btn.disabled = true; btn.textContent = 'Building…';
-        try {
-          await api.buildGraph(topic);
-          await api.enrichGraph(topic);
-          loadChat();  // re-check gates
-        } catch (e) {
-          showToast('Build failed', e?.message || String(e), 'err');
-          btn.disabled = false; btn.textContent = 'Build gap map now';
-        }
-      };
       $('#btn-chat-rerun').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
       return;
     }
+    // findingsCount === 0 but postCount > 0 → fall through. We expose a
+    // soft chip in the chat UI (rendered below by mounting #chat-no-findings-hint)
+    // so the user can opt to enrich without being forced to.
 
     const providerLabel = (byok?.llm_provider || '').toString().toUpperCase() || 'auto-detect';
     const modelLabel = byok?.llm_model || 'default';
@@ -1823,31 +2962,47 @@ export async function renderTopic(root, { params }) {
                 <i data-lucide="${p.icon}"></i>${esc(p.label)}
               </button>`).join('')}
           </div>
+          ${findingsCount === 0 ? `
+            <div class="map-enrich-banner info" id="chat-no-findings-hint" style="margin:6px 0 0">
+              <span>💡 Chat is using <b>${postCount.toLocaleString()}</b> indexed posts via palace (ChromaDB + MiniLM ONNX). Answers will be sharper after extraction adds painpoints / features.</span>
+              <button class="btn btn-ghost btn-sm btn-bordered map-banner-btn" id="btn-chat-enrich-soft" type="button">Enrich now</button>
+            </div>` : ''}
+          <div class="chat-status" id="chat-status">
+            <span class="chat-status-dot"></span>
+            <span id="chat-status-text">Ready — ask a question.</span>
+          </div>
 
           <div class="chat-messages" id="chat-messages"></div>
 
           <div class="chat-input-row">
-            <textarea id="chat-input" rows="2" placeholder='Ask a question about this topic — e.g. "what do users DIY today?"'></textarea>
-            <button class="btn btn-primary btn-sm" id="btn-chat-send">Send</button>
-            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-cancel" hidden>Stop</button>
+            <div class="chat-composer">
+              <textarea id="chat-input" rows="2" placeholder='Ask about user pain, trends, gaps, evidence, or "what should we build next?"'></textarea>
+              <div class="chat-composer-foot">
+                <span class="chat-composer-hint">Enter to send · Shift+Enter for newline</span>
+                <div class="chat-composer-actions">
+                  <button class="btn btn-primary btn-sm icon-btn" id="btn-chat-send"><i data-lucide="send-horizontal"></i> Send</button>
+                  <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-cancel" hidden><i data-lucide="square"></i> Stop</button>
+                </div>
+              </div>
+            </div>
           </div>`;
     }
 
     set(`
       <div class="chat-wrap">
         <div class="chat-head">
-          <div>
-            <h3 style="margin:0 0 2px">Chat with this gap map</h3>
-            <p style="margin:0;color:var(--ink-3);font-size:12px">
+          <div class="chat-head-main">
+            <h3 style="margin:0 0 2px">Topic AI Chat</h3>
+            <p class="chat-head-sub">
               ${anyReady
                 ? `Provider: <b>${esc(providerLabel)}</b> · Model: <b>${esc(modelLabel)}</b>`
                 : '<span style="color:#B84747">No LLM key configured yet.</span>'}
             </p>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div class="chat-head-actions">
             <label class="mode-toggle" title="Agent mode — LLM can call tools to explore the database (Anthropic only)">
               <input type="checkbox" id="chat-agent" ${agentDefault ? 'checked' : ''} />
-              <span>🤖 Agent</span>
+              <span><i data-lucide="bot"></i> myind AI Agent</span>
             </label>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-keys"><i data-lucide="key-round"></i> Keys</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-export" title="Download the conversation as markdown"><i data-lucide="download"></i> Export</button>
@@ -1867,6 +3022,25 @@ export async function renderTopic(root, { params }) {
       renderMessages();
     });
     $('#btn-chat-add-key')?.addEventListener('click', () => openByokModal(() => loadChat()));
+    // Soft "Enrich now" inside the no-findings hint chip. Fires
+    // build+enrich in the background, replaces the hint with a status
+    // line, and reloads chat once findings land so the prompt picks
+    // them up. Non-blocking — chat keeps working via palace meanwhile.
+    $('#btn-chat-enrich-soft')?.addEventListener('click', async () => {
+      const hint = $('#chat-no-findings-hint');
+      const btn = $('#btn-chat-enrich-soft');
+      if (btn) { btn.disabled = true; btn.textContent = 'Enriching…'; }
+      try {
+        await api.buildGraph(topic).catch(() => {});
+        const e = await api.enrichGraph(topic);
+        recordEnrichResult(topic, e, e?.ok === false ? (e?.error || 'unknown') : null);
+        if (hint) hint.remove();
+        loadChat();
+      } catch (err) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Enrich now'; }
+        showToast('Enrich failed', err?.message || String(err), 'err');
+      }
+    });
     $('#chat-agent')?.addEventListener('change', (e) => {
       localStorage.setItem('gapmap.chat.agent', e.target.checked ? 'true' : 'false');
     });
@@ -1880,6 +3054,18 @@ export async function renderTopic(root, { params }) {
     const input = $('#chat-input');
     const sendBtn = $('#btn-chat-send');
     const cancelBtn = $('#btn-chat-cancel');
+    const presetBtns = contentEl.querySelectorAll('.chat-preset');
+    const chatWrap = contentEl.querySelector('.chat-wrap');
+    const statusText = $('#chat-status-text');
+
+    // Defined at renderTopic-scope (see `setBusyUi` declaration outside
+    // loadChat) so the sibling-scope `send()` can also drive busy-state.
+    // The wrapper here forwards to that shared implementation, captured
+    // here only so the local `loadChat` callsites still read naturally.
+    // (Previously `setBusyUi` was a const inside loadChat; `send()` is
+    // declared at renderTopic-scope and got `ReferenceError: Can't find
+    // variable: setBusyUi` the moment chat actually streamed.)
+    /* setBusyUi is declared at renderTopic scope — see below. */
 
     const sendFromInput = () => {
       const q = input.value.trim();
@@ -1899,19 +3085,39 @@ export async function renderTopic(root, { params }) {
     autoGrow();
 
     input.addEventListener('keydown', e => {
+      if (e.isComposing) return;
       // Enter = send, Shift+Enter = newline. Cmd/Ctrl+Enter still works.
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if ((e.key === 'Enter' || e.code === 'NumpadEnter') && !e.shiftKey) {
         e.preventDefault();
         sendFromInput();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'Enter' || e.code === 'NumpadEnter')) {
         e.preventDefault();
         sendFromInput();
       }
     });
     cancelBtn.onclick = async () => {
+      if (statusText) statusText.textContent = 'Stopping generation…';
       try { await api.cancelChat(); } catch {}
+      // Belt-and-braces: SIGTERM should kill the Python child, the exit
+      // waiter in cli.rs should emit chat:done, and the JS listener
+      // should clear busy state. If any of those steps stalls (already
+      // observed when Python is blocked on a hung HTTPS read to a flaky
+      // provider — SIGTERM gets queued behind the syscall), the UI sits
+      // on "Stopping generation…" forever. After 4 s, force-clear:
+      // unlisten, mark inactive, flip busy off. The Python process may
+      // still die a second later, but the UI is no longer hostage.
+      setTimeout(() => {
+        if (chatStream.active) {
+          try { chatStream.unlistenProgress?.(); } catch {}
+          try { chatStream.unlistenDone?.(); } catch {}
+          chatStream.unlistenProgress = null;
+          chatStream.unlistenDone = null;
+          chatStream.active = false;
+          setBusyUi(false, 'Stopped. (Sidecar may take a moment to release.)');
+        }
+      }, 4000);
     };
-    contentEl.querySelectorAll('.chat-preset').forEach(btn => {
+    presetBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         if (chatStream.active) return;
         send(btn.dataset.mode, '');
@@ -1934,11 +3140,11 @@ export async function renderTopic(root, { params }) {
       for (const m of hist) {
         const ts = m.ts ? new Date(m.ts).toISOString() : '';
         if (m.role === 'user') {
-          md.push(`## 🧑 ${m.mode || 'ask'}${ts ? ` · ${ts}` : ''}`);
+          md.push(`## User · ${m.mode || 'ask'}${ts ? ` · ${ts}` : ''}`);
           if (m.text) md.push(m.text);
           md.push('');
         } else {
-          md.push(`## 🤖 assistant${ts ? ` · ${ts}` : ''}`);
+          md.push(`## myind AI${ts ? ` · ${ts}` : ''}`);
           if (m.toolCalls && m.toolCalls.length) {
             md.push('<details><summary>Tool calls</summary>\n');
             for (const tc of m.toolCalls) {
@@ -2040,8 +3246,8 @@ export async function renderTopic(root, { params }) {
     const tsHtml = m.ts ? `<div class="chat-msg-ts" ${tsAttr}>${timeAgo(m.ts / 1000)}</div>` : '';
     if (m.role === 'user') {
       return `<div class="chat-msg chat-msg-user" data-idx="${index}">
-        <div class="chat-msg-ic">🧑</div>
-        <div class="chat-msg-body"><b>${esc(m.mode || 'ask')}</b>${m.text ? `<div>${esc(m.text)}</div>` : ''}${tsHtml}</div>
+        <div class="chat-msg-ic" title="User"><i data-lucide="user-round"></i></div>
+        <div class="chat-msg-body"><b>${esc(m.mode || 'ask')}</b>${m.text ? `<div class="chat-msg-text">${esc(m.text)}</div>` : ''}${tsHtml}</div>
       </div>`;
     }
     const isStreaming = chatStream.active && index === (chatHistory.get(topic) || []).length - 1;
@@ -2054,7 +3260,7 @@ export async function renderTopic(root, { params }) {
       </div>`;
     return `<div class="chat-msg chat-msg-asst" data-idx="${index}">
       ${actions}
-      <div class="chat-msg-ic">🤖</div>
+      <div class="chat-msg-ic" title="myind AI"><i data-lucide="bot"></i></div>
       <div class="chat-msg-body markdown-view">${assistantInnerHtml(m, isStreaming)}${tsHtml}</div>
     </div>`;
   }
@@ -2072,29 +3278,78 @@ export async function renderTopic(root, { params }) {
     // UI state
     const sendBtn = $('#btn-chat-send');
     const cancelBtn = $('#btn-chat-cancel');
-    const presets = contentEl.querySelectorAll('.chat-preset');
-    if (sendBtn)   sendBtn.disabled = true;
-    if (cancelBtn) cancelBtn.hidden = false;
-    presets.forEach(p => p.disabled = true);
+    setBusyUi(true, 'myind AI is thinking… grounding answer on your topic data.');
 
     chatStream.active = true;
     chatStream.buffer = '';
 
-    // Subscribe to events BEFORE starting
-    chatStream.unlistenProgress = await api.onChatProgress(line => {
-      handleChatLine(line);
-    });
-    chatStream.unlistenDone = await api.onChatDone(async (_payload) => {
-      // Cleanup
+    // Fail-safe timers. Without these, a hung Python LLM call (NVIDIA
+    // socket stalls, ollama runner crashed mid-load, etc.) leaves the
+    // UI stuck on "Working…" forever. Two thresholds:
+    //   * `firstTokenTimer` (60 s): no progress event at all → assume the
+    //     sidecar wedged before printing anything; surface a hint and
+    //     keep the spinner so the user can click Stop without losing it.
+    //   * `hardTimer` (5 min): no `chat:done` after a long run → force-
+    //     clear busy state and mark the assistant turn as timed out so
+    //     the user can retry. We still leave the Python process to
+    //     either finish or be killed by Stop — the UI just stops
+    //     blocking.
+    let sawProgress = false;
+    let firstTokenTimer = setTimeout(() => {
+      if (!sawProgress && chatStream.active) {
+        const st = $('#chat-status-text');
+        if (st) st.textContent = '⚠ No reply yet — Python sidecar may be hung. Click Stop to abort.';
+      }
+    }, 60000);
+    let hardTimer = setTimeout(() => {
+      if (chatStream.active) {
+        const h = chatHistory.get(topic) || [];
+        const last = h[h.length - 1];
+        if (last && last.role === 'assistant' && !(last.text || '').trim()) {
+          last.text = '✗ Timed out after 5 min with no response. Provider may be unreachable — try Stop, then check the LLM provider in Settings.';
+          saveChatHistory(topic);
+        }
+        renderMessages();
+        try { chatStream.unlistenProgress?.(); } catch {}
+        try { chatStream.unlistenDone?.(); } catch {}
+        chatStream.unlistenProgress = null;
+        chatStream.unlistenDone = null;
+        chatStream.active = false;
+        setBusyUi(false, '✗ Timed out — see message above.');
+      }
+    }, 300000);
+
+    const finishStream = (msg) => {
       try { chatStream.unlistenProgress?.(); } catch {}
       try { chatStream.unlistenDone?.(); } catch {}
       chatStream.unlistenProgress = null;
       chatStream.unlistenDone = null;
       chatStream.active = false;
-      if (sendBtn)   sendBtn.disabled = false;
-      if (cancelBtn) cancelBtn.hidden = true;
-      presets.forEach(p => p.disabled = false);
-      // Persist the completed assistant turn to localStorage.
+      clearTimeout(firstTokenTimer);
+      clearTimeout(hardTimer);
+      setBusyUi(false, msg);
+    };
+
+    // Subscribe to events BEFORE starting
+    chatStream.unlistenProgress = await api.onChatProgress(line => {
+      sawProgress = true;
+      handleChatLine(line);
+    });
+    chatStream.unlistenDone = await api.onChatDone(async (payload) => {
+      // Distinguish clean exit vs error code so the status line is
+      // honest. payload shape: { code: number } where 0 = success.
+      const code = (payload && typeof payload === 'object' && 'code' in payload) ? Number(payload.code) : 0;
+      const h = chatHistory.get(topic) || [];
+      const last = h[h.length - 1];
+      const hasContent = !!(last && last.role === 'assistant' && (last.text || '').trim());
+      if (code !== 0 && !hasContent) {
+        if (last && last.role === 'assistant') last.text = `✗ Provider exited with code ${code}. Check the LLM key/model in Settings.`;
+        renderMessages();
+        finishStream('✗ Provider error — see message above.');
+      } else {
+        finishStream(code === 0 ? 'Done — response ready.' : '⚠ Provider exited early; partial response shown.');
+      }
+      // Persist whatever made it through to localStorage.
       saveChatHistory(topic);
     });
 
@@ -2105,12 +3360,7 @@ export async function renderTopic(root, { params }) {
       const last = h[h.length - 1];
       if (last && last.role === 'assistant') last.text = `✗ Failed to start chat: ${e?.message || e}`;
       renderMessages();
-      try { chatStream.unlistenProgress?.(); } catch {}
-      try { chatStream.unlistenDone?.(); } catch {}
-      chatStream.active = false;
-      if (sendBtn)   sendBtn.disabled = false;
-      if (cancelBtn) cancelBtn.hidden = true;
-      presets.forEach(p => p.disabled = false);
+      finishStream('Failed to start. Check keys/provider and retry.');
     }
   }
 
@@ -2130,16 +3380,30 @@ export async function renderTopic(root, { params }) {
       last.text = (last.text || '') + t;
       renderAssistantInPlace(last);
     } else if (ev.event === 'tool_call') {
+      if (statusText) statusText.textContent = `myind AI is using ${ev.name || 'a tool'}…`;
       last.toolCalls = last.toolCalls || [];
       last.toolCalls.push({ id: ev.id, name: ev.name, input: ev.input, output: null });
       renderAssistantInPlace(last);
     } else if (ev.event === 'tool_result') {
+      if (statusText) statusText.textContent = 'myind AI is analyzing tool results…';
       const tc = (last.toolCalls || []).find(x => x.id === ev.id);
       if (tc) tc.output = ev.output;
       renderAssistantInPlace(last);
     } else if (ev.event === 'error') {
-      last.text = (last.text || '') + `\n\n✗ Error: ${ev.error}`;
+      // Append the error text to the assistant turn AND release the
+      // busy UI immediately. Python may still emit a `done` event a
+      // moment later — the `chatStream.active` guard in finishStream
+      // (set false here) makes that done a no-op.
+      const st = contentEl.querySelector('#chat-status-text');
+      if (st) st.textContent = '✗ Error while generating response.';
+      last.text = (last.text || '') + `\n\n✗ Error: ${ev.error || 'unknown'}`;
       renderMessages();
+      try { chatStream.unlistenProgress?.(); } catch {}
+      try { chatStream.unlistenDone?.(); } catch {}
+      chatStream.unlistenProgress = null;
+      chatStream.unlistenDone = null;
+      chatStream.active = false;
+      setBusyUi(false, '✗ Error — see message above.');
     }
   }
 
@@ -2193,7 +3457,30 @@ export async function renderTopic(root, { params }) {
 
   // ─── Actions ──────────────────────────────────────────────────────────
   function loadActions() {
+    const autoOn = isAutoRunEnabled();
     contentEl.innerHTML = `
+      <div class="settings-card run-all-card" style="margin-bottom:14px;border:1px solid var(--accent, #4B6FE4);background:linear-gradient(180deg,#F6F9FF,#FFF)">
+        <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:280px">
+            <h4 style="margin:0 0 4px"><i data-lucide="sparkles"></i> Run all analyses</h4>
+            <p style="margin:0;color:var(--ink-3);font-size:13px">
+              One click to populate every tab: builds the graph, enriches painpoints,
+              synthesizes insights, generates solutions + concepts, computes trends +
+              sentiment, and renders the final report.
+              <span class="muted">Takes 3-8 minutes on a typical topic. Each step is logged separately.</span>
+            </p>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;min-width:180px">
+            <button class="btn btn-primary icon-btn" id="btn-run-all"><i data-lucide="play"></i> Run all</button>
+            <label class="compact-toggle" style="font-size:12px;color:var(--ink-3)">
+              <input type="checkbox" id="cb-autorun" ${autoOn ? 'checked' : ''}/>
+              <span>Auto-run pipelines when a tab is opened with no data</span>
+            </label>
+          </div>
+        </div>
+        <div id="run-all-status" class="muted" style="margin-top:10px;font-size:12.5px;min-height:16px"></div>
+        <ol id="run-all-steps" class="run-all-steps" style="margin:10px 0 0;padding-left:20px;font-size:12.5px;color:var(--ink-2);display:none"></ol>
+      </div>
       <div class="settings-grid">
         <div class="settings-card">
           <h4>Re-run collect</h4>
@@ -2204,6 +3491,11 @@ export async function renderTopic(root, { params }) {
           <h4>Ingest local file</h4>
           <p>Drop your interview CSV, Slack export, or call transcript into this topic.</p>
           <button class="btn btn-primary btn-sm" data-route="ingest">Open ingest</button>
+        </div>
+        <div class="settings-card">
+          <h4>Ingest a video</h4>
+          <p>Paste any YouTube / Vimeo / podcast URL — audio stays local, Whisper transcribes on-device, chunks land in this topic's corpus.</p>
+          <button class="btn btn-primary btn-sm icon-btn" data-route="ingest-video"><i data-lucide="video"></i> Paste video URL</button>
         </div>
         <div class="settings-card">
           <h4>Export artifacts</h4>
@@ -2238,6 +3530,10 @@ export async function renderTopic(root, { params }) {
     contentEl.querySelector('.settings-grid').insertAdjacentHTML('afterend', quickHtml);
     contentEl.querySelector('[data-route="collect"]').onclick = () => { location.hash = `#/collect/${encodeURIComponent(topic)}`; };
     contentEl.querySelector('[data-route="ingest"]').onclick  = () => { location.hash = '#/ingest'; };
+    contentEl.querySelector('[data-route="ingest-video"]').onclick = () => {
+      // Pre-select the current topic so the video screen lands with topic filled.
+      location.hash = `#/ingest-video?topic=${encodeURIComponent(topic)}`;
+    };
     $('#btn-export-html').onclick = async () => {
       $('#export-status').textContent = 'exporting HTML…';
       try { const p = await api.exportHtml(topic); $('#export-status').innerHTML = `✓ ${esc(p)}`; }
@@ -2308,21 +3604,330 @@ export async function renderTopic(root, { params }) {
         status.textContent = `Error: ${e?.message || e}`;
       }
     });
+
+    // ─── Run all analyses ────────────────────────────────────────────────
+    $('#cb-autorun', contentEl)?.addEventListener('change', (e) => {
+      setAutoRunEnabled(!!e.target.checked);
+      const status = $('#run-all-status', contentEl);
+      if (status) {
+        status.textContent = e.target.checked
+          ? 'Auto-run enabled — opening an empty tab will trigger its pipeline.'
+          : 'Auto-run disabled — tabs show a manual "Run" button instead.';
+        setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+      }
+    });
+    $('#btn-run-all', contentEl)?.addEventListener('click', async () => {
+      const btn    = $('#btn-run-all', contentEl);
+      const status = $('#run-all-status', contentEl);
+      const list   = $('#run-all-steps', contentEl);
+      if (!btn || !status || !list) return;
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Running…';
+      list.style.display = 'block';
+      list.innerHTML = '';
+      window.refreshIcons?.();
+      const startTs = Date.now();
+      const onStep = (e) => {
+        const key = `run-step-${e.id}`;
+        let li = list.querySelector(`[data-k="${key}"]`);
+        if (!li) {
+          li = document.createElement('li');
+          li.dataset.k = key;
+          list.appendChild(li);
+        }
+        const icon = e.status === 'running' ? '⏳'
+                   : e.status === 'done'    ? '✓'
+                   : e.status === 'error'   ? '✗'
+                   : e.status === 'skipped' ? '·'
+                   : '•';
+        const note = e.error ? ` <span style="color:#B84747">(${esc(String(e.error?.message || e.error).slice(0, 120))})</span>` : '';
+        li.innerHTML = `${icon} <b>${esc(e.label)}</b> <span class="muted">step ${e.i + 1} / ${e.total}</span>${note}`;
+        status.textContent = e.status === 'running'
+          ? `Running ${e.label}… (${e.i + 1} / ${e.total})`
+          : status.textContent;
+      };
+      try {
+        const { ran, failed, skipped } = await runAllForTopic(topic, onStep);
+        const secs = Math.round((Date.now() - startTs) / 1000);
+        const skippedForKey = skipped.length && skipped.some(s => s.error?.code === 'no_llm_key');
+        if (skippedForKey) {
+          status.innerHTML = `No LLM key — nothing ran. <a href="#/settings">Open Settings → API keys</a> and try again.`;
+        } else {
+          status.innerHTML = `Done in ${secs}s · ran ${ran.length} · failed ${failed.length}${skipped.length ? ` · skipped ${skipped.length}` : ''}.`;
+        }
+        // Mark affected tabs dirty so the next switch re-renders fresh data.
+        for (const r of ran) dirtyTabs.add(r.id);
+        // Nudge the rest of the app that data changed.
+        window.dispatchEvent(new CustomEvent('gapmap:changed', {
+          detail: { kind: 'findings', topic, ts: Date.now() },
+        }));
+      } catch (e) {
+        status.textContent = `Error: ${e?.message || e}`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="play"></i> Run all';
+        window.refreshIcons?.();
+      }
+    });
     window.refreshIcons?.();
+  }
+
+  // ─── Search (unified cross-table) ─────────────────────────────────────
+  // Single input → normal / aggressive mode → grouped results across
+  // posts, graph findings, analyses, papers, hypotheses, feedback.
+  // Every run persists to mcp_analyses so downstream pipelines can reuse
+  // the query context.
+  function loadSearch() {
+    contentEl.innerHTML = `
+      <div class="settings-card" style="margin-bottom:14px">
+        <h4><i data-lucide="search-code"></i> Search everything in this topic</h4>
+        <p class="muted" style="margin:4px 0 10px;font-size:12.5px">
+          Fans a single query across posts, findings (painpoints/products/workarounds/concepts),
+          AI analyses, papers, hypotheses, and feedback. Aggressive mode adds an LLM
+          paraphrase pass plus local semantic search. Every run is logged to AI Analyses.
+        </p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="search-all-input" type="text"
+                 placeholder="e.g. slow upload, forgotten password, pricing confusion"
+                 style="flex:1;min-width:260px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px" />
+          <label class="compact-toggle" style="font-size:12px;color:var(--ink-3)">
+            <input type="checkbox" id="search-all-aggressive" />
+            <span>Aggressive (LLM + semantic)</span>
+          </label>
+          <button class="btn btn-primary icon-btn" id="btn-search-all"><i data-lucide="search"></i> Search</button>
+        </div>
+        <div id="search-all-status" class="muted" style="margin-top:8px;font-size:12px;min-height:14px"></div>
+      </div>
+      <div id="search-all-results"></div>
+    `;
+    window.refreshIcons?.();
+
+    const input = $('#search-all-input', contentEl);
+    const aggr  = $('#search-all-aggressive', contentEl);
+    const btn   = $('#btn-search-all', contentEl);
+    const status = $('#search-all-status', contentEl);
+    const out   = $('#search-all-results', contentEl);
+
+    const renderSection = (title, icon, rows, renderRow) => {
+      if (!rows || !rows.length) return '';
+      return `
+        <section class="settings-card" style="margin-bottom:10px">
+          <h4 style="margin:0 0 8px"><i data-lucide="${icon}"></i> ${esc(title)} <span class="muted" style="font-weight:normal;font-size:12px">(${rows.length})</span></h4>
+          <div>${rows.map(renderRow).join('')}</div>
+        </section>`;
+    };
+
+    const row = (html) => `<div style="padding:6px 0;border-bottom:1px solid var(--line);font-size:13px">${html}</div>`;
+
+    const run = async () => {
+      const query = (input.value || '').trim();
+      if (!query) { status.textContent = 'Enter a query first.'; return; }
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2"></i> Searching…';
+      status.textContent = aggr.checked ? 'Aggressive mode: expanding query + semantic search…' : 'Searching…';
+      out.innerHTML = '';
+      window.refreshIcons?.();
+      try {
+        const r = await api.searchAll(query, { topic, aggressive: aggr.checked });
+        if (!r || !r.ok) {
+          status.textContent = `Error: ${r?.error || 'unknown'}`;
+          return;
+        }
+        const b = r.buckets || {};
+        const exp = (r.expansions || []).length
+          ? `<p class="muted" style="margin:0 0 10px;font-size:12px">Expanded to: ${(r.expansions || []).map(e => `<code>${esc(e)}</code>`).join(' · ')}</p>`
+          : '';
+        const html = exp + [
+          renderSection('Posts', 'file-text', b.posts, p => row(
+            `<a href="${esc(p.url || (p.permalink ? 'https://reddit.com' + p.permalink : '#'))}" target="_blank" rel="noopener"><b>${esc(p.title || '(untitled)')}</b></a>
+             <span class="muted"> · ${esc(p.source || 'reddit')} · score ${p.score || 0}</span>
+             ${p.excerpt ? `<div class="muted" style="font-size:12px;margin-top:2px">${esc(p.excerpt)}…</div>` : ''}`)),
+          renderSection('Findings', 'lightbulb', b.graph_nodes, n => row(
+            `<b>${esc(n.label || '')}</b> <span class="muted">· ${esc(n.kind || '')}</span>`)),
+          renderSection('Semantic matches', 'brain', b.semantic, m => row(
+            `<b>${esc((m.text || '').slice(0, 120))}</b> <span class="muted">· sim ${Number(m.score || 0).toFixed(2)}</span>`)),
+          renderSection('AI Analyses', 'sparkles', b.analyses, a => row(
+            `<b>${esc(a.kind || '')}</b>/<span class="muted">${esc(a.tool || '')}</span>
+             <span class="muted"> · ${esc(a.source || 'app')}</span>
+             <div class="muted" style="font-size:12px;margin-top:2px">${esc((a.excerpt || '').slice(0, 300))}…</div>`)),
+          renderSection('Paper analyses', 'book-marked', b.paper_analyses, pa => row(
+            `<b>${esc((pa.takeaway || '').slice(0, 140))}</b>
+             <span class="muted"> · rel ${Number(pa.relevance || 0).toFixed(2)}</span>`)),
+          renderSection('Hypotheses', 'target', b.hypotheses, h => row(
+            `<b>${esc(h.status || '')}</b> <span class="muted">· ${esc(String(h.card_json || '').slice(0, 180))}…</span>`)),
+          renderSection('Flagged feedback', 'thumbs-down', b.feedback, f => row(
+            `<b>${esc(f.finding_title || '')}</b> <span class="muted">· ${esc(f.verdict || '')}</span>
+             ${f.note ? `<div class="muted" style="font-size:12px">${esc(f.note)}</div>` : ''}`)),
+        ].join('');
+        out.innerHTML = html || `<div class="empty-state"><p>No matches for <b>${esc(query)}</b>.</p></div>`;
+        status.textContent = `Found ${r.counts?.total || 0} matches across ${Object.keys(b).filter(k => (b[k] || []).length).length} tables${r.persisted ? ' · saved to AI Analyses' : ''}.`;
+        window.refreshIcons?.();
+      } catch (e) {
+        status.textContent = `Error: ${e?.message || e}`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="search"></i> Search';
+        window.refreshIcons?.();
+      }
+    };
+    btn.addEventListener('click', run);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+    input.focus();
+  }
+
+  // ─── AI Analyses ──────────────────────────────────────────────────────
+  // Reads the mcp_analyses table — the unified log of LLM-driven intelligence
+  // across MCP tools (source='mcp') and the app's own enrichment pipelines
+  // (source='app'). Shows newest first so users see what the client LLM (or
+  // the app) concluded on this topic regardless of which tool produced it.
+  async function loadAiAnalyses() {
+    contentEl.innerHTML = `<div class="empty-state">loading…</div>`;
+    let rows = [];
+    try {
+      rows = await api.runQuery(
+        `SELECT id, kind, source, tool, content, content_type, provider, model,
+                tokens_in, tokens_out, created_at
+         FROM mcp_analyses
+         WHERE topic = :topic
+         ORDER BY created_at DESC, id DESC
+         LIMIT 200`,
+        topic,
+      );
+    } catch (e) {
+      contentEl.innerHTML = `<div class="empty-state">Error loading analyses: ${esc(e?.message || String(e))}</div>`;
+      return;
+    }
+    if (contentEl.dataset.tab !== 'ai_analyses') return;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      contentEl.innerHTML = `
+        <div class="empty-state" style="padding:32px;text-align:center;max-width:600px;margin:0 auto">
+          <h3 style="margin-bottom:8px">No AI analyses yet</h3>
+          <p style="color:var(--ink-3);margin-bottom:16px">
+            Every LLM call the app or an MCP client makes on this topic
+            (insights, concepts, solutions, sentiment, chat, search, report,
+            paper analysis, …) shows up here — unified, newest-first.
+          </p>
+          <button class="btn btn-primary icon-btn" id="btn-ai-go-actions">
+            <i data-lucide="zap"></i> Run all analyses
+          </button>
+        </div>`;
+      window.refreshIcons?.();
+      $('#btn-ai-go-actions', contentEl)?.addEventListener('click', () => switchTab('actions'));
+      return;
+    }
+
+    // Kind + source filter chips. Counts per kind so users see distribution.
+    const byKind = {};
+    const bySrc = {};
+    for (const r of rows) {
+      byKind[r.kind || 'other'] = (byKind[r.kind || 'other'] || 0) + 1;
+      bySrc[r.source || 'app'] = (bySrc[r.source || 'app'] || 0) + 1;
+    }
+    const kindOrder = Object.keys(byKind).sort((a, b) => byKind[b] - byKind[a]);
+    const sourceOrder = Object.keys(bySrc).sort();
+
+    const cards = rows.map((r) => {
+      const ts = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+      const sourceTag = r.source === 'mcp'
+        ? `<span class="th-chip" style="background:#2d4a6b;color:#cfe3ff">MCP</span>`
+        : `<span class="th-chip" style="background:#34503a;color:#d6f0dd">app</span>`;
+      const kindTag = `<span class="th-chip" style="background:var(--surface-2);color:var(--ink-2)">${esc(r.kind || '')}</span>`;
+      const meta = [r.tool, r.provider, r.model].filter(Boolean).map(esc).join(' · ');
+      let body;
+      const raw = String(r.content || '');
+      if (r.content_type === 'json') {
+        let pretty = raw;
+        try { pretty = JSON.stringify(JSON.parse(raw), null, 2); } catch {}
+        const trimmed = pretty.length > 4000 ? pretty.slice(0, 4000) + '\n…' : pretty;
+        body = `<pre style="background:var(--surface-2);padding:10px;border-radius:6px;overflow:auto;max-height:360px;font-size:12px">${esc(trimmed)}</pre>`;
+      } else {
+        body = `<div class="markdown-body">${renderMarkdown(raw)}</div>`;
+      }
+      return `
+        <div class="settings-card ai-analysis-card" data-kind="${esc(r.kind || 'other')}" data-source="${esc(r.source || 'app')}" style="margin-bottom:12px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            ${sourceTag}${kindTag}
+            <span style="color:var(--ink-3);font-size:12px">${esc(ts)}</span>
+            ${meta ? `<span style="color:var(--ink-3);font-size:12px;margin-left:auto">${meta}</span>` : ''}
+          </div>
+          ${body}
+        </div>`;
+    }).join('');
+    const kindChips = kindOrder.map(k =>
+      `<button class="filter-chip" data-filter-kind="${esc(k)}" style="padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:12px;cursor:pointer">
+        ${esc(k)} <b>${byKind[k]}</b>
+      </button>`).join('');
+    const sourceChips = sourceOrder.map(s =>
+      `<button class="filter-chip" data-filter-source="${esc(s)}" style="padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:12px;cursor:pointer">
+        ${esc(s)} <b>${bySrc[s]}</b>
+      </button>`).join('');
+    contentEl.innerHTML = `
+      <div style="padding:12px 0">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin:0 4px 12px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">AI Analyses <span style="color:var(--ink-3);font-weight:normal;font-size:13px">(${rows.length})</span></h3>
+          <span style="color:var(--ink-3);font-size:12px">Unified log — every LLM call. Click chips to filter.</span>
+        </div>
+        <div class="ai-filter-bar" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 4px 14px">
+          <span class="muted" style="font-size:11.5px;align-self:center">kind:</span>
+          ${kindChips}
+          <span class="muted" style="font-size:11.5px;align-self:center;margin-left:10px">source:</span>
+          ${sourceChips}
+          <button class="filter-chip" data-filter-clear="1" style="padding:4px 10px;border:1px dashed var(--line);border-radius:999px;background:transparent;font-size:12px;cursor:pointer;margin-left:auto">
+            Clear
+          </button>
+        </div>
+        <div id="ai-analyses-list">${cards}</div>
+      </div>`;
+    window.refreshIcons?.();
+
+    // Filter wiring — chips toggle; active filter hides non-matching cards.
+    const activeKind = new Set();
+    const activeSrc = new Set();
+    const applyFilter = () => {
+      contentEl.querySelectorAll('.ai-analysis-card').forEach(c => {
+        const k = c.dataset.kind, s = c.dataset.source;
+        const matchK = activeKind.size === 0 || activeKind.has(k);
+        const matchS = activeSrc.size === 0 || activeSrc.has(s);
+        c.style.display = (matchK && matchS) ? '' : 'none';
+      });
+      contentEl.querySelectorAll('.filter-chip').forEach(ch => {
+        const k = ch.dataset.filterKind, s = ch.dataset.filterSource;
+        const on = (k && activeKind.has(k)) || (s && activeSrc.has(s));
+        ch.style.background = on ? 'var(--accent, #4B6FE4)' : 'var(--surface-2)';
+        ch.style.color = on ? '#fff' : '';
+      });
+    };
+    contentEl.querySelectorAll('.filter-chip').forEach(ch => {
+      ch.addEventListener('click', () => {
+        if (ch.dataset.filterClear) {
+          activeKind.clear(); activeSrc.clear();
+        } else if (ch.dataset.filterKind) {
+          const k = ch.dataset.filterKind;
+          activeKind.has(k) ? activeKind.delete(k) : activeKind.add(k);
+        } else if (ch.dataset.filterSource) {
+          const s = ch.dataset.filterSource;
+          activeSrc.has(s) ? activeSrc.delete(s) : activeSrc.add(s);
+        }
+        applyFilter();
+      });
+    });
   }
 
   // ─── tab switching ────────────────────────────────────────────────────
   const loaders = {
-    insights: () => loadInsights(contentEl, topic),
+    home: () => loadInsights(contentEl, topic),
+    insights: () => loadInsights(contentEl, topic), // backward-compatible alias
     bets: () => loadBets(contentEl, topic),
     map: loadMap, report: loadReport, evidence: loadEvidence,
     sources: loadSources, research: loadResearch, chat: loadChat, actions: loadActions,
+    search: loadSearch,
     solutions: () => loadSolutions(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
     papers:   () => loadPapers(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
     posts: () => loadPosts(contentEl, topic),
     sentiment: () => loadSentiment(contentEl, topic),
+    ai_analyses: () => loadAiAnalyses(contentEl, topic),
   };
   // Tab-generation counter. Every click bumps it. Loaders already close over
   // `activeTab` — they can check `activeTab === 'map'` before innerHTML writes
@@ -2331,41 +3936,111 @@ export async function renderTopic(root, { params }) {
   // is still current, so rapid clicks (B before A's async work settles) don't
   // trigger ghost renders.
   let tabGen = 0;
+  const normalizeTabName = (name) => {
+    if (name === 'insights') return 'home';
+    if (!name || !loaders[name]) return 'home';
+    return name;
+  };
   const switchTab = async (name) => {
+    name = normalizeTabName(name);
     const myGen = ++tabGen;
+    const prevTab = activeTab;
     // Clean up chat listeners if we're leaving chat mid-stream
     if (activeTab === 'chat' && name !== 'chat') {
       try { chatStream.unlistenProgress?.(); } catch {}
       try { chatStream.unlistenDone?.(); } catch {}
       if (chatTsInterval) { clearInterval(chatTsInterval); chatTsInterval = null; }
     }
+    // If we're moving away from a tab, preserve its DOM for instant revisit.
+    if (prevTab && prevTab !== name) stashTabDom(prevTab);
     activeTab = name;
+    try { sessionStorage.setItem(TAB_STATE_KEY, name); } catch {}
     // Stamp the content container with the current tab name so any loader's
     // deferred DOM write (finished after a rapid tab switch) can self-check
     // `contentEl.dataset.tab === 'map'` before stomping on the new tab's
     // render. See `writeIfTab()` helper further down — the fix for stale
     // tab content was spec'd here on 2026-04-20.
     contentEl.dataset.tab = name;
+    // Show the home-chrome wrapper (intent ladder + extraction override +
+    // coverage gaps) only on the Home tab. Declutters Map/Report/etc while
+    // keeping every element reachable. Painters inside the wrapper continue
+    // running in the background so the chrome is fully populated the moment
+    // the user switches back to Home.
+    syncHomeChromeVisibility(name);
     // Highlight primary tabs by data-tab match. Also highlight the More
     // button when a non-primary tab is active, so the user can see their
     // current location even for tabs inside the dropdown.
-    const primaryTabs = new Set(['insights', 'bets', 'evidence', 'chat']);
+    const primaryTabs = new Set([
+      'home', 'map', 'report', 'trends', 'sentiment', 'sources', 'posts',
+      'research', 'solutions', 'concepts', 'papers', 'bets', 'evidence',
+      'chat', 'search', 'actions', 'ai_analyses'
+    ]);
     tabsEl.querySelectorAll('.tab:not(.tab-more)').forEach(t =>
       t.classList.toggle('active', t.dataset.tab === name)
     );
     const moreBtn = tabsEl.querySelector('.tab-more');
     if (moreBtn) moreBtn.classList.toggle('active', !primaryTabs.has(name));
-    // Synchronous placeholder so the old tab's content disappears the moment
-    // the user clicks — before the loader's first await. Without this the
-    // screen looks hung if the loader takes more than ~100 ms to produce
-    // its first innerHTML write (which map/evidence often do on cold cache).
-    contentEl.innerHTML = `
-      <div class="empty-state" style="padding:40px;text-align:center">
-        <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-        <div style="color:var(--ink-3);font-size:13px">Loading ${esc(name)}…</div>
-      </div>`;
+    // Fast path: if this tab has a clean cached DOM, restore it and skip reload.
+    if (restoreTabDom(name)) {
+      if (tabGen === myGen) window.refreshIcons?.();
+      return;
+    }
+    // If we have a persisted HTML snapshot from a previous visit, paint it
+    // immediately (stale-while-revalidate) so users see content right away.
+    // Then run the loader in background to refresh to latest data.
+    const snapshot = readTabHtmlSnapshot(name);
+    if (snapshot) {
+      contentEl.innerHTML = `
+        <div style="display:flex;justify-content:flex-end;padding:8px 12px 0">
+          <span class="th-chip" title="Showing cached tab while refreshing latest data">
+            cached · updating
+          </span>
+        </div>
+        ${snapshot.html}`;
+      // Map re-open UX: if we already have a fresh snapshot and the tab
+      // wasn't marked dirty by a data mutation, don't kick a full map reload
+      // (build/relate/export) on every tab switch. This makes back-and-forth
+      // navigation feel instant while still reloading whenever data changes.
+      if (name === 'map') {
+        const mapDirty = dirtyTabs.has('map');
+        const autoUpdate = isMapAutoUpdateEnabled();
+        if (!mapDirty) {
+          if (tabGen === myGen) window.refreshIcons?.();
+          return;
+        }
+        if (!autoUpdate) {
+          const banner = document.createElement('div');
+          banner.className = 'map-enrich-banner warn';
+          banner.style.margin = '8px 12px 0';
+          banner.innerHTML = `
+            <span>New data was added since your last map build. Click <b>Rebuild</b> to include latest sources, links, and findings.</span>
+            <button class="btn btn-primary map-banner-btn" id="btn-map-stale-rebuild">Rebuild</button>
+          `;
+          contentEl.insertBefore(banner, contentEl.firstChild);
+          banner.querySelector('#btn-map-stale-rebuild')?.addEventListener('click', () => loadMap(true));
+          if (tabGen === myGen) window.refreshIcons?.();
+          return;
+        }
+      }
+    } else {
+      // Synchronous placeholder so the old tab's content disappears the moment
+      // the user clicks — before the loader's first await.
+      contentEl.innerHTML = `
+        <div class="empty-state" style="padding:40px;text-align:center">
+          <div class="map-building-spinner" style="margin:0 auto 10px"></div>
+          <div style="color:var(--ink-3);font-size:13px">Loading ${esc(name)}…</div>
+        </div>`;
+    }
     try {
-      await loaders[name]?.();
+      await withTimeout(
+        loaders[name]?.(),
+        TAB_LOAD_TIMEOUT_MS,
+        `${name} tab load`
+      );
+      dirtyTabs.delete(name);
+      if (tabGen === myGen && contentEl.dataset.tab === name) {
+        writeTabHtmlSnapshot(name);
+      }
     } catch (e) {
       if (tabGen === myGen && contentEl.dataset.tab === name) {
         contentEl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || String(e))}</div>`;
@@ -2384,8 +4059,13 @@ export async function renderTopic(root, { params }) {
   };
 
   // Primary tab buttons (Insights / Bets / Evidence / Chat + the More toggle)
-  tabsEl.querySelectorAll('.tab:not(.tab-more)').forEach(t => {
-    t.addEventListener('click', () => switchTab(t.dataset.tab));
+  tabsEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab[data-tab]');
+    if (!btn || !tabsEl.contains(btn)) return;
+    const name = btn.dataset.tab;
+    if (!name) return;
+    e.preventDefault();
+    switchTab(name);
   });
 
   // More ▾ dropdown — toggles on click, closes on outside-click + Escape,
@@ -2629,10 +4309,16 @@ export async function renderTopic(root, { params }) {
   // Intent-driven default tab + action-ladder mount. Falls back cleanly to
   // 'insights' on any failure so pre-migration topics + first-run installs
   // stay on their current landing.
-  let defaultTab = 'insights';
+  let defaultTab = 'home';
+  try {
+    const remembered = sessionStorage.getItem(TAB_STATE_KEY);
+    if (remembered) defaultTab = normalizeTabName(remembered);
+  } catch {}
   try {
     const intentPayload = await api.topicIntentGet(topic);
-    defaultTab = intentPayload?.preset?.default_tab || 'insights';
+    if (!defaultTab || defaultTab === 'home') {
+      defaultTab = normalizeTabName(intentPayload?.preset?.default_tab || 'home');
+    }
     const ladderHost = document.getElementById('intent-ladder-host');
     if (ladderHost) {
       mountIntentLadder(ladderHost, topic, {
@@ -2642,7 +4328,7 @@ export async function renderTopic(root, { params }) {
   } catch {
     // Intent layer is additive — any failure falls back to pre-intent flow.
   }
-  await switchTab(defaultTab);
+  await switchTab(normalizeTabName(defaultTab));
 }
 
 // Badge colors per source type — matches the source badge palette used on

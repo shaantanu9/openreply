@@ -196,6 +196,34 @@ def _ensure_mcp_extra_in_project(project_dir: Path) -> dict[str, Any]:
     import shutil
     import subprocess
 
+    sentinel = project_dir / ".venv" / ".gapmap_mcp_extra_ready"
+    if sentinel.exists():
+        return {"ok": True, "ran": False, "reason": "mcp extra previously prepared"}
+
+    # Fast-path: if the project's venv already imports fastmcp, skip the
+    # expensive `uv pip install -e .[mcp]` call. This keeps connect/re-sync
+    # near-instant instead of 30-90s on every click/app-open.
+    venv_py = project_dir / ".venv" / "bin" / "python"
+    if venv_py.exists():
+        try:
+            probe = subprocess.run(
+                [str(venv_py), "-c", "import fastmcp"],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if probe.returncode == 0:
+                try:
+                    sentinel.parent.mkdir(parents=True, exist_ok=True)
+                    sentinel.write_text("ok\n", encoding="utf-8")
+                except OSError:
+                    pass
+                return {"ok": True, "ran": False, "reason": "mcp extra already installed"}
+        except Exception:
+            # Probe is best-effort. Fall through to `uv pip install`.
+            pass
+
     if shutil.which("uv") is None:
         return {"ok": True, "ran": False, "reason": "uv not on PATH; skipped extras install"}
     try:
@@ -211,6 +239,11 @@ def _ensure_mcp_extra_in_project(project_dir: Path) -> dict[str, Any]:
         )
         if proc.returncode != 0:
             return {"ok": False, "ran": True, "reason": f"uv pip install failed: {proc.stderr.strip()[:300]}"}
+        try:
+            sentinel.parent.mkdir(parents=True, exist_ok=True)
+            sentinel.write_text("ok\n", encoding="utf-8")
+        except OSError:
+            pass
         return {"ok": True, "ran": True}
     except subprocess.TimeoutExpired:
         return {"ok": False, "ran": True, "reason": "uv pip install timed out after 120s"}
@@ -236,8 +269,17 @@ def _resolve_command(bin_path: Path | None, project_dir: Path | None) -> dict[st
         }
     if project_dir:
         proj = project_dir.expanduser().resolve()
+        # GUI MCP clients (Claude Desktop, Cursor) inherit launchd's PATH —
+        # `/usr/bin:/bin:/usr/sbin:/sbin` plus a few extras — NOT the user's
+        # zsh login PATH. A bare `"command": "uv"` works from a shell-launched
+        # CLI but ENOENTs the moment the same config is read by Claude Desktop
+        # or Cursor's GUI process. Resolve to an absolute path at install time
+        # so the entry works in both. Fallback to bare "uv" only when which()
+        # can't find it (caller can still fix manually, and CLI clients keep
+        # working).
+        uv_path = shutil.which("uv") or "uv"
         return {
-            "command": "uv",
+            "command": uv_path,
             "args":    ["--directory", str(proj), "run", "reddit-cli", "mcp", "serve"],
         }
     return {
@@ -323,11 +365,25 @@ def status(
     out["entry_data_dir"] = env.get("REDDIT_MYIND_DATA_DIR")
     out["db_aligned"] = (out["entry_data_dir"] == str(dd))
     out["token_in_env"] = bool(token and env.get("REDDIT_MYIND_TOKEN") == token)
+    # Stale-lock takeover flag presence — entries written before 2026-04-24
+    # lack this and will fail with `another_mcp_server_running` when the
+    # MCP client restarts while a prior zombie instance holds the pid
+    # lock. We treat absence as a re-sync trigger so older installs
+    # self-heal on next status check.
+    out["takeover_configured"] = (
+        str(env.get("MCP_TAKEOVER_STALE_LOCK") or "").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
 
     if not out["db_aligned"]:
         out["reason"] = f"Connected, but {out['client']} is reading a different DB. Click Re-sync to align."
     elif not out["token_in_env"]:
         out["reason"] = "Connected, but token mismatch. Re-sync to refresh."
+    elif not out["takeover_configured"]:
+        out["reason"] = (
+            "Connected, but this entry predates stale-lock auto-recovery. "
+            "Re-sync to avoid `another_mcp_server_running` errors on client restart."
+        )
     return out
 
 
@@ -374,6 +430,13 @@ def install(
         "env": {
             "REDDIT_MYIND_DATA_DIR": str(dd),
             "REDDIT_MYIND_TOKEN": token,
+            # MCP client restarts frequently leave a zombie `mcp serve`
+            # attached to a dead stdin pipe. Without takeover, the next
+            # spawn fails with `another_mcp_server_running` until the
+            # user manually deletes the pid file. Setting this flag in
+            # the entry means every client-spawned instance can reclaim
+            # the stale lock on startup — ~3s SIGTERM grace, then SIGKILL.
+            "MCP_TAKEOVER_STALE_LOCK": "1",
         },
     }
 

@@ -557,6 +557,112 @@ of what shipped, what was cut, what's next.
 
 ---
 
+## Appendix Z — 2026-04-24 addendum: streaming collect + enrich UX
+
+**Problem.** First-result latency in the Tauri app is ~20 min: fetch-all
+→ gate → enrich-all. Users sit on an empty findings panel until the
+whole pipeline finishes.
+
+**App target state (Horizon 2).**
+
+1. **Streaming fetch** is already per-source; keep.
+2. **Rolling enrichment** — the enrichment worker pulls from a FIFO
+   batch queue (default batch = 25 posts) instead of waiting for the
+   terminal gate. Findings start landing within 1–2 min.
+3. **User gate (existing setting) preserved.**
+   - `gate=100` → worker idle until ≥100 posts exist for the topic.
+   - `gate=all` → worker idle until `collect:done` fires.
+   - New default: `gate=rolling` (start immediately, batch=25).
+4. **UI contract.**
+   - Posts counter ticks live (already).
+   - Findings counter ticks live once the gate opens.
+   - Phase-B card reveals incrementally as painpoints/features/workarounds cross the confidence floor.
+   - "AI conclusions" card (topic-level synthesis) renders at `collect:done`, not before — this is the only non-streaming piece, because synthesis wants the full corpus.
+5. **Tradeoff acknowledged.** Rolling enrichment costs ~10–15% more
+   tokens (some enriched posts get superseded by dedupe later). We
+   accept this for UX; cost-conscious users flip gate to `100` or `all`.
+
+**Implementation sketch.**
+
+- Python: `enrichment_worker.py` subscribes to `collect:progress` and
+  maintains a per-topic pending queue; drains in batches of N on a tick.
+- Gate logic lives in `core/enrich_gate.py` (reads user setting, returns
+  `should_drain(topic)`).
+- Rust: forward a new `enrich:batch-done` event so the UI can tick the
+  findings counter without a DB roundtrip every time.
+- UI: `src/screens/collect.js` adds a "rolling findings" strip above the
+  log; keep the terminal "Conclusions" card for `collect:done`.
+
+**Decision gate for promotion to H1.** Promote when ≥3 users complain
+about the 20-min wait OR when paying customers run ≥5 collects/week
+(rolling UX becomes table-stakes).
+
+---
+
+## Appendix Y — 2026-04-24 addendum: MCP intelligence surface
+
+**Principle.** In MCP mode the *client LLM* (Claude Desktop, Cursor,
+Claude Code, etc.) is the reasoning engine. The app's configured LLM
+provider key is for the app's own sidecar pipeline — it must NOT be
+used by MCP tools. That way:
+
+- The user's app key never gets spent on MCP calls.
+- The client LLM already has context about the user's question and can
+  orchestrate fetch → analyze → fetch → analyze on its own terms.
+- MCP tools stay deterministic and cheap (return data, not LLM calls).
+
+**Exceptions — persisted analysis tools (see below).** Some MCP tools
+DO run LLM calls, but only when the user has explicitly asked for a
+synthesis that should be cached and shown in the app GUI. Those tools
+use the app's configured provider and write results to the shared DB
+so the GUI can render them.
+
+**Tool taxonomy.**
+
+| Tier | Uses LLM? | Persists to DB? | Examples |
+|------|-----------|-----------------|----------|
+| Fetch tools | no | yes (raw corpus) | `reddit_fetch_hn`, `reddit_fetch_arxiv`, etc. |
+| Query tools | no | no | `reddit_query_db`, `reddit_graph_neighbors` |
+| Analysis tools (deterministic) | no | yes | `reddit_graph_build`, `reddit_cluster_painpoints` |
+| Analysis tools (LLM-backed) | yes | yes (new `mcp_analyses` table) | `reddit_summarize_topic`, `reddit_synthesize_findings` |
+| Orchestrator | yes (delegates) | yes | `reddit_research_collect` |
+
+**New DB table (shared with GUI).**
+
+```sql
+CREATE TABLE IF NOT EXISTS mcp_analyses (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic      TEXT NOT NULL,
+  kind       TEXT NOT NULL,          -- 'summary' | 'synthesis' | 'cluster_note' | 'conclusion'
+  source     TEXT NOT NULL,          -- 'mcp' | 'app'
+  tool       TEXT,                   -- which MCP tool produced it
+  params_json TEXT,                  -- input args (for reproducibility)
+  content    TEXT NOT NULL,          -- the LLM output (markdown)
+  tokens_in  INTEGER,
+  tokens_out INTEGER,
+  model      TEXT,
+  created_at INTEGER NOT NULL        -- ms epoch
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_analyses_topic ON mcp_analyses(topic, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mcp_analyses_kind  ON mcp_analyses(topic, kind, created_at DESC);
+```
+
+**GUI surface.** Topic page grows an "AI Analyses" tab that lists every
+`mcp_analyses` row for the topic (newest first), showing kind + source
++ model + content. Same widget works for app-generated conclusions.
+
+**Interleaved fetch/analyze in MCP.** Because the client LLM drives,
+no orchestrator change is needed — expose the fine-grained tools and
+the client will call them in whatever order. The one-shot
+`reddit_research_collect` remains for clients that want "do it all"
+in a single call.
+
+**Decision gate.** Ship this *before* the streaming app rework (this
+appendix); the MCP side is smaller and unblocks "let the MCP brain
+drive" immediately.
+
+---
+
 ## Appendix A — cross-references
 
 - [`docs/MISSING_AND_NEXT.md`](./MISSING_AND_NEXT.md) — short-term

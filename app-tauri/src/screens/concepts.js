@@ -5,6 +5,8 @@
 // Bare-minimum MVP per docs/superpowers/specs/2026-04-20-monetization-strategy.md
 // — no export, no paywall yet. Just the feature.
 import { api } from '../api.js';
+import { isAutoRunEnabled } from '../lib/tabPipelines.js';
+import { hasLlmConfigured } from '../lib/llmStatus.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -155,23 +157,41 @@ export async function loadConcepts(contentEl, topic) {
   if (contentEl.dataset.tab !== 'concepts') return;
   window.refreshIcons?.();
 
-  $('#btn-run-concepts', contentEl)?.addEventListener('click', async () => {
-    const status = $('#concepts-status', contentEl);
-    status.textContent = 'Running… this may take 20-60 seconds.';
+  const runBtn = $('#btn-run-concepts', contentEl);
+  // Re-query the status element on every assignment because the empty
+  // template can be replaced (`set(renderEmpty(...))` rebuilds DOM, tab
+  // re-renders fire while a run is in flight, etc). A captured ref goes
+  // null on the next innerHTML write and `status.textContent = …` throws
+  // `TypeError: null is not an object`. `setStatus` no-ops if the host
+  // is gone — same pattern used by the chat composer.
+  const setStatus = (msg) => {
+    const el = contentEl.querySelector('#concepts-status');
+    if (el) el.textContent = msg;
+  };
+  const runPipeline = async () => {
+    if (runBtn) runBtn.disabled = true;
+    setStatus('Running… this may take 20-60 seconds.');
     try {
       const result = await api.runConcepts(topic);
       if (contentEl.dataset.tab !== 'concepts') return;
       if (result?.skipped) {
-        status.textContent = `Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`;
+        setStatus(`Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`);
+        if (runBtn) runBtn.disabled = false;
         return;
       }
       if (!result?.concepts?.length) {
-        status.textContent = result?.reason || 'No concepts returned. Try re-running.';
+        setStatus(result?.reason || 'No concepts returned. Try re-running.');
+        if (runBtn) runBtn.disabled = false;
         return;
       }
       await renderAndBind(result.concepts);
     } catch (e) {
-      status.textContent = `Error: ${e?.message || e}`;
+      setStatus(`Error: ${e?.message || e}`);
+      if (runBtn) runBtn.disabled = false;
     }
-  });
+  };
+  runBtn?.addEventListener('click', runPipeline);
+  if (isAutoRunEnabled() && await hasLlmConfigured()) {
+    if (contentEl.dataset.tab === 'concepts') runPipeline();
+  }
 }

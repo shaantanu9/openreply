@@ -149,4 +149,19 @@ def solutions_pipeline(
         )
         summary["interventions_added"] += per_pp["interventions_added"]
 
+    try:
+        from ..core.db import save_mcp_analysis
+        save_mcp_analysis(
+            topic=topic, source="app", kind="solutions",
+            tool="run_solutions_pipeline",
+            content=json.dumps(summary, ensure_ascii=False, default=str),
+            content_type="json",
+            provider=provider or "",
+            model="",
+            params={"papers_per_painpoint": papers_per_painpoint,
+                    "painpoints": len(pps)},
+        )
+    except Exception:
+        pass
+
     return summary

@@ -38,12 +38,14 @@ export function titleForHash(hash) {
   if (m) return decodeURIComponent(m[1]);
   const c = h.match(/^\/collect\/([^/]+)/);
   if (c) return 'Collecting · ' + decodeURIComponent(c[1]);
-  const rest = h.replace(/^\//, '').split('/')[0];
+  if (h.startsWith('/ingest-video')) return 'Ingest Video';
+  const rest = h.replace(/^\//, '').split(/[/?]/)[0];
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 export function iconForHash(hash) {
   if (hash.includes('/topic/')) return 'target';
   if (hash.includes('/collect/')) return 'download-cloud';
+  if (hash.includes('/ingest-video')) return 'video';
   if (hash.includes('/settings')) return 'settings';
   if (hash.includes('/reports')) return 'file-text';
   if (hash.includes('/database')) return 'database';

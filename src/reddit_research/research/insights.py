@@ -509,6 +509,23 @@ def synthesize_insights(
         model = os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or ""
         _persist(topic, report, provider, model, len(rows))
 
+    # Mandatory unified-log row so the GUI's AI Analyses tab (and any MCP
+    # client querying mcp_analyses) picks up this run regardless of who
+    # triggered it. Best-effort — never block the pipeline on a log failure.
+    try:
+        from ..core.db import save_mcp_analysis
+        save_mcp_analysis(
+            topic=topic, source="app", kind="insights",
+            tool="synthesize_insights",
+            content=json.dumps(report, ensure_ascii=False, default=str),
+            content_type="json",
+            provider=provider,
+            model=os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or "",
+            params={"corpus_size": len(rows), "min_score": min_score},
+        )
+    except Exception:
+        pass
+
     return report
 
 
@@ -993,6 +1010,21 @@ def synthesize_insights_chunked(
     if persist and merged_findings:
         model = os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or ""
         _persist(topic, report, provider, model, len(rows))
+
+    try:
+        from ..core.db import save_mcp_analysis
+        save_mcp_analysis(
+            topic=topic, source="app", kind="insights",
+            tool="synthesize_insights_chunked",
+            content=json.dumps(report, ensure_ascii=False, default=str),
+            content_type="json",
+            provider=provider,
+            model=os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or "",
+            params={"corpus_size": len(rows), "chunk_size": chunk_size,
+                    "max_workers": max_workers, "chunks_with_errors": len(errors)},
+        )
+    except Exception:
+        pass
 
     _log(f"[chunked] merged → {len(merged_findings)} findings, {len(errors)} chunk error(s)")
     return report

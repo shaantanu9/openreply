@@ -4,6 +4,20 @@
 import { api, esc, fmtN, timeAgo } from '../api.js';
 import { avatarInitials } from './settings.js';
 
+function normalizeTopicLabel(value) {
+  const s = String(value ?? '');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function safeDecodeTopicSlug(value) {
+  const s = String(value ?? '');
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 function headerAvatar() {
   const name = localStorage.getItem('gapmap.profile.name') || '';
   return esc(avatarInitials(name));
@@ -22,11 +36,13 @@ function topicTile(t, idx) {
   const icon = COVER_ICONS[idx % COVER_ICONS.length];
   const painpoints = t.painpoints || 0;
   const sources = t.sources || 0;
-  const slug = encodeURIComponent(t.topic);
+  const topic = String(t?.topic ?? '');
+  const topicLabel = normalizeTopicLabel(topic) || topic;
+  const slug = encodeURIComponent(topic);
   return `
     <div class="topic-tile" data-href="#/topic/${slug}" data-topic-href="#/topic/${slug}">
       <div class="topic-cover ${cover}"><i data-lucide="${icon}"></i></div>
-      <h4>${esc(t.topic)}</h4>
+      <h4>${esc(topicLabel)}</h4>
       <div class="topic-stats">
         <span><b>${fmtN(t.posts)}</b> posts</span>
         <span><b>${painpoints}</b> pains</span>
@@ -110,7 +126,12 @@ function skelStats() {
 
 // ---- render helpers ----
 function renderHero(heroRoot, topTopic, stats, dailyCounts) {
-  const heroTopic = topTopic?.topic || 'Welcome to Gap Map';
+  // Stale-render guard: overview_stats is async, so by the time it resolves
+  // the user may have routed away and `#hero-slot` no longer exists in the
+  // current DOM tree. Silently skip — the next route's own renderer owns
+  // the screen now.
+  if (!heroRoot) return;
+  const heroTopic = normalizeTopicLabel(topTopic?.topic || '') || 'Welcome to Gap Map';
   const heroCopy = topTopic
     ? `Your latest topic has ${topTopic.painpoints || 0} painpoints across ${topTopic.sources || 0} source types from ${fmtN(topTopic.posts)} posts.`
     : 'Start a topic to see multi-source gap maps with citations, competitors, DIY workarounds, and more.';
@@ -156,6 +177,14 @@ function heroBarsFromCounts(counts) {
 }
 
 function renderStatGrid(el, stats, deltas) {
+  // Defensive: home tab cache pre-paints from localStorage before the
+  // host element is in the DOM, AND the dashboard cache write-back can
+  // call this with the prior `el` ref after the user navigated to a
+  // topic (`#stat-grid` no longer exists). Without this guard, the
+  // next `el.innerHTML = …` throws `TypeError: null is not an object`
+  // — observed when opening a chat tab while the dashboard cache
+  // refresh was still in flight. No-op when host is gone.
+  if (!el) return;
   const s = stats || {};
   const d = deltas || {};
   const trendPill = (delta) => {
@@ -330,7 +359,13 @@ export async function renderHome(root) {
         <h2>Your topics</h2>
         <p id="topics-subtitle">Active research projects</p>
       </div>
-      <div class="filter-bar">
+      <div class="filter-bar" style="display:flex;gap:8px">
+        <a href="#/ingest-video" class="btn btn-ghost btn-sm btn-bordered icon-btn" title="Paste any YouTube / Vimeo / podcast URL — audio stays local, Whisper transcribes on-device">
+          <i data-lucide="video"></i> Ingest video
+        </a>
+        <a href="#/ingest" class="btn btn-ghost btn-sm btn-bordered icon-btn" title="Drop a CSV, JSON, PDF, or transcript file into a topic">
+          <i data-lucide="file-up"></i> Ingest files
+        </a>
         <button class="btn btn-primary btn-sm" id="btn-new-topic">
           + New topic
         </button>
@@ -588,7 +623,7 @@ async function loadTopicGrid(root) {
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const href = el.dataset.href || '';
-      const topic = decodeURIComponent(href.replace('#/topic/', ''));
+      const topic = normalizeTopicLabel(safeDecodeTopicSlug(href.replace('#/topic/', '')));
       if (!topic) return;
       showTopicContextMenu(e.clientX, e.clientY, topic);
     });
@@ -899,6 +934,7 @@ async function loadByokPrompt(root) {
     const anyReady =
       s?.anthropic?.set || s?.openai?.set || s?.openrouter?.set ||
       s?.groq?.set || s?.deepseek?.set || s?.mistral?.set || s?.google?.set ||
+      s?.nvidia?.set ||
       !!s?.ollama_base_url;
     if (anyReady) { slot.innerHTML = ''; return; }
     slot.innerHTML = `

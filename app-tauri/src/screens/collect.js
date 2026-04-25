@@ -52,6 +52,13 @@ export async function renderCollect(root, { params }) {
   const topic = decodeURIComponent(params[0] || '');
   const slug = params[0];
 
+  // routeGen gate — hoisted to the top so any early-path handler (e.g. the
+  // catch in startCollect → showRetryAction) can call stillHere() without
+  // hitting a TDZ. The router sets root.dataset.routeGen before dispatching,
+  // so it's already populated here.
+  const myRouteGen = root.dataset.routeGen;
+  const stillHere  = () => root.dataset.routeGen === myRouteGen && root.isConnected;
+
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">
@@ -118,6 +125,21 @@ export async function renderCollect(root, { params }) {
             <span>${esc(s.label)}</span>
           </div>
         `).join('')}
+      </div>
+
+      <!-- Searching-for strip. Surfaces the LLM-expanded keyword fan-out
+           that every source is actually querying. Users who type
+           "public speaking anxiety app" can see at a glance that the
+           pipeline is also hitting "confident speaking", "speaking
+           tricks", and so on — not just the literal string. Hidden
+           until canonicalizeTopic resolves. -->
+      <div class="search-keywords-strip" id="search-keywords-strip" hidden>
+        <div class="skw-head">
+          <b>Searching for</b>
+          <span class="skw-sub" id="skw-sub"></span>
+        </div>
+        <div class="skw-chips" id="skw-chips"></div>
+        <div class="skw-hint" id="skw-hint" hidden></div>
       </div>
 
       <!-- Per-source status grid (hidden until the parallel stage starts).
@@ -293,6 +315,68 @@ export async function renderCollect(root, { params }) {
     root.querySelectorAll('.stage-step.active').forEach(x => { x.classList.remove('active'); x.classList.add('done'); });
     el.classList.add('active');
   };
+
+  // Render the "Searching for…" strip from a canonicalize() response.
+  // Shape: { original, canonical, variants, confidence,
+  //          search_keywords: [{ keyword, relevance }, …] }
+  // Keywords are filtered to the same relevance floor that collect.py uses
+  // (high in non-aggressive runs, medium-or-better in aggressive) so the
+  // chip list mirrors what the sources actually queried.
+  function renderSearchKeywordsStrip(canon, { aggressive } = {}) {
+    const wrap = $('#search-keywords-strip');
+    const chipsEl = $('#skw-chips');
+    const subEl = $('#skw-sub');
+    const hintEl = $('#skw-hint');
+    if (!wrap || !chipsEl) return;
+    const rank = { high: 3, medium: 2, low: 1 };
+    const floor = aggressive ? 2 : 3;
+    const canonical = String(canon?.canonical || topic).trim();
+    const originalRaw = String(canon?.original || topic).trim();
+    const kwList = Array.isArray(canon?.search_keywords) ? canon.search_keywords : [];
+    const filtered = kwList
+      .map(k => ({
+        keyword: String(k?.keyword || '').trim(),
+        relevance: String(k?.relevance || 'low').toLowerCase(),
+      }))
+      .filter(k => k.keyword && (rank[k.relevance] || 0) >= floor);
+    // Always include the canonical as the lead chip even if the LLM didn't
+    // echo it into search_keywords (defensive).
+    const seen = new Set();
+    const chips = [];
+    if (canonical) { seen.add(canonical.toLowerCase()); chips.push({ keyword: canonical, relevance: 'high' }); }
+    for (const k of filtered) {
+      const lo = k.keyword.toLowerCase();
+      if (seen.has(lo)) continue;
+      seen.add(lo);
+      chips.push(k);
+    }
+    if (!chips.length) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    chipsEl.innerHTML = chips.map(c => {
+      const isCanon = c.keyword.toLowerCase() === canonical.toLowerCase();
+      const cls = isCanon ? 'skw-chip skw-chip-canon' : `skw-chip skw-chip-${c.relevance}`;
+      const tip = isCanon ? 'Canonical topic' : `Expanded keyword · relevance: ${c.relevance}`;
+      return `<span class="${cls}" title="${esc(tip)}">${esc(c.keyword)}</span>`;
+    }).join('');
+    const tail = chips.length === 1 ? '' : ` + ${chips.length - 1} expanded synonym${chips.length === 2 ? '' : 's'}`;
+    subEl.textContent = `"${canonical}"${tail}`;
+    // Surface corrections and low-confidence matches inline so users know
+    // the canonical didn't exactly match what they typed.
+    const bits = [];
+    if (originalRaw && originalRaw.toLowerCase() !== canonical.toLowerCase()) {
+      bits.push(`Corrected "${originalRaw}" → "${canonical}".`);
+    }
+    if ((canon?.confidence || '').toLowerCase() === 'low' && Array.isArray(canon?.variants) && canon.variants.length) {
+      bits.push(`Low-confidence match. Alternatives: ${canon.variants.slice(0, 3).join(', ')}.`);
+    }
+    if (bits.length) {
+      hintEl.hidden = false;
+      hintEl.textContent = bits.join(' ');
+    } else {
+      hintEl.hidden = true;
+      hintEl.textContent = '';
+    }
+  }
 
   // --- per-source status tracker ---
   // The Python side emits well-defined log markers for its parallel fetch
@@ -532,6 +616,20 @@ export async function renderCollect(root, { params }) {
       appendLine('✓ exporting HTML viewer…', 'done');
       exportPath = await api.exportHtml(topic);
       appendLine(`✓ ready: ${exportPath}`, 'done');
+      // Keep Insights in sync with fresh multi-source data: regenerate in the
+      // background after collect/enrich completes so conclusions are not stale.
+      appendLine('→ refreshing insights from the latest cross-source corpus…', 'info');
+      api.monitorRunTopic(topic, true)
+        .then((res) => {
+          if (res?.ok) {
+            appendLine('✓ insights refreshed (painpoints, product value, and user-value synthesis updated)', 'done');
+          } else {
+            appendLine(`⚠ insights refresh skipped/failed: ${res?.error || 'unknown'}`, 'warn');
+          }
+        })
+        .catch((err) => {
+          appendLine(`⚠ insights refresh errored: ${err?.message || err}`, 'warn');
+        });
       setFinal('✓ ready', 'var(--mint)', '#1A3424');
       sub.textContent = `Completed in ${fmtElapsed(Date.now() - startTs)} · ${lineCount} log lines · ${errCount} errors`;
       if (nowText) nowText.textContent = '✓ Done — gap map ready';
@@ -587,14 +685,17 @@ export async function renderCollect(root, { params }) {
   openBtn.addEventListener('click', () => { location.hash = `#/topic/${slug}`; });
 
   function showRetryAction() {
-    const actions = $('#collect-actions');
+    if (!stillHere()) return;
+    const actions = root.querySelector('#collect-actions');
+    if (!actions) return;
     if (actions.querySelector('#btn-retry')) return;
     const retry = document.createElement('button');
     retry.className = 'btn btn-primary icon-btn';
     retry.id = 'btn-retry';
     retry.innerHTML = '<i data-lucide="rotate-cw"></i> Retry';
     retry.onclick = () => { location.reload(); };
-    actions.insertBefore(retry, $('#btn-open'));
+    const open = root.querySelector('#btn-open');
+    actions.insertBefore(retry, open || null);
     const home = document.createElement('button');
     home.className = 'btn btn-ghost';
     home.style.border = '1px solid var(--line)';
@@ -641,6 +742,22 @@ export async function renderCollect(root, { params }) {
     }
   }
 
+  // Paint the "Searching for…" strip as soon as possible. Canonicalize is
+  // ~free when cached (one DB read) and ~400 tokens when cold. Runs in
+  // parallel with startCollect so it never blocks the collect itself.
+  // Failure silently hides the strip — worst case: user doesn't see the
+  // expansion, everything else still works.
+  (async () => {
+    try {
+      const canon = await api.canonicalizeTopic(topic);
+      if (!stillHere()) return;
+      renderSearchKeywordsStrip(canon, { aggressive });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[collect] canonicalize failed:', e);
+    }
+  })();
+
   try {
     const result = await api.startCollect(topic, aggressive, sourcesArg, skipReddit);
     if (result && result.already_running) {
@@ -682,9 +799,8 @@ export async function renderCollect(root, { params }) {
   //
   // routeGen gate: each async callback bails if the user has navigated
   // away. That way late-arriving events don't mutate DOM belonging to the
-  // next screen.
-  const myRouteGen = root.dataset.routeGen;
-  const stillHere  = () => root.dataset.routeGen === myRouteGen && root.isConnected;
+  // next screen. (myRouteGen / stillHere are declared at the top of
+  // renderCollect so early-path handlers can use them too.)
 
   async function refetchPhaseCounts() {
     if (!stillHere()) return;

@@ -1,4 +1,4 @@
-import { api, $, $$, esc } from './api.js';
+import { api, $, $$, esc, clearApiCache } from './api.js';
 import { refreshIcons } from './icons.js';
 import { hasLlmConfigured } from './lib/llmStatus.js';
 import { renderHome, renderTopicsList } from './screens/home.js';
@@ -31,7 +31,7 @@ const routes = [
   { match: /^\/collect\/([^/]+)$/,  render: renderCollect },
   { match: /^\/settings\/?$/,       render: renderSettings },
   { match: /^\/ingest\/?$/,         render: renderIngest },
-  { match: /^\/ingest-video\/?$/,   render: renderIngestVideo },
+  { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },
   { match: /^\/activity\/?$/,       render: renderActivity },
   { match: /^\/database\/?$/,       render: renderDatabase },
@@ -58,10 +58,26 @@ let routeGen = 0;
 export function currentRouteGen() { return routeGen; }
 
 let _lastHash = null;
+function normalizeTopicInput(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function isLicenseActivatedLocally() {
+  return localStorage.getItem('gapmap.license.activated') === 'true';
+}
+
+function mustStayInOnboarding() {
+  return !isOnboardingComplete() || !isLicenseActivatedLocally();
+}
+
 async function route() {
   // Full hash (with leading `#`) for tab-store ops; stripped hash for regex match.
   const fullHash = location.hash || '#/';
   const hash = fullHash.replace(/^#/, '');
+  if (mustStayInOnboarding() && !/^\/welcome\/?$/.test(hash)) {
+    location.hash = '#/welcome';
+    return;
+  }
   const main = $('#main-content');
 
   // Save scroll of the outgoing tab before we re-render.
@@ -146,17 +162,48 @@ window.addEventListener('hashchange', route);
   } catch {}
 })();
 
+// Activation state heal: license_state.json (written by the Rust
+// `license_activate` command) is the source of truth on disk, but the
+// onboarding gate reads a synchronous localStorage flag. If the JSON
+// exists + is valid but the localStorage flag is missing (e.g. a
+// successful activation from a different build, a cleared localStorage,
+// or HMR refresh before the flag landed), heal it at boot so the user
+// isn't bounced back to the welcome wizard for an already-licensed
+// machine.
+async function healActivationFlagsFromBackend() {
+  try {
+    if (localStorage.getItem('gapmap.license.activated') === 'true') return;
+    const status = await api.licenseStatus();
+    if (status?.activated && status?.license_id) {
+      localStorage.setItem('gapmap.license.activated', 'true');
+      localStorage.setItem('gapmap.onboarding.completed', 'true');
+      if (status.email) localStorage.setItem('gapmap.license.email', status.email);
+      if (status.api_base) localStorage.setItem('gapmap.license.api_base', status.api_base);
+      // Tell screens that were already mounted (if any) to re-render now that
+      // we're past the onboarding gate.
+      window.dispatchEvent(new CustomEvent('gapmap:changed', { detail: { kind: 'topics' } }));
+    }
+  } catch {
+    /* best effort — fall through to the sync localStorage path */
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   // Wire modal + keyboard FIRST so Cancel / Escape work even before any data loads.
   // (The Python sidecar can take 5–10s to spin up the first time.)
   wireModal();
   wireKeyboard();
 
+  // Run the activation-flag heal BEFORE the first route() so the guard
+  // below sees the correct state. Swallow errors — the sync check is the
+  // last line of defence.
+  await healActivationFlagsFromBackend();
+
   // Mount tab strip. Hide during onboarding — the welcome flow should feel
   // like a clean first-run, not a multi-tab browser.
   const strip = document.getElementById('tab-strip');
   if (strip) {
-    strip.style.display = isOnboardingComplete() ? '' : 'none';
+    strip.style.display = (!mustStayInOnboarding()) ? '' : 'none';
     renderTabStrip(strip);
   }
 
@@ -179,10 +226,27 @@ window.addEventListener('DOMContentLoaded', async () => {
   // If not, route straight to welcome — dashboard never renders until they finish.
   if (!location.hash || location.hash === '#/' || location.hash === '#') {
     // Fast, synchronous localStorage check — does not block on sidecar.
-    if (!isOnboardingComplete()) {
+    if (!isOnboardingComplete() || !isLicenseActivatedLocally()) {
       location.hash = '#/welcome';
     } else {
       location.hash = '#/';
+    }
+  }
+
+  // Hard gate: every boot must have a valid local activation marker, and if
+  // Rust state disagrees we force the user back to activation.
+  if (!isOnboardingComplete() || !isLicenseActivatedLocally()) {
+    location.hash = '#/welcome';
+  } else {
+    try {
+      const lic = await api.licenseStatus();
+      if (!lic?.activated) {
+        localStorage.removeItem('gapmap.license.activated');
+        location.hash = '#/welcome';
+      }
+    } catch {
+      // If license server/sidecar is unavailable, keep existing session locked
+      // to last known activation marker and continue.
     }
   }
 
@@ -228,6 +292,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
+  // Fire closeSplash on a parallel timer that's independent of route() — so
+  // a throw/hang during the first render never leaves the splash stuck on
+  // screen and the main window hidden. Rust also has a 6 s hard safety
+  // net (see src-tauri/src/main.rs setup()), this belt-and-braces approach
+  // gives the happy path near-instant reveal.
+  setTimeout(() => { api.closeSplash().catch(() => {}); }, 0);
+
   await route();
 
   // First route rendered — tell Rust to close splash + show main window.
@@ -266,6 +337,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     // findings, etc.). Re-running route() triggers the screen's renderer,
     // which reads through the (now-invalidated) cache and pulls fresh data.
     if (['topics', 'collect', 'ingest', 'graph', 'findings', 'trash'].includes(kind)) {
+      // Avoid remounting the in-flight collect screen. Re-rendering the same
+      // route mid-collect can duplicate listeners and cause action-footer
+      // button state to appear inconsistent until a manual refresh.
+      const onCollectRoute = /^#\/collect\/[^/]+/.test(location.hash || '');
+      // Topic screen manages its own reactive refreshes per tab; forcing a full
+      // route() remount here resets tab state back to default and feels like
+      // "Map click bounced to Home". Let topic.js own in-place updates.
+      const onTopicRoute = /^#\/topic\/[^/?]+/.test(location.hash || '');
+      if (onCollectRoute || onTopicRoute) return;
       // Also wipe home's stale-while-revalidate localStorage cache so a
       // deleted topic doesn't flash before the fresh fetch returns.
       try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
@@ -281,12 +361,59 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // External-writer bridge: when the DB-mtime poller in api.js sees that
+  // reddit.db changed outside this process (MCP server, CLI, another Tauri
+  // window, background collect from a scheduled task), translate that into
+  // a `gapmap:changed` event so the same re-render path fires.
+  //
+  // Without this, MCP tools like `reddit_start_collect` successfully write
+  // topics/posts to the shared SQLite but the GUI renders stale cached data
+  // until the user manually navigates.
+  window.addEventListener('gapmap:db-changed', () => {
+    refreshNavCounts();
+    // Skip remount on collect/topic routes — they own their own reactive
+    // refreshes and a route() rerun would nuke in-place tab state.
+    const onCollectRoute = /^#\/collect\/[^/]+/.test(location.hash || '');
+    const onTopicRoute = /^#\/topic\/[^/?]+/.test(location.hash || '');
+    if (onCollectRoute || onTopicRoute) return;
+    try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
+    route();
+    // Poke the extraction worker in case the external write pushed a topic
+    // past the enrichment threshold — idempotent.
+    api.startExtractionWorker().catch(() => {});
+  });
+
   // Boot-time health probe: on every launch, confirm the sidecar spawns and
   // the DB/data-dir are writable. If a blocker is detected (sidecar can't
   // start, DB corrupted, etc.) inject a red topbar with a "Run setup again"
   // link. Warnings (LLM not configured) stay silent — welcome step 3 and
   // settings surface those.
   runStartupHealthProbe();
+
+  // MCP auto-bootstrap on app open.
+  // Goal: when the app is already activated, proactively verify MCP client
+  // wiring (Cursor / Claude Code / Claude Desktop) and self-heal missing
+  // installs so users don't have to click Connect every boot.
+  //
+  // Notes:
+  // - This only writes client config entries (mcp install/re-sync). External
+  //   MCP clients still need their own process restart to reload config.
+  // - Backend commands are activation-gated; if activation is invalid this
+  //   gracefully no-ops.
+  // - Shared helper at ./lib/mcp_bootstrap.js — same path is called from
+  //   welcome.js on first-time activation so MCP connects the moment the
+  //   user completes onboarding, not only on next launch.
+  // - forceResync=true here because users expect app-open to heal client
+  //   config drift every time, even when status was previously "connected".
+  (async () => {
+    if (!isOnboardingComplete() || !isLicenseActivatedLocally()) return;
+    try {
+      const { bootstrapMcpClients } = await import('./lib/mcp_bootstrap.js');
+      await bootstrapMcpClients({ tag: 'mcp:auto-bootstrap', forceResync: true });
+    } catch (e) {
+      console.warn('[mcp:auto-bootstrap] skipped', e);
+    }
+  })();
 
   // ── Incremental enrichment: Tauri worker events → reactive pipeline ──
   //
@@ -544,7 +671,8 @@ function wireModal() {
     const startBtn = $('#modal-start');
     const cancelBtn = $('#modal-cancel');
     const input = $('#new-topic-input');
-    const topic = input.value.trim();
+    const topic = normalizeTopicInput(input.value);
+    input.value = topic;
     if (!topic) {
       input.focus();
       return;
@@ -623,7 +751,42 @@ function wireModal() {
 }
 
 function wireKeyboard() {
+  const focusAdjacentTab = (dir) => {
+    const tabs = tabStore.getAll();
+    const active = tabStore.getActive();
+    if (!tabs.length || !active) return false;
+    const idx = tabs.findIndex(t => t.id === active.id);
+    if (idx < 0) return false;
+    const nextIdx = dir < 0
+      ? (idx - 1 + tabs.length) % tabs.length
+      : (idx + 1) % tabs.length;
+    const target = tabs[nextIdx];
+    if (!target || target.id === active.id) return false;
+    tabStore.focus(target.id);
+    return true;
+  };
+  // Temporary key-event debugger for shortcut mapping issues.
+  // Enable with localStorage.setItem('gapmap.debug.keys','true') in DevTools.
+  const keyDebugEnabled = localStorage.getItem('gapmap.debug.keys') === 'true';
+  let keyDebugEl = null;
+  const showKeyDebug = (e) => {
+    if (!keyDebugEnabled) return;
+    if (!keyDebugEl) {
+      keyDebugEl = document.createElement('div');
+      keyDebugEl.style.cssText = [
+        'position:fixed', 'right:12px', 'bottom:12px', 'z-index:99999',
+        'background:rgba(20,20,20,.92)', 'color:#fff', 'padding:10px 12px',
+        'border-radius:10px', 'font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace',
+        'max-width:520px', 'box-shadow:0 8px 24px rgba(0,0,0,.3)',
+      ].join(';');
+      document.body.appendChild(keyDebugEl);
+    }
+    keyDebugEl.textContent =
+      `key=${e.key} code=${e.code} keyCode=${e.keyCode} ` +
+      `meta=${!!e.metaKey} ctrl=${!!e.ctrlKey} alt=${!!e.altKey} shift=${!!e.shiftKey}`;
+  };
   document.addEventListener('keydown', e => {
+    showKeyDebug(e);
     // Bail on any shortcut when the user is actively editing text — avoids
     // hijacking ? / n while they're typing in a form.
     const t = e.target;
@@ -647,6 +810,12 @@ function wireKeyboard() {
       location.hash = '#/find';
       return;
     }
+    // Cmd/Ctrl+Shift+V → paste video URL screen.
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+      e.preventDefault();
+      location.hash = '#/ingest-video';
+      return;
+    }
     // ? (shift+/) → shortcuts help, unless the user is typing.
     if (!typing && (e.key === '?' || (e.shiftKey && e.key === '/'))) {
       e.preventDefault();
@@ -666,14 +835,18 @@ function wireKeyboard() {
     }
   });
 
-  // Tab shortcuts (⌘T / ⌘W / ⌘⇧T / ⌘1..⌘9) live in their own listener because
+  // Chrome-like shortcuts (⌘T / ⌘W / ⌘⇧T / ⌘1..⌘9 / ⌘R / ⌘⇧R + tab nav) live in
+  // their own listener because
   // they're window-level operations that should fire even while the user is
   // typing — unlike the editor-style shortcuts above (?, j/k) which must
   // respect the typing guard. preventDefault() runs BEFORE tabStore ops so
   // the browser/macOS never gets a chance to handle ⌘W as "close window".
   document.addEventListener('keydown', e => {
+    showKeyDebug(e);
     const meta = e.metaKey || e.ctrlKey;
-    if (!meta) return;
+    const isCmd = !!e.metaKey;
+    const isCtrlOnly = !!e.ctrlKey && !e.metaKey;
+    if (!meta && !isCtrlOnly) return;
 
     if (e.key === 't' && !e.shiftKey) {
       e.preventDefault();
@@ -686,6 +859,121 @@ function wireKeyboard() {
       if (a) tabStore.close(a.id);
       return;
     }
+    // Chrome-like refresh of the current route.
+    if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) {
+      e.preventDefault();
+      route();
+      return;
+    }
+    // Chrome-like hard refresh: drop API cache + dashboard cache, then re-render.
+    if ((e.key === 'r' || e.key === 'R') && e.shiftKey) {
+      e.preventDefault();
+      clearApiCache();
+      try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
+      route();
+      return;
+    }
+    // Chrome-style previous/next tab navigation (Cmd+Shift+[ / ]).
+    if (e.shiftKey && (e.key === '[' || e.key === '{')) {
+      e.preventDefault();
+      const tabs = tabStore.getAll();
+      const active = tabStore.getActive();
+      if (!tabs.length || !active) return;
+      const idx = tabs.findIndex(t => t.id === active.id);
+      const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+      if (prev) tabStore.focus(prev.id);
+      return;
+    }
+    if (e.shiftKey && (e.key === ']' || e.key === '}')) {
+      e.preventDefault();
+      const tabs = tabStore.getAll();
+      const active = tabStore.getActive();
+      if (!tabs.length || !active) return;
+      const idx = tabs.findIndex(t => t.id === active.id);
+      const next = tabs[(idx + 1) % tabs.length];
+      if (next) tabStore.focus(next.id);
+      return;
+    }
+    // Chrome-style tab cycling: Ctrl+Tab / Ctrl+Shift+Tab.
+    // (Cmd+Tab is OS-level app switch and should not be hijacked.)
+    if (isCtrlOnly && e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      const tabs = tabStore.getAll();
+      const active = tabStore.getActive();
+      if (!tabs.length || !active) return;
+      const idx = tabs.findIndex(t => t.id === active.id);
+      const next = tabs[(idx + 1) % tabs.length];
+      if (next) tabStore.focus(next.id);
+      return;
+    }
+    if (isCtrlOnly && e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+    // Chrome on macOS also supports Cmd+Option+Left/Right to move across tabs.
+    // Tauri/WebView can vary between `key` and `code` reporting, so we accept both.
+    const isNavLeft = e.key === 'ArrowLeft' || e.code === 'ArrowLeft' || e.keyCode === 37;
+    const isNavRight = e.key === 'ArrowRight' || e.code === 'ArrowRight' || e.keyCode === 39;
+    // WebKit/Tauri can report arrows as legacy keyIdentifier/keyCode.
+    const isLegacyLeft = e.keyIdentifier === 'Left' || e.which === 37 || e.keyCode === 63234;
+    const isLegacyRight = e.keyIdentifier === 'Right' || e.which === 39 || e.keyCode === 63235;
+    const navLeft = isNavLeft || isLegacyLeft;
+    const navRight = isNavRight || isLegacyRight;
+
+    if ((isCmd || isCtrlOnly) && e.altKey && navLeft) {
+      e.preventDefault();
+      focusAdjacentTab(-1);
+      return;
+    }
+    if ((isCmd || isCtrlOnly) && e.altKey && navRight) {
+      e.preventDefault();
+      focusAdjacentTab(1);
+      return;
+    }
+    // Additional fallback path in case Option-modified arrows are swallowed by
+    // the platform: Cmd+Shift+Arrow cycles tabs too.
+    if (isCmd && e.shiftKey && navLeft) {
+      e.preventDefault();
+      focusAdjacentTab(-1);
+      return;
+    }
+    if (isCmd && e.shiftKey && navRight) {
+      e.preventDefault();
+      focusAdjacentTab(1);
+      return;
+    }
+    // Chrome-style history navigation.
+    if (isCmd && !e.shiftKey && (e.key === '[' || e.key === ']')) {
+      e.preventDefault();
+      if (e.key === '[') history.back();
+      else history.forward();
+      return;
+    }
+      const tabs = tabStore.getAll();
+      const active = tabStore.getActive();
+      if (!tabs.length || !active) return;
+      const idx = tabs.findIndex(t => t.id === active.id);
+      const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+      if (prev) tabStore.focus(prev.id);
+      return;
+    }
+    // Address-bar-like action: open New Topic and focus input.
+    if (e.key === 'l' || e.key === 'L') {
+      e.preventDefault();
+      window.gapmapOpenNewTopic?.();
+      return;
+    }
+    // Find-in-page style focus: first visible search input in current screen.
+    if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      const candidates = Array.from(document.querySelectorAll(
+        'input[type="search"], input[id*="filter"], input[placeholder*="Filter"], input[placeholder*="Search"]'
+      ));
+      const target = candidates.find(el => el.offsetParent !== null && !el.disabled);
+      if (target) {
+        target.focus();
+        target.select?.();
+      }
+      return;
+    }
     if (e.shiftKey && (e.key === 'T' || e.key === 't')) {
       e.preventDefault();
       tabStore.reopenLastClosed();
@@ -693,8 +981,9 @@ function wireKeyboard() {
     }
     if (/^[1-9]$/.test(e.key)) {
       e.preventDefault();
-      const idx = parseInt(e.key, 10) - 1;
-      const tab = tabStore.getAll()[idx];
+      const all = tabStore.getAll();
+      const idx = e.key === '9' ? all.length - 1 : (parseInt(e.key, 10) - 1);
+      const tab = all[idx];
       if (tab) tabStore.focus(tab.id);
     }
   });
@@ -712,7 +1001,17 @@ function openShortcutsHelp() {
       <p class="modal-sub">The basics — more coming soon.</p>
       <div class="shortcuts-list">
         <div class="shortcut-row"><kbd>⌘ N</kbd> <span>New topic</span></div>
+        <div class="shortcut-row"><kbd>⌘ ⇧ V</kbd> <span>Paste video URL to ingest</span></div>
         <div class="shortcut-row"><kbd>⌘ K</kbd> <span>Global search / find anything</span></div>
+        <div class="shortcut-row"><kbd>⌘ L</kbd> <span>Open quick topic input</span></div>
+        <div class="shortcut-row"><kbd>⌘ F</kbd> <span>Focus current screen filter/search</span></div>
+        <div class="shortcut-row"><kbd>⌘ R</kbd> <span>Refresh current tab</span></div>
+        <div class="shortcut-row"><kbd>⌘ ⇧ R</kbd> <span>Hard refresh (clear cache + refresh)</span></div>
+        <div class="shortcut-row"><kbd>⌘ ⇧ [</kbd> / <kbd>⌘ ⇧ ]</kbd> <span>Previous / next tab</span></div>
+        <div class="shortcut-row"><kbd>⌘ ⌥ ←</kbd> / <kbd>⌘ ⌥ →</kbd> <span>Previous / next tab</span></div>
+        <div class="shortcut-row"><kbd>Ctrl Tab</kbd> / <kbd>Ctrl ⇧ Tab</kbd> <span>Cycle tabs</span></div>
+        <div class="shortcut-row"><kbd>⌘ [</kbd> / <kbd>⌘ ]</kbd> <span>Back / forward</span></div>
+        <div class="shortcut-row"><kbd>⌘ 1…9</kbd> <span>Jump to tab (9 = last)</span></div>
         <div class="shortcut-row"><kbd>⌘ ,</kbd> <span>Open Settings</span></div>
         <div class="shortcut-row"><kbd>⌘ /</kbd> <span>Toggle chat sidebar on Insights</span></div>
         <div class="shortcut-row"><kbd>J</kbd> / <kbd>K</kbd> <span>Next / previous hypothesis card</span></div>

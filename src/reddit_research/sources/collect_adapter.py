@@ -424,13 +424,14 @@ def run_rss(
             feeds.append(("custom", "custom", u))
     try:
         for i, (cat, publication, url) in enumerate(feeds):
-            # Use the first keyword for filtering — matches storage_topic
-            # semantics used by every other adapter in this file.
-            kw = kws[0] if kws else ""
+            # Use the full keyword fanout (LLM-expanded canonical terms). This
+            # raises RSS recall for multi-word topics while keeping rows scoped
+            # to the same canonical storage topic.
+            kw_queries = kws if kws else [""]
             try:
                 rows = fetch_rss(
                     url,
-                    query=kw,
+                    query=kw_queries,
                     publication=publication,
                     category=cat,
                     limit=limit_per_feed,
@@ -498,6 +499,9 @@ def run_producthunt(topic_or_keywords: str | list[str], limit: int = 30) -> int:
     try:
         for i, kw in enumerate(kws):
             rows = fetch_producthunt(query=kw, limit=limit)
+            # Missing PH_TOKEN returns sentinel error rows ({"_error": ...}).
+            # Filter those out so _persist doesn't KeyError on r["id"].
+            rows = [r for r in rows if not (isinstance(r, dict) and r.get("_error"))]
             total += _persist(stopic, rows, source_tag=f"producthunt:{kw}")
             if i < len(kws) - 1:
                 time.sleep(_KW_SLEEP)
@@ -506,6 +510,56 @@ def run_producthunt(topic_or_keywords: str | list[str], limit: int = 30) -> int:
     except Exception as e:
         log_fetch_end(fid, rows=0, error=str(e))
         return 0
+
+
+def run_crossref(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .crossref import fetch_crossref
+    return _run_simple_list(topic_or_keywords, "crossref", fetch_crossref, limit)
+
+
+def run_semantic_scholar(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .semantic_scholar import fetch_semantic_scholar
+    return _run_simple_list(topic_or_keywords, "semantic_scholar", fetch_semantic_scholar, limit)
+
+
+def run_bluesky(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .bluesky import fetch_bluesky
+    return _run_simple_list(topic_or_keywords, "bluesky", fetch_bluesky, limit)
+
+
+def run_wikipedia(topic_or_keywords: str | list[str], limit: int = 5) -> int:
+    """Wikipedia returns a structured summary (title, extract, etc.) — not
+    a posts-shaped row. Reshape to `posts` schema so the canonical upsert
+    path works: id = `wikipedia_<slug>`, title = page title, selftext =
+    extract, url = canonical Wikipedia URL.
+    """
+    from datetime import datetime, timezone
+    from .wikipedia import fetch_wikipedia_summary
+    import re as _re
+    def _as_list(kw: str, limit: int) -> list[dict]:
+        r = fetch_wikipedia_summary(topic=kw)
+        if not r or not r.get("title"):
+            return []
+        slug = _re.sub(r"[^a-z0-9]+", "_", (r.get("title") or "").lower()).strip("_") or "wiki"
+        return [{
+            "id":          f"wikipedia_{slug}",
+            "sub":         "wikipedia",
+            "source_type": "wikipedia",
+            "author":      "Wikipedia",
+            "title":       r.get("title") or kw,
+            "selftext":    r.get("extract") or r.get("description") or "",
+            "url":         r.get("url") or f"https://en.wikipedia.org/wiki/{slug}",
+            "score":       int(r.get("pageviews") or 0),
+            "upvote_ratio": 0.0,
+            "num_comments": 0,
+            "created_utc": 0,
+            "is_self":     1,
+            "over_18":     0,
+            "flair":       "summary",
+            "permalink":   r.get("url") or "",
+            "fetched_at":  datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }]
+    return _run_simple_list(topic_or_keywords, "wikipedia", _as_list, limit)
 
 
 def run_alternativeto(topic_or_keywords: str | list[str], limit: int = 30) -> int:
@@ -572,6 +626,13 @@ SOURCES: dict[str, Any] = {
     "alternativeto": run_alternativeto,
     # RSS bundle — one entry per category so the UI picker can offer
     # granular opt-in. All delegate to run_rss under the hood.
+    # Discourse forums — caller must pass instance in kwargs (config-dependent).
+    "discourse": run_discourse,
+    # Paper sources added in 2026-04-21 paper-research toolkit
+    "crossref":         run_crossref,
+    "semantic_scholar": run_semantic_scholar,
+    "wikipedia":        run_wikipedia,
+    "bluesky":          run_bluesky,
     "rss": run_rss,  # default bundle (see rss_catalog.DEFAULT_CATEGORIES)
     "rss_learning": _rss_category_runner("learning"),
     "rss_startup": _rss_category_runner("startup"),

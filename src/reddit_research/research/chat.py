@@ -29,6 +29,8 @@ _OPENAI_COMPATIBLE = {
     "deepseek":   ("DEEPSEEK_API_KEY",   "https://api.deepseek.com/v1",         "deepseek-chat"),
     "mistral":    ("MISTRAL_API_KEY",    "https://api.mistral.ai/v1",           "mistral-large-latest"),
     "google":     ("GOOGLE_API_KEY",     "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.0-flash"),
+    # NVIDIA NIM — OpenAI-compatible. Browse models at https://build.nvidia.com.
+    "nvidia":     ("NVIDIA_API_KEY",     "https://integrate.api.nvidia.com/v1", "meta/llama-3.3-70b-instruct"),
     # Last-resort default — only used if LLM_MODEL isn't set AND the live /api/tags
     # autopick also returns nothing. `gemma3:4b` is a broadly-available chat model.
     "ollama":     (None,                 None,                                  "gemma3:4b"),
@@ -94,12 +96,33 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
     """
     if not (question or "").strip():
         return [], ""
+    # Hard kill-switch for users on broken chromadb installs (segfault on
+    # `coll.query()` / `coll.count()` — tracked in skill `tauri-python-
+    # sidecar-app` Phase X). Set GAPMAP_DISABLE_PALACE=1 to bypass palace
+    # entirely and fall back to engagement-ranked SQL retrieval.
+    if os.environ.get("GAPMAP_DISABLE_PALACE", "").strip().lower() in ("1","true","yes","on"):
+        return [], ""
     try:
         from ..retrieval import palace
     except Exception:
         return [], ""
     if not palace.is_available() or not palace.is_model_ready():
         return [], ""
+    # Empty-collection guard. ChromaDB's Rust backend SEGFAULTS on
+    # `coll.query(where={topic:X})` when zero docs match — kills the
+    # entire chat process before any tokens stream. `palace.stats()`
+    # uses a direct SQLite read (no segfault), so we use its by-topic
+    # count to skip the query entirely when this topic isn't indexed.
+    # When `by_topic` isn't available (older palace builds), we still
+    # try the query — segfaults on those installs are caller-visible
+    # via the Tauri streaming watchdogs.
+    try:
+        st = palace.stats() or {}
+        by_topic = (st.get("by_topic") or {}) if isinstance(st, dict) else {}
+        if topic and isinstance(by_topic, dict) and int(by_topic.get(topic, 0) or 0) == 0:
+            return [], ""
+    except Exception:
+        pass
     res = palace.search_posts(query=question, topic=topic, k=k, rerank=True)
     if not res or not res.get("ok") or not res.get("results"):
         return [], ""
@@ -133,19 +156,31 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
     """
     db = get_db()
 
+    post_prefix = f"{topic}::post::"
+
     # Painpoints / features / products / workarounds
+    # Rank by cross-source corroboration first, then evidence volume.
     findings = {}
     for kind in ("painpoint", "feature_wish", "product", "workaround"):
         rows = list(db.query(
-            "SELECT label, metadata_json FROM graph_nodes "
-            "WHERE topic=? AND kind=? "
-            "ORDER BY (SELECT count(*) FROM graph_edges e "
-            "          WHERE e.topic=graph_nodes.topic "
-            "            AND (e.src=graph_nodes.id OR e.dst=graph_nodes.id)) DESC "
+            "SELECT gn.label, gn.metadata_json, "
+            "       (SELECT count(*) FROM graph_edges e "
+            "          WHERE e.topic=gn.topic "
+            "            AND (e.src=gn.id OR e.dst=gn.id) "
+            "            AND e.kind IN ('evidenced_by','wished_in','about_product','built_in','solves','supports')) AS evidence_count, "
+            "       (SELECT count(DISTINCT coalesce(p.source_type,'reddit')) "
+            "          FROM graph_edges e2 "
+            "          JOIN posts p ON (e2.src = ? || p.id OR e2.dst = ? || p.id) "
+            "         WHERE e2.topic=gn.topic "
+            "           AND (e2.src=gn.id OR e2.dst=gn.id) "
+            "           AND e2.kind IN ('evidenced_by','wished_in','about_product','built_in','solves','supports')) AS source_diversity "
+            "FROM graph_nodes gn "
+            "WHERE gn.topic=? AND gn.kind=? "
+            "ORDER BY source_diversity DESC, evidence_count DESC, gn.label ASC "
             "LIMIT 12",
-            (topic, kind),
+            (post_prefix, post_prefix, topic, kind),
         ))
-        findings[kind] = [r["label"] for r in rows]
+        findings[kind] = rows
 
     # Source breakdown
     sources = list(db.query(
@@ -198,17 +233,40 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
             parts.append(f"- **{s['source']}** — {s['n']} posts")
         parts.append("")
 
+    # Cross-source relation summary (semantic-to-semantic links from all
+    # sources together). Gives chat a fused base before conclusions.
+    relation_rows = list(db.query(
+        "SELECT kind, count(*) AS n "
+        "FROM graph_edges "
+        "WHERE topic=? "
+        "  AND kind IN ('related_to','potentially_solves','could_address') "
+        "GROUP BY kind "
+        "ORDER BY n DESC",
+        (topic,),
+    ))
+    if relation_rows:
+        rel_total = sum(int(r["n"] or 0) for r in relation_rows)
+        parts.append("## Cross-source semantic relations")
+        parts.append(f"- Total relation edges: **{rel_total}**")
+        for r in relation_rows:
+            parts.append(f"- {r['kind']}: {r['n']}")
+        parts.append("")
+
     for kind, label in (
         ("painpoint", "Painpoints"),
         ("workaround", "DIY workarounds (strong gap signals)"),
         ("product", "Products complained about"),
         ("feature_wish", "Feature wishes"),
     ):
-        items = findings.get(kind) or []
+        rows = findings.get(kind) or []
+        items = [r["label"] for r in rows]
         if items:
             parts.append(f"## {label}")
-            for i in items[:10]:
-                parts.append(f"- {i}")
+            for r in rows[:10]:
+                diversity = int(r.get("source_diversity") or 0)
+                evidence = int(r.get("evidence_count") or 0)
+                confidence = "multi-source" if diversity >= 2 else "single-source"
+                parts.append(f"- {r['label']}  ({evidence} evidence, {diversity} sources, {confidence})")
             parts.append("")
 
     if posts:
@@ -238,8 +296,9 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
 MODE_PROMPTS: dict[str, str] = {
     "ask": (
         "Answer the user's question using the topic context below. "
-        "Cite specific painpoints, workarounds, or evidence posts where relevant. "
-        "Prefer bullet points. If you don't have enough evidence, say so honestly."
+        "Treat cross-source corroborated signals as primary: prioritize findings backed by 2+ sources "
+        "and relation edges. Cite specific painpoints/workarounds/evidence posts and mention source overlap. "
+        "Mark any single-source claim as tentative. Prefer bullet points. If evidence is insufficient, say so."
     ),
     "plan": (
         "Produce a concrete 1-week validation plan for building a product in this space. "
@@ -251,12 +310,13 @@ MODE_PROMPTS: dict[str, str] = {
     "features": (
         "List the top 5 features to build, sorted by (pain × gap × evidence strength). "
         "For each feature provide: name, who it's for, the painpoint it solves, "
-        "and whether any existing competitor does it. Use markdown with short paragraphs."
+        "and whether any existing competitor does it. Prioritize painpoints validated across multiple sources; "
+        "label single-source signals as tentative. Use markdown with short paragraphs."
     ),
     "sources": (
         "Summarize what each data source uniquely contributes. "
         "One bullet per source describing the dominant signal from that corpus, "
-        "then a 2-sentence synthesis across all sources. Keep it tight."
+        "then a 2-sentence synthesis across all sources based on cross-source relation overlap. Keep it tight."
     ),
     "bullets": (
         "Give me only bullet-point learnings. Three sections: "

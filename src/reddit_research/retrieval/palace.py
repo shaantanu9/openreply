@@ -145,6 +145,80 @@ def _palace_path() -> str:
     return str(path)
 
 
+_HEAL_SENTINEL_NAME = ".palace_heal_v1.5.done"
+
+def _detect_legacy_segment_format(palace_dir: str) -> bool:
+    """Return True if the palace dir contains chromadb 0.4/0.5-era HNSW
+    segment files (`data_level0.bin`, `header.bin`, `link_lists.bin`).
+    chromadb >= 1.0's Rust backend segfaults at `coll.query()` /
+    `coll.count()` when handed those files — observed on macOS arm64
+    with chromadb 1.5.x. The legacy sidecar files were unique to the
+    DuckDB+HNSW Python segment; the Rust backend uses a different
+    segment-id directory layout (vectors/* and offsets/* parquet
+    files), so their presence is a reliable proxy for "this palace was
+    written by an incompatible chromadb version".
+    """
+    import os as _os
+    if not _os.path.isdir(palace_dir):
+        return False
+    legacy_markers = {"data_level0.bin", "header.bin", "link_lists.bin", "length.bin", "index_metadata.pickle"}
+    for entry in _os.listdir(palace_dir):
+        sub = _os.path.join(palace_dir, entry)
+        if not _os.path.isdir(sub):
+            continue
+        try:
+            files = set(_os.listdir(sub))
+        except OSError:
+            continue
+        # If any segment dir has 3+ legacy markers, it's the old format.
+        if len(legacy_markers & files) >= 3:
+            return True
+    return False
+
+
+def _heal_legacy_palace(palace_dir: str) -> bool:
+    """Idempotent: if the palace dir has chromadb < 1.0 segment files
+    AND we haven't already run a heal under the current major version,
+    move the corrupt store to a backup path and let `get_palace()`
+    create a fresh one. Returns True if a heal happened.
+
+    The corpus stays intact — palace is a derived index built from
+    `posts` / `topic_posts` in the main SQLite. Caller (or background
+    worker) re-runs `reindex_all()` to repopulate. Without this, every
+    process that imports palace eats a Rust-backend SEGFAULT the first
+    time it tries to query, and the user has no escape.
+    """
+    import os as _os
+    import shutil as _shutil
+    import time as _time
+    if not _detect_legacy_segment_format(palace_dir):
+        return False
+    sentinel = _os.path.join(palace_dir, _HEAL_SENTINEL_NAME)
+    if _os.path.isfile(sentinel):
+        return False  # already healed once; don't loop on a still-broken install
+    backup = palace_dir.rstrip("/") + f".legacy_backup_{int(_time.time())}"
+    try:
+        _os.rename(palace_dir, backup)
+        _os.makedirs(palace_dir, exist_ok=True)
+        # Drop the sentinel so we don't heal a second time if the user
+        # restores the legacy backup; future legacy detections after the
+        # sentinel exists fall through to the regular query path (and
+        # may segfault again — but at least we've left the user's data
+        # alone). To force another heal, delete .palace_heal_v1.5.done.
+        with open(sentinel, "w") as f:
+            f.write(f"healed_at={int(_time.time())} backup={backup}\n")
+        logger.warning(
+            "palace: detected chromadb 0.x segment format under %s — "
+            "moved to %s and reset palace. Run `palace.reindex_all()` "
+            "to re-embed posts (≈30 min for 20k items).",
+            palace_dir, backup,
+        )
+        return True
+    except OSError as e:
+        logger.error("palace heal failed: %s", e)
+        return False
+
+
 def get_palace():
     """Return (client, collection), lazily creating both. Thread-safe. None
     if chromadb isn't installed (caller should check ``is_available()``)."""
@@ -160,6 +234,17 @@ def get_palace():
         entry = _CLIENT_CACHE.get(path)
         if entry is not None:
             return entry
+        # Auto-heal pre-1.0 chromadb segment files. Detects legacy
+        # data_level0.bin / link_lists.bin / etc. and moves them to a
+        # backup so the new Rust-backend client can boot fresh. No-op
+        # on already-healed installs and on stores that are already
+        # 1.x-format. Done BEFORE PersistentClient init because the
+        # client constructor itself triggers segment loading and can
+        # crash on the legacy format.
+        try:
+            _heal_legacy_palace(path)
+        except Exception as _e:
+            logger.warning("palace heal probe failed: %s", _e)
         import chromadb
         from chromadb.config import Settings
 
@@ -365,6 +450,37 @@ def search_posts(
     if source_type:
         where["source_type"] = source_type
 
+    # Empty-collection guard. ChromaDB's Rust backend (chromadb >= 0.5)
+    # SEGFAULTS in `chromadb/api/rust.py::_query` when called with a
+    # `where` filter that matches zero documents — observed on macOS
+    # arm64 with chromadb 0.5.x and a partially-populated palace
+    # (e.g. some topics indexed, others not). The crash kills the entire
+    # Python process, so try/except can't catch it. Short-circuit here:
+    # check `count(where=…)` first, return empty if zero. `coll.count()`
+    # accepts `where` from chromadb 0.4+ and is a fast metadata lookup.
+    if where:
+        try:
+            matched = coll.count(where=where)
+        except TypeError:
+            # Older chromadb signatures don't accept `where=` on count.
+            # Fall back to peek: a 1-item peek with the filter is cheap
+            # and uses a different code path than `query`, so it doesn't
+            # trigger the same Rust segfault.
+            try:
+                pk = coll.peek(limit=1)
+                matched = 1 if pk and pk.get("ids") else 0
+            except Exception:
+                matched = 1  # don't block legitimate queries on probe failure
+        except Exception as e:
+            logger.warning("palace pre-count failed: %s", e)
+            matched = 1
+        if matched == 0:
+            # No docs match the filter — return empty without invoking
+            # `query()` (which would segfault). Caller will fall back to
+            # engagement-ranked SQL retrieval (`_topic_context` in
+            # research/chat.py handles this branch).
+            return {"ok": True, "results": [], "count": 0, "skipped_reason": "no_indexed_docs_for_filter"}
+
     # Pull 3× the desired k from Chroma; BM25 rerank picks the top k
     # from that pool. Keeps latency sub-linear in k.
     n_results = max(k * 3, k + 5)
@@ -542,15 +658,65 @@ def stats() -> dict:
     """Return ``{"ok": True, "count": N, "path": "..."}`` or skip-stub."""
     if not is_available():
         return {"ok": False, "skipped": True, "reason": "chromadb not installed"}
-    got = get_palace()
-    if got is None:
-        return {"ok": False, "skipped": True, "reason": "palace unavailable"}
-    _, coll = got
+    # Prefer a direct SQLite count against Chroma's persisted DB to avoid
+    # triggering a full Chroma client/session init on lightweight health checks.
+    # This avoids native crashes observed in some environments when calling
+    # `coll.count()` from short-lived CLI processes.
     try:
-        count = coll.count()
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-    return {"ok": True, "count": count, "path": _palace_path()}
+        import sqlite3
+        db_path = os.path.join(_palace_path(), "chroma.sqlite3")
+        if not os.path.isfile(db_path):
+            return {"ok": True, "count": 0, "path": _palace_path()}
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        # Chroma stores one row per embedded id in `embeddings`, keyed by a
+        # segment. For our single "posts" collection, counting rows in the
+        # metadata segment is a stable proxy for indexed document count.
+        row = cur.execute(
+            "SELECT count(*) FROM embeddings e "
+            "JOIN segments s ON s.id = e.segment_id "
+            "WHERE s.scope = 'METADATA'"
+        ).fetchone()
+        count = int((row[0] if row else 0) or 0)
+        # Per-topic count — same SQLite-direct trick. Powers the chat
+        # tab's `indexed_for_topic` indicator and the empty-collection
+        # short-circuit in `_semantic_evidence` (avoids triggering the
+        # Rust-backend `coll.query()` SEGFAULT on filters that match no
+        # docs — see the auto-heal block in this module). One row per
+        # `(embedding_id, key='topic', string_value=<topic>)`.
+        by_topic: dict[str, int] = {}
+        try:
+            for tname, n in cur.execute(
+                "SELECT string_value, count(*) "
+                "  FROM embedding_metadata "
+                " WHERE key='topic' AND string_value IS NOT NULL "
+                " GROUP BY string_value"
+            ).fetchall():
+                if tname:
+                    by_topic[str(tname)] = int(n or 0)
+        except Exception:
+            # `embedding_metadata` table layout may differ on older
+            # chromadb versions; treat absence as "not available".
+            pass
+        conn.close()
+        return {
+            "ok": True,
+            "count": count,
+            "path": _palace_path(),
+            "source": "sqlite_fallback",
+            "by_topic": by_topic,
+        }
+    except Exception:
+        # Last resort: use Chroma API.
+        got = get_palace()
+        if got is None:
+            return {"ok": False, "skipped": True, "reason": "palace unavailable"}
+        _, coll = got
+        try:
+            count = coll.count()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "count": count, "path": _palace_path(), "source": "chroma_api"}
 
 
 # ─── model download / warmup ───────────────────────────────────────────────

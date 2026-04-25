@@ -21,6 +21,17 @@ _PROVIDER_CONFIG = {
     "google":     {"env": "GOOGLE_API_KEY",
                    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
                    "default_model": "gemini-2.0-flash"},
+    # NVIDIA NIM — OpenAI-compatible endpoint at integrate.api.nvidia.com.
+    # Catalogue at https://build.nvidia.com (~136 ids). NOT every listed
+    # id is actually serving — some return HTTP 400 "DEGRADED function
+    # cannot be invoked" or HTTP 410 "end of life". Verified-working as
+    # of 2026-04-25: meta/llama-3.3-70b-instruct, meta/llama-3.1-8b-
+    # instruct, mistralai/mixtral-8x22b-instruct-v0.1, google/gemma-3-
+    # 27b-it, nvidia/llama-3.1-nemotron-70b-instruct. Override with
+    # LLM_MODEL; see byok.js's curated chip list for the user-facing set.
+    "nvidia":     {"env": "NVIDIA_API_KEY",
+                   "base_url": "https://integrate.api.nvidia.com/v1",
+                   "default_model": "meta/llama-3.3-70b-instruct"},
 }
 
 

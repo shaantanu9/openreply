@@ -1,8 +1,10 @@
 """Structural graph builder — derives a topic's graph from existing Reddit
 tables (topic_posts, posts, comments, users) with zero LLM calls.
 
-Output node kinds: topic, subreddit, post, comment, user.
-Output edge kinds: contains, has_comment, authored, replied_to, era.
+Output node kinds: topic, subreddit/source, post, comment, user, document,
+document_element.
+Output edge kinds: contains, has_comment, authored, replied_to, era,
+has_source_doc, has_source_element.
 
 Re-runnable. Upsert everything so calling build_structural() twice is a no-op.
 """
@@ -111,10 +113,21 @@ def build_structural(topic: str) -> dict[str, Any]:
         "comment": 0,
         "user": 0,
         "era": 0,
+        "document": 0,
+        "document_element": 0,
     }
-    edge_counts = {"contains": 0, "has_comment": 0, "authored": 0, "era": 0, "replied_to": 0}
+    edge_counts = {
+        "contains": 0,
+        "has_comment": 0,
+        "authored": 0,
+        "era": 0,
+        "replied_to": 0,
+        "has_source_doc": 0,
+        "has_source_element": 0,
+    }
 
     seen_subs: set[str] = set()
+    seen_sources: set[str] = set()
     seen_users: set[str] = set()
     seen_eras: set[str] = set()
     post_id_map: dict[str, str] = {}  # reddit post id → graph node id
@@ -124,6 +137,34 @@ def build_structural(topic: str) -> dict[str, Any]:
         _upsert_node(db, topic, "era", era, era)
         seen_eras.add(era)
         node_counts["era"] += 1
+
+    # Ensure one canonical source node per source_type (reddit/hn/arxiv/...)
+    # so the graph can always represent cross-source relationships even when
+    # Reddit rows are grouped under subreddit nodes.
+    for p in posts:
+        src = (p.get("source_type") or "reddit").lower()
+        if not src or src in seen_sources:
+            continue
+        source_label = {
+            "reddit": "Reddit",
+            "hn": "Hacker News",
+            "appstore": "App Store",
+            "playstore": "Play Store",
+            "scholar": "Google Scholar",
+            "stackoverflow": "Stack Overflow",
+        }.get(src, src.upper())
+        source_node = _upsert_node(
+            db,
+            topic,
+            "source",
+            src,
+            source_label,
+            metadata={"source_type": src, "is_canonical_source": True},
+        )
+        _upsert_edge(db, topic, topic_node, source_node, "contains")
+        edge_counts["contains"] += 1
+        node_counts["source"] = node_counts.get("source", 0) + 1
+        seen_sources.add(src)
 
     # Subs (or non-reddit source containers) + posts + authorship + era
     for p in posts:
@@ -177,6 +218,12 @@ def build_structural(topic: str) -> dict[str, Any]:
         _upsert_edge(db, topic, sub_node, post_node, "contains")
         edge_counts["contains"] += 1
         node_counts["post"] += 1
+        # Canonical source -> post edge keeps "all source knowledge together"
+        # in the same graph even when container is subreddit/document bundle.
+        source_node = make_node_id(topic, "source", source_type)
+        if db["graph_nodes"].count_where("id = ?", [source_node]) > 0:
+            _upsert_edge(db, topic, source_node, post_node, "contains")
+            edge_counts["contains"] += 1
 
         author = p.get("author") or "[deleted]"
         if author and author != "[deleted]" and author not in seen_users:
@@ -239,6 +286,84 @@ def build_structural(topic: str) -> dict[str, Any]:
                 user_node = make_node_id(topic, "user", author)
                 _upsert_edge(db, topic, user_node, c_node, "authored")
                 edge_counts["authored"] += 1
+
+    # Local-file source provenance: document + element nodes and edges.
+    docs = list(
+        db.query(
+            """
+            SELECT id, post_id, source_path, source_type, parser, parser_mode, artifact_dir
+            FROM ingested_documents
+            WHERE topic = ?
+            """,
+            [topic],
+        )
+    )
+    for d in docs:
+        doc_key = d["id"]
+        doc_label = (d.get("source_path") or d.get("id") or "")[:140]
+        doc_node = _upsert_node(
+            db,
+            topic,
+            "document",
+            doc_key,
+            doc_label,
+            metadata={
+                "source_path": d.get("source_path"),
+                "permalink": d.get("source_path"),
+                "source_type": d.get("source_type"),
+                "parser": d.get("parser"),
+                "parser_mode": d.get("parser_mode"),
+                "artifact_dir": d.get("artifact_dir"),
+            },
+        )
+        node_counts["document"] += 1
+        _upsert_edge(db, topic, topic_node, doc_node, "contains")
+        edge_counts["contains"] += 1
+        pid = d.get("post_id")
+        if pid:
+            post_node = make_node_id(topic, "post", str(pid))
+            if db["graph_nodes"].count_where("id = ?", [post_node]) > 0:
+                _upsert_edge(db, topic, post_node, doc_node, "has_source_doc")
+                edge_counts["has_source_doc"] += 1
+
+    elements = list(
+        db.query(
+            """
+            SELECT id, document_id, post_id, element_id, element_type, content, page_number, bbox_json
+            FROM document_elements
+            WHERE topic = ?
+            """,
+            [topic],
+        )
+    )
+    for e in elements:
+        elem_node = _upsert_node(
+            db,
+            topic,
+            "document_element",
+            e["id"],
+            (e.get("content") or e.get("element_type") or "element")[:140],
+            metadata={
+                "document_id": e.get("document_id"),
+                "post_id": e.get("post_id"),
+                "element_id": e.get("element_id"),
+                "element_type": e.get("element_type"),
+                "page_number": e.get("page_number"),
+                "bbox_json": e.get("bbox_json"),
+                "permalink": None,
+            },
+        )
+        node_counts["document_element"] += 1
+        doc_node = make_node_id(topic, "document", str(e.get("document_id")))
+        if db["graph_nodes"].count_where("id = ?", [doc_node]) > 0:
+            _upsert_edge(db, topic, doc_node, elem_node, "contains")
+            edge_counts["contains"] += 1
+        pid = e.get("post_id")
+        if pid:
+            post_node = make_node_id(topic, "post", str(pid))
+            if db["graph_nodes"].count_where("id = ?", [post_node]) > 0:
+                _upsert_edge(db, topic, post_node, elem_node, "has_source_element")
+                edge_counts["has_source_element"] += 1
 
     total_nodes = sum(node_counts.values())
     total_edges = sum(edge_counts.values())

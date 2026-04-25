@@ -75,6 +75,10 @@ fn find_dev_venv_python() -> Option<std::path::PathBuf> {
 /// Build a Tauri shell Command for the sidecar binary. Used for both dev
 /// and production — capabilities only whitelist `binaries/reddit-cli`, which
 /// keeps the DMG-shippable signature intact for any user.
+///
+/// Pre-injects `GAPMAP_FFMPEG_PATH` when a bundled / system ffmpeg is
+/// resolvable, so every sidecar invocation (one-shot or streaming) can hand
+/// yt-dlp a working demuxer without each caller wiring the env.
 fn build_sidecar_cmd(app: &AppHandle, user_args: &[&str]) -> Result<Command> {
     let mut cmd = app
         .shell()
@@ -82,6 +86,10 @@ fn build_sidecar_cmd(app: &AppHandle, user_args: &[&str]) -> Result<Command> {
         .map_err(|e| anyhow!("sidecar missing: {e}"))?;
     for a in user_args {
         cmd = cmd.arg(*a);
+    }
+    let ffmpeg = ffmpeg_env_value(app);
+    if !ffmpeg.is_empty() {
+        cmd = cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg);
     }
     Ok(cmd)
 }
@@ -98,6 +106,12 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
     for a in args { cmd.arg(a); }
     cmd.env("REDDIT_MYIND_DATA_DIR", data_dir)
        .env("PYTHONUNBUFFERED", "1");
+    // Propagate GAPMAP_FFMPEG_PATH — set by the caller (run_cli) via
+    // ffmpeg_env_value(app). yt-dlp inside the sidecar reads this to point
+    // at the bundled/static ffmpeg instead of a system install.
+    if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
+        if !ffmpeg.is_empty() { cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg); }
+    }
     let output = cmd.output().await
         .map_err(|e| anyhow!("dev python spawn failed: {e}"))?;
     let elapsed = t0.elapsed().as_millis();
@@ -163,6 +177,19 @@ pub struct ActiveStream(pub Arc<Mutex<Option<CommandChild>>>);
 #[derive(Default)]
 pub struct ActiveStreamPid(pub Arc<Mutex<Option<u32>>>);
 
+/// Live-child handles for the streaming enrich path (`enrich_graph_stream`).
+/// Kept separate from ActiveJob/ActiveStream so a stream-mode enrich can
+/// overlap with a user's collect or chat session — they share nothing at the
+/// SQLite layer (enrich only writes to graph_nodes/edges) and users
+/// legitimately trigger an enrich while reading the map in another tab.
+/// Dedup of *concurrent enrich streams* is still handled per-topic by
+/// ActiveGraphOps + `enrich:<topic>` keys.
+#[derive(Default)]
+pub struct ActiveEnrich(pub Arc<Mutex<Option<CommandChild>>>);
+
+#[derive(Default)]
+pub struct ActiveEnrichPid(pub Arc<Mutex<Option<u32>>>);
+
 /// In-flight dedup for graph operations (enrich / build). Unlike
 /// ActiveJob/ActiveChat these are fire-and-forget sidecar calls without a
 /// cancel button — if the user double-clicks "Enrich" or `loadMap` re-fires
@@ -175,8 +202,17 @@ pub struct ActiveStreamPid(pub Arc<Mutex<Option<u32>>>);
 /// Key format: `"<op>:<topic>"`, e.g. `"enrich:calari tracking app"`. Same
 /// topic under different ops (build vs enrich) runs concurrently, which is
 /// fine — they touch different parts of the schema.
+///
+/// Value: the `Instant` at which the key was inserted. Used by
+/// `run_graph_op_deduped` to auto-expire stale locks — if a previous sidecar
+/// crashed silently (Ollama hang, SIGKILL, process panic between insert and
+/// remove) the key would stay forever and every subsequent call would return
+/// `already_running`, stranding the user. With the timestamp we treat any
+/// key older than `GRAPH_OP_STALE_AFTER` (10 min) as stale and reclaim it.
 #[derive(Default, Clone)]
-pub struct ActiveGraphOps(pub Arc<Mutex<std::collections::HashSet<String>>>);
+pub struct ActiveGraphOps(
+    pub Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
+);
 
 /// In-flight `start_collect` dedup + visibility registry.
 ///
@@ -191,6 +227,53 @@ pub struct ActiveGraphOps(pub Arc<Mutex<std::collections::HashSet<String>>>);
 /// Keyed by topic string. Tracks start timestamp so the UI can show elapsed.
 #[derive(Default, Clone)]
 pub struct ActiveCollects(pub Arc<Mutex<std::collections::HashMap<String, u64>>>);
+
+/// Resolve the bundled ffmpeg binary the Python sidecar should use for
+/// yt-dlp audio extraction. Priority:
+///   1. `GAPMAP_FFMPEG_PATH` env (dev override — point at /opt/homebrew/bin/ffmpeg).
+///   2. Tauri `resource_dir()/binaries/ffmpeg-aarch64-apple-darwin` (shipped DMG).
+///   3. `app-tauri/src-tauri/binaries/ffmpeg-aarch64-apple-darwin` relative to
+///      dev CWD — picks up a drop-in static ffmpeg for `npm run tauri dev`.
+///   4. System PATH (`/opt/homebrew/bin/ffmpeg`, `/usr/local/bin/ffmpeg`, `/usr/bin/ffmpeg`).
+/// Returns `None` if nothing resolves — yt-dlp may still work for URLs that
+/// ship audio directly (rare) but m4a/webm mux jobs will fail with a clean
+/// error message the UI can surface.
+pub fn resolve_ffmpeg_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("GAPMAP_FFMPEG_PATH") {
+        let pb = std::path::PathBuf::from(p);
+        if pb.exists() { return Some(pb); }
+    }
+    // Bundled next to the PyInstaller sidecar binary.
+    if let Ok(res) = app.path().resource_dir() {
+        let bundled = res.join("binaries").join("ffmpeg-aarch64-apple-darwin");
+        if bundled.exists() { return Some(bundled); }
+        let bundled2 = res.join("ffmpeg-aarch64-apple-darwin");
+        if bundled2.exists() { return Some(bundled2); }
+    }
+    // Dev layout — walk up from CWD looking for the drop-in binary.
+    if let Ok(mut cur) = std::env::current_dir() {
+        for _ in 0..5 {
+            let candidate = cur
+                .join("app-tauri").join("src-tauri").join("binaries")
+                .join("ffmpeg-aarch64-apple-darwin");
+            if candidate.exists() { return Some(candidate); }
+            if !cur.pop() { break; }
+        }
+    }
+    // System fallback — acceptable in dev, surfaces shared-lib deps but works.
+    for p in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"] {
+        let pb = std::path::PathBuf::from(p);
+        if pb.exists() { return Some(pb); }
+    }
+    None
+}
+
+/// Stringified ffmpeg path suitable for passing into env. Empty when unresolved.
+fn ffmpeg_env_value(app: &AppHandle) -> String {
+    resolve_ffmpeg_path(app)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
 
 /// Resolve the data dir used by the Python CLI for this app.
 /// `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`.
@@ -213,6 +296,12 @@ pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
 pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
+    let ffmpeg = ffmpeg_env_value(app);
+    if !ffmpeg.is_empty() {
+        // Propagate via process env so run_dev_python_cli picks it up without
+        // threading another arg through every caller.
+        std::env::set_var("GAPMAP_FFMPEG_PATH", &ffmpeg);
+    }
 
     // Dev fast path — skip the bundled PyInstaller binary entirely when a
     // .venv/bin/python exists near CWD. Avoids macOS Gatekeeper slow launches.
@@ -220,6 +309,7 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
         return run_dev_python_cli(py, &args, &data_str).await;
     }
 
+    // build_sidecar_cmd pre-injects GAPMAP_FFMPEG_PATH itself — no need here.
     let sidecar = build_sidecar_cmd(app, &args)?
         .env("REDDIT_MYIND_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1");
@@ -279,6 +369,10 @@ async fn run_dev_python_streaming(
        .env("PYTHONUNBUFFERED", "1")
        .stdout(Stdio::piped())
        .stderr(Stdio::piped());
+    let ffmpeg = ffmpeg_env_value(app);
+    if !ffmpeg.is_empty() {
+        cmd.env("GAPMAP_FFMPEG_PATH", &ffmpeg);
+    }
     let mut child = cmd.spawn().map_err(|e| anyhow!("dev python spawn failed: {e}"))?;
     if let Some(pid) = child.id() {
         *pid_slot.lock().unwrap() = Some(pid);
@@ -730,6 +824,88 @@ pub async fn run_cli_stream_streaming(
                             "error_class": class,
                             "hint": hint,
                         }),
+                    );
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Spawn the sidecar for a stream-mode enrich and forward each stdout line as
+/// a Tauri `progress_event` payload. Uses its own ActiveEnrich/ActiveEnrichPid
+/// slots so it doesn't collide with ActiveJob (collect) or ActiveStream
+/// (reddit-cli stream) — a user reading the map while a collect finishes still
+/// gets progressive painpoints.
+///
+/// Unlike the collect path, we DON'T refuse a second enrich here — the
+/// per-topic dedup is enforced at `run_graph_op_deduped` above (via
+/// ActiveGraphOps). That means two DIFFERENT topics can enrich in parallel
+/// (e.g. user opens topic A map, then navigates to topic B — both stream).
+pub async fn run_cli_enrich_streaming(
+    app: &AppHandle,
+    args: Vec<&str>,
+    progress_event: &'static str,
+    done_event: &'static str,
+) -> Result<()> {
+    let data = data_dir(app)?;
+    let data_str = data.to_string_lossy().to_string();
+
+    // Dev fast path — .venv/bin/python streaming. Uses ActiveEnrichPid so
+    // a future cancel button can SIGTERM just the enrich without touching
+    // an unrelated collect.
+    if let Some(py) = find_dev_venv_python() {
+        let pid_slot = if let Some(state) = app.try_state::<ActiveEnrichPid>() {
+            state.0.clone()
+        } else {
+            Arc::new(Mutex::new(None))
+        };
+        return run_dev_python_streaming(
+            app, py, &args, &data_str, progress_event, done_event, pid_slot,
+            |code, _recent| {
+                // Enrich failures are classified client-side from the NDJSON
+                // stream (we already emit extractor:error). Here we just
+                // surface the exit code so the UI can distinguish "process
+                // crashed before final enrich:done" from "process exited
+                // cleanly and the done event is the authoritative summary".
+                serde_json::json!({ "code": code })
+            },
+        ).await;
+    }
+
+    let (mut rx, child) = build_sidecar_cmd(app, &args)?
+        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("PYTHONUNBUFFERED", "1")
+        .spawn()
+        .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
+
+    if let Some(state) = app.try_state::<ActiveEnrich>() {
+        *state.0.lock().unwrap() = Some(child);
+    }
+
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stderr(bytes) | CommandEvent::Stdout(bytes) => {
+                    if let Ok(s) = String::from_utf8(bytes) {
+                        for line in s.lines() {
+                            if line.trim().is_empty() { continue; }
+                            let _ = app_clone.emit(progress_event, line.to_string());
+                        }
+                    }
+                }
+                CommandEvent::Terminated(payload) => {
+                    if let Some(state) = app_clone.try_state::<ActiveEnrich>() {
+                        *state.0.lock().unwrap() = None;
+                    }
+                    let code = payload.code.unwrap_or(-1);
+                    let _ = app_clone.emit(
+                        done_event,
+                        serde_json::json!({ "code": code }),
                     );
                     break;
                 }

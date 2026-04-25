@@ -68,6 +68,18 @@ retrieval = [
     "chromadb>=1.5.4,<2",
     "rank-bm25>=0.2.2",
 ]
+# Video ingest — yt-dlp pulls audio from any URL, bundled ffmpeg demuxes it,
+# faster-whisper transcribes locally. Model weights are user-downloaded from
+# HuggingFace on demand (not bundled), keeping the DMG lean. yt-dlp itself
+# ships bundled AND auto-updates into a user-writable overlay dir on every
+# sidecar cold-start with a 24h cooldown (YouTube extractor rotations break
+# yt-dlp ~monthly). See docs/video-ingest.md for the full design.
+video = [
+    "yt-dlp>=2024.10",
+    "faster-whisper>=1.0",
+    "huggingface_hub>=0.24",
+    "packaging>=23.0",
+]
 mcp = [
     "fastmcp>=0.4",
 ]
@@ -77,7 +89,7 @@ dev = [
     "ruff>=0.5",
     "pyinstaller>=6.10",
 ]
-all = ["reddit-myind[analyze,mcp,sources,dev]"]
+all = ["reddit-myind[analyze,mcp,sources,dev,retrieval,video]"]
 
 [project.scripts]
 reddit-myind = "reddit_research.cli.main:app"

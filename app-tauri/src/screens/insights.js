@@ -7,6 +7,8 @@
 //
 // Spec: docs/specs/2026-04-20-insight-engine.md
 import { api, esc } from '../api.js';
+import { isAutoRunEnabled } from '../lib/tabPipelines.js';
+import { hasLlmConfigured } from '../lib/llmStatus.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -640,10 +642,15 @@ export async function loadInsights(contentEl, topic) {
     return;
   }
 
-  // No cache (or error). Show CTA.
+  // No cache (or error). Show CTA — and auto-run if the user opted in and
+  // an LLM is configured, so the empty-state is only ever a fallback.
   set(renderEmpty(cached?.error));
   wireRunButton(contentEl, topic);
   window.refreshIcons?.();
+  if (isAutoRunEnabled() && await hasLlmConfigured()) {
+    // Trip the same handler the CTA button wires up. Guarded by tab check.
+    if (contentEl.dataset.tab === 'insights') runSynth(contentEl, topic);
+  }
 }
 
 async function runSynth(contentEl, topic) {

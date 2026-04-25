@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 from typing import Any, Iterable
 
 from ..core.db import get_db
@@ -41,6 +42,12 @@ logger = logging.getLogger(__name__)
 
 # Kinds that are "findings" — worth relating to one another.
 _SEMANTIC_KINDS = ("painpoint", "feature_wish", "workaround", "product")
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_STOPWORDS = {
+    "the", "a", "an", "and", "or", "to", "of", "for", "in", "on", "with",
+    "is", "are", "be", "by", "that", "this", "it", "as", "at", "from",
+    "app", "apps", "user", "users",
+}
 
 
 def _embeddings_available() -> bool:
@@ -85,6 +92,20 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _token_set(label: str) -> set[str]:
+    toks = {t for t in _TOKEN_RE.findall((label or "").lower()) if len(t) >= 3}
+    return {t for t in toks if t not in _STOPWORDS}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    if inter == 0:
+        return 0.0
+    return inter / max(1, len(a | b))
+
+
 def _load_semantic_nodes(topic: str) -> list[dict[str, Any]]:
     db = get_db()
     placeholders = ",".join(["?"] * len(_SEMANTIC_KINDS))
@@ -127,6 +148,7 @@ def _build_relates_to(
     vectors: list[list[float]],
     threshold: float,
     max_neighbors: int,
+    evidence_map: dict[str, set[str]] | None = None,
 ) -> int:
     """Emit `relates_to` edges: any pair with cos ≥ threshold. Weight =
     similarity (float, preserves ordering for downstream viz).
@@ -139,6 +161,10 @@ def _build_relates_to(
         return 0
     db = get_db()
     solve_threshold = _env_float("GAPMAP_SOLVE_THRESHOLD", 0.50)
+    lexical_floor = _env_float("GAPMAP_REL_LEXICAL_FLOOR", 0.08)
+    bridge_margin = _env_float("GAPMAP_REL_BRIDGE_MARGIN", 0.08)
+    evidence_map = evidence_map or {}
+    token_sets = [_token_set((n.get("label") or "")) for n in nodes]
 
     # Per-node neighbor cap — prevents one popular finding from dominating the
     # graph with 30+ edges (creates a hairball instead of surfacing structure).
@@ -159,13 +185,25 @@ def _build_relates_to(
         kept = neighbors[:max_neighbors]
         for sim, j in kept:
             a, b = nodes[i], nodes[j]
+            # False-link guard: if two findings share no evidence and no lexical
+            # overlap, require a substantially stronger semantic score. This
+            # suppresses "meditation app" -> "political corruption" style links
+            # from noisy corpora while still allowing strong cross-phrase pairs.
+            shared_evidence = len(evidence_map.get(a["id"], set()) & evidence_map.get(b["id"], set()))
+            lex_sim = _jaccard(token_sets[i], token_sets[j])
+            if shared_evidence == 0 and lex_sim < lexical_floor and sim < (threshold + bridge_margin):
+                continue
             # Canonical ordering so (a→b) and (b→a) don't both persist.
             src, dst = (a["id"], b["id"]) if a["id"] < b["id"] else (b["id"], a["id"])
             if (src, dst) in emitted:
                 continue
             emitted.add((src, dst))
             _upsert_edge(db, topic, src, dst, "relates_to", weight=float(sim),
-                         metadata={"similarity": round(sim, 3)})
+                         metadata={
+                             "similarity": round(sim, 3),
+                             "lexical_overlap": round(lex_sim, 3),
+                             "shared_evidence": shared_evidence,
+                         })
             edges_written += 1
 
             # Extra cross-kind edges — stronger semantic claim, so more useful
@@ -265,7 +303,8 @@ def build_semantic_relations(topic: str) -> dict[str, Any]:
     if vectors is None:
         return {"ok": True, "skipped": True, "reason": "embedding call failed"}
 
-    relates = _build_relates_to(topic, nodes, vectors, threshold, max_neighbors)
+    evidence_map = _load_evidence_map(topic)
+    relates = _build_relates_to(topic, nodes, vectors, threshold, max_neighbors, evidence_map)
     co_ev = _build_co_evidenced(topic, nodes, min_shared=2)
 
     return {

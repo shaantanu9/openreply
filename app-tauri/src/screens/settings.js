@@ -3,6 +3,7 @@
 
 import { api, esc } from '../api.js';
 import { openByokModal } from './byok.js';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
 const PROFILE_KEYS = {
   name:  'gapmap.profile.name',
@@ -37,7 +38,7 @@ export function avatarInitials(name) {
   const n = (name || '').trim();
   if (!n) return 'GM';
   const parts = n.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 function avatarColor(name) {
@@ -127,6 +128,20 @@ export async function renderSettings(root) {
         <p style="color:var(--ink-3)">Checking disk usage…</p>
         <div class="skel skel-line" style="width:80%;margin-top:10px"></div>
         <div class="skel skel-line" style="width:65%"></div>
+      </div>
+
+      <!-- Export destination -->
+      <div class="settings-card" id="card-export-dir">
+        <h4>Export destination</h4>
+        <p style="color:var(--ink-3)">Choose where HTML/JSON/Markdown exports are saved.</p>
+        <div class="skel skel-line" style="width:85%;margin-top:10px"></div>
+      </div>
+
+      <!-- Export destination -->
+      <div class="settings-card" id="card-export-dir">
+        <h4>Export destination</h4>
+        <p style="color:var(--ink-3)">Choose where HTML/JSON/Markdown exports are saved.</p>
+        <div class="skel skel-line" style="width:85%;margin-top:10px"></div>
       </div>
 
       <!-- Semantic search (palace) — opt-in on-device model download -->
@@ -356,6 +371,14 @@ export async function renderSettings(root) {
     })
     .catch(e => { if (alive()) reportError(root, 'data', e); });
 
+  api.exportPrefsGet()
+    .then(prefs => { if (alive()) fillExportCard(root, prefs); })
+    .catch(e => { if (alive()) reportError(root, 'export', e); });
+
+  api.exportPrefsGet()
+    .then(prefs => { if (alive()) fillExportCard(root, prefs); })
+    .catch(e => { if (alive()) reportError(root, 'export', e); });
+
   // Task 9.5 — Extraction pane. Loads global prefs + today's token spend
   // in parallel; renders the mode radios / sliders / cap input / cost
   // estimator as soon as both land. Individual Save clicks invoke
@@ -476,6 +499,7 @@ function wireStaticButtons(root) {
     const btnConn = card.querySelector('#btn-mcp-connect');
     const btnSync = card.querySelector('#btn-mcp-resync');
     const btnDis  = card.querySelector('#btn-mcp-disconnect');
+    const activationHintId = 'mcp-activation-gate-note';
 
     const STORAGE_KEY = 'gapmap.mcp.client';
     const clientLabels = {};   // key → human label
@@ -488,6 +512,96 @@ function wireStaticButtons(root) {
     };
 
     const currentClient = () => sel.value || 'claude-code';
+
+    // Per-reason messaging for the MCP activation gate. Kept in sync with
+    // the Rust reason codes in commands.rs::compute_activation_reason.
+    // Every case has an actionable primary button so the user never sees
+    // a dead-end "locked" state.
+    const GATE_COPY = {
+      not_activated: {
+        badge: 'Not activated',
+        heading: 'MCP is locked until this device is activated',
+        body: 'Activate your licence key on this device to unlock MCP for Claude Code, Claude Desktop, Cursor, Windsurf, or Cline.',
+        action: { label: 'Activate this device', href: '#/activate' },
+      },
+      device_mismatch: {
+        badge: 'Different device',
+        heading: 'Stored licence is for a different device',
+        body: 'Your licence is bound to another machine. Re-activate this device (free within your device slot limit) to move the licence here.',
+        action: { label: 'Re-activate this device', href: '#/activate' },
+      },
+      token_missing: {
+        badge: 'Token missing',
+        heading: 'Activation token is missing from the keychain',
+        body: 'The saved token blob was removed or corrupted. Re-activate this device to refresh it — no new purchase needed.',
+        action: { label: 'Refresh activation', href: '#/activate' },
+      },
+      expired: {
+        badge: 'Expired',
+        heading: 'Licence expired',
+        body: 'Your licence term ended. Open the customer portal from Activate → Purchase history to renew, then re-activate this device to resume MCP.',
+        action: { label: 'Renew & re-activate', href: '#/activate' },
+      },
+      token_device_mismatch: {
+        badge: 'Device fingerprint changed',
+        heading: 'Activation token no longer matches this device',
+        body: 'Something about this machine changed (hostname, hardware, or OS). Re-activate this device to refresh the token.',
+        action: { label: 'Re-activate this device', href: '#/activate' },
+      },
+      unknown: {
+        badge: 'Locked',
+        heading: 'MCP is locked until this device is activated',
+        body: 'Complete activation in onboarding or Settings → Licence to unlock MCP client setup.',
+        action: { label: 'Go to activation', href: '#/activate' },
+      },
+    };
+
+    const renderActivationGate = (reasonCode = 'not_activated', reasonMsg = '') => {
+      const copy = GATE_COPY[reasonCode] || GATE_COPY.unknown;
+      let gate = card.querySelector(`#${activationHintId}`);
+      if (!gate) {
+        gate = document.createElement('div');
+        gate.id = activationHintId;
+        gate.style.marginTop = '8px';
+        gate.style.padding = '10px 12px';
+        gate.style.border = '1px solid var(--line)';
+        gate.style.borderRadius = '8px';
+        gate.style.background = 'var(--surface)';
+        gate.style.fontSize = '12px';
+        gate.style.color = 'var(--ink-2)';
+        const detailHost = card.querySelector('#mcp-detail');
+        detailHost?.parentElement?.appendChild(gate);
+      }
+      // Detail message from backend wins when present — the Rust gate passes
+      // a precise, already-formatted reason (e.g. with expiry date) that the
+      // static `body` copy can't know. Fall through to `copy.body` if empty.
+      const detailedBody = reasonMsg && reasonMsg.trim() ? esc(reasonMsg.trim()) : esc(copy.body);
+      gate.innerHTML =
+        `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+           <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--orange-soft,#ffe9d6);color:#b85a1e;font-weight:600;font-size:11px">
+             ⚠ ${esc(copy.badge)}
+           </span>
+           <span style="font-weight:600;color:var(--ink);font-size:13px">${esc(copy.heading)}</span>
+         </div>
+         <div style="margin-bottom:8px">${detailedBody}</div>
+         <a href="${copy.action.href}" class="btn btn-sm primary" id="mcp-gate-cta" style="text-decoration:none">${esc(copy.action.label)} →</a>`;
+      dot.dataset.state = 'warn';
+      txt.textContent = copy.heading;
+      detail.textContent = '';
+      sel.disabled = true;
+      btnRef.disabled = true;
+      btnConn.hidden = true; btnSync.hidden = true; btnDis.hidden = true;
+    };
+
+    // Best-effort extraction of `[mcp:<code>]` prefix the Rust gate emits.
+    // Returns `null` if the error doesn't match the schema so the caller can
+    // fall through to generic handling.
+    const parseMcpReason = (err) => {
+      const msg = err?.message || (typeof err === 'string' ? err : String(err || ''));
+      const m = msg.match(/\[mcp:([a-z_]+)\]\s*(.*)/i);
+      if (!m) return null;
+      return { reason_code: m[1], reason: m[2] || '' };
+    };
 
     const renderState = (s) => {
       const cl = currentClient();
@@ -527,6 +641,19 @@ function wireStaticButtons(root) {
         btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
         return;
       }
+      // Pre-2026-04-24 installs don't have MCP_TAKEOVER_STALE_LOCK=1 in the
+      // entry env, so a client restart can hit `another_mcp_server_running`
+      // until the user manually deletes the pid file. One click to re-sync
+      // rewrites the entry with the flag and the problem stops recurring.
+      if (s.takeover_configured === false) {
+        dot.dataset.state = 'warn';
+        txt.textContent = `Connected to ${label} · needs re-sync`;
+        detail.innerHTML =
+          `This entry predates stale-lock auto-recovery. A client restart can hit ` +
+          `<code>another_mcp_server_running</code> until you re-sync. One click fixes it.`;
+        btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
+        return;
+      }
       dot.dataset.state = 'ok';
       txt.textContent = `Connected to ${label} · DB aligned`;
       const tokenNote = s.token_in_env ? '· token saved' : '· token will refresh on Re-sync';
@@ -540,11 +667,31 @@ function wireStaticButtons(root) {
       dot.dataset.state = 'loading';
       txt.textContent = 'checking…';
       detail.textContent = '';
+      // 12s safety timeout — Python sidecar cold-start on a freshly
+      // signed dev binary can take ~5-8s, well within bounds. Without
+      // this, a wedged sidecar (DB lock, frozen Ollama callback at
+      // import time, gatekeeper verification stall) leaves the card
+      // permanently in "checking…". Surfacing the timeout as an
+      // actionable error lets the user click Refresh / Re-sync.
+      const TIMEOUT_MS = 12000;
+      const timeoutPromise = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error(`mcp_status timed out after ${TIMEOUT_MS}ms — sidecar may be stuck`)), TIMEOUT_MS)
+      );
       try {
-        const s = await api.mcpStatus(currentClient());
+        const s = await Promise.race([api.mcpStatus(currentClient()), timeoutPromise]);
         renderState(s);
       } catch (e) {
-        renderState({ ok: false, reason: e?.message || String(e) });
+        // A licence that was valid at page load can flip to expired/mismatch
+        // while the card is open (manual deactivate from the web portal,
+        // clock change, etc). If the error has the `[mcp:<code>]` prefix
+        // from `ensure_mcp_allowed`, re-render the activation gate with
+        // the specific reason instead of a raw "unable to read status".
+        const gate = parseMcpReason(e);
+        if (gate) {
+          renderActivationGate(gate.reason_code, gate.reason);
+        } else {
+          renderState({ ok: false, reason: e?.message || String(e) });
+        }
       }
     };
 
@@ -555,17 +702,46 @@ function wireStaticButtons(root) {
       try {
         const r = await fn();
         if (r && r.ok === false) {
-          renderState({ ok: false, reason: r.reason || `${label} failed` });
+          // Backend returned structured `{ok:false, reason}` — prefer that
+          // but still parse for an `[mcp:<code>]` prefix in case the
+          // Python install helper propagates the Rust gate error verbatim.
+          const gate = parseMcpReason({ message: r.reason });
+          if (gate) {
+            renderActivationGate(gate.reason_code, gate.reason);
+          } else {
+            renderState({ ok: false, reason: r.reason || `${label} failed` });
+          }
         } else {
           await refresh();
         }
       } catch (e) {
-        renderState({ ok: false, reason: e?.message || String(e) });
+        const gate = parseMcpReason(e);
+        if (gate) {
+          renderActivationGate(gate.reason_code, gate.reason);
+        } else {
+          renderState({ ok: false, reason: e?.message || String(e) });
+        }
       } finally {
         btnConn.disabled = btnSync.disabled = btnDis.disabled = false;
         sel.disabled = false;
       }
     };
+
+    // MCP is activation-gated at backend too; mirror it here for clear UX.
+    // `license_status` returns reason_code + reason when not activated, so
+    // we can render the exact case (expired / device_mismatch / etc) and
+    // guide the user to the right recovery path.
+    try {
+      const lic = await api.licenseStatus();
+      if (!lic?.activated) {
+        renderActivationGate(lic?.reason_code || 'not_activated', lic?.reason || '');
+        return;
+      }
+    } catch (e) {
+      // If we can't even probe the license status, behave as first-time user.
+      renderActivationGate('not_activated', e?.message || '');
+      return;
+    }
 
     // Populate client dropdown from the Python-resolved list (so OS-specific
     // paths stay in one place). Mark detected ones with a ✓ in the label.
@@ -764,6 +940,66 @@ function fillDataCard(root, info, dataDir, dbSize) {
   card.querySelector('#btn-reveal-data').onclick = () => { if (dataDir) api.revealInFinder(dataDir); };
   card.querySelector('#btn-open-db').onclick     = () => { location.hash = '#/database'; };
   window.refreshIcons?.();
+}
+
+function fillExportCard(root, prefs) {
+  const card = root.querySelector('#card-export-dir');
+  if (!card) return;
+  const effectiveDir = prefs?.effective_dir || prefs?.default_dir || '—';
+  const configuredDir = (prefs?.configured_dir || '').trim();
+  const isCustom = !!prefs?.is_custom && configuredDir;
+  card.innerHTML = `
+    <h4>Export destination <span style="color:var(--ink-3);font-size:12px;font-weight:500">${isCustom ? 'custom' : 'default'}</span></h4>
+    <p style="color:var(--ink-3)">All exports from topic/report screens save here.</p>
+    <div class="kv-row"><b>Current folder</b><span title="${esc(effectiveDir)}">${esc(effectiveDir)}</span></div>
+    ${isCustom ? `<div class="kv-row"><b>Custom override</b><span title="${esc(configuredDir)}">${esc(configuredDir)}</span></div>` : ''}
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" id="btn-export-dir-pick">Choose folder</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-export-dir-reveal">Reveal</button>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="btn-export-dir-reset" ${isCustom ? '' : 'disabled'}>Use app default</button>
+    </div>
+    <div id="export-dir-status" style="margin-top:8px;font-size:12px;color:var(--ink-3)"></div>
+  `;
+
+  const statusEl = card.querySelector('#export-dir-status');
+  const setStatus = (txt, ok = false) => {
+    if (!statusEl) return;
+    statusEl.textContent = txt;
+    statusEl.style.color = ok ? '#2E7D5B' : 'var(--ink-3)';
+  };
+
+  card.querySelector('#btn-export-dir-reveal')?.addEventListener('click', () => {
+    api.revealInFinder(effectiveDir);
+  });
+
+  card.querySelector('#btn-export-dir-pick')?.addEventListener('click', async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        defaultPath: effectiveDir,
+        title: 'Choose export folder',
+      });
+      if (!selected || typeof selected !== 'string') return;
+      setStatus('Saving...');
+      const next = await api.exportPrefsSet(selected);
+      fillExportCard(root, next);
+      setStatus('Saved export folder.', true);
+    } catch (e) {
+      setStatus(`Failed: ${e?.message || e}`);
+    }
+  });
+
+  card.querySelector('#btn-export-dir-reset')?.addEventListener('click', async () => {
+    try {
+      setStatus('Resetting...');
+      const next = await api.exportPrefsSet(null);
+      fillExportCard(root, next);
+      setStatus('Using app default folder now.', true);
+    } catch (e) {
+      setStatus(`Failed: ${e?.message || e}`);
+    }
+  });
 }
 
 function fillTablesCard(root, info) {
@@ -1332,16 +1568,34 @@ async function fillWhisperCard(root, catalogueRows, ytdlpVer) {
   function rowHtml(m) {
     const size = m.size_mb >= 1000 ? `${(m.size_mb / 1000).toFixed(1)} GB` : `${m.size_mb} MB`;
     const rec = m.tier === 'small.en' ? ' <span class="pill" style="margin-left:6px">recommended</span>' : '';
-    const action = m.installed
-      ? `<button class="btn btn-ghost btn-xs btn-bordered" data-act="default" data-tier="${m.tier}">Set default</button>
-         <button class="btn btn-ghost btn-xs btn-bordered" data-act="delete"  data-tier="${m.tier}" style="color:var(--chronic,#B84747)">Delete</button>`
-      : `<button class="btn btn-primary btn-xs icon-btn" data-act="download" data-tier="${m.tier}">
+    // External installs (HF hub cache, env dir, system dir) show an
+    // "Already installed" pill + source label. Delete button only appears
+    // for app-managed installs — we never delete files we don't own.
+    const SOURCE_LABELS = {
+      app: 'Installed', hf_hub: 'HuggingFace cache',
+      custom: 'Custom dir', system: 'System dir',
+    };
+    const sourcePill = m.installed && m.source
+      ? `<span class="pill" style="margin-left:6px;background:rgba(45,156,68,0.15);color:#2d7a3e" title="${m.path ? m.path.replace(/"/g,'&quot;') : ''}">${SOURCE_LABELS[m.source] || m.source}</span>`
+      : '';
+
+    let action;
+    if (!m.installed) {
+      action = `<button class="btn btn-primary btn-xs icon-btn" data-act="download" data-tier="${m.tier}">
            <i data-lucide="download"></i> Download
          </button>`;
+    } else if (m.source === 'app') {
+      action = `<button class="btn btn-ghost btn-xs btn-bordered" data-act="default" data-tier="${m.tier}">Set default</button>
+         <button class="btn btn-ghost btn-xs btn-bordered" data-act="delete"  data-tier="${m.tier}" style="color:var(--chronic,#B84747)">Delete</button>`;
+    } else {
+      // External — offer to set-default only. No delete (not ours to remove).
+      action = `<button class="btn btn-ghost btn-xs btn-bordered" data-act="default" data-tier="${m.tier}">Use it</button>`;
+    }
+
     return `
       <div class="whisper-row" data-tier="${m.tier}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px dashed var(--line)">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:13px">${m.tier}${rec}</div>
+          <div style="font-weight:600;font-size:13px">${m.tier}${rec}${sourcePill}</div>
           <div style="color:var(--ink-3);font-size:12px">${size} · ${m.rtf}× realtime · ${m.repo}</div>
           <div class="whisper-progress" style="display:none;margin-top:6px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--ink-3)"></div>
         </div>
@@ -1385,11 +1639,32 @@ async function fillWhisperCard(root, catalogueRows, ytdlpVer) {
       btn.innerHTML = '<i data-lucide="loader-2"></i> Downloading…';
       window.refreshIcons?.();
       if (prog) { prog.style.display = 'block'; prog.textContent = 'Starting…'; }
+      const fmtWhisperProgress = (payload) => {
+        const raw = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        let parsed = null;
+        try { parsed = typeof payload === 'string' ? JSON.parse(payload) : payload; } catch {}
+        const evt = parsed?._progress || parsed;
+        if (evt && typeof evt === 'object') {
+          if (evt.stage === 'skip') {
+            return 'Already installed — reusing existing model';
+          }
+          if (evt.stage === 'download') {
+            const pct = Number(evt.pct);
+            const doneMb = Number(evt.downloaded_mb);
+            const totalMb = Number(evt.total_mb);
+            const pctText = Number.isFinite(pct) ? `${pct.toFixed(1)}%` : '…';
+            if (Number.isFinite(doneMb) && Number.isFinite(totalMb) && totalMb > 0) {
+              return `Downloading… ${pctText} (${doneMb.toFixed(1)} / ${totalMb.toFixed(1)} MB)`;
+            }
+            return `Downloading… ${pctText}`;
+          }
+        }
+        return raw.slice(0, 200);
+      };
       const { listen } = await import('@tauri-apps/api/event');
       const un1 = await listen('whisper:download-progress', (ev) => {
         if (!prog) return;
-        const raw = typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload);
-        prog.textContent = raw.slice(0, 200);
+        prog.textContent = fmtWhisperProgress(ev.payload);
       });
       const un2 = await listen('whisper:download-done', async (ev) => {
         try { un1(); un2(); } catch {}

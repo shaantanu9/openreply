@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
@@ -52,6 +52,127 @@ def cmd_ingest_file(
 
     n = ingest_and_persist(path=path, topic=topic, source_type=source_type, sub=sub)
     console.print(f"[green]ingested {n} rows[/green] from {path} as source_type={source_type!r}")
+
+
+# Files we support — kept in sync with `local_file.py`. Used by the folder
+# walker to decide what to ingest. Anything else (binaries, .DS_Store, source
+# code) is silently skipped so users can drop a whole repo subdir without
+# polluting the corpus.
+_INGEST_FOLDER_EXTENSIONS = {".md", ".pdf", ".csv", ".json", ".txt", ".vtt", ".srt"}
+# Hard cap to avoid accidentally dragging in node_modules etc.
+_INGEST_FOLDER_MAX_FILES = 500
+# Skip any path component starting with these — covers VCS, deps, hidden dirs.
+_INGEST_FOLDER_SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".idea", ".vscode", "dist", "build", ".next", ".cache"}
+
+
+@ingest_app.command("folder")
+def cmd_ingest_folder(
+    path: Path = typer.Option(..., "--path", "-p", help="Directory to walk recursively."),
+    topic: str = typer.Option(..., "--topic", "-t"),
+    source_type: str = typer.Option(
+        "local", "--source-type", "-s",
+        help="Tag every ingested doc with this source_type. Use 'learning_material', "
+             "'test_doc', 'spec', etc. so attribution is meaningful in the Map view.",
+    ),
+    sub: Optional[str] = typer.Option(None, "--sub"),
+    extensions: Optional[str] = typer.Option(
+        None, "--ext",
+        help="Comma-separated extensions (e.g. 'md,txt'). Defaults to md,pdf,csv,json,txt,vtt,srt.",
+    ),
+    max_files: int = typer.Option(
+        _INGEST_FOLDER_MAX_FILES, "--max-files",
+        help=f"Refuse to ingest if the folder yields more than N files (default {_INGEST_FOLDER_MAX_FILES}).",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Walk a folder recursively and ingest every supported file into one topic.
+
+    Skips hidden dirs, .git, node_modules, build/dist artifacts, and binaries
+    by extension. Each file goes through the same parser as `ingest file`,
+    queues for LLM extraction, and surfaces in the same gap map as Reddit
+    posts — so dropping a `learnings/` folder full of design docs and test
+    notes makes them grist for painpoint extraction without any extra setup.
+
+    Example:
+      reddit-cli ingest folder --path ./docs --topic "auth flow" --source-type spec
+    """
+    from ..sources.local_file import ingest_and_persist
+
+    if not path.exists():
+        out = {"ok": False, "error": f"path not found: {path}"}
+        _emit(out, as_json=as_json)
+        raise typer.Exit(2)
+    if not path.is_dir():
+        out = {"ok": False, "error": f"not a directory: {path} — use `ingest file` for single files"}
+        _emit(out, as_json=as_json)
+        raise typer.Exit(2)
+
+    allowed = (
+        {f".{e.strip().lstrip('.').lower()}" for e in extensions.split(",")}
+        if extensions
+        else _INGEST_FOLDER_EXTENSIONS
+    )
+
+    # Collect first so we can enforce the cap before any DB writes — partial
+    # ingest of 12k node_modules markdown files is worse than no ingest.
+    candidates: list[Path] = []
+    for entry in path.rglob("*"):
+        if not entry.is_file():
+            continue
+        # Skip hidden + known-bad dirs anywhere in the path. Cheap str check
+        # keeps this fast on large trees.
+        parts = set(entry.parts)
+        if any(p.startswith(".") for p in entry.parts if p not in (".", "..")):
+            # Allow the user to point at a hidden dir explicitly (path.parts
+            # includes everything from cwd) but skip any subtree that becomes
+            # hidden BELOW the user's chosen root.
+            rel = entry.relative_to(path)
+            if any(p.startswith(".") for p in rel.parts):
+                continue
+        if parts & _INGEST_FOLDER_SKIP_DIRS:
+            continue
+        if entry.suffix.lower() not in allowed:
+            continue
+        candidates.append(entry)
+        if len(candidates) > max_files:
+            out = {
+                "ok": False,
+                "error": f"folder yielded > {max_files} files. Narrow with --ext or raise --max-files.",
+                "found_so_far": len(candidates),
+            }
+            _emit(out, as_json=as_json)
+            raise typer.Exit(2)
+
+    results: list[dict[str, Any]] = []
+    total_rows = 0
+    failed = 0
+    for fp in candidates:
+        try:
+            n = ingest_and_persist(path=fp, topic=topic, source_type=source_type, sub=sub)
+            total_rows += int(n or 0)
+            results.append({"path": str(fp), "rows": int(n or 0), "ok": True})
+        except Exception as e:
+            failed += 1
+            results.append({"path": str(fp), "rows": 0, "ok": False, "error": str(e)[:200]})
+
+    summary = {
+        "ok": True,
+        "topic": topic,
+        "source_type": source_type,
+        "files_seen": len(candidates),
+        "files_ingested": len(candidates) - failed,
+        "files_failed": failed,
+        "rows_total": total_rows,
+        "files": results if as_json else None,
+    }
+    if as_json:
+        _emit(summary, as_json=True)
+    else:
+        console.print(
+            f"[green]ingested[/green] {summary['files_ingested']}/{summary['files_seen']} files · "
+            f"{total_rows} rows · topic [cyan]{topic}[/cyan] · source_type [cyan]{source_type}[/cyan]"
+            + (f" · [red]{failed} failed[/red]" if failed else "")
+        )
 
 
 # ── AG-D: CSV ingest ──
@@ -663,6 +784,34 @@ def cmd_research_discover(
         _emit(rows, as_json, table_title=f"subs for '{topic}'")
 
 
+@research_app.command("canonicalize")
+def cmd_research_canonicalize(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Return the canonical topic string, variants, confidence, and the
+    expanded search-keyword fan-out that collect would use.
+
+    Cheap when cached — one DB read. Uncached → one LLM call (~400 tokens).
+    Used by the desktop app's Collect screen to show the user which related
+    terms are being searched alongside the raw topic they typed, and by
+    the welcome flow to surface the "Did you mean…?" modal before paying
+    for a full collect run."""
+    from ..research.discover import _canonicalize_topic
+
+    result = _canonicalize_topic(topic)
+    # Mirror the shape back with the original in case callers want to show
+    # a before/after view in a tooltip.
+    out = {
+        "original": topic,
+        "canonical": result.get("canonical") or topic,
+        "variants": result.get("variants") or [],
+        "confidence": result.get("confidence") or "unknown",
+        "search_keywords": result.get("search_keywords") or [],
+    }
+    _emit(out, as_json)
+
+
 @research_app.command("schedule-enable")
 def cmd_schedule_enable(
     topic: str = typer.Option(..., "--topic", "-t"),
@@ -949,12 +1098,60 @@ def cmd_research_gaps(
         result = run_extractor(
             extractor, topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
         )
+        try:
+            from ..core.db import save_mcp_analysis
+            save_mcp_analysis(
+                topic=topic, source="app", kind="quick_extract",
+                tool=f"research_gaps_{extractor}",
+                content=json.dumps(result, ensure_ascii=False, default=str),
+                content_type="json",
+                provider=provider or "", model="",
+                params={"extractor": extractor, "corpus_limit": corpus_limit,
+                        "min_score": min_score},
+            )
+        except Exception:
+            pass
         _emit(result, as_json)
     else:
         report = find_gaps(
             topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
         )
+        try:
+            from ..core.db import save_mcp_analysis
+            save_mcp_analysis(
+                topic=topic, source="app", kind="quick_extract",
+                tool="research_gaps",
+                content=json.dumps(report, ensure_ascii=False, default=str),
+                content_type="json",
+                provider=provider or "", model="",
+                params={"corpus_limit": corpus_limit, "min_score": min_score},
+            )
+        except Exception:
+            pass
         _emit(report, as_json)
+
+
+@research_app.command("search-all")
+def cmd_research_search_all(
+    query: str = typer.Option(..., "--query", "-q"),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t",
+        help="Scope the search to a topic. Omit to search across every topic."),
+    aggressive: bool = typer.Option(False, "--aggressive", "-a",
+        help="Aggressive mode: LLM query expansion + palace semantic search."),
+    provider: Optional[str] = typer.Option(None, "--provider",
+        help="LLM provider for query expansion (aggressive mode only)."),
+    as_json: bool = typer.Option(True, "--json", hidden=True),
+) -> None:
+    """Cross-table search — returns grouped results across posts, graph
+    nodes, analyses, papers, hypotheses, and feedback. Every run is
+    persisted to mcp_analyses so older pipelines can reference it."""
+    _ = as_json
+    from ..research.search_all import search_all
+    result = search_all(
+        query=query, topic=topic, aggressive=aggressive,
+        provider=provider, persist=True,
+    )
+    typer.echo(json.dumps(result, ensure_ascii=False, default=str))
 
 
 @research_app.command("saturation")
@@ -1388,6 +1585,103 @@ def cmd_collect_quality_check(
             "failed": total - strict_pass,
             "sample_failed_ids": strict_fail_ids[:20],
         },
+    }
+    _emit(out, as_json)
+
+
+@research_app.command("repair-topic-graph")
+def cmd_repair_topic_graph(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    relevance_threshold: float = typer.Option(
+        0.34, "--relevance-threshold",
+        help="Min cosine-to-topic to keep when cleaning corpus before rebuild.",
+    ),
+    min_keep: int = typer.Option(
+        20, "--min-keep",
+        help="Safety floor for clean-corpus (never drop below this many posts).",
+    ),
+    enrich: bool = typer.Option(
+        True, "--enrich/--no-enrich",
+        help="Run LLM semantic enrich after structural rebuild.",
+    ),
+    relate: bool = typer.Option(
+        True, "--relate/--no-relate",
+        help="Run semantic relation + source-evidence backfill after rebuild.",
+    ),
+    provider: Optional[str] = typer.Option(
+        None, "--provider",
+        help="Optional provider override for graph enrich.",
+    ),
+    corpus_limit: int = typer.Option(
+        120, "--limit", "-n",
+        help="Corpus size for enrich step (if enabled).",
+    ),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Clean off-topic corpus rows and fully rebuild graph for an existing topic.
+
+    Why: older topics can carry semantic nodes/edges from previously tagged
+    off-topic posts. `clean-corpus --apply` removes topic_posts links, but stale
+    graph rows still remain unless we reset/rebuild graph tables for that topic.
+    """
+    from ..core.db import get_db
+    from ..graph import build_structural, enrich_from_llm
+    from ..graph.relations import build_semantic_relations
+    from ..graph.semantic import backfill_source_evidence
+    from ..research.relevance import filter_topic_posts
+
+    clean = filter_topic_posts(
+        topic=topic,
+        threshold=relevance_threshold,
+        apply=True,
+        min_keep=min_keep,
+    )
+
+    db = get_db()
+    db.conn.execute("DELETE FROM graph_edges WHERE topic = ?", (topic,))
+    db.conn.execute("DELETE FROM graph_nodes WHERE topic = ?", (topic,))
+    db.conn.commit()
+
+    rebuilt = build_structural(topic)
+
+    enrich_out: dict[str, Any] = {
+        "ok": False,
+        "skipped": True,
+        "reason": "enrich disabled",
+    }
+    if enrich:
+        enrich_out = enrich_from_llm(
+            topic=topic,
+            provider=provider,
+            corpus_limit=corpus_limit,
+        )
+
+    relate_out: dict[str, Any] = {
+        "ok": False,
+        "skipped": True,
+        "reason": "relate disabled",
+    }
+    source_backfill: dict[str, Any] = {
+        "ok": False,
+        "skipped": True,
+        "reason": "relate disabled",
+    }
+    if relate:
+        relate_out = build_semantic_relations(topic)
+        source_backfill = backfill_source_evidence(topic)
+
+    out = {
+        "ok": True,
+        "topic": topic,
+        "clean_corpus": clean,
+        "graph_reset": {
+            "deleted_topic_rows": True,
+            "tables": ["graph_nodes", "graph_edges"],
+        },
+        "build": rebuilt,
+        "enrich": enrich_out,
+        "relate": relate_out,
+        "source_backfill": source_backfill,
     }
     _emit(out, as_json)
 
@@ -1894,6 +2188,21 @@ def cmd_research_temporal(
     result = find_temporal_gaps(
         topic=topic, provider=provider, per_bucket=per_bucket, force=force,
     )
+
+    try:
+        from ..core.db import save_mcp_analysis
+        save_mcp_analysis(
+            topic=topic, source="app", kind="temporal_gaps",
+            tool="run_temporal_gaps",
+            content=json.dumps(result, ensure_ascii=False, default=str),
+            content_type="json",
+            provider=provider or "",
+            model="",
+            params={"per_bucket": per_bucket, "force": force},
+        )
+    except Exception:
+        pass
+
     _emit(result, as_json)
 
 
@@ -1902,18 +2211,47 @@ def cmd_research_report_pro(
     topic: str = typer.Option(..., "--topic", "-t"),
     out: Optional[Path] = typer.Option(None, "--out", "-o"),
     as_json: bool = typer.Option(False, "--json", hidden=True,
-                                 help="Accept --json from Rust wrapper (no-op; output is always markdown)."),
+                                 help="Emit machine-readable result for Rust wrapper."),
 ) -> None:
     """Premium citation-rich report: painpoints + evidence + build plan + users-to-DM."""
     from ..research.report_pro import render_citations_md
 
-    _ = as_json  # flag accepted for wrapper compat
     md = render_citations_md(topic)
+    out_path: Optional[str] = None
     if out:
         out.write_text(md, encoding="utf-8")
-        console.print(f"[green]wrote premium report → {out}[/green]")
+        out_path = str(out)
+        if not as_json:
+            console.print(f"[green]wrote premium report -> {out}[/green]")
     else:
-        typer.echo(md)
+        if not as_json:
+            typer.echo(md)
+
+    if as_json:
+        _emit(
+            {
+                "ok": True,
+                "topic": topic,
+                "out": out_path,
+                "chars": len(md),
+                # Keep markdown available when caller doesn't pass --out.
+                "markdown": md if out_path is None else None,
+            },
+            True,
+        )
+
+    # Mandatory unified-log row so the Report rendering is visible in AI Analyses.
+    try:
+        from ..core.db import save_mcp_analysis
+        save_mcp_analysis(
+            topic=topic, source="app", kind="report",
+            tool="export_report_pro",
+            content=md, content_type="markdown",
+            provider="", model="",
+            params={"out_path": str(out) if out else None, "chars": len(md)},
+        )
+    except Exception:
+        pass
 
 
 @research_app.command("findings")
@@ -1989,10 +2327,19 @@ def cmd_research_chat(
         typer.echo(f"→ {label} · model={meta['model']} · {meta['posts']} posts in corpus\n")
     sys.stdout.flush()
 
+    # Accumulate assistant text + tool calls so we can persist a single
+    # mcp_analyses row when the turn completes. Keeps the AI Analyses tab
+    # in sync with every chat exchange regardless of provider.
+    _full_text: list[str] = []
+    _tool_calls: list[dict] = []
     try:
         if agent:
             # Agent mode = tool-use loop. Emits structured events.
             for ev in agent_stream_anthropic(topic, question, max_tokens=max_tokens):
+                if ev.get("event") == "text":
+                    _full_text.append(ev.get("text") or "")
+                elif ev.get("event") == "tool_call":
+                    _tool_calls.append({"name": ev.get("name"), "input": ev.get("input")})
                 if as_json:
                     typer.echo(json.dumps(ev, default=str))
                 else:
@@ -2009,6 +2356,7 @@ def cmd_research_chat(
             for chunk in chat_stream(
                 topic, question, mode=mode, provider=provider, max_tokens=max_tokens,
             ):
+                _full_text.append(chunk)
                 if as_json:
                     typer.echo(json.dumps({"event": "token", "text": chunk}))
                 else:
@@ -2020,6 +2368,24 @@ def cmd_research_chat(
         else:
             typer.echo(f"\nERROR: {e}", err=True)
         raise typer.Exit(code=1)
+
+    # Mandatory unified-log row. Captures the question + final answer + any
+    # tool calls the agent made, so chat turns show up next to synthesis
+    # runs / searches / MCP tool invocations in AI Analyses.
+    try:
+        from ..core.db import save_mcp_analysis
+        save_mcp_analysis(
+            topic=topic, source="app", kind="chat",
+            tool=("research_chat_agent" if agent else "research_chat"),
+            content=("## Q\n" + question + "\n\n## A\n" + "".join(_full_text)),
+            content_type="markdown",
+            provider=meta.get("provider") or "",
+            model=meta.get("model") or "",
+            params={"mode": mode, "agent": agent,
+                    "tool_calls": _tool_calls[:20]},
+        )
+    except Exception:
+        pass
 
     if as_json:
         typer.echo(json.dumps({"event": "done"}))
@@ -2187,6 +2553,34 @@ def cmd_research_palace_warmup() -> None:
     warmup_model(progress=emit)
 
 
+@research_app.command("palace-reindex")
+def cmd_research_palace_reindex(
+    batch_size: int = typer.Option(200, "--batch-size"),
+) -> None:
+    """Re-embed every post into Palace (ChromaDB + ONNX MiniLM).
+
+    Streams progress as one JSON event per line for the Tauri streaming
+    bridge. Use after a chromadb version change (segment-format heal),
+    after a long collect to backfill, or when the existing index is
+    suspected stale. Idempotent — `upsert_posts_many` ignores rows
+    whose content hash hasn't changed.
+    """
+    import sys as _sys
+    from ..retrieval.palace import reindex_all, stats as _palace_stats
+
+    def emit(ev) -> None:
+        # Accept either dict events or plain status strings.
+        if isinstance(ev, dict):
+            typer.echo(json.dumps(ev, default=str))
+        else:
+            typer.echo(json.dumps({"event": "log", "msg": str(ev)}))
+        _sys.stdout.flush()
+
+    emit({"event": "start", **(_palace_stats() or {})})
+    res = reindex_all(batch_size=batch_size, progress=emit)
+    emit({"event": "done", **(res or {}), "after": (_palace_stats() or {})})
+
+
 @research_app.command("test-llm")
 def cmd_research_test_llm(
     provider: Optional[str] = typer.Option(None, "--provider"),
@@ -2255,6 +2649,23 @@ def cmd_graph_enrich(
              "Omit to auto-detect from LLM_PROVIDER env or the first configured key.",
     ),
     corpus_limit: int = typer.Option(120, "--limit", "-n"),
+    only: Optional[str] = typer.Option(
+        None, "--only",
+        help="Run just one extractor: painpoints|features|complaints|workarounds. "
+             "Lets the UI ask for a single category fast instead of waiting for all four.",
+    ),
+    parallel: bool = typer.Option(
+        False, "--parallel",
+        help="Fan the 4 extractors out concurrently (cloud providers). Ignored for Ollama "
+             "since its inference queue serializes calls anyway.",
+    ),
+    stream: bool = typer.Option(
+        False, "--stream",
+        help="Emit NDJSON progress events to stdout as each extractor starts/finishes. "
+             "The final line is `{\"_event\":\"enrich:done\",\"summary\":{…}}` — parse that "
+             "for the consolidated result. Used by the Tauri map banner so the user sees "
+             "painpoints the moment they're ready instead of waiting for all 4 LLM calls.",
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Add semantic nodes (painpoints / products / workarounds) via LLM.
@@ -2263,7 +2674,98 @@ def cmd_graph_enrich(
     """
     from ..graph import enrich_from_llm
 
-    r = enrich_from_llm(topic=topic, provider=provider, corpus_limit=corpus_limit)
+    if not stream:
+        r = enrich_from_llm(
+            topic=topic, provider=provider, corpus_limit=corpus_limit,
+            only=only, parallel=parallel,
+        )
+        _emit(r, as_json)
+        return
+
+    # Streaming mode: emit one NDJSON line per lifecycle event so the Rust
+    # supervisor can forward them to the UI as they happen. The final
+    # `enrich:done` line carries the same summary the non-stream path
+    # returns — callers parse that as the authoritative result.
+    import sys as _sys
+
+    def _emit_event(event: str, payload: dict) -> None:
+        line = json.dumps({"_event": event, **payload}, default=str, ensure_ascii=False)
+        # flush=True is critical — without it, Python buffers 4-8 KB on macOS
+        # and the Rust line-reader sees nothing until the process exits,
+        # defeating the whole point of streaming.
+        print(line, flush=True)
+
+    def _sample(findings: Any, n: int = 3) -> list[str]:
+        """Grab the first N titles from an extractor result for banner copy."""
+        if not isinstance(findings, list):
+            return []
+        out = []
+        for f in findings[:n]:
+            if not isinstance(f, dict):
+                continue
+            title = (
+                f.get("painpoint") or f.get("feature") or f.get("title")
+                or f.get("name") or f.get("complaint") or f.get("workaround")
+                or ""
+            )
+            title = str(title).strip()
+            if title:
+                out.append(title[:120])
+        return out
+
+    def _progress(kind: str, info: dict) -> None:
+        try:
+            if kind == "corpus":
+                _emit_event("enrich:start", info)
+            elif kind == "start":
+                _emit_event("extractor:start", {"kind": info.get("kind")})
+            elif kind == "done":
+                findings = info.get("findings")
+                count = len(findings) if isinstance(findings, list) else 0
+                _emit_event("extractor:done", {
+                    "kind": info.get("kind"),
+                    "count": count,
+                    "sample": _sample(findings),
+                })
+            elif kind == "error":
+                _emit_event("extractor:error", {
+                    "kind": info.get("kind"),
+                    "error": str(info.get("error") or "unknown")[:400],
+                })
+        except Exception as e:
+            # A broken callback must not break enrichment. Log to stderr so the
+            # Rust tail-buffer picks it up for diagnosis.
+            print(f"[enrich progress cb error] {e}", file=_sys.stderr, flush=True)
+
+    try:
+        summary = enrich_from_llm(
+            topic=topic, provider=provider, corpus_limit=corpus_limit,
+            only=only, parallel=parallel, progress_cb=_progress,
+        )
+    except Exception as e:
+        _emit_event("enrich:done", {"summary": {
+            "ok": False,
+            "error": f"enrich crashed: {e}",
+            "topic": topic,
+        }})
+        raise typer.Exit(1)
+
+    _emit_event("enrich:done", {"summary": summary})
+
+
+@graph_app.command("relate")
+def cmd_graph_relate(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Build dense finding-to-finding relation edges and backfill source links."""
+    from ..graph.relations import build_semantic_relations
+    from ..graph.semantic import backfill_source_evidence
+
+    r = build_semantic_relations(topic)
+    b = backfill_source_evidence(topic)
+    if isinstance(r, dict):
+        r["source_backfill"] = b
     _emit(r, as_json)
 
 
@@ -2325,6 +2827,8 @@ def cmd_graph_neighbors(
 def cmd_graph_export(
     topic: str = typer.Option(..., "--topic", "-t"),
     fmt: str = typer.Option("html", "--format", "-f", help="html|json"),
+    mode: str = typer.Option("skeleton", "--mode", help="skeleton|full"),
+    max_post_nodes: int = typer.Option(120, "--max-post-nodes", help="Top-N post nodes in skeleton mode"),
     out: Optional[Path] = typer.Option(None, "--out", "-o"),
 ) -> None:
     """Export the graph as a shareable HTML (D3 force-graph) or raw JSON."""
@@ -2332,11 +2836,11 @@ def cmd_graph_export(
 
     if fmt == "html":
         out = out or Path(f"gap-map-{topic.replace(' ', '-')}.html")
-        p = export_graph_html(topic, out)
+        p = export_graph_html(topic, out, mode=mode, max_post_nodes=max_post_nodes)
         console.print(f"[green]wrote[/green] {p}")
         console.print(f"[dim]open in a browser: file://{Path(p).resolve()}[/dim]")
     elif fmt == "json":
-        data = export_graph_json(topic)
+        data = export_graph_json(topic, mode=mode, max_post_nodes=max_post_nodes)
         if out:
             out.write_text(json.dumps(data, default=str, ensure_ascii=False, indent=2), encoding="utf-8")
             console.print(f"[green]wrote[/green] {out}")
@@ -2617,6 +3121,165 @@ def cmd_saved_view_delete(
     """Delete a saved view."""
     from ..research.saved_views import delete_view
     _emit(delete_view(view_id), as_json)
+
+
+# ── video ingest + whisper models + yt-dlp ──────────────────────────────────
+#
+# See docs/video-ingest.md for the full design. These subcommands are gated
+# by the `video` pyproject extra (yt-dlp / faster-whisper / huggingface_hub).
+# All emit structured JSON when --json is passed so the Tauri sidecar can
+# stream progress into the webview via run_cli_streaming events.
+
+whisper_app = typer.Typer(help="Manage Whisper models for video transcription.")
+app.add_typer(whisper_app, name="whisper")
+
+ytdlp_app = typer.Typer(help="yt-dlp version + overlay auto-updater controls.")
+app.add_typer(ytdlp_app, name="ytdlp")
+
+
+@ingest_app.command("video")
+def cmd_ingest_video(
+    url: str = typer.Option(..., "--url", "-u"),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    model: str = typer.Option("auto", "--model", "-m",
+        help="auto | tiny.en | base.en | small.en | medium.en | large-v3"),
+    language: str = typer.Option("auto", "--language", "-l",
+        help="auto (Whisper detects) | en | es | ..."),
+    preview: bool = typer.Option(False, "--preview",
+        help="Only fetch yt-dlp metadata — skip download + transcription."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Transcribe a video URL (any yt-dlp-supported site) and ingest as rows.
+
+    Example:
+      reddit-cli ingest video --url https://youtu.be/... --topic "my topic"
+    """
+    from ..sources.video import fetch_and_persist, preview_video
+
+    if preview:
+        result = preview_video(url)
+        _emit(result, as_json=as_json, table_title=f"preview: {url}")
+        return
+
+    def _progress(evt: dict) -> None:
+        # Stream-friendly: every event is one JSON line on stdout, so the
+        # Tauri streaming runner can tail it regardless of --json.
+        typer.echo(json.dumps({"_progress": evt}, ensure_ascii=False), err=False)
+
+    cb = _progress if as_json else None
+    result = fetch_and_persist(
+        url=url, topic=topic, model=model, language=language,
+        progress_cb=cb,
+    )
+    _emit(result, as_json=as_json, table_title=f"video: {url}")
+
+
+@whisper_app.command("list")
+def cmd_whisper_list(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List installed Whisper model tiers + sizes."""
+    from ..transcribe import list_installed
+    _emit(list_installed(), as_json=as_json, table_title="whisper models")
+
+
+@whisper_app.command("catalogue")
+def cmd_whisper_catalogue(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show every known tier with an `installed` flag — used by Settings UI."""
+    from ..transcribe.models import catalogue
+    _emit(catalogue(), as_json=as_json, table_title="whisper catalogue")
+
+
+@whisper_app.command("download")
+def cmd_whisper_download(
+    tier: str = typer.Argument(..., help="tiny.en | base.en | small.en | medium.en | large-v3"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Download a Whisper tier — or reuse an existing install.
+
+    Before hitting HuggingFace we scan known locations (HF hub cache,
+    ``GAPMAP_WHISPER_MODELS_DIR``, common system dirs). If the tier is
+    already present there, we skip the download and reuse it in place.
+    Exit code 0 either way — the UI renders the ``skipped`` / ``source``
+    fields so the user knows what happened.
+    """
+    from ..transcribe import download_model
+
+    def _progress(evt: dict) -> None:
+        typer.echo(json.dumps({"_progress": evt}, ensure_ascii=False), err=False)
+
+    cb = _progress if as_json else None
+    try:
+        result = download_model(tier, progress_cb=cb)
+        if not as_json and result.get("skipped"):
+            typer.echo(
+                f"✓ reusing existing {tier} at {result['path']} "
+                f"(source={result.get('source','?')}) — skipping download"
+            )
+        _emit(result, as_json=as_json, table_title=f"whisper download: {tier}")
+    except Exception as e:
+        _emit({"ok": False, "tier": tier, "error": str(e)}, as_json=as_json,
+              table_title=f"whisper download: {tier}")
+        raise typer.Exit(code=1)
+
+
+@whisper_app.command("delete")
+def cmd_whisper_delete(
+    tier: str = typer.Argument(..., help="tiny.en | base.en | small.en | medium.en | large-v3"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Delete an installed Whisper model tier."""
+    from ..transcribe import delete_model
+    deleted = delete_model(tier)
+    _emit({"ok": True, "tier": tier, "deleted": deleted}, as_json=as_json,
+          table_title=f"whisper delete: {tier}")
+
+
+@whisper_app.command("default")
+def cmd_whisper_default(
+    tier: Optional[str] = typer.Argument(None,
+        help="Tier to set as default. Omit to print the current default."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Get / set the default Whisper tier (picked when user passes --model auto)."""
+    from ..transcribe import default_tier, set_default_tier
+    if tier is None:
+        _emit({"default_tier": default_tier()}, as_json=as_json,
+              table_title="whisper default")
+        return
+    set_default_tier(tier)
+    _emit({"ok": True, "default_tier": tier}, as_json=as_json,
+          table_title=f"whisper default → {tier}")
+
+
+@ytdlp_app.command("version")
+def cmd_ytdlp_version(
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Print installed + latest (PyPI) yt-dlp versions."""
+    from ..transcribe.ytdlp_client import _pypi_latest_stable, ytdlp_current_version
+    out = {
+        "installed": ytdlp_current_version(),
+        "latest": _pypi_latest_stable("yt-dlp"),
+    }
+    _emit(out, as_json=as_json, table_title="yt-dlp version")
+
+
+@ytdlp_app.command("update")
+def cmd_ytdlp_update(
+    force: bool = typer.Option(False, "--force",
+        help="Ignore the 24h cooldown stamp."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Pip-install the latest yt-dlp into the user-writable overlay dir.
+
+    Safe to run any time. Failures are graceful — bundled yt-dlp keeps working.
+    """
+    from ..transcribe import ensure_latest_ytdlp
+    result = ensure_latest_ytdlp(force=force)
+    _emit(result, as_json=as_json, table_title="yt-dlp update")
 
 
 if __name__ == "__main__":

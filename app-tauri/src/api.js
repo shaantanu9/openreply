@@ -21,8 +21,16 @@ if (typeof window !== 'undefined') {
 }
 
 // ---------- cache internals ----------
+// `_cache` is keyed by `(name, args-json)`. Without a bound, every distinct
+// arg combination accumulates an entry forever — `run_query` with thousands of
+// unique SQL strings, `get_findings` per-topic, `topic_saturation` per-topic,
+// `recent_activity` with shifting time windows etc. all add entries that
+// `mutated()` may not target (its INVALIDATE_MAP only knows a fixed list of
+// names). Over a long session this is a real leak — the JS heap keeps every
+// past response alive. Cap at MAX_CACHE_ENTRIES, evict oldest-by-ts when over.
 const _cache = new Map();     // key → { value, ts }
 const _inflight = new Map();  // key → Promise
+const MAX_CACHE_ENTRIES = 200;
 // Default TTL for idempotent reads. 5s is short enough that data feels
 // live (Dashboard won't miss a collect that just finished) but long enough
 // that sidebar pogo-sticking doesn't re-fetch.
@@ -30,6 +38,19 @@ const DEFAULT_TTL_MS = 5000;
 
 function cacheKey(name, args) {
   return args == null ? name : `${name}:${JSON.stringify(args)}`;
+}
+
+function evictIfOverCap() {
+  if (_cache.size <= MAX_CACHE_ENTRIES) return;
+  // Drop the 25% oldest entries by ts. Sorting once and slicing is cheaper
+  // than evicting one-at-a-time when many big sessions land at once. JS
+  // Map iteration order is insertion order so we can't rely on it for ts —
+  // sort explicitly.
+  const drop = Math.ceil(MAX_CACHE_ENTRIES * 0.25);
+  const entries = [..._cache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+  for (let i = 0; i < drop && i < entries.length; i++) {
+    _cache.delete(entries[i][0]);
+  }
 }
 
 // A transient sidecar failure (Python import hiccup, brief lock contention,
@@ -89,6 +110,7 @@ async function cachedInvoke(name, args, ttlMs = DEFAULT_TTL_MS) {
   if (_inflight.has(key)) return _inflight.get(key);
   const p = invokeWithRetry(name, args).then(value => {
     _cache.set(key, { value, ts: Date.now() });
+    evictIfOverCap();
     _inflight.delete(key);
     return value;
   }).catch(e => {
@@ -109,6 +131,57 @@ function invalidate(...nameOrPrefixes) {
 }
 
 export function clearApiCache() { _cache.clear(); _inflight.clear(); }
+
+/**
+ * Memory snapshot for leak hunting. Call from DevTools console:
+ *   await window.__gapmapMemStats()
+ *
+ * Returns:
+ *   - js: webview-side cache + map sizes + heap (when Chrome's
+ *         performance.memory is available, which it is in Tauri's
+ *         WKWebView wrapper on macOS).
+ *   - rust: rust process RSS (MB) + Active* slot states + sidecar pids/RSS.
+ *
+ * Sample once, run a "bad" workflow (open Map tab 50 times, run enrich on 5
+ * topics, etc.), sample again — diff to see which counter grew. The big
+ * leak suspects to watch:
+ *   - js.api_cache_size — should plateau under 200 (we cap)
+ *   - js.map_render_cache_size — bounded per-topic, should equal # topics opened
+ *   - rust.slots.graph_inflight_count — should drop to 0 between calls
+ *   - rust.sidecars[*].rss_mb — Python sidecar RSS over time
+ */
+async function memStats() {
+  const js = {
+    api_cache_size: _cache.size,
+    api_inflight_size: _inflight.size,
+    cache_keys_sample: [..._cache.keys()].slice(0, 10),
+  };
+  // Optional caches living in screens/* — read via globals we know exist.
+  try {
+    const w = typeof window !== 'undefined' ? window : null;
+    if (w && w.performance && w.performance.memory) {
+      const m = w.performance.memory;
+      js.heap_used_mb = Math.round(m.usedJSHeapSize / (1024 * 1024));
+      js.heap_total_mb = Math.round(m.totalJSHeapSize / (1024 * 1024));
+      js.heap_limit_mb = Math.round(m.jsHeapSizeLimit / (1024 * 1024));
+    }
+  } catch {}
+
+  let rust = null;
+  try {
+    rust = await invoke('mem_stats');
+  } catch (e) {
+    rust = { error: String(e?.message || e) };
+  }
+  return { ts: Date.now(), js, rust };
+}
+
+if (typeof window !== 'undefined') {
+  // Expose so devs can call from the console without imports. Always returns
+  // a Promise; non-Tauri contexts get js-only stats.
+  window.__gapmapMemStats = memStats;
+}
+export { memStats };
 
 /**
  * Broadcast an in-app mutation so every open screen can refresh.
@@ -228,7 +301,10 @@ export const api = {
   appDataDir:      ()        => cachedInvoke('app_data_dir',   null, 300000),
   healthCheck:     ()        => invoke('health_check'),
   listExports:     ()        => cachedInvoke('list_exports',   null, 30000),
+  exportPrefsGet:  ()        => cachedInvoke('export_prefs_get', null, 30000),
   byokStatus:      ()        => cachedInvoke('byok_status',    null, 30000),
+  deviceSignature: ()        => cachedInvoke('device_signature', null, 60000),
+  licenseStatus:   ()        => cachedInvoke('license_status', null, 10000),
   getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 10000),
   runQuery:        (sql, topic, params) => cachedInvoke('run_query', { sql, topic, params }, 10000),
   diffFindings:    (topic, windowDays = 7) => cachedInvoke('diff_findings', { topic, windowDays }, 30000),
@@ -273,6 +349,9 @@ export const api = {
 
   // ----- writes / side-effects (bypass + invalidate) -----
   discoverSubs:    (topic, limit = 10) => invoke('discover_subs', { topic, limit }),
+  // Returns { original, canonical, variants, confidence, search_keywords }.
+  // search_keywords is an array of { keyword, relevance: 'high'|'medium'|'low' }.
+  canonicalizeTopic: (topic)            => invoke('canonicalize_topic', { topic }),
   startCollect:    (topic, aggressive = true, sources = null, skipReddit = false) => {
     const p = invoke('start_collect', { topic, aggressive, sources, skipReddit });
     mutated('collect', { topic });
@@ -290,8 +369,44 @@ export const api = {
     mutated('graph', { topic });
     return p;
   },
-  exportHtml:      (topic, force = false) => {
-    const p = invoke('export_html', { topic, force });
+  /**
+   * Streaming enrichment — returns immediately; subscribe to `enrich:progress`
+   * (NDJSON lines) and `enrich:stream:done` ({code}) Tauri events via
+   * `listen(...)` to observe progress.
+   * @param {string} topic
+   * @param {object} [opts]
+   * @param {string|null} [opts.only] - painpoints|features|complaints|workarounds
+   * @param {boolean}     [opts.parallel] - fan extractors out concurrently (cloud only)
+   */
+  enrichGraphStream: (topic, opts = {}) => {
+    const p = invoke('enrich_graph_stream', {
+      topic,
+      only: opts.only || null,
+      parallel: opts.parallel === true,
+    });
+    mutated('graph', { topic });
+    return p;
+  },
+  relateGraph:     (topic)   => {
+    const p = invoke('relate_graph', { topic });
+    mutated('graph', { topic });
+    return p;
+  },
+  // Force-clear the graph-op inflight registry. Use when a sticky
+  // "Already running" response hangs around after a crashed/cancelled
+  // enrich (the Rust side auto-expires after 10 min; this is the manual
+  // override). Omit both args to clear everything.
+  clearGraphInflight: (topic = null, op = null) => invoke('clear_graph_inflight', { topic, op }),
+  exportHtml:      (topic, forceOrOpts = false) => {
+    const opts = (typeof forceOrOpts === 'object' && forceOrOpts !== null)
+      ? forceOrOpts
+      : { force: !!forceOrOpts };
+    const p = invoke('export_html', {
+      topic,
+      force: !!opts.force,
+      mode: opts.mode || null,
+      maxPostNodes: Number.isFinite(opts.maxPostNodes) ? opts.maxPostNodes : null,
+    });
     mutated('exports', { topic });
     return p;
   },
@@ -306,16 +421,38 @@ export const api = {
     mutated('ingest', { topic });
     return p;
   },
-  // Soft-delete (T1.3): 7-day undo window via api.restoreTopic + listTrash.
-  deleteTopic:     (topic)   => {
-    const p = invoke('delete_topic', { topic });
-    mutated('topics', { topic, action: 'delete' });
+  /**
+   * Recursively ingest every supported file in a folder into one topic.
+   * @param {object} opts
+   * @param {string} opts.path - absolute folder path
+   * @param {string} opts.topic
+   * @param {string} opts.sourceType - free-form tag (e.g. 'learning_material', 'spec')
+   * @param {string} [opts.extensions] - comma-separated overrides (e.g. 'md,txt'). Default md/pdf/csv/json/txt/vtt/srt.
+   * @param {number} [opts.maxFiles=500] - safety cap; the Python side aborts if the walker exceeds this.
+   */
+  ingestFolder: ({ path, topic, sourceType, extensions = null, maxFiles = 500 }) => {
+    const p = invoke('ingest_folder', {
+      path, topic, sourceType,
+      extensions: extensions || null,
+      maxFiles: Number.isFinite(maxFiles) ? maxFiles : 500,
+    });
+    mutated('ingest', { topic });
     return p;
   },
+  // Soft-delete (T1.3): 7-day undo window via api.restoreTopic + listTrash.
+  deleteTopic:     (topic)   => {
+    // Do NOT broadcast optimistically for delete/restore. If we emit before
+    // SQLite commit, screens can re-fetch the old row and memoize it for TTL.
+    return invoke('delete_topic', { topic }).then((res) => {
+      mutated('topics', { topic, action: 'delete' });
+      return res;
+    });
+  },
   restoreTopic:    (topic)   => {
-    const p = invoke('restore_topic', { topic });
-    mutated('topics', { topic, action: 'restore' });
-    return p;
+    return invoke('restore_topic', { topic }).then((res) => {
+      mutated('topics', { topic, action: 'restore' });
+      return res;
+    });
   },
   listTrash:       ()        => cachedInvoke('list_trash', null, 10000),
   purgeDeletedTopics: (minAgeDays = 7) => {
@@ -324,13 +461,41 @@ export const api = {
     return p;
   },
   revealInFinder:  (path)    => invoke('reveal_in_finder', { path }),
+  exportPrefsSet:  (exportDir) => {
+    const p = invoke('export_prefs_set', { exportDir });
+    mutated('exports');
+    invalidate('export_prefs_get', 'list_exports');
+    return p;
+  },
   openUrl:         (url)     => invoke('open_url', { url }),
+  // Force a full byok_status re-fetch on next call, bypassing the 30s
+  // memoise. Used after Rust rebuilds or out-of-band .env edits where
+  // the cached object still claims a provider is missing even though
+  // the fresh binary now reports it (e.g. adding a new provider arm
+  // mid-session). Cheap — next caller pays the round-trip.
+  byokInvalidate:  () => { invalidate('byok_status', 'list_provider_models', 'cli_info'); },
   byokSet:         (name, value) => {
     // Any key change can unlock or lock a provider's /models endpoint — nuke
     // both caches so the next modal open fetches fresh.
     const p = invoke('byok_set', { name, value });
     mutated('byok');
     return p;
+  },
+  licenseActivate: (apiBase, email, password, activationKey, onboarding = null) => {
+    invalidate('license_status');
+    return invoke('license_activate', {
+      apiBase,
+      email,
+      password,
+      activationKey,
+      onboarding,
+    });
+  },
+  licenseServerCheck: (apiBase) => invoke('license_server_check', { apiBase }),
+  licenseDefaultApiBase: () => invoke('license_default_api_base'),
+  licenseLogout:    () => {
+    invalidate('license_status');
+    return invoke('license_logout');
   },
   startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
   cancelChat:      ()        => invoke('cancel_chat'),
@@ -364,6 +529,11 @@ export const api = {
   // `palace:warmup:progress` for {event, bytes, total, pct} events and
   // `palace:warmup:done` for the {code} exit.
   palaceWarmup:       ()     => invoke('palace_warmup'),
+  // Re-embed every post into palace. Long-running; UI subscribes to
+  // `palace:reindex:progress` for status + `palace:reindex:done` for
+  // exit. Use after a chromadb upgrade (auto-heal resets palace) or
+  // when the user clicks the explicit "Reindex" button in Settings.
+  palaceReindex:      ()     => invoke('palace_reindex'),
   onPalaceWarmupProgress: (cb) => listen('palace:warmup:progress', e => cb(e.payload)),
   onPalaceWarmupDone:     (cb) => listen('palace:warmup:done',     e => cb(e.payload)),
   // Phase-1 Insight Engine — one long-context synthesis call across the
@@ -557,6 +727,15 @@ export const api = {
   mcpInstall:   (client)  => invoke('mcp_install',   { client: client || null }),
   mcpUninstall: (client)  => invoke('mcp_uninstall', { client: client || null }),
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
+
+  // ── Unified cross-table search ───────────────────────────────────────
+  // Normal mode: SQL LIKE across posts/graph/analyses/papers/hypotheses/
+  // feedback. Fast, offline, persisted. Aggressive mode: LLM query
+  // expansion (3-4 paraphrases) + palace semantic search. Every run
+  // writes a compact summary row to mcp_analyses so older pipelines can
+  // consume "recently searched" as LLM prompt context.
+  searchAll: (query, { topic = null, aggressive = false } = {}) =>
+    invoke('search_all', { query, topic, aggressive }),
 
   // ── Task 8: saturation v1 + coverage gaps panel ───────────────────
   // Both are pure-SQL reads so a 30s cache is plenty — they auto-refresh

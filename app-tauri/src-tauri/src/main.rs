@@ -9,14 +9,42 @@ mod worker;
 
 use cli::{
     cancel_active_chat, cancel_active_job, cancel_active_stream,
-    ActiveChat, ActiveChatPid, ActiveCollects, ActiveGraphOps, ActiveJob, ActiveJobPid,
-    ActiveStream, ActiveStreamPid,
+    ActiveChat, ActiveChatPid, ActiveCollects, ActiveEnrich, ActiveEnrichPid, ActiveGraphOps,
+    ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
 };
 use std::sync::Arc;
 use tauri::RunEvent;
 use worker::ExtractionWorker;
 
+fn load_runtime_env_files() {
+    // Keep process env highest priority; dotenv files only fill missing keys.
+    //
+    // Search order:
+    //   1) current dir .env
+    //   2) parent dirs .env (up to 5 levels; catches app-tauri/.env in dev)
+    //   3) ~/.config/reddit-myind/.env (same path BYOK writes to)
+    let mut dir = std::env::current_dir().ok();
+    let mut depth = 0usize;
+    while let Some(d) = dir {
+        let p = d.join(".env");
+        let _ = dotenvy::from_path(&p);
+        if depth >= 5 {
+            break;
+        }
+        dir = d.parent().map(|x| x.to_path_buf());
+        depth += 1;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let user_env = std::path::PathBuf::from(home)
+            .join(".config")
+            .join("reddit-myind")
+            .join(".env");
+        let _ = dotenvy::from_path(user_env);
+    }
+}
+
 fn main() {
+    load_runtime_env_files();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -26,10 +54,65 @@ fn main() {
         .manage(ActiveChatPid::default())
         .manage(ActiveStream::default())
         .manage(ActiveStreamPid::default())
+        .manage(ActiveEnrich::default())
+        .manage(ActiveEnrichPid::default())
         .manage(ActiveGraphOps::default())
         .manage(ActiveCollects::default())
         .manage(Arc::new(ExtractionWorker::default()))
         .setup(|app| {
+            // Splash safety net + cold-boot webview heal.
+            //
+            // Two separate failure modes this guards against:
+            //   1. The frontend never calls `close_splash` (throw during
+            //      early boot, HMR disconnect, missing command registration
+            //      after refactor). Splash stays on top forever with no way
+            //      to reach the main window.
+            //   2. The webview's initial URL load raced vite's startup and
+            //      lost — the main window is created but displays a blank
+            //      frame because the initial navigation to `devUrl` 404'd
+            //      before vite bound the port. This is particularly easy
+            //      to hit in dev with file-watcher-triggered rebuilds: a
+            //      fresh binary launches while the old vite is mid-restart.
+            //
+            // For (1): force-close the splash + show the main window at T+6 s.
+            // For (2): if we're still invisible OR known-blank after T+6 s,
+            //   reload the main webview. Vite is definitely up by then
+            //   (Next.js check: 200 on `/` within ~1 s of vite boot).
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+                    use tauri::Manager;
+                    if let Some(splash) = app_handle.get_webview_window("splash") {
+                        let _ = splash.close();
+                    }
+                    if let Some(main) = app_handle.get_webview_window("main") {
+                        let was_hidden = !main.is_visible().unwrap_or(false);
+                        if was_hidden {
+                            let _ = main.show();
+                            let _ = main.set_focus();
+                        }
+                        // Re-navigate the webview to the dev/dist URL. In dev
+                        // this re-hits vite; in release it re-loads `index.html`
+                        // from the bundle. Idempotent: if the page was
+                        // already showing content, this just reruns main.js
+                        // which is already idempotent via the route gen guard.
+                        let _ = main.eval("if(!document.querySelector('.app *')){location.reload();}");
+                    }
+                });
+            }
+
+            // Open devtools for the main window on debug builds so any
+            // JavaScript module-load failure is visible immediately instead
+            // of silently leaving a blank webview. No-op in release.
+            #[cfg(debug_assertions)]
+            {
+                use tauri::Manager;
+                if let Some(main) = app.get_webview_window("main") {
+                    main.open_devtools();
+                }
+            }
+
             // Auto-start the extraction worker on boot IFF any topic already
             // has ≥ ENRICH_THRESHOLD posts. This gates Phase-B (async
             // findings extraction) on having enough signal. On fresh
@@ -86,17 +169,25 @@ fn main() {
             commands::overview_stats,
             commands::recent_activity,
             commands::discover_subs,
+            commands::canonicalize_topic,
             commands::start_collect,
             commands::cancel_collect,
             commands::collect_status,
             commands::build_graph,
             commands::enrich_graph,
+            commands::enrich_graph_stream,
+            commands::relate_graph,
+            commands::clear_graph_inflight,
+            commands::mem_stats,
             commands::export_html,
             commands::export_graph_json,
             commands::export_report_pro,
             commands::get_findings,
             commands::ingest_file,
+            commands::ingest_folder,
             commands::list_exports,
+            commands::export_prefs_get,
+            commands::export_prefs_set,
             commands::delete_topic,
             commands::reveal_in_finder,
             commands::app_data_dir,
@@ -104,6 +195,12 @@ fn main() {
             commands::open_url,
             commands::byok_status,
             commands::byok_set,
+            commands::device_signature,
+            commands::license_status,
+            commands::license_activate,
+            commands::license_server_check,
+            commands::license_default_api_base,
+            commands::license_logout,
             commands::run_query,
             commands::start_chat,
             commands::cancel_chat,
@@ -144,6 +241,7 @@ fn main() {
             commands::topic_intent_get,
             commands::topic_intent_set,
             commands::quick_extract_gaps,
+            commands::search_all,
             commands::run_reddit_search,
             commands::start_stream,
             commands::cancel_stream,
@@ -158,6 +256,7 @@ fn main() {
             commands::palace_stats,
             commands::palace_model_status,
             commands::palace_warmup,
+            commands::palace_reindex,
             commands::diff_findings,
             commands::analyze_paper,
             commands::analyze_papers_bulk,

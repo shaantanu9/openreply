@@ -56,19 +56,18 @@ export function confirmDestructiveAction({
     backdrop.className = 'modal-backdrop delete-confirm-backdrop';
     backdrop.hidden = false;
     backdrop.innerHTML = `
-      <div class="modal delete-confirm-modal" role="dialog" aria-modal="true" style="max-width:480px">
-        <h3 style="margin:0 0 6px;color:#B84747">
+      <div class="modal delete-confirm-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+        <h3 class="dc-title">
           <i data-lucide="alert-triangle"></i> ${escapeHtml(title)}
         </h3>
-        ${body ? `<p class="modal-sub" style="margin:0 0 12px">${escapeHtml(body)}</p>` : ''}
-        <p style="margin:0 0 6px;font-size:13px;color:var(--ink-2)">
-          Type <code class="dc-match-text">${escapeHtml(matchText)}</code> below to confirm.
+        ${body ? `<p class="modal-sub dc-body">${escapeHtml(body)}</p>` : ''}
+        <p class="dc-instruction">
+          Type exactly: <code class="dc-match-text">"${escapeHtml(matchText)}"</code>
         </p>
         <input type="text" class="dc-input" autocomplete="off" spellcheck="false"
-               placeholder="${escapeHtml(hint || matchText)}"
-               style="width:100%;margin-top:4px" />
-        <div class="dc-feedback" style="min-height:18px;margin:6px 0 0;font-size:12px;color:var(--ink-3)"></div>
-        <div class="modal-actions" style="justify-content:flex-end;gap:8px;margin-top:14px">
+               placeholder="${escapeHtml(hint || `Type "${matchText}"`)}" />
+        <div class="dc-feedback"></div>
+        <div class="modal-actions dc-actions">
           <button type="button" class="btn btn-ghost btn-bordered dc-cancel">Cancel</button>
           <button type="button" class="btn ${confirmDanger ? 'btn-danger' : 'btn-primary'} dc-confirm" disabled>
             ${escapeHtml(confirmLabel)}
@@ -105,7 +104,7 @@ export function confirmDestructiveAction({
         feedback.textContent = '✓ matches — action unlocked';
         feedback.style.color = '#2E7D5B';
       } else {
-        feedback.textContent = 'does not match yet';
+        feedback.textContent = 'Does not match yet';
         feedback.style.color = 'var(--ink-3)';
       }
     });

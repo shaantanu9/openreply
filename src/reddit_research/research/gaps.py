@@ -239,13 +239,67 @@ def find_temporal_gaps(
     return result
 
 
+# (summary_key, extractor_file, ui_short_name)
+# `ui_short_name` is what the UI + --only flag speak. Keep both long+short
+# so legacy callers can still pass "diy_workarounds" without confusion.
+_EXTRACTORS: tuple[tuple[str, str, str], ...] = (
+    ("painpoints",         "painpoints", "painpoints"),
+    ("feature_wishes",     "features",   "features"),
+    ("product_complaints", "complaints", "complaints"),
+    ("diy_workarounds",    "diy",        "workarounds"),
+)
+
+
+def _normalize_only(only: str | None) -> str | None:
+    """Map a user-supplied --only value to the canonical summary key.
+
+    Accepts short names (painpoints/features/complaints/workarounds) OR the
+    full summary keys (painpoints/feature_wishes/product_complaints/
+    diy_workarounds). Returns None for empty/missing, raises ValueError for
+    unknown values so the CLI can surface a clean error.
+    """
+    if not only:
+        return None
+    val = only.strip().lower()
+    valid = {}
+    for summary_key, _file, short in _EXTRACTORS:
+        valid[summary_key] = summary_key
+        valid[short] = summary_key
+    if val not in valid:
+        raise ValueError(
+            f"unknown --only={only!r}. Use one of: "
+            + ", ".join(sorted({v for v in valid.keys()}))
+        )
+    return valid[val]
+
+
 def find_gaps(
     topic: str,
     provider: str | None = None,
     corpus_limit: int = 120,
     min_score: int = 1,
+    only: str | None = None,
+    parallel: bool = False,
+    progress_cb: Any = None,
 ) -> dict[str, Any]:
-    """Run all four extractors and return a consolidated gap report."""
+    """Run the four extractors and return a consolidated gap report.
+
+    Args:
+        only: Optional summary key (painpoints/feature_wishes/…) or short name
+            (painpoints/features/complaints/workarounds). When set, runs only
+            that extractor — the other categories are absent from the result.
+        parallel: When True, runs all selected extractors concurrently via a
+            thread pool. Skipped for Ollama (local models serialize LLM calls
+            via a single inference queue anyway; parallel launch just thrashes
+            CPU/RAM). Ignored when only=1 extractor.
+        progress_cb: Optional callable invoked at lifecycle boundaries:
+            ``progress_cb("corpus", {corpus_size, provider, extractors})``
+            ``progress_cb("start",  {kind})`` before each extractor fires
+            ``progress_cb("done",   {kind, findings})`` after each finishes
+            ``progress_cb("error",  {kind, error})`` on extractor exception
+            The callback is called synchronously from the worker thread for
+            parallel runs — keep it cheap (typically just a stdout print).
+    """
     import os as _os
     from ..analyze.providers.base import resolve_provider
 
@@ -267,6 +321,18 @@ def find_gaps(
         except ValueError:
             ollama_cap = 50
         corpus_limit = min(corpus_limit, ollama_cap)
+
+    try:
+        only_key = _normalize_only(only)
+    except ValueError as e:
+        return {"topic": topic, "provider": head_provider, "error": str(e)}
+
+    selected = [
+        (summary_key, file, short)
+        for summary_key, file, short in _EXTRACTORS
+        if only_key is None or summary_key == only_key
+    ]
+
     out: dict[str, Any] = {"topic": topic, "provider": head_provider, "corpus_size": None}
     rows = corpus_for(topic, limit=corpus_limit, min_score=min_score)
     out["corpus_size"] = len(rows)
@@ -274,13 +340,59 @@ def find_gaps(
         out["error"] = f"No corpus found for topic={topic!r}. Run `reddit-cli research collect` first."
         return out
 
-    for key, file in (
-        ("painpoints", "painpoints"),
-        ("feature_wishes", "features"),
-        ("product_complaints", "complaints"),
-        ("diy_workarounds", "diy"),
-    ):
-        out[key] = run_extractor(
-            file, topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
-        )
+    if progress_cb is not None:
+        try:
+            progress_cb("corpus", {
+                "corpus_size": len(rows),
+                "provider": head_provider,
+                "extractors": [s for _k, _f, s in selected],
+                "parallel": bool(parallel and len(selected) > 1 and head_provider != "ollama"),
+            })
+        except Exception:
+            pass
+
+    def _run_one(summary_key: str, file: str, short: str) -> tuple[str, Any, Any]:
+        if progress_cb is not None:
+            try: progress_cb("start", {"kind": short})
+            except Exception: pass
+        try:
+            result = run_extractor(
+                file, topic, provider=provider,
+                corpus_limit=corpus_limit, min_score=min_score,
+            )
+            if progress_cb is not None:
+                try: progress_cb("done", {"kind": short, "findings": result})
+                except Exception: pass
+            return summary_key, result, None
+        except Exception as e:
+            if progress_cb is not None:
+                try: progress_cb("error", {"kind": short, "error": str(e)})
+                except Exception: pass
+            return summary_key, [], e
+
+    # Parallel only helps when the provider can serve N concurrent requests.
+    # Ollama's single inference queue means 4 parallel callers just wait in
+    # the same line — no speedup and it multiplies RAM/OOM risk. Cloud
+    # providers handle the fan-out fine.
+    can_parallel = (
+        parallel
+        and len(selected) > 1
+        and head_provider != "ollama"
+    )
+
+    if can_parallel:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=min(4, len(selected))) as ex:
+            futures = [
+                ex.submit(_run_one, sk, fl, sh)
+                for sk, fl, sh in selected
+            ]
+            for fut in as_completed(futures):
+                summary_key, result, _err = fut.result()
+                out[summary_key] = result
+    else:
+        for summary_key, file, short in selected:
+            _k, result, _err = _run_one(summary_key, file, short)
+            out[summary_key] = result
+
     return out

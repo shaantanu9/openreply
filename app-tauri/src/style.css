@@ -120,22 +120,34 @@ html.dark ::-webkit-scrollbar-track { background: var(--bg); }
 html.dark ::-webkit-scrollbar-thumb { background: var(--line-2); }
 
 html, body { height: 100%; }
+html { overflow: hidden; }
 body {
   font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
   background: var(--bg);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   line-height: 1.45;
+  overflow: hidden;
 }
 
 /* ---------- Layout ---------- */
-.app { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
+.app {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+}
 
 .sidebar {
   background: var(--surface); border-right: 1px solid var(--line);
   padding: 22px 18px 24px;
   display: flex; flex-direction: column; gap: 18px;
   position: sticky; top: 0; height: 100vh;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px 12px; }
 .brand-mark {
@@ -188,7 +200,8 @@ body {
 .nav a.active .nav-count { background: var(--orange-soft); color: #B85A1E; }
 
 .pro-card {
-  margin-top: auto;
+  margin-top: 10px;
+  flex-shrink: 0;
   background: linear-gradient(160deg, #1A1614 0%, #2C2522 100%);
   color: white; padding: 16px; border-radius: 14px;
   position: relative; overflow: hidden;
@@ -273,6 +286,26 @@ body {
 }
 .hero p { color: #4A3729; font-size: 14px; max-width: 480px; }
 .hero-actions { display: flex; gap: 10px; margin-top: 18px; position: relative; z-index: 2; }
+.onboarding-profile-hero {
+  grid-template-columns: 1fr;
+  width: 100%;
+  max-width: none;
+  margin-bottom: 0;
+}
+.onboarding-profile-hero p {
+  max-width: 760px;
+}
+.onboarding-profile-fields {
+  width: 100%;
+  max-width: none;
+}
+.onboarding-profile-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+  justify-content: space-between;
+  width: 100%;
+}
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 11px 18px; border-radius: 999px;
@@ -603,12 +636,24 @@ body {
 .report-btn:hover { border-color: var(--orange); color: var(--ink); }
 
 /* Tabs on topic detail */
-.tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
 .tab {
   padding: 8px 14px; border-radius: 10px 10px 0 0;
   font-size: 13px; font-weight: 600; cursor: pointer;
   color: var(--ink-3); background: transparent;
   display: inline-flex; align-items: center; gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tab svg { width: 14px; height: 14px; flex-shrink: 0; }
 .tab.active { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-bottom-color: var(--surface); margin-bottom: -9px; }
@@ -1037,27 +1082,47 @@ body {
   padding: 10px 14px; margin: 0 0 10px; border-radius: 10px;
   font-size: 13px; line-height: 1.4;
 }
+.map-enrich-banner[data-stream="1"] { flex-direction: column; align-items: stretch; gap: 6px; }
 .map-enrich-banner.warn { background: var(--gold-soft); color: #6B5919; border: 1px solid var(--gold); }
 .map-enrich-banner.err  { background: var(--rose-soft); color: #7A2A34; border: 1px solid var(--rose); }
 .map-enrich-banner.info { background: #E8F0FA; color: #25487D; border: 1px solid #C5D6EE; }
 .map-enrich-banner.ok   { background: var(--mint-soft, #D5EBDF); color: #1A3424; border: 1px solid var(--mint, #7CC49A); }
 .map-enrich-banner b    { font-weight: 700; }
 .map-banner-btn { margin-left: auto; padding: 6px 10px; font-size: 12px; }
+.map-enrich-row { display: flex; gap: 10px; align-items: center; }
+.map-enrich-samples { display: flex; gap: 6px; flex-wrap: wrap; }
+.map-enrich-samples:empty { display: none; }
+.map-enrich-sample-chip {
+  display: inline-block; padding: 3px 8px; border-radius: 999px;
+  background: rgba(255,255,255,0.6); border: 1px solid rgba(0,0,0,0.06);
+  font-size: 11px; max-width: 240px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.map-enrich-actions {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin-top: 4px; font-size: 12px;
+}
+.map-enrich-picker { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.map-enrich-picker select { padding: 4px 8px; font-size: 12px; }
 
 /* Chat tab */
 .chat-wrap {
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line);
-  border-radius: 14px; overflow: hidden;
+  border-radius: 16px; overflow: hidden;
   min-height: 520px;
+  box-shadow: 0 10px 28px rgba(29, 22, 14, 0.05);
 }
 .chat-head {
   display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; flex-wrap: wrap;
   padding: 14px 18px; border-bottom: 1px solid var(--line);
-  background: var(--surface-alt);
+  background: linear-gradient(180deg, var(--surface-alt), var(--surface));
 }
-.chat-head h3 { font-size: 15px; }
-.chat-head > div:last-child { display: flex; gap: 6px; }
+.chat-head h3 { font-size: 15px; letter-spacing: -0.01em; }
+.chat-head-main { min-width: 220px; flex: 1; }
+.chat-head-sub { margin: 0; color: var(--ink-3); font-size: 12px; }
+.chat-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .chat-presets {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -1082,6 +1147,9 @@ body {
 .chat-messages {
   flex: 1; min-height: 200px; max-height: 540px; overflow-y: auto;
   padding: 14px 18px;
+  background:
+    radial-gradient(circle at 8% 2%, rgba(255, 140, 66, 0.06), transparent 38%),
+    var(--surface);
 }
 .chat-msg {
   display: flex; gap: 10px; margin-bottom: 14px;
@@ -1090,6 +1158,7 @@ body {
   width: 28px; height: 28px; border-radius: 8px;
   display: grid; place-items: center; font-size: 15px;
   background: var(--surface-alt); flex-shrink: 0;
+  border: 1px solid var(--line);
 }
 .chat-msg-body { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-1); }
 .chat-msg-body b {
@@ -1097,9 +1166,15 @@ body {
   text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;
 }
 .chat-msg-user .chat-msg-body > div:not(.markdown-view) {
-  padding: 10px 14px; border-radius: 10px; background: var(--surface-alt);
+  padding: 10px 14px; border-radius: 12px; background: #FFF4E9;
+  border: 1px solid #F0D7BD;
 }
-.chat-msg-asst .chat-msg-body { padding-top: 2px; }
+.chat-msg-asst .chat-msg-body {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
 .chat-typing {
   display: inline-block; color: var(--ink-3); font-style: italic;
   animation: typingPulse 1.4s ease-in-out infinite;
@@ -1178,15 +1253,39 @@ body {
 .chat-input-row {
   display: flex; gap: 8px; align-items: stretch;
   padding: 12px 18px; border-top: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+.chat-composer {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 8px 10px 8px;
 }
 .chat-input-row textarea {
-  flex: 1; padding: 10px 14px; border-radius: 10px;
+  flex: 1; width: 100%; padding: 8px 10px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--surface-alt);
   font-family: inherit; font-size: 13.5px; resize: none;
   line-height: 1.5; min-height: 48px;
 }
 .chat-input-row textarea:focus {
   outline: none; border-color: var(--ink-3); background: white;
+}
+.chat-composer-foot {
+  margin-top: 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.chat-composer-hint { font-size: 11px; color: var(--ink-3); }
+.chat-composer-actions { display: inline-flex; align-items: center; gap: 8px; }
+
+@media (max-width: 900px) {
+  .chat-composer-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .chat-composer-actions {
+    justify-content: flex-end;
+  }
 }
 
 /* --- Sources tab (topic detail) --- */
@@ -1685,6 +1784,46 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
   gap: 8px;
+}
+
+/* Searching-for strip — sits above the sources grid and renders the
+   expanded-keyword fan-out. Users get a clear answer to "what's this
+   actually searching for?" before any source reports in. */
+.search-keywords-strip {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.skw-head {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
+  font-size: 12px; color: var(--ink-2);
+}
+.skw-head b { color: var(--ink-1); font-weight: 700; }
+.skw-sub { color: var(--ink-3); font-size: 11.5px; }
+.skw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.skw-chip {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-1);
+  cursor: help;
+}
+.skw-chip-canon {
+  background: var(--orange-soft, #ffe9d6);
+  border-color: rgba(255, 140, 66, 0.45);
+  color: #b85a1e;
+  font-weight: 600;
+}
+.skw-chip-high { /* default surface — most common */ }
+.skw-chip-medium { color: var(--ink-2); border-style: dashed; }
+.skw-chip-low { color: var(--ink-3); border-style: dashed; opacity: 0.85; }
+.skw-hint {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-style: italic;
 }
 .src-chip {
   display: flex; align-items: center; gap: 8px;
@@ -2564,6 +2703,32 @@ kbd {
 .graph-stat-chip b { color: var(--ink); font-weight: 700; }
 .graph-stat-edges { color: var(--ink-3); font-size: 11.5px; margin-left: 4px; }
 .graph-stat-edges b { color: var(--ink-2); font-weight: 700; }
+/* Dense cross-finding relation edges (relates_to / potentially_solves /
+   could_address / co_evidenced). Cue users that the graph has meaningful
+   cross-source links, not just a tree. */
+.graph-stat-chip.graph-stat-relations {
+  background: var(--orange-soft, #ffe9d6);
+  border-color: rgba(255, 140, 66, 0.35);
+  color: #b85a1e;
+  cursor: help;
+}
+.graph-stat-chip.graph-stat-relations b { color: #b85a1e; }
+.graph-stat-chip.graph-stat-relations-empty {
+  color: var(--ink-3);
+  font-style: italic;
+  border-style: dashed;
+  cursor: help;
+}
+/* Source-coverage chip — multi-source evidence indicator. Different hue from
+   relations so users can distinguish "what sources fed the graph" from
+   "what semantic links the graph found." */
+.graph-stat-chip.graph-stat-sources {
+  background: #e8f1fb;
+  border-color: #c4dbf0;
+  color: #185fa5;
+  cursor: help;
+}
+.graph-stat-chip.graph-stat-sources b { color: #0f4a84; }
 
 /* ─── Trends tab (temporal-gaps: chronic / emerging / fading) ───────── */
 .trends-tab { padding: 4px 0; }
@@ -2712,6 +2877,39 @@ kbd {
 .chat-preset-pill:hover { background: var(--surface-2); border-color: var(--orange); color: var(--ink); }
 .chat-preset-pill:disabled { opacity: .45; cursor: not-allowed; }
 .chat-preset-pill svg { width: 13px; height: 13px; }
+
+.chat-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.chat-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #93A1B2;
+  flex-shrink: 0;
+}
+.chat-wrap.chat-busy .chat-status {
+  border-color: #FFB085;
+  background: #FFF4EA;
+  color: #8A4A1F;
+}
+.chat-wrap.chat-busy .chat-status-dot {
+  background: var(--orange);
+  animation: chat-status-pulse 1.1s ease-in-out infinite;
+}
+@keyframes chat-status-pulse {
+  0%, 100% { transform: scale(1); opacity: .55; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
 
 /* Animated typing dots — shown in assistant bubble while streaming */
 .chat-typing-dots {
@@ -2962,6 +3160,68 @@ kbd {
   margin-top: 10px; font-size: 12px; color: var(--ink-3);
   background: transparent; border: none; cursor: pointer;
   text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* ---------- Delete confirm modal polish ---------- */
+.delete-confirm-modal {
+  width: min(520px, 92vw);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: 0 20px 44px rgba(23, 18, 14, 0.18);
+}
+.delete-confirm-modal .dc-title {
+  margin: 0 0 8px;
+  color: #B84747;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.delete-confirm-modal .dc-body {
+  margin: 0 0 14px;
+  line-height: 1.45;
+}
+.delete-confirm-modal .dc-instruction {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.delete-confirm-modal .dc-match-text {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+.delete-confirm-modal .dc-input {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 15px;
+}
+.delete-confirm-modal .dc-feedback {
+  min-height: 18px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.delete-confirm-modal .dc-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.delete-confirm-modal .dc-confirm[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+html.dark .delete-confirm-modal {
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.48);
+}
+html.dark .delete-confirm-modal .dc-match-text {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--ink-1);
 }
 
 /* ─── BYOK models accordion (matches app design language) ─── */
@@ -4439,7 +4699,11 @@ textarea, select {
 }
 
 /* ─── Tab strip (Chrome-style) + context menu ─────────────────────────── */
-#tab-strip { position: sticky; top: 0; z-index: 40; }
+#tab-strip {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
 .tab-strip {
   display: flex; align-items: flex-end; gap: 2px;
   padding: 6px 10px 0;
@@ -4506,13 +4770,16 @@ textarea, select {
   display: flex;
   flex-direction: column;
   min-width: 0;        /* prevent intrinsic-width blow-out in narrow windows */
+  height: 100vh;
   min-height: 100vh;
   overflow: hidden;    /* children scroll, the column itself doesn't */
 }
 .app .main-col > main.main {
   flex: 1;
+  height: 100%;
   min-height: 0;
   overflow-y: auto;    /* preserve per-tab scroll restoration */
+  overscroll-behavior: contain;
 }
 #tab-strip { flex-shrink: 0; }
 

@@ -83,6 +83,17 @@ const LLM_PROVIDERS = [
     defaultModel: 'gemini-2.0-flash',
   },
   {
+    key: 'nvidia',
+    envKey: 'NVIDIA_API_KEY',
+    label: 'NVIDIA NIM',
+    pillColor: '#76B900',
+    placeholder: 'nvapi-…',
+    help: 'NVIDIA-hosted Llama / Gemma / Mixtral / Nemotron via integrate.api.nvidia.com. OpenAI-compatible. Browse models at <a href="https://build.nvidia.com" target="_blank">build.nvidia.com</a>.',
+    docs: 'https://build.nvidia.com',
+    prefix: 'nvapi-',
+    defaultModel: 'meta/llama-3.3-70b-instruct',
+  },
+  {
     key: 'ollama',
     envKey: 'OLLAMA_BASE_URL',
     label: 'Ollama (local)',
@@ -179,6 +190,21 @@ const PROVIDER_CURATED_MODELS = {
     { name: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite', note: 'cheapest' },
     { name: 'gemini-1.5-pro',        label: 'Gemini 1.5 Pro',        note: 'smartest' },
   ],
+  // NVIDIA NIM curated picks — VERIFIED 2026-04-25 by hitting
+  // /v1/chat/completions on each id with a 1-token probe. Removed
+  // gemma-2-27b-it (HTTP 410 end-of-life 2026-04-15) and gemma-3-12b-it
+  // (HTTP 400 DEGRADED function cannot be invoked). Models below
+  // returned HTTP 200 with valid completions in under 500 ms. NVIDIA's
+  // /v1/models endpoint lists ~136 ids without flagging which are
+  // degraded — clients have to verify by probing. Re-test this list
+  // before each release.
+  nvidia: [
+    { name: 'meta/llama-3.3-70b-instruct',          label: 'Llama 3.3 70B',  note: 'flagship general — recommended' },
+    { name: 'meta/llama-3.1-8b-instruct',           label: 'Llama 3.1 8B',   note: 'fast + cheap' },
+    { name: 'mistralai/mixtral-8x22b-instruct-v0.1',label: 'Mixtral 8x22B',  note: 'long context' },
+    { name: 'google/gemma-3-27b-it',                label: 'Gemma 3 27B',    note: 'Google instruction-tuned' },
+    { name: 'nvidia/llama-3.1-nemotron-70b-instruct', label: 'Nemotron 70B', note: 'NVIDIA-tuned' },
+  ],
 };
 
 // A container shell with a placeholder. Live models are swapped in by
@@ -262,6 +288,11 @@ async function renderCuratedChips(containerEl, providerKey, activeProvider, acti
       paintStatic('Live list returned no chat-capable models');
       return;
     }
+    // Warn about live → static silent fallbacks. Surfaces in DevTools so
+    // a user can spot a binary-rebuild gap (Rust changes shipped JS-side
+    // but the running .app still has the old `list_provider_models` arm
+    // and returns "unknown provider: <name>") without manual probing.
+    console.info(`[byok] ${providerKey} live models loaded:`, live.length);
     // Keep the active model sticky at the top of the list so users see their
     // current selection without scrolling through 200+ OpenRouter items.
     const sorted = [...live].sort((a, b) => {
@@ -288,9 +319,12 @@ async function renderCuratedChips(containerEl, providerKey, activeProvider, acti
       }
     }
   } catch (err) {
-    // Network / auth / rate-limit error. Surface the reason but keep the UI
-    // usable by painting the static list underneath.
-    const msg = (err && err.message ? err.message : String(err)).split('\n')[0].slice(0, 120);
+    // Network / auth / rate-limit error. Surface the reason both in the
+    // UI (paintStatic) and in DevTools so users can tell apart "API down"
+    // vs "stale binary returned `unknown provider: X`" — the latter means
+    // they need to rebuild Tauri after pulling provider-registry edits.
+    const msg = (err && err.message ? err.message : String(err)).split('\n')[0].slice(0, 200);
+    console.warn(`[byok] live model fetch failed for ${providerKey}:`, msg);
     paintStatic(`Live fetch failed: ${msg}`);
   }
 }
@@ -930,8 +964,14 @@ export async function openByokModal(onClose) {
             renderDefaultChips(live, p.key, `live ${esc(p.label)} models · click to use`);
             return;
           }
+          console.info(`[byok-default] ${providerKey} live returned 0 models`);
         } catch (err) {
-          // Fall through to static.
+          // Surface in DevTools — silently falling back to static makes a
+          // stale-binary "unknown provider" indistinguishable from a real
+          // upstream outage. Users wondering "why am I seeing 4 chips
+          // instead of 100" can now read the actual reason in console.
+          const msg = (err && err.message ? err.message : String(err)).slice(0, 200);
+          console.warn(`[byok-default] live fetch failed for ${providerKey}:`, msg);
         }
       }
       // Static fallback (or no key saved yet)

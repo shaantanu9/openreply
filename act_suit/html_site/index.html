@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gap Map — Site map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;1,9..144,300&family=DM+Sans:opsz,wght@9..40,400;9..40,500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --cream: #F4EFE6;
+    --cream-dark: #EDE6D9;
+    --orange: #E07B3C;
+    --orange-pale: #FBF0E6;
+    --dark: #1C1710;
+    --text: #2E2820;
+    --muted: #6B6259;
+    --border: rgba(30,20,10,0.12);
+    --white: #fff;
+    --radius-lg: 16px;
+    --radius-md: 10px;
+  }
+  html, body { min-height: 100%; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--cream);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 1.5rem 64px; }
+  .brand {
+    display: flex; align-items: center; gap: 10px; text-decoration: none; margin-bottom: 28px;
+  }
+  .brand-mark {
+    width: 36px; height: 36px; background: var(--dark); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand-name { font-family: 'Fraunces', serif; font-size: 22px; color: var(--dark); }
+  h1 {
+    font-family: 'Fraunces', serif; font-size: clamp(28px, 5vw, 38px); font-weight: 400;
+    color: var(--dark); letter-spacing: -0.5px; margin-bottom: 10px;
+  }
+  h1 em { font-style: italic; color: var(--orange); }
+  .lead { font-size: 15px; color: var(--muted); margin-bottom: 36px; max-width: 520px; }
+  h2 {
+    font-size: 11px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--muted); margin: 28px 0 12px;
+  }
+  ul.site-list { list-style: none; display: flex; flex-direction: column; gap: 0; }
+  ul.site-list li { border-bottom: 1px solid var(--border); }
+  ul.site-list a {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px 4px; text-decoration: none; color: var(--text); font-size: 15px;
+    transition: color .15s;
+  }
+  ul.site-list a:hover { color: var(--orange); }
+  ul.site-list span.meta { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .note {
+    margin-top: 32px; padding: 14px 16px; background: var(--orange-pale);
+    border: 1px solid rgba(224,123,60,0.22); border-radius: var(--radius-md);
+    font-size: 13px; color: var(--muted);
+  }
+  .note code { font-size: 11px; background: var(--cream-dark); padding: 2px 6px; border-radius: 4px; }
+  footer { margin-top: 48px; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--orange); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="brand" href="index.html" aria-current="page">
+    <div class="brand-mark">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <circle cx="9" cy="9" r="7" stroke="#E07B3C" stroke-width="1.5"/>
+        <circle cx="9" cy="9" r="3" fill="#E07B3C"/>
+      </svg>
+    </div>
+    <span class="brand-name">Gap Map</span>
+  </a>
+
+  <h1>Static site <em>index</em></h1>
+  <p class="lead">All HTML prototypes in this folder are wired as one site. Start from the marketing page, sign in, then activate your licence.</p>
+
+  <h2>Primary pages</h2>
+  <ul class="site-list">
+    <li>
+      <a href="marketing.html">
+        <span>Marketing home</span>
+        <span class="meta">marketing.html</span>
+      </a>
+    </li>
+    <li>
+      <a href="sign-in.html">
+        <span>Sign in / Create account</span>
+        <span class="meta">sign-in.html</span>
+      </a>
+    </li>
+    <li>
+      <a href="activate.html">
+        <span>Licence &amp; activation</span>
+        <span class="meta">activate.html</span>
+      </a>
+    </li>
+    <li>
+      <a href="activation-help.html">
+        <span>Activation help</span>
+        <span class="meta">activation-help.html</span>
+      </a>
+    </li>
+  </ul>
+
+  <h2>Alternate marketing layouts</h2>
+  <ul class="site-list">
+    <li>
+      <a href="marketing-pricing-grid.html">
+        <span>Marketing (4-tier pricing grid)</span>
+        <span class="meta">marketing-pricing-grid.html</span>
+      </a>
+    </li>
+    <li>
+      <a href="marketing-alt.html">
+        <span>Marketing (alternate layout)</span>
+        <span class="meta">marketing-alt.html</span>
+      </a>
+    </li>
+  </ul>
+
+  <p class="note">Use <code>.env</code> + <code>npm run build</code> to generate <code>env.config.js</code>. Run <code>npm run check</code> before testing. Deployment and security notes are in <a href="DEPLOY.md" style="color:inherit">DEPLOY.md</a>; local workflow is in <a href="README.md" style="color:inherit">README.md</a>.</p>
+
+  <footer>
+    <a href="marketing.html">Continue to marketing →</a>
+  </footer>
+</div>
+</body>
+</html>

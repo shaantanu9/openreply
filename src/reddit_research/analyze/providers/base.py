@@ -40,14 +40,18 @@ _PROVIDER_ENV_KEY = {
     "deepseek":   "DEEPSEEK_API_KEY",
     "mistral":    "MISTRAL_API_KEY",
     "google":     "GOOGLE_API_KEY",
+    "nvidia":     "NVIDIA_API_KEY",
 }
 
 # Order of auto-detect fallback when no explicit preference fits. Cloud
 # providers first (generally more reliable than a local runner under load).
 # Anthropic prioritized because the default prompts were tuned on Claude.
+# NVIDIA NIM placed last in the cloud tier — it's a newer addition; users
+# who set it explicitly via LLM_PROVIDER still get prioritized via the
+# `preferred`/env path before this fallback list is consulted.
 _FALLBACK_ORDER = [
     "anthropic", "openai", "openrouter",
-    "groq", "deepseek", "google", "mistral",
+    "groq", "deepseek", "google", "mistral", "nvidia",
 ]
 
 
@@ -165,7 +169,7 @@ def _build_single_provider(name: str) -> LLMProvider:
     if name == "anthropic":
         from .anthropic import AnthropicProvider
         return AnthropicProvider()
-    if name in ("openai", "openrouter", "groq", "deepseek", "mistral", "google"):
+    if name in ("openai", "openrouter", "groq", "deepseek", "mistral", "google", "nvidia"):
         from .openai import OpenAIProvider
         return OpenAIProvider(provider=name)
     if name == "ollama":

@@ -87,16 +87,176 @@ def reddit_search(
 def reddit_query_db(sql: str) -> list[dict[str, Any]]:
     """Run a read-only SQL query against the local SQLite store.
 
-    Tables: posts, comments, users, subreddits, fetches, streams, stream_hits.
-    Only SELECT statements are allowed.
+    Only SELECT / WITH statements are allowed. Destructive keywords are blocked.
+    If in doubt about a column name, call `reddit_describe_schema` first —
+    the column names below look like the common defaults but there are
+    several departures (no `published_at`, no `body`, no `created_at`).
+
+    ─── Primary tables (gotcha columns in bold) ────────────────────────────
+
+    posts(id TEXT pk, sub TEXT, source_type TEXT, author TEXT, title TEXT,
+          **selftext TEXT** (NOT "body"), url TEXT, score INT, upvote_ratio,
+          num_comments INT, **created_utc FLOAT** (unix secs, NOT "published_at"
+          or "created_at"), is_self, over_18, flair, permalink TEXT,
+          **fetched_at TEXT** (NOT "indexed_at"))
+
+    comments(id, post_id, parent_id, author, body, score, created_utc FLOAT,
+             depth, fetched_at)
+
+    topic_posts(**topic TEXT**, post_id TEXT, source TEXT, added_at TEXT)
+        — join post_id ↔ posts.id to pivot posts by topic.
+
+    users(name pk, link_karma, comment_karma, created_utc FLOAT, is_mod, fetched_at)
+    subreddits(name pk, subscribers, description, fetched_at)
+    fetches(id INT, kind, params_json, started_at, ended_at, rows, error)
+
+    ─── Graph tables (topic knowledge graph) ───────────────────────────────
+
+    graph_nodes(id, topic, kind, label, metadata_json, created_at, ts,
+                evidence_post_id)
+    graph_edges(src, dst, kind, weight, metadata_json, created_at, topic)
+
+    ─── Enrichment / research tables ──────────────────────────────────────
+
+    topic_insights(topic, report_json, generated_at, corpus_size, provider, model)
+    topic_runs(id, topic, run_at, ended_at, trigger, corpus_size,
+               findings_count, delta_json, report_hash, error)
+    topic_prefs(topic pk, scheduled, last_run_seen, last_run_ts, deleted_at,
+                intent, extraction_mode, extraction_threshold, ...)
+    topic_canonicalizations(original, canonical, variants_json, confidence, ts,
+                            keywords_json)
+    topic_aliases(alias_norm, canonical, source, created_at)
+    topic_favorites(topic pk, position, added_at)
+
+    paper_analyses(post_id, topic, summary, relevance, takeaway, ts, provider,
+                   model)
+    mcp_analyses(id, topic, kind, source, tool, params_json, content,
+                 content_type, provider, model, tokens_in, tokens_out,
+                 created_at)
+      — unified log of LLM-driven intelligence (MCP tools + app pipelines).
+      `kind` ∈ {summary, synthesis, cluster_note, conclusion, paper_analysis,
+      subreddit_ranking, insights, gaps}. GUI topic page reads this.
+    hypothesis_tests(id, topic, card_json, status, started_at, resolved_at,
+                     resolution_notes, linked_evidence, last_updated, created_at)
+    ingested_documents(id, topic, post_id, source_path, source_hash,
+                       source_type, parser, parser_mode, artifact_dir, created_at)
+    document_elements(id, document_id, post_id, topic, element_id,
+                      element_type, content, page_number, bbox_json, created_at)
+    extraction_queue(topic, post_id, kind, queued_at, attempted_at, attempts,
+                     last_error)
+    extraction_daily_usage(day, provider, model, tokens_in, tokens_out, est_usd)
+    finding_feedback(id, topic, finding_title, finding_kind, verdict, note,
+                     created_at)
+    perf_traces(id, op, topic, duration_ms, status, notes, ts)
+
+    ─── Product-mode tables ───────────────────────────────────────────────
+
+    products(id pk, name, one_liner, category, topic, created_at,
+             last_swept_at, monitoring_cadence, is_active, metadata_json)
+    product_competitors(product_id, competitor_name, urls_json, category,
+                        tracked_since, is_active)
+    product_signals(id, product_id, signal_type, severity, confidence,
+                    detected_at, title, description, evidence_post_ids,
+                    related_competitor, suggested_action, user_action,
+                    user_action_at, snoozed_until, resolution_notes,
+                    created_at)
+    product_sweeps(id, product_id, run_at, trigger, signals_generated,
+                   posts_added, duration_ms, error, notes)
+
+    ─── Misc ──────────────────────────────────────────────────────────────
+
+    streams(id, name, sub, keywords, started_at, active)
+    stream_hits(stream_id, item_type, item_id, matched_at, keywords_matched)
+    trend_series(id, topic, keyword, timeframe, geo, point_ts, interest,
+                 fetched_at)
+    saved_views(id, scope, name, filter_json, pinned, created_at, updated_at)
+    prompt_overrides(key pk, override_text, updated_at)
+
+    ─── Date/time conventions ─────────────────────────────────────────────
+    - `created_utc` is a FLOAT unix epoch. Format with
+      `datetime(created_utc, 'unixepoch')` → `'2026-04-20 12:30:08'`
+      or `date(created_utc, 'unixepoch')` → `'2026-04-20'`.
+    - Every `*_at` column is an ISO-8601 TEXT string.
     """
     s = sql.strip().rstrip(";")
     lower = s.lower()
-    if not lower.startswith(("select", "with")):
-        raise ValueError("Only SELECT / WITH queries are allowed.")
+    # Allow SELECT, WITH, and a narrow list of read-only PRAGMAs so an LLM
+    # client can introspect the schema without hitting the write-guard.
+    # Every PRAGMA here is documented as read-only in SQLite's docs.
+    _READ_ONLY_PRAGMAS = (
+        "pragma table_info",
+        "pragma table_list",
+        "pragma index_info",
+        "pragma index_list",
+        "pragma index_xinfo",
+        "pragma foreign_key_list",
+        "pragma database_list",
+        "pragma function_list",
+    )
+    is_select = lower.startswith(("select", "with"))
+    is_ro_pragma = any(lower.startswith(p) for p in _READ_ONLY_PRAGMAS)
+    if not (is_select or is_ro_pragma):
+        raise ValueError(
+            "Only SELECT / WITH / read-only PRAGMA (table_info, table_list, "
+            "index_info, index_list, index_xinfo, foreign_key_list, "
+            "database_list, function_list) are allowed."
+        )
     if any(k in lower for k in (" insert ", " update ", " delete ", " drop ", " alter ")):
         raise ValueError("Destructive statements are blocked.")
     return list(get_db().query(s))
+
+
+@mcp.tool()
+def reddit_describe_schema(table: str | None = None) -> dict[str, Any]:
+    """Return live SQLite schema — either every table, or one table.
+
+    Use this when `reddit_query_db` rejects a column ("no such column: …") —
+    running `PRAGMA table_info()` is cheaper than guessing and the tool
+    description may be stale after a migration.
+
+    Args:
+        table: if provided, return columns for that table only. If omitted,
+               returns a {table_name: [columns]} map for every user table.
+
+    Returns:
+        {"tables": {name: [{name, type, notnull, default, pk}, ...]}} when
+        `table` is None, otherwise {"table": name, "columns": [...]}.
+
+        Column rows are the shape SQLite's PRAGMA returns, one per field.
+    """
+    db = get_db()
+    conn = db.conn if hasattr(db, "conn") else db  # sqlite_utils Database → sqlite3 conn
+
+    def cols_for(name: str) -> list[dict[str, Any]]:
+        rows = conn.execute(f"PRAGMA table_info({name})").fetchall()
+        return [
+            {
+                "name": r[1],
+                "type": r[2],
+                "notnull": bool(r[3]),
+                "default": r[4],
+                "pk": bool(r[5]),
+            }
+            for r in rows
+        ]
+
+    if table:
+        # Whitelist: only user tables, never sqlite_* or arbitrary names.
+        name = table.strip()
+        if not name.replace("_", "").isalnum():
+            raise ValueError("table name must be alphanumeric/underscore")
+        cols = cols_for(name)
+        if not cols:
+            raise ValueError(f"table '{name}' not found")
+        return {"table": name, "columns": cols}
+
+    tables = [
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        ).fetchall()
+    ]
+    return {"tables": {t: cols_for(t) for t in tables}}
 
 
 @mcp.tool()
@@ -153,9 +313,28 @@ def reddit_discover_subs(topic: str, limit: int = 10) -> list[dict]:
     result = research_discover(topic=topic, limit=limit)
     # research_discover now returns {subs, confirmation}. MCP consumers
     # expect a plain list — unwrap so the external contract stays stable.
-    if isinstance(result, dict):
-        return result.get("subs", [])
-    return result
+    subs = result.get("subs", []) if isinstance(result, dict) else result
+    confirmation = result.get("confirmation", "") if isinstance(result, dict) else ""
+
+    # Persist so the GUI's "AI Analyses" tab sees what the LLM ranked,
+    # even when the call came from an MCP client. Silent on any failure —
+    # the user ask never depends on this bookkeeping write.
+    try:
+        from ..core.db import save_mcp_analysis
+        import json as _json
+        save_mcp_analysis(
+            topic=topic,
+            kind="subreddit_ranking",
+            tool="reddit_discover_subs",
+            source="mcp",
+            content_type="json",
+            content=_json.dumps({"subs": subs, "confirmation": confirmation}),
+            params={"topic": topic, "limit": limit},
+        )
+    except Exception:
+        pass
+
+    return subs
 
 
 @mcp.tool()
@@ -687,7 +866,30 @@ def reddit_analyze_paper(topic: str, post_id: str, force: bool = False) -> dict:
     a configured LLM provider (BYOK). Skip-stub if none configured.
     """
     from ..research.paper_analyze import analyze_paper
-    return analyze_paper(topic=topic, post_id=post_id, force=force)
+    res = analyze_paper(topic=topic, post_id=post_id, force=force)
+    # Mirror a compact markdown card into mcp_analyses so the GUI surfaces
+    # this analysis without having to join paper_analyses every render.
+    try:
+        if isinstance(res, dict) and res.get("ok") and not res.get("skipped"):
+            from ..core.db import save_mcp_analysis
+            md = (
+                f"**Summary.** {res.get('summary','').strip()}\n\n"
+                f"**Relevance.** {res.get('relevance','').strip()}\n\n"
+                f"**Takeaway.** {res.get('takeaway','').strip()}"
+            )
+            save_mcp_analysis(
+                topic=topic,
+                kind="paper_analysis",
+                tool="reddit_analyze_paper",
+                source="mcp",
+                content=md,
+                params={"topic": topic, "post_id": post_id, "force": force},
+                provider=res.get("provider", ""),
+                model=res.get("model", ""),
+            )
+    except Exception:
+        pass
+    return res
 
 
 @mcp.tool()
@@ -697,7 +899,31 @@ def reddit_analyze_papers_bulk(topic: str, limit: int | None = None, force: bool
     Ordered by citation/score desc so the highest-signal papers go first.
     """
     from ..research.paper_analyze import analyze_papers_bulk
-    return analyze_papers_bulk(topic=topic, limit=limit, force=force)
+    res = analyze_papers_bulk(topic=topic, limit=limit, force=force)
+    # One rollup row, not one per paper — individual paper rows already
+    # land via analyze_paper() if the bulk path calls it. This keeps the
+    # "AI Analyses" GUI list readable.
+    try:
+        if isinstance(res, dict) and res.get("ok"):
+            from ..core.db import save_mcp_analysis
+            md = (
+                f"Bulk paper analysis for **{topic}** — "
+                f"{res.get('analyzed', 0)} analyzed, "
+                f"{res.get('skipped', 0)} skipped, "
+                f"{res.get('errored', 0)} errored "
+                f"(of {res.get('total', 0)} total)."
+            )
+            save_mcp_analysis(
+                topic=topic,
+                kind="conclusion",
+                tool="reddit_analyze_papers_bulk",
+                source="mcp",
+                content=md,
+                params={"topic": topic, "limit": limit, "force": force},
+            )
+    except Exception:
+        pass
+    return res
 
 
 @mcp.tool()
@@ -715,6 +941,118 @@ def reddit_paper_analyses(topic: str, limit: int = 50) -> list[dict]:
         LIMIT :lim
     """
     return list(get_db().query(sql, {"topic": topic, "lim": limit}))
+
+
+@mcp.tool()
+def reddit_synthesize_insights(
+    topic: str,
+    min_score: int = 0,
+    provider: str | None = None,
+) -> dict:
+    """Run the insight synthesis pipeline on the topic's corpus and return
+    the parsed report. Persists to both `topic_insights` (primary) and
+    `mcp_analyses` (GUI surface). LLM-backed — uses the app's configured
+    provider chain. Returns {ok, skipped?, report?, error?}.
+
+    Use AFTER fetching enough corpus (≥100 posts recommended). This is the
+    "conclusions at the end" step from the GUI's app-mode perspective —
+    MCP clients can call it on demand instead of waiting for the app's
+    enrichment worker.
+    """
+    from ..research.insights import synthesize_insights
+    import json as _json
+    res = synthesize_insights(topic=topic, provider=provider, persist=True, min_score=min_score)
+    try:
+        if isinstance(res, dict) and res.get("ok") is not False:
+            from ..core.db import save_mcp_analysis
+            report = res if "findings" in res else res.get("report") or {}
+            save_mcp_analysis(
+                topic=topic,
+                kind="insights",
+                tool="reddit_synthesize_insights",
+                source="mcp",
+                content_type="json",
+                content=_json.dumps(report),
+                params={"topic": topic, "min_score": min_score, "provider": provider},
+                provider=res.get("provider", "") or "",
+                model=res.get("model", "") or "",
+            )
+    except Exception:
+        pass
+    return res
+
+
+@mcp.tool()
+def reddit_find_gaps(
+    topic: str,
+    corpus_limit: int = 120,
+    min_score: int = 1,
+    provider: str | None = None,
+) -> dict:
+    """Extract painpoints / feature wishes / product complaints / DIY workarounds
+    from the topic's corpus. LLM-backed via the app's configured provider.
+    Persists the four-part report to `mcp_analyses` so the GUI can show it.
+    """
+    from ..research.gaps import find_gaps
+    import json as _json
+    res = find_gaps(topic=topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score)
+    try:
+        if isinstance(res, dict) and not res.get("error"):
+            from ..core.db import save_mcp_analysis
+            save_mcp_analysis(
+                topic=topic,
+                kind="gaps",
+                tool="reddit_find_gaps",
+                source="mcp",
+                content_type="json",
+                content=_json.dumps({
+                    "painpoints": res.get("painpoints"),
+                    "feature_wishes": res.get("feature_wishes"),
+                    "product_complaints": res.get("product_complaints"),
+                    "diy_workarounds": res.get("diy_workarounds"),
+                    "corpus_size": res.get("corpus_size"),
+                }),
+                params={"topic": topic, "corpus_limit": corpus_limit, "min_score": min_score},
+                provider=res.get("provider", "") or "",
+            )
+    except Exception:
+        pass
+    return res
+
+
+@mcp.tool()
+def reddit_mcp_analyses_list(
+    topic: str | None = None,
+    kind: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """List recent entries from `mcp_analyses` — the unified log of
+    LLM-driven intelligence across MCP tools and the app's pipelines.
+
+    Use this to show a client LLM (or the GUI) what's already been
+    concluded on a topic before running a fresh synthesis. Filter by
+    `topic` and/or `kind` ∈ {summary, synthesis, cluster_note, conclusion,
+    paper_analysis, subreddit_ranking, insights, gaps}.
+    """
+    from ..core.db import get_db
+    clauses: list[str] = []
+    params: dict[str, Any] = {"lim": max(1, min(int(limit), 500))}
+    if topic:
+        clauses.append("topic = :topic")
+        params["topic"] = topic
+    if kind:
+        clauses.append("kind = :kind")
+        params["kind"] = kind
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"""
+        SELECT id, topic, kind, source, tool, content_type, content,
+               provider, model, tokens_in, tokens_out, created_at
+        FROM mcp_analyses
+        {where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT :lim
+    """
+    return list(get_db().query(sql, params))
 
 
 @mcp.tool()
@@ -773,6 +1111,81 @@ def reddit_fetch_mastodon(query: str, instance: str = "mastodon.social", limit: 
     from ..sources.mastodon import fetch_mastodon
 
     return fetch_mastodon(query=query, instance=instance, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_bluesky(query: str, limit: int = 30) -> list[dict]:
+    """Bluesky (AT Protocol) — public posts matching a query. Free, no key."""
+    from ..sources.bluesky import fetch_bluesky
+    return fetch_bluesky(query=query, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_rss(
+    feed_url: str,
+    category: str = "rss",
+    publication: str = "",
+    limit: int = 50,
+    query: str | None = None,
+) -> list[dict]:
+    """Fetch any RSS / Atom feed and persist entries as posts.
+
+    Args:
+        feed_url: full RSS / Atom URL (e.g. https://news.ycombinator.com/rss).
+        category: free-form tag stored in `sub` (use for filtering later).
+        publication: display name for the outlet (blog / newspaper name).
+        limit: max entries to return.
+        query: optional keyword filter — when set, only entries whose
+            title/summary contain one of the query's words are kept.
+    """
+    from ..sources.rss import fetch_rss
+    return fetch_rss(
+        feed_url=feed_url, category=category, publication=publication,
+        query=query, limit=limit,
+    )
+
+
+@mcp.tool()
+def reddit_fetch_producthunt(query: str, limit: int = 30) -> list[dict]:
+    """Product Hunt — recent launches matching a query. Useful for 'what
+    is everyone launching in this space' + competitor scanning."""
+    from ..sources.producthunt import fetch_producthunt
+    return fetch_producthunt(query=query, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_trustpilot(query: str, pages: int = 3, limit: int = 90) -> list[dict]:
+    """Trustpilot — user reviews for a brand. `query` = brand or search term
+    (we resolve it to a Trustpilot domain). Useful for product-mode sweeps."""
+    from ..sources.trustpilot import fetch_trustpilot
+    return fetch_trustpilot(query=query, pages=pages, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_alternativeto(product: str, limit: int = 30) -> list[dict]:
+    """AlternativeTo — 'what else is out there like X?' Returns competitor
+    products with brief descriptions. Input is a product name (e.g. 'Notion')."""
+    from ..sources.alternativeto import fetch_alternativeto
+    return fetch_alternativeto(product=product, limit=limit)
+
+
+@mcp.tool()
+def reddit_fetch_youtube(query: str, videos: int = 5, comments_per_video: int = 50) -> list[dict]:
+    """YouTube — video metadata + top comments for each video on a query.
+    Requires `YOUTUBE_API_KEY` env var (free quota: 10K units/day).
+    Returns rows shaped like posts — video = parent, comments follow as their own posts."""
+    from ..sources.youtube import search_youtube_videos, fetch_youtube_comments
+    vids = search_youtube_videos(query=query, limit=videos) or []
+    out = list(vids)
+    for v in vids:
+        vid_id = v.get("id", "").replace("youtube_", "")
+        try:
+            cs = fetch_youtube_comments(video_id=vid_id, video_title=v.get("title", ""),
+                                        limit=comments_per_video) or []
+            out.extend(cs)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
 
 
 @mcp.tool()
@@ -1307,6 +1720,28 @@ def reddit_research_links(topic: str, finding: str | None = None) -> list[dict] 
     return get_links_summary(topic=topic)
 
 
+@mcp.tool()
+def reddit_search_all(
+    query: str,
+    topic: str | None = None,
+    aggressive: bool = False,
+) -> dict:
+    """Cross-table search across posts, graph nodes, analyses, papers,
+    hypotheses, feedback, and (aggressive mode) palace semantic hits.
+
+    - normal: SQL LIKE across indexed text columns. Fast, offline.
+    - aggressive: LLM query-expansion (3-4 paraphrases) + semantic search.
+
+    Every run persists a summary row to `mcp_analyses` with
+    `kind='search'` — so downstream pipelines (insights, concepts,
+    solutions) can reuse the result without re-running the search.
+
+    Returns: {ok, query, topic, mode, expansions, buckets, counts, persisted}
+    """
+    from ..research.search_all import search_all
+    return search_all(query=query, topic=topic, aggressive=aggressive, persist=True)
+
+
 # ─── Production guards — prevents the "18 zombie MCP servers" bug ───
 # Shipping lessons from 2026-04-21 — a user session accumulated 18
 # `reddit-cli mcp serve` processes over 2 days (Claude Code / Cursor
@@ -1355,24 +1790,68 @@ def _acquire_pidfile_lock() -> bool:
     """Write our PID to the lock file. Returns True if we got the lock,
     False if another live MCP server already has it.
 
-    Policy: if the stored PID is dead (crash, kill -9), steal the lock.
-    If the stored PID is alive, return False — the caller should exit
-    with a diagnostic, not race.
+    Policy:
+      - If the stored PID is dead (crash, kill -9), steal the lock.
+      - If the stored PID is alive AND ``MCP_TAKEOVER_STALE_LOCK=1``,
+        SIGTERM it, wait up to 3 s for it to die, retry. This is the
+        normal case when a client (Claude Code / Cursor) restarts and
+        spawns a new ``mcp serve`` while the previous one is still
+        attached to a dead stdin pipe from the prior session.
+      - Otherwise return False — the caller exits with a diagnostic.
     """
     import os
+    import signal
+    import time
+
     pf = _pidfile_path()
-    if pf.exists():
+
+    def _read_prior() -> int:
+        if not pf.exists():
+            return 0
         try:
-            prior = int(pf.read_text().strip())
+            return int(pf.read_text().strip())
         except (ValueError, OSError):
-            prior = 0
-        if prior and prior != os.getpid() and _is_alive(prior):
+            return 0
+
+    def _write_ours() -> bool:
+        try:
+            pf.write_text(str(os.getpid()))
+            return True
+        except OSError:
+            return True  # best-effort — don't block startup on a write failure
+
+    prior = _read_prior()
+    if prior and prior != os.getpid() and _is_alive(prior):
+        takeover = (os.environ.get("MCP_TAKEOVER_STALE_LOCK") or "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if not takeover:
             return False
-    try:
-        pf.write_text(str(os.getpid()))
-    except OSError:
-        return True  # best-effort — don't block startup on a write failure
-    return True
+        # Cooperative shutdown. SIGTERM lets the prior server's atexit
+        # hooks run (including _release_pidfile_lock), which is cleaner
+        # than SIGKILL. Poll for death for up to 3 s, then escalate.
+        try:
+            os.kill(prior, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            return _write_ours()
+        for _ in range(30):  # 30 × 100ms = 3s
+            if not _is_alive(prior):
+                break
+            time.sleep(0.1)
+        else:
+            try:
+                os.kill(prior, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                pass
+            time.sleep(0.2)
+        if _is_alive(prior):
+            # Something else re-acquired the same PID in the interim
+            # (rare), or SIGKILL didn't stick. Don't race.
+            return False
+    return _write_ours()
 
 
 def _release_pidfile_lock() -> None:
@@ -1501,13 +1980,20 @@ def run() -> None:
     _ = os.environ.get("REDDIT_MYIND_TOKEN", "")
 
     # Guard 1 — PID-file lock. If another live instance owns the lock,
-    # exit with a clear diagnostic rather than racing.
+    # exit with a clear diagnostic rather than racing. When MCP was
+    # installed by the desktop app, MCP_TAKEOVER_STALE_LOCK=1 is set
+    # in the client config so a restart automatically reclaims the
+    # lock from a zombie prior instance.
     if not _acquire_pidfile_lock():
         import json
         sys.stderr.write(json.dumps({
             "error": "another_mcp_server_running",
-            "hint": "Kill the other instance or remove "
-                    f"{_pidfile_path()} if you're sure it's dead.",
+            "hint": "Another MCP server instance is still alive. "
+                    f"Kill it or remove {_pidfile_path()} if you're sure "
+                    "it's dead. To let the server auto-reclaim a stale "
+                    "lock on restart, set MCP_TAKEOVER_STALE_LOCK=1 in "
+                    "your MCP client's env (or re-run `mcp install` from "
+                    "the desktop app, which wires this automatically).",
         }) + "\n")
         sys.stderr.flush()
         raise SystemExit(2)

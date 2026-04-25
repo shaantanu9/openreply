@@ -30,6 +30,9 @@ def _utc_now() -> str:
 _tls = threading.local()
 _schema_lock = threading.Lock()
 _schema_inited = False
+# Chroma Rust client can segfault on concurrent upserts across threads.
+# Serialize palace writes while allowing SQLite upserts to stay parallel.
+_palace_upsert_lock = threading.Lock()
 
 
 def get_db() -> Database:
@@ -220,6 +223,48 @@ def init_schema(db: Database) -> None:
         )
         db["topic_posts"].create_index(["topic"])
         db["topic_posts"].create_index(["post_id"])
+
+    # PDF ingest provenance: document-level artifact metadata + element-level
+    # coordinates/types from opendataloader JSON. This powers "open source
+    # location" UX and future graph evidence edges without overloading posts.
+    if "ingested_documents" not in db.table_names():
+        db["ingested_documents"].create(
+            {
+                "id": str,
+                "topic": str,
+                "post_id": str,
+                "source_path": str,
+                "source_hash": str,
+                "source_type": str,
+                "parser": str,
+                "parser_mode": str,
+                "artifact_dir": str,
+                "created_at": str,
+            },
+            pk="id",
+        )
+        db["ingested_documents"].create_index(["topic"])
+        db["ingested_documents"].create_index(["post_id"])
+
+    if "document_elements" not in db.table_names():
+        db["document_elements"].create(
+            {
+                "id": str,
+                "document_id": str,
+                "post_id": str,
+                "topic": str,
+                "element_id": str,
+                "element_type": str,
+                "content": str,
+                "page_number": int,
+                "bbox_json": str,
+                "created_at": str,
+            },
+            pk="id",
+        )
+        db["document_elements"].create_index(["document_id"])
+        db["document_elements"].create_index(["post_id"])
+        db["document_elements"].create_index(["topic"])
 
     # Migration: an earlier revision of this file created the graph tables
     # with `meta_json` instead of `metadata_json` and, for graph_edges, with
@@ -485,6 +530,34 @@ def init_schema(db: Database) -> None:
             },
             pk="key",
         )
+
+    # MCP analyses — unified log of LLM-driven intelligence produced either
+    # by MCP tools (source='mcp') or by the app's own pipelines (source='app').
+    # The GUI's topic page reads this table to show "AI Analyses" so users see
+    # what the client LLM (or the app) concluded, independent of which
+    # domain-specific table the primary result lives in.
+    if "mcp_analyses" not in db.table_names():
+        db["mcp_analyses"].create(
+            {
+                "id": int,                 # autoincrement
+                "topic": str,              # topic context (may be empty for global)
+                "kind": str,               # summary | synthesis | cluster_note | conclusion | paper_analysis | subreddit_ranking | insights | gaps
+                "source": str,             # 'mcp' | 'app'
+                "tool": str,               # which MCP tool / pipeline produced it
+                "params_json": str,        # input args, for reproducibility
+                "content": str,            # markdown or JSON blob (see content_type)
+                "content_type": str,       # 'markdown' | 'json'
+                "provider": str,           # resolved LLM provider ('' if deterministic)
+                "model": str,              # LLM_MODEL at write-time ('' if deterministic)
+                "tokens_in": int,
+                "tokens_out": int,
+                "created_at": str,         # ISO UTC
+            },
+            pk="id",
+        )
+        db["mcp_analyses"].create_index(["topic", "created_at"])
+        db["mcp_analyses"].create_index(["topic", "kind", "created_at"])
+        db["mcp_analyses"].create_index(["source"])
 
     # ── Dual-Mode Pivot — Product Mode tables (2026-04-20) ───────────────
     # Adds a product-centric surface alongside the existing topic-centric
@@ -765,6 +838,11 @@ def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
     #      warmup), then a Reindex backfills the existing corpus.
     if os.getenv("GAPMAP_SKIP_PALACE") in ("1", "true", "yes"):
         return len(rows)
+    # Chroma Rust bindings are unstable from worker threads in our collect
+    # fanout path. Keep SQLite writes parallel, but defer vector upserts to
+    # main-thread flows (reindex / enrich / explicit retrieval jobs).
+    if threading.current_thread() is not threading.main_thread():
+        return len(rows)
     try:
         from ..retrieval.palace import is_available, is_model_ready, upsert_posts_many
         # is_model_ready() also probes for the bundled / on-disk tar and
@@ -773,7 +851,8 @@ def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
         # first embed. Callers that fetched-then-MCP-restarted will pick
         # the index up too.
         if is_available() and is_model_ready():
-            upsert_posts_many(rows)
+            with _palace_upsert_lock:
+                upsert_posts_many(rows)
     except Exception:
         pass
     return len(rows)
@@ -799,6 +878,42 @@ def upsert_subreddit(row: dict[str, Any]) -> None:
     get_db()["subreddits"].upsert(row, pk="name")
 
 
+def save_mcp_analysis(
+    *,
+    topic: str,
+    kind: str,
+    tool: str,
+    content: str,
+    source: str = "mcp",
+    content_type: str = "markdown",
+    params: dict[str, Any] | None = None,
+    provider: str = "",
+    model: str = "",
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+) -> int:
+    """Record one LLM-driven analysis row for the unified GUI surface.
+
+    Returns the inserted row id. Safe to call from any thread that went
+    through get_db() — each thread has its own connection.
+    """
+    row = {
+        "topic": topic or "",
+        "kind": kind,
+        "source": source,
+        "tool": tool,
+        "params_json": json.dumps(params, sort_keys=True) if params else "",
+        "content": content,
+        "content_type": content_type,
+        "provider": provider,
+        "model": model,
+        "tokens_in": int(tokens_in or 0),
+        "tokens_out": int(tokens_out or 0),
+        "created_at": _utc_now(),
+    }
+    return get_db()["mcp_analyses"].insert(row).last_pk  # type: ignore[return-value]
+
+
 __all__ = [
     "get_db",
     "init_schema",
@@ -808,4 +923,5 @@ __all__ = [
     "upsert_comments",
     "upsert_users",
     "upsert_subreddit",
+    "save_mcp_analysis",
 ]

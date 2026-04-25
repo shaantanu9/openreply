@@ -13,6 +13,60 @@ from .base import LLMProvider
 _NON_CHAT_FAMILIES = {"bert", "nomic-bert", "glmocr"}
 
 
+# Preferred-family order for auto-pick. When the user has multiple local
+# models installed, naive "first /api/tags entry" is arbitrary and often
+# picks a small Q4 model over a better-tuned alternative. This list encodes
+# "instruction-tuned chat models with reliable JSON compliance," ordered by
+# general extraction quality. Prefixes match the Ollama tag prefix (before
+# the colon, e.g. "llama3.2:3b" → "llama3.2").
+_PREFERRED_FAMILY_PREFIXES = (
+    "llama3.3",
+    "llama3.2",
+    "llama3.1",
+    "qwen2.5",
+    "qwen2",
+    "gemma3",
+    "gemma2",
+    "mistral",
+    "mixtral",
+    "phi3",
+    "phi4",
+)
+
+
+def _param_size_score(details: dict | None) -> float:
+    """Parse Ollama's `parameter_size` (e.g. "8.0B", "3B", "70B") to a float.
+    Used as a tiebreaker: within the same preferred family, pick the larger
+    model so users with 70B llama3.1 + 3B llama3.2 installed get 70B for
+    extraction (far better JSON reliability on a gnarly prompt)."""
+    if not details:
+        return 0.0
+    raw = str(details.get("parameter_size") or "").strip().upper()
+    if not raw:
+        return 0.0
+    try:
+        # Strip trailing B/M/K; treat as billions by default.
+        if raw.endswith("B"):
+            return float(raw[:-1])
+        if raw.endswith("M"):
+            return float(raw[:-1]) / 1000.0
+        if raw.endswith("K"):
+            return float(raw[:-1]) / 1_000_000.0
+        return float(raw)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _family_rank(name: str) -> int:
+    """Lower = more preferred. Returns len(prefixes) for unknown families
+    so known ones always win."""
+    lo = name.lower()
+    for i, prefix in enumerate(_PREFERRED_FAMILY_PREFIXES):
+        if lo.startswith(prefix):
+            return i
+    return len(_PREFERRED_FAMILY_PREFIXES)
+
+
 # Incremental-enrichment (2026-04-21, Task 4): opt-in Ollama keep-alive
 # release. When ``GAPMAP_RELEASE_LLM_IDLE`` is truthy AND the last call was
 # more than ``_IDLE_KEEPALIVE_SECS`` ago, the next generate request sends
@@ -33,14 +87,19 @@ def _release_on_idle_enabled() -> bool:
 
 
 def _autopick_ollama_model(base_url: str) -> str | None:
-    """Pick the first installed chat-capable **local** model.
+    """Pick the best-installed chat-capable **local** model.
 
     Skips:
-      - Embeddings models (names containing "embed").
+      - Embedding models (names containing "embed").
       - OCR models (names containing "ocr").
       - Non-chat families (bert, glmocr, …) listed in _NON_CHAT_FAMILIES.
       - Ollama cloud-gated models (any name ending `:cloud` — those require
         an upstream key and hit 401 otherwise, silently breaking enrichment).
+
+    Ranking: families listed in _PREFERRED_FAMILY_PREFIXES win over unknowns.
+    Within a family, the model with the larger parameter count wins (a user
+    who has llama3.1:70b + llama3.2:3b installed should get 70b for
+    extraction — its JSON compliance is far better on long prompts).
     """
     try:
         import httpx
@@ -49,6 +108,8 @@ def _autopick_ollama_model(base_url: str) -> str | None:
         data = r.json()
     except Exception:
         return None
+
+    candidates: list[tuple[int, float, str]] = []  # (rank, -size, name)
     for m in data.get("models", []) or []:
         name = m.get("name") or m.get("model") or ""
         if not name:
@@ -58,11 +119,17 @@ def _autopick_ollama_model(base_url: str) -> str | None:
             continue
         if lo.endswith(":cloud"):
             continue
-        fam = (m.get("details", {}) or {}).get("family") or ""
+        details = m.get("details") or {}
+        fam = details.get("family") or ""
         if fam in _NON_CHAT_FAMILIES:
             continue
-        return name
-    return None
+        # Sort key: preferred-family rank ASC, then size DESC (larger wins).
+        candidates.append((_family_rank(name), -_param_size_score(details), name))
+
+    if not candidates:
+        return None
+    candidates.sort()
+    return candidates[0][2]
 
 
 class OllamaProvider(LLMProvider):
@@ -86,12 +153,23 @@ class OllamaProvider(LLMProvider):
             if (os.getenv("LLM_PROVIDER") or "").lower() == "ollama"
             else None
         )
-        self._model = (
+        picked = (
             model
             or env_model
             or _autopick_ollama_model(self._base)
-            or "llama3.1"
         )
+        if not picked:
+            # Previously we fell back to "llama3.1" which then failed at
+            # generation time with a confusing "unable to load model" error
+            # if the user didn't have it pulled. Fail fast with actionable
+            # guidance instead — the FallbackProvider chain catches this
+            # and moves to the next provider (or surfaces it in the UI).
+            raise RuntimeError(
+                "No local Ollama chat model found. Pull one first, e.g. "
+                "`ollama pull llama3.2` (fast) or `ollama pull llama3.1:70b` "
+                "(best for extraction), then retry."
+            )
+        self._model = picked
 
     def complete(
         self,

@@ -1,6 +1,8 @@
 // Solutions tab — shows the Problem -> Why -> Science -> Solution loop
 // per painpoint. Reads from graph_nodes/graph_edges via api.runQuery.
 import { api } from '../api.js';
+import { isAutoRunEnabled } from '../lib/tabPipelines.js';
+import { hasLlmConfigured } from '../lib/llmStatus.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -150,21 +152,40 @@ export async function loadSolutions(contentEl, topic) {
     set(renderEmpty(topic));
     if (contentEl.dataset.tab !== 'solutions') return;
     window.refreshIcons?.();
-    $('#btn-run-solutions', contentEl)?.addEventListener('click', async () => {
-      const status = $('#solutions-status', contentEl);
-      status.textContent = 'Running… this may take 1-3 minutes.';
+    const runBtn = $('#btn-run-solutions', contentEl);
+    // Re-query #solutions-status on every assignment so a tab re-render
+    // mid-run doesn't strand the captured ref. Without this, a captured
+    // `status` goes null after `set(renderEmpty(...))` runs again or
+    // when the user switches tabs and back, and the next assignment
+    // throws `TypeError: null is not an object`. setStatus no-ops if
+    // the host is gone — matches the pattern in concepts.js / chat.
+    const setStatus = (msg) => {
+      const el = contentEl.querySelector('#solutions-status');
+      if (el) el.textContent = msg;
+    };
+    const runPipeline = async () => {
+      if (runBtn) runBtn.disabled = true;
+      setStatus('Running… this may take 1-3 minutes.');
       try {
         const result = await api.runSolutionsPipeline(topic);
         if (result?.skipped) {
-          status.textContent = `Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`;
+          setStatus(`Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`);
+          if (runBtn) runBtn.disabled = false;
           return;
         }
-        // Re-render with the new data
         await loadSolutions(contentEl, topic);
       } catch (e) {
-        status.textContent = `Error: ${e?.message || e}`;
+        setStatus(`Error: ${e?.message || e}`);
+        if (runBtn) runBtn.disabled = false;
       }
-    });
+    };
+    runBtn?.addEventListener('click', runPipeline);
+    // Auto-run on open when the user has opted in AND an LLM is configured.
+    // Falls back to the manual CTA when either condition fails so we never
+    // silently consume credits against the user's will.
+    if (isAutoRunEnabled() && await hasLlmConfigured()) {
+      if (contentEl.dataset.tab === 'solutions') runPipeline();
+    }
     return;
   }
 

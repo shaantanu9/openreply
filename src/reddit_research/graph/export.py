@@ -35,7 +35,7 @@ def _source_breakdown_for_node(topic: str, node_id: str) -> dict[str, int]:
                 SELECT CASE WHEN e.src = ? THEN e.dst ELSE e.src END AS nid
                 FROM graph_edges e
                 WHERE e.topic = ? AND (e.src = ? OR e.dst = ?)
-                  AND e.kind IN ('evidenced_by','wished_in','built_in','solves','about_product')
+                  AND e.kind IN ('evidenced_by','wished_in','built_in','solves','about_product','supports')
             )
             SELECT coalesce(p.source_type, 'reddit') AS src, count(*) AS n
             FROM posts p JOIN ev ON ev.nid = ? || p.id
@@ -69,7 +69,7 @@ def _saturation_for_node(topic: str, node_id: str) -> dict[str, Any]:
                 SELECT CASE WHEN e.src = ? THEN e.dst ELSE e.src END AS nid
                 FROM graph_edges e
                 WHERE e.topic = ? AND (e.src = ? OR e.dst = ?)
-                  AND e.kind IN ('evidenced_by','wished_in','built_in','solves','about_product')
+                  AND e.kind IN ('evidenced_by','wished_in','built_in','solves','about_product','supports')
             )
             SELECT
               count(*) AS n_evidence,
@@ -105,7 +105,13 @@ def _saturation_for_node(topic: str, node_id: str) -> dict[str, Any]:
 
 
 def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
-    """Pull ranked findings per kind with evidence counts + source distribution."""
+    """Pull ranked findings per kind with cross-source weighted ranking.
+
+    Ranking policy:
+      1) Source diversity first (same finding seen across more source types)
+      2) Evidence count second
+      3) Stable label sort as tie-breaker
+    """
     db = get_db()
     out: dict[str, list[dict]] = {}
     for kind in ("painpoint", "feature_wish", "product", "workaround"):
@@ -116,18 +122,27 @@ def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
                        (SELECT count(*) FROM graph_edges e
                         WHERE e.topic = n.topic
                           AND (e.src = n.id OR e.dst = n.id)
-                          AND e.kind IN ('evidenced_by','wished_in','about_product','built_in','solves'))
-                        AS evidence_count
+                          AND e.kind IN ('evidenced_by','wished_in','about_product','built_in','solves','supports'))
+                        AS evidence_count,
+                       (SELECT count(DISTINCT coalesce(p.source_type,'reddit'))
+                          FROM graph_edges e2
+                          JOIN posts p
+                            ON (e2.src = ? || p.id OR e2.dst = ? || p.id)
+                         WHERE e2.topic = n.topic
+                           AND (e2.src = n.id OR e2.dst = n.id)
+                           AND e2.kind IN ('evidenced_by','wished_in','about_product','built_in','solves','supports'))
+                        AS source_diversity
                 FROM graph_nodes n
                 WHERE n.topic = ? AND n.kind = ?
-                ORDER BY evidence_count DESC
+                ORDER BY source_diversity DESC, evidence_count DESC, n.label ASC
                 """,
-                [topic, kind],
+                [f"{topic}::post::", f"{topic}::post::", topic, kind],
             )
         )
         parsed = [_parse_metadata(r) for r in rows]
         for p, r in zip(parsed, rows, strict=False):
             p["evidence_count"] = r.get("evidence_count", 0)
+            p["source_diversity"] = r.get("source_diversity", 0)
             p["source_breakdown"] = _source_breakdown_for_node(topic, p["id"])
             p["saturation"] = _saturation_for_node(topic, p["id"])
         out[kind] = parsed
@@ -136,6 +151,7 @@ def _findings_for_topic(topic: str) -> dict[str, list[dict]]:
 
 SKELETON_KINDS = {
     "topic", "era", "subreddit", "source",
+    "document",
     "painpoint", "feature_wish", "product", "workaround",
 }
 
@@ -394,6 +410,17 @@ _HTML_TEMPLATE = """<!doctype html>
     margin-bottom:10px; }
   .swatch { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:3px;
     vertical-align:middle; }
+  .source-groups { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .source-group { border:1px solid var(--border); background:var(--bg); border-radius:6px; padding:7px 8px; }
+  .source-group-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .source-pill {
+    display:inline-flex; align-items:center; gap:6px; font-size:10px; text-transform:uppercase;
+    letter-spacing:.4px; font-weight:700; color:var(--text);
+  }
+  .source-pill i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .source-count { font-size:10px; color:var(--muted); }
+  .source-group ul { margin:7px 0 0; padding-left:16px; font-size:11px; line-height:1.45; }
+  .source-group li { margin:2px 0; }
 
   #graph { width:100%; height:100%; background:var(--bg); }
   .node { cursor:pointer; }
@@ -488,6 +515,8 @@ _HTML_TEMPLATE = """<!doctype html>
     </div>
 
     <div class="legend" id="legend"></div>
+    <h2>Top insights by source</h2>
+    <div id="sourceTopInsights" class="source-groups"></div>
 
     <h2>🔥 Painpoints <span id="ppCount" style="color:var(--muted);font-weight:400"></span></h2>
     <div id="painpoints"></div>
@@ -535,11 +564,14 @@ const KIND_COLORS = {
   feature_wish:"#E69447", // app emerging
   product:"#D48BA6",      // deepened rose
   workaround:"#7DC9A3",   // deepened mint
+  document:"#A371F7",
+  document_element:"#79C0FF",
 };
 const KIND_LABEL = {
   topic:"Topic", subreddit:"Subreddit", post:"Post", comment:"Comment",
   user:"User", era:"Era", painpoint:"Painpoint", feature_wish:"Feature wish",
-  product:"Product", workaround:"DIY workaround",
+  product:"Product", workaround:"DIY workaround", document:"Document",
+  document_element:"Document element",
 };
 
 // ── header stats + subtitle ──
@@ -763,6 +795,76 @@ const findingsPanels = {
 
 document.getElementById("ppCount").textContent = `(${findingsPanels.painpoints.length})`;
 
+function renderSourceWiseTopInsights() {
+  const sourceHost = document.getElementById("sourceTopInsights");
+  const sourceColors = {
+    reddit:"#ff4500", hn:"#ff6600", appstore:"#58a6ff", playstore:"#3fb950",
+    arxiv:"#d2a8ff", openalex:"#a371f7", pubmed:"#7ee787", scholar:"#c9d1d9",
+    gnews:"#ffa657", devto:"#79c0ff", lemmy:"#7ee787", mastodon:"#a371f7",
+    github:"#f778ba", github_issue:"#f85149", stackoverflow:"#ffa657",
+  };
+  const allFindings = [
+    ...findingsPanels.painpoints,
+    ...findingsPanels.workarounds,
+    ...findingsPanels.products,
+    ...findingsPanels.features,
+  ];
+  const bySource = new Map();
+  for (const finding of allFindings) {
+    const breakdown = finding.source_breakdown || {};
+    for (const [source, count] of Object.entries(breakdown)) {
+      const n = Number(count || 0);
+      if (!n) continue;
+      if (!bySource.has(source)) bySource.set(source, []);
+      bySource.get(source).push({
+        node: finding,
+        evidence: n,
+        totalEvidence: Number(finding.evidence_count || 0),
+      });
+    }
+  }
+
+  const groups = Array.from(bySource.entries())
+    .map(([source, items]) => {
+      items.sort((a, b) => (
+        (b.evidence - a.evidence) ||
+        (b.totalEvidence - a.totalEvidence) ||
+        String(a.node.label || "").localeCompare(String(b.node.label || ""))
+      ));
+      return {
+        source,
+        sourceEvidence: items.reduce((s, it) => s + it.evidence, 0),
+        items: items.slice(0, 3),
+      };
+    })
+    .sort((a, b) => b.sourceEvidence - a.sourceEvidence);
+
+  if (!groups.length) {
+    sourceHost.innerHTML = '<p class="empty">No source-level evidence yet. Run enrich to populate this.</p>';
+    return;
+  }
+
+  sourceHost.innerHTML = "";
+  groups.forEach(group => {
+    const color = sourceColors[group.source] || "#7d8590";
+    const wrap = document.createElement("div");
+    wrap.className = "source-group";
+    const listHtml = group.items.map((it) => {
+      const label = String(it.node.label || "(unnamed)").replace(/</g, "&lt;");
+      return `<li>${label} <span class="source-count">(${it.evidence} evidence)</span></li>`;
+    }).join("");
+    wrap.innerHTML = `
+      <div class="source-group-head">
+        <span class="source-pill"><i style="background:${color}"></i>${group.source}</span>
+        <span class="source-count">${group.sourceEvidence} total evidence</span>
+      </div>
+      <ul>${listHtml}</ul>
+    `;
+    sourceHost.appendChild(wrap);
+  });
+}
+renderSourceWiseTopInsights();
+
 function selectNodeById(nodeId) {
   const node = nodesById[nodeId];
   if (!node) return;
@@ -948,11 +1050,19 @@ const EDGE_LABEL = {
   wished_in:         "Wished in",
   about_product:     "About product",
   built_in:          "Built in",
+  source_evidence:   "Source evidence",
+  relates_to:        "Relates to",
+  co_evidenced:      "Co-evidenced with",
+  potentially_solves:"Potentially solves",
+  could_address:     "Could address",
   has_painpoint:     "Has painpoint",
   has_feature_wish:  "Feature wish",
   has_workaround:    "Workaround",
   has_product:       "Product",
   has_temporal_gap:  "Temporal gap",
+  supports:          "Supports",
+  has_source_doc:    "Has source doc",
+  has_source_element:"Has source element",
   addresses:         "Addresses",
   cites:             "Cites",
   similar_to:        "Similar to",
@@ -961,7 +1071,9 @@ const EDGE_LABEL = {
   posted_in:         "Posted in",
 };
 
-function esc(s) { return (s == null ? "" : String(s)).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+const ESC_MAP = {"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;"};
+ESC_MAP['"'] = "&quot;";
+function esc(s) { return (s == null ? "" : String(s)).replace(/[&<>"']/g, c => ESC_MAP[c]); }
 
 function _neighborsOf(nodeId) {
   // Returns { edgeKind: [{ neighbor, dir }] } for every edge touching nodeId.
@@ -1001,11 +1113,26 @@ function showNodeDetails(node) {
   if (md.satisfaction != null) preview.push(`<div class="node-meta-row"><b>Satisfaction</b><span>${esc(md.satisfaction)}/10</span></div>`);
   if (md.frequency != null) preview.push(`<div class="node-meta-row"><b>Frequency</b><span>${esc(md.frequency)} posts</span></div>`);
   if (md.classification) preview.push(`<div class="node-meta-row"><b>Classification</b><span>${esc(md.classification)}</span></div>`);
+  if (md.source_breakdown && typeof md.source_breakdown === "object") {
+    const entries = Object.entries(md.source_breakdown).sort((a, b) => (b[1] - a[1]));
+    if (entries.length) {
+      const srcSummary = entries.map(([s, n]) => `${s}: ${n}`).join(" · ");
+      preview.push(`<div class="node-meta-row"><b>Sources</b><span>${esc(srcSummary)}</span></div>`);
+    }
+  }
   if (preview.length) html += `<div class="node-meta-block">${preview.join("")}</div>`;
 
   // Neighbors grouped by edge kind — this is the "linked to" section.
   const groups = _neighborsOf(node.id);
   const groupKeys = Object.keys(groups).sort((a, b) => (groups[b].length - groups[a].length));
+  const relationKinds = ["related_to", "potentially_solves", "could_address", "source_evidence"];
+  const relationTotal = relationKinds.reduce((n, k) => n + ((groups[k] || []).length), 0);
+  if (relationTotal > 0) {
+    const relParts = relationKinds
+      .filter((k) => (groups[k] || []).length > 0)
+      .map((k) => `${(EDGE_LABEL[k] || k)}: ${(groups[k] || []).length}`);
+    html += `<div class="node-meta-block"><div class="node-meta-row"><b>Relations</b><span>${esc(relParts.join(" · "))}</span></div></div>`;
+  }
   if (groupKeys.length) {
     html += `<h3 class="node-section-title">Linked to · <span class="muted">${groupKeys.reduce((n, k) => n + groups[k].length, 0)} edges</span></h3>`;
     groupKeys.forEach(kind => {

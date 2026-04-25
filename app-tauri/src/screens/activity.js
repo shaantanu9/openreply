@@ -3,6 +3,7 @@
 import { api, esc, timeAgo } from '../api.js';
 
 const PAGE_SIZE = 50;
+const QUERY_TIMEOUT_MS = 15000;
 let state = {
   page: 0,
   kind: '',
@@ -14,6 +15,18 @@ let state = {
 };
 
 let refreshTimer = null;
+
+async function withTimeout(promise, ms, label = 'request') {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export async function renderActivity(root) {
   state = { ...state, page: 0 };
@@ -77,7 +90,7 @@ export async function renderActivity(root) {
 
   // Populate topic filter.
   try {
-    const topics = await api.listTopics();
+    const topics = await withTimeout(api.listTopics(), QUERY_TIMEOUT_MS, 'activity topics');
     if (Array.isArray(topics) && topics.length) {
       const sel = root.querySelector('#f-topic');
       topics.forEach(t => {
@@ -103,9 +116,9 @@ export async function renderActivity(root) {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(async () => {
     try {
-      const rows = await api.runQuery(
+      const rows = await withTimeout(api.runQuery(
         `SELECT 1 FROM fetches WHERE ended_at IS NULL LIMIT 1`
-      );
+      ), QUERY_TIMEOUT_MS, 'activity live check');
       const pill = root.querySelector('#activity-live-pill');
       if (Array.isArray(rows) && rows.length) {
         if (pill) pill.hidden = false;
@@ -138,12 +151,12 @@ async function loadSpark(root) {
   const el = root.querySelector('#activity-spark');
   if (!el) return;
   try {
-    const rows = await api.runQuery(
+    const rows = await withTimeout(api.runQuery(
       `SELECT substr(started_at,1,10) AS day, count(*) AS n, \
               sum(CASE WHEN error IS NOT NULL AND error <> '' THEN 1 ELSE 0 END) AS errs \
        FROM fetches WHERE substr(started_at,1,10) >= date('now','-29 days') \
        GROUP BY substr(started_at,1,10) ORDER BY day ASC`
-    );
+    ), QUERY_TIMEOUT_MS, 'activity sparkline');
     const map = {}; (rows || []).forEach(r => { map[r.day] = r; });
     const today = new Date();
     const days = [];
@@ -174,7 +187,11 @@ async function loadSpark(root) {
 
 async function checkLive(root) {
   try {
-    const rows = await api.runQuery(`SELECT 1 FROM fetches WHERE ended_at IS NULL LIMIT 1`);
+    const rows = await withTimeout(
+      api.runQuery(`SELECT 1 FROM fetches WHERE ended_at IS NULL LIMIT 1`),
+      QUERY_TIMEOUT_MS,
+      'activity live status'
+    );
     const pill = root.querySelector('#activity-live-pill');
     if (pill) pill.hidden = !(Array.isArray(rows) && rows.length);
   } catch {}
@@ -219,17 +236,20 @@ async function loadPage(root) {
                     LIMIT ${limit} OFFSET ${offset}`;
 
   try {
-    const [countRes, rowsRes] = await Promise.all([
+    const [countRes, rowsRes] = await withTimeout(Promise.all([
       api.runQuery(countSql, null, params),
       api.runQuery(listSql, null, params),
-    ]);
+    ]), QUERY_TIMEOUT_MS, 'activity table');
     state.totalCount = Array.isArray(countRes) && countRes[0] ? (countRes[0].n || 0) : 0;
     state.rows = Array.isArray(rowsRes) ? rowsRes : [];
     renderTable(root);
   } catch (e) {
-    tbl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}</div>`;
+    tbl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}<br/><button id="activity-retry" class="btn btn-ghost btn-sm btn-bordered" style="margin-top:8px">Retry</button></div>`;
+    const retry = root.querySelector('#activity-retry');
+    retry?.addEventListener('click', () => loadPage(root));
+  } finally {
+    state.loading = false;
   }
-  state.loading = false;
 }
 
 function renderTable(root) {

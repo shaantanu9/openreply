@@ -40,3 +40,27 @@ scripts/onnx-model-cache/
 # built app; the private key stays on your laptop (or webhook server).
 scripts/licenses/.keys/
 
+
+# Large static binary fetched by scripts/fetch-ffmpeg.sh — not committed.
+app-tauri/src-tauri/binaries/ffmpeg-aarch64-apple-darwin
+
+# Node.js / Next.js — never commit, regenerated via `npm i` / `npm run build`
+**/node_modules/
+**/.next/
+**/.npm-cache/
+**/dist/
+
+# Nested .env files (top-level rule above only matches root)
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+
+# Editor / IDE state
+.cursor/
+
+# Local scratch / probes — not part of source
+tmp/
+
+# Stray "html_site copy" — looks like a duplicated folder, exclude
+act_suit/html_site copy/

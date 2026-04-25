@@ -5,15 +5,129 @@
 
 use crate::cli::{
     cancel_active_chat, cancel_active_job, cancel_active_stream, data_dir, run_cli,
-    run_cli_chat_streaming, run_cli_stream_streaming, run_cli_streaming,
+    run_cli_chat_streaming, run_cli_enrich_streaming, run_cli_stream_streaming, run_cli_streaming,
     ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
 };
 use tauri::Listener;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+// NOTE: `keyring::Entry` intentionally removed 2026-04-24. Keychain storage
+// caused macOS to prompt for the login password on every dev rebuild (code-sign
+// identity changes invalidate the ACL of the `gapmap-license` keychain item,
+// so `security` asks the user to unlock it again). Switched to a file-based
+// token store in the app's data dir (0600 perms, same as `device_id`). Less
+// defensive against local disk compromise than Keychain, but the threat model
+// here (user's own Mac, token is a 180d JWT that can be revoked server-side
+// via `/v1/license/revoke`) makes the UX trade worth it.
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct LicenseState {
+    api_base: String,
+    email: String,
+    license_id: String,
+    activation_key: String,
+    device_signature: String,
+    access_token: String,
+    user_id: Option<String>,
+    expires_at: Option<String>,
+    last_verified_at: Option<String>,
+}
+
+// Filename inside data_dir that holds the activation JWT. 0600 perms on Unix.
+// Parallel with `device_id` (also a plain file in the same directory).
+const LICENSE_TOKEN_FILE: &str = "license_token";
+
+// In-process cache of the activation JWT. Exists purely to collapse repeated
+// keychain reads down to one per app launch. Without this, every Settings
+// page load + every `mcp_*` command fires its own `read_access_token()` →
+// macOS shows its "gapmap wants to read …" prompt every time the current
+// binary's code signature doesn't match the item's ACL (which is ~every
+// dev rebuild). Feels like a privacy breach even though we're always
+// reading the same one string.
+//
+// Semantics:
+//   `None`          → never attempted a read in this process yet.
+//   `Some(None)`    → read returned empty / entry missing — negative cache
+//                     so we don't re-prompt for a user who simply hasn't
+//                     activated yet.
+//   `Some(Some(t))` → last known token value.
+//
+// Invalidation: `save_access_token` re-seeds the cache with the fresh value.
+// `clear_access_token` flips it to `Some(None)`. There is no time-based
+// expiry — the JWT's own `expires_at` is the authoritative expiry (checked
+// by `compute_activation_reason`).
+use std::sync::Mutex;
+static TOKEN_CACHE: Mutex<Option<Option<String>>> = Mutex::new(None);
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct VerifiedTokenClaims {
+    device_fingerprint: Option<String>,
+}
 
 fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
+}
+
+fn sanitize_export_file_stem(topic: &str) -> String {
+    topic
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
+fn export_prefs_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = data_dir(app).map_err(err_to_string)?;
+    Ok(dir.join("export_prefs.json"))
+}
+
+fn read_export_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let prefs = export_prefs_path(app)?;
+    if !prefs.exists() {
+        return data_dir(app).map_err(err_to_string);
+    }
+    let raw = std::fs::read_to_string(&prefs).map_err(err_to_string)?;
+    let v: Value = serde_json::from_str(&raw).map_err(err_to_string)?;
+    let configured = v
+        .get("export_dir")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+    if configured.is_empty() {
+        return data_dir(app).map_err(err_to_string);
+    }
+    let p = std::path::PathBuf::from(configured);
+    if p.exists() && p.is_dir() {
+        Ok(p)
+    } else {
+        data_dir(app).map_err(err_to_string)
+    }
+}
+
+fn write_export_dir(app: &AppHandle, export_dir: Option<&str>) -> Result<(), String> {
+    let dir = data_dir(app).map_err(err_to_string)?;
+    let prefs = export_prefs_path(app)?;
+    let tmp = dir.join("export_prefs.json.tmp");
+    let mut map = serde_json::Map::new();
+    if let Some(v) = export_dir {
+        map.insert("export_dir".into(), Value::String(v.to_string()));
+    } else {
+        map.insert("export_dir".into(), Value::String(String::new()));
+    }
+    let body = Value::Object(map).to_string();
+    std::fs::write(&tmp, body).map_err(err_to_string)?;
+    std::fs::rename(&tmp, &prefs).map_err(err_to_string)?;
+    Ok(())
 }
 
 /// Strip SQL line/block comments (same rules as `run_query`) for keyword checks only.
@@ -230,6 +344,24 @@ pub async fn discover_subs(app: AppHandle, topic: String, limit: u32) -> Result<
     .map_err(err_to_string)
 }
 
+/// Canonicalize a topic — returns the corrected canonical form, variants,
+/// confidence, and the LLM-scored keyword fan-out that `start_collect`
+/// will use. Cached per-topic; uncached takes ~1 LLM call (~400 tokens).
+///
+/// Drives the Collect screen's "Searching for…" strip so users can see
+/// the expanded synonyms (e.g. "public speaking anxiety app" → also
+/// searches "confident speaking", "speaking tricks", …) and the
+/// "Did you mean…?" modal when confidence is low.
+#[tauri::command]
+pub async fn canonicalize_topic(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "canonicalize", "--topic", &topic, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 /// Start a topic collect. Streams progress via `collect:progress` events
 /// and emits `collect:done` when complete.
 ///
@@ -382,6 +514,12 @@ pub async fn active_collects(app: AppHandle) -> Result<Value, String> {
 /// afterwards, success or error, via the `_Guard` RAII pattern. Held across
 /// the `.await` — safe because `HashSet<String>` insert/remove takes a
 /// fresh mutex lock on each side, not across the await.
+/// Maximum age of a graph-op inflight key before it's considered stale.
+/// An enrich on a 7k-post topic with Ollama can take 3-4 min, so this has
+/// to be generous — but not so long that a crashed sidecar strands the
+/// user for hours. 10 min is the observed max + buffer.
+const GRAPH_OP_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(600);
+
 async fn run_graph_op_deduped(
     app: &AppHandle,
     op: &str,
@@ -392,34 +530,174 @@ async fn run_graph_op_deduped(
     let key = format!("{}:{}", op, topic);
     let state = app.state::<ActiveGraphOps>();
 
-    // Try to insert the key — if it's already there, another call is in flight.
+    // Try to insert the key. If it's already there AND still fresh, another
+    // call really is in flight → return `already_running`. If the existing
+    // entry is older than GRAPH_OP_STALE_AFTER, assume the previous sidecar
+    // crashed without removing its key (seen when Ollama hangs + the user
+    // kills -9 the dev server) and reclaim it.
     {
-        let mut set = state.0.lock().map_err(|e| e.to_string())?;
-        if set.contains(&key) {
-            return Ok(serde_json::json!({
-                "ok": false,
-                "already_running": true,
-                "topic": topic,
-                "op": op,
-                "reason": format!(
-                    "A {} for topic {:?} is already running. Wait for it to finish before triggering another.",
-                    op, topic
-                ),
-            }));
+        let mut map = state.0.lock().map_err(|e| e.to_string())?;
+        let now = std::time::Instant::now();
+        if let Some(inserted_at) = map.get(&key) {
+            let age = now.saturating_duration_since(*inserted_at);
+            if age < GRAPH_OP_STALE_AFTER {
+                let remaining = GRAPH_OP_STALE_AFTER.saturating_sub(age).as_secs();
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "already_running": true,
+                    "topic": topic,
+                    "op": op,
+                    "age_seconds": age.as_secs(),
+                    "auto_clears_in_seconds": remaining,
+                    "reason": format!(
+                        "A {} for topic {:?} is already running (started {}s ago). It will auto-clear in {}s if truly stuck, or click Unstick to force-clear now.",
+                        op, topic, age.as_secs(), remaining
+                    ),
+                }));
+            }
+            // Stale — fall through to reclaim.
         }
-        set.insert(key.clone());
+        map.insert(key.clone(), now);
     }
 
-    // Run the job. The `guard` drops the key back out on success OR error —
-    // implemented inline as scope exit rather than a Drop impl because
-    // async drop order around `?` is finicky.
+    // Run the job. Scope exit removes the key on success OR error — kept
+    // inline rather than via Drop because async drop order around `?` is
+    // finicky.
     let result = run_cli(app, args).await.map_err(err_to_string);
     {
-        if let Ok(mut set) = state.0.lock() {
-            set.remove(&key);
+        if let Ok(mut map) = state.0.lock() {
+            map.remove(&key);
         }
     }
     result
+}
+
+/// Force-clear in-flight graph-op locks. Escape hatch for when
+/// `run_graph_op_deduped`'s staleness check hasn't fired yet but the user
+/// is certain nothing is actually running (e.g. they quit the dev server
+/// mid-enrich and restarted). Accepts optional `topic` + `op` filter;
+/// omit both to clear everything. Returns the list of cleared keys.
+#[tauri::command]
+pub async fn clear_graph_inflight(
+    app: AppHandle,
+    topic: Option<String>,
+    op: Option<String>,
+) -> Result<Value, String> {
+    use crate::cli::ActiveGraphOps;
+    let state = app.state::<ActiveGraphOps>();
+    let mut map = state.0.lock().map_err(|e| e.to_string())?;
+    let to_remove: Vec<String> = map
+        .keys()
+        .filter(|k| {
+            match (&op, &topic) {
+                (Some(o), Some(t)) => k.as_str() == format!("{}:{}", o, t),
+                (Some(o), None)    => k.starts_with(&format!("{}:", o)),
+                (None,    Some(t)) => k.ends_with(&format!(":{}", t)),
+                (None,    None)    => true,
+            }
+        })
+        .cloned()
+        .collect();
+    for k in &to_remove {
+        map.remove(k);
+    }
+    Ok(serde_json::json!({
+        "ok": true,
+        "cleared": to_remove,
+        "cleared_count": to_remove.len(),
+    }))
+}
+
+/// Snapshot of current memory + state-slot sizes across the Rust process and
+/// any tracked sidecar children. Plumbed for diagnosing the "memory grows
+/// exponentially / app hangs" reports — call from DevTools console
+/// (`window.__gapmapMemStats()`) to see which layer is bloating.
+///
+/// Returns:
+///   - `rust_pid` / `rust_rss_mb`: this Tauri host process.
+///   - `sidecar_*`: rss + pid of the longest-lived sidecar slots if non-empty.
+///   - `slots`: live count of each Active* state map (large counts mean a
+///     stuck dedup key — typical hang cause).
+///
+/// Implemented via `ps -o rss=,vsz= -p <pid>` so we don't pull in `libc` or
+/// a sysinfo crate just for a debug helper. RSS is reported in MB (rounded).
+#[tauri::command]
+pub async fn mem_stats(app: AppHandle) -> Result<Value, String> {
+    use crate::cli::{
+        ActiveChat, ActiveChatPid, ActiveCollects, ActiveEnrich, ActiveEnrichPid,
+        ActiveGraphOps, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
+    };
+
+    fn rss_mb_of(pid: u32) -> Option<u64> {
+        // `ps -o rss= -p PID` — RSS in KB on both macOS and Linux. Empty
+        // stdout means the process exited; treat as None.
+        let out = std::process::Command::new("ps")
+            .args(["-o", "rss=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        let s = String::from_utf8_lossy(&out.stdout);
+        let kb: u64 = s.trim().parse().ok()?;
+        Some(kb / 1024)
+    }
+
+    let own_pid = std::process::id();
+    let own_rss = rss_mb_of(own_pid);
+
+    // Slot sizes — reading these without spawning any sidecar so the
+    // command is safe to call from a hot button without thrashing.
+    let job_running = app.try_state::<ActiveJob>()
+        .and_then(|s| s.0.lock().ok().map(|g| g.is_some())).unwrap_or(false);
+    let chat_running = app.try_state::<ActiveChat>()
+        .and_then(|s| s.0.lock().ok().map(|g| g.is_some())).unwrap_or(false);
+    let stream_running = app.try_state::<ActiveStream>()
+        .and_then(|s| s.0.lock().ok().map(|g| g.is_some())).unwrap_or(false);
+    let enrich_running = app.try_state::<ActiveEnrich>()
+        .and_then(|s| s.0.lock().ok().map(|g| g.is_some())).unwrap_or(false);
+
+    let job_pid = app.try_state::<ActiveJobPid>()
+        .and_then(|s| s.0.lock().ok().and_then(|g| *g));
+    let chat_pid = app.try_state::<ActiveChatPid>()
+        .and_then(|s| s.0.lock().ok().and_then(|g| *g));
+    let stream_pid = app.try_state::<ActiveStreamPid>()
+        .and_then(|s| s.0.lock().ok().and_then(|g| *g));
+    let enrich_pid = app.try_state::<ActiveEnrichPid>()
+        .and_then(|s| s.0.lock().ok().and_then(|g| *g));
+
+    let active_collects: Vec<String> = app.try_state::<ActiveCollects>()
+        .and_then(|s| s.0.lock().ok().map(|g| g.keys().cloned().collect()))
+        .unwrap_or_default();
+    // Each entry is `(op:topic, instant_inserted)` — we expose just the keys
+    // so the UI can show "5 stuck enrich locks" if any. Ages are inferred
+    // client-side from the count + timestamps if needed; surface count here.
+    let graph_inflight_keys: Vec<String> = app.try_state::<ActiveGraphOps>()
+        .and_then(|s| s.0.lock().ok().map(|g| g.keys().cloned().collect()))
+        .unwrap_or_default();
+
+    let mut sidecar_pids: Vec<(String, u32, Option<u64>)> = Vec::new();
+    if let Some(p) = job_pid    { sidecar_pids.push(("collect".into(),    p, rss_mb_of(p))); }
+    if let Some(p) = chat_pid   { sidecar_pids.push(("chat".into(),       p, rss_mb_of(p))); }
+    if let Some(p) = stream_pid { sidecar_pids.push(("stream".into(),     p, rss_mb_of(p))); }
+    if let Some(p) = enrich_pid { sidecar_pids.push(("enrich".into(),     p, rss_mb_of(p))); }
+
+    Ok(serde_json::json!({
+        "rust_pid": own_pid,
+        "rust_rss_mb": own_rss,
+        "slots": {
+            "active_job_running":     job_running,
+            "active_chat_running":    chat_running,
+            "active_stream_running":  stream_running,
+            "active_enrich_running":  enrich_running,
+            "active_collects":        active_collects,
+            "graph_inflight_keys":    graph_inflight_keys,
+            "graph_inflight_count":   graph_inflight_keys.len(),
+        },
+        "sidecars": sidecar_pids.into_iter().map(|(name, pid, rss)| serde_json::json!({
+            "name": name, "pid": pid, "rss_mb": rss,
+        })).collect::<Vec<_>>(),
+        "captured_at": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs()).unwrap_or(0),
+    }))
 }
 
 /// Build the structural graph for a topic. Deduped per-topic.
@@ -445,6 +723,174 @@ pub async fn enrich_graph(app: AppHandle, topic: String) -> Result<Value, String
         "enrich",
         &topic,
         vec!["research", "graph", "enrich", "--topic", &topic, "--json"],
+    )
+    .await
+}
+
+/// Streaming counterpart of `enrich_graph`. Fires `enrich:progress` events as
+/// each extractor (painpoints → features → complaints → workarounds) starts
+/// and finishes, so the UI banner can show findings the moment they're
+/// available instead of blocking for the full 2-6 min of 4 sequential LLM
+/// calls.
+///
+/// Payloads (as NDJSON lines on `enrich:progress`):
+///   `{"_event":"enrich:start","corpus_size":43,"provider":"ollama","extractors":["painpoints","features",…],"parallel":false}`
+///   `{"_event":"extractor:start","kind":"painpoints"}`
+///   `{"_event":"extractor:done","kind":"painpoints","count":5,"sample":["…", "…"]}`
+///   `{"_event":"extractor:error","kind":"painpoints","error":"…"}`
+///   `{"_event":"enrich:done","summary":{ok,painpoints_added,…}}`
+///
+/// After the Python process exits, Rust emits one final `enrich:stream:done`
+/// event with `{code}` so the UI can detect a crash where `enrich:done` never
+/// arrived (sidecar killed, python OOM, etc.).
+///
+/// `only`   → one of `painpoints|features|complaints|workarounds` to run a
+///            single extractor (fastest path, finishes in 30-90s).
+/// `parallel` → fan the 4 calls out concurrently for cloud providers. No-op
+///            for Ollama (its inference queue serializes internally).
+///
+/// Per-topic dedup is still enforced via ActiveGraphOps `enrich:<topic>`
+/// keys — callers get `{already_running: true}` back if one is in flight.
+/// A distinct set of flags counts as the same op: we don't want "All" +
+/// "Only painpoints" racing each other into a double-insert.
+#[tauri::command]
+pub async fn enrich_graph_stream(
+    app: AppHandle,
+    topic: String,
+    only: Option<String>,
+    parallel: Option<bool>,
+) -> Result<Value, String> {
+    use crate::cli::ActiveGraphOps;
+
+    // Reclaim stale + check in-flight. Same policy as run_graph_op_deduped
+    // but we can't use that helper directly — it awaits run_cli to completion
+    // and expects a synchronous JSON return, whereas we're firing up a
+    // streaming sidecar and returning immediately.
+    let key = format!("enrich:{}", topic);
+    {
+        let state = app.state::<ActiveGraphOps>();
+        let mut map = state.0.lock().map_err(|e| e.to_string())?;
+        let now = std::time::Instant::now();
+        if let Some(inserted_at) = map.get(&key) {
+            let age = now.saturating_duration_since(*inserted_at);
+            let stale_after = std::time::Duration::from_secs(600);
+            if age < stale_after {
+                let remaining = stale_after.saturating_sub(age).as_secs();
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "already_running": true,
+                    "topic": topic,
+                    "op": "enrich",
+                    "age_seconds": age.as_secs(),
+                    "auto_clears_in_seconds": remaining,
+                    "reason": format!(
+                        "An enrich for topic {:?} is already running (started {}s ago). Subscribe to enrich:progress to watch it.",
+                        topic, age.as_secs()
+                    ),
+                }));
+            }
+        }
+        map.insert(key.clone(), now);
+    }
+
+    // Build the argv. Keep `--stream` AFTER `--topic`/`--limit` so the
+    // typer parser sees the flags in the same shape as the non-stream path
+    // (no order dependency in typer, but readable).
+    let mut args: Vec<&str> = vec![
+        "research", "graph", "enrich",
+        "--topic", &topic,
+        "--stream",
+        // Always emit JSON payloads to stdout — `--json` is a no-op in
+        // stream mode (the `_emit` at the bottom is skipped when streaming)
+        // but passing it keeps the CLI call shape consistent with the
+        // non-stream variant so logs line up.
+        "--json",
+    ];
+    let only_lc: String;
+    if let Some(o) = only.as_deref() {
+        if !o.is_empty() {
+            only_lc = o.to_lowercase();
+            args.push("--only");
+            args.push(&only_lc);
+        }
+    }
+    if parallel.unwrap_or(false) {
+        args.push("--parallel");
+    }
+
+    // The streaming helper returns as soon as the sidecar is spawned. The
+    // `enrich:progress` / `enrich:stream:done` events fire asynchronously
+    // from background tokio tasks. We register a listener that clears the
+    // dedup key when the done event arrives AND auto-unlistens itself —
+    // without the unlisten-in-closure, each streaming call would permanently
+    // leak another handler, so after a few hundred enriches the cleanup fan
+    // would fire hundreds of times per done event. See the analogous
+    // pattern in `start_collect` above.
+    let app_for_cleanup = app.clone();
+    let key_for_cleanup = key.clone();
+    let unlisten_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::EventId>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let unlisten_slot_for_closure = unlisten_slot.clone();
+    let unlisten_id = app.listen_any("enrich:stream:done", move |_ev| {
+        if let Some(state) = app_for_cleanup.try_state::<ActiveGraphOps>() {
+            if let Ok(mut m) = state.0.lock() {
+                m.remove(&key_for_cleanup);
+            }
+        }
+        // Self-unlisten so the handler is gone before the next enrich call
+        // registers its own. `take()` ensures the unlisten happens once
+        // even if multiple done events ever fire.
+        if let Ok(mut slot) = unlisten_slot_for_closure.lock() {
+            if let Some(id) = slot.take() {
+                app_for_cleanup.unlisten(id);
+            }
+        }
+    });
+    if let Ok(mut slot) = unlisten_slot.lock() {
+        *slot = Some(unlisten_id);
+    }
+
+    let spawn_result = run_cli_enrich_streaming(
+        &app, args, "enrich:progress", "enrich:stream:done",
+    )
+    .await;
+
+    // If the spawn itself failed (binary missing, fork failed, dev python
+    // not found) the `enrich:stream:done` event will never fire — that's
+    // the cleanup leak. Clear the inflight key NOW so a follow-up call
+    // doesn't get stuck for 10 minutes waiting for the stale-after timer.
+    // The listener registered above is also still alive; it'll harmlessly
+    // no-op on the (now absent) key when whatever future done event fires.
+    if let Err(ref e) = spawn_result {
+        let state = app.state::<ActiveGraphOps>();
+        if let Ok(mut map) = state.0.lock() {
+            map.remove(&key);
+        }
+        return Err(err_to_string(e.to_string()));
+    }
+    drop(spawn_result);  // suppress unused warning on Ok branch
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "streaming": true,
+        "topic": topic,
+        "only": only,
+        "parallel": parallel.unwrap_or(false),
+        "progress_event": "enrich:progress",
+        "done_event": "enrich:stream:done",
+    }))
+}
+
+/// Build dense relation edges between semantic findings (relates_to /
+/// potentially_solves / could_address / co_evidenced). Safe to call repeatedly;
+/// graph_edges upserts keep this idempotent.
+#[tauri::command]
+pub async fn relate_graph(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_graph_op_deduped(
+        &app,
+        "relate",
+        &topic,
+        vec!["research", "graph", "relate", "--topic", &topic, "--json"],
     )
     .await
 }
@@ -1227,6 +1673,29 @@ pub async fn quick_extract_gaps(app: AppHandle, topic: String) -> Result<Value, 
     .map_err(err_to_string)
 }
 
+/// Cross-table search — posts, graph nodes, analyses, papers, hypotheses,
+/// feedback, + optional palace semantic hits in aggressive mode. Persists
+/// a summary row to mcp_analyses so future pipelines can consume it.
+#[tauri::command]
+pub async fn search_all(
+    app: AppHandle,
+    query: String,
+    topic: Option<String>,
+    aggressive: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec!["research", "search-all", "--query", &query, "--json"];
+    if let Some(t) = topic.as_ref() {
+        if !t.is_empty() {
+            args.push("--topic");
+            args.push(t.as_str());
+        }
+    }
+    if aggressive.unwrap_or(false) {
+        args.push("--aggressive");
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Run an ad-hoc Reddit search via PRAW. Returns an array of post rows.
 #[tauri::command]
 pub async fn run_reddit_search(
@@ -1431,12 +1900,12 @@ pub async fn export_html(
     app: AppHandle,
     topic: String,
     force: Option<bool>,
+    mode: Option<String>,
+    max_post_nodes: Option<i64>,
 ) -> Result<String, String> {
-    let data = data_dir(&app).map_err(err_to_string)?;
-    let out_path = data.join(format!(
-        "gap-map-{}.html",
-        topic.replace(' ', "-").to_lowercase()
-    ));
+    let export_dir = read_export_dir(&app)?;
+    let file_stem = sanitize_export_file_stem(&topic);
+    let out_path = export_dir.join(format!("gap-map-{}.html", file_stem));
     let out_str = out_path.to_string_lossy().to_string();
 
     // Fast path — skip the sidecar spawn if we already have a non-empty
@@ -1451,25 +1920,41 @@ pub async fn export_html(
         }
     }
 
-    run_cli(
-        &app,
-        vec![
-            "research", "graph", "export", "--topic", &topic, "--out", &out_str,
-        ],
-    )
-    .await
-    .map_err(err_to_string)?;
+    let mut args: Vec<String> = vec![
+        "research".into(),
+        "graph".into(),
+        "export".into(),
+        "--topic".into(),
+        topic.clone(),
+        "--out".into(),
+        out_str.clone(),
+    ];
+    if let Some(m) = mode {
+        if !m.trim().is_empty() {
+            args.push("--mode".into());
+            args.push(m);
+        }
+    }
+    if let Some(n) = max_post_nodes {
+        if n > 0 {
+            args.push("--max-post-nodes".into());
+            args.push(n.to_string());
+        }
+    }
+
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, arg_refs)
+        .await
+        .map_err(err_to_string)?;
     Ok(out_str)
 }
 
 /// Export the graph as raw JSON (D3-compatible). Returns absolute path.
 #[tauri::command]
 pub async fn export_graph_json(app: AppHandle, topic: String) -> Result<String, String> {
-    let data = data_dir(&app).map_err(err_to_string)?;
-    let out_path = data.join(format!(
-        "gap-graph-{}.json",
-        topic.replace(' ', "-").to_lowercase()
-    ));
+    let export_dir = read_export_dir(&app)?;
+    let file_stem = sanitize_export_file_stem(&topic);
+    let out_path = export_dir.join(format!("gap-graph-{}.json", file_stem));
     let out_str = out_path.to_string_lossy().to_string();
     run_cli(
         &app,
@@ -1507,11 +1992,9 @@ pub async fn get_findings(app: AppHandle, topic: String, kind: String) -> Result
 /// Generate the premium citation-rich markdown report for a topic.
 #[tauri::command]
 pub async fn export_report_pro(app: AppHandle, topic: String) -> Result<String, String> {
-    let data = data_dir(&app).map_err(err_to_string)?;
-    let out_path = data.join(format!(
-        "report-pro-{}.md",
-        topic.replace(' ', "-").to_lowercase()
-    ));
+    let export_dir = read_export_dir(&app)?;
+    let file_stem = sanitize_export_file_stem(&topic);
+    let out_path = export_dir.join(format!("report-pro-{}.md", file_stem));
     let out_str = out_path.to_string_lossy().to_string();
     run_cli(
         &app,
@@ -1545,10 +2028,49 @@ pub async fn ingest_file(
     .map_err(err_to_string)
 }
 
+/// Walk a folder recursively and ingest every supported file (md/pdf/csv/
+/// json/txt/vtt/srt) into a single topic. The Python side enforces a
+/// configurable file-count cap and skips the usual junk dirs (.git,
+/// node_modules, dist, build, hidden subtrees) so the user can drop a
+/// project root without polluting the corpus.
+///
+/// Returns the per-file ingest summary so the UI can show "ingested 12/14
+/// files, 2 failed (… reasons)" without a second round-trip.
+#[tauri::command]
+pub async fn ingest_folder(
+    app: AppHandle,
+    path: String,
+    topic: String,
+    source_type: String,
+    extensions: Option<String>,
+    max_files: Option<u32>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec![
+        "ingest", "folder",
+        "--path", &path,
+        "--topic", &topic,
+        "--source-type", &source_type,
+        "--json",
+    ];
+    let max_str: String;
+    if let Some(m) = max_files {
+        max_str = m.to_string();
+        args.push("--max-files");
+        args.push(&max_str);
+    }
+    if let Some(ext) = extensions.as_deref() {
+        if !ext.is_empty() {
+            args.push("--ext");
+            args.push(ext);
+        }
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// List exported files (.md, .html) in the app data dir.
 #[tauri::command]
 pub async fn list_exports(app: AppHandle) -> Result<Value, String> {
-    let data = data_dir(&app).map_err(err_to_string)?;
+    let data = read_export_dir(&app)?;
     let mut out = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&data) {
         for entry in entries.flatten() {
@@ -1576,6 +2098,51 @@ pub async fn list_exports(app: AppHandle) -> Result<Value, String> {
             .cmp(&a.get("modified").and_then(|v| v.as_u64()).unwrap_or(0))
     });
     Ok(Value::Array(out))
+}
+
+/// Read export destination settings.
+#[tauri::command]
+pub async fn export_prefs_get(app: AppHandle) -> Result<Value, String> {
+    let default_dir = data_dir(&app).map_err(err_to_string)?;
+    let configured_path = export_prefs_path(&app)?;
+    let configured_exists = configured_path.exists();
+    let effective = read_export_dir(&app)?;
+    let configured = if configured_exists {
+        let raw = std::fs::read_to_string(&configured_path).unwrap_or_default();
+        let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+        v.get("export_dir")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Ok(serde_json::json!({
+        "default_dir": default_dir.to_string_lossy().to_string(),
+        "configured_dir": configured,
+        "effective_dir": effective.to_string_lossy().to_string(),
+        "is_custom": !configured.trim().is_empty(),
+    }))
+}
+
+/// Persist export destination settings.
+#[tauri::command]
+pub async fn export_prefs_set(app: AppHandle, export_dir: Option<String>) -> Result<Value, String> {
+    let normalized = export_dir
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(dir) = normalized.as_ref() {
+        let p = std::path::PathBuf::from(dir);
+        if !p.exists() {
+            return Err(format!("directory does not exist: {dir}"));
+        }
+        if !p.is_dir() {
+            return Err(format!("not a directory: {dir}"));
+        }
+    }
+    write_export_dir(&app, normalized.as_deref())?;
+    export_prefs_get(app).await
 }
 
 /// Soft-delete a topic (T1.3). Sets topic_prefs.deleted_at and hides the
@@ -1805,6 +2372,24 @@ pub async fn palace_warmup(app: AppHandle) -> Result<(), String> {
         vec!["research", "palace-warmup"],
         "palace:warmup:progress",
         "palace:warmup:done",
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// Re-embed every post into Palace. Streams `palace:reindex:progress`
+/// events (one JSON per line) and emits `palace:reindex:done` on exit.
+/// Idempotent — `upsert_posts_many` skips unchanged rows. Used by the
+/// "Reindex palace" Settings button + by the auto-heal flow when palace
+/// has been reset due to a chromadb format mismatch (legacy 0.x segment
+/// files in a 1.x runtime → segfault → heal to empty → reindex).
+#[tauri::command]
+pub async fn palace_reindex(app: AppHandle) -> Result<(), String> {
+    run_cli_chat_streaming(
+        &app,
+        vec!["research", "palace-reindex"],
+        "palace:reindex:progress",
+        "palace:reindex:done",
     )
     .await
     .map_err(err_to_string)
@@ -2050,15 +2635,36 @@ fn serialize_env(map: &std::collections::BTreeMap<String, String>) -> String {
     lines
 }
 
+fn env_or_file_value(
+    map: &std::collections::BTreeMap<String, String>,
+    keys: &[&str],
+) -> Option<String> {
+    for key in keys {
+        if let Ok(v) = std::env::var(key) {
+            let t = v.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+        if let Some(v) = map.get(*key) {
+            let t = v.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Read current BYOK status — returns which keys are set (masked values).
 #[tauri::command]
 pub async fn byok_status(_app: AppHandle) -> Result<Value, String> {
     let path = byok_env_path()?;
     let contents = std::fs::read_to_string(&path).unwrap_or_default();
     let map = parse_env(&contents);
-    let mask = |k: &str| -> Value {
-        match map.get(k) {
-            Some(v) if !v.is_empty() => {
+    let mask = |keys: &[&str]| -> Value {
+        match env_or_file_value(&map, keys) {
+            Some(v) => {
                 let masked = if v.len() > 8 {
                     format!("{}…{}", &v[..4], &v[v.len()-4..])
                 } else { "•".repeat(v.len()) };
@@ -2068,35 +2674,38 @@ pub async fn byok_status(_app: AppHandle) -> Result<Value, String> {
         }
     };
     // Non-secret values (pref / model / base-url) — return raw so user can see.
-    let raw = |k: &str| -> Value {
-        map.get(k).map(|v| Value::String(v.clone())).unwrap_or(Value::String(String::new()))
+    let raw = |keys: &[&str]| -> Value {
+        env_or_file_value(&map, keys)
+            .map(Value::String)
+            .unwrap_or(Value::String(String::new()))
     };
     Ok(serde_json::json!({
         "path": path.to_string_lossy().to_string(),
-        "anthropic":  mask("ANTHROPIC_API_KEY"),
-        "openai":     mask("OPENAI_API_KEY"),
-        "openrouter": mask("OPENROUTER_API_KEY"),
-        "groq":       mask("GROQ_API_KEY"),
-        "deepseek":   mask("DEEPSEEK_API_KEY"),
-        "mistral":    mask("MISTRAL_API_KEY"),
-        "google":     mask("GOOGLE_API_KEY"),
+        "anthropic":  mask(&["ANTHROPIC_API_KEY"]),
+        "openai":     mask(&["OPENAI_API_KEY"]),
+        "openrouter": mask(&["OPENROUTER_API_KEY"]),
+        "groq":       mask(&["GROQ_API_KEY"]),
+        "deepseek":   mask(&["DEEPSEEK_API_KEY"]),
+        "mistral":    mask(&["MISTRAL_API_KEY"]),
+        "google":     mask(&["GOOGLE_API_KEY"]),
+        "nvidia":     mask(&["NVIDIA_API_KEY"]),
         // Alias: most frontend code looks up `byok.ollama` (mirroring the
         // BYOK provider key), while a few older spots use `ollama_base_url`.
         // Return both — same URL string, non-empty when the user has saved one.
-        "ollama":               raw("OLLAMA_BASE_URL"),
-        "ollama_base_url":      raw("OLLAMA_BASE_URL"),
-        "reddit_client_id":     mask("REDDIT_CLIENT_ID"),
-        "reddit_client_secret": mask("REDDIT_CLIENT_SECRET"),
-        "reddit_refresh_token": mask("REDDIT_REFRESH_TOKEN"),
+        "ollama":               raw(&["OLLAMA_BASE_URL"]),
+        "ollama_base_url":      raw(&["OLLAMA_BASE_URL"]),
+        "reddit_client_id":     mask(&["REDDIT_CLIENT_ID"]),
+        "reddit_client_secret": mask(&["REDDIT_CLIENT_SECRET"]),
+        "reddit_refresh_token": mask(&["REDDIT_REFRESH_TOKEN"]),
         // Data-source API keys for non-Reddit fetchers. YouTube is required
         // to collect video comments; the other two are optional rate-limit
         // upgrades for Semantic Scholar + PubMed. All three surface in the
         // BYOK modal's "Reddit + sources" tab.
-        "youtube_api_key":          mask("YOUTUBE_API_KEY"),
-        "semantic_scholar_api_key": mask("SEMANTIC_SCHOLAR_API_KEY"),
-        "ncbi_api_key":             mask("NCBI_API_KEY"),
-        "llm_provider": raw("LLM_PROVIDER"),
-        "llm_model":    raw("LLM_MODEL"),
+        "youtube_api_key":          mask(&["YOUTUBE_API_KEY"]),
+        "semantic_scholar_api_key": mask(&["SEMANTIC_SCHOLAR_API_KEY", "S2_API_KEY"]),
+        "ncbi_api_key":             mask(&["NCBI_API_KEY"]),
+        "llm_provider": raw(&["LLM_PROVIDER"]),
+        "llm_model":    raw(&["LLM_MODEL"]),
     }))
 }
 
@@ -2111,12 +2720,17 @@ pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Va
         "DEEPSEEK_API_KEY",
         "MISTRAL_API_KEY",
         "GOOGLE_API_KEY",
+        "NVIDIA_API_KEY",
         "OLLAMA_BASE_URL",
         "LLM_PROVIDER",
         "LLM_MODEL",
         "REDDIT_CLIENT_ID",
         "REDDIT_CLIENT_SECRET",
         "REDDIT_REFRESH_TOKEN",
+        "YOUTUBE_API_KEY",
+        "SEMANTIC_SCHOLAR_API_KEY",
+        "S2_API_KEY",
+        "NCBI_API_KEY",
     ];
     if !ALLOWED.contains(&name.as_str()) {
         return Err(format!("key '{}' is not allowed", name));
@@ -2129,7 +2743,7 @@ pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Va
     if cleared {
         map.remove(&name);
     } else {
-        map.insert(name.clone(), trimmed);
+        map.insert(name.clone(), trimmed.clone());
     }
     std::fs::write(&path, serialize_env(&map)).map_err(|e| e.to_string())?;
     // Restrict perms to 0600 on unix so keys aren't world-readable.
@@ -2137,6 +2751,28 @@ pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Va
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    // Mirror the change into the running process's env so subsequent
+    // byok_status / list_provider_models / fetch_openai_compat calls
+    // (which prefer process env over file via env_or_file_value) see
+    // the new value immediately. Without this, dotenvy's boot-time
+    // snapshot wins forever — saving LLM_PROVIDER=nvidia to the file
+    // would still resolve to whatever the env was at app launch
+    // (typically the previous default, e.g. "ollama"), so the UI
+    // pill, llm-ready predicates, and Python sidecar all keep using
+    // the stale provider until the app is fully restarted.
+    //
+    // SAFETY: std::env::set_var / remove_var are unsafe in
+    // multi-threaded programs because libc getenv may race with
+    // setenv. We accept that for BYOK because (a) writes are
+    // user-initiated, never reentrant, (b) the alternative is forcing
+    // an app restart on every key change. Production note: if a
+    // future upgrade flips Rust 2024 edition this becomes an `unsafe`
+    // block — wrap accordingly.
+    if cleared {
+        std::env::remove_var(&name);
+    } else {
+        std::env::set_var(&name, &trimmed);
     }
     Ok(serde_json::json!({
         "ok": true,
@@ -2186,6 +2822,12 @@ pub async fn close_splash(app: AppHandle) -> Result<(), String> {
 // ─────────────────────────────────────────────────────────────────────────
 
 fn read_byok_value(key: &str) -> Result<String, String> {
+    if let Ok(v) = std::env::var(key) {
+        let t = v.trim();
+        if !t.is_empty() {
+            return Ok(t.to_string());
+        }
+    }
     let path = byok_env_path()?;
     let contents = std::fs::read_to_string(&path).unwrap_or_default();
     parse_env(&contents)
@@ -2231,6 +2873,7 @@ pub async fn list_provider_models(provider: String) -> Result<Value, String> {
         }
         "openai" => fetch_openai_compat(&client, "https://api.openai.com/v1/models", "OPENAI_API_KEY").await?,
         "openrouter" => fetch_openai_compat(&client, "https://openrouter.ai/api/v1/models", "OPENROUTER_API_KEY").await?,
+        "nvidia" => fetch_openai_compat(&client, "https://integrate.api.nvidia.com/v1/models", "NVIDIA_API_KEY").await?,
         "groq" => fetch_openai_compat(&client, "https://api.groq.com/openai/v1/models", "GROQ_API_KEY").await?,
         "deepseek" => fetch_openai_compat(&client, "https://api.deepseek.com/v1/models", "DEEPSEEK_API_KEY").await?,
         "mistral" => fetch_openai_compat(&client, "https://api.mistral.ai/v1/models", "MISTRAL_API_KEY").await?,
@@ -2459,6 +3102,7 @@ fn dev_project_dir() -> Option<std::path::PathBuf> {
 /// List known MCP clients (Claude Code, Cursor, Cline, …) and which configs exist.
 #[tauri::command]
 pub async fn mcp_clients(app: AppHandle) -> Result<Value, String> {
+    ensure_mcp_allowed(&app)?;
     run_cli(&app, vec!["mcp", "clients", "--json"]).await.map_err(err_to_string)
 }
 
@@ -2466,6 +3110,7 @@ pub async fn mcp_clients(app: AppHandle) -> Result<Value, String> {
 /// `client` defaults to `claude-code` when None/empty.
 #[tauri::command]
 pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    ensure_mcp_allowed(&app)?;
     let dd = data_dir(&app).map_err(err_to_string)?;
     let dd_str = dd.to_string_lossy().to_string();
     let mut args: Vec<String> = vec![
@@ -2484,6 +3129,7 @@ pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value,
 /// Aligns REDDIT_MYIND_DATA_DIR and writes a token to the data dir.
 #[tauri::command]
 pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    ensure_mcp_allowed(&app)?;
     let dd = data_dir(&app).map_err(err_to_string)?;
     let dd_str = dd.to_string_lossy().to_string();
 
@@ -2495,12 +3141,15 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
     if let Some(c) = client.as_deref().filter(|s| !s.is_empty()) {
         args.push("--client".into()); args.push(c.into());
     }
-    if let Some(bin) = resolve_sidecar_bin_path() {
-        args.push("--bin".into());
-        args.push(bin.to_string_lossy().to_string());
-    } else if let Some(proj) = dev_project_dir() {
+    // Prefer project-dir in dev so MCP clients run the Python CLI directly.
+    // This avoids stale/broken debug sidecar binaries being written into
+    // client configs (observed with Cursor MCP connect timeouts).
+    if let Some(proj) = dev_project_dir() {
         args.push("--project-dir".into());
         args.push(proj.to_string_lossy().to_string());
+    } else if let Some(bin) = resolve_sidecar_bin_path() {
+        args.push("--bin".into());
+        args.push(bin.to_string_lossy().to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     run_cli(&app, arg_refs).await.map_err(err_to_string)
@@ -2509,6 +3158,7 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
 /// Remove Gap Map's MCP entry from the chosen client's config + delete the token.
 #[tauri::command]
 pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    ensure_mcp_allowed(&app)?;
     let dd = data_dir(&app).map_err(err_to_string)?;
     let dd_str = dd.to_string_lossy().to_string();
     let mut args: Vec<String> = vec![
@@ -2521,6 +3171,63 @@ pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Val
     }
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+/// Structured activation check — shared by `license_status`, `ensure_mcp_allowed`,
+/// and anything else that needs to know *why* a licence is failing (not just
+/// that it is). Returns a `(code, human_message)` pair when the device is
+/// not fully activated, or `None` when everything checks out.
+///
+/// Reason codes (stable, safe to match on in UI):
+///   - `not_activated`         — no licence state persisted (first-time user)
+///   - `device_mismatch`       — stored state is for a different device signature
+///   - `token_missing`         — licence state exists but access-token blob is empty
+///   - `expired`               — `expires_at` is in the past
+///   - `token_device_mismatch` — JWT's device_fingerprint claim ≠ current device
+fn compute_activation_reason(app: &AppHandle) -> Result<Option<(String, String)>, String> {
+    let sig = build_device_signature(app)?;
+    let Some(state) = load_license_state(app)? else {
+        return Ok(Some((
+            "not_activated".into(),
+            "This device has not been activated yet. Activate your licence in onboarding or Settings → Licence.".into(),
+        )));
+    };
+    if state.device_signature != sig {
+        return Ok(Some((
+            "device_mismatch".into(),
+            "Stored licence is for a different device. Re-activate this device to unlock MCP.".into(),
+        )));
+    }
+    let token = read_access_token(&app).unwrap_or_default();
+    if token.trim().is_empty() {
+        return Ok(Some((
+            "token_missing".into(),
+            "Activation token is missing from local storage. Re-activate this device to refresh it.".into(),
+        )));
+    }
+    if !is_license_not_expired(&state.expires_at) {
+        let when = state.expires_at.clone().unwrap_or_else(|| "unknown".into());
+        return Ok(Some((
+            "expired".into(),
+            format!(
+                "Licence expired on {when}. Open the customer portal from Activate → Purchase history to renew, then re-activate."
+            ),
+        )));
+    }
+    if !token_matches_device_fingerprint(&token, &sig) {
+        return Ok(Some((
+            "token_device_mismatch".into(),
+            "Activation token does not match this device fingerprint (hostname or hardware changed). Re-activate to refresh.".into(),
+        )));
+    }
+    Ok(None)
+}
+
+fn ensure_mcp_allowed(app: &AppHandle) -> Result<(), String> {
+    match compute_activation_reason(app)? {
+        None => Ok(()),
+        Some((code, msg)) => Err(format!("[mcp:{code}] {msg}")),
+    }
 }
 
 // ── AG-C: global-competitors (T2.5) + finding feedback (T2.4) ─────────
@@ -3239,6 +3946,151 @@ fn local_today_iso() -> String {
     format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
+fn is_license_not_expired(expires_at: &Option<String>) -> bool {
+    let Some(raw) = expires_at else { return true; };
+    let expiry_date = raw.get(0..10).unwrap_or("").trim();
+    if expiry_date.is_empty() {
+        return true;
+    }
+    // ISO date lexical compare is safe for YYYY-MM-DD.
+    let today = local_today_iso();
+    today.as_str() <= expiry_date
+}
+
+fn verify_license_token(token: &str) -> Result<VerifiedTokenClaims, String> {
+    let secret = env!("JWT_DESKTOP_SECRET");
+    let key = DecodingKey::from_secret(secret.as_bytes());
+    let mut validation = Validation::new(Algorithm::HS256);
+    // Expiry is checked using the server-issued `expires_at` field for this
+    // app flow; keep JWT exp soft to avoid hard lockout during transient clock
+    // drift. Signature + issuer + audience are still strictly verified.
+    validation.validate_exp = false;
+    validation.set_issuer(&["gapmap-activation-suite"]);
+    validation.set_audience(&["gapmap-desktop"]);
+    decode::<VerifiedTokenClaims>(token, &key, &validation)
+        .map(|d| d.claims)
+        .map_err(|e| format!("invalid activation token: {e}"))
+}
+
+fn token_matches_device_fingerprint(token: &str, expected_sig: &str) -> bool {
+    match verify_license_token(token) {
+        Ok(claims) => match claims.device_fingerprint.as_deref() {
+            Some(fp) => fp == expected_sig,
+            None => false,
+        },
+        Err(_) => false,
+    }
+}
+
+fn normalize_activation_key(raw: &str) -> Result<String, String> {
+    let cleaned = raw
+        .trim()
+        .replace('-', "")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_uppercase();
+    if cleaned.len() != 16 {
+        return Err("activation key must be 16 chars (format XXXX-XXXX-XXXX-XXXX)".into());
+    }
+    let is_allowed = cleaned.chars().all(|c| matches!(c, 'A'..='Z' | '2'..='9'));
+    if !is_allowed {
+        return Err("activation key may only use A-Z and 2-9 (no 0/1)".into());
+    }
+    Ok(cleaned)
+}
+
+fn license_token_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = data_dir(app).map_err(err_to_string)?;
+    std::fs::create_dir_all(&dir).map_err(err_to_string)?;
+    Ok(dir.join(LICENSE_TOKEN_FILE))
+}
+
+fn save_access_token(app: &AppHandle, token: &str) -> Result<(), String> {
+    let path = license_token_path(app)?;
+    std::fs::write(&path, token).map_err(err_to_string)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    if let Ok(mut guard) = TOKEN_CACHE.lock() {
+        *guard = Some(Some(token.to_string()));
+    }
+    Ok(())
+}
+
+fn read_access_token(app: &AppHandle) -> Option<String> {
+    // Fast path: cache is populated (positive or negative).
+    if let Ok(guard) = TOKEN_CACHE.lock() {
+        if let Some(cached) = guard.as_ref() {
+            return cached.clone();
+        }
+    }
+    // Cold path: read the file. Never prompts the user (file is owned by
+    // the user and 0600-read-permissioned), so this replaces the Keychain
+    // round-trip that was triggering macOS's login prompt on every rebuild.
+    let path = match license_token_path(app) {
+        Ok(p) => p,
+        Err(_) => {
+            if let Ok(mut guard) = TOKEN_CACHE.lock() {
+                *guard = Some(None);
+            }
+            return None;
+        }
+    };
+    let mut fetched: Option<String> = std::fs::read_to_string(&path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // Fallback / migration path. Older builds stored the activation JWT in
+    // the macOS Keychain (later in this file before 2026-04-24) — when we
+    // moved to file-based storage existing users were left with no token at
+    // the new location. `license_state.json` *also* persists `access_token`
+    // in plain text, so we can recover it from there silently and then
+    // promote it to the canonical file location on first read. Without
+    // this, every previously-activated user hits `[mcp:token_missing]` on
+    // their first launch after the upgrade and the MCP card just spins.
+    if fetched.is_none() {
+        if let Ok(Some(state)) = load_license_state(app) {
+            let from_state = state.access_token.trim().to_string();
+            if !from_state.is_empty() {
+                fetched = Some(from_state.clone());
+                // Best-effort write-through so the next read goes straight
+                // to the file. Failures here are non-fatal — we still have
+                // the value in memory + license_state.json.
+                if let Err(e) = std::fs::write(&path, &from_state) {
+                    eprintln!("[license] migrate token to file failed: {e}");
+                } else {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(
+                            &path,
+                            std::fs::Permissions::from_mode(0o600),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(mut guard) = TOKEN_CACHE.lock() {
+        *guard = Some(fetched.clone());
+    }
+    fetched
+}
+
+fn clear_access_token(app: &AppHandle) {
+    if let Ok(path) = license_token_path(app) {
+        let _ = std::fs::remove_file(&path);
+    }
+    if let Ok(mut guard) = TOKEN_CACHE.lock() {
+        *guard = Some(None);
+    }
+}
+
 /// Days-since-Unix-epoch → (year, month, day). Gregorian, Howard Hinnant's
 /// civil-from-days algorithm.
 fn days_to_ymd(days: i64) -> (i64, u32, u32) {
@@ -3252,6 +4104,334 @@ fn days_to_ymd(days: i64) -> (i64, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+fn license_state_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = data_dir(app).map_err(err_to_string)?;
+    std::fs::create_dir_all(&dir).map_err(err_to_string)?;
+    Ok(dir.join("license_state.json"))
+}
+
+fn device_id_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = data_dir(app).map_err(err_to_string)?;
+    std::fs::create_dir_all(&dir).map_err(err_to_string)?;
+    Ok(dir.join("device_id"))
+}
+
+fn ensure_device_id(app: &AppHandle) -> Result<String, String> {
+    let path = device_id_path(app)?;
+    if let Ok(raw) = std::fs::read_to_string(&path) {
+        let id = raw.trim().to_string();
+        if !id.is_empty() {
+            return Ok(id);
+        }
+    }
+    let id = Uuid::new_v4().to_string();
+    std::fs::write(&path, &id).map_err(err_to_string)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(id)
+}
+
+#[cfg(target_os = "macos")]
+fn get_macos_ioreg_uuid() -> Option<String> {
+    let out = std::process::Command::new("ioreg")
+        .args(["-d2", "-c", "IOPlatformExpertDevice"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    stdout.lines().find_map(|line| {
+        if !line.contains("IOPlatformUUID") {
+            return None;
+        }
+        line.split('=')
+            .nth(1)
+            .map(|v| v.trim().trim_matches('"').to_string())
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn get_linux_machine_id() -> Option<String> {
+    std::fs::read_to_string("/etc/machine-id")
+        .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_machine_guid() -> Option<String> {
+    let out = std::process::Command::new("reg")
+        .args([
+            "query",
+            r"HKLM\SOFTWARE\Microsoft\Cryptography",
+            "/v",
+            "MachineGuid",
+        ])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    stdout.lines().find_map(|line| {
+        if !line.to_ascii_lowercase().contains("machineguid") {
+            return None;
+        }
+        line.split_whitespace().last().map(|s| s.trim().to_string())
+    })
+}
+
+fn build_device_signature(app: &AppHandle) -> Result<String, String> {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let hw_id = {
+        #[cfg(target_os = "macos")]
+        {
+            get_macos_ioreg_uuid()
+        }
+        #[cfg(target_os = "linux")]
+        {
+            get_linux_machine_id()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            get_windows_machine_guid()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        {
+            None
+        }
+    };
+    let stable = hw_id.unwrap_or_else(|| ensure_device_id(app).unwrap_or_else(|_| "unknown-device".to_string()));
+    let seed = format!("gapmap|{}|{}|{}", os, arch, stable);
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn load_license_state(app: &AppHandle) -> Result<Option<LicenseState>, String> {
+    let path = license_state_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&path).map_err(err_to_string)?;
+    let parsed: LicenseState = serde_json::from_str(&raw).map_err(err_to_string)?;
+    Ok(Some(parsed))
+}
+
+fn save_license_state(app: &AppHandle, state: &LicenseState) -> Result<(), String> {
+    let path = license_state_path(app)?;
+    let mut safe = state.clone();
+    safe.access_token = String::new();
+    let raw = serde_json::to_string_pretty(&safe).map_err(err_to_string)?;
+    std::fs::write(&path, raw).map_err(err_to_string)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn device_signature(app: AppHandle) -> Result<Value, String> {
+    let sig = build_device_signature(&app)?;
+    Ok(serde_json::json!({
+        "device_signature": sig,
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH
+    }))
+}
+
+#[tauri::command]
+pub async fn license_status(app: AppHandle) -> Result<Value, String> {
+    let sig = build_device_signature(&app)?;
+    let reason = compute_activation_reason(&app)?;
+    let state = load_license_state(&app)?;
+    let activated = reason.is_none();
+    let (reason_code, reason_msg) = match reason {
+        Some((c, m)) => (Some(c), Some(m)),
+        None => (None, None),
+    };
+    if let Some(s) = state {
+        return Ok(serde_json::json!({
+            "activated": activated,
+            "reason_code": reason_code,
+            "reason": reason_msg,
+            "email": s.email,
+            "license_id": s.license_id,
+            "device_signature": sig,
+            "expires_at": s.expires_at,
+            "last_verified_at": s.last_verified_at,
+            "api_base": s.api_base
+        }));
+    }
+    Ok(serde_json::json!({
+        "activated": false,
+        "reason_code": reason_code.unwrap_or_else(|| "not_activated".into()),
+        "reason": reason_msg.unwrap_or_else(|| "This device has not been activated yet.".into()),
+        "device_signature": sig
+    }))
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ActivateRequest<'a> {
+    email: &'a str,
+    password: &'a str,
+    activation_key: &'a str,
+    device_signature: &'a str,
+    app: &'a str,
+    os: &'a str,
+    arch: &'a str,
+    onboarding: Option<&'a Value>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ActivateResponse {
+    ok: Option<bool>,
+    token: Option<String>,
+    access_token: Option<String>,
+    license_id: Option<String>,
+    user_id: Option<String>,
+    expires_at: Option<String>,
+}
+
+#[tauri::command]
+pub async fn license_activate(
+    app: AppHandle,
+    api_base: String,
+    email: String,
+    password: String,
+    activation_key: String,
+    onboarding: Option<Value>,
+) -> Result<Value, String> {
+    let base = api_base.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return Err("license api base is required".into());
+    }
+    if email.trim().is_empty() || password.trim().is_empty() || activation_key.trim().is_empty() {
+        return Err("email, password and activation key are required".into());
+    }
+    let cleaned_key = normalize_activation_key(&activation_key)?;
+    let sig = build_device_signature(&app)?;
+    let endpoint = format!("{}/v1/device/activate", base);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(err_to_string)?;
+    let payload = ActivateRequest {
+        email: email.trim(),
+        password: password.trim(),
+        activation_key: &cleaned_key,
+        device_signature: &sig,
+        app: "gapmap-desktop",
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        onboarding: onboarding.as_ref(),
+    };
+    let resp = client
+        .post(endpoint)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(err_to_string)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(err_to_string)?;
+    if !status.is_success() {
+        return Err(format!("activation failed ({}): {}", status.as_u16(), body));
+    }
+    let parsed: ActivateResponse = serde_json::from_str(&body).map_err(|e| {
+        format!("activation response is not valid JSON: {} | body={}", e, body)
+    })?;
+    let ok = parsed.ok.unwrap_or(true);
+    let token = parsed.access_token.or(parsed.token).unwrap_or_default();
+    let license_id = parsed.license_id.unwrap_or_default();
+    if !ok || token.is_empty() || license_id.is_empty() {
+        return Err("activation response missing token/license_id".into());
+    }
+    // Hard requirement from licence spec: token must be signed with baked secret
+    // and bound to this device fingerprint before we persist it.
+    let claims = verify_license_token(&token)?;
+    if claims.device_fingerprint.as_deref() != Some(sig.as_str()) {
+        return Err("activation token belongs to a different device".into());
+    }
+    let state = LicenseState {
+        api_base: base,
+        email: email.trim().to_string(),
+        license_id: license_id.clone(),
+        activation_key: cleaned_key,
+        device_signature: sig.clone(),
+        access_token: token,
+        user_id: parsed.user_id,
+        expires_at: parsed.expires_at.clone(),
+        last_verified_at: Some(local_today_iso()),
+    };
+    save_access_token(&app, &state.access_token)?;
+    save_license_state(&app, &state)?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "activated": true,
+        "license_id": license_id,
+        "device_signature": sig,
+        "expires_at": parsed.expires_at
+    }))
+}
+
+#[tauri::command]
+pub async fn license_server_check(api_base: String) -> Result<Value, String> {
+    let base = api_base.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return Err("license api base is required".into());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(err_to_string)?;
+    let probes = [
+        format!("{}/v1/health", base),
+        format!("{}/health", base),
+        format!("{}/healthz", base),
+    ];
+    let mut last_err = String::new();
+    for url in probes {
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    return Ok(serde_json::json!({
+                        "ok": true,
+                        "url": url,
+                        "status": resp.status().as_u16()
+                    }));
+                }
+                last_err = format!("{} -> HTTP {}", url, resp.status().as_u16());
+            }
+            Err(e) => {
+                last_err = format!("{} -> {}", url, e);
+            }
+        }
+    }
+    Err(format!("license server not reachable: {}", last_err))
+}
+
+#[tauri::command]
+pub async fn license_default_api_base() -> Result<Value, String> {
+    let from_env = std::env::var("GAPMAP_LICENSE_API_BASE")
+        .or_else(|_| std::env::var("LICENSE_API_BASE"))
+        .unwrap_or_default();
+    let base = from_env.trim().trim_end_matches('/').to_string();
+    Ok(serde_json::json!({
+        "api_base": base
+    }))
+}
+
+#[tauri::command]
+pub async fn license_logout(app: AppHandle) -> Result<Value, String> {
+    let path = license_state_path(&app)?;
+    if path.exists() {
+        let _ = std::fs::remove_file(path);
+    }
+    clear_access_token(&app);
+    Ok(serde_json::json!({ "ok": true }))
 }
 
 #[cfg(test)]
