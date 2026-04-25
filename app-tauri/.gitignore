@@ -10,5 +10,17 @@ src-tauri/gen/
 # Users of other platforms run scripts/build-pyinstaller.sh on their machine
 # src-tauri/binaries/*
 
+# env files
+.env
+.env.local
+.env.*.local
+
 # OS
 .DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Per-worktree Claude state
+.claude/
