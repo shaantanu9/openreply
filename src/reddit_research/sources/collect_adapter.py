@@ -587,6 +587,210 @@ def run_alternativeto(topic_or_keywords: str | list[str], limit: int = 30) -> in
         return 0
 
 
+def _oc_persist(
+    topic: str,
+    rows: list[dict],
+    *,
+    site: str,
+    keyword: str,
+    map_row: Any,
+) -> int:
+    """Generic opencli persistence helper.
+
+    `map_row(item)` returns a row in the unified posts schema (or None to
+    skip). Source tag is `f"oc_{site}:{keyword}"` so attribution stays
+    granular in topic_posts.source.
+    """
+    out: list[dict] = []
+    for item in rows:
+        try:
+            mapped = map_row(item)
+        except Exception:
+            mapped = None
+        if mapped:
+            out.append(mapped)
+    return _persist(topic, out, source_tag=f"oc_{site}:{keyword}")
+
+
+def run_oc_bluesky(
+    topic_or_keywords: str | list[str],
+    limit: int = 25,
+) -> int:
+    """Bluesky author search via opencli (PUBLIC strategy, no browser).
+
+    Returns USER profiles whose handle/name/bio matches the query —
+    treated as authority-signal rows alongside post-based sources.
+    """
+    from . import opencli_bridge
+
+    kws, stopic = _as_keywords(topic_or_keywords)
+    if not kws or not opencli_bridge.is_available():
+        return 0
+
+    fid = log_fetch_start("oc_bluesky", {"keywords": kws, "limit": limit})
+    total = 0
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    now_ts = time.time()
+    try:
+        for i, kw in enumerate(kws):
+            data = opencli_bridge.run(
+                "bluesky", "search", [kw, "--limit", str(limit)]
+            )
+
+            def _map(item: dict) -> dict | None:
+                handle = (item.get("handle") or "").strip()
+                if not handle:
+                    return None
+                name = (item.get("name") or "").strip() or handle
+                desc = (item.get("description") or "").strip()
+                followers = item.get("followers")
+                try:
+                    score = int(followers) if followers is not None else 0
+                except (TypeError, ValueError):
+                    score = 0
+                url = f"https://bsky.app/profile/{handle}"
+                return {
+                    "id": f"oc_bluesky_{handle}",
+                    "sub": "bluesky",
+                    "source_type": "oc_bluesky",
+                    "author": handle,
+                    "title": name,
+                    "selftext": desc,
+                    "url": url,
+                    "score": score,
+                    "upvote_ratio": None,
+                    "num_comments": 0,
+                    "created_utc": now_ts,
+                    "is_self": 1,
+                    "over_18": 0,
+                    "flair": None,
+                    "permalink": url,
+                    "fetched_at": now_iso,
+                }
+
+            total += _oc_persist(stopic, data, site="bluesky", keyword=kw, map_row=_map)
+            if i < len(kws) - 1:
+                time.sleep(_KW_SLEEP)
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_oc_substack(
+    topic_or_keywords: str | list[str],
+    limit: int = 25,
+) -> int:
+    """Substack post search via opencli — no native equivalent."""
+    from . import opencli_bridge
+
+    kws, stopic = _as_keywords(topic_or_keywords)
+    if not kws or not opencli_bridge.is_available():
+        return 0
+
+    fid = log_fetch_start("oc_substack", {"keywords": kws, "limit": limit})
+    total = 0
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    try:
+        for i, kw in enumerate(kws):
+            data = opencli_bridge.run("substack", "search", [kw, "--limit", str(limit)])
+
+            def _map(item: dict, _kw: str = kw) -> dict | None:
+                url = (item.get("url") or "").strip()
+                title = (item.get("title") or "").strip()
+                if not url or not title:
+                    return None
+                date_str = (item.get("date") or "").strip()
+                try:
+                    created = time.mktime(time.strptime(date_str, "%Y-%m-%d")) if date_str else time.time()
+                except ValueError:
+                    created = time.time()
+                return {
+                    "id": f"oc_substack_{abs(hash(url))}",
+                    "sub": "substack",
+                    "source_type": "oc_substack",
+                    "author": (item.get("author") or "").strip(),
+                    "title": title,
+                    "selftext": (item.get("description") or "").strip(),
+                    "url": url,
+                    "score": 0,
+                    "upvote_ratio": None,
+                    "num_comments": 0,
+                    "created_utc": created,
+                    "is_self": 0,
+                    "over_18": 0,
+                    "flair": None,
+                    "permalink": url,
+                    "fetched_at": now_iso,
+                }
+
+            total += _oc_persist(stopic, data, site="substack", keyword=kw, map_row=_map)
+            if i < len(kws) - 1:
+                time.sleep(_KW_SLEEP)
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_oc_producthunt_today(
+    topic_or_keywords: str | list[str],
+    limit: int = 30,
+) -> int:
+    """Product Hunt daily leaderboard via opencli.
+
+    NOTE: ignores the topic — Product Hunt's `today` command surfaces the
+    current day's launches site-wide. Tagged under the canonical topic so
+    these rows feed broader competitive-landscape analysis.
+    """
+    from . import opencli_bridge
+
+    _, stopic = _as_keywords(topic_or_keywords)
+    if not stopic or not opencli_bridge.is_available():
+        return 0
+
+    fid = log_fetch_start("oc_producthunt_today", {"topic": stopic, "limit": limit})
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    now_ts = time.time()
+    try:
+        data = opencli_bridge.run(
+            "producthunt", "today", ["--limit", str(limit)]
+        )
+
+        def _map(item: dict) -> dict | None:
+            url = (item.get("url") or "").strip()
+            name = (item.get("name") or "").strip()
+            if not url or not name:
+                return None
+            return {
+                "id": f"oc_phtoday_{abs(hash(url))}",
+                "sub": "producthunt",
+                "source_type": "oc_producthunt_today",
+                "author": (item.get("author") or "").strip(),
+                "title": name,
+                "selftext": (item.get("tagline") or "").strip(),
+                "url": url,
+                "score": 0,
+                "upvote_ratio": None,
+                "num_comments": 0,
+                "created_utc": now_ts,
+                "is_self": 0,
+                "over_18": 0,
+                "flair": None,
+                "permalink": url,
+                "fetched_at": now_iso,
+            }
+
+        total = _oc_persist(stopic, data, site="producthunt", keyword="today", map_row=_map)
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
 def _rss_category_runner(cat: str):
     """Bind `run_rss` to a specific category so it can be registered
     as its own SOURCES entry (rss_startup, rss_ml, …). The wizard CSV
@@ -633,6 +837,14 @@ SOURCES: dict[str, Any] = {
     "semantic_scholar": run_semantic_scholar,
     "wikipedia":        run_wikipedia,
     "bluesky":          run_bluesky,
+    # opencli-backed adapters (require @jackwener/opencli built locally;
+    # see src/reddit_research/sources/opencli_bridge.py for resolution).
+    # Adapter ids prefixed `oc_` so they don't collide with native sources
+    # of the same name (e.g. native `bluesky` searches POSTS via API,
+    # `oc_bluesky` searches USERS via opencli).
+    "oc_bluesky":            run_oc_bluesky,
+    "oc_substack":           run_oc_substack,
+    "oc_producthunt_today":  run_oc_producthunt_today,
     "rss": run_rss,  # default bundle (see rss_catalog.DEFAULT_CATEGORIES)
     "rss_learning": _rss_category_runner("learning"),
     "rss_startup": _rss_category_runner("startup"),
