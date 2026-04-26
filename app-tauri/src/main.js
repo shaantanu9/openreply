@@ -325,6 +325,39 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   refreshNavCounts();
 
+  // Drop any localStorage screen-cache entry whose key contains the
+  // mutation kind, so the next visit refetches fresh data. Example:
+  // saving a new finding fires `gapmap:changed{kind:findings}` →
+  // every key matching `*findings*` is dropped → the topic Home /
+  // Insights tab reloads from sidecar instead of serving stale data.
+  // Unrelated cached screens keep their fast paint. See
+  // `lib/screenCache.js`.
+  import('./lib/screenCache.js').then(({ clearScreenCacheBy }) => {
+    window.addEventListener('gapmap:changed', (e) => {
+      const kind = e?.detail?.kind;
+      if (!kind) return;
+      // Map mutation kinds to cache-tag substrings. `kind === 'graph'`
+      // means findings + concepts + relations changed → drop every
+      // topic-scoped cache.
+      const tagsByKind = {
+        topics:    ['insights.', 'home.'],
+        collect:   ['insights.', 'home.', 'sources.', 'posts.'],
+        ingest:    ['insights.', 'home.', 'sources.', 'posts.'],
+        // Graph mutations rebuild concept + intervention + relation
+        // nodes — drop every cache derived from graph_nodes/edges.
+        graph:     ['insights.', 'solutions.', 'concepts.', 'papers.'],
+        // Findings drive insights, evidence, and the painpoint cards on
+        // solutions. Re-extraction means all three need fresh paint.
+        findings:  ['insights.', 'evidence.', 'solutions.'],
+        trash:     ['insights.', 'home.', 'evidence.', 'sources.', 'posts.'],
+        byok:      [],   // no screen cache depends on the key itself
+        hypothesis:['bets.'],
+        product:   ['insights.'],
+      };
+      for (const tag of (tagsByKind[kind] || [])) clearScreenCacheBy(tag);
+    });
+  }).catch(() => {});
+
   // Reactive re-render: any in-app mutation fires `gapmap:changed`. We refresh
   // the sidebar counters AND ask the currently-visible screen to re-render
   // itself (by re-running route() — cached reads are already invalidated
@@ -491,11 +524,32 @@ function wireEnrichErrorBanner() {
       <button id="enrich-err-retry">Retry all failed</button>
       <button id="enrich-err-dismiss" aria-label="Dismiss">Dismiss</button>
     `;
-    hostEl.querySelector('#enrich-err-retry').onclick = async () => {
-      try { await api.retryAllExtraction(); }
-      catch (e) { console.warn('[enrich] retry failed:', e); }
-      // Banner stays — the next tick or idle will clear it via clearBanner()
-      // once the worker successfully drains or returns idle.
+    hostEl.querySelector('#enrich-err-retry').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = 'Retrying…';
+      try {
+        const res = await api.retryAllExtraction();
+        // Surface counts so the user knows what happened. The Rust impl
+        // returns `{ok, rows_reset, worker_restart_error}` after my fix;
+        // older builds return `{ok:true, stub:true}` and we fall through
+        // to a generic "queued" message.
+        if (res?.stub) {
+          btn.textContent = 'Stub — rebuild app';
+        } else if (res?.ok) {
+          btn.textContent = `✓ Retrying ${res.rows_reset ?? '?'} rows`;
+          setTimeout(clearBanner, 1500);
+        } else {
+          btn.textContent = '✗ Retry failed — see console';
+          console.warn('[enrich] retry result:', res);
+        }
+      } catch (e) {
+        btn.textContent = '✗ Retry errored';
+        console.warn('[enrich] retry failed:', e);
+      } finally {
+        setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
+      }
     };
     hostEl.querySelector('#enrich-err-dismiss').onclick = clearBanner;
   };

@@ -147,12 +147,21 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
     return posts, label
 
 
-def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None) -> str:
+def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None,
+                   citations_out: list | None = None) -> str:
     """Build a compact markdown context block for the LLM.
 
     If `question` is provided AND Palace (ChromaDB + ONNX model) is ready,
     the evidence section uses semantic retrieval against the question.
     Otherwise falls back to engagement-ranked SQL across all sources.
+
+    `citations_out` (optional): if a list is passed, it's filled with one
+    dict per evidence post in the same order they appear in the context
+    (1-indexed). Each dict carries the fields needed to render a citation
+    line: ``{n, title, source, url, post_id, subreddit}``. Callers use this
+    to append a deterministic Sources block at the end of the response —
+    so even if the LLM forgets the prompted [N] inline citations, the user
+    still gets a clickable list of every source the answer drew on.
     """
     db = get_db()
 
@@ -272,7 +281,9 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
     if posts:
         from .corpus_format import _format_row
         parts.append(evidence_heading)
-        for p in posts:
+        parts.append("Cite these sources inline as [1], [2], etc. when you reference them.")
+        parts.append("")
+        for idx, p in enumerate(posts, start=1):
             # Re-use the source-aware formatter so arxiv / pubmed / ingest
             # rows cite correctly instead of being mislabelled as r/reddit.
             # `selftext` column is named `snip` here — alias it.
@@ -280,15 +291,58 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
             row["selftext"] = p.get("snip", "")
             row["sub"] = p.get("subreddit") or ""
             header_and_body = _format_row(row, excerpt_chars=300)
-            # Make it a markdown bullet.
             lines = header_and_body.split("\n", 1)
+            # Prefix each evidence post with [N] so the LLM can reference it.
             if len(lines) == 2:
-                parts.append(f"- {lines[0]}\n  > {lines[1].strip()}")
+                parts.append(f"- [{idx}] {lines[0]}\n  > {lines[1].strip()}")
             else:
-                parts.append(f"- {lines[0]}")
+                parts.append(f"- [{idx}] {lines[0]}")
+            # Stash citation metadata for post-stream rendering. We fall back
+            # to a synthesized Reddit URL if `url` is empty (legacy posts
+            # collected before we persisted permalinks).
+            if citations_out is not None:
+                pid = p.get("id") or ""
+                source = p.get("source") or "reddit"
+                url = (p.get("url") or "").strip()
+                sub = (p.get("subreddit") or "").strip()
+                if not url and source == "reddit" and pid and sub:
+                    url = f"https://www.reddit.com/r/{sub}/comments/{pid}/"
+                citations_out.append({
+                    "n": idx,
+                    "title": (p.get("title") or "").strip()[:200],
+                    "source": source,
+                    "url": url,
+                    "post_id": pid,
+                    "subreddit": sub,
+                })
         parts.append("")
 
     return "\n".join(parts)
+
+
+def _format_sources_block(citations: list) -> str:
+    """Render a deterministic 'Sources' markdown block from `citations_out`.
+
+    Always emitted at the end of a chat response so the user can verify
+    every claim — even if the LLM forgot to cite inline. Format matches
+    common academic markdown so renderers turn URLs into clickable links.
+    """
+    if not citations:
+        return ""
+    out = ["", "---", "## Sources", ""]
+    for c in citations:
+        title = c.get("title") or "(untitled)"
+        url = c.get("url") or ""
+        src = c.get("source") or "reddit"
+        sub = c.get("subreddit") or ""
+        # `r/foo` for reddit, otherwise the source label (arxiv, hn, …).
+        prefix = f"r/{sub}" if (src == "reddit" and sub) else src
+        if url:
+            out.append(f"[{c['n']}] **{prefix}** — [{title}]({url})")
+        else:
+            out.append(f"[{c['n']}] **{prefix}** — {title}")
+    out.append("")
+    return "\n".join(out)
 
 
 # --- prompt modes ---------------------------------------------------------
@@ -331,14 +385,22 @@ def system_prompt() -> str:
         "You are a senior product researcher. You analyze multi-source corpora "
         "(Reddit, HN, app stores, arXiv, etc.) to identify market gaps. "
         "Ground every claim in the context you're given — do not hallucinate. "
-        "Quote evidence verbatim where possible."
+        "Quote evidence verbatim where possible. "
+        "When you reference an evidence post from the Evidence section, cite it "
+        "inline with its bracketed number, e.g. \"users complain about X [3]\". "
+        "Do NOT invent citation numbers — only use ones present in the Evidence "
+        "section. Do NOT add a Sources / References list yourself; one will be "
+        "appended automatically after your response."
     )
 
 
-def build_user_prompt(topic: str, question: str, mode: str) -> str:
+def build_user_prompt(topic: str, question: str, mode: str,
+                      citations_out: list | None = None) -> str:
     # Pass the user's question into _topic_context so Palace can retrieve
     # semantically-relevant evidence posts instead of blind top-engagement.
-    context = _topic_context(topic, question=question)
+    # `citations_out` is filled in-place with the numbered evidence list so
+    # `chat_stream` can append the Sources block after the LLM finishes.
+    context = _topic_context(topic, question=question, citations_out=citations_out)
     instruction = MODE_PROMPTS.get(mode, MODE_PROMPTS["ask"])
     return (
         f"{instruction}\n\n"
@@ -416,9 +478,20 @@ def chat_stream(
     provider: str | None = None,
     max_tokens: int = 1800,
 ) -> Iterator[str]:
-    """Stream tokens from the selected provider."""
+    """Stream tokens from the selected provider, then append a citations block.
+
+    Two layers of citation:
+      1. The context block numbers each evidence post `[N]` and the system
+         prompt instructs the LLM to reference them inline. LLM cooperation
+         varies — bigger models tend to cite, smaller ones often forget.
+      2. After the stream completes, this function yields a deterministic
+         `## Sources` block listing every evidence post with title + URL.
+         That guarantees the user always sees source attribution, even
+         when the LLM didn't bother with inline `[N]` markers.
+    """
     prov, model = _resolve_provider(provider)
-    user = build_user_prompt(topic, question, mode)
+    citations: list[dict] = []
+    user = build_user_prompt(topic, question, mode, citations_out=citations)
     sys = system_prompt()
 
     if prov == "anthropic":
@@ -427,6 +500,14 @@ def chat_stream(
         yield from _stream_openai_compatible(prov, model, sys, user, max_tokens)
     else:
         raise RuntimeError(f"Unknown provider: {prov}")
+
+    # Append the deterministic Sources block once the LLM stream finishes.
+    # Yielding as a single chunk so the frontend's incremental markdown
+    # renderer paints it atomically — easier than streaming a partial
+    # heading character-by-character.
+    sources_block = _format_sources_block(citations)
+    if sources_block:
+        yield sources_block
 
 
 # ─── Agent mode (tool-use loop) ────────────────────────────────────────────

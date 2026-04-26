@@ -20,15 +20,23 @@ function renderRow(p) {
   const link = p.permalink
     ? `https://www.reddit.com${p.permalink}`
     : (p.url || '#');
+  // Tauri 2 routes `<a target="_blank">` clicks through the shell plugin's
+  // `open` command, which requires `shell:allow-open` in capabilities. We
+  // intentionally don't grant that — the surface is too broad. Instead,
+  // emit a `data-extlink` attribute and route every click through
+  // `api.openUrl()` (Rust `open_url` command, which uses
+  // `std::process::Command::new("open")` directly — no shell plugin
+  // permission required). The delegated handler in renderSearch wires
+  // them all in one place.
   const subTag = p.sub
-    ? `<a class="search-sub" href="https://www.reddit.com/r/${esc(p.sub)}" target="_blank" rel="noopener">r/${esc(p.sub)}</a>`
+    ? `<button type="button" class="search-sub" data-extlink="https://www.reddit.com/r/${esc(p.sub)}">r/${esc(p.sub)}</button>`
     : '';
   const excerpt = p.selftext
     ? `<div class="search-excerpt">${esc(String(p.selftext).slice(0, 240))}${String(p.selftext).length > 240 ? '…' : ''}</div>`
     : '';
   return `
     <div class="search-row">
-      <a class="search-title" href="${esc(link)}" target="_blank" rel="noopener">${esc(p.title || '(untitled)')}</a>
+      <button type="button" class="search-title" data-extlink="${esc(link)}">${esc(p.title || '(untitled)')}</button>
       ${excerpt}
       <div class="search-meta">
         ${subTag}
@@ -140,5 +148,20 @@ export async function renderSearch(root) {
     state.sort  = $('#search-sort', root).value;
     state.time  = $('#search-time', root).value;
     doSearch(root);
+  });
+
+  // Delegated external-link handler — every `[data-extlink]` button in
+  // the results area opens via `api.openUrl()` instead of letting the
+  // webview intercept and route through the shell plugin (which would
+  // throw `shell.open not allowed` since we don't grant `shell:allow-
+  // open` in capabilities). One listener, survives result-area
+  // re-renders. See renderRow comment for context.
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-extlink]');
+    if (!btn) return;
+    e.preventDefault();
+    const url = btn.dataset.extlink;
+    if (!url || url === '#') return;
+    api.openUrl(url).catch(err => console.warn('[search] openUrl failed:', err));
   });
 }

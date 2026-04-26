@@ -3,6 +3,7 @@
 import { api } from '../api.js';
 import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -131,11 +132,62 @@ function renderPainpointCard(pp, interventions, papers) {
 export async function loadSolutions(contentEl, topic) {
   // Gated writes — drop renders that would land after a rapid tab switch.
   const set = (html) => { if (contentEl.dataset.tab === 'solutions') contentEl.innerHTML = html; };
-  set('<div class="empty-state">loading…</div>');
+
+  // SWR: paint cached cards immediately, refresh in background. The
+  // painpoints + per-card interventions/papers fan-out costs ~3-6
+  // sidecar spawns; cache survives app restart so re-opening Solutions
+  // paints in <10 ms. Mutation listener in main.js (kind='findings' /
+  // 'graph') drops the cache when the user re-runs the pipeline.
+  const CACHE_KEY = `solutions.${topic}`;
+  const cachedCards = readScreenCache(CACHE_KEY);
+  let paintedFromCache = false;
+
+  const renderCards = (cards) => {
+    set(`
+      <div class="solutions-tab">
+        <div class="solutions-toolbar">
+          <button class="btn" id="btn-rerun-solutions"><i data-lucide="refresh-cw"></i> Re-run pipeline</button>
+        </div>
+        <div class="solutions-list">${cards.map(c => renderPainpointCard(c.pp, c.interventions, c.papers)).join('')}</div>
+      </div>
+    `);
+    if (contentEl.dataset.tab !== 'solutions') return;
+    window.refreshIcons?.();
+    $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
+      set('<div class="empty-state">Re-running…</div>');
+      let err = null;
+      try {
+        await api.runSolutionsPipeline(topic);
+      } catch (e) {
+        err = e;
+        console.error('solutions pipeline failed:', e);
+      }
+      if (err) {
+        set(
+          `<div class="empty-big"><h3>Couldn't re-run solutions</h3>
+            <p>${(err && (err.message || String(err))) || 'unknown error'}</p>
+            <p style="margin-top:10px;color:var(--ink-3);font-size:12px">
+              Check your LLM key in Settings → API keys, or retry in a moment.
+            </p>
+          </div>`);
+        return;
+      }
+      await loadSolutions(contentEl, topic);
+    });
+  };
+
+  if (Array.isArray(cachedCards) && cachedCards.length > 0) {
+    renderCards(cachedCards);
+    paintedFromCache = true;
+  } else {
+    set('<div class="empty-state">loading…</div>');
+  }
+
   const painpoints = await fetchSolutionsData(topic);
   if (contentEl.dataset.tab !== 'solutions') return;
 
   if (!painpoints.length) {
+    if (paintedFromCache) return;   // keep stale-but-valid paint
     set(`<div class="empty-state"><p>No painpoints found for <b>${escape(topic)}</b>. Build the gap map first.</p></div>`);
     return;
   }
@@ -149,6 +201,7 @@ export async function loadSolutions(contentEl, topic) {
   const haveSolutions = (anySolutions?.[0]?.c || 0) > 0;
 
   if (!haveSolutions) {
+    if (paintedFromCache) return;   // keep stale-but-valid paint
     set(renderEmpty(topic));
     if (contentEl.dataset.tab !== 'solutions') return;
     window.refreshIcons?.();
@@ -189,46 +242,17 @@ export async function loadSolutions(contentEl, topic) {
     return;
   }
 
-  // Render painpoint cards
+  // Fetch interventions + papers for each painpoint, then cache the
+  // structured cards so the next visit paints from localStorage.
   const cards = await Promise.all(painpoints.map(async pp => {
     const [interventions, papers] = await Promise.all([
       fetchInterventionsForPainpoint(topic, pp.painpoint_id),
       fetchPapersForPainpoint(topic, pp.painpoint_id),
     ]);
-    return renderPainpointCard(pp, interventions, papers);
+    return { pp, interventions, papers };
   }));
   if (contentEl.dataset.tab !== 'solutions') return;
 
-  set(`
-    <div class="solutions-tab">
-      <div class="solutions-toolbar">
-        <button class="btn" id="btn-rerun-solutions"><i data-lucide="refresh-cw"></i> Re-run pipeline</button>
-      </div>
-      <div class="solutions-list">${cards.join('')}</div>
-    </div>
-  `);
-  if (contentEl.dataset.tab !== 'solutions') return;
-  window.refreshIcons?.();
-
-  $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
-    set('<div class="empty-state">Re-running…</div>');
-    let err = null;
-    try {
-      await api.runSolutionsPipeline(topic);
-    } catch (e) {
-      err = e;
-      console.error('solutions pipeline failed:', e);
-    }
-    if (err) {
-      set(
-        `<div class="empty-big"><h3>Couldn't re-run solutions</h3>
-          <p>${(err && (err.message || String(err))) || 'unknown error'}</p>
-          <p style="margin-top:10px;color:var(--ink-3);font-size:12px">
-            Check your LLM key in Settings → API keys, or retry in a moment.
-          </p>
-        </div>`);
-      return;
-    }
-    await loadSolutions(contentEl, topic);
-  });
+  if (cards.length > 0) writeScreenCache(CACHE_KEY, cards);
+  renderCards(cards);
 }

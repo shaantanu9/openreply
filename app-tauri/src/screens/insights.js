@@ -9,6 +9,7 @@
 import { api, esc } from '../api.js';
 import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -615,17 +616,42 @@ export async function loadInsights(contentEl, topic) {
   // Gated writes — drop any render that would land after a tab switch.
   const set = (html) => { if (contentEl.dataset.tab === 'insights') contentEl.innerHTML = html; };
 
-  // Phase 1: try cached first (cheap). If empty, show CTA to generate.
-  set(`<div class="empty-state" style="padding:40px;text-align:center">
-    <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-    <div style="color:var(--ink-3);font-size:13px">Loading insights…</div>
-  </div>`);
+  // ─── Phase 0: instant paint from localStorage SWR cache ──────────────
+  // Without this, every topic Home open paid 800-1500 ms of sidecar cold
+  // start before showing anything. The cache survives full app restart so
+  // the second time the user opens the same topic (whether in this session
+  // or after closing the app), the report renders in <10 ms while the
+  // fresh fetch happens in the background. Only paint when we have a real
+  // report — the empty-state should ALWAYS reflect the live answer, not
+  // a memoised "no data" placeholder.
+  const CACHE_KEY = `insights.${topic}`;
+  const cachedSnap = readScreenCache(CACHE_KEY);
+  let paintedFromCache = false;
+  if (cachedSnap && cachedSnap.ok && (cachedSnap.findings || cachedSnap.executive_summary)) {
+    set(renderFull(cachedSnap, contentEl, topic));
+    if (contentEl.dataset.tab === 'insights') {
+      contentEl.dataset.cached = '1';
+      wireCards(contentEl, topic, cachedSnap);
+      $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
+      window.refreshIcons?.();
+    }
+    paintedFromCache = true;
+  } else {
+    set(`<div class="empty-state" style="padding:40px;text-align:center">
+      <div class="map-building-spinner" style="margin:0 auto 10px"></div>
+      <div style="color:var(--ink-3);font-size:13px">Loading insights…</div>
+    </div>`);
+  }
 
+  // ─── Phase 1: background refresh (cached server-side, ~500-1500 ms) ──
   let cached;
   try {
     cached = await api.synthesizeInsights(topic, true);
   } catch (e) {
     if (contentEl.dataset.tab !== 'insights') return;
+    // Keep the cached paint if we have one — better than blanking on a
+    // transient error. Otherwise fall through to the error card.
+    if (paintedFromCache) return;
     set(renderError(e?.message || String(e)));
     wireRunButton(contentEl, topic);
     return;
@@ -634,16 +660,21 @@ export async function loadInsights(contentEl, topic) {
 
   // If we got a real report, render it.
   if (cached && cached.ok && (cached.findings || cached.executive_summary)) {
+    writeScreenCache(CACHE_KEY, cached);
     await annotateWithResearchLinks(cached, topic);
     set(renderFull(cached, contentEl, topic));
+    if (contentEl.dataset.tab !== 'insights') return;
+    contentEl.dataset.cached = '';
     wireCards(contentEl, topic, cached);
     $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
     window.refreshIcons?.();
     return;
   }
 
-  // No cache (or error). Show CTA — and auto-run if the user opted in and
-  // an LLM is configured, so the empty-state is only ever a fallback.
+  // No cache (or error). If we already painted a stale cache, leave it
+  // alone — the user gets old-but-valid data instead of a flash of empty.
+  if (paintedFromCache) return;
+
   set(renderEmpty(cached?.error));
   wireRunButton(contentEl, topic);
   window.refreshIcons?.();

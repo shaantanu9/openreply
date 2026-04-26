@@ -71,6 +71,63 @@ pub struct ExtractionWorker {
     pub starting: Mutex<bool>,
 }
 
+/// SIGTERM any `enrich-worker --serve` Python processes other than ours
+/// before we spawn a new one. Defends against the dev-restart leak where
+/// the previous Tauri process exited but its child (the worker) survived
+/// orphaned and holds a SQLite write-lock + ~300 MB of ChromaDB+ONNX state.
+///
+/// Implementation: shell out to `pgrep -f` (BSD/macOS + GNU/Linux ship it),
+/// SIGTERM each matching pid that isn't this process. SIGKILL after 1s for
+/// stragglers. Returns count killed; errors are intentionally swallowed —
+/// a worker we couldn't reap is a smaller problem than failing to start a
+/// new one because pgrep didn't exist on a weird system.
+fn reap_orphan_workers() -> usize {
+    let own_pid = std::process::id();
+    let pgrep_out = match std::process::Command::new("pgrep")
+        .args(["-f", "enrich-worker --serve"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return 0,
+    };
+    if !pgrep_out.status.success() {
+        return 0;  // no matches — nothing to do
+    }
+    let stdout = String::from_utf8_lossy(&pgrep_out.stdout);
+    let pids: Vec<u32> = stdout
+        .lines()
+        .filter_map(|l| l.trim().parse::<u32>().ok())
+        .filter(|p| *p != own_pid)
+        .collect();
+    if pids.is_empty() {
+        return 0;
+    }
+    eprintln!("[worker] reaping {} orphan worker(s): {:?}", pids.len(), pids);
+    for pid in &pids {
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .output();
+    }
+    // Brief grace period for clean exit, then SIGKILL stragglers.
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    for pid in &pids {
+        // `kill -0` checks if pid is alive; ignore exit code, just SIGKILL
+        // on best-effort. This loop's worst case is "we sigkill an already-
+        // dead pid" → kill returns 1, harmless.
+        let still_alive = std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if still_alive {
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .output();
+        }
+    }
+    pids.len()
+}
+
 /// Idempotent start. If the worker is already running (child slot non-empty
 /// OR a start is currently in flight), returns Ok(()) without doing anything.
 ///
@@ -115,6 +172,19 @@ pub async fn start_worker(app: AppHandle) -> Result<(), String> {
 
     let data = crate::cli::data_dir(&app).map_err(|e| e.to_string())?;
     let data_str = data.to_string_lossy().to_string();
+
+    // Sweep for orphan workers BEFORE spawning. Tauri-dev restarts (HMR,
+    // SIGINT + relaunch) leave the previous worker process running parented
+    // to the now-dead old Rust process — by the time we get here, our
+    // in-memory state thinks no worker exists, and we'd spawn a second one.
+    // Two workers racing on the same SQLite write-lock + each holding
+    // ~200-400 MB of ChromaDB+ONNX state is a real memory leak (observed:
+    // 3 stacked workers after a few dev cycles, app got hangy + RSS spiked).
+    // Kill anything matching `enrich-worker --serve` that ISN'T this child.
+    // Best-effort: pgrep / kill failures are fine — the spawn below will
+    // still succeed even if a stragler survives, and the python side has
+    // its own pid-file lock as a last line of defense.
+    let _ = reap_orphan_workers();
 
     // Dev bypass: if a .venv/bin/python is near CWD, skip the PyInstaller
     // sidecar for the same reason run_cli_streaming does — macOS Gatekeeper
@@ -563,19 +633,82 @@ pub async fn mark_topic_active(app: AppHandle, topic: String) -> Result<(), Stri
     mark_active(&app, &topic)
 }
 
-/// Stub for the "Retry all failed" button on the enrichment error banner.
-/// Returns `{ok:true}` so the UI has something to invoke while the real
-/// requeue-failed-rows logic is still being designed. Keeping the command
-/// registered (vs. returning an error) means the button is fully wired —
-/// the only part we haven't implemented is the "find every failed row and
-/// push it back onto extraction_queue" step on the Python side.
+/// "Retry all failed" — reset the extraction_queue rows that failed
+/// (attempts >= 3 OR last_error set), clear the supervisor's restart counter,
+/// and kick the worker back up. End-to-end: the banner the user sees after
+/// `enrich:supervisor-gave-up` becomes actionable instead of a no-op.
+///
+/// Three steps, all idempotent:
+///   1. SQL: `UPDATE extraction_queue SET attempts=0, last_error=NULL
+///            WHERE attempts>=3 OR last_error IS NOT NULL`
+///   2. Reset supervisor state (`restart_count`, `last_restart`, `shutting_down`).
+///   3. `start_worker(app)` — orphan-reaping is built in.
+///
+/// Returns the row counts so the UI can show "✓ retried 30 rows".
 #[tauri::command]
-pub async fn retry_extraction_failures(_app: AppHandle) -> Result<Value, String> {
-    // TODO(Task 9.x follow-up): drive a `research enrich-worker --retry-failed`
-    // subcommand that re-enqueues rows in `extraction_queue` with state='error'
-    // and resets their attempt counter. For now this is a no-op so the frontend
-    // banner stays functional end-to-end.
-    Ok(serde_json::json!({ "ok": true, "stub": true }))
+pub async fn retry_extraction_failures(app: AppHandle) -> Result<Value, String> {
+    use rusqlite::Connection;
+
+    let dir = crate::cli::data_dir(&app).map_err(|e| e.to_string())?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Err(format!("DB not found at {}", db_path.display()));
+    }
+
+    // Reset failed rows in a blocking thread — rusqlite is sync and we're in
+    // a tauri async runtime. spawn_blocking keeps the event loop free.
+    let dbp = db_path.clone();
+    let reset_count: i64 = tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
+        let conn = Connection::open(&dbp).map_err(|e| format!("open db: {e}"))?;
+        // Count first so we can report. Cheap aggregate, no row scan because
+        // both columns have indexes in the schema.
+        let n: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM extraction_queue
+                  WHERE attempts >= 3 OR last_error IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| format!("count: {e}"))?;
+        conn.execute(
+            "UPDATE extraction_queue
+                SET attempts = 0,
+                    last_error = NULL
+              WHERE attempts >= 3 OR last_error IS NOT NULL",
+            [],
+        )
+        .map_err(|e| format!("update: {e}"))?;
+        Ok(n)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))??;
+
+    // Reset supervisor state so the next start_worker isn't immediately
+    // gated by the 3-strikes counter from a prior crash burst. Pull the Arc
+    // out of the State<'_, T> borrow into an owned binding before locking —
+    // see `stop_worker_blocking` for the same dance, otherwise the State
+    // temporary's lifetime ends mid-expression and the lock fails to borrow.
+    let s_opt: Option<Arc<ExtractionWorker>> = app
+        .try_state::<Arc<ExtractionWorker>>()
+        .map(|st| st.inner().clone());
+    if let Some(s) = s_opt {
+        if let Ok(mut c) = s.restart_count.lock() { *c = 0; }
+        if let Ok(mut l) = s.last_restart.lock() { *l = None; }
+        if let Ok(mut sd) = s.shutting_down.lock() { *sd = false; }
+        if let Ok(mut le) = s.last_error.lock() { *le = None; }
+    }
+
+    // Kick the worker. Idempotent — if one's already running this is a no-op;
+    // if dead, it spawns fresh (with orphan reaping). Errors are surfaced so
+    // the UI can distinguish "queue reset succeeded but spawn failed" from
+    // "everything went green".
+    let start_err = start_worker(app.clone()).await.err();
+
+    Ok(serde_json::json!({
+        "ok": start_err.is_none(),
+        "rows_reset": reset_count,
+        "worker_restart_error": start_err,
+    }))
 }
 
 /// Manually re-enqueue every post of a topic (re-runs extraction even for

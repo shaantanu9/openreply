@@ -1073,9 +1073,29 @@ body {
 }
 
 .map-toolbar {
-  display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
+  /* Toolbar must wrap on narrow widths or the button labels break char-by-char
+     ("Mode: Full" stacks vertically as M-o-d-e-…) — observed on a windowed
+     dev build at ~1200px. `flex-wrap: wrap` lets the chip-info row reflow
+     onto its own line first, then individual button groups wrap below.
+     `row-gap` separates wrapped rows visually. Each control inside must
+     keep `white-space: nowrap` so its own label stays on one line. */
+  display: flex; flex-wrap: wrap; gap: 8px; row-gap: 6px;
+  align-items: center; margin-bottom: 10px;
 }
-.map-toolbar-info { display: flex; gap: 6px; align-items: center; }
+.map-toolbar-info {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  /* min-width:0 so this child can shrink below its content size and let
+     the toolbar wrap predictably instead of forcing horizontal overflow. */
+  min-width: 0;
+}
+/* Keep every Map-toolbar control's label on a single line — without this,
+   `Mode: Full` / `Auto: On` collapse into per-character columns when the
+   parent runs out of horizontal room. nowrap is safe because the parent
+   now wraps the controls themselves onto a new line instead. */
+.map-toolbar .btn,
+.map-toolbar .th-chip,
+.map-toolbar-actions .btn { white-space: nowrap; }
+.map-toolbar-actions { min-width: 0; }
 
 .map-enrich-banner {
   display: flex; gap: 10px; align-items: center;

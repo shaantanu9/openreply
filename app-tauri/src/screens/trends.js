@@ -105,7 +105,9 @@ async function runAndRender(contentEl, topic, force = false) {
     const result = await api.runTemporalGaps(topic, force);
     if (contentEl.dataset.tab !== 'trends') return;
     if (result && typeof result === 'object' && !Array.isArray(result)) {
-      // Error / parse-error / skipped
+      // Error / parse-error / skipped — NONE of these are cached, so the
+      // user can simply revisit the tab to retry. We surface the actual
+      // reason instead of a generic empty state.
       if (result.skipped) {
         set(`<div class="empty-state"><p>Skipped: ${esc(result.reason || 'no LLM provider')}.</p><p>Add a key in Settings → API keys.</p></div>`);
         return;
@@ -113,18 +115,32 @@ async function runAndRender(contentEl, topic, force = false) {
       if (result._error) {
         set(renderErrorState(topic, result._error));
         if (contentEl.dataset.tab !== 'trends') return;
-        $('#btn-trends-retry', contentEl)?.addEventListener('click', () => runAndRender(contentEl, topic));
+        $('#btn-trends-retry', contentEl)?.addEventListener('click', () => runAndRender(contentEl, topic, /* force */ true));
         window.refreshIcons?.();
         return;
       }
       if (result._parse_error) {
-        set(`<div class="empty-state"><p>The LLM response could not be parsed as JSON. Try re-running.</p></div>`);
+        const raw = String(result._raw || '').slice(0, 400);
+        set(`
+          <div class="empty-state">
+            <p>The LLM response could not be parsed as JSON. Likely cause: NVIDIA model returned a non-JSON error (e.g. <code>DEGRADED function cannot be invoked</code>).</p>
+            ${raw ? `<pre style="text-align:left;font-size:11px;color:var(--ink-3);max-width:600px;margin:8px auto;white-space:pre-wrap">${esc(raw)}</pre>` : ''}
+            <button class="btn primary icon-btn" id="btn-trends-retry"><i data-lucide="refresh-cw"></i> Retry</button>
+          </div>
+        `);
+        $('#btn-trends-retry', contentEl)?.addEventListener('click', () => runAndRender(contentEl, topic, /* force */ true));
+        window.refreshIcons?.();
         return;
       }
     }
     const items = Array.isArray(result) ? result : [];
-    _trendsCache.set(topic, items);
     if (items.length === 0) {
+      // Do NOT cache empty results — earlier this path memoised `[]` so
+      // every subsequent tab visit silently served the empty state, even
+      // after the underlying issue (broken model, missing pre-2025 data,
+      // sidecar binary built before today's fixes) was resolved. Only
+      // success paths get cached now.
+      _trendsCache.delete(topic);
       set(renderEmptyCta(topic));
       if (contentEl.dataset.tab !== 'trends') return;
       $('#btn-run-trends', contentEl)?.addEventListener('click', () => {
@@ -134,6 +150,7 @@ async function runAndRender(contentEl, topic, force = false) {
       window.refreshIcons?.();
       return;
     }
+    _trendsCache.set(topic, items);
     set(renderResults(topic, items));
     if (contentEl.dataset.tab !== 'trends') return;
     window.refreshIcons?.();
@@ -142,7 +159,18 @@ async function runAndRender(contentEl, topic, force = false) {
       runAndRender(contentEl, topic, /* force */ true);
     });
   } catch (e) {
-    set(`<div class="empty-state"><p>Error: ${esc(e?.message || String(e))}</p></div>`);
+    // Surface the real error AND a retry button. Without retry, the only
+    // recovery was a full app restart.
+    const msg = (e?.message || String(e)).slice(0, 400);
+    set(`
+      <div class="empty-state">
+        <p><b>Trends call failed.</b></p>
+        <pre style="text-align:left;font-size:11px;color:var(--ink-3);max-width:600px;margin:8px auto;white-space:pre-wrap">${esc(msg)}</pre>
+        <button class="btn primary icon-btn" id="btn-trends-retry"><i data-lucide="refresh-cw"></i> Retry</button>
+      </div>
+    `);
+    $('#btn-trends-retry', contentEl)?.addEventListener('click', () => runAndRender(contentEl, topic, /* force */ true));
+    window.refreshIcons?.();
   }
 }
 
@@ -152,16 +180,13 @@ export async function loadTrends(contentEl, topic) {
   // doesn't re-spawn the 30-90s LLM call. User can explicitly re-run via
   // the toolbar button once results are painted.
   const cached = _trendsCache.get(topic);
-  if (cached) {
-    if (cached.length === 0) {
-      contentEl.innerHTML = renderEmptyCta(topic);
-      $('#btn-run-trends', contentEl)?.addEventListener('click', () => {
-        _trendsCache.delete(topic);
-        runAndRender(contentEl, topic, /* force */ true);
-      });
-      window.refreshIcons?.();
-      return;
-    }
+  // Only honour a NON-EMPTY cache. An empty `[]` here would be left over
+  // from an old session before runAndRender stopped caching empties; we
+  // discard it and re-fetch so the user doesn't see an unexplained empty
+  // state on a topic that actually has cached temporal_gap rows in
+  // graph_nodes (which the Python `find_temporal_gaps` will surface in
+  // <100ms via its DB cache).
+  if (cached && cached.length > 0) {
     contentEl.innerHTML = renderResults(topic, cached);
     window.refreshIcons?.();
     $('#btn-rerun-trends', contentEl)?.addEventListener('click', () => {

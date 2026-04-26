@@ -17,6 +17,7 @@ import { loadInsights } from './insights.js';
 import { loadBets } from './bets.js';
 import { wireFreshnessBadge } from '../lib/enrichStatus.js';
 import { TAB_PIPELINES, TAB_READONLY, runAllForTopic, runTabPipeline, tabHasData, isAutoRunEnabled, setAutoRunEnabled } from '../lib/tabPipelines.js';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const TOPIC_QUERY_TIMEOUT_MS = 25000;
 const TAB_LOAD_TIMEOUT_MS = 70000;
@@ -151,6 +152,34 @@ const MAP_RENDER_CACHE_TTL_MS = 30 * 60 * 1000;  // 30 min
 // Populated by the global `gapmap:changed` listener below — survives nav.
 const _mapDirtyTopics = new Set();
 
+// Cross-navigation dirty signal for non-Map tabs.
+//   `_dirtyTopicTabs.get(topic)` → Set<tab-id> of tabs whose cached snapshot
+//   is stale because of a mutation that happened since the last render.
+// Populated from the same `gapmap:changed` listener as `_mapDirtyTopics`,
+// but at finer granularity so `switchTab` can decide per-tab whether to
+// re-fire the loader. Without this, every tab switch re-fetched even when
+// nothing had changed, because `dirtyTabs` (per-renderTopic-closure) was
+// blank on every fresh closure after navigation.
+const _dirtyTopicTabs = new Map();
+
+// Map mutation kinds → which tab caches they invalidate. Anything not in
+// this list keeps its cache (e.g. byok, schedule, exports). Add new
+// mappings here when a new mutation kind affects a tab.
+const _MUTATION_KIND_TO_DIRTY_TABS = {
+  collect:  ['home', 'map', 'evidence', 'posts', 'sources', 'trends', 'sentiment',
+             'insights', 'solutions', 'concepts', 'papers', 'bets', 'report', 'ai_analyses'],
+  ingest:   ['home', 'map', 'evidence', 'posts', 'sources',
+             'insights', 'solutions', 'concepts'],
+  graph:    ['home', 'map', 'evidence',
+             'insights', 'solutions', 'concepts', 'bets', 'report'],
+  findings: ['home', 'map', 'evidence',
+             'insights', 'solutions', 'concepts', 'bets', 'report', 'ai_analyses'],
+  // Topic create/delete clears EVERY cache for the affected topic.
+  topics:   ['home', 'map', 'evidence', 'posts', 'sources', 'trends', 'sentiment',
+             'insights', 'solutions', 'concepts', 'papers', 'bets', 'report',
+             'ai_analyses', 'chat', 'research', 'actions', 'search'],
+};
+
 (function installMapCacheInvalidator() {
   if (typeof window === 'undefined') return;
   if (window.__gapmapMapCacheInvalidatorInstalled) return;
@@ -159,18 +188,42 @@ const _mapDirtyTopics = new Set();
     const detail = ev?.detail || {};
     const kind = detail.kind;
     const topic = detail.topic;
-    // Only graph/collect/ingest writes change graph_nodes/edges. byok,
-    // exports, schedule, etc. don't affect the map render content.
-    if (kind !== 'graph' && kind !== 'collect' && kind !== 'ingest' && kind !== 'findings') return;
-    if (topic) {
-      _mapDirtyTopics.add(topic);
-    } else {
-      // Mutation without a topic field (e.g. global trash/byok action) —
-      // play safe and mark every cached map dirty rather than miss one.
-      for (const k of _mapRenderCache.keys()) _mapDirtyTopics.add(k);
+    // Map cache — single-flag "needs rebuild?" semantics, kept for back-compat
+    // with the loadMap() short-circuit. Set on graph/collect/ingest/findings.
+    if (kind === 'graph' || kind === 'collect' || kind === 'ingest' || kind === 'findings') {
+      if (topic) {
+        _mapDirtyTopics.add(topic);
+      } else {
+        for (const k of _mapRenderCache.keys()) _mapDirtyTopics.add(k);
+      }
+    }
+    // Per-tab dirty set. Lookup which tabs this mutation kind affects, mark
+    // them all dirty for the affected topic. Mutation without a topic field
+    // (rare — e.g. trash purge) marks every cached topic dirty.
+    const tabs = _MUTATION_KIND_TO_DIRTY_TABS[kind];
+    if (!tabs || !tabs.length) return;
+    const targetTopics = topic ? [topic] : [..._dirtyTopicTabs.keys()];
+    for (const t of targetTopics) {
+      let s = _dirtyTopicTabs.get(t);
+      if (!s) { s = new Set(); _dirtyTopicTabs.set(t, s); }
+      for (const tab of tabs) s.add(tab);
     }
   });
 })();
+
+/** True if `tab` is dirty for `topic` (set by `gapmap:changed` since render). */
+function isTabDirtyAcrossNav(topic, tab) {
+  return !!(_dirtyTopicTabs.get(topic)?.has(tab));
+}
+
+/** Clear the dirty bit for one (topic, tab) — called after a successful loader run. */
+function clearTabDirtyAcrossNav(topic, tab) {
+  const s = _dirtyTopicTabs.get(topic);
+  if (s) {
+    s.delete(tab);
+    if (s.size === 0) _dirtyTopicTabs.delete(topic);
+  }
+}
 async function runEnrichStreamForTopic(topic, { onComplete, only = null, parallel = false, bannerId = 'map-enrich-banner' } = {}) {
   const mod = await import('@tauri-apps/api/event');
   const bannerSelector = `#${bannerId}`;
@@ -2010,14 +2063,23 @@ export async function renderTopic(root, { params }) {
             <span class="th-chip" title="skeleton is faster; full shows every node and relationship">mode: <b>${mapMode}</b></span>
             <span class="th-chip" title="When off, map stays cached until you click Rebuild">auto-update: <b>${mapAutoUpdate ? 'on' : 'off'}</b></span>
           </div>
-          <div style="flex:1"></div>
-          ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich" title="Re-run LLM extraction for this topic"><i data-lucide="sparkles"></i> Enrich</button>` : ''}
-          ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich-all" title="Enrich every topic with ≥50 posts and 0 findings"><i data-lucide="layers"></i> Enrich all</button>` : ''}
-          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-mode" title="Toggle graph density (skeleton/full)">Mode: ${mapMode === 'full' ? 'Full' : 'Skeleton'}</button>
-          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
-          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
-          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>
-          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
+          <!-- Right-side action group. Wrapping keeps buttons together
+               when narrowing reflows them onto a new row (instead of
+               breaking text char-by-char). margin-left:auto right-
+               aligns when there is horizontal room AND lets the whole
+               group drop to its own line predictably on small widths.
+               Replaces a former flex:1 spacer div that produced a
+               zero-width shim and confused the wrap. See the
+               .map-toolbar rule in style.css. -->
+          <div class="map-toolbar-actions" style="display:flex;flex-wrap:wrap;gap:8px;margin-left:auto;align-items:center">
+            ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich" title="Re-run LLM extraction for this topic"><i data-lucide="sparkles"></i> Enrich</button>` : ''}
+            ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich-all" title="Enrich every topic with ≥50 posts and 0 findings"><i data-lucide="layers"></i> Enrich all</button>` : ''}
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-mode" title="Toggle graph density (skeleton/full)">Mode: ${mapMode === 'full' ? 'Full' : 'Skeleton'}</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>
+            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
+          </div>
         </div>
         ${enrichBanner}
         <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`);
@@ -2185,7 +2247,23 @@ export async function renderTopic(root, { params }) {
 
   async function loadEvidence() {
     const set = (html) => { if (contentEl.dataset.tab === 'evidence') contentEl.innerHTML = html; };
-    set(skeletonCards(3));
+
+    // SWR: paint cached rows synchronously before any await so the tab
+    // feels instant on revisit. The four-kind findings query is fast
+    // warm but pays a sidecar spawn (~200-800 ms) and the localStorage
+    // cache survives full app restarts. Mutation listener in main.js
+    // (kind='findings') drops the cache when extraction re-runs.
+    const CACHE_KEY = `evidence.${topic}`;
+    const cachedRows = readScreenCache(CACHE_KEY);
+    let paintedFromCache = false;
+    if (Array.isArray(cachedRows) && cachedRows.length > 0) {
+      try {
+        renderEvidenceFromRows(cachedRows);
+        paintedFromCache = true;
+      } catch (_) { /* fall through to skeleton */ }
+    }
+    if (!paintedFromCache) set(skeletonCards(3));
+
     try {
       // All four kinds in ONE sidecar call (was 4 parallel Python spawns).
       // SQL is hoisted to `combinedFindingsSql` above so this call shares a
@@ -2195,6 +2273,37 @@ export async function renderTopic(root, { params }) {
         TOPIC_QUERY_TIMEOUT_MS,
         'evidence query'
       );
+      if (Array.isArray(rows) && rows.length > 0) writeScreenCache(CACHE_KEY, rows);
+      renderEvidenceFromRows(rows);
+      return;
+    } catch (e) {
+      // If we already painted from cache, keep it on transient sidecar
+      // failures — better than blanking. Otherwise fall through to the
+      // existing error card.
+      if (paintedFromCache) return;
+      // Error-path actions also branch on whether a key is actually present,
+      // so the retry path doesn't tell users to re-add a key they already have.
+      const ready = await hasLlmConfigured().catch(() => false);
+      const actions = [
+        { label: 'Retry', icon: 'refresh-cw', primary: true, onClick: () => loadEvidence() },
+        ready
+          ? { label: 'Run extraction', onClick: () => runEnrichHere(null, () => loadEvidence()) }
+          : { label: 'Add LLM key',    onClick: () => openByokModal(() => loadEvidence()) },
+      ];
+      set(errorCard('Could not load evidence', e?.message || String(e), actions));
+      if (contentEl.dataset.tab !== 'evidence') return;
+      wireErrorCard(contentEl, actions);
+      return;
+    }
+  }
+
+  // Pure-sync render of the evidence rows array → DOM. Pulled out of
+  // loadEvidence so the SWR cache path can paint from localStorage
+  // without re-running async empty-state checks (those only fire on
+  // truly empty rows, which we don't cache).
+  async function renderEvidenceFromRows(rows) {
+    const set = (html) => { if (contentEl.dataset.tab === 'evidence') contentEl.innerHTML = html; };
+    try {
       const byKind = { painpoint: [], feature_wish: [], product: [], workaround: [] };
       for (const r of rows || []) {
         if (byKind[r.kind]) byKind[r.kind].push(r);
@@ -2427,7 +2536,20 @@ export async function renderTopic(root, { params }) {
   let subsVisible = 12;
   async function loadSources() {
     const set = (html) => { if (contentEl.dataset.tab === 'sources') contentEl.innerHTML = html; };
-    set(skeletonCards(2));
+
+    // SWR: paint cached sources+subs synchronously before any await.
+    // Cache survives full app restart — see docs/perf-audit.md.
+    const CACHE_KEY = `sources.${topic}`;
+    const cached = readScreenCache(CACHE_KEY);
+    let paintedFromCache = false;
+    if (cached && Array.isArray(cached.sources) && cached.sources.length > 0) {
+      try {
+        renderSourcesFromData(cached.sources, cached.subs || []);
+        paintedFromCache = true;
+      } catch (_) { /* fall through to skeleton */ }
+    }
+    if (!paintedFromCache) set(skeletonCards(2));
+
     try {
       // Parameterized — topic goes in safely via :topic, no string concat.
       const srcSql = `SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts,
@@ -2446,6 +2568,24 @@ export async function renderTopic(root, { params }) {
         api.runQuery(srcSql, topic),
         api.runQuery(subsSql, topic).catch(() => []),
       ]);
+      if (Array.isArray(sources) && sources.length > 0) {
+        writeScreenCache(CACHE_KEY, { sources, subs: subs || [] });
+      }
+      renderSourcesFromData(sources || [], subs || []);
+    } catch (e) {
+      if (paintedFromCache) return;   // keep stale-but-valid render
+      const actions = [{ label: 'Retry', icon: 'refresh-cw', primary: true, onClick: () => loadSources() }];
+      set(errorCard('Could not load sources', e?.message || String(e), actions));
+      if (contentEl.dataset.tab !== 'sources') return;
+      wireErrorCard(contentEl, actions);
+    }
+  }
+
+  // Pure-sync DOM render of sources + subs lists. Pulled out of
+  // loadSources so the SWR cache path can paint without re-fetching.
+  function renderSourcesFromData(sources, subs) {
+    const set = (html) => { if (contentEl.dataset.tab === 'sources') contentEl.innerHTML = html; };
+    try {
       const total = (sources || []).reduce((a, r) => a + (r.posts || 0), 0);
       const sourceRow = (r) => {
         const pct = total ? Math.round((r.posts / total) * 100) : 0;
@@ -3986,23 +4126,28 @@ export async function renderTopic(root, { params }) {
       return;
     }
     // If we have a persisted HTML snapshot from a previous visit, paint it
-    // immediately (stale-while-revalidate) so users see content right away.
-    // Then run the loader in background to refresh to latest data.
+    // immediately. Whether to ALSO run the loader in background depends on
+    // whether the underlying data changed since the snapshot was written.
+    // Default behaviour was always-refresh, which made every tab switch
+    // feel like a re-fetch even when nothing had changed — exactly what
+    // the user reported. Now: skip the loader when both same-session
+    // (`dirtyTabs`) and cross-nav (`_dirtyTopicTabs`) report clean.
     const snapshot = readTabHtmlSnapshot(name);
+    const tabIsDirty = dirtyTabs.has(name) || isTabDirtyAcrossNav(topic, name);
     if (snapshot) {
-      contentEl.innerHTML = `
-        <div style="display:flex;justify-content:flex-end;padding:8px 12px 0">
-          <span class="th-chip" title="Showing cached tab while refreshing latest data">
-            cached · updating
-          </span>
-        </div>
-        ${snapshot.html}`;
+      contentEl.innerHTML = tabIsDirty
+        ? `<div style="display:flex;justify-content:flex-end;padding:8px 12px 0">
+             <span class="th-chip" title="Showing cached tab while refreshing latest data">
+               cached · updating
+             </span>
+           </div>
+           ${snapshot.html}`
+        : snapshot.html;
       // Map re-open UX: if we already have a fresh snapshot and the tab
       // wasn't marked dirty by a data mutation, don't kick a full map reload
-      // (build/relate/export) on every tab switch. This makes back-and-forth
-      // navigation feel instant while still reloading whenever data changes.
+      // (build/relate/export) on every tab switch.
       if (name === 'map') {
-        const mapDirty = dirtyTabs.has('map');
+        const mapDirty = dirtyTabs.has('map') || _mapDirtyTopics.has(topic);
         const autoUpdate = isMapAutoUpdateEnabled();
         if (!mapDirty) {
           if (tabGen === myGen) window.refreshIcons?.();
@@ -4022,6 +4167,14 @@ export async function renderTopic(root, { params }) {
           return;
         }
       }
+      // Snapshot-served + clean? Don't run the loader — user said they
+      // didn't ask to refresh. Loader fires only when the tab is dirty
+      // (mutation since render) OR the user explicitly hits a Rebuild
+      // button on a particular tab.
+      if (!tabIsDirty) {
+        if (tabGen === myGen) window.refreshIcons?.();
+        return;
+      }
     } else {
       // Synchronous placeholder so the old tab's content disappears the moment
       // the user clicks — before the loader's first await.
@@ -4038,6 +4191,7 @@ export async function renderTopic(root, { params }) {
         `${name} tab load`
       );
       dirtyTabs.delete(name);
+      clearTabDirtyAcrossNav(topic, name);
       if (tabGen === myGen && contentEl.dataset.tab === name) {
         writeTabHtmlSnapshot(name);
       }

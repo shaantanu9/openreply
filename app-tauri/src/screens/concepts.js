@@ -7,6 +7,7 @@
 import { api } from '../api.js';
 import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -124,12 +125,30 @@ function renderList(concepts) {
 
 export async function loadConcepts(contentEl, topic) {
   const set = (html) => { if (contentEl.dataset.tab === 'concepts') contentEl.innerHTML = html; };
-  set('<div class="empty-state">loading…</div>');
+
+  // SWR: paint cached concepts immediately, refresh in background. The
+  // graph_nodes(kind='concept') row read is fast but still pays a sidecar
+  // spawn (~200-800 ms). Cache survives app restart.
+  const CACHE_KEY = `concepts.${topic}`;
+  const cachedConcepts = readScreenCache(CACHE_KEY);
+  let paintedFromCache = false;
+
+  // We need to lazily call renderAndBind — keep a forward-binding ref so
+  // both the cache path AND the live-fetch path use the same renderer.
+  let renderAndBind;
+
+  if (Array.isArray(cachedConcepts) && cachedConcepts.length > 0) {
+    paintedFromCache = true;
+    // Defer to after renderAndBind is defined (a few lines down).
+    queueMicrotask(() => renderAndBind?.(cachedConcepts));
+  } else {
+    set('<div class="empty-state">loading…</div>');
+  }
 
   const existing = await fetchExistingConcepts(topic);
   if (contentEl.dataset.tab !== 'concepts') return;
 
-  const renderAndBind = async (concepts) => {
+  renderAndBind = async (concepts) => {
     set(renderList(concepts));
     if (contentEl.dataset.tab !== 'concepts') return;
     window.refreshIcons?.();
@@ -149,10 +168,16 @@ export async function loadConcepts(contentEl, topic) {
   };
 
   if (existing.length) {
-    await renderAndBind(existing.map(conceptFromGraphRow));
+    const concepts = existing.map(conceptFromGraphRow);
+    writeScreenCache(CACHE_KEY, concepts);
+    await renderAndBind(concepts);
     return;
   }
 
+  // No live concepts. Keep the cached paint if we have one (better than
+  // blanking on what might be a transient sidecar hiccup); otherwise
+  // show the empty CTA.
+  if (paintedFromCache) return;
   set(renderEmpty(topic));
   if (contentEl.dataset.tab !== 'concepts') return;
   window.refreshIcons?.();

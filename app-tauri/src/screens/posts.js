@@ -1,6 +1,7 @@
 // Posts tab — paginated list of raw collected posts for a topic.
 // Pure SQL via api.runQuery (joins topic_posts -> posts).
 import { api, esc, timeAgo } from '../api.js';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -161,19 +162,16 @@ function renderPager(topic, total) {
   `;
 }
 
-async function rerender(contentEl, topic) {
-  // Gated writes — drop any render that would land after a rapid tab switch.
-  const set = (html) => { if (contentEl.dataset.tab === 'posts') contentEl.innerHTML = html; };
-  set(`<div class="empty-state">loading…</div>`);
-  let data;
-  try {
-    data = await fetchPosts(topic);
-  } catch (e) {
-    set(`<div class="empty-state"><p>Error: ${esc(e?.message || String(e))}</p></div>`);
-    return;
-  }
-  if (contentEl.dataset.tab !== 'posts') return;
+// Build a cache key that incorporates current filter state so each
+// filter combo gets its own SWR slot. Default-filter view (page 0,
+// no filters) is the one most users see on revisit.
+function cacheKey(topic) {
+  const s = getState(topic);
+  return `posts.${topic}.${s.sort}.${s.source}.${s.sub}.${s.minScore}.${s.page}`;
+}
 
+function paintFromData(contentEl, topic, data) {
+  const set = (html) => { if (contentEl.dataset.tab === 'posts') contentEl.innerHTML = html; };
   const body = data.rows.length === 0
     ? `<div class="empty-state"><p>No posts match the current filters.</p></div>`
     : data.rows.map(renderRow).join('');
@@ -187,8 +185,10 @@ async function rerender(contentEl, topic) {
   `);
   if (contentEl.dataset.tab !== 'posts') return;
   window.refreshIcons?.();
+  wireToolbar(contentEl, topic);
+}
 
-  // Wire toolbar
+function wireToolbar(contentEl, topic) {
   const apply = () => {
     const s = getState(topic);
     s.sub = ($('#posts-sub', contentEl)?.value || '').trim();
@@ -214,6 +214,40 @@ async function rerender(contentEl, topic) {
   // Pager
   $('#posts-prev', contentEl)?.addEventListener('click', () => { const s = getState(topic); s.page = Math.max(0, s.page - 1); rerender(contentEl, topic); });
   $('#posts-next', contentEl)?.addEventListener('click', () => { const s = getState(topic); s.page += 1; rerender(contentEl, topic); });
+}
+
+async function rerender(contentEl, topic) {
+  // Gated writes — drop any render that would land after a rapid tab switch.
+  const set = (html) => { if (contentEl.dataset.tab === 'posts') contentEl.innerHTML = html; };
+
+  // SWR: paint cached page synchronously before any await. Cache key
+  // includes filter state so each combo gets its own slot. Survives
+  // full app restart — see docs/perf-audit.md. Mutation listener in
+  // main.js (kind='collect') drops the cache when new posts land.
+  const KEY = cacheKey(topic);
+  const cached = readScreenCache(KEY);
+  let paintedFromCache = false;
+  if (cached && Array.isArray(cached.rows)) {
+    paintFromData(contentEl, topic, cached);
+    paintedFromCache = true;
+  } else {
+    set(`<div class="empty-state">loading…</div>`);
+  }
+
+  let data;
+  try {
+    data = await fetchPosts(topic);
+  } catch (e) {
+    if (paintedFromCache) return;   // keep stale-but-valid render
+    set(`<div class="empty-state"><p>Error: ${esc(e?.message || String(e))}</p></div>`);
+    return;
+  }
+  if (contentEl.dataset.tab !== 'posts') return;
+
+  // Only cache non-empty results — empty pages are usually transient
+  // (filter typos, sidecar timing) and we don't want to lock them in.
+  if (data.rows.length > 0) writeScreenCache(KEY, data);
+  paintFromData(contentEl, topic, data);
 }
 
 export async function loadPosts(contentEl, topic) {

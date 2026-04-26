@@ -5,6 +5,7 @@
 //
 // See docs/ROADMAP.md §"Phase 3" for the full state machine.
 import { api, esc } from '../api.js';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -103,23 +104,75 @@ function renderGroup(state, rows) {
 
 export async function loadBets(contentEl, topic) {
   const set = (html) => { if (contentEl.dataset.tab === 'bets') contentEl.innerHTML = html; };
-  set(`
-    <div class="empty-state" style="padding:40px;text-align:center">
-      <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-      <div style="color:var(--ink-3);font-size:13px">Loading your bets…</div>
-    </div>
-  `);
+
+  // SWR: paint cached bets immediately, refresh in background. See
+  // docs/perf-audit.md for the universal pattern. Cache survives full
+  // app restart so re-opening any topic's Bets tab paints in <10 ms.
+  // Mutation listener in main.js (kind='hypothesis') drops the cache
+  // when the user updates a bet's state, so the next visit refetches.
+  const CACHE_KEY = `bets.${topic}`;
+  const cachedRows = readScreenCache(CACHE_KEY);
+  let paintedFromCache = false;
+
+  const renderRows = (rows) => {
+    if (!rows || rows.length === 0) {
+      set(`
+        <div class="empty-big">
+          <h3>No tracked bets yet</h3>
+          <p>Promote any hypothesis card from the <b>Insights</b> tab to track it here. Each bet has a state machine (draft → running → validated / invalidated) and a journal for notes.</p>
+          <p class="muted" style="font-size:12px;margin-top:10px">This is your weekly-ritual surface — come back to update states as you run real-world tests.</p>
+        </div>
+      `);
+      return;
+    }
+    const groups = {};
+    for (const state of STATE_ORDER) groups[state] = [];
+    for (const r of rows) (groups[r.status] || groups.draft).push(r);
+    set(`
+      <div class="bets-tab">
+        <div class="bets-toolbar">
+          <div class="bets-summary muted">
+            ${rows.length} bet${rows.length === 1 ? '' : 's'} ·
+            ${groups.running.length} running ·
+            ${groups.validated.length} validated ·
+            ${groups.invalidated.length} invalidated
+          </div>
+        </div>
+        ${STATE_ORDER.map(s => renderGroup(s, groups[s])).join('')}
+      </div>
+    `);
+    window.refreshIcons?.();
+    wireBetActions(contentEl, topic);
+  };
+
+  if (Array.isArray(cachedRows) && cachedRows.length > 0) {
+    renderRows(cachedRows);
+    paintedFromCache = true;
+  } else {
+    set(`
+      <div class="empty-state" style="padding:40px;text-align:center">
+        <div class="map-building-spinner" style="margin:0 auto 10px"></div>
+        <div style="color:var(--ink-3);font-size:13px">Loading your bets…</div>
+      </div>
+    `);
+  }
 
   let rows = [];
   try {
     rows = await api.hypothesisList(topic, null, false);
   } catch (e) {
     if (contentEl.dataset.tab !== 'bets') return;
+    if (paintedFromCache) return;   // keep stale-but-valid render
     set(`<div class="empty-state"><p>Error loading bets: ${esc(e?.message || String(e))}</p></div>`);
     return;
   }
   if (contentEl.dataset.tab !== 'bets') return;
 
+  if (Array.isArray(rows)) writeScreenCache(CACHE_KEY, rows);
+  renderRows(rows);
+  return;
+  // Below this line is the legacy first-paint code path, kept only as
+  // a no-op safety net — the early `return` above should always trip.
   if (!rows || rows.length === 0) {
     set(`
       <div class="empty-big">

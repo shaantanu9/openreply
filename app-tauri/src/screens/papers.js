@@ -6,6 +6,7 @@
 // UX researchers building a research doc, solopreneurs backing a
 // landing-page claim. Same feature set — different framing.
 import { api } from '../api.js';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -137,25 +138,44 @@ function showExportModal(topic, fmt, text, count) {
 
 export async function loadPapers(contentEl, topic) {
   const set = (html) => { if (contentEl.dataset.tab === 'papers') contentEl.innerHTML = html; };
-  set('<div class="empty-state">loading papers…</div>');
+
+  // SWR: paint cached papers list immediately, refresh in background.
+  // Cache survives app restart — see docs/perf-audit.md.
+  const CACHE_KEY = `papers.${topic}`;
+  const cachedPosts = readScreenCache(CACHE_KEY);
+  let paintedFromCache = false;
+  if (Array.isArray(cachedPosts) && cachedPosts.length > 0) {
+    set(renderList(topic, cachedPosts));
+    if (contentEl.dataset.tab === 'papers') {
+      contentEl.dataset.cached = '1';
+      window.refreshIcons?.();
+    }
+    paintedFromCache = true;
+  } else {
+    set('<div class="empty-state">loading papers…</div>');
+  }
 
   let posts = [];
   try {
     posts = await api.papersList(topic, 500);
   } catch (e) {
+    if (paintedFromCache) return;   // keep stale-but-valid render
     set(`<div class="empty-big"><h3>Couldn't load papers</h3><p>${escape(e?.message || e)}</p></div>`);
     return;
   }
   if (contentEl.dataset.tab !== 'papers') return;
 
   if (!posts || posts.length === 0) {
+    if (paintedFromCache) return;
     set(renderEmpty(topic));
     window.refreshIcons?.();
     return;
   }
 
+  writeScreenCache(CACHE_KEY, posts);
   set(renderList(topic, posts));
   if (contentEl.dataset.tab !== 'papers') return;
+  contentEl.dataset.cached = '';
   window.refreshIcons?.();
 
   const doExport = async (fmt) => {

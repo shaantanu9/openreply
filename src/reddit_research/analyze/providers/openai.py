@@ -66,9 +66,19 @@ class OpenAIProvider(LLMProvider):
         # (and logs) can see `mistral` / `groq` rather than the generic "openai".
         self.name = prov
         self._client = OpenAI(api_key=api_key, base_url=cfg["base_url"])
-        # LLM_MODEL is the single source of truth for model choice;
-        # per-provider default only kicks in if nothing is set.
-        self._model = model or os.getenv("LLM_MODEL") or cfg["default_model"]
+        # `LLM_MODEL` is per-provider. When the user pins LLM_PROVIDER=ollama
+        # with LLM_MODEL=llama3.2:3b and the FallbackProvider walks down to
+        # OpenRouter / Groq / etc., we must NOT pass that Ollama model name
+        # to a cloud API — OpenRouter will reject "llama3.2:3b" with a
+        # 400 ("not a valid model identifier"), Groq will 404, etc., and
+        # every fallback attempt fails for what looks like an unrelated
+        # reason. Only honour LLM_MODEL when the user's pinned provider
+        # matches THIS provider; otherwise use the per-provider default.
+        # See `extraction_queue.last_error` rows: "openrouter: 400 -
+        # 'llama3.2:3b is not a valid model'" — that is this bug.
+        pinned = (os.getenv("LLM_PROVIDER") or "").lower()
+        env_model = os.getenv("LLM_MODEL") if pinned == prov else None
+        self._model = model or env_model or cfg["default_model"]
 
     def complete(
         self,
