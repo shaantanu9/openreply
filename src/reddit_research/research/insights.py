@@ -73,6 +73,40 @@ _PROVIDER_CAPS = {
 }
 
 
+def _attach_suggested_tactics(report: dict[str, Any]) -> None:
+    """Attach top persuasion tactics per finding (best-effort)."""
+    findings = report.get("findings")
+    if not isinstance(findings, list) or not findings:
+        return
+    try:
+        from .tactic_library import find_matching_tactics, seed_from_json
+        # Idempotent seed call; makes sure fresh installs have baseline tactics.
+        seed_from_json()
+    except Exception:
+        return
+    for f in findings:
+        if not isinstance(f, dict):
+            continue
+        text = " ".join(
+            [
+                str(f.get("title") or ""),
+                str(f.get("narrative") or ""),
+                str(f.get("best_quote") or ""),
+            ]
+        ).strip()
+        if not text:
+            continue
+        try:
+            tactics = find_matching_tactics(text, k=5)
+        except Exception:
+            tactics = []
+        if not tactics:
+            continue
+        f["suggested_tactics"] = tactics[:2]
+        # Keep a JSON-serializable mirror for downstream UI contracts.
+        f["suggested_tactics_json"] = json.dumps(f["suggested_tactics"], ensure_ascii=False)
+
+
 def _cap_for_provider(provider: str) -> int:
     """Return the corpus cap appropriate for this provider's context window.
     Env override `INSIGHTS_HARD_CAP` wins if set — for power users with big
@@ -504,6 +538,8 @@ def synthesize_insights(
                     report["_relevance_threshold"] = threshold
         except Exception as e:
             report["_relevance_gate_error"] = str(e)
+
+    _attach_suggested_tactics(report)
 
     if persist:
         model = os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or ""
@@ -1006,6 +1042,8 @@ def synthesize_insights_chunked(
                     report["_relevance_threshold"] = threshold
         except Exception as e:
             report["_relevance_gate_error"] = str(e)
+
+    _attach_suggested_tactics(report)
 
     if persist and merged_findings:
         model = os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or ""

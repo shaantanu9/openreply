@@ -32,6 +32,82 @@ from ..research.discover import discover_subs as research_discover
 
 mcp = FastMCP("reddit-myind")
 
+# ── Per-tool logging shim ─────────────────────────────────────────────────
+# Wrap FastMCP's `@mcp.tool()` so every registered tool gets its call/error
+# events into the structured log. Done here (rather than per-tool boilerplate)
+# so all 90+ existing decorators keep working unchanged. Slow tools also
+# surface in `mcp stats --slow` because we record duration_ms on success.
+def _wrap_tool_for_logging(orig_decorator):
+    """Return a drop-in replacement for `mcp.tool()` that wraps the
+    decorated function with timing + error logging. Mirrors FastMCP's
+    decorator-with-args calling convention: `@mcp.tool()` and `@mcp.tool(...)`
+    both call this and the inner returned wrapper handles the function.
+    """
+    import functools, time as _t, traceback as _tb
+
+    def _outer(*dec_args, **dec_kwargs):
+        # Re-apply the original FastMCP decorator first to register the
+        # tool with its discovery/schema machinery — we only intercept
+        # the runtime call, not registration.
+        registrar = orig_decorator(*dec_args, **dec_kwargs)
+
+        def _bind(fn):
+            tool_name = getattr(fn, "__name__", "<unknown>")
+
+            @functools.wraps(fn)
+            def _logged(*args, **kwargs):
+                # We already imported logger at startup; cheap re-import here
+                # so this wrapper still works in test contexts that patch
+                # the module out from under us.
+                from .logger import log_event as _log
+                # Mark the session as active for the idle-timeout watcher.
+                # Done at entry AND again at exit so a long-running tool
+                # call doesn't trigger a mid-call idle-shutdown.
+                _bump_activity()
+                t0 = _t.time()
+                try:
+                    out = fn(*args, **kwargs)
+                except Exception as e:
+                    duration_ms = int((_t.time() - t0) * 1000)
+                    _log(
+                        "tool_error",
+                        severity="error",
+                        message=f"{type(e).__name__}: {e}",
+                        tool_name=tool_name,
+                        duration_ms=duration_ms,
+                        details={
+                            "traceback": _tb.format_exc()[:6000],
+                            # Truncate args — large blobs (corpus dumps,
+                            # huge SQL queries) shouldn't bloat the log.
+                            "args_preview": str(args)[:400],
+                            "kwargs_preview": str(kwargs)[:400],
+                        },
+                    )
+                    raise
+                duration_ms = int((_t.time() - t0) * 1000)
+                # Slow-call threshold — flag anything >5s as `warn` so
+                # `mcp stats --severity warn` surfaces them.
+                severity = "warn" if duration_ms > 5000 else "info"
+                _log(
+                    "tool_call",
+                    severity=severity,
+                    message=f"ok ({duration_ms} ms)",
+                    tool_name=tool_name,
+                    duration_ms=duration_ms,
+                )
+                _bump_activity()  # second bump on exit (covers slow tools)
+                return out
+
+            # Hand the LOGGED function to FastMCP's registrar so the
+            # JSON-RPC dispatcher invokes our wrapper, not the bare fn.
+            return registrar(_logged)
+
+        return _bind
+
+    return _outer
+
+mcp.tool = _wrap_tool_for_logging(mcp.tool)  # type: ignore[assignment]
+
 
 @mcp.tool()
 def reddit_fetch_posts(
@@ -850,6 +926,228 @@ def reddit_research_papers(
 
 
 @mcp.tool()
+def reddit_paper_fulltext(post_id: str, force: bool = False, max_chars: int = 30000) -> dict:
+    """Fetch + cache the full PDF text for a paper post (arxiv / openalex /
+    semantic_scholar / scholar). Returns the extracted text alongside its
+    char_count, source, and cache status.
+
+    Use this when the user asks for actual content from a paper — the post
+    row's `selftext` only ever holds the abstract (max 2000 chars). The
+    full text comes from downloading the OA PDF and running pypdf, cached
+    on disk so repeat calls are free.
+
+    Returns:
+      {ok, status, text, char_count, source, pdf_url, cached}
+    Status values:
+      ok / empty / not_oa / download_failed / parse_failed / unsupported.
+    """
+    from ..research.paper_fulltext import get_full_text
+    r = get_full_text(post_id, force=force)
+    # Truncate text to fit the requested budget so a 200 KB paper doesn't
+    # blow the MCP message size limit on small clients.
+    if r.get("ok") and r.get("text") and max_chars > 0:
+        if len(r["text"]) > max_chars:
+            r = dict(r)
+            r["text"] = r["text"][:max_chars] + "\n\n[truncated]"
+            r["truncated"] = True
+    return r
+
+
+@mcp.tool()
+def reddit_paper_fulltext_status(topic: str | None = None) -> dict:
+    """Aggregate status counts from `paper_full_texts`. Tells the caller
+    which papers in a topic still need their PDF downloaded vs. which
+    failed permanently (not_oa / download_failed)."""
+    from ..research.paper_fulltext import get_status_summary
+    return get_status_summary(topic=topic)
+
+
+# ─── Paper sections + chunks + citations (gap-finding stack) ────────────────
+
+
+@mcp.tool()
+def reddit_paper_sections(post_id: str, force: bool = False) -> dict:
+    """Parse the cached full text into named sections (Abstract /
+    Introduction / Methods / Results / Limitations / Discussion / etc.).
+
+    Idempotent — re-runs are cheap. Sections persist into `paper_sections`
+    so subsequent chunk and citation calls don't re-parse. Requires the
+    paper to have already been downloaded via `reddit_paper_fulltext`.
+
+    Returns: {ok, post_id, sections: [{name, ord, char_count, raw_heading}]}.
+    Falls back to a single `body` section when no recognised heading is
+    found in the PDF (image-only papers, unusual layouts).
+    """
+    from ..research.paper_sections import parse_sections_for
+    return parse_sections_for(post_id, force=force)
+
+
+@mcp.tool()
+def reddit_paper_section_get(post_id: str, section: str) -> dict:
+    """Return the verbatim text of a named section (e.g. 'limitations',
+    'results', 'methods'). Useful when you want just the methodology or
+    just the limitations without the rest of the paper.
+
+    Section names are canonical — see CANONICAL_SECTIONS in
+    paper_sections.py: abstract / introduction / background / related_work /
+    methods / experiments / results / evaluation / discussion /
+    limitations / future_work / conclusion / acknowledgments / references /
+    appendix.
+    """
+    from ..research.paper_sections import get_section_text
+    txt = get_section_text(post_id, section)
+    if txt is None:
+        return {"ok": False, "post_id": post_id, "section": section,
+                "error": f"section {section!r} not found for {post_id}"}
+    return {"ok": True, "post_id": post_id, "section": section,
+            "char_count": len(txt), "text": txt}
+
+
+@mcp.tool()
+def reddit_paper_chunk(post_id: str, force: bool = False) -> dict:
+    """Chunk a paper's full text into embedding-friendly windows and push
+    new chunks into Mempalace's `paper_chunks` collection.
+
+    Section-aware: chunks never cross Methods/Results/Limitations
+    boundaries, so semantic search by section stays clean. Idempotent —
+    unchanged chunk hashes skip re-embedding. Requires the paper to have
+    been downloaded first via `reddit_paper_fulltext`.
+
+    Returns: {ok, n_chunks, n_new, n_unchanged, embedded}.
+    """
+    from ..research.paper_chunks import chunk_paper
+    return chunk_paper(post_id, force=force, embed=True)
+
+
+@mcp.tool()
+def reddit_paper_chunk_search(
+    query: str,
+    k: int = 12,
+    topic: str | None = None,
+    sections: list[str] | None = None,
+) -> dict:
+    """Semantic + BM25 search over paper chunks (one vector per ~1500-char
+    section-aware window).
+
+    Use this when you want passage-level evidence across many papers —
+    e.g. "what limitations have papers identified about RAG?". Filter
+    `sections=['limitations']` to retrieve only Limitations sections;
+    'methods' for methodology comparison; 'results' for findings.
+
+    Returns: {ok, results: [{chunk_id, post_id, section, ord, text,
+    score, vector_score, bm25_score}]}.
+    """
+    from ..retrieval import palace
+    return palace.search_paper_chunks(
+        query, k=k, topic=topic, section_filter=sections,
+    )
+
+
+@mcp.tool()
+def reddit_paper_search_papers(
+    query: str,
+    k: int = 8,
+    topic: str | None = None,
+    sections: list[str] | None = None,
+    max_chunks_per_paper: int = 3,
+) -> dict:
+    """Chunk-level retrieval rolled up to paper level — the "which papers
+    discuss X" query.
+
+    Pulls top chunks across the corpus and groups by paper so a single
+    verbose paper doesn't monopolise the result set. Each result row
+    includes the matching chunks (up to `max_chunks_per_paper`) so the
+    caller can quote exact passages with provenance.
+
+    Returns: {ok, results: [{post_id, title, source_type, url, best_score,
+    sections_hit: [...], chunks: [{section, ord, text, score}]}]}.
+    """
+    from ..retrieval import palace
+    return palace.search_papers(
+        query, k=k, topic=topic,
+        section_filter=sections,
+        max_chunks_per_paper=max_chunks_per_paper,
+    )
+
+
+@mcp.tool()
+def reddit_paper_chunk_topic(
+    topic: str | None = None,
+    force: bool = False,
+    limit: int | None = None,
+) -> dict:
+    """Bulk-chunk every cached paper for a topic. Section-parses + chunks
+    + embeds each one. Skips papers whose chunks are already up-to-date.
+
+    Run after `reddit_paper_fulltext` finishes for a topic to make all
+    chunk-search tools return useful results.
+    """
+    from ..research.paper_chunks import chunk_topic
+    return chunk_topic(topic=topic, embed=True, limit=limit, force=force)
+
+
+@mcp.tool()
+def reddit_paper_extract_refs(post_id: str, force: bool = False) -> dict:
+    """Extract the references / bibliography section from a paper's
+    cached full-text PDF into structured rows (DOI / arxiv id / title /
+    year). Tries OpenFileLoader when installed; falls back to a regex
+    extractor. Note: distinct from the S2-API-backed
+    `reddit_paper_references` — this one works on the local PDF, no
+    network required.
+
+    After extraction, `paper_references` rows are auto-resolved against
+    existing `posts` rows where possible (arxiv id match, DOI match in
+    metadata_json). Unresolved refs stay as raw strings for a future
+    Crossref/OpenAlex pass to fill in.
+
+    Returns: {ok, n_refs, by_status, extractor}.
+    """
+    from ..research.paper_references import (
+        extract_references_for, resolve_to_existing_posts,
+    )
+    r = extract_references_for(post_id, force=force)
+    if r.get("ok") and r.get("n_refs", 0) > 0:
+        link = resolve_to_existing_posts(post_id)
+        r["linked_via_arxiv"] = link.get("linked_via_arxiv", 0)
+        r["linked_via_doi"] = link.get("linked_via_doi", 0)
+    return r
+
+
+@mcp.tool()
+def reddit_paper_local_refs(post_id: str) -> dict:
+    """List the references extracted from this paper's local PDF cache.
+    Each row has the parsed DOI/arxiv id/title plus a `dst_post_id` if we
+    already have the cited work in our corpus.
+
+    Distinct from `reddit_paper_references` (which hits Semantic Scholar
+    over the network) — this one is the local-corpus equivalent built
+    from the PDF references section.
+    """
+    from ..research.paper_references import get_references
+    refs = get_references(post_id)
+    return {"ok": True, "post_id": post_id, "count": len(refs), "refs": refs}
+
+
+@mcp.tool()
+def reddit_paper_cited_by(post_id: str) -> dict:
+    """List the papers in our corpus that cite this paper. Counts only
+    references that have been resolved to an existing `posts` row via
+    `reddit_paper_extract_refs`."""
+    from ..research.paper_references import get_cited_by
+    refs = get_cited_by(post_id)
+    return {"ok": True, "post_id": post_id, "count": len(refs), "refs": refs}
+
+
+@mcp.tool()
+def reddit_paper_chunks_stats() -> dict:
+    """Mempalace stats for the paper_chunks collection — total chunks,
+    unique papers indexed, distribution by section. Useful to verify a
+    bulk chunk job actually populated the index."""
+    from ..retrieval import palace
+    return palace.paper_chunks_stats()
+
+
+@mcp.tool()
 def reddit_analyze_paper(topic: str, post_id: str, force: bool = False) -> dict:
     """LLM analysis of one paper — summary, claims, methods, tier, applicability.
 
@@ -980,6 +1278,48 @@ def reddit_synthesize_insights(
     except Exception:
         pass
     return res
+
+
+@mcp.tool()
+def reddit_paper_outline_generate(topic: str, provider: str | None = None) -> dict:
+    """Generate a structured research-paper outline from topic insights."""
+    from ..research.paper_pipeline import paper_outline_generate
+    return paper_outline_generate(topic=topic, provider=provider)
+
+
+@mcp.tool()
+def reddit_paper_draft_generate(
+    topic: str,
+    provider: str | None = None,
+    style: str = "IMRaD",
+) -> dict:
+    """Generate a markdown research paper draft (default IMRaD style)."""
+    from ..research.paper_pipeline import paper_draft_generate
+    return paper_draft_generate(topic=topic, provider=provider, style=style)
+
+
+@mcp.tool()
+def reddit_experiment_plan_generate(topic: str, provider: str | None = None) -> dict:
+    """Generate testable experiment plan from topic hypotheses/findings."""
+    from ..research.paper_pipeline import experiment_plan_generate
+    return experiment_plan_generate(topic=topic, provider=provider)
+
+
+@mcp.tool()
+def reddit_paper_export_with_citations(
+    topic: str,
+    provider: str | None = None,
+    format: str = "markdown",
+    style: str = "IMRaD",
+) -> dict:
+    """Export paper draft with citation appendix (markdown)."""
+    from ..research.paper_pipeline import paper_export_with_citations
+    return paper_export_with_citations(
+        topic=topic,
+        provider=provider,
+        format=format,
+        style=style,
+    )
 
 
 @mcp.tool()
@@ -1742,6 +2082,162 @@ def reddit_search_all(
     return search_all(query=query, topic=topic, aggressive=aggressive, persist=True)
 
 
+# ─── Stakeholder-ready exports (DOCX + PPTX) ─────────────────────────────
+# Read-only over the existing corpus: same tables the markdown exporter
+# uses (topic_insights + posts + topic_posts + graph_nodes). Both tools
+# return a clear install hint if python-docx / python-pptx aren't on the
+# host so users know exactly what to `pip install`.
+
+
+@mcp.tool()
+def reddit_export_docx(
+    topic: str,
+    out_path: str,
+    extra_topics: list[str] | None = None,
+    title: str | None = None,
+    subtitle: str | None = None,
+    max_painpoints: int = 12,
+) -> dict:
+    """Export a stakeholder-ready DOCX research brief for `topic`.
+
+    Pulls painpoints, competitor teardown, voice-of-customer quotes, and
+    (if available) LLM-synthesized insights into a Word document with
+    cited evidence quotes for every claim. `extra_topics` widens the
+    corpus by merging sibling topics (e.g. all 6 lending topics).
+
+    Requires `python-docx` (~5 MB). If missing, returns
+    `{ok: False, install_hint}` instead of raising.
+
+    Returns: {ok, path, painpoint_count, citation_count, competitor_count, total_corpus_posts}
+    """
+    from ..research.export_deck import build_docx
+    return build_docx(
+        topic=topic,
+        out_path=out_path,
+        extra_topics=extra_topics,
+        title=title,
+        subtitle=subtitle,
+        max_painpoints=max_painpoints,
+    )
+
+
+@mcp.tool()
+def reddit_export_pptx(
+    topic: str,
+    out_path: str,
+    extra_topics: list[str] | None = None,
+    title: str | None = None,
+    subtitle: str | None = None,
+    max_painpoints: int = 6,
+) -> dict:
+    """Export a 12-15 slide PPTX pitch deck for `topic`.
+
+    Slide order: cover · TL;DR · corpus snapshot · top market quote ·
+    one slide per top painpoint with cited evidence · competitor matrix ·
+    voice of the customer · top opportunities · re-pull instructions.
+
+    Requires `python-pptx` (~5 MB). If missing, returns
+    `{ok: False, install_hint}` instead of raising.
+
+    Returns: {ok, path, slide_count, painpoint_count, competitor_count, total_corpus_posts}
+    """
+    from ..research.export_deck import build_pptx
+    return build_pptx(
+        topic=topic,
+        out_path=out_path,
+        extra_topics=extra_topics,
+        title=title,
+        subtitle=subtitle,
+        max_painpoints=max_painpoints,
+    )
+
+
+@mcp.tool()
+def reddit_doc_design_prompt() -> dict:
+    """Return the strict design-system prompt + JSON layout-plan schema.
+
+    Pass this to an LLM before asking it to design a brief — the
+    renderer enforces every rule below, so the model can't drift on
+    typography, color, or section structure.
+
+    Returns: {prompt, kinds: [...]}
+    """
+    from ..research.export_deck import get_design_system_prompt
+    return {
+        "prompt": get_design_system_prompt(),
+        "kinds": [
+            "executive_summary", "corpus_table", "painpoint_cards",
+            "competitor_matrix", "quote_wall", "feature_roadmap",
+            "citation_index",
+        ],
+    }
+
+
+@mcp.tool()
+def reddit_plan_doc_layout(
+    topic: str,
+    extra_topics: list[str] | None = None,
+    title: str | None = None,
+    subtitle: str | None = None,
+    tagline: str | None = None,
+    max_painpoints: int = 12,
+) -> dict:
+    """Build a JSON layout plan for a topic — without rendering bytes.
+
+    Use this to inspect / hand-edit the plan before calling
+    `reddit_render_planned_docx`. The plan shape matches
+    `reddit_doc_design_prompt`.
+
+    Returns: {topic, cover, sections: [...], data_summary}
+    """
+    from ..research.export_deck import plan_layout
+    return plan_layout(
+        topic=topic, extra_topics=extra_topics,
+        title=title, subtitle=subtitle, tagline=tagline,
+        max_painpoints=max_painpoints,
+    )
+
+
+@mcp.tool()
+def reddit_render_planned_docx(plan: dict, out_path: str) -> dict:
+    """Render a layout plan (from `reddit_plan_doc_layout` or LLM-generated)
+    to a brand-styled DOCX.
+
+    Returns: {ok, path, section_count, output_bytes}
+    """
+    from ..research.export_deck import render_planned_docx
+    return render_planned_docx(plan, out_path)
+
+
+@mcp.tool()
+def reddit_export_docx_from_markdown(
+    md_path: str,
+    out_path: str,
+    reference_docx: str | None = None,
+) -> dict:
+    """Convert an existing markdown research brief to DOCX with full fidelity.
+
+    Use this when the rich research doc already exists as markdown
+    (cited evidence, competitor tables, code blocks, blockquotes,
+    headings) and you want a Word file that opens cleanly in Word /
+    Pages / Google Docs with tables, quotes, and formatting preserved.
+
+    Strategy:
+      - Primary: pandoc via pypandoc (gold standard for md → docx;
+        preserves GFM tables, blockquotes, fenced code, lists, links).
+      - Fallback: lightweight python-docx renderer if pandoc is not on
+        the host. Lower fidelity on edge cases but zero extra deps.
+
+    Install pandoc (auto-bundled): `pip install pypandoc-binary`.
+
+    Returns: {ok, path, engine ('pandoc'|'python-docx-fallback'), source_chars, output_bytes}
+    """
+    from ..research.export_deck import build_docx_from_markdown
+    return build_docx_from_markdown(
+        md_path=md_path, out_path=out_path, reference_docx=reference_docx,
+    )
+
+
 # ─── Production guards — prevents the "18 zombie MCP servers" bug ───
 # Shipping lessons from 2026-04-21 — a user session accumulated 18
 # `reddit-cli mcp serve` processes over 2 days (Claude Code / Cursor
@@ -1762,10 +2258,25 @@ def reddit_search_all(
 
 def _pidfile_path() -> "object":
     """Path to the MCP server's PID file, alongside the app's data dir.
-    Living next to reddit.db ensures each data-dir gets its own lock.
-    Uses the single-source-of-truth resolver in core.config so the PID
-    file always lands in the same folder as the SQLite DB — regardless
-    of how or where the MCP server was spawned."""
+
+    Per-client scoping via `MCP_CLIENT_TAG` env var. Without it, every
+    configured MCP client (Claude Code, Claude Desktop, Cursor, …) shares
+    one lock file — and because each install bakes in `MCP_TAKEOVER_STALE_LOCK=1`,
+    every reconnect from any client kills the live server owned by another
+    client. Net effect: cross-client thrash, zero clean shutdowns,
+    "lost connection" errors mid-tool-call.
+
+    With `MCP_CLIENT_TAG=claude-code`, the lock becomes
+    `mcp-server.claude-code.pid` — Cursor uses its own
+    `mcp-server.cursor.pid`, and they never fight. `install.py` writes
+    the tag into each entry's env automatically.
+
+    Fallback: if the env var is missing (entries written before this
+    change), use the original `mcp-server.pid` path so re-sync isn't
+    forced.
+    """
+    import os
+    import re
     from pathlib import Path
     try:
         from ..core.config import _resolve_data_dir
@@ -1773,6 +2284,12 @@ def _pidfile_path() -> "object":
     except Exception:
         base = Path.home() / ".gapmap"
         base.mkdir(parents=True, exist_ok=True)
+    tag = (os.environ.get("MCP_CLIENT_TAG") or "").strip().lower()
+    # Sanitise — only allow `[a-z0-9-]` so a malformed tag can't escape
+    # the data dir or produce weird filenames.
+    tag = re.sub(r"[^a-z0-9-]", "", tag)
+    if tag:
+        return base / f"mcp-server.{tag}.pid"
     return base / "mcp-server.pid"
 
 
@@ -1903,48 +2420,142 @@ def _sweep_stale_siblings(max_age_days: int = 1) -> int:
     return killed
 
 
+# Module-level activity tracker — shared between the tool wrapper (which
+# bumps it on every tool call) and the idle-timeout watcher (which reads
+# it). Single-element list so closures can mutate without `nonlocal`.
+_LAST_ACTIVITY_TS: list[float] = [0.0]
+
+
+def _bump_activity() -> None:
+    """Mark the server as active. Called from the tool-call wrapper on
+    every JSON-RPC tool dispatch so the idle-timeout watcher knows the
+    session is still in use, regardless of how FastMCP reads stdin."""
+    import time
+    _LAST_ACTIVITY_TS[0] = time.time()
+
+
+def _clean_shutdown_then_exit(*, reason: str, **details: Any) -> None:
+    """Release the pidfile, log a `startup:exit` event, then call
+    ``os._exit(0)``.
+
+    Why not ``sys.exit(0)``: this runs from a daemon watcher thread, and
+    ``sys.exit`` only raises ``SystemExit`` on the calling thread — it
+    won't terminate the main thread blocked in FastMCP's stdio read.
+    ``os._exit`` does kill the whole process, but skips ``atexit`` —
+    so we run the cleanup we need (pidfile release + log) by hand first.
+    """
+    import os
+    import time
+    try:
+        from .logger import log_event as _log
+        _log(
+            "startup:exit",
+            message=f"shutdown: {reason}",
+            details={"shutdown_reason": reason, **details},
+        )
+    except Exception:
+        pass
+    try:
+        _release_pidfile_lock()
+    except Exception:
+        pass
+    # Best-effort flush of stderr before the kernel reaps us.
+    try:
+        import sys as _s
+        _s.stderr.flush()
+    except Exception:
+        pass
+    os._exit(0)
+
+
+def _install_signal_handlers() -> None:
+    """Catch SIGTERM (and SIGHUP on Unix) so the takeover path — where a
+    new client spawn SIGTERMs the prior server — runs the same clean
+    shutdown sequence as the idle-timeout watcher.
+
+    The default SIGTERM handler raises ``SystemExit``, which *should*
+    trigger ``atexit`` and hence ``startup:exit``. In practice FastMCP's
+    anyio event loop sometimes swallows the exception, so we get killed
+    without ``startup:exit`` being recorded and the pidfile leaks. An
+    explicit handler bypasses the asyncio path entirely.
+    """
+    import signal
+    import sys
+
+    def _handler(signum, _frame):  # noqa: ARG001
+        name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
+        _clean_shutdown_then_exit(reason=f"signal:{name.lower()}")
+
+    for sig in ("SIGTERM", "SIGHUP", "SIGINT"):
+        s = getattr(signal, sig, None)
+        if s is None:
+            continue
+        try:
+            signal.signal(s, _handler)
+        except (ValueError, OSError):
+            # Not the main thread, or signal not supported on this OS.
+            # Best-effort — skip silently rather than crash startup.
+            pass
+
+    # Windows has no SIGHUP; SIGINT is handled the same as Unix.
+    _ = sys
+
+
 def _start_idle_timeout_guard(timeout_seconds: int) -> None:
-    """Background daemon thread — os._exit(0) if stdin has been silent
-    AND no tool calls have landed for `timeout_seconds`.
+    """Background daemon thread — clean-shutdown if the server has been
+    idle for `timeout_seconds`, OR if the parent process died (orphan
+    case where launchd/init has adopted us).
 
-    Why: MCP clients (Claude Code / Cursor) occasionally fail to close
-    stdin cleanly on window close / crash — the child hangs forever.
-    Self-terminate so we don't accumulate zombies.
+    Activity is tracked via tool-call entries in `_LAST_ACTIVITY_TS`,
+    NOT via `sys.stdin.readline` — FastMCP wraps `sys.stdin.buffer`
+    in its own `TextIOWrapper` and reads from that, so a monkey-patch
+    on the original `sys.stdin.readline` would never fire and the
+    watcher would kill the server every `timeout_seconds` regardless
+    of activity (the bug that produced 36 startups / 3 clean exits per
+    day before this fix).
 
-    Tracks activity by hooking `sys.stdin.read`; FastMCP's I/O runs
-    through stdio and bumps `_last_activity` whenever something arrives.
+    Orphan detection (`os.getppid() == 1`) handles the case where
+    Claude Code / Cursor crashes and leaves the MCP child running
+    forever, re-parented to launchd. fastmcp doesn't always notice
+    its stdin pipe has nothing on the other end, so without this
+    check the orphan accumulates indefinitely.
     """
     import os
     import sys
     import threading
     import time
 
-    # Module-level mutable container so the watcher + hook share state.
-    state = {"last": time.time()}
-
-    # Monkey-patch stdin.read* to update last-activity on every read.
-    # Cheap and invisible to FastMCP.
-    orig_readline = sys.stdin.readline
-
-    def _wrapped_readline(*a, **kw):
-        state["last"] = time.time()
-        return orig_readline(*a, **kw)
-
-    try:
-        sys.stdin.readline = _wrapped_readline  # type: ignore[method-assign]
-    except (AttributeError, TypeError):
-        pass  # stdin is read-only on some platforms — skip
+    _LAST_ACTIVITY_TS[0] = time.time()  # initialise at startup
 
     def _watcher():
+        # Sleep in 60-second slices. We don't need fine-grained timing —
+        # idle timeout is on the order of minutes/hours.
         while True:
             time.sleep(60)
-            if time.time() - state["last"] > timeout_seconds:
+            # 1. Orphan check — parent died, we're talking to nobody.
+            try:
+                if os.getppid() == 1:
+                    sys.stderr.write(
+                        "[mcp] orphaned (parent=launchd/init); shutting down\n"
+                    )
+                    sys.stderr.flush()
+                    _clean_shutdown_then_exit(reason="orphaned_parent")
+                    return
+            except Exception:
+                pass  # getppid is essentially infallible; defensive only
+
+            # 2. Idle check — no tool calls in `timeout_seconds`.
+            if time.time() - _LAST_ACTIVITY_TS[0] > timeout_seconds:
                 sys.stderr.write(
-                    f"[mcp] idle-timeout: no stdin activity for {timeout_seconds}s; "
+                    f"[mcp] idle-timeout: no tool activity for {timeout_seconds}s; "
                     f"exiting to prevent zombie accumulation\n"
                 )
                 sys.stderr.flush()
-                os._exit(0)
+                _clean_shutdown_then_exit(
+                    reason="idle_timeout",
+                    idle_seconds=timeout_seconds,
+                )
+                return
 
     t = threading.Thread(target=_watcher, daemon=True, name="mcp-idle-watcher")
     t.start()
@@ -1976,6 +2587,29 @@ def run() -> None:
     import atexit
     import os
     import sys
+    import time
+
+    # Structured logger — file + SQLite event store. Calls are best-effort;
+    # a broken logger never crashes the server. Install the unhandled-
+    # exception hook FIRST so an import error in the legacy server module
+    # below still gets recorded as `fatal:unhandled` in mcp_events.
+    from .logger import (
+        log_event as _log_event,
+        install_unhandled_exception_hook,
+    )
+    install_unhandled_exception_hook()
+    _startup_t0 = time.time()
+    _log_event(
+        "startup:begin",
+        message=f"mcp serve invoked, pid={os.getpid()}",
+        details={
+            "argv": sys.argv,
+            "python": sys.executable,
+            "env_takeover": os.environ.get("MCP_TAKEOVER_STALE_LOCK", ""),
+            "env_data_dir": os.environ.get("REDDIT_MYIND_DATA_DIR", ""),
+            "env_idle_timeout": os.environ.get("REDDIT_MYIND_IDLE_TIMEOUT", ""),
+        },
+    )
 
     _ = os.environ.get("REDDIT_MYIND_TOKEN", "")
 
@@ -1986,18 +2620,37 @@ def run() -> None:
     # lock from a zombie prior instance.
     if not _acquire_pidfile_lock():
         import json
-        sys.stderr.write(json.dumps({
-            "error": "another_mcp_server_running",
-            "hint": "Another MCP server instance is still alive. "
-                    f"Kill it or remove {_pidfile_path()} if you're sure "
-                    "it's dead. To let the server auto-reclaim a stale "
-                    "lock on restart, set MCP_TAKEOVER_STALE_LOCK=1 in "
-                    "your MCP client's env (or re-run `mcp install` from "
-                    "the desktop app, which wires this automatically).",
-        }) + "\n")
+        msg = "another_mcp_server_running"
+        hint = ("Another MCP server instance is still alive. "
+                f"Kill it or remove {_pidfile_path()} if you're sure "
+                "it's dead. To let the server auto-reclaim a stale "
+                "lock on restart, set MCP_TAKEOVER_STALE_LOCK=1 in "
+                "your MCP client's env (or re-run `mcp install` from "
+                "the desktop app, which wires this automatically).")
+        # Record as `error` (not `fatal`) — the server didn't crash, it
+        # politely refused to start. The next reconnect with takeover=1
+        # turns this into `startup:lock_takeover` instead.
+        _log_event(
+            "startup:lock_failed", severity="error", message=msg,
+            details={"hint": hint, "pidfile": str(_pidfile_path())},
+        )
+        sys.stderr.write(json.dumps({"error": msg, "hint": hint}) + "\n")
         sys.stderr.flush()
         raise SystemExit(2)
+    _log_event("startup:lock_acquired", message=f"pid file locked at {_pidfile_path()}")
     atexit.register(_release_pidfile_lock)
+    atexit.register(lambda: _log_event(
+        "startup:exit",
+        message="mcp serve atexit fired (clean shutdown)",
+        details={"uptime_sec": round(time.time() - _startup_t0, 1)},
+    ))
+
+    # Catch SIGTERM/SIGHUP/SIGINT explicitly so the takeover path (where
+    # a fresh client spawn evicts us with SIGTERM) runs the same clean
+    # cleanup as a normal shutdown — pidfile released, `startup:exit`
+    # logged. Without this, FastMCP's anyio loop sometimes swallows the
+    # SystemExit and the pidfile leaks pointing at a dead PID.
+    _install_signal_handlers()
 
     # Guard 3 — sweep stale siblings. Non-blocking; swallows all errors.
     try:
@@ -2039,4 +2692,21 @@ def run() -> None:
     except Exception:
         pass
 
-    mcp.run()
+    _log_event(
+        "startup:ready",
+        message="entering mcp.run() — handing stdio to FastMCP",
+        details={"startup_ms": int((time.time() - _startup_t0) * 1000)},
+    )
+    try:
+        mcp.run()
+    except SystemExit:
+        # Normal shutdown path — atexit hook records `startup:exit`.
+        raise
+    except BaseException as e:
+        _log_event(
+            "fatal:run_loop",
+            severity="fatal",
+            message=f"mcp.run() raised {type(e).__name__}: {e}",
+            details={"uptime_sec": round(time.time() - _startup_t0, 1)},
+        )
+        raise

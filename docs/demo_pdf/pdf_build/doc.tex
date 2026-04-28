@@ -1,0 +1,3358 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames*,x11names*}{xcolor}
+%
+\documentclass[
+  10pt,
+]{article}
+\usepackage{lmodern}
+\usepackage{setspace}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+  \setmainfont[Scale=0.95]{DejaVu Sans}
+  \setsansfont[]{Poppins}
+  \setmonofont[Scale=0.78]{DejaVu Sans Mono}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=Maroon,
+  filecolor=Maroon,
+  citecolor=Blue,
+  urlcolor=Blue,
+  pdfcreator={LaTeX via pandoc}}
+\urlstyle{same} % disable monospaced font for URLs
+\usepackage[a4paper, top=2.4cm, bottom=2.4cm, left=2.0cm, right=2.0cm]{geometry}
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{longtable,booktabs}
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{titling}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{fvextra}
+\usepackage{quoting}
+\usepackage{seqsplit}
+
+% Color palette
+\definecolor{accentblue}{HTML}{1F4E79}
+\definecolor{accentlight}{HTML}{2E75B6}
+\definecolor{softgray}{HTML}{595959}
+\definecolor{lightgray}{HTML}{808080}
+\definecolor{rulegray}{HTML}{BFBFBF}
+\definecolor{codebg}{HTML}{F6F8FA}
+
+% Section title styling
+\titleformat{\section}
+  {\color{accentblue}\Large\bfseries\sffamily}
+  {\thesection.}{0.6em}{}[\vspace{2pt}{\color{rulegray}\titlerule}]
+\titleformat{\subsection}
+  {\color{accentlight}\large\bfseries\sffamily}
+  {\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}
+  {\color{softgray}\normalsize\bfseries\sffamily}
+  {\thesubsubsection}{0.6em}{}
+\titleformat{\paragraph}[runin]
+  {\color{softgray}\normalsize\bfseries\sffamily}
+  {}{0pt}{}
+
+\titlespacing*{\section}{0pt}{20pt}{10pt}
+\titlespacing*{\subsection}{0pt}{14pt}{6pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{4pt}
+
+% Page header / footer
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
+\fancyhead[L]{\small\color{lightgray}\sffamily Home-Improvement Lending Marketplace}
+\fancyhead[R]{\small\color{lightgray}\sffamily Deep-Dive Research}
+
+% Footer: small "gapmap.myind.ai" in left corner, page number center, brand right
+\fancyfoot[L]{\footnotesize\sffamily\color{accentlight}\href{http://gapmap.myind.ai}{gapmap.myind.ai}}
+\fancyfoot[C]{\small\color{lightgray}\sffamily \thepage}
+\fancyfoot[R]{\footnotesize\sffamily\color{lightgray}gapmap}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accentblue,
+  urlcolor=accentlight,
+  citecolor=accentblue
+}
+
+\fvset{breaklines=true, breakanywhere=true, fontsize=\footnotesize}
+
+\setlist{topsep=3pt, itemsep=2pt, parsep=0pt, leftmargin=*}
+
+\quotingsetup{
+  vskip=4pt, leftmargin=12pt, rightmargin=12pt,
+  font=itshape, indentfirst=false
+}
+\renewenvironment{quote}{\begin{quoting}\color{softgray}}{\end{quoting}}
+
+\pretitle{\begin{flushleft}\sffamily\color{accentblue}\Huge\bfseries}
+\posttitle{\par\vspace{2pt}\end{flushleft}}
+\preauthor{\begin{flushleft}\sffamily\color{softgray}\large}
+\postauthor{\par\end{flushleft}}
+\predate{\begin{flushleft}\sffamily\color{lightgray}\normalsize}
+\postdate{\par\end{flushleft}\vspace{4pt}{\color{accentblue}\rule{\textwidth}{1.2pt}}}
+
+\setlength{\parskip}{4pt plus 1pt}
+\setlength{\parindent}{0pt}
+
+\sloppy
+\emergencystretch=4em
+\hbadness=10000
+\hfuzz=12pt
+
+% Allow long monospace strings (IDs, etc.) to break inside cells
+\let\origtexttt\texttt
+\renewcommand{\texttt}[1]{\origtexttt{\seqsplit{#1}}}
+
+% Make table cells use top-alignment for nicer multi-line cells
+\renewcommand{\arraystretch}{1.18}
+
+\title{Home-Improvement Lending Marketplace}
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\large #1 \par}}{}{}
+}
+\makeatother
+\subtitle{Deep-Dive Per-Topic Research}
+\author{Shantanu Bombatkar — Researcher}
+\date{2026-04-28}
+
+\begin{document}
+\maketitle
+
+{
+\hypersetup{linkcolor=}
+\setcounter{tocdepth}{2}
+\tableofcontents
+}
+\setstretch{1.25}
+\hypertarget{home-improvement-lending-marketplace-deep-dive-per-topic-research}{%
+\section{Home-Improvement Lending Marketplace --- Deep-Dive Per-Topic
+Research}\label{home-improvement-lending-marketplace-deep-dive-per-topic-research}}
+
+\textbf{Date:} 2026-04-28 \textbf{Status:} Companion to
+\texttt{2026-04-28\_us-canada-home-lending-marketplace\ copy.md} and
+\texttt{2026-04-28\_PRD-build-ready.md}. This document drills into \textbf{each painpoint, concept,
+evidence cluster, competitor, and feature} with \textbf{direct citations} (Reddit IDs, App Store /
+Play Store review IDs, GNews IDs, OpenAlex IDs) you can re-pull from the corpus with one query.
+
+\textbf{Corpus mined for this document (deduplicated):} 1,890 posts across 16 sources, spanning 6
+lending-related topics in the SQLite DB:
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+Topic in DB & Posts\tabularnewline
+\midrule
+\endhead
+\texttt{US\ Canada\ roofing\ contractor\ homeowner\ lending\ marketplace} & 1,126\tabularnewline
+\texttt{home\ improvement\ financing\ marketplace\ usa\ canada\ contractors\ homeowners} &
+563\tabularnewline
+\texttt{roof\ financing\ marketplace\ usa\ canada} & 290\tabularnewline
+\texttt{contractor\ financing\ GreenSky\ Hearth\ Wisetack\ Synchrony\ BNPL\ home\ improvement} &
+110\tabularnewline
+\texttt{Canada\ HELOC\ mortgage\ broker\ home\ renovation\ financing\ Ontario\ Quebec\ BC} &
+48\tabularnewline
+\texttt{HELOC\ home\ equity\ line\ of\ credit\ cash\ out\ refinance\ roof\ renovation} &
+15\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Top sources by post count (deduplicated, lending-marketplace topic):} GNews 567 · OpenAlex
+160 · App Store: Hearth-for-Contractors 110 · r/realestate 106 · r/mortgages 91 · r/homeowners 80 ·
+HN 75 · r/realestateinvesting 56 · App Store: JobNimbus 46 · r/personalfinance 46 ·
+r/homeimprovement 44 · Play Store: Prosper 42 · App Store: ContractorTools 41 · arXiv 37 · GitHub 37
+· Scholar 35 · App Store: Contractor+ 32 · Play Store: ContractorForeman 32 · App Store: Mr.~Cooper
+31 · App Store: Prosper 29 · App Store: My LoanCare Go 28 · App Store: EagleView 27 · App Store:
+Upstart 27 · App Store: QuoteIQ 24 · Play Store: LoanCashUSA 24 · App Store: Pitch Gauge 21 · App
+Store: AccuLynx Field 20 · Play Store: Solofunds 19 · Play Store: Canadian Homes 19 · App Store: Ava
+14 · App Store: Rocket Mortgage 14 · pubmed 13 · Play Store: EnerBank 12 · App Store: Regions
+Contractor SalesPro 11 · App Store: Roof Pitch Factor 11.
+
+\textbf{To re-read any cited Reddit post:} prepend
+\texttt{https://www.reddit.com/r/\textless{}sub\textgreater{}/comments/\textless{}id\textgreater{}/}
+(the \texttt{permalink} is in the \texttt{posts} table). \textbf{To re-read any App Store or Play
+Store review:} the ID format is
+\texttt{appstore\_\textless{}app\_id\textgreater{}\_\textless{}review\_id\textgreater{}} or
+\texttt{playstore\_\textless{}uuid\textgreater{}} --- the \texttt{sub} column carries the app name.
+\textbf{Re-query template:}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{SELECT} \KeywordTok{id}\NormalTok{, title, score, sub, source\_type, permalink, }\FunctionTok{substr}\NormalTok{(selftext,}\DecValTok{1}\NormalTok{,}\DecValTok{1500}\NormalTok{) }\KeywordTok{AS} \KeywordTok{body}
+\KeywordTok{FROM}\NormalTok{ posts }\KeywordTok{WHERE} \KeywordTok{id} \OperatorTok{=} \StringTok{\textquotesingle{}\textless{}POST\_ID\textgreater{}\textquotesingle{}}\NormalTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{table-of-contents}{%
+\subsection{Table of contents}\label{table-of-contents}}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{The 14 painpoints} --- every one with cited evidence, severity, frequency, sources, and
+  the feature it maps to (§1).
+\item
+  \textbf{Per-competitor teardown} --- review distributions (1★ vs 5★), cited 1-star reviews, what
+  they leave on the table (§2).
+\item
+  \textbf{Industry signal} --- actual fintech moves in the last 12 months (Houzz+Figure HELOC,
+  GreenSky+RAFTR, GreenSky+TAMKO, PACE-loan controversy, BNPL late-payment surge), pulled from GNews
+  (§3).
+\item
+  \textbf{Academic backing} --- peer-reviewed work on predatory lending, FinTech discrimination,
+  HELOC adverse-selection, payment-shock at HELOC draw end, neighborhood subprime concentration
+  (§4).
+\item
+  \textbf{Per-vertical scope schema} --- roofing, HVAC, solar --- what fields a marketplace must
+  capture for the offer engine to anchor against (§5).
+\item
+  \textbf{Cross-border Canada surface} --- what the corpus says (and doesn't say) about Canadian
+  home-improvement lending (§6).
+\item
+  \textbf{The build-order matrix} --- every feature in §1 + §3 mapped to MVP / P1 / P2 with
+  rationale and dependent integrations (§7).
+\end{enumerate}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{the-14-painpoints-cited-evidence-grounded-mapped-to-features}{%
+\subsection{1. The 14 painpoints --- cited, evidence-grounded, mapped to
+features}\label{the-14-painpoints-cited-evidence-grounded-mapped-to-features}}
+
+\hypertarget{p0-solve-in-mvp-or-do-not-ship}{%
+\subsubsection{P0 --- Solve in MVP or do not ship}\label{p0-solve-in-mvp-or-do-not-ship}}
+
+\hypertarget{spam-aftermath-of-lead-form-lenders}{%
+\paragraph{1.1 --- Spam aftermath of ``lead-form''
+lenders}\label{spam-aftermath-of-lead-form-lenders}}
+
+\textbf{Headline pain:} Aggregator funnels, contractor-attached ``financing'' buttons, and free
+loan-shopping apps resell the user's contact details to 4--12 lenders, who all text/call/email
+simultaneously.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} 8+ direct hits across Reddit + Play
+Store · \textbf{Source diversity:} Reddit r/mortgages, Play Store (Prosper, BILS, LoanCashUSA,
+Solofunds), App Store (Hearth complaints).
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1odky4x}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+632 ▲ / 175 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``I received 57 calls from mortgage brokers since 8 AM. I just locked in at 5.625\% yesterday
+for refinancing a 20 year mortgage (\textgreater760 credit score). Paid \$299 for closing
+costs\ldots{} since 8 AM, I've had 57 calls to my phone from folks trying to swoop in.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: Prosper Borrower\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_8349f9d2-\ldots{}-55bbb0db9150}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``this app just does a 2 second loading, says it can't offer anything and then tries to get
+you to consent to your phone getting blasted with calls by third party loan providers.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: Prosper Borrower\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_d6e8b127-\ldots{}-a51c6caefc84}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``The loan I got matched with had an interest rate of 490\%! I was going to have to pay them
+over 2200 for just a 600 loan!''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: BILS / Instant Pay Loan\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_305a1f72-\ldots{}-092d56cdc094}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``once you sign up to barrow a loan. immediately phone blows up with over 500 loans saying
+your approved''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: BILS / Instant Pay Loan\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_b6d2795f-\ldots{}-d65863a4ba81}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Deceiving do not download this app it just sends you to other lenders that send you to other
+lenders which I'm come to the conclusion that is selling our information''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: LoanCashUSA\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_2d29960a-\ldots{}-dcfa6682d1d9}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``I filled out everything and it won't go to next screen to find the lenders. I feel like all
+my vital info is just out there in limbo.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Prosper Personal Loans\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1506637917\_12763541985}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``three weeks later I started getting harassed by marketers asking if I was interested in
+loans. They were calling texting me and also emailing me just spamming all of my inboxes. If you're
+big I'm protecting your data I would not work with them.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Concept:} The lead-resale economic model directly creates the spam. Every aggregator that
+gets paid per-lead-sold has the same incentive structure --- Prosper, BILS, LoanCashUSA,
+LendingTree, HomeAdvisor / Angi all sit here.
+
+\textbf{Feature to build (MVP):} \textbf{Soft-pull-only marketplace + No-Spam Guarantee}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Lender contract\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Every lender on the platform signs an exclusivity clause: zero outbound contact
+(call/SMS/email/mail) until the user explicitly accepts a specific offer in-app\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Single comm channel\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+All offer-related messaging happens in the in-app inbox; out-of-band notifications carry only ``you
+have a new offer'' metadata, never offer content\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Breach enforcement\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Each user-reported breach triggers an automatic 30-day suspension and a public mark on the lender's
+scorecard (no warning)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+User trust signal\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Marketplace home page carries a counter: ``X funded loans, 0 phone numbers sold''\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Why nobody else does it:} Lead-resale revenue subsidises the consumer side. Killing it
+requires switching to a per-funded-loan fee model --- which means slower revenue ramp but higher
+retention. This is a \textbf{deliberate strategic choice}, not a feature.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{opaque-broker-pricing-the-11-on-820k-804-fico-problem}{%
+\paragraph{1.2 --- Opaque broker pricing (the ``11\% on \$820k, 804 FICO''
+problem)}\label{opaque-broker-pricing-the-11-on-820k-804-fico-problem}}
+
+\textbf{Headline pain:} Brokers and contractor-financing partners surface rates that are wildly
+above the market median for the borrower's actual FICO band --- borrowers cannot detect this without
+a comparison anchor.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} 4 direct hits + 60 ★1 Hearth
+complaints calling out ``rates through the roof'' / ``loan shark rates'' / ``16\% with perfect
+credit'' / ``APR around 10--12 / loan double'' · \textbf{Source diversity:} Reddit r/mortgages +
+Hearth-for-Contractors App Store reviews.
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1p5pyzt}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+293 ▲ / 167 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Broker put down ELEVEN PERCENT (11\%!!!) interest rate on a 820k home. 804 credit score,
+putting down 25\%, 30 year term. Is this a scam of epic portions or am I misinformed?''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1qw5veu}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+521 ▲ / 66 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``My mortgage company just sent me a letter saying because I paid on time good customer etc
+they will give me a special offer to refinance at 5.99\% and get a check for 45k of my current
+equity\ldots{} The thing is my current Interest rate is 3\%.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1r8s4st}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+311 ▲ / 48 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Mortgage fraud attempted by mortgage originator. The mortgage originator rep (out of state
+company) specifically stated the foundation was recently repaired and asked I provide clearance by
+looking only at a specific repair\ldots{}''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Hearth\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_11629102398}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``APR crazy high. Around 10-12 costumers apply thru heart financing all costumer Agee that
+it's too expensive to get a loan with heart for a 7000 loan they have to pay almost double
+13000''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Hearth\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_9809008451}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``To date I've had 35 clients apply, only 8 have been qualified. The lowest rate I've seen a
+client been given is over 16\% and the client had perfect credit.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Hearth\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_6182647950}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Customers basically laugh me out of their home with this app and their `loan shark' rates.
+Haven't closed a loan yet.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (MVP):} \textbf{Live Rate Sanity Badge (anchored to FRED + per-FICO-band
+median)}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Anchor data\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Daily pull of FRED 30-yr fixed average + Bankrate / LendingTree-published personal-loan medians by
+FICO band: 700+, 680--700, 640--680, \textless640\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Per-offer chip\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Every offer card shows a \texttt{+X\ bps\ vs\ market\ median\ for\ your\ FICO} chip with
+red/yellow/green coding (≤+50 green, +50--150 yellow, \textgreater+150 red)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Source receipts\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Tap chip → modal shows the source data, the date the median was computed, and a link to the FRED /
+Bankrate page\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Refresh cadence\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Anchor must update at least daily; cache median per FICO band in app SQLite\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{hearth-style-most-clients-dont-qualify-conversion-failure}{%
+\paragraph{1.3 --- Hearth-style ``most clients don't qualify'' conversion
+failure}\label{hearth-style-most-clients-dont-qualify-conversion-failure}}
+
+\textbf{Headline pain:} A contractor pays for a financing tool, sends customers to it, and most
+customers either don't qualify at all or only qualify for junk-rate loans the customer would never
+accept. The contractor loses face with their customer mid-sale.
+
+\textbf{Severity:} \textbf{High (existential to the contractor)} · \textbf{Frequency in corpus:} 60
+of 110 Hearth-for-Contractors reviews are 1★, with this exact complaint pattern repeated ·
+\textbf{Source diversity:} App Store Hearth-for-Contractors reviews (largest competitor signal in
+the corpus).
+
+\textbf{Direct citations (Hearth for Contractors, all 1★):}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_12915616345}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``Total waste of money. Paid a ton of money to have this service so we could offer it to our
+customers only to find out all they do is shop a bunch personal loan places for customers. Zero help
+for the contractor that pays them. Every single person we sent an application to went with a cheaper
+contractor after approved or just took the cash and ran.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_12793568000}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``We have used them for over 7 months now and EVERY SINGLE CLIENT has had issues, even when
+their FICO scores are excellent and no mortgages and no other payments.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_11370373927}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``Been with these guys for 3 years. Most clients do not qualify but my biggest complaint is if
+you send the client the link for financing, you are not protected by Hearth and they can get
+financed and use another contractor even though they got financing under your company.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_10997222957}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``I had this company for 11 months presented the idea of getting financing to every single one
+of my clients. I did close to \$400,000 worth of income every client that applied did not get enough
+money if they were approved or if they were approved for the amount that they wanted. The APR was
+ridiculous.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_11564649017}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``This is a Expedia experience but with a subscription payment of \$1k or more, costumer will
+have multiple options on the table, if they get approved (most people don't) which someone with no
+sales experience could tell you : `costumer with too many options it's a call me back'.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_9456420552}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``Please do not get this! Nobody can get qualified and they can only qualify for up to 25\% of
+their annual income. You will never be able to use this to finance a full job''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_11040020959}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``About all the loan options available through hearth to my customers have been car title
+loans and junk high-interest trap loans. This was poorly explained by the person who originated my
+subscription.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (MVP):} \textbf{Pre-qualification rails --- never present an offer that
+doesn't actually exist}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Soft-pull bureau hit\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Customer enters basic data (FICO range self-report, state, income band, requested ticket) →
+marketplace soft-pulls instantly via Plaid CRA / Array Bureau\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Real-offer gate\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Marketplace does \textbf{not} show ``you're pre-qualified'' until ≥1 lender on the shelf passes back
+a real offer based on the soft-pull bureau hit\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Graceful no-offer path\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+If the customer doesn't qualify: show ``We can't surface a good offer right now. Build credit with
+these 3 free tools, retry in 90 days'' --- no bait-and-switch to a junk-rate offer\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Lender shelf curation\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Curated prime-borrower lenders only at MVP: Best Egg, Upgrade, SoFi, LightStream --- exclude
+car-title-loan lenders, retroactive-interest BNPL, and any lender with median APR \textgreater{}
+18\% in our anchor data\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{contractor-commission-attribution-gap-hearths-most-damning-weakness}{%
+\paragraph{1.4 --- Contractor commission-attribution gap (Hearth's most-damning
+weakness)}\label{contractor-commission-attribution-gap-hearths-most-damning-weakness}}
+
+\textbf{Headline pain:} A Hearth contractor sends a client to the financing flow. The client gets
+approved. The client then \textbf{uses a cheaper contractor}, or self-completes the financing. The
+original contractor --- who paid for the Hearth subscription --- gets nothing.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} Direct quote in
+\texttt{appstore\_1383073333\_11370373927} + \texttt{appstore\_1383073333\_12915616345} +
+\texttt{appstore\_1383073333\_11564649017} (3 separate 1★ Hearth reviews) · \textbf{Source:} App
+Store Hearth-for-Contractors.
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_11370373927}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``if you send the client the link for financing, you are not protected by Hearth and they can
+get financed and use another contractor even though they got financing under your company''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\texttt{appstore\_1383073333\_11564649017}\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+\emph{``You don't have a security to receive the funds: Funds will be send to the client and because
+is a personal loan they could change their mind at any time or go with another contractor even
+though they qualify through your company.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (MVP):} \textbf{Contractor referral attribution that survives the customer
+leaving the funnel}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Unique referral code\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Each contractor gets a unique code embedded in their branded soft-pull link
+(e.g.~\texttt{roofstack.app/r/austinroofs-tx-7G2})\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Persistent attribution\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Code is stored on the user's account on first soft-pull; survives account deletion + re-creation via
+hashed-fingerprint match on email-or-phone\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Long attribution window\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Contractor gets paid the per-funded-loan referral fee even if customer comes back 30 days later via
+direct app download\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Funnel transparency\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Contractor dashboard shows \texttt{Quotes-out\ →\ Pre-qualified\ →\ Funded} per referral with
+earned-but-unpaid balance\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{curated-lender-shelf-excluding-the-predators-that-show-up-in-every-aggregator}{%
+\paragraph{1.5 --- Curated lender shelf (excluding the predators that show up in every
+aggregator)}\label{curated-lender-shelf-excluding-the-predators-that-show-up-in-every-aggregator}}
+
+\textbf{Headline pain:} Every consumer-facing lending aggregator includes Prosper, EnerBank,
+GreenSky and similar lenders whose own app reviews show predatory APRs and dark patterns. The
+marketplace's brand can be destroyed by the lenders it lists.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} Prosper has 12 of 42 Play Store
+reviews at 1★ + 4 of 29 App Store reviews at 1★; GreenSky has 6 of 7 Play Store reviews at 1★;
+EnerBank has 6 of 12 Play Store reviews at 1★.
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: Prosper Borrower\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_1d5dc0b0-\ldots{}-dae90d877d6c}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``predator institutions no fall for it. daily charges on interest and even if you make
+payments monthly of 1,300\$ they gorce you pay 60\% on interest in each payment, no fail for it no
+take loans or find a better job this one is predatory be aware.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Prosper Personal Loans\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1506637917\_11136915531}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Prosper is a very shady lender! I was looking around for a small loan with best interest
+rates, they told me the loan would be under 10\% which they lied and processed the loan without my
+permission!\ldots{} It dinged my credit -13 points!''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Prosper Personal Loans\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1506637917\_10520647198}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Rates too high don't take loans from them''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Prosper Invest\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1294834607\_12201423609}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``This company literally steals money from everyone. The prospectuses are inaccurate
+copy\&paste specials. You'll see charge offs that will after 120 days for AA rated loans and you
+won't have any tax benefit.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: GreenSky\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_acba678b-\ldots{}-90d4982a5a}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``The finance charge is too excessive. Who can pay 25\%. Nit a good program for the
+consumer.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: GreenSky\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_e41d3675-\ldots{}-841c0b50}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Been with Greensky for several years and this app has never worked. The only way I can log
+in to my account is by clicking the link in my statement emails.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Play Store: EnerBank\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{playstore\_aa222655-\ldots{}-b78ab2729fad}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Useless app, I already have a loan with them, and it wouldn't allow me to go sign in. Only
+allowed me to get pre qualified and get an estimate''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Regions Contractor SalesPro (EnerBank)\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1146476917\_7844102705}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``I can't find the balance on our Enerbank loan anywhere. We replaced an HVAC condenser
+earlier this year and our vendor recommended Enerbank to finance it. I've made regular payments of
+1/12 the balance but I receive no statements from them.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (MVP):} \textbf{Curated prime-borrower-only lender shelf, with public
+exclusion list}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Inclusion criteria\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Median APR ≤ 14\% for 700+ FICO; full TILA disclosure; no retroactive deferred-interest 0\% APR; no
+daily-compounding consumer products\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Public exclusion list\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Marketplace publishes the lenders it considered and rejected with the reason (``excluded for
+retroactive interest'', ``excluded for car-title-loan crossover'', etc.) --- turns the rejection
+into a trust signal\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Continuous re-audit\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Quarterly re-audit of every shelf lender's App Store / Play Store reviews; \textgreater{} 30\% 1★
+rate triggers re-evaluation\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{p1-ship-within-6-months-of-mvp}{%
+\subsubsection{P1 --- Ship within 6 months of MVP}\label{p1-ship-within-6-months-of-mvp}}
+
+\hypertarget{servicer-hand-off-opacity-mr-cooper-nationstar-champion-lakeview}{%
+\paragraph{1.6 --- Servicer hand-off opacity (Mr Cooper / Nationstar / Champion /
+Lakeview)}\label{servicer-hand-off-opacity-mr-cooper-nationstar-champion-lakeview}}
+
+\textbf{Headline pain:} A borrower's mortgage gets sold to a different servicer with no
+notification, with paperwork that lies about terms not changing, with the new servicer refusing to
+honour the original terms.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} 31 reviews against
+\texttt{appstore:Mr.\ Cooper} (5 are 1★), 8 of 28 LoanCare reviews are 1★, plus the Reddit
+\texttt{loan\ was\ bought\ out} post (\texttt{1kdy5q8}).
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1kdy5q8}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+360 ▲ / 163 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``My loan was bought out and now they won't honor terms. We bought a house and the loan terms
+said that we would be able to refinance for free in the first 2 years. However, our loan was
+immediately sold to another lender and now they say that those terms don't apply.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Mr.~Cooper\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1114621467\_12642269853}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``My mortgage got sold to mr cooper. Their paperwork said my credit score would t change, nor
+would my payment. Both changed. Credit score dropped when the old mortgage company said paid off. Mr
+cooper raised my payment \$140 per month because of their requirement to hold two months escrow
+payments''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Mr.~Cooper\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1114621467\_13572555939}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``My mortgage was with rocket mortgage rocket mortgage sold it to Lakeview mortgage company.
+What is sketchy about all of this is I get paper notices from a Mr.~Cooper. And supposedly my loan
+is through Lakeview mortgage. Why do I get stuff from Mr.~Cooper when I hate Mr Cooper.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Mr.~Cooper\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1114621467\_13209457292}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``If you make an extra payment on your mortgage, Mr.~Cooper categorizes your extra payments as
+`Unapplied funds'. You just lose that money. Thousands lost.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: My LoanCare Go\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_6467651368\_12739283016}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``I had switched to LoanCare a few years ago and originally it went thru different names and
+still to this day it is very confusing to understand which mortgage company I am dealing
+with!''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P1):} \textbf{Servicer-Change Watchdog}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Loan attach\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+After a loan funds through us --- or the user imports an existing loan --- store the servicer name +
+paper-statement parser + MERS lookup ID\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Monthly poll\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Cron-based MERS public lookup + monthly statement OCR; trigger on any servicer-name change\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Side-by-side diff\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Push notification with original vs current: payment amount, autopay info, escrow balance, PMI
+removal date, contact details\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Archived note\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Original promissory note + closing docs are stored encrypted; user can download them as evidence in
+any dispute\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+CFPB integration\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+``Discrepancy detected'' → tap to file CFPB complaint, auto-filled from archived docs\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{pmi-removal-stonewalling}{%
+\paragraph{1.7 --- PMI-removal stonewalling}\label{pmi-removal-stonewalling}}
+
+\textbf{Headline pain:} The borrower has crossed the 78\% LTV automatic-cancellation threshold but
+the servicer refuses to remove PMI and is unreachable.
+
+\textbf{Severity:} \textbf{Medium-High} · \textbf{Frequency in corpus:} 12 posts mentioning PMI in
+the lending corpus + the cited Mr Cooper review.
+
+\textbf{Direct citation:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: Mr.~Cooper\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_1114621467\_13678911694}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``DO NOT USE! Mr Cooper will not take away mortgage insurance even though I have paid over
+22\% of my loan. Every time I try to call them I am unable to reach an operator. Use another lender
+if you can.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P1):} \textbf{PMI Removal Tracker}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+LTV calc\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+After loan funds, calculate current LTV using public AVM (Zillow / Redfin Estimate API) + user's
+payment history\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+LTV ≤ 78\% trigger\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+In-app prompt with one-click PMI cancellation request letter (PDF) auto-filled with borrower's loan
+number + property address + LTV evidence\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+30-day timer\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Track servicer response within 30 days; escalate to CFPB complaint template if no response\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{escrow-shortage-payment-surprise}{%
+\paragraph{1.8 --- Escrow shortage payment surprise}\label{escrow-shortage-payment-surprise}}
+
+\textbf{Headline pain:} Annual escrow analysis raises the borrower's monthly payment by
+\$500--\$1,500 with no warning, often because the servicer over-paid taxes early.
+
+\textbf{Severity:} \textbf{High when it happens} · \textbf{Frequency in corpus:} Top engagement
+signal --- \texttt{1rnj2mi} has 1,186 ▲ / 401 ».
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1rnj2mi}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1,186 ▲ / 401 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``My mom's mortgage increased by \$1000 a month due to an escrow shortage. Is this right?
+We're in complete shock. There's no way she can afford this. How on earth does a shortage that huge
+come up? EDIT: Okay, I may have figured it out. Her property tax bill increased nearly five-fold and
+I believe part of the reason why is that her homestead exemption did not renew.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+App Store: My LoanCare Go\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{appstore\_6467651368\_13511459675}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1 ★\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``This company is the worst. Every winter and summer they pay the taxes far too early and
+short my escrow. This results in a negative escrow balance which then raises my monthly payment
+after the analysis.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P1):} \textbf{Escrow Surprise Predictor}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Tax + insurance ingestion\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Pull user's tax bill (county-assessor APIs in pilot states) + homeowners-insurance declarations page
+(user-uploaded PDF + OCR)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Forward projection\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Project the next escrow analysis 6--12 months out; track homestead-exemption status\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Tiered alerts\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+When projected shortage \textgreater{} \$1,000 → in-app warning at 90 / 30 / 7 days before the
+analysis\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Pay-down button\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+One-tap ``pay it down now to avoid a payment increase'' button that ACH-transfers the deficit\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{insurance-dark-patterns-force-roofing-scope-down}{%
+\paragraph{1.9 --- Insurance dark patterns force roofing scope
+down}\label{insurance-dark-patterns-force-roofing-scope-down}}
+
+\textbf{Headline pain (two sides of the same coin):} 1. Insurers refuse to cover modern roof
+materials so contractors are forced to downgrade upgrades to like-for-like 3-tab shingles. 2. Some
+homeowners commit fraud --- file claims for ``storm-damaged'' roofs that weren't damaged --- which
+causes insurance to crack down on all neighbours.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} Two of the top 30 Reddit posts in
+the corpus by score (893 + 846 ▲).
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/homeowners\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1s8mpb1}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+893 ▲ / 498 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Insurance doesn't like long lasting roofs. Why the hell would one buy a roof that could last
+50 years when home insurance apparently won't cover your house if your roof is over 20 years old and
+half the time doesn't like it over 16 years? I only wanted to buy a new roof once, man.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/homeowners\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1o6g2ip}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+846 ▲ / 537 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Are all of my neighbors committing insurance fraud for new roofs? A roofing company has been
+coming around my neighborhood door to door. Their sales pitch is that they can get you a new roof
+via insurance by claiming storm damage. We haven't had any significant storms for as long as I've
+lived here (3 years).''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/realestate\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1nfo8zr}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+856 ▲ / 255 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``American Home Shield Is a Waste of Money. I bought the American Home shield platinum home
+warranty, and after years of paying for it, my air conditioner went out. The cost to replace the
+unit was \$8000\ldots{} American Home shield charge me \$100 to send someone out and then only
+offered to pay \$975''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/homeowners\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1kk7fb6}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1,093 ▲ / 342 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Using homeowners insurance for it's intended purpose. I have a roof leak from hail damage
+and am filing a claim. My father is freaking out, telling me I should pay out of pocket''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/homeowners\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1ndefiv}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+312 ▲ / 53 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Should I tell insurance their `preferred contractor' is banned from local stores? we
+experienced a house fire recently (in Canada). It was almost a total loss. We found an incredible
+company\ldots{} Our insurance is requesting two other companies places bids''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P1):} \textbf{Insurance × Scope reconciliation viewer}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Declarations OCR\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+User uploads insurance declarations page → OCR + parser extracts: coverage limit, like-for-like vs
+replacement-cost endorsement, named exclusions, wind/hail deductible\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Scope diff\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Contractor enters scope (tear-off + 2,400 sq ft of architectural shingle) → app shows insurance pays
+\$X for like-for-like, the upgrade gap is \$Y, here's a personal-loan offer for \$Y\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Future P2 --- neighbour-fraud signal\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Anonymised aggregated user reports: ``is your insurer typically denying upgrade-shingle claims in
+your zip'' flag\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{refinance-lies-break-even-math}{%
+\paragraph{1.10 --- Refinance lies + break-even math}\label{refinance-lies-break-even-math}}
+
+\textbf{Headline pain:} Borrowers are sold a refi by the sticker rate, hiding closing costs and
+points; when they actually run the break-even math, the refi loses money for years.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} 68 posts with refi/refinance
+terminology + the top-engagement r/Mortgages post about ``Has anyone else been lied to about
+refinancing?''
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1qw5veu}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+521 ▲ / 66 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``My mortgage company just sent me a letter saying because I paid on time good customer etc
+they will give me a special offer to refinance at 5.99\% and get a check for 45k of my current
+equity. And my monthly payment will be the same as it is now. It's a 30 year loan. I'm sure I've
+paid 3-5 years on this loan already. The thing is my current Interest rate is 3\%. Like I'm going to
+give up 3\%''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1sks2br}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+295 ▲ / 180 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Mortgage Prisoners seem to be back!!! Had 2 clients this week sitting on rates around 5.85\%
+and 5.92\% who wanted to refinance to fix 3 years at 6.09\%, but both we couldn't help as the last
+time we got them the loans, the rates were under 5\%. Now their loans don't service.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1so6v60}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+750 ▲ / 366 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Caught the listing agent lying to our faces hours before closing. Would you walk
+away?''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P1):} \textbf{Refi Break-Even Watchdog}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Loan attach\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Watcher tied to user's existing loan (rate, term remaining, balance, points paid originally)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+True-APR comparison\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Pull live offers daily; compute break-even with \textbf{all} closing costs + points; only ping when
+break-even ≤ 24 months\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+No-call-back format\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Notification shows: 3 actual lenders, itemized closing-cost estimates, points cost, true-APR,
+break-even months --- no salesperson contact required\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{apr-retroactive-interest-dark-pattern-bnpl-contractor-financing}{%
+\paragraph{1.11 --- 0\% APR retroactive-interest dark pattern (BNPL + contractor
+financing)}\label{apr-retroactive-interest-dark-pattern-bnpl-contractor-financing}}
+
+\textbf{Headline pain:} The user is sold a ``0\% APR for 24 months'' promotion. If the balance is
+not paid off by the end of the promo period, \textbf{all} accrued interest from day one is charged
+retroactively.
+
+\textbf{Severity:} \textbf{High} · \textbf{Frequency in corpus:} 39 posts mentioning 0\% APR /
+deferred / promotional + GNews
+\texttt{Nearly\ Half\ of\ BNPL\ Users\ Have\ Paid\ Late\ in\ the\ Past\ Year}.
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.27\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.19\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.46\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+GNews\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{gnews\_6fbdea6a}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+\emph{``Nearly Half of BNPL Users Have Paid Late in the Past Year, Up for a Second Straight Year -
+LendingTree''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+GNews\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{gnews\_73eca534}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+(duplicate)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+Play Store: Affirm\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{playstore\_b6a080f5-\ldots{}-ead103963afd}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+2 ★ --- \emph{``be careful with this app it's not credit it's loan and I got more interest than the
+price of the item I 😅 owe misleading app.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P0/P1 --- must show in MVP):} \textbf{True-APR comparison that includes
+any retroactive-interest scenario}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+True-APR field\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Every offer card has two APR fields: \texttt{Promo\ APR} (if any) +
+\texttt{True\ APR\ if\ not\ paid\ off\ by\ promo\ end} (the retroactive scenario)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Worst-case modal\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Tap → shows worst-case total interest if balance not cleared by promo end; default sort is by
+True-APR worst-case, not promo\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Lender disclosure\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Lender's offer schema must include \texttt{retroactive\_interest\_on\_promo\_default:\ bool} ---
+required field, no exceptions\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{closing-day-shenanigans-mortgage-origination-only}{%
+\paragraph{1.12 --- Closing-day shenanigans (mortgage origination
+only)}\label{closing-day-shenanigans-mortgage-origination-only}}
+
+\textbf{Headline pain:} Sellers / buyers manipulate closing-cost line items, hide overdue payments,
+demand credit after closing, or invent assistance-program work-arounds that look like fraud.
+
+\textbf{Severity:} \textbf{High when it happens} · \textbf{Frequency in corpus:} 4 of the top 50
+Reddit posts by score: \texttt{1l7r4f2} (1,199 ▲), \texttt{1rh9mbw} (1,185 ▲), \texttt{1nrg7w1}
+(1,031 ▲), \texttt{1so6v60} (750 ▲), \texttt{1o2ipb4} (1,096 ▲).
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1l7r4f2}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1,199 ▲ / 563 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Our buyer asked us to raise our house price by 10k and that we provide 10k of financial
+assistance. Is this weird?''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/realestate\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1rh9mbw}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1,185 ▲ / 490 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Buyers demanding credit after closing. We sold our home in CO to an offer with no inspection
+contingency. The contract also had a clause where buyers would get 8k credit from escrow\ldots{} 2
+{[}months later they're demanding more{]}''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/realestate\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1nrg7w1}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1,031 ▲ / 274 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Be cautious of this tactic: sellers hiding overdue mortgage payments and then backing out on
+closing day.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/realestate\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1o2ipb4}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1,096 ▲ / 317 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Buyers had contractors in my home before closing''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/realestate\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1muehvg}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+314 ▲ / 280 »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Selling agent forgot to tell roofers to add peel and stick. We're 2 days from closing. What
+is a fair resolution?''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/mortgages\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1qvfeb9}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+50 ▲ / --- »\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``(Seller) My Real Estate Agent committed mortgage fraud? Close Friday\ldots{}''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P2, mortgage-vertical):} \textbf{Closing-Day Concierge}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+LE vs CD diff\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+7 days before closing: side-by-side of original Loan Estimate vs Closing Disclosure with auto-flag
+of any line item that changed by \textgreater{} \$100 or \textgreater{} 10\%\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+TRID tolerance overlay\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Auto-explain: ``These changes are within RESPA TRID tolerance / outside tolerance'' with regulatory
+citation\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Dispute generator\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+If outside tolerance: one-click letter generator citing 12 CFR 1026.19(f)(2)\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{title-fraud-heloc-opened-without-borrowers-knowledge}{%
+\paragraph{1.13 --- Title fraud / HELOC opened without borrower's
+knowledge}\label{title-fraud-heloc-opened-without-borrowers-knowledge}}
+
+\textbf{Headline pain:} A bad actor opens a HELOC against a homeowner's property using stolen
+identity. Borrower discovers it months later, often when refinancing.
+
+\textbf{Severity:} \textbf{Critical when it happens} · \textbf{Frequency in corpus:} Single biggest
+engagement signal --- \texttt{1ovg9rh} has 2,061 ▲, the second-highest score in the lending corpus.
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}llll@{}}
+\toprule
+\begin{minipage}[b]{0.20\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Score\strut
+\end{minipage} & \begin{minipage}[b]{0.44\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.20\columnwidth}\raggedright
+Reddit r/homeowners\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\texttt{1ovg9rh}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{2,061 ▲ / 420 »}\strut
+\end{minipage} & \begin{minipage}[t]{0.44\columnwidth}\raggedright
+\emph{``Someone took out a HELOC on my home without my knowledge --- has anyone else dealt with
+this? I recently discovered that a 50k HELOC was opened against my property without my consent or
+knowledge. I bought my home in December 2023 and the HELOC was opened January 2024. I was completely
+unaware of it until I was trying to refinance last week and the title company flagged it. I've
+already contacted PNC to let them know of this error.''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P2):} \textbf{Title-Monitoring + Loan-Origination Alerts}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+County-recorder polling\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+After any loan or property is attached to the user, monitor county-recorder + MERS for any new lien
+recorded against their property\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+48-hour alert\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Push notification within 48h of a new lien appearing\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Pre-built dispute kit\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+County-recorder fraud-affidavit template + CFPB complaint template + ``freeze your credit'' links to
+all 3 bureaus, one tap\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{loan-account-fragmentation}{%
+\paragraph{1.14 --- Loan-account fragmentation}\label{loan-account-fragmentation}}
+
+\textbf{Headline pain:} Every servicer has a bad app; none of them aggregate; the borrower can't see
+all their property-related liabilities in one place.
+
+\textbf{Severity:} \textbf{Medium} · \textbf{Frequency in corpus:} LoanCare reviews (8 of 28 are
+1★), Mr Cooper push-to-refinance complaint, GreenSky app non-functionality (6 of 7 Play Store
+reviews are 1★), EnerBank no-existing-loan-view (multiple 1★ reviews).
+
+\textbf{Direct citations:}
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.27\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.19\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.46\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+App Store: Mr.~Cooper\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{appstore\_1114621467\_12971534280}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+2 ★ --- \emph{``The app will forever try and push you into a heloc or refinance. You have to dig to
+get to your loan balance. So stupid and shows their greed.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+App Store: My LoanCare Go\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{appstore\_6467651368\_13678513303}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+1 ★ --- \emph{``I had rocket mortgage app before and it was so great that you could make partial
+payments throughout the month and from different accounts. This only allows you to make the full
+payment from one single account.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+App Store: Rocket Mortgage\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{appstore\_431156417\_13918342445}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+1 ★ --- \emph{``All I get when I open the app is an advertisement for a new loan. I already have a
+loan and I can't see any information about it!''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+Play Store: GreenSky\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{playstore\_e41d3675-\ldots{}-841c0b50}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+1 ★ --- \emph{``Been with Greensky for several years and this app has never worked. The only way I
+can log in to my account is by clicking the link in my statement emails.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+Play Store: EnerBank\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{playstore\_2f2f7231-\ldots{}-2c08e1dd34}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+1 ★ --- \emph{``this app is hot garbage. there is no way to view an existing loan''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Feature to build (P2):} \textbf{Plaid-Liabilities-style Loan Aggregator}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Plaid Liabilities import\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+``Import any of your existing loans'' via Plaid Liabilities (US) / Equifax CA equivalent\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Unified dashboard\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Real outstanding balance, next payment, autopay status, PMI status, escrow balance,
+principal-vs-interest split\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Daily-active surface\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Becomes the retention loop justifying daily app open beyond the one-shot financing transaction\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{per-competitor-teardown}{%
+\subsection{2. Per-competitor teardown}\label{per-competitor-teardown}}
+
+\hypertarget{review-distribution-the-engineering-ranking}{%
+\subsubsection{Review distribution (the engineering
+ranking)}\label{review-distribution-the-engineering-ranking}}
+
+Sorted by review count in our corpus. The 1★ rate is the strongest hostility signal --- the
+competitor's own users are telling you what they hate.
+
+\begin{longtable}[]{@{}llllllll@{}}
+\toprule
+\begin{minipage}[b]{0.10\columnwidth}\raggedright
+Competitor\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Side\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Total reviews\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Avg ★\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+1★\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+5★\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+1★ rate\strut
+\end{minipage} & \begin{minipage}[b]{0.10\columnwidth}\raggedright
+Use this for\ldots{}\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{Hearth for Contractors}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor financing\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+110\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2.68\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{60}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+45\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{54.5\%}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Direct competitor --- entire MVP attacks Hearth's failure modes\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+JobNimbus\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Roofing CRM\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+46\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.30\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+31\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.3\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Integration target (not competitor)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Prosper Borrower (Play)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Lender\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+42\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3.81\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+12\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+28\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+28.6\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Exclude from shelf\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+ContractorTools\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor utility\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+41\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.71\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+35\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2.4\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Pricing-model lever (\$50 too expensive)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+ContractorForeman\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor CRM\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+32\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.81\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+29\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3.1\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Integration target\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor+\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor CRM\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+32\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.59\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+27\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+6.3\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Freemium-rug-pull lesson\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{Mr.~Cooper}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Servicer\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+31\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.23\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{5}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+24\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+16.1\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Servicer-watchdog fuel\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Prosper Personal Loans (App)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Lender\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+29\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.10\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+21\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+13.8\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Exclude from shelf\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{My LoanCare Go}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Servicer\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+28\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3.43\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{8}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+15\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+28.6\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Servicer-watchdog + escrow-predictor fuel\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Upstart\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Lender\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+27\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3.93\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+7\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+19\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+25.9\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Geographic/processing lever\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+EagleView\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Roof measurement\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+27\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.74\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+24\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3.7\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Integration target\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+LoanCashUSA (Play)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Aggregator\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+24\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.75\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+22\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.2\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Antipattern --- lead-resale model\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+QuoteIQ\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor CRM\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+24\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+5.00\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+24\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Integration target (very high satisfaction)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Pitch Gauge\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Roof tool\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+21\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.43\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+18\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+14.3\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Embed (not compete)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+AccuLynx Field\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor CRM\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+20\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.95\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+19\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Integration target\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{Solofunds} (Play)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+P2P lending\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+19\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2.79\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{5}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+5\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+26.3\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Antipattern --- gamified visibility hostage\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Canadian Homes (Play)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+CA marketplace\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+19\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3.68\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+5\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+12\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+26.3\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+CA white-space --- terrible UX\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Rocket Mortgage\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Servicer\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+14\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.71\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+13\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+7.1\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Lone ``advertise instead of show balance'' complaint\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Ava: Build Credit Fast\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Credit-builder\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+14\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.07\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+10\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+21.4\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Subscription-without-loan antipattern\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{EnerBank} (Play)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor PLOC\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+12\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2.50\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{6}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{50\%}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Direct competitor for contractor-financing wedge --- atrocious app\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Roof Pitch Factor\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Roof tool\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+11\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.18\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+7\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+9.1\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Embed\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Regions Contractor SalesPro (EnerBank)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor PLOC origination\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+11\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3.55\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+7\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+36.4\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Direct competitor --- same origination, different brand\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+ContractorPlus\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor CRM\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+9\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.56\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+7\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Integration target\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{GreenSky} (Play)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Contractor PLOC\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+7\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{1.57}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{6}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{85.7\%}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Most-hostile lender app in corpus --- perfect target to displace\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Loan Calculator -- Loan2Me\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Utility\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+9\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+4.67\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+7\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Embed our own\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+BILS / Instant Loan (Play)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Lead-aggregator\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+9\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+2.33\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+6\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+3\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+66.7\%\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+Antipattern --- phone-blast model\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.10\columnwidth}\raggedright
+Lendbox (India)\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+P2P lending\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+8\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{1.00}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{8}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+0\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+\textbf{100\%}\strut
+\end{minipage} & \begin{minipage}[t]{0.10\columnwidth}\raggedright
+International antipattern --- total trust collapse\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{the-two-competitors-to-watch}{%
+\subsubsection{The two competitors to watch}\label{the-two-competitors-to-watch}}
+
+\hypertarget{hearth-for-contractors-the-direct-incumbent}{%
+\paragraph{\texorpdfstring{\textbf{Hearth for Contractors} --- the direct
+incumbent}{Hearth for Contractors --- the direct incumbent}}\label{hearth-for-contractors-the-direct-incumbent}}
+
+\begin{itemize}
+\tightlist
+\item
+  110 reviews, 60 are 1★, \textbf{54.5\% 1★ rate} --- this is an industry outlier and a strong sign
+  of brand decay.
+\item
+  Recurring 1★ complaint themes (cited in §1.3, §1.4, §1.2 above):
+
+  \begin{enumerate}
+  \def\labelenumi{\arabic{enumi}.}
+  \tightlist
+  \item
+    ``Most clients do not qualify'' --- pre-qual rails are broken (every aggregator-as-lead-shop has
+    this)
+  \item
+    ``Rates through the roof / loan shark / 16\% with perfect credit'' --- rates are non-prime, not
+    prime
+  \item
+    ``All they do is shop personal loan places'' --- they are a glorified comparison front, not a
+    lender
+  \item
+    ``Auto-renewal \$1,000--\$2,500/year, no refunds'' --- pricing antipattern that drives 1★
+    regardless of product quality
+  \item
+    ``You're not protected when client uses another contractor'' --- attribution gap (the strongest
+    single damning quote)
+  \end{enumerate}
+\item
+  \textbf{Roofstack's wedge against Hearth} is precisely the inverse on each axis: pre-qual rails
+  before the customer sees an offer (§1.3), curated prime-only lender shelf (§1.5), per-funded-loan
+  fee instead of seat fee (no auto-renewal nightmare), and persistent referral-attribution (§1.4).
+\end{itemize}
+
+\hypertarget{greensky-the-lender-hearth-raftr-and-tamko-use}{%
+\paragraph{\texorpdfstring{\textbf{GreenSky} --- the lender Hearth, RAFTR, and TAMKO
+use}{GreenSky --- the lender Hearth, RAFTR, and TAMKO use}}\label{greensky-the-lender-hearth-raftr-and-tamko-use}}
+
+\begin{itemize}
+\tightlist
+\item
+  Only 7 Play Store reviews, but \textbf{6 of 7 are 1★} (85.7\% hostility rate). Highest 1★ rate of
+  any lender in the corpus.
+\item
+  Recently (2025--26) signed two distribution deals captured in the corpus:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{gnews\_25987bf1} --- \emph{``RAFTR Roofing + Exteriors Partners with Loan Platform
+    GreenSky''}
+  \item
+    \texttt{gnews\_e22311ea} --- \emph{``TAMKO Adds New GreenSky Offer for High-Volume Contractors
+    in TAMKO Edge Program''}
+  \end{itemize}
+\item
+  Implication: GreenSky is \emph{expanding} roofing distribution at the same time their consumer
+  reviews are collapsing. Roofstack arrives just as the contractor-side of these partnerships will
+  start hearing the same customer complaints (excessive APR, no app to view loan, dark-pattern 0\%
+  promotional periods).
+\end{itemize}
+
+\hypertarget{integration-vs-compete-decision-matrix}{%
+\subsubsection{Integration vs compete decision
+matrix}\label{integration-vs-compete-decision-matrix}}
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.30\columnwidth}\raggedright
+Competitor\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Decision\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Why\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+JobNimbus, AccuLynx, ContractorPlus, ContractorForeman, ContractorTools, Contractor+\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Integrate}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+These are CRMs with high satisfaction (avg ★ 4.3--5.0). The MVP wedge is financing, not contractor
+CRM. Embed our soft-pull-link generator; don't compete.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+EagleView, Pitch Gauge, Roof Pitch Factor\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Integrate} (roof-measurement utilities)\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+EagleView 4.74★, Pitch Gauge 4.43★ --- high satisfaction in a narrow utility. Pull measurement →
+auto-fill scope.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+Hearth, GreenSky, EnerBank/Regions, Wisetack, Synchrony\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Compete}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+All four have predatory APR signal + dark patterns. Direct displacement.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+Prosper, Best Egg, SoFi, LightStream, Marcus, Upgrade\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Lender shelf}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Curated based on §1.5 inclusion criteria. Prosper specifically excluded from shelf (28.6\% 1★ rate,
+``predator institutions'' quote).\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+LendingTree, HomeAdvisor, Angi\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Antipattern}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+The lead-resale model the marketplace is fighting.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+Mr Cooper, Lakeview, Champion, LoanCare, Nationstar\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Watchdog target}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Servicers with high handoff opacity --- the watchdog (§1.6) specifically tracks these.\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{industry-signal-from-gnews-the-next-12-months-will-be-hot}{%
+\subsection{3. Industry signal from GNews (the next 12 months will be
+hot)}\label{industry-signal-from-gnews-the-next-12-months-will-be-hot}}
+
+Real corporate moves captured in our 567 GNews posts on home-improvement lending. These are the
+macro tailwinds + competitive moves the marketplace must position against.
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.30\columnwidth}\raggedright
+Date / signal\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+GNews ID\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+What it means\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Houzz × Figure HELOC partnership}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{gnews\_9df5a02b}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\emph{``Houzz and Figure Partner, Making HELOCs More Accessible for Homeowners''}. Houzz Pro (the
+GC-matching marketplace) now offers HELOCs via Figure. \textbf{This is the closest direct competitor
+in 2026.} They have the GC-matching side; we have the financing-comparison side. Figure's HELOC is a
+single-product shelf, not a comparison engine.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{GreenSky × RAFTR partnership}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{gnews\_25987bf1}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\emph{``RAFTR Roofing + Exteriors Partners with Loan Platform GreenSky''}. New roofing-vertical
+distribution for a lender with 85.7\% 1★ Play Store rate. Customers will start complaining;
+contractors will start looking for an alternative. \textbf{Window of opportunity for Roofstack:
+6--12 months.}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{GreenSky × TAMKO Edge}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{gnews\_e22311ea}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\emph{``TAMKO Adds New GreenSky Offer for High-Volume Contractors in TAMKO Edge Program''}. TAMKO is
+a major shingle manufacturer --- GreenSky is now embedded in their dealer-incentive program. Same
+6--12 month opportunity window.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{PACE-loan controversy}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{gnews\_e5a8d3f4} + \texttt{gnews\_1d3e2cd6}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\emph{``What to Know Before Signing Up for PACE Loans to Finance Energy-Efficient Home
+Improvements''} (NBC 6) + \emph{``Florida PACE home improvement loans raise concerns among tax
+collectors''} (WPTV). PACE = Property Assessed Clean Energy --- turns into a property-tax lien, has
+caused major homeowner complaints. \textbf{MVP should explicitly exclude PACE from the shelf} and
+surface this as a trust signal.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{BNPL late-payment surge}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{gnews\_6fbdea6a} + \texttt{gnews\_73eca534}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\emph{``Nearly Half of BNPL Users Have Paid Late in the Past Year, Up for a Second Straight Year ---
+LendingTree''}. Validates the §1.11 retroactive-interest dark-pattern feature --- this is an
+industry-wide trust collapse moment.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{Senate housing bill --- small-dollar mortgages}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Reddit \texttt{1rsnpar} (429 ▲)\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\emph{``the senate just passed a massive housing bill and there's a part about small dollar
+mortgages that nobody's talking about''}. Federal regulatory tailwind for the kind of small-balance
+lending Roofstack does.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\textbf{QXO refinancing \$2.73B}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{gnews\_424eb238}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Roofing-industry consolidation indicator --- large M\&A in roofing distribution. Adjacent context
+for picking partners.\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{academic-backing-the-moat-narrative}{%
+\subsection{4. Academic backing (the moat narrative)}\label{academic-backing-the-moat-narrative}}
+
+Pulled from 160 OpenAlex + 35 Scholar + 13 PubMed posts in the corpus. These five papers are the
+most directly relevant to the marketplace's wedge.
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Citation\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Why it matters\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\textbf{An overview of the predatory mortgage lending process}
+(\texttt{openalex\_W2153391916})\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Foundational framing of the predatory-lending taxonomy. Cited for the §1.5 lender-shelf curation
+criteria --- match the exclusion criteria to this paper's typology.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\textbf{Consumer-lending discrimination in the FinTech Era}
+(\texttt{scholar\_97a98065c1fec5c36104f586c93ca756caf5caaf})\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Establishes that algorithmic lending platforms can replicate redlining patterns even without
+protected-class fields. Roofstack must publish per-zip funded-rate distribution as an ECOA / Reg-B
+compliance moat.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\textbf{Credit Cycle and Adverse Selection Effects in Consumer Credit Markets --- Evidence from the
+HELOC Market} (\texttt{openalex\_W2111353212})\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Academic underpinning for §1.13 (HELOC origination fraud risk grows in adverse-selection
+regimes).\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\textbf{Payment shock in HELOCs at the end of the draw period}
+(\texttt{openalex\_W2331284714})\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Academic underpinning for the P2 ``loan-aggregator with payment-shock alerts'' feature (extension of
+§1.8 escrow predictor).\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\textbf{The Neighborhood Distribution of Subprime Mortgage Lending} (\texttt{openalex\_W2032940201})
++ \textbf{Exploiting Race and Space: Concentrated Subprime Lending as Housing Discrimination}
+(\texttt{scholar\_92246030555e82c3fa20a6560b289ca7a51337df})\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Geographic-distribution evidence for the per-zip transparency feature. The marketplace publishing
+anonymised funded-loan distributions by zip is a direct academic-backed differentiator vs
+lead-resellers.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\textbf{Do Homeowners Know Their House Values and Mortgage Terms?} (\texttt{openalex\_W1531925229} +
+\texttt{openalex\_W3123307333})\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Direct evidence that the §1.7 PMI-removal tracker + §1.10 refi break-even calculator solve
+documented information asymmetries.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+\textbf{An empirical analysis of home equity loan and line performance}
+(\texttt{openalex\_W3125216685})\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Risk-modelling backing for our underwriting partnership negotiations.\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{per-vertical-scope-schemas-what-fields-lender-offers-anchor-against}{%
+\subsection{5. Per-vertical scope schemas (what fields lender offers anchor
+against)}\label{per-vertical-scope-schemas-what-fields-lender-offers-anchor-against}}
+
+The MVP wedge is \textbf{roofing}, but the chassis must support HVAC and solar in P1. Each vertical
+needs a structured scope schema so a lender's offer can be price-anchored to a real project.
+
+\hypertarget{a.-roofing-scope-schema-mvp}{%
+\subsubsection{5A. Roofing scope schema (MVP)}\label{a.-roofing-scope-schema-mvp}}
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.30\columnwidth}\raggedright
+Field\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Type\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Source / why\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{roof\_area\_sqft}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+int\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Primary cost driver. Auto-fill from EagleView / Pitch Gauge integration if available.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{tear\_off\_layers}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}0, 1, 2, 3+{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Local-code ceiling on overlay layers; layer-tear-off is +\$1.50--\$3/sqft\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{material\_grade}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}3-tab, architectural, premium-architectural, metal-standing-seam, slate, tile{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Material is the dominant cost-tier; insurance-coverage compatibility (§1.9) is a function of this
+field\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{pitch\_class}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}low (≤ 4:12), standard (5:12--8:12), steep (9:12--12:12), extreme
+(\textgreater12:12){]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Pitch \textgreater{} 8:12 is +20--40\% labor; extreme requires harness equipment\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{accessories}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+multi-enum {[}drip-edge, ice-water-shield, peel-stick, ridge-vent, soffit-vent, skylight-flash,
+chimney-flash, satellite-removal{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Hidden costs that explode the bid (the \texttt{1muehvg} peel-and-stick post is exactly this)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{decking\_replacement\_pct}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+int (0--100)\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Often discovered after tear-off; lender offer must include a contingency line\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{permit\_required}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+bool\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+TX requires permits for full tear-off in most jurisdictions; the \texttt{1rfi4ay} post exposes
+contractors who refuse to permit\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{insurance\_claim}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+bool\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+If true, the §1.9 insurance reconciliation viewer kicks in --- financing only the upgrade
+delta\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{homestead\_zip}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+str\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Drives the lender shelf state-licence eligibility + per-zip benchmark anchor\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{b.-hvac-scope-schema-p1-second-vertical}{%
+\subsubsection{5B. HVAC scope schema (P1 --- second
+vertical)}\label{b.-hvac-scope-schema-p1-second-vertical}}
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.30\columnwidth}\raggedright
+Field\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Type\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Why\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{system\_type}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}central-AC, central-furnace, central-AC+furnace, heat-pump, ductless-mini-split,
+geothermal{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Heat-pump is rebate-eligible (federal IRA + state utility); changes the financing math
+materially\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{tonnage}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+float\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Primary capacity / cost driver\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{seer2\_rating}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+float\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+IRA tax-credit threshold (≥ 16 SEER2 for heat pumps)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{ductwork\_status}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}existing-good, existing-replace, none-add, none-mini-split-only{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Ductwork is 30--50\% of total cost when added\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{refrigerant\_type}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}R-410A, R-32, R-454B{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+R-410A phase-out (2025) means new R-32 / R-454B equipment is required for new installs\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{installation\_difficulty}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}standard, attic-only, crawlspace, rooftop, multi-story-no-elevator{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Labor multiplier\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{existing\_loan\_payoff}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+money\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+If user has an existing HVAC loan (the \texttt{1m7oy16} post is exactly this scenario)\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{federal\_credit\_eligibility}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+bool (computed)\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Surface in offer as: ``Federal credit -\$X reduces effective ticket''\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{c.-solar-scope-schema-p1-third-vertical}{%
+\subsubsection{5C. Solar scope schema (P1 --- third
+vertical)}\label{c.-solar-scope-schema-p1-third-vertical}}
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.30\columnwidth}\raggedright
+Field\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Type\strut
+\end{minipage} & \begin{minipage}[b]{0.30\columnwidth}\raggedright
+Why\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{system\_kw}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+float\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Primary cost driver\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{roof\_orientation\_score}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+int (0--100, computed from roof\_pitch + facing)\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Drives production estimate, drives net-financing economics\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{mount\_type}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}roof, ground{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Material-cost difference + permitting differences\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{battery\_storage\_kwh}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+float\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Tesla Powerwall, Enphase, etc.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{interconnection\_type}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum {[}grid-tied, hybrid, off-grid{]}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Permitting timeline driver\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{existing\_roof\_age\_years}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+int\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Most consumer-protection guides say ``replace roof if \textgreater{} 10 years old before solar'' ---
+adds to ticket\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{loan\_vs\_lease\_vs\_ppa}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Material consumer-protection issue per \texttt{gnews\_1d3e2cd6} PACE-loan controversy\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.30\columnwidth}\raggedright
+\texttt{srec\_state}\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+enum (US-state)\strut
+\end{minipage} & \begin{minipage}[t]{0.30\columnwidth}\raggedright
+Active SREC market changes the financing math\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{cross-border-canada-surface-p1-wedge}{%
+\subsection{6. Cross-border Canada surface (P1 wedge)}\label{cross-border-canada-surface-p1-wedge}}
+
+The corpus has \textbf{only 48 posts} in the Canada-specific topic --- direct evidence the Canadian
+home-improvement-financing space is \textbf{white space}. Three signals:
+
+\begin{longtable}[]{@{}lll@{}}
+\toprule
+\begin{minipage}[b]{0.27\columnwidth}\raggedright
+Source\strut
+\end{minipage} & \begin{minipage}[b]{0.19\columnwidth}\raggedright
+ID\strut
+\end{minipage} & \begin{minipage}[b]{0.46\columnwidth}\raggedright
+Quote\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+Reddit r/homeowners (Canada)\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{1ndefiv}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+\emph{``we experienced a house fire recently (in Canada). It was almost a total loss. We found an
+incredible company that's been doing an amazing job so far at restoration\ldots{} Our insurance is
+requesting two other companies places bids on who is awarded the rebuild.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+Reddit r/homeimprovement\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{1sqbaiv}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+\emph{``Roofing scam. Beware of Toronto City Roofing and Construction. They lowballed a gutter
+cleaning job for me then wanted \$2500 to fix and replace them.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+Reddit r/realestateinvesting\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{1keuxet}\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+\emph{``There is a housing crisis in Canada\ldots{} the government is offering low interest loans
+(4\%) with 50 year mortgage to developers\ldots{} 5\% equity\ldots{} 95\%
+government-financed.''}\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.27\columnwidth}\raggedright
+Play Store: Canadian Homes\strut
+\end{minipage} & \begin{minipage}[t]{0.19\columnwidth}\raggedright
+\texttt{playstore\_3e3ed047-\ldots{}-fefae09e07c2} (5 distinct 1★ reviews)\strut
+\end{minipage} & \begin{minipage}[t]{0.46\columnwidth}\raggedright
+\emph{``WARNING .. THIS DEVEOPER. WILL ACTUALLY CALL YOUR CELL PHONE. horrible breach of
+trust\ldots{} BEWARE of this scamming app. When you install this app you have to provide your email
+I'd, phone number\ldots{}''}\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\textbf{Implications for the marketplace:}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  The Canadian competitor app surface is bad enough that the top results are a 1★-rating
+  scam-warning pile. Same wedge applies (no-spam guarantee, soft-pull-only).
+\item
+  Insurance-driven contractor-bid process is more codified in Canada (claim → 3-bid requirement) ---
+  financing must integrate with that workflow.
+\item
+  The Canadian regulatory surface adds: \textbf{Bank Act} (federal lenders), \textbf{provincial
+  cost-of-credit disclosure} (Ontario CPSAA, Quebec CPA, BC BPCPA), \textbf{FCAC code of conduct},
+  \textbf{PIPEDA} + \textbf{Quebec Law 25} (privacy). Build the disclosure-generator engine once →
+  moat.
+\end{enumerate}
+
+\textbf{Sequencing:} Don't build Canada in MVP. Add it at month 12+ once the US wedge converts. Pick
+\textbf{Ontario} first (largest population, English-default, federal Greener Homes loan program
+tailwind for HVAC retrofit financing).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{the-build-order-matrix-every-feature-mapped}{%
+\subsection{7. The build-order matrix --- every feature
+mapped}\label{the-build-order-matrix-every-feature-mapped}}
+
+\begin{longtable}[]{@{}llllll@{}}
+\toprule
+\begin{minipage}[b]{0.14\columnwidth}\raggedright
+\#\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+Feature\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+Tier\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+Solves painpoint\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+Required integrations\strut
+\end{minipage} & \begin{minipage}[b]{0.14\columnwidth}\raggedright
+Estimated time\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+1\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Soft-pull marketplace + No-Spam Guarantee\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{MVP}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.1\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Plaid CRA / Array Bureau + 3 prime lender APIs\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+60--90 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+2\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Live Rate Sanity Badge\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{MVP}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.2\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+FRED API + Bankrate / LendingTree median scrape\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
++30 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+3\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Pre-qual rails (no junk-rate fallback)\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{MVP}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.3\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Already from \#1\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+included\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+4\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Contractor referral attribution\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{MVP}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.4\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Hashed-fingerprint store + per-contractor dashboard\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
++30 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+5\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Curated lender shelf + public exclusion list\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{MVP}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.5\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+BizDev contracts + quarterly review process\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+included\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+6\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+True-APR comparison incl.~retroactive-interest\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{MVP}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.11\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Lender-offer schema must include \texttt{retroactive\_interest\_on\_promo\_default}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+included\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+7\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Servicer-Change Watchdog\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P1}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.6\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+MERS public-lookup polling + monthly statement OCR + CFPB complaint draft generator\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+60--90 days post-MVP\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+8\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+PMI Removal Tracker\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P1}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.7\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Zillow Estimate / Redfin AVM + LTV calculator\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+30 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+9\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Escrow Surprise Predictor\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P1}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.8\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+County-assessor APIs (TX pilot) + insurance declarations OCR\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+60 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+10\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Insurance × Scope reconciliation viewer\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P1}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.9\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Insurance declarations OCR + per-vertical scope schema\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+60 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+11\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Refi Break-Even Watchdog\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P1}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.10\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Loan-attach + daily anchor data\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+30 days post-\#7\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+12\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+HVAC vertical (same chassis, new schema + lender shelf)\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P1}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§5B\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+EnerBank or specialist heat-pump lender (GoodLeap) partnership\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+90 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+13\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Solar vertical (with PACE exclusion)\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P1/P2}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§5C + §3 PACE controversy\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Specialist solar lender partner; SREC state coverage matrix\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+90 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+14\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Closing-Day Concierge\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P2}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.12\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+LE/CD parser + RESPA TRID rule encoder\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+mortgage-vertical only; year 2\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+15\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Title-Monitoring + Origination Alerts\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P2}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.13\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+County-recorder API in pilot states + MERS lien polling\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+90 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+16\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Plaid-Liabilities Loan Aggregator\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P2}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.14\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Plaid Liabilities + Equifax CA equivalent\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+90 days\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+17\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Canada wedge (Ontario pilot)\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P2}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§6\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Bilingual disclosure engine + Equitable / EQ Bank partner-bank shell\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+year 2\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.14\columnwidth}\raggedright
+18\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Anonymised funded-loan transparency surface\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+\textbf{P2 moat}\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+§1.5 + §4 academic\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+Daily aggregation job; dashboards for per-zip / per-FICO funded-rate distribution\strut
+\end{minipage} & \begin{minipage}[t]{0.14\columnwidth}\raggedright
+year 2\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{friend-referral-trust-transfer-at-scale-the-social-proof-feature}{%
+\subsection{8. Friend-referral trust transfer at scale (the social-proof
+feature)}\label{friend-referral-trust-transfer-at-scale-the-social-proof-feature}}
+
+\textbf{Headline insight:} The most-quoted DIY workaround in the corpus is \emph{``My friend
+recommended this personal loan platform to me, which is really reliable''} --- trust transfers
+through people, not aggregator stars. The contractor-1★-Hearth complaint reinforces it: customers
+don't trust pre-qual offers from a brand they've never heard of, but they trust offers their
+neighbours have actually funded.
+
+\textbf{Direct citations:} - The friend-referral workaround quote (cited in
+\texttt{2026-04-28\_us-canada-home-lending-marketplace\ copy.md} §6D) - App Store: Hearth
+\texttt{appstore\_1383073333\_13814467740} (5★, the only positive cluster) --- \emph{``I had a
+friend use Hearth and was ecstatic about how easy it was and the fact that they had a dedicated
+agent. So much so, that I referred Hearth to a friend without even being a customer.''}
+
+\textbf{Feature to build (P1):} \textbf{Per-zip social-proof feed}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Acceptance criterion\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Detail\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Aggregation\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+After 100 funded loans in a zip, expose: ``X people in your zip funded a similar roof in the last 90
+days; their median APR was Y\%; lender most-chosen was Z''\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Privacy\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+All anonymised; never expose specific borrower data\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Lender ranking\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Same data drives the lender scorecard from §1.5 --- turns user-funded-loan data into a transparency
+moat\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{what-we-are-deliberately-not-building-and-why}{%
+\subsection{9. What we are deliberately not building (and
+why)}\label{what-we-are-deliberately-not-building-and-why}}
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+\begin{minipage}[b]{0.47\columnwidth}\raggedright
+Anti-feature\strut
+\end{minipage} & \begin{minipage}[b]{0.47\columnwidth}\raggedright
+Why we skip\strut
+\end{minipage}\tabularnewline
+\midrule
+\endhead
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Contractor licence + bond + insurance OCR\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+JobNimbus, AccuLynx, ContractorPlus, ContractorForeman already collect these. Integrate, don't
+compete on document-collection.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Generic ``find a contractor'' directory\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Houzz, Sweeten, Angi, HomeAdvisor saturate this. Their lead-spam economics are the antipattern
+(§1.1). Houzz × Figure (§3) tries to bolt financing onto contractor-matching; we bolt
+contractor-matching onto financing.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Full mortgage origination\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Different licence, different lender shelf, different timeline. Wait until PLOC works.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Crypto / DeFi lending\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Zero corpus signal in 1,890 posts.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Generic personal-finance content\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+NerdWallet and Bankrate own this; not the wedge.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+BNPL with promotional 0\% APR retroactive-interest\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Anti-feature --- explicitly excluded from shelf per §1.11.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+PACE loans\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Anti-feature --- explicitly excluded per §3 + GNews \texttt{gnews\_e5a8d3f4} +
+\texttt{gnews\_1d3e2cd6}. Surface this exclusion as a trust signal.\strut
+\end{minipage}\tabularnewline
+\begin{minipage}[t]{0.47\columnwidth}\raggedright
+Lender call-back forms\strut
+\end{minipage} & \begin{minipage}[t]{0.47\columnwidth}\raggedright
+Anti-feature --- the §1.1 spam-aftermath quote literally describes this antipattern.\strut
+\end{minipage}\tabularnewline
+\bottomrule
+\end{longtable}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{re-running-the-research-as-the-product-evolves}{%
+\subsection{10. Re-running the research as the product
+evolves}\label{re-running-the-research-as-the-product-evolves}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Monthly: re{-}collect to catch new entrants + new pain patterns}
+\ExtensionTok{uv}\NormalTok{ run gapmap research collect }\KeywordTok{\textbackslash{}}
+  \ExtensionTok{{-}t} \StringTok{"US Canada roofing contractor homeowner lending marketplace"} \KeywordTok{\textbackslash{}}
+  \ExtensionTok{{-}{-}aggressive}\NormalTok{ {-}{-}skip{-}extraction}
+
+\CommentTok{\# After collect: refresh painpoint extraction}
+\ExtensionTok{uv}\NormalTok{ run gapmap research gaps }\KeywordTok{\textbackslash{}}
+  \ExtensionTok{{-}t} \StringTok{"US Canada roofing contractor homeowner lending marketplace"} \KeywordTok{\textbackslash{}}
+  \ExtensionTok{{-}n}\NormalTok{ 300 {-}{-}json }\OperatorTok{\textgreater{}}\NormalTok{ docs/research/painpoints{-}}\VariableTok{$(}\FunctionTok{date}\NormalTok{ +\%Y\%m\%d}\VariableTok{)}\NormalTok{.json}
+
+\CommentTok{\# Re{-}pull all 1★ Hearth reviews (the direct competitor)}
+\ExtensionTok{uv}\NormalTok{ run gapmap query }\StringTok{"SELECT id, score, title, substr(selftext,1,500) FROM posts WHERE sub=\textquotesingle{}appstore:Hearth for Contractors\textquotesingle{} AND score=1 ORDER BY id DESC LIMIT 100"}
+
+\CommentTok{\# What changed in the last 14 days}
+\ExtensionTok{uv}\NormalTok{ run gapmap research diff }\KeywordTok{\textbackslash{}}
+  \ExtensionTok{{-}t} \StringTok{"US Canada roofing contractor homeowner lending marketplace"}\NormalTok{ {-}{-}days 14}
+
+\CommentTok{\# Pull all GreenSky/EnerBank/Hearth GNews mentions in the last 30 days (industry move detector)}
+\ExtensionTok{uv}\NormalTok{ run gapmap query }\StringTok{"SELECT id, title FROM posts WHERE source\_type=\textquotesingle{}gnews\textquotesingle{} AND (lower(title) LIKE \textquotesingle{}\%greensky\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%hearth\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%enerbank\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%wisetack\%\textquotesingle{}) AND created\_utc \textgreater{} strftime(\textquotesingle{}\%s\textquotesingle{},\textquotesingle{}now\textquotesingle{},\textquotesingle{}{-}30 days\textquotesingle{}) ORDER BY created\_utc DESC"}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\hypertarget{the-60-second-pitch-for-a-cto}{%
+\subsection{11. The 60-second pitch (for a CTO)}\label{the-60-second-pitch-for-a-cto}}
+
+\begin{quote}
+\textbf{Roofstack} is a soft-pull-only home-improvement-financing marketplace. We solve four
+user-quoted pains simultaneously: (1) the ``57 calls in one morning'' lead-spam aftermath (Reddit
+\texttt{1odky4x}), (2) the ``11\% on 820k with 804 FICO'' opaque-broker pricing (Reddit
+\texttt{1p5pyzt}), (3) the ``most clients do not qualify'' Hearth conversion failure (60 of 110 1★
+reviews), and (4) the ``loan was bought out, terms changed'' servicer-handoff opacity (Reddit
+\texttt{1kdy5q8} + Mr Cooper 1★ reviews). Wedge: \textbf{roofing} (679 posts), \textbf{Texas} (high
+ticket, low licence friction), \textbf{3 prime lenders} (curated, no Prosper/GreenSky/EnerBank
+junk-rate). Differentiator: per-funded-loan fee not lead-resale. Moat: TILA / RESPA / Reg-B / FCAC
+disclosure engine that generates correct disclosures per offer × per state/province. Window of
+opportunity: GreenSky just signed RAFTR (\texttt{gnews\_25987bf1}) and TAMKO
+(\texttt{gnews\_e22311ea}) --- the contractor side of those distribution deals will start hearing
+customer complaints in 6--12 months.
+\end{quote}
+
+\end{document}

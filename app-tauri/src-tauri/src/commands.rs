@@ -1091,6 +1091,93 @@ pub async fn export_brief(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Research-paper pipeline stage 1 — structured outline.
+#[tauri::command]
+pub async fn paper_outline_generate(
+    app: AppHandle,
+    topic: String,
+    provider: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec![
+        "research", "paper-outline",
+        "--topic", &topic, "--json",
+    ];
+    let p = provider.unwrap_or_default();
+    if !p.is_empty() {
+        args.push("--provider");
+        args.push(p.as_str());
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Research-paper pipeline stage 2 — markdown draft generation.
+#[tauri::command]
+pub async fn paper_draft_generate(
+    app: AppHandle,
+    topic: String,
+    provider: Option<String>,
+    style: Option<String>,
+) -> Result<Value, String> {
+    let style_v = style.unwrap_or_else(|| "IMRaD".to_string());
+    let mut args: Vec<&str> = vec![
+        "research", "paper-draft",
+        "--topic", &topic,
+        "--style", &style_v,
+        "--json",
+    ];
+    let p = provider.unwrap_or_default();
+    if !p.is_empty() {
+        args.push("--provider");
+        args.push(p.as_str());
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Research-paper pipeline stage 3 — experiment plan generation.
+#[tauri::command]
+pub async fn experiment_plan_generate(
+    app: AppHandle,
+    topic: String,
+    provider: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec![
+        "research", "paper-experiments",
+        "--topic", &topic, "--json",
+    ];
+    let p = provider.unwrap_or_default();
+    if !p.is_empty() {
+        args.push("--provider");
+        args.push(p.as_str());
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Research-paper pipeline stage 4 — export draft with citations.
+#[tauri::command]
+pub async fn paper_export_with_citations(
+    app: AppHandle,
+    topic: String,
+    provider: Option<String>,
+    format: Option<String>,
+    style: Option<String>,
+) -> Result<Value, String> {
+    let format_v = format.unwrap_or_else(|| "markdown".to_string());
+    let style_v = style.unwrap_or_else(|| "IMRaD".to_string());
+    let mut args: Vec<&str> = vec![
+        "research", "paper-export",
+        "--topic", &topic,
+        "--format", &format_v,
+        "--style", &style_v,
+        "--json",
+    ];
+    let p = provider.unwrap_or_default();
+    if !p.is_empty() {
+        args.push("--provider");
+        args.push(p.as_str());
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 #[tauri::command]
 pub async fn competitor_matrix(
     app: AppHandle,

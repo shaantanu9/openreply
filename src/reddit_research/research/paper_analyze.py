@@ -144,8 +144,23 @@ def analyze_paper(topic: str, post_id: str, force: bool = False) -> dict[str, An
             "post_id": post_id,
         }
 
+    # Prefer full-text PDF content over the abstract when available. The
+    # abstract is at most 2000 chars; the full PDF gives methodology,
+    # results numbers, dataset size, limitations — exactly the parts that
+    # make a paper useful as evidence. `get_full_text_or_abstract` falls
+    # back to the abstract when no OA PDF is reachable, so this never
+    # downgrades behaviour for closed papers.
     try:
-        raw = _llm_paper_call(topic, paper["title"] or "", paper["selftext"] or "")
+        from .paper_fulltext import get_full_text_or_abstract
+        content_payload = get_full_text_or_abstract(post_id, max_chars=30_000)
+        body = content_payload.get("text") or paper.get("selftext") or ""
+        content_tier = content_payload.get("tier", "abstract")
+    except Exception:
+        body = paper.get("selftext") or ""
+        content_tier = "abstract"
+
+    try:
+        raw = _llm_paper_call(topic, paper["title"] or "", body)
     except Exception as e:
         return {
             "ok": False, "error": f"llm call failed: {e}",
@@ -160,10 +175,14 @@ def analyze_paper(topic: str, post_id: str, force: bool = False) -> dict[str, An
         }
 
     model = os.getenv("LLM_MODEL") or ""
+    written = _write_analysis(post_id, topic, parsed, provider_name, model)
     return {
         "ok": True,
         "cached": False,
-        **_write_analysis(post_id, topic, parsed, provider_name, model),
+        # Surface which content tier the LLM saw, so the UI can show
+        # "analysis based on full PDF" vs "abstract only — no OA PDF".
+        "content_tier": content_tier,
+        **written,
     }
 
 

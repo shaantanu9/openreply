@@ -120,6 +120,12 @@ def _bump_embed_ts() -> None:
 # case we later want to add a second collection for, say, LLM-extracted
 # findings or external document ingests.
 _POSTS_COLLECTION = "posts"
+# Second collection for academic-paper chunks. One vector per chunk
+# (~40 chunks per paper at 1500-char target), with metadata carrying
+# (post_id, section, ord) so paper-level rollup works at search time.
+# Kept separate from `posts` because the lifecycle, retrieval pattern,
+# and scoring are different (one-vector-per-doc vs many-vectors-per-doc).
+_PAPER_CHUNKS_COLLECTION = "paper_chunks"
 
 # How much of each post to embed. Empirically, concatenating title +
 # first-2kB-of-body is a good tradeoff between recall and ingest throughput:
@@ -652,6 +658,306 @@ def reindex_all(*, batch_size: int = 200, progress=None) -> dict:
         skipped += r.get("skipped", 0)
     _log(f"[palace] done. upserted={total} skipped={skipped}")
     return {"ok": True, "upserted": total, "skipped": skipped}
+
+
+# ─── paper_chunks collection (separate from `posts`) ─────────────────────
+#
+# Lifecycle and retrieval semantics are different from posts:
+#   * one paper → many vectors (chunks); one post → one vector
+#   * search returns chunk-level hits AND paper-level rollups
+#   * metadata carries (post_id, section, ord) so the UI can show
+#     "Limitations section of paper X, chunk 3" for every result
+# A separate Chroma collection keeps these contracts clean — no mixing.
+
+_PAPER_CHUNKS_CACHE: dict[str, Any] = {}
+
+
+def get_paper_chunks_collection():
+    """Return the ChromaDB collection used for paper chunks. Lazy-init.
+    None when chromadb isn't available (caller falls back gracefully)."""
+    if not is_available():
+        return None
+    path = _palace_path()
+    cached = _PAPER_CHUNKS_CACHE.get(path)
+    if cached is not None:
+        return cached
+    got = get_palace()
+    if got is None:
+        return None
+    client, _ = got
+    kwargs: dict[str, Any] = {"metadata": {"hnsw:space": "cosine"}}
+    try:
+        from .embedder import get_embedding_function
+        ef = get_embedding_function()
+        if ef is not None:
+            kwargs["embedding_function"] = ef
+    except Exception:
+        pass
+    coll = client.get_or_create_collection(_PAPER_CHUNKS_COLLECTION, **kwargs)
+    _PAPER_CHUNKS_CACHE[path] = coll
+    return coll
+
+
+def upsert_paper_chunks(chunks: Iterable[dict], *, post_id: str | None = None,
+                       topic: str | None = None) -> dict:
+    """Embed + upsert paper chunks. Each chunk dict needs:
+        ``{id, post_id, section, ord, text, char_count, hash}``.
+
+    Idempotent (id is stable; same hash means re-embed is a no-op upsert).
+    Returns ``{ok, upserted, skipped, backend}``.
+    """
+    if not is_available():
+        return {"ok": False, "skipped": True, "reason": "chromadb not installed",
+                "upserted": 0}
+    coll = get_paper_chunks_collection()
+    if coll is None:
+        return {"ok": False, "skipped": True, "reason": "palace unavailable",
+                "upserted": 0}
+
+    ids: list[str] = []
+    docs: list[str] = []
+    metas: list[dict] = []
+    skipped = 0
+    for c in chunks:
+        cid = c.get("id")
+        text = (c.get("text") or "").strip()
+        if not cid or not text:
+            skipped += 1
+            continue
+        ids.append(str(cid))
+        docs.append(text)
+        meta = {
+            "post_id": str(c.get("post_id") or ""),
+            "section": str(c.get("section") or ""),
+            "ord": int(c.get("ord") or 0),
+            "char_count": int(c.get("char_count") or len(text)),
+            "hash": str(c.get("hash") or ""),
+        }
+        if topic:
+            meta["topic"] = topic
+        metas.append(meta)
+
+    if not ids:
+        return {"ok": True, "upserted": 0, "skipped": skipped, "backend": ""}
+
+    try:
+        coll.upsert(ids=ids, documents=docs, metadatas=metas)
+    except Exception as e:
+        logger.warning("palace paper_chunks upsert failed: %s", e)
+        return {"ok": False, "error": str(e), "upserted": 0,
+                "skipped": skipped + len(ids)}
+    _bump_embed_ts()
+
+    backend = ""
+    try:
+        from .embedder import active_backend
+        backend = active_backend()
+    except Exception:
+        pass
+    return {"ok": True, "upserted": len(ids), "skipped": skipped,
+            "backend": backend}
+
+
+def search_paper_chunks(
+    query: str,
+    *,
+    k: int = 12,
+    topic: str | None = None,
+    post_id: str | None = None,
+    section_filter: list[str] | None = None,
+    rerank: bool = True,
+) -> dict:
+    """Hybrid semantic + BM25 search over paper chunks.
+
+    ``section_filter`` constrains hits to listed canonical section names
+    (e.g. ``['methods', 'results', 'limitations']``). When set with more
+    than one section, Chroma's `where` is built with ``$or``.
+
+    Returns ``{ok, results: [{chunk_id, post_id, section, ord, text,
+    score, vector_score, bm25_score}], count}``.
+    """
+    if not is_available():
+        return {"ok": False, "skipped": True, "reason": "chromadb not installed",
+                "results": []}
+    if not (query or "").strip():
+        return {"ok": True, "results": [], "count": 0}
+    coll = get_paper_chunks_collection()
+    if coll is None:
+        return {"ok": False, "skipped": True, "reason": "palace unavailable",
+                "results": []}
+
+    where: dict[str, Any] = {}
+    clauses: list[dict] = []
+    if topic:
+        clauses.append({"topic": topic})
+    if post_id:
+        clauses.append({"post_id": post_id})
+    if section_filter:
+        if len(section_filter) == 1:
+            clauses.append({"section": section_filter[0]})
+        else:
+            clauses.append({"$or": [{"section": s} for s in section_filter]})
+    if len(clauses) == 1:
+        where = clauses[0]
+    elif len(clauses) > 1:
+        where = {"$and": clauses}
+
+    n_results = max(k * 3, k + 5)
+    try:
+        # Empty-collection guard, mirrors search_posts.
+        if where:
+            try:
+                matched = coll.count(where=where)
+            except Exception:
+                matched = 1
+            if matched == 0:
+                return {"ok": True, "results": [], "count": 0,
+                        "skipped_reason": "no_indexed_chunks_for_filter"}
+        raw = coll.query(
+            query_texts=[query],
+            n_results=n_results,
+            where=where or None,
+        )
+    except Exception as e:
+        logger.warning("palace paper_chunks query failed: %s", e)
+        return {"ok": False, "error": str(e), "results": []}
+    _bump_embed_ts()
+
+    ids = (raw.get("ids") or [[]])[0]
+    docs = (raw.get("documents") or [[]])[0]
+    dists = (raw.get("distances") or [[]])[0]
+    metas = (raw.get("metadatas") or [[]])[0]
+    if not ids:
+        return {"ok": True, "results": [], "count": 0}
+
+    vector_sims = [max(0.0, 1.0 - (d or 0.0) / 2.0) for d in dists]
+    if rerank:
+        bm25 = _bm25_scores(query, docs)
+        bm25_n = _normalize(bm25)
+        vec_n = _normalize(vector_sims)
+        final = [0.6 * v + 0.4 * b for v, b in zip(vec_n, bm25_n)]
+        order = sorted(range(len(ids)), key=lambda i: final[i], reverse=True)
+    else:
+        final = vector_sims
+        order = sorted(range(len(ids)), key=lambda i: vector_sims[i], reverse=True)
+
+    results = []
+    for i in order[:k]:
+        m = metas[i] or {}
+        results.append({
+            "chunk_id": ids[i],
+            "post_id": m.get("post_id", ""),
+            "section": m.get("section", ""),
+            "ord": int(m.get("ord", 0)),
+            "score": round(final[i], 4),
+            "vector_score": round(vector_sims[i], 4),
+            "bm25_score": round(_bm25_scores(query, [docs[i]])[0] if rerank else 0.0, 4),
+            "text": docs[i][:1000],
+            "char_count": int(m.get("char_count", len(docs[i]))),
+        })
+    return {"ok": True, "results": results, "count": len(results)}
+
+
+def search_papers(
+    query: str,
+    *,
+    k: int = 8,
+    topic: str | None = None,
+    section_filter: list[str] | None = None,
+    max_chunks_per_paper: int = 3,
+) -> dict:
+    """Chunk-level retrieval rolled up to paper level.
+
+    Pulls the top ~k×4 chunks, groups by ``post_id``, keeps the strongest
+    ``max_chunks_per_paper`` chunks per paper, and returns one row per
+    paper. Useful for "which papers discuss X" — without this rollup,
+    one verbose paper can monopolise the top-k.
+    """
+    n_chunks_pull = max(k * max_chunks_per_paper * 2, k * 4)
+    chunks = search_paper_chunks(
+        query, k=n_chunks_pull, topic=topic,
+        section_filter=section_filter,
+    )
+    if not chunks.get("ok") or not chunks.get("results"):
+        return {"ok": chunks.get("ok", True), "results": [], "count": 0,
+                "reason": chunks.get("reason") or chunks.get("skipped_reason")}
+
+    by_paper: dict[str, dict] = {}
+    for ch in chunks["results"]:
+        pid = ch["post_id"]
+        if not pid:
+            continue
+        bucket = by_paper.setdefault(pid, {
+            "post_id": pid, "best_score": 0.0,
+            "chunks": [], "sections_hit": set(),
+        })
+        if len(bucket["chunks"]) < max_chunks_per_paper:
+            bucket["chunks"].append(ch)
+        bucket["best_score"] = max(bucket["best_score"], ch["score"])
+        if ch.get("section"):
+            bucket["sections_hit"].add(ch["section"])
+
+    rolled = list(by_paper.values())
+    rolled.sort(key=lambda r: r["best_score"], reverse=True)
+    rolled = rolled[:k]
+
+    # Enrich with title from `posts` so callers don't need a second query.
+    if rolled:
+        try:
+            from ..core.db import get_db
+            db = get_db()
+            ids_in = ",".join(["?"] * len(rolled))
+            title_rows = list(db.query(
+                f"SELECT id, title, source_type, url FROM posts WHERE id IN ({ids_in})",
+                [r["post_id"] for r in rolled],
+            ))
+            tmap = {r["id"]: r for r in title_rows}
+            for r in rolled:
+                t = tmap.get(r["post_id"]) or {}
+                r["title"] = t.get("title", "")
+                r["source_type"] = t.get("source_type", "")
+                r["url"] = t.get("url", "")
+                r["sections_hit"] = sorted(list(r["sections_hit"]))
+        except Exception:
+            for r in rolled:
+                r["sections_hit"] = sorted(list(r["sections_hit"]))
+
+    return {"ok": True, "results": rolled, "count": len(rolled)}
+
+
+def paper_chunks_stats() -> dict:
+    """Return ``{ok, count, by_section, papers_indexed}`` for the
+    paper_chunks collection. Best-effort SQLite-direct read first to
+    avoid spinning up the full client; falls back to the chroma API."""
+    if not is_available():
+        return {"ok": False, "skipped": True, "reason": "chromadb not installed"}
+    try:
+        coll = get_paper_chunks_collection()
+        if coll is None:
+            return {"ok": False, "skipped": True, "reason": "palace unavailable"}
+        count = coll.count()
+        # Per-section + per-paper aggregates via metadata pull. Cap at
+        # 50k peek to bound memory.
+        by_section: dict[str, int] = {}
+        papers: set[str] = set()
+        try:
+            peek = coll.get(include=["metadatas"], limit=50_000)
+            for m in (peek.get("metadatas") or []):
+                if not m:
+                    continue
+                sec = m.get("section") or ""
+                by_section[sec] = by_section.get(sec, 0) + 1
+                pid = m.get("post_id") or ""
+                if pid:
+                    papers.add(pid)
+        except Exception:
+            pass
+        return {
+            "ok": True, "count": int(count or 0),
+            "by_section": by_section, "papers_indexed": len(papers),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def stats() -> dict:

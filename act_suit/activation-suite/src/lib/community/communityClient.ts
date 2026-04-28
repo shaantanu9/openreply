@@ -3,6 +3,10 @@
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import type {
   ByokProvider,
+  DailyBrief,
+  EnterpriseAction,
+  EnterpriseActionPriority,
+  EnterpriseActionStatus,
   Insight,
   Post,
   Sweep,
@@ -120,6 +124,66 @@ export async function unpublishWorkspace(workspaceId: string) {
   return request<{ ok: true; removed: boolean }>("/api/v1/unpublish", {
     method: "POST",
     body: JSON.stringify({ workspace_id: workspaceId }),
+  });
+}
+
+// ── Daily brief + enterprise actions ────────────────────────────────────────
+
+export async function getDailyBrief(workspaceId: string): Promise<DailyBrief> {
+  const body = await request<{ ok: true; brief: DailyBrief }>(
+    `/api/v1/workspaces/${workspaceId}/daily-brief`,
+  );
+  return body.brief;
+}
+
+export async function listEnterpriseActions(workspaceId: string): Promise<EnterpriseAction[]> {
+  const body = await request<{ ok: true; actions: EnterpriseAction[] }>(
+    `/api/v1/workspaces/${workspaceId}/actions`,
+  );
+  return body.actions;
+}
+
+export async function createEnterpriseAction(
+  workspaceId: string,
+  input: {
+    title: string;
+    notes?: string;
+    priority?: EnterpriseActionPriority;
+    status?: EnterpriseActionStatus;
+    due_at?: string | null;
+    insight_id?: string | null;
+  },
+): Promise<EnterpriseAction> {
+  const body = await request<{ ok: true; action: EnterpriseAction }>(
+    `/api/v1/workspaces/${workspaceId}/actions`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+  return body.action;
+}
+
+export async function updateEnterpriseAction(
+  workspaceId: string,
+  actionId: string,
+  patch: Partial<
+    Pick<EnterpriseAction, "title" | "notes" | "priority" | "status" | "due_at" | "insight_id">
+  >,
+): Promise<EnterpriseAction> {
+  const body = await request<{ ok: true; action: EnterpriseAction }>(
+    `/api/v1/workspaces/${workspaceId}/actions/${actionId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    },
+  );
+  return body.action;
+}
+
+export async function deleteEnterpriseAction(workspaceId: string, actionId: string): Promise<void> {
+  await request(`/api/v1/workspaces/${workspaceId}/actions/${actionId}`, {
+    method: "DELETE",
   });
 }
 

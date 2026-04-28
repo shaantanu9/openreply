@@ -83,13 +83,26 @@ video = [
 mcp = [
     "fastmcp>=0.4",
 ]
+# Stakeholder-ready DOCX + PPTX exports. Both are pure-Python, no system
+# deps (no pandoc, no LibreOffice, no Cairo) — work fine inside a
+# PyInstaller sidecar. Together ~10 MB. Drives `research export-deck`
+# and the `reddit_export_docx` / `reddit_export_pptx` MCP tools.
+docs = [
+    "python-docx>=1.1",
+    "python-pptx>=0.6.23",
+    # Bundles a pandoc binary (~25 MB) so the markdown→docx converter
+    # has full GFM-table / blockquote / footnote fidelity without
+    # asking the user to install pandoc separately. Plain `pypandoc`
+    # also works if pandoc is already on PATH.
+    "pypandoc-binary>=1.13",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "pyinstaller>=6.10",
 ]
-all = ["reddit-myind[analyze,mcp,sources,dev,retrieval,video]"]
+all = ["reddit-myind[analyze,mcp,sources,dev,retrieval,video,docs]"]
 
 [project.scripts]
 reddit-myind = "reddit_research.cli.main:app"

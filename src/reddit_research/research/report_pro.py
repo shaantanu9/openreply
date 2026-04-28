@@ -23,9 +23,12 @@ def _source_label(source_type: str | None) -> str:
         "playstore": "Play Store", "arxiv": "arXiv", "openalex": "OpenAlex",
         "pubmed": "PubMed", "scholar": "Semantic Scholar", "gnews": "Google News",
         "devto": "DEV.to", "lemmy": "Lemmy", "mastodon": "Mastodon",
-        "github": "GitHub", "github_issue": "GitHub Issue",
+        "github": "GitHub", "github_issue": "GitHub Issue", "github_issues": "GitHub Issues",
         "stackoverflow": "Stack Overflow", "youtube": "YouTube",
         "discourse": "Discourse forum",
+        "rss_marketing": "Marketing / growth (15 feeds)",
+        "rss_persuasion": "Persuasion / behavioral",
+        "rss_swipe": "Ad swipe files",
     }.get(source_type or "reddit", source_type or "Reddit")
 
 

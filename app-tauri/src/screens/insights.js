@@ -59,6 +59,30 @@ function renderSourceBadges(breakdown) {
   ).join('');
 }
 
+function renderSuggestedTactics(f) {
+  let tactics = [];
+  if (Array.isArray(f?.suggested_tactics)) {
+    tactics = f.suggested_tactics;
+  } else if (typeof f?.suggested_tactics_json === 'string' && f.suggested_tactics_json.trim()) {
+    try { tactics = JSON.parse(f.suggested_tactics_json); } catch { tactics = []; }
+  }
+  if (!Array.isArray(tactics) || tactics.length === 0) return '';
+  const items = tactics.slice(0, 2).map((t) => `
+    <button
+      class="insight-tactic-chip"
+      data-tactic="${encodeURIComponent(JSON.stringify(t))}"
+      title="Open tactic detail">
+      💡 ${esc(t.name || t.slug || 'Tactic')}
+    </button>
+  `).join('');
+  return `
+    <details class="insight-tactics">
+      <summary>💡 Suggested tactics</summary>
+      <div class="insight-tactic-list">${items}</div>
+    </details>
+  `;
+}
+
 function renderFindingCard(f) {
   const op = f.opportunity_score || 0;
   const imp = f.importance ?? f.pain_weight ?? 0;
@@ -140,11 +164,44 @@ function renderFindingCard(f) {
 
       <p class="insight-narrative">${esc(f.narrative || '')}</p>
 
+      ${renderSuggestedTactics(f)}
+
       ${quote}
 
       <div class="insight-sources">${renderSourceBadges(f.source_breakdown)}</div>
     </div>
   `;
+}
+
+function showTacticModal(tactic) {
+  const t = tactic && typeof tactic === 'object' ? tactic : {};
+  const examples = Array.isArray(t.examples) ? t.examples : [];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.hidden = false;
+  backdrop.innerHTML = `
+    <div class="modal" style="max-width:640px;max-height:80vh;overflow:auto">
+      <h3 style="margin-top:0">💡 ${esc(t.name || t.slug || 'Suggested tactic')}</h3>
+      <p class="muted">${esc(t.framework || 'custom')}</p>
+      ${t.description ? `<p>${esc(t.description)}</p>` : ''}
+      ${t.when_to_use ? `<p><b>When to use:</b> ${esc(t.when_to_use)}</p>` : ''}
+      ${examples.length ? `
+        <div style="margin-top:10px">
+          <b>Example snippets</b>
+          <ul style="margin-top:8px">
+            ${examples.slice(0, 3).map((ex) => `<li>${esc(ex?.snippet || '')}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+      <div class="modal-actions" style="justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost btn-bordered" id="tactic-close">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector('#tactic-close')?.addEventListener('click', close);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
 }
 
 // ─── Minto pyramid header ─────────────────────────────────────────────
@@ -1039,6 +1096,18 @@ function wireCards(contentEl, topic, report) {
       const ids = (el.dataset.ev || '').split(',').filter(Boolean);
       if (!ids.length) return;
       console.info('[insights] evidence post_ids:', ids);
+    });
+  });
+
+  // Suggested tactic chips → detail modal with description/examples.
+  contentEl.querySelectorAll('.insight-tactic-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      const raw = (el.dataset.tactic || '').trim();
+      if (!raw) return;
+      try {
+        const tactic = JSON.parse(decodeURIComponent(raw));
+        showTacticModal(tactic);
+      } catch {}
     });
   });
 

@@ -1,0 +1,37 @@
+\contentsline {section}{Home-Improvement Lending Marketplace --- Deep-Dive Per-Topic Research}{1}{Doc-Start}%
+\contentsline {subsection}{Table of contents}{2}{table.1}%
+\contentsline {subsection}{1. The 14 painpoints --- cited, evidence-grounded, mapped to features}{2}{Item.7}%
+\contentsline {subsubsection}{P0 --- Solve in MVP or do not ship}{2}{Item.7}%
+\contentsline {paragraph}{1.1 --- Spam aftermath of ``lead-form'' lenders}{2}{Item.7}%
+\contentsline {paragraph}{1.2 --- Opaque broker pricing (the ``11\% on \$820k, 804 FICO'' problem)}{4}{table.3}%
+\contentsline {paragraph}{1.3 --- Hearth-style ``most clients don't qualify'' conversion failure}{5}{table.5}%
+\contentsline {paragraph}{1.4 --- Contractor commission-attribution gap (Hearth's most-damning weakness)}{7}{table.7}%
+\contentsline {paragraph}{1.5 --- Curated lender shelf (excluding the predators that show up in every aggregator)}{8}{table.9}%
+\contentsline {subsubsection}{P1 --- Ship within 6 months of MVP}{9}{table.11}%
+\contentsline {paragraph}{1.6 --- Servicer hand-off opacity (Mr Cooper / Nationstar / Champion / Lakeview)}{9}{table.11}%
+\contentsline {paragraph}{1.7 --- PMI-removal stonewalling}{11}{table.13}%
+\contentsline {paragraph}{1.8 --- Escrow shortage payment surprise}{12}{table.15}%
+\contentsline {paragraph}{1.9 --- Insurance dark patterns force roofing scope down}{13}{table.17}%
+\contentsline {paragraph}{1.10 --- Refinance lies + break-even math}{14}{table.19}%
+\contentsline {paragraph}{1.11 --- 0\% APR retroactive-interest dark pattern (BNPL + contractor financing)}{15}{table.21}%
+\contentsline {paragraph}{1.12 --- Closing-day shenanigans (mortgage origination only)}{16}{table.23}%
+\contentsline {paragraph}{1.13 --- Title fraud / HELOC opened without borrower's knowledge}{17}{table.25}%
+\contentsline {paragraph}{1.14 --- Loan-account fragmentation}{18}{table.27}%
+\contentsline {subsection}{2. Per-competitor teardown}{18}{table.29}%
+\contentsline {subsubsection}{Review distribution (the engineering ranking)}{19}{table.29}%
+\contentsline {subsubsection}{The two competitors to watch}{22}{table.30}%
+\contentsline {paragraph}{\textbf {Hearth for Contractors} --- the direct incumbent}{22}{table.30}%
+\contentsline {paragraph}{\textbf {GreenSky} --- the lender Hearth, RAFTR, and TAMKO use}{22}{Item.12}%
+\contentsline {subsubsection}{Integration vs compete decision matrix}{22}{Item.12}%
+\contentsline {subsection}{3. Industry signal from GNews (the next 12 months will be hot)}{23}{table.31}%
+\contentsline {subsection}{4. Academic backing (the moat narrative)}{25}{table.32}%
+\contentsline {subsection}{5. Per-vertical scope schemas (what fields lender offers anchor against)}{26}{table.33}%
+\contentsline {subsubsection}{5A. Roofing scope schema (MVP)}{26}{table.33}%
+\contentsline {subsubsection}{5B. HVAC scope schema (P1 --- second vertical)}{27}{table.34}%
+\contentsline {subsubsection}{5C. Solar scope schema (P1 --- third vertical)}{27}{table.35}%
+\contentsline {subsection}{6. Cross-border Canada surface (P1 wedge)}{28}{table.36}%
+\contentsline {subsection}{7. The build-order matrix --- every feature mapped}{29}{Item.15}%
+\contentsline {subsection}{8. Friend-referral trust transfer at scale (the social-proof feature)}{31}{table.38}%
+\contentsline {subsection}{9. What we are deliberately not building (and why)}{32}{table.39}%
+\contentsline {subsection}{10. Re-running the research as the product evolves}{33}{table.40}%
+\contentsline {subsection}{11. The 60-second pitch (for a CTO)}{33}{table.40}%

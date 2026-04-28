@@ -549,7 +549,9 @@ const ALL_SOURCES = [
   { id: 'rss_design',      label: 'RSS: Design / UX',         group: 'rss', defaultOn: false },
   { id: 'rss_psychology',  label: 'RSS: Psychology',          group: 'rss', defaultOn: false },
   { id: 'rss_neuroscience',label: 'RSS: Neuroscience',        group: 'rss', defaultOn: false },
-  { id: 'rss_marketing',   label: 'RSS: Marketing / growth',  group: 'rss', defaultOn: false },
+  { id: 'rss_marketing',   label: 'RSS: Marketing / growth (15 feeds)', group: 'rss', defaultOn: false },
+  { id: 'rss_persuasion',  label: 'RSS: Persuasion / behavioral', group: 'rss', defaultOn: false },
+  { id: 'rss_swipe',       label: 'RSS: Ad swipe files',      group: 'rss', defaultOn: false },
 ];
 
 const GROUP_LABELS = {
@@ -2183,6 +2185,87 @@ export async function renderTopic(root, { params }) {
   }
 
   // ─── Report ───────────────────────────────────────────────────────────
+  function showPaperResultModal(title, content) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.hidden = false;
+    backdrop.innerHTML = `
+      <div class="modal" style="max-width:920px;max-height:85vh;overflow:auto">
+        <h3 style="margin-top:0">${esc(title)}</h3>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="paper-modal-copy"><i data-lucide="copy"></i> Copy</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="paper-modal-close">Close</button>
+        </div>
+        <div class="markdown-view">${renderMarkdown(content || '')}</div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.querySelector('#paper-modal-close')?.addEventListener('click', close);
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+    backdrop.querySelector('#paper-modal-copy')?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(content || ''); } catch {}
+    });
+    window.refreshIcons?.();
+  }
+
+  async function runPaperPipelineAction(actionBtn, actionKind) {
+    const prevHtml = actionBtn.innerHTML;
+    actionBtn.disabled = true;
+    actionBtn.innerHTML = '<i data-lucide="loader"></i> Running…';
+    window.refreshIcons?.();
+    try {
+      if (actionKind === 'outline') {
+        const out = await api.paperOutlineGenerate(topic);
+        const outline = out?.outline || {};
+        const md = [
+          `# ${outline.title || `Research outline — ${topic}`}`,
+          '',
+          '## Sections',
+          ...((outline.sections || []).map((s, i) => `${i + 1}. **${s.heading || s.id || 'Section'}** — ${s.notes || ''}`)),
+          '',
+          '## Key Findings',
+          ...((outline.key_findings || []).map((f, i) =>
+            `${i + 1}. ${f.title || '(untitled)'} · score: ${f.opportunity_score ?? '—'} · triangulation: ${f.triangulation_strength || '—'}`)),
+        ].join('\n');
+        showPaperResultModal('Paper Outline', md);
+      } else if (actionKind === 'draft') {
+        const out = await api.paperDraftGenerate(topic, null, 'IMRaD');
+        showPaperResultModal('Paper Draft (IMRaD)', out?.markdown || '');
+      } else if (actionKind === 'experiments') {
+        const out = await api.experimentPlanGenerate(topic);
+        const rows = Array.isArray(out?.experiments) ? out.experiments : [];
+        const md = [
+          `# Experiment Plan — ${topic}`,
+          '',
+          ...rows.map((e, i) => [
+            `## ${i + 1}. ${e.hypothesis || '(untitled)'}`,
+            `- Test: ${e.test_design || ''}`,
+            `- Success metric: ${e.success_metric || ''}`,
+            `- Failure criteria: ${Array.isArray(e.failure_criteria) ? e.failure_criteria.join('; ') : ''}`,
+            `- Time box: ${e.time_box_days ?? '—'} days`,
+            `- Budget: $${e.budget_usd ?? '—'}`,
+            '',
+          ].join('\n')).join('\n'),
+        ].join('\n');
+        showPaperResultModal('Experiment Plan', md);
+      } else if (actionKind === 'export') {
+        const out = await api.paperExportWithCitations(topic, null, 'markdown', 'IMRaD');
+        showPaperResultModal('Paper Export with Citations', out?.content || '');
+      }
+    } catch (e) {
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-error';
+      toast.textContent = `Paper action failed: ${e?.message || String(e)}`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 4200);
+    } finally {
+      actionBtn.disabled = false;
+      actionBtn.innerHTML = prevHtml;
+      window.refreshIcons?.();
+    }
+  }
+
   async function loadReport() {
     // Gated write — see note in loadMap.
     const set = (html) => { if (contentEl.dataset.tab === 'report') contentEl.innerHTML = html; };
@@ -2207,6 +2290,10 @@ export async function renderTopic(root, { params }) {
           <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-copy-md"><i data-lucide="copy"></i> Copy markdown</button>
           <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-reveal-md">Reveal in Finder</button>
           <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-regen-md"><i data-lucide="rotate-cw"></i> Regenerate</button>
+          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-outline"><i data-lucide="list-tree"></i> Outline</button>
+          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-draft"><i data-lucide="file-pen-line"></i> Draft</button>
+          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-experiments"><i data-lucide="flask-conical"></i> Experiments</button>
+          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-export"><i data-lucide="book-copy"></i> Export+citations</button>
         </div>
         <div class="markdown-view">${renderMarkdown(md)}</div>
       `);
@@ -2221,6 +2308,10 @@ export async function renderTopic(root, { params }) {
       };
       $('#btn-reveal-md').onclick = () => api.revealInFinder(path);
       $('#btn-regen-md').onclick  = () => loadReport();
+      $('#btn-paper-outline').onclick = (e) => runPaperPipelineAction(e.currentTarget, 'outline');
+      $('#btn-paper-draft').onclick = (e) => runPaperPipelineAction(e.currentTarget, 'draft');
+      $('#btn-paper-experiments').onclick = (e) => runPaperPipelineAction(e.currentTarget, 'experiments');
+      $('#btn-paper-export').onclick = (e) => runPaperPipelineAction(e.currentTarget, 'export');
     } catch (e) {
       const ready = await hasLlmConfigured().catch(() => false);
       const actions = [

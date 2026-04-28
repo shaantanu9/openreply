@@ -31,12 +31,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "name required" }, { status: 400 });
   }
   try {
+    const wantsPrivate = body.is_public === false;
+    if (wantsPrivate && !auth.isPaidPlan) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Private workspaces are available on paid plans only. Upgrade to Pro to keep research private.",
+        },
+        { status: 402 },
+      );
+    }
     const ws = await createWorkspace({
       userId: auth.userId,
       name,
       topic: body.topic?.trim() || undefined,
       description: body.description?.trim() || undefined,
-      isPublic: body.is_public ?? true,
+      isPublic: auth.isPaidPlan ? (body.is_public ?? true) : true,
     });
     return NextResponse.json({ ok: true, workspace: ws });
   } catch (err) {

@@ -42,6 +42,9 @@ SOURCE_LABELS = {
     "trends": "Google Trends",
     "appstore": "App Store reviews",
     "playstore": "Play Store reviews",
+    "rss_marketing": "Marketing / growth (15 feeds)",
+    "rss_persuasion": "Persuasion / behavioral",
+    "rss_swipe": "Ad swipe files",
 }
 
 

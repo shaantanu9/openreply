@@ -19,8 +19,16 @@ const ROLE_OPTIONS: Array<{ value: Role; name: string; sub: string }> = [
 type Alert = { msg: string; type: "error" | "success" } | null;
 
 function parseError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err || "Unknown error");
+  const fallback = "Something went wrong. Please try again.";
+  const raw = err instanceof Error ? err.message : String(err || fallback);
+  const normalized = raw.trim().toLowerCase();
+  if (normalized.includes("invalid login credentials")) {
+    return "Email or password is incorrect. Please try again.";
+  }
+  if (normalized.includes("email not confirmed")) {
+    return "Please verify your email before signing in.";
+  }
+  return raw || fallback;
 }
 
 export function SignInPanel() {

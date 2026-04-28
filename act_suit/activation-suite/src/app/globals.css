@@ -219,3 +219,19 @@ a {
   from { width: 0%; }
   to { width: 100%; }
 }
+
+/* ── Force-graph (DemoSection) — kill the default focus outline so the
+       only visible selection cue is the white-stroke ring on the active
+       node, matching the in-app gap-map.html convention. ── */
+svg.force-graph,
+svg.force-graph g,
+svg.force-graph circle,
+svg.force-graph text {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+svg.force-graph g:focus,
+svg.force-graph g:focus-visible,
+svg.force-graph g:active {
+  outline: none !important;
+}

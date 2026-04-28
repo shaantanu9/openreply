@@ -152,6 +152,9 @@ def build_structural(topic: str) -> dict[str, Any]:
             "playstore": "Play Store",
             "scholar": "Google Scholar",
             "stackoverflow": "Stack Overflow",
+            "rss_marketing": "Marketing / growth (15 feeds)",
+            "rss_persuasion": "Persuasion / behavioral",
+            "rss_swipe": "Ad swipe files",
         }.get(src, src.upper())
         source_node = _upsert_node(
             db,

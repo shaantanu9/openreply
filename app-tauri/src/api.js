@@ -626,6 +626,16 @@ export const api = {
   exportBrief: (topic, format = 'markdown') =>
     invoke('export_brief', { topic, format }),
 
+  // Research-paper pipeline (outline/draft/experiments/export with citations)
+  paperOutlineGenerate: (topic, provider = null) =>
+    invoke('paper_outline_generate', { topic, provider }),
+  paperDraftGenerate: (topic, provider = null, style = 'IMRaD') =>
+    invoke('paper_draft_generate', { topic, provider, style }),
+  experimentPlanGenerate: (topic, provider = null) =>
+    invoke('experiment_plan_generate', { topic, provider }),
+  paperExportWithCitations: (topic, provider = null, format = 'markdown', style = 'IMRaD') =>
+    invoke('paper_export_with_citations', { topic, provider, format, style }),
+
   // Phase-9 — competitor matrix
   competitorMatrix: (topic) =>
     cachedInvoke('competitor_matrix', { topic }, 30000),

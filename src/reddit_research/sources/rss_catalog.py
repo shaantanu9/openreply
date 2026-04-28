@@ -94,11 +94,37 @@ CATALOG: dict[str, list[tuple[str, str]]] = {
         ("Ars Technica Science", "https://feeds.arstechnica.com/arstechnica/science"),
         ("New Scientist", "https://www.newscientist.com/feed/home/"),
     ],
-    # Marketing / growth
+    # Marketing / growth — verified live 2026-04-28
     "marketing": [
         ("HubSpot Marketing Blog", "https://blog.hubspot.com/marketing/rss.xml"),
+        ("Lenny's Newsletter", "https://www.lennysnewsletter.com/feed"),
+        ("Copyhackers", "https://copyhackers.com/feed/"),
+        ("Ahrefs Blog", "https://ahrefs.com/blog/feed/"),
+        ("Demand Curve", "https://www.demandcurve.com/blog/rss.xml"),
+        ("Stacked Marketer", "https://www.stackedmarketer.com/feed/"),
+        # Bot-protected; production httpx + Retry-After handling usually
+        # succeeds where a bare urllib check 403s. Keep — drop if collect
+        # logs show repeat 403/429 in real runs.
         ("CXL", "https://cxl.com/blog/feed/"),
+        ("CXL Institute", "https://cxl.com/institute/feed/"),
+    ],
+    # Persuasion / behavioral economics — verified live 2026-04-28
+    "persuasion": [
+        ("Nielsen Norman Group", "https://www.nngroup.com/feed/rss/"),
+        ("Behavioral Scientist", "https://behavioralscientist.org/feed/"),
+        ("The Sludge", "https://www.bi.team/feed/"),
+        ("Farnam Street", "https://fs.blog/feed/"),
+        ("Choice Hacking", "https://choicehacking.substack.com/feed"),
+        # Throttled (429) on bare urllib checks; real adapter respects
+        # Retry-After and usually completes.
         ("Growth.Design", "https://growth.design/feed.rss"),
+    ],
+    # Ad swipe files / creative inspiration — verified live 2026-04-28
+    # Note: Marketing Examples, Reforge, Really Good Emails, Animalz,
+    # AdAge, and Ads of the World do not expose public RSS feeds; we
+    # surface them via the OpenCLI bridge or scheduled scrapers instead.
+    "swipe": [
+        ("Swiped.co", "https://swiped.co/feed/"),
     ],
 }
 
@@ -116,6 +142,8 @@ CATEGORY_LABELS: dict[str, str] = {
     "neuroscience": "Neuroscience",
     "science": "Science (general)",
     "marketing": "Marketing / growth",
+    "persuasion": "Persuasion / behavioral",
+    "swipe": "Ad swipe files",
 }
 
 

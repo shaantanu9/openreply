@@ -283,6 +283,35 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
         parts.append(evidence_heading)
         parts.append("Cite these sources inline as [1], [2], etc. when you reference them.")
         parts.append("")
+
+        # If any evidence row is an academic paper with full-text already
+        # cached, splice in a longer excerpt so the LLM sees actual paper
+        # content (methodology, results, limitations) instead of just the
+        # 2000-char abstract. We DON'T trigger downloads here — that would
+        # block chat for 5-15s per paper. The user runs
+        # `research paper-fulltext --topic <T>` ahead of time (or the
+        # desktop app does it lazily) to populate the cache.
+        try:
+            from .paper_fulltext import get_full_text
+            paper_text_cache: dict[str, str] = {}
+            for p in posts:
+                if (p.get("source") or "") not in ("arxiv", "openalex", "semantic_scholar", "scholar"):
+                    continue
+                ft = get_full_text(p["id"])
+                if ft.get("ok") and ft.get("text"):
+                    # Front-load the first 2.5k chars (intro/abstract) and
+                    # last 1k (conclusions/limitations) — the bits an
+                    # analyst usually quotes. Keeps prompt tokens bounded
+                    # at ~1000/paper × 8 papers = 8k tokens, well within
+                    # any modern context window.
+                    full = ft["text"]
+                    head = full[:2500].strip()
+                    tail = full[-1000:].strip() if len(full) > 3500 else ""
+                    excerpt = head + ("\n\n[…paper continues…]\n\n" + tail if tail else "")
+                    paper_text_cache[p["id"]] = excerpt
+        except Exception:
+            paper_text_cache = {}
+
         for idx, p in enumerate(posts, start=1):
             # Re-use the source-aware formatter so arxiv / pubmed / ingest
             # rows cite correctly instead of being mislabelled as r/reddit.
@@ -297,6 +326,14 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
                 parts.append(f"- [{idx}] {lines[0]}\n  > {lines[1].strip()}")
             else:
                 parts.append(f"- [{idx}] {lines[0]}")
+            # When we have full-text for THIS paper, append the long excerpt
+            # AFTER the standard formatted row so abstract+title still front
+            # the citation. The LLM gets the abstract for context-skimming
+            # AND the deeper content for fact pulls.
+            ftxt = paper_text_cache.get(p.get("id"))
+            if ftxt:
+                parts.append(f"  [paper full-text excerpt for [{idx}]]:")
+                parts.append(f"  > {ftxt[:5000]}")
             # Stash citation metadata for post-stream rendering. We fall back
             # to a synthesized Reddit URL if `url` is empty (legacy posts
             # collected before we persisted permalinks).

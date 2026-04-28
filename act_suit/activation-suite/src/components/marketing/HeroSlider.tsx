@@ -52,7 +52,7 @@ function personaToneFrom(className: string): PersonaTone {
 function renderHeadline(headline: readonly unknown[]) {
   return headline.map((seg, i) => {
     if (typeof seg === "string") {
-      if (i === 0) return <>{seg}</>;
+      if (i === 0) return <span key={i}>{seg}</span>;
       return (
         <span key={i}>
           <br />
@@ -267,10 +267,25 @@ export function HeroSlider() {
                       <DownloadArrow />
                       {slide.primaryCta.label}
                     </DownloadLink>
-                    <a href={slide.secondaryCta.href} className="btn btn-ghost btn-lg">
-                      {slide.secondaryCta.label}
+                    <a href="/sign-in" className="btn btn-ghost btn-lg">
+                      Start free account →
                     </a>
                   </div>
+                  <p className="mt-3 text-[12.5px] text-[var(--muted-light)]">
+                    {"ctaNote" in slide ? slide.ctaNote : "No card needed · activation in 2 mins"}
+                  </p>
+                  {"microProof" in slide ? (
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      {slide.microProof.map((chip: string) => (
+                        <span
+                          key={chip}
+                          className="rounded-full border border-[var(--border)] bg-[var(--cream-mid)] px-[10px] py-[4px] text-[11px] font-medium text-[var(--muted)]"
+                        >
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <TrustRow avatars={slide.trust.avatars} line={slide.trust.line} />
                 </div>
                 <div className="relative">

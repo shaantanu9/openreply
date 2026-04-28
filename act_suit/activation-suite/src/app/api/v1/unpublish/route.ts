@@ -8,6 +8,15 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   const auth = await requireSession(req);
   if (!auth.ok) return auth.response;
+  if (!auth.isPaidPlan) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Private workspaces are available on paid plans only. Upgrade to Pro to keep research private.",
+      },
+      { status: 402 },
+    );
+  }
 
   let body: { workspace_id?: string };
   try {

@@ -29,9 +29,15 @@ export function FeaturesGrid() {
           <div className="flex flex-col items-start justify-end gap-5">
             <p className="section-sub">
               Built for product teams that make evidence-based decisions. Every
-              feature designed to reduce the gap between signal and shipped feature.
+              feature is designed to reduce the gap between signal collection and
+              confident shipping.
             </p>
-            <DownloadLink className="btn btn-orange">Get started free →</DownloadLink>
+            <div className="flex flex-wrap gap-3">
+              <DownloadLink className="btn btn-orange">Download for Mac</DownloadLink>
+              <a href="/sign-in" className="btn btn-ghost">
+                Start free account →
+              </a>
+            </div>
           </div>
         </div>
         <div className="mt-12 grid gap-5 md:grid-cols-3">

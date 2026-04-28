@@ -48,10 +48,30 @@ _EF_CACHE: dict[str, Any] = {}
 
 
 def _resolve_mode() -> str:
-    """Return normalised mode string from the env var. Defaults to ``default``."""
+    """Return normalised mode string. Defaults to ``default``.
+
+    Honours both the legacy ``GAPMAP_EMBEDDING_MODEL`` (multilingual /
+    default) and the newer ``GAPMAP_EMBEDDING_BACKEND`` (mlx / onnx /
+    multilingual / default). Backend wins when both are set.
+    """
+    backend = (os.getenv("GAPMAP_EMBEDDING_BACKEND") or "").strip().lower()
+    if backend in ("mlx", "onnx", "multilingual", "default"):
+        if backend == "default":
+            # Allow `default` as an explicit "use whatever auto-resolves to"
+            # signal — falls through to autodetect.
+            pass
+        else:
+            return backend
     raw = (os.getenv("GAPMAP_EMBEDDING_MODEL") or "").strip().lower()
     if raw == "multilingual":
         return "multilingual"
+    # Autodetect: prefer MLX on Apple Silicon when available, else default ONNX.
+    try:
+        from .embedder_mlx import is_active_for_environment
+        if is_active_for_environment(force=None):
+            return "mlx"
+    except Exception:
+        pass
     return "default"
 
 
@@ -102,7 +122,21 @@ def get_embedding_function():
     if cached is not None:
         return cached
 
-    if mode == "multilingual":
+    if mode == "mlx":
+        try:
+            from .embedder_mlx import get_mlx_embedding_function
+            fn = get_mlx_embedding_function()
+            if fn is None:
+                logger.warning(
+                    "embedder: MLX backend requested but unavailable — "
+                    "falling back to default ONNX MiniLM. Install with "
+                    "`uv pip install mlx mlx_embeddings` on Apple Silicon."
+                )
+                fn = _default_ef()
+        except Exception as e:
+            logger.warning("embedder: MLX init failed (%s) — falling back to ONNX.", e)
+            fn = _default_ef()
+    elif mode == "multilingual":
         fn = _multilingual_ef()
     else:
         fn = _default_ef()
@@ -110,4 +144,10 @@ def get_embedding_function():
     return fn
 
 
-__all__ = ["get_embedding_function"]
+def active_backend() -> str:
+    """Return a short label for the currently-active backend.
+    Used by the doctor + status tools to surface which embedder is live."""
+    return _resolve_mode()
+
+
+__all__ = ["get_embedding_function", "active_backend"]

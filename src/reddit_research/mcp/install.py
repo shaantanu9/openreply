@@ -269,14 +269,25 @@ def _resolve_command(bin_path: Path | None, project_dir: Path | None) -> dict[st
         }
     if project_dir:
         proj = project_dir.expanduser().resolve()
-        # GUI MCP clients (Claude Desktop, Cursor) inherit launchd's PATH —
-        # `/usr/bin:/bin:/usr/sbin:/sbin` plus a few extras — NOT the user's
-        # zsh login PATH. A bare `"command": "uv"` works from a shell-launched
-        # CLI but ENOENTs the moment the same config is read by Claude Desktop
-        # or Cursor's GUI process. Resolve to an absolute path at install time
-        # so the entry works in both. Fallback to bare "uv" only when which()
-        # can't find it (caller can still fix manually, and CLI clients keep
-        # working).
+        # PREFERRED: point directly at the project's `.venv/bin/reddit-cli`
+        # console-script. Boot time is ~50 ms (single Python interpreter
+        # startup) vs 1-3 s for `uv run` (lockfile resolve + venv check on
+        # every invocation) — and 5-10 s on a cold uv cache. Claude Desktop
+        # / Cursor have ~10 s init timeouts; `uv run` on a slow disk
+        # silently exhausts them and the client logs "lost connection".
+        # The venv binary always exists once the dev has run `uv sync` /
+        # `pip install -e .` in the project, which is a prerequisite anyway.
+        venv_bin = proj / ".venv" / "bin" / "reddit-cli"
+        if venv_bin.is_file():
+            return {
+                "command": str(venv_bin),
+                "args":    ["mcp", "serve"],
+            }
+        # Fallback: `uv run`. GUI MCP clients (Claude Desktop, Cursor)
+        # inherit launchd's PATH — `/usr/bin:/bin:/usr/sbin:/sbin` plus
+        # a few extras — NOT the user's zsh login PATH. A bare
+        # `"command": "uv"` works from a shell-launched CLI but ENOENTs
+        # in GUI clients, so resolve to absolute path at install time.
         uv_path = shutil.which("uv") or "uv"
         return {
             "command": uv_path,
@@ -374,6 +385,14 @@ def status(
         str(env.get("MCP_TAKEOVER_STALE_LOCK") or "").strip().lower()
         in ("1", "true", "yes", "on")
     )
+    # Per-client pidfile tag — entries written before 2026-04-27 lack
+    # this and share one lock file with every other client, causing the
+    # cross-client SIGTERM thrash that surfaces as "lost connection"
+    # mid-tool-call. We treat absence as a re-sync trigger.
+    expected_tag = (client or "claude-code").strip().lower()
+    out["client_tag_configured"] = (
+        (env.get("MCP_CLIENT_TAG") or "").strip().lower() == expected_tag
+    )
 
     if not out["db_aligned"]:
         out["reason"] = f"Connected, but {out['client']} is reading a different DB. Click Re-sync to align."
@@ -383,6 +402,12 @@ def status(
         out["reason"] = (
             "Connected, but this entry predates stale-lock auto-recovery. "
             "Re-sync to avoid `another_mcp_server_running` errors on client restart."
+        )
+    elif not out["client_tag_configured"]:
+        out["reason"] = (
+            "Connected, but this entry predates per-client pidfile scoping. "
+            "Re-sync so this client stops fighting other MCP clients for "
+            "the same lock (cause of mid-tool-call disconnects)."
         )
     return out
 
@@ -425,6 +450,7 @@ def install(
         extra_status = _ensure_mcp_extra_in_project(project_dir.expanduser().resolve())
 
     cmd = _resolve_command(bin_path, project_dir)
+    client_tag = (client or "claude-code").strip().lower()
     entry = {
         **cmd,
         "env": {
@@ -437,6 +463,14 @@ def install(
             # the entry means every client-spawned instance can reclaim
             # the stale lock on startup — ~3s SIGTERM grace, then SIGKILL.
             "MCP_TAKEOVER_STALE_LOCK": "1",
+            # Per-client pidfile. Without this, Claude Code / Claude
+            # Desktop / Cursor all share `mcp-server.pid` and the
+            # takeover flag above causes them to SIGTERM each other
+            # every reconnect — the user sees "lost connection" mid-
+            # tool-call. With it, each client gets
+            # `mcp-server.<tag>.pid` and they coexist quietly. See
+            # _pidfile_path() in server.py.
+            "MCP_CLIENT_TAG": client_tag,
         },
     }
 

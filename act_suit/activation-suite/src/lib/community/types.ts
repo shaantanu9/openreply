@@ -104,6 +104,50 @@ export type Sweep = {
   error_message: string | null;
 };
 
+export type EnterpriseActionStatus = "open" | "in_progress" | "done" | "blocked";
+export type EnterpriseActionPriority = "low" | "medium" | "high" | "critical";
+
+export type EnterpriseAction = {
+  id: string;
+  workspace_id: string;
+  insight_id: string | null;
+  owner_user_id: string;
+  owner_name: string | null;
+  title: string;
+  notes: string | null;
+  priority: EnterpriseActionPriority;
+  status: EnterpriseActionStatus;
+  due_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DailyBrief = {
+  workspace_id: string;
+  generated_at: string;
+  totals: {
+    insights: number;
+    pains: number;
+    requests: number;
+    workarounds: number;
+    praise: number;
+  };
+  new_insights_24h: Array<{
+    id: string;
+    insight_type: InsightType;
+    title: string;
+    frequency_pct: number;
+    created_at: string;
+  }>;
+  rising_gaps: Array<{
+    id: string;
+    insight_type: InsightType;
+    title: string;
+    frequency_pct: number;
+    frequency: number;
+  }>;
+};
+
 export type PublishedResearch = {
   id: string;
   workspace_id: string;

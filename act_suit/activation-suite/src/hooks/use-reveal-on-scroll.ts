@@ -11,8 +11,17 @@ export function useRevealOnScroll(selector = ".reveal") {
     );
     if (!nodes.length) return;
 
+    // Failsafe: never leave large blank sections hidden if observer timing
+    // breaks. 200ms — long enough for the in-viewport observer to fade
+    // visible nodes, short enough that the user never sees a blank
+    // section even on slow paint or out-of-viewport scroll-skipping.
+    const forceVisibleTimer = setTimeout(() => {
+      nodes.forEach((n) => n.classList.add("is-visible"));
+    }, 200);
+
     if (!("IntersectionObserver" in window)) {
       nodes.forEach((n) => n.classList.add("is-visible"));
+      clearTimeout(forceVisibleTimer);
       return;
     }
 
@@ -32,6 +41,9 @@ export function useRevealOnScroll(selector = ".reveal") {
     );
 
     nodes.forEach((n) => io.observe(n));
-    return () => io.disconnect();
+    return () => {
+      clearTimeout(forceVisibleTimer);
+      io.disconnect();
+    };
   }, [selector]);
 }

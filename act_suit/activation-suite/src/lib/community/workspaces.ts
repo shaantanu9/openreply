@@ -1,5 +1,9 @@
 import { getSupabaseServerClient } from "@/lib/supabaseClient";
 import type {
+  DailyBrief,
+  EnterpriseAction,
+  EnterpriseActionPriority,
+  EnterpriseActionStatus,
   Insight,
   InsightType,
   Post,
@@ -211,4 +215,135 @@ export async function getSweepById(
     .eq("user_id", userId)
     .maybeSingle<Sweep>();
   return data || null;
+}
+
+// ── Daily brief + activity actions ───────────────────────────────────────────
+
+export async function buildDailyBrief(workspaceId: string): Promise<DailyBrief> {
+  const insights = await listInsights(workspaceId, { limit: 300 });
+  const now = Date.now();
+  const since24h = now - 24 * 60 * 60 * 1000;
+  const totals = {
+    insights: insights.length,
+    pains: insights.filter((i) => i.insight_type === "pain").length,
+    requests: insights.filter((i) => i.insight_type === "request").length,
+    workarounds: insights.filter((i) => i.insight_type === "workaround").length,
+    praise: insights.filter((i) => i.insight_type === "praise").length,
+  };
+
+  const newInsights = insights
+    .filter((i) => new Date(i.created_at).getTime() >= since24h)
+    .slice(0, 12)
+    .map((i) => ({
+      id: i.id,
+      insight_type: i.insight_type,
+      title: i.title,
+      frequency_pct: i.frequency_pct,
+      created_at: i.created_at,
+    }));
+
+  const rising = [...insights]
+    .sort((a, b) => (b.frequency_pct || 0) - (a.frequency_pct || 0))
+    .slice(0, 10)
+    .map((i) => ({
+      id: i.id,
+      insight_type: i.insight_type,
+      title: i.title,
+      frequency_pct: i.frequency_pct,
+      frequency: i.frequency,
+    }));
+
+  return {
+    workspace_id: workspaceId,
+    generated_at: new Date().toISOString(),
+    totals,
+    new_insights_24h: newInsights,
+    rising_gaps: rising,
+  };
+}
+
+type EnterpriseActionRow = {
+  id: string;
+  workspace_id: string;
+  insight_id: string | null;
+  owner_user_id: string;
+  owner_name: string | null;
+  title: string;
+  notes: string | null;
+  priority: EnterpriseActionPriority;
+  status: EnterpriseActionStatus;
+  due_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listEnterpriseActions(workspaceId: string): Promise<EnterpriseAction[]> {
+  const sb = getSupabaseServerClient();
+  const { data, error } = await sb
+    .from("enterprise_actions")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data as EnterpriseActionRow[]) || [];
+}
+
+export async function createEnterpriseAction(input: {
+  workspaceId: string;
+  ownerUserId: string;
+  ownerName?: string | null;
+  title: string;
+  notes?: string | null;
+  priority?: EnterpriseActionPriority;
+  status?: EnterpriseActionStatus;
+  dueAt?: string | null;
+  insightId?: string | null;
+}): Promise<EnterpriseAction> {
+  const sb = getSupabaseServerClient();
+  const { data, error } = await sb
+    .from("enterprise_actions")
+    .insert({
+      workspace_id: input.workspaceId,
+      owner_user_id: input.ownerUserId,
+      owner_name: input.ownerName || null,
+      title: input.title,
+      notes: input.notes || null,
+      priority: input.priority || "medium",
+      status: input.status || "open",
+      due_at: input.dueAt || null,
+      insight_id: input.insightId || null,
+    })
+    .select("*")
+    .single<EnterpriseActionRow>();
+  if (error || !data) throw new Error(error?.message || "create enterprise action failed");
+  return data;
+}
+
+export async function updateEnterpriseAction(input: {
+  workspaceId: string;
+  actionId: string;
+  patch: Partial<
+    Pick<EnterpriseAction, "title" | "notes" | "priority" | "status" | "due_at" | "insight_id">
+  >;
+}): Promise<EnterpriseAction> {
+  const sb = getSupabaseServerClient();
+  const { data, error } = await sb
+    .from("enterprise_actions")
+    .update(input.patch)
+    .eq("id", input.actionId)
+    .eq("workspace_id", input.workspaceId)
+    .select("*")
+    .single<EnterpriseActionRow>();
+  if (error || !data) throw new Error(error?.message || "update enterprise action failed");
+  return data;
+}
+
+export async function deleteEnterpriseAction(workspaceId: string, actionId: string): Promise<void> {
+  const sb = getSupabaseServerClient();
+  const { error } = await sb
+    .from("enterprise_actions")
+    .delete()
+    .eq("id", actionId)
+    .eq("workspace_id", workspaceId);
+  if (error) throw new Error(error.message);
 }

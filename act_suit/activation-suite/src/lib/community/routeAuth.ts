@@ -3,10 +3,23 @@ import { verifySupabaseBearer } from "@/lib/supabaseAuthServer";
 import { hasSupabaseConfig } from "@/lib/supabaseClient";
 import { ensureProfile } from "@/lib/community/workspaces";
 import type { Profile } from "@/lib/community/types";
+import { supabaseLicenceForEmail } from "@/lib/supabaseActivationStore";
+import type { PlanId } from "@/lib/features";
 
 export type AuthResult =
-  | { ok: true; userId: string; email: string; profile: Profile }
+  | {
+      ok: true;
+      userId: string;
+      email: string;
+      profile: Profile;
+      planId: PlanId;
+      isPaidPlan: boolean;
+    }
   | { ok: false; response: NextResponse };
+
+function isPaidPlan(planId: PlanId): boolean {
+  return planId === "pro" || planId === "live_pass" || planId === "team";
+}
 
 export async function requireSession(req: Request): Promise<AuthResult> {
   if (!hasSupabaseConfig()) {
@@ -46,7 +59,16 @@ export async function requireSession(req: Request): Promise<AuthResult> {
       (typeof meta.name === "string" && meta.name) ||
       null;
     const profile = await ensureProfile(user.id, user.email, fullName);
-    return { ok: true, userId: user.id, email: user.email, profile };
+    const licence = await supabaseLicenceForEmail(user.email);
+    const planId: PlanId = licence?.planId || "free";
+    return {
+      ok: true,
+      userId: user.id,
+      email: user.email,
+      profile,
+      planId,
+      isPaidPlan: isPaidPlan(planId),
+    };
   } catch (err) {
     return {
       ok: false,

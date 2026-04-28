@@ -20,6 +20,7 @@ from typing import Any, Iterable
 from ..core.db import get_db
 from ..research.gaps import find_gaps
 from ..research.relevance import filter_findings
+from ..research.tactic_library import find_matching_tactics, seed_from_json
 from .build import _upsert_edge, _upsert_node
 from .schema import ensure_graph_schema, make_node_id
 
@@ -267,6 +268,22 @@ def upsert_semantic(
         "workarounds_added": 0,
         "evidence_edges": 0,
     }
+    # Seed once so tactic matching has data even on fresh installs.
+    try:
+        seed_from_json()
+    except Exception:
+        pass
+
+    def _suggested_tactics(item: dict[str, Any], keys: tuple[str, ...]) -> list[dict[str, Any]]:
+        if isinstance(item.get("suggested_tactics"), list):
+            return item.get("suggested_tactics")[:2]
+        text = " ".join(str(item.get(k) or "") for k in keys).strip()
+        if not text:
+            return []
+        try:
+            return find_matching_tactics(text, k=2)
+        except Exception:
+            return []
 
     for pp in painpoints or []:
         title = pp.get("painpoint") or pp.get("title") or ""
@@ -282,6 +299,9 @@ def upsert_semantic(
                 "pre_2025_freq": pp.get("pre_2025_freq"),
                 "post_2025_freq": pp.get("post_2025_freq"),
                 "aliases": pp.get("aliases"),
+                "suggested_tactics_json": _suggested_tactics(
+                    pp, ("painpoint", "title", "evidence", "summary")
+                ),
             },
         )
         _upsert_edge(db, topic, topic_node, node, "has_painpoint")
@@ -301,6 +321,9 @@ def upsert_semantic(
                 "user_quote": fw.get("user_quote"),
                 "frequency": fw.get("frequency"),
                 "aliases": fw.get("aliases"),
+                "suggested_tactics_json": _suggested_tactics(
+                    fw, ("feature", "title", "user_quote")
+                ),
             },
         )
         _upsert_edge(db, topic, topic_node, node, "has_feature_wish")
@@ -316,7 +339,13 @@ def upsert_semantic(
             continue
         prod_node = _upsert_node(
             db, topic, "product", _slug(prod), prod,
-            metadata={"severity": pc.get("severity"), "frequency": pc.get("frequency")},
+            metadata={
+                "severity": pc.get("severity"),
+                "frequency": pc.get("frequency"),
+                "suggested_tactics_json": _suggested_tactics(
+                    pc, ("product", "complaint", "title")
+                ),
+            },
         )
         _upsert_edge(db, topic, topic_node, prod_node, "has_product")
         summary["products_added"] += 1
@@ -330,6 +359,9 @@ def upsert_semantic(
                     "about_product": prod,
                     "severity": pc.get("severity"),
                     "frequency": pc.get("frequency"),
+                    "suggested_tactics_json": _suggested_tactics(
+                        pc, ("product", "complaint", "title")
+                    ),
                 },
             )
             _upsert_edge(db, topic, topic_node, pp_node, "has_painpoint")
@@ -350,6 +382,9 @@ def upsert_semantic(
                 "user_quote": wa.get("user_quote"),
                 "frequency": wa.get("frequency"),
                 "aliases": wa.get("aliases"),
+                "suggested_tactics_json": _suggested_tactics(
+                    wa, ("workaround", "title", "user_quote", "gap")
+                ),
             },
         )
         _upsert_edge(db, topic, topic_node, wa_node, "has_workaround")

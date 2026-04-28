@@ -10,6 +10,7 @@ import {
   deleteWorkspace,
   listWorkspaces,
 } from "@/lib/community/communityClient";
+import { fetchLicenceMe } from "@/lib/licenceClient";
 import type { Workspace } from "@/lib/community/types";
 
 function formatDate(iso: string | null): string {
@@ -32,6 +33,7 @@ export function WorkspacesPanel() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canSetPrivate, setCanSetPrivate] = useState(false);
   const [form, setForm] = useState({
     name: "",
     topic: "",
@@ -43,7 +45,13 @@ export function WorkspacesPanel() {
     setLoading(true);
     setError(null);
     try {
-      setRows(await listWorkspaces());
+      const [workspaceRows, licence] = await Promise.all([
+        listWorkspaces(),
+        fetchLicenceMe(),
+      ]);
+      setRows(workspaceRows);
+      const isPaidPlan = Boolean(licence.licence) && licence.features.plan_id !== "free";
+      setCanSetPrivate(isPaidPlan);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -152,10 +160,13 @@ export function WorkspacesPanel() {
             <label className="md:col-span-2 flex items-center gap-2 text-[13px] text-[var(--text)]">
               <input
                 type="checkbox"
-                checked={form.is_public}
+                checked={canSetPrivate ? form.is_public : true}
+                disabled={!canSetPrivate}
                 onChange={(e) => setForm((f) => ({ ...f, is_public: e.target.checked }))}
               />
-              Publish publicly on /explore (Gap Map Pro is required to keep workspaces private).
+              {canSetPrivate
+                ? "Publish publicly on /explore (turn off to keep this workspace private)."
+                : "Free plan: all workspaces are public on /explore. Upgrade to Pro to keep workspaces private."}
             </label>
             <div className="md:col-span-2">
               <button

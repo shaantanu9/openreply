@@ -3593,6 +3593,35 @@ html.dark .delete-confirm-modal .dc-match-text {
   font-size: 13px; line-height: 1.55; color: var(--ink-1);
   margin: 0 0 10px;
 }
+.insight-tactics {
+  margin: 0 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-1);
+  padding: 8px 10px;
+}
+.insight-tactics > summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.insight-tactic-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.insight-tactic-chip {
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.insight-tactic-chip:hover { background: var(--surface-3); }
 .insight-quote {
   margin: 0 0 10px;
   padding: 10px 14px;

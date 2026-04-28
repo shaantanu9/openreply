@@ -751,6 +751,146 @@ def cmd_mcp_status(
         typer.echo(f"note: {result['reason']}")
 
 
+def _parse_since(s: str | None) -> int | None:
+    """Parse a `--since` arg like ``24h`` / ``30m`` / ``2d`` / ``900`` → seconds.
+    None / empty → return None (no filter)."""
+    if not s:
+        return None
+    s = s.strip().lower()
+    try:
+        if s.endswith("d"): return int(float(s[:-1]) * 86400)
+        if s.endswith("h"): return int(float(s[:-1]) * 3600)
+        if s.endswith("m"): return int(float(s[:-1]) * 60)
+        if s.endswith("s"): return int(float(s[:-1]))
+        return int(float(s))
+    except ValueError:
+        return None
+
+
+@mcp_app.command("logs")
+def cmd_mcp_logs(
+    tail: int = typer.Option(50, "--tail", "-n", help="Last N events to print."),
+    severity: Optional[str] = typer.Option(
+        None, "--severity", "-s",
+        help="Minimum severity: debug|info|warn|error|fatal. error → also includes fatal.",
+    ),
+    kind: Optional[str] = typer.Option(
+        None, "--kind", "-k",
+        help="Filter to one event kind. Wildcards: 'startup:*', 'tool_*'.",
+    ),
+    tool: Optional[str] = typer.Option(
+        None, "--tool", "-t", help="Filter to one tool name (e.g. reddit_query_db).",
+    ),
+    since: Optional[str] = typer.Option(
+        None, "--since",
+        help="Only events newer than this. e.g. 24h, 30m, 2d, or seconds.",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show recent MCP server events from the structured log.
+
+    The MCP server writes every startup, lock acquisition, tool call, and
+    crash into the `mcp_events` SQLite table + a NDJSON file at
+    `<data_dir>/logs/mcp-server.log`. This command reads from the table
+    so filtering is fast even with 100k+ rows.
+
+    Examples:
+      reddit-cli mcp logs --severity error --since 24h
+      reddit-cli mcp logs --kind 'startup:*' --tail 20
+      reddit-cli mcp logs --tool reddit_query_db --since 1h
+    """
+    from ..mcp.logger import query_events
+
+    kind_arg, kind_prefix = None, None
+    if kind:
+        if "*" in kind or "%" in kind:
+            kind_prefix = kind
+        else:
+            kind_arg = kind
+
+    rows = query_events(
+        kind=kind_arg, kind_prefix=kind_prefix,
+        severity=severity, tool_name=tool,
+        since_seconds=_parse_since(since), limit=tail,
+    )
+    if as_json:
+        typer.echo(json.dumps(rows, default=str, indent=2))
+        return
+
+    if not rows:
+        typer.echo("(no matching events)")
+        return
+
+    sev_color = {
+        "debug": "dim", "info": "cyan", "warn": "yellow",
+        "error": "red", "fatal": "bold red",
+    }
+    for r in reversed(rows):  # oldest-first reads more naturally
+        ts = (r.get("ts") or "")[:19].replace("T", " ")
+        sev = (r.get("severity") or "info").lower()
+        color = sev_color.get(sev, "white")
+        kindstr = (r.get("kind") or "").ljust(22)
+        toolstr = f"  [{r.get('tool_name')}]" if r.get("tool_name") else ""
+        durstr = f"  ({r['duration_ms']} ms)" if r.get("duration_ms") is not None else ""
+        msg = (r.get("message") or "").replace("\n", " ")
+        console.print(
+            f"[dim]{ts}[/dim]  [{color}]{sev.upper():<5}[/{color}]  "
+            f"{kindstr}{toolstr}{durstr}  {msg}"
+        )
+
+
+@mcp_app.command("stats")
+def cmd_mcp_stats(
+    since: Optional[str] = typer.Option(
+        "24h", "--since",
+        help="Window for aggregation. e.g. 24h, 7d, 1h. Default 24h. Pass 'all' for no filter.",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Aggregate MCP server health: events by kind, severity, top errors, slowest tools.
+
+    Lets you spot recurring failure modes — e.g. ``reddit_synthesize_insights``
+    timing out 30× in 24h points at LLM-key issues; ``startup:lock_failed``
+    repeating means a client is reconnecting without `MCP_TAKEOVER_STALE_LOCK=1`.
+    """
+    from ..mcp.logger import aggregate_stats
+
+    secs = None if (since or "").lower() in ("", "all", "0") else _parse_since(since)
+    stats = aggregate_stats(since_seconds=secs)
+    if as_json:
+        typer.echo(json.dumps(stats, default=str, indent=2))
+        return
+
+    if not stats:
+        typer.echo("(no stats — log is empty or DB unreachable)")
+        return
+
+    label = since if since and since.lower() not in ("", "all", "0") else "all time"
+    console.print(f"[bold]MCP server stats — last {label}[/bold]  ([dim]{stats.get('log_file','')}[/dim])\n")
+
+    if stats.get("by_severity"):
+        console.print("[bold]By severity[/bold]")
+        for r in stats["by_severity"]:
+            console.print(f"  {r['severity']:<6}  {r['n']:>6}")
+
+    if stats.get("by_kind"):
+        console.print("\n[bold]By kind (top 15)[/bold]")
+        for r in stats["by_kind"][:15]:
+            console.print(f"  {r['kind']:<28}  {r['n']:>6}")
+
+    if stats.get("top_tool_errors"):
+        console.print("\n[bold red]Top tools by error count[/bold red]")
+        for r in stats["top_tool_errors"]:
+            console.print(f"  {r['tool_name']:<40}  {r['n']:>4}")
+
+    if stats.get("slow_tools"):
+        console.print("\n[bold yellow]Slowest tools (max ms)[/bold yellow]")
+        for r in stats["slow_tools"]:
+            console.print(
+                f"  {r['tool_name']:<40}  avg={r['p50_ms']:>5} ms  max={r['p95_ms']:>6} ms  ({r['n']} calls)"
+            )
+
+
 # ── info ─────────────────────────────────────────────────────────────────────
 
 # ── research ─────────────────────────────────────────────────────────────────
@@ -1015,8 +1155,9 @@ def cmd_research_collect(
         help=(
             "Comma-separated free sources. Options: hn, appstore, playstore, "
             "arxiv, openalex, pubmed, gnews, devto, stackoverflow, github, "
-            "trends, scholar, github_issues, lemmy, mastodon. Omit → aggressive "
-            "uses the safe 11-source default."
+            "trends, scholar, github_issues, lemmy, mastodon, rss_marketing, "
+            "rss_persuasion, rss_swipe. Omit → aggressive uses the safe "
+            "11-source default."
         ),
     ),
     aggressive: bool = typer.Option(
@@ -1235,6 +1376,123 @@ def cmd_export_brief(
         typer.echo(f"Wrote {len(content)} chars to {out}")
     else:
         typer.echo(content)
+
+
+@research_app.command("export-deck")
+def cmd_export_deck(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t",
+        help="Required for --format docx|pptx; ignored for --format md-to-docx"),
+    format: str = typer.Option("docx", "--format", "-f",
+        help="docx | pptx | md-to-docx — last one converts an existing .md brief"),
+    out: str = typer.Option(..., "--out", "-o",
+        help="Output file path (.docx or .pptx)"),
+    md_in: Optional[str] = typer.Option(None, "--md-in",
+        help="Source markdown path (only with --format md-to-docx)"),
+    reference_docx: Optional[str] = typer.Option(None, "--reference-docx",
+        help="Optional Word doc whose styles pandoc copies (md-to-docx only)"),
+    extra_topics: Optional[str] = typer.Option(None, "--extra-topics",
+        help="Comma-separated sibling topics to merge into the corpus"),
+    title: Optional[str] = typer.Option(None, "--title"),
+    subtitle: Optional[str] = typer.Option(None, "--subtitle"),
+    max_painpoints: int = typer.Option(12, "--max-painpoints",
+        help="Max painpoints to include (DOCX 12 / PPTX 6 are the defaults)"),
+) -> None:
+    """Export a stakeholder-ready DOCX brief or PPTX pitch deck."""
+    from ..research.export_deck import build_docx, build_pptx, build_docx_from_markdown
+    extras = [s.strip() for s in extra_topics.split(",")] if extra_topics else None
+    if format == "md-to-docx":
+        if not md_in:
+            typer.echo("--md-in is required with --format md-to-docx", err=True)
+            raise typer.Exit(1)
+        res = build_docx_from_markdown(
+            md_path=md_in, out_path=out, reference_docx=reference_docx,
+        )
+    elif format == "docx":
+        if not topic:
+            typer.echo("--topic is required with --format docx", err=True)
+            raise typer.Exit(1)
+        res = build_docx(
+            topic=topic, out_path=out, extra_topics=extras,
+            title=title, subtitle=subtitle, max_painpoints=max_painpoints,
+        )
+    elif format == "pptx":
+        if not topic:
+            typer.echo("--topic is required with --format pptx", err=True)
+            raise typer.Exit(1)
+        res = build_pptx(
+            topic=topic, out_path=out, extra_topics=extras,
+            title=title, subtitle=subtitle, max_painpoints=max_painpoints,
+        )
+    else:
+        typer.echo(f"Unknown format: {format}. Use docx | pptx | md-to-docx.", err=True)
+        raise typer.Exit(1)
+    if not res.get("ok"):
+        typer.echo(f"Export failed: {res.get('error')}", err=True)
+        if res.get("install_hint"):
+            typer.echo(f"  → {res['install_hint']}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Wrote {res['path']}")
+    for k in ("engine", "slide_count", "painpoint_count", "citation_count",
+              "competitor_count", "total_corpus_posts", "source_chars", "output_bytes"):
+        if k in res:
+            typer.echo(f"  {k}: {res[k]}")
+
+
+@research_app.command("paper-outline")
+def cmd_research_paper_outline(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str | None = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Generate a structured research-paper outline from insights."""
+    from ..research.paper_pipeline import paper_outline_generate
+    out = paper_outline_generate(topic=topic, provider=provider)
+    _emit(out, as_json)
+
+
+@research_app.command("paper-draft")
+def cmd_research_paper_draft(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str | None = typer.Option(None, "--provider"),
+    style: str = typer.Option("IMRaD", "--style", help="Paper style, default IMRaD."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Generate a markdown paper draft from topic insights."""
+    from ..research.paper_pipeline import paper_draft_generate
+    out = paper_draft_generate(topic=topic, provider=provider, style=style)
+    _emit(out, as_json)
+
+
+@research_app.command("paper-experiments")
+def cmd_research_paper_experiments(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str | None = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Generate experiment plan from hypotheses/findings."""
+    from ..research.paper_pipeline import experiment_plan_generate
+    out = experiment_plan_generate(topic=topic, provider=provider)
+    _emit(out, as_json)
+
+
+@research_app.command("paper-export")
+def cmd_research_paper_export(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: str | None = typer.Option(None, "--provider"),
+    format: str = typer.Option("markdown", "--format", help="Export format (markdown)."),
+    style: str = typer.Option("IMRaD", "--style", help="Paper style, default IMRaD."),
+    out: str | None = typer.Option(None, "--out", help="Optional file path to write."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Export paper draft with citation appendix."""
+    from ..research.paper_pipeline import paper_export_with_citations
+    res = paper_export_with_citations(topic=topic, provider=provider, format=format, style=style)
+    if out and res.get("ok"):
+        path = Path(out).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(res.get("content") or ""), encoding="utf-8")
+        res = {**res, "written_to": str(path)}
+    _emit(res, as_json)
 
 
 @research_app.command("competitor-matrix")
@@ -2104,6 +2362,308 @@ def cmd_research_papers_list(
     typer.echo(f"{len(posts)} papers for topic={topic}")
     for p in posts[:20]:
         typer.echo(f"  · [{p.get('source_type')}] cites={p.get('score')}  {(p.get('title') or '')[:120]}")
+
+
+@research_app.command("paper-fulltext")
+def cmd_research_paper_fulltext(
+    post_id: Optional[str] = typer.Option(
+        None, "--post-id",
+        help="Single paper post ID (e.g. arxiv_2403.12345). Omit to bulk-fetch a topic.",
+    ),
+    topic: Optional[str] = typer.Option(
+        None, "--topic", "-t",
+        help="Bulk mode: fetch full text for every paper post tagged to this topic.",
+    ),
+    sources: Optional[str] = typer.Option(
+        None, "--sources",
+        help="Comma-separated source filter (default: arxiv,openalex,semantic_scholar,scholar).",
+    ),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n"),
+    force: bool = typer.Option(
+        False, "--force",
+        help="Re-download + re-parse even if cached. Single-post mode only.",
+    ),
+    show_text: bool = typer.Option(
+        False, "--show",
+        help="Print the extracted text (single-post mode only). Off by default — papers are 50k+ chars.",
+    ),
+    status_only: bool = typer.Option(
+        False, "--status",
+        help="Show paper_full_texts aggregate status counts and exit.",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Fetch + cache the full PDF text for academic papers.
+
+    Until now the LLM analysis path saw at most a 2000-char abstract for
+    each paper. This command downloads the OA PDF (when available),
+    extracts text via pypdf, and caches it under
+    `<data_dir>/paper_cache/<source>/<post_id>.txt`. Subsequent reads —
+    by `analyze-paper` / `chat` / MCP — are served from cache.
+
+    Examples:
+      reddit-cli research paper-fulltext --post-id arxiv_2403.12345 --show
+      reddit-cli research paper-fulltext --topic "AI coding assistants"
+      reddit-cli research paper-fulltext --status --topic "AI coding assistants"
+    """
+    from ..research.paper_fulltext import (
+        get_full_text, fetch_bulk, get_status_summary,
+    )
+
+    if status_only:
+        result = get_status_summary(topic=topic)
+        _emit(result, as_json=as_json)
+        return
+
+    if post_id:
+        r = get_full_text(post_id, force=force)
+        if not as_json and r.get("ok"):
+            txt = r.get("text") or ""
+            console.print(
+                f"[green]ok[/green] · source={r['source']} · "
+                f"chars={r['char_count']} · cached={r.get('cached', False)} · "
+                f"cache={r.get('cache_path','')}"
+            )
+            if show_text:
+                console.print("\n" + txt[:8000] + ("\n[...]" if len(txt) > 8000 else ""))
+        elif not as_json:
+            console.print(f"[red]✗[/red] status={r.get('status')} error={r.get('error','')}")
+        else:
+            # Don't dump 200 KB of text into JSON unless asked.
+            r2 = dict(r)
+            if "text" in r2 and not show_text:
+                r2["text_preview"] = r2.pop("text")[:1000]
+            typer.echo(json.dumps(r2, default=str, indent=2))
+        return
+
+    # Bulk mode
+    src_list = [s.strip() for s in sources.split(",")] if sources else None
+    result = fetch_bulk(topic=topic, sources=src_list, limit=limit)
+    if as_json:
+        typer.echo(json.dumps(result, default=str, indent=2))
+        return
+    console.print(
+        f"[green]bulk fulltext[/green] · topic={topic or 'ALL'} · "
+        f"total={result.get('total', 0)} · fetched={result.get('fetched', 0)} · "
+        f"skipped={result.get('skipped', 0)} · failed={result.get('failed', 0)}"
+    )
+    for st, n in (result.get("by_status") or {}).items():
+        console.print(f"  {st:<20}  {n}")
+
+
+@research_app.command("paper-sections")
+def cmd_research_paper_sections(
+    post_id: str = typer.Option(..., "--post-id"),
+    force: bool = typer.Option(False, "--force"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Parse a cached paper into named sections (Methods, Results, Limitations…).
+
+    Idempotent — re-runs return the cached spans unless --force is set.
+    Run `paper-fulltext --post-id ...` first if no cache exists.
+    """
+    from ..research.paper_sections import parse_sections_for
+    r = parse_sections_for(post_id, force=force)
+    if as_json:
+        typer.echo(json.dumps(r, default=str, indent=2))
+        return
+    if not r.get("ok"):
+        console.print(f"[red]✗[/red] {r.get('error','')}")
+        raise typer.Exit(1)
+    console.print(
+        f"[green]ok[/green] · post_id={r['post_id']} · "
+        f"cached={r.get('cached', False)} · sections={len(r['sections'])}"
+    )
+    for s in r["sections"]:
+        console.print(
+            f"  {s['ord']:>2}. {s['name']:<16}  "
+            f"chars={s['char_count']:>6}  raw={s.get('raw_heading','')!r}"
+        )
+
+
+@research_app.command("paper-chunk")
+def cmd_research_paper_chunk(
+    post_id: Optional[str] = typer.Option(None, "--post-id"),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n"),
+    force: bool = typer.Option(False, "--force"),
+    no_embed: bool = typer.Option(False, "--no-embed", help="Skip Mempalace upsert."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Chunk paper full-text into embedding windows + push to Mempalace.
+
+    Single-paper mode (--post-id) or bulk mode (--topic). Bulk walks
+    every paper with a cached full text. Without --no-embed, new chunks
+    are upserted into Mempalace's `paper_chunks` collection so semantic
+    search by section works immediately.
+    """
+    from ..research.paper_chunks import chunk_paper, chunk_topic
+    if post_id:
+        r = chunk_paper(post_id, force=force, embed=not no_embed)
+    else:
+        r = chunk_topic(topic=topic, embed=not no_embed,
+                        limit=limit, force=force)
+    if as_json:
+        typer.echo(json.dumps(r, default=str, indent=2))
+        return
+    if not r.get("ok"):
+        console.print(f"[red]✗[/red] {r.get('error','')}")
+        raise typer.Exit(1)
+    if post_id:
+        console.print(
+            f"[green]chunk[/green] · post_id={r['post_id']} · "
+            f"n_chunks={r['n_chunks']} · n_new={r['n_new']} · "
+            f"unchanged={r['n_unchanged']} · embedded={r['embedded']}"
+        )
+    else:
+        console.print(
+            f"[green]bulk chunk[/green] · topic={r.get('topic') or 'ALL'} · "
+            f"total={r['total']} · chunked={r['chunked']} · "
+            f"embedded_total={r['embedded_total']} · errors={r['errors']}"
+        )
+
+
+@research_app.command("paper-chunk-search")
+def cmd_research_paper_chunk_search(
+    query: str = typer.Argument(...),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    sections: Optional[str] = typer.Option(
+        None, "--sections",
+        help="Comma list: methods,results,limitations,discussion,…",
+    ),
+    k: int = typer.Option(12, "--k"),
+    rollup: bool = typer.Option(
+        False, "--papers",
+        help="Roll up to paper level — one row per paper, top chunks attached.",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Semantic search over paper chunks. Use --sections to scope to
+    Methods / Results / Limitations etc. — gold for gap-finding."""
+    from ..retrieval import palace
+    sec_list = [s.strip() for s in sections.split(",")] if sections else None
+    if rollup:
+        r = palace.search_papers(query, k=k, topic=topic, section_filter=sec_list)
+    else:
+        r = palace.search_paper_chunks(query, k=k, topic=topic, section_filter=sec_list)
+    if as_json:
+        typer.echo(json.dumps(r, default=str, indent=2))
+        return
+    if not r.get("ok"):
+        console.print(f"[red]✗[/red] {r.get('reason') or r.get('error','')}")
+        raise typer.Exit(1)
+    for hit in r.get("results", []):
+        if rollup:
+            console.print(
+                f"[bold]{hit.get('title') or hit['post_id']}[/bold]  "
+                f"score={hit['best_score']:.3f}  "
+                f"sections={','.join(hit.get('sections_hit', []))}"
+            )
+            for ch in hit.get("chunks", [])[:2]:
+                snippet = ch["text"][:240].replace("\n", " ")
+                console.print(f"   · [{ch['section']}] {snippet}…")
+        else:
+            snippet = hit["text"][:300].replace("\n", " ")
+            console.print(
+                f"[{hit['section']:<12}] score={hit['score']:.3f} "
+                f"{hit['post_id']}#{hit['ord']}  {snippet}…"
+            )
+
+
+@research_app.command("paper-references")
+def cmd_research_paper_references(
+    post_id: Optional[str] = typer.Option(None, "--post-id"),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n"),
+    force: bool = typer.Option(False, "--force"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Extract references / citations from cached paper full text.
+
+    Tries OpenFileLoader first when installed; regex fallback otherwise.
+    After extraction, references are auto-linked to existing posts in
+    the corpus where possible (by arxiv id or DOI).
+    """
+    from ..research.paper_references import (
+        extract_references_for,
+        extract_topic_references,
+        get_references,
+    )
+    if post_id:
+        r = extract_references_for(post_id, force=force)
+        if r.get("ok") and r.get("n_refs", 0) > 0:
+            from ..research.paper_references import resolve_to_existing_posts
+            r["link"] = resolve_to_existing_posts(post_id)
+        if as_json:
+            typer.echo(json.dumps(r, default=str, indent=2))
+            return
+        if not r.get("ok"):
+            console.print(f"[red]✗[/red] {r.get('error','')}")
+            raise typer.Exit(1)
+        console.print(
+            f"[green]ok[/green] · {r['post_id']} · n_refs={r['n_refs']} · "
+            f"extractor={r.get('extractor','')}"
+        )
+        for ref in get_references(post_id)[:30]:
+            tag = ref.get("dst_post_id") or ref.get("dst_doi") or ref.get("dst_arxiv_id") or "—"
+            console.print(
+                f"  [{ref['resolution_status']:<10}] {tag}  "
+                f"{(ref.get('dst_title') or ref['raw'])[:120]}"
+            )
+        return
+
+    # Bulk
+    r = extract_topic_references(topic=topic, limit=limit, force=force)
+    if as_json:
+        typer.echo(json.dumps(r, default=str, indent=2))
+        return
+    console.print(
+        f"[green]bulk refs[/green] · topic={r.get('topic') or 'ALL'} · "
+        f"papers={r['papers_processed']} · refs_total={r['refs_total']} · "
+        f"linked_arxiv={r['linked_via_arxiv']} · linked_doi={r['linked_via_doi']}"
+    )
+
+
+@research_app.command("paper-cited-by")
+def cmd_research_paper_cited_by(
+    post_id: str = typer.Option(..., "--post-id"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show which papers in our corpus cite this one. Counts only refs
+    that have been auto-resolved to an existing post."""
+    from ..research.paper_references import get_cited_by
+    refs = get_cited_by(post_id)
+    if as_json:
+        typer.echo(json.dumps(refs, default=str, indent=2))
+        return
+    if not refs:
+        console.print(f"[yellow]no resolved citers[/yellow] for {post_id}")
+        return
+    console.print(f"[green]{len(refs)} papers[/green] cite {post_id}:")
+    for r in refs:
+        console.print(f"  · {r['src_post_id']}  ({r.get('dst_title','')[:80]})")
+
+
+@research_app.command("paper-stats")
+def cmd_research_paper_stats(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Show Mempalace `paper_chunks` collection stats — total chunks,
+    unique papers indexed, by-section histogram, embedder backend."""
+    from ..retrieval import palace
+    from ..retrieval.embedder import active_backend
+    s = palace.paper_chunks_stats()
+    s["embed_backend"] = active_backend()
+    if as_json:
+        typer.echo(json.dumps(s, default=str, indent=2))
+        return
+    if not s.get("ok"):
+        console.print(f"[red]✗[/red] {s.get('reason') or s.get('error','')}")
+        raise typer.Exit(1)
+    console.print(
+        f"[green]paper_chunks[/green] · count={s['count']} · "
+        f"papers_indexed={s['papers_indexed']} · backend={s['embed_backend']}"
+    )
+    for sec, n in sorted(s.get("by_section", {}).items(), key=lambda kv: -kv[1]):
+        console.print(f"  {sec:<16} {n}")
 
 
 @research_app.command("oa-lookup")

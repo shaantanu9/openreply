@@ -7,15 +7,22 @@ import { useSession } from "@/hooks/use-session";
 import { ROUTES } from "@/lib/constants";
 import {
   addSource,
+  createEnterpriseAction,
+  deleteEnterpriseAction,
+  getDailyBrief,
+  listEnterpriseActions,
   getSweep,
   getWorkspaceBundle,
   publishWorkspace,
   removeSource,
   startSweep,
   unpublishWorkspace,
+  updateEnterpriseAction,
   updateWorkspace,
 } from "@/lib/community/communityClient";
 import type {
+  DailyBrief,
+  EnterpriseAction,
   Insight,
   InsightType,
   Post,
@@ -24,8 +31,9 @@ import type {
   Workspace,
   WorkspaceSource,
 } from "@/lib/community/types";
+import { fetchLicenceMe } from "@/lib/licenceClient";
 
-type Tab = "ingest" | "sweep" | "insights" | "report" | "settings";
+type Tab = "ingest" | "sweep" | "insights" | "activity" | "report" | "settings";
 
 const SOURCE_TYPES: Array<{ value: SourceType; label: string }> = [
   { value: "reddit", label: "Reddit" },
@@ -65,21 +73,34 @@ export function WorkspaceDetailPanel({ workspaceId }: { workspaceId: string }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [latestSweep, setLatestSweep] = useState<Sweep | null>(null);
+  const [brief, setBrief] = useState<DailyBrief | null>(null);
+  const [actions, setActions] = useState<EnterpriseAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [newSourceType, setNewSourceType] = useState<SourceType>("reddit");
+  const [canSetPrivate, setCanSetPrivate] = useState(false);
+  const [newActionTitle, setNewActionTitle] = useState("");
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const bundle = await getWorkspaceBundle(workspaceId);
+      const [bundle, licence, nextBrief, nextActions] = await Promise.all([
+        getWorkspaceBundle(workspaceId),
+        fetchLicenceMe(),
+        getDailyBrief(workspaceId),
+        listEnterpriseActions(workspaceId),
+      ]);
       setWorkspace(bundle.workspace);
       setSources(bundle.sources);
       setPosts(bundle.posts);
       setInsights(bundle.insights);
       setLatestSweep(bundle.latest_sweep);
+      setBrief(nextBrief);
+      setActions(nextActions);
+      const isPaidPlan = Boolean(licence.licence) && licence.features.plan_id !== "free";
+      setCanSetPrivate(isPaidPlan);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -172,6 +193,56 @@ export function WorkspaceDetailPanel({ workspaceId }: { workspaceId: string }) {
     try {
       const updated = await updateWorkspace(workspace.id, patch);
       setWorkspace(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleCreateAction() {
+    const title = newActionTitle.trim();
+    if (!title) return;
+    setBusy("action-create");
+    setError(null);
+    try {
+      await createEnterpriseAction(workspaceId, { title, priority: "medium" });
+      setNewActionTitle("");
+      setActions(await listEnterpriseActions(workspaceId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleCycleActionStatus(action: EnterpriseAction) {
+    const nextStatus =
+      action.status === "open"
+        ? "in_progress"
+        : action.status === "in_progress"
+        ? "done"
+        : action.status === "done"
+        ? "blocked"
+        : "open";
+    setBusy(`action-${action.id}`);
+    setError(null);
+    try {
+      await updateEnterpriseAction(workspaceId, action.id, { status: nextStatus });
+      setActions(await listEnterpriseActions(workspaceId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleDeleteAction(actionId: string) {
+    setBusy(`action-del-${actionId}`);
+    setError(null);
+    try {
+      await deleteEnterpriseAction(workspaceId, actionId);
+      setActions(await listEnterpriseActions(workspaceId));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -290,7 +361,7 @@ export function WorkspaceDetailPanel({ workspaceId }: { workspaceId: string }) {
         ) : null}
 
         <nav className="mb-6 flex border-b border-[var(--border)]">
-          {(["ingest", "sweep", "insights", "report", "settings"] as Tab[]).map((t) => (
+          {(["ingest", "sweep", "insights", "activity", "report", "settings"] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -482,6 +553,111 @@ export function WorkspaceDetailPanel({ workspaceId }: { workspaceId: string }) {
           </section>
         ) : null}
 
+        {tab === "activity" ? (
+          <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
+            <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">Daily brief</div>
+            <p className="mb-5 text-[13px] text-[var(--muted)]">
+              Today&rsquo;s synthesis and action queue for this workspace.
+            </p>
+            {brief ? (
+              <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+                <div className="rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-2 text-[12px]">
+                  <div className="text-[var(--muted-light)]">Insights</div>
+                  <div className="text-[18px] font-medium text-[var(--dark)]">{brief.totals.insights}</div>
+                </div>
+                <div className="rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-2 text-[12px]">
+                  <div className="text-[var(--muted-light)]">Pains</div>
+                  <div className="text-[18px] font-medium text-[var(--dark)]">{brief.totals.pains}</div>
+                </div>
+                <div className="rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-2 text-[12px]">
+                  <div className="text-[var(--muted-light)]">Requests</div>
+                  <div className="text-[18px] font-medium text-[var(--dark)]">{brief.totals.requests}</div>
+                </div>
+                <div className="rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-2 text-[12px]">
+                  <div className="text-[var(--muted-light)]">Workarounds</div>
+                  <div className="text-[18px] font-medium text-[var(--dark)]">{brief.totals.workarounds}</div>
+                </div>
+                <div className="rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-2 text-[12px]">
+                  <div className="text-[var(--muted-light)]">New (24h)</div>
+                  <div className="text-[18px] font-medium text-[var(--dark)]">{brief.new_insights_24h.length}</div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mb-5">
+              <div className="mb-2 text-[13px] font-medium text-[var(--dark)]">Top rising gaps</div>
+              {brief?.rising_gaps?.length ? (
+                <ul className="flex flex-col gap-2">
+                  {brief.rising_gaps.slice(0, 5).map((g) => (
+                    <li key={g.id} className="rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-2 text-[12.5px]">
+                      <span className="font-medium text-[var(--dark)]">{g.title}</span>
+                      <span className="ml-2 text-[var(--orange)]">{g.frequency_pct}%</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-4 py-3 text-[12.5px] text-[var(--muted)]">
+                  No rising gaps yet.
+                </div>
+              )}
+            </div>
+
+            <div className="mb-3 text-[13px] font-medium text-[var(--dark)]">Today&rsquo;s actions</div>
+            <div className="mb-4 flex gap-2">
+              <input
+                value={newActionTitle}
+                onChange={(e) => setNewActionTitle(e.target.value)}
+                placeholder="Add action (e.g. Draft onboarding experiment for top painpoint)"
+                className="flex-1 rounded-[10px] border border-[var(--border-strong)] bg-white px-[12px] py-[10px] text-[13.5px] outline-none focus:border-[var(--orange)]"
+              />
+              <button
+                type="button"
+                onClick={handleCreateAction}
+                disabled={busy === "action-create" || !newActionTitle.trim()}
+                className="btn-sm"
+              >
+                {busy === "action-create" ? "Adding…" : "Add"}
+              </button>
+            </div>
+            {actions.length ? (
+              <ul className="flex flex-col gap-2">
+                {actions.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-2">
+                    <div>
+                      <div className="text-[13px] font-medium text-[var(--dark)]">{a.title}</div>
+                      <div className="text-[11.5px] text-[var(--muted)]">
+                        {a.priority} · {a.status}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCycleActionStatus(a)}
+                        disabled={busy === `action-${a.id}`}
+                        className="text-[12px] text-[var(--orange)] hover:underline disabled:opacity-50"
+                      >
+                        {busy === `action-${a.id}` ? "Saving…" : "Next status"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAction(a.id)}
+                        disabled={busy === `action-del-${a.id}`}
+                        className="text-[12px] text-[var(--muted)] hover:text-[#C0392B] disabled:opacity-50"
+                      >
+                        {busy === `action-del-${a.id}` ? "Removing…" : "Delete"}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-4 py-3 text-[12.5px] text-[var(--muted)]">
+                No actions yet. Add one from today&rsquo;s brief.
+              </div>
+            )}
+          </section>
+        ) : null}
+
         {tab === "report" ? (
           <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
             <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">Export</div>
@@ -554,10 +730,13 @@ export function WorkspaceDetailPanel({ workspaceId }: { workspaceId: string }) {
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    defaultChecked={workspace.is_public}
+                    defaultChecked={workspace.is_public || !canSetPrivate}
+                    disabled={!canSetPrivate}
                     onChange={(e) => handleSaveMeta({ is_public: e.target.checked })}
                   />
-                  Published on /explore
+                  {canSetPrivate
+                    ? "Published on /explore"
+                    : "Free plan: always published on /explore (upgrade to Pro for private)"}
                 </label>
                 <label className="flex items-center gap-2">
                   <input

@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       userId: auth.userId,
       workspace: ws,
       publishedBy: auth.profile.username,
-      poweredBy: "Gap Map Community",
+      poweredBy: auth.isPaidPlan ? "Gap Map Pro" : "Gap Map Community",
     });
     return NextResponse.json({ ok: true, published });
   } catch (err) {

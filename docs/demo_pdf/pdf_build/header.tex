@@ -1,0 +1,87 @@
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{titling}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{fvextra}
+\usepackage{quoting}
+\usepackage{seqsplit}
+
+% Color palette
+\definecolor{accentblue}{HTML}{1F4E79}
+\definecolor{accentlight}{HTML}{2E75B6}
+\definecolor{softgray}{HTML}{595959}
+\definecolor{lightgray}{HTML}{808080}
+\definecolor{rulegray}{HTML}{BFBFBF}
+\definecolor{codebg}{HTML}{F6F8FA}
+
+% Section title styling
+\titleformat{\section}
+  {\color{accentblue}\Large\bfseries\sffamily}
+  {\thesection.}{0.6em}{}[\vspace{2pt}{\color{rulegray}\titlerule}]
+\titleformat{\subsection}
+  {\color{accentlight}\large\bfseries\sffamily}
+  {\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}
+  {\color{softgray}\normalsize\bfseries\sffamily}
+  {\thesubsubsection}{0.6em}{}
+\titleformat{\paragraph}[runin]
+  {\color{softgray}\normalsize\bfseries\sffamily}
+  {}{0pt}{}
+
+\titlespacing*{\section}{0pt}{20pt}{10pt}
+\titlespacing*{\subsection}{0pt}{14pt}{6pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{4pt}
+
+% Page header / footer
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
+\fancyhead[L]{\small\color{lightgray}\sffamily Home-Improvement Lending Marketplace}
+\fancyhead[R]{\small\color{lightgray}\sffamily Deep-Dive Research}
+
+% Footer: small "gapmap.myind.ai" in left corner, page number center, brand right
+\fancyfoot[L]{\footnotesize\sffamily\color{accentlight}\href{http://gapmap.myind.ai}{gapmap.myind.ai}}
+\fancyfoot[C]{\small\color{lightgray}\sffamily \thepage}
+\fancyfoot[R]{\footnotesize\sffamily\color{lightgray}gapmap}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accentblue,
+  urlcolor=accentlight,
+  citecolor=accentblue
+}
+
+\fvset{breaklines=true, breakanywhere=true, fontsize=\footnotesize}
+
+\setlist{topsep=3pt, itemsep=2pt, parsep=0pt, leftmargin=*}
+
+\quotingsetup{
+  vskip=4pt, leftmargin=12pt, rightmargin=12pt,
+  font=itshape, indentfirst=false
+}
+\renewenvironment{quote}{\begin{quoting}\color{softgray}}{\end{quoting}}
+
+\pretitle{\begin{flushleft}\sffamily\color{accentblue}\Huge\bfseries}
+\posttitle{\par\vspace{2pt}\end{flushleft}}
+\preauthor{\begin{flushleft}\sffamily\color{softgray}\large}
+\postauthor{\par\end{flushleft}}
+\predate{\begin{flushleft}\sffamily\color{lightgray}\normalsize}
+\postdate{\par\end{flushleft}\vspace{4pt}{\color{accentblue}\rule{\textwidth}{1.2pt}}}
+
+\setlength{\parskip}{4pt plus 1pt}
+\setlength{\parindent}{0pt}
+
+\sloppy
+\emergencystretch=4em
+\hbadness=10000
+\hfuzz=12pt
+
+% Allow long monospace strings (IDs, etc.) to break inside cells
+\let\origtexttt\texttt
+\renewcommand{\texttt}[1]{\origtexttt{\seqsplit{#1}}}
+
+% Make table cells use top-alignment for nicer multi-line cells
+\renewcommand{\arraystretch}{1.18}

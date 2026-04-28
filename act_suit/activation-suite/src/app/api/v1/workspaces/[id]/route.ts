@@ -50,7 +50,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (typeof body.name === "string") patch.name = body.name.trim();
   if (typeof body.topic === "string") patch.topic = body.topic.trim();
   if (typeof body.description === "string") patch.description = body.description.trim();
-  if (typeof body.is_public === "boolean") patch.is_public = body.is_public;
+  if (typeof body.is_public === "boolean") {
+    if (body.is_public === false && !auth.isPaidPlan) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Private workspaces are available on paid plans only. Upgrade to Pro to keep research private.",
+        },
+        { status: 402 },
+      );
+    }
+    patch.is_public = body.is_public;
+  }
   if (body.status === "active" || body.status === "archived") patch.status = body.status;
 
   try {
