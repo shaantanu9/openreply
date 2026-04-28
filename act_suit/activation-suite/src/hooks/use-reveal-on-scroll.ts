@@ -6,6 +6,12 @@ import { useEffect } from "react";
 export function useRevealOnScroll(selector = ".reveal") {
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Capture window in a non-narrowing local. Using `if (!("…" in window))`
+    // narrows the *original* `window` symbol to `never` in the false branch
+    // under TS 5+, which then breaks `window.clearTimeout` (Vercel build,
+    // Apr 28). Reading through `w` keeps the types clean.
+    const w = window;
+
     const nodes = Array.from(
       document.querySelectorAll<HTMLElement>(selector),
     );
@@ -15,13 +21,16 @@ export function useRevealOnScroll(selector = ".reveal") {
     // breaks. 200ms — long enough for the in-viewport observer to fade
     // visible nodes, short enough that the user never sees a blank
     // section even on slow paint or out-of-viewport scroll-skipping.
-    const forceVisibleTimer = setTimeout(() => {
+    // Explicit `window.setTimeout` returns `number`, sidestepping the
+    // `NodeJS.Timeout` ambient type from `@types/node`.
+    const forceVisibleTimer: number = w.setTimeout(() => {
       nodes.forEach((n) => n.classList.add("is-visible"));
     }, 200);
 
-    if (!("IntersectionObserver" in window)) {
+    const hasIO = typeof IntersectionObserver !== "undefined";
+    if (!hasIO) {
       nodes.forEach((n) => n.classList.add("is-visible"));
-      clearTimeout(forceVisibleTimer);
+      w.clearTimeout(forceVisibleTimer);
       return;
     }
 
@@ -42,7 +51,7 @@ export function useRevealOnScroll(selector = ".reveal") {
 
     nodes.forEach((n) => io.observe(n));
     return () => {
-      clearTimeout(forceVisibleTimer);
+      w.clearTimeout(forceVisibleTimer);
       io.disconnect();
     };
   }, [selector]);
