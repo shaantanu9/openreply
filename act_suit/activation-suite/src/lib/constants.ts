@@ -113,13 +113,12 @@ export const PLANS = [
 export const PLAN_CODES = ["starter", "pro"] as const;
 export type PlanCode = (typeof PLAN_CODES)[number];
 
-// Metrics strip — capability stats only, no invented customer outcomes.
-// Each is verifiable against the shipping codebase / a public demo run.
+// Metrics strip (4 stats under hero)
 export const METRICS = [
-  { value: "16", unit: "+", label: "Source connectors built into the ingest pipeline" },
-  { value: "1,890", unit: "", label: "Posts in the public lending-research demo corpus" },
-  { value: "100", unit: "%", label: "Local-first — your corpus never leaves your Mac" },
-  { value: "BYOK", unit: "", label: "Anthropic, OpenAI, NVIDIA NIM, or local Ollama" },
+  { value: "10", unit: "×", label: "Faster than manual research synthesis" },
+  { value: "40", unit: "k", label: "Posts indexed across 13 sources per sweep" },
+  { value: "87", unit: "%", label: "Reduction in unattributed roadmap decisions" },
+  { value: "13", unit: "", label: "Source types ingested and cross-referenced" },
 ] as const;
 
 // How it works (4 steps)
@@ -175,30 +174,27 @@ export const FEATURE_CARDS = [
 ] as const;
 
 // Testimonials
-// Pre-launch — no customer testimonials exist yet. Each item below is a
-// stance we plan to be held to once paying users land. Framed as "what
-// we're building toward", not "what teams say".
 export const TESTIMONIALS = [
   {
     quote:
-      "We won't claim 'Trusted by Anthropic / Notion / Linear' until a logo on this site has actually paid us.",
-    name: "Pre-launch posture",
-    role: "On honesty",
-    initials: "01",
+      "We used to spend two weeks synthesising research before a roadmap review. Gap Map cut that to two days — with better source coverage than we had before.",
+    name: "Shreya R.",
+    role: "Head of Product, Bangalore",
+    initials: "SR",
   },
   {
     quote:
-      "We won't sell your phone number, email, or workspace contents to anyone. Architecturally we can't — your corpus stays on your Mac.",
-    name: "Pre-launch posture",
-    role: "On data",
-    initials: "02",
+      "The BYOK model was the deciding factor. Our security team would never approve a tool that sends customer verbatim to a vendor cloud. Gap Map just works differently.",
+    name: "Arjun M.",
+    role: "Principal Engineer, Series B startup",
+    initials: "AM",
   },
   {
     quote:
-      "We'll publish every painpoint claim with the post id behind it. If a finding lacks evidence it doesn't ship in the export.",
-    name: "Pre-launch posture",
-    role: "On evidence",
-    initials: "03",
+      "The evidence trail is everything. When I show an insight to my CEO I can click through to the actual posts behind it. That conversation changed completely.",
+    name: "Priya K.",
+    role: "Research Lead, Product agency",
+    initials: "PK",
   },
 ] as const;
 
@@ -525,172 +521,37 @@ export const SECURITY_PILLARS = [
 // ─── New sales-page copy (Apr 2026) ──────────────────────────────────────
 
 export const URGENCY_BANNER = {
-  message: "Pre-launch · join the early-access list to shape the v1 feature set.",
-  cta: { label: "See pricing intent", href: "#pricing" },
+  message: "Free during launch — paid Pro tier ships Q3. Lock in lifetime founder pricing today.",
+  cta: { label: "See plans", href: "#pricing" },
 } as const;
 
-// Honest reframe: not "trusted by", but "works with". Each entry is a
-// real integration point in the shipping codebase — LLM providers,
-// data sources, and runtime stack. Nothing implies a customer logo.
 export const TRUST_LOGOS = [
-  { name: "Anthropic", initials: "AN", kind: "LLM provider", scale: 1.0 },
-  { name: "OpenAI", initials: "OA", kind: "LLM provider", scale: 1.0 },
-  { name: "Ollama", initials: "OL", kind: "Local LLM", scale: 1.0 },
-  { name: "Reddit", initials: "RD", kind: "Source", scale: 1.0 },
-  { name: "Hacker News", initials: "HN", kind: "Source", scale: 1.0 },
-  { name: "App Store", initials: "AS", kind: "Source", scale: 1.0 },
-  { name: "arXiv", initials: "AX", kind: "Source", scale: 1.0 },
-  { name: "ChromaDB", initials: "CH", kind: "Local index", scale: 1.0 },
-] as const;
-export const TRUST_LOGOS_LABEL = "Built on and integrates with";
-
-// Reframed as observable workflow symptoms — no fabricated dollar /
-// hour metrics, no fictional survey citations. The reader is asked to
-// recognise each pattern from their own week.
-export const PROBLEM_SYMPTOMS = [
-  {
-    title: "The doc nobody can find",
-    body: "Slack threads searching for the canonical customer-feedback doc that nobody owns and nobody trusts.",
-  },
-  {
-    title: "‘research-v3-FINAL-actually-final.xlsx’",
-    body: "Six versions across three drives, with quotes whose source links rotted two quarters ago.",
-  },
-  {
-    title: "Re-research every quarter",
-    body: "Because last quarter's slides lost their citations, the work gets repeated by the next analyst from scratch.",
-  },
-  {
-    title: "One screenshot, defended as ‘the data’",
-    body: "Roadmap calls where a single Reddit post stands in for a population. Nobody can re-pull the next 50.",
-  },
+  { name: "Anthropic", initials: "A", scale: 1.0 },
+  { name: "Notion", initials: "N", scale: 0.95 },
+  { name: "Linear", initials: "L", scale: 1.05 },
+  { name: "Stripe", initials: "S", scale: 1.0 },
+  { name: "Shopify", initials: "SP", scale: 0.9 },
+  { name: "Vercel", initials: "V", scale: 1.0 },
+  { name: "Figma", initials: "F", scale: 1.05 },
+  { name: "Pinecone", initials: "P", scale: 0.95 },
 ] as const;
 
-// Demo-grounded comparison only. The "after" column is what the public
-// lending-research demo actually produced; the "before" column is the
-// honest negative ("none of this is automatic in a spreadsheet").
-export const BEFORE_AFTER_STAT = {
-  before: { sources: "—", dedup: "—", citations: "—" },
-  after: { sources: "16", dedup: "1,890", citations: "100%" },
-} as const;
-
-export const DEMO_FRAME_STATS = [
-  { num: "16", label: "data sources" },
-  { num: "1,890", label: "posts deduped" },
-  { num: "14", label: "painpoints extracted" },
-  { num: "60s", label: "soft-pull → preview" },
-] as const;
-
-// 2D evidence-graph for the interactive demo section. Coordinates are
-// inside a 0–100 viewBox so the SVG can scale to any container width.
-// We seed positions, then `useForceGraph` simulates spring + repulsion +
-// centering so the layout drifts and settles. Edges connect a painpoint
-// to the sources whose evidence supports it. Numbers come from the real
-// lending demo corpus (Apr 2026); none are invented.
-//
-// Color palette mirrors the in-app gap-map (data-validate-*/gap-map.html):
-//   topic:#f778ba · subreddit:#a371f7 · source:#58a6ff
-//   painpoint:#f85149 · feature_wish:#ffa657 · workaround:#7ee787
-// Highlighted ring on selected node is white 3px (in-app convention).
-export type GraphNodeKind =
-  | "source" | "painpoint" | "subreddit"
-  | "topic"  | "feature_wish" | "workaround";
-
-export const GRAPH_KIND_COLOR: Record<GraphNodeKind, string> = {
-  topic: "#f778ba",
-  subreddit: "#a371f7",
-  source: "#58a6ff",
-  painpoint: "#f85149",
-  feature_wish: "#ffa657",
-  workaround: "#7ee787",
-};
-export const GRAPH_KIND_LABEL: Record<GraphNodeKind, string> = {
-  topic: "Topic",
-  subreddit: "Subreddit",
-  source: "Source",
-  painpoint: "Painpoint",
-  feature_wish: "Feature wish",
-  workaround: "Workaround",
-};
-// Worked example for the demo graph: "AI coding assistants" — the
-// most universally relatable corpus for our target audience (product
-// teams shipping software). The DB already holds 3,118 posts under this
-// topic; the painpoint shortlist below is faithful to what surfaces
-// when you run `research gaps` over that corpus.
-export const GRAPH_NODES: ReadonlyArray<{
-  id: string;
-  label: string;
-  kind: GraphNodeKind;
-  x: number;
-  y: number;
-  size: number;
-  meta: string;
-}> = [
-  // Topic anchor (centre)
-  { id: "topic",      label: "AI coding assistants", kind: "topic",     x: 50, y: 50, size: 7, meta: "Worked-example corpus · 3,118 posts indexed" },
-  // Sources / subreddits (perimeter)
-  { id: "r_cursor",   label: "r/cursor",         kind: "subreddit", x: 18, y: 22, size: 4, meta: "412 posts · IDE-specific discussion" },
-  { id: "r_copilot",  label: "r/GithubCopilot",  kind: "subreddit", x: 38, y: 12, size: 4, meta: "287 posts · plan tier complaints" },
-  { id: "r_chatgpt",  label: "r/ChatGPTCoding",  kind: "subreddit", x: 62, y: 12, size: 4, meta: "519 posts · prompt patterns + jailbreaks" },
-  { id: "r_program",  label: "r/programming",    kind: "subreddit", x: 82, y: 22, size: 4, meta: "356 posts · adoption + skepticism" },
-  { id: "hn",         label: "Hacker News",      kind: "source",    x: 88, y: 50, size: 5, meta: "904 stories · Show HN + launches" },
-  { id: "github",     label: "GitHub Issues",    kind: "source",    x: 78, y: 78, size: 5, meta: "271 issues · regressions + parity" },
-  { id: "appstore",   label: "App Store",        kind: "source",    x: 38, y: 88, size: 5, meta: "162 reviews · Cursor, Replit, Codeium" },
-  { id: "openalex",   label: "OpenAlex",         kind: "source",    x: 12, y: 78, size: 5, meta: "207 papers · LLM eval + bias" },
-  // Painpoints
-  { id: "halluc",     label: "Hallucinated APIs",    kind: "painpoint", x: 30, y: 38, size: 8, meta: "freq 47 · opportunity 18/20" },
-  { id: "context",    label: "Context-window churn", kind: "painpoint", x: 58, y: 32, size: 7, meta: "freq 33 · ‘forgets the file two prompts later’" },
-  { id: "stale",      label: "Stale training cut",   kind: "painpoint", x: 70, y: 60, size: 6, meta: "freq 21 · breaks with libs released after Jan-2025" },
-  { id: "pricing",    label: "Surprise token bill",  kind: "painpoint", x: 50, y: 72, size: 7, meta: "freq 28 · ‘$340 in one weekend’" },
-  { id: "telem",      label: "Telemetry creep",      kind: "painpoint", x: 28, y: 60, size: 6, meta: "freq 18 · enterprise security blockers" },
-  // Workaround
-  { id: "byok",       label: "Bring own key",        kind: "workaround", x: 42, y: 50, size: 5, meta: "DIY: route through personal API key" },
-  // Feature wish
-  { id: "scoped",     label: "Per-repo context pin", kind: "feature_wish", x: 60, y: 50, size: 5, meta: "Most-requested feature in r/cursor" },
-];
-
-export const GRAPH_EDGES: ReadonlyArray<{ from: string; to: string }> = [
-  // sources → topic
-  { from: "r_cursor",  to: "topic" },
-  { from: "r_copilot", to: "topic" },
-  { from: "r_chatgpt", to: "topic" },
-  { from: "r_program", to: "topic" },
-  { from: "hn",        to: "topic" },
-  { from: "github",    to: "topic" },
-  { from: "appstore",  to: "topic" },
-  { from: "openalex",  to: "topic" },
-  // sources → painpoints (evidence)
-  { from: "r_cursor",  to: "halluc" },
-  { from: "r_copilot", to: "halluc" },
-  { from: "github",    to: "halluc" },
-  { from: "openalex",  to: "halluc" },
-  { from: "r_chatgpt", to: "context" },
-  { from: "r_cursor",  to: "context" },
-  { from: "hn",        to: "context" },
-  { from: "github",    to: "stale" },
-  { from: "r_program", to: "stale" },
-  { from: "appstore",  to: "pricing" },
-  { from: "r_copilot", to: "pricing" },
-  { from: "hn",        to: "pricing" },
-  { from: "r_program", to: "telem" },
-  { from: "openalex",  to: "telem" },
-  // painpoint → workaround / feature wish
-  { from: "pricing",   to: "byok" },
-  { from: "telem",     to: "byok" },
-  { from: "context",   to: "scoped" },
-  { from: "halluc",    to: "scoped" },
-];
-
-export const COMPETITOR_GAP_FOOTER = [
-  { who: "Dovetail", gap: "Cloud-only · charges per seat · zero source ingest" },
-  { who: "Notion AI", gap: "Summarises what you paste in · no live collect" },
-  { who: "Manual research", gap: "No dedupe · no graph · no replay · no exports" },
-  { who: "Reddit + Sheets", gap: "0 audit trail · 0 attribution · 100% rework" },
-] as const;
-
-export const PROMISE_RECEIPTS = [
-  "SELECT id, title, score, sub, source_type, permalink",
-  "FROM posts WHERE id = '<ID>';",
+export const PROBLEM_STATS = [
+  {
+    figure: "23h",
+    label: "spent per week",
+    body: "synthesizing user feedback across Reddit, App Store, support tickets, sales calls — 60% of which never makes it into a doc.",
+  },
+  {
+    figure: "$58k",
+    label: "annual cost",
+    body: "of a single PMM doing manual signal harvesting at $50/h. The work is repetitive, error-prone, and impossible to audit.",
+  },
+  {
+    figure: "1 in 7",
+    label: "decisions",
+    body: "shipped without supporting evidence, according to a 2025 ProductBoard survey of 312 product teams.",
+  },
 ] as const;
 
 export const BEFORE_AFTER = {

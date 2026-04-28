@@ -1,10 +1,13 @@
-import { BEFORE_AFTER, BEFORE_AFTER_STAT } from "@/lib/constants";
+import { BEFORE_AFTER } from "@/lib/constants";
 
 /**
- * Side-by-side workflow contrast — tightened: 72px section padding,
- * 7-point internal padding, and a 3-cell stats strip pinned to the
- * bottom of the panel so the eye lands on a concrete delta instead of
- * floating into whitespace.
+ * Side-by-side workflow contrast. Single most powerful conversion
+ * device for B2B SaaS — replaces vague claims ("faster") with concrete
+ * line-item differences the reader can map onto their own day.
+ *
+ * Visual rule: muted gray treatment on the left, full-color brand on
+ * the right. The accent panel deliberately overlaps the divider line
+ * by 1px so the eye reads "after" as the wider, dominant column.
  */
 function CheckRow({ text, kind }: { text: string; kind: "x" | "✓" }) {
   const isWin = kind === "✓";
@@ -12,7 +15,7 @@ function CheckRow({ text, kind }: { text: string; kind: "x" | "✓" }) {
     <li className="flex items-start gap-3">
       <span
         aria-hidden
-        className={`mt-[2px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+        className={`mt-[2px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
           isWin
             ? "bg-[var(--orange)] text-white"
             : "bg-[var(--cream-dark)] text-[var(--muted-light)]"
@@ -21,10 +24,8 @@ function CheckRow({ text, kind }: { text: string; kind: "x" | "✓" }) {
         {isWin ? "✓" : "×"}
       </span>
       <span
-        className={`text-[13.5px] leading-[1.55] ${
-          isWin
-            ? "text-[var(--dark)]"
-            : "text-[var(--muted)] line-through decoration-[var(--muted-light)]"
+        className={`text-[14px] leading-[1.6] ${
+          isWin ? "text-[var(--dark)]" : "text-[var(--muted)] line-through decoration-[var(--muted-light)]"
         }`}
       >
         {text}
@@ -33,108 +34,68 @@ function CheckRow({ text, kind }: { text: string; kind: "x" | "✓" }) {
   );
 }
 
-function MiniStat({
-  num,
-  label,
-  tone,
-}: {
-  num: string;
-  label: string;
-  tone: "before" | "after";
-}) {
-  const numColor = tone === "after" ? "text-[var(--orange)]" : "text-[var(--muted)]";
-  return (
-    <div className="flex flex-col">
-      <span className={`font-serif text-[22px] font-normal leading-none tracking-[-0.6px] ${numColor}`}>
-        {num}
-      </span>
-      <span className="mt-1 text-[10px] font-medium uppercase tracking-[1.2px] text-[var(--muted-light)]">
-        {label}
-      </span>
-    </div>
-  );
-}
-
 export function BeforeAfterSection() {
   const { before, after } = BEFORE_AFTER;
   return (
     <section
       id="before-after"
-      className="bg-[var(--cream-mid)] px-8 py-[72px]"
+      className="bg-[var(--cream-mid)] px-8 py-[100px]"
     >
       <div className="mx-auto max-w-[1200px]">
         <div className="mx-auto max-w-[640px] text-center">
           <span className="section-label">Before / after</span>
-          <h2 className="font-serif text-[clamp(30px,3.4vw,42px)] font-normal leading-[1.1] tracking-[-1.2px] text-[var(--dark)]">
+          <h2 className="section-h2">
             From spreadsheet sprawl to
             <br />
             <em>one auditable graph.</em>
           </h2>
-          <p className="mx-auto mt-3 max-w-[560px] text-[14.5px] leading-[1.65] text-[var(--muted)]">
+          <p className="section-sub mx-auto mt-3">
             Same week. Same product team. Same 1,890 posts of customer signal.
             Two very different outcomes.
           </p>
         </div>
 
-        <div className="mt-10 grid gap-0 overflow-hidden rounded-[24px] border border-[var(--border-strong)] bg-white md:grid-cols-2">
+        <div className="mt-12 grid gap-0 overflow-hidden rounded-[28px] border border-[var(--border-strong)] bg-white md:grid-cols-2">
           {/* BEFORE */}
-          <div className="reveal flex flex-col gap-4 bg-[var(--cream-dark)] p-7">
-            <span className="text-[10.5px] font-medium uppercase tracking-[1.4px] text-[var(--muted-light)]">
+          <div className="reveal flex flex-col gap-5 bg-[var(--cream-dark)] p-10">
+            <span className="text-[11px] font-medium uppercase tracking-[1.5px] text-[var(--muted-light)]">
               {before.label}
             </span>
-            <h3 className="font-serif text-[22px] font-normal leading-tight tracking-[-0.4px] text-[var(--muted)]">
+            <h3 className="font-serif text-[24px] font-normal leading-tight tracking-[-0.5px] text-[var(--muted)]">
               {before.title}
             </h3>
-            <ul className="mt-1 flex flex-col gap-[10px]">
+            <ul className="mt-2 flex flex-col gap-3">
               {before.items.map((item) => (
                 <CheckRow key={item} text={item} kind="x" />
               ))}
             </ul>
-            <div className="mt-auto grid grid-cols-3 gap-3 border-t border-[var(--border)] pt-4">
-              <MiniStat num={BEFORE_AFTER_STAT.before.sources} label="sources" tone="before" />
-              <MiniStat
-                num={BEFORE_AFTER_STAT.before.dedup}
-                label="deduped"
-                tone="before"
-              />
-              <MiniStat
-                num={BEFORE_AFTER_STAT.before.citations}
-                label="cited"
-                tone="before"
-              />
-            </div>
+            <p className="mt-auto pt-6 text-[12px] font-mono uppercase tracking-[1.5px] text-[var(--muted-light)]">
+              ~23 hours / week · 4 tools · zero receipts
+            </p>
           </div>
 
           {/* AFTER */}
-          <div className="reveal relative flex flex-col gap-4 bg-white p-7 md:-ml-px md:border-l md:border-[var(--border-strong)]">
-            <span className="absolute right-5 top-5 inline-flex items-center gap-2 rounded-full bg-[var(--orange-pale)] px-3 py-[3px] text-[10px] font-medium uppercase tracking-[1.2px] text-[var(--orange)]">
-              <span className="h-[5px] w-[5px] rounded-full bg-[var(--orange)]" />
-              Gap Map
+          <div className="reveal relative flex flex-col gap-5 bg-white p-10 md:-ml-px md:border-l md:border-[var(--border-strong)]">
+            <span
+              className="absolute right-6 top-6 inline-flex items-center gap-2 rounded-full bg-[var(--orange-pale)] px-3 py-[4px] text-[10.5px] font-medium uppercase tracking-[1.2px] text-[var(--orange)]"
+            >
+              <span className="h-[6px] w-[6px] rounded-full bg-[var(--orange)]" />
+              The Gap Map way
             </span>
-            <span className="text-[10.5px] font-medium uppercase tracking-[1.4px] text-[var(--orange)]">
+            <span className="text-[11px] font-medium uppercase tracking-[1.5px] text-[var(--orange)]">
               {after.label}
             </span>
-            <h3 className="font-serif text-[22px] font-normal leading-tight tracking-[-0.4px] text-[var(--dark)]">
+            <h3 className="font-serif text-[24px] font-normal leading-tight tracking-[-0.5px] text-[var(--dark)]">
               {after.title}
             </h3>
-            <ul className="mt-1 flex flex-col gap-[10px]">
+            <ul className="mt-2 flex flex-col gap-3">
               {after.items.map((item) => (
                 <CheckRow key={item} text={item} kind="✓" />
               ))}
             </ul>
-            <div className="mt-auto grid grid-cols-3 gap-3 border-t border-[var(--border)] pt-4">
-              <MiniStat num={BEFORE_AFTER_STAT.after.sources} label="sources" tone="after" />
-              <MiniStat
-                num={BEFORE_AFTER_STAT.after.dedup}
-                label="deduped"
-                tone="after"
-              />
-              <MiniStat
-                num={BEFORE_AFTER_STAT.after.citations}
-                label="cited"
-                tone="after"
-              />
-            </div>
+            <p className="mt-auto pt-6 text-[12px] font-mono uppercase tracking-[1.5px] text-[var(--orange)]">
+              ~3 hours / week · 1 app · every claim cited
+            </p>
           </div>
         </div>
       </div>

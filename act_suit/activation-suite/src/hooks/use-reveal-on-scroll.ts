@@ -9,7 +9,7 @@ export function useRevealOnScroll(selector = ".reveal") {
     // Capture window in a non-narrowing local. Using `if (!("…" in window))`
     // narrows the *original* `window` symbol to `never` in the false branch
     // under TS 5+, which then breaks `window.clearTimeout` (Vercel build,
-    // Apr 28). Reading through `w` keeps the types clean.
+    // Apr 28 2026). Reading through `w` keeps the types clean.
     const w = window;
 
     const nodes = Array.from(
@@ -21,7 +21,7 @@ export function useRevealOnScroll(selector = ".reveal") {
     // breaks. 200ms — long enough for the in-viewport observer to fade
     // visible nodes, short enough that the user never sees a blank
     // section even on slow paint or out-of-viewport scroll-skipping.
-    // Explicit `window.setTimeout` returns `number`, sidestepping the
+    // Explicit `w.setTimeout` returns `number`, sidestepping the
     // `NodeJS.Timeout` ambient type from `@types/node`.
     const forceVisibleTimer: number = w.setTimeout(() => {
       nodes.forEach((n) => n.classList.add("is-visible"));

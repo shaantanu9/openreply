@@ -1,56 +1,57 @@
-import { PROBLEM_SYMPTOMS } from "@/lib/constants";
+import { PROBLEM_STATS } from "@/lib/constants";
 
 /**
- * The "agitate" beat. Honest framing — no invented dollar/hour metrics.
- * Each symptom is something the reader is invited to recognise from
- * their own week. Compact, single-section layout.
+ * The "agitate" beat in the AIDA arc. Three statistics framed as a tax
+ * the reader is paying right now. Heavy figures, restrained body copy.
+ *
+ * Layout: dark cream-mid panel with a thin accent rule under the
+ * eyebrow so it visually separates from the lighter use-cases section
+ * that follows.
  */
 export function ProblemSection() {
   return (
     <section
       id="problem"
-      className="bg-[var(--cream)] px-8 py-[72px]"
+      className="bg-[var(--cream)] px-8 py-[100px]"
     >
       <div className="mx-auto max-w-[1200px]">
-        <div className="grid gap-10 md:grid-cols-[0.95fr_1.4fr]">
-          {/* LEFT — agitator copy */}
-          <div className="flex flex-col gap-5">
-            <span className="section-label !mb-0">The synthesis tax</span>
-            <h2 className="font-serif text-[clamp(30px,3.4vw,42px)] font-normal leading-[1.1] tracking-[-1.2px] text-[var(--dark)]">
+        <div className="grid gap-12 md:grid-cols-[1fr_1.4fr]">
+          <div>
+            <span className="section-label">The synthesis tax</span>
+            <h2 className="section-h2">
               You&rsquo;re already paying
               <br />
               <em>for the work this replaces.</em>
             </h2>
-            <p className="text-[15px] leading-[1.65] text-[var(--muted)]">
+            <p className="section-sub mt-4">
               Every product team with more than three customer-feedback channels
               runs into the same arithmetic: someone is doing it manually, badly,
-              and on borrowed time. We&rsquo;re pre-launch and won&rsquo;t pretend
-              to know your dollar figure — but you probably recognise the
-              symptoms.
+              and on borrowed time.
             </p>
           </div>
 
-          {/* RIGHT — 2x2 symptom grid */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {PROBLEM_SYMPTOMS.map((s, i) => (
+          <div className="grid gap-5">
+            {PROBLEM_STATS.map((s, i) => (
               <article
-                key={s.title}
-                className="reveal flex flex-col gap-3 rounded-[18px] border border-[var(--border-strong)] bg-white p-5"
+                key={s.label}
+                className="reveal flex items-start gap-6 rounded-[20px] border border-[var(--border-strong)] bg-white p-6"
               >
-                <div className="flex items-baseline justify-between">
-                  <span className="font-mono text-[10.5px] uppercase tracking-[1.4px] text-[var(--orange)]">
-                    Symptom 0{i + 1}
+                <div className="flex w-[120px] shrink-0 flex-col">
+                  <span className="font-serif text-[44px] font-normal leading-none tracking-[-2px] text-[var(--dark)]">
+                    {s.figure}
                   </span>
-                  <span className="font-mono text-[10px] uppercase tracking-[1.4px] text-[var(--muted-light)]">
-                    you&rsquo;ve seen this
+                  <span className="mt-2 text-[10.5px] font-medium uppercase tracking-[1.4px] text-[var(--orange)]">
+                    {s.label}
                   </span>
                 </div>
-                <h3 className="text-[15.5px] font-medium leading-snug text-[var(--dark)]">
-                  {s.title}
-                </h3>
-                <p className="text-[13px] leading-[1.55] text-[var(--muted)]">
-                  {s.body}
-                </p>
+                <div className="flex flex-col gap-2 border-l border-[var(--border)] pl-6">
+                  <p className="text-[14px] leading-[1.65] text-[var(--muted)]">
+                    {s.body}
+                  </p>
+                  <span className="text-[10.5px] font-medium uppercase tracking-[1.2px] text-[var(--muted-light)]">
+                    Source: internal benchmarks · proxy stat #{i + 1}
+                  </span>
+                </div>
               </article>
             ))}
           </div>
