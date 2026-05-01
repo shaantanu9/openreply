@@ -10,6 +10,7 @@ import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
 import { loadPapers } from './papers.js';
 import { mountIntentLadder } from './intent_ladder.js';
+import { loadHome } from './home_tab.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
 import { loadSentiment } from './sentiment.js';
@@ -430,20 +431,16 @@ export async function renderTopic(root, { params }) {
       </button>
     </div>
 
-    <!-- Intent action-ladder card (per-topic deliverable routing).
-         Spec: docs/superpowers/specs/2026-04-21-intent-layer.md.
-         Shows the user WHAT they're producing + 3-4 steps to get there.
-         Lives below the stage rail — stage rail is visual workflow cue,
-         intent ladder is the actionable "your deliverable" card. -->
-    <div id="intent-ladder-host"></div>
+    <!-- Intent ladder + Gap Map coverage now live inside the Home tab
+         (the default first tab for every topic). Spec:
+         docs/superpowers/specs/2026-04-21-intent-layer.md. -->
 
-    <!-- Phase-11 tab cleanup: 4 primary tabs always visible, everything
-         else in a "More ▾" dropdown. Primaries were picked from actual
-         usage (Insights=core output, Bets=weekly ritual,
-         Evidence=drilldown, Chat=follow-up) per PRODUCT_GAPS.md §3.1 -->
+    <!-- Home is the default landing tab. It owns the intent action-ladder +
+         Gap Map coverage card. Other tabs (Insights/Bets/Evidence/Chat/…)
+         stay as work surfaces users dive into from Home's step buttons. -->
     <div class="tabs" id="topic-tabs">
-      <button class="tab active" data-tab="insights"><i data-lucide="sparkles"></i> Insights</button>
-      <button class="tab" data-tab="bets"><i data-lucide="target"></i> Bets</button>
+      <button class="tab active" data-tab="home"><i data-lucide="home"></i> Home</button>
+      <button class="tab" data-tab="insights"><i data-lucide="sparkles"></i> Insights</button>
       <button class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence</button>
       <button class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
       <div class="tab-more-wrap">
@@ -451,6 +448,7 @@ export async function renderTopic(root, { params }) {
           <i data-lucide="more-horizontal"></i> More <i data-lucide="chevron-down"></i>
         </button>
         <div class="tab-more-menu" id="tab-more-menu" hidden>
+          <button class="tab-more-item" data-tab="bets"><i data-lucide="target"></i> Bets</button>
           <button class="tab-more-item" data-tab="map"><i data-lucide="network"></i> Map</button>
           <button class="tab-more-item" data-tab="report"><i data-lucide="file-text"></i> Report</button>
           <button class="tab-more-item" data-tab="trends"><i data-lucide="trending-up"></i> Trends</button>
@@ -2193,6 +2191,10 @@ export async function renderTopic(root, { params }) {
 
   // ─── tab switching ────────────────────────────────────────────────────
   const loaders = {
+    // Home is the first default tab for every topic. It owns the intent
+    // ladder + Gap Map coverage card. The ladder's step buttons call back
+    // into switchTab to route to the tab that performs each step.
+    home: () => loadHome(contentEl, topic, switchTab),
     insights: () => loadInsights(contentEl, topic),
     bets: () => loadBets(contentEl, topic),
     map: loadMap, report: loadReport, evidence: loadEvidence,
@@ -2306,7 +2308,7 @@ export async function renderTopic(root, { params }) {
     // Highlight primary tabs by data-tab match. Also highlight the More
     // button when a non-primary tab is active, so the user can see their
     // current location even for tabs inside the dropdown.
-    const primaryTabs = new Set(['insights', 'bets', 'evidence', 'chat']);
+    const primaryTabs = new Set(['home', 'insights', 'evidence', 'chat']);
     tabsEl.querySelectorAll('.tab:not(.tab-more)').forEach(t =>
       t.classList.toggle('active', t.dataset.tab === name)
     );
@@ -2586,23 +2588,11 @@ export async function renderTopic(root, { params }) {
   };
   window.addEventListener('hashchange', hashCleanup);
 
-  // Intent-driven default tab + action-ladder mount. Falls back cleanly to
-  // 'insights' on any failure so pre-migration topics + first-run installs
-  // stay on their current landing.
-  let defaultTab = 'insights';
-  try {
-    const intentPayload = await api.topicIntentGet(topic);
-    defaultTab = intentPayload?.preset?.default_tab || 'insights';
-    const ladderHost = document.getElementById('intent-ladder-host');
-    if (ladderHost) {
-      mountIntentLadder(ladderHost, topic, {
-        goToTab: (name) => switchTab(name),
-      });
-    }
-  } catch {
-    // Intent layer is additive — any failure falls back to pre-intent flow.
-  }
-  await switchTab(defaultTab);
+  // Home is now the universal default landing tab for every topic —
+  // intent's per-preset default_tab is what the Home ladder's step
+  // buttons route to when users click "Open", not the first-open landing.
+  // This gives every audience the same overview experience on arrival.
+  await switchTab('home');
 }
 
 // Badge colors per source type — matches the source badge palette used on

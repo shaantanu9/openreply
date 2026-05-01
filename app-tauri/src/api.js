@@ -222,6 +222,7 @@ export const api = {
   activeCollects:  ()        => cachedInvoke('active_collects', null, 1500),
   overviewStats:   ()        => cachedInvoke('overview_stats', null, 15000),
   recentActivity:  ()        => cachedInvoke('recent_activity', null, 2000),
+  topicGraphSummary: (topic) => cachedInvoke('topic_graph_summary', { topic }, 15000),
   appDataDir:      ()        => cachedInvoke('app_data_dir',   null, 300000),
   healthCheck:     ()        => invoke('health_check'),
   listExports:     ()        => cachedInvoke('list_exports',   null, 30000),
