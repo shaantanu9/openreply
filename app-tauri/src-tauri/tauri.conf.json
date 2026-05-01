@@ -57,6 +57,8 @@
           "allow": [
             "$APPDATA/**",
             "$APPDATA/reddit-myind/**",
+            "$APPLOCALDATA/**",
+            "$APPLOCALDATA/paper_pdf_cache/**",
             "$HOME/Library/Application Support/com.shantanu.gapmap/**"
           ]
         }

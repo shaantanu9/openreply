@@ -20,12 +20,37 @@ cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin
 cd app-tauri
 npm install
 
-# 4. Run in dev mode
+# 4. Run in dev mode (preferred — auto-clears stale cargo workers)
+npm run tauri:dev
+
+# Or the raw form (will stall if rust-analyzer or another `tauri dev`
+# is holding the cargo package-cache lock — see "Dev workflow" below):
 npm run tauri dev
 ```
 
 The app opens a window, boots the soft-dashboard UI, and calls the
 sidecar to populate real data.
+
+## Dev workflow — no more "Blocking waiting for file lock on package cache"
+
+If you ever saw `cargo run` sit forever on `Blocking waiting for file
+lock on package cache`, four pieces of repo config now prevent it:
+
+1. **`.vscode/settings.json`** — gives rust-analyzer its own out-of-tree
+   `target/rust-analyzer/` directory so it never contends with
+   `tauri dev` for the global flock at `~/.cargo/.package-cache`.
+   Cursor reads the same file. Restart your IDE once after pulling.
+2. **`scripts/dev.sh`** (run via `npm run tauri:dev`) — kills every
+   stale `cargo` / `rustc` / `tauri-cli` process owned by the current
+   user before starting. Two seconds of cleanup, then `tauri dev` runs
+   with a clean slate every time.
+3. **`.gitignore` `target/`** — the new RA target dir is git-ignored.
+4. This README — so a new contributor can't recreate the pattern.
+
+Production (Vercel build, GitHub Actions, `cargo build --release` for
+the DMG) never runs through `scripts/dev.sh`. It calls cargo directly
+with no IDE in the picture, so this contention literally cannot happen
+there. The lock-fix is dev-only.
 
 ## What's in each directory
 

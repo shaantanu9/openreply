@@ -39,11 +39,11 @@ export async function renderIngestVideo(root) {
       </div>
     </div>
 
-    <div class="ingest-wrap" style="max-width:820px">
+    <div class="ingest-wrap ingest-wrap--single">
       <div class="ingest-form">
         <div class="ingest-row">
           <label for="video-url">Video URL</label>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div class="ingest-inline-row">
             <input id="video-url" type="url" placeholder="https://youtu.be/..." style="flex:1" />
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-preview">Preview</button>
           </div>
@@ -65,7 +65,7 @@ export async function renderIngestVideo(root) {
 
         <div class="ingest-row">
           <label for="video-model">Whisper model</label>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div class="ingest-inline-row">
             <select id="video-model" style="flex:1"></select>
             <a href="#/settings" style="font-size:13px">Install more →</a>
           </div>
@@ -88,7 +88,7 @@ export async function renderIngestVideo(root) {
 
         <div class="ingest-row">
           <label for="video-topic">Topic</label>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div class="ingest-inline-row ingest-inline-row--topic">
             <select id="video-topic" style="flex:1">
               <option value="">— pick an existing topic —</option>
             </select>
@@ -153,14 +153,19 @@ export async function renderIngestVideo(root) {
   } catch {}
   try {
     const topics = await api.listTopics();
-    const topicSel = $('#video-topic');
+    const seen = new Set();
     for (const t of (topics || [])) {
       const o = document.createElement('option');
       const name = typeof t === 'string' ? t : (t.topic || t.name || '');
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
       o.value = name;
       o.textContent = name;
       if (name === preTopic) o.selected = true;
       topicSel.appendChild(o);
+    }
+    if (preTopic && !seen.has(preTopic)) {
+      topicNewEl.value = preTopic;
     }
   } catch {}
 
@@ -171,6 +176,21 @@ export async function renderIngestVideo(root) {
   const previewCard  = $('#preview-card');
   const ingestBtn    = $('#btn-ingest');
   const etaHint      = $('#model-eta-hint');
+  const topicSel     = $('#video-topic');
+  const topicNewEl   = $('#video-topic-new');
+
+  function resolveTopic() {
+    const topicFromNew = topicNewEl.value.trim();
+    const topicFromSel = topicSel.value;
+    return topicFromNew || topicFromSel || '';
+  }
+
+  function syncIngestEnabled() {
+    const hasModel = installed.length > 0;
+    const hasPreview = Boolean(currentPreview?.title);
+    const hasTopic = Boolean(resolveTopic());
+    ingestBtn.disabled = !(hasModel && hasPreview && hasTopic);
+  }
 
   function updateEta() {
     if (!currentPreview?.duration_s) { etaHint.textContent = ''; return; }
@@ -181,7 +201,12 @@ export async function renderIngestVideo(root) {
     if (!tierInfo) { etaHint.textContent = ''; return; }
     etaHint.textContent = `ETA ≈ ${fmtEta(currentPreview.duration_s, tierInfo.rtf)} on ${tierInfo.tier}.`;
   }
-  modelSel.addEventListener('change', updateEta);
+  modelSel.addEventListener('change', () => {
+    updateEta();
+    syncIngestEnabled();
+  });
+  topicSel.addEventListener('change', syncIngestEnabled);
+  topicNewEl.addEventListener('input', syncIngestEnabled);
 
   async function doPreview() {
     const url = urlInput.value.trim();
@@ -201,14 +226,14 @@ export async function renderIngestVideo(root) {
         $('#preview-thumb').src = meta.thumbnail || '';
         $('#preview-cached-badge').hidden = !meta.cached;
         previewCard.hidden = false;
-        ingestBtn.disabled = installed.length === 0;
         updateEta();
+        syncIngestEnabled();
       } else {
         throw new Error('no metadata returned');
       }
     } catch (e) {
       previewCard.hidden = true;
-      ingestBtn.disabled = true;
+      syncIngestEnabled();
       const msg = (e?.message || e || '').toString();
       appendLog(`✗ preview failed: ${msg}`, 'err');
     } finally {
@@ -246,10 +271,12 @@ export async function renderIngestVideo(root) {
     const url = urlInput.value.trim();
     const model = modelSel.value || 'auto';
     const language = $('#video-language').value || 'auto';
-    const topicFromNew = $('#video-topic-new').value.trim();
-    const topicFromSel = $('#video-topic').value;
-    const topic = topicFromNew || topicFromSel || null;
+    const topic = resolveTopic();
     if (!url) return;
+    if (!topic) {
+      appendLog('✗ choose an existing topic or type a new topic name first.', 'err');
+      return;
+    }
 
     progressSection.hidden = false;
     logEl.innerHTML = '';
@@ -257,7 +284,7 @@ export async function renderIngestVideo(root) {
     $('#btn-cancel').hidden = false;
 
     appendLog(`→ starting ingest for ${url}`);
-    appendLog(`  model=${model} · language=${language}${topic ? ` · topic=${topic}` : ''}`);
+    appendLog(`  model=${model} · language=${language} · topic=${topic}`);
 
     unlistenProgress = await listen('video:progress', (e) => {
       const raw = typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload);
@@ -266,11 +293,11 @@ export async function renderIngestVideo(root) {
     unlistenDone = await listen('video:done', (e) => {
       const p = e.payload || {};
       if (p.code === 0) {
-        appendLog(`✓ ingested video into topic${topic ? ` "${topic}"` : ''}`, 'ok');
+        appendLog(`✓ ingested video into topic "${topic}"`, 'ok');
       } else {
         appendLog(`✗ ingest failed (exit ${p.code || '?'}) — ${p.hint || 'see log above'}`, 'err');
       }
-      ingestBtn.disabled = false;
+      syncIngestEnabled();
       $('#btn-cancel').hidden = true;
       cleanup();
     });
@@ -279,7 +306,7 @@ export async function renderIngestVideo(root) {
       await api.ingestVideo(url, topic, model, language);
     } catch (e) {
       appendLog(`✗ ${e?.message || e}`, 'err');
-      ingestBtn.disabled = false;
+      syncIngestEnabled();
       $('#btn-cancel').hidden = true;
       cleanup();
     }
@@ -295,4 +322,5 @@ export async function renderIngestVideo(root) {
   ingestBtn.addEventListener('click', startIngest);
   $('#btn-cancel').addEventListener('click', () => api.cancelCollect?.().catch(() => {}));
   window.addEventListener('hashchange', cleanup, { once: true });
+  syncIngestEnabled();
 }

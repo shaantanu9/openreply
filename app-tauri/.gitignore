@@ -5,6 +5,8 @@ node_modules/
 # Rust build output
 src-tauri/target/
 src-tauri/gen/
+# rust-analyzer's separate target dir — see .vscode/settings.json
+target/
 
 # Sidecar binaries are platform-specific — commit your-platform binary only
 # Users of other platforms run scripts/build-pyinstaller.sh on their machine
@@ -19,7 +21,11 @@ src-tauri/gen/
 .DS_Store
 
 # Editor / IDE
-.vscode/
+# Track .vscode/settings.json (workspace-wide rust-analyzer config that
+# prevents the cargo package-cache lock contention) but ignore everything
+# else under .vscode/ (per-user state).
+.vscode/*
+!.vscode/settings.json
 .idea/
 
 # Per-worktree Claude state

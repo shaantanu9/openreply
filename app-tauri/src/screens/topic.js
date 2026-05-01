@@ -599,7 +599,25 @@ async function openSourcePickerModal(topic) {
   // successful sources selected while still including newly-added defaults
   // (e.g. app reviews + RSS bundles) so source coverage expands over time.
   const defaultSet = new Set(ALL_SOURCES.filter(s => s.defaultOn).map(s => s.id));
-  const initialChecked = new Set([...defaultSet, ...existing]);
+  // Per-topic saved selection (from "Save (don't fetch yet)") wins over
+  // defaults when present — that's the user's explicit choice for this
+  // topic. Existing-source detection still gets unioned in so dropped
+  // sources from a prior collect don't silently disappear.
+  let savedChecked = null;
+  let savedAggressive = false;
+  try {
+    const raw = localStorage.getItem(`gapmap.topic.sources.${topic}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.checked)) {
+        savedChecked = new Set(parsed.checked);
+        savedAggressive = !!parsed.aggressive;
+      }
+    }
+  } catch {}
+  const initialChecked = savedChecked
+    ? new Set([...savedChecked, ...existing])
+    : new Set([...defaultSet, ...existing]);
 
   const groups = {};
   for (const src of ALL_SOURCES) {
@@ -644,11 +662,15 @@ async function openSourcePickerModal(topic) {
       <div class="src-pick-grid">${groupHtml}</div>
       <div class="src-pick-foot">
         <label class="src-pick-aggressive">
-          <input type="checkbox" id="src-pick-aggressive" />
+          <input type="checkbox" id="src-pick-aggressive" ${savedAggressive ? 'checked' : ''} />
           <span>Aggressive (max limits + historical archive — slower, deeper)</span>
         </label>
         <div class="src-pick-actions">
           <button type="button" class="btn btn-ghost btn-sm" id="src-pick-cancel">Cancel</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-bordered" id="src-pick-save"
+                  title="Remember these sources for this topic — don't fetch right now. Next manual collect picks them up.">
+            Save (don't fetch yet)
+          </button>
           <button type="button" class="btn btn-primary btn-sm icon-btn" id="src-pick-go">
             <i data-lucide="play"></i> Run
           </button>
@@ -674,33 +696,64 @@ async function openSourcePickerModal(topic) {
     });
   };
 
-  host.querySelector('#src-pick-go').onclick = async () => {
-    const checked = Array.from(host.querySelectorAll('input[data-src]:checked'))
+  // Common picker-state extractor — reads checked sources, the aggressive
+  // flag, and persists them to localStorage. Both "Run" and "Save without
+  // fetching" feed off this so the on-disk state is identical and the
+  // next collect (whether fired now or later) picks up the same prefs.
+  function _persistPickerSelection() {
+    const checkedIds = Array.from(host.querySelectorAll('input[data-src]:checked'))
       .map(cb => cb.dataset.src);
-    const includeReddit = checked.includes('reddit');
-    const externalSources = checked.filter(s => s !== 'reddit');
+    const includeReddit = checkedIds.includes('reddit');
+    const externalSources = checkedIds.filter(s => s !== 'reddit');
     const aggressive = host.querySelector('#src-pick-aggressive').checked;
-
-    if (checked.length === 0) {
-      alert('Pick at least one source.');
-      return;
-    }
-
-    close();
-    // Stash the picker state in localStorage so collect.js (which auto-fires
-    // startCollect on mount) can pick up our chosen source filter + skip-reddit
-    // flag. Otherwise collect.js's 2-arg startCollect call would fire FIRST
-    // and ignore the source filter entirely (root cause: bug 2026-04-20 where
-    // selecting only playstore still searched Reddit).
+    if (checkedIds.length === 0) return null;
     localStorage.setItem('gapmap.collect.last_aggressive', String(aggressive));
     localStorage.setItem(
       'gapmap.collect.last_sources',
       externalSources.length > 0 ? externalSources.join(',') : '',
     );
     localStorage.setItem('gapmap.collect.last_skip_reddit', String(!includeReddit));
+    // Per-topic source preference — survives picker close and is what a
+    // future collect should default to (instead of ALL_SOURCES.defaultOn).
+    localStorage.setItem(
+      `gapmap.topic.sources.${topic}`,
+      JSON.stringify({ checked: checkedIds, aggressive, ts: Date.now() }),
+    );
+    return { checkedIds, includeReddit, externalSources, aggressive };
+  }
 
-    // Navigate to the live progress screen — collect.js will read the
-    // localStorage values and fire startCollect with the correct args.
+  host.querySelector('#src-pick-save').onclick = () => {
+    const sel = _persistPickerSelection();
+    if (!sel) {
+      alert('Pick at least one source.');
+      return;
+    }
+    close();
+    try {
+      window.toast?.(
+        `Saved ${sel.checkedIds.length} source(s) for "${topic}". No fetch fired.`,
+        'info',
+      );
+    } catch {}
+  };
+
+  host.querySelector('#src-pick-go').onclick = async () => {
+    const sel = _persistPickerSelection();
+    if (!sel) {
+      alert('Pick at least one source.');
+      return;
+    }
+    const { checkedIds: checked, includeReddit, externalSources, aggressive } = sel;
+
+    // _persistPickerSelection already wrote the localStorage keys
+    // collect.js reads on mount (last_sources, last_skip_reddit,
+    // last_aggressive). Navigate to the live progress screen — collect.js
+    // will pick up those values and fire startCollect with the correct
+    // args. Without the explicit stash, collect.js's 2-arg startCollect
+    // call would fire FIRST and ignore the source filter entirely (root
+    // cause: bug 2026-04-20 where selecting only playstore still searched
+    // Reddit).
+    void includeReddit; void externalSources; void aggressive; void checked;
     location.hash = `#/collect/${encodeURIComponent(topic)}`;
   };
 }
@@ -2285,17 +2338,87 @@ export async function renderTopic(root, { params }) {
       const resp = await fetch(fileUrl);
       const md = await resp.text();
       if (contentEl.dataset.tab !== 'report') return;
+
+      // Build a quick TOC from h2/h3 headings so long reports stay navigable.
+      // Slug each heading and inject matching ids into the rendered HTML.
+      const headings = [];
+      const lines = md.split('\n');
+      const inFence = (() => { let f = false; return (l) => { if (/^```/.test(l)) f = !f; return f; }; })();
+      for (const ln of lines) {
+        if (inFence(ln)) continue;
+        const m = /^(#{2,3})\s+(.+?)\s*$/.exec(ln);
+        if (m) {
+          const depth = m[1].length;
+          const text = m[2].replace(/[*`]/g, '').trim();
+          const slug = text.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 80);
+          headings.push({ depth, text, slug });
+        }
+      }
+      // Inject ids on the rendered headings. renderMarkdown emits plain
+      // <h2>/<h3> without ids, AND inlineMd may turn the text into
+      // `<h2><strong>Risk</strong> Analysis</h2>`. The previous regex
+      // (`[^<]*?`) couldn't match across those inner tags — TOC anchors
+      // jumped nowhere. Walk all h2/h3 in order and pair them positionally
+      // with the parsed `headings` list (built in source order above).
+      let renderedMd = renderMarkdown(md);
+      let hIdx = 0;
+      renderedMd = renderedMd.replace(/<(h[23])>([\s\S]*?)<\/\1>/g, (full, tag, inner) => {
+        const h = headings[hIdx++];
+        if (!h || `h${h.depth}` !== tag) return full;
+        return `<${tag} id="${h.slug}">${inner}</${tag}>`;
+      });
+      const tocHtml = headings.length >= 3 ? `
+        <nav class="report-toc" aria-label="Table of contents">
+          <div class="report-toc-title">Contents</div>
+          <ul>
+            ${headings.map(h =>
+              `<li class="toc-depth-${h.depth}"><a href="#${esc(h.slug)}">${esc(h.text)}</a></li>`
+            ).join('')}
+          </ul>
+        </nav>` : '';
+
+      const sizeKb = (md.length / 1024).toFixed(1);
+      const wordCount = (md.match(/\S+/g) || []).length;
+      const fileName = path.split('/').pop() || 'report.md';
+
       set(`
-        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-copy-md"><i data-lucide="copy"></i> Copy markdown</button>
-          <button class="btn btn-ghost" style="border:1px solid var(--line)" id="btn-reveal-md">Reveal in Finder</button>
-          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-regen-md"><i data-lucide="rotate-cw"></i> Regenerate</button>
-          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-outline"><i data-lucide="list-tree"></i> Outline</button>
-          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-draft"><i data-lucide="file-pen-line"></i> Draft</button>
-          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-experiments"><i data-lucide="flask-conical"></i> Experiments</button>
-          <button class="btn btn-ghost icon-btn" style="border:1px solid var(--line)" id="btn-paper-export"><i data-lucide="book-copy"></i> Export+citations</button>
+        <div class="report-page">
+          <div class="report-toolbar" role="toolbar" aria-label="Report actions">
+            <div class="report-info">
+              <span title="${esc(path)}">📄 <b>${esc(fileName)}</b></span>
+              <span>·</span>
+              <span><b>${wordCount.toLocaleString()}</b> words</span>
+              <span>·</span>
+              <span><b>${sizeKb}</b> KB</span>
+            </div>
+            <button class="btn btn-ghost btn-sm icon-btn" id="btn-copy-md">
+              <i data-lucide="copy"></i> Copy
+            </button>
+            <button class="btn btn-ghost btn-sm icon-btn" id="btn-download-md">
+              <i data-lucide="download"></i> Download
+            </button>
+            <button class="btn btn-ghost btn-sm" id="btn-reveal-md">Reveal in Finder</button>
+            <button class="btn btn-ghost btn-sm icon-btn" id="btn-regen-md">
+              <i data-lucide="rotate-cw"></i> Regenerate
+            </button>
+            <button class="btn btn-ghost btn-sm icon-btn" id="btn-paper-outline">
+              <i data-lucide="list-tree"></i> Outline
+            </button>
+            <button class="btn btn-ghost btn-sm icon-btn" id="btn-paper-draft">
+              <i data-lucide="file-pen-line"></i> Draft
+            </button>
+            <button class="btn btn-ghost btn-sm icon-btn" id="btn-paper-experiments">
+              <i data-lucide="flask-conical"></i> Experiments
+            </button>
+            <button class="btn btn-ghost btn-sm icon-btn" id="btn-paper-export">
+              <i data-lucide="book-copy"></i> Export+citations
+            </button>
+          </div>
+          <article class="report-view">
+            ${tocHtml}
+            ${renderedMd}
+          </article>
         </div>
-        <div class="markdown-view">${renderMarkdown(md)}</div>
       `);
       if (contentEl.dataset.tab !== 'report') return;
       window.refreshIcons?.();
@@ -2304,7 +2427,17 @@ export async function renderTopic(root, { params }) {
         const b = $('#btn-copy-md');
         b.innerHTML = '<i data-lucide="check"></i> Copied';
         window.refreshIcons?.();
-        setTimeout(() => { b.innerHTML = '<i data-lucide="copy"></i> Copy markdown'; window.refreshIcons?.(); }, 1500);
+        setTimeout(() => { b.innerHTML = '<i data-lucide="copy"></i> Copy'; window.refreshIcons?.(); }, 1500);
+      };
+      $('#btn-download-md').onclick = () => {
+        // Browser-native download — stays in the webview, no Rust round-trip.
+        const blob = new Blob([md], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       };
       $('#btn-reveal-md').onclick = () => api.revealInFinder(path);
       $('#btn-regen-md').onclick  = () => loadReport();
@@ -4031,13 +4164,12 @@ export async function renderTopic(root, { params }) {
     if (contentEl.dataset.tab !== 'ai_analyses') return;
     if (!Array.isArray(rows) || rows.length === 0) {
       contentEl.innerHTML = `
-        <div class="empty-state" style="padding:32px;text-align:center;max-width:600px;margin:0 auto">
-          <h3 style="margin-bottom:8px">No AI analyses yet</h3>
-          <p style="color:var(--ink-3);margin-bottom:16px">
-            Every LLM call the app or an MCP client makes on this topic
+        <div class="ai-empty">
+          <div class="ai-empty-icon"><i data-lucide="sparkles"></i></div>
+          <h3>No AI analyses yet</h3>
+          <p>Every LLM call the app or an MCP client makes on this topic
             (insights, concepts, solutions, sentiment, chat, search, report,
-            paper analysis, …) shows up here — unified, newest-first.
-          </p>
+            paper analysis, …) shows up here — unified, newest-first.</p>
           <button class="btn btn-primary icon-btn" id="btn-ai-go-actions">
             <i data-lucide="zap"></i> Run all analyses
           </button>
@@ -4047,91 +4179,205 @@ export async function renderTopic(root, { params }) {
       return;
     }
 
-    // Kind + source filter chips. Counts per kind so users see distribution.
+    // Distribution counts drive the filter chips.
     const byKind = {};
     const bySrc = {};
     for (const r of rows) {
       byKind[r.kind || 'other'] = (byKind[r.kind || 'other'] || 0) + 1;
-      bySrc[r.source || 'app'] = (bySrc[r.source || 'app'] || 0) + 1;
+      bySrc[r.source || 'app']  = (bySrc[r.source || 'app']  || 0) + 1;
     }
-    const kindOrder = Object.keys(byKind).sort((a, b) => byKind[b] - byKind[a]);
+    const kindOrder   = Object.keys(byKind).sort((a, b) => byKind[b] - byKind[a]);
     const sourceOrder = Object.keys(bySrc).sort();
 
-    const cards = rows.map((r) => {
-      const ts = r.created_at ? new Date(r.created_at).toLocaleString() : '';
-      const sourceTag = r.source === 'mcp'
-        ? `<span class="th-chip" style="background:#2d4a6b;color:#cfe3ff">MCP</span>`
-        : `<span class="th-chip" style="background:#34503a;color:#d6f0dd">app</span>`;
-      const kindTag = `<span class="th-chip" style="background:var(--surface-2);color:var(--ink-2)">${esc(r.kind || '')}</span>`;
-      const meta = [r.tool, r.provider, r.model].filter(Boolean).map(esc).join(' · ');
-      let body;
+    // Stash the prepared body string on each row so search filtering can
+    // run against the rendered text without re-escaping every keystroke.
+    // The rendered/raw payloads are kept in a JS Map keyed by card index —
+    // putting 100 KB into a `data-` attribute breaks DOM perf and was the
+    // cause of the AI-Analyses tab freezing on long outputs.
+    const cardPayloads = new Map();   // idx → { rendered, raw }
+    const cards = rows.map((r, idx) => {
+      const ts   = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+      const kind = r.kind || 'other';
+      const src  = r.source || 'app';
+      const srcClass = src === 'mcp' ? 'ai-source-mcp' : 'ai-source-app';
+      const srcLabel = src === 'mcp' ? 'MCP' : 'app';
+
+      const metaBits = [];
+      if (r.tool)     metaBits.push(`<code>${esc(r.tool)}</code>`);
+      if (r.provider) metaBits.push(`<code>${esc(r.provider)}</code>`);
+      if (r.model)    metaBits.push(`<code>${esc(r.model)}</code>`);
+
       const raw = String(r.content || '');
+
+      // Decide rendered + raw representations. We track both so the card can
+      // flip without a re-fetch. The "type" string also drives the stats line.
+      let renderedHtml, rawText, viewerKind;
       if (r.content_type === 'json') {
-        let pretty = raw;
-        try { pretty = JSON.stringify(JSON.parse(raw), null, 2); } catch {}
-        const trimmed = pretty.length > 4000 ? pretty.slice(0, 4000) + '\n…' : pretty;
-        body = `<pre style="background:var(--surface-2);padding:10px;border-radius:6px;overflow:auto;max-height:360px;font-size:12px">${esc(trimmed)}</pre>`;
+        viewerKind = 'json';
+        // Pretty-print when valid; fall back to original text otherwise so
+        // we never *hide* malformed payloads — they're often the most
+        // interesting cases to debug.
+        try {
+          rawText = JSON.stringify(JSON.parse(raw), null, 2);
+        } catch {
+          rawText = raw;
+        }
+        renderedHtml = `<pre class="ai-json">${esc(rawText)}</pre>`;
       } else {
-        body = `<div class="markdown-body">${renderMarkdown(raw)}</div>`;
+        // Heuristic: if the text shows any markdown structure, render it.
+        // Otherwise treat as plain text — preserves whitespace from logs,
+        // stack traces, etc.
+        const looksLikeMarkdown = /(^|\n)(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```)/.test(raw)
+                               || /\*\*[^*]+\*\*/.test(raw)
+                               || /\[[^\]]+\]\([^)]+\)/.test(raw);
+        if (looksLikeMarkdown) {
+          viewerKind = 'markdown';
+          renderedHtml = `<div class="markdown-body">${renderMarkdown(raw)}</div>`;
+        } else {
+          viewerKind = 'text';
+          renderedHtml = `<pre class="ai-text">${esc(raw)}</pre>`;
+        }
+        rawText = raw;
       }
+
+      // Long-content collapse threshold. We render full content into the DOM
+      // (so search-in-page works) but cap visible height with a fade until
+      // the user expands. ~6 KB is a good cutoff: shorter than a typical
+      // report section, longer than a typical chat reply.
+      const overflowThreshold = 6000;
+      const overflows = raw.length > overflowThreshold;
+
+      const stats = [
+        `${raw.length.toLocaleString()} chars`,
+        (r.tokens_in || r.tokens_out)
+          ? `${(r.tokens_in || 0)}↑ ${(r.tokens_out || 0)}↓ tokens`
+          : null,
+      ].filter(Boolean).join(' · ');
+
+      const tools = `
+        <div class="ai-card-tools">
+          ${overflows ? `
+            <button class="ai-toggle" data-act="expand">
+              <i data-lucide="chevron-down"></i> Show all
+            </button>` : ''}
+          <button class="ai-toggle" data-act="raw" title="Toggle raw / rendered">
+            <i data-lucide="code"></i> Raw
+          </button>
+          <span class="ai-stats">${esc(stats)}</span>
+        </div>
+      `;
+
+      // Searchable haystack — kind/source/tool/provider/model + raw content.
+      const haystack = [kind, src, r.tool, r.provider, r.model, raw]
+        .filter(Boolean).join(' ').toLowerCase();
+
+      cardPayloads.set(idx, { rendered: renderedHtml, raw: rawText });
+
       return `
-        <div class="settings-card ai-analysis-card" data-kind="${esc(r.kind || 'other')}" data-source="${esc(r.source || 'app')}" style="margin-bottom:12px">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-            ${sourceTag}${kindTag}
-            <span style="color:var(--ink-3);font-size:12px">${esc(ts)}</span>
-            ${meta ? `<span style="color:var(--ink-3);font-size:12px;margin-left:auto">${meta}</span>` : ''}
+        <article class="ai-card"
+                 data-idx="${idx}"
+                 data-kind="${esc(kind)}"
+                 data-source="${esc(src)}"
+                 data-viewer="${viewerKind}"
+                 data-search="${esc(haystack)}">
+          <header class="ai-card-head">
+            <span class="ai-chip ${srcClass}">${srcLabel}</span>
+            <span class="ai-chip ai-kind">${esc(kind)}</span>
+            <span class="ai-time">${esc(ts)}</span>
+            <span class="ai-meta">
+              ${metaBits.join('')}
+              <button class="ai-copy" data-copy="${esc(r.id ?? '')}" title="Copy raw content">
+                <i data-lucide="copy"></i>
+              </button>
+            </span>
+          </header>
+          <div class="ai-collapsible ${overflows ? 'has-overflow' : ''}">
+            <div class="ai-card-body" data-mode="rendered">
+              ${renderedHtml}
+            </div>
           </div>
-          ${body}
-        </div>`;
+          ${tools}
+        </article>`;
     }).join('');
+
     const kindChips = kindOrder.map(k =>
-      `<button class="filter-chip" data-filter-kind="${esc(k)}" style="padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:12px;cursor:pointer">
+      `<button class="ai-chip" data-filter-kind="${esc(k)}">
         ${esc(k)} <b>${byKind[k]}</b>
       </button>`).join('');
     const sourceChips = sourceOrder.map(s =>
-      `<button class="filter-chip" data-filter-source="${esc(s)}" style="padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:12px;cursor:pointer">
-        ${esc(s)} <b>${bySrc[s]}</b>
+      `<button class="ai-chip" data-filter-source="${esc(s)}">
+        ${esc(s === 'mcp' ? 'MCP' : s)} <b>${bySrc[s]}</b>
       </button>`).join('');
+
     contentEl.innerHTML = `
-      <div style="padding:12px 0">
-        <div style="display:flex;align-items:baseline;justify-content:space-between;margin:0 4px 12px;flex-wrap:wrap;gap:8px">
-          <h3 style="margin:0">AI Analyses <span style="color:var(--ink-3);font-weight:normal;font-size:13px">(${rows.length})</span></h3>
-          <span style="color:var(--ink-3);font-size:12px">Unified log — every LLM call. Click chips to filter.</span>
+      <div class="ai-analyses-page">
+        <div class="ai-analyses-head">
+          <h3>
+            <i data-lucide="sparkles"></i>
+            AI Analyses
+            <span class="ai-count">(${rows.length})</span>
+          </h3>
+          <span class="ai-sub">Unified log — every LLM call, newest first.</span>
         </div>
-        <div class="ai-filter-bar" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 4px 14px">
-          <span class="muted" style="font-size:11.5px;align-self:center">kind:</span>
+        <div class="ai-toolbar" role="toolbar" aria-label="AI Analyses filters">
+          <input type="search"
+                 class="ai-search"
+                 id="ai-search"
+                 placeholder="Search content, tool, provider, model…"
+                 autocomplete="off"
+                 spellcheck="false">
+          <span class="ai-toolbar-label">kind</span>
           ${kindChips}
-          <span class="muted" style="font-size:11.5px;align-self:center;margin-left:10px">source:</span>
+          <span class="ai-toolbar-label">source</span>
           ${sourceChips}
-          <button class="filter-chip" data-filter-clear="1" style="padding:4px 10px;border:1px dashed var(--line);border-radius:999px;background:transparent;font-size:12px;cursor:pointer;margin-left:auto">
-            Clear
-          </button>
+          <button class="ai-clear" data-filter-clear="1">Clear filters</button>
         </div>
         <div id="ai-analyses-list">${cards}</div>
       </div>`;
     window.refreshIcons?.();
 
-    // Filter wiring — chips toggle; active filter hides non-matching cards.
+    // Filter wiring — chips toggle, search narrows further, all stack together.
     const activeKind = new Set();
-    const activeSrc = new Set();
+    const activeSrc  = new Set();
+    let   query      = '';
+    const list       = $('#ai-analyses-list', contentEl);
+
     const applyFilter = () => {
-      contentEl.querySelectorAll('.ai-analysis-card').forEach(c => {
-        const k = c.dataset.kind, s = c.dataset.source;
+      let visible = 0;
+      contentEl.querySelectorAll('.ai-card').forEach(c => {
+        const k = c.dataset.kind, s = c.dataset.source, h = c.dataset.search || '';
         const matchK = activeKind.size === 0 || activeKind.has(k);
-        const matchS = activeSrc.size === 0 || activeSrc.has(s);
-        c.style.display = (matchK && matchS) ? '' : 'none';
+        const matchS = activeSrc.size  === 0 || activeSrc.has(s);
+        const matchQ = !query || h.includes(query);
+        const ok = matchK && matchS && matchQ;
+        c.style.display = ok ? '' : 'none';
+        if (ok) visible++;
       });
-      contentEl.querySelectorAll('.filter-chip').forEach(ch => {
+      contentEl.querySelectorAll('.ai-chip[data-filter-kind], .ai-chip[data-filter-source]').forEach(ch => {
         const k = ch.dataset.filterKind, s = ch.dataset.filterSource;
         const on = (k && activeKind.has(k)) || (s && activeSrc.has(s));
-        ch.style.background = on ? 'var(--accent, #4B6FE4)' : 'var(--surface-2)';
-        ch.style.color = on ? '#fff' : '';
+        ch.classList.toggle('is-active', on);
       });
+      // No-match hint replaces the list when every card is filtered out.
+      let hint = list.querySelector('.ai-no-match');
+      if (visible === 0) {
+        if (!hint) {
+          hint = document.createElement('div');
+          hint.className = 'ai-no-match';
+          hint.textContent = 'No analyses match the current filters.';
+          list.appendChild(hint);
+        }
+      } else if (hint) {
+        hint.remove();
+      }
     };
-    contentEl.querySelectorAll('.filter-chip').forEach(ch => {
+
+    contentEl.querySelectorAll('.ai-chip[data-filter-kind], .ai-chip[data-filter-source], [data-filter-clear]').forEach(ch => {
       ch.addEventListener('click', () => {
         if (ch.dataset.filterClear) {
           activeKind.clear(); activeSrc.clear();
+          const search = $('#ai-search', contentEl);
+          if (search) { search.value = ''; query = ''; }
         } else if (ch.dataset.filterKind) {
           const k = ch.dataset.filterKind;
           activeKind.has(k) ? activeKind.delete(k) : activeKind.add(k);
@@ -4140,6 +4386,64 @@ export async function renderTopic(root, { params }) {
           activeSrc.has(s) ? activeSrc.delete(s) : activeSrc.add(s);
         }
         applyFilter();
+      });
+    });
+
+    $('#ai-search', contentEl)?.addEventListener('input', (e) => {
+      query = (e.target.value || '').trim().toLowerCase();
+      applyFilter();
+    });
+
+    // Per-card "copy" — grabs the raw content from the row map. Avoids
+    // re-fetching by id; we already have everything from the initial query.
+    const rowById = new Map(rows.map(r => [String(r.id ?? ''), r]));
+    contentEl.querySelectorAll('.ai-copy').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const r = rowById.get(btn.dataset.copy || '');
+        if (!r) return;
+        try {
+          await navigator.clipboard.writeText(String(r.content || ''));
+          const orig = btn.innerHTML;
+          btn.innerHTML = '<i data-lucide="check"></i>';
+          window.refreshIcons?.();
+          setTimeout(() => { btn.innerHTML = orig; window.refreshIcons?.(); }, 1200);
+        } catch {
+          // Clipboard API can be denied on some webview policies — silent.
+        }
+      });
+    });
+
+    // Per-card "Show all" — drops the height cap on long content.
+    // Per-card "Raw" — flips between rendered (markdown/JSON) and source view.
+    contentEl.querySelectorAll('.ai-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const card = btn.closest('.ai-card');
+        if (!card) return;
+        const idx = Number(card.dataset.idx);
+        const payload = cardPayloads.get(idx);
+        const act = btn.dataset.act;
+        if (act === 'expand') {
+          const wrap = card.querySelector('.ai-collapsible');
+          const open = wrap?.classList.toggle('is-open');
+          btn.innerHTML = open
+            ? '<i data-lucide="chevron-up"></i> Show less'
+            : '<i data-lucide="chevron-down"></i> Show all';
+          window.refreshIcons?.();
+        } else if (act === 'raw' && payload) {
+          const body = card.querySelector('.ai-card-body');
+          if (!body) return;
+          const mode = body.dataset.mode === 'rendered' ? 'raw' : 'rendered';
+          body.dataset.mode = mode;
+          if (mode === 'raw') {
+            body.innerHTML = `<pre class="ai-text">${esc(payload.raw)}</pre>`;
+            btn.innerHTML = '<i data-lucide="eye"></i> Rendered';
+          } else {
+            body.innerHTML = payload.rendered;
+            btn.innerHTML = '<i data-lucide="code"></i> Raw';
+          }
+          window.refreshIcons?.();
+        }
       });
     });
   }

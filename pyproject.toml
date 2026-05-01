@@ -111,6 +111,12 @@ reddit-cli   = "reddit_research.cli.main:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Ship the LaTeX header + Lua filter that drive the markdown→PDF pipeline.
+# Without this, `pip install reddit-myind` would skip the assets and
+# `build_pdf_from_markdown()` would error at runtime.
+[tool.setuptools.package-data]
+"reddit_research.research" = ["_doc_assets/pdf/*.tex", "_doc_assets/pdf/*.lua"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

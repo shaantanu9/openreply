@@ -32,6 +32,15 @@ from ..research.discover import discover_subs as research_discover
 
 mcp = FastMCP("reddit-myind")
 
+# ── Tool registry (for the async-job dispatcher) ──────────────────────────
+# `reddit_jobs_submit(tool_name, args)` needs to look up the underlying
+# Python function for any registered tool. The logging wrapper below
+# populates this dict at registration time so jobs.submit() can dispatch
+# without depending on FastMCP's internal registries (which differ
+# between fastmcp versions).
+_TOOL_REGISTRY: dict[str, Any] = {}
+
+
 # ── Per-tool logging shim ─────────────────────────────────────────────────
 # Wrap FastMCP's `@mcp.tool()` so every registered tool gets its call/error
 # events into the structured log. Done here (rather than per-tool boilerplate)
@@ -53,6 +62,10 @@ def _wrap_tool_for_logging(orig_decorator):
 
         def _bind(fn):
             tool_name = getattr(fn, "__name__", "<unknown>")
+            # Record the underlying callable so reddit_jobs_submit can
+            # dispatch by name without relying on FastMCP's private API.
+            # Last-write-wins if a name is reused (matches FastMCP).
+            _TOOL_REGISTRY[tool_name] = fn
 
             @functools.wraps(fn)
             def _logged(*args, **kwargs):
@@ -443,6 +456,7 @@ def reddit_research_collect(
         historical_limit_per_sub: max historical posts per sub.
         aggressive: preset — maxes limits + all categories + 3-year historical.
     """
+    from . import jobs as _jobs
     r = research_collect(
         topic=topic,
         subs=subs,
@@ -454,6 +468,10 @@ def reddit_research_collect(
         historical_days=historical_days,
         historical_limit_per_sub=historical_limit_per_sub,
         aggressive=aggressive,
+        # When invoked via reddit_jobs_submit, progress=msgs flow into
+        # the job row's progress_msg (and progress_pct heuristically).
+        # Outside a job this is a no-op.
+        progress=_jobs.make_progress_logger(prefix="[collect] "),
     )
     return {
         "topic": r.topic,
@@ -942,7 +960,14 @@ def reddit_paper_fulltext(post_id: str, force: bool = False, max_chars: int = 30
       ok / empty / not_oa / download_failed / parse_failed / unsupported.
     """
     from ..research.paper_fulltext import get_full_text
+    from . import jobs as _jobs
+    _log = _jobs.make_progress_logger(prefix="[fulltext] ")
+    _log(f"fetch {post_id} (force={force})")
     r = get_full_text(post_id, force=force)
+    _log(
+        f"done status={r.get('status', 'unknown')} "
+        f"chars={r.get('char_count', 0)}"
+    )
     # Truncate text to fit the requested budget so a 200 KB paper doesn't
     # blow the MCP message size limit on small clients.
     if r.get("ok") and r.get("text") and max_chars > 0:
@@ -1197,7 +1222,11 @@ def reddit_analyze_papers_bulk(topic: str, limit: int | None = None, force: bool
     Ordered by citation/score desc so the highest-signal papers go first.
     """
     from ..research.paper_analyze import analyze_papers_bulk
-    res = analyze_papers_bulk(topic=topic, limit=limit, force=force)
+    from . import jobs as _jobs
+    res = analyze_papers_bulk(
+        topic=topic, limit=limit, force=force,
+        progress=_jobs.make_progress_logger(prefix="[paper-bulk] "),
+    )
     # One rollup row, not one per paper — individual paper rows already
     # land via analyze_paper() if the bulk path calls it. This keeps the
     # "AI Analyses" GUI list readable.
@@ -1295,7 +1324,12 @@ def reddit_paper_draft_generate(
 ) -> dict:
     """Generate a markdown research paper draft (default IMRaD style)."""
     from ..research.paper_pipeline import paper_draft_generate
-    return paper_draft_generate(topic=topic, provider=provider, style=style)
+    from . import jobs as _jobs
+    _log = _jobs.make_progress_logger(prefix="[paper-draft] ")
+    _log(f"start topic='{topic}' style={style}")
+    r = paper_draft_generate(topic=topic, provider=provider, style=style)
+    _log(f"done ok={r.get('ok')} chars={len(r.get('markdown') or '')}")
+    return r
 
 
 @mcp.tool()
@@ -1334,8 +1368,13 @@ def reddit_find_gaps(
     Persists the four-part report to `mcp_analyses` so the GUI can show it.
     """
     from ..research.gaps import find_gaps
+    from . import jobs as _jobs
     import json as _json
-    res = find_gaps(topic=topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score)
+    res = find_gaps(
+        topic=topic, provider=provider,
+        corpus_limit=corpus_limit, min_score=min_score,
+        progress_cb=_jobs.make_progress_logger(prefix="[gaps] "),
+    )
     try:
         if isinstance(res, dict) and not res.get("error"):
             from ..core.db import save_mcp_analysis
@@ -1647,7 +1686,17 @@ def reddit_palace_warmup() -> dict:
     queries in 15-30 ms p50. Returns the final progress event.
     """
     from ..retrieval import palace
-    return palace.warmup_model()
+    from . import jobs as _jobs
+    # warmup_model emits structured-event dicts (`{kind, ...}`), not plain
+    # strings — adapt to a string for the regex-based progress logger.
+    base_log = _jobs.make_progress_logger(prefix="[warmup] ")
+    def _warmup_log(ev):
+        try:
+            kind = ev.get("kind") if isinstance(ev, dict) else None
+            base_log(f"{kind or 'event'}: {ev}")
+        except Exception:
+            pass
+    return palace.warmup_model(progress=_warmup_log)
 
 
 @mcp.tool()
@@ -1697,9 +1746,98 @@ def reddit_palace_reindex() -> dict:
     Use after a bulk fetch when the model wasn't ready at upsert time, or
     after changing what fields go into the embedding text. Safe to interrupt;
     next run picks up where it left off because Chroma upserts by id.
+
+    Long-running: prefer `reddit_jobs_submit("reddit_palace_reindex", {})`
+    so you can poll status with `reddit_jobs_get(job_id)` instead of
+    holding the MCP transport open for minutes.
     """
     from ..retrieval import palace
-    return palace.reindex_all()
+    from . import jobs as _jobs
+    return palace.reindex_all(
+        progress=_jobs.make_progress_logger(prefix="[reindex] "),
+    )
+
+
+# ─── Async job queue (2026-05-01) ─────────────────────────────────────
+# Pattern B from the long-call redesign: any tool can be fired
+# asynchronously via `reddit_jobs_submit`, which returns a job_id in
+# milliseconds. Work runs in a 4-thread pool inside this daemon; agents
+# poll `reddit_jobs_get` whenever they want. Survives Cursor cycling,
+# chat resets, and (via SQLite persistence) daemon restarts.
+@mcp.tool()
+def reddit_jobs_submit(tool_name: str, args: dict | None = None) -> dict:
+    """Queue any registered tool for async execution.
+
+    Returns immediately with `{ok, job_id, state}`. The work runs in a
+    background thread inside this daemon — your client connection is
+    free to do other tool calls or even disconnect. Poll the result
+    with `reddit_jobs_get(job_id)`.
+
+    Args:
+        tool_name: any registered MCP tool name, e.g. 'reddit_research_collect'.
+        args: kwargs forwarded to the tool. Pass {} for no-arg tools.
+
+    Use this for anything that runs >5s — `reddit_research_collect` on
+    a big topic, `reddit_palace_reindex`, bulk `reddit_paper_fulltext`,
+    `reddit_graph_build_relations`, anything LLM-heavy. Sub-5s tools
+    don't benefit from queueing — call them synchronously.
+
+    Cancellation: `reddit_jobs_cancel(job_id)` sets a flag that
+    cooperative tools observe; non-cooperative tools run to completion
+    but their result is marked `cancelled` instead of `done`.
+    """
+    from . import jobs
+    return jobs.submit(tool_name, args or {}, _TOOL_REGISTRY)
+
+
+@mcp.tool()
+def reddit_jobs_get(job_id: str) -> dict:
+    """Inspect a single job. Returns state, progress, and result-when-done.
+
+    States: queued | running | done | failed | cancelled | interrupted.
+    `interrupted` means the daemon restarted while the job was running
+    or queued — re-submit if needed.
+
+    When state is `done` or `cancelled` and the result fits under the
+    1 MB cap, the inflated result is included as `result`. If the
+    result was too large, `result_truncated=1` and a head preview is
+    in `result_json` — re-run the underlying tool with paging.
+    """
+    from . import jobs
+    return jobs.get(job_id)
+
+
+@mcp.tool()
+def reddit_jobs_list(
+    state: str | None = None,
+    tool_name: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """List recent jobs newest-first.
+
+    Args:
+        state: filter — queued | running | done | failed | cancelled | interrupted.
+        tool_name: filter to one tool (e.g. all `reddit_research_collect` runs).
+        limit: max rows (clamped 1..500, default 50).
+
+    Use without args to see "what's in flight right now". Use
+    `state='running'` to confirm a long job is still alive.
+    """
+    from . import jobs
+    return jobs.list_jobs(state=state, tool_name=tool_name, limit=limit)
+
+
+@mcp.tool()
+def reddit_jobs_cancel(job_id: str) -> dict:
+    """Request cancellation of a queued or running job.
+
+    Queued jobs flip to `cancelled` immediately. Running jobs depend on
+    the underlying tool: if it polls `is_cancelled()`, it stops at the
+    next checkpoint; otherwise it runs to completion but the row's
+    final state will be `cancelled` rather than `done`.
+    """
+    from . import jobs
+    return jobs.cancel(job_id)
 
 
 # ─── 2026-04-21 Tier-1..6 build — MCP surface for new features ────────
@@ -2039,7 +2177,14 @@ def reddit_graph_build_relations(topic: str) -> dict:
     could_address / co_evidenced edges across findings. No LLM cost —
     uses ChromaDB MiniLM. Safe to re-run (upserts)."""
     from ..graph.relations import build_semantic_relations
-    return build_semantic_relations(topic)
+    from . import jobs as _jobs
+    _log = _jobs.make_progress_logger(prefix="[graph-relations] ")
+    _log(f"start topic='{topic}'")
+    r = build_semantic_relations(topic)
+    _log(
+        f"done edges={r.get('edges_added', 0) if isinstance(r, dict) else '?'}"
+    )
+    return r
 
 
 @mcp.tool()
@@ -2207,6 +2352,36 @@ def reddit_render_planned_docx(plan: dict, out_path: str) -> dict:
     """
     from ..research.export_deck import render_planned_docx
     return render_planned_docx(plan, out_path)
+
+
+@mcp.tool()
+def reddit_export_pdf_from_markdown(
+    md_path: str,
+    out_path: str,
+    title: str | None = None,
+    subtitle: str | None = None,
+    brand_link: str = "gapmap.myind.ai",
+    brand_link_url: str = "https://gapmap.myind.ai",
+) -> dict:
+    """Convert a markdown research brief to a brand-styled PDF.
+
+    Pipeline: pandoc → XeLaTeX with the bundled `header.tex` + the
+    `widen-quote.lua` Lua filter (lifted from
+    `docs/demo_pdf/pdf_build/`). Same brand palette (#1F4E79 accent,
+    Poppins headings, DejaVu Sans body) as the DOCX exporter.
+
+    Requires xelatex on PATH. If missing, returns
+    `{ok: False, install_hint}` with the BasicTeX/MacTeX command.
+
+    Returns: {ok, path, engine: 'xelatex', source_chars, output_bytes,
+              header_tex, lua_filter}
+    """
+    from ..research.export_deck import build_pdf_from_markdown
+    return build_pdf_from_markdown(
+        md_path=md_path, out_path=out_path,
+        title=title, subtitle=subtitle,
+        brand_link=brand_link, brand_link_url=brand_link_url,
+    )
 
 
 @mcp.tool()
@@ -2561,8 +2736,20 @@ def _start_idle_timeout_guard(timeout_seconds: int) -> None:
     t.start()
 
 
-def run() -> None:
-    """Start the server on stdio.
+def run(
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+) -> None:
+    """Start the server.
+
+    Args:
+        transport: 'stdio' (default, for Claude Code / Desktop / Cursor stdio)
+            or 'http' / 'streamable-http' / 'sse' for daemon-style HTTP.
+            HTTP mode is recommended for Cursor — its stdio MCP client
+            cycles servers every ~5 min, killing in-flight long calls.
+        host: bind host for HTTP transport. Default 127.0.0.1.
+        port: bind port for HTTP transport. Default 8765.
 
     Hardened (2026-04-21) against zombie accumulation — see Production
     guards block above for the three-layer defense.
@@ -2669,12 +2856,18 @@ def run() -> None:
             pass
 
     # Guard 2 — idle timeout. Skip when running inside the Tauri sidecar
-    # (which already owns process lifecycle) or when disabled via env.
+    # (which already owns process lifecycle), when disabled via env, or
+    # when running in HTTP/daemon mode (clients connect/disconnect freely
+    # so "no recent tool call" is normal, not a zombie signal).
     try:
         idle_seconds = int(os.environ.get("REDDIT_MYIND_IDLE_TIMEOUT", "1800"))
     except ValueError:
         idle_seconds = 1800
-    if idle_seconds > 0 and os.environ.get("REDDIT_MYIND_NO_IDLE_GUARD") != "1":
+    if (
+        idle_seconds > 0
+        and os.environ.get("REDDIT_MYIND_NO_IDLE_GUARD") != "1"
+        and transport == "stdio"
+    ):
         _start_idle_timeout_guard(idle_seconds)
 
     # Lazy palace client init — opens the SQLite-backed Chroma store but does
@@ -2692,13 +2885,43 @@ def run() -> None:
     except Exception:
         pass
 
+    # Job queue — recover any rows the previous daemon left in a
+    # `running` or `queued` state. Without this, agents would see
+    # forever-running jobs after a crash. Best-effort; failures here
+    # are non-fatal.
+    try:
+        from . import jobs as _jobs
+        recover = _jobs.recover_stale()
+        if recover.get("interrupted_running") or recover.get("interrupted_queued"):
+            _log_event(
+                "jobs:recovered_stale",
+                message="reaped stale jobs from prior daemon",
+                details=recover,
+            )
+        # Register clean shutdown so in-flight workers don't get an abrupt
+        # SIGKILL during normal exit. They'll finish naturally; any that
+        # don't finish before process death will be marked interrupted on
+        # next startup.
+        atexit.register(_jobs.shutdown)
+    except Exception:
+        pass
+
     _log_event(
         "startup:ready",
-        message="entering mcp.run() — handing stdio to FastMCP",
-        details={"startup_ms": int((time.time() - _startup_t0) * 1000)},
+        message=f"entering mcp.run() — transport={transport}",
+        details={
+            "startup_ms": int((time.time() - _startup_t0) * 1000),
+            "transport": transport,
+            "host": host if transport != "stdio" else None,
+            "port": port if transport != "stdio" else None,
+        },
     )
     try:
-        mcp.run()
+        if transport == "stdio":
+            mcp.run()
+        else:
+            # FastMCP 3.x accepts host/port as transport_kwargs.
+            mcp.run(transport=transport, host=host, port=port)
     except SystemExit:
         # Normal shutdown path — atexit hook records `startup:exit`.
         raise

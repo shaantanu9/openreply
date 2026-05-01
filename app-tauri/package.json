@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:dev": "bash scripts/dev.sh",
     "test": "node --test src/api.test.mjs src/lib/collectFormat.test.mjs src/screens/settings.avatar.test.mjs src/screens/welcome.onboarding.test.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture"
   },

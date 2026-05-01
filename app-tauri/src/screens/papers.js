@@ -7,6 +7,7 @@
 // landing-page claim. Same feature set — different framing.
 import { api } from '../api.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -63,16 +64,47 @@ function renderRow(p) {
   const cites = Number(p.score || 0).toLocaleString();
   const title = escape(p.title || '[untitled]');
   const authors = escape(p.author || '');
+  const landingUrl = p.url || '';
+  const pdfUrl = p.pdf_url || '';
+  const hasFulltext = !!p.has_fulltext;
+
+  // Data column: green check when we already have cached parsed text;
+  // dash when the paper exists in the index but no body has been fetched.
+  const dataCell = hasFulltext
+    ? `<span class="src-badge" style="background:#3D8B5E" title="Full text cached locally — analyses can quote it">data</span>`
+    : `<span class="muted" title="No body cached yet — run paper-fulltext to download">—</span>`;
+
+  // PDF column priority:
+  //   1. Direct PDF URL (deterministic for arXiv) → "View PDF" button.
+  //   2. DOI present → Unpaywall lookup ("OA").
+  //   3. Nothing usable → dash.
+  let pdfCell = '<span class="muted">—</span>';
+  if (pdfUrl) {
+    pdfCell = `<button class="btn btn-sm btn-ghost btn-pdf"
+                       data-pdf="${escape(pdfUrl)}"
+                       data-title="${title}"
+                       title="Open PDF">
+                 <i data-lucide="file-text"></i> View PDF
+               </button>`;
+  } else if (doi) {
+    pdfCell = `<button class="btn btn-sm btn-ghost btn-oa"
+                       data-doi="${escape(doi)}"
+                       title="Find free PDF (Unpaywall)">
+                 <i data-lucide="download"></i> OA
+               </button>`;
+  }
+
   return `
     <tr data-post-id="${escape(p.id)}">
       <td><span class="src-badge" style="background:${colour}">${escape(label)}</span></td>
-      <td class="paper-title"><a href="${escape(p.url || '#')}" target="_blank" rel="noopener">${title}</a>
-          <div class="paper-authors">${authors}</div></td>
+      <td class="paper-title">
+        <a href="${escape(landingUrl || '#')}" target="_blank" rel="noopener">${title}</a>
+        <div class="paper-authors">${authors}</div>
+      </td>
       <td class="num">${escape(year)}</td>
       <td class="num">${cites}</td>
-      <td>
-        ${doi ? `<button class="btn btn-sm btn-ghost btn-oa" data-doi="${escape(doi)}" title="Find free PDF (Unpaywall)"><i data-lucide="download"></i> OA</button>` : ''}
-      </td>
+      <td>${dataCell}</td>
+      <td>${pdfCell}</td>
     </tr>
   `;
 }
@@ -92,7 +124,7 @@ function renderList(topic, posts) {
       </div>
       <table class="papers-table">
         <thead>
-          <tr><th>Src</th><th>Title</th><th>Year</th><th>Cites</th><th>PDF</th></tr>
+          <tr><th>Src</th><th>Title</th><th>Year</th><th>Cites</th><th>Data</th><th>PDF</th></tr>
         </thead>
         <tbody>${byCites.map(renderRow).join('')}</tbody>
       </table>
@@ -198,9 +230,9 @@ export async function loadPapers(contentEl, topic) {
   $('#btn-export-apa',    contentEl)?.addEventListener('click', () => doExport('apa'));
   $('#btn-export-md',     contentEl)?.addEventListener('click', () => doExport('md'));
 
-  // Unpaywall — fetch a legal free PDF URL for one DOI
+  // Unpaywall — resolve a free-PDF URL for one DOI, then open inline.
   contentEl.querySelectorAll('.btn-oa').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', async () => {
       const doi = btn.dataset.doi;
       if (!doi) return;
       const orig = btn.innerHTML;
@@ -208,7 +240,7 @@ export async function loadPapers(contentEl, topic) {
       try {
         const r = await api.oaLookup(doi);
         if (r?.best_oa_url) {
-          window.open(r.best_oa_url, '_blank', 'noopener');
+          await openPdfViewer(r.best_oa_url, doi, null);
           btn.innerHTML = '<i data-lucide="check"></i> OA';
         } else {
           btn.innerHTML = '<i data-lucide="lock"></i> —';
@@ -222,4 +254,83 @@ export async function loadPapers(contentEl, topic) {
       }
     });
   });
+
+  // Direct PDF — deterministic per source (arXiv etc).
+  contentEl.querySelectorAll('.btn-pdf').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const url = btn.dataset.pdf;
+      if (!url) return;
+      const postId = btn.closest('tr')?.dataset.postId || null;
+      await openPdfViewer(url, btn.dataset.title || 'PDF', postId);
+    });
+  });
+}
+
+// In-app PDF viewer.
+//
+// Strategy: ask Rust to mirror the URL into the app's local data dir, then
+// load the local file via `convertFileSrc()` (asset:// protocol). This
+// dodges three otherwise-fatal browser policies on remote PDFs:
+//   1. CORS blocks `fetch(..., {responseType: 'blob'})` from arbitrary origins.
+//   2. Publishers send `X-Frame-Options: deny`, killing iframe rendering.
+//   3. Our CSP `frame-src` only allows `'self'` + `asset:`.
+// Local files via asset:// satisfy all three.
+//
+// "Open externally" is kept as an escape hatch — useful when the publisher
+// returns an HTML wall instead of a PDF (Rust catches the wrong content-type
+// and surfaces an error toast).
+async function openPdfViewer(remoteUrl, title, postId) {
+  const wrap = document.createElement('div');
+  wrap.className = 'papers-modal-backdrop';
+  wrap.innerHTML = `
+    <div class="papers-modal" style="width:min(1100px,95vw);height:min(92vh,1200px);display:flex;flex-direction:column">
+      <div class="papers-modal-head">
+        <h3 style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(title || 'PDF')}</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <a class="btn btn-sm btn-bordered" href="${escape(remoteUrl)}" target="_blank" rel="noopener">
+            <i data-lucide="external-link"></i> Open externally
+          </a>
+          <button class="btn btn-ghost btn-sm" id="pdf-modal-close" aria-label="Close"><i data-lucide="x"></i></button>
+        </div>
+      </div>
+      <div id="pdf-modal-body" style="flex:1;display:flex;align-items:center;justify-content:center;background:#1b1b1b;border-radius:0 0 12px 12px;color:#aaa;font-size:13px">
+        <span>Downloading PDF…</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  window.refreshIcons?.();
+
+  const close = () => {
+    wrap.remove();
+    document.removeEventListener('keydown', escHandler);
+  };
+  const escHandler = (ev) => { if (ev.key === 'Escape') close(); };
+  $('#pdf-modal-close', wrap)?.addEventListener('click', close);
+  wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+  document.addEventListener('keydown', escHandler);
+
+  const body = $('#pdf-modal-body', wrap);
+  try {
+    const r = await api.paperPdfFetch(remoteUrl, postId);
+    if (!r?.ok || !r.path) throw new Error(r?.reason || 'fetch failed');
+    const localUrl = convertFileSrc(r.path);
+    body.style.padding = '0';
+    body.innerHTML = `
+      <iframe src="${escape(localUrl)}"
+              style="flex:1;width:100%;height:100%;border:0;background:#222"
+              title="${escape(title || 'PDF')}"></iframe>
+    `;
+  } catch (e) {
+    body.innerHTML = `
+      <div style="text-align:center;padding:32px;max-width:480px">
+        <div style="color:#e88;font-weight:600;margin-bottom:8px">Couldn't fetch PDF</div>
+        <div style="color:#aaa;font-size:12px;margin-bottom:16px">${escape(e?.message || e)}</div>
+        <a class="btn btn-sm primary" href="${escape(remoteUrl)}" target="_blank" rel="noopener">
+          <i data-lucide="external-link"></i> Open in browser
+        </a>
+      </div>
+    `;
+    window.refreshIcons?.();
+  }
 }

@@ -22,6 +22,16 @@ import {
   detectCollectStage as detectStage,
   fmtCollectElapsed as fmtElapsed,
 } from '../lib/collectFormat.js';
+// Parallel topic-recon preview — fires canonicalize + discover_subs + the
+// external-source catalog the moment the screen mounts so the user sees
+// "we're going to fetch from r/X, r/Y, r/Z + 15 sources" before any data
+// arrives. Each source chip flips to "fetched: N" when the sidecar
+// emits its `[src] ✓ N posts` line.
+import { mountReconCard } from '../components/CollectReconCard.js';
+// Shared busy modal — also used by the /collects manager screen, so a
+// "topic already running" prompt looks the same everywhere a collect
+// can be initiated.
+import { showCollectBusyModal } from '../components/CollectBusyModal.js';
 
 // Threshold at which Phase A → B flip happens. Spec §2.1 / §2.3 locks this
 // at 100 posts (user-adjustable later via Settings — Task 9.5).
@@ -35,9 +45,34 @@ const PHASE_B_THRESHOLD = 100;
 // topic starts clean. Capped at 5000 lines per topic to bound memory if a
 // pathologically long collect spews logs.
 const _collectLogs   = new Map();   // topic → [{text, cls}, …]  up to 5000
-const _collectStatus = new Map();   // topic → 'running' | 'done' | 'failed'
+const _collectStatus = new Map();   // topic → 'running' | 'done' | 'failed' | 'queued' | 'idle'
 const _collectStart  = new Map();   // topic → ms timestamp of first line
 const MAX_PERSISTED_LINES = 5000;
+
+// Re-exported snapshot for the central CollectsManager screen so it can
+// show the last few log lines + status of every topic that's been
+// collected this session, without having to re-spawn the sidecar.
+export function getCollectSnapshot() {
+  const out = [];
+  const seen = new Set();
+  for (const t of _collectLogs.keys()) seen.add(t);
+  for (const t of _collectStatus.keys()) seen.add(t);
+  for (const t of _collectStart.keys()) seen.add(t);
+  for (const topic of seen) {
+    const lines = _collectLogs.get(topic) || [];
+    const tail = lines.slice(-5);
+    out.push({
+      topic,
+      status: _collectStatus.get(topic) || 'idle',
+      started_ms: _collectStart.get(topic) || null,
+      line_count: lines.length,
+      tail,
+    });
+  }
+  // Newest first by start time, falling back to topic name.
+  out.sort((a, b) => (b.started_ms || 0) - (a.started_ms || 0));
+  return out;
+}
 
 function pushPersistedLine(topic, text, cls) {
   if (!_collectLogs.has(topic)) _collectLogs.set(topic, []);
@@ -59,6 +94,21 @@ export async function renderCollect(root, { params }) {
   const myRouteGen = root.dataset.routeGen;
   const stillHere  = () => root.dataset.routeGen === myRouteGen && root.isConnected;
 
+  // Source-picker output (read once, hoisted). Previously these `const`s
+  // sat ~500 lines below, but `mountReconCard(...)` at the top of the
+  // function references `aggressive`, which raised a TDZ
+  // ("Cannot access 'aggressive' before initialization") on the Collections
+  // / Active page. Reading localStorage early is harmless — the topic-page
+  // Rerun modal writes them BEFORE navigating, and the new-topic flow leaves
+  // them unset (defaults apply).
+  const aggressive = localStorage.getItem('gapmap.collect.last_aggressive') !== 'false';
+  const sourcesStr = localStorage.getItem('gapmap.collect.last_sources') || '';
+  const skipReddit = localStorage.getItem('gapmap.collect.last_skip_reddit') === 'true';
+  // One-shot — clear so a manual reload doesn't carry the previous filter.
+  localStorage.removeItem('gapmap.collect.last_aggressive');
+  localStorage.removeItem('gapmap.collect.last_sources');
+  localStorage.removeItem('gapmap.collect.last_skip_reddit');
+
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">
@@ -68,41 +118,53 @@ export async function renderCollect(root, { params }) {
       <span class="pill active" id="collect-status-pill">● running</span>
     </header>
 
+    <!-- Recon card — runs canonicalize + discover_subs + source-catalog
+         in parallel so the user sees the full sweep target list within
+         ~1s of arrival, before any actual fetch numbers come back. Chips
+         flip from "queued" → fetched count as collect:progress lines
+         arrive from the sidecar. -->
+    <div id="recon-host"></div>
+
     <!-- Phase-A / Phase-B hero card. Sits above the log for glanceability.
          Starts in phase-a (below threshold) and flips to phase-b when the
          post count crosses PHASE_B_THRESHOLD — border animates orange and
          the heading + body copy change via CSS classes. Kept in the same
-         .progress-card container so the whole block shares a background. -->
+         .progress-card container so the whole block shares a background.
+         Collapsed by default: the head row (title + stat chips) stays
+         visible; bar + copy + freshness expand on click. -->
     <div class="progress-card phase-card phase-a" id="phase-card">
-      <div class="phase-head">
+      <button type="button" class="phase-head" id="phase-head" aria-expanded="false" data-phase-toggle>
         <h2 class="phase-title" id="phase-title">Gathering evidence for "${esc(topic)}"</h2>
         <div class="progress-stats phase-stats">
           <span class="pchip"><b id="pchip-phase-elapsed">0s</b><span>elapsed</span></span>
           <span class="pchip"><b id="pchip-posts">0</b><span>posts</span></span>
           <span class="pchip" id="pchip-findings-wrap" hidden><b id="pchip-findings">0</b><span>findings</span></span>
         </div>
-      </div>
+        <span class="phase-caret" aria-hidden="true">▸</span>
+      </button>
 
-      <!-- Threshold progress bar. Clamped to PHASE_B_THRESHOLD for display;
-           once over we swap to a "Phase B" tint but keep the bar full. -->
-      <div class="phase-bar-wrap">
-        <div class="phase-bar" id="phase-bar">
-          <div class="phase-bar-fill" id="phase-bar-fill" style="width:0%"></div>
-          <div class="phase-bar-tick" style="left:100%"></div>
+      <div class="phase-body" id="phase-body" hidden>
+        <!-- Threshold progress bar. Clamped to PHASE_B_THRESHOLD for display;
+             once over we swap to a "Phase B" tint but keep the bar full. -->
+        <div class="phase-bar-wrap">
+          <div class="phase-bar" id="phase-bar">
+            <div class="phase-bar-fill" id="phase-bar-fill" style="width:0%"></div>
+            <div class="phase-bar-tick" style="left:100%"></div>
+          </div>
+          <div class="phase-bar-label"><span id="phase-bar-count">0</span> / ${PHASE_B_THRESHOLD}</div>
         </div>
-        <div class="phase-bar-label"><span id="phase-bar-count">0</span> / ${PHASE_B_THRESHOLD}</div>
-      </div>
 
-      <!-- Flip-copy. Phase A = ETA + threshold hint. Phase B = findings +
-           keep-collecting nudge. Findings counter is live-driven by
-           enrich:tick + gapmap:changed + initial runQuery. -->
-      <div class="phase-copy" id="phase-copy">
-        <p class="phase-copy-line" id="phase-copy-primary">Insights begin at ${PHASE_B_THRESHOLD} posts. ETA —</p>
-        <p class="phase-copy-line phase-copy-muted" id="phase-copy-secondary" hidden>Keep collecting — new posts auto-improve the graph.</p>
-      </div>
+        <!-- Flip-copy. Phase A = ETA + threshold hint. Phase B = findings +
+             keep-collecting nudge. Findings counter is live-driven by
+             enrich:tick + gapmap:changed + initial runQuery. -->
+        <div class="phase-copy" id="phase-copy">
+          <p class="phase-copy-line" id="phase-copy-primary">Insights begin at ${PHASE_B_THRESHOLD} posts. ETA —</p>
+          <p class="phase-copy-line phase-copy-muted" id="phase-copy-secondary" hidden>Keep collecting — new posts auto-improve the graph.</p>
+        </div>
 
-      <!-- Freshness badge — updated each time enrich:tick fires. -->
-      <p class="phase-freshness" id="phase-freshness" hidden>Last finding: just now</p>
+        <!-- Freshness badge — updated each time enrich:tick fires. -->
+        <p class="phase-freshness" id="phase-freshness" hidden>Last finding: just now</p>
+      </div>
     </div>
 
     <div class="progress-card">
@@ -207,8 +269,39 @@ export async function renderCollect(root, { params }) {
   const errsEl = $('#pchip-errs');
   const errsWrap = $('#pchip-errs-wrap');
 
+  // Mount the parallel recon card. Fires canonicalize + discover + the
+  // source catalog immediately so the user sees the full sweep target
+  // list within ~1s, before any actual fetch numbers arrive. Returns an
+  // unmount we keep for the route-cleanup path below.
+  let unmountRecon = () => {};
+  const reconHost = $('#recon-host');
+  if (reconHost) {
+    mountReconCard(reconHost, { topic, aggressive }).then((u) => {
+      unmountRecon = u || (() => {});
+    }).catch((e) => console.warn('[collect] recon mount failed:', e));
+  }
+
   // Phase-card handles.
   const phaseCard    = $('#phase-card');
+  const phaseHead    = $('#phase-head');
+  const phaseBody    = $('#phase-body');
+  // Click the head row to expand/collapse the bar + copy + freshness.
+  // Persists per-topic so a user who left it open stays open on revisit.
+  const phaseExpandKey = `gapmap.collect.phase_open.${topic}`;
+  if (localStorage.getItem(phaseExpandKey) === '1') {
+    phaseBody.hidden = false;
+    phaseCard.classList.add('is-open');
+    phaseHead.setAttribute('aria-expanded', 'true');
+    const c = phaseHead.querySelector('.phase-caret'); if (c) c.textContent = '▾';
+  }
+  phaseHead?.addEventListener('click', () => {
+    const open = phaseBody.hidden;
+    phaseBody.hidden = !open;
+    phaseCard.classList.toggle('is-open', open);
+    phaseHead.setAttribute('aria-expanded', String(open));
+    const c = phaseHead.querySelector('.phase-caret'); if (c) c.textContent = open ? '▾' : '▸';
+    try { localStorage.setItem(phaseExpandKey, open ? '1' : '0'); } catch {}
+  });
   const phaseTitle   = $('#phase-title');
   const phaseElapsed = $('#pchip-phase-elapsed');
   const phasePosts   = $('#pchip-posts');
@@ -709,16 +802,8 @@ export async function renderCollect(root, { params }) {
   }
 
   // --- start collect ---
-  // Read the source-picker output from localStorage. The topic-page Rerun
-  // modal stashes its choices here BEFORE navigating; the new-topic flow
-  // (no picker) leaves them unset → defaults below.
-  const aggressive = localStorage.getItem('gapmap.collect.last_aggressive') !== 'false';
-  const sourcesStr = localStorage.getItem('gapmap.collect.last_sources') || '';
-  const skipReddit = localStorage.getItem('gapmap.collect.last_skip_reddit') === 'true';
-  // One-shot — clear so a manual reload doesn't carry the previous filter.
-  localStorage.removeItem('gapmap.collect.last_aggressive');
-  localStorage.removeItem('gapmap.collect.last_sources');
-  localStorage.removeItem('gapmap.collect.last_skip_reddit');
+  // (Source-picker `aggressive` / `sourcesStr` / `skipReddit` were read at
+  //  the top of this function so the recon-card mount above could see them.)
 
   // Build a human-readable filter summary for the log line.
   const sourcesArg = sourcesStr ? sourcesStr : null;
@@ -761,9 +846,89 @@ export async function renderCollect(root, { params }) {
     }
   })();
 
+  // Helper that handles the structured "blocked" response from the backend.
+  // Replaces the old opaque "✗ failed to start: another collect is already
+  // running" error path: now we render a modal letting the user pick:
+  //   1) Cancel running and start this one
+  //   2) Queue this one (auto-spawns when the running collect finishes)
+  //   3) Open the running collect's log
+  async function handleBlocked(blockedBy) {
+    let otherTopic = blockedBy?.topic || '(unknown)';
+    let elapsedSecs = Number(blockedBy?.elapsed_secs) || 0;
+    // The Rust orphan path returns "(unknown)" + 0; the old bug also let
+    // huge numbers through ("29625725 min"). Recover from JS state if the
+    // value looks broken or unknown.
+    const looksUnknown = /\(unknown/i.test(otherTopic) || elapsedSecs > 60 * 60 * 24 * 30;
+    if (looksUnknown) {
+      const snap = (_collectStatus.entries
+        ? Array.from(_collectStatus.entries()) : []).find(([t, st]) => st === 'running' && t !== topic);
+      if (snap) {
+        otherTopic = snap[0];
+        const ms = _collectStart.get(otherTopic);
+        elapsedSecs = ms ? Math.floor((Date.now() - ms) / 1000) : 0;
+      } else {
+        otherTopic = '(orphan sidecar — name unavailable)';
+        elapsedSecs = 0;
+      }
+    }
+    const elapsedMins = Math.floor(elapsedSecs / 60);
+    const elapsedStr = elapsedSecs <= 0 ? 'unknown'
+      : elapsedMins > 0 ? `${elapsedMins} min` : `${elapsedSecs}s`;
+    appendLine(
+      `⏸ collect for "${topic}" is waiting — "${otherTopic}" is currently running (${elapsedStr}).`,
+      'info',
+    );
+    const choice = await showCollectBusyModal({
+      newTopic: topic,
+      runningTopic: otherTopic,
+      elapsedStr,
+    });
+    if (choice === 'cancel-and-start') {
+      appendLine(`✗ cancelling "${otherTopic}", starting "${topic}"…`, 'info');
+      try {
+        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'cancel_and_start');
+        if (r?.ok) {
+          appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
+          _collectStatus.set(topic, 'running');
+          _collectStart.set(topic, Date.now());
+        }
+      } catch (e) {
+        appendLine(`✗ cancel-and-start failed: ${e?.message || e}`, 'err');
+        showRetryAction();
+      }
+    } else if (choice === 'queue') {
+      try {
+        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'queue');
+        const pos = r?.position || '?';
+        appendLine(
+          r?.already_queued
+            ? `↻ "${topic}" is already in the queue.`
+            : `⏳ queued "${topic}" — position ${pos} in line.`,
+          'info',
+        );
+        setFinal('queued', 'var(--accent-soft, #2E75B6)', 'white');
+        _collectStatus.set(topic, 'queued');
+        clearInterval(tick);
+      } catch (e) {
+        appendLine(`✗ queue failed: ${e?.message || e}`, 'err');
+        showRetryAction();
+      }
+    } else if (choice === 'open-running') {
+      window.location.hash = `#/collect/${encodeURIComponent(otherTopic)}`;
+    } else {
+      // 'dismiss' — leave the screen in a soft "waiting for user" state.
+      setFinal('idle', 'var(--ink-3, #8a8a8a)', 'white');
+      _collectStatus.set(topic, 'idle');
+      clearInterval(tick);
+    }
+  }
+
   try {
     const result = await api.startCollect(topic, aggressive, sourcesArg, skipReddit);
-    if (result && result.already_running) {
+    if (result && result.blocked) {
+      // Structured-blocked response — branch through the modal.
+      await handleBlocked(result.blocked_by);
+    } else if (result && result.already_running) {
       // Another tab / earlier session of this very topic is already streaming.
       // Don't log "→ started…" — the log above already has the history and
       // new events will land via the collect:progress subscription set up
@@ -771,11 +936,13 @@ export async function renderCollect(root, { params }) {
       if (!isRevisit) {
         appendLine(`↻ attached to in-flight collect for "${topic}"…`, 'info');
       }
+      _collectStatus.set(topic, 'running');
+      _collectStart.set(topic, Date.now());
     } else {
       appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
+      _collectStatus.set(topic, 'running');
+      _collectStart.set(topic, Date.now());
     }
-    _collectStatus.set(topic, 'running');
-    _collectStart.set(topic, Date.now());
   } catch (e) {
     appendLine(`✗ failed to start: ${e?.message || e}`, 'err');
     setFinal('failed', 'var(--chronic, #B84747)', 'white');
@@ -881,6 +1048,7 @@ export async function renderCollect(root, { params }) {
     try { unlistenProgress?.(); } catch {}
     try { unlistenDone?.();     } catch {}
     try { unlistenEnrich?.();   } catch {}
+    try { unmountRecon?.();     } catch {}
     window.removeEventListener('gapmap:changed', onGapmapChanged);
     window.removeEventListener('hashchange', cleanup);
   };

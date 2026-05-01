@@ -3,6 +3,7 @@
 
 import { api, esc, fmtN, timeAgo } from '../api.js';
 import { avatarInitials } from './settings.js';
+import { setHTMLIfChanged } from '../lib/screenCache.js';
 
 function normalizeTopicLabel(value) {
   const s = String(value ?? '');
@@ -135,7 +136,7 @@ function renderHero(heroRoot, topTopic, stats, dailyCounts) {
   const heroCopy = topTopic
     ? `Your latest topic has ${topTopic.painpoints || 0} painpoints across ${topTopic.sources || 0} source types from ${fmtN(topTopic.posts)} posts.`
     : 'Start a topic to see multi-source gap maps with citations, competitors, DIY workarounds, and more.';
-  heroRoot.innerHTML = `
+  const heroHtml = `
     <section class="hero fade-in">
       <div>
         <div class="hero-eyebrow">${topTopic ? 'Active research' : 'Get started'}</div>
@@ -158,6 +159,7 @@ function renderHero(heroRoot, topTopic, stats, dailyCounts) {
       </div>
     </section>
   `;
+  if (!setHTMLIfChanged(heroRoot, heroHtml)) return;   // identical → keep handlers
   heroRoot.querySelector('#hero-new')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
   heroRoot.querySelector('[data-open-topic]')?.addEventListener('click', (e) => {
     location.hash = `#/topic/${e.currentTarget.dataset.openTopic}`;
@@ -193,7 +195,7 @@ function renderStatGrid(el, stats, deltas) {
     if (delta < 0) return `<span class="stat-trend" style="background:var(--rose-soft);color:#B84747">${delta}</span>`;
     return `<span class="stat-trend trend-flat">·</span>`;
   };
-  el.innerHTML = `
+  setHTMLIfChanged(el, `
     <div class="stat-card fade-in">
       <div class="stat-head"><div class="stat-icon peach"><i data-lucide="target"></i></div>${trendPill(d.painpoints)}</div>
       <div class="stat-num">${fmtN(s.total_painpoints || 0)}</div>
@@ -214,7 +216,7 @@ function renderStatGrid(el, stats, deltas) {
       <div class="stat-num">${fmtN(s.total_posts || 0)}</div>
       <div class="stat-label">Posts indexed</div>
     </div>
-  `;
+  `);
 }
 
 // ---- line chart (SVG) ----
@@ -319,8 +321,6 @@ export async function renderHome(root) {
     <div id="weekly-deltas-slot"></div>
     <!-- Phase-3 active bets summary. Populated async by loadBetsSummary() -->
     <div id="bets-summary-slot"></div>
-    <!-- Phase-5 cross-topic leaderboard. Populated async by loadTopOpportunities() -->
-    <div id="top-opportunities-slot"></div>
 
     <div id="hero-slot">${skelHero()}</div>
     <section class="stat-grid" id="stat-grid">${skelStats()}</section>
@@ -354,6 +354,11 @@ export async function renderHome(root) {
         </div>
       </div>
     </section>
+
+    <!-- Phase-5 cross-topic leaderboard. Populated async by loadTopOpportunities().
+         Sits just above "Your topics" so it acts as a lead-in to the topic grid. -->
+    <div id="top-opportunities-slot"></div>
+
     <div class="section-head">
       <div>
         <h2>Your topics</h2>
@@ -524,7 +529,7 @@ async function loadMomentum(root) {
   const body = root.querySelector('#momentum-body');
   // Only show skeleton if we have no cached chart for this range.
   const cached = readDashCache()?.momentumByRange?.[momentumRange];
-  if (!cached) body.innerHTML = `<div class="empty-state">loading chart…</div>`;
+  if (!cached) setHTMLIfChanged(body, `<div class="empty-state">loading chart…</div>`);
   try {
     const rows = await api.runQuery(
       `SELECT substr(started_at,1,10) AS day, count(*) AS n \
@@ -532,13 +537,13 @@ async function loadMomentum(root) {
        WHERE substr(started_at,1,10) >= date('now','-${momentumRange} days') \
        GROUP BY substr(started_at,1,10) ORDER BY day ASC`
     );
-    body.innerHTML = momentumChart(Array.isArray(rows) ? rows : [], momentumRange);
+    setHTMLIfChanged(body, momentumChart(Array.isArray(rows) ? rows : [], momentumRange));
     // Cache per-range so the 30/90/1Y toggle also benefits.
     const prev = readDashCache()?.momentumByRange || {};
     writeDashCache({ momentumByRange: { ...prev, [momentumRange]: rows || [] } });
   } catch (e) {
     if (!cached) {
-      body.innerHTML = `<div class="empty-state">error loading chart: ${esc(e?.message || e)}</div>`;
+      setHTMLIfChanged(body, `<div class="empty-state">error loading chart: ${esc(e?.message || e)}</div>`);
     }
     // With cache: keep the stale chart, don't overwrite with an error message.
   }
@@ -551,17 +556,17 @@ async function loadActivity(root) {
     const rows = await api.recentActivity();
     if (!Array.isArray(rows) || !rows.length) {
       if (!hadCache) {
-        feed.innerHTML = `<div class="empty-state" style="padding:24px">no activity yet — start a topic to see fetches land here</div>`;
+        setHTMLIfChanged(feed, `<div class="empty-state" style="padding:24px">no activity yet — start a topic to see fetches land here</div>`);
       }
       writeDashCache({ activity: [] });
       return;
     }
-    feed.innerHTML = rows.slice(0, 8).map(activityItem).join('');
-    window.refreshIcons?.();
+    const html = rows.slice(0, 8).map(activityItem).join('');
+    if (setHTMLIfChanged(feed, html)) window.refreshIcons?.();
     writeDashCache({ activity: rows });
   } catch (e) {
     if (!hadCache) {
-      feed.innerHTML = `<div class="empty-state" style="padding:24px">error: ${esc(e?.message || e)}</div>`;
+      setHTMLIfChanged(feed, `<div class="empty-state" style="padding:24px">error: ${esc(e?.message || e)}</div>`);
     }
   }
 }
@@ -616,7 +621,9 @@ async function loadTopicGrid(root) {
     return;
   }
 
-  slot.innerHTML = `<section class="topic-grid">${topics.slice(0, 8).map((t, i) => topicTile(t, i)).join('')}</section>`;
+  const gridHtml = `<section class="topic-grid">${topics.slice(0, 8).map((t, i) => topicTile(t, i)).join('')}</section>`;
+  const changed = setHTMLIfChanged(slot, gridHtml);
+  if (!changed) return;          // identical grid — leave existing handlers in place
   slot.querySelectorAll('.topic-tile').forEach(el => {
     el.addEventListener('click', () => { location.hash = el.dataset.href; });
     // T1.1: right-click on a topic tile → context menu with Delete + Re-collect.

@@ -262,7 +262,7 @@ export function HeroSlider() {
                   </p>
                   <div className="flex flex-wrap items-center gap-3">
                     <DownloadLink
-                      className={`btn btn-lg ${ctaVariants[slide.primaryCta.variant]}`}
+                      className={`btn btn-lg !text-white [&_*]:!text-white ${ctaVariants[slide.primaryCta.variant]}`}
                     >
                       <DownloadArrow />
                       {slide.primaryCta.label}

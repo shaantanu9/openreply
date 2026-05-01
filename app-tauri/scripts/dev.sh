@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Tauri-dev wrapper that prevents the "Blocking waiting for file lock on
+# package cache" stall.
+#
+# Root cause: every cargo invocation (rust-analyzer, a leftover `tauri
+# dev` from a previous session, a stale `cargo run` from a crashed
+# terminal) takes a flock on ~/.cargo/.package-cache. Exiting an IDE
+# tab does not always reap the worker. The next `tauri dev` then waits
+# forever because the dead process never released its lock.
+#
+# This script:
+#   1. Detects every cargo / rustc / tauri-cli process owned by the
+#      current user that is NOT this script's pid.
+#   2. SIGTERMs them, gives them 2s, then SIGKILLs anything still alive.
+#   3. Removes the stale ~/.cargo/.package-cache marker file (cargo
+#      recreates it on next start; an empty file with no flock holder
+#      is harmless but we clear it so its mtime reflects this session).
+#   4. Execs the real `tauri dev` so signals reach it cleanly.
+#
+# DEV-ONLY. Production builds (Vercel, GH Actions, asc release) never
+# call this — they invoke `cargo build --release` directly with no IDE
+# in the picture, so contention is impossible there.
+
+set -euo pipefail
+
+SELF_PID=$$
+USER_ID=$(id -u)
+
+# ── 1. find every cargo / rustc / tauri-cli we own ─────────────────────────
+mapfile -t STALE < <(ps -u "$USER_ID" -o pid=,comm= 2>/dev/null \
+  | awk '$2 ~ /(cargo|rustc|tauri-cli)$/ { print $1 }' \
+  | grep -v "^${SELF_PID}\$" || true)
+
+if (( ${#STALE[@]} )); then
+  echo "→ killing ${#STALE[@]} stale cargo/rustc process(es): ${STALE[*]}"
+  kill -TERM "${STALE[@]}" 2>/dev/null || true
+  sleep 2
+  # SIGKILL anything still alive
+  for pid in "${STALE[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  done
+fi
+
+# ── 2. clear the stale marker (the flock itself died with the process) ────
+if [[ -f "$HOME/.cargo/.package-cache" ]]; then
+  rm -f "$HOME/.cargo/.package-cache"
+fi
+
+# ── 3. hand off to the real tauri dev ─────────────────────────────────────
+cd "$(dirname "$0")/.."
+exec npx tauri dev "$@"

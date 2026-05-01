@@ -107,3 +107,25 @@ export function clearAllScreenCache() {
     try { localStorage.removeItem(k); } catch {}
   }
 }
+
+/**
+ * Set `el.innerHTML` only if the new HTML differs from what was last
+ * written through this helper. Prevents the whole-app flicker caused by
+ * `gapmap:db-changed` and the 30 s background poll re-stamping identical
+ * hero / activity / chart / topic-grid markup on every tick.
+ *
+ * The previous payload is stashed on the element itself (`el.__lastHTML`)
+ * so it survives across renders and is GC'd with the node when it leaves
+ * the DOM.
+ *
+ * Returns true when the DOM was actually mutated, false otherwise — handy
+ * for callers that need to (re-)wire event listeners / icons only on real
+ * updates.
+ */
+export function setHTMLIfChanged(el, html) {
+  if (!el) return false;
+  if (el.__lastHTML === html) return false;
+  el.innerHTML = html;
+  el.__lastHTML = html;
+  return true;
+}

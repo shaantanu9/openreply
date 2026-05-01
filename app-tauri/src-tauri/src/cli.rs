@@ -228,6 +228,41 @@ pub struct ActiveGraphOps(
 #[derive(Default, Clone)]
 pub struct ActiveCollects(pub Arc<Mutex<std::collections::HashMap<String, u64>>>);
 
+/// One pending entry in the collect queue. Stored as a string-args vector so
+/// it can replay via the same code path as a fresh `start_collect`.
+#[derive(Clone, Debug)]
+pub struct QueuedCollect {
+    pub topic: String,
+    pub args: Vec<String>,
+    pub queued_at: u64,
+}
+
+/// FIFO queue of collects waiting for the single-flight slot to free up.
+///
+/// Why we have this:
+///   The user kicks off collect-A for "roofing marketplace" (running ~3 min).
+///   They search for collect-B "ai coding assistants" — currently the sidecar
+///   refuses to start because the single-flight ActiveJob lock is held.
+///   The old UX surfaced this as `failed to start: another collect is
+///   already running. Cancel it first.` with no way to know which collect
+///   blocked them, no way to wait, no way to swap.
+///
+///   With this queue, the UI now offers three policies (`if_busy`):
+///     - "error":            current behaviour, but with structured blocked_by
+///                           metadata so the modal can render which topic blocks.
+///     - "queue":            append to this VecDeque. When the running collect
+///                           finishes (collect:done event), the front-of-queue
+///                           is auto-spawned — keeps single-flight invariant
+///                           while letting the user batch work.
+///     - "cancel_and_start": SIGTERM the running sidecar, drain the queue
+///                           briefly, then start the new one. Used when the
+///                           user wants to switch focus immediately.
+///
+/// Single-flight is still preserved against SQLite write contention — only
+/// one Python sidecar runs at a time. The queue is just a "next up" list.
+#[derive(Default, Clone)]
+pub struct CollectQueue(pub Arc<Mutex<std::collections::VecDeque<QueuedCollect>>>);
+
 /// Resolve the bundled ffmpeg binary the Python sidecar should use for
 /// yt-dlp audio extraction. Priority:
 ///   1. `GAPMAP_FFMPEG_PATH` env (dev override — point at /opt/homebrew/bin/ffmpeg).
