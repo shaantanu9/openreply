@@ -304,10 +304,17 @@ export async function renderHome(root) {
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Dashboard</strong></div>
       <div class="topbar-spacer"></div>
-      <div class="search" id="home-search" role="button" tabindex="0" title="Start a new topic">
+      <form class="search search--interactive" id="home-search" title="Search across your corpus">
         <span>⌕</span>
-        <span>Start a topic — type a market or problem…</span>
-      </div>
+        <input
+          id="home-search-input"
+          type="search"
+          placeholder="Search your corpus — topics, signals, findings…"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search corpus"
+        />
+      </form>
       <div class="icon-btn-square" id="home-bell" title="Pipeline activity" role="button" tabindex="0"><i data-lucide="bell"></i></div>
       <div class="avatar" id="home-avatar" role="button" tabindex="0" title="Settings">${headerAvatar()}</div>
     </header>
@@ -383,7 +390,11 @@ export async function renderHome(root) {
 
   // Header buttons (synchronous)
   root.querySelector('#btn-new-topic')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
-  root.querySelector('#home-search')?.addEventListener('click',  () => window.gapmapOpenNewTopic?.());
+  root.querySelector('#home-search')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = (root.querySelector('#home-search-input')?.value || '').trim();
+    location.hash = q ? `#/find?q=${encodeURIComponent(q)}` : '#/find';
+  });
   root.querySelector('#home-bell')?.addEventListener('click',    () => { location.hash = '#/activity'; });
   root.querySelector('#home-avatar')?.addEventListener('click',  () => { location.hash = '#/settings'; });
 

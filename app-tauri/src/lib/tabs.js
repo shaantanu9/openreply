@@ -52,6 +52,12 @@ export function iconForHash(hash) {
   if (hash.includes('/search')) return 'search';
   if (hash.includes('/playbook')) return 'book-open';
   if (hash.includes('/ost')) return 'git-fork';
+  if (hash.includes('/empathy')) return 'users';
+  if (hash.includes('/interviews')) return 'mic';
+  if (hash.includes('/pmf')) return 'bar-chart-3';
+  if (hash.includes('/pricing')) return 'dollar-sign';
+  if (hash.includes('/estimate')) return 'calculator';
+  if (hash.includes('/prd')) return 'file-text';
   return 'home';
 }
 

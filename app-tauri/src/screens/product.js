@@ -701,6 +701,328 @@ async function renderValueCurveAsync(productId, competitors) {
 
 
 // ══════════════════════════════════════════════════════════════════════
+// TAM / SAM / SOM (Blank & Dorf, 2012)
+// ══════════════════════════════════════════════════════════════════════
+function fmtMoney(n, units = 'USD') {
+  const v = Number(n || 0);
+  if (!v) return '—';
+  if (v >= 1e9)  return `${units} ${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6)  return `${units} ${(v / 1e6).toFixed(2)}M`;
+  if (v >= 1e3)  return `${units} ${(v / 1e3).toFixed(1)}K`;
+  return `${units} ${v.toLocaleString()}`;
+}
+
+function renderTamSamSomPanel(d) {
+  const tier = (k) => {
+    const v = (d && d[k]) || {};
+    return `
+      <div class="tss-tier" data-tss="${k}">
+        <div class="tss-label">${k.toUpperCase()}</div>
+        <div class="tss-value-display">${fmtMoney(v.value || 0, v.units || 'USD')}</div>
+        <div class="tss-edit">
+          <input class="tss-value" type="number" min="0" step="1000" value="${v.value || 0}" placeholder="value"/>
+          <input class="tss-units" type="text" value="${esc(v.units || 'USD')}" maxlength="6" placeholder="units"/>
+          <select class="tss-method">
+            <option value=""           ${!v.method ? 'selected' : ''}>method…</option>
+            <option value="top_down"   ${v.method === 'top_down' ? 'selected' : ''}>Top-down (Gartner / IDC)</option>
+            <option value="bottom_up"  ${v.method === 'bottom_up' ? 'selected' : ''}>Bottom-up (customers × ARPU)</option>
+            <option value="value"      ${v.method === 'value' ? 'selected' : ''}>Value-theory</option>
+          </select>
+          <input class="tss-source" type="text" value="${esc(v.source || '')}" placeholder="source URL or citation"/>
+          <textarea class="tss-notes" rows="1" placeholder="notes / assumptions">${esc(v.notes || '')}</textarea>
+        </div>
+      </div>
+    `;
+  };
+
+  return `
+    <section class="tss-panel card">
+      <div class="tss-head">
+        <h4>TAM / SAM / SOM</h4>
+        <span class="muted" style="font-size:11px">Blank &amp; Dorf, 2012 · sized using top-down + bottom-up cross-validation</span>
+      </div>
+      <div class="tss-grid">
+        ${tier('tam')}${tier('sam')}${tier('som')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;gap:8px">
+        <button class="btn primary" id="tss-save">Save market sizing</button>
+      </div>
+    </section>
+  `;
+}
+
+async function renderTamSamSomAsync(productId) {
+  const mount = document.getElementById('pd-tam-sam-som');
+  if (!mount) return;
+  let result;
+  try {
+    result = await api.tamSamSomGet(productId);
+  } catch (e) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">TAM/SAM/SOM unavailable: ${esc(e?.message || e)}</div>`;
+    return;
+  }
+  if (!result?.ok) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${esc(result?.error || 'TAM/SAM/SOM unavailable')}</div>`;
+    return;
+  }
+  mount.innerHTML = renderTamSamSomPanel(result);
+
+  document.getElementById('tss-save')?.addEventListener('click', async () => {
+    const tiers = ['tam', 'sam', 'som'];
+    const payload = {};
+    tiers.forEach(k => {
+      const card = mount.querySelector(`[data-tss="${k}"]`);
+      if (!card) return;
+      payload[k] = {
+        value:  parseFloat(card.querySelector('.tss-value')?.value || '0'),
+        units:  card.querySelector('.tss-units')?.value || 'USD',
+        method: card.querySelector('.tss-method')?.value || '',
+        source: card.querySelector('.tss-source')?.value || '',
+        notes:  card.querySelector('.tss-notes')?.value || '',
+      };
+    });
+    const btn = document.getElementById('tss-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api.tamSamSomSet(productId, payload);
+      btn.textContent = '✓ Saved';
+      setTimeout(() => renderTamSamSomAsync(productId), 800);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Save market sizing';
+      alert(`Save failed: ${e?.message || e}`);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Porter's Five Forces (Porter, 1979)
+// ══════════════════════════════════════════════════════════════════════
+const PORTER_LABELS = {
+  new_entrants:   'Threat of new entrants',
+  supplier_power: 'Bargaining power of suppliers',
+  buyer_power:    'Bargaining power of buyers',
+  substitutes:    'Threat of substitutes',
+  rivalry:        'Competitive rivalry',
+};
+const PORTER_KEYS = ['new_entrants', 'supplier_power', 'buyer_power', 'substitutes', 'rivalry'];
+
+function renderPorterPanel(forces) {
+  const cards = PORTER_KEYS.map(k => {
+    const f = forces[k] || { score: 0, notes: '' };
+    return `
+      <div class="porter-card" data-force="${k}">
+        <div class="porter-name">${PORTER_LABELS[k]}</div>
+        <div class="porter-score-row">
+          ${[1, 2, 3, 4, 5].map(s => `
+            <button class="porter-score-pill ${(f.score || 0) >= s ? 'is-on' : ''}"
+                    data-force="${k}" data-score="${s}">${s}</button>
+          `).join('')}
+        </div>
+        <textarea class="porter-notes" rows="2" placeholder="evidence / notes" data-force="${k}">${esc(f.notes || '')}</textarea>
+      </div>
+    `;
+  }).join('');
+  return `
+    <section class="porter-panel card">
+      <div class="porter-head">
+        <h4>Porter's Five Forces</h4>
+        <span class="muted" style="font-size:11px">Porter, 1979 · 1 (low threat) → 5 (high threat)</span>
+      </div>
+      <div class="porter-grid">${cards}</div>
+    </section>
+  `;
+}
+
+async function renderPorterAsync(productId) {
+  const mount = document.getElementById('pd-porter');
+  if (!mount) return;
+  let result;
+  try {
+    result = await api.porterGet(productId);
+  } catch (e) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">Porter unavailable: ${esc(e?.message || e)}</div>`;
+    return;
+  }
+  if (!result?.ok) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${esc(result?.error || 'Porter unavailable')}</div>`;
+    return;
+  }
+  mount.innerHTML = renderPorterPanel(result.forces || {});
+  mount.querySelectorAll('.porter-score-pill').forEach(b => {
+    b.addEventListener('click', async () => {
+      const force = b.dataset.force;
+      const score = parseInt(b.dataset.score, 10);
+      const card = mount.querySelector(`.porter-card[data-force="${force}"]`);
+      const notes = card?.querySelector('.porter-notes')?.value || '';
+      try {
+        await api.porterSet(productId, force, score, notes);
+        await renderPorterAsync(productId);
+      } catch (e) { alert(`Update failed: ${e?.message || e}`); }
+    });
+  });
+  mount.querySelectorAll('.porter-notes').forEach(ta => {
+    ta.addEventListener('blur', async () => {
+      const force = ta.dataset.force;
+      const card = mount.querySelector(`.porter-card[data-force="${force}"]`);
+      const score = card?.querySelectorAll('.porter-score-pill.is-on')?.length || 0;
+      try { await api.porterSet(productId, force, score, ta.value); } catch {}
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 2x2 Positioning Map (Ries & Trout, 1981)
+// ══════════════════════════════════════════════════════════════════════
+function renderPositioningSvg(data) {
+  const W = 420, H = 320;
+  const padL = 50, padB = 36, padT = 20, padR = 20;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xAt = v => padL + (innerW * Math.max(0, Math.min(v, 10))) / 10;
+  const yAt = v => padT + innerH - (innerH * Math.max(0, Math.min(v, 10))) / 10;
+
+  let dots = '';
+  (data.points || []).forEach(p => {
+    const fill = p.is_self ? '#0f172a' : '#94a3b8';
+    const r = p.is_self ? 7 : 5;
+    dots += `<circle cx="${xAt(p.x)}" cy="${yAt(p.y)}" r="${r}" fill="${fill}" stroke="#fff" stroke-width="2"/>` +
+            `<text x="${xAt(p.x) + 8}" y="${yAt(p.y) + 4}" font-size="10" fill="#1f2937">${esc(p.name || '')}</text>`;
+  });
+
+  // Axes
+  const axes = `
+    <line x1="${padL}" y1="${padT + innerH / 2}" x2="${padL + innerW}" y2="${padT + innerH / 2}" stroke="#e5e7eb"/>
+    <line x1="${padL + innerW / 2}" y1="${padT}" x2="${padL + innerW / 2}" y2="${padT + innerH}" stroke="#e5e7eb"/>
+    <rect x="${padL}" y="${padT}" width="${innerW}" height="${innerH}" fill="none" stroke="#cbd5e1"/>
+    <text x="${padL + innerW / 2}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#374151">${esc(data.x_axis || 'X')} →</text>
+    <g transform="translate(14, ${padT + innerH / 2}) rotate(-90)">
+      <text text-anchor="middle" font-size="11" fill="#374151">${esc(data.y_axis || 'Y')} →</text>
+    </g>
+  `;
+  return `<svg class="positioning-svg" viewBox="0 0 ${W} ${H}">${axes}${dots}</svg>`;
+}
+
+function renderPositioningPanel(d) {
+  const rows = (d.points || []).map((p, i) => `
+    <div class="positioning-row" data-pp-idx="${i}">
+      <input class="pp-name"   type="text"   value="${esc(p.name || '')}" placeholder="competitor name"/>
+      <input class="pp-x"      type="range"  min="0" max="10" step="0.5" value="${p.x ?? 5}"/>
+      <span  class="pp-x-val">${(p.x ?? 5).toFixed(1)}</span>
+      <input class="pp-y"      type="range"  min="0" max="10" step="0.5" value="${p.y ?? 5}"/>
+      <span  class="pp-y-val">${(p.y ?? 5).toFixed(1)}</span>
+      <label class="pp-self">
+        <input type="checkbox" class="pp-self-ck" ${p.is_self ? 'checked' : ''}/>
+        self
+      </label>
+      <button class="btn-mini pp-delete">×</button>
+    </div>
+  `).join('');
+  return `
+    <section class="positioning-panel card">
+      <div class="positioning-head">
+        <h4>2×2 Positioning map</h4>
+        <span class="muted" style="font-size:11px">Ries &amp; Trout, 1981 · pick two factors customers care about</span>
+      </div>
+      <div class="positioning-axes">
+        <label>X axis<input id="pp-x-axis" type="text" value="${esc(d.x_axis || 'Price')}"/></label>
+        <label>Y axis<input id="pp-y-axis" type="text" value="${esc(d.y_axis || 'Feature depth')}"/></label>
+      </div>
+      <div class="positioning-svg-wrap">${renderPositioningSvg(d)}</div>
+      <div class="positioning-list">${rows}</div>
+      <div class="positioning-add">
+        <input id="pp-new-name" type="text" placeholder="competitor name"/>
+        <button class="btn-mini" id="pp-add-row">+ add competitor</button>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;gap:8px">
+        <button class="btn primary" id="pp-save">Save positioning map</button>
+      </div>
+    </section>
+  `;
+}
+
+async function renderPositioningAsync(productId) {
+  const mount = document.getElementById('pd-positioning');
+  if (!mount) return;
+  let data;
+  try { data = await api.positioningGet(productId); }
+  catch (e) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">Positioning unavailable: ${esc(e?.message || e)}</div>`;
+    return;
+  }
+  if (!data?.ok) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${esc(data?.error || 'Positioning unavailable')}</div>`;
+    return;
+  }
+
+  const state = {
+    x_axis: data.x_axis,
+    y_axis: data.y_axis,
+    points: (data.points || []).map(p => ({ ...p })),
+  };
+
+  const repaint = () => {
+    mount.innerHTML = renderPositioningPanel(state);
+    wire();
+    window.refreshIcons?.();
+  };
+
+  const wire = () => {
+    document.getElementById('pp-x-axis')?.addEventListener('change', e => state.x_axis = e.target.value);
+    document.getElementById('pp-y-axis')?.addEventListener('change', e => state.y_axis = e.target.value);
+
+    mount.querySelectorAll('.positioning-row').forEach(row => {
+      const i = parseInt(row.dataset.ppIdx, 10);
+      row.querySelector('.pp-name')?.addEventListener('change', e => state.points[i].name = e.target.value);
+      row.querySelector('.pp-self-ck')?.addEventListener('change', e => state.points[i].is_self = !!e.target.checked);
+      const xIn = row.querySelector('.pp-x');
+      const yIn = row.querySelector('.pp-y');
+      const xLbl = row.querySelector('.pp-x-val');
+      const yLbl = row.querySelector('.pp-y-val');
+      xIn?.addEventListener('input', () => {
+        state.points[i].x = parseFloat(xIn.value);
+        xLbl.textContent = state.points[i].x.toFixed(1);
+        const wrap = mount.querySelector('.positioning-svg-wrap');
+        if (wrap) wrap.innerHTML = renderPositioningSvg(state);
+      });
+      yIn?.addEventListener('input', () => {
+        state.points[i].y = parseFloat(yIn.value);
+        yLbl.textContent = state.points[i].y.toFixed(1);
+        const wrap = mount.querySelector('.positioning-svg-wrap');
+        if (wrap) wrap.innerHTML = renderPositioningSvg(state);
+      });
+      row.querySelector('.pp-delete')?.addEventListener('click', () => {
+        state.points.splice(i, 1);
+        repaint();
+      });
+    });
+
+    document.getElementById('pp-add-row')?.addEventListener('click', () => {
+      const nm = document.getElementById('pp-new-name').value.trim();
+      if (!nm) return;
+      state.points.push({ name: nm, x: 5, y: 5, is_self: false });
+      repaint();
+    });
+
+    document.getElementById('pp-save')?.addEventListener('click', async () => {
+      const btn = document.getElementById('pp-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        await api.positioningSet(productId, {
+          x_axis: state.x_axis, y_axis: state.y_axis, points: state.points,
+        });
+        btn.textContent = '✓ Saved';
+        setTimeout(() => { btn.disabled = false; btn.textContent = 'Save positioning map'; }, 1500);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Save positioning map';
+        alert(`Save failed: ${e?.message || e}`);
+      }
+    });
+  };
+
+  repaint();
+}
+
+// ══════════════════════════════════════════════════════════════════════
 // #/product/<id> — the Daily Dashboard (5 sections)
 // ══════════════════════════════════════════════════════════════════════
 export async function renderProductDashboard(root, { params }) {
@@ -725,13 +1047,36 @@ export async function renderProductDashboard(root, { params }) {
     </header>
 
     <div id="pd-header"></div>
+    <div class="pd-discovery-toolbar">
+      <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/empathy/${esc(encodeURIComponent(id))}">
+        <i data-lucide="users"></i> Empathy map
+      </a>
+      <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/interviews/${esc(encodeURIComponent(id))}">
+        <i data-lucide="mic"></i> Interviews
+      </a>
+      <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/pmf/${esc(encodeURIComponent(id))}">
+        <i data-lucide="bar-chart-3"></i> PMF survey
+      </a>
+      <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/pricing/${esc(encodeURIComponent(id))}">
+        <i data-lucide="dollar-sign"></i> Pricing surveys
+      </a>
+      <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/estimate/${esc(encodeURIComponent(id))}">
+        <i data-lucide="calculator"></i> PERT &amp; cost
+      </a>
+      <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/prd/${esc(encodeURIComponent(id))}">
+        <i data-lucide="file-text"></i> Export PRD
+      </a>
+    </div>
     <div id="pd-four-risks"></div>
     <div id="pd-gate"></div>
+    <div id="pd-tam-sam-som"></div>
+    <div id="pd-porter"></div>
     <div id="pd-signals"></div>
     <div class="pd-sections-grid">
       <div id="pd-mirror"></div>
       <div id="pd-lens"></div>
     </div>
+    <div id="pd-positioning"></div>
     <div id="pd-value-curve"></div>
     <div id="pd-field"></div>
     <div id="pd-sweeps"></div>
@@ -763,9 +1108,17 @@ export async function renderProductDashboard(root, { params }) {
 
     document.getElementById('pd-gate').innerHTML = renderGateBar(product);
     wireGateBar(id, renderAll);
+
+    // Discovery panels — async so the daily-use flow above paints first.
+    renderTamSamSomAsync(id);
+    renderPorterAsync(id);
+
     document.getElementById('pd-signals').innerHTML = renderSignalsSection(data.signals || []);
     document.getElementById('pd-mirror').innerHTML = renderMirrorSection(data.mirror || {});
     document.getElementById('pd-lens').innerHTML = renderLensSection(data.lens || {}, data.competitors || []);
+
+    // 2x2 positioning map (Ries & Trout, 1981)
+    renderPositioningAsync(id);
 
     // Blue Ocean Value Curve — also independent of the dashboard payload.
     renderValueCurveAsync(id, data.competitors || []);

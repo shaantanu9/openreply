@@ -25,6 +25,16 @@ import { renderPlaybook } from './screens/playbook.js';
 // Discovery framework expansion (2026-05-01_04) — Opportunity Solution Tree
 // (Torres, 2016): Outcome → Opportunities → Solutions → Experiments.
 import { renderOst } from './screens/ost.js';
+// Discovery framework expansion v2 (2026-05-01_05) — Empathy Map (Gray 2010),
+// Customer Discovery Interviews (Mom Test, Fitzpatrick 2013), Sean Ellis PMF
+// survey (2010), Pricing surveys (Van Westendorp 1976 / NPS 2003 / MaxDiff),
+// PERT estimation (US Navy 1958), PRD generator.
+import { renderEmpathy } from './screens/empathy.js';
+import { renderInterviews } from './screens/interviews.js';
+import { renderPmf } from './screens/pmf.js';
+import { renderPricing } from './screens/pricing.js';
+import { renderEstimate } from './screens/estimate.js';
+import { renderPrd } from './screens/prd.js';
 import { runHealthCheck, healthIsBlocking } from './lib/healthCheck.js';
 import { tabStore, renderTabStrip, titleForHash, iconForHash } from './lib/tabs.js';
 // ── AG-D: compare view ──
@@ -66,6 +76,18 @@ const routes = [
   // Discovery framework expansion — OST picker + per-topic tree.
   { match: /^\/ost\/?$/,                    render: renderOst },
   { match: /^\/ost\/([^/?]+)$/,             render: renderOst },
+  // Discovery v2 — Empathy maps, Customer Discovery Interviews, PMF survey,
+  // Pricing surveys, PERT estimate, PRD export.
+  { match: /^\/empathy\/?$/,                render: renderEmpathy },
+  { match: /^\/empathy\/([^/?]+).*$/,       render: renderEmpathy },
+  { match: /^\/interviews\/?$/,             render: renderInterviews },
+  { match: /^\/interviews\/([^/?]+).*$/,    render: renderInterviews },
+  { match: /^\/pmf\/?$/,                    render: renderPmf },
+  { match: /^\/pmf\/([^/?]+).*$/,           render: renderPmf },
+  { match: /^\/pricing\/?$/,                render: renderPricing },
+  { match: /^\/pricing\/([^/?]+).*$/,       render: renderPricing },
+  { match: /^\/estimate\/([^/?]+).*$/,      render: renderEstimate },
+  { match: /^\/prd\/([^/?]+).*$/,           render: renderPrd },
 ];
 
 // Route generation counter — bumped on every navigation so screens can tell

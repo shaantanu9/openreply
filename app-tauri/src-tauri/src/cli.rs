@@ -130,6 +130,200 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
     Ok(parse_or_diagnostic(&stdout))
 }
 
+// ─── Long-running dev-python daemon ────────────────────────────────────────
+//
+// `run_cli` previously paid the full Python interpreter / module-import cost
+// on EVERY invocation (~300-1500 ms each). When the topic page mounts we fire
+// 3+ such calls in parallel (saturation, coverage-gaps, byok_status, …) and
+// each one spawns its own `python -m reddit_research.cli.main`. Multiply by
+// every page navigation and the perceived "even local DB feels slow" follows.
+//
+// The daemon process keeps the Python interpreter warm. It reads one
+// JSON request per line on stdin, dispatches via Click's
+// `standalone_mode=False`, and writes one JSON response per line on stdout.
+// First call still pays imports; every subsequent call lands in the
+// already-warm process — measured 12 s → 0.5 s for 3 sequential calls.
+//
+// Failure handling: any IO/parse failure on the daemon channel marks the
+// slot as broken, kills the child, and signals the caller to fall back to
+// the existing one-shot `output()` path so a single bad command can't take
+// down the whole app. On the next call we lazily re-spawn.
+//
+// Scope: dev-mode only for now. The bundled PyInstaller path stays on
+// one-shot — the dev wins are huge and the bundled-binary plumbing through
+// Tauri's shell-plugin Command (event-channel stdin/stdout) is a meatier
+// refactor for a follow-up. Cross-session SWR caching (Fix #2) already
+// covers most user-visible cold-start pain in the bundled DMG.
+
+struct DevDaemon {
+    child: tokio::process::Child,
+    stdin: tokio::process::ChildStdin,
+    stdout: tokio::io::BufReader<tokio::process::ChildStdout>,
+    next_id: u64,
+}
+
+static DEV_DAEMON: std::sync::OnceLock<Arc<tokio::sync::Mutex<Option<DevDaemon>>>> =
+    std::sync::OnceLock::new();
+
+fn dev_daemon_slot() -> Arc<tokio::sync::Mutex<Option<DevDaemon>>> {
+    DEV_DAEMON
+        .get_or_init(|| Arc::new(tokio::sync::Mutex::new(None)))
+        .clone()
+}
+
+async fn spawn_dev_daemon(
+    py: &std::path::Path,
+    data_dir: &str,
+) -> Result<DevDaemon> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
+
+    let mut cmd = tokio::process::Command::new(py);
+    cmd.arg("-m").arg("reddit_research.cli.main").arg("daemon");
+    cmd.env("REDDIT_MYIND_DATA_DIR", data_dir)
+        .env("PYTHONUNBUFFERED", "1");
+    if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
+        if !ffmpeg.is_empty() {
+            cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg);
+        }
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| anyhow!("daemon spawn failed: {e}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("daemon stdin not piped"))?;
+    let mut stdout = TokioBufReader::new(
+        child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("daemon stdout not piped"))?,
+    );
+
+    // Handshake — daemon prints {"_daemon_ready": true} once imports finish.
+    let mut handshake = String::new();
+    stdout
+        .read_line(&mut handshake)
+        .await
+        .map_err(|e| anyhow!("daemon handshake read failed: {e}"))?;
+    let v: Value = serde_json::from_str(handshake.trim())
+        .map_err(|e| anyhow!("daemon handshake invalid JSON ({e}): {}", handshake.trim()))?;
+    if v.get("_daemon_ready") != Some(&Value::Bool(true)) {
+        return Err(anyhow!(
+            "daemon handshake unexpected: {}",
+            handshake.trim()
+        ));
+    }
+    eprintln!("[sidecar] dev-python daemon spawned, pid={:?}", child.id());
+
+    Ok(DevDaemon {
+        child,
+        stdin,
+        stdout,
+        next_id: 0,
+    })
+}
+
+/// Result of a daemon round-trip. `DaemonBroken` means the IPC layer itself
+/// failed (write/read/parse) — caller should drop the slot and fall back to
+/// one-shot. `CommandFailed` is a clean dispatch where the command itself
+/// errored — propagate as-is, no fallback (one-shot would just fail too).
+enum DaemonOutcome {
+    Ok(Value),
+    CommandFailed(String),
+    DaemonBroken(String),
+}
+
+async fn run_via_dev_daemon(
+    py: &std::path::Path,
+    args: &[&str],
+    data_dir: &str,
+) -> DaemonOutcome {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+    let slot = dev_daemon_slot();
+    let mut guard = slot.lock().await;
+
+    // Lazy spawn / re-spawn after a previous broken slot.
+    if guard.is_none() {
+        match spawn_dev_daemon(py, data_dir).await {
+            Ok(d) => {
+                *guard = Some(d);
+            }
+            Err(e) => {
+                return DaemonOutcome::DaemonBroken(format!("spawn: {e}"));
+            }
+        }
+    }
+
+    let daemon = guard.as_mut().expect("daemon slot just populated");
+    daemon.next_id += 1;
+    let req_id = daemon.next_id;
+
+    let request = serde_json::json!({ "id": req_id, "args": args });
+    let request_line = match serde_json::to_string(&request) {
+        Ok(s) => format!("{s}\n"),
+        Err(e) => return DaemonOutcome::DaemonBroken(format!("encode: {e}")),
+    };
+
+    if let Err(e) = daemon.stdin.write_all(request_line.as_bytes()).await {
+        let _ = guard.take();
+        return DaemonOutcome::DaemonBroken(format!("write: {e}"));
+    }
+    if let Err(e) = daemon.stdin.flush().await {
+        let _ = guard.take();
+        return DaemonOutcome::DaemonBroken(format!("flush: {e}"));
+    }
+
+    let mut response = String::new();
+    match daemon.stdout.read_line(&mut response).await {
+        Ok(0) => {
+            let _ = guard.take();
+            return DaemonOutcome::DaemonBroken("EOF on stdout".into());
+        }
+        Ok(_) => {}
+        Err(e) => {
+            let _ = guard.take();
+            return DaemonOutcome::DaemonBroken(format!("read: {e}"));
+        }
+    }
+
+    let resp: Value = match serde_json::from_str(response.trim()) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = guard.take();
+            return DaemonOutcome::DaemonBroken(format!(
+                "parse: {e}: {}",
+                response.trim()
+            ));
+        }
+    };
+
+    if resp.get("ok") == Some(&Value::Bool(true)) {
+        DaemonOutcome::Ok(resp.get("result").cloned().unwrap_or(Value::Null))
+    } else {
+        let err = resp
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown daemon command error")
+            .to_string();
+        DaemonOutcome::CommandFailed(err)
+    }
+}
+
+/// Best-effort kill of the running daemon — used on app shutdown so the
+/// orphan Python doesn't outlive its parent.
+pub async fn shutdown_dev_daemon() {
+    let slot = dev_daemon_slot();
+    let mut guard = slot.lock().await;
+    if let Some(mut daemon) = guard.take() {
+        let _ = daemon.child.kill().await;
+    }
+}
+
 /// Parse stdout as JSON; on failure return `{_parse_error, _raw, _parse_error_message}`
 /// so the frontend can render a real diagnostic instead of silently showing empty state.
 fn parse_or_diagnostic(stdout: &str) -> Value {
@@ -341,6 +535,25 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     // Dev fast path — skip the bundled PyInstaller binary entirely when a
     // .venv/bin/python exists near CWD. Avoids macOS Gatekeeper slow launches.
     if let Some(py) = find_dev_venv_python() {
+        // First try the long-running daemon (warm Python interpreter).
+        // On any IPC-level failure we fall back to one-shot so a single
+        // bad command can't strand the whole UI.
+        match run_via_dev_daemon(&py, &args, &data_str).await {
+            DaemonOutcome::Ok(v) => return Ok(v),
+            DaemonOutcome::CommandFailed(msg) => {
+                // Daemon ran the command cleanly but the command itself
+                // errored — same outcome as a non-zero one-shot exit, so
+                // surface it directly without re-running.
+                return Err(anyhow!("cli error: {}", msg));
+            }
+            DaemonOutcome::DaemonBroken(reason) => {
+                eprintln!(
+                    "[sidecar] dev-python daemon broken ({reason}), falling back to one-shot"
+                );
+                // Slot was already cleared inside run_via_dev_daemon — next
+                // call will re-spawn.
+            }
+        }
         return run_dev_python_cli(py, &args, &data_str).await;
     }
 

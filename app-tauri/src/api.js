@@ -40,6 +40,30 @@ function cacheKey(name, args) {
   return args == null ? name : `${name}:${JSON.stringify(args)}`;
 }
 
+// ---------- localStorage SWR (cross-session "instant paint") ----------
+// In-memory `_cache` evaporates on page reload. For read-only stats whose
+// values rarely change between sessions (Bets pill counts, saturation hints,
+// coverage gaps, BYOK status), persist the last result to localStorage so
+// that the *next* topic-page open (even after a fresh app launch) resolves
+// from disk in microseconds instead of paying a Python-sidecar spawn. Only
+// callers that opt in via `persistTtlMs` write/read here.
+const PERSIST_PREFIX = 'gapmap.api.cache.';
+function readPersisted(key, ttlMs) {
+  try {
+    const raw = localStorage.getItem(PERSIST_PREFIX + key);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== 'object' || typeof obj._ts !== 'number') return null;
+    if (Date.now() - obj._ts > ttlMs) return null;
+    return obj.value;
+  } catch { return null; }
+}
+function writePersisted(key, value) {
+  try {
+    localStorage.setItem(PERSIST_PREFIX + key, JSON.stringify({ value, _ts: Date.now() }));
+  } catch {}
+}
+
 function evictIfOverCap() {
   if (_cache.size <= MAX_CACHE_ENTRIES) return;
   // Drop the 25% oldest entries by ts. Sorting once and slicing is cheaper
@@ -101,15 +125,82 @@ async function invokeWithRetry(name, args) {
   }
 }
 
-async function cachedInvoke(name, args, ttlMs = DEFAULT_TTL_MS) {
+async function cachedInvoke(name, args, ttlMs = DEFAULT_TTL_MS, persistTtlMs = 0) {
   const key = cacheKey(name, args);
   const now = Date.now();
   const hit = _cache.get(key);
   if (hit && now - hit.ts < ttlMs) return hit.value;
+
+  // localStorage SWR — when caller opted in via `persistTtlMs`, resolve from
+  // disk immediately if the persisted value is still within the cross-session
+  // freshness window. Kick off a background fetch to keep things current; the
+  // persisted value is fine to surface meanwhile (these are stats that only
+  // change on explicit user action, which invalidates everything anyway).
+  if (persistTtlMs > 0) {
+    const persisted = readPersisted(key, persistTtlMs);
+    if (persisted != null) {
+      _cache.set(key, { value: persisted, ts: now });
+      if (!_inflight.has(key)) {
+        const refresh = invokeWithRetry(name, args).then(value => {
+          _cache.set(key, { value, ts: Date.now() });
+          writePersisted(key, value);
+          _inflight.delete(key);
+          return value;
+        }).catch(e => { _inflight.delete(key); throw e; });
+        _inflight.set(key, refresh);
+        refresh.catch(() => {}); // silent in background
+      }
+      return persisted;
+    }
+  }
+
   // In-flight dedup: multiple callers get the same promise
   if (_inflight.has(key)) return _inflight.get(key);
   const p = invokeWithRetry(name, args).then(value => {
     _cache.set(key, { value, ts: Date.now() });
+    if (persistTtlMs > 0) writePersisted(key, value);
+    evictIfOverCap();
+    _inflight.delete(key);
+    return value;
+  }).catch(e => {
+    _inflight.delete(key);
+    throw e;
+  });
+  _inflight.set(key, p);
+  return p;
+}
+
+// Generic dedup+TTL cache around an arbitrary async fetcher. Same shape as
+// `cachedInvoke` but lets us cache results from anything (e.g. a thin native
+// run_query wrapper that reshapes rows) under a stable key the existing
+// `mutated()` invalidator already targets — without spawning the sidecar.
+async function cachedFetch(key, fetcher, ttlMs = DEFAULT_TTL_MS, persistTtlMs = 0) {
+  const now = Date.now();
+  const hit = _cache.get(key);
+  if (hit && now - hit.ts < ttlMs) return hit.value;
+
+  if (persistTtlMs > 0) {
+    const persisted = readPersisted(key, persistTtlMs);
+    if (persisted != null) {
+      _cache.set(key, { value: persisted, ts: now });
+      if (!_inflight.has(key)) {
+        const refresh = Promise.resolve().then(fetcher).then(value => {
+          _cache.set(key, { value, ts: Date.now() });
+          writePersisted(key, value);
+          _inflight.delete(key);
+          return value;
+        }).catch(e => { _inflight.delete(key); throw e; });
+        _inflight.set(key, refresh);
+        refresh.catch(() => {});
+      }
+      return persisted;
+    }
+  }
+
+  if (_inflight.has(key)) return _inflight.get(key);
+  const p = Promise.resolve().then(fetcher).then(value => {
+    _cache.set(key, { value, ts: Date.now() });
+    if (persistTtlMs > 0) writePersisted(key, value);
     evictIfOverCap();
     _inflight.delete(key);
     return value;
@@ -122,11 +213,23 @@ async function cachedInvoke(name, args, ttlMs = DEFAULT_TTL_MS) {
 }
 
 function invalidate(...nameOrPrefixes) {
-  // Clear any cache entry whose key equals or starts with the given prefix.
+  // Clear any cache entry whose key equals or starts with the given prefix —
+  // BOTH in-memory AND any localStorage SWR mirror, so writes don't leak
+  // stale persisted values across sessions.
   for (const np of nameOrPrefixes) {
     for (const k of [..._cache.keys()]) {
       if (k === np || k.startsWith(np + ':')) _cache.delete(k);
     }
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const lk = localStorage.key(i);
+        if (!lk || !lk.startsWith(PERSIST_PREFIX)) continue;
+        const inner = lk.slice(PERSIST_PREFIX.length);
+        if (inner === np || inner.startsWith(np + ':')) {
+          localStorage.removeItem(lk);
+        }
+      }
+    } catch {}
   }
 }
 
@@ -303,7 +406,11 @@ export const api = {
   healthCheck:     ()        => invoke('health_check'),
   listExports:     ()        => cachedInvoke('list_exports',   null, 30000),
   exportPrefsGet:  ()        => cachedInvoke('export_prefs_get', null, 30000),
-  byokStatus:      ()        => cachedInvoke('byok_status',    null, 30000),
+  // SWR-persisted: BYOK status only changes when the user edits keys (which
+  // calls `mutated('byok')` → invalidates both cache layers). Persisting it
+  // for 30 min eliminates the topic-open spawn for the LLM-config readiness
+  // check on every page mount.
+  byokStatus:      ()        => cachedInvoke('byok_status',    null, 60000, 30 * 60 * 1000),
   deviceSignature: ()        => cachedInvoke('device_signature', null, 60000),
   licenseStatus:   ()        => cachedInvoke('license_status', null, 10000),
   getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 10000),
@@ -613,8 +720,31 @@ export const api = {
     invalidate('hypothesis_list', 'hypothesis_stats');
     return invoke('hypothesis_delete', { id });
   },
-  hypothesisStats: (topic) =>
-    cachedInvoke('hypothesis_stats', { topic }, 5000),
+  // Native run_query path — was a sidecar `research hypothesis-stats` spawn
+  // (≈300-800 ms warm, 1-2 s cold on bundled DMG) on every topic-page open
+  // for the Bets pill. The query is a trivial GROUP BY; running it through
+  // `run_query` (read-only SQLite, sub-10 ms) eliminates the spawn. Cache
+  // key kept as `hypothesis_stats:…` so `mutated('hypothesis')` still hits
+  // it via the existing INVALIDATE_MAP entry. 60 s TTL because bets only
+  // change on explicit user action — invalidation handles freshness.
+  hypothesisStats: (topic) => {
+    const key = `hypothesis_stats:${topic || ''}`;
+    return cachedFetch(key, async () => {
+      const sql = topic
+        ? `SELECT status, count(*) AS n FROM hypothesis_tests
+           WHERE topic = :topic AND status != 'archived'
+           GROUP BY status`
+        : `SELECT status, count(*) AS n FROM hypothesis_tests
+           WHERE status != 'archived'
+           GROUP BY status`;
+      const rows = (await invokeWithRetry('run_query', { sql, topic: topic || null, params: null })) || [];
+      const stats = {};
+      for (const r of rows) {
+        if (r && r.status != null) stats[r.status] = Number(r.n) || 0;
+      }
+      return { ok: true, topic: topic || null, stats };
+    }, 60000, 10 * 60 * 1000);
+  },
 
   // Phase-4 Monitoring — weekly delta tracking. `monitorRunTopic` re-runs
   // synthesize (and optionally collect) for a single topic, recording
@@ -1021,8 +1151,12 @@ export const api = {
   // ── Task 8: saturation v1 + coverage gaps panel ───────────────────
   // Both are pure-SQL reads so a 30s cache is plenty — they auto-refresh
   // anyway when any screen fires `gapmap:changed` (see main.js).
-  topicSaturation:    (topic) => cachedInvoke('topic_saturation',    { topic }, 30000),
-  topicCoverageGaps:  (topic) => cachedInvoke('topic_coverage_gaps', { topic }, 30000),
+  // SWR-persisted: saturation and coverage-gaps reflect graph state that
+  // only moves on collect/enrich/ingest writes — all of which call
+  // `mutated()` and invalidate both cache layers. 10-min persist window
+  // keeps the topic-page hint chips painting instantly across sessions.
+  topicSaturation:    (topic) => cachedInvoke('topic_saturation',    { topic }, 60000, 10 * 60 * 1000),
+  topicCoverageGaps:  (topic) => cachedInvoke('topic_coverage_gaps', { topic }, 60000, 10 * 60 * 1000),
   runRedditSearch:    (query, sub, sort, timeFilter, limit) =>
     invoke('run_reddit_search', { query, sub, sort, timeFilter, limit }),
   startStream:        (sub, keywords, watch) => invoke('start_stream', { sub, keywords, watch }),

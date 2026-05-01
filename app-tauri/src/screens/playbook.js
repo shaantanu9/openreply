@@ -43,12 +43,14 @@ const PHASES = [
       'Stanford d.school Empathize + Double Diamond Discover. Diverge ' +
       'broadly to understand the full problem space. In Gap Map this is ' +
       'the corpus you collect across Reddit, HN, AppStore, Bluesky, etc.',
-    deliverables: ['Multi-source corpus', 'Pain-point matrix', 'JTBD statements', 'Empathy Map'],
+    deliverables: ['Multi-source corpus', 'Pain-point matrix', 'JTBD statements', 'Empathy Map', 'Interviews log'],
     appLinks: [
       { hash: '#/topics', label: 'Pick or create a topic' },
       { hash: '#/ingest', label: 'Ingest CSV / past data' },
       { hash: '#/ingest-video', label: 'Ingest video transcripts' },
       { hash: '#/ost', label: 'Open Opportunity Solution Tree' },
+      { hash: '#/empathy', label: 'Empathy maps (Says/Thinks/Does/Feels)' },
+      { hash: '#/interviews', label: 'Customer Discovery Interviews (Mom Test)' },
     ],
     checks: [
       'Collect from ≥3 sources to triangulate (Reddit + HN + AppStore is the floor).',
@@ -64,12 +66,14 @@ const PHASES = [
       'deliver value?) and growth hypothesis (how do users find it?). ' +
       'Kano categorizes features as Must-Be / Performance / Attractive — ' +
       'kill Indifferent and Reverse on sight.',
-    deliverables: ['Insight report', 'Kano + MoSCoW-tagged interventions', 'RICE scores', 'Four-Risks pass/fail', 'Go/Kill verdict'],
+    deliverables: ['Insight report', 'Kano + MoSCoW-tagged interventions', 'RICE scores', 'Four-Risks pass/fail', 'PMF score', 'NPS', 'Go/Kill verdict'],
     appLinks: [
       { hash: '#/topics', label: 'Open a topic → Insights tab' },
       { hash: '#/find', label: 'Local semantic search over the corpus' },
       { hash: '#/ost', label: 'Opportunity Solution Tree' },
       { hash: '#/products', label: 'Four Risks + Stage-Gate verdict' },
+      { hash: '#/pmf', label: 'Sean Ellis PMF survey (40% threshold)' },
+      { hash: '#/pricing', label: 'Pricing surveys (Van Westendorp / NPS / MaxDiff)' },
     ],
     checks: [
       'Run Insights synthesis — opportunity-scored findings with citations.',
@@ -86,9 +90,10 @@ const PHASES = [
       'coding effort by 1.5–2x for total. Present 2–3 scope tiers. ' +
       'Cooper: only structured Stage-Gate processes hit 63–78% success ' +
       'vs ~10% without.',
-    deliverables: ['Scope doc with 2–3 tiers', 'PERT estimates', 'Risk register'],
+    deliverables: ['Scope doc with 2–3 tiers', 'PERT estimates', 'Cost model', 'LTV/CAC', 'Risk register', 'PRD'],
     appLinks: [
       { hash: '#/reports', label: 'Export brief / deck' },
+      { hash: '#/products', label: 'Open the product → PERT & cost' },
     ],
     checks: [
       'Decompose into a WBS — every task has O / M / P estimates.',
@@ -231,6 +236,26 @@ const FRAMEWORKS = [
     use: 'Value / Usability / Feasibility / Viability — clear all four BEFORE the Stage-Gate.' },
   { name: 'Blue Ocean Value Curve', creator: 'Kim & Mauborgne (INSEAD, 2005)',
     use: 'Plot factor scores vs competitors. Apply Eliminate / Reduce / Raise / Create.' },
+  { name: 'Empathy Map', creator: 'Dave Gray (2010), popularised by Stanford d.school',
+    use: 'Says / Thinks / Does / Feels per persona. Says-vs-Does gap = the latent insight.' },
+  { name: 'The Mom Test', creator: 'Rob Fitzpatrick (2013)',
+    use: 'Customer discovery interviewing — ask about life, not your idea. Past behaviour > future intent.' },
+  { name: 'Sean Ellis PMF Survey', creator: 'Sean Ellis (2010)',
+    use: 'Single question: "How would you feel if you could no longer use this product?" ≥40% "very disappointed" = PMF.' },
+  { name: 'Van Westendorp PSM', creator: 'Peter Van Westendorp (ESOMAR 1976)',
+    use: 'Four-question price sensitivity meter — OPP, IPP, and acceptable range from population curves.' },
+  { name: 'Net Promoter Score', creator: 'Fred Reichheld (HBR, 2003)',
+    use: '"Would you recommend to a friend?" 0–10. Promoters−Detractors = NPS.' },
+  { name: 'MaxDiff', creator: 'Jordan Louviere',
+    use: 'Best/worst feature ranking. Resists Likert-scale inflation, produces a stable feature priority list.' },
+  { name: 'Three-Point PERT', creator: 'US Navy (1958), McConnell (2006)',
+    use: 'E = (O + 4M + P) / 6 with 1.5–2× overhead and 15–20% contingency.' },
+  { name: 'TAM / SAM / SOM', creator: 'Blank & Dorf (2012)',
+    use: 'Market sizing — total addressable, serviceable addressable, serviceable obtainable.' },
+  { name: "Porter's Five Forces", creator: 'Michael Porter (HBR, 1979)',
+    use: 'Industry structure: new entrants, supplier/buyer power, substitutes, rivalry.' },
+  { name: '2×2 Positioning Map', creator: 'Ries & Trout (1981)',
+    use: 'Plot self + competitors on the two factors customers actually care about.' },
 ];
 
 function esc(s) {

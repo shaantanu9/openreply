@@ -4598,5 +4598,127 @@ def cmd_ytdlp_update(
     _emit(result, as_json=as_json, table_title="yt-dlp update")
 
 
+@app.command("daemon")
+def cmd_daemon() -> None:
+    """Long-running stdin/stdout daemon — used by the Tauri Rust shell to
+    avoid paying Python interpreter / PyInstaller startup on every call.
+
+    Protocol (line-delimited JSON, one request and one response per line):
+
+        request:  {"id": <any>, "args": ["research", "hypothesis-stats", "--topic", "x", "--json"]}
+        response: {"id": <same>, "ok": true, "result": <parsed JSON output>}
+                  or {"id": <same>, "ok": false, "error": "<msg>", "stderr": "<captured>"}
+
+    On startup the daemon writes a single handshake line so the parent
+    knows imports are warm: {"_daemon_ready": true}.
+
+    Each command runs in-process via Click's `standalone_mode=False`, with
+    stdout/stderr captured and JSON-parsed back. Module imports happen
+    ONCE on first call per command family (sqlite-utils, requests, llm
+    providers, …) and stay warm across all subsequent calls — that's the
+    speedup vs. `Command::new(py).output()`.
+    """
+    import io
+    import traceback as _tb
+
+    real_stdout = sys.stdout
+    real_stderr = sys.stderr
+
+    # Handshake so the parent can treat the spawn as ready.
+    real_stdout.write(json.dumps({"_daemon_ready": True}) + "\n")
+    real_stdout.flush()
+
+    while True:
+        try:
+            line = sys.stdin.readline()
+        except KeyboardInterrupt:
+            break
+        if not line:
+            break  # parent closed stdin → exit
+        line = line.strip()
+        if not line:
+            continue
+
+        req_id = None
+        try:
+            req = json.loads(line)
+            req_id = req.get("id")
+            args = list(req.get("args") or [])
+        except Exception as e:
+            real_stdout.write(json.dumps({
+                "id": req_id, "ok": False,
+                "error": f"invalid daemon request: {e}",
+            }) + "\n")
+            real_stdout.flush()
+            continue
+
+        # Capture the command's stdout (where _emit prints JSON) and stderr
+        # (where Click writes errors). Restore on exit so the daemon's own
+        # protocol writes go to the real pipe.
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        sys.stdout = out_buf
+        sys.stderr = err_buf
+
+        ok = True
+        err_msg: Optional[str] = None
+        try:
+            try:
+                app(args=args, standalone_mode=False)
+            except SystemExit as e:
+                code = e.code if isinstance(e.code, int) else (1 if e.code else 0)
+                if code != 0:
+                    ok = False
+                    err_msg = f"command exited {code}"
+            except Exception as e:
+                ok = False
+                err_msg = f"{type(e).__name__}: {e}"
+                # Tracebacks go to err_buf so the parent can surface them.
+                _tb.print_exc(file=err_buf)
+        finally:
+            sys.stdout = real_stdout
+            sys.stderr = real_stderr
+
+        captured_out = out_buf.getvalue()
+        captured_err = err_buf.getvalue()
+
+        result: Any = None
+        if ok:
+            text = captured_out.strip()
+            if text:
+                # Most commands emit a single JSON document. Try whole first,
+                # then fall back to the last non-empty line (some commands
+                # also log status banners before the JSON payload).
+                try:
+                    result = json.loads(text)
+                except Exception:
+                    last = ""
+                    for ln in reversed(text.splitlines()):
+                        ln = ln.strip()
+                        if ln:
+                            last = ln
+                            break
+                    try:
+                        result = json.loads(last) if last else None
+                    except Exception:
+                        result = {
+                            "_parse_error": True,
+                            "_parse_error_message": "non-JSON stdout from daemon command",
+                            "_raw": captured_out[:4000],
+                        }
+
+        resp: dict[str, Any] = {"id": req_id, "ok": ok}
+        if ok:
+            resp["result"] = result
+        else:
+            resp["error"] = err_msg or "unknown daemon error"
+            if captured_err:
+                resp["stderr"] = captured_err[:2000]
+            if captured_out:
+                resp["stdout"] = captured_out[:2000]
+        real_stdout.write(json.dumps(resp, default=str) + "\n")
+        real_stdout.flush()
+
+
 if __name__ == "__main__":
     app()

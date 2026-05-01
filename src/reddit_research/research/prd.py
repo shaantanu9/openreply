@@ -61,9 +61,10 @@ def generate(product_id: str) -> dict[str, Any]:
     from . import product as product_mod
     from . import interviews as interviews_mod
 
-    prod = product_mod.get_product(product_id)
-    if not prod or "id" not in prod:
-        return {"ok": False, "error": f"product '{product_id}' not found"}
+    pres = product_mod.get_product(product_id)
+    if not pres or not pres.get("ok"):
+        return {"ok": False, "error": pres.get("error") if isinstance(pres, dict) else f"product '{product_id}' not found"}
+    prod = pres.get("product") or {}
 
     topic = prod.get("topic") or product_id
     name = prod.get("name") or product_id
