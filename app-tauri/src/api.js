@@ -910,6 +910,14 @@ export const api = {
   runtimeSnapshot: (recentLimit = 25) =>
     cachedInvoke('runtime_snapshot', { recentLimit }, 1500),
 
+  // Page-explainer eye-icon system. Cached for 5 minutes — the
+  // explanations only change when the user edits them via Settings,
+  // and the screen tolerates stale-while-revalidate easily.
+  pageExplanationGet: (slug) =>
+    cachedInvoke('page_explanation_get', { slug }, 300000),
+  pageExplanationsList: () =>
+    cachedInvoke('page_explanations_list', null, 300000),
+
   // ── Discovery framework expansion (2026-05-01_04) ──────────────────
   // Opportunity Solution Tree (Torres, 2016) — outcome → opportunities
   // → solutions → experiments. ostBuild reads only; the underlying data

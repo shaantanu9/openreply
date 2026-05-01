@@ -2288,6 +2288,25 @@ def cmd_research_kano_categorize(
             typer.echo(f"{k}: {v}")
 
 
+@research_app.command("page-explanation-get")
+def cmd_page_explanation_get(
+    slug: str = typer.Option(..., "--slug"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Fetch the why/science/data-source explainer for one page."""
+    from ..runtime import get_explanation
+    _emit(get_explanation(slug), as_json)
+
+
+@research_app.command("page-explanations-list")
+def cmd_page_explanations_list(
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List every page-explainer slug + title."""
+    from ..runtime import list_explanations
+    _emit({"ok": True, "explanations": list_explanations()}, as_json)
+
+
 @research_app.command("runtime-snapshot")
 def cmd_runtime_snapshot(
     recent_limit: int = typer.Option(25, "--recent-limit"),
@@ -4460,6 +4479,95 @@ def cmd_saved_view_delete(
     """Delete a saved view."""
     from ..research.saved_views import delete_view
     _emit(delete_view(view_id), as_json)
+
+
+# ── idea scan ───────────────────────────────────────────────────────────────
+# Fast-pass discovery from a 2-word seed. See research/idea_scan.py for
+# the full design. The scan halts at ~200 items (configurable), then a
+# separate synthesize call clusters + LLM-labels the top 5 wedges.
+
+@research_app.command("idea-start")
+def cmd_research_idea_start(
+    seed: str = typer.Option(..., "--seed", "-s"),
+    sources: Optional[str] = typer.Option(
+        None, "--sources",
+        help="Comma-separated source names (default: every adapter that "
+             "doesn't need explicit config)",
+    ),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    halt_threshold: int = typer.Option(200, "--halt-threshold"),
+    max_seconds: Optional[int] = typer.Option(None, "--max-seconds"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Run a fast first-pass scan from a 2-word seed and return a row."""
+    from ..research.idea_scan import start_scan
+    src_list = [s.strip() for s in (sources or "").split(",") if s.strip()] or None
+    def _progress(msg: str) -> None:
+        # Stream progress lines as JSONL when --json so the Tauri
+        # streaming bridge picks them up. Mirrors the collect pattern.
+        if as_json:
+            typer.echo(json.dumps({"event": "progress", "message": msg}))
+        else:
+            typer.echo(msg)
+    out = start_scan(
+        seed,
+        llm_provider=provider,
+        sources=src_list,
+        halt_threshold=halt_threshold,
+        max_seconds=max_seconds,
+        progress=_progress,
+    )
+    _emit(out, as_json)
+
+
+@research_app.command("idea-synthesize")
+def cmd_research_idea_synthesize(
+    scan_id: str = typer.Option(..., "--scan-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Cluster the scan corpus and LLM-label the top 5 wedges."""
+    from ..research.idea_scan import synthesize_scan
+    def _progress(msg: str) -> None:
+        if as_json:
+            typer.echo(json.dumps({"event": "progress", "message": msg}))
+        else:
+            typer.echo(msg)
+    _emit(synthesize_scan(scan_id, progress=_progress), as_json)
+
+
+@research_app.command("idea-get")
+def cmd_research_idea_get(
+    scan_id: str = typer.Option(..., "--scan-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Read a scan row + parsed clusters."""
+    from ..research.idea_scan import get_scan
+    _emit(get_scan(scan_id), as_json)
+
+
+@research_app.command("idea-list")
+def cmd_research_idea_list(
+    limit: int = typer.Option(50, "--limit"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List recent scans (newest first)."""
+    from ..research.idea_scan import list_scans
+    _emit({"ok": True, "scans": list_scans(limit)}, as_json)
+
+
+@research_app.command("idea-extend")
+def cmd_research_idea_extend(
+    scan_id: str = typer.Option(..., "--scan-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """'Keep fetching' — re-run the scan on its still-pending sources."""
+    from ..research.idea_scan import extend_scan
+    def _progress(msg: str) -> None:
+        if as_json:
+            typer.echo(json.dumps({"event": "progress", "message": msg}))
+        else:
+            typer.echo(msg)
+    _emit(extend_scan(scan_id, progress=_progress), as_json)
 
 
 # ── video ingest + whisper models + yt-dlp ──────────────────────────────────

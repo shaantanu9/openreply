@@ -227,10 +227,31 @@ body {
 
 .main { padding: 22px 28px 40px; }
 
+/* HTML `hidden` attribute must always win over class-level `display:` rules.
+   Several screens (pricing tabs, OST outcome editor) use `el.hidden = true`
+   to toggle visibility — without this rule, `display: flex` on the class
+   wins and the element stays visible. */
+[hidden] { display: none !important; }
+
 .topbar { display: flex; align-items: center; gap: 14px; padding: 6px 0 22px; }
-.crumbs { font-size: 13px; color: var(--ink-3); }
+.crumbs { font-size: 13px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .crumbs strong { color: var(--ink); font-weight: 600; }
+.crumbs a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dashed transparent; transition: color .15s, border-color .15s; }
+.crumbs a:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
 .topbar-spacer { flex: 1; }
+/* topbar-actions — right-aligned action cluster used on detail screens
+   (Empathy, Interviews, OST, PMF, PRD, Estimate). Matches the "actions"
+   slot a topbar-spacer would otherwise gate, but lets the screen omit
+   the explicit spacer div. */
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.topbar-actions .btn { white-space: nowrap; }
 .search {
   display: flex; align-items: center; gap: 8px;
   background: var(--surface); border: 1px solid var(--line);
@@ -2599,7 +2620,7 @@ kbd {
 .pd-gate-notes { margin-top: 4px; font-size: 12px; color: var(--ink-2); }
 
 /* Playbook screen — 10-phase product-development lifecycle reference. */
-.pb-wrap { padding: 0 16px 24px; max-width: 1080px; }
+.pb-wrap { padding: 0 0 24px; max-width: 1080px; margin: 0 auto; }
 .pb-intro { padding: 18px 20px; margin: 0 0 16px; }
 .pb-intro h2 { margin: 0 0 6px; font-size: 22px; }
 .pb-phase-list { display: grid; gap: 14px; grid-template-columns: 1fr; }
@@ -2766,6 +2787,49 @@ kbd {
   .tm-row-stats { flex-direction: row; gap: 14px; text-align: left; }
   .tm-section-body { max-height: 300px; }
   .tm-stat-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ─── Why-this-page explainer screen + reusable eye-icon button ──────── */
+.why-wrap { padding: 0 16px 24px; max-width: 880px; min-width: 0; }
+.why-intro h2 { margin: 0 0 6px; font-size: 22px; }
+.why-tagline { margin: 0; font-size: 13px; line-height: 1.6; }
+.why-section { padding: 16px 20px; margin-bottom: 12px; }
+.why-section h3 {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 10px; font-size: 14px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px; color: var(--ink-2);
+}
+.why-section h3 svg { width: 16px; height: 16px; color: var(--orange); }
+.why-section p { font-size: 14px; line-height: 1.7; color: var(--ink-1); margin: 0 0 12px; }
+.why-fw-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.why-fw-chip {
+  display: inline-block; padding: 3px 10px; font-size: 11.5px; font-weight: 600;
+  background: var(--surface-2); color: var(--ink-2);
+  border-radius: 999px; border: 1px solid var(--line);
+}
+.why-cites { padding-left: 18px; margin: 8px 0 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.7; }
+.why-cites li { margin-bottom: 4px; }
+.why-promise {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 14px; background: rgba(4, 120, 87, 0.06);
+  border: 1px solid rgba(4, 120, 87, 0.2); border-radius: 8px;
+  font-size: 12.5px; line-height: 1.55;
+}
+.why-promise svg { width: 18px; height: 18px; color: #047857; flex-shrink: 0; margin-top: 1px; }
+.why-back { display: flex; justify-content: center; padding: 20px; }
+.why-index { list-style: none; padding: 0; margin: 0; }
+.why-index li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.why-index li:last-child { border-bottom: none; }
+.why-index a { color: var(--ink-1); text-decoration: none; display: block; }
+.why-index a:hover b { color: var(--orange); }
+.why-index a b { font-size: 14px; }
+.why-index a .muted { font-size: 12.5px; line-height: 1.5; display: block; margin-top: 2px; }
+.why-eye-btn {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.why-eye-btn svg { width: 14px; height: 14px; }
+@media (max-width: 720px) {
+  .why-eye-label { display: none; }
 }
 
 /* Science screen — process / framework cards with "Know more" expander.
@@ -6492,7 +6556,7 @@ html.dark .topic-header-compact .compact-toggle {
 }
 
 /* OST screen layout */
-.ost-wrap { padding: 18px 22px; display: flex; flex-direction: column; gap: 18px; }
+.ost-wrap { padding: 0 0 24px; max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
 
 .ost-outcome {
   position: relative;
@@ -6507,6 +6571,7 @@ html.dark .topic-header-compact .compact-toggle {
   font-size: 19px; font-weight: 600; line-height: 1.35; color: var(--ink-1);
 }
 .ost-outcome-edit { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.ost-outcome-edit[hidden] { display: none; }
 .ost-outcome-edit input {
   flex: 1; padding: 8px 10px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--surface); color: var(--ink-1);
@@ -7002,6 +7067,7 @@ html.dark .topic-header-compact .compact-toggle {
 .pricing-tab.is-active { color: #1d4ed8; border-bottom-color: #1d4ed8; }
 
 .pricing-pane { display: flex; flex-direction: column; gap: 12px; }
+.pricing-pane[hidden] { display: none; }
 .vw-summary, .nps-summary, .maxdiff-summary { padding: 14px 18px; }
 .vw-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

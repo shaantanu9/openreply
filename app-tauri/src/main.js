@@ -26,6 +26,71 @@ import { renderPlaybook } from './screens/playbook.js';
 // operation (collects, MCP jobs, extraction queue, sweeps, streams) +
 // LLM token usage. Auto-refreshes every 2 s.
 import { renderTasks } from './screens/tasks.js';
+// Page-explainer system — eye-icon on every page links to /why/<slug>
+// which renders the WHY / SCIENCE / HOW-WE-FETCH-YOUR-DATA explainer
+// for that specific screen. Trust-building, not technical.
+import { renderWhy, whyButtonHTML } from './screens/why.js';
+
+// Maps the current location.hash to the page-explainer slug. Returning
+// '' means "don't show the eye icon on this route" — useful for the
+// Why screen itself, the welcome / onboarding screens, and any modal-
+// shaped routes where the explainer would be redundant.
+function explainerSlugForHash(hash) {
+  const h = (hash || '').replace(/^#/, '') || '/';
+  if (h.startsWith('/why')) return '';        // self
+  if (h.startsWith('/welcome')) return '';    // onboarding
+  if (h === '/' || h === '')          return 'home';
+  if (h.startsWith('/topics'))        return 'topics';
+  if (h.startsWith('/topic/'))        return 'topic';
+  if (h.startsWith('/collect/'))      return 'collect';
+  if (h.startsWith('/collects'))      return 'tasks';   // collects manager → task manager explainer
+  if (h.startsWith('/tasks'))         return 'tasks';
+  if (h.startsWith('/products'))      return 'products';
+  if (h.startsWith('/product/'))      return 'product';
+  if (h.startsWith('/competitors'))   return 'competitors';
+  if (h.startsWith('/ingest-video'))  return 'ingest-video';
+  if (h.startsWith('/ingest'))        return 'ingest';
+  if (h.startsWith('/reports'))       return 'reports';
+  if (h.startsWith('/activity'))      return 'activity';
+  if (h.startsWith('/search'))        return 'search';
+  if (h.startsWith('/find'))          return 'find';
+  if (h.startsWith('/watch'))         return 'watch';
+  if (h.startsWith('/database'))      return 'database';
+  if (h.startsWith('/science'))       return 'science';
+  if (h.startsWith('/playbook'))      return 'playbook';
+  if (h.startsWith('/ost'))           return 'ost';
+  if (h.startsWith('/empathy'))       return 'empathy';
+  if (h.startsWith('/interviews'))    return 'interviews';
+  if (h.startsWith('/pmf'))           return 'pmf';
+  if (h.startsWith('/pricing'))       return 'pricing';
+  if (h.startsWith('/estimate'))      return 'estimate';
+  if (h.startsWith('/prd'))           return 'prd';
+  if (h.startsWith('/settings'))      return 'settings';
+  return '';
+}
+
+// Auto-inject the eye-icon button into the topbar of any rendered
+// screen. Called after every successful route render so we never
+// touch each screen's render function. Safely no-ops if the screen
+// has no .topbar or already mounted its own eye button.
+function mountWhyEyeIcon(rootEl, hash) {
+  const slug = explainerSlugForHash(hash);
+  if (!slug) return;
+  const topbar = rootEl.querySelector('.topbar');
+  if (!topbar) return;
+  if (topbar.querySelector('.why-eye-btn')) return;  // already mounted
+  // Append after the spacer (or at end) so it sits at the topbar's
+  // right edge alongside any existing actions.
+  const wrap = document.createElement('span');
+  wrap.className = 'why-eye-mount';
+  wrap.innerHTML = whyButtonHTML(slug, { label: 'Why this page', size: 'sm' });
+  const spacer = topbar.querySelector('.topbar-spacer');
+  if (spacer && spacer.nextSibling) {
+    topbar.insertBefore(wrap, spacer.nextSibling);
+  } else {
+    topbar.appendChild(wrap);
+  }
+}
 // Discovery framework expansion (2026-05-01_04) — Opportunity Solution Tree
 // (Torres, 2016): Outcome → Opportunities → Solutions → Experiments.
 import { renderOst } from './screens/ost.js';
@@ -79,6 +144,9 @@ const routes = [
   { match: /^\/playbook\/?$/,               render: renderPlaybook },
   // Task Manager — Windows Task Manager analog for runtime state.
   { match: /^\/tasks\/?$/,                  render: renderTasks },
+  // Page-explainer: trust-building "why this page" view per screen.
+  { match: /^\/why\/?$/,                    render: renderWhy },
+  { match: /^\/why\/([^/?]+)$/,             render: renderWhy },
   // Discovery framework expansion — OST picker + per-topic tree.
   { match: /^\/ost\/?$/,                    render: renderOst },
   { match: /^\/ost\/([^/?]+)$/,             render: renderOst },
@@ -172,7 +240,14 @@ async function route() {
           console.warn('[route] suppressed stale render error:', e);
         }
       }
-      if (routeGen === myGen) refreshIcons();
+      if (routeGen === myGen) {
+        // Auto-inject the eye-icon "why this page" button into the
+        // active screen's topbar. Runs after the screen has rendered
+        // its own DOM so we know .topbar exists. The icon refresh
+        // below picks up the lucide <i> tag we just added.
+        mountWhyEyeIcon(main, hash);
+        refreshIcons();
+      }
       // After render succeeds, update tab title + restore scroll for this tab.
       if (routeGen === myGen) {
         const cur = tabStore.getActive();

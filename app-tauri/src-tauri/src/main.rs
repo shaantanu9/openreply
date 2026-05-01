@@ -302,6 +302,9 @@ fn main() {
             commands::run_kano_categorize,
             // Runtime snapshot — Task Manager backing
             commands::runtime_snapshot,
+            // Page explainer — eye-icon "why this page exists"
+            commands::page_explanation_get,
+            commands::page_explanations_list,
             // Discovery framework expansion (2026-05-01_04) — OST + RICE +
             // MoSCoW + Empathy Maps + Four Risks + Value Curve.
             commands::ost_build,

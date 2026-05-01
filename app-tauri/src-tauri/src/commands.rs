@@ -1946,6 +1946,27 @@ pub async fn product_convert_topic(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+// ─── Page explainer — eye-icon "why this page exists" ───────────────────
+
+#[tauri::command]
+pub async fn page_explanation_get(
+    app: AppHandle,
+    slug: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "page-explanation-get", "--slug", &slug, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn page_explanations_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "page-explanations-list", "--json"],
+    ).await.map_err(err_to_string)
+}
+
 // ─── Runtime snapshot — Task Manager backing ────────────────────────────
 
 #[tauri::command]
