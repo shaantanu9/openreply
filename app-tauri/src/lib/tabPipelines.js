@@ -25,6 +25,36 @@ const COUNT_SAFE = async (sql, topic) => {
   } catch { return 0; }
 };
 
+// Bundled-bundle adapter — every tab's badge maps to one of the keys the
+// native `topic_counts_bundle` Tauri command returns. Falls back to 0
+// when the field isn't recognised, matching the safety contract above.
+const BUNDLE_KEY = {
+  home:        'painpoints',          // home tab freshness pings off painpoint count
+  insights:    'painpoints',
+  map:         'total_findings',
+  evidence:    'total_findings',
+  solutions:   'workarounds',
+  concepts:    'concepts',
+  trends:      'posts',
+  sentiment:   'posts',
+  sources:     'sources',
+  posts:       'posts',
+  research:    'posts',
+  papers:      'evidence_papers',
+  bets:        'hypotheses',
+  ai_analyses: 'ai_analyses',
+};
+
+/** Pick a single tab's count from a bundle response. Used by freshness
+ *  badges so 11 badges share one rusqlite roundtrip via api.topicCountsBundle. */
+export function tabCountFromBundle(tabId, bundle) {
+  if (!bundle || typeof bundle !== 'object') return 0;
+  const key = BUNDLE_KEY[tabId];
+  if (!key) return 0;
+  const v = bundle[key];
+  return typeof v === 'number' ? v : 0;
+}
+
 // Per-tab registry. Keys match the tab IDs used by topic.js → loaders{}.
 export const TAB_PIPELINES = {
   home: {

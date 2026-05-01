@@ -303,11 +303,11 @@ export { memStats };
  * changes the same. Always broadcast; never skip. Cheap event dispatch.
  */
 const INVALIDATE_MAP = {
-  topics:     ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'list_trash'],
-  collect:    ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'get_findings', 'topic_saturation', 'topic_coverage_gaps'],
-  ingest:     ['list_topics', 'overview_stats', 'recent_activity', 'run_query', 'topic_coverage_gaps'],
-  graph:      ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'topic_saturation', 'topic_coverage_gaps'],
-  findings:   ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get', 'topic_saturation', 'topic_coverage_gaps'],
+  topics:     ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'list_trash', 'topic_counts_bundle'],
+  collect:    ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'get_findings', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle'],
+  ingest:     ['list_topics', 'overview_stats', 'recent_activity', 'run_query', 'topic_coverage_gaps', 'topic_counts_bundle'],
+  graph:      ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle', 'topic_insights_cached'],
+  findings:   ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle', 'topic_insights_cached'],
   exports:    ['list_exports'],
   byok:       ['byok_status', 'list_provider_models', 'cli_info'],
   hypothesis: ['hypothesis_list', 'hypothesis_stats'],
@@ -414,8 +414,16 @@ export const api = {
   byokStatus:      ()        => cachedInvoke('byok_status',    null, 60000, 30 * 60 * 1000),
   deviceSignature: ()        => cachedInvoke('device_signature', null, 60000),
   licenseStatus:   ()        => cachedInvoke('license_status', null, 10000),
-  getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 10000),
+  getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 30000),
   runQuery:        (sql, topic, params) => cachedInvoke('run_query', { sql, topic, params }, 10000),
+
+  // Bundled per-topic counts for every tab freshness badge. One rusqlite
+  // round-trip replaces 11 individual `runQuery` calls. Cache for 15 s —
+  // counts only change on collect / enrich / ingest, all of which call
+  // `mutated('graph'|'collect'|'findings')` and invalidate this key
+  // explicitly via the INVALIDATE_MAP entries below.
+  topicCountsBundle: (topic) =>
+    cachedInvoke('topic_counts_bundle', { topic }, 15000),
   diffFindings:    (topic, windowDays = 7) => cachedInvoke('diff_findings', { topic, windowDays }, 30000),
 
   // ----- per-paper LLM analysis (Research tab) -----
@@ -666,7 +674,14 @@ export const api = {
   // full multi-source corpus. `cached=true` returns the last persisted
   // report without re-running the LLM (cheap for tab re-renders). First
   // call per topic writes to the `topic_insights` table.
-  synthesizeInsights: (topic, cached = false) => invoke('synthesize_insights', { topic, cached }),
+  // Cached read of an insights report is a single SELECT on `topic_insights`
+  // — route it through the native rusqlite fast-path. Saves 50–200 ms warm
+  // / 500–2000 ms cold per topic open. The non-cached branch (which actually
+  // calls the LLM) still goes through the Python sidecar.
+  synthesizeInsights: (topic, cached = false) =>
+    cached
+      ? cachedInvoke('topic_insights_cached', { topic }, 30000)
+      : invoke('synthesize_insights', { topic, cached: false }),
 
   // Map-reduce chunked synth — N small LLM calls instead of one big one.
   // Use when the provider is low on credits (sidesteps 402 errors) or for

@@ -354,6 +354,10 @@ fn main() {
             commands::pert_list,
             commands::pert_rollup,
             commands::prd_export,
+            // Native fast-paths to bypass the Python sidecar for hot reads
+            // — turns 50–2000 ms IPC into ~1 ms direct rusqlite.
+            commands::topic_insights_cached,
+            commands::topic_counts_bundle,
             // MCP ↔ App integration (one-click connect to any MCP client)
             commands::mcp_clients,
             commands::mcp_status,
@@ -421,6 +425,10 @@ fn main() {
             // long-lived Python process exits cleanly instead of being
             // orphaned and re-summoned on next boot as a zombie.
             worker::stop_worker_blocking(app_handle);
+            // Same treatment for the dev-python `daemon` child kept alive by
+            // run_via_dev_daemon — without this it survives the GUI exit and
+            // pegs CPU until the user kills it from Activity Monitor.
+            tauri::async_runtime::block_on(cli::shutdown_dev_daemon());
         }
     });
 }

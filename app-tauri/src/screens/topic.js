@@ -16,7 +16,7 @@ import { loadSentiment } from './sentiment.js';
 import { loadInsights } from './insights.js';
 import { loadBets } from './bets.js';
 import { wireFreshnessBadge } from '../lib/enrichStatus.js';
-import { TAB_PIPELINES, TAB_READONLY, runAllForTopic, runTabPipeline, tabHasData, isAutoRunEnabled, setAutoRunEnabled } from '../lib/tabPipelines.js';
+import { TAB_PIPELINES, TAB_READONLY, runAllForTopic, runTabPipeline, tabHasData, isAutoRunEnabled, setAutoRunEnabled, tabCountFromBundle } from '../lib/tabPipelines.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 
 const TOPIC_QUERY_TIMEOUT_MS = 25000;
@@ -1104,54 +1104,55 @@ export async function renderTopic(root, { params }) {
   // Initial call — activeTab is 'home' at mount unless overridden later.
   syncHomeChromeVisibility(activeTab);
 
-  // ─── Freshness badges (Findings / Map / Gaps / Solutions) ──────────────
-  // Each badge re-computes every 1 s off the last `enrich:tick` timestamp
-  // tracked in enrichStatus.js. `getCounts` is an optional sidecar read
-  // that appends a count string; we only enable it on tabs where the
-  // count is semantically meaningful ("12 findings", "42 nodes"). All
-  // intervals self-clear when the tab header detaches from the DOM.
-  const freshGetCount = (kind) => async () => {
-    try {
-      const rows = await api.runQuery(
-        'SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic'
-          + (kind ? ` AND kind='${kind.replace(/'/g, '')}'` : ''),
-        topic,
-      );
-      const n = Array.isArray(rows) && rows[0]?.n || 0;
-      if (!n) return '';
-      return kind ? `${n} ${kind}${n === 1 ? '' : 's'}` : `${n} findings`;
-    } catch { return ''; }
+  // ─── Freshness badges (Findings / Map / Gaps / Solutions / …) ────────
+  // Performance fix (2026-05-01): every badge used to spawn its own
+  // `runQuery` SELECT every 1 s — 11 badges × 1 Hz = 11 sidecar IPC pings
+  // per second. Even though `run_query` is now native rusqlite, the IPC
+  // framing alone added ~10–30 ms overhead per call and competed with
+  // tab-load fetches.
+  //
+  // New behaviour: ONE bundled native call (`api.topicCountsBundle`) runs
+  // every count SQL in a single rusqlite round-trip, cached for 15 s. All
+  // badges share that cached bundle through their getCounts() lambda. Each
+  // badge ticks at 5 s instead of 1 s — counts only change on enrich /
+  // collect, both of which already invalidate the bundle cache. The badges
+  // also share a per-topic in-flight promise so a freshly-mounted topic
+  // page fires ONE network call total for all 11 badges, not 11.
+  let _lastBundle = null;
+  const fetchBundle = () => api.topicCountsBundle(topic).then(b => {
+    _lastBundle = b || _lastBundle;
+    return _lastBundle;
+  }).catch(() => _lastBundle || {});
+  const FRESH_INTERVAL = 5000;
+  const NOUN = {
+    home: 'painpoints', insights: 'painpoints',
+    map: 'findings', evidence: 'findings',
+    solutions: 'workarounds', concepts: 'concepts',
+    trends: 'posts', sentiment: 'posts',
+    sources: 'sources', posts: 'posts', research: 'posts',
+    papers: 'papers', ai_analyses: 'analyses',
   };
-  wireFreshnessBadge($('#tab-fresh-evidence'), topic, { getCounts: freshGetCount(null) });
-  wireFreshnessBadge($('#tab-fresh-map'),      topic, { getCounts: freshGetCount(null) });
-  wireFreshnessBadge($('#tab-fresh-insights'), topic, { getCounts: freshGetCount('painpoint') });
-  wireFreshnessBadge($('#tab-fresh-solutions'),topic, { getCounts: freshGetCount('workaround') });
-
-  // Freshness badges for every remaining tab. Counts come from the shared
-  // pipeline registry so adding a new tab only requires registering there.
-  const freshFromRegistry = (tabId) => async () => {
+  const bundleGetCount = (tabId) => async () => {
     try {
-      const spec = TAB_PIPELINES[tabId] || TAB_READONLY[tabId];
-      if (!spec?.countSql) return '';
-      const rows = await api.runQuery(spec.countSql, topic);
-      const n = Number(Array.isArray(rows) && rows[0]?.n) || 0;
+      const bundle = await fetchBundle();
+      const n = tabCountFromBundle(tabId, bundle);
       if (!n) return '';
-      const noun = {
-        trends: 'posts', sentiment: 'posts', sources: 'sources',
-        posts: 'posts', research: 'posts', concepts: 'concepts',
-        papers: 'papers', ai_analyses: 'analyses', report: '',
-      }[tabId] || '';
+      const noun = NOUN[tabId] || '';
       return noun ? `${n} ${noun}` : `${n}`;
     } catch { return ''; }
   };
-  wireFreshnessBadge($('#tab-fresh-trends'),    topic, { getCounts: freshFromRegistry('trends') });
-  wireFreshnessBadge($('#tab-fresh-sentiment'), topic, { getCounts: freshFromRegistry('sentiment') });
-  wireFreshnessBadge($('#tab-fresh-sources'),   topic, { getCounts: freshFromRegistry('sources') });
-  wireFreshnessBadge($('#tab-fresh-posts'),     topic, { getCounts: freshFromRegistry('posts') });
-  wireFreshnessBadge($('#tab-fresh-research'),  topic, { getCounts: freshFromRegistry('research') });
-  wireFreshnessBadge($('#tab-fresh-concepts'),  topic, { getCounts: freshFromRegistry('concepts') });
-  wireFreshnessBadge($('#tab-fresh-papers'),    topic, { getCounts: freshFromRegistry('papers') });
-  wireFreshnessBadge($('#tab-fresh-ai'),        topic, { getCounts: freshFromRegistry('ai_analyses') });
+  wireFreshnessBadge($('#tab-fresh-evidence'),  topic, { getCounts: bundleGetCount('evidence'),  interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-map'),       topic, { getCounts: bundleGetCount('map'),       interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-insights'),  topic, { getCounts: bundleGetCount('home'),      interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-solutions'), topic, { getCounts: bundleGetCount('solutions'), interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-trends'),    topic, { getCounts: bundleGetCount('trends'),    interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-sentiment'), topic, { getCounts: bundleGetCount('sentiment'), interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-sources'),   topic, { getCounts: bundleGetCount('sources'),   interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-posts'),     topic, { getCounts: bundleGetCount('posts'),     interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-research'),  topic, { getCounts: bundleGetCount('research'),  interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-concepts'),  topic, { getCounts: bundleGetCount('concepts'),  interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-papers'),    topic, { getCounts: bundleGetCount('papers'),    interval: FRESH_INTERVAL });
+  wireFreshnessBadge($('#tab-fresh-ai'),        topic, { getCounts: bundleGetCount('ai_analyses'), interval: FRESH_INTERVAL });
   // Bets: read from hypothesisStats so the badge matches the header pill.
   wireFreshnessBadge($('#tab-fresh-bets'), topic, {
     getCounts: async () => {
