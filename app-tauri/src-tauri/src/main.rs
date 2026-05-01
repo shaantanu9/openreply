@@ -169,6 +169,7 @@ fn main() {
             commands::active_collects,
             commands::overview_stats,
             commands::recent_activity,
+            commands::topic_graph_summary,
             commands::discover_subs,
             commands::canonicalize_topic,
             commands::start_collect,

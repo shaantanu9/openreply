@@ -64,3 +64,6 @@ tmp/
 
 # Stray "html_site copy" — looks like a duplicated folder, exclude
 act_suit/html_site copy/
+
+# Per-worktree venv symlink (ui-redesign worktree)
+/.venv

@@ -70,7 +70,7 @@ function renderFindingMini(f) {
       <div class="insight-head">
         <div class="insight-head-left">
           <span class="insight-kind">${kindEmoji}</span>
-          <h3 style="font-size:14px">${esc(f?.title || '(untitled)')}</h3>
+          <h3 style="font-size:var(--fs-15)">${esc(f?.title || '(untitled)')}</h3>
         </div>
         <div class="insight-score ${cls}">
           <b>${op.toFixed(1)}</b><span>opp</span>
@@ -117,7 +117,7 @@ function renderColumn(topic, report, error) {
         <a href="#/topic/${encodeURIComponent(topic)}" style="text-decoration:none;color:inherit">${esc(topic)}</a>
       </h2>
       ${renderMinto(report)}
-      <h3 style="margin:14px 0 8px;font-size:14px">Top ${findings.length} opportunities</h3>
+      <h3 style="margin:14px 0 8px;font-size:var(--fs-15)">Top ${findings.length} opportunities</h3>
       ${findings.length ? findings.map(renderFindingMini).join('') : '<p class="muted">No findings extracted.</p>'}
     </div>
   `;
@@ -166,7 +166,7 @@ function renderSharedCard(shared, topicA, topicB) {
     const a = s.a, b = s.b;
     return `
       <div class="insight-card" style="margin-bottom:10px">
-        <h3 style="margin:0 0 8px;font-size:14px">${esc(a.title || b.title || '(untitled)')}</h3>
+        <h3 style="margin:0 0 8px;font-size:var(--fs-15)">${esc(a.title || b.title || '(untitled)')}</h3>
         <div class="insight-meta">
           <span><b>${esc(topicA)}</b> opp ${(a.opportunity_score || 0).toFixed(1)}</span>
           <span><b>${esc(topicB)}</b> opp ${(b.opportunity_score || 0).toFixed(1)}</span>

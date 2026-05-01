@@ -142,9 +142,16 @@ export async function mountIntentLadder(hostEl, topic, opts = {}) {
       <ol class="intent-ladder-steps">
         ${ladder.map((s, i) => renderStep(s, i, states[i])).join('')}
       </ol>
+      <div class="intent-coverage" id="intent-coverage-host">
+        <div class="intent-coverage-loading">loading gap map coverage…</div>
+      </div>
     </section>
   `;
   window.refreshIcons?.();
+
+  // Async-mount the gap-map coverage card so the primary ladder renders
+  // instantly and coverage fills in when the SQL returns.
+  mountCoverage(hostEl.querySelector('#intent-coverage-host'), topic);
 
   const reloadLadder = () => mountIntentLadder(hostEl, topic, opts);
 
@@ -214,4 +221,118 @@ function showIntentSwap(hostEl, topic, currentKey, presets, onPick) {
       if (key && key !== currentKey) onPick(key);
     });
   });
+}
+
+
+// ── Gap Map coverage card ────────────────────────────────────────────────────
+//
+// Renders the live node-kind + edge-kind + source_type breakdown for a topic
+// so users see the FULL pipeline output at a glance:
+//   posts → painpoints → mechanisms → interventions → evidence_papers → concepts
+// and every relation that connects them. Data comes from the Tauri
+// `topic_graph_summary` command (3 cheap GROUP BY queries, cached 15s).
+
+const NODE_GROUPS = {
+  corpus:   { label: 'Corpus',    kinds: ['post', 'comment', 'user', 'subreddit', 'source'] },
+  semantic: { label: 'Extracted', kinds: ['painpoint', 'workaround', 'feature_wish', 'product', 'mechanism', 'intervention', 'evidence_paper', 'source_sentiment', 'insight', 'concept', 'temporal_gap'] },
+};
+
+const NODE_META = {
+  post:             { label: 'Posts',           icon: 'file-text' },
+  comment:          { label: 'Comments',        icon: 'message-circle' },
+  user:             { label: 'Users',           icon: 'user' },
+  subreddit:        { label: 'Subs',            icon: 'hash' },
+  source:           { label: 'Sources',         icon: 'database' },
+  painpoint:        { label: 'Painpoints',      icon: 'zap-off' },
+  workaround:       { label: 'Workarounds',     icon: 'wrench' },
+  feature_wish:     { label: 'Feature wishes',  icon: 'sparkles' },
+  product:          { label: 'Products',        icon: 'package' },
+  mechanism:        { label: 'Mechanisms',      icon: 'atom' },
+  intervention:     { label: 'Interventions',   icon: 'flask-conical' },
+  evidence_paper:   { label: 'Evidence papers', icon: 'book-marked' },
+  source_sentiment: { label: 'Sentiment cards', icon: 'smile' },
+  insight:          { label: 'Insights',        icon: 'lightbulb' },
+  concept:          { label: 'Concepts',        icon: 'rocket' },
+  temporal_gap:     { label: 'Temporal gaps',   icon: 'trending-up' },
+};
+
+async function mountCoverage(host, topic) {
+  if (!host) return;
+  let data = null;
+  try {
+    data = await api.topicGraphSummary(topic);
+  } catch (e) {
+    host.innerHTML = `<div class="intent-coverage-loading">coverage unavailable</div>`;
+    return;
+  }
+  if (!data) { host.innerHTML = ''; return; }
+  const nodes   = Array.isArray(data.nodes)   ? data.nodes   : [];
+  const edges   = Array.isArray(data.edges)   ? data.edges   : [];
+  const sources = Array.isArray(data.sources) ? data.sources : [];
+  if (nodes.length === 0 && edges.length === 0 && sources.length === 0) {
+    host.innerHTML = `<div class="intent-coverage-loading">no gap-map data yet — run collect</div>`;
+    return;
+  }
+
+  const nodeMap = Object.fromEntries(nodes.map(r => [r.kind, r.c]));
+  const edgeMap = Object.fromEntries(edges.map(r => [r.kind, r.c]));
+
+  const pill = (kind, count) => {
+    const meta = NODE_META[kind] || { label: kind, icon: 'circle' };
+    const dim = count === 0 ? ' is-empty' : '';
+    return `
+      <span class="intent-cov-pill${dim}" title="${escape(meta.label)}: ${count}">
+        <i data-lucide="${escape(meta.icon)}"></i>
+        <b>${count.toLocaleString()}</b>
+        <span>${escape(meta.label)}</span>
+      </span>
+    `;
+  };
+
+  const renderGroup = (group) => {
+    const pills = group.kinds
+      .map(k => pill(k, nodeMap[k] || 0))
+      .filter(Boolean)
+      .join('');
+    return `
+      <div class="intent-cov-group">
+        <div class="intent-cov-group-title">${escape(group.label)}</div>
+        <div class="intent-cov-pills">${pills}</div>
+      </div>
+    `;
+  };
+
+  // Source-type row (posts broken down by where they came from)
+  const srcRow = sources.length
+    ? `<div class="intent-cov-sources">
+         ${sources.map(s => `<span class="intent-cov-src" title="${escape(s.source_type)}: ${s.c}">
+           <span class="intent-cov-src-name">${escape(s.source_type)}</span>
+           <span class="intent-cov-src-n">${Number(s.c).toLocaleString()}</span>
+         </span>`).join('')}
+       </div>`
+    : '';
+
+  // Edge summary — only show kinds with >0, kept compact
+  const edgeRow = edges.filter(e => e.c > 0).length
+    ? `<div class="intent-cov-edges">
+         <span class="intent-cov-edges-label">Relations:</span>
+         ${edges.filter(e => e.c > 0).map(e =>
+           `<span class="intent-cov-edge" title="${escape(e.kind)}: ${e.c}">${escape(e.kind)} <b>${Number(e.c).toLocaleString()}</b></span>`
+         ).join('')}
+       </div>`
+    : '';
+
+  host.innerHTML = `
+    <div class="intent-coverage-card">
+      <div class="intent-coverage-head">
+        <b>Gap Map coverage</b>
+        <span class="intent-coverage-sub">what the pipeline has extracted from your corpus</span>
+      </div>
+      ${renderGroup(NODE_GROUPS.corpus)}
+      ${renderGroup(NODE_GROUPS.semantic)}
+      ${srcRow}
+      ${edgeRow}
+    </div>
+  `;
+  window.refreshIcons?.();
 }

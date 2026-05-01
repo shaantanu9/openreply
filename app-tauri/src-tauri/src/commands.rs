@@ -314,6 +314,44 @@ pub async fn recent_activity(app: AppHandle) -> Result<Value, String> {
     native_query(&app, sql).await
 }
 
+/// Per-topic graph coverage — how many of each node + edge kind exist, plus
+/// the source_type breakdown for posts. Powers the "Gap Map coverage" card
+/// on the topic page so users see the full pipeline output at a glance
+/// (posts → painpoints → mechanisms → interventions → evidence_papers →
+///  concepts, and every relation type between them).
+#[tauri::command]
+pub async fn topic_graph_summary(app: AppHandle, topic: String) -> Result<Value, String> {
+    // Three queries instead of one so each subquery can be read independently
+    // by callers and the JS side doesn't have to parse a hand-rolled payload.
+    let nodes_sql = format!(
+        "SELECT kind, count(*) AS c FROM graph_nodes WHERE topic = '{t}' \
+         GROUP BY kind ORDER BY count(*) DESC",
+        t = topic.replace('\'', "''"),
+    );
+    let edges_sql = format!(
+        "SELECT kind, count(*) AS c FROM graph_edges WHERE topic = '{t}' \
+         GROUP BY kind ORDER BY count(*) DESC",
+        t = topic.replace('\'', "''"),
+    );
+    let sources_sql = format!(
+        "SELECT coalesce(p.source_type,'reddit') AS source_type, count(*) AS c \
+         FROM posts p JOIN topic_posts tp ON tp.post_id = p.id \
+         WHERE tp.topic = '{t}' GROUP BY p.source_type ORDER BY count(*) DESC",
+        t = topic.replace('\'', "''"),
+    );
+
+    let nodes = native_query(&app, &nodes_sql).await?;
+    let edges = native_query(&app, &edges_sql).await?;
+    let sources = native_query(&app, &sources_sql).await?;
+
+    Ok(serde_json::json!({
+        "topic":   topic,
+        "nodes":   nodes,
+        "edges":   edges,
+        "sources": sources,
+    }))
+}
+
 /// Native-SQLite helper — same fallback shape as `run_query` (empty array
 /// if DB doesn't exist yet) but without the read-only SQL validator (these
 /// queries are hardcoded string literals above, not user-supplied).

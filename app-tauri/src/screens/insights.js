@@ -360,7 +360,7 @@ function renderEmpty(reason) {
         <button class="btn btn-primary icon-btn" id="btn-insights-run"><i data-lucide="sparkles"></i> ${isPostIssue ? 'Collect posts first' : 'Generate insights'}</button>
         ${isKeyIssue ? `<button class="btn btn-ghost btn-bordered icon-btn" onclick="location.hash='#/settings'"><i data-lucide="key-round"></i> Open Settings</button>` : ''}
       </div>
-      <p class="muted" style="font-size:12px;margin-top:10px">Works with any LLM provider (Anthropic, OpenAI, OpenRouter, Ollama …). Takes 30–90 s on a full topic corpus.</p>
+      <p class="muted" style="font-size:var(--fs-13);margin-top:10px">Works with any LLM provider (Anthropic, OpenAI, OpenRouter, Ollama …). Takes 30–90 s on a full topic corpus.</p>
     </div>
   `;
 }
@@ -390,7 +390,7 @@ function renderError(err, errCode = null, provider = null) {
       </button>`;
   }
   const providerPill = provider
-    ? `<span class="muted" style="font-size:11px">provider: <code>${esc(provider)}</code></span>`
+    ? `<span class="muted" style="font-size:var(--fs-11)">provider: <code>${esc(provider)}</code></span>`
     : '';
   return `
     <div class="empty-big">
@@ -483,7 +483,7 @@ function renderFull(report, contentEl, topic) {
         <!-- AG-E saved views mount -->
         <div class="saved-views-bar" id="ag-e-saved-views-bar" data-topic="${esc(topic || '')}"
           style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px">
-          <label style="font-size:12px;color:var(--ink-3)">Saved view:</label>
+          <label style="font-size:var(--fs-13);color:var(--ink-3)">Saved view:</label>
           <select id="ag-e-saved-views-select" class="select-sm" style="min-width:180px">
             <option value="">All findings</option>
           </select>
@@ -491,25 +491,25 @@ function renderFull(report, contentEl, topic) {
             title="Save the current filter as a view">Save current…</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="ag-e-saved-views-clear"
             title="Show every finding" hidden>Clear filter</button>
-          <span id="ag-e-saved-views-status" style="font-size:11px;color:var(--ink-3)"></span>
+          <span id="ag-e-saved-views-status" style="font-size:var(--fs-11);color:var(--ink-3)"></span>
         </div>
         <!-- /AG-E saved views mount -->
         ${findings.length ? findings.map(renderFindingCard).join('') : '<p class="muted">No findings extracted.</p>'}
         ${(report._relevance_dropped_findings && report._relevance_dropped_findings.length) ? `
           <!-- T1.6: dropped-findings fold. Surfaces which findings the relevance gate dropped + why. -->
           <details class="dropped-findings-fold" style="margin-top:14px;padding:10px 14px;background:var(--surface-2,#FAF4EA);border-radius:8px">
-            <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-2)">
+            <summary style="cursor:pointer;font-size:var(--fs-13);color:var(--ink-2)">
               ⚖ ${report._relevance_dropped_count} off-topic finding${report._relevance_dropped_count === 1 ? '' : 's'} dropped by relevance gate
               (threshold ${report._relevance_threshold?.toFixed?.(2) ?? '—'})
             </summary>
-            <ul style="margin:8px 0 0;padding-left:20px;font-size:12px">
+            <ul style="margin:8px 0 0;padding-left:20px;font-size:var(--fs-13)">
               ${report._relevance_dropped_findings.map(f => `
                 <li style="margin:4px 0">
                   <b>${esc(f.title || '(untitled)')}</b>
                   <span class="muted">— ${esc(f._dropped_reason || `score ${(f._relevance_score ?? 0).toFixed(2)}`)}</span>
                 </li>`).join('')}
             </ul>
-            <p class="muted" style="font-size:11px;margin:8px 0 0">
+            <p class="muted" style="font-size:var(--fs-11);margin:8px 0 0">
               Tune: <code>GAPMAP_FINDING_RELEVANCE_THRESHOLD</code> env (0 disables the gate).
             </p>
           </details>
@@ -696,7 +696,7 @@ export async function loadInsights(contentEl, topic) {
   } else {
     set(`<div class="empty-state" style="padding:40px;text-align:center">
       <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-      <div style="color:var(--ink-3);font-size:13px">Loading insights…</div>
+    <div style="color:var(--ink-3);font-size:var(--fs-13)">Loading insights…</div>
     </div>`);
   }
 
@@ -747,7 +747,7 @@ async function runSynth(contentEl, topic) {
     <div class="empty-state" style="padding:40px;text-align:center">
       <div class="map-building-spinner" style="margin:0 auto 10px"></div>
       <div style="font-weight:600;margin-bottom:4px">Generating insights with Claude…</div>
-      <div style="color:var(--ink-3);font-size:13px">Packing your full corpus into one synthesis call. 30–90 s.</div>
+      <div style="color:var(--ink-3);font-size:var(--fs-13)">Packing your full corpus into one synthesis call. 30–90 s.</div>
     </div>
   `);
   // Use monitor_run_topic instead of raw synthesize — same synthesis call,
@@ -812,7 +812,7 @@ async function runChunkedSynth(contentEl, topic) {
     <div class="empty-state" style="padding:40px;text-align:center">
       <div class="map-building-spinner" style="margin:0 auto 10px"></div>
       <div style="font-weight:600;margin-bottom:4px">Deep scan (chunked mode)…</div>
-      <div style="color:var(--ink-3);font-size:13px">Splitting the corpus into small chunks and synthesizing each in parallel. Longer than the fast path but works on low-credit providers.</div>
+      <div style="color:var(--ink-3);font-size:var(--fs-13)">Splitting the corpus into small chunks and synthesizing each in parallel. Longer than the fast path but works on low-credit providers.</div>
     </div>
   `);
   let report;
@@ -1022,7 +1022,7 @@ async function showResearchLinksModal(topic, findingTitle) {
                     <span>${esc(r.source_type || 'unknown')}</span>
                     ${r.author ? `<span>${esc(r.author)}</span>` : ''}
                   </div>
-                  ${r.excerpt ? `<p class="cep-excerpt" style="margin-top:6px;font-size:12px;color:var(--ink-2)">${esc(r.excerpt)}${r.excerpt.length >= 300 ? '…' : ''}</p>` : ''}
+                  ${r.excerpt ? `<p class="cep-excerpt" style="margin-top:6px;font-size:var(--fs-13);color:var(--ink-2)">${esc(r.excerpt)}${r.excerpt.length >= 300 ? '…' : ''}</p>` : ''}
                 </div>
               `;
             }).join('')}

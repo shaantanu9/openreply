@@ -233,7 +233,7 @@ function _renderChipHtml(providerKey, models, activeProvider, activeModel) {
     const note = m.note || m.description || '';
     const isActive = (activeProvider === providerKey) && (activeModel === id);
     return `<button class="byok-curated-chip" data-provider="${esc(providerKey)}" data-model="${esc(id)}" title="${esc(note)}"
-      style="padding:6px 10px;font-size:11px;border:1px solid ${isActive ? '#2E7D5B' : 'var(--line)'};border-radius:999px;background:${isActive ? '#2E7D5B' : 'transparent'};color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap;font-family:inherit">
+      style="padding:6px 10px;font-size:var(--fs-11);border:1px solid ${isActive ? '#2E7D5B' : 'var(--line)'};border-radius:999px;background:${isActive ? '#2E7D5B' : 'transparent'};color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap;font-family:inherit">
       ${isActive ? '✓ ' : ''}${esc(label)}
       ${note ? `<span style="color:${isActive ? 'rgba(255,255,255,0.75)' : 'var(--ink-3)'};margin-left:4px;font-weight:400">${esc(note)}</span>` : ''}
     </button>`;
@@ -350,7 +350,7 @@ export async function openByokModal(onClose) {
         Keys stored at <code>${esc(status.path)}</code> · chmod 600 · never uploaded.
       </p>
 
-      <div id="byok-active-banner" style="margin:8px 0 14px;padding:10px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font-size:12.5px"></div>
+      <div id="byok-active-banner" style="margin:8px 0 14px;padding:10px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font-size:var(--fs-13)"></div>
 
       <div class="byok-tabs">
         <button class="byok-tab active" data-section="llm">LLM providers</button>
@@ -683,7 +683,7 @@ export async function openByokModal(onClose) {
         lastOllamaModels.map(m => {
           const isActive = m.name === active;
           return `<span class="byok-model-chip-wrap" style="display:inline-flex;align-items:stretch;border:1px solid ${isActive ? '#2E7D5B' : 'var(--line)'};border-radius:999px;background:${isActive ? '#2E7D5B' : 'transparent'};overflow:hidden">
-            <button class="byok-model-chip${isActive ? ' byok-model-chip-active' : ''}" data-m="${esc(m.name)}" style="padding:6px 4px 6px 10px;font-size:11px;border:none;background:transparent;color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap">
+            <button class="byok-model-chip${isActive ? ' byok-model-chip-active' : ''}" data-m="${esc(m.name)}" style="padding:6px 4px 6px 10px;font-size:var(--fs-11);border:none;background:transparent;color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap">
               ${isActive ? '✓ ' : ''}${esc(m.name)} <span style="color:${isActive ? 'rgba(255,255,255,0.75)' : 'var(--ink-3)'};margin-left:4px">${m.size_mb}MB${m.param_size ? ' · ' + esc(m.param_size) : ''}</span>
             </button>
             <button class="byok-model-delete" data-m="${esc(m.name)}" title="Delete ${esc(m.name)}" aria-label="Delete ${esc(m.name)}" style="padding:0 8px;border:none;border-left:1px solid ${isActive ? 'rgba(255,255,255,0.25)' : 'var(--line)'};background:transparent;color:${isActive ? 'white' : '#B84747'};cursor:pointer;display:inline-flex;align-items:center">
@@ -904,7 +904,7 @@ export async function openByokModal(onClose) {
         const note = m.note || m.description || '';
         const isActive = (modelInput.value || '').trim() === id;
         return `<button type="button" class="byok-curated-chip" data-model="${esc(id)}" title="${esc(note)}"
-          style="padding:6px 10px;font-size:11px;border:1px solid ${isActive ? '#2E7D5B' : 'var(--line)'};border-radius:999px;background:${isActive ? '#2E7D5B' : 'transparent'};color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap;font-family:inherit">
+          style="padding:6px 10px;font-size:var(--fs-11);border:1px solid ${isActive ? '#2E7D5B' : 'var(--line)'};border-radius:999px;background:${isActive ? '#2E7D5B' : 'transparent'};color:${isActive ? 'white' : 'inherit'};cursor:pointer;white-space:nowrap;font-family:inherit">
           ${isActive ? '✓ ' : ''}${esc(lbl)}${note ? `<span style="color:${isActive ? 'rgba(255,255,255,0.75)' : 'var(--ink-3)'};margin-left:4px;font-weight:400">${esc(note)}</span>` : ''}
         </button>`;
       }).join('');
@@ -1024,7 +1024,7 @@ function renderLlmField(p, st) {
     <div class="byok-row" data-key="${esc(p.key)}" data-provider="${esc(p.key)}">
       <div class="byok-row-head">
         <div>
-          <label>${esc(p.label)}${isLocal ? ' <span style="color:var(--ink-3);font-size:11px">· no key needed</span>' : ''}</label>
+          <label>${esc(p.label)}${isLocal ? ' <span style="color:var(--ink-3);font-size:var(--fs-11)">· no key needed</span>' : ''}</label>
           <span class="pill ${set ? 'active' : ''}" style="${set ? `background:${p.pillColor}15;color:${p.pillColor}` : ''}">${set ? '✓ saved' : (isLocal ? '◦ default' : '× not set')}</span>
         </div>
         <div class="byok-preview">${esc(preview)}</div>
@@ -1047,7 +1047,7 @@ function renderLlmField(p, st) {
             <button class="btn btn-ghost btn-xs btn-bordered byok-start-svc icon-btn" style="display:none"><i data-lucide="play"></i> Start service</button>
             <button class="btn btn-ghost btn-xs btn-bordered byok-stop-svc icon-btn" style="display:none"><i data-lucide="square"></i> Stop service</button>
             <button class="btn btn-primary btn-xs byok-pull-model icon-btn"><i data-lucide="download"></i> Pull model</button>
-            <span class="byok-ollama-status" style="font-size:11px;color:var(--ink-3);margin-left:auto"></span>
+            <span class="byok-ollama-status" style="font-size:var(--fs-11);color:var(--ink-3);margin-left:auto"></span>
           </div>
           <details class="byok-ollama-accordion" open>
             <summary class="byok-models-summary">
@@ -1086,12 +1086,12 @@ function renderDefaultSelector(status) {
   const current = status.llm_provider || detectPreferred(status) || '';
   const currentModel = status.llm_model || '';
   return `
-    <div style="padding:4px 0 10px;color:var(--ink-3);font-size:12.5px;line-height:1.6">
+    <div style="padding:4px 0 10px;color:var(--ink-3);font-size:var(--fs-13);line-height:1.6">
       Pick which provider gets used for extraction, temporal gap analysis, and chat. Gap Map reads these settings at runtime — change at any time.
     </div>
     <div style="display:flex;flex-direction:column;gap:14px">
       <div>
-        <label style="display:block;font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Provider</label>
+        <label style="display:block;font-size:var(--fs-13);font-weight:700;color:var(--ink-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Provider</label>
         <select id="byok-provider-sel" class="byok-select">
           <option value="">— pick one —</option>
           ${LLM_PROVIDERS.map(p => `
@@ -1101,7 +1101,7 @@ function renderDefaultSelector(status) {
         </select>
       </div>
       <div>
-        <label style="display:block;font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Model</label>
+        <label style="display:block;font-size:var(--fs-13);font-weight:700;color:var(--ink-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Model</label>
         <input id="byok-model-input" type="text" class="byok-model-input"
                placeholder="e.g. claude-sonnet-4-6 or llama3.1"
                value="${esc(currentModel)}" />
@@ -1166,8 +1166,8 @@ export function openPullModelModal(ollamaUrl, onChanged) {
           ${CURATED_MODELS.map(m => `
             <div class="pull-card" data-name="${esc(m.name)}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">
               <div style="flex:1;min-width:0">
-                <div style="font-weight:700;font-size:13px">${esc(m.label)} <code style="font-size:11px;color:var(--ink-3)">${esc(m.name)}</code></div>
-                <div style="font-size:11px;color:var(--ink-3);margin-top:2px">${esc(m.size)} on disk · needs ~${esc(m.ram)} RAM · ${esc(m.note)}</div>
+                <div style="font-weight:700;font-size:var(--fs-13)">${esc(m.label)} <code style="font-size:var(--fs-11);color:var(--ink-3)">${esc(m.name)}</code></div>
+                <div style="font-size:var(--fs-11);color:var(--ink-3);margin-top:2px">${esc(m.size)} on disk · needs ~${esc(m.ram)} RAM · ${esc(m.note)}</div>
               </div>
               <button class="btn btn-primary btn-xs icon-btn pull-go"><i data-lucide="download"></i> Pull</button>
             </div>`).join('')}
@@ -1175,14 +1175,14 @@ export function openPullModelModal(ollamaUrl, onChanged) {
       </div>
 
       <div class="byok-section hidden" data-tab="custom">
-        <p style="font-size:12px;color:var(--ink-3);margin-bottom:8px">Any Ollama model tag works. Examples: <code>mistral</code>, <code>phi3</code>, <code>hf.co/bartowski/Some-Model-GGUF:Q4_K_M</code></p>
+        <p style="font-size:var(--fs-13);color:var(--ink-3);margin-bottom:8px">Any Ollama model tag works. Examples: <code>mistral</code>, <code>phi3</code>, <code>hf.co/bartowski/Some-Model-GGUF:Q4_K_M</code></p>
         <div style="display:flex;gap:8px">
-          <input id="pull-custom-input" type="text" placeholder="model:tag" style="flex:1;padding:8px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px" />
+          <input id="pull-custom-input" type="text" placeholder="model:tag" style="flex:1;padding:8px 10px;font-size:var(--fs-13);border:1px solid var(--line);border-radius:8px" />
           <button class="btn btn-primary icon-btn pull-go-custom"><i data-lucide="download"></i> Pull</button>
         </div>
       </div>
 
-      <div id="pull-progress" style="margin-top:14px;padding:12px;border-radius:10px;background:var(--surface-2);font-size:12px;font-family:ui-monospace,monospace;max-height:200px;overflow-y:auto;display:none"></div>
+      <div id="pull-progress" style="margin-top:14px;padding:12px;border-radius:10px;background:var(--surface-2);font-size:var(--fs-13);font-family:ui-monospace,monospace;max-height:200px;overflow-y:auto;display:none"></div>
 
       <div class="byok-foot" style="margin-top:14px">
         <div style="flex:1"></div>

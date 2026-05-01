@@ -168,8 +168,8 @@ async function loadSpark(root) {
     const max = Math.max(1, ...days.map(d => d.n));
     const total = days.reduce((a, d) => a + d.n, 0);
     el.innerHTML = `
-      <div style="font-size:11.5px;color:var(--ink-3);margin-bottom:8px">
-        <b style="color:var(--ink-1);font-size:13px">${total}</b> fetches · last 30 days
+      <div style="font-size:var(--fs-11);color:var(--ink-3);margin-bottom:8px">
+        <b style="color:var(--ink-1);font-size:var(--fs-13)">${total}</b> fetches · last 30 days
       </div>
       <div class="spark-bars">
         ${days.map(d => {
@@ -287,9 +287,9 @@ function renderTable(root) {
   const pager = root.querySelector('#activity-pager');
   if (pages <= 1) { pager.innerHTML = ''; return; }
   pager.innerHTML = `
-    <button class="btn btn-ghost" style="border:1px solid var(--line);padding:8px 14px;font-size:12px" ${state.page === 0 ? 'disabled' : ''}>← Previous</button>
-    <span style="color:var(--ink-3);font-size:12px">Page ${state.page + 1} of ${pages}</span>
-    <button class="btn btn-ghost" style="border:1px solid var(--line);padding:8px 14px;font-size:12px" ${state.page >= pages - 1 ? 'disabled' : ''}>Next →</button>
+    <button class="btn btn-ghost" style="border:1px solid var(--line);padding:8px 14px;font-size:var(--fs-13)" ${state.page === 0 ? 'disabled' : ''}>← Previous</button>
+    <span style="color:var(--ink-3);font-size:var(--fs-13)">Page ${state.page + 1} of ${pages}</span>
+    <button class="btn btn-ghost" style="border:1px solid var(--line);padding:8px 14px;font-size:var(--fs-13)" ${state.page >= pages - 1 ? 'disabled' : ''}>Next →</button>
   `;
   const [prev, _mid, next] = pager.querySelectorAll('button, span');
   // Dedup rapid-click: disable the button the moment it fires and let the
