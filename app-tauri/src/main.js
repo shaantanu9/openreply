@@ -4,6 +4,8 @@ import { hasLlmConfigured } from './lib/llmStatus.js';
 import { renderHome, renderTopicsList } from './screens/home.js';
 import { renderTopic } from './screens/topic.js';
 import { renderCollect } from './screens/collect.js';
+// Central "Collects Manager" — running + queue + this-session history.
+import { renderCollects } from './screens/collects.js';
 import { renderSettings } from './screens/settings.js';
 import { renderIngest } from './screens/ingest.js';
 import { renderIngestVideo } from './screens/ingest_video.js';
@@ -16,12 +18,21 @@ import { renderSearch } from './screens/search.js';
 import { renderWatch } from './screens/watch.js';
 import { renderFind } from './screens/find.js';
 import { renderProductsList, renderProductDashboard, renderProductSetup } from './screens/product.js';
+// Lifecycle pivot — Playbook surfaces the 10-phase product-development lifecycle
+// (Design Thinking, Lean Startup, Stage-Gate, Kano, JTBD, ...) on top of the
+// existing screens, so users see WHERE in the cycle they are.
+import { renderPlaybook } from './screens/playbook.js';
+// Discovery framework expansion (2026-05-01_04) — Opportunity Solution Tree
+// (Torres, 2016): Outcome → Opportunities → Solutions → Experiments.
+import { renderOst } from './screens/ost.js';
 import { runHealthCheck, healthIsBlocking } from './lib/healthCheck.js';
 import { tabStore, renderTabStrip, titleForHash, iconForHash } from './lib/tabs.js';
 // ── AG-D: compare view ──
 import { renderCompare } from './screens/compare.js';
 // ── AG-C: global competitors (T2.5) ──
 import { renderGlobalCompetitors } from './screens/global_competitors.js';
+// ── Global collect status bar (running + queue) ──
+import { mountCollectStatusBar } from './components/CollectStatusBar.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -29,6 +40,9 @@ const routes = [
   { match: /^\/topics\/?$/,         render: renderTopicsList },
   { match: /^\/topic\/([^/]+)$/,    render: renderTopic },
   { match: /^\/collect\/([^/]+)$/,  render: renderCollect },
+  // Central "Collects Manager" — running + queued + this-session history.
+  // Linked from the global CollectStatusBar.
+  { match: /^\/collects\/?$/,       render: renderCollects },
   { match: /^\/settings\/?$/,       render: renderSettings },
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
@@ -47,6 +61,11 @@ const routes = [
   { match: /^\/compare\/([^/]+)\/([^/]+)$/, render: renderCompare },
   // ── AG-C: global competitors (T2.5) ──
   { match: /^\/competitors\/?$/,            render: renderGlobalCompetitors },
+  // Lifecycle pivot — Playbook screen: 10-phase product-development lifecycle.
+  { match: /^\/playbook\/?$/,               render: renderPlaybook },
+  // Discovery framework expansion — OST picker + per-topic tree.
+  { match: /^\/ost\/?$/,                    render: renderOst },
+  { match: /^\/ost\/([^/?]+)$/,             render: renderOst },
 ];
 
 // Route generation counter — bumped on every navigation so screens can tell
@@ -96,19 +115,11 @@ async function route() {
     if (owner) {
       tabStore.focus(owner.id);
     } else {
-      // Replace current tab's hash in-place (Chrome-like default). Write
-      // directly to localStorage so we don't trigger a notify loop here —
-      // the route itself will render and the strip repaints via setTitle below.
-      try {
-        const s = JSON.parse(localStorage.getItem('gapmap.tabs.v1'));
-        const t = s?.tabs?.find(x => x.id === s.activeId);
-        if (t) {
-          t.hash = fullHash;
-          t.title = titleForHash(fullHash);
-          t.icon = iconForHash(fullHash);
-          localStorage.setItem('gapmap.tabs.v1', JSON.stringify(s));
-        }
-      } catch {}
+      // Replace current tab's hash in-place (Chrome-like default).
+      // replaceHash() updates hash+title+icon AND notifies — without
+      // the notify the strip would show the old title until the user
+      // clicked a tab (focus() being the next notify trigger).
+      tabStore.replaceHash(active.id, fullHash);
     }
   }
 
@@ -193,6 +204,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   // (The Python sidecar can take 5–10s to spin up the first time.)
   wireModal();
   wireKeyboard();
+  // Sticky status bar showing running collect + queued collects on every screen.
+  mountCollectStatusBar().catch((e) =>
+    console.warn('[main] collect-status-bar mount failed:', e),
+  );
 
   // Run the activation-flag heal BEFORE the first route() so the guard
   // below sees the correct state. Swallow errors — the sync check is the

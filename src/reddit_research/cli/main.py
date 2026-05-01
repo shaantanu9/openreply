@@ -586,8 +586,25 @@ def cmd_painpoints(
 # ── mcp ──────────────────────────────────────────────────────────────────────
 
 @mcp_app.command("serve")
-def cmd_mcp_serve() -> None:
-    """Run the MCP server (stdio transport)."""
+def cmd_mcp_serve(
+    transport: str = typer.Option(
+        "stdio",
+        "--transport",
+        help="stdio (default, for Claude Code / Desktop) or http / streamable-http / sse "
+             "(daemon-style — recommended for Cursor, which cycles stdio servers "
+             "every ~5 min and kills in-flight long calls).",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host", help="bind host for HTTP transport"),
+    port: int = typer.Option(8765, "--port", help="bind port for HTTP transport"),
+) -> None:
+    """Run the MCP server.
+
+    Default stdio mode is for Claude Code, Claude Desktop, and Cursor's
+    legacy MCP integration. Use ``--transport http --port 8765`` to run
+    a long-lived daemon — Cursor 0.45+ can connect to ``http://127.0.0.1:8765/mcp``
+    via a ``url`` entry in mcp.json, which avoids the 5-min stdio cycling
+    that drops in-flight tool calls.
+    """
     try:
         from ..mcp.server import run
     except ImportError as e:
@@ -596,7 +613,7 @@ def cmd_mcp_serve() -> None:
             "Run: pip install -e '.[mcp]'"
         )
         raise typer.Exit(1) from e
-    run()
+    run(transport=transport, host=host, port=port)
 
 
 @mcp_app.command("clients")
@@ -1383,7 +1400,7 @@ def cmd_export_deck(
     topic: Optional[str] = typer.Option(None, "--topic", "-t",
         help="Required for --format docx|pptx; ignored for --format md-to-docx"),
     format: str = typer.Option("docx", "--format", "-f",
-        help="docx | pptx | md-to-docx — last one converts an existing .md brief"),
+        help="docx | pptx | md-to-docx | md-to-pdf — last two convert an existing .md brief"),
     out: str = typer.Option(..., "--out", "-o",
         help="Output file path (.docx or .pptx)"),
     md_in: Optional[str] = typer.Option(None, "--md-in",
@@ -1397,8 +1414,11 @@ def cmd_export_deck(
     max_painpoints: int = typer.Option(12, "--max-painpoints",
         help="Max painpoints to include (DOCX 12 / PPTX 6 are the defaults)"),
 ) -> None:
-    """Export a stakeholder-ready DOCX brief or PPTX pitch deck."""
-    from ..research.export_deck import build_docx, build_pptx, build_docx_from_markdown
+    """Export a stakeholder-ready DOCX brief, PPTX pitch deck, or PDF."""
+    from ..research.export_deck import (
+        build_docx, build_pptx, build_docx_from_markdown,
+        build_pdf_from_markdown,
+    )
     extras = [s.strip() for s in extra_topics.split(",")] if extra_topics else None
     if format == "md-to-docx":
         if not md_in:
@@ -1406,6 +1426,13 @@ def cmd_export_deck(
             raise typer.Exit(1)
         res = build_docx_from_markdown(
             md_path=md_in, out_path=out, reference_docx=reference_docx,
+        )
+    elif format == "md-to-pdf":
+        if not md_in:
+            typer.echo("--md-in is required with --format md-to-pdf", err=True)
+            raise typer.Exit(1)
+        res = build_pdf_from_markdown(
+            md_path=md_in, out_path=out, title=title, subtitle=subtitle,
         )
     elif format == "docx":
         if not topic:
@@ -1424,7 +1451,10 @@ def cmd_export_deck(
             title=title, subtitle=subtitle, max_painpoints=max_painpoints,
         )
     else:
-        typer.echo(f"Unknown format: {format}. Use docx | pptx | md-to-docx.", err=True)
+        typer.echo(
+            f"Unknown format: {format}. Use docx | pptx | md-to-docx | md-to-pdf.",
+            err=True,
+        )
         raise typer.Exit(1)
     if not res.get("ok"):
         typer.echo(f"Export failed: {res.get('error')}", err=True)
@@ -2219,6 +2249,697 @@ def cmd_research_solutions(
             typer.echo(f"{k}: {v}")
 
 
+@research_app.command("kano-categorize")
+def cmd_research_kano_categorize(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must have interventions in the graph)."),
+    provider: str | None = typer.Option(None, "--provider", help="Override LLM provider."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Apply Kano-Model categorization to every intervention in the topic."""
+    from ..analyze.providers.base import resolve_provider
+    from ..research.kano import categorize_topic
+    try:
+        resolved = resolve_provider(provider)
+    except Exception as e:  # noqa: BLE001
+        out = {"ok": False, "skipped": True, "reason": f"no_llm_provider: {e}"}
+        if as_json:
+            typer.echo(json.dumps(out))
+        else:
+            typer.echo(f"Skipped: {out['reason']}")
+        raise typer.Exit(0)
+    summary = categorize_topic(topic=topic, provider=resolved)
+    if as_json:
+        typer.echo(json.dumps(summary))
+    else:
+        for k, v in summary.items():
+            typer.echo(f"{k}: {v}")
+
+
+@research_app.command("product-gate-set")
+def cmd_product_gate_set(
+    product_id: str = typer.Option(..., "--id"),
+    status: str = typer.Option("", "--status",
+        help="'' (clear) | 'go' | 'kill' | 'hold' | 'recycle'"),
+    notes: str = typer.Option("", "--notes"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Set/clear the Stage-Gate verdict on a Product."""
+    from ..research.product import gate_set
+    _emit(gate_set(product_id, status=status, notes=notes), as_json)
+
+
+@research_app.command("product-gate-get")
+def cmd_product_gate_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Read the current Stage-Gate verdict for a Product."""
+    from ..research.product import gate_get
+    _emit(gate_get(product_id), as_json)
+
+
+# ─── Discovery framework expansion (2026-05-01_04) ──────────────────────
+# OST + RICE + MoSCoW + Empathy + Four Risks + Value Curve.
+# Every command emits JSON-only when --json is set so the Tauri sidecar
+# parser stays happy.
+
+@research_app.command("ost-build")
+def cmd_research_ost_build(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Build the Opportunity Solution Tree for a topic (Torres, 2016)."""
+    from ..research.ost import build_tree
+    _emit(build_tree(topic, product_id=product_id or None), as_json)
+
+
+@research_app.command("ost-set-outcome")
+def cmd_research_ost_set_outcome(
+    product_id: str = typer.Option(..., "--id"),
+    outcome: str = typer.Option(..., "--outcome"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Persist the desired-outcome string at the OST root."""
+    from ..research.ost import set_outcome
+    _emit(set_outcome(product_id, outcome), as_json)
+
+
+@research_app.command("ost-experiment-create")
+def cmd_research_ost_experiment_create(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    painpoint_id: str = typer.Option(..., "--painpoint-id"),
+    intervention_id: str = typer.Option("", "--intervention-id"),
+    hypothesis: str = typer.Option(..., "--hypothesis"),
+    method: str = typer.Option("custom", "--method"),
+    success_criteria: str = typer.Option("", "--success-criteria"),
+    sample_size: int = typer.Option(0, "--sample-size"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Create one OST experiment (fake_door / landing_page / wizard_of_oz / concierge / survey / custom).
+
+    Distinct from `research experiments-list` which surfaces gap-discovery's
+    LLM-proposed paper-grounded experiments. OST experiments are user-tracked
+    falsifiable bets attached to interventions on the Opportunity Solution Tree.
+    """
+    from ..research.ost import create_experiment
+    _emit(
+        create_experiment(
+            topic,
+            painpoint_id=painpoint_id,
+            intervention_id=intervention_id,
+            hypothesis=hypothesis,
+            method=method,
+            success_criteria=success_criteria,
+            sample_size=sample_size,
+        ),
+        as_json,
+    )
+
+
+@research_app.command("ost-experiments-list")
+def cmd_research_ost_experiments_list(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    painpoint_id: str = typer.Option("", "--painpoint-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List OST experiments for a topic (optionally scoped to one painpoint)."""
+    from ..research.ost import list_experiments
+    _emit(
+        {"experiments": list_experiments(topic, painpoint_id=painpoint_id or None)},
+        as_json,
+    )
+
+
+@research_app.command("ost-experiment-update")
+def cmd_research_ost_experiment_update(
+    experiment_id: str = typer.Option(..., "--id"),
+    fields_json: str = typer.Option("{}", "--fields-json",
+        help="JSON-encoded patch — keys: hypothesis, method, success_criteria, sample_size, status, result_notes"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.ost import update_experiment
+    try:
+        fields = json.loads(fields_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid fields-json: {e}"}, as_json)
+        return
+    _emit(update_experiment(experiment_id, fields), as_json)
+
+
+@research_app.command("ost-experiment-delete")
+def cmd_research_ost_experiment_delete(
+    experiment_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.ost import delete_experiment
+    _emit(delete_experiment(experiment_id), as_json)
+
+
+@research_app.command("rice-score")
+def cmd_research_rice_score(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    default_effort: int = typer.Option(3, "--default-effort"),
+    overwrite_effort: bool = typer.Option(False, "--overwrite-effort"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Compute deterministic RICE scores for every intervention in a topic."""
+    from ..research.rice import score_topic
+    _emit(score_topic(topic, default_effort=default_effort,
+                      overwrite_effort=overwrite_effort), as_json)
+
+
+@research_app.command("rice-set")
+def cmd_research_rice_set(
+    intervention_id: str = typer.Option(..., "--id"),
+    reach: Optional[int] = typer.Option(None, "--reach"),
+    impact: Optional[int] = typer.Option(None, "--impact"),
+    confidence: Optional[int] = typer.Option(None, "--confidence"),
+    effort: Optional[int] = typer.Option(None, "--effort"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Override RICE values on a single intervention."""
+    from ..research.rice import set_rice
+    _emit(set_rice(intervention_id, reach=reach, impact=impact,
+                   confidence=confidence, effort=effort), as_json)
+
+
+@research_app.command("moscow-categorize")
+def cmd_research_moscow_categorize(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Tag every intervention with Must / Should / Could / Won't (Clegg, 1994)."""
+    from ..analyze.providers.base import resolve_provider
+    from ..research.moscow import categorize_topic
+    try:
+        resolved = resolve_provider(provider)
+    except Exception as e:
+        _emit({"ok": False, "skipped": True, "reason": f"no_llm_provider: {e}"}, as_json)
+        return
+    _emit(categorize_topic(topic=topic, provider=resolved), as_json)
+
+
+@research_app.command("empathy-build")
+def cmd_research_empathy_build(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    persona: str = typer.Option("primary", "--persona"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Build a Says/Thinks/Does/Feels empathy map (Gray, 2010)."""
+    from ..analyze.providers.base import resolve_provider
+    from ..research.empathy import build_empathy_map
+    try:
+        resolved = resolve_provider(provider)
+    except Exception:
+        resolved = None  # offline mode
+    _emit(build_empathy_map(topic=topic, persona=persona, provider=resolved), as_json)
+
+
+@research_app.command("empathy-get")
+def cmd_research_empathy_get(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    persona: str = typer.Option("primary", "--persona"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.empathy import get_empathy_map
+    _emit(get_empathy_map(topic, persona), as_json)
+
+
+@research_app.command("empathy-list")
+def cmd_research_empathy_list(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.empathy import list_empathy_maps
+    _emit({"maps": list_empathy_maps(topic)}, as_json)
+
+
+@research_app.command("four-risks-get")
+def cmd_research_four_risks_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import four_risks_get
+    _emit(four_risks_get(product_id), as_json)
+
+
+@research_app.command("four-risks-set")
+def cmd_research_four_risks_set(
+    product_id: str = typer.Option(..., "--id"),
+    risk: str = typer.Option(..., "--risk",
+        help="value | usability | feasibility | viability"),
+    status: str = typer.Option(..., "--status",
+        help="unknown | pass | fail"),
+    notes: str = typer.Option("", "--notes"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import four_risks_set
+    _emit(four_risks_set(product_id, risk, status, notes), as_json)
+
+
+@research_app.command("value-curve-get")
+def cmd_research_value_curve_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import value_curve_get
+    _emit(value_curve_get(product_id), as_json)
+
+
+@research_app.command("value-curve-set")
+def cmd_research_value_curve_set(
+    product_id: str = typer.Option(..., "--id"),
+    payload_json: str = typer.Option(..., "--payload-json",
+        help='{"factors":[...],"self":[...],"competitors":[{"name":"…","scores":[...]}],"four_actions":{...}}'),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import value_curve_set
+    try:
+        payload = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(
+        value_curve_set(
+            product_id,
+            factors=payload.get("factors") or [],
+            self_scores=payload.get("self") or [],
+            competitors=payload.get("competitors") or [],
+            four_actions=payload.get("four_actions") or {},
+        ),
+        as_json,
+    )
+
+
+# ── TAM / SAM / SOM (Blank & Dorf, 2012) ────────────────────────────────
+@research_app.command("tam-sam-som-get")
+def cmd_research_tam_sam_som_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import tam_sam_som_get
+    _emit(tam_sam_som_get(product_id), as_json)
+
+
+@research_app.command("tam-sam-som-set")
+def cmd_research_tam_sam_som_set(
+    product_id: str = typer.Option(..., "--id"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import tam_sam_som_set
+    try:
+        data = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(tam_sam_som_set(product_id, data), as_json)
+
+
+# ── Porter's Five Forces (Porter, 1979) ─────────────────────────────────
+@research_app.command("porter-get")
+def cmd_research_porter_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import porter_get
+    _emit(porter_get(product_id), as_json)
+
+
+@research_app.command("porter-set")
+def cmd_research_porter_set(
+    product_id: str = typer.Option(..., "--id"),
+    force: str = typer.Option(..., "--force",
+        help="new_entrants | supplier_power | buyer_power | substitutes | rivalry"),
+    score: int = typer.Option(..., "--score", help="0..5"),
+    notes: str = typer.Option("", "--notes"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import porter_set
+    _emit(porter_set(product_id, force, score, notes), as_json)
+
+
+# ── 2x2 positioning map (Ries & Trout, 1981) ───────────────────────────
+@research_app.command("positioning-get")
+def cmd_research_positioning_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import positioning_get
+    _emit(positioning_get(product_id), as_json)
+
+
+@research_app.command("positioning-set")
+def cmd_research_positioning_set(
+    product_id: str = typer.Option(..., "--id"),
+    payload_json: str = typer.Option(..., "--payload-json",
+        help='{"x_axis":"Price","y_axis":"Feature depth","points":[{"name":"...","x":3,"y":7,"is_self":false}]}'),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import positioning_set
+    try:
+        data = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(
+        positioning_set(
+            product_id,
+            x_axis=data.get("x_axis", "Price"),
+            y_axis=data.get("y_axis", "Feature depth"),
+            points=data.get("points") or [],
+        ),
+        as_json,
+    )
+
+
+# ── Cost model + pricing tiers ──────────────────────────────────────────
+@research_app.command("cost-model-get")
+def cmd_research_cost_model_get(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import cost_model_get
+    _emit(cost_model_get(product_id), as_json)
+
+
+@research_app.command("cost-model-set")
+def cmd_research_cost_model_set(
+    product_id: str = typer.Option(..., "--id"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.product import cost_model_set
+    try:
+        data = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(cost_model_set(product_id, data), as_json)
+
+
+# ── Customer Discovery Interviews (Mom Test, Fitzpatrick, 2013) ─────────
+@research_app.command("interview-create")
+def cmd_research_interview_create(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    name: str = typer.Option(..., "--name"),
+    payload_json: str = typer.Option("{}", "--payload-json",
+        help="Optional JSON {persona, summary, full_text, current_solution, ...}"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.interviews import create_interview
+    try:
+        kw = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    kw["product_id"] = product_id or kw.get("product_id", "")
+    _emit(create_interview(topic, name, **kw), as_json)
+
+
+@research_app.command("interview-update")
+def cmd_research_interview_update(
+    interview_id: str = typer.Option(..., "--id"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.interviews import update_interview
+    try:
+        fields = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(update_interview(interview_id, fields), as_json)
+
+
+@research_app.command("interview-delete")
+def cmd_research_interview_delete(
+    interview_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.interviews import delete_interview
+    _emit(delete_interview(interview_id), as_json)
+
+
+@research_app.command("interview-get")
+def cmd_research_interview_get(
+    interview_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.interviews import get_interview
+    _emit(get_interview(interview_id), as_json)
+
+
+@research_app.command("interview-list")
+def cmd_research_interview_list(
+    topic: str = typer.Option("", "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.interviews import list_interviews
+    _emit({"interviews": list_interviews(topic, product_id)}, as_json)
+
+
+@research_app.command("interview-summary")
+def cmd_research_interview_summary(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.interviews import summarize
+    _emit(summarize(topic, product_id), as_json)
+
+
+# ── Sean Ellis PMF Survey (Ellis, 2010) ─────────────────────────────────
+@research_app.command("pmf-add")
+def cmd_research_pmf_add(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pmf import add_response
+    try:
+        d = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    if "disappointment" not in d:
+        _emit({"ok": False, "error": "disappointment required"}, as_json)
+        return
+    _emit(add_response(topic, **d), as_json)
+
+
+@research_app.command("pmf-list")
+def cmd_research_pmf_list(
+    topic: str = typer.Option("", "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pmf import list_responses
+    _emit({"responses": list_responses(topic, product_id)}, as_json)
+
+
+@research_app.command("pmf-score")
+def cmd_research_pmf_score(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pmf import score
+    _emit(score(topic, product_id), as_json)
+
+
+@research_app.command("pmf-delete")
+def cmd_research_pmf_delete(
+    response_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pmf import delete_response
+    _emit(delete_response(response_id), as_json)
+
+
+# ── Pricing surveys: Van Westendorp + NPS + MaxDiff ────────────────────
+@research_app.command("vw-add")
+def cmd_research_vw_add(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import add_vw_response
+    try:
+        d = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(add_vw_response(topic, **d), as_json)
+
+
+@research_app.command("vw-aggregate")
+def cmd_research_vw_aggregate(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import vw_aggregate
+    _emit(vw_aggregate(topic, product_id), as_json)
+
+
+@research_app.command("nps-add")
+def cmd_research_nps_add(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import add_nps_response
+    try:
+        d = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(add_nps_response(topic, **d), as_json)
+
+
+@research_app.command("nps-score")
+def cmd_research_nps_score(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import nps_score
+    _emit(nps_score(topic, product_id), as_json)
+
+
+@research_app.command("maxdiff-add")
+def cmd_research_maxdiff_add(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import add_maxdiff_response
+    try:
+        d = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(add_maxdiff_response(topic, **d), as_json)
+
+
+@research_app.command("maxdiff-ranking")
+def cmd_research_maxdiff_ranking(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import maxdiff_ranking
+    _emit(maxdiff_ranking(topic, product_id), as_json)
+
+
+@research_app.command("survey-list")
+def cmd_research_survey_list(
+    topic: str = typer.Option("", "--topic", "-t"),
+    product_id: str = typer.Option("", "--product-id"),
+    kind: str = typer.Option("", "--kind", help="vw | nps | maxdiff"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import list_responses
+    _emit({"responses": list_responses(topic, product_id, kind)}, as_json)
+
+
+@research_app.command("survey-delete")
+def cmd_research_survey_delete(
+    response_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pricing import delete_response
+    _emit(delete_response(response_id), as_json)
+
+
+# ── PERT Estimation (US Navy 1958, McConnell 2006) ──────────────────────
+@research_app.command("pert-add")
+def cmd_research_pert_add(
+    product_id: str = typer.Option(..., "--id"),
+    label: str = typer.Option(..., "--label"),
+    optimistic: float = typer.Option(0, "--o"),
+    most_likely: float = typer.Option(0, "--m"),
+    pessimistic: float = typer.Option(0, "--p"),
+    role: str = typer.Option("eng", "--role"),
+    notes: str = typer.Option("", "--notes"),
+    tier: str = typer.Option("mvp", "--tier"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pert import add_task
+    _emit(
+        add_task(product_id, label,
+                 optimistic=optimistic, most_likely=most_likely,
+                 pessimistic=pessimistic, role=role, notes=notes, tier=tier),
+        as_json,
+    )
+
+
+@research_app.command("pert-update")
+def cmd_research_pert_update(
+    task_id: str = typer.Option(..., "--id"),
+    payload_json: str = typer.Option(..., "--payload-json"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pert import update_task
+    try:
+        f = json.loads(payload_json or "{}") or {}
+    except json.JSONDecodeError as e:
+        _emit({"ok": False, "error": f"invalid payload-json: {e}"}, as_json)
+        return
+    _emit(update_task(task_id, f), as_json)
+
+
+@research_app.command("pert-delete")
+def cmd_research_pert_delete(
+    task_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pert import delete_task
+    _emit(delete_task(task_id), as_json)
+
+
+@research_app.command("pert-list")
+def cmd_research_pert_list(
+    product_id: str = typer.Option(..., "--id"),
+    tier: str = typer.Option("", "--tier"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pert import list_tasks
+    _emit({"tasks": list_tasks(product_id, tier=tier)}, as_json)
+
+
+@research_app.command("pert-rollup")
+def cmd_research_pert_rollup(
+    product_id: str = typer.Option(..., "--id"),
+    multiplier: float = typer.Option(1.75, "--multiplier"),
+    contingency_pct: float = typer.Option(17.5, "--contingency"),
+    tier: str = typer.Option("", "--tier"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.pert import rollup
+    _emit(
+        rollup(product_id, multiplier=multiplier,
+               contingency_pct=contingency_pct, tier=tier),
+        as_json,
+    )
+
+
+# ── PRD generation ──────────────────────────────────────────────────────
+@research_app.command("prd-export")
+def cmd_research_prd_export(
+    product_id: str = typer.Option(..., "--id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    from ..research.prd import generate
+    _emit(generate(product_id), as_json)
+
+
 @research_app.command("sentiment-by-source")
 def cmd_research_sentiment_by_source(
     topic: str = typer.Option(..., "--topic", "-t", help="Topic name (must have a corpus collected)."),
@@ -2343,19 +3064,54 @@ def cmd_research_papers_list(
     from ..research.paper_export import _papers_for_topic
     posts = _papers_for_topic(topic, limit=limit)
     if as_json:
+        # Bulk-lookup which papers already have cached full text. Gives the UI
+        # a "has data" indicator without an N+1 round-trip to the DB.
+        cached_ids: set[str] = set()
+        try:
+            from ..core.db import get_db
+            db = get_db()
+            if "paper_full_texts" in db.table_names() and posts:
+                ids = [p.get("id") for p in posts if p.get("id")]
+                if ids:
+                    placeholders = ",".join("?" for _ in ids)
+                    rows = db.query(
+                        f"SELECT post_id FROM paper_full_texts "
+                        f"WHERE status='ok' AND post_id IN ({placeholders})",
+                        ids,
+                    )
+                    cached_ids = {r["post_id"] for r in rows}
+        except Exception:
+            # Best-effort: if the column/table is missing, just leave the flag false.
+            cached_ids = set()
+
+        def _derive_pdf_url(p: dict) -> str:
+            """Best-effort direct PDF URL when deterministic from source.
+
+            arXiv abstract URLs (`/abs/<id>`) map to `/pdf/<id>.pdf`. Other
+            sources need Unpaywall and are left for the OA button to resolve.
+            """
+            url = p.get("url") or ""
+            src = p.get("source_type") or ""
+            if src == "arxiv" and "arxiv.org/abs/" in url:
+                return url.replace("/abs/", "/pdf/").rstrip("/") + ".pdf"
+            return ""
+
         out = []
         for p in posts:
+            pid = p.get("id")
             out.append({
-                "id":          p.get("id"),
-                "title":       p.get("title"),
-                "author":      p.get("author"),
-                "url":         p.get("url"),
-                "source_type": p.get("source_type"),
-                "score":       p.get("score"),
+                "id":           pid,
+                "title":        p.get("title"),
+                "author":       p.get("author"),
+                "url":          p.get("url"),
+                "source_type":  p.get("source_type"),
+                "score":        p.get("score"),
                 "num_comments": p.get("num_comments"),
-                "created_utc": p.get("created_utc"),
-                "flair":       p.get("flair"),
-                "selftext":    (p.get("selftext") or "")[:500],
+                "created_utc":  p.get("created_utc"),
+                "flair":        p.get("flair"),
+                "selftext":     (p.get("selftext") or "")[:500],
+                "pdf_url":      _derive_pdf_url(p),
+                "has_fulltext": bool(pid and pid in cached_ids),
             })
         typer.echo(json.dumps(out, default=str))
         return

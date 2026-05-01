@@ -50,6 +50,8 @@ export function iconForHash(hash) {
   if (hash.includes('/reports')) return 'file-text';
   if (hash.includes('/database')) return 'database';
   if (hash.includes('/search')) return 'search';
+  if (hash.includes('/playbook')) return 'book-open';
+  if (hash.includes('/ost')) return 'git-fork';
   return 'home';
 }
 
@@ -105,6 +107,21 @@ export const tabStore = {
     const t = s.tabs.find(t => t.id === id);
     if (!t || t.title === title) return;
     t.title = title; t.icon = iconForHash(t.hash);
+    writeStore(s); notify();
+  },
+  // Rewrite the active tab's URL in-place (Chrome-like default for in-app
+  // sidebar navigation). Updates hash + derived title/icon and ALWAYS
+  // notifies, so the tab strip re-renders the new label live without a
+  // click. The router used to manipulate localStorage directly to dodge a
+  // perceived notify loop, which left the strip showing stale titles
+  // until the user clicked a tab.
+  replaceHash(id, hash) {
+    const s = readStore();
+    const t = s.tabs.find(t => t.id === id);
+    if (!t) return;
+    t.hash = hash;
+    t.title = titleForHash(hash);
+    t.icon = iconForHash(hash);
     writeStore(s); notify();
   },
   saveScroll(id, px) {

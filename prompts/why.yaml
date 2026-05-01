@@ -11,6 +11,13 @@ system: |
         struggling_moment: when does the user hit this painpoint? (one sentence)
         anxiety: what are they afraid of? (one sentence)
         desired_outcome: what would success feel like? (one sentence)
+    - jtbd_statement: a SINGLE sentence in the canonical Christensen format,
+      EXACTLY: "When [situation], I want [motivation], so I can [outcome]."
+      Keep it concrete — name the actual situation users described, the
+      actual motivation, the actual outcome. Bad: "When I'm frustrated, I
+      want help, so I can be happy." Good: "When my reps spike past 90 BPM
+      mid-set, I want a watch that buzzes a clear cue, so I can pace
+      without breaking form."
 
   Quote sparingly from the posts. Be specific and concrete — generic answers
   ("users are frustrated") are wrong. Reply with JSON only, no markdown fences.
@@ -22,7 +29,8 @@ system: |
       "struggling_moment": "...",
       "anxiety": "...",
       "desired_outcome": "..."
-    }
+    },
+    "jtbd_statement": "When [situation], I want [motivation], so I can [outcome]."
   }
 
 user_template: |

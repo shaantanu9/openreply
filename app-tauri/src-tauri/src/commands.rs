@@ -8,7 +8,7 @@ use crate::cli::{
     run_cli_chat_streaming, run_cli_enrich_streaming, run_cli_stream_streaming, run_cli_streaming,
     ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
 };
-use tauri::Listener;
+use tauri::{Emitter, Listener};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use sha2::{Digest, Sha256};
@@ -362,6 +362,151 @@ pub async fn canonicalize_topic(app: AppHandle, topic: String) -> Result<Value, 
     .map_err(err_to_string)
 }
 
+/// Build the CLI args vector for a topic collect. Pulled out of
+/// `start_collect` so the queue dequeue path can replay the same args
+/// shape without duplicating the assembly.
+fn build_collect_args(
+    topic: &str,
+    aggressive: bool,
+    sources: Option<&str>,
+    skip_reddit: bool,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "research".into(),
+        "collect".into(),
+        "--topic".into(),
+        topic.into(),
+    ];
+    if aggressive {
+        args.push("--aggressive".into());
+    }
+    if let Some(s) = sources {
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            args.push("--sources".into());
+            args.push(trimmed.into());
+        }
+    }
+    if skip_reddit {
+        args.push("--skip-reddit".into());
+    }
+    // The desktop app always skips the CLI's legacy inline LLM extraction
+    // pass. Incremental extraction runs in a separate long-lived worker
+    // process — leaving the inline pass on would block `collect:done` for
+    // minutes on aggressive collects.
+    args.push("--skip-extraction".into());
+    args
+}
+
+/// True when a collect sidecar is currently holding the single-flight slot.
+fn is_collect_running(app: &AppHandle) -> bool {
+    use crate::cli::{ActiveJob, ActiveJobPid};
+    if let Some(s) = app.try_state::<ActiveJob>() {
+        if s.0.lock().ok().map(|g| g.is_some()).unwrap_or(false) {
+            return true;
+        }
+    }
+    if let Some(s) = app.try_state::<ActiveJobPid>() {
+        if s.0.lock().ok().map(|g| g.is_some()).unwrap_or(false) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Pop the next queued collect (if any) and spawn it. Called automatically
+/// after `collect:done` fires. Spawned via `tauri::async_runtime::spawn` so
+/// it never blocks the listener that triggered it.
+fn drain_collect_queue(app: &AppHandle) {
+    use crate::cli::CollectQueue;
+
+    // Bail if a collect is somehow still running — we don't want to overlap
+    // sidecars even if the queue trigger races.
+    if is_collect_running(app) {
+        return;
+    }
+    let next = {
+        let queue_arc = match app.try_state::<CollectQueue>() {
+            Some(s) => s.0.clone(),
+            None => return,
+        };
+        let mut q = match queue_arc.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        q.pop_front()
+    };
+    if let Some(qc) = next {
+        let app_clone = app.clone();
+        let topic = qc.topic.clone();
+        let args = qc.args.clone();
+        // Notify UI that we transitioned a queued item into running.
+        let _ = app.emit(
+            "collect:queue:dequeued",
+            serde_json::json!({ "topic": topic, "queued_at": qc.queued_at }),
+        );
+        tauri::async_runtime::spawn(async move {
+            let _ = run_collect_inner(app_clone, topic, args).await;
+        });
+    }
+}
+
+/// Inner runner shared by `start_collect` and the queue drain. Spawns the
+/// sidecar via `run_cli_streaming`, manages the `ActiveCollects` map, and
+/// drains the queue on completion.
+async fn run_collect_inner(
+    app: AppHandle,
+    topic: String,
+    args: Vec<String>,
+) -> Result<Value, String> {
+    use crate::cli::ActiveCollects;
+
+    let active_arc = {
+        let state = app.state::<ActiveCollects>();
+        state.0.clone()
+    };
+
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    {
+        let mut map = active_arc.lock().map_err(|e| e.to_string())?;
+        map.insert(topic.clone(), now_secs);
+    }
+
+    let active_for_listener = active_arc.clone();
+    let topic_clone = topic.clone();
+    let unlisten = app.listen_any("collect:done", move |_event| {
+        if let Ok(mut map) = active_for_listener.lock() {
+            map.remove(&topic_clone);
+        }
+    });
+
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let stream_result =
+        run_cli_streaming(&app, arg_refs, "collect:progress", "collect:done").await;
+
+    app.unlisten(unlisten);
+    if let Ok(mut map) = active_arc.lock() {
+        map.remove(&topic);
+    }
+
+    // Drain — the slot just freed up, fire the next queued item if any.
+    drain_collect_queue(&app);
+
+    stream_result
+        .map(|_| {
+            serde_json::json!({
+                "ok": true,
+                "already_running": false,
+                "topic": topic,
+                "started_at": now_secs,
+            })
+        })
+        .map_err(err_to_string)
+}
+
 /// Start a topic collect. Streams progress via `collect:progress` events
 /// and emits `collect:done` when complete.
 ///
@@ -370,6 +515,18 @@ pub async fn canonicalize_topic(app: AppHandle, topic: String) -> Result<Value, 
 ///
 /// `skip_reddit` (default false) — skip the Reddit fetch stages entirely.
 /// Useful for topping up an existing topic with only externals.
+///
+/// `if_busy` (optional) — what to do if another collect is already
+/// running. One of:
+///   - "error" (default): return `{ ok: false, blocked: true,
+///     blocked_by: { topic, started_at, elapsed_secs } }` so the UI can
+///     render an actionable modal.
+///   - "queue": append to the FIFO queue. When the running collect
+///     finishes, we auto-spawn this one. Returns
+///     `{ ok: true, queued: true, position }`.
+///   - "cancel_and_start": SIGTERM the running collect, then start this
+///     one. Returns `{ ok: true, started: true, cancelled: <prior-topic> }`
+///     once the new collect's events start flowing.
 #[tauri::command]
 pub async fn start_collect(
     app: AppHandle,
@@ -377,22 +534,18 @@ pub async fn start_collect(
     aggressive: bool,
     sources: Option<String>,
     skip_reddit: Option<bool>,
+    if_busy: Option<String>,
 ) -> Result<Value, String> {
-    use crate::cli::ActiveCollects;
+    use crate::cli::{ActiveCollects, CollectQueue};
 
-    // Single-flight dedup. If the user navigates away from `#/collect/X` and
-    // comes back, renderCollect will call start_collect again. Without this
-    // we'd spawn a duplicate Python sidecar for the same topic — two parallel
-    // writers stomping on the schema. Instead, return already_running so the
-    // UI subscribes to the already-streaming events.
-    //
-    // We clone the inner Arc once and release the State borrow immediately —
-    // keeping a long-lived `state` binding would block the subsequent
-    // `app.listen_any(...)` and `app.unlisten(...)` calls from borrowing app.
+    let policy = if_busy.as_deref().unwrap_or("error");
+
     let active_arc = {
         let state = app.state::<ActiveCollects>();
         state.0.clone()
     };
+
+    // Same-topic dedup — never spawn a duplicate sidecar for the SAME topic.
     {
         let map = active_arc.lock().map_err(|e| e.to_string())?;
         if map.contains_key(&topic) {
@@ -406,82 +559,209 @@ pub async fn start_collect(
         }
     }
 
-    let mut args: Vec<String> = vec![
-        "research".into(),
-        "collect".into(),
-        "--topic".into(),
-        topic.clone(),
+    let args = build_collect_args(
+        &topic,
+        aggressive,
+        sources.as_deref(),
+        skip_reddit.unwrap_or(false),
+    );
+
+    // If something else is running, branch on the policy.
+    if is_collect_running(&app) {
+        // Get the running topic + its started_at for blocked_by metadata.
+        let entry = {
+            let map = active_arc.lock().map_err(|e| e.to_string())?;
+            map.iter().next().map(|(k, v)| (k.clone(), *v))
+        };
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        // When the slot is held but the topic map is empty (orphan / HMR
+        // restart), don't compute elapsed off started_at=0 — that yielded
+        // ~1.7 billion seconds = "29 million minutes". Use 0 as a sentinel
+        // and let the frontend show "(unknown)" without bogus minutes.
+        let (running_topic, running_started, elapsed) = match entry {
+            Some((topic, started)) => (topic, started, now_secs.saturating_sub(started)),
+            None => ("(unknown — sidecar still alive)".into(), 0u64, 0u64),
+        };
+
+        match policy {
+            "queue" => {
+                let queue_arc = {
+                    let st = app.state::<CollectQueue>();
+                    st.0.clone()
+                };
+                let queued_at = now_secs;
+                let position = {
+                    let mut q = queue_arc.lock().map_err(|e| e.to_string())?;
+                    // Reject duplicate-in-queue too, so the user can't
+                    // accidentally enqueue the same topic twice.
+                    if q.iter().any(|x| x.topic == topic) {
+                        return Ok(serde_json::json!({
+                            "ok": true,
+                            "queued": true,
+                            "already_queued": true,
+                            "topic": topic,
+                            "blocked_by": {
+                                "topic": running_topic,
+                                "started_at": running_started,
+                                "elapsed_secs": elapsed,
+                            },
+                        }));
+                    }
+                    q.push_back(crate::cli::QueuedCollect {
+                        topic: topic.clone(),
+                        args: args.clone(),
+                        queued_at,
+                    });
+                    q.len()
+                };
+                let _ = app.emit("collect:queue:enqueued",
+                    serde_json::json!({ "topic": topic, "position": position }));
+                return Ok(serde_json::json!({
+                    "ok": true,
+                    "queued": true,
+                    "position": position,
+                    "topic": topic,
+                    "queued_at": queued_at,
+                    "blocked_by": {
+                        "topic": running_topic,
+                        "started_at": running_started,
+                        "elapsed_secs": elapsed,
+                    },
+                }));
+            }
+            "cancel_and_start" => {
+                // Kill the running sidecar. cancel_active_job emits
+                // `collect:done` (with code=-1) via the streaming hook, which
+                // unblocks any UI listener AND clears the active map.
+                let prior = running_topic.clone();
+                crate::cli::cancel_active_job(&app);
+                // Tiny grace so the prior `collect:done` listener gets to
+                // remove `prior` from `ActiveCollects` before we insert ours.
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                // Spawn the new one in the background so we don't block this
+                // command. UI is already subscribed to collect:progress.
+                let app_clone = app.clone();
+                let topic_for_spawn = topic.clone();
+                let args_for_spawn = args.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = run_collect_inner(app_clone, topic_for_spawn, args_for_spawn).await;
+                });
+                return Ok(serde_json::json!({
+                    "ok": true,
+                    "started": true,
+                    "cancelled": prior,
+                    "topic": topic,
+                }));
+            }
+            _ /* "error" */ => {
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "blocked": true,
+                    "topic": topic,
+                    "blocked_by": {
+                        "topic": running_topic,
+                        "started_at": running_started,
+                        "elapsed_secs": elapsed,
+                    },
+                }));
+            }
+        }
+    }
+
+    // Nothing running — straight path.
+    run_collect_inner(app, topic, args).await
+}
+
+/// Catalog of external sources the Python `research collect` will sweep.
+/// Mirrors the lists in `src/reddit_research/research/collect.py` so the
+/// "topic recon" card on the collect screen can preview the exact set
+/// that's about to be queried — without spinning up the sidecar first.
+///
+/// `aggressive=true` returns the 15-source aggressive sweep; otherwise
+/// the 8-source quick default.
+///
+/// Each entry: { id, label, kind: "external", default_aggressive,
+/// default_quick }. The frontend matches `id` against the sidecar's
+/// `[src] …` progress lines to flip a chip from "queued" → "fetched".
+#[tauri::command]
+pub async fn collect_source_catalog(aggressive: bool) -> Result<Vec<Value>, String> {
+    // (id, label, in_aggressive_default, in_quick_default)
+    // Order matches collect.py for visual consistency.
+    let all: &[(&str, &str, bool, bool)] = &[
+        ("hn",            "Hacker News",         true,  true),
+        ("appstore",      "App Store",           true,  false),
+        ("playstore",     "Play Store",          true,  false),
+        ("trustpilot",    "Trustpilot",          true,  false),
+        ("producthunt",   "Product Hunt",        true,  false),
+        ("rss_products",  "RSS — Products",      true,  true),
+        ("rss_tech_news", "RSS — Tech News",     true,  true),
+        ("arxiv",         "arXiv",               true,  true),
+        ("openalex",      "OpenAlex",            true,  false),
+        ("pubmed",        "PubMed",              true,  false),
+        ("gnews",         "Google News",         true,  true),
+        ("devto",         "Dev.to",              true,  true),
+        ("stackoverflow", "Stack Overflow",      true,  true),
+        ("github",        "GitHub Trending",     true,  true),
+        ("trends",        "Google Trends",       true,  false),
+        // Opt-in (only included when explicitly requested via --sources):
+        ("alternativeto", "AlternativeTo",       false, false),
+        ("lemmy",         "Lemmy",               false, false),
+        ("mastodon",      "Mastodon",            false, false),
+        ("github_issues", "GitHub Issues",       false, false),
+        ("youtube",       "YouTube",             false, false),
+        ("scholar",       "Google Scholar",      false, false),
     ];
-    if aggressive {
-        args.push("--aggressive".into());
+
+    let out: Vec<Value> = all.iter()
+        .filter(|(_, _, ag, qk)| if aggressive { *ag } else { *qk })
+        .map(|(id, label, ag, qk)| serde_json::json!({
+            "id": id,
+            "label": label,
+            "kind": "external",
+            "default_aggressive": ag,
+            "default_quick": qk,
+        }))
+        .collect();
+    Ok(out)
+}
+
+/// List the pending collect queue (FIFO order).
+/// Used by the status bar to render "+ N queued: A, B".
+#[tauri::command]
+pub async fn list_collect_queue(app: AppHandle) -> Result<Vec<Value>, String> {
+    use crate::cli::CollectQueue;
+    let arc = {
+        let state = app.state::<CollectQueue>();
+        state.0.clone()
+    };
+    let q = arc.lock().map_err(|e| e.to_string())?;
+    Ok(q.iter()
+        .map(|qc| serde_json::json!({
+            "topic": qc.topic,
+            "queued_at": qc.queued_at,
+        }))
+        .collect())
+}
+
+/// Remove a queued collect by topic. Returns true if it was found.
+/// Use this to cancel a queued item before it ever starts.
+#[tauri::command]
+pub async fn cancel_queued_collect(app: AppHandle, topic: String) -> Result<bool, String> {
+    use crate::cli::CollectQueue;
+    let arc = {
+        let state = app.state::<CollectQueue>();
+        state.0.clone()
+    };
+    let mut q = arc.lock().map_err(|e| e.to_string())?;
+    let before = q.len();
+    q.retain(|qc| qc.topic != topic);
+    let removed = q.len() < before;
+    drop(q);
+    if removed {
+        let _ = app.emit("collect:queue:cancelled", serde_json::json!({ "topic": topic }));
     }
-    if let Some(s) = sources.as_ref() {
-        let trimmed = s.trim();
-        if !trimmed.is_empty() {
-            args.push("--sources".into());
-            args.push(trimmed.into());
-        }
-    }
-    if skip_reddit.unwrap_or(false) {
-        args.push("--skip-reddit".into());
-    }
-
-    // The desktop app always skips the CLI's legacy inline LLM extraction
-    // pass. Incremental extraction runs in a separate long-lived worker
-    // process that drains `extraction_queue` in batches of 5 — see
-    // docs/superpowers/plans/2026-04-21-incremental-enrichment.md Task 2.
-    // Leaving the inline pass on would block `collect:done` for minutes
-    // on aggressive collects and starve the worker's writer of the SQLite
-    // busy window.
-    args.push("--skip-extraction".into());
-
-    // Register the topic as in-flight BEFORE spawning the sidecar. We remove
-    // it when `collect:done` fires (via the listener below).
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    {
-        let mut map = active_arc.lock().map_err(|e| e.to_string())?;
-        map.insert(topic.clone(), now_secs);
-    }
-
-    // Subscribe to collect:done so we can auto-remove the topic from the
-    // active set. Since only one collect runs per topic at a time (enforced
-    // by this map), clearing `topic_clone` on any collect:done event is safe.
-    let active_for_listener = active_arc.clone();
-    let topic_clone = topic.clone();
-    let unlisten = app.listen_any("collect:done", move |_event| {
-        if let Ok(mut map) = active_for_listener.lock() {
-            map.remove(&topic_clone);
-        }
-    });
-
-    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let stream_result =
-        run_cli_streaming(&app, arg_refs, "collect:progress", "collect:done").await;
-
-    // Always unlisten + ensure topic is cleared, regardless of outcome.
-    // On success the listener has already cleared the topic (collect:done
-    // fired which is why run_cli_streaming returned); the remove below is a
-    // no-op. On failure (sidecar refused to start, etc.) the listener may
-    // have never fired — we manually clear so a user retry doesn't return
-    // {already_running: true} for a ghost process.
-    app.unlisten(unlisten);
-    if let Ok(mut map) = active_arc.lock() {
-        map.remove(&topic);
-    }
-
-    stream_result
-        .map(|_| {
-            serde_json::json!({
-                "ok": true,
-                "already_running": false,
-                "topic": topic,
-                "started_at": now_secs,
-            })
-        })
-        .map_err(err_to_string)
+    Ok(removed)
 }
 
 /// Return the set of topics that have an in-flight collect, with their start
@@ -1628,6 +1908,623 @@ pub async fn product_convert_topic(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+// ─── Lifecycle pivot — Stage-Gate verdict + Kano categorization ──────────
+
+#[tauri::command]
+pub async fn product_gate_set(
+    app: AppHandle,
+    product_id: String,
+    status: String,
+    notes: Option<String>,
+) -> Result<Value, String> {
+    let n = notes.unwrap_or_default();
+    run_cli(
+        &app,
+        vec!["research", "product-gate-set", "--id", &product_id,
+             "--status", &status, "--notes", &n, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn product_gate_get(
+    app: AppHandle,
+    product_id: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "product-gate-get", "--id", &product_id, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn run_kano_categorize(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "kano-categorize", "--topic", &topic, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+// ─── Discovery framework expansion (2026-05-01_04) ────────────────────────
+// OST + RICE + MoSCoW + Empathy Maps + Four Risks + Value Curve.
+
+#[tauri::command]
+pub async fn ost_build(
+    app: AppHandle,
+    topic: String,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let pid = product_id.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "ost-build", "--topic", &topic, "--json"];
+    if !pid.is_empty() {
+        args.push("--product-id");
+        args.push(&pid);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn ost_set_outcome(
+    app: AppHandle,
+    product_id: String,
+    outcome: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "ost-set-outcome", "--id", &product_id,
+             "--outcome", &outcome, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+// OST experiment CRUD — distinct namespace from gap_discovery's
+// `experiments-list` / `list_experiments` which surface a different
+// (LLM-proposed, paper-grounded) experiment concept.
+#[tauri::command]
+pub async fn ost_experiment_create(
+    app: AppHandle,
+    topic: String,
+    painpoint_id: String,
+    intervention_id: Option<String>,
+    hypothesis: String,
+    method: Option<String>,
+    success_criteria: Option<String>,
+    sample_size: Option<i64>,
+) -> Result<Value, String> {
+    let iv = intervention_id.unwrap_or_default();
+    let m = method.unwrap_or_else(|| "custom".to_string());
+    let sc = success_criteria.unwrap_or_default();
+    let ss = sample_size.unwrap_or(0).to_string();
+    let mut args: Vec<&str> = vec![
+        "research", "ost-experiment-create",
+        "--topic", &topic,
+        "--painpoint-id", &painpoint_id,
+        "--hypothesis", &hypothesis,
+        "--method", &m,
+        "--success-criteria", &sc,
+        "--sample-size", &ss,
+        "--json",
+    ];
+    if !iv.is_empty() {
+        args.push("--intervention-id");
+        args.push(&iv);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn ost_experiments_list(
+    app: AppHandle,
+    topic: String,
+    painpoint_id: Option<String>,
+) -> Result<Value, String> {
+    let pp = painpoint_id.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "ost-experiments-list", "--topic", &topic, "--json"];
+    if !pp.is_empty() {
+        args.push("--painpoint-id");
+        args.push(&pp);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn ost_experiment_update(
+    app: AppHandle,
+    experiment_id: String,
+    fields_json: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "ost-experiment-update", "--id", &experiment_id,
+             "--fields-json", &fields_json, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn ost_experiment_delete(
+    app: AppHandle,
+    experiment_id: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "ost-experiment-delete", "--id", &experiment_id, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn run_rice_score(
+    app: AppHandle,
+    topic: String,
+    default_effort: Option<i64>,
+    overwrite_effort: Option<bool>,
+) -> Result<Value, String> {
+    let de = default_effort.unwrap_or(3).to_string();
+    let mut args: Vec<&str> = vec![
+        "research", "rice-score", "--topic", &topic,
+        "--default-effort", &de, "--json",
+    ];
+    if overwrite_effort.unwrap_or(false) {
+        args.push("--overwrite-effort");
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn rice_set(
+    app: AppHandle,
+    intervention_id: String,
+    reach: Option<i64>,
+    impact: Option<i64>,
+    confidence: Option<i64>,
+    effort: Option<i64>,
+) -> Result<Value, String> {
+    let mut args: Vec<String> = vec![
+        "research".into(), "rice-set".into(),
+        "--id".into(), intervention_id,
+    ];
+    if let Some(v) = reach      { args.push("--reach".into());      args.push(v.to_string()); }
+    if let Some(v) = impact     { args.push("--impact".into());     args.push(v.to_string()); }
+    if let Some(v) = confidence { args.push("--confidence".into()); args.push(v.to_string()); }
+    if let Some(v) = effort     { args.push("--effort".into());     args.push(v.to_string()); }
+    args.push("--json".into());
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn run_moscow_categorize(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "moscow-categorize", "--topic", &topic, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn run_empathy_build(
+    app: AppHandle,
+    topic: String,
+    persona: Option<String>,
+) -> Result<Value, String> {
+    let p = persona.unwrap_or_else(|| "primary".to_string());
+    run_cli(
+        &app,
+        vec!["research", "empathy-build", "--topic", &topic,
+             "--persona", &p, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn empathy_get(
+    app: AppHandle,
+    topic: String,
+    persona: Option<String>,
+) -> Result<Value, String> {
+    let p = persona.unwrap_or_else(|| "primary".to_string());
+    run_cli(
+        &app,
+        vec!["research", "empathy-get", "--topic", &topic, "--persona", &p, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn empathy_list(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "empathy-list", "--topic", &topic, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn four_risks_get(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "four-risks-get", "--id", &product_id, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn four_risks_set(
+    app: AppHandle,
+    product_id: String,
+    risk: String,
+    status: String,
+    notes: Option<String>,
+) -> Result<Value, String> {
+    let n = notes.unwrap_or_default();
+    run_cli(
+        &app,
+        vec!["research", "four-risks-set", "--id", &product_id,
+             "--risk", &risk, "--status", &status, "--notes", &n, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn value_curve_get(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "value-curve-get", "--id", &product_id, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn value_curve_set(
+    app: AppHandle,
+    product_id: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "value-curve-set", "--id", &product_id,
+             "--payload-json", &payload_json, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+// ── TAM / SAM / SOM ────────────────────────────────────────────────
+#[tauri::command]
+pub async fn tam_sam_som_get(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "tam-sam-som-get", "--id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn tam_sam_som_set(
+    app: AppHandle,
+    product_id: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "tam-sam-som-set", "--id", &product_id,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── Porter's Five Forces ──────────────────────────────────────────────
+#[tauri::command]
+pub async fn porter_get(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "porter-get", "--id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn porter_set(
+    app: AppHandle,
+    product_id: String,
+    force: String,
+    score: i64,
+    notes: Option<String>,
+) -> Result<Value, String> {
+    let n = notes.unwrap_or_default();
+    let s = score.to_string();
+    run_cli(&app, vec!["research", "porter-set", "--id", &product_id,
+        "--force", &force, "--score", &s, "--notes", &n, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── 2x2 positioning map ───────────────────────────────────────────────
+#[tauri::command]
+pub async fn positioning_get(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "positioning-get", "--id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn positioning_set(
+    app: AppHandle,
+    product_id: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "positioning-set", "--id", &product_id,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── Cost model + pricing tiers ────────────────────────────────────────
+#[tauri::command]
+pub async fn cost_model_get(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "cost-model-get", "--id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn cost_model_set(
+    app: AppHandle,
+    product_id: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "cost-model-set", "--id", &product_id,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── Customer Discovery Interviews ─────────────────────────────────────
+#[tauri::command]
+pub async fn interview_create(
+    app: AppHandle,
+    topic: String,
+    name: String,
+    payload_json: Option<String>,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let pj = payload_json.unwrap_or_else(|| "{}".to_string());
+    let pid = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "interview-create", "--topic", &topic,
+        "--name", &name, "--payload-json", &pj, "--product-id", &pid, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn interview_update(
+    app: AppHandle,
+    interview_id: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "interview-update", "--id", &interview_id,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn interview_delete(app: AppHandle, interview_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "interview-delete", "--id", &interview_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn interview_get(app: AppHandle, interview_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "interview-get", "--id", &interview_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn interview_list(
+    app: AppHandle,
+    topic: Option<String>,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let p = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "interview-list", "--topic", &t, "--product-id", &p, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn interview_summary(
+    app: AppHandle,
+    topic: String,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let p = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "interview-summary", "--topic", &topic,
+        "--product-id", &p, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── Sean Ellis PMF ────────────────────────────────────────────────────
+#[tauri::command]
+pub async fn pmf_add(
+    app: AppHandle,
+    topic: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "pmf-add", "--topic", &topic,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pmf_list(
+    app: AppHandle,
+    topic: Option<String>,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let p = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "pmf-list", "--topic", &t, "--product-id", &p, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pmf_score(
+    app: AppHandle,
+    topic: String,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let p = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "pmf-score", "--topic", &topic,
+        "--product-id", &p, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pmf_delete(app: AppHandle, response_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "pmf-delete", "--id", &response_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── Pricing surveys ───────────────────────────────────────────────────
+#[tauri::command]
+pub async fn vw_add(
+    app: AppHandle,
+    topic: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "vw-add", "--topic", &topic,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn vw_aggregate(
+    app: AppHandle,
+    topic: String,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let p = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "vw-aggregate", "--topic", &topic,
+        "--product-id", &p, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn nps_add(
+    app: AppHandle,
+    topic: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "nps-add", "--topic", &topic,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn nps_score(
+    app: AppHandle,
+    topic: String,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let p = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "nps-score", "--topic", &topic,
+        "--product-id", &p, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn maxdiff_add(
+    app: AppHandle,
+    topic: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "maxdiff-add", "--topic", &topic,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn maxdiff_ranking(
+    app: AppHandle,
+    topic: String,
+    product_id: Option<String>,
+) -> Result<Value, String> {
+    let p = product_id.unwrap_or_default();
+    run_cli(&app, vec!["research", "maxdiff-ranking", "--topic", &topic,
+        "--product-id", &p, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn survey_list(
+    app: AppHandle,
+    topic: Option<String>,
+    product_id: Option<String>,
+    kind: Option<String>,
+) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let p = product_id.unwrap_or_default();
+    let k = kind.unwrap_or_default();
+    run_cli(&app, vec!["research", "survey-list", "--topic", &t, "--product-id", &p,
+        "--kind", &k, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn survey_delete(app: AppHandle, response_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "survey-delete", "--id", &response_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── PERT ───────────────────────────────────────────────────────────────
+#[tauri::command]
+pub async fn pert_add(
+    app: AppHandle,
+    product_id: String,
+    label: String,
+    optimistic: Option<f64>,
+    most_likely: Option<f64>,
+    pessimistic: Option<f64>,
+    role: Option<String>,
+    notes: Option<String>,
+    tier: Option<String>,
+) -> Result<Value, String> {
+    let o = optimistic.unwrap_or(0.0).to_string();
+    let m = most_likely.unwrap_or(0.0).to_string();
+    let p = pessimistic.unwrap_or(0.0).to_string();
+    let r = role.unwrap_or_else(|| "eng".to_string());
+    let n = notes.unwrap_or_default();
+    let t = tier.unwrap_or_else(|| "mvp".to_string());
+    run_cli(&app, vec!["research", "pert-add", "--id", &product_id,
+        "--label", &label, "--o", &o, "--m", &m, "--p", &p,
+        "--role", &r, "--notes", &n, "--tier", &t, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pert_update(
+    app: AppHandle,
+    task_id: String,
+    payload_json: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "pert-update", "--id", &task_id,
+        "--payload-json", &payload_json, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pert_delete(app: AppHandle, task_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "pert-delete", "--id", &task_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pert_list(
+    app: AppHandle,
+    product_id: String,
+    tier: Option<String>,
+) -> Result<Value, String> {
+    let t = tier.unwrap_or_default();
+    run_cli(&app, vec!["research", "pert-list", "--id", &product_id, "--tier", &t, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pert_rollup(
+    app: AppHandle,
+    product_id: String,
+    multiplier: Option<f64>,
+    contingency_pct: Option<f64>,
+    tier: Option<String>,
+) -> Result<Value, String> {
+    let m = multiplier.unwrap_or(1.75).to_string();
+    let c = contingency_pct.unwrap_or(17.5).to_string();
+    let t = tier.unwrap_or_default();
+    run_cli(&app, vec!["research", "pert-rollup", "--id", &product_id,
+        "--multiplier", &m, "--contingency", &c, "--tier", &t, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ── PRD Generator ──────────────────────────────────────────────────────
+#[tauri::command]
+pub async fn prd_export(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "prd-export", "--id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
 /// Run the Problem -> Why -> Science -> Solution pipeline for a topic.
 /// Returns a summary JSON or `{ok: false, skipped: true, reason}` if no
 /// LLM provider is configured.
@@ -1718,6 +2615,108 @@ pub async fn oa_lookup(app: AppHandle, doi: String) -> Result<Value, String> {
         &app,
         vec!["research", "oa-lookup", "--doi", &doi, "--json"],
     ).await.map_err(err_to_string)
+}
+
+/// Download a PDF to the app's local data dir and return its absolute path.
+///
+/// The webview can't load most paper PDFs directly: publishers send
+/// `X-Frame-Options: deny` (kills iframes) and CORS doesn't permit binary
+/// fetch from origins not in `connect-src`. So we mirror the file once, on
+/// the Rust side (no CORS, no frame headers), then the frontend renders it
+/// via `convertFileSrc()` → `asset://` URL — which the OS PDF stack handles.
+///
+/// Cache key: SHA-256 of the URL truncated to 24 hex chars. Means the same
+/// URL is downloaded once across topics, regardless of post_id reuse.
+#[tauri::command]
+pub async fn paper_pdf_fetch(
+    app: AppHandle,
+    url: String,
+    post_id: Option<String>,
+) -> Result<Value, String> {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+    use std::fs;
+    use tauri::Manager;
+
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("invalid url scheme: {url}"));
+    }
+
+    let cache_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("app_local_data_dir failed: {e}"))?
+        .join("paper_pdf_cache");
+    fs::create_dir_all(&cache_dir).map_err(|e| format!("mkdir cache: {e}"))?;
+
+    // Stable filename: prefer post_id when supplied (cleaner in Finder),
+    // else hash the URL. Always end in .pdf so the OS picks the right viewer.
+    let stem = match post_id.as_deref().filter(|s| !s.is_empty()) {
+        Some(pid) => pid.replace(['/', '\\', ':'], "_"),
+        None => {
+            let mut h = Sha256::new();
+            h.update(url.as_bytes());
+            let digest = h.finalize();
+            let mut s = String::with_capacity(24);
+            for b in &digest[..12] {
+                write!(&mut s, "{b:02x}").ok();
+            }
+            s
+        }
+    };
+    let dest = cache_dir.join(format!("{stem}.pdf"));
+
+    if !dest.exists() {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .redirect(reqwest::redirect::Policy::limited(8))
+            .user_agent("gapmap/1.0 (paper-pdf-fetch)")
+            .build()
+            .map_err(|e| format!("client build: {e}"))?;
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("fetch failed: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("HTTP {} for {url}", resp.status()));
+        }
+        // Sanity-check content-type. Some publisher landing pages 200 with
+        // an HTML body instead of redirecting to the PDF — saving that as
+        // .pdf would render a blank viewer with no useful error.
+        let ct = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_lowercase();
+        if !ct.is_empty() && !(ct.contains("pdf") || ct.contains("octet-stream")) {
+            return Err(format!(
+                "expected PDF, got content-type: {ct} (publisher likely served an HTML wall — try the 'Open externally' button)"
+            ));
+        }
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("read body: {e}"))?;
+        // Magic-byte check — first 4 bytes of every valid PDF are `%PDF`.
+        if bytes.len() < 4 || &bytes[..4] != b"%PDF" {
+            return Err(
+                "downloaded payload is not a PDF (magic bytes missing)".to_string()
+            );
+        }
+        let tmp = dest.with_extension("pdf.tmp");
+        fs::write(&tmp, &bytes).map_err(|e| format!("write tmp: {e}"))?;
+        fs::rename(&tmp, &dest).map_err(|e| format!("rename: {e}"))?;
+    }
+
+    let size = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+    Ok(serde_json::json!({
+        "ok": true,
+        "path": dest.to_string_lossy(),
+        "size": size,
+        "cached": true,
+    }))
 }
 
 // ─── Intent layer (per-topic deliverable routing) ──────────────────────────────

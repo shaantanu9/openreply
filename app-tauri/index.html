@@ -44,6 +44,11 @@
         <span class="nav-ic"><i data-lucide="users"></i></span>
         <span>Competitors</span>
       </a>
+      <a href="#/collects" data-route="/collects" title="See and manage every collect — running, queued, recently finished">
+        <span class="nav-ic"><i data-lucide="activity"></i></span>
+        <span>Active collects</span>
+        <span class="nav-count" id="nav-collects-count">—</span>
+      </a>
       <a href="#/ingest" data-route="/ingest">
         <span class="nav-ic"><i data-lucide="download"></i></span>
         <span>Ingest</span>
@@ -80,6 +85,14 @@
         <span class="nav-ic"><i data-lucide="flask-conical"></i></span>
         <span>Science</span>
       </a>
+      <a href="#/playbook" data-route="/playbook" title="The 10-phase product-development lifecycle (Design Thinking, Lean Startup, Stage-Gate, Kano, JTBD…)">
+        <span class="nav-ic"><i data-lucide="book-open"></i></span>
+        <span>Playbook</span>
+      </a>
+      <a href="#/ost" data-route="/ost" title="Opportunity Solution Tree (Torres, 2016) — Outcome → Opportunities → Solutions → Experiments">
+        <span class="nav-ic"><i data-lucide="git-fork"></i></span>
+        <span>OST</span>
+      </a>
     </nav>
 
     <div class="nav-section-label">Account</div>
@@ -99,6 +112,9 @@
   <!-- ============ MAIN ============ -->
   <div class="main-col">
     <div id="tab-strip" aria-label="Open screens"></div>
+    <!-- Global collect status bar — auto-shows when a collect is running
+         or queued. Hidden by default; CollectStatusBar.mount() flips it on. -->
+    <div id="collect-status-bar" class="collect-status-bar" hidden></div>
     <main class="main" id="main-content">
       <!-- Screens render here -->
       <div class="empty-state">Loading…</div>

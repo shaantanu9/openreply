@@ -671,6 +671,12 @@ def init_schema(db: Database) -> None:
     # a running cost estimate. See design spec §12.
     _ensure_extraction_prefs_schema(db)
 
+    # Lifecycle pivot (2026-05-01) — Stage-Gate verdicts on products and
+    # Kano category metadata is stored on intervention graph_nodes via
+    # metadata_json (no schema change needed). Adds nullable columns so
+    # pre-existing product rows survive without data loss.
+    _ensure_lifecycle_schema(db)
+
 
 def _ensure_extraction_queue(db: Database) -> None:
     """Create the extraction_queue table + indexes, then backfill existing
@@ -793,6 +799,239 @@ def _ensure_extraction_prefs_schema(db: Database) -> None:
         # the original columns; these extras just won't exist on very old
         # rows (and the worker tolerates missing columns).
         pass
+
+
+def _ensure_lifecycle_schema(db: Database) -> None:
+    """Lifecycle pivot — Stage-Gate verdict on products + Kano metadata.
+
+    All migrations are additive and idempotent: pre-existing installs gain
+    the columns without touching their data. Kano category lives in
+    ``graph_nodes.metadata_json`` (free-form JSON column already used by
+    interventions for confidence_tier/effort/rationale) — no schema change
+    required for Kano on the graph side. MoSCoW and RICE tags also live in
+    ``graph_nodes.metadata_json`` for the same reason.
+    """
+    try:
+        if "products" in db.table_names():
+            cols = {c.name for c in db["products"].columns}
+            add_cols = [
+                ("gate_status", str),       # '' | 'go' | 'kill' | 'hold' | 'recycle'
+                ("gate_decided_at", str),   # ISO UTC of last decision
+                ("gate_notes", str),        # free-text rationale
+                # Discovery framework artefacts (2026-05-01_04 expansion):
+                ("four_risks_json", str),   # Cagan: value/usability/feasibility/viability
+                ("tam_sam_som_json", str),  # market sizing per Blank/Dorf
+                ("value_curve_json", str),  # Blue Ocean factor scoring
+                ("outcome", str),           # OST root: desired business outcome
+            ]
+            for name, typ in add_cols:
+                if name not in cols:
+                    try:
+                        db["products"].add_column(name, typ)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # OST experiments — terminal nodes of the Opportunity Solution Tree
+    # (Torres, 2016). Distinct from the older ``experiments`` table that
+    # gap_discovery.py uses for LLM-proposed paper-grounded experiment
+    # designs (different schema, different lifecycle). OST experiments
+    # are user-tracked falsifiable bets attached to interventions.
+    if "ost_experiments" not in db.table_names():
+        try:
+            db["ost_experiments"].create(
+                {
+                    "id": str,
+                    "topic": str,
+                    "painpoint_id": str,         # graph_nodes.id of the painpoint
+                    "intervention_id": str,      # graph_nodes.id of the intervention (may be empty)
+                    "hypothesis": str,           # "We believe X will cause Y because Z"
+                    "method": str,               # 'fake_door' | 'landing_page' | 'wizard_of_oz' | 'concierge' | 'survey' | 'custom'
+                    "success_criteria": str,
+                    "sample_size": int,
+                    "status": str,               # 'planned' | 'running' | 'validated' | 'invalidated' | 'inconclusive'
+                    "result_notes": str,
+                    "created_at": str,
+                    "updated_at": str,
+                },
+                pk="id",
+                defaults={"status": "planned", "sample_size": 0},
+            )
+            db["ost_experiments"].create_index(["topic"])
+            db["ost_experiments"].create_index(["painpoint_id"])
+            db["ost_experiments"].create_index(["intervention_id"])
+        except Exception:
+            pass
+
+    # Empathy maps — Says / Thinks / Does / Feels per (topic, persona).
+    if "empathy_maps" not in db.table_names():
+        try:
+            db["empathy_maps"].create(
+                {
+                    "id": str,                    # f"{topic}::{persona_slug}"
+                    "topic": str,
+                    "persona": str,
+                    "says_json": str,             # JSON list of verbatim quotes
+                    "thinks_json": str,           # JSON list of inferred beliefs
+                    "does_json": str,             # JSON list of observed behaviours / workarounds
+                    "feels_json": str,            # JSON list of emotion clusters
+                    "gap_notes": str,             # the Says-vs-Does insight
+                    "created_at": str,
+                    "updated_at": str,
+                },
+                pk="id",
+            )
+            db["empathy_maps"].create_index(["topic"])
+        except Exception:
+            pass
+
+    # Customer Discovery Interviews (Mom Test, Fitzpatrick 2013) — manually
+    # captured 1:1 interviews with potential users. Distinct from raw
+    # `posts` (social-media corpus) — these are real conversations a PM
+    # ran themselves.
+    if "interviews" not in db.table_names():
+        try:
+            db["interviews"].create(
+                {
+                    "id": str,
+                    "topic": str,
+                    "product_id": str,            # optional FK
+                    "interviewee_name": str,
+                    "persona": str,               # which user persona
+                    "interviewer": str,
+                    "conducted_at": str,          # ISO date
+                    "duration_min": int,
+                    "channel": str,               # 'video' | 'phone' | 'inperson' | 'async'
+                    "summary": str,               # short PM-written digest
+                    "full_text": str,             # transcript / raw notes
+                    "current_solution": str,      # what they use today
+                    "willingness_to_pay": str,    # free text or amount
+                    "jtbd_quote": str,            # best JTBD quote
+                    "mom_test_score": int,        # 0..5 — interview rigour self-rating
+                    "follow_up": str,             # 'pending' | 'done' | 'none'
+                    "tags_json": str,             # arbitrary tags
+                    "created_at": str,
+                    "updated_at": str,
+                },
+                pk="id",
+                defaults={"duration_min": 0, "mom_test_score": 0},
+            )
+            db["interviews"].create_index(["topic"])
+            db["interviews"].create_index(["product_id"])
+        except Exception:
+            pass
+
+    # Sean Ellis PMF Survey (Ellis 2010) — single-question survey
+    # (How would you feel if you could no longer use this product?).
+    # Threshold: ≥40% answer "very disappointed" → product-market fit.
+    if "pmf_responses" not in db.table_names():
+        try:
+            db["pmf_responses"].create(
+                {
+                    "id": str,
+                    "topic": str,
+                    "product_id": str,            # optional
+                    "responded_at": str,
+                    "respondent": str,            # email / handle / anonymized id
+                    "persona": str,               # segment for slicing
+                    # core: very_disappointed | somewhat_disappointed |
+                    # not_disappointed | dont_use
+                    "disappointment": str,
+                    "must_have_alternative": str, # follow-up: what would you use instead?
+                    "main_benefit": str,          # what's the main benefit?
+                    "ideal_user": str,            # who do you think would benefit most?
+                    "improvement": str,           # how can we improve?
+                    "notes": str,
+                    "created_at": str,
+                },
+                pk="id",
+            )
+            db["pmf_responses"].create_index(["topic"])
+            db["pmf_responses"].create_index(["product_id"])
+        except Exception:
+            pass
+
+    # Survey responses — Van Westendorp PSM, NPS, MaxDiff. Single table
+    # so the UI can mix instruments freely; payload lives in data_json.
+    if "survey_responses" not in db.table_names():
+        try:
+            db["survey_responses"].create(
+                {
+                    "id": str,
+                    "topic": str,
+                    "product_id": str,
+                    "kind": str,                  # 'vw' | 'nps' | 'maxdiff'
+                    "respondent": str,
+                    "persona": str,
+                    "data_json": str,             # instrument-specific payload
+                    "responded_at": str,
+                    "created_at": str,
+                },
+                pk="id",
+            )
+            db["survey_responses"].create_index(["topic"])
+            db["survey_responses"].create_index(["product_id"])
+            db["survey_responses"].create_index(["kind"])
+        except Exception:
+            pass
+
+    # PERT estimation tasks (US Navy 1958, McConnell 2006). Each task
+    # has Optimistic / Most Likely / Pessimistic estimates;
+    # E = (O + 4M + P) / 6, SD = (P - O) / 6.
+    if "pert_tasks" not in db.table_names():
+        try:
+            db["pert_tasks"].create(
+                {
+                    "id": str,
+                    "product_id": str,
+                    "label": str,
+                    "role": str,                  # eng | design | qa | pm
+                    "optimistic": float,          # days
+                    "most_likely": float,
+                    "pessimistic": float,
+                    "notes": str,
+                    "tier": str,                  # 'mvp' | 'standard' | 'full'
+                    "created_at": str,
+                    "updated_at": str,
+                },
+                pk="id",
+                defaults={
+                    "optimistic": 0.0, "most_likely": 0.0, "pessimistic": 0.0,
+                    "role": "eng", "tier": "mvp",
+                },
+            )
+            db["pert_tasks"].create_index(["product_id"])
+            db["pert_tasks"].create_index(["tier"])
+        except Exception:
+            pass
+
+    # Additional product-level columns for Porter's Five Forces, 2x2
+    # positioning map, cost model. Kept as JSON columns to stay
+    # schema-stable.
+    try:
+        if "products" in db.table_names():
+            cols = {c.name for c in db["products"].columns}
+            extra_cols = [
+                ("porter_forces_json", str),     # Porter Five Forces (1979)
+                ("positioning_map_json", str),   # 2x2 positioning map (Ries/Trout)
+                ("cost_model_json", str),        # dev + infra + maint + LTV/CAC
+            ]
+            for name, typ in extra_cols:
+                if name not in cols:
+                    try:
+                        db["products"].add_column(name, typ)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+def _ensure_experiments_pk_compat(db: Database) -> None:
+    """Some early-pre-experiments schemas may have created the table without
+    a string pk — no-op if the table already matches. Kept separate so the
+    main lifecycle migration stays trivially idempotent."""
+    return None
 
 
 # ── Fetch audit log ──────────────────────────────────────────────────────────

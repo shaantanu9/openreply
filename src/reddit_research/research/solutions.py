@@ -18,12 +18,16 @@ def _format_why(why: dict[str, Any]) -> str:
         return "(no why-data available)"
     emotions = ", ".join(why.get("emotions") or []) or "(none)"
     jtbd = why.get("jtbd") or {}
-    return (
-        f"Emotions: {emotions}\n"
-        f"Struggling moment: {jtbd.get('struggling_moment', '?')}\n"
-        f"Anxiety: {jtbd.get('anxiety', '?')}\n"
-        f"Desired outcome: {jtbd.get('desired_outcome', '?')}"
-    )
+    statement = (why.get("jtbd_statement") or "").strip()
+    parts = [f"Emotions: {emotions}"]
+    if statement:
+        parts.append(f"JTBD statement: {statement}")
+    parts.extend([
+        f"Struggling moment: {jtbd.get('struggling_moment', '?')}",
+        f"Anxiety: {jtbd.get('anxiety', '?')}",
+        f"Desired outcome: {jtbd.get('desired_outcome', '?')}",
+    ])
+    return "\n".join(parts)
 
 
 def _format_papers(papers: list[dict[str, Any]]) -> str:
@@ -113,6 +117,7 @@ def solutions_pipeline(
         "why_extracted": 0,
         "papers_persisted": 0,
         "interventions_added": 0,
+        "kano_categorized": 0,
     }
 
     for pp in pps:
@@ -148,6 +153,20 @@ def solutions_pipeline(
             topic=topic, painpoint_id=pp["id"], solution=solution
         )
         summary["interventions_added"] += per_pp["interventions_added"]
+
+    # Kano categorization — runs after interventions are persisted so each
+    # intervention gets a Must-Be / Performance / Attractive tag in its
+    # metadata_json. Failures are non-fatal (LLM key missing, parse errors)
+    # — the solutions pipeline still returns its core summary.
+    if summary["interventions_added"] > 0:
+        try:
+            from .kano import categorize_topic
+            kano_summary = categorize_topic(topic, provider=provider)
+            summary["kano_categorized"] = kano_summary.get(
+                "interventions_categorized", 0
+            )
+        except Exception:
+            pass
 
     try:
         from ..core.db import save_mcp_analysis

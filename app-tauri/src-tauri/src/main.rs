@@ -10,7 +10,7 @@ mod worker;
 use cli::{
     cancel_active_chat, cancel_active_job, cancel_active_stream,
     ActiveChat, ActiveChatPid, ActiveCollects, ActiveEnrich, ActiveEnrichPid, ActiveGraphOps,
-    ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
+    ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid, CollectQueue,
 };
 use std::sync::Arc;
 use tauri::RunEvent;
@@ -58,6 +58,7 @@ fn main() {
         .manage(ActiveEnrichPid::default())
         .manage(ActiveGraphOps::default())
         .manage(ActiveCollects::default())
+        .manage(CollectQueue::default())
         .manage(Arc::new(ExtractionWorker::default()))
         .setup(|app| {
             // Splash safety net + cold-boot webview heal.
@@ -173,6 +174,9 @@ fn main() {
             commands::start_collect,
             commands::cancel_collect,
             commands::collect_status,
+            commands::list_collect_queue,
+            commands::cancel_queued_collect,
+            commands::collect_source_catalog,
             commands::build_graph,
             commands::enrich_graph,
             commands::enrich_graph_stream,
@@ -240,6 +244,7 @@ fn main() {
             commands::papers_list,
             commands::papers_export,
             commands::oa_lookup,
+            commands::paper_pdf_fetch,
             // Intent layer (per-topic deliverable routing)
             commands::list_intents,
             commands::topic_intent_get,
@@ -290,6 +295,64 @@ fn main() {
             commands::product_digest,
             commands::product_dashboard,
             commands::product_convert_topic,
+            // Lifecycle pivot — Stage-Gate verdict + Kano categorization
+            commands::product_gate_set,
+            commands::product_gate_get,
+            commands::run_kano_categorize,
+            // Discovery framework expansion (2026-05-01_04) — OST + RICE +
+            // MoSCoW + Empathy Maps + Four Risks + Value Curve.
+            commands::ost_build,
+            commands::ost_set_outcome,
+            commands::ost_experiment_create,
+            commands::ost_experiments_list,
+            commands::ost_experiment_update,
+            commands::ost_experiment_delete,
+            commands::run_rice_score,
+            commands::rice_set,
+            commands::run_moscow_categorize,
+            commands::run_empathy_build,
+            commands::empathy_get,
+            commands::empathy_list,
+            commands::four_risks_get,
+            commands::four_risks_set,
+            commands::value_curve_get,
+            commands::value_curve_set,
+            // Discovery framework expansion v2 (2026-05-01_05) — TAM/SAM/SOM,
+            // Porter's Five Forces, 2x2 positioning map, cost model,
+            // customer interviews (Mom Test), Sean Ellis PMF survey,
+            // Van Westendorp / NPS / MaxDiff, PERT estimation, PRD export.
+            commands::tam_sam_som_get,
+            commands::tam_sam_som_set,
+            commands::porter_get,
+            commands::porter_set,
+            commands::positioning_get,
+            commands::positioning_set,
+            commands::cost_model_get,
+            commands::cost_model_set,
+            commands::interview_create,
+            commands::interview_update,
+            commands::interview_delete,
+            commands::interview_get,
+            commands::interview_list,
+            commands::interview_summary,
+            commands::pmf_add,
+            commands::pmf_list,
+            commands::pmf_score,
+            commands::pmf_delete,
+            commands::vw_add,
+            commands::vw_aggregate,
+            commands::nps_add,
+            commands::nps_score,
+            commands::maxdiff_add,
+            commands::maxdiff_ranking,
+            commands::survey_list,
+            commands::survey_delete,
+            commands::pert_add,
+            commands::pert_update,
+            commands::pert_delete,
+            commands::pert_list,
+            commands::pert_rollup,
+            commands::prd_export,
             // MCP ↔ App integration (one-click connect to any MCP client)
             commands::mcp_clients,
             commands::mcp_status,

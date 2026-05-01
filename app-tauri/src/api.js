@@ -293,9 +293,10 @@ export const api = {
   //   - list_exports: changes only after export button click (invalidated there) → 30s
   cliInfo:         ()        => cachedInvoke('cli_info',       null, 30000),
   listTopics:      ()        => cachedInvoke('list_topics',    null, 30000),
-  // Short TTL — banner polls this, and a just-completed collect should
-  // disappear from it within a couple seconds.
-  activeCollects:  ()        => cachedInvoke('active_collects', null, 1500),
+  // No cache — when a collect just started or the Rust process restarted
+  // mid-session, a stale empty hit makes the manager screen lie about
+  // what's running. Always read fresh; the call is < 1ms (in-memory map).
+  activeCollects:  ()        => invoke('active_collects'),
   overviewStats:   ()        => cachedInvoke('overview_stats', null, 15000),
   recentActivity:  ()        => cachedInvoke('recent_activity', null, 2000),
   appDataDir:      ()        => cachedInvoke('app_data_dir',   null, 300000),
@@ -352,13 +353,30 @@ export const api = {
   // Returns { original, canonical, variants, confidence, search_keywords }.
   // search_keywords is an array of { keyword, relevance: 'high'|'medium'|'low' }.
   canonicalizeTopic: (topic)            => invoke('canonicalize_topic', { topic }),
-  startCollect:    (topic, aggressive = true, sources = null, skipReddit = false) => {
-    const p = invoke('start_collect', { topic, aggressive, sources, skipReddit });
+  // startCollect now takes an optional ifBusy policy ('error' | 'queue' |
+  // 'cancel_and_start'). The default 'error' returns a structured response
+  //   { ok: false, blocked: true, blocked_by: { topic, started_at,
+  //     elapsed_secs } }
+  // instead of throwing — the UI uses that to show an actionable modal
+  // (cancel-and-start vs queue vs open-running-log) instead of the old
+  // "another collect is already running. Cancel it first." error string.
+  startCollect:    (topic, aggressive = true, sources = null, skipReddit = false,
+                    ifBusy = 'error') => {
+    const p = invoke('start_collect', {
+      topic, aggressive, sources, skipReddit, ifBusy,
+    });
     mutated('collect', { topic });
     return p;
   },
   cancelCollect:   ()        => invoke('cancel_collect'),
   collectStatus:   ()        => invoke('collect_status'),
+  // Pending FIFO queue (collects waiting for the running one to finish).
+  listCollectQueue:   ()        => invoke('list_collect_queue'),
+  cancelQueuedCollect: (topic)  => invoke('cancel_queued_collect', { topic }),
+  // Static catalog of external sources the next collect will sweep.
+  // Mirrors the source list in `research/collect.py` (aggressive vs quick).
+  collectSourceCatalog: (aggressive = true) =>
+    invoke('collect_source_catalog', { aggressive }),
   buildGraph:      (topic)   => {
     const p = invoke('build_graph', { topic });
     mutated('graph', { topic });
@@ -716,6 +734,254 @@ export const api = {
     return invoke('product_convert_topic', { topic, name, oneLiner });
   },
 
+  // Lifecycle pivot — Stage-Gate verdict (Cooper, 2017). status='' clears.
+  productGateSet: (productId, status, notes = '') => {
+    invalidate('product_get'); invalidate('product_dashboard'); invalidate('product_list');
+    return invoke('product_gate_set', { productId, status, notes });
+  },
+  productGateGet: (productId) =>
+    cachedInvoke('product_gate_get', { productId }, 5000),
+
+  // Kano-Model categorization for interventions in a topic.
+  runKanoCategorize: (topic) => {
+    invalidate('run_query');
+    return invoke('run_kano_categorize', { topic });
+  },
+
+  // ── Discovery framework expansion (2026-05-01_04) ──────────────────
+  // Opportunity Solution Tree (Torres, 2016) — outcome → opportunities
+  // → solutions → experiments. ostBuild reads only; the underlying data
+  // is whatever the existing pipelines have already produced.
+  ostBuild: (topic, productId = null) =>
+    cachedInvoke('ost_build', { topic, productId: productId || null }, 10000),
+  ostSetOutcome: (productId, outcome) => {
+    invalidate('ost_build');
+    invalidate('product_get');
+    return invoke('ost_set_outcome', { productId, outcome });
+  },
+  // OST experiments — namespaced separately from gap_discovery's
+  // experiments table (which `api.listExperiments` already exposes for a
+  // different concept: LLM-proposed paper-grounded experiment designs).
+  experimentCreate: (topic, payload) => {
+    invalidate('ost_build', 'ost_experiments_list');
+    return invoke('ost_experiment_create', {
+      topic,
+      painpointId: payload.painpoint_id,
+      interventionId: payload.intervention_id || '',
+      hypothesis: payload.hypothesis,
+      method: payload.method || 'custom',
+      successCriteria: payload.success_criteria || '',
+      sampleSize: payload.sample_size ?? 0,
+    });
+  },
+  ostExperimentsList: (topic, painpointId = null) =>
+    cachedInvoke('ost_experiments_list', { topic, painpointId: painpointId || null }, 10000),
+  experimentUpdate: (experimentId, fields) => {
+    invalidate('ost_build', 'ost_experiments_list');
+    return invoke('ost_experiment_update', {
+      experimentId,
+      fieldsJson: JSON.stringify(fields || {}),
+    });
+  },
+  experimentDelete: (experimentId) => {
+    invalidate('ost_build', 'ost_experiments_list');
+    return invoke('ost_experiment_delete', { experimentId });
+  },
+
+  // RICE prioritization (Intercom, 2016).
+  runRiceScore: (topic, defaultEffort = 3, overwriteEffort = false) => {
+    invalidate('run_query', 'ost_build');
+    return invoke('run_rice_score', {
+      topic, defaultEffort, overwriteEffort,
+    });
+  },
+  riceSet: (interventionId, fields = {}) => {
+    invalidate('run_query', 'ost_build');
+    return invoke('rice_set', {
+      interventionId,
+      reach: fields.reach ?? null,
+      impact: fields.impact ?? null,
+      confidence: fields.confidence ?? null,
+      effort: fields.effort ?? null,
+    });
+  },
+
+  // MoSCoW prioritization (Clegg, 1994).
+  runMoscowCategorize: (topic) => {
+    invalidate('run_query', 'ost_build');
+    return invoke('run_moscow_categorize', { topic });
+  },
+
+  // Empathy Maps (Gray, 2010).
+  runEmpathyBuild: (topic, persona = 'primary') => {
+    invalidate('empathy_get', 'empathy_list');
+    return invoke('run_empathy_build', { topic, persona });
+  },
+  empathyGet: (topic, persona = 'primary') =>
+    cachedInvoke('empathy_get', { topic, persona }, 10000),
+  empathyList: (topic) =>
+    cachedInvoke('empathy_list', { topic }, 10000),
+
+  // Cagan's Four Risks (Inspired, 2017).
+  fourRisksGet: (productId) =>
+    cachedInvoke('four_risks_get', { productId }, 5000),
+  fourRisksSet: (productId, risk, status, notes = '') => {
+    invalidate('four_risks_get', 'product_get');
+    return invoke('four_risks_set', { productId, risk, status, notes });
+  },
+
+  // Blue Ocean Value Curve (Kim & Mauborgne, 2005).
+  valueCurveGet: (productId) =>
+    cachedInvoke('value_curve_get', { productId }, 10000),
+  valueCurveSet: (productId, payload) => {
+    invalidate('value_curve_get', 'product_get');
+    return invoke('value_curve_set', {
+      productId,
+      payloadJson: JSON.stringify(payload || {}),
+    });
+  },
+
+  // ── TAM / SAM / SOM (Blank & Dorf, 2012) ────────────────────────────
+  tamSamSomGet: (productId) =>
+    cachedInvoke('tam_sam_som_get', { productId }, 10000),
+  tamSamSomSet: (productId, payload) => {
+    invalidate('tam_sam_som_get', 'product_get');
+    return invoke('tam_sam_som_set', {
+      productId,
+      payloadJson: JSON.stringify(payload || {}),
+    });
+  },
+
+  // ── Porter's Five Forces (Porter, 1979) ─────────────────────────────
+  porterGet: (productId) =>
+    cachedInvoke('porter_get', { productId }, 10000),
+  porterSet: (productId, force, score, notes = '') => {
+    invalidate('porter_get', 'product_get');
+    return invoke('porter_set', { productId, force, score, notes });
+  },
+
+  // ── 2x2 positioning map (Ries & Trout, 1981) ────────────────────────
+  positioningGet: (productId) =>
+    cachedInvoke('positioning_get', { productId }, 10000),
+  positioningSet: (productId, payload) => {
+    invalidate('positioning_get', 'product_get');
+    return invoke('positioning_set', {
+      productId,
+      payloadJson: JSON.stringify(payload || {}),
+    });
+  },
+
+  // ── Cost model + pricing tiers ──────────────────────────────────────
+  costModelGet: (productId) =>
+    cachedInvoke('cost_model_get', { productId }, 10000),
+  costModelSet: (productId, payload) => {
+    invalidate('cost_model_get', 'product_get');
+    return invoke('cost_model_set', {
+      productId,
+      payloadJson: JSON.stringify(payload || {}),
+    });
+  },
+
+  // ── Customer Discovery Interviews (Mom Test, Fitzpatrick 2013) ──────
+  interviewCreate: (topic, name, payload = {}, productId = '') => {
+    invalidate('interview_list', 'interview_summary');
+    return invoke('interview_create', {
+      topic, name,
+      payloadJson: JSON.stringify(payload || {}),
+      productId,
+    });
+  },
+  interviewUpdate: (interviewId, fields = {}) => {
+    invalidate('interview_list', 'interview_summary', 'interview_get');
+    return invoke('interview_update', {
+      interviewId, payloadJson: JSON.stringify(fields || {}),
+    });
+  },
+  interviewDelete: (interviewId) => {
+    invalidate('interview_list', 'interview_summary', 'interview_get');
+    return invoke('interview_delete', { interviewId });
+  },
+  interviewGet: (interviewId) =>
+    cachedInvoke('interview_get', { interviewId }, 5000),
+  interviewList: (topic = '', productId = '') =>
+    cachedInvoke('interview_list', { topic, productId }, 5000),
+  interviewSummary: (topic, productId = '') =>
+    cachedInvoke('interview_summary', { topic, productId }, 10000),
+
+  // ── Sean Ellis PMF survey (Ellis 2010) ──────────────────────────────
+  pmfAdd: (topic, payload) => {
+    invalidate('pmf_list', 'pmf_score');
+    return invoke('pmf_add', { topic, payloadJson: JSON.stringify(payload || {}) });
+  },
+  pmfList: (topic = '', productId = '') =>
+    cachedInvoke('pmf_list', { topic, productId }, 5000),
+  pmfScore: (topic, productId = '') =>
+    cachedInvoke('pmf_score', { topic, productId }, 10000),
+  pmfDelete: (responseId) => {
+    invalidate('pmf_list', 'pmf_score');
+    return invoke('pmf_delete', { responseId });
+  },
+
+  // ── Pricing surveys: Van Westendorp / NPS / MaxDiff ─────────────────
+  vwAdd: (topic, payload) => {
+    invalidate('vw_aggregate', 'survey_list');
+    return invoke('vw_add', { topic, payloadJson: JSON.stringify(payload || {}) });
+  },
+  vwAggregate: (topic, productId = '') =>
+    cachedInvoke('vw_aggregate', { topic, productId }, 10000),
+  npsAdd: (topic, payload) => {
+    invalidate('nps_score', 'survey_list');
+    return invoke('nps_add', { topic, payloadJson: JSON.stringify(payload || {}) });
+  },
+  npsScore: (topic, productId = '') =>
+    cachedInvoke('nps_score', { topic, productId }, 10000),
+  maxdiffAdd: (topic, payload) => {
+    invalidate('maxdiff_ranking', 'survey_list');
+    return invoke('maxdiff_add', { topic, payloadJson: JSON.stringify(payload || {}) });
+  },
+  maxdiffRanking: (topic, productId = '') =>
+    cachedInvoke('maxdiff_ranking', { topic, productId }, 10000),
+  surveyList: (topic = '', productId = '', kind = '') =>
+    cachedInvoke('survey_list', { topic, productId, kind }, 5000),
+  surveyDelete: (responseId) => {
+    invalidate('survey_list', 'vw_aggregate', 'nps_score', 'maxdiff_ranking');
+    return invoke('survey_delete', { responseId });
+  },
+
+  // ── PERT estimation (US Navy 1958, McConnell 2006) ──────────────────
+  pertAdd: (productId, label, fields = {}) => {
+    invalidate('pert_list', 'pert_rollup');
+    return invoke('pert_add', {
+      productId, label,
+      optimistic: fields.optimistic ?? null,
+      mostLikely: fields.most_likely ?? null,
+      pessimistic: fields.pessimistic ?? null,
+      role: fields.role ?? null,
+      notes: fields.notes ?? null,
+      tier: fields.tier ?? null,
+    });
+  },
+  pertUpdate: (taskId, fields = {}) => {
+    invalidate('pert_list', 'pert_rollup');
+    return invoke('pert_update', { taskId, payloadJson: JSON.stringify(fields || {}) });
+  },
+  pertDelete: (taskId) => {
+    invalidate('pert_list', 'pert_rollup');
+    return invoke('pert_delete', { taskId });
+  },
+  pertList: (productId, tier = '') =>
+    cachedInvoke('pert_list', { productId, tier }, 5000),
+  pertRollup: (productId, opts = {}) =>
+    cachedInvoke('pert_rollup', {
+      productId,
+      multiplier: opts.multiplier ?? null,
+      contingencyPct: opts.contingency_pct ?? null,
+      tier: opts.tier ?? null,
+    }, 5000),
+
+  // ── PRD export ──────────────────────────────────────────────────────
+  prdExport: (productId) => invoke('prd_export', { productId }),
+
   runSolutionsPipeline: (topic) => invoke('run_solutions_pipeline', { topic }),
   runTemporalGaps:    (topic, force = false) => invoke('run_temporal_gaps', { topic, force }),
   runSentimentBySource: (topic) => invoke('run_sentiment_by_source', { topic }),
@@ -725,6 +991,11 @@ export const api = {
   papersList:   (topic, limit = 200) => invoke('papers_list', { topic, limit }),
   papersExport: (topic, fmt = 'bibtex', limit = null) => invoke('papers_export', { topic, fmt, limit }),
   oaLookup:     (doi) => invoke('oa_lookup', { doi }),
+  // Mirror a remote PDF into the app's local cache so the webview can
+  // render it without tripping CORS / X-Frame-Options. Returns
+  // { ok, path, size } — feed `path` through convertFileSrc to get an
+  // asset:// URL the iframe can load.
+  paperPdfFetch: (url, postId = null) => invoke('paper_pdf_fetch', { url, postId }),
 
   // ----- Intent layer (per-topic deliverable routing) -----
   listIntents:     ()              => cachedInvoke('list_intents', null, 300000),

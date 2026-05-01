@@ -103,10 +103,16 @@ function renderProductsEmpty() {
 function productTile(p) {
   const openCount = p.open_signal_count || 0;
   const lastSwept = p.last_swept_at ? new Date(p.last_swept_at).toLocaleDateString() : 'never';
+  const gate = (p.gate_status || '').toLowerCase();
+  const gateLabels = { go: 'Go', kill: 'Kill', hold: 'Hold', recycle: 'Recycle' };
+  const gatePill = gate && gateLabels[gate]
+    ? `<span class="pd-gate-current pd-gate-${gate}" style="font-size:10px">${gateLabels[gate]}</span>`
+    : '';
   return `
     <a class="product-tile" data-product-id="${esc(p.id)}">
       <div class="product-tile-head">
         <h4>${esc(p.name)}</h4>
+        ${gatePill}
         ${openCount > 0 ? `<span class="product-open-pill">${openCount} open</span>` : ''}
       </div>
       ${p.one_liner ? `<p class="product-oneliner">${esc(p.one_liner)}</p>` : ''}
@@ -314,6 +320,387 @@ async function showConvertTopicPicker() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// Cagan's Four Risks (Inspired, 2017) + Blue Ocean Value Curve
+// (Kim & Mauborgne, 2005). Both are independent product-level state
+// stored on the products row; we fetch them async so the main dashboard
+// data path stays untouched.
+// ══════════════════════════════════════════════════════════════════════
+
+const RISK_QUESTIONS = {
+  value:       'Will customers actually choose to buy and use it?',
+  usability:   'Can users figure out how to use it?',
+  feasibility: 'Can we build it with available tech, time, and budget?',
+  viability:   'Does the business support it (sales, support, legal, finance)?',
+};
+const RISK_ORDER = ['value', 'usability', 'feasibility', 'viability'];
+const RISK_PILLS = [
+  { key: 'pass',    label: '✓ Pass' },
+  { key: 'unknown', label: '? Unknown' },
+  { key: 'fail',    label: '✗ Fail' },
+];
+
+function renderFourRisksPanel(risks) {
+  const cards = RISK_ORDER.map(k => {
+    const r = risks[k] || { status: 'unknown', notes: '' };
+    const pills = RISK_PILLS.map(p => `
+      <button class="risk-pill ${r.status === p.key ? 'is-on' : ''}"
+              data-pill="${p.key}" data-risk="${k}">${p.label}</button>
+    `).join('');
+    return `
+      <div class="risk-card" data-status="${esc(r.status)}" data-risk="${k}">
+        <div class="risk-name">${k}</div>
+        <div class="risk-question">${esc(RISK_QUESTIONS[k])}</div>
+        <div class="risk-controls">${pills}</div>
+        <textarea class="risk-notes" data-risk-notes="${k}"
+                  placeholder="Notes / evidence (optional)"
+                  rows="2">${esc(r.notes || '')}</textarea>
+      </div>
+    `;
+  }).join('');
+  return `
+    <section class="four-risks-panel card">
+      <div class="four-risks-head">
+        <h4>Cagan's Four Risks</h4>
+        <span class="muted" style="font-size:11px">Inspired (2017) · clear these BEFORE the Stage-Gate verdict</span>
+      </div>
+      <div class="four-risks-grid">${cards}</div>
+    </section>
+  `;
+}
+
+async function renderFourRisksAsync(productId) {
+  const mount = document.getElementById('pd-four-risks');
+  if (!mount) return;
+  mount.innerHTML = '<div class="card muted" style="padding:10px 14px;font-size:11.5px">Loading four-risks…</div>';
+  let result;
+  try {
+    result = await api.fourRisksGet(productId);
+  } catch (e) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">Four-risks unavailable: ${esc(e?.message || e)}</div>`;
+    return;
+  }
+  if (!result?.ok) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${esc(result?.error || 'Four-risks unavailable')}</div>`;
+    return;
+  }
+  mount.innerHTML = renderFourRisksPanel(result.risks || {});
+
+  // Wire pills + notes blur
+  mount.querySelectorAll('.risk-pill').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const risk = btn.dataset.risk;
+      const status = btn.dataset.pill;
+      const notesEl = mount.querySelector(`textarea[data-risk-notes="${risk}"]`);
+      const notes = (notesEl?.value || '').trim();
+      btn.disabled = true;
+      try {
+        await api.fourRisksSet(productId, risk, status, notes);
+        await renderFourRisksAsync(productId);
+      } catch (e) {
+        btn.disabled = false;
+        alert(`Couldn't update ${risk}: ${e?.message || e}`);
+      }
+    });
+  });
+  mount.querySelectorAll('textarea.risk-notes').forEach(ta => {
+    ta.addEventListener('blur', async () => {
+      const risk = ta.dataset.riskNotes;
+      const card = ta.closest('.risk-card');
+      const status = card?.dataset.status || 'unknown';
+      try {
+        await api.fourRisksSet(productId, risk, status, ta.value || '');
+      } catch (e) {
+        console.warn('risk notes save failed', e);
+      }
+    });
+  });
+}
+
+// ── Value Curve ──────────────────────────────────────────────────────────
+const COMPETITOR_PALETTE = [
+  '#1d4ed8', '#be123c', '#047857', '#b45309', '#6d28d9', '#0891b2',
+  '#c2410c', '#15803d',
+];
+
+function renderValueCurveSvg(curve) {
+  const factors = curve.factors || [];
+  const series = [
+    { name: 'Self', scores: curve.self || [], color: '#0f172a', stroke: 3 },
+    ...((curve.competitors || []).map((c, i) => ({
+      name: c.name,
+      scores: c.scores || [],
+      color: COMPETITOR_PALETTE[i % COMPETITOR_PALETTE.length],
+      stroke: 2,
+    }))),
+  ];
+  if (!factors.length) return '<p class="muted">Add factors below to plot the curve.</p>';
+
+  const W = Math.max(560, factors.length * 90);
+  const H = 280;
+  const padL = 40, padR = 24, padT = 24, padB = 56;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+
+  const xAt = i => padL + (factors.length === 1 ? innerW / 2 : (innerW * i) / (factors.length - 1));
+  const yAt = v => padT + innerH - (innerH * Math.max(0, Math.min(v, 10))) / 10;
+
+  // Y-axis labels (0, 5, 10) + horizontal gridlines.
+  let grid = '';
+  [0, 5, 10].forEach(g => {
+    const y = yAt(g);
+    grid += `<line x1="${padL}" y1="${y}" x2="${padL + innerW}" y2="${y}" stroke="#e5e7eb" stroke-dasharray="2 4"/>` +
+            `<text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#6b7280">${g}</text>`;
+  });
+
+  // X-axis factor labels (rotated 30°)
+  let xLabels = '';
+  factors.forEach((f, i) => {
+    const x = xAt(i);
+    xLabels += `<g transform="translate(${x}, ${padT + innerH + 10}) rotate(20)">` +
+               `<text font-size="11" fill="#374151">${esc(f)}</text></g>`;
+  });
+
+  // Lines + dots
+  let lines = '';
+  series.forEach(s => {
+    if (!s.scores.length) return;
+    const pts = s.scores.slice(0, factors.length).map((v, i) => `${xAt(i)},${yAt(v)}`).join(' ');
+    lines += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.stroke}"/>`;
+    s.scores.slice(0, factors.length).forEach((v, i) => {
+      lines += `<circle cx="${xAt(i)}" cy="${yAt(v)}" r="3" fill="${s.color}"/>`;
+    });
+  });
+
+  return `
+    <div class="value-curve-svg-wrap">
+      <svg class="value-curve-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+        ${grid}
+        ${xLabels}
+        ${lines}
+      </svg>
+    </div>
+    <div class="value-curve-legend">
+      ${series.map(s => `<span><span class="value-curve-legend-dot" style="background:${s.color}"></span>${esc(s.name)}</span>`).join('')}
+    </div>
+  `;
+}
+
+function renderValueCurvePanel(curve, competitors) {
+  const factors = curve.factors || [];
+  const selfScores = curve.self || [];
+
+  // Editor: one row per factor, with the Self slider + a delete button.
+  const editorRows = factors.map((f, i) => `
+    <div class="vc-row" data-row-idx="${i}">
+      <input class="vc-factor-name" type="text" value="${esc(f)}"
+             placeholder="Factor name" data-idx="${i}"/>
+      <input class="vc-self-slider" type="range" min="0" max="10" step="1"
+             value="${Math.round(selfScores[i] ?? 5)}" data-idx="${i}"/>
+      <span class="vc-score" data-self-score="${i}">${Math.round(selfScores[i] ?? 5)}</span>
+      <button class="btn-mini vc-delete-row" data-idx="${i}" title="Remove factor">×</button>
+    </div>
+  `).join('');
+
+  const fa = curve.four_actions || {};
+  return `
+    <section class="value-curve-panel card">
+      <div class="value-curve-head">
+        <h4>Blue Ocean Value Curve</h4>
+        <span class="muted" style="font-size:11px">Kim &amp; Mauborgne (2005) · plot the strategy canvas</span>
+      </div>
+
+      ${renderValueCurveSvg(curve)}
+
+      <div class="value-curve-editor" id="vc-editor">
+        <div class="muted" style="font-size:11px">
+          Edit factors and the Self score. Competitor scores live below.
+        </div>
+        ${editorRows || '<div class="muted" style="font-size:12px">No factors yet — add one to start the curve.</div>'}
+        <div class="vc-add-row">
+          <input id="vc-new-factor" type="text" placeholder="New factor (e.g. price, ease of setup, integrations)" />
+          <button class="btn-mini" id="vc-add-factor-btn">+ add factor</button>
+        </div>
+      </div>
+
+      ${competitors.length ? `
+        <details>
+          <summary style="cursor:pointer;font-size:12.5px;color:var(--ink-2)">Competitor scores (${competitors.length})</summary>
+          <div class="value-curve-editor" id="vc-comp-editor" style="margin-top:8px">
+            ${competitors.map(c => {
+              const existing = (curve.competitors || []).find(x => x.name === c.competitor_name);
+              const scores = existing?.scores || [];
+              return `
+                <div class="vc-comp-block" data-comp-name="${esc(c.competitor_name)}">
+                  <strong style="font-size:12.5px">${esc(c.competitor_name)}</strong>
+                  ${factors.map((f, i) => `
+                    <div class="vc-row">
+                      <span class="vc-label">${esc(f)}</span>
+                      <input class="vc-comp-slider" type="range" min="0" max="10" step="1"
+                             value="${Math.round(scores[i] ?? 5)}"
+                             data-comp="${esc(c.competitor_name)}" data-idx="${i}"/>
+                      <span class="vc-score" data-comp-score="${esc(c.competitor_name)}-${i}">${Math.round(scores[i] ?? 5)}</span>
+                      <span></span>
+                    </div>
+                  `).join('')}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </details>
+      ` : ''}
+
+      <div>
+        <h5 style="margin:8px 0 6px;font-size:12px;letter-spacing:1px;color:var(--ink-3);font-weight:700">FOUR ACTIONS</h5>
+        <div class="value-curve-actions">
+          ${['eliminate', 'reduce', 'raise', 'create'].map(k => `
+            <div class="va-action" data-action="${k}">
+              <label>${k.toUpperCase()}</label>
+              <input data-action="${k}" type="text" maxlength="300"
+                     value="${esc(fa[k] || '')}"
+                     placeholder="${k === 'eliminate' ? 'What can you cut entirely?' :
+                                   k === 'reduce' ? 'What can be well below industry standard?' :
+                                   k === 'raise' ? 'What can be raised above industry standard?' :
+                                   'What can you offer that nobody else does?'}"/>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn primary" id="vc-save">Save value curve</button>
+      </div>
+    </section>
+  `;
+}
+
+async function renderValueCurveAsync(productId, competitors) {
+  const mount = document.getElementById('pd-value-curve');
+  if (!mount) return;
+  mount.innerHTML = '<div class="card muted" style="padding:10px 14px;font-size:11.5px">Loading value curve…</div>';
+  let result;
+  try {
+    result = await api.valueCurveGet(productId);
+  } catch (e) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">Value curve unavailable: ${esc(e?.message || e)}</div>`;
+    return;
+  }
+  if (!result?.ok) {
+    mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${esc(result?.error || 'Value curve unavailable')}</div>`;
+    return;
+  }
+  // Local working copy — edits flush to API only on save.
+  const state = {
+    factors: [...(result.factors || [])],
+    self: [...(result.self || [])],
+    competitors: (result.competitors || []).map(c => ({ ...c, scores: [...(c.scores || [])] })),
+    four_actions: { ...(result.four_actions || {}) },
+  };
+  // Always pad self scores to factors length.
+  while (state.self.length < state.factors.length) state.self.push(5);
+
+  const repaint = () => {
+    mount.innerHTML = renderValueCurvePanel(state, competitors);
+    wire();
+    window.refreshIcons?.();
+  };
+
+  const wire = () => {
+    // Self slider live update
+    mount.querySelectorAll('.vc-self-slider').forEach(slider => {
+      slider.addEventListener('input', () => {
+        const i = +slider.dataset.idx;
+        const v = +slider.value;
+        state.self[i] = v;
+        const lbl = mount.querySelector(`[data-self-score="${i}"]`);
+        if (lbl) lbl.textContent = v;
+        // Re-render the SVG so the line moves immediately.
+        const wrap = mount.querySelector('.value-curve-svg-wrap');
+        if (wrap) wrap.outerHTML = renderValueCurveSvg(state).split('<div class="value-curve-legend">')[0];
+      });
+    });
+
+    // Factor name updates
+    mount.querySelectorAll('.vc-factor-name').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const i = +inp.dataset.idx;
+        state.factors[i] = inp.value.trim();
+      });
+    });
+
+    // Delete factor
+    mount.querySelectorAll('.vc-delete-row').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = +btn.dataset.idx;
+        state.factors.splice(i, 1);
+        state.self.splice(i, 1);
+        state.competitors.forEach(c => c.scores.splice(i, 1));
+        repaint();
+      });
+    });
+
+    // Add factor
+    document.getElementById('vc-add-factor-btn')?.addEventListener('click', () => {
+      const inp = document.getElementById('vc-new-factor');
+      const name = (inp?.value || '').trim();
+      if (!name) return;
+      state.factors.push(name);
+      state.self.push(5);
+      state.competitors.forEach(c => c.scores.push(5));
+      if (inp) inp.value = '';
+      repaint();
+    });
+
+    // Competitor sliders
+    mount.querySelectorAll('.vc-comp-slider').forEach(slider => {
+      slider.addEventListener('input', () => {
+        const name = slider.dataset.comp;
+        const i = +slider.dataset.idx;
+        let comp = state.competitors.find(c => c.name === name);
+        if (!comp) {
+          comp = { name, scores: new Array(state.factors.length).fill(5) };
+          state.competitors.push(comp);
+        }
+        while (comp.scores.length < state.factors.length) comp.scores.push(5);
+        comp.scores[i] = +slider.value;
+        const lbl = mount.querySelector(`[data-comp-score="${name}-${i}"]`);
+        if (lbl) lbl.textContent = slider.value;
+        const wrap = mount.querySelector('.value-curve-svg-wrap');
+        if (wrap) wrap.outerHTML = renderValueCurveSvg(state).split('<div class="value-curve-legend">')[0];
+      });
+    });
+
+    // Four actions text
+    mount.querySelectorAll('.va-action input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        state.four_actions[inp.dataset.action] = inp.value || '';
+      });
+    });
+
+    // Save
+    document.getElementById('vc-save')?.addEventListener('click', async () => {
+      const btn = document.getElementById('vc-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        await api.valueCurveSet(productId, {
+          factors: state.factors,
+          self: state.self,
+          competitors: state.competitors,
+          four_actions: state.four_actions,
+        });
+        btn.textContent = '✓ Saved';
+        setTimeout(() => { btn.disabled = false; btn.textContent = 'Save value curve'; }, 1500);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Save value curve';
+        alert(`Couldn't save: ${e?.message || e}`);
+      }
+    });
+  };
+
+  repaint();
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
 // #/product/<id> — the Daily Dashboard (5 sections)
 // ══════════════════════════════════════════════════════════════════════
 export async function renderProductDashboard(root, { params }) {
@@ -338,11 +725,14 @@ export async function renderProductDashboard(root, { params }) {
     </header>
 
     <div id="pd-header"></div>
+    <div id="pd-four-risks"></div>
+    <div id="pd-gate"></div>
     <div id="pd-signals"></div>
     <div class="pd-sections-grid">
       <div id="pd-mirror"></div>
       <div id="pd-lens"></div>
     </div>
+    <div id="pd-value-curve"></div>
     <div id="pd-field"></div>
     <div id="pd-sweeps"></div>
   `;
@@ -365,9 +755,21 @@ export async function renderProductDashboard(root, { params }) {
     const product = data.product || {};
     document.getElementById('pd-name').textContent = product.name || id;
     document.getElementById('pd-header').innerHTML = renderHeader(product, data.signals || []);
+
+    // Cagan's Four Risks — fetched in parallel so we don't block the rest
+    // of the dashboard. Failures are non-fatal: missing column on an old
+    // schema just means the panel stays empty until the next migration.
+    renderFourRisksAsync(id);
+
+    document.getElementById('pd-gate').innerHTML = renderGateBar(product);
+    wireGateBar(id, renderAll);
     document.getElementById('pd-signals').innerHTML = renderSignalsSection(data.signals || []);
     document.getElementById('pd-mirror').innerHTML = renderMirrorSection(data.mirror || {});
     document.getElementById('pd-lens').innerHTML = renderLensSection(data.lens || {}, data.competitors || []);
+
+    // Blue Ocean Value Curve — also independent of the dashboard payload.
+    renderValueCurveAsync(id, data.competitors || []);
+
     document.getElementById('pd-field').innerHTML = renderFieldSection(data.field || {});
     document.getElementById('pd-sweeps').innerHTML = renderSweepsSection(data.recent_sweeps || []);
     wireSignalActions(id, renderAll);
@@ -421,6 +823,80 @@ export async function renderProductDashboard(root, { params }) {
   };
 
   renderAll();
+}
+
+// Stage-Gate verdict labels (Cooper, 2017). Persisted on the product row
+// itself so every dashboard load sees the latest verdict with no extra
+// query. The button below the header lets users update it inline; the
+// button row itself emits a custom 'pd-gate-clicked' event that the
+// dashboard wires up at render time.
+const GATE_LABEL = {
+  go: 'Go',
+  kill: 'Kill',
+  hold: 'Hold',
+  recycle: 'Recycle',
+};
+
+function renderGateBar(product) {
+  const current = (product.gate_status || '').toLowerCase();
+  const decidedAt = product.gate_decided_at
+    ? new Date(product.gate_decided_at).toLocaleString()
+    : '';
+  const notes = (product.gate_notes || '').trim();
+  const buttons = ['go', 'kill', 'hold', 'recycle'].map(k => `
+    <button class="btn btn-sm pd-gate-btn ${current === k ? 'pd-gate-active pd-gate-' + k : ''}"
+            data-gate="${k}">
+      ${GATE_LABEL[k]}
+    </button>
+  `).join('');
+  const clearBtn = current
+    ? `<button class="btn btn-ghost btn-sm pd-gate-btn" data-gate="">Clear</button>`
+    : '';
+  return `
+    <section class="pd-gate-bar card">
+      <div class="pd-gate-row">
+        <div class="pd-gate-label">
+          <strong>Stage-Gate verdict</strong>
+          <span class="muted" style="font-size:11px;margin-left:6px">Cooper (2017) · Go / Kill / Hold / Recycle</span>
+        </div>
+        <div class="pd-gate-buttons">${buttons}${clearBtn}</div>
+      </div>
+      ${current
+        ? `<div class="pd-gate-meta muted" style="font-size:11.5px;margin-top:6px">
+             Current: <b class="pd-gate-current pd-gate-${current}">${GATE_LABEL[current] || current}</b>
+             ${decidedAt ? ` · decided ${esc(decidedAt)}` : ''}
+             ${notes ? `<div class="pd-gate-notes">${esc(notes)}</div>` : ''}
+           </div>`
+        : `<div class="pd-gate-meta muted" style="font-size:11.5px;margin-top:6px">No verdict yet — set one to lock in your Stage-Gate decision.</div>`
+      }
+    </section>
+  `;
+}
+
+function wireGateBar(productId, refreshFn) {
+  document.querySelectorAll('.pd-gate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const status = btn.dataset.gate || '';
+      let notes = '';
+      if (status) {
+        const proposed = window.prompt(
+          `Notes for "${GATE_LABEL[status] || status}" verdict (optional):`,
+          '',
+        );
+        if (proposed === null) return;  // user cancelled
+        notes = (proposed || '').trim();
+      }
+      btn.disabled = true;
+      try {
+        const out = await api.productGateSet(productId, status, notes);
+        if (!out?.ok) throw new Error(out?.error || 'gate update failed');
+        if (typeof refreshFn === 'function') await refreshFn(false);
+      } catch (e) {
+        btn.disabled = false;
+        alert(`Couldn't update verdict: ${e?.message || e}`);
+      }
+    });
+  });
 }
 
 function renderHeader(product, signals) {

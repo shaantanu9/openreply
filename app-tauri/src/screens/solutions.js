@@ -23,6 +23,53 @@ function tierBadge(tier) {
   return `<span class="tier-badge ${cls}">${escape(tier || 'unknown')}</span>`;
 }
 
+// Kano-Model badge. Stored in metadata_json.kano on each intervention by
+// research/kano.py. Five categories from Noriaki Kano (1984): must_be /
+// performance / attractive / indifferent / reverse. We surface them as
+// colored chips so users can scan a painpoint card and see where to
+// invest engineering effort first.
+const KANO_LABEL = {
+  must_be: 'Must-Be',
+  performance: 'Performance',
+  attractive: 'Attractive',
+  indifferent: 'Indifferent',
+  reverse: 'Reverse',
+};
+function kanoBadge(kano, confidence, reasoning) {
+  if (!kano || !KANO_LABEL[kano]) return '';
+  const conf = confidence ? ` · ${escape(confidence)}` : '';
+  const tip = reasoning ? ` title="${escape(reasoning)}"` : '';
+  return `<span class="kano-badge kano-${kano}"${tip}>${KANO_LABEL[kano]}${conf}</span>`;
+}
+
+// MoSCoW (Clegg, 1994) — Must / Should / Could / Won't. Sibling axis to
+// Kano: stored in metadata_json.moscow on each intervention by
+// research/moscow.py. Renders as a colored pill so the Solutions tab
+// shows BOTH the satisfaction (Kano) and scope-discipline (MoSCoW)
+// dimensions on the same card.
+const MOSCOW_LABEL = {
+  must: 'Must', should: 'Should', could: 'Could', wont: "Won't",
+};
+function moscowBadge(moscow, confidence, reasoning) {
+  if (!moscow || !MOSCOW_LABEL[moscow]) return '';
+  const conf = confidence ? ` · ${escape(confidence)}` : '';
+  const tip = reasoning ? ` title="${escape(reasoning)}"` : '';
+  return `<span class="moscow-badge moscow-${moscow}"${tip}>${MOSCOW_LABEL[moscow]}${conf}</span>`;
+}
+
+// RICE (Sean McBride / Intercom, 2016). research/rice.py auto-fills
+// reach + impact + confidence from the corpus and defaults effort to 3;
+// a manual override (api.riceSet) flips auto=false. Tooltip shows the
+// component values so users can see why the number is what it is.
+function riceBadge(rice) {
+  if (!rice) return '';
+  const score = (typeof rice.score === 'number') ? rice.score : 0;
+  const auto = rice.auto ? '' : ' · manual';
+  const tip = `Reach=${rice.reach || 0} · Impact=${rice.impact || 0} · ` +
+              `Confidence=${rice.confidence || 0}% · Effort=${rice.effort || 0}${auto}`;
+  return `<span class="rice-badge" title="${escape(tip)}">RICE ${score.toFixed(1)}</span>`;
+}
+
 async function fetchSolutionsData(topic) {
   // One painpoint per row: includes why metadata + counts of linked
   // mechanism/intervention/evidence_paper nodes.
@@ -78,15 +125,21 @@ function renderPainpointCard(pp, interventions, papers) {
   const why = meta.why || {};
   const emotions = (why.emotions || []).map(e => `<span class="chip">${escape(e)}</span>`).join(' ');
   const jtbd = why.jtbd || {};
+  const jtbdStatement = (why.jtbd_statement || '').trim();
 
   const intvHtml = interventions.length === 0
     ? '<p class="muted">No interventions yet.</p>'
     : interventions.map(iv => {
         const m = (() => { try { return JSON.parse(iv.metadata_json || '{}'); } catch { return {}; } })();
+        const kanoCls = m.kano ? ` data-kano="${escape(m.kano)}"` : '';
+        const moscowAttr = m.moscow ? ` data-moscow="${escape(m.moscow)}"` : '';
         return `
-          <li class="intervention">
+          <li class="intervention"${kanoCls}${moscowAttr}>
             <div class="intervention-label">${escape(iv.label)}</div>
             <div class="intervention-meta">
+              ${riceBadge(m.rice)}
+              ${kanoBadge(m.kano, m.kano_confidence, m.kano_reasoning)}
+              ${moscowBadge(m.moscow, m.moscow_confidence, m.moscow_reasoning)}
               ${tierBadge(m.confidence_tier)}
               <span class="effort">effort: ${escape(m.effort || '?')}</span>
             </div>
@@ -112,6 +165,7 @@ function renderPainpointCard(pp, interventions, papers) {
       <div class="card-body">
         <section>
           <h4>Why people feel this way</h4>
+          ${jtbdStatement ? `<p class="jtbd-statement"><b>JTBD:</b> <em>${escape(jtbdStatement)}</em></p>` : ''}
           <p><b>Struggling moment:</b> ${escape(jtbd.struggling_moment || '—')}</p>
           <p><b>Anxiety:</b> ${escape(jtbd.anxiety || '—')}</p>
           <p><b>Desired outcome:</b> ${escape(jtbd.desired_outcome || '—')}</p>
@@ -147,12 +201,60 @@ export async function loadSolutions(contentEl, topic) {
       <div class="solutions-tab">
         <div class="solutions-toolbar">
           <button class="btn" id="btn-rerun-solutions"><i data-lucide="refresh-cw"></i> Re-run pipeline</button>
+          <button class="btn" id="btn-rerun-rice" title="Compute deterministic RICE scores from corpus data"><i data-lucide="trending-up"></i> Re-run RICE</button>
+          <button class="btn" id="btn-rerun-kano" title="Re-categorize all interventions by Kano (no science fetch)"><i data-lucide="layers"></i> Re-run Kano</button>
+          <button class="btn" id="btn-rerun-moscow" title="LLM-tag every intervention as Must / Should / Could / Won't (Clegg, 1994)"><i data-lucide="list-checks"></i> Re-run MoSCoW</button>
+          <div class="kano-filter" role="group" aria-label="Filter by Kano category">
+            <button class="chip kano-chip is-on" data-kano-filter="all">All</button>
+            <button class="chip kano-chip kano-must_be" data-kano-filter="must_be">Must-Be</button>
+            <button class="chip kano-chip kano-performance" data-kano-filter="performance">Performance</button>
+            <button class="chip kano-chip kano-attractive" data-kano-filter="attractive">Attractive</button>
+            <button class="chip kano-chip kano-indifferent" data-kano-filter="indifferent">Indifferent</button>
+          </div>
+          <div class="moscow-filter" role="group" aria-label="Filter by MoSCoW">
+            <button class="chip moscow-chip is-on" data-moscow-filter="all">All</button>
+            <button class="chip moscow-chip moscow-must"   data-moscow-filter="must">Must</button>
+            <button class="chip moscow-chip moscow-should" data-moscow-filter="should">Should</button>
+            <button class="chip moscow-chip moscow-could"  data-moscow-filter="could">Could</button>
+            <button class="chip moscow-chip moscow-wont"   data-moscow-filter="wont">Won't</button>
+          </div>
         </div>
         <div class="solutions-list">${cards.map(c => renderPainpointCard(c.pp, c.interventions, c.papers)).join('')}</div>
       </div>
     `);
     if (contentEl.dataset.tab !== 'solutions') return;
     window.refreshIcons?.();
+
+    // Filter wiring — Kano AND MoSCoW filters intersect (a row hides if
+    // it fails either active filter). Both axes default to 'all' so the
+    // combined filter is a no-op until the user clicks a chip.
+    const kanoChips = contentEl.querySelectorAll('.kano-chip');
+    const moscowChips = contentEl.querySelectorAll('.moscow-chip');
+
+    const applyFilters = () => {
+      const wantKano = contentEl.querySelector('.kano-chip.is-on')?.dataset.kanoFilter || 'all';
+      const wantMos  = contentEl.querySelector('.moscow-chip.is-on')?.dataset.moscowFilter || 'all';
+      contentEl.querySelectorAll('.intervention').forEach(li => {
+        const k = li.dataset.kano || '';
+        const m = li.dataset.moscow || '';
+        const okK = wantKano === 'all' || wantKano === k;
+        const okM = wantMos  === 'all' || wantMos  === m;
+        li.style.display = (okK && okM) ? '' : 'none';
+      });
+    };
+    kanoChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        kanoChips.forEach(c => c.classList.toggle('is-on', c === chip));
+        applyFilters();
+      });
+    });
+    moscowChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        moscowChips.forEach(c => c.classList.toggle('is-on', c === chip));
+        applyFilters();
+      });
+    });
+
     $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
       set('<div class="empty-state">Re-running…</div>');
       let err = null;
@@ -173,6 +275,50 @@ export async function loadSolutions(contentEl, topic) {
         return;
       }
       await loadSolutions(contentEl, topic);
+    });
+
+    $('#btn-rerun-kano', contentEl)?.addEventListener('click', async () => {
+      const btn = $('#btn-rerun-kano', contentEl);
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader"></i> Categorizing…'; window.refreshIcons?.(); }
+      try {
+        await api.runKanoCategorize(topic);
+        await loadSolutions(contentEl, topic);
+      } catch (e) {
+        console.error('kano categorize failed:', e);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="layers"></i> Re-run Kano'; window.refreshIcons?.(); }
+        alert(`Kano failed: ${e?.message || e}`);
+      }
+    });
+
+    $('#btn-rerun-moscow', contentEl)?.addEventListener('click', async () => {
+      const btn = $('#btn-rerun-moscow', contentEl);
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader"></i> Tagging…'; window.refreshIcons?.(); }
+      try {
+        const r = await api.runMoscowCategorize(topic);
+        if (r?.skipped) {
+          alert(`MoSCoW skipped: ${r.reason || 'no LLM provider'}. Add an LLM key in Settings.`);
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="list-checks"></i> Re-run MoSCoW'; window.refreshIcons?.(); }
+          return;
+        }
+        await loadSolutions(contentEl, topic);
+      } catch (e) {
+        console.error('moscow categorize failed:', e);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="list-checks"></i> Re-run MoSCoW'; window.refreshIcons?.(); }
+        alert(`MoSCoW failed: ${e?.message || e}`);
+      }
+    });
+
+    $('#btn-rerun-rice', contentEl)?.addEventListener('click', async () => {
+      const btn = $('#btn-rerun-rice', contentEl);
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader"></i> Scoring…'; window.refreshIcons?.(); }
+      try {
+        await api.runRiceScore(topic, 3, false);
+        await loadSolutions(contentEl, topic);
+      } catch (e) {
+        console.error('rice score failed:', e);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="trending-up"></i> Re-run RICE'; window.refreshIcons?.(); }
+        alert(`RICE failed: ${e?.message || e}`);
+      }
     });
   };
 
