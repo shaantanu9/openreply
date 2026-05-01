@@ -39,12 +39,24 @@ def fetch_gnews(query: str, limit: int = 50, lang: str = "en", country: str = "U
             import calendar
             ts = float(calendar.timegm(entry.published_parsed))
         rid = entry.get("id") or entry.get("link") or ""
+        # Publisher name (e.g. "BBC", "Reuters", "TechCrunch"). Falls back
+        # to "google-news" so the row still has a non-empty bucket label.
+        # Previously this field stored the literal string "gnews", which
+        # the UI rendered as "r/gnews" (Reddit-style) and linked to a
+        # 404 reddit URL. The `source_type` field is the canonical
+        # source identifier; `sub` is the per-row sub-bucket.
+        src = entry.get("source")
+        if isinstance(src, dict):
+            publisher = (src.get("title") or "").strip()
+        else:
+            publisher = str(src or "").strip()
+        publisher_slug = (publisher.lower().replace(" ", "-") if publisher else "google-news")[:60]
         rows.append(
             {
                 "id": f"gnews_{hash(rid) & 0xffffffff:x}",
-                "sub": "gnews",
+                "sub": publisher_slug,
                 "source_type": "gnews",
-                "author": entry.get("source", {}).get("title", "") if isinstance(entry.get("source"), dict) else str(entry.get("source") or ""),
+                "author": publisher,
                 "title": (entry.get("title") or "")[:300],
                 "selftext": (entry.get("summary") or "")[:2000],
                 "url": entry.get("link") or "",
@@ -55,7 +67,12 @@ def fetch_gnews(query: str, limit: int = 50, lang: str = "en", country: str = "U
                 "is_self": 0,
                 "over_18": 0,
                 "flair": None,
-                "permalink": entry.get("link"),
+                # IMPORTANT: leave permalink empty for non-Reddit sources.
+                # The frontend prepends https://www.reddit.com to permalink
+                # when it's set, so a non-empty permalink here would
+                # produce a broken reddit.com link. The article URL lives
+                # in the `url` field above.
+                "permalink": None,
                 "fetched_at": _now_iso(),
             }
         )

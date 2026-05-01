@@ -72,7 +72,11 @@ def _entry_to_row(entry, feed_url: str, publication: str, category: str) -> dict
         "is_self": 0,
         "over_18": 0,
         "flair": publication[:100] if publication else None,
-        "permalink": entry.get("link") or feed_url,
+        # IMPORTANT: leave permalink None for non-Reddit sources. The
+        # frontend prepends https://www.reddit.com to permalink when
+        # set, so storing an arbitrary article URL here produced
+        # broken cross-domain links. The article URL lives in `url`.
+        "permalink": None,
         "fetched_at": _now_iso(),
     }
 

@@ -20,9 +20,12 @@ def _now_iso() -> str:
 def _row(q: dict[str, Any]) -> dict[str, Any]:
     owner = q.get("owner") or {}
     tags = q.get("tags") or []
+    # `sub` becomes the primary tag (best per-row bucket) so the UI shows
+    # something useful like "[python]" instead of "[stackoverflow]".
+    primary_tag = (tags[0] if tags else "stackoverflow")
     return {
         "id": f"so_{q.get('question_id')}",
-        "sub": "stackoverflow",
+        "sub": primary_tag,
         "source_type": "stackoverflow",
         "author": owner.get("display_name") or "[anon]",
         "title": q.get("title") or "",
@@ -35,7 +38,10 @@ def _row(q: dict[str, Any]) -> dict[str, Any]:
         "is_self": 1,
         "over_18": 0,
         "flair": ",".join(tags[:3]) if tags else None,
-        "permalink": q.get("link"),
+        # IMPORTANT: leave permalink None — the article URL is in `url`.
+        # Storing the SO question URL in `permalink` made the FE prepend
+        # reddit.com to it, producing broken links.
+        "permalink": None,
         "fetched_at": _now_iso(),
     }
 

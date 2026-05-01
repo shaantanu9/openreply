@@ -75,22 +75,90 @@ async function fetchPosts(topic) {
   return { rows: rows || [], total: (countRows?.[0]?.n) || 0 };
 }
 
+// Sources that genuinely have a Reddit-style sub. For everything else,
+// `p.sub` is being reused as a free-form bucket (gnews=feed, hn=site,
+// stackoverflow=tag, github=repo, etc.) and must NOT be rendered with
+// the `r/...` prefix or linked to reddit.com — that produced the
+// "r/gnews" 404s we saw in production.
+const REDDIT_FAMILY = new Set(['reddit', 'lemmy']);
+
+function subBucketLabel(source, sub) {
+  // Per-source human label for the bucket field. Falls back to the raw
+  // value so unknown sources still surface something.
+  if (!sub) return '';
+  if (REDDIT_FAMILY.has(source)) return `r/${sub}`;
+  if (source === 'hn')             return `site:${sub}`;
+  if (source === 'stackoverflow')  return `[${sub}]`;
+  if (source === 'github' || source === 'github_issue') return sub;  // repo
+  if (source === 'devto')          return `tag:${sub}`;
+  if (source === 'gnews')          return sub;                       // feed name
+  if (source === 'rss')            return sub;                       // feed slug
+  if (source === 'bluesky' || source === 'mastodon') return `@${sub}`;
+  if (source === 'youtube')        return sub;                       // channel
+  if (source === 'appstore' || source === 'playstore') return sub;   // app id
+  if (source === 'arxiv' || source === 'openalex' || source === 'pubmed' || source === 'scholar') {
+    return sub;  // venue/journal
+  }
+  return sub;
+}
+
+function postLink(p, source) {
+  // Pick the right target URL per source. Permalinks are reddit-shaped,
+  // so prepending reddit.com to a non-Reddit permalink would 404.
+  if (REDDIT_FAMILY.has(source) && p.permalink) {
+    return `https://www.reddit.com${p.permalink}`;
+  }
+  if (p.url) return p.url;
+  // Last-resort fallback to permalink (rare — only if a non-Reddit row
+  // somehow has a permalink but no url). Strip leading slash so it
+  // becomes a relative path the browser ignores rather than an apparent
+  // absolute path.
+  return p.permalink ? p.permalink.replace(/^\/+/, '') : '#';
+}
+
+function authorLine(p, source) {
+  if (!p.author) return '';
+  if (REDDIT_FAMILY.has(source))               return `u/${esc(p.author)}`;
+  if (source === 'bluesky' || source === 'mastodon') return `@${esc(p.author)}`;
+  if (source === 'github' || source === 'github_issue') return `@${esc(p.author)}`;
+  if (source === 'youtube')                    return `channel: ${esc(p.author)}`;
+  return esc(p.author);
+}
+
 function renderRow(p) {
   const ts = (p.created_utc && p.created_utc > 0)
     ? timeAgo(new Date(p.created_utc * 1000).toISOString())
     : '—';
-  const link = p.permalink
-    ? `https://www.reddit.com${p.permalink}`
-    : (p.url || '#');
-  const sourceTag = p.source_type && p.source_type !== 'reddit'
-    ? `<span class="posts-source">${esc(p.source_type)}</span>`
+  const source = p.source_type || 'reddit';
+  const link = postLink(p, source);
+
+  // Source chip uses the human label, not the raw key, so users see
+  // "Google News" instead of "gnews".
+  const sourceTag = source !== 'reddit'
+    ? `<span class="posts-source">${esc(SOURCE_LABELS[source] || source)}</span>`
     : '';
-  const subTag = p.sub
-    ? `<a class="posts-sub" href="https://www.reddit.com/r/${esc(p.sub)}" target="_blank" rel="noopener">r/${esc(p.sub)}</a>`
+
+  // Sub/bucket label — per-source format. For Reddit it links to the
+  // sub. For others, it's a plain inline span (no broken cross-domain
+  // link).
+  const bucketText = subBucketLabel(source, p.sub);
+  const subTag = bucketText
+    ? (REDDIT_FAMILY.has(source) && p.sub
+        ? `<a class="posts-sub" href="https://www.reddit.com/r/${esc(p.sub)}" target="_blank" rel="noopener">${esc(bucketText)}</a>`
+        : `<span class="posts-bucket">${esc(bucketText)}</span>`)
     : '';
+
   const excerpt = p.excerpt
     ? `<div class="posts-excerpt">${esc(p.excerpt)}${p.excerpt.length >= 280 ? '…' : ''}</div>`
     : '';
+
+  // Reddit-style score/comment counts are meaningless for sources that
+  // don't track them (most do not). Show only when ≥1 to avoid "▲ 0  💬 0"
+  // noise on every GNews / arXiv / RSS row.
+  const scoreTag = (p.score ?? 0) > 0 ? `<span title="Score">▲ ${p.score}</span>` : '';
+  const commentsTag = (p.num_comments ?? 0) > 0 ? `<span title="Comments">💬 ${p.num_comments}</span>` : '';
+  const authorTag = p.author ? `<span title="Author">${authorLine(p, source)}</span>` : '';
+
   return `
     <div class="posts-row">
       <div class="posts-row-head">
@@ -100,9 +168,9 @@ function renderRow(p) {
       ${excerpt}
       <div class="posts-meta">
         ${subTag}
-        <span title="Score">▲ ${p.score ?? 0}</span>
-        <span title="Comments">💬 ${p.num_comments ?? 0}</span>
-        <span title="Author">u/${esc(p.author || 'unknown')}</span>
+        ${scoreTag}
+        ${commentsTag}
+        ${authorTag}
         <span title="Posted">${ts}</span>
       </div>
     </div>
@@ -120,20 +188,38 @@ const SOURCE_LABELS = {
   youtube: 'YouTube', discourse: 'Discourse', local_file: 'Local file',
 };
 
-function renderToolbar(topic) {
+function renderToolbar(topic, sourcesInTopic = []) {
   const s = getState(topic);
-  // Active-source chip appears only when a filter is set. Clicking the ×
-  // clears the filter and re-renders the unfiltered list.
-  const sourceChip = s.source
-    ? `<span class="posts-source-chip" title="Filtering to ${esc(s.source)}">
-         <span>Source: <b>${esc(SOURCE_LABELS[s.source] || s.source)}</b></span>
-         <button class="posts-source-clear" id="posts-source-clear" title="Clear source filter">×</button>
-       </span>`
-    : '';
+
+  // Source dropdown lists ONLY sources actually present in this topic
+  // (saves the user from picking a source with 0 rows). The first
+  // option is "All sources" — selecting it clears the filter. The
+  // counts are cached per-topic and refreshed on each rerender.
+  const sourceOpts = ['<option value="">All sources</option>']
+    .concat(sourcesInTopic.map(({ source, n }) => {
+      const sel = s.source === source ? ' selected' : '';
+      const label = SOURCE_LABELS[source] || source;
+      return `<option value="${esc(source)}"${sel}>${esc(label)} (${n.toLocaleString()})</option>`;
+    }));
+
+  // Sub/bucket input is reused per source — placeholder updates so
+  // users know what to type for non-Reddit sources.
+  const bucketPlaceholder = (() => {
+    if (!s.source || REDDIT_FAMILY.has(s.source)) return 'filter by sub (e.g. python)';
+    if (s.source === 'github' || s.source === 'github_issue') return 'filter by repo (e.g. owner/name)';
+    if (s.source === 'devto')   return 'filter by tag';
+    if (s.source === 'gnews' || s.source === 'rss') return 'filter by feed';
+    if (s.source === 'stackoverflow') return 'filter by tag';
+    if (s.source === 'youtube') return 'filter by channel';
+    return 'filter by bucket';
+  })();
+
   return `
     <div class="posts-toolbar">
-      ${sourceChip}
-      <input type="text" id="posts-sub" class="posts-input" placeholder="filter by sub (e.g. python)" value="${esc(s.sub)}" />
+      <select id="posts-source" class="posts-input posts-input-source" title="Filter by source">
+        ${sourceOpts.join('')}
+      </select>
+      <input type="text" id="posts-sub" class="posts-input" placeholder="${esc(bucketPlaceholder)}" value="${esc(s.sub)}" />
       <input type="number" id="posts-min-score" class="posts-input posts-input-num" placeholder="min score" min="0" value="${s.minScore || ''}" />
       <select id="posts-sort" class="posts-input">
         <option value="score" ${s.sort === 'score' ? 'selected' : ''}>Top score</option>
@@ -170,7 +256,26 @@ function cacheKey(topic) {
   return `posts.${topic}.${s.sort}.${s.source}.${s.sub}.${s.minScore}.${s.page}`;
 }
 
-function paintFromData(contentEl, topic, data) {
+// Per-source counts for the toolbar dropdown. One round-trip per
+// rerender; result is small (≤16 rows) so no need to cache.
+async function fetchSourceCounts(topic) {
+  const sql = `
+    SELECT coalesce(p.source_type, 'reddit') AS source, count(*) AS n
+    FROM topic_posts tp
+    JOIN posts p ON p.id = tp.post_id
+    WHERE tp.topic = :topic
+    GROUP BY coalesce(p.source_type, 'reddit')
+    ORDER BY n DESC
+  `;
+  try {
+    const rows = await api.runQuery(sql, topic);
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function paintFromData(contentEl, topic, data, sourcesInTopic) {
   const set = (html) => { if (contentEl.dataset.tab === 'posts') contentEl.innerHTML = html; };
   const body = data.rows.length === 0
     ? `<div class="empty-state"><p>No posts match the current filters.</p></div>`
@@ -178,7 +283,7 @@ function paintFromData(contentEl, topic, data) {
 
   set(`
     <div class="posts-tab">
-      ${renderToolbar(topic)}
+      ${renderToolbar(topic, sourcesInTopic)}
       <div class="posts-list">${body}</div>
       ${renderPager(topic, data.total)}
     </div>
@@ -191,6 +296,7 @@ function paintFromData(contentEl, topic, data) {
 function wireToolbar(contentEl, topic) {
   const apply = () => {
     const s = getState(topic);
+    s.source = ($('#posts-source', contentEl)?.value || '').trim().toLowerCase();
     s.sub = ($('#posts-sub', contentEl)?.value || '').trim();
     const ms = parseInt($('#posts-min-score', contentEl)?.value || '0', 10);
     s.minScore = Number.isFinite(ms) ? ms : 0;
@@ -199,17 +305,10 @@ function wireToolbar(contentEl, topic) {
     rerender(contentEl, topic);
   };
   $('#posts-apply', contentEl)?.addEventListener('click', apply);
+  $('#posts-source', contentEl)?.addEventListener('change', apply);
   $('#posts-sub', contentEl)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
   $('#posts-min-score', contentEl)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
   $('#posts-sort', contentEl)?.addEventListener('change', apply);
-
-  // Clear-source chip → reset to unfiltered posts list.
-  $('#posts-source-clear', contentEl)?.addEventListener('click', () => {
-    const s = getState(topic);
-    s.source = '';
-    s.page = 0;
-    rerender(contentEl, topic);
-  });
 
   // Pager
   $('#posts-prev', contentEl)?.addEventListener('click', () => { const s = getState(topic); s.page = Math.max(0, s.page - 1); rerender(contentEl, topic); });
@@ -228,15 +327,18 @@ async function rerender(contentEl, topic) {
   const cached = readScreenCache(KEY);
   let paintedFromCache = false;
   if (cached && Array.isArray(cached.rows)) {
-    paintFromData(contentEl, topic, cached);
+    paintFromData(contentEl, topic, cached, cached.sourcesInTopic || []);
     paintedFromCache = true;
   } else {
     set(`<div class="empty-state">loading…</div>`);
   }
 
-  let data;
+  let data, sourcesInTopic;
   try {
-    data = await fetchPosts(topic);
+    [data, sourcesInTopic] = await Promise.all([
+      fetchPosts(topic),
+      fetchSourceCounts(topic),
+    ]);
   } catch (e) {
     if (paintedFromCache) return;   // keep stale-but-valid render
     set(`<div class="empty-state"><p>Error: ${esc(e?.message || String(e))}</p></div>`);
@@ -246,8 +348,10 @@ async function rerender(contentEl, topic) {
 
   // Only cache non-empty results — empty pages are usually transient
   // (filter typos, sidecar timing) and we don't want to lock them in.
-  if (data.rows.length > 0) writeScreenCache(KEY, data);
-  paintFromData(contentEl, topic, data);
+  if (data.rows.length > 0) {
+    writeScreenCache(KEY, { ...data, sourcesInTopic });
+  }
+  paintFromData(contentEl, topic, data, sourcesInTopic);
 }
 
 export async function loadPosts(contentEl, topic) {

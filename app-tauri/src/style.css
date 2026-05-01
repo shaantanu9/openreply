@@ -3048,7 +3048,7 @@ kbd {
 }
 
 /* ─── Posts (raw corpus) tab ────────────────────────────────────────── */
-.posts-tab { padding: 4px 0; }
+.posts-tab { padding: 4px 0; min-width: 0; }
 .posts-toolbar {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
   margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
@@ -3056,24 +3056,79 @@ kbd {
 .posts-input {
   padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--surface); color: var(--ink); font-size: 12.5px;
+  min-width: 0;  /* allow shrink in flex toolbar so inputs don't blow it out */
+  max-width: 100%;
 }
-.posts-input-num { width: 100px; }
-.posts-list { display: flex; flex-direction: column; gap: 10px; }
+.posts-input-num { width: 100px; flex: 0 0 auto; }
+.posts-input-source { flex: 0 1 220px; max-width: 100%; }
+.posts-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .posts-row {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 8px; padding: 12px 14px;
+  /* word-break breaks intra-word at character boundaries (URLs, IDs);
+     overflow-wrap is the modern preferred name. min-width:0 lets the
+     row shrink inside its flex parent. */
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
-.posts-row-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 4px; }
-.posts-title { font-size: 13.5px; font-weight: 600; color: var(--ink); text-decoration: none; flex: 1; }
+.posts-row-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 10px; margin-bottom: 4px;
+  flex-wrap: wrap;  /* source chip drops below title on narrow viewports */
+}
+.posts-title {
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  text-decoration: none;
+  flex: 1 1 auto;
+  min-width: 0;  /* THE flexbox-overflow fix: without this, a long
+                    URL-like title forces the row wider than the viewport */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .posts-title:hover { color: var(--orange); text-decoration: underline; }
 .posts-source {
   font-size: 10px; padding: 1px 7px; border-radius: 999px;
   background: var(--surface-2); color: var(--ink-3); text-transform: uppercase;
+  white-space: nowrap; flex: 0 0 auto;
 }
-.posts-excerpt { font-size: 12px; color: var(--ink-2); margin: 4px 0 6px; line-height: 1.5; }
-.posts-meta { display: flex; gap: 14px; font-size: 11px; color: var(--ink-3); flex-wrap: wrap; }
-.posts-sub { color: var(--orange); text-decoration: none; }
+.posts-excerpt {
+  font-size: 12px; color: var(--ink-2); margin: 4px 0 6px; line-height: 1.5;
+  word-break: break-word; overflow-wrap: anywhere;
+  /* Cap at 3 lines on small viewports so a wall-of-text excerpt doesn't
+     push everything else off-screen. The full text is still in the
+     tooltip / source post. */
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.posts-meta {
+  display: flex; gap: 14px; font-size: 11px; color: var(--ink-3);
+  flex-wrap: wrap; min-width: 0;
+}
+.posts-meta span, .posts-meta a { white-space: nowrap; }
+.posts-sub { color: var(--orange); text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .posts-sub:hover { text-decoration: underline; }
+.posts-bucket {
+  /* Non-Reddit "bucket" label — feed name, repo, channel, etc. Visually
+     subdued vs the orange r/sub link so the eye still finds Reddit
+     subs first when scanning a mixed-source list. */
+  color: var(--ink-3); font-family: var(--font-mono, monospace);
+  font-size: 10.5px; padding: 1px 6px; border-radius: 4px;
+  background: var(--surface-2); max-width: 220px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Narrow-viewport tightening — under ~640 px the toolbar wraps to a
+   stack and the meta row drops gap so per-line hits fit in the column. */
+@media (max-width: 640px) {
+  .posts-toolbar { gap: 6px; }
+  .posts-input { font-size: 12px; padding: 5px 8px; }
+  .posts-input-num { width: 80px; }
+  .posts-row { padding: 10px 12px; }
+  .posts-meta { gap: 10px; font-size: 10.5px; }
+  .posts-source { font-size: 9.5px; padding: 1px 6px; }
+  .posts-excerpt { -webkit-line-clamp: 2; }
+}
 .posts-pager {
   display: flex; justify-content: space-between; align-items: center;
   margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
