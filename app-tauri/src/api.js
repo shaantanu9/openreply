@@ -304,13 +304,13 @@ export { memStats };
  */
 const INVALIDATE_MAP = {
   topics:     ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'list_trash', 'topic_counts_bundle'],
-  collect:    ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'get_findings', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle'],
-  ingest:     ['list_topics', 'overview_stats', 'recent_activity', 'run_query', 'topic_coverage_gaps', 'topic_counts_bundle'],
-  graph:      ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle', 'topic_insights_cached'],
-  findings:   ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle', 'topic_insights_cached'],
+  collect:    ['list_topics', 'overview_stats', 'recent_activity', 'cli_info', 'run_query', 'get_findings', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle', 'papers_list_native'],
+  ingest:     ['list_topics', 'overview_stats', 'recent_activity', 'run_query', 'topic_coverage_gaps', 'topic_counts_bundle', 'papers_list_native'],
+  graph:      ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle', 'topic_insights_cached', 'solutions_data_bundle'],
+  findings:   ['list_topics', 'overview_stats', 'get_findings', 'run_query', 'paper_analyses_get', 'topic_saturation', 'topic_coverage_gaps', 'topic_counts_bundle', 'topic_insights_cached', 'solutions_data_bundle'],
   exports:    ['list_exports'],
   byok:       ['byok_status', 'list_provider_models', 'cli_info'],
-  hypothesis: ['hypothesis_list', 'hypothesis_stats'],
+  hypothesis: ['hypothesis_list', 'hypothesis_list_native', 'hypothesis_stats'],
   product:    ['list_products', 'product_get', 'product_signals', 'product_digest', 'overview_stats'],
   schedule:   ['schedule_status'],
   trash:      ['list_trash', 'list_topics', 'overview_stats'],
@@ -424,6 +424,12 @@ export const api = {
   // explicitly via the INVALIDATE_MAP entries below.
   topicCountsBundle: (topic) =>
     cachedInvoke('topic_counts_bundle', { topic }, 15000),
+
+  // Solutions tab data — replaces N+1 painpoint × {interventions, papers}
+  // fan-out. Bundles all three SELECTs into one Tauri call that returns
+  // pre-stitched `{ painpoints: [{ pp, interventions, papers }] }`.
+  solutionsDataBundle: (topic) =>
+    cachedInvoke('solutions_data_bundle', { topic }, 30000),
   diffFindings:    (topic, windowDays = 7) => cachedInvoke('diff_findings', { topic, windowDays }, 30000),
 
   // ----- per-paper LLM analysis (Research tab) -----
@@ -730,8 +736,12 @@ export const api = {
     invalidate('hypothesis_list', 'hypothesis_stats');
     return invoke('hypothesis_update_status', { id, status, notes });
   },
+  // Bets list — native rusqlite path. Was a Python sidecar call
+  // (~300–800 ms warm, 1500+ ms cold); now ~1 ms. JSON columns are
+  // pre-hydrated by the native command so the frontend doesn't need to
+  // parse `evidence_json` etc. itself.
   hypothesisList: (topic, status, includeArchived = false) =>
-    cachedInvoke('hypothesis_list', { topic, status, includeArchived }, 5000),
+    cachedInvoke('hypothesis_list_native', { topic, status, includeArchived }, 30000),
   hypothesisDelete: (id) => {
     invalidate('hypothesis_list', 'hypothesis_stats');
     return invoke('hypothesis_delete', { id });
@@ -893,6 +903,12 @@ export const api = {
     invalidate('run_query');
     return invoke('run_kano_categorize', { topic });
   },
+
+  // Task Manager — single-call view of every queue/job table. Polled
+  // every 2 s by /tasks; the cache window is short so the manual
+  // refresh button is responsive while rapid re-renders coalesce.
+  runtimeSnapshot: (recentLimit = 25) =>
+    cachedInvoke('runtime_snapshot', { recentLimit }, 1500),
 
   // ── Discovery framework expansion (2026-05-01_04) ──────────────────
   // Opportunity Solution Tree (Torres, 2016) — outcome → opportunities
@@ -1134,7 +1150,14 @@ export const api = {
   runConcepts:        (topic) => invoke('run_concepts', { topic }),
 
   // ----- Paper research (BibTeX/RIS/APA/MD export, Unpaywall OA lookup) -----
-  papersList:   (topic, limit = 200) => invoke('papers_list', { topic, limit }),
+  // Papers list — native rusqlite path. Was a Python sidecar call
+  // (~200–800 ms warm, 1500+ ms cold); now ~1 ms. The fallback to
+  // `papers_list` (sidecar) stays so callers that need fields the native
+  // path doesn't expose can still opt in.
+  papersList:   (topic, limit = 200) =>
+    cachedInvoke('papers_list_native', { topic, limit }, 30000),
+  papersListSidecar: (topic, limit = 200) =>
+    invoke('papers_list', { topic, limit }),
   papersExport: (topic, fmt = 'bibtex', limit = null) => invoke('papers_export', { topic, fmt, limit }),
   oaLookup:     (doi) => invoke('oa_lookup', { doi }),
   // Mirror a remote PDF into the app's local cache so the webview can

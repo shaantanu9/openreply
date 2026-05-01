@@ -300,6 +300,8 @@ fn main() {
             commands::product_gate_set,
             commands::product_gate_get,
             commands::run_kano_categorize,
+            // Runtime snapshot — Task Manager backing
+            commands::runtime_snapshot,
             // Discovery framework expansion (2026-05-01_04) — OST + RICE +
             // MoSCoW + Empathy Maps + Four Risks + Value Curve.
             commands::ost_build,
@@ -358,6 +360,9 @@ fn main() {
             // — turns 50–2000 ms IPC into ~1 ms direct rusqlite.
             commands::topic_insights_cached,
             commands::topic_counts_bundle,
+            commands::papers_list_native,
+            commands::hypothesis_list_native,
+            commands::solutions_data_bundle,
             // MCP ↔ App integration (one-click connect to any MCP client)
             commands::mcp_clients,
             commands::mcp_status,

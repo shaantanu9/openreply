@@ -1946,6 +1946,20 @@ pub async fn product_convert_topic(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+// ─── Runtime snapshot — Task Manager backing ────────────────────────────
+
+#[tauri::command]
+pub async fn runtime_snapshot(
+    app: AppHandle,
+    recent_limit: Option<i64>,
+) -> Result<Value, String> {
+    let r = recent_limit.unwrap_or(25).to_string();
+    run_cli(
+        &app,
+        vec!["research", "runtime-snapshot", "--recent-limit", &r, "--json"],
+    ).await.map_err(err_to_string)
+}
+
 // ─── Lifecycle pivot — Stage-Gate verdict + Kano categorization ──────────
 
 #[tauri::command]
@@ -3888,6 +3902,270 @@ pub async fn topic_counts_bundle(
     .await
     .map_err(|e| format!("count bundle failed: {e}"))?;
     Ok(Value::Object(result))
+}
+
+/// Native rusqlite path for the Papers tab. Mirrors `research papers-list`
+/// shape: list of paper rows with derived `pdf_url` and `has_fulltext` flag.
+/// Was a Python sidecar call — now ~1 ms on warm WAL.
+#[tauri::command]
+pub async fn papers_list_native(
+    app: AppHandle,
+    topic: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let lim = limit.unwrap_or(200) as i64;
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Ok(Value::Array(vec![]));
+    }
+    let topic_clone = topic;
+    let lim_clone = lim;
+    let result = tokio::task::spawn_blocking(move || -> Result<Vec<Value>, String> {
+        let mut p = serde_json::Map::new();
+        p.insert("topic".into(), Value::String(topic_clone));
+        p.insert("limit".into(), Value::from(lim_clone));
+        // LEFT JOIN paper_full_texts to get cached-fulltext flag in one shot.
+        // Source filter mirrors Python's `_papers_for_topic`: arxiv, openalex,
+        // pubmed, scholar (research-paper sources).
+        let sql = "SELECT \
+            p.id, p.title, p.author, p.url, p.permalink, \
+            COALESCE(p.source_type, 'reddit') AS source_type, \
+            p.score, p.num_comments, p.created_utc, p.flair, \
+            substr(COALESCE(p.selftext, ''), 1, 500) AS selftext, \
+            (CASE \
+                WHEN COALESCE(p.source_type,'') = 'arxiv' \
+                     AND p.url LIKE '%arxiv.org/abs/%' \
+                THEN replace(rtrim(p.url, '/'), '/abs/', '/pdf/') || '.pdf' \
+                ELSE '' \
+             END) AS pdf_url, \
+            (CASE WHEN ft.post_id IS NOT NULL THEN 1 ELSE 0 END) AS has_fulltext \
+            FROM topic_posts tp \
+            JOIN posts p ON p.id = tp.post_id \
+            LEFT JOIN paper_full_texts ft \
+                  ON ft.post_id = p.id AND ft.status = 'ok' \
+            WHERE tp.topic = :topic \
+              AND COALESCE(p.source_type, 'reddit') \
+                  IN ('arxiv', 'pubmed', 'openalex', 'scholar', 'semantic_scholar', 'crossref') \
+            ORDER BY COALESCE(p.score, 0) DESC, p.created_utc DESC \
+            LIMIT :limit";
+        match crate::db::query_db(&db_path, sql, Some(&p)) {
+            Ok(rows) => {
+                // Coerce has_fulltext from i64 to bool for the frontend.
+                let mut out: Vec<Value> = Vec::with_capacity(rows.len());
+                for mut r in rows {
+                    if let Some(obj) = r.as_object_mut() {
+                        if let Some(v) = obj.get("has_fulltext").and_then(|v| v.as_i64()) {
+                            obj.insert("has_fulltext".into(), Value::Bool(v != 0));
+                        }
+                    }
+                    out.push(r);
+                }
+                Ok(out)
+            }
+            // Tables missing on a fresh install — return [] so the UI shows
+            // the empty CTA instead of an error card.
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("no such table") {
+                    Ok(Vec::new())
+                } else {
+                    Err(msg)
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("papers_list_native failed: {e}"))??;
+    Ok(Value::Array(result))
+}
+
+/// Native rusqlite path for the Bets tab. Mirrors `research hypothesis-list`.
+/// Hydrates `evidence_json` / `tactic_link_json` / `notes_json` JSON columns
+/// the same way Python's `_hydrate` did.
+#[tauri::command]
+pub async fn hypothesis_list_native(
+    app: AppHandle,
+    topic: Option<String>,
+    status: Option<String>,
+    include_archived: Option<bool>,
+) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Ok(Value::Array(vec![]));
+    }
+    let inc_archived = include_archived.unwrap_or(false);
+    let topic_clone = topic;
+    let status_clone = status;
+    let result = tokio::task::spawn_blocking(move || -> Result<Vec<Value>, String> {
+        let mut where_parts: Vec<&str> = vec!["1=1"];
+        let mut p = serde_json::Map::new();
+        if let Some(t) = topic_clone.as_ref() {
+            where_parts.push("topic = :topic");
+            p.insert("topic".into(), Value::String(t.clone()));
+        }
+        if let Some(s) = status_clone.as_ref() {
+            where_parts.push("status = :status");
+            p.insert("status".into(), Value::String(s.clone()));
+        } else if !inc_archived {
+            where_parts.push("status != 'archived'");
+        }
+        let where_clause = where_parts.join(" AND ");
+        let sql = format!(
+            "SELECT * FROM hypothesis_tests WHERE {where_clause} ORDER BY last_updated DESC"
+        );
+        let p_opt = if p.is_empty() { None } else { Some(&p) };
+        match crate::db::query_db(&db_path, &sql, p_opt) {
+            Ok(rows) => {
+                // Mirror Python's `_hydrate`: card_json → card,
+                // linked_evidence → evidence. Everything else stays as-is.
+                let mut out: Vec<Value> = Vec::with_capacity(rows.len());
+                for mut r in rows {
+                    if let Some(obj) = r.as_object_mut() {
+                        let card = obj.get("card_json")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                            .unwrap_or_else(|| serde_json::json!({}));
+                        obj.insert("card".into(), card);
+                        let evidence = obj.get("linked_evidence")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                            .unwrap_or_else(|| Value::Array(Vec::new()));
+                        obj.insert("evidence".into(), evidence);
+                    }
+                    out.push(r);
+                }
+                Ok(out)
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("no such table") {
+                    Ok(Vec::new())
+                } else {
+                    Err(msg)
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("hypothesis_list_native failed: {e}"))??;
+    Ok(Value::Array(result))
+}
+
+/// Native bundled fetch for the Solutions tab. Returns:
+///   { painpoints: [{ painpoint_id, painpoint_label, metadata_json,
+///                    interventions: [...], papers: [...] }] }
+/// Replaces 1 + 2*N round-trips (one per painpoint × interventions × papers)
+/// with **2 SQL statements** total — one for painpoints, one big JOIN for
+/// every intervention and every paper across all painpoints. Matches the
+/// frontend's existing render shape so no UI changes are needed.
+#[tauri::command]
+pub async fn solutions_data_bundle(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({ "painpoints": [] }));
+    }
+    let topic_clone = topic;
+    let bundle = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut p = serde_json::Map::new();
+        p.insert("topic".into(), Value::String(topic_clone.clone()));
+        let pp_sql = "SELECT n.id AS painpoint_id, n.label AS painpoint_label, \
+                             n.metadata_json \
+                      FROM graph_nodes n \
+                      WHERE n.topic = :topic AND n.kind = 'painpoint' \
+                      ORDER BY n.label";
+        let painpoints = match crate::db::query_db(&db_path, pp_sql, Some(&p)) {
+            Ok(r) => r,
+            Err(e) if e.to_string().contains("no such table") =>
+                return Ok(serde_json::json!({ "painpoints": [] })),
+            Err(e) => return Err(e.to_string()),
+        };
+        if painpoints.is_empty() {
+            return Ok(serde_json::json!({ "painpoints": [] }));
+        }
+
+        // One JOIN to fetch every intervention for every painpoint at once.
+        // The mechanism node sits between painpoint and intervention.
+        let iv_sql = "SELECT e1.src AS painpoint_id, \
+                             iv.id AS id, iv.label AS label, iv.metadata_json \
+                      FROM graph_edges e1 \
+                      JOIN graph_nodes m ON m.id = e1.dst AND m.kind = 'mechanism' \
+                      JOIN graph_edges e2 ON e2.src = m.id AND e2.kind = 'addressed_by' \
+                      JOIN graph_nodes iv ON iv.id = e2.dst AND iv.kind = 'intervention' \
+                      WHERE e1.kind = 'explained_by' \
+                        AND e1.src IN ( \
+                          SELECT id FROM graph_nodes \
+                          WHERE topic = :topic AND kind = 'painpoint' \
+                        )";
+        let interventions = match crate::db::query_db(&db_path, iv_sql, Some(&p)) {
+            Ok(r) => r,
+            Err(_) => Vec::new(),
+        };
+
+        // Same idea for evidence-paper edges.
+        let pap_sql = "SELECT e.src AS painpoint_id, \
+                              p2.id AS id, p2.label AS label, p2.metadata_json \
+                       FROM graph_edges e \
+                       JOIN graph_nodes p2 ON p2.id = e.dst AND p2.kind = 'evidence_paper' \
+                       WHERE e.kind = 'has_evidence' \
+                         AND e.src IN ( \
+                           SELECT id FROM graph_nodes \
+                           WHERE topic = :topic AND kind = 'painpoint' \
+                         )";
+        let papers = match crate::db::query_db(&db_path, pap_sql, Some(&p)) {
+            Ok(r) => r,
+            Err(_) => Vec::new(),
+        };
+
+        // Bucket into per-painpoint maps.
+        let mut iv_by_pp: std::collections::HashMap<String, Vec<Value>> =
+            std::collections::HashMap::new();
+        for mut row in interventions {
+            if let Some(obj) = row.as_object_mut() {
+                let pid = obj.remove("painpoint_id")
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_default();
+                iv_by_pp.entry(pid).or_default().push(Value::Object(obj.clone()));
+            }
+        }
+        let mut pap_by_pp: std::collections::HashMap<String, Vec<Value>> =
+            std::collections::HashMap::new();
+        for mut row in papers {
+            if let Some(obj) = row.as_object_mut() {
+                let pid = obj.remove("painpoint_id")
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_default();
+                pap_by_pp.entry(pid).or_default().push(Value::Object(obj.clone()));
+            }
+        }
+
+        // Stitch the bundle.
+        let mut bundled: Vec<Value> = Vec::with_capacity(painpoints.len());
+        for pp in painpoints {
+            if let Some(obj) = pp.as_object() {
+                let pid = obj.get("painpoint_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut entry = serde_json::Map::new();
+                entry.insert("pp".into(), Value::Object(obj.clone()));
+                entry.insert("interventions".into(),
+                             Value::Array(iv_by_pp.remove(&pid).unwrap_or_default()));
+                entry.insert("papers".into(),
+                             Value::Array(pap_by_pp.remove(&pid).unwrap_or_default()));
+                bundled.push(Value::Object(entry));
+            }
+        }
+        Ok(serde_json::json!({ "painpoints": bundled }))
+    })
+    .await
+    .map_err(|e| format!("solutions_data_bundle failed: {e}"))??;
+    Ok(bundle)
 }
 
 /// Path to the user's BYOK env file (`~/.config/reddit-myind/.env`).

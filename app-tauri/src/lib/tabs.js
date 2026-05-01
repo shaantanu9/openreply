@@ -51,6 +51,7 @@ export function iconForHash(hash) {
   if (hash.includes('/database')) return 'database';
   if (hash.includes('/search')) return 'search';
   if (hash.includes('/playbook')) return 'book-open';
+  if (hash.includes('/tasks')) return 'activity';
   if (hash.includes('/ost')) return 'git-fork';
   if (hash.includes('/empathy')) return 'users';
   if (hash.includes('/interviews')) return 'mic';

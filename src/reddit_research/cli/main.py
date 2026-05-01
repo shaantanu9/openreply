@@ -33,6 +33,19 @@ ingest_app = typer.Typer(help="Ingest local files (CSV / JSON / TXT / VTT / SRT 
 app.add_typer(ingest_app, name="ingest")
 
 
+def _reload_user_env_for_daemon() -> None:
+    """Refresh Settings/BYOK values for the warm dev daemon.
+
+    The one-shot CLI imports ``core.config`` for every process, but the daemon
+    imports it once and then lives across Settings edits. Reloading the user
+    config file here lets newly saved LLM keys/defaults apply without forcing
+    an app restart.
+    """
+    from dotenv import load_dotenv
+
+    load_dotenv(Path.home() / ".config" / "reddit-myind" / ".env", override=True)
+
+
 @ingest_app.command("file")
 def cmd_ingest_file(
     path: Path = typer.Option(..., "--path", "-p"),
@@ -2273,6 +2286,16 @@ def cmd_research_kano_categorize(
     else:
         for k, v in summary.items():
             typer.echo(f"{k}: {v}")
+
+
+@research_app.command("runtime-snapshot")
+def cmd_runtime_snapshot(
+    recent_limit: int = typer.Option(25, "--recent-limit"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Single-call view of every queue/job surface (Task Manager backing)."""
+    from ..runtime import runtime_snapshot
+    _emit(runtime_snapshot(recent_limit=recent_limit), as_json)
 
 
 @research_app.command("product-gate-set")
@@ -4664,6 +4687,7 @@ def cmd_daemon() -> None:
         err_msg: Optional[str] = None
         try:
             try:
+                _reload_user_env_for_daemon()
                 app(args=args, standalone_mode=False)
             except SystemExit as e:
                 code = e.code if isinstance(e.code, int) else (1 if e.code else 0)

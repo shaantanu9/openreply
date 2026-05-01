@@ -22,6 +22,10 @@ import { renderProductsList, renderProductDashboard, renderProductSetup } from '
 // (Design Thinking, Lean Startup, Stage-Gate, Kano, JTBD, ...) on top of the
 // existing screens, so users see WHERE in the cycle they are.
 import { renderPlaybook } from './screens/playbook.js';
+// Task Manager — single-screen view of every running/queued/recent
+// operation (collects, MCP jobs, extraction queue, sweeps, streams) +
+// LLM token usage. Auto-refreshes every 2 s.
+import { renderTasks } from './screens/tasks.js';
 // Discovery framework expansion (2026-05-01_04) — Opportunity Solution Tree
 // (Torres, 2016): Outcome → Opportunities → Solutions → Experiments.
 import { renderOst } from './screens/ost.js';
@@ -73,6 +77,8 @@ const routes = [
   { match: /^\/competitors\/?$/,            render: renderGlobalCompetitors },
   // Lifecycle pivot — Playbook screen: 10-phase product-development lifecycle.
   { match: /^\/playbook\/?$/,               render: renderPlaybook },
+  // Task Manager — Windows Task Manager analog for runtime state.
+  { match: /^\/tasks\/?$/,                  render: renderTasks },
   // Discovery framework expansion — OST picker + per-topic tree.
   { match: /^\/ost\/?$/,                    render: renderOst },
   { match: /^\/ost\/([^/?]+)$/,             render: renderOst },
