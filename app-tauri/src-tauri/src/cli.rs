@@ -156,6 +156,7 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
 // covers most user-visible cold-start pain in the bundled DMG.
 
 struct DevDaemon {
+    // Held to keep the process alive; `kill()` reaped on `shutdown_dev_daemon`.
     child: tokio::process::Child,
     stdin: tokio::process::ChildStdin,
     stdout: tokio::io::BufReader<tokio::process::ChildStdout>,

@@ -3727,6 +3727,169 @@ pub async fn run_query(
     .map_err(|e| e.to_string())
 }
 
+/// Native fast-path for the cached insights read.
+///
+/// `synthesize_insights(topic, cached=true)` was just one row from
+/// `topic_insights` — but it went through the Python sidecar (50–200ms warm,
+/// 500–2000ms cold on a fresh DMG). This rusqlite path collapses it to ~1ms.
+/// Returns the same shape the Python load_insights() emitted, with
+/// `_cached=true`, `_generated_at`, `_corpus_size`, `_provider`, `_model`.
+/// Returns `{ok: false, error}` when no cached row exists, matching how
+/// the Python branch communicated "never generated".
+#[tauri::command]
+pub async fn topic_insights_cached(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({
+            "ok": false, "topic": topic,
+            "error": "No cached insight — run without --cached to generate.",
+        }));
+    }
+    let topic_clone = topic.clone();
+    let rows = tokio::task::spawn_blocking(move || {
+        let mut p = serde_json::Map::new();
+        p.insert("topic".into(), serde_json::Value::String(topic_clone));
+        crate::db::query_db(
+            &db_path,
+            "SELECT report_json, generated_at, corpus_size, provider, model \
+             FROM topic_insights WHERE topic = :topic",
+            Some(&p),
+        )
+    })
+    .await
+    .map_err(|e| format!("task failed: {e}"))?
+    .map_err(|e| {
+        // If the table doesn't exist yet (fresh install before any synth),
+        // surface the Python-equivalent "no cached" sentinel.
+        let msg = e.to_string();
+        if msg.contains("no such table") {
+            String::new()
+        } else {
+            msg
+        }
+    });
+    let rows = match rows {
+        Ok(r) => r,
+        Err(e) if e.is_empty() => {
+            return Ok(serde_json::json!({
+                "ok": false, "topic": topic,
+                "error": "No cached insight — run without --cached to generate.",
+            }));
+        }
+        Err(e) => return Err(e),
+    };
+    if rows.is_empty() {
+        return Ok(serde_json::json!({
+            "ok": false, "topic": topic,
+            "error": "No cached insight — run without --cached to generate.",
+        }));
+    }
+    let row = &rows[0];
+    let report_json = row.get("report_json").and_then(|v| v.as_str()).unwrap_or("");
+    let mut report: Value = match serde_json::from_str(report_json) {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(serde_json::json!({
+                "ok": false, "topic": topic,
+                "error": "cached report JSON corrupt",
+            }));
+        }
+    };
+    if let Some(obj) = report.as_object_mut() {
+        obj.insert("_cached".into(), Value::Bool(true));
+        if let Some(v) = row.get("generated_at") { obj.insert("_generated_at".into(), v.clone()); }
+        if let Some(v) = row.get("corpus_size")  { obj.insert("_corpus_size".into(),  v.clone()); }
+        if let Some(v) = row.get("provider")     { obj.insert("_provider".into(),     v.clone()); }
+        if let Some(v) = row.get("model")        { obj.insert("_model".into(),        v.clone()); }
+        // Mirror the Python ok flag — when persisted reports omit "ok",
+        // they're still valid (load_insights doesn't add one), so default to true.
+        if !obj.contains_key("ok") {
+            obj.insert("ok".into(), Value::Bool(true));
+        }
+    }
+    Ok(report)
+}
+
+/// Native bundled count fetch — replaces 11 separate `runQuery` calls (one
+/// per tab freshness badge) with a single rusqlite round-trip.
+///
+/// Returns a JSON object: `{ painpoints, feature_wishes, workarounds,
+/// products, concepts, evidence_papers, total_findings, posts, sources,
+/// hypotheses, ai_analyses }`. Empty/zero values are still present so the
+/// frontend can simply look up keys without null-guarding every read.
+///
+/// On a fresh DB (no `graph_nodes` table yet), every counter is 0 — never
+/// errors. Sub-millisecond on warm WAL.
+#[tauri::command]
+pub async fn topic_counts_bundle(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("reddit.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({
+            "painpoints": 0, "feature_wishes": 0, "workarounds": 0,
+            "products": 0, "concepts": 0, "evidence_papers": 0,
+            "total_findings": 0, "posts": 0, "sources": 0,
+            "hypotheses": 0, "ai_analyses": 0,
+        }));
+    }
+    let topic_clone = topic.clone();
+    let result = tokio::task::spawn_blocking(move || -> serde_json::Map<String, Value> {
+        let mut p = serde_json::Map::new();
+        p.insert("topic".into(), Value::String(topic_clone.clone()));
+
+        // Helper that runs a `SELECT count(*) AS n FROM ...` and returns the
+        // integer or 0 on any error (missing table on fresh install, etc.).
+        let count = |sql: &str| -> i64 {
+            match crate::db::query_db(&db_path, sql, Some(&p)) {
+                Ok(rows) => rows.first()
+                    .and_then(|r| r.get("n"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+                Err(_) => 0,
+            }
+        };
+
+        let painpoints       = count("SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic AND kind='painpoint'");
+        let feature_wishes   = count("SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic AND kind='feature_wish'");
+        let workarounds      = count("SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic AND kind='workaround'");
+        let products         = count("SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic AND kind='product'");
+        let concepts         = count("SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic AND kind='concept'");
+        let evidence_papers  = count("SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic AND kind='evidence_paper'");
+        let total_findings   = count("SELECT count(*) AS n FROM graph_nodes WHERE topic=:topic");
+        let posts            = count("SELECT count(*) AS n FROM topic_posts WHERE topic=:topic");
+        let sources          = count(
+            "SELECT count(DISTINCT coalesce(p.source_type,'reddit')) AS n \
+             FROM topic_posts tp JOIN posts p ON p.id=tp.post_id WHERE tp.topic=:topic"
+        );
+        let hypotheses       = count("SELECT count(*) AS n FROM hypotheses WHERE topic=:topic");
+        let ai_analyses      = count("SELECT count(*) AS n FROM mcp_analyses WHERE topic=:topic");
+
+        let mut m = serde_json::Map::new();
+        m.insert("painpoints".into(),       Value::from(painpoints));
+        m.insert("feature_wishes".into(),   Value::from(feature_wishes));
+        m.insert("workarounds".into(),      Value::from(workarounds));
+        m.insert("products".into(),         Value::from(products));
+        m.insert("concepts".into(),         Value::from(concepts));
+        m.insert("evidence_papers".into(),  Value::from(evidence_papers));
+        m.insert("total_findings".into(),   Value::from(total_findings));
+        m.insert("posts".into(),            Value::from(posts));
+        m.insert("sources".into(),          Value::from(sources));
+        m.insert("hypotheses".into(),       Value::from(hypotheses));
+        m.insert("ai_analyses".into(),      Value::from(ai_analyses));
+        m
+    })
+    .await
+    .map_err(|e| format!("count bundle failed: {e}"))?;
+    Ok(Value::Object(result))
+}
+
 /// Path to the user's BYOK env file (`~/.config/reddit-myind/.env`).
 fn byok_env_path() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
