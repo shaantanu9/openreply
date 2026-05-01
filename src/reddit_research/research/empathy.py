@@ -197,6 +197,13 @@ def build_empathy_map(
         "gap_notes": (parsed.get("gap_note") or "").strip()[:600],
         "created_at": created_at,
         "updated_at": now,
+        # Persisted so reads (get_empathy_map) can tell the UI whether
+        # the row came from an LLM call or the offline seed. Without
+        # this, the empathy screen had no way to distinguish "row is
+        # empty because nothing's been built" from "row was filled by
+        # the offline seeder", and incorrectly showed "No LLM
+        # configured" on every fresh topic.
+        "built_offline": 0 if used_llm else 1,
     }
     db["empathy_maps"].upsert(row, pk="id")
 
@@ -234,6 +241,12 @@ def get_empathy_map(topic: str, persona: str = "primary") -> dict[str, Any]:
         "feels": json.loads(r.get("feels_json") or "[]"),
         "gap_notes": r.get("gap_notes") or "",
         "updated_at": r.get("updated_at") or "",
+        # Surfaces to the UI so the offline-seed banner only shows
+        # when the row was actually built without an LLM. Old rows
+        # written before this column existed return falsy → no banner
+        # (they may or may not have used the LLM, but assuming the
+        # better default is preferable to a misleading warning).
+        "built_offline": bool(r.get("built_offline")),
     }
 
 

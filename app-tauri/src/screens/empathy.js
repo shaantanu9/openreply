@@ -11,6 +11,24 @@ import { api, esc } from '../api.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
+function isMissingMapError(err) {
+  // Tightened: only treat the literal "not found" backend response as
+  // missing. The previous broad match against "empathy map" caught any
+  // error that mentioned the screen by name (e.g. parse errors), and
+  // routed them into the auto-bootstrap path which then showed the
+  // misleading "No LLM configured" banner.
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes('not found');
+}
+
+function isNoLlmError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes('no llm')
+    || msg.includes('not connected')
+    || msg.includes('api keys')
+    || msg.includes('all configured llm providers failed');
+}
+
 function topicFromHash() {
   const h = location.hash || '';
   const m = h.match(/^#\/empathy\/([^/?]+)/);
@@ -28,17 +46,32 @@ function quadrant(label, items, kind) {
   `;
 }
 
-function renderEmpathyShell(topic, persona, map, offlineSeed) {
-  const banner = offlineSeed
-    ? `<div class="empathy-banner muted">⚠ No LLM provider configured — offline seed below was mined deterministically from your corpus. Add an OpenAI / Anthropic / Ollama key in Settings, then click Refresh.</div>`
-    : '';
+function renderEmpathyShell(topic, persona, map, state) {
+  // state ∈ { 'never_built' | 'offline' | 'llm' | 'empty_corpus' }
+  // Banner rules:
+  //   never_built  → friendly nudge to click Build (NOT a warning)
+  //   offline      → real warning that the LLM call failed/missing
+  //   llm          → no banner
+  //   empty_corpus → explain why nothing showed up
+  const banner = (() => {
+    if (state === 'offline') {
+      return `<div class="empathy-banner muted">⚠ The last build ran in offline mode (LLM unavailable). <em>Says</em>, <em>Does</em>, and <em>Feels</em> are seeded from the corpus; <em>Thinks</em> and the gap-note need an LLM.</div>`;
+    }
+    if (state === 'never_built') {
+      return `<div class="empathy-banner muted">No empathy map yet for this persona. Click <b>Build / refresh</b> to mine the corpus.</div>`;
+    }
+    if (state === 'empty_corpus') {
+      return `<div class="empathy-banner muted">No matching corpus posts found for persona <b>${esc(persona)}</b>. Run a collect on this topic first, then come back.</div>`;
+    }
+    return '';
+  })();
   const updated = map?.updated_at
     ? `Last updated: ${new Date(map.updated_at).toLocaleString()}`
     : 'Never built';
   return `
     <header class="topbar">
       <div class="crumbs">
-        <a href="#/empathy">Empathy maps</a> ›
+        <a href="#/empathy">Empathy Maps</a> ›
         <strong>${esc(topic)}</strong>
         <span class="muted" style="font-size:11px;margin-left:8px">${esc(updated)}</span>
       </div>
@@ -91,15 +124,47 @@ async function renderTopicEmpathy(root, topic) {
   try {
     result = await api.empathyGet(topic, persona);
   } catch (e) {
-    root.innerHTML = `<div class="empty-big"><h3>Couldn't load empathy map</h3><p>${esc(e?.message || e)}</p></div>`;
-    return;
+    // First-open bootstrap: if no row exists yet, build once (offline-safe),
+    // then re-read. This avoids a confusing "not found / no LLM" dead-end.
+    if (isMissingMapError(e) || isNoLlmError(e)) {
+      try {
+        await api.runEmpathyBuild(topic, persona);
+        result = await api.empathyGet(topic, persona);
+      } catch (bootstrapErr) {
+        if (isNoLlmError(bootstrapErr)) {
+          root.innerHTML = `<div class="empty-big"><h3>No LLM configured</h3><p>The empathy map can still run in offline mode from local corpus data. Click Build / refresh to try again.</p></div>`;
+        } else {
+          root.innerHTML = `<div class="empty-big"><h3>Couldn't load empathy map</h3><p>${esc(bootstrapErr?.message || bootstrapErr)}</p><p class="muted">Tip: if no LLM is configured, Gap Map will still seed an offline empathy map from your corpus after Build/refresh.</p></div>`;
+        }
+        return;
+      }
+    } else {
+      root.innerHTML = `<div class="empty-big"><h3>Couldn't load empathy map</h3><p>${esc(e?.message || e)}</p></div>`;
+      return;
+    }
   }
 
   const exists = !!result?.ok;
   const map = exists ? result : null;
-  const offlineSeed = !exists || (Array.isArray(map?.thinks) && map.thinks.length === 0 && (map?.says?.length || 0) > 0);
+  // State drives the banner. Falls back to never_built when the row is
+  // missing entirely; offline only when the persisted row explicitly
+  // marks built_offline; empty_corpus when an existing row has zero
+  // signal in every quadrant (likely no posts to mine).
+  let state;
+  if (!exists) {
+    state = 'never_built';
+  } else if (map?.built_offline) {
+    state = 'offline';
+  } else {
+    const totalSignals =
+      (map?.says?.length || 0) +
+      (map?.thinks?.length || 0) +
+      (map?.does?.length || 0) +
+      (map?.feels?.length || 0);
+    state = totalSignals === 0 ? 'empty_corpus' : 'llm';
+  }
 
-  root.innerHTML = renderEmpathyShell(topic, persona, map, offlineSeed);
+  root.innerHTML = renderEmpathyShell(topic, persona, map, state);
   window.refreshIcons?.();
 
   $('#empathy-build', root)?.addEventListener('click', async () => {
@@ -116,7 +181,10 @@ async function renderTopicEmpathy(root, topic) {
       // Re-route after hash change updates the URL
       setTimeout(() => renderTopicEmpathy(root, topic), 0);
     } catch (e) {
-      alert(`Couldn't build empathy map: ${e?.message || e}`);
+      const msg = isNoLlmError(e)
+        ? 'No LLM configured — offline mode is available.'
+        : `Couldn't build empathy map: ${e?.message || e}`;
+      alert(msg);
       btn.disabled = false;
       btn.innerHTML = '<i data-lucide="refresh-cw"></i> Build / refresh';
       window.refreshIcons?.();
@@ -127,7 +195,7 @@ async function renderTopicEmpathy(root, topic) {
 async function renderPicker(root) {
   root.innerHTML = `
     <header class="topbar">
-      <div class="crumbs"><strong>Empathy maps</strong> · Gray, 2010</div>
+      <div class="crumbs"><strong>Empathy Maps</strong> · Gray, 2010</div>
     </header>
     <div class="empathy-wrap"><div id="empathy-picker-mount"><div class="empty-state">loading…</div></div></div>
   `;
