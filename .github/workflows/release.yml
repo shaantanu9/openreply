@@ -65,7 +65,12 @@ jobs:
 
       - name: Install Python deps
         shell: bash
-        run: uv sync --frozen || uv sync
+        # `--all-extras` is critical — pyinstaller lives under [project.optional-
+        # dependencies] dev, so without it `uv run pyinstaller` errors out with
+        # "Failed to spawn: No such file or directory". The frozen sync may
+        # fail on uv.lock drift; fall back to a fresh resolution.
+        run: |
+          uv sync --frozen --all-extras || uv sync --all-extras
 
       - name: Build reddit-cli sidecar (PyInstaller) — Unix
         if: matrix.platform != 'windows-latest'
