@@ -677,6 +677,104 @@ def init_schema(db: Database) -> None:
     # pre-existing product rows survive without data loss.
     _ensure_lifecycle_schema(db)
 
+    # Persona agents (2026-05-12) — single-lens learning agents that
+    # auto-ingest every collected post relevant to their goal. Memories
+    # are LLM-distilled 1-3 sentence lessons with a source-post evidence
+    # trail. Edges + conclusions are populated by Phase-2 consolidation.
+    _ensure_persona_schema(db)
+
+
+def _ensure_persona_schema(db: Database) -> None:
+    """Create persona tables + seed the default "Psyche" persona. Idempotent."""
+    now = _utc_now()
+    if "personas" not in db.table_names():
+        db["personas"].create(
+            {
+                "id": int,
+                "name": str,
+                "goal": str,
+                "lens": str,
+                "system_prompt": str,
+                "color": str,
+                "icon": str,
+                "active": int,
+                "created_at": str,
+                "updated_at": str,
+            },
+            pk="id",
+        )
+        db["personas"].create_index(["name"], unique=True)
+
+    if "persona_memories" not in db.table_names():
+        db["persona_memories"].create(
+            {
+                "id": int,
+                "persona_id": int,
+                "source_post_id": str,
+                "topic": str,
+                "lesson": str,
+                "excerpt": str,
+                "tags": str,
+                "importance": float,
+                "created_at": str,
+            },
+            pk="id",
+            foreign_keys=[("persona_id", "personas", "id")],
+        )
+        db["persona_memories"].create_index(["persona_id"])
+        db["persona_memories"].create_index(["persona_id", "topic"])
+        db["persona_memories"].create_index(["persona_id", "source_post_id"], unique=True)
+
+    if "persona_edges" not in db.table_names():
+        db["persona_edges"].create(
+            {
+                "id": int,
+                "persona_id": int,
+                "from_memory_id": int,
+                "to_memory_id": int,
+                "kind": str,
+                "weight": float,
+                "created_at": str,
+            },
+            pk="id",
+        )
+        db["persona_edges"].create_index(["persona_id"])
+        db["persona_edges"].create_index(["from_memory_id"])
+        db["persona_edges"].create_index(["to_memory_id"])
+
+    if "persona_conclusions" not in db.table_names():
+        db["persona_conclusions"].create(
+            {
+                "id": int,
+                "persona_id": int,
+                "statement": str,
+                "evidence_memory_ids": str,
+                "confidence": float,
+                "created_at": str,
+                "updated_at": str,
+            },
+            pk="id",
+        )
+        db["persona_conclusions"].create_index(["persona_id"])
+
+    # Seed default persona on a fresh install. Users can edit/disable later.
+    if db.execute("SELECT COUNT(*) FROM personas").fetchone()[0] == 0:
+        db["personas"].insert({
+            "name": "Psyche",
+            "goal": "Learn human psychology from every corpus, regardless of topic.",
+            "lens": "psychology",
+            "system_prompt": (
+                "You are Psyche, a learning agent whose sole goal is to extract "
+                "psychological insights — cognitive biases, motivations, emotions, "
+                "social dynamics, behavior patterns — from anything you read."
+            ),
+            "color": "#7c3aed",
+            "icon": "brain",
+            "active": 1,
+            "created_at": now,
+            "updated_at": now,
+        })
+
 
 def _ensure_extraction_queue(db: Database) -> None:
     """Create the extraction_queue table + indexes, then backfill existing
