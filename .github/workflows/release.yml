@@ -170,7 +170,13 @@ jobs:
         run: npm ci
 
       # ---------- Tauri build + upload ----------
-      - name: Build and release Tauri bundle
+      # Two parallel step definitions — only one fires per run based on
+      # whether the APPLE_CERTIFICATE secret is set. Empty `env:` strings
+      # to tauri-action break codesign on macOS (tauri-bundler reads
+      # APPLE_SIGNING_IDENTITY="" and still tries to security-import
+      # an empty .p12). Hard split avoids the trap.
+      - name: Build and release Tauri bundle (signed)
+        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -178,14 +184,13 @@ jobs:
           # release mode. Bakes a HMAC secret into the desktop license-
           # activation flow. Must be ≥32 chars. Set as a repo secret.
           JWT_DESKTOP_SECRET: ${{ secrets.JWT_DESKTOP_SECRET }}
-          # macOS code signing + notarization (optional — unset = unsigned)
+          # macOS code signing + notarization — all set together here.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Tauri updater signing (optional)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
@@ -201,4 +206,26 @@ jobs:
             - Linux: `*.AppImage` / `*.deb`
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build and release Tauri bundle (unsigned)
+        if: ${{ secrets.APPLE_CERTIFICATE == '' }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JWT_DESKTOP_SECRET: ${{ secrets.JWT_DESKTOP_SECRET }}
+        with:
+          projectPath: ./app-tauri
+          tagName: v__VERSION__
+          releaseName: Gap Map v__VERSION__ (unsigned)
+          releaseBody: |
+            **Unsigned build** — for testing only. macOS will warn on first
+            launch (right-click → Open to bypass Gatekeeper).
+
+            - macOS (Apple Silicon): `*_aarch64.dmg`
+            - macOS (Intel): `*_x64.dmg`
+            - Windows: `*_x64_en-US.msi` / `*_x64-setup.exe`
+            - Linux: `*.AppImage` / `*.deb`
+          releaseDraft: true
+          prerelease: true
           args: ${{ matrix.args }}
