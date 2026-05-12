@@ -1347,6 +1347,14 @@ export const api = {
   // Phase 4a — persona-of-personas (ingest peer conclusions through own lens)
   personaIngestPeers: (personaId, limit = 50) =>
     invoke('persona_agent_ingest_peers', { personaId, limit }),
+
+  // Phase 4c — share-rejection log (lens contradictions map)
+  personaRejections: (personaId, opts = {}) =>
+    invoke('persona_agent_rejections', {
+      personaId,
+      direction: opts.direction || 'involving',
+      limit: opts.limit || 50,
+    }),
 };
 
 // ---------- tiny DOM helpers ----------

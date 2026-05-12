@@ -232,6 +232,28 @@ pub async fn persona_agent_conclude(
 }
 
 #[tauri::command]
+pub async fn persona_agent_rejections(
+    app: AppHandle,
+    persona_id: i64,
+    direction: Option<String>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let id_s = persona_id.to_string();
+    let dir = direction.unwrap_or_else(|| "involving".to_string());
+    let lim_s = limit.unwrap_or(50).to_string();
+    run_cli(
+        &app,
+        vec![
+            "persona", "rejections", &id_s,
+            "--direction", &dir, "--limit", &lim_s,
+            "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
 pub async fn persona_agent_share(
     app: AppHandle,
     from_persona_id: i64,

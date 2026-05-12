@@ -23,7 +23,7 @@ from .graph import (
     list_edges,
 )
 from .conclude import synthesize_conclusions, list_conclusions
-from .share import share_memory
+from .share import share_memory, list_rejections
 
 __all__ = [
     "create_persona",
@@ -45,4 +45,5 @@ __all__ = [
     "synthesize_conclusions",
     "list_conclusions",
     "share_memory",
+    "list_rejections",
 ]

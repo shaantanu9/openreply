@@ -428,6 +428,8 @@ fn main() {
             persona_cmds::persona_agent_share,
             // Phase 4a — persona-of-personas (ingest peer conclusions)
             persona_cmds::persona_agent_ingest_peers,
+            // Phase 4c — share-rejection log (lens contradictions)
+            persona_cmds::persona_agent_rejections,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");

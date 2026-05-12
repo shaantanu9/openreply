@@ -757,6 +757,25 @@ def _ensure_persona_schema(db: Database) -> None:
         )
         db["persona_conclusions"].create_index(["persona_id"])
 
+    # Phase 4c (2026-05-12) — when share_memory() is called but the receiver's
+    # lens says "not relevant", record it. Over time this builds a map of where
+    # personas' worldviews diverge — the lens-edges of the agent ecosystem.
+    if "persona_rejections" not in db.table_names():
+        db["persona_rejections"].create(
+            {
+                "id": int,
+                "from_persona_id": int,
+                "from_memory_id": int,
+                "to_persona_id": int,
+                "donor_lesson": str,
+                "reason": str,
+                "created_at": str,
+            },
+            pk="id",
+        )
+        db["persona_rejections"].create_index(["to_persona_id"])
+        db["persona_rejections"].create_index(["from_persona_id"])
+
     # Seed default persona on a fresh install. Users can edit/disable later.
     if db.execute("SELECT COUNT(*) FROM personas").fetchone()[0] == 0:
         db["personas"].insert({

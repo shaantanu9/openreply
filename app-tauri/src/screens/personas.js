@@ -712,6 +712,10 @@ async function mountConclusionsTab(host, persona) {
     </div>
     <div id="c-log" style="display:none;font-family:var(--mono, ui-monospace, monospace);font-size:12px;padding:10px;margin-bottom:12px;border:1px solid var(--border, #2a2a2a);border-radius:8px;max-height:240px;overflow-y:auto"></div>
     <div id="c-list" class="muted">loading…</div>
+    <div style="margin-top:24px">
+      <div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase" class="muted">CONTRADICTIONS — shares this persona refused (lens mismatches)</div>
+      <div id="c-rejections" style="margin-top:8px" class="muted">loading…</div>
+    </div>
   `;
 
   async function load() {
@@ -739,7 +743,29 @@ async function mountConclusionsTab(host, persona) {
       </div>
     `).join('');
   }
-  $('#c-refresh', host).addEventListener('click', load);
+  async function loadRejections() {
+    const box = $('#c-rejections', host);
+    if (!box) return;
+    box.innerHTML = '<div class="muted">loading…</div>';
+    try {
+      const r = unwrap(await api.personaRejections(persona.id, { direction: 'as_receiver', limit: 20 }));
+      const rows = r?.rejections || [];
+      if (!rows.length) {
+        box.innerHTML = '<div class="muted" style="font-size:12px">No shares have been refused by this lens yet. As other personas share memories to this one and the lens says "not relevant", the rejections will accumulate here — a map of where worldviews diverge.</div>';
+        return;
+      }
+      box.innerHTML = rows.map(j => `
+        <div style="padding:8px 10px;margin-bottom:6px;border-left:2px solid #b84747;background:#b8474711;border-radius:4px">
+          <div style="font-size:11px" class="muted">${esc(j.from_name || '?')} (${esc(j.from_lens || '?')}) → refused · ${fmtTime(j.created_at)}</div>
+          <div style="font-size:12px;margin:4px 0">donor said: <em>"${esc((j.donor_lesson || '').slice(0,200))}"</em></div>
+          <div style="font-size:12px;color:#b84747">reason: ${esc(j.reason || '')}</div>
+        </div>
+      `).join('');
+    } catch (e) {
+      box.innerHTML = `<div class="muted">error: ${esc(String(e?.message || e))}</div>`;
+    }
+  }
+  $('#c-refresh', host).addEventListener('click', () => { load(); loadRejections(); });
 
   let unsubP, unsubD;
   $('#c-synthesise', host).addEventListener('click', async () => {
@@ -776,6 +802,7 @@ async function mountConclusionsTab(host, persona) {
   });
 
   await load();
+  await loadRejections();
 }
 
 async function mountIngestTab(host, persona) {

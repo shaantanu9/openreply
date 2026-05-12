@@ -74,6 +74,38 @@ def _parse_json_blob(raw: str) -> dict | None:
     return None
 
 
+def list_rejections(persona_id: int, *, direction: str = "involving", limit: int = 100) -> list[dict]:
+    """List share-rejections for the persona's contradictions panel.
+
+    direction:
+      'involving' (default) — both donor and receiver perspectives
+      'as_donor'            — only rejections where this persona was the sender
+      'as_receiver'         — only rejections where this persona refused
+    """
+    db = get_db()
+    if direction == "as_donor":
+        where = "from_persona_id = ?"
+    elif direction == "as_receiver":
+        where = "to_persona_id = ?"
+    else:
+        where = "from_persona_id = ? OR to_persona_id = ?"
+    params = [persona_id, persona_id] if direction == "involving" else [persona_id]
+    cur = db.execute(
+        f"SELECT r.id, r.from_persona_id, r.from_memory_id, r.to_persona_id, "
+        f"r.donor_lesson, r.reason, r.created_at, "
+        f"pf.name AS from_name, pf.lens AS from_lens, "
+        f"pt.name AS to_name, pt.lens AS to_lens "
+        f"FROM persona_rejections r "
+        f"LEFT JOIN personas pf ON pf.id = r.from_persona_id "
+        f"LEFT JOIN personas pt ON pt.id = r.to_persona_id "
+        f"WHERE {where} "
+        f"ORDER BY r.created_at DESC LIMIT ?",
+        params + [int(limit)],
+    )
+    cols = [c[0] for c in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
 def share_memory(
     from_persona_id: int,
     memory_id: int,
@@ -154,6 +186,19 @@ def share_memory(
         return {"ok": False, "error": "llm returned unparseable json",
                 "raw_preview": (raw or "")[:200]}
     if not parsed.get("relevant") or not (parsed.get("lesson") or "").strip():
+        # Phase 4c — record the rejection so the contradictions panel on
+        # the donor's dashboard can show "this lens didn't take this".
+        try:
+            db["persona_rejections"].insert({
+                "from_persona_id": from_persona_id,
+                "from_memory_id": memory_id,
+                "to_persona_id": to_persona_id,
+                "donor_lesson": (src.get("lesson") or "")[:500],
+                "reason": (parsed.get("reason") or "lens mismatch")[:300],
+                "created_at": _now(),
+            })
+        except Exception:
+            pass
         return {
             "ok": False,
             "error": "receiver_lens_says_not_relevant",

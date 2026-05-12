@@ -25,6 +25,7 @@ from ..persona import (
     list_conclusions,
     list_memories,
     list_personas,
+    list_rejections as _list_rejections,
     share_memory as _share,
     synthesize_conclusions,
     update_persona as _update,
@@ -313,6 +314,29 @@ def cmd_share(
     typer.echo(f"  new lesson: {r['lesson']}")
     if r.get("edges_added"):
         typer.echo(f"  + {r['edges_added']} new edges in receiver's graph")
+
+
+@persona_app.command("rejections")
+def cmd_rejections(
+    persona_id: int = typer.Argument(...),
+    direction: str = typer.Option("involving", "--direction",
+        help="involving | as_donor | as_receiver"),
+    limit: int = typer.Option(50, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """List share-rejections involving this persona (lens contradictions)."""
+    rows = _list_rejections(persona_id, direction=direction, limit=limit)
+    if as_json:
+        _emit({"ok": True, "rejections": rows})
+        return
+    if not rows:
+        typer.echo("(no rejections yet — every share so far has been accepted)")
+        return
+    for r in rows:
+        typer.echo(f"#{r['id']}  {r.get('from_name')} ({r.get('from_lens')}) → "
+                   f"{r.get('to_name')} ({r.get('to_lens')})  [{r['created_at']}]")
+        typer.echo(f"   donor: {(r.get('donor_lesson') or '')[:160]}")
+        typer.echo(f"   reason: {r.get('reason')}")
 
 
 @persona_app.command("chat")
