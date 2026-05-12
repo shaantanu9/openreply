@@ -383,14 +383,23 @@ async function mountChatTab(host, persona) {
     </div>
   `;
   const hist = $('#chat-history', host);
-  function append(role, text, cits) {
+  function append(role, text, cits, beliefs, retrieval) {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'margin:8px 0;padding:8px 12px;border-radius:8px;line-height:1.5';
     wrap.style.background = role === 'user' ? 'var(--accent-soft, #7c3aed22)' : 'var(--bg-elev, #1a1a1a)';
-    wrap.innerHTML = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px" class="muted">${role}</div><div>${esc(text).replace(/\n/g,'<br/>')}</div>`;
+    const headExtras = retrieval ? `<span class="muted" style="font-size:10px;margin-left:8px">${esc(retrieval)} retrieval</span>` : '';
+    wrap.innerHTML = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px" class="muted">${role}${headExtras}</div><div>${esc(text).replace(/\n/g,'<br/>')}</div>`;
+    if (beliefs && beliefs.length) {
+      wrap.innerHTML += `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:11px">${beliefs.length} established beliefs</summary>` +
+        beliefs.map(b => `<div class="muted" style="margin-top:6px;font-size:11px"><strong>${esc(b.tag)}</strong> conf=${(b.confidence||0).toFixed(2)}: ${esc((b.statement||'').slice(0,220))}</div>`).join('') +
+        `</details>`;
+    }
     if (cits && cits.length) {
-      wrap.innerHTML += `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:11px">${cits.length} citations</summary>` +
-        cits.map(c => `<div class="muted" style="margin-top:6px;font-size:11px"><strong>${esc(c.tag)}</strong> mem#${c.memory_id} (topic=${esc(c.topic || '—')}): ${esc((c.lesson||'').slice(0,180))}</div>`).join('') +
+      wrap.innerHTML += `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:11px">${cits.length} memory citations</summary>` +
+        cits.map(c => {
+          const simBit = c.similarity != null ? ` · sim ${Number(c.similarity).toFixed(2)}` : '';
+          return `<div class="muted" style="margin-top:6px;font-size:11px"><strong>${esc(c.tag)}</strong> mem#${c.memory_id} (topic=${esc(c.topic || '—')}${simBit}): ${esc((c.lesson||'').slice(0,180))}</div>`;
+        }).join('') +
         `</details>`;
     }
     hist.appendChild(wrap);
@@ -400,7 +409,7 @@ async function mountChatTab(host, persona) {
     const q = $('#chat-q', host).value.trim();
     if (!q) return;
     const k = parseInt($('#chat-k', host).value, 10) || 8;
-    append('user', q, null);
+    append('user', q, null, null, null);
     $('#chat-q', host).value = '';
     const placeholder = document.createElement('div');
     placeholder.className = 'muted';
@@ -412,13 +421,13 @@ async function mountChatTab(host, persona) {
       const r = unwrap(await api.personaChat(persona.id, q, k));
       placeholder.remove();
       if (!r.ok) {
-        append(persona.name, 'error: ' + (r.error || 'unknown'), null);
+        append(persona.name, 'error: ' + (r.error || 'unknown'), null, null, null);
       } else {
-        append(persona.name, r.answer || '(empty)', r.citations);
+        append(persona.name, r.answer || '(empty)', r.citations, r.beliefs, r.retrieval);
       }
     } catch (e) {
       placeholder.remove();
-      append(persona.name, 'error: ' + String(e?.message || e), null);
+      append(persona.name, 'error: ' + String(e?.message || e), null, null, null);
     }
   }
   $('#chat-send', host).addEventListener('click', ask);
