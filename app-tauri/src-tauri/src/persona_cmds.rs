@@ -213,6 +213,28 @@ pub async fn persona_agent_conclude(
 }
 
 #[tauri::command]
+pub async fn persona_agent_share(
+    app: AppHandle,
+    from_persona_id: i64,
+    memory_id: i64,
+    to_persona_id: i64,
+) -> Result<Value, String> {
+    let from_s = from_persona_id.to_string();
+    let mid_s = memory_id.to_string();
+    let to_s = to_persona_id.to_string();
+    run_cli(
+        &app,
+        vec![
+            "persona", "share",
+            "-f", &from_s, "-m", &mid_s, "-t", &to_s,
+            "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
 pub async fn persona_agent_conclusions(
     app: AppHandle,
     persona_id: i64,

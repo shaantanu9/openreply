@@ -424,6 +424,8 @@ fn main() {
             persona_cmds::persona_agent_backfill,
             persona_cmds::persona_agent_conclude,
             persona_cmds::persona_agent_conclusions,
+            // Phase 3b — cross-persona memory share
+            persona_cmds::persona_agent_share,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");

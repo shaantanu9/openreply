@@ -24,6 +24,7 @@ from ..persona import (
     list_conclusions,
     list_memories,
     list_personas,
+    share_memory as _share,
     synthesize_conclusions,
     update_persona as _update,
 )
@@ -260,6 +261,31 @@ def cmd_conclusions(
     for c in rows:
         typer.echo(f"#{c['id']}  conf={c['confidence']:.2f}  evidence={c['evidence']}")
         typer.echo(f"   {c['statement']}")
+
+
+@persona_app.command("share")
+def cmd_share(
+    from_persona_id: int = typer.Option(..., "--from", "-f"),
+    memory_id: int = typer.Option(..., "--memory", "-m"),
+    to_persona_id: int = typer.Option(..., "--to", "-t"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Re-frame a memory from one persona through another's lens."""
+    r = _share(from_persona_id, memory_id, to_persona_id, provider=provider)
+    if as_json:
+        _emit(r)
+        return
+    if not r.get("ok"):
+        typer.echo(f"error: {r.get('error')}", err=True)
+        if r.get("existing_lesson"):
+            typer.echo(f"  receiver already had: {r['existing_lesson']}")
+        raise typer.Exit(2)
+    typer.echo(f"shared mem#{memory_id} from {r['from_persona_name']} → "
+               f"{r['to_persona_name']} as mem#{r['new_memory_id']}")
+    typer.echo(f"  new lesson: {r['lesson']}")
+    if r.get("edges_added"):
+        typer.echo(f"  + {r['edges_added']} new edges in receiver's graph")
 
 
 @persona_app.command("chat")

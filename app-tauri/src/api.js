@@ -1339,6 +1339,10 @@ export const api = {
     invoke('persona_agent_conclusions', { personaId, limit }),
   onPersonaConcludeProgress: (cb) => listen('persona_conclude:progress', e => cb(e.payload)),
   onPersonaConcludeDone:     (cb) => listen('persona_conclude:done',     e => cb(e.payload)),
+
+  // Phase 3b — cross-persona memory share
+  personaShare: (fromPersonaId, memoryId, toPersonaId) =>
+    invoke('persona_agent_share', { fromPersonaId, memoryId, toPersonaId }),
 };
 
 // ---------- tiny DOM helpers ----------

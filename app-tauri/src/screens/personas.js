@@ -88,10 +88,10 @@ function refreshIcons() {
 
 export async function renderPersonas(root) {
   root.innerHTML = `
-    <div class="screen-pad">
-      <div class="page-head">
-        <h1>Persona agents</h1>
-        <p class="muted">
+    <div class="screen-pad personas-screen" style="padding:24px 28px 48px;max-width:1200px;margin:0 auto">
+      <div class="page-head" style="margin-bottom:18px">
+        <h1 style="font-size:28px;letter-spacing:-.01em;margin:0 0 6px">Persona agents</h1>
+        <p class="muted" style="margin:0;max-width:820px;line-height:1.55;font-size:13.5px">
           Each persona is an always-on learning agent with a single lens.
           When you collect on any topic, every active persona reads the new
           posts, filters for relevance to its lens, and distills the lesson
@@ -100,33 +100,64 @@ export async function renderPersonas(root) {
         </p>
       </div>
 
-      <div class="card" style="margin:12px 0;padding:10px 14px;display:flex;align-items:center;gap:12px">
-        <i data-lucide="zap" style="width:18px;height:18px"></i>
-        <div style="flex:1">
-          <div style="font-weight:600">Auto-ingest after every collect</div>
-          <div class="muted" style="font-size:12px">When ON, every collect:done event fans out persona ingest across active personas for that topic.</div>
+      <div class="card persona-auto-ingest" style="margin:14px 0;padding:14px 18px;display:flex;align-items:center;gap:14px">
+        <div style="width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:rgba(124,58,237,.12);color:#7c3aed;flex-shrink:0">
+          <i data-lucide="zap" style="width:18px;height:18px"></i>
         </div>
-        <label class="switch" style="cursor:pointer">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px;color:var(--ink-1)">Auto-ingest after every collect</div>
+          <div class="muted" style="font-size:12px;margin-top:2px;line-height:1.45">When ON, every collect:done event fans out persona ingest across active personas for that topic.</div>
+        </div>
+        <label class="persona-switch" title="Toggle auto-ingest">
           <input id="ai-toggle" type="checkbox" />
-          <span style="margin-left:6px">enable</span>
+          <span class="persona-switch-track" aria-hidden="true"><span class="persona-switch-thumb"></span></span>
+          <span class="persona-switch-label">Enable</span>
         </label>
       </div>
 
-      <div id="personas-list" class="personas-grid" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));margin:18px 0"></div>
+      <div id="personas-list" class="personas-grid" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));margin:18px 0"></div>
 
-      <div class="card" style="margin-top:24px">
-        <div class="card-head"><h3>Create a new persona</h3></div>
-        <div class="card-body" style="display:grid;gap:10px;max-width:560px">
-          <label>Name <input id="np-name" placeholder="e.g. Market Hunter"></label>
-          <label>Lens (single keyword) <input id="np-lens" placeholder="e.g. market-gap"></label>
-          <label>Goal (one sentence) <textarea id="np-goal" rows="2" placeholder="e.g. Learn unmet market needs from every corpus."></textarea></label>
-          <label>System prompt override (optional) <textarea id="np-sp" rows="3" placeholder="Leave blank to auto-generate from name + goal + lens"></textarea></label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <label>Color <input id="np-color" type="color" value="#7c3aed"></label>
-            <label>Icon (lucide name)  <input id="np-icon" placeholder="sparkles" value="sparkles"></label>
-            <button id="np-create" class="btn-primary" style="margin-left:auto">Create</button>
+      <div class="card" style="margin-top:28px">
+        <div class="card-head" style="padding:18px 20px 0">
+          <div>
+            <h3>Create a new persona</h3>
+            <p>Name it, give it a lens, and write one sentence describing what it should learn.</p>
           </div>
-          <div id="np-msg" class="muted" style="font-size:12px"></div>
+        </div>
+        <div class="card-body np-form" style="display:grid;gap:14px">
+          <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr))">
+            <label class="np-field">
+              <span>Name</span>
+              <input id="np-name" placeholder="e.g. Market Hunter" />
+            </label>
+            <label class="np-field">
+              <span>Lens (single keyword)</span>
+              <input id="np-lens" placeholder="e.g. market-gap" />
+            </label>
+          </div>
+          <label class="np-field">
+            <span>Goal (one sentence)</span>
+            <textarea id="np-goal" rows="2" placeholder="e.g. Learn unmet market needs from every corpus."></textarea>
+          </label>
+          <label class="np-field">
+            <span>System prompt override <em class="muted" style="font-style:normal;font-weight:500">(optional)</em></span>
+            <textarea id="np-sp" rows="3" placeholder="Leave blank to auto-generate from name + goal + lens"></textarea>
+          </label>
+          <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+            <label class="np-field" style="width:auto">
+              <span>Color</span>
+              <input id="np-color" type="color" value="#7c3aed" />
+            </label>
+            <label class="np-field" style="flex:1;min-width:180px">
+              <span>Icon (lucide name)</span>
+              <input id="np-icon" placeholder="sparkles" value="sparkles" />
+            </label>
+            <button id="np-create" class="btn btn-primary btn-sm" style="height:38px">
+              <i data-lucide="plus" style="width:14px;height:14px"></i>
+              Create persona
+            </button>
+          </div>
+          <div id="np-msg" class="muted" style="font-size:12.5px;min-height:16px"></div>
         </div>
       </div>
     </div>
@@ -174,60 +205,82 @@ export async function renderPersonas(root) {
 
 async function reloadList(root) {
   const grid = $('#personas-list', root);
-  grid.innerHTML = '<div class="muted">loading…</div>';
+  grid.innerHTML = '<div class="muted" style="padding:18px">loading…</div>';
   try {
     const r = unwrap(await api.personaList());
     const rows = r?.personas || [];
     if (!rows.length) {
-      grid.innerHTML = '<div class="muted">no personas yet — create one below</div>';
+      grid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1;padding:36px;text-align:center">
+          <div style="font-size:14px;color:var(--ink-2);margin-bottom:4px">No personas yet</div>
+          <div class="muted" style="font-size:12.5px">Create your first one in the form below.</div>
+        </div>`;
       return;
     }
     grid.innerHTML = rows.map(p => personaCard(p)).join('');
     refreshIcons();
-    // Wire card actions
+    // Wire card actions: the whole card opens the detail view; buttons handle
+    // their own actions and stop propagation so they don't double-trigger.
     $$('[data-persona-id]', grid).forEach(el => {
+      const id = parseInt(el.dataset.personaId, 10);
+      // Whole-card navigation
       el.addEventListener('click', (ev) => {
-        const act = ev.target.closest('[data-act]')?.dataset.act;
-        if (!act) return;
-        ev.stopPropagation();
-        const id = parseInt(el.dataset.personaId, 10);
-        if (act === 'open')   location.hash = `#/persona/${id}`;
-        if (act === 'toggle') togglePersona(id, !el.dataset.active || el.dataset.active === '0', root);
-        if (act === 'delete') deletePersona(id, root);
+        if (ev.target.closest('[data-act]')) return; // button handled separately
+        location.hash = `#/persona/${id}`;
+      });
+      // Per-button actions
+      $$('[data-act]', el).forEach(btn => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const act = btn.dataset.act;
+          if (act === 'open')   location.hash = `#/persona/${id}`;
+          if (act === 'toggle') togglePersona(id, !(el.dataset.active === '1' || el.dataset.active === 'true'), root);
+          if (act === 'delete') deletePersona(id, root);
+        });
       });
     });
   } catch (e) {
-    grid.innerHTML = `<div class="muted">error: ${esc(String(e?.message || e))}</div>`;
+    grid.innerHTML = `<div class="muted" style="padding:18px">error: ${esc(String(e?.message || e))}</div>`;
   }
 }
 
 function personaCard(p) {
   const s = p.stats || { memories: 0, edges: 0, topics_seen: 0, last_memory_at: null };
   const color = p.color || '#7c3aed';
+  const isActive = p.active ? '1' : '0';
   return `
-    <div class="card persona-card" data-persona-id="${p.id}" data-active="${p.active}"
-         style="border-left:4px solid ${esc(color)};cursor:pointer">
-      <div class="card-head" style="padding:14px 16px;display:flex;align-items:center;gap:12px">
-        <div style="width:36px;height:36px;border-radius:8px;display:grid;place-items:center;background:${esc(color)}22;color:${esc(color)}">
-          <i data-lucide="${esc(p.icon || 'sparkles')}"></i>
+    <div class="card persona-card" data-persona-id="${p.id}" data-active="${isActive}"
+         style="border-left:4px solid ${esc(color)};cursor:pointer;display:flex;flex-direction:column">
+      <div class="card-head" style="padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:0">
+        <div style="width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:${esc(color)}22;color:${esc(color)};flex-shrink:0">
+          <i data-lucide="${esc(p.icon || 'sparkles')}" style="width:18px;height:18px"></i>
         </div>
         <div style="flex:1;min-width:0">
-          <h3 style="margin:0;font-size:16px">${esc(p.name)}</h3>
-          <p class="muted" style="margin:2px 0 0;font-size:12px">lens: ${esc(p.lens)} · ${p.active ? 'active' : 'inactive'}</p>
+          <h3 style="margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em">${esc(p.name)}</h3>
+          <p class="muted" style="margin:2px 0 0;font-size:11.5px">lens: <span style="color:${esc(color)};font-weight:600">${esc(p.lens)}</span> · ${p.active ? 'active' : 'paused'}</p>
         </div>
+        <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--ink-3);flex-shrink:0" aria-hidden="true"></i>
       </div>
-      <div class="card-body" style="padding:8px 16px 14px">
-        <p style="margin:0 0 10px;font-size:13px;line-height:1.4">${esc(p.goal)}</p>
-        <div style="display:flex;gap:14px;font-size:12px" class="muted">
-          <span><strong>${s.memories}</strong> memories</span>
-          <span><strong>${s.topics_seen}</strong> topics</span>
-          <span><strong>${s.edges}</strong> edges</span>
+      <div class="card-body" style="padding:6px 16px 14px;flex:1;display:flex;flex-direction:column">
+        <p style="margin:0 0 12px;font-size:13px;line-height:1.45;color:var(--ink-2)">${esc(p.goal)}</p>
+        <div class="persona-stats muted" style="display:flex;gap:16px;font-size:12px">
+          <span><strong style="color:var(--ink-1)">${s.memories}</strong> memories</span>
+          <span><strong style="color:var(--ink-1)">${s.topics_seen}</strong> topics</span>
+          <span><strong style="color:var(--ink-1)">${s.edges}</strong> edges</span>
         </div>
         <p class="muted" style="margin:6px 0 0;font-size:11px">last memory: ${fmtTime(s.last_memory_at)}</p>
-        <div style="display:flex;gap:6px;margin-top:12px">
-          <button class="btn-primary" data-act="open">Open</button>
-          <button class="btn-ghost-bordered" data-act="toggle">${p.active ? 'Pause' : 'Resume'}</button>
-          <button class="btn-ghost-bordered" data-act="delete" style="margin-left:auto;color:#b84747">Delete</button>
+        <div style="display:flex;gap:6px;margin-top:auto;padding-top:14px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" data-act="open">
+            <i data-lucide="folder-open" style="width:12px;height:12px"></i>
+            Open
+          </button>
+          <button class="btn btn-ghost btn-bordered btn-sm" data-act="toggle" title="${p.active ? 'Pause learning' : 'Resume learning'}">
+            <i data-lucide="${p.active ? 'pause' : 'play'}" style="width:12px;height:12px"></i>
+            ${p.active ? 'Pause' : 'Resume'}
+          </button>
+          <button class="btn btn-ghost btn-bordered btn-sm persona-delete-btn" data-act="delete" title="Delete this persona" style="margin-left:auto">
+            <i data-lucide="trash-2" style="width:12px;height:12px"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -333,7 +386,7 @@ async function mountMemoriesTab(host, persona) {
     <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
       <label>Filter by topic <input id="m-topic" placeholder="(all)" style="margin-left:6px"></label>
       <label>Limit <input id="m-limit" type="number" value="50" min="1" max="500" style="width:80px;margin-left:6px"></label>
-      <button id="m-refresh" class="btn-ghost-bordered" style="margin-left:auto">Refresh</button>
+      <button id="m-refresh" class="btn btn-ghost btn-bordered btn-sm" style="margin-left:auto"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
     </div>
     <div id="m-list" class="muted">loading…</div>
   `;
@@ -348,12 +401,13 @@ async function mountMemoriesTab(host, persona) {
       return;
     }
     $('#m-list', host).innerHTML = rows.map(m => `
-      <div class="card" style="margin-bottom:10px">
+      <div class="card" data-mem-id="${m.id}" style="margin-bottom:10px">
         <div class="card-body" style="padding:12px 16px">
           <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">
             <span class="chip" style="font-size:11px;padding:1px 7px;border-radius:5px;background:var(--accent-soft, #7c3aed22)">topic: ${esc(m.topic || '—')}</span>
             <span class="muted" style="font-size:11px">imp ${(m.importance ?? 0).toFixed(2)} · ${fmtTime(m.created_at)}</span>
             <span style="margin-left:auto;font-size:11px" class="muted">mem#${m.id}</span>
+            <button data-act="share" class="btn-ghost-bordered" style="padding:2px 8px;font-size:11px" title="Share this memory with another persona — they'll re-frame it through their own lens">Share →</button>
           </div>
           <p style="margin:0 0 6px;line-height:1.45">${esc(m.lesson || '')}</p>
           ${m.excerpt ? `<p class="muted" style="margin:0;font-size:12px;font-style:italic">"${esc(m.excerpt)}"</p>` : ''}
@@ -361,6 +415,11 @@ async function mountMemoriesTab(host, persona) {
         </div>
       </div>
     `).join('');
+    // Wire share buttons
+    $$('.card[data-mem-id]', host).forEach(card => {
+      const btn = card.querySelector('[data-act="share"]');
+      if (btn) btn.addEventListener('click', () => openShareModal(persona, parseInt(card.dataset.memId, 10)));
+    });
   }
   $('#m-refresh', host).addEventListener('click', load);
   $('#m-topic', host).addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
@@ -374,7 +433,7 @@ async function mountChatTab(host, persona) {
       <div style="display:flex;gap:8px">
         <input id="chat-q" placeholder="Ask ${esc(persona.name)} something…" style="flex:1"/>
         <input id="chat-k" type="number" value="8" min="1" max="30" style="width:64px" title="memories to retrieve"/>
-        <button id="chat-send" class="btn-primary">Ask</button>
+        <button id="chat-send" class="btn btn-primary btn-sm"><i data-lucide="send" style="width:12px;height:12px"></i>Ask</button>
       </div>
       <p class="muted" style="font-size:11px;margin:0">
         Answers come ONLY from ${esc(persona.name)}'s own memories. Citations
@@ -440,8 +499,8 @@ async function mountGraphTab(host, persona) {
   host.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
       <span class="muted" style="font-size:13px">Memory graph — node size by importance, edge weight by cosine similarity.</span>
-      <button id="g-refresh"  class="btn-ghost-bordered" style="margin-left:auto">Refresh</button>
-      <button id="g-backfill" class="btn-ghost-bordered" title="Re-embed every memory and recompute every edge from scratch">Backfill</button>
+      <button id="g-refresh"  class="btn btn-ghost btn-bordered btn-sm" style="margin-left:auto"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
+      <button id="g-backfill" class="btn btn-ghost btn-bordered btn-sm" title="Re-embed every memory and recompute every edge from scratch"><i data-lucide="layers" style="width:12px;height:12px"></i>Backfill</button>
     </div>
     <div id="g-stage" style="position:relative;width:100%;height:520px;border:1px solid var(--border, #2a2a2a);border-radius:8px;overflow:hidden;background:var(--bg-elev, #111)">
       <svg id="g-svg" width="100%" height="100%" style="display:block"></svg>
@@ -772,4 +831,81 @@ async function mountIngestTab(host, persona) {
       line('error: ' + String(e?.message || e));
     }
   });
+}
+
+// ─── share modal ──────────────────────────────────────────────────────────
+
+async function openShareModal(fromPersona, memoryId) {
+  // Fetch all personas → exclude the donor
+  let receivers = [];
+  try {
+    const r = unwrap(await api.personaList());
+    receivers = (r?.personas || []).filter(p => p.id !== fromPersona.id && p.active);
+  } catch {}
+
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = 'position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:9999';
+  const dlg = document.createElement('div');
+  dlg.style.cssText = 'background:var(--bg-elev, #1a1a1a);color:inherit;padding:20px;border-radius:10px;max-width:520px;width:90%;border:1px solid var(--border, #2a2a2a)';
+  dlg.innerHTML = `
+    <h3 style="margin:0 0 8px">Share mem#${memoryId} from ${esc(fromPersona.name)}</h3>
+    <p class="muted" style="margin:0 0 12px;font-size:12px">
+      The receiver will re-distill this lesson through their own lens. If the
+      receiver already has a memory from the same source post, the share is skipped.
+    </p>
+    ${receivers.length === 0
+      ? '<p class="muted">No other active personas to share with — create one or activate an inactive persona first.</p>'
+      : `<div id="share-list" style="display:grid;gap:8px;margin-bottom:14px"></div>`
+    }
+    <div id="share-result" class="muted" style="font-size:12px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button id="share-close" class="btn-ghost-bordered">Close</button>
+    </div>
+  `;
+  backdrop.appendChild(dlg);
+  document.body.appendChild(backdrop);
+
+  $('#share-close', dlg).addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  const list = $('#share-list', dlg);
+  if (list) {
+    list.innerHTML = receivers.map(p => `
+      <button data-rid="${p.id}" class="btn-ghost-bordered" style="display:flex;align-items:center;gap:10px;padding:10px 12px;text-align:left;cursor:pointer">
+        <span style="width:26px;height:26px;border-radius:6px;background:${esc(p.color || '#7c3aed')}33;color:${esc(p.color || '#7c3aed')};display:grid;place-items:center">
+          <i data-lucide="${esc(p.icon || 'sparkles')}"></i>
+        </span>
+        <span style="flex:1">
+          <div style="font-weight:600">${esc(p.name)}</div>
+          <div class="muted" style="font-size:11px">lens: ${esc(p.lens)}</div>
+        </span>
+        <span class="muted" style="font-size:11px">${p.stats?.memories || 0} mem</span>
+      </button>
+    `).join('');
+    refreshIcons();
+    list.querySelectorAll('button[data-rid]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const toId = parseInt(btn.dataset.rid, 10);
+        const out = $('#share-result', dlg);
+        out.textContent = `Re-framing through receiver's lens…`;
+        btn.disabled = true;
+        try {
+          const r = unwrap(await api.personaShare(fromPersona.id, memoryId, toId));
+          if (!r.ok) {
+            out.innerHTML = `<span style="color:#b84747">${esc(r.error || 'failed')}</span>`
+              + (r.existing_lesson ? `<br/><span class="muted">receiver already had: ${esc(r.existing_lesson.slice(0,200))}</span>` : '');
+          } else {
+            out.innerHTML = `
+              <div style="color:#2da44e">✓ shared as mem#${r.new_memory_id} on ${esc(r.to_persona_name)} (+${r.edges_added || 0} edges)</div>
+              <div style="margin-top:6px;line-height:1.4">${esc(r.lesson || '')}</div>
+            `;
+          }
+        } catch (e) {
+          out.innerHTML = `<span style="color:#b84747">${esc(String(e?.message || e))}</span>`;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  }
 }
