@@ -164,3 +164,66 @@ pub async fn persona_agent_ingest(
         .await
         .map_err(err_to_string)
 }
+
+// ─── Phase 2b — graph + conclusions ───
+
+#[tauri::command]
+pub async fn persona_agent_graph(
+    app: AppHandle,
+    persona_id: i64,
+    edge_limit: Option<u32>,
+) -> Result<Value, String> {
+    let id_s = persona_id.to_string();
+    let el_s = edge_limit.unwrap_or(500).to_string();
+    run_cli(
+        &app,
+        vec!["persona", "graph", &id_s, "--edge-limit", &el_s, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn persona_agent_backfill(
+    app: AppHandle,
+    persona_id: i64,
+) -> Result<Value, String> {
+    let id_s = persona_id.to_string();
+    run_cli(&app, vec!["persona", "backfill", &id_s, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Streaming conclusion synthesis. Emits `persona_conclude:progress` per
+/// cluster event and `persona_conclude:done` at the end.
+#[tauri::command]
+pub async fn persona_agent_conclude(
+    app: AppHandle,
+    persona_id: i64,
+    no_refresh: Option<bool>,
+) -> Result<(), String> {
+    let id_s = persona_id.to_string();
+    let mut args: Vec<&str> = vec!["persona", "conclude", &id_s, "--json"];
+    if no_refresh.unwrap_or(false) {
+        args.push("--no-refresh");
+    }
+    run_cli_streaming(&app, args, "persona_conclude:progress", "persona_conclude:done")
+        .await
+        .map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn persona_agent_conclusions(
+    app: AppHandle,
+    persona_id: i64,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let id_s = persona_id.to_string();
+    let lim_s = limit.unwrap_or(100).to_string();
+    run_cli(
+        &app,
+        vec!["persona", "conclusions", &id_s, "--limit", &lim_s, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}

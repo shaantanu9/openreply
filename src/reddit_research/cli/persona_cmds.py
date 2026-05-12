@@ -13,14 +13,18 @@ from typing import Optional
 import typer
 
 from ..persona import (
+    backfill_persona as _backfill,
     chat_persona,
     create_persona as _create,
     delete_persona as _delete,
     get_persona,
+    graph_payload,
     ingest_all_personas,
     ingest_persona,
+    list_conclusions,
     list_memories,
     list_personas,
+    synthesize_conclusions,
     update_persona as _update,
 )
 
@@ -176,6 +180,86 @@ def cmd_memories(
         typer.echo(f"   {m.get('lesson')}")
         if m.get("excerpt"):
             typer.echo(f"   evidence: \"{m['excerpt'][:160]}\"")
+
+
+@persona_app.command("graph")
+def cmd_graph(
+    persona_id: int = typer.Argument(...),
+    edge_limit: int = typer.Option(500, "--edge-limit"),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Dump persona's memory→memory graph as JSON (nodes + edges)."""
+    g = graph_payload(persona_id, edge_limit=edge_limit)
+    if as_json:
+        _emit({"ok": True, "graph": g})
+        return
+    typer.echo(f"nodes: {len(g['nodes'])}, edges: {len(g['edges'])}")
+    for e in g["edges"][:20]:
+        typer.echo(f"  {e['from_memory_id']:>3} -- {e['to_memory_id']:<3} "
+                   f"(w={e.get('weight') or 0:.3f})")
+
+
+@persona_app.command("backfill")
+def cmd_backfill(
+    persona_id: int = typer.Argument(...),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Re-embed every memory and recompute the full edge graph from scratch."""
+    r = _backfill(persona_id)
+    if as_json:
+        _emit(r)
+    else:
+        typer.echo(f"backfill: {r}")
+
+
+@persona_app.command("conclude")
+def cmd_conclude(
+    persona_id: int = typer.Argument(...),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    no_refresh: bool = typer.Option(False, "--no-refresh",
+        help="Skip clusters that already have a conclusion."),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Cluster the edge graph + LLM-synthesise one belief per cluster."""
+    refresh = not no_refresh
+    for ev in synthesize_conclusions(persona_id, provider=provider, refresh=refresh):
+        if as_json:
+            _emit(ev)
+            continue
+        kind = ev.get("event")
+        if kind == "start":
+            typer.echo(f"start — {ev['clusters']} clusters")
+        elif kind == "concluded":
+            flag = "refreshed" if ev.get("refreshed") else "new"
+            typer.echo(f"  ✓ {flag} #{ev['conclusion_id']} "
+                       f"(conf={ev['confidence']:.2f}, ev={ev['evidence']}):")
+            typer.echo(f"    {ev['statement']}")
+        elif kind == "skip":
+            typer.echo(f"  · skip {ev.get('reason')}")
+        elif kind == "error":
+            typer.echo(f"  ✗ {ev.get('error','')[:160]}", err=True)
+        elif kind == "done":
+            typer.echo(f"done — written={ev['written']} refreshed={ev['refreshed']} "
+                       f"skipped={ev['skipped']} errors={ev['errors']}")
+
+
+@persona_app.command("conclusions")
+def cmd_conclusions(
+    persona_id: int = typer.Argument(...),
+    limit: int = typer.Option(100, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """List persona conclusions (synthesised beliefs)."""
+    rows = list_conclusions(persona_id, limit=limit)
+    if as_json:
+        _emit({"ok": True, "conclusions": rows})
+        return
+    if not rows:
+        typer.echo("(no conclusions yet — run `persona conclude <id>` first)")
+        return
+    for c in rows:
+        typer.echo(f"#{c['id']}  conf={c['confidence']:.2f}  evidence={c['evidence']}")
+        typer.echo(f"   {c['statement']}")
 
 
 @persona_app.command("chat")

@@ -1328,6 +1328,17 @@ export const api = {
     }),
   onPersonaIngestProgress: (cb) => listen('persona_ingest:progress', e => cb(e.payload)),
   onPersonaIngestDone:     (cb) => listen('persona_ingest:done',     e => cb(e.payload)),
+
+  // Phase 2b — graph + conclusions
+  personaGraph:        (personaId, edgeLimit = 500) =>
+    invoke('persona_agent_graph', { personaId, edgeLimit }),
+  personaBackfill:     (personaId) => invoke('persona_agent_backfill', { personaId }),
+  personaConclude:     (personaId, opts = {}) =>
+    invoke('persona_agent_conclude', { personaId, noRefresh: opts.noRefresh || false }),
+  personaConclusions:  (personaId, limit = 100) =>
+    invoke('persona_agent_conclusions', { personaId, limit }),
+  onPersonaConcludeProgress: (cb) => listen('persona_conclude:progress', e => cb(e.payload)),
+  onPersonaConcludeDone:     (cb) => listen('persona_conclude:done',     e => cb(e.payload)),
 };
 
 // ---------- tiny DOM helpers ----------

@@ -22,6 +22,7 @@ from .graph import (
     is_available as graph_is_available,
     list_edges,
 )
+from .conclude import synthesize_conclusions, list_conclusions
 
 __all__ = [
     "create_persona",
@@ -39,4 +40,6 @@ __all__ = [
     "graph_payload",
     "graph_is_available",
     "list_edges",
+    "synthesize_conclusions",
+    "list_conclusions",
 ]

@@ -419,6 +419,11 @@ fn main() {
             persona_cmds::persona_agent_memories,
             persona_cmds::persona_agent_chat,
             persona_cmds::persona_agent_ingest,
+            // Phase 2b — graph + conclusions
+            persona_cmds::persona_agent_graph,
+            persona_cmds::persona_agent_backfill,
+            persona_cmds::persona_agent_conclude,
+            persona_cmds::persona_agent_conclusions,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");
