@@ -11,6 +11,14 @@ import { api, esc } from '../api.js';
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+/** Persona accent colours come from DB — only allow #rgb / #rrggbb for CSS injection */
+function safeHexColor(c, fallback = '#7c3aed') {
+  const raw = String(c ?? fallback).trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(raw)) return raw;
+  if (/^#[0-9A-Fa-f]{3}$/.test(raw)) return raw;
+  return fallback;
+}
+
 // ─── auto-ingest hook ─────────────────────────────────────────────────────
 // Phase 2d (2026-05-12). When a collect finishes, fan out persona ingest
 // over the newly-collected topic for every active persona. Off by default
@@ -309,14 +317,14 @@ export async function renderPersona(root, { params } = {}) {
   }
 
   root.innerHTML = `
-    <div class="screen-pad">
+    <div class="screen-pad persona-screen-pad">
       <div id="persona-head"></div>
-      <div class="tabs" style="margin:14px 0;display:flex;gap:8px;border-bottom:1px solid var(--line);flex-wrap:wrap">
-        <button class="tab-btn active" data-tab="memories"    style="padding:8px 14px;background:none;border:none;border-bottom:2px solid var(--accent, #7c3aed);cursor:pointer">Memories</button>
-        <button class="tab-btn"        data-tab="graph"       style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Graph</button>
-        <button class="tab-btn"        data-tab="conclusions" style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Conclusions</button>
-        <button class="tab-btn"        data-tab="chat"        style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Chat</button>
-        <button class="tab-btn"        data-tab="ingest"      style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Ingest</button>
+      <div class="persona-tabs" role="tablist" aria-label="Persona sections">
+        <button type="button" class="persona-tab-btn active" data-tab="memories" role="tab" aria-selected="true">Memories</button>
+        <button type="button" class="persona-tab-btn" data-tab="graph" role="tab" aria-selected="false">Graph</button>
+        <button type="button" class="persona-tab-btn" data-tab="conclusions" role="tab" aria-selected="false">Conclusions</button>
+        <button type="button" class="persona-tab-btn" data-tab="chat" role="tab" aria-selected="false">Chat</button>
+        <button type="button" class="persona-tab-btn" data-tab="ingest" role="tab" aria-selected="false">Ingest</button>
       </div>
       <div id="persona-body"></div>
     </div>
@@ -332,15 +340,18 @@ export async function renderPersona(root, { params } = {}) {
     return;
   }
 
+  const pad = root.querySelector('.persona-screen-pad');
+  if (pad) pad.style.setProperty('--persona-accent', safeHexColor(persona.color));
+
   $('#persona-head', root).innerHTML = renderHead(persona);
   refreshIcons();
 
-  const tabBtns = $$('.tab-btn', root);
+  const tabBtns = $$('.persona-tab-btn', root);
   tabBtns.forEach(b => b.addEventListener('click', () => {
     tabBtns.forEach(x => {
       const on = x === b;
       x.classList.toggle('active', on);
-      x.style.borderBottomColor = on ? 'var(--accent, #7c3aed)' : 'transparent';
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     mountTab(b.dataset.tab, $('#persona-body', root), persona);
   }));
@@ -349,20 +360,19 @@ export async function renderPersona(root, { params } = {}) {
 
 function renderHead(p) {
   const s = p.stats || {};
-  const color = p.color || '#7c3aed';
   return `
-    <div style="display:flex;align-items:flex-start;gap:14px">
-      <div style="width:48px;height:48px;border-radius:10px;display:grid;place-items:center;background:${esc(color)}22;color:${esc(color)}">
+    <div class="persona-detail-head">
+      <div class="persona-icon">
         <i data-lucide="${esc(p.icon || 'sparkles')}" style="width:24px;height:24px"></i>
       </div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:10px">
-          <h1 style="margin:0;font-size:22px">${esc(p.name)}</h1>
-          <span class="chip" style="background:${esc(color)}22;color:${esc(color)};padding:2px 8px;border-radius:6px;font-size:12px">${esc(p.lens)}</span>
-          <span class="muted" style="font-size:12px">${p.active ? 'active' : 'paused'}</span>
+        <div class="persona-detail-row1">
+          <h1>${esc(p.name)}</h1>
+          <span class="persona-lens-chip">${esc(p.lens)}</span>
+          <span class="persona-status-chip ${p.active ? 'is-active' : ''}">${p.active ? 'active' : 'paused'}</span>
         </div>
-        <p class="muted" style="margin:6px 0 0">${esc(p.goal)}</p>
-        <div style="display:flex;gap:14px;margin-top:8px;font-size:13px" class="muted">
+        <p>${esc(p.goal)}</p>
+        <div class="persona-stat-row">
           <span><strong>${s.memories || 0}</strong> memories</span>
           <span><strong>${s.topics_seen || 0}</strong> topics</span>
           <span><strong>${s.edges || 0}</strong> edges</span>
@@ -383,40 +393,42 @@ function mountTab(tab, host, persona) {
 
 async function mountMemoriesTab(host, persona) {
   host.innerHTML = `
-    <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
-      <label>Filter by topic <input id="m-topic" placeholder="(all)" style="margin-left:6px"></label>
-      <label>Limit <input id="m-limit" type="number" value="50" min="1" max="500" style="width:80px;margin-left:6px"></label>
-      <button id="m-refresh" class="btn btn-ghost btn-bordered btn-sm" style="margin-left:auto"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
+    <div class="persona-toolbar">
+      <span class="persona-toolbar-hint">All ${esc(persona.name)}'s distilled lessons — newest first. Click <strong>Share →</strong> on any memory to push it through another persona's lens.</span>
+      <label>Topic<input id="m-topic" type="text" placeholder="(all)"></label>
+      <label>Limit<input id="m-limit" type="number" value="50" min="1" max="500"></label>
+      <button id="m-refresh" class="btn btn-ghost btn-bordered btn-sm"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
     </div>
-    <div id="m-list" class="muted">loading…</div>
+    <div id="m-list" class="persona-list"></div>
   `;
   async function load() {
-    $('#m-list', host).innerHTML = '<div class="muted">loading…</div>';
+    const listEl = $('#m-list', host);
+    listEl.innerHTML = '<div class="persona-empty">Loading memories…</div>';
     const topic = $('#m-topic', host).value.trim() || null;
     const limit = parseInt($('#m-limit', host).value, 10) || 50;
     const r = unwrap(await api.personaMemories(persona.id, { topic, limit }));
     const rows = r?.memories || [];
     if (!rows.length) {
-      $('#m-list', host).innerHTML = '<div class="muted">no memories yet — go to the Ingest tab.</div>';
+      listEl.innerHTML = `<div class="persona-empty">No memories yet${topic ? ` for topic <strong>${esc(topic)}</strong>` : ''} — open the <strong>Ingest</strong> tab to run a pass over your corpus.</div>`;
       return;
     }
-    $('#m-list', host).innerHTML = rows.map(m => `
-      <div class="card" data-mem-id="${m.id}" style="margin-bottom:10px">
-        <div class="card-body" style="padding:12px 16px">
-          <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">
-            <span class="chip" style="font-size:11px;padding:1px 7px;border-radius:5px;background:var(--accent-soft, #7c3aed22)">topic: ${esc(m.topic || '—')}</span>
-            <span class="muted" style="font-size:11px">imp ${(m.importance ?? 0).toFixed(2)} · ${fmtTime(m.created_at)}</span>
-            <span style="margin-left:auto;font-size:11px" class="muted">mem#${m.id}</span>
-            <button data-act="share" class="btn-ghost-bordered" style="padding:2px 8px;font-size:11px" title="Share this memory with another persona — they'll re-frame it through their own lens">Share →</button>
-          </div>
-          <p style="margin:0 0 6px;line-height:1.45">${esc(m.lesson || '')}</p>
-          ${m.excerpt ? `<p class="muted" style="margin:0;font-size:12px;font-style:italic">"${esc(m.excerpt)}"</p>` : ''}
-          ${m.post_title ? `<p class="muted" style="margin:6px 0 0;font-size:11px">source: ${esc(m.post_source || '?')} — ${esc(m.post_title.slice(0,80))}${m.post_url ? ` <a href="${esc(m.post_url)}" target="_blank">↗</a>` : ''}</p>` : ''}
+    listEl.innerHTML = rows.map(m => `
+      <article class="persona-mem-card" data-mem-id="${m.id}">
+        <div class="persona-mem-meta">
+          <span class="persona-topic-chip">${esc(m.topic || '—')}</span>
+          <span>importance ${(m.importance ?? 0).toFixed(2)}</span>
+          <span>·</span>
+          <span>${fmtTime(m.created_at)}</span>
+          <span class="persona-mem-id">mem#${m.id}</span>
+          <button type="button" data-act="share" class="btn btn-ghost btn-bordered btn-sm persona-share-btn" title="Share this memory with another persona — they'll re-frame it through their own lens"><i data-lucide="share-2" style="width:11px;height:11px"></i>Share</button>
         </div>
-      </div>
+        <p class="persona-mem-lesson">${esc(m.lesson || '')}</p>
+        ${m.excerpt ? `<p class="persona-mem-excerpt">"${esc(m.excerpt)}"</p>` : ''}
+        ${m.post_title ? `<p class="persona-mem-source">source: ${esc(m.post_source || '?')} — ${esc(m.post_title.slice(0,90))}${m.post_url ? ` <a href="${esc(m.post_url)}" target="_blank" rel="noopener">↗</a>` : ''}</p>` : ''}
+      </article>
     `).join('');
-    // Wire share buttons
-    $$('.card[data-mem-id]', host).forEach(card => {
+    refreshIcons();
+    $$('.persona-mem-card', listEl).forEach(card => {
       const btn = card.querySelector('[data-act="share"]');
       if (btn) btn.addEventListener('click', () => openShareModal(persona, parseInt(card.dataset.memId, 10)));
     });
@@ -427,8 +439,7 @@ async function mountMemoriesTab(host, persona) {
 }
 
 async function mountChatTab(host, persona) {
-  const raw = String(persona.color || '#7c3aed').trim();
-  const accentSafe = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : /^#[0-9A-Fa-f]{3}$/.test(raw) ? raw : '#7c3aed';
+  const accentSafe = safeHexColor(persona.color);
   host.innerHTML = `
     <div class="persona-chat" style="--persona-accent:${accentSafe}">
       <div id="chat-history" class="persona-chat-history" aria-live="polite"></div>
@@ -502,28 +513,33 @@ async function mountChatTab(host, persona) {
 
 async function mountGraphTab(host, persona) {
   host.innerHTML = `
-    <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
-      <span class="muted" style="font-size:13px">Memory graph — node size by importance, edge weight by cosine similarity.</span>
-      <button id="g-refresh"  class="btn btn-ghost btn-bordered btn-sm" style="margin-left:auto"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
+    <div class="persona-toolbar">
+      <span class="persona-toolbar-hint">Memory graph — node size encodes importance, edge thickness encodes cosine similarity. Drag nodes to explore, hover to read.</span>
+      <button id="g-refresh"  class="btn btn-ghost btn-bordered btn-sm"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
       <button id="g-backfill" class="btn btn-ghost btn-bordered btn-sm" title="Re-embed every memory and recompute every edge from scratch"><i data-lucide="layers" style="width:12px;height:12px"></i>Backfill</button>
     </div>
-    <div id="g-stage" style="position:relative;width:100%;height:520px;border:1px solid var(--border, #2a2a2a);border-radius:8px;overflow:hidden;background:var(--bg-elev, #111)">
+    <div id="g-stage" class="persona-graph-stage">
       <svg id="g-svg" width="100%" height="100%" style="display:block"></svg>
-      <div id="g-tooltip" style="position:absolute;display:none;pointer-events:none;background:#000c;color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;max-width:340px;line-height:1.4;z-index:5"></div>
+      <div id="g-tooltip" class="persona-graph-tooltip"></div>
+      <div id="g-empty" class="persona-graph-empty" style="display:none"></div>
     </div>
-    <p class="muted" style="font-size:11px;margin:6px 0">Drag nodes to explore. Hover to read the memory.</p>
   `;
+  refreshIcons();
   const svg = $('#g-svg', host);
   const tip = $('#g-tooltip', host);
+  const empty = $('#g-empty', host);
 
   async function load() {
-    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#888" font-size="12">loading…</text>';
+    svg.innerHTML = '';
+    empty.style.display = 'grid';
+    empty.textContent = 'Loading graph…';
     const r = unwrap(await api.personaGraph(persona.id));
     const g = (r && r.graph) || { nodes: [], edges: [] };
     if (!g.nodes.length) {
-      svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#888" font-size="12">no graph yet — ingest memories or click Backfill.</text>';
+      empty.innerHTML = '<div>No graph yet — open the <strong>Ingest</strong> tab to land some memories, or click <strong>Backfill</strong> to re-embed existing ones.</div>';
       return;
     }
+    empty.style.display = 'none';
     drawForceGraph(svg, tip, g, persona);
   }
 
@@ -705,64 +721,66 @@ function drawForceGraph(svg, tip, g, persona) {
 
 async function mountConclusionsTab(host, persona) {
   host.innerHTML = `
-    <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
-      <span class="muted" style="font-size:13px">Synthesised beliefs — each clusters densely-connected memories into one falsifiable statement.</span>
-      <button id="c-refresh"   class="btn btn-ghost btn-bordered btn-sm" style="margin-left:auto"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
+    <div class="persona-toolbar">
+      <span class="persona-toolbar-hint">Synthesised beliefs — each clusters densely-connected memories into one falsifiable statement, ranked by confidence.</span>
+      <button id="c-refresh"   class="btn btn-ghost btn-bordered btn-sm"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
       <button id="c-synthesise" class="btn btn-primary btn-sm"><i data-lucide="sparkles" style="width:12px;height:12px"></i>Synthesise</button>
     </div>
-    <div id="c-log" style="display:none;font-family:var(--mono, ui-monospace, monospace);font-size:12px;padding:10px;margin-bottom:12px;border:1px solid var(--border, #2a2a2a);border-radius:8px;max-height:240px;overflow-y:auto"></div>
-    <div id="c-list" class="muted">loading…</div>
-    <div style="margin-top:24px">
-      <div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase" class="muted">CONTRADICTIONS — shares this persona refused (lens mismatches)</div>
-      <div id="c-rejections" style="margin-top:8px" class="muted">loading…</div>
+    <div id="c-log" class="persona-mono-log" style="display:none;margin-bottom:14px;max-height:240px;overflow-y:auto"></div>
+    <div id="c-list" class="persona-list"></div>
+
+    <div class="persona-contradictions">
+      <div class="persona-section-label">Contradictions · shares this lens refused</div>
+      <div id="c-rejections"></div>
     </div>
   `;
+  refreshIcons();
 
   async function load() {
-    $('#c-list', host).innerHTML = '<div class="muted">loading…</div>';
+    const listEl = $('#c-list', host);
+    listEl.innerHTML = '<div class="persona-empty">Loading conclusions…</div>';
     const r = unwrap(await api.personaConclusions(persona.id));
     const rows = r?.conclusions || [];
     if (!rows.length) {
-      $('#c-list', host).innerHTML = '<div class="muted">no conclusions yet — click Synthesise (needs ≥3 connected memories).</div>';
+      listEl.innerHTML = '<div class="persona-empty">No conclusions yet — click <strong>Synthesise</strong> above. Needs at least 3 memories connected by cosine edges ≥ 0.50.</div>';
       return;
     }
-    $('#c-list', host).innerHTML = rows.map(c => `
-      <div class="card" style="margin-bottom:10px">
-        <div class="card-body" style="padding:12px 16px">
-          <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">
-            <span class="chip" style="font-size:11px;padding:1px 7px;border-radius:5px;background:var(--accent-soft, #7c3aed22)">confidence ${(c.confidence || 0).toFixed(2)}</span>
-            <span class="muted" style="font-size:11px">${(c.evidence || []).length} supporting memories</span>
-            <span class="muted" style="font-size:11px;margin-left:auto">${fmtTime(c.updated_at || c.created_at)}</span>
-          </div>
-          <p style="margin:0 0 8px;line-height:1.5;font-size:14px">${esc(c.statement || '')}</p>
-          <details>
-            <summary class="muted" style="cursor:pointer;font-size:11px">evidence (mem ${(c.evidence||[]).join(', ')})</summary>
-            <div class="muted" style="margin-top:6px;font-size:11px">scroll to those memory ids in the Memories tab to see the source lessons.</div>
-          </details>
+    listEl.innerHTML = rows.map(c => `
+      <article class="persona-concl-card">
+        <div class="persona-concl-meta">
+          <span class="persona-conf-chip">confidence ${(c.confidence || 0).toFixed(2)}</span>
+          <span>${(c.evidence || []).length} supporting memories</span>
+          <span class="persona-mem-id">${fmtTime(c.updated_at || c.created_at)}</span>
         </div>
-      </div>
+        <p class="persona-concl-statement">${esc(c.statement || '')}</p>
+        <details class="persona-concl-evidence">
+          <summary>evidence — mem ${(c.evidence || []).join(', ')}</summary>
+          <div>Scroll to those memory ids in the <strong>Memories</strong> tab to read the source lessons.</div>
+        </details>
+      </article>
     `).join('');
   }
+
   async function loadRejections() {
     const box = $('#c-rejections', host);
     if (!box) return;
-    box.innerHTML = '<div class="muted">loading…</div>';
+    box.innerHTML = '<div class="persona-empty">Loading rejections…</div>';
     try {
       const r = unwrap(await api.personaRejections(persona.id, { direction: 'as_receiver', limit: 20 }));
       const rows = r?.rejections || [];
       if (!rows.length) {
-        box.innerHTML = '<div class="muted" style="font-size:12px">No shares have been refused by this lens yet. As other personas share memories to this one and the lens says "not relevant", the rejections will accumulate here — a map of where worldviews diverge.</div>';
+        box.innerHTML = '<div class="persona-empty">No shares refused yet. When another persona shares a memory to this one and the lens says "not relevant", the rejection will land here — building a map of where worldviews diverge.</div>';
         return;
       }
       box.innerHTML = rows.map(j => `
-        <div style="padding:8px 10px;margin-bottom:6px;border-left:2px solid #b84747;background:#b8474711;border-radius:4px">
-          <div style="font-size:11px" class="muted">${esc(j.from_name || '?')} (${esc(j.from_lens || '?')}) → refused · ${fmtTime(j.created_at)}</div>
-          <div style="font-size:12px;margin:4px 0">donor said: <em>"${esc((j.donor_lesson || '').slice(0,200))}"</em></div>
-          <div style="font-size:12px;color:#b84747">reason: ${esc(j.reason || '')}</div>
-        </div>
+        <article class="persona-rejection-card">
+          <div class="persona-rejection-meta">${esc(j.from_name || '?')} (${esc(j.from_lens || '?')}) → refused · ${fmtTime(j.created_at)}</div>
+          <div class="persona-rejection-donor">donor said: <em>"${esc((j.donor_lesson || '').slice(0, 220))}"</em></div>
+          <div class="persona-rejection-reason">reason: ${esc(j.reason || '')}</div>
+        </article>
       `).join('');
     } catch (e) {
-      box.innerHTML = `<div class="muted">error: ${esc(String(e?.message || e))}</div>`;
+      box.innerHTML = `<div class="persona-empty">error: ${esc(String(e?.message || e))}</div>`;
     }
   }
   $('#c-refresh', host).addEventListener('click', () => { load(); loadRejections(); });
@@ -807,26 +825,27 @@ async function mountConclusionsTab(host, persona) {
 
 async function mountIngestTab(host, persona) {
   host.innerHTML = `
-    <div style="max-width:680px">
-      <p class="muted">
-        Scans posts already in your corpus that ${esc(persona.name)} hasn't read yet,
-        filters them through the lens, and stores any relevant lesson in
-        ${esc(persona.name)}'s memory. Safe to re-run — already-ingested posts are skipped.
+    <div style="max-width:760px">
+      <p class="muted" style="line-height:1.55">
+        Scans posts in your corpus that <strong>${esc(persona.name)}</strong> hasn't read yet,
+        filters them through the lens, and stores any relevant lesson in this persona's memory.
+        Safe to re-run — already-ingested posts are skipped.
       </p>
-      <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap">
-        <label>Limit posts to scan <input id="in-limit" type="number" value="50" min="1" max="500" style="width:80px;margin-left:6px"></label>
-        <label>Topic (optional) <input id="in-topic" placeholder="(all topics)" style="margin-left:6px"></label>
+      <div class="persona-toolbar">
+        <label>Limit<input id="in-limit" type="number" value="50" min="1" max="500"></label>
+        <label>Topic<input id="in-topic" type="text" placeholder="(all topics)"></label>
         <span style="flex:1"></span>
-        <button id="in-peers" class="btn btn-ghost-bordered btn-sm" title="Ingest other personas' conclusions through THIS persona's lens — the persona-of-personas / meta-agent pass"><i data-lucide="users" style="width:12px;height:12px"></i>Ingest peers</button>
+        <button id="in-peers" class="btn btn-ghost btn-bordered btn-sm" title="Ingest other personas' conclusions through THIS persona's lens — the persona-of-personas / meta-agent pass"><i data-lucide="users" style="width:12px;height:12px"></i>Ingest peers</button>
         <button id="in-run" class="btn btn-primary btn-sm"><i data-lucide="play" style="width:12px;height:12px"></i>Run ingest</button>
       </div>
-      <div id="in-log" style="font-family:var(--mono, ui-monospace, monospace);font-size:12px;padding:10px;border:1px solid var(--border, #2a2a2a);border-radius:8px;min-height:140px;max-height:50vh;overflow-y:auto"></div>
+      <div id="in-log" class="persona-mono-log persona-mono-log--ingest"></div>
     </div>
   `;
+  refreshIcons();
   const log = $('#in-log', host);
-  function line(text, cls = '') {
+  function line(text, kind = '') {
     const div = document.createElement('div');
-    if (cls) div.className = cls;
+    if (kind) div.className = `persona-log-line--${kind}`;
     div.textContent = text;
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
@@ -836,33 +855,30 @@ async function mountIngestTab(host, persona) {
     log.innerHTML = '';
     const limit = parseInt($('#in-limit', host).value, 10) || 50;
     const topic = $('#in-topic', host).value.trim() || null;
-    line(`▶ starting ingest (persona=${persona.name}, topic=${topic || '(all)'}, limit=${limit})`);
+    line(`▶ starting ingest (persona=${persona.name}, topic=${topic || '(all)'}, limit=${limit})`, 'info');
     if (progressUnsub) await progressUnsub();
     if (doneUnsub) await doneUnsub();
     progressUnsub = await api.onPersonaIngestProgress(payload => {
       const t = String(payload || '').trim();
       if (!t) return;
-      // payload is an NDJSON line emitted by the python CLI
       try {
         const ev = JSON.parse(t);
         if (ev.event === 'start') line(`  start — ${ev.candidates} candidates`);
         else if (ev.event === 'memory') line(`  ✓ mem#${ev.memory_id}: ${(ev.lesson || '').slice(0,150)}`);
-        else if (ev.event === 'skip')   line(`  · skip (${ev.reason})`, 'muted');
-        else if (ev.event === 'error')  line(`  ✗ ${(ev.error || '').slice(0,150)}`, 'muted');
+        else if (ev.event === 'skip')   line(`  · skip (${ev.reason})`, 'info');
+        else if (ev.event === 'error')  line(`  ✗ ${(ev.error || '').slice(0,150)}`, 'err');
         else if (ev.event === 'done')   line(`  ▶ done — kept=${ev.kept} dropped=${ev.dropped} errors=${ev.errors}`);
-      } catch {
-        line(t);
-      }
+      } catch { line(t); }
     });
     doneUnsub = await api.onPersonaIngestDone(_payload => {
-      line('✔ ingest complete', '');
+      line('✔ ingest complete', 'ok');
       if (progressUnsub) progressUnsub();
       if (doneUnsub) doneUnsub();
     });
     try {
       await api.personaIngest({ personaId: persona.id, topic, limit });
     } catch (e) {
-      line('error: ' + String(e?.message || e));
+      line('error: ' + String(e?.message || e), 'err');
     }
   });
 
@@ -870,7 +886,7 @@ async function mountIngestTab(host, persona) {
   $('#in-peers', host)?.addEventListener('click', async () => {
     log.innerHTML = '';
     const limit = parseInt($('#in-limit', host).value, 10) || 50;
-    line(`▶ starting peer-ingest (persona=${persona.name}, limit=${limit})`);
+    line(`▶ starting peer-ingest (persona=${persona.name}, limit=${limit})`, 'info');
     if (progressUnsub) await progressUnsub();
     if (doneUnsub) await doneUnsub();
     progressUnsub = await api.onPersonaIngestProgress(payload => {
@@ -880,20 +896,20 @@ async function mountIngestTab(host, persona) {
         const ev = JSON.parse(t);
         if (ev.event === 'start')      line(`  peer start — ${ev.candidates} candidate conclusions`);
         else if (ev.event === 'memory') line(`  ✓ meta-mem#${ev.memory_id}: ${(ev.lesson || '').slice(0,150)}`);
-        else if (ev.event === 'skip')   line(`  · skip (${ev.reason})`, 'muted');
-        else if (ev.event === 'error')  line(`  ✗ ${(ev.error || '').slice(0,150)}`, 'muted');
+        else if (ev.event === 'skip')   line(`  · skip (${ev.reason})`, 'info');
+        else if (ev.event === 'error')  line(`  ✗ ${(ev.error || '').slice(0,150)}`, 'err');
         else if (ev.event === 'done')   line(`  ▶ peer done — kept=${ev.kept} dropped=${ev.dropped} errors=${ev.errors}`);
       } catch { line(t); }
     });
     doneUnsub = await api.onPersonaIngestDone(_payload => {
-      line('✔ peer ingest complete', '');
+      line('✔ peer ingest complete', 'ok');
       if (progressUnsub) progressUnsub();
       if (doneUnsub) doneUnsub();
     });
     try {
       await api.personaIngestPeers(persona.id, limit);
     } catch (e) {
-      line('error: ' + String(e?.message || e));
+      line('error: ' + String(e?.message || e), 'err');
     }
   });
 }
@@ -906,25 +922,24 @@ async function mountIngestTab(host, persona) {
 
 export async function renderAgentsDashboard(root) {
   root.innerHTML = `
-    <div class="screen-pad" style="padding:24px 28px 48px;max-width:1400px;margin:0 auto">
-      <div class="page-head" style="margin-bottom:18px;display:flex;align-items:flex-start;gap:14px">
-        <div style="flex:1">
-          <h1 style="font-size:28px;letter-spacing:-.01em;margin:0 0 6px">Agents orchestra</h1>
+    <div class="screen-pad personas-screen" style="padding:24px 28px 48px;max-width:1400px;margin:0 auto">
+      <div class="persona-orchestra-head">
+        <div style="flex:1;min-width:0">
+          <h1>Agents orchestra</h1>
           <p class="muted" style="margin:0;max-width:820px;line-height:1.55;font-size:13.5px">
-            All your active personas at a glance — what each has learned, their
-            most recent memory, their most-confident belief. Auto-refreshes every
-            5 seconds while this page is open so you can watch them learn in
-            real time during a collect.
+            All your active personas at a glance — lens, counts, top belief, and the three most-recent memories.
+            Auto-refreshes every 5 seconds so you can watch them learn in real time during a collect.
           </p>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span id="ao-pulse" class="muted" style="font-size:11px">live · 5s</span>
-          <a href="#/personas" class="btn btn-ghost-bordered btn-sm" style="text-decoration:none">Manage personas</a>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+          <span id="ao-pulse" class="persona-orchestra-pulse">live · 5s</span>
+          <a href="#/personas" class="btn btn-ghost btn-bordered btn-sm" style="text-decoration:none"><i data-lucide="settings-2" style="width:12px;height:12px"></i>Manage personas</a>
         </div>
       </div>
-      <div id="ao-grid" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill, minmax(360px, 1fr))"></div>
+      <div id="ao-grid" class="persona-orchestra-grid"></div>
     </div>
   `;
+  refreshIcons();
 
   let interval = null;
   let lastTickAt = 0;
@@ -938,7 +953,7 @@ export async function renderAgentsDashboard(root) {
     const grid = $('#ao-grid', root);
     if (!grid) return;
     if (!rows.length) {
-      grid.innerHTML = '<div class="muted">no active personas — <a href="#/personas">create one</a>.</div>';
+      grid.innerHTML = '<div class="persona-empty">No active personas — <a href="#/personas">create one</a> or activate an inactive persona.</div>';
       return;
     }
     // Fetch the per-persona latest memory + top conclusion in parallel
@@ -975,49 +990,47 @@ export async function renderAgentsDashboard(root) {
 }
 
 function orchestraCard(p) {
-  const color = p.color || '#7c3aed';
+  const accent = safeHexColor(p.color);
   const s = p.stats || {};
   const recent = (p.recentMems || []).slice(0, 3);
   const con = p.topConclusion;
   return `
-    <div class="card persona-card" style="border-left:4px solid ${esc(color)};cursor:default">
-      <div class="card-body" style="padding:14px 16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="width:32px;height:32px;border-radius:8px;background:${esc(color)}22;color:${esc(color)};display:grid;place-items:center">
-            <i data-lucide="${esc(p.icon || 'sparkles')}"></i>
-          </div>
-          <div style="flex:1;min-width:0">
-            <a href="#/persona/${p.id}" style="text-decoration:none;color:inherit"><h3 style="margin:0;font-size:15px">${esc(p.name)}</h3></a>
-            <p class="muted" style="margin:1px 0 0;font-size:11px">lens: ${esc(p.lens)} · ${s.memories || 0} mem · ${s.edges || 0} edges · ${s.conclusions || 0} concl</p>
-          </div>
-          <a href="#/persona/${p.id}" class="btn btn-ghost-bordered btn-sm" style="text-decoration:none;font-size:11px">Open</a>
+    <article class="persona-orchestra-card" style="--persona-accent:${accent}">
+      <div class="persona-orchestra-row1">
+        <div class="persona-icon" style="width:36px;height:36px;border-radius:10px">
+          <i data-lucide="${esc(p.icon || 'sparkles')}"></i>
         </div>
-        ${con ? `
-          <div style="margin:8px 0 10px;padding:8px 10px;background:${esc(color)}11;border-radius:6px">
-            <div style="font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:${esc(color)};margin-bottom:4px">TOP BELIEF · conf ${((con.confidence||0)).toFixed(2)}</div>
-            <div style="font-size:12.5px;line-height:1.4">${esc((con.statement || '').slice(0,220))}</div>
-          </div>
-        ` : ''}
-        <div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase" class="muted">RECENT MEMORIES</div>
-        <div style="margin-top:6px">
-          ${recent.length === 0 ? '<div class="muted" style="font-size:12px;font-style:italic">(no memories yet)</div>' :
-            recent.map(m => `
-              <div style="font-size:12px;line-height:1.4;padding:5px 0;border-bottom:1px solid var(--line, #2a2a2a3a)">
-                <span class="muted" style="font-size:10px">[${esc(m.topic || '—')}] mem#${m.id}</span><br/>
-                ${esc((m.lesson || '').slice(0,180))}
-              </div>
-            `).join('')
-          }
+        <div style="flex:1;min-width:0">
+          <h3 class="persona-orchestra-name"><a href="#/persona/${p.id}">${esc(p.name)}</a></h3>
+          <p class="persona-orchestra-sub">lens: ${esc(p.lens)} · ${s.memories || 0} mem · ${s.edges || 0} edges · ${s.conclusions || 0} concl</p>
         </div>
+        <a href="#/persona/${p.id}" class="btn btn-ghost btn-bordered btn-sm" style="text-decoration:none">Open</a>
       </div>
-    </div>
+      ${con ? `
+        <div class="persona-orchestra-belief">
+          <div class="persona-belief-label">Top belief · conf ${((con.confidence || 0)).toFixed(2)}</div>
+          <div class="persona-belief-body">${esc((con.statement || '').slice(0, 240))}</div>
+        </div>
+      ` : ''}
+      <div class="persona-orchestra-recent">Recent memories</div>
+      <div>
+        ${recent.length === 0
+          ? '<div class="persona-empty" style="padding:8px 12px;font-size:12px">No memories yet — run an ingest from the Personas screen.</div>'
+          : recent.map(m => `
+            <div class="persona-orchestra-mem">
+              <span class="persona-orchestra-mem-meta">[${esc(m.topic || '—')}] mem#${m.id}</span>
+              ${esc((m.lesson || '').slice(0, 180))}
+            </div>
+          `).join('')
+        }
+      </div>
+    </article>
   `;
 }
 
 // ─── share modal ──────────────────────────────────────────────────────────
 
 async function openShareModal(fromPersona, memoryId) {
-  // Fetch all personas → exclude the donor
   let receivers = [];
   try {
     const r = unwrap(await api.personaList());
@@ -1025,22 +1038,23 @@ async function openShareModal(fromPersona, memoryId) {
   } catch {}
 
   const backdrop = document.createElement('div');
-  backdrop.style.cssText = 'position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:9999';
+  backdrop.className = 'persona-share-backdrop';
   const dlg = document.createElement('div');
-  dlg.style.cssText = 'background:var(--bg-elev, #1a1a1a);color:inherit;padding:20px;border-radius:10px;max-width:520px;width:90%;border:1px solid var(--border, #2a2a2a)';
+  dlg.className = 'persona-share-dialog';
+  dlg.style.setProperty('--persona-accent', safeHexColor(fromPersona.color));
   dlg.innerHTML = `
-    <h3 style="margin:0 0 8px">Share mem#${memoryId} from ${esc(fromPersona.name)}</h3>
-    <p class="muted" style="margin:0 0 12px;font-size:12px">
-      The receiver will re-distill this lesson through their own lens. If the
-      receiver already has a memory from the same source post, the share is skipped.
+    <h3 style="margin:0 0 6px;font-size:17px;letter-spacing:-.005em">Share mem#${memoryId}</h3>
+    <p class="muted" style="margin:0 0 16px;font-size:12.5px;line-height:1.5">
+      From <strong>${esc(fromPersona.name)}</strong> — the receiver will re-distill this lesson through their own lens.
+      If the receiver already has a memory from the same source post, the share is skipped.
     </p>
     ${receivers.length === 0
-      ? '<p class="muted">No other active personas to share with — create one or activate an inactive persona first.</p>'
-      : `<div id="share-list" style="display:grid;gap:8px;margin-bottom:14px"></div>`
+      ? '<div class="persona-empty">No other active personas to share with — create one or activate an inactive persona first.</div>'
+      : `<div id="share-list" class="persona-share-list"></div>`
     }
-    <div id="share-result" class="muted" style="font-size:12px;margin-bottom:10px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button id="share-close" class="btn-ghost-bordered">Close</button>
+    <div id="share-result" style="display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button id="share-close" type="button" class="btn btn-ghost btn-bordered btn-sm">Close</button>
     </div>
   `;
   backdrop.appendChild(dlg);
@@ -1048,19 +1062,22 @@ async function openShareModal(fromPersona, memoryId) {
 
   $('#share-close', dlg).addEventListener('click', () => backdrop.remove());
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  // Esc-to-close
+  const escHandler = (e) => { if (e.key === 'Escape') { backdrop.remove(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
 
   const list = $('#share-list', dlg);
   if (list) {
     list.innerHTML = receivers.map(p => `
-      <button data-rid="${p.id}" class="btn-ghost-bordered" style="display:flex;align-items:center;gap:10px;padding:10px 12px;text-align:left;cursor:pointer">
-        <span style="width:26px;height:26px;border-radius:6px;background:${esc(p.color || '#7c3aed')}33;color:${esc(p.color || '#7c3aed')};display:grid;place-items:center">
+      <button type="button" data-rid="${p.id}" class="persona-share-row" style="--persona-accent:${safeHexColor(p.color)}">
+        <span class="persona-share-icon">
           <i data-lucide="${esc(p.icon || 'sparkles')}"></i>
         </span>
-        <span style="flex:1">
-          <div style="font-weight:600">${esc(p.name)}</div>
-          <div class="muted" style="font-size:11px">lens: ${esc(p.lens)}</div>
+        <span style="flex:1;min-width:0">
+          <div class="persona-share-name">${esc(p.name)}</div>
+          <div class="persona-share-sub">lens: ${esc(p.lens)}</div>
         </span>
-        <span class="muted" style="font-size:11px">${p.stats?.memories || 0} mem</span>
+        <span class="persona-share-sub" style="margin-left:auto">${p.stats?.memories || 0} mem</span>
       </button>
     `).join('');
     refreshIcons();
@@ -1068,21 +1085,26 @@ async function openShareModal(fromPersona, memoryId) {
       btn.addEventListener('click', async () => {
         const toId = parseInt(btn.dataset.rid, 10);
         const out = $('#share-result', dlg);
-        out.textContent = `Re-framing through receiver's lens…`;
+        out.style.display = 'block';
+        out.className = 'persona-share-result';
+        out.textContent = "Re-framing through receiver's lens…";
         btn.disabled = true;
         try {
           const r = unwrap(await api.personaShare(fromPersona.id, memoryId, toId));
           if (!r.ok) {
-            out.innerHTML = `<span style="color:#b84747">${esc(r.error || 'failed')}</span>`
-              + (r.existing_lesson ? `<br/><span class="muted">receiver already had: ${esc(r.existing_lesson.slice(0,200))}</span>` : '');
+            out.className = 'persona-share-result persona-share-result--err';
+            out.innerHTML = `<strong>${esc(r.error || 'failed')}</strong>`
+              + (r.existing_lesson ? `<div style="margin-top:4px;font-style:italic;opacity:.85">receiver already had: "${esc(r.existing_lesson.slice(0, 220))}"</div>` : '');
           } else {
+            out.className = 'persona-share-result persona-share-result--ok';
             out.innerHTML = `
-              <div style="color:#2da44e">✓ shared as mem#${r.new_memory_id} on ${esc(r.to_persona_name)} (+${r.edges_added || 0} edges)</div>
-              <div style="margin-top:6px;line-height:1.4">${esc(r.lesson || '')}</div>
+              <div style="font-weight:600;margin-bottom:4px">✓ shared as mem#${r.new_memory_id} on ${esc(r.to_persona_name)} (+${r.edges_added || 0} edges)</div>
+              <div style="line-height:1.45">${esc(r.lesson || '')}</div>
             `;
           }
         } catch (e) {
-          out.innerHTML = `<span style="color:#b84747">${esc(String(e?.message || e))}</span>`;
+          out.className = 'persona-share-result persona-share-result--err';
+          out.textContent = String(e?.message || e);
         } finally {
           btn.disabled = false;
         }
