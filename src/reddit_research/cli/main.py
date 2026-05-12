@@ -4852,5 +4852,12 @@ def cmd_daemon() -> None:
         real_stdout.flush()
 
 
+# Persona subcommands (Phase 1 — 2026-05-12). Self-contained module so the
+# entire persona feature can be removed by deleting these 2 lines + the
+# persona_cmds.py file + the src/reddit_research/persona/ package.
+from .persona_cmds import persona_app
+app.add_typer(persona_app, name="persona")
+
+
 if __name__ == "__main__":
     app()
