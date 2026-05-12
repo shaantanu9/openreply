@@ -282,11 +282,11 @@ def collect(
                 "stackoverflow",  # Stack Overflow Q&A
                 "github",         # GitHub trending repos
                 "trends",         # Google Trends series (returns series, not posts)
+                "youtube",        # YouTube video comments via yt-dlp (no API key)
                 # Opt-in via explicit --sources flag (not in aggressive default):
                 #   alternativeto  — Cloudflare blocks unauth clients (known flaky)
                 #   lemmy/mastodon — need explicit instance URLs
                 #   github_issues  — rate-limited without GITHUB_TOKEN
-                #   youtube        — needs YOUTUBE_API_KEY
                 #   scholar        — Google Scholar blocks aggressively
             ]
     elif not sources:

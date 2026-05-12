@@ -497,6 +497,7 @@ export async function renderCollect(root, { params }) {
     youtube: 'YouTube',
     trustpilot: 'Trustpilot', producthunt: 'Product Hunt',
     alternativeto: 'AlternativeTo',
+    rss_products: 'RSS — Products', rss_tech_news: 'RSS — Tech News',
     oc_bluesky: 'Bluesky (authors)',
     oc_substack: 'Substack',
     oc_producthunt_today: 'Product Hunt — today',
@@ -571,9 +572,11 @@ export async function renderCollect(root, { params }) {
   // parallel stage begins, even though only _PARALLEL_SOURCES=6 can run
   // at a time.
   const AGGRESSIVE_SOURCES = [
-    'hn', 'appstore', 'playstore', 'producthunt',
+    'hn', 'appstore', 'playstore', 'trustpilot', 'producthunt',
+    'rss_products', 'rss_tech_news',
     'arxiv', 'openalex', 'pubmed',
     'gnews', 'devto', 'stackoverflow', 'github', 'trends',
+    'youtube',
   ];
 
   function maybeUpdateSourceGrid(text) {

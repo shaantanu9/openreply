@@ -353,8 +353,9 @@ def run_youtube(
 ) -> int:
     """Search YouTube + pull top-voted comments per video.
 
-    Gated behind YOUTUBE_API_KEY. Silently skips if no key is set (logs an
-    empty result).
+    Backed by yt-dlp (free, no API key, no quota). Falls back to YouTube
+    Data API v3 if yt-dlp is unavailable AND ``YOUTUBE_API_KEY`` is set;
+    otherwise logs an empty result.
     """
     from .youtube import fetch_youtube_comments, search_youtube_videos
 
