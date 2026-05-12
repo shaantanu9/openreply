@@ -19,6 +19,11 @@ def test_catalogue_has_every_expected_tier():
 def test_default_tier_falls_back_to_default_when_nothing_installed(tmp_path, monkeypatch):
     """With no models on disk, default_tier() returns DEFAULT_TIER."""
     monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    # Isolate from externally-discoverable models on the test runner —
+    # list_installed() probes HF cache + GAPMAP_WHISPER_MODELS_DIR too.
+    # Other tests in this file already isolate the same way.
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "_hf_empty"))
+    monkeypatch.delenv("GAPMAP_WHISPER_MODELS_DIR", raising=False)
     from reddit_research.transcribe.models import DEFAULT_TIER, default_tier
     assert default_tier() == DEFAULT_TIER
 
@@ -50,6 +55,8 @@ def test_default_tier_reads_marker_file(tmp_path, monkeypatch):
 def test_default_tier_ignores_stale_marker(tmp_path, monkeypatch):
     """If the marker references an uninstalled tier we fall back to DEFAULT_TIER."""
     monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "_hf_empty"))
+    monkeypatch.delenv("GAPMAP_WHISPER_MODELS_DIR", raising=False)
     from reddit_research.transcribe.models import (
         DEFAULT_TIER,
         default_tier,

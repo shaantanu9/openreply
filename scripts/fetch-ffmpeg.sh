@@ -1,16 +1,58 @@
 #!/usr/bin/env bash
 # Download a static ffmpeg binary for the Tauri DMG bundle.
 #
-# macOS arm64 static builds come from https://www.osxexperts.net/ (the
-# de-facto go-to for notarized static ffmpeg; mirrors evermeet.cx builds).
-# We keep this out of git because it's ~30 MB — run this script before
-# `tauri build` on a fresh clone.
+# Pass an arch arg ("arm64" or "x86_64") to pick the target, or call it with
+# no arg to default to the host arch. Both binaries are needed for a
+# universal-DMG release (release.yml builds both via the CI matrix).
+#
+# macOS static builds come from https://www.osxexperts.net/ (the de-facto
+# notarized-static mirror). Kept out of git because each binary is ~30 MB —
+# run this script before `tauri build` on a fresh clone.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TARGET_DIR="${HERE}/../app-tauri/src-tauri/binaries"
 mkdir -p "$TARGET_DIR"
-TARGET="${TARGET_DIR}/ffmpeg-aarch64-apple-darwin"
+
+ARG_ARCH="${1:-}"
+if [[ -z "$ARG_ARCH" ]]; then
+  case "$(uname -m)" in
+    arm64|aarch64) ARG_ARCH="arm64" ;;
+    x86_64)        ARG_ARCH="x86_64" ;;
+    *)             ARG_ARCH="arm64" ;;
+  esac
+fi
+
+case "$ARG_ARCH" in
+  arm64|aarch64)
+    RUST_TRIPLE="aarch64-apple-darwin"
+    URLS=(
+      "${FFMPEG_DOWNLOAD_URL:-}"
+      "https://www.osxexperts.net/ffmpeg711arm.zip"
+      "https://www.osxexperts.net/ffmpeg71arm.zip"
+      "https://www.osxexperts.net/ffmpeg7arm.zip"
+      "https://www.osxexperts.net/ffmpeg8arm.zip"
+    )
+    ;;
+  x86_64|intel)
+    RUST_TRIPLE="x86_64-apple-darwin"
+    # Intel static builds: evermeet.cx is the canonical source. They publish
+    # current + prior FFmpeg releases. URL stays stable for the latest.
+    URLS=(
+      "${FFMPEG_DOWNLOAD_URL:-}"
+      "https://evermeet.cx/ffmpeg/getrelease/zip"
+      "https://www.osxexperts.net/ffmpeg711intel.zip"
+      "https://www.osxexperts.net/ffmpeg71intel.zip"
+      "https://www.osxexperts.net/ffmpeg7intel.zip"
+    )
+    ;;
+  *)
+    echo "Unknown arch: $ARG_ARCH (use arm64 or x86_64)" >&2
+    exit 2
+    ;;
+esac
+
+TARGET="${TARGET_DIR}/ffmpeg-${RUST_TRIPLE}"
 
 if [[ -x "$TARGET" ]]; then
     echo "ffmpeg already present at $TARGET — skipping download."
@@ -18,16 +60,6 @@ if [[ -x "$TARGET" ]]; then
     exit 0
 fi
 
-# Try a list of known mirror names in order. osxexperts often renames
-# between FFmpeg major releases; if every mirror 404s, fall back to a
-# symlink of the system ffmpeg so dev-mode at least works.
-URLS=(
-  "${FFMPEG_DOWNLOAD_URL:-}"
-  "https://www.osxexperts.net/ffmpeg711arm.zip"
-  "https://www.osxexperts.net/ffmpeg71arm.zip"
-  "https://www.osxexperts.net/ffmpeg7arm.zip"
-  "https://www.osxexperts.net/ffmpeg8arm.zip"
-)
 TMPZIP="$(mktemp /tmp/gapmap-ffmpeg.XXXXXX.zip)"
 trap 'rm -f "$TMPZIP"' EXIT
 
@@ -51,13 +83,13 @@ done
 
 if [[ $success -eq 0 ]]; then
   echo
-  echo "All static-build mirrors failed. Falling back to a symlink of the"
-  echo "system ffmpeg so dev-mode works. For the shipped DMG you'll need a"
-  echo "real static binary — re-run this script once the mirrors are back,"
-  echo "or pass FFMPEG_DOWNLOAD_URL=<url> for a custom source."
+  echo "All static-build mirrors failed for $ARG_ARCH. Falling back to a"
+  echo "symlink of the system ffmpeg so dev-mode works. For the shipped DMG"
+  echo "you'll need a real static binary of the matching arch — re-run once"
+  echo "the mirrors are back, or pass FFMPEG_DOWNLOAD_URL=<url>."
   SYS_FFMPEG="$(command -v ffmpeg || true)"
   if [[ -z "$SYS_FFMPEG" ]]; then
-    echo "❌ system ffmpeg not found either. Install with: brew install ffmpeg"
+    echo "❌ system ffmpeg not found either. Install with: brew install ffmpeg" >&2
     exit 1
   fi
   ln -sf "$SYS_FFMPEG" "$TARGET"
@@ -66,5 +98,6 @@ if [[ $success -eq 0 ]]; then
 fi
 
 echo
-echo "Next step: add \"binaries/ffmpeg-aarch64-apple-darwin\" to"
-echo "tauri.conf.json → bundle.externalBin (alongside binaries/reddit-cli)."
+echo "Next step: confirm \"binaries/ffmpeg\" is in tauri.conf.json →"
+echo "bundle.externalBin. Tauri will pick the matching <triple> suffix at"
+echo "build time."

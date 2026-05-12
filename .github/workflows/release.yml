@@ -114,6 +114,34 @@ jobs:
           New-Item -ItemType Directory -Force -Path app-tauri/src-tauri/binaries | Out-Null
           Copy-Item dist/reddit-cli.exe "app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}.exe"
 
+      # ---------- ffmpeg sidecar (macOS only) ----------
+      # tauri.conf.json declares ffmpeg as externalBin. It's gitignored, so
+      # CI must fetch it before `cargo tauri build`. fetch-ffmpeg.sh picks
+      # the matching arch and downloads from osxexperts.net / evermeet.cx.
+      # For Linux + Windows we don't ship ffmpeg as a sidecar yet — the
+      # Ingest-video feature degrades gracefully when ffmpeg isn't present.
+      - name: Fetch ffmpeg sidecar (macOS arm64)
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh arm64
+
+      - name: Fetch ffmpeg sidecar (macOS x86_64)
+        if: matrix.target == 'x86_64-apple-darwin'
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh x86_64
+
+      # On Linux + Windows, drop the ffmpeg externalBin reference so the
+      # bundle build doesn't try to find a missing binary. (jq for Linux,
+      # python for Windows since both runners have them preinstalled.)
+      - name: Strip ffmpeg externalBin on non-macOS
+        if: matrix.platform != 'macos-latest'
+        shell: bash
+        run: |
+          cd app-tauri/src-tauri
+          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; p.write_text(json.dumps(d, indent=2))"
+          echo '— externalBin after strip —'
+          python3 -c "import json; print(json.loads(open('tauri.conf.json').read())['bundle']['externalBin'])"
+
       # ---------- Node + Rust toolchains ----------
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -141,6 +169,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Release builds REQUIRE this — build.rs panics if missing in
+          # release mode. Bakes a HMAC secret into the desktop license-
+          # activation flow. Must be ≥32 chars. Set as a repo secret.
+          JWT_DESKTOP_SECRET: ${{ secrets.JWT_DESKTOP_SECRET }}
           # macOS code signing + notarization (optional — unset = unsigned)
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

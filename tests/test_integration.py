@@ -84,12 +84,19 @@ def test_discover_subs_returns_real_results(clean_env: Path) -> None:
     from reddit_research.research.discover import discover_subs
 
     result = discover_subs("note taking apps", limit=3)
-    assert isinstance(result, list)
-    assert len(result) >= 1, "expected at least 1 sub"
-    first = result[0]
+    # discover_subs returns {"subs": [...], "confirmation": {...}} since the
+    # topic-canonicalization rework (2026-04). The legacy bare-list shape is
+    # gone; tests must unwrap the "subs" key.
+    assert isinstance(result, dict)
+    subs = result.get("subs") or []
+    assert isinstance(subs, list)
+    assert len(subs) >= 1, "expected at least 1 sub"
+    first = subs[0]
     assert first.get("name"), "sub entry must have a name"
     # Reddit's sub search always gives at least name + url
     assert "url" in first or "permalink" in first
+    # Confirmation payload should always be present.
+    assert isinstance(result.get("confirmation"), dict)
 
 
 # ─── Reddit fetch (live) ────────────────────────────────────────────────────
@@ -336,12 +343,12 @@ def test_canonicalize_no_llm_passthrough(
     """Without any LLM configured, canonicalize returns the topic unchanged."""
     from reddit_research.research import discover as discover_mod
     from reddit_research.analyze.providers import base as provider_base
-    for k in (
-        "LLM_PROVIDER", "LLM_MODEL",
-        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
-        "GROQ_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY", "GOOGLE_API_KEY",
-    ):
-        monkeypatch.delenv(k, raising=False)
+    # Drive the cleanup list off the real provider table so adding a new
+    # provider (e.g. nvidia) doesn't silently leak its key into this test.
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    for env_key in provider_base._PROVIDER_ENV_KEY.values():
+        monkeypatch.delenv(env_key, raising=False)
     # Also hide any locally-running Ollama so this test is deterministic.
     monkeypatch.setattr(provider_base, "_ollama_reachable", lambda: False)
 
