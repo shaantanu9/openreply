@@ -491,6 +491,11 @@ export const api = {
     return p;
   },
   cancelCollect:   ()        => invoke('cancel_collect'),
+  // Force-clear a stale single-flight collect lock when the slot is held
+  // but no live topic can be identified. Safe no-op when nothing is stuck —
+  // returns { ok, was_orphan, slot_held, map_empty, killed } so callers can
+  // distinguish "we cleared it" from "you weren't actually stuck".
+  clearOrphanCollectLock: () => invoke('clear_orphan_collect_lock'),
   collectStatus:   ()        => invoke('collect_status'),
   // Pending FIFO queue (collects waiting for the running one to finish).
   listCollectQueue:   ()        => invoke('list_collect_queue'),
@@ -918,6 +923,69 @@ export const api = {
   pageExplanationsList: () =>
     cachedInvoke('page_explanations_list', null, 300000),
 
+  // ── Iterate / Autoresearch (2026-05-03 Phase 4) ──────────────────
+  // Persistent autoresearch loop. start+execute can be split for
+  // background-job semantics; iterateRun is the one-shot helper.
+  iterateRun:    (topic, loopKind, { gridJson = null, notes = '' } = {}) => {
+    invalidate('iterate_status', 'iterate_list', 'iterate_applied');
+    return invoke('iterate_run', { topic, loopKind, gridJson, notes });
+  },
+  iterateStart:  (topic, loopKind, { gridJson = null, notes = '' } = {}) => {
+    invalidate('iterate_list');
+    return invoke('iterate_start', { topic, loopKind, gridJson, notes });
+  },
+  iterateExecute: (runId) => {
+    invalidate('iterate_status', 'iterate_list');
+    return invoke('iterate_execute', { runId });
+  },
+  iterateStatus:  (runId) => cachedInvoke('iterate_status', { runId }, 2000),
+  iterateList:    (topic = null, limit = 30) =>
+    cachedInvoke('iterate_list', { topic, limit }, 5000),
+  iterateCancel:  (runId) => {
+    invalidate('iterate_status', 'iterate_list');
+    return invoke('iterate_cancel', { runId });
+  },
+  iterateApply:   (runId) => {
+    invalidate('iterate_applied', 'iterate_status');
+    return invoke('iterate_apply', { runId });
+  },
+  iterateApplied: (topic) => cachedInvoke('iterate_applied', { topic }, 5000),
+
+  // Pipeline orchestrator: audience → synthesize → deliberate → launch
+  pipelineRun:    (topic, { force = false, noLlm = false, provider = null } = {}) => {
+    invalidate('pipeline_status', 'launch_brief_get', 'audience_personas_get');
+    return invoke('pipeline_run', { topic, force, noLlm, provider });
+  },
+  pipelineStatus: (topic) => cachedInvoke('pipeline_status', { topic }, 5000),
+
+  // ── Deliberation (2026-05-03 Phase 3) ────────────────────────────
+  // 5-persona debate: tag every finding Confirmed/Probable/Minority/
+  // Discarded. Optionally grounded in audience clusters.
+  deliberate: (topic, { rounds = 1, noLlm = false, provider = null } = {}) =>
+    invoke('deliberate', { topic, rounds, noLlm, provider }),
+
+  // ── Audience personas (2026-05-03) ────────────────────────────────
+  // Cluster real authors per topic. Build invalidates the GET cache so
+  // the screen re-renders with fresh personas after a re-cluster.
+  audiencePersonasBuild: (topic, { llm = true, provider = null, minPosts = 3 } = {}) => {
+    invalidate('audience_personas_get');
+    return invoke('audience_personas_build', {
+      topic, llm, provider, minPosts,
+    });
+  },
+  audiencePersonasGet: (topic) =>
+    cachedInvoke('audience_personas_get', { topic }, 10000),
+
+  // ── Launch & GTM (2026-05-02) ─────────────────────────────────────
+  // Per-topic Launch Brief: target audience, demographics, where to
+  // launch, market requirements. Deterministic + optional LLM.
+  launchBrief: (topic, { llm = true, provider = null } = {}) => {
+    invalidate('launch_brief_get');
+    return invoke('launch_brief', { topic, llm, provider });
+  },
+  launchBriefGet: (topic) =>
+    cachedInvoke('launch_brief_get', { topic }, 10000),
+
   // ── Discovery framework expansion (2026-05-01_04) ──────────────────
   // Opportunity Solution Tree (Torres, 2016) — outcome → opportunities
   // → solutions → experiments. ostBuild reads only; the underlying data
@@ -1325,6 +1393,16 @@ export const api = {
       personaId: opts.personaId || null,
       topic: opts.topic || null,
       limit: opts.limit || 50,
+    }),
+  // Phase 5 — surgical teach-from-video (2026-05-12). Same event channel as
+  // personaIngest so the existing onPersonaIngestProgress/Done listeners pick
+  // up the fetch-phase events (`teach:start`, `teach:fetched`, `teach:error`)
+  // and the standard ingest events that follow.
+  personaTeachVideo: (personaId, url, opts = {}) =>
+    invoke('persona_agent_teach_video', {
+      personaId,
+      url,
+      commentsLimit: opts.commentsLimit || 100,
     }),
   onPersonaIngestProgress: (cb) => listen('persona_ingest:progress', e => cb(e.payload)),
   onPersonaIngestDone:     (cb) => listen('persona_ingest:done',     e => cb(e.payload)),

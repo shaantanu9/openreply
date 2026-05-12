@@ -14,6 +14,7 @@ from .store import (
     list_memories,
 )
 from .ingest import ingest_persona, ingest_all_personas, ingest_from_peers
+from .teach import teach_from_youtube, parse_youtube_id
 from .chat import chat_persona
 from .graph import (
     backfill_persona,
@@ -36,6 +37,8 @@ __all__ = [
     "ingest_persona",
     "ingest_all_personas",
     "ingest_from_peers",
+    "teach_from_youtube",
+    "parse_youtube_id",
     "chat_persona",
     "backfill_persona",
     "embed_and_link",

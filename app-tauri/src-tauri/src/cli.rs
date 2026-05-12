@@ -409,6 +409,16 @@ pub struct ActiveGraphOps(
     pub Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
 );
 
+/// One-shot marker set by `cancel_active_job` so the streaming
+/// `Terminated` handler can classify the resulting `code = -1` (or
+/// negative signal exit) as `error_class = "cancelled"` instead of
+/// `"unknown"`. Without this, a user clicking Cancel sees
+/// `× collect exited with code -1 [unknown]` — indistinguishable from a
+/// real crash. The marker auto-resets after the next done event so
+/// future failures aren't misreported as cancellations.
+#[derive(Default, Clone)]
+pub struct CollectCancelMarker(pub Arc<Mutex<bool>>);
+
 /// In-flight `start_collect` dedup + visibility registry.
 ///
 /// Two problems solved:
@@ -721,10 +731,27 @@ pub async fn run_cli_streaming(
         } else {
             Arc::new(Mutex::new(None))
         };
+        // Capture the cancel marker for this collect so the closure can
+        // tell user-cancelled exits apart from real failures. Captured by
+        // value so the closure stays `'static`.
+        let cancel_marker = app
+            .try_state::<CollectCancelMarker>()
+            .map(|s| s.0.clone())
+            .unwrap_or_else(|| Arc::new(Mutex::new(false)));
         return run_dev_python_streaming(
             app, py, &args, &data_str, progress_event, done_event, pid_slot,
-            |code, recent| {
-                let (class, hint) = classify_collect_error(code, recent);
+            move |code, recent| {
+                let was_cancelled = {
+                    let mut g = cancel_marker.lock().unwrap();
+                    let v = *g;
+                    *g = false;
+                    v
+                };
+                let (class, hint) = if was_cancelled && code != 0 {
+                    ("cancelled", "Cancelled by user. Partial results are kept.".to_string())
+                } else {
+                    classify_collect_error(code, recent)
+                };
                 serde_json::json!({ "code": code, "error_class": class, "hint": hint })
             },
         ).await;
@@ -764,7 +791,12 @@ pub async fn run_cli_streaming(
                         *state.0.lock().unwrap() = None;
                     }
                     let code = payload.code.unwrap_or(-1);
-                    let (class, hint) = classify_collect_error(code, &recent_lines);
+                    let was_cancelled = take_cancel_marker(&app_clone);
+                    let (class, hint) = if was_cancelled && code != 0 {
+                        ("cancelled", "Cancelled by user. Partial results are kept.".to_string())
+                    } else {
+                        classify_collect_error(code, &recent_lines)
+                    };
                     let _ = app_clone.emit(
                         done_event,
                         serde_json::json!({
@@ -844,7 +876,58 @@ fn classify_collect_error(
 
 /// Kill the currently-running sidecar child, if any. Tries both branches —
 /// the Tauri-shell `CommandChild` (prod) and the dev-python pid (dev).
+///
+/// Sets `CollectCancelMarker` so the streaming `Terminated` handler can
+/// surface `error_class = "cancelled"` to the UI instead of the generic
+/// `unknown` bucket — otherwise the user sees
+/// `× collect exited with code -1 [unknown]` which reads like a crash.
 pub fn cancel_active_job(app: &AppHandle) -> bool {
+    let mut killed = false;
+    if let Some(state) = app.try_state::<ActiveJob>() {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(child) = guard.take() {
+            let _ = child.kill();
+            killed = true;
+        }
+    }
+    if let Some(state) = app.try_state::<ActiveJobPid>() {
+        let mut guard = state.0.lock().unwrap();
+        if let Some(pid) = guard.take() {
+            kill_pid(pid);
+            killed = true;
+        }
+    }
+    if killed {
+        if let Some(state) = app.try_state::<CollectCancelMarker>() {
+            if let Ok(mut g) = state.0.lock() {
+                *g = true;
+            }
+        }
+    }
+    killed
+}
+
+/// Take the cancel marker (returns true if cancel was just called) and
+/// reset it. Called by the streaming `Terminated` handler so it knows to
+/// label the exit as cancelled instead of failed.
+pub fn take_cancel_marker(app: &AppHandle) -> bool {
+    if let Some(state) = app.try_state::<CollectCancelMarker>() {
+        if let Ok(mut g) = state.0.lock() {
+            let was_set = *g;
+            *g = false;
+            return was_set;
+        }
+    }
+    false
+}
+
+/// Same as `cancel_active_job` but does NOT set the cancel marker. Used
+/// from internal recovery paths (orphan reaper / queue dedup) where the
+/// kill is a maintenance action — labelling the eventual exit as
+/// "cancelled by user" would be misleading. The streaming Terminated
+/// handler will then fall through to the regular classifier; for a true
+/// orphan it never fires anyway because the sidecar is already dead.
+pub fn cancel_active_job_silent(app: &AppHandle) -> bool {
     let mut killed = false;
     if let Some(state) = app.try_state::<ActiveJob>() {
         let mut guard = state.0.lock().unwrap();

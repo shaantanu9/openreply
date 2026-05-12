@@ -673,14 +673,36 @@ export async function renderCollect(root, { params }) {
     if (payload?.code !== 0) {
       const cls = payload?.error_class || 'unknown';
       const hint = payload?.hint || `Collect exited ${payload?.code}.`;
-      appendLine(`✗ collect exited with code ${payload?.code} [${cls}]`, 'err');
-      appendLine(`  ${hint}`, 'err');
-      setFinal(cls === 'reddit_rate_limit' ? 'rate-limited' : 'failed',
-               'var(--chronic, #B84747)', 'white');
+      const isCancel = cls === 'cancelled';
+      appendLine(
+        isCancel
+          ? `■ cancelled by user`
+          : `✗ collect exited with code ${payload?.code} [${cls}]`,
+        isCancel ? 'info' : 'err',
+      );
+      appendLine(`  ${hint}`, isCancel ? 'info' : 'err');
+      setFinal(
+        isCancel ? 'cancelled'
+          : cls === 'reddit_rate_limit' ? 'rate-limited'
+          : 'failed',
+        isCancel ? 'var(--fading, #8A8178)' : 'var(--chronic, #B84747)',
+        'white',
+      );
       sub.textContent = hint;
-      if (nowText) nowText.textContent = `✗ ${cls.replace(/_/g, ' ')}`;
+      if (nowText) nowText.textContent = isCancel
+        ? '■ cancelled'
+        : `✗ ${cls.replace(/_/g, ' ')}`;
       if (nowSpinner) nowSpinner.style.animation = 'none';
-      showRetryAction();
+      // Demote the phase card so the orange "Extracting insights…" banner
+      // doesn't keep pulsing after a failure / cancel — nothing is being
+      // extracted. Phase-B class stays so the layout doesn't reflow, but
+      // the active-state styling is dropped via the new `.phase-stalled`
+      // modifier.
+      try {
+        const card = root.querySelector('#phase-card');
+        if (card) card.classList.add('phase-stalled');
+      } catch {}
+      if (!isCancel) showRetryAction();
       return;
     }
 
@@ -862,6 +884,7 @@ export async function renderCollect(root, { params }) {
     // huge numbers through ("29625725 min"). Recover from JS state if the
     // value looks broken or unknown.
     const looksUnknown = /\(unknown/i.test(otherTopic) || elapsedSecs > 60 * 60 * 24 * 30;
+    let isOrphan = false;
     if (looksUnknown) {
       const snap = (_collectStatus.entries
         ? Array.from(_collectStatus.entries()) : []).find(([t, st]) => st === 'running' && t !== topic);
@@ -870,23 +893,54 @@ export async function renderCollect(root, { params }) {
         const ms = _collectStart.get(otherTopic);
         elapsedSecs = ms ? Math.floor((Date.now() - ms) / 1000) : 0;
       } else {
+        // No live topic anywhere — slot is orphaned. Show the orphan modal
+        // (Unstick + Dismiss), not the regular busy modal. We deliberately
+        // hide Queue / Stop-and-start here because both would trap the
+        // user: the queue waits for a `collect:done` that will never fire,
+        // and "stop" pretends to terminate something that's already dead.
         otherTopic = '(orphan sidecar — name unavailable)';
         elapsedSecs = 0;
+        isOrphan = true;
       }
     }
     const elapsedMins = Math.floor(elapsedSecs / 60);
     const elapsedStr = elapsedSecs <= 0 ? 'unknown'
       : elapsedMins > 0 ? `${elapsedMins} min` : `${elapsedSecs}s`;
     appendLine(
-      `⏸ collect for "${topic}" is waiting — "${otherTopic}" is currently running (${elapsedStr}).`,
+      isOrphan
+        ? `⏸ collect for "${topic}" is blocked by a stale lock from a previous run.`
+        : `⏸ collect for "${topic}" is waiting — "${otherTopic}" is currently running (${elapsedStr}).`,
       'info',
     );
     const choice = await showCollectBusyModal({
       newTopic: topic,
       runningTopic: otherTopic,
       elapsedStr,
+      isOrphan,
     });
-    if (choice === 'cancel-and-start') {
+    if (choice === 'unstick') {
+      try {
+        const u = await api.clearOrphanCollectLock();
+        if (u?.was_orphan) {
+          appendLine(`↻ cleared stale collect lock; starting "${topic}"…`, 'info');
+        } else {
+          appendLine(`↻ no stale lock to clear; starting "${topic}"…`, 'info');
+        }
+        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit);
+        if (r?.ok) {
+          appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
+          _collectStatus.set(topic, 'running');
+          _collectStart.set(topic, Date.now());
+        } else if (r?.blocked) {
+          // Race: a real collect grabbed the slot between our unstick and
+          // start — fall back to the normal blocked path.
+          await handleBlocked(r.blocked_by);
+        }
+      } catch (e) {
+        appendLine(`✗ unstick failed: ${e?.message || e}`, 'err');
+        showRetryAction();
+      }
+    } else if (choice === 'cancel-and-start') {
       appendLine(`✗ cancelling "${otherTopic}", starting "${topic}"…`, 'info');
       try {
         const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'cancel_and_start');

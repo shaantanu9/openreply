@@ -71,14 +71,52 @@ def _parse_json_blob(raw: str) -> dict | None:
     return None
 
 
-def _candidate_posts(persona_id: int, topic: str | None, limit: int) -> list[dict]:
+def _candidate_posts(
+    persona_id: int,
+    topic: str | None,
+    limit: int,
+    post_ids: list[str] | None = None,
+) -> list[dict]:
     """Posts not yet ingested by this persona (any source). Newest first.
 
-    If ``topic`` is given, restricts to posts tagged under that topic in
-    ``topic_posts``. Otherwise pulls across all topics.
+    Selector precedence:
+      * ``post_ids`` (explicit list) — overrides everything. Used by the
+        teach-from-video path to scope ingest to a specific video's rows
+        without polluting ``topic_posts``-driven topic lists.
+      * ``topic`` — restricts to posts tagged under that topic.
+      * neither — scans all posts the persona hasn't read yet.
+
+    The NOT-EXISTS already-ingested filter applies in all three modes, so
+    re-teaching the same video is a no-op for memories that already exist.
     """
     db = get_db()
-    if topic:
+    if post_ids:
+        # Strip dupes + Nones while preserving order. SQLite caps placeholders
+        # at 999 per statement; the teach path never approaches this (24 chunk
+        # cap + 100 comments + 1 desc = ~125 rows) but enforce a safety slice.
+        seen: set[str] = set()
+        dedup: list[str] = []
+        for pid in post_ids:
+            if pid and pid not in seen:
+                seen.add(pid)
+                dedup.append(pid)
+        dedup = dedup[:900]
+        if not dedup:
+            return []
+        placeholders = ",".join(["?"] * len(dedup))
+        sql = (
+            "SELECT p.id, p.title, p.selftext, p.source_type, p.score, "
+            "(SELECT topic FROM topic_posts tp WHERE tp.post_id = p.id "
+            " ORDER BY ROWID DESC LIMIT 1) AS topic "
+            "FROM posts p "
+            f"WHERE p.id IN ({placeholders}) "
+            "AND NOT EXISTS (SELECT 1 FROM persona_memories m "
+            "                WHERE m.persona_id = ? AND m.source_post_id = p.id) "
+            "ORDER BY p.fetched_at DESC "
+            "LIMIT ?"
+        )
+        params = [*dedup, persona_id, int(limit)]
+    elif topic:
         sql = (
             "SELECT p.id, p.title, p.selftext, p.source_type, p.score, "
             "tp.topic AS topic "
@@ -129,8 +167,14 @@ def ingest_persona(
     topic: str | None = None,
     limit: int = 50,
     provider: str | None = None,
+    post_ids: list[str] | None = None,
 ) -> Iterator[dict]:
     """Run the persona over candidate posts. Yields progress events.
+
+    ``post_ids`` is the surgical override used by the teach-from-video path
+    — when supplied, ingest pulls only those specific posts (still filtered
+    by NOT-EXISTS so re-teaches are idempotent) and the ``topic`` argument
+    is ignored.
 
     Event shapes:
       {"event": "start", "persona_id": id, "candidates": N, "topic": str|None}
@@ -147,7 +191,7 @@ def ingest_persona(
         yield {"event": "error", "error": f"persona '{persona['name']}' is inactive"}
         return
 
-    candidates = _candidate_posts(persona_id, topic, limit)
+    candidates = _candidate_posts(persona_id, topic, limit, post_ids=post_ids)
     yield {
         "event": "start",
         "persona_id": persona_id,

@@ -6,10 +6,9 @@
 // existing graph_nodes / graph_edges / experiments tables and rendered
 // as a left-to-right tree of nested cards.
 //
-// No new pipelines are kicked off here — every node in the tree
-// already exists by the time you open this screen. Toolbar buttons
-// trigger the deterministic RICE pass, the LLM-backed MoSCoW + Kano
-// passes, and experiment CRUD.
+// Design: matches Home/Topics — slash crumbs + topbar-spacer,
+// card-head/card-body, btn-primary/btn-ghost-bordered, .stat-grid for
+// the outcome banner, .section-head transitions, .pill filters.
 import { api, esc } from '../api.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -71,8 +70,8 @@ function renderExperimentCard(exp) {
       <div class="ost-exp-hyp">${esc(exp.hypothesis || '')}</div>
       ${exp.success_criteria ? `<div class="ost-exp-criteria">Success: ${esc(exp.success_criteria)}</div>` : ''}
       <div class="ost-exp-actions">
-        <button class="btn-mini ost-exp-cycle" data-exp-id="${esc(exp.id)}" title="Cycle status">Cycle</button>
-        <button class="btn-mini ost-exp-delete" data-exp-id="${esc(exp.id)}" title="Delete experiment">×</button>
+        <button class="btn btn-ghost btn-xs btn-bordered ost-exp-cycle" data-exp-id="${esc(exp.id)}" title="Cycle status">Cycle</button>
+        <button class="btn btn-ghost btn-xs btn-bordered ost-exp-delete" data-exp-id="${esc(exp.id)}" title="Delete">×</button>
       </div>
     </li>
   `;
@@ -95,7 +94,7 @@ function renderSolutionCard(sol, topic) {
       ${sol.rationale ? `<div class="ost-sol-rationale">${esc(sol.rationale)}</div>` : ''}
       <div class="ost-exp-bar">
         <div class="ost-exp-title">Experiments</div>
-        <button class="btn-mini ost-add-exp"
+        <button class="btn btn-ghost btn-xs btn-bordered ost-add-exp"
                 data-iv-id="${esc(sol.id)}"
                 data-iv-label="${esc(sol.label)}"
                 data-topic="${esc(topic)}">+ experiment</button>
@@ -111,20 +110,22 @@ function renderOpportunityCard(opp, topic) {
   const emoChips = (opp.emotions || []).slice(0, 4)
     .map(e => `<span class="ost-emotion">${esc(e)}</span>`).join('');
   return `
-    <article class="ost-opportunity" data-pp-id="${esc(opp.id)}">
-      <header class="ost-opp-head">
-        <h3>${esc(opp.label)}</h3>
-        <div class="ost-opp-meta">
-          <span class="ost-opp-mentions" title="Posts mentioning this painpoint">${opp.mention_count || 0} mentions</span>
-          ${emoChips}
+    <article class="card ost-opportunity" data-pp-id="${esc(opp.id)}">
+      <div class="card-head">
+        <div>
+          <h3>${esc(opp.label)}</h3>
+          <p>${opp.mention_count || 0} mentions${emoChips ? '' : ''}</p>
         </div>
-      </header>
-      ${opp.jtbd_statement ? `<p class="ost-jtbd"><b>JTBD:</b> <em>${esc(opp.jtbd_statement)}</em></p>` : ''}
-      ${opp.desired_outcome ? `<p class="ost-desired">Desired: ${esc(opp.desired_outcome)}</p>` : ''}
-      <div class="ost-solutions-bar">
-        <div class="ost-sol-title">Solutions (sorted by RICE)</div>
+        ${emoChips ? `<div class="ost-opp-meta">${emoChips}</div>` : ''}
       </div>
-      <ul class="ost-solutions">${sols}${empty}</ul>
+      <div class="card-body" style="padding:14px 18px">
+        ${opp.jtbd_statement ? `<p class="ost-jtbd"><b>JTBD:</b> <em>${esc(opp.jtbd_statement)}</em></p>` : ''}
+        ${opp.desired_outcome ? `<p class="ost-desired">Desired: ${esc(opp.desired_outcome)}</p>` : ''}
+        <div class="ost-solutions-bar">
+          <div class="ost-sol-title">Solutions (sorted by RICE)</div>
+        </div>
+        <ul class="ost-solutions">${sols}${empty}</ul>
+      </div>
     </article>
   `;
 }
@@ -134,22 +135,28 @@ function renderTopicPicker(topics) {
     return `<div class="empty-big">
       <h3>No topics yet</h3>
       <p>Collect a topic first — the OST reads from your existing painpoint / intervention graph.</p>
-      <a class="btn primary" href="#/topics">Open Topics</a>
+      <a class="btn btn-primary btn-sm" href="#/topics">Open Topics</a>
     </div>`;
   }
   const opts = topics.map(t => `<option value="${esc(t.topic)}">${esc(t.topic)} · ${t.posts || 0} posts</option>`).join('');
   return `
-    <div class="ost-picker card">
-      <h2>Open an Opportunity Solution Tree</h2>
-      <p class="muted" style="font-size:13px;line-height:1.6;max-width:680px">
-        Pick a topic — the tree maps its desired outcome to the painpoints,
-        interventions, and experiments you've already extracted. RICE / Kano /
-        MoSCoW chips show priority on every solution branch.
-      </p>
-      <div class="row" style="gap:8px;margin-top:14px;align-items:center">
-        <label for="ost-topic-pick" class="muted">Topic</label>
-        <select id="ost-topic-pick">${opts}</select>
-        <button class="btn primary" id="ost-topic-go">Open tree →</button>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Open an Opportunity Solution Tree</h3>
+          <p>Outcome → Opportunities → Solutions → Experiments (Torres, 2016)</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="muted" style="font-size:13px;line-height:1.6;margin:0 0 14px">
+          Pick a topic — the tree maps its desired outcome to the painpoints,
+          interventions, and experiments you've already extracted. RICE / Kano /
+          MoSCoW chips show priority on every solution branch.
+        </p>
+        <div class="row">
+          <select id="ost-topic-pick" style="flex:1;min-width:240px">${opts}</select>
+          <button class="btn btn-primary btn-sm" id="ost-topic-go">Open tree →</button>
+        </div>
       </div>
     </div>
   `;
@@ -162,7 +169,7 @@ function renderTreeShell(topic, tree) {
       <h3>No opportunities yet for <b>${esc(topic)}</b></h3>
       <p>OST reads from painpoint nodes. Build the gap map first, then run the
       Solutions pipeline — the tree fills itself out.</p>
-      <a class="btn primary" href="#/topic/${encodeURIComponent(topic)}">Open topic</a>
+      <a class="btn btn-primary btn-sm" href="#/topic/${encodeURIComponent(topic)}">Open topic</a>
     </div>` : '';
 
   const outcome = tree.outcome || `Address user pain in ${topic}`;
@@ -170,44 +177,62 @@ function renderTreeShell(topic, tree) {
   return `
     <header class="topbar">
       <div class="crumbs">
-        <a href="#/ost">OST</a> ›
+        <a href="#/ost">OST</a> /
         <strong>${esc(topic)}</strong>
       </div>
-      <div class="topbar-actions">
-        <button class="btn" id="ost-rerun-rice" title="Compute deterministic RICE for every intervention">
-          <i data-lucide="trending-up"></i> Re-run RICE
-        </button>
-        <button class="btn" id="ost-rerun-moscow" title="LLM categorize Must/Should/Could/Won't">
-          <i data-lucide="list-checks"></i> Re-run MoSCoW
-        </button>
-        <button class="btn" id="ost-rerun-kano" title="LLM categorize Kano (Must-Be / Performance / Attractive)">
-          <i data-lucide="layers"></i> Re-run Kano
-        </button>
-      </div>
+      <div class="topbar-spacer"></div>
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="ost-rerun-rice" title="Compute deterministic RICE for every intervention">
+        <i data-lucide="trending-up"></i> Re-run RICE
+      </button>
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="ost-rerun-moscow" title="LLM categorize Must/Should/Could/Won't">
+        <i data-lucide="list-checks"></i> Re-run MoSCoW
+      </button>
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="ost-rerun-kano" title="LLM categorize Kano (Must-Be / Performance / Attractive)">
+        <i data-lucide="layers"></i> Re-run Kano
+      </button>
     </header>
 
-    <div class="ost-wrap">
-      <section class="ost-outcome card">
-        <div class="ost-outcome-label">DESIRED OUTCOME</div>
+    <div class="card ost-outcome">
+      <div class="card-head">
+        <div>
+          <h3>Desired outcome</h3>
+          <p>The root of every Opportunity Solution Tree</p>
+        </div>
+        <button class="btn btn-ghost btn-xs btn-bordered" id="ost-outcome-edit-btn">Edit</button>
+      </div>
+      <div class="card-body">
         <div class="ost-outcome-text" id="ost-outcome-text">${esc(outcome)}</div>
         <div class="ost-outcome-edit" hidden>
           <input id="ost-outcome-input" type="text" maxlength="500" />
-          <button class="btn" id="ost-outcome-save">Save</button>
-          <button class="btn" id="ost-outcome-cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="ost-outcome-save">Save</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="ost-outcome-cancel">Cancel</button>
         </div>
-        <button class="btn-mini" id="ost-outcome-edit-btn">edit</button>
-        <p class="muted" style="font-size:12px;margin-top:6px">
-          The root of every Opportunity Solution Tree. Set this from a Product
-          dashboard (Outcome field) or edit it inline. Torres: "Product strategy
-          doesn't happen in the solution space, it happens in the opportunity space."
+        <p class="muted" style="font-size:11.5px;margin-top:8px;line-height:1.55">
+          Set this from a Product dashboard (Outcome field) or edit it
+          inline. Torres: "Product strategy doesn't happen in the
+          solution space, it happens in the opportunity space."
         </p>
-      </section>
+      </div>
+    </div>
 
-      <div class="ost-tree" id="ost-tree">${opps}${empty}</div>
+    <div class="section-head" style="margin-top:18px">
+      <div>
+        <h2>Opportunities</h2>
+        <p>${(tree.opportunities || []).length} painpoints · sorted by mentions</p>
+      </div>
+    </div>
 
-      <section class="ost-key card">
-        <h4>Reading the tree</h4>
-        <p class="muted" style="font-size:12px;line-height:1.55">
+    <div class="ost-tree" id="ost-tree">${opps}${empty}</div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="card-head">
+        <div>
+          <h3>Reading the tree</h3>
+          <p>How to interpret each layer</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="muted" style="font-size:12.5px;line-height:1.6;margin:0">
           <b>Opportunities</b> (painpoints) are sized by mention count and
           tagged with the JTBD statement extracted from evidence.
           <b>Solutions</b> (interventions) are ordered by RICE score, with
@@ -215,19 +240,18 @@ function renderTreeShell(topic, tree) {
           <b>Experiments</b> are your falsifiable bets — fake-door, landing
           page, Wizard-of-Oz, concierge, or a custom test.
         </p>
-      </section>
+      </div>
     </div>
   `;
 }
 
 function showExperimentModal(opts) {
   const { topic, painpointId, interventionId, interventionLabel, onCreate } = opts;
-  // Lightweight inline modal — no global modal registry needed.
   const wrap = document.createElement('div');
   wrap.className = 'ost-modal-bg';
   wrap.innerHTML = `
     <div class="ost-modal">
-      <header><h3>New experiment</h3><button class="btn-mini" id="ost-modal-close">×</button></header>
+      <header><h3>New experiment</h3><button class="btn btn-ghost btn-xs btn-bordered" id="ost-modal-close">×</button></header>
       <p class="muted" style="font-size:12px;margin:0 0 8px">
         Testing: <em>${esc(interventionLabel)}</em>
       </p>
@@ -251,8 +275,8 @@ function showExperimentModal(opts) {
         <input id="ost-exp-samples" type="number" value="50" min="0" />
       </label>
       <footer>
-        <button class="btn" id="ost-exp-cancel">Cancel</button>
-        <button class="btn primary" id="ost-exp-save">Create experiment</button>
+        <button class="btn btn-ghost btn-sm btn-bordered" id="ost-exp-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="ost-exp-save">Create experiment</button>
       </footer>
     </div>
   `;
@@ -305,7 +329,6 @@ async function renderTopicTree(root, topic) {
   root.innerHTML = renderTreeShell(topic, tree);
   window.refreshIcons?.();
 
-  // Outcome inline edit
   const outcomeText = $('#ost-outcome-text', root);
   const outcomeEdit = $('.ost-outcome-edit', root);
   const outcomeInput = $('#ost-outcome-input', root);
@@ -349,7 +372,6 @@ async function renderTopicTree(root, topic) {
     }
   });
 
-  // Toolbar — re-run prioritization passes
   $('#ost-rerun-rice', root)?.addEventListener('click', async () => {
     const btn = $('#ost-rerun-rice', root);
     btn.disabled = true; btn.textContent = 'Computing…';
@@ -385,12 +407,10 @@ async function renderTopicTree(root, topic) {
     }
   });
 
-  // Experiment CRUD
   root.querySelectorAll('.ost-add-exp').forEach(btn => {
     btn.addEventListener('click', () => {
       const ivId = btn.dataset.ivId;
       const ivLabel = btn.dataset.ivLabel;
-      // Walk up to the .ost-opportunity for the painpoint id.
       const opp = btn.closest('.ost-opportunity');
       const ppId = opp?.dataset.ppId || '';
       showExperimentModal({
@@ -434,12 +454,13 @@ export async function renderOst(root) {
   const topic = topicFromHash();
   if (topic) return renderTopicTree(root, topic);
 
-  // Picker — show the user their topics so they can open a tree.
   root.innerHTML = `
     <header class="topbar">
-      <div class="crumbs"><strong>Opportunity Solution Tree</strong> · Torres, 2016</div>
+      <div class="crumbs">Workspace / <strong>Opportunity Solution Tree</strong></div>
+      <div class="topbar-spacer"></div>
+      <span class="muted" style="font-size:12px">Torres, 2016</span>
     </header>
-    <div class="ost-wrap"><div id="ost-picker-mount"><div class="empty-state">loading…</div></div></div>
+    <div id="ost-picker-mount"><div class="empty-state">loading…</div></div>
   `;
 
   let topics = [];

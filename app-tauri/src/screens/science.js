@@ -837,6 +837,7 @@ export async function renderScience(root) {
       <div class="topbar-spacer"></div>
     </header>
 
+    <div class="shell shell--wide science-page-body">
     <div class="section-head">
       <div>
         <h2>What we collect · why it works</h2>
@@ -844,14 +845,14 @@ export async function renderScience(root) {
       </div>
     </div>
 
-    <section class="card" style="margin-bottom:18px">
+    <section class="card science-prose-card">
       <div class="card-head">
         <div>
           <h3>📐 The methodology in one paragraph</h3>
           <p>Why Gap Map isn't just scraping Reddit</p>
         </div>
       </div>
-      <div style="padding:4px 22px 22px;color:var(--ink-2);font-size:var(--fs-15);line-height:1.75">
+      <div class="science-prose-body">
         <p>Every topic you collect runs through a four-stage pipeline:
         <b>(1) multi-source fetch</b> from up to 16 independent corpora,
         <b>(2) structural graph build</b> that links every post to subs, threads, and authors,
@@ -873,7 +874,7 @@ export async function renderScience(root) {
       <div class="empty-state">loading…</div>
     </div>
 
-    <div class="section-head" style="margin-top:26px">
+    <div class="section-head">
       <div>
         <h2>Processes &amp; frameworks</h2>
         <p>${PROCESSES.length} distinct methodologies the app applies — click any card for the full reasoning + citation.</p>
@@ -884,7 +885,7 @@ export async function renderScience(root) {
       ${[...grouped.entries()].map(([g, items]) => processGroupSection(g, items)).join('')}
     </div>
 
-    <div class="section-head" style="margin-top:22px">
+    <div class="section-head">
       <div><h2>Pillars</h2><p>The four ideas Gap Map is built on.</p></div>
     </div>
 
@@ -924,12 +925,12 @@ export async function renderScience(root) {
       </div>
     </section>
 
-    <div class="section-head" style="margin-top:22px">
-      <div><h2>What gets stored locally</h2><p>Everything Gap Map knows lives in SQLite on your machine.</p></div>
+    <div class="section-head">
+      <div><h2>What gets stored locally</h2><p>Gap Map stores its full working memory in a local SQLite database on your machine (posts, graph structure, signals, and audit logs) so research remains private and reproducible.</p></div>
     </div>
 
-    <section class="card" style="margin-bottom:18px">
-      <div style="padding:4px 22px 22px">
+    <section class="card science-table-card">
+      <div class="science-table-inner">
         <table class="db-rows" style="font-size:var(--fs-13)">
           <thead><tr><th>Table</th><th>What it holds</th></tr></thead>
           <tbody>
@@ -947,10 +948,11 @@ export async function renderScience(root) {
       </div>
     </section>
 
-    <div style="display:flex;gap:10px;margin-top:14px">
+    <div class="science-page-actions">
       <button class="btn btn-primary btn-sm" id="btn-science-db">Open database →</button>
       <button class="btn btn-ghost btn-sm btn-bordered" id="btn-science-activity">View activity log →</button>
       <button class="btn btn-ghost btn-sm btn-bordered" id="btn-science-playbook">Open Playbook →</button>
+    </div>
     </div>
   `;
   window.refreshIcons?.();

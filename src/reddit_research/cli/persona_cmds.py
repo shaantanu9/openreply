@@ -28,6 +28,7 @@ from ..persona import (
     list_rejections as _list_rejections,
     share_memory as _share,
     synthesize_conclusions,
+    teach_from_youtube as _teach_yt,
     update_persona as _update,
 )
 
@@ -161,6 +162,44 @@ def cmd_ingest(
                 f"[{ev.get('persona_name')}] done — "
                 f"kept={ev['kept']} dropped={ev['dropped']} errors={ev['errors']}"
             )
+
+
+@persona_app.command("teach-video")
+def cmd_teach_video(
+    persona_id: int = typer.Argument(...),
+    url: str = typer.Argument(..., help="YouTube URL or 11-char video id"),
+    comments_limit: int = typer.Option(100, "--comments", "-c",
+        help="Top comments to fetch per video (in addition to transcript + description)."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Teach one persona from one YouTube video — description + transcript +
+    top comments. Streams NDJSON events on stdout (teach:* + ingest:* shapes)."""
+    for ev in _teach_yt(persona_id, url, comments_limit=comments_limit, provider=provider):
+        if as_json:
+            _emit(ev)
+            continue
+        kind = ev.get("event")
+        if kind == "teach:start":
+            typer.echo(f"▶ teach — video={ev['video_id']}")
+        elif kind == "teach:fetched":
+            typer.echo(
+                f"  fetched: {ev['rows']} rows "
+                f"({ev['comments']} comments, {ev['transcript']} transcript chunks, "
+                f"{ev['description']} description)"
+            )
+        elif kind == "teach:error":
+            typer.echo(f"  ✗ teach error: {ev.get('error','')[:200]}", err=True)
+        elif kind == "start":
+            typer.echo(f"  ingest start — {ev['candidates']} candidates")
+        elif kind == "memory":
+            typer.echo(f"  ✓ mem#{ev['memory_id']}: {(ev.get('lesson') or '')[:140]}")
+        elif kind == "skip":
+            typer.echo(f"  · skip: {ev.get('reason')}")
+        elif kind == "error":
+            typer.echo(f"  ✗ {ev.get('error','')[:200]}", err=True)
+        elif kind == "done":
+            typer.echo(f"done — kept={ev['kept']} dropped={ev['dropped']} errors={ev['errors']}")
 
 
 @persona_app.command("ingest-peers")

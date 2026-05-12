@@ -63,10 +63,67 @@ function explainerSlugForHash(hash) {
   if (h.startsWith('/interviews'))    return 'interviews';
   if (h.startsWith('/pmf'))           return 'pmf';
   if (h.startsWith('/pricing'))       return 'pricing';
+  if (h.startsWith('/launch'))        return 'launch';
+  if (h.startsWith('/audience'))      return 'audience';
+  if (h.startsWith('/iterate'))       return 'iterate';
+  if (h.startsWith('/improve'))       return 'improve';
   if (h.startsWith('/estimate'))      return 'estimate';
   if (h.startsWith('/prd'))           return 'prd';
   if (h.startsWith('/settings'))      return 'settings';
   return '';
+}
+
+// Audience-first nudge — when the user lands on a topic detail page
+// and the topic has no audience-personas built yet, show a single
+// dismissible banner pointing at /audience and /improve. This is the
+// visible expression of "personas-from-real-users come first." Cheap:
+// one async call, gated by hash + per-topic localStorage dismiss flag.
+function _topicSlugFromHash(hash) {
+  const m = (hash || '').match(/^\/topic\/([^/?]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+async function mountAudienceNudge(rootEl, hash) {
+  const topic = _topicSlugFromHash(hash);
+  if (!topic) return;
+  if (rootEl.querySelector('.audience-nudge')) return;
+  let dismissed = {};
+  try { dismissed = JSON.parse(localStorage.getItem('gapmap.audience.nudge.dismissed.v1') || '{}'); }
+  catch { dismissed = {}; }
+  if (dismissed[topic]) return;
+  let resp;
+  try { resp = await api.audiencePersonasGet(topic); } catch { return; }
+  const built = resp?.ok && (resp.personas || []).length > 0;
+  if (built) return;
+  const banner = document.createElement('div');
+  banner.className = 'audience-nudge';
+  banner.style.cssText = [
+    'display:flex', 'align-items:center', 'gap:12px',
+    'padding:10px 16px', 'margin-bottom:14px',
+    'background:linear-gradient(120deg, var(--lavender-soft, #EFE7FB), var(--mint-soft, #E1F2EA))',
+    'border:1px solid var(--line)', 'border-radius:10px',
+    'font-size:13px', 'color:var(--ink, #1A1614)',
+  ].join(';');
+  banner.innerHTML = `
+    <span style="font-size:18px">🧭</span>
+    <span style="flex:1">
+      <strong>Build personas from your real users first.</strong>
+      Every other screen gets stronger when grounded on real authors —
+      audience clusters power Insights, Deliberation, and Launch.
+    </span>
+    <a href="#/audience/${encodeURIComponent(topic)}" class="btn btn-primary btn-xs" style="white-space:nowrap">Build now</a>
+    <a href="#/improve/${encodeURIComponent(topic)}" class="btn btn-ghost btn-xs btn-bordered" style="white-space:nowrap">Run pipeline</a>
+    <button class="btn btn-ghost btn-xs btn-bordered" data-aud-dismiss aria-label="Dismiss" style="white-space:nowrap">×</button>
+  `;
+  rootEl.insertBefore(banner, rootEl.firstChild);
+  banner.querySelector('[data-aud-dismiss]')?.addEventListener('click', () => {
+    try {
+      const cur = JSON.parse(localStorage.getItem('gapmap.audience.nudge.dismissed.v1') || '{}');
+      cur[topic] = Date.now();
+      localStorage.setItem('gapmap.audience.nudge.dismissed.v1', JSON.stringify(cur));
+    } catch {}
+    banner.remove();
+  });
 }
 
 // Auto-inject the eye-icon button into the topbar of any rendered
@@ -104,6 +161,18 @@ import { renderPmf } from './screens/pmf.js';
 import { renderPricing } from './screens/pricing.js';
 import { renderEstimate } from './screens/estimate.js';
 import { renderPrd } from './screens/prd.js';
+// Launch & GTM (2026-05-02) — per-topic go-to-market brief that
+// synthesizes audience + demographics + channels + MVP + pricing.
+import { renderLaunch } from './screens/launch.js';
+// Audience (2026-05-03) — clusters of REAL authors per topic.
+// Replaces every LLM-imagined-persona surface with citation-backed clusters.
+import { renderAudience } from './screens/audience.js';
+// Iterate (2026-05-03 Phase 4) — Karpathy-style autoresearch loop UI.
+// Sweeps a small config grid for the deliberate / audience pipelines.
+import { renderIterate } from './screens/iterate.js';
+// Improve (2026-05-03 Phase 4) — guided "one button" pipeline runner
+// that chains audience → synthesize → deliberate → launch.
+import { renderImprove } from './screens/improve.js';
 import { runHealthCheck, healthIsBlocking } from './lib/healthCheck.js';
 import { tabStore, renderTabStrip, titleForHash, iconForHash } from './lib/tabs.js';
 // ── AG-D: compare view ──
@@ -162,6 +231,22 @@ const routes = [
   { match: /^\/pmf\/([^/?]+).*$/,           render: renderPmf },
   { match: /^\/pricing\/?$/,                render: renderPricing },
   { match: /^\/pricing\/([^/?]+).*$/,       render: renderPricing },
+  // Launch & GTM (2026-05-02) — audience, demographics, channels, MVP,
+  // pricing, sequence — all per topic.
+  { match: /^\/launch\/?$/,                 render: renderLaunch },
+  { match: /^\/launch\/([^/?]+).*$/,        render: renderLaunch },
+  // Audience personas (2026-05-03) — citation-backed clusters of real
+  // authors per topic.
+  { match: /^\/audience\/?$/,               render: renderAudience },
+  { match: /^\/audience\/([^/?]+).*$/,      render: renderAudience },
+  // Iterate / Autoresearch (2026-05-03) — config-grid sweeper UI.
+  // The /run/<id> path is also handled by renderIterate (see internals).
+  { match: /^\/iterate\/?$/,                render: renderIterate },
+  { match: /^\/iterate\/run\/([^/?]+)$/,    render: renderIterate },
+  { match: /^\/iterate\/([^/?]+).*$/,       render: renderIterate },
+  // Improve (2026-05-03) — guided pipeline runner.
+  { match: /^\/improve\/?$/,                render: renderImprove },
+  { match: /^\/improve\/([^/?]+).*$/,       render: renderImprove },
   { match: /^\/estimate\/([^/?]+).*$/,      render: renderEstimate },
   { match: /^\/prd\/([^/?]+).*$/,           render: renderPrd },
   // ── Persona agents (Phase 1 — 2026-05-12) ──
@@ -253,6 +338,11 @@ async function route() {
         // its own DOM so we know .topbar exists. The icon refresh
         // below picks up the lucide <i> tag we just added.
         mountWhyEyeIcon(main, hash);
+        // Audience-first nudge — fires on /topic/<T> only; cheap async,
+        // self-dismisses when audience clusters exist or the user X's it.
+        mountAudienceNudge(main, hash).catch((e) =>
+          console.warn('[gapmap] audience nudge skipped:', e),
+        );
         refreshIcons();
       }
       // After render succeeds, update tab title + restore scroll for this tab.
@@ -519,8 +609,57 @@ window.addEventListener('DOMContentLoaded', async () => {
     // idempotent, so starting an already-running worker is a no-op, and
     // below-threshold topics will be filtered naturally by the worker's
     // drain query (empty extraction_queue → immediate idle).
+    // Clear the audience-auto-build marker when a topic is trashed —
+    // a future re-collect on the same name should retrigger the build.
+    if (kind === 'trash' || kind === 'topics') {
+      try {
+        const s = JSON.parse(localStorage.getItem('gapmap.audience.autobuilt.v1') || '{}');
+        const dismissed = JSON.parse(localStorage.getItem('gapmap.audience.nudge.dismissed.v1') || '{}');
+        const detailTopic = e?.detail?.topic;
+        if (detailTopic) {
+          delete s[detailTopic];
+          delete dismissed[detailTopic];
+          localStorage.setItem('gapmap.audience.autobuilt.v1', JSON.stringify(s));
+          localStorage.setItem('gapmap.audience.nudge.dismissed.v1', JSON.stringify(dismissed));
+        }
+      } catch {}
+    }
     if (kind === 'collect') {
       api.startExtractionWorker().catch(() => {});
+      // Auto-trigger audience clustering (deterministic only — no LLM
+      // call) right after a collect completes. Personas-from-real-users
+      // is the starting point of every other discovery surface, so
+      // building them eagerly means the Audience / Improve / Launch
+      // screens have data the moment the user clicks them. Fully best-
+      // effort: any failure (no embedder, too few authors, sidecar
+      // hiccup) is silenced. The user can also re-run from the
+      // Audience screen with LLM augmentation later.
+      const detail = e?.detail || {};
+      const topicName = detail.topic;
+      const lastSession = (() => {
+        try { return JSON.parse(localStorage.getItem('gapmap.audience.autobuilt.v1') || '{}'); }
+        catch { return {}; }
+      })();
+      if (topicName && !lastSession[topicName]) {
+        lastSession[topicName] = Date.now();
+        try { localStorage.setItem('gapmap.audience.autobuilt.v1', JSON.stringify(lastSession)); } catch {}
+        api.audiencePersonasBuild(topicName, { llm: false })
+          .then((r) => {
+            if (r?.ok) {
+              console.log(`[gapmap] auto-built ${(r.personas || []).length} audience clusters for ${topicName}`);
+            }
+          })
+          .catch((err) => {
+            console.warn('[gapmap] audience auto-build skipped:', err);
+            // On failure, drop the cache marker so the user's next
+            // collect on this topic retries.
+            try {
+              const s = JSON.parse(localStorage.getItem('gapmap.audience.autobuilt.v1') || '{}');
+              delete s[topicName];
+              localStorage.setItem('gapmap.audience.autobuilt.v1', JSON.stringify(s));
+            } catch {}
+          });
+      }
     }
   });
 

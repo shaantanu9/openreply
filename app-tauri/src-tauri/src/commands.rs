@@ -492,6 +492,21 @@ fn drain_collect_queue(app: &AppHandle) {
 /// Inner runner shared by `start_collect` and the queue drain. Spawns the
 /// sidecar via `run_cli_streaming`, manages the `ActiveCollects` map, and
 /// drains the queue on completion.
+///
+/// **Lifecycle gotcha:** `run_cli_streaming` is *fire-and-forget* — it
+/// spawns the streaming task and returns `Ok(())` as soon as the child
+/// process is alive. It does NOT await sidecar termination. The previous
+/// implementation cleaned up `ActiveCollects` and unlistened immediately
+/// after this `await`, which left the slot held + the topic map empty
+/// for the entire duration of the collect — exactly the orphan state the
+/// busy modal then surfaces, and what the periodic sweeper interprets as
+/// "kill this dead process". Net effect: every collect was self-killing
+/// itself within ~8 s of starting.
+///
+/// Fix: register a one-shot `collect:done` listener that does the
+/// cleanup when the sidecar actually terminates. `once_any` auto-
+/// unregisters after the first fire so it doesn't leak across repeated
+/// collects.
 async fn run_collect_inner(
     app: AppHandle,
     topic: String,
@@ -513,25 +528,36 @@ async fn run_collect_inner(
         map.insert(topic.clone(), now_secs);
     }
 
+    // One-shot cleanup. Fires when the sidecar actually emits `collect:done`
+    // (i.e., the streaming task observed `Terminated`), which is the only
+    // moment we know the slot will be released — `run_cli_streaming` itself
+    // doesn't wait for that. Both `ActiveCollects` removal and the queue
+    // drain live here so they fire in the right order regardless of how
+    // long the sidecar runs.
     let active_for_listener = active_arc.clone();
-    let topic_clone = topic.clone();
-    let unlisten = app.listen_any("collect:done", move |_event| {
+    let topic_for_listener = topic.clone();
+    let app_for_listener = app.clone();
+    app.once_any("collect:done", move |_event| {
         if let Ok(mut map) = active_for_listener.lock() {
-            map.remove(&topic_clone);
+            map.remove(&topic_for_listener);
         }
+        drain_collect_queue(&app_for_listener);
     });
 
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let stream_result =
         run_cli_streaming(&app, arg_refs, "collect:progress", "collect:done").await;
 
-    app.unlisten(unlisten);
-    if let Ok(mut map) = active_arc.lock() {
-        map.remove(&topic);
+    // If the spawn itself failed, `collect:done` will never fire — we have
+    // to clean up synchronously here instead. The one-shot listener is
+    // harmless in that case (it'll just sit waiting for an event that
+    // never arrives, and Tauri will GC it on app shutdown).
+    if stream_result.is_err() {
+        if let Ok(mut map) = active_arc.lock() {
+            map.remove(&topic);
+        }
+        drain_collect_queue(&app);
     }
-
-    // Drain — the slot just freed up, fire the next queued item if any.
-    drain_collect_queue(&app);
 
     stream_result
         .map(|_| {
@@ -603,6 +629,31 @@ pub async fn start_collect(
         sources.as_deref(),
         skip_reddit.unwrap_or(false),
     );
+
+    // Orphan auto-reap. The single-flight slot can end up "held" with no
+    // matching entry in `ActiveCollects` when a prior sidecar dies without
+    // its `Terminated` event ever reaching us (panic between writes, hard
+    // SIGKILL by the OS, dev HMR rebuild that drops the listener mid-flight).
+    // Symptoms in the UI: the busy modal shows "(orphan sidecar — name
+    // unavailable)" with "unknown elapsed". Queueing waits forever because
+    // `collect:done` never fires; the user has to click "Stop and start" on a
+    // process that's already dead. Detect-and-reap here so the modal never
+    // surfaces in that state — if the slot is held but the topic map is
+    // empty, drop the slot (best-effort kill is idempotent if already dead).
+    {
+        let map_empty = active_arc.lock().map_err(|e| e.to_string())?.is_empty();
+        if map_empty && is_collect_running(&app) {
+            // Silent kill — the orphan reap is a maintenance action, not
+            // a user cancellation. Using the loud variant would set the
+            // cancel marker, which would then mislabel THIS new collect's
+            // eventual exit as "cancelled by user".
+            let _ = crate::cli::cancel_active_job_silent(&app);
+            let _ = app.emit(
+                "collect:orphan:reaped",
+                serde_json::json!({ "trigger": "start_collect" }),
+            );
+        }
+    }
 
     // If something else is running, branch on the policy.
     if is_collect_running(&app) {
@@ -2017,6 +2068,250 @@ pub async fn run_kano_categorize(app: AppHandle, topic: String) -> Result<Value,
     ).await.map_err(err_to_string)
 }
 
+// ─── Iterate / Autoresearch (2026-05-03 Phase 4) ──────────────────────────
+// Persistent in-app autoresearch loop. Each call wraps a CLI subcommand
+// that touches new SQLite tables: iterate_runs, iterate_iterations,
+// topic_pipeline_config.
+
+#[tauri::command]
+pub async fn iterate_run(
+    app: AppHandle,
+    topic: String,
+    loop_kind: String,
+    grid_json: Option<String>,
+    notes: Option<String>,
+) -> Result<Value, String> {
+    let g = grid_json.unwrap_or_default();
+    let n = notes.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "iterate-run",
+        "--topic", &topic, "--loop", &loop_kind,
+        "--notes", &n, "--json",
+    ];
+    if !g.is_empty() {
+        args.push("--grid");
+        args.push(&g);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn iterate_start(
+    app: AppHandle,
+    topic: String,
+    loop_kind: String,
+    grid_json: Option<String>,
+    notes: Option<String>,
+) -> Result<Value, String> {
+    let g = grid_json.unwrap_or_default();
+    let n = notes.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "iterate-start",
+        "--topic", &topic, "--loop", &loop_kind,
+        "--notes", &n, "--json",
+    ];
+    if !g.is_empty() {
+        args.push("--grid");
+        args.push(&g);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn iterate_execute(
+    app: AppHandle,
+    run_id: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "iterate-execute",
+                       "--run-id", &run_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn iterate_status(
+    app: AppHandle,
+    run_id: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "iterate-status",
+                       "--run-id", &run_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn iterate_list(
+    app: AppHandle,
+    topic: Option<String>,
+    limit: Option<i64>,
+) -> Result<Value, String> {
+    let lim = limit.unwrap_or(30).to_string();
+    let t = topic.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "iterate-list", "--limit", &lim, "--json",
+    ];
+    if !t.is_empty() {
+        args.push("--topic"); args.push(&t);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn iterate_cancel(
+    app: AppHandle,
+    run_id: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "iterate-cancel",
+                       "--run-id", &run_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn iterate_apply(
+    app: AppHandle,
+    run_id: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "iterate-apply",
+                       "--run-id", &run_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn iterate_applied(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "iterate-applied",
+                       "--topic", &topic, "--json"])
+        .await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pipeline_run(
+    app: AppHandle,
+    topic: String,
+    force: Option<bool>,
+    no_llm: Option<bool>,
+    provider: Option<String>,
+) -> Result<Value, String> {
+    let f = if force.unwrap_or(false) { "--force" } else { "--no-force" };
+    let prov = provider.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "pipeline-run", "--topic", &topic, f, "--json",
+    ];
+    if no_llm.unwrap_or(false) { args.push("--no-llm"); }
+    if !prov.is_empty() { args.push("--provider"); args.push(&prov); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn pipeline_status(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "pipeline-status",
+                       "--topic", &topic, "--json"])
+        .await.map_err(err_to_string)
+}
+
+// ─── Deliberation (2026-05-03 Phase 3) ────────────────────────────────────
+// 5-persona debate over a topic's cached findings.
+
+#[tauri::command]
+pub async fn deliberate(
+    app: AppHandle,
+    topic: String,
+    rounds: Option<i64>,
+    no_llm: Option<bool>,
+    provider: Option<String>,
+) -> Result<Value, String> {
+    let r = rounds.unwrap_or(1).to_string();
+    let prov = provider.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "deliberate", "--topic", &topic, "--rounds", &r, "--json",
+    ];
+    if no_llm.unwrap_or(false) {
+        args.push("--no-llm");
+    }
+    if !prov.is_empty() {
+        args.push("--provider");
+        args.push(&prov);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+// ─── Audience personas (2026-05-03) ───────────────────────────────────────
+// Cluster real authors in a topic into ICP personas backed by their
+// actual posts. Pairs with the Audience screen + Launch Brief.
+
+#[tauri::command]
+pub async fn audience_personas_build(
+    app: AppHandle,
+    topic: String,
+    llm: Option<bool>,
+    provider: Option<String>,
+    min_posts: Option<i64>,
+) -> Result<Value, String> {
+    let llm_flag = if llm.unwrap_or(true) { "--llm" } else { "--no-llm" };
+    let prov = provider.unwrap_or_default();
+    let mp = min_posts.unwrap_or(3).to_string();
+    let mut args: Vec<&str> = vec![
+        "research", "audience-build",
+        "--topic", &topic,
+        llm_flag,
+        "--min-posts", &mp,
+        "--json",
+    ];
+    if !prov.is_empty() {
+        args.push("--provider");
+        args.push(&prov);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn audience_personas_get(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "audience-get", "--topic", &topic, "--json"],
+    ).await.map_err(err_to_string)
+}
+
+// ─── Launch & GTM (2026-05-02) ────────────────────────────────────────────
+// Per-topic Launch Brief: target audience, demographics, where to launch,
+// market requirements. Deterministic + optional LLM augmentation.
+
+#[tauri::command]
+pub async fn launch_brief(
+    app: AppHandle,
+    topic: String,
+    llm: Option<bool>,
+    provider: Option<String>,
+) -> Result<Value, String> {
+    let llm_flag = if llm.unwrap_or(true) { "--llm" } else { "--no-llm" };
+    let prov = provider.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "launch-brief", "--topic", &topic, llm_flag, "--json",
+    ];
+    if !prov.is_empty() {
+        args.push("--provider");
+        args.push(&prov);
+    }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn launch_brief_get(
+    app: AppHandle,
+    topic: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "launch-brief-get", "--topic", &topic, "--json"],
+    ).await.map_err(err_to_string)
+}
+
 // ─── Discovery framework expansion (2026-05-01_04) ────────────────────────
 // OST + RICE + MoSCoW + Empathy Maps + Four Risks + Value Curve.
 
@@ -3381,6 +3676,59 @@ pub async fn reveal_in_finder(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn cancel_collect(app: AppHandle) -> Result<bool, String> {
     Ok(cancel_active_job(&app))
+}
+
+/// Force-clear an orphaned single-flight collect lock. Use case:
+///   - The single-flight slot (`ActiveJob` / `ActiveJobPid`) is held.
+///   - But `ActiveCollects` has no matching topic → no live collect we can
+///     report on, no `collect:done` listener that will ever fire.
+///   - The user is stuck — their "Start collect" calls are blocked by a
+///     ghost.
+///
+/// Returns `{ ok, was_orphan, slot_held, map_empty, killed }` so the UI can
+/// distinguish "you weren't actually stuck" (`was_orphan=false`) from "we
+/// cleared it" (`was_orphan=true, killed=true`). Safe to call even when
+/// nothing is running — it's a no-op in that case.
+///
+/// We intentionally do NOT kill the slot when the topic map is non-empty —
+/// that would clobber a legitimate running collect. The Unstick affordance
+/// in the busy modal only surfaces when we've already detected the orphan
+/// state, but this guard keeps the IPC contract safe even if the frontend
+/// races a real collect into the slot between detection and click.
+#[tauri::command]
+pub async fn clear_orphan_collect_lock(app: AppHandle) -> Result<Value, String> {
+    use crate::cli::ActiveCollects;
+    let map_empty = {
+        let state = app.state::<ActiveCollects>();
+        let map = state.0.lock().map_err(|e| e.to_string())?;
+        map.is_empty()
+    };
+    let slot_held = is_collect_running(&app);
+    if !(slot_held && map_empty) {
+        return Ok(serde_json::json!({
+            "ok": true,
+            "was_orphan": false,
+            "slot_held": slot_held,
+            "map_empty": map_empty,
+            "killed": false,
+        }));
+    }
+    // Silent kill — manual Unstick is also a maintenance action. The
+    // user pressed Unstick because they wanted to RUN something, not to
+    // cancel something. If we used the loud variant the next collect
+    // they kick off would get its exit mislabeled as cancelled-by-user.
+    let killed = crate::cli::cancel_active_job_silent(&app);
+    let _ = app.emit(
+        "collect:orphan:reaped",
+        serde_json::json!({ "trigger": "manual_unstick", "killed": killed }),
+    );
+    Ok(serde_json::json!({
+        "ok": true,
+        "was_orphan": true,
+        "slot_held": true,
+        "map_empty": true,
+        "killed": killed,
+    }))
 }
 
 /// Is a long-running collect currently active? Checks BOTH the prod sidecar

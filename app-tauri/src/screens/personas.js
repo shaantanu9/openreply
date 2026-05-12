@@ -7,6 +7,7 @@
 // Self-contained module. Remove the route registrations in main.js + the
 // nav link in index.html + this file to fully roll back.
 import { api, esc } from '../api.js';
+import { currentRouteGen } from '../main.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -825,19 +826,56 @@ async function mountConclusionsTab(host, persona) {
 
 async function mountIngestTab(host, persona) {
   host.innerHTML = `
-    <div style="max-width:760px">
-      <p class="muted" style="line-height:1.55">
-        Scans posts in your corpus that <strong>${esc(persona.name)}</strong> hasn't read yet,
-        filters them through the lens, and stores any relevant lesson in this persona's memory.
-        Safe to re-run — already-ingested posts are skipped.
-      </p>
-      <div class="persona-toolbar">
-        <label>Limit<input id="in-limit" type="number" value="50" min="1" max="500"></label>
-        <label>Topic<input id="in-topic" type="text" placeholder="(all topics)"></label>
-        <span style="flex:1"></span>
-        <button id="in-peers" class="btn btn-ghost btn-bordered btn-sm" title="Ingest other personas' conclusions through THIS persona's lens — the persona-of-personas / meta-agent pass"><i data-lucide="users" style="width:12px;height:12px"></i>Ingest peers</button>
-        <button id="in-run" class="btn btn-primary btn-sm"><i data-lucide="play" style="width:12px;height:12px"></i>Run ingest</button>
-      </div>
+    <div style="max-width:820px;display:flex;flex-direction:column;gap:18px">
+      <section class="card persona-teach-card" style="border-left:4px solid ${esc(persona.color || '#7c3aed')}">
+        <div class="card-head" style="padding:14px 18px 0">
+          <div>
+            <h3 style="display:flex;align-items:center;gap:8px">
+              <i data-lucide="graduation-cap" style="width:16px;height:16px"></i>
+              Teach ${esc(persona.name)} from a video
+            </h3>
+            <p>Paste a YouTube URL. ${esc(persona.name)} reads the speaker's words (transcript), the video description, and the top commenter reactions — all filtered through the <strong style="color:${esc(persona.color || '#7c3aed')}">${esc(persona.lens)}</strong> lens.</p>
+          </div>
+        </div>
+        <div class="card-body" style="display:grid;gap:12px;padding-top:12px">
+          <div class="np-form" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+            <label class="np-field" style="flex:1;min-width:280px">
+              <span>YouTube URL or video id</span>
+              <input id="teach-url" type="text" placeholder="https://www.youtube.com/watch?v=…  or  youtu.be/…  or 11-char id" />
+            </label>
+            <label class="np-field" style="width:120px">
+              <span>Comments</span>
+              <input id="teach-comments" type="number" value="100" min="0" max="500" />
+            </label>
+            <button id="teach-run" class="btn btn-primary btn-sm" style="height:38px">
+              <i data-lucide="brain" style="width:14px;height:14px"></i>
+              Teach
+            </button>
+          </div>
+          <p class="muted" style="font-size:11.5px;margin:0;line-height:1.5">
+            Already-learned content is skipped automatically, so re-running with the same URL is safe.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <div style="display:flex;align-items:center;gap:8px;margin:0 0 8px">
+          <h3 style="margin:0;font-size:14px;font-weight:700;letter-spacing:-.01em">Or scan the existing corpus</h3>
+        </div>
+        <p class="muted" style="line-height:1.55;margin:0 0 10px;font-size:12.5px">
+          Scans posts in your corpus that <strong>${esc(persona.name)}</strong> hasn't read yet,
+          filters them through the lens, and stores any relevant lesson in this persona's memory.
+          Safe to re-run — already-ingested posts are skipped.
+        </p>
+        <div class="persona-toolbar">
+          <label>Limit<input id="in-limit" type="number" value="50" min="1" max="500"></label>
+          <label>Topic<input id="in-topic" type="text" placeholder="(all topics)"></label>
+          <span style="flex:1"></span>
+          <button id="in-peers" class="btn btn-ghost btn-bordered btn-sm" title="Ingest other personas' conclusions through THIS persona's lens — the persona-of-personas / meta-agent pass"><i data-lucide="users" style="width:12px;height:12px"></i>Ingest peers</button>
+          <button id="in-run" class="btn btn-primary btn-sm"><i data-lucide="play" style="width:12px;height:12px"></i>Run ingest</button>
+        </div>
+      </section>
+
       <div id="in-log" class="persona-mono-log persona-mono-log--ingest"></div>
     </div>
   `;
@@ -850,31 +888,99 @@ async function mountIngestTab(host, persona) {
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
   }
+
+  // Shared NDJSON event renderer — handles the regular ingest, peer ingest,
+  // AND the teach-from-video stream (which prepends `teach:*` events before
+  // the standard ingest ones). Returns silently for events it doesn't know
+  // so a future event type doesn't bleed raw JSON into the log.
+  function renderEvent(ev, opts = {}) {
+    const label = opts.label || 'ingest';
+    const memoryPrefix = opts.memoryPrefix || 'mem';
+    if (!ev || typeof ev !== 'object') return;
+    switch (ev.event) {
+      case 'teach:start':
+        line(`▶ teaching — video=${ev.video_id}`, 'info');
+        return;
+      case 'teach:fetched':
+        line(`  fetched ${ev.rows} rows (${ev.comments} comments · ${ev.transcript} transcript chunks · ${ev.description} description)`, 'info');
+        return;
+      case 'teach:error':
+        line(`  ✗ teach: ${(ev.error || '').slice(0, 200)}`, 'err');
+        return;
+      case 'start':
+        line(`  ${label} start — ${ev.candidates} candidates`);
+        return;
+      case 'memory':
+        line(`  ✓ ${memoryPrefix}#${ev.memory_id}: ${(ev.lesson || '').slice(0, 150)}`);
+        return;
+      case 'skip':
+        line(`  · skip (${ev.reason})`, 'info');
+        return;
+      case 'error':
+        line(`  ✗ ${(ev.error || '').slice(0, 200)}`, 'err');
+        return;
+      case 'done':
+        line(`  ▶ ${label} done — kept=${ev.kept} dropped=${ev.dropped} errors=${ev.errors}`);
+        return;
+    }
+  }
+
   let progressUnsub, doneUnsub;
-  $('#in-run', host).addEventListener('click', async () => {
-    log.innerHTML = '';
-    const limit = parseInt($('#in-limit', host).value, 10) || 50;
-    const topic = $('#in-topic', host).value.trim() || null;
-    line(`▶ starting ingest (persona=${persona.name}, topic=${topic || '(all)'}, limit=${limit})`, 'info');
+
+  // Resets stream subscriptions before each run so old listeners don't pile
+  // up on rapid re-runs.
+  async function attachStream(opts) {
     if (progressUnsub) await progressUnsub();
     if (doneUnsub) await doneUnsub();
     progressUnsub = await api.onPersonaIngestProgress(payload => {
       const t = String(payload || '').trim();
       if (!t) return;
-      try {
-        const ev = JSON.parse(t);
-        if (ev.event === 'start') line(`  start — ${ev.candidates} candidates`);
-        else if (ev.event === 'memory') line(`  ✓ mem#${ev.memory_id}: ${(ev.lesson || '').slice(0,150)}`);
-        else if (ev.event === 'skip')   line(`  · skip (${ev.reason})`, 'info');
-        else if (ev.event === 'error')  line(`  ✗ ${(ev.error || '').slice(0,150)}`, 'err');
-        else if (ev.event === 'done')   line(`  ▶ done — kept=${ev.kept} dropped=${ev.dropped} errors=${ev.errors}`);
-      } catch { line(t); }
+      try { renderEvent(JSON.parse(t), opts); } catch { line(t); }
     });
     doneUnsub = await api.onPersonaIngestDone(_payload => {
-      line('✔ ingest complete', 'ok');
+      line(`✔ ${opts.label || 'ingest'} complete`, 'ok');
       if (progressUnsub) progressUnsub();
       if (doneUnsub) doneUnsub();
     });
+  }
+
+  $('#teach-run', host).addEventListener('click', async () => {
+    const url = $('#teach-url', host).value.trim();
+    const commentsLimit = parseInt($('#teach-comments', host).value, 10);
+    if (!url) {
+      line('paste a YouTube URL above first', 'err');
+      return;
+    }
+    log.innerHTML = '';
+    const btn = $('#teach-run', host);
+    btn.disabled = true;
+    const restore = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" style="width:14px;height:14px"></i>Teaching…';
+    refreshIcons();
+    line(`▶ teaching ${persona.name} from ${url}`, 'info');
+    await attachStream({ label: 'teach' });
+    try {
+      await api.personaTeachVideo(persona.id, url, {
+        commentsLimit: Number.isFinite(commentsLimit) ? commentsLimit : 100,
+      });
+    } catch (e) {
+      line('error: ' + String(e?.message || e), 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = restore;
+      refreshIcons();
+    }
+  });
+  $('#teach-url', host).addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('#teach-run', host).click();
+  });
+
+  $('#in-run', host).addEventListener('click', async () => {
+    log.innerHTML = '';
+    const limit = parseInt($('#in-limit', host).value, 10) || 50;
+    const topic = $('#in-topic', host).value.trim() || null;
+    line(`▶ starting ingest (persona=${persona.name}, topic=${topic || '(all)'}, limit=${limit})`, 'info');
+    await attachStream({ label: 'ingest' });
     try {
       await api.personaIngest({ personaId: persona.id, topic, limit });
     } catch (e) {
@@ -887,25 +993,7 @@ async function mountIngestTab(host, persona) {
     log.innerHTML = '';
     const limit = parseInt($('#in-limit', host).value, 10) || 50;
     line(`▶ starting peer-ingest (persona=${persona.name}, limit=${limit})`, 'info');
-    if (progressUnsub) await progressUnsub();
-    if (doneUnsub) await doneUnsub();
-    progressUnsub = await api.onPersonaIngestProgress(payload => {
-      const t = String(payload || '').trim();
-      if (!t) return;
-      try {
-        const ev = JSON.parse(t);
-        if (ev.event === 'start')      line(`  peer start — ${ev.candidates} candidate conclusions`);
-        else if (ev.event === 'memory') line(`  ✓ meta-mem#${ev.memory_id}: ${(ev.lesson || '').slice(0,150)}`);
-        else if (ev.event === 'skip')   line(`  · skip (${ev.reason})`, 'info');
-        else if (ev.event === 'error')  line(`  ✗ ${(ev.error || '').slice(0,150)}`, 'err');
-        else if (ev.event === 'done')   line(`  ▶ peer done — kept=${ev.kept} dropped=${ev.dropped} errors=${ev.errors}`);
-      } catch { line(t); }
-    });
-    doneUnsub = await api.onPersonaIngestDone(_payload => {
-      line('✔ peer ingest complete', 'ok');
-      if (progressUnsub) progressUnsub();
-      if (doneUnsub) doneUnsub();
-    });
+    await attachStream({ label: 'peer ingest', memoryPrefix: 'meta-mem' });
     try {
       await api.personaIngestPeers(persona.id, limit);
     } catch (e) {
@@ -942,21 +1030,31 @@ export async function renderAgentsDashboard(root) {
   refreshIcons();
 
   let interval = null;
-  let lastTickAt = 0;
   let stopped = false;
+  // Capture the route generation we mounted under. main.js bumps a counter
+  // on every navigation; when it doesn't equal `myGen` anymore, the user
+  // has navigated away and we must stop polling. The previous MutationObserver
+  // approach didn't fire because route() replaces root.innerHTML (root stays
+  // connected; only its children change), so the dashboard polled forever.
+  const myGen = currentRouteGen();
+
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    if (interval) clearInterval(interval);
+  }
 
   async function tick() {
-    if (stopped) return;
-    lastTickAt = Date.now();
+    if (stopped || currentRouteGen() !== myGen) { stop(); return; }
     const r = unwrap(await api.personaList());
+    if (currentRouteGen() !== myGen) { stop(); return; }
     const rows = (r?.personas || []).filter(p => p.active);
     const grid = $('#ao-grid', root);
-    if (!grid) return;
+    if (!grid) { stop(); return; }
     if (!rows.length) {
       grid.innerHTML = '<div class="persona-empty">No active personas — <a href="#/personas">create one</a> or activate an inactive persona.</div>';
       return;
     }
-    // Fetch the per-persona latest memory + top conclusion in parallel
     const enriched = await Promise.all(rows.map(async p => {
       const [memRes, conRes] = await Promise.all([
         api.personaMemories(p.id, { limit: 3 }).catch(() => null),
@@ -966,6 +1064,7 @@ export async function renderAgentsDashboard(root) {
       const cons = unwrap(conRes)?.conclusions || [];
       return { ...p, recentMems: mems, topConclusion: cons[0] || null };
     }));
+    if (currentRouteGen() !== myGen) { stop(); return; }
     grid.innerHTML = enriched.map(p => orchestraCard(p)).join('');
     refreshIcons();
     const pulse = $('#ao-pulse', root);
@@ -974,19 +1073,6 @@ export async function renderAgentsDashboard(root) {
 
   await tick();
   interval = setInterval(tick, 5000);
-
-  // Auto-cleanup: when the route hands main over to another screen, the
-  // root subtree is replaced. Watch for that with a MutationObserver on
-  // root.parentElement (the route container itself isn't replaced; its
-  // children are). When root is detached, kill the interval.
-  const obs = new MutationObserver(() => {
-    if (!root.isConnected) {
-      stopped = true;
-      if (interval) clearInterval(interval);
-      obs.disconnect();
-    }
-  });
-  if (root.parentElement) obs.observe(root.parentElement, { childList: true, subtree: false });
 }
 
 function orchestraCard(p) {
@@ -1060,11 +1146,21 @@ async function openShareModal(fromPersona, memoryId) {
   backdrop.appendChild(dlg);
   document.body.appendChild(backdrop);
 
-  $('#share-close', dlg).addEventListener('click', () => backdrop.remove());
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
-  // Esc-to-close
-  const escHandler = (e) => { if (e.key === 'Escape') { backdrop.remove(); document.removeEventListener('keydown', escHandler); } };
+  // Single close path so we never leak the keydown listener — close()
+  // is idempotent. Was bug: prior version only removed the keydown
+  // handler on Esc; clicking Close or the backdrop left it attached
+  // forever (memory leak + would intercept Esc on the next screen).
+  let closed = false;
+  const escHandler = (e) => { if (e.key === 'Escape') close(); };
+  function close() {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener('keydown', escHandler);
+    backdrop.remove();
+  }
   document.addEventListener('keydown', escHandler);
+  $('#share-close', dlg).addEventListener('click', close);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
 
   const list = $('#share-list', dlg);
   if (list) {

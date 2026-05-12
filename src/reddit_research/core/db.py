@@ -35,11 +35,86 @@ _schema_inited = False
 _palace_upsert_lock = threading.Lock()
 
 
+_wal_self_heal_done = False
+
+
+def _wal_self_heal(db_path: str) -> None:
+    """Best-effort WAL recovery on first boot per process.
+
+    When a Python sidecar / MCP daemon is hard-killed mid-write (or the
+    Chroma HNSW writer crashes inside the same process and takes the
+    sqlite WAL with it), the next process to open `reddit.db` can hit
+    "database is locked" or "disk I/O error" on `reddit_query_db`.
+    The fix is normally:
+        sqlite3 reddit.db "PRAGMA wal_checkpoint(TRUNCATE);"
+    or, if that fails, removing `reddit.db-wal` / `reddit.db-shm`.
+
+    This helper does both, in order, with every step swallowed so a
+    healthy DB never pays a measurable cost. Idempotent across calls
+    via the module-level `_wal_self_heal_done` flag.
+    """
+    global _wal_self_heal_done
+    if _wal_self_heal_done:
+        return
+    _wal_self_heal_done = True
+    try:
+        import os as _os
+        import sqlite3 as _sqlite3
+        if not _os.path.isfile(db_path):
+            return  # fresh DB will be created later
+        # 1) Try to checkpoint WAL — usual no-op on a clean DB, real fix
+        # when the WAL has uncommitted frames left over from a hard kill.
+        try:
+            _conn = _sqlite3.connect(db_path, timeout=2.0, isolation_level=None)
+            try:
+                _conn.execute("PRAGMA busy_timeout=2000")
+                _conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+                # Quick integrity probe — full check is expensive, but
+                # `quick_check` catches the corruption modes we care
+                # about (page-level + index-level).
+                row = _conn.execute("PRAGMA quick_check").fetchone()
+                if row and row[0] != "ok":
+                    raise RuntimeError(f"sqlite quick_check: {row[0]!r}")
+            finally:
+                _conn.close()
+            return  # checkpoint + integrity passed; nothing more to do
+        except Exception as e:
+            # 2) Last-resort: nuke side-files. Safe ONLY if no other
+            # process holds the DB; the sidecar always runs as a single
+            # daemon so this holds in practice. The next connection
+            # rebuilds an empty WAL/SHM. We do NOT touch the main .db.
+            try:
+                _conn.close()  # type: ignore[has-type]
+            except Exception:
+                pass
+            for ext in ("-wal", "-shm", "-journal"):
+                p = db_path + ext
+                if _os.path.isfile(p):
+                    try:
+                        _os.remove(p)
+                    except OSError:
+                        pass
+            # Log via stderr so it shows up in the sidecar log without
+            # requiring logging config to be ready.
+            import sys as _sys
+            print(
+                f"[db] WAL self-heal: dropped sidecar files for {db_path} "
+                f"(reason: {e!s})",
+                file=_sys.stderr,
+            )
+    except Exception:
+        # Never block boot on the heal path itself.
+        pass
+
+
 def get_db() -> Database:
     global _schema_inited
     db = getattr(_tls, "db", None)
     if db is None:
         cfg = load_config()
+        # Run WAL self-heal BEFORE opening the long-lived connection so
+        # we don't hold the DB open while removing the sidecar files.
+        _wal_self_heal(cfg.db_path)
         db = Database(cfg.db_path)
         # WAL: concurrent readers never block; concurrent writers serialize
         # briefly on a filesystem-level lock (5s busy-timeout absorbs rare
@@ -1142,6 +1217,50 @@ def _ensure_lifecycle_schema(db: Database) -> None:
                         pass
     except Exception:
         pass
+
+    # Idea scans — fast-pass discovery from a 2-word seed.
+    # The orchestrator fans out across enabled sources, halts the
+    # moment the running item count crosses ~200, then writes the
+    # raw items into `posts` (tagged via `topic_posts` with the
+    # scan_id as topic prefix) and a top-5 cluster summary into
+    # `clusters_json`. Status transitions:
+    #   pending → fetching → halted_at_threshold | completed | error
+    #            → synthesizing → ready
+    # Re-runs (the "Keep fetching" decision) reuse the row, append
+    # to `sources_hit_json`, and bump `total_items` + `updated_at`.
+    if "idea_scans" not in db.table_names():
+        try:
+            db["idea_scans"].create(
+                {
+                    "id": str,                    # uuid
+                    "seed": str,                  # the 2-word user input
+                    "search_topic": str,          # canonical (post-LLM expansion)
+                    "status": str,                # pending|fetching|halted|completed|error|synthesizing|ready
+                    "halt_threshold": int,        # default 200; configurable
+                    "total_items": int,           # running sum across all sources
+                    "sources_planned_json": str,  # JSON list[str] — what was queued
+                    "sources_hit_json": str,      # JSON dict[str,int] — counts by source
+                    "sources_pending_json": str,  # JSON list[str] — not yet run (for extend)
+                    "clusters_json": str,         # JSON list of {label, jtbd, mention_count, source_count, sample_quotes}
+                    "llm_provider": str,          # resolved name at scan time
+                    "llm_model": str,             # resolved model
+                    "error": str,                 # last error message
+                    "created_at": str,
+                    "updated_at": str,
+                    "halted_at": str,
+                    "synthesized_at": str,
+                },
+                pk="id",
+                defaults={
+                    "status": "pending",
+                    "halt_threshold": 200,
+                    "total_items": 0,
+                },
+            )
+            db["idea_scans"].create_index(["status"])
+            db["idea_scans"].create_index(["created_at"])
+        except Exception:
+            pass
 
 
 def _ensure_experiments_pk_compat(db: Database) -> None:

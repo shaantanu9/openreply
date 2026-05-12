@@ -38,6 +38,36 @@ from ..core.db import get_db
 
 _LIKE_LIMIT = 30  # per-bucket cap — UI renders top-N, full count shown separately
 
+# Stop-words that hurt LIKE recall when broken out as standalone tokens.
+# Kept tiny on purpose — we want "ats" / "resume" / "ios" to survive but
+# drop the connectives that pollute every row.
+_STOPWORDS = frozenset({
+    "a", "an", "and", "or", "the", "of", "to", "for", "in", "on", "at",
+    "by", "with", "from", "as", "is", "are", "was", "were", "be", "been",
+    "this", "that", "these", "those", "it", "its", "i", "we", "you",
+    "my", "our", "your", "but", "not", "no", "so", "if", "then", "than",
+    "do", "does", "did", "have", "has", "had", "will", "would", "can",
+    "could", "should", "may", "might", "about", "into", "out", "over",
+    "after", "before", "while", "when", "what", "which", "who", "how",
+})
+
+
+def _significant_tokens(q: str) -> list[str]:
+    """Split a query into distinctive tokens for fallback LIKE searches.
+    Drops stop-words and 1-char fragments. Preserves order and dedup."""
+    if not q:
+        return []
+    import re as _re
+    parts = _re.findall(r"[A-Za-z0-9_+#-]{2,}", q.lower())
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in parts:
+        if p in _STOPWORDS or p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
+
 
 def _like(q: str) -> str:
     return f"%{q.replace('%', '').replace('_', '')}%"
@@ -148,12 +178,23 @@ def _search_feedback(db, topic: str | None, q: str, limit: int = _LIKE_LIMIT) ->
 
 def _palace_hits(topic: str | None, q: str, k: int = 15) -> list[dict]:
     """Best-effort semantic search via the ChromaDB palace. Returns empty
-    on any import / availability failure so the SQL path still works."""
+    on any import / availability failure so the SQL path still works.
+
+    Hard 8s timeout: a corrupt HNSW index or a cold ONNX warmup can take
+    minutes; we never block the aggressive search_all path on that — the
+    palace's own self-heal happens on the next call."""
     try:
         from ..retrieval import palace  # type: ignore
         if not palace.is_available():
             return []
-        rows = palace.search_posts(query=q, topic=topic, k=k)
+        import concurrent.futures as _fut
+        with _fut.ThreadPoolExecutor(max_workers=1) as _ex:
+            fut = _ex.submit(palace.search_posts, q, topic=topic, k=k)
+            try:
+                resp = fut.result(timeout=8.0)
+            except _fut.TimeoutError:
+                return []
+        rows = (resp or {}).get("results") if isinstance(resp, dict) else (resp or [])
         return [
             {
                 "id": r.get("id"),
@@ -237,8 +278,31 @@ def search_all(
     queries = [query]
     expansions: list[str] = []
     if aggressive:
-        expansions = _expand_query_with_llm(query, provider=provider)
+        # LLM call must not hang the MCP transport. _expand_query_with_llm
+        # itself swallows exceptions, but a slow provider can still keep us
+        # waiting for tens of seconds. Run on a thread with a hard timeout
+        # so aggressive mode degrades to "normal + semantic" instead of
+        # killing the connection.
+        import concurrent.futures as _fut
+        try:
+            with _fut.ThreadPoolExecutor(max_workers=1) as _ex:
+                fut = _ex.submit(_expand_query_with_llm, query, provider)
+                expansions = fut.result(timeout=12.0) or []
+        except Exception:
+            expansions = []
         queries.extend(expansions)
+
+    # Token-fallback: if the original `query` is multi-word and likely to
+    # miss as a single LIKE phrase ("collect freezes after upgrade" rarely
+    # appears verbatim), break it into 2-3 distinctive tokens and union
+    # those LIKE hits too. Cheap, deterministic, no network. Only kicks
+    # in when the literal phrase has whitespace and is longer than two
+    # words — preserves precise short-query behaviour.
+    tokens = _significant_tokens(query)
+    if len(tokens) >= 2:
+        # Cap at 4 extra tokens so the fan-out stays bounded even on long
+        # queries.
+        queries.extend(tokens[:4])
 
     # De-dup buckets across primary + expansion queries using id-ish keys.
     def _union(rows_list, key_fn):

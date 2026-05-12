@@ -36,6 +36,28 @@
   --radius: 18px;
   --radius-sm: 12px;
   --shadow: 0 1px 2px rgba(26,22,20,.04), 0 8px 28px rgba(26,22,20,.04);
+
+  /* Body copy alias (many screens use --ink-1; light theme defines it here) */
+  --ink-1: #1A1614;
+
+  /* Type scale (used across screens + inline styles) */
+  --fs-11: 11px;
+  --fs-13: 13px;
+  --fs-15: 15px;
+
+  /* Page rhythm — main column padding + vertical gaps between blocks */
+  --page-pad-x: 28px;
+  --page-pad-y: 22px;
+  --page-pad-bottom: 44px;
+  --block-gap: 18px;
+  --block-gap-lg: 24px;
+  --block-gap-sm: 14px;
+  --card-pad-x: 22px;
+  --card-pad-y: 20px;
+
+  /* Names used in inline screen styles — map to real tokens (dark mode follows) */
+  --border: var(--line);
+  --bg-elev: var(--surface-2);
 }
 
 /* ---------- Dark mode ---------- */
@@ -191,6 +213,9 @@ body {
 .icon-btn { display: inline-flex; align-items: center; gap: 6px; }
 .icon-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
 .btn svg { vertical-align: middle; }
+/* Lucide icons default to 24×24 — too big inline with .btn label text.
+   Cap any `.btn > svg` to 14×14 unless a more-specific rule overrides. */
+.btn > svg { width: 14px; height: 14px; flex-shrink: 0; }
 /* When a lucide SVG is inline in a pill/state span, size it down */
 .llm-chip-state svg, .pill svg { width: 12px; height: 12px; }
 .nav-count {
@@ -225,7 +250,22 @@ body {
   font-size: 12px; font-weight: 700; display: inline-block; cursor: pointer;
 }
 
-.main { padding: 22px 28px 40px; }
+.main {
+  padding: var(--page-pad-y) var(--page-pad-x) var(--page-pad-bottom);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Centered readable column for explainer / long-form screens (Why, Science, etc.) */
+.shell {
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+.shell--wide {
+  max-width: min(1180px, 100%);
+}
 
 /* HTML `hidden` attribute must always win over class-level `display:` rules.
    Several screens (pricing tabs, OST outcome editor) use `el.hidden = true`
@@ -233,7 +273,13 @@ body {
    wins and the element stays visible. */
 [hidden] { display: none !important; }
 
-.topbar { display: flex; align-items: center; gap: 14px; padding: 6px 0 22px; }
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 0 var(--block-gap-lg);
+  min-width: 0;
+}
 .crumbs { font-size: 13px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .crumbs strong { color: var(--ink); font-weight: 600; }
 .crumbs a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dashed transparent; transition: color .15s, border-color .15s; }
@@ -298,7 +344,7 @@ body {
   background: linear-gradient(120deg, #FFE4CD 0%, #FFD1B0 60%, #FFC196 100%);
   border-radius: 22px; padding: 28px 32px;
   display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 32px; margin-bottom: 24px;
+  gap: 32px; margin-bottom: var(--block-gap-lg);
   position: relative; overflow: hidden;
 }
 .hero::before {
@@ -352,6 +398,42 @@ body {
 .btn-ghost   { background: rgba(255,255,255,.7); color: #1A1614; backdrop-filter: blur(6px); }
 .btn-ghost:hover { background: rgba(255,255,255,.9); }
 
+/* Space-separated modifier aliases.
+   Many screens (OST, Empathy, Interviews, PMF, Pricing, Estimate, PRD,
+   Settings, Solutions, Papers, Trends, Why) use `class="btn primary"`
+   instead of `class="btn btn-primary"`. Without these aliases the .btn
+   base renders as a plain unstyled button. */
+.btn.primary, button.primary {
+  background: #1A1614; color: #fff;
+  border: 1px solid #1A1614;
+}
+.btn.primary:hover, button.primary:hover { background: #2C2522; border-color: #2C2522; }
+.btn.ghost, button.ghost {
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn.ghost:hover, button.ghost:hover { background: var(--surface-2); border-color: var(--line-2); }
+.btn.danger, button.danger {
+  background: #B84747; color: #fff;
+  border: 1px solid #B84747;
+}
+.btn.danger:hover, button.danger:hover { background: #A03A3A; border-color: #A03A3A; }
+/* Default `.btn` (no modifier) — give it a real surface so unmodified
+   buttons don't show as transparent rectangles. */
+.btn:not(.primary):not(.ghost):not(.danger):not(.btn-primary):not(.btn-ghost):not(.btn-danger) {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn:not(.primary):not(.ghost):not(.danger):not(.btn-primary):not(.btn-ghost):not(.btn-danger):hover {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Generic flex helper used by picker forms across new screens. */
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 /* Size modifiers for dense in-card buttons */
 .btn-sm { padding: 8px 14px; font-size: 12px; }
 .btn-xs { padding: 6px 10px; font-size: 11px; }
@@ -380,7 +462,7 @@ body {
 .hero-bar { flex: 1; background: var(--orange); border-radius: 4px 4px 0 0; opacity: .85; }
 
 /* ---------- Stat grid ---------- */
-.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: var(--block-gap-lg); }
 .stat-card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
@@ -406,15 +488,16 @@ body {
 .stat-label { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 
 /* ---------- Two-column row ---------- */
-.two-col { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 18px; margin-bottom: 24px; }
+.two-col { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; margin-bottom: var(--block-gap-lg); }
 .card    { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .card-head {
-  padding: 18px 20px; display: flex; justify-content: space-between; align-items: center;
+  padding: var(--card-pad-y) var(--card-pad-x);
+  display: flex; justify-content: space-between; align-items: center;
   border-bottom: 1px solid var(--line);
 }
 .card-head h3 { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
 .card-head p  { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
-.card-body { padding: 20px; }
+.card-body { padding: var(--card-pad-y) var(--card-pad-x); }
 .pill {
   font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
   background: var(--surface-2); color: var(--ink-2); cursor: pointer;
@@ -439,11 +522,94 @@ body {
 /* ---------- Topic tiles ---------- */
 .section-head {
   display: flex; align-items: end; justify-content: space-between;
-  margin: 8px 0 14px;
+  margin: 4px 0 var(--block-gap);
+  gap: 12px;
+  min-width: 0;
 }
 .section-head h2 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
 .section-head p  { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
 .filter-bar { display: flex; gap: 8px; }
+
+/* ─── Topics list (#/topics) — same field rhythm as .settings-card, no stray inline spacing */
+.topics-page .section-head {
+  align-items: flex-start;
+  gap: 14px;
+}
+.topics-toolbar {
+  justify-content: flex-end;
+  flex: 1 1 260px;
+  min-width: 0;
+  gap: 10px;
+}
+.topics-field {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: var(--fs-13);
+  background: var(--surface);
+  color: var(--ink-1);
+  min-height: 38px;
+  box-sizing: border-box;
+}
+.topics-field:focus {
+  outline: 2px solid var(--orange);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+.topics-field--pill {
+  border-radius: 999px;
+}
+.topics-field--search {
+  min-width: min(100%, 220px);
+  flex: 1 1 200px;
+}
+select.topics-field {
+  cursor: pointer;
+  appearance: auto;
+}
+.topics-quick-card {
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.topics-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+}
+.topics-quick-row .topics-field--grow {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.topics-quick-tip {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin: 10px 0 0;
+  line-height: 1.45;
+}
+.topics-page .topic-grid {
+  margin-bottom: 0;
+}
+.topics-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 0 4px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.topics-pagination-meta {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.topics-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .topic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; margin-bottom: 24px; }
 .topic-tile {
@@ -540,6 +706,18 @@ body {
 }
 .phase-card.phase-flipping {
   animation: phaseFlipIn 900ms ease;
+}
+/* Stalled state: collect failed or was cancelled. Drops the active
+   orange tint so the card stops shouting "Extracting insights…" at the
+   user — nothing is being extracted right now. */
+.phase-card.phase-stalled {
+  border-color: var(--line, #d1d5db) !important;
+  box-shadow: none !important;
+  animation: none !important;
+  opacity: .82;
+}
+.phase-card.phase-stalled .phase-bar-fill {
+  background: var(--ink-3, #8a8a8a) !important;
 }
 @keyframes phaseFlipIn {
   0%   { transform: scale(1);     box-shadow: 0 0 0 0 rgba(224, 122, 36, 0.00); }
@@ -2437,7 +2615,7 @@ kbd {
   .sidebar .nav-count { display: none; }
   .sidebar .pro-card { display: none; }
 
-  .main { padding: 14px 16px; }
+  .main { padding: 16px 20px 36px; }
   .topbar { flex-wrap: wrap; gap: 8px; }
   .topbar-spacer { flex-basis: 100%; }
   .search { display: none; }
@@ -2790,46 +2968,162 @@ kbd {
 }
 
 /* ─── Why-this-page explainer screen + reusable eye-icon button ──────── */
-.why-wrap { padding: 0 16px 24px; max-width: 880px; min-width: 0; }
-.why-intro h2 { margin: 0 0 6px; font-size: 22px; }
-.why-tagline { margin: 0; font-size: 13px; line-height: 1.6; }
-.why-section { padding: 16px 20px; margin-bottom: 12px; }
+.why-page {
+  width: 100%;
+  min-width: 0;
+}
+.why-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--block-gap-sm);
+  padding: 0 0 var(--page-pad-bottom);
+  min-width: 0;
+}
+.why-intro.card {
+  padding: 24px 26px;
+}
+.why-intro h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.why-tagline { margin: 0; font-size: 14px; line-height: 1.65; }
+.why-section {
+  padding: 22px 26px;
+  margin-bottom: 0;
+}
 .why-section h3 {
-  display: flex; align-items: center; gap: 8px;
-  margin: 0 0 10px; font-size: 14px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 1px; color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
 }
-.why-section h3 svg { width: 16px; height: 16px; color: var(--orange); }
-.why-section p { font-size: 14px; line-height: 1.7; color: var(--ink-1); margin: 0 0 12px; }
-.why-fw-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.why-section h3 svg { width: 17px; height: 17px; color: var(--orange); flex-shrink: 0; }
+.why-section p {
+  font-size: 15px;
+  line-height: 1.72;
+  color: var(--ink-1);
+  margin: 0 0 14px;
+}
+.why-section p:last-child { margin-bottom: 0; }
+.why-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 18px 0 8px;
+}
+.why-fw-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
 .why-fw-chip {
-  display: inline-block; padding: 3px 10px; font-size: 11.5px; font-weight: 600;
-  background: var(--surface-2); color: var(--ink-2);
-  border-radius: 999px; border: 1px solid var(--line);
+  display: inline-block;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border-radius: 999px;
+  border: 1px solid var(--line);
 }
-.why-cites { padding-left: 18px; margin: 8px 0 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.7; }
-.why-cites li { margin-bottom: 4px; }
+.why-cites {
+  padding-left: 20px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.75;
+}
+.why-cites li { margin-bottom: 6px; }
 .why-promise {
-  display: flex; gap: 10px; align-items: flex-start;
-  padding: 12px 14px; background: rgba(4, 120, 87, 0.06);
-  border: 1px solid rgba(4, 120, 87, 0.2); border-radius: 8px;
-  font-size: 12.5px; line-height: 1.55;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 4px;
+  padding: 16px 18px;
+  background: rgba(4, 120, 87, 0.07);
+  border: 1px solid rgba(4, 120, 87, 0.22);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.6;
 }
-.why-promise svg { width: 18px; height: 18px; color: #047857; flex-shrink: 0; margin-top: 1px; }
-.why-back { display: flex; justify-content: center; padding: 20px; }
+.why-promise svg {
+  width: 20px;
+  height: 20px;
+  color: #047857;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.why-back {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 22px 26px;
+}
 .why-index { list-style: none; padding: 0; margin: 0; }
-.why-index li { padding: 10px 0; border-bottom: 1px solid var(--line); }
-.why-index li:last-child { border-bottom: none; }
+.why-index li { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.why-index li:first-child { padding-top: 4px; }
+.why-index li:last-child { border-bottom: none; padding-bottom: 4px; }
 .why-index a { color: var(--ink-1); text-decoration: none; display: block; }
 .why-index a:hover b { color: var(--orange); }
-.why-index a b { font-size: 14px; }
-.why-index a .muted { font-size: 12.5px; line-height: 1.5; display: block; margin-top: 2px; }
+.why-index a b { font-size: 15px; font-weight: 700; }
+.why-index a .muted { font-size: 13px; line-height: 1.55; display: block; margin-top: 4px; }
 .why-eye-btn {
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 .why-eye-btn svg { width: 14px; height: 14px; }
 @media (max-width: 720px) {
   .why-eye-label { display: none; }
+  .why-intro.card,
+  .why-section,
+  .why-back {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .why-intro h2 { font-size: 20px; }
+}
+
+/* Science page body — centered shell + consistent gaps between blocks */
+.science-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--block-gap);
+  width: 100%;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+.science-page-body > .section-head {
+  margin: 0;
+}
+.science-prose-body {
+  padding: 8px var(--card-pad-x) var(--card-pad-y);
+  color: var(--ink-2);
+  font-size: var(--fs-15);
+  line-height: 1.75;
+}
+.science-prose-body p {
+  margin: 0 0 14px;
+}
+.science-prose-body p:last-child {
+  margin-bottom: 0;
+}
+.science-table-inner {
+  padding: 10px var(--card-pad-x) var(--card-pad-y);
+  overflow-x: auto;
+}
+.science-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 
 /* Science screen — process / framework cards with "Know more" expander.
@@ -4092,14 +4386,14 @@ html.dark .delete-confirm-modal .dc-match-text {
 
 /* ─── Health check card (onboarding + settings + top banner) ──────────── */
 .hc-card {
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px 16px;
   background: var(--bg-card, #fff);
   margin: 0 0 14px 0;
 }
 .hc-card-fail { border-color: #E5614E; background: #fff7f5; }
-.hc-card-ok   { border-color: var(--border); }
+.hc-card-ok   { border-color: var(--line); }
 .hc-card-head {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px;
@@ -4505,6 +4799,7 @@ html.dark .delete-confirm-modal .dc-match-text {
 }
 .cbm-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
   text-transform: uppercase; color: var(--accent, #1F4E79); margin-bottom: 6px; }
+.cbm-eyebrow--warn { color: #B5581A; }
 .cbm-title { margin: 0 0 6px; font: 700 18px/1.25 system-ui; color: var(--ink, #0f172a); }
 .cbm-body { margin: 0 0 16px; }
 .cbm-meta { color: var(--ink-3, #6b7280); }
@@ -5703,7 +5998,7 @@ html.dark .prod-open-pill {
  * `:where()` pseudo-class adds zero specificity so the original rules
  * continue to win on anything specific. These just add the defaults.
  */
-:where(.topbar, .section-head, .filter-bar, .modal-actions, .form-actions,
+:where(.topbar, .section-head, .filter-bar, .topics-toolbar, .modal-actions, .form-actions,
        .settings-toggle, .byok-row, .chat-composer, .chat-controls,
        .topic-header-actions, .llm-grid, .tag-row, .source-row) {
   flex-wrap: wrap;
@@ -5722,7 +6017,7 @@ html.dark .prod-open-pill {
 
 /* Any flex child that could receive a long text should shrink below its
  * intrinsic content width instead of forcing horizontal scroll */
-.topbar > *, .section-head > *, .filter-bar > *,
+.topbar > *, .section-head > *, .filter-bar > *, .topics-toolbar > *,
 .topic-header > *, .crumbs > * {
   min-width: 0;
 }
@@ -5749,7 +6044,8 @@ html.dark .prod-open-pill {
   .topic-grid {
     grid-template-columns: 1fr !important;
   }
-  .main { padding: 12px 14px; }
+  .main { padding: 12px 16px 32px; }
+  .tab-strip { padding: 8px 16px 0; }
   .modal { width: calc(100vw - 28px); max-width: calc(100vw - 28px); padding: 18px; }
   .card { padding: 14px; }
   .btn { font-size: 13px; padding: 6px 10px; }
@@ -5786,7 +6082,7 @@ textarea, select {
 }
 .tab-strip {
   display: flex; align-items: flex-end; gap: 2px;
-  padding: 6px 10px 0;
+  padding: 8px var(--page-pad-x) 0;
   background: var(--surface-sunk, #F4EFEA);
   border-bottom: 1px solid var(--line);
   overflow-x: auto; -webkit-overflow-scrolling: touch;
@@ -6555,14 +6851,13 @@ html.dark .topic-header-compact .compact-toggle {
   background: #0f172a; color: #f1f5f9; cursor: help;
 }
 
-/* OST screen layout */
-.ost-wrap { padding: 0 0 24px; max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+/* OST screen layout — wrappers now sit inside the standard .main padding,
+   so the screens no longer add their own outer padding/max-width. The
+   `.ost-outcome` card still gets a left accent so the user spots the
+   root of the tree at a glance. */
+.ost-wrap { display: flex; flex-direction: column; gap: 18px; }
 
-.ost-outcome {
-  position: relative;
-  border-left: 4px solid #1d4ed8;
-  padding: 16px 20px;
-}
+.ost-outcome { border-left: 4px solid #1d4ed8; }
 .ost-outcome-label {
   font-size: 10.5px; letter-spacing: 1.5px; color: var(--ink-3);
   font-weight: 700; margin-bottom: 4px;
@@ -6577,13 +6872,8 @@ html.dark .topic-header-compact .compact-toggle {
   border: 1px solid var(--line); background: var(--surface); color: var(--ink-1);
   font-size: 14px;
 }
-#ost-outcome-edit-btn {
-  position: absolute; top: 14px; right: 14px;
-  padding: 2px 8px; font-size: 11px; border-radius: 4px;
-  border: 1px solid var(--line); background: transparent; color: var(--ink-3);
-  cursor: pointer;
-}
-#ost-outcome-edit-btn:hover { color: var(--ink-1); border-color: var(--ink-2); }
+/* Outcome edit button now lives inside .card-head — drop the old
+   absolute-positioned override; it inherits .btn / .btn-ghost styling. */
 
 .ost-tree { display: flex; flex-direction: column; gap: 14px; }
 
@@ -6864,9 +7154,7 @@ html.dark .topic-header-compact .compact-toggle {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── Empathy Map screen ────────────────────────────────────────────── */
-.empathy-wrap {
-  padding: 16px 24px; max-width: 1100px; margin: 0 auto;
-}
+.empathy-wrap { display: flex; flex-direction: column; gap: 18px; }
 .empathy-wrap .empathy-intro { padding: 14px 18px; margin-bottom: 14px; }
 .empathy-banner {
   padding: 9px 12px; border-left: 3px solid #fbbf24;
@@ -6883,9 +7171,7 @@ html.dark .topic-header-compact .compact-toggle {
 .empathy-picker { padding: 18px 22px; }
 
 /* ── Customer Discovery Interviews ─────────────────────────────────── */
-.iv-wrap {
-  padding: 16px 24px; max-width: 1100px; margin: 0 auto;
-}
+.iv-wrap { display: flex; flex-direction: column; gap: 14px; }
 .iv-mom-test {
   padding: 14px 18px; margin-bottom: 14px;
   border-left: 3px solid #6d28d9;
@@ -6979,10 +7265,7 @@ html.dark .topic-header-compact .compact-toggle {
 }
 
 /* ── Sean Ellis PMF screen ─────────────────────────────────────────── */
-.pmf-wrap {
-  padding: 16px 24px; max-width: 1100px; margin: 0 auto;
-  display: flex; flex-direction: column; gap: 14px;
-}
+.pmf-wrap { display: flex; flex-direction: column; gap: 14px; }
 .pmf-q { padding: 14px 18px; }
 .pmf-q blockquote {
   border-left: 3px solid #1d4ed8; padding: 8px 14px; margin: 10px 0;
@@ -7052,10 +7335,7 @@ html.dark .topic-header-compact .compact-toggle {
 .pmf-picker { padding: 18px 22px; }
 
 /* ── Pricing surveys ───────────────────────────────────────────────── */
-.pricing-wrap {
-  padding: 16px 24px; max-width: 1100px; margin: 0 auto;
-  display: flex; flex-direction: column; gap: 14px;
-}
+.pricing-wrap { display: flex; flex-direction: column; gap: 14px; }
 .pricing-tabs {
   display: flex; gap: 4px; border-bottom: 1px solid var(--ink-4, #e5e7eb);
 }
@@ -7320,6 +7600,281 @@ html.dark .topic-header-compact .compact-toggle {
   flex: 1; padding: 5px 8px; border: 1px solid var(--ink-4, #e5e7eb);
   border-radius: 5px; font-size: 12px;
 }
+
+/* ── Discovery-screen polish (OST, Empathy, Interviews, PMF, Pricing,
+ *    Estimate, PRD) ──────────────────────────────────────────────────
+ * Screens added by the discovery framework expansion sometimes drop raw
+ * <label><input/></label> directly inside a `.card` without a dedicated
+ * form-grid class. Without these scoped fallbacks the inputs render as
+ * unstyled OS-default boxes that float against the card's white
+ * background. Scope is tight (only the new wrappers) so we don't
+ * accidentally re-style screens that already have their own form CSS.
+ */
+.ost-wrap .card,
+.empathy-wrap .card,
+.iv-wrap .card,
+.pmf-wrap .card,
+.pricing-wrap .card,
+.estimate-wrap .card,
+.prd-wrap .card {
+  padding: 16px 20px;
+}
+.ost-wrap .card > h2,
+.empathy-wrap .card > h2,
+.iv-wrap .card > h2,
+.pmf-wrap .card > h2,
+.pricing-wrap .card > h2,
+.estimate-wrap .card > h2 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.ost-wrap .card > h3,
+.empathy-wrap .card > h3,
+.iv-wrap .card > h3,
+.pmf-wrap .card > h3,
+.pricing-wrap .card > h3,
+.estimate-wrap .card > h3 { font-size: 13.5px; font-weight: 700; margin: 0 0 6px; }
+
+/* Generic label+input wrapping inside the new screens' cards. */
+.ost-wrap .card > label,
+.empathy-wrap .card > label,
+.iv-wrap .card > label,
+.pmf-wrap .card > label,
+.pricing-wrap .card > label,
+.estimate-wrap .card > label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: .3px;
+  color: var(--ink-3);
+  font-weight: 600;
+  margin: 10px 0 0;
+}
+.ost-wrap .card input[type="text"],
+.ost-wrap .card input[type="number"],
+.ost-wrap .card input[type="date"],
+.ost-wrap .card select,
+.ost-wrap .card textarea,
+.empathy-wrap .card input[type="text"],
+.empathy-wrap .card input[type="number"],
+.empathy-wrap .card input[type="date"],
+.empathy-wrap .card select,
+.empathy-wrap .card textarea,
+.iv-wrap .card input[type="text"],
+.iv-wrap .card input[type="number"],
+.iv-wrap .card input[type="date"],
+.iv-wrap .card select,
+.iv-wrap .card textarea,
+.pmf-wrap .card input[type="text"],
+.pmf-wrap .card input[type="number"],
+.pmf-wrap .card select,
+.pmf-wrap .card textarea,
+.pricing-wrap .card input[type="text"],
+.pricing-wrap .card input[type="number"],
+.pricing-wrap .card select,
+.pricing-wrap .card textarea,
+.estimate-wrap .card input[type="text"],
+.estimate-wrap .card input[type="number"],
+.estimate-wrap .card select,
+.estimate-wrap .card textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--ink);
+  margin-top: 4px;
+}
+.ost-wrap .card textarea,
+.empathy-wrap .card textarea,
+.iv-wrap .card textarea,
+.pmf-wrap .card textarea,
+.pricing-wrap .card textarea,
+.estimate-wrap .card textarea { resize: vertical; min-height: 60px; }
+
+.ost-wrap .card input:focus,
+.ost-wrap .card select:focus,
+.ost-wrap .card textarea:focus,
+.empathy-wrap .card input:focus,
+.empathy-wrap .card select:focus,
+.empathy-wrap .card textarea:focus,
+.iv-wrap .card input:focus,
+.iv-wrap .card select:focus,
+.iv-wrap .card textarea:focus,
+.pmf-wrap .card input:focus,
+.pmf-wrap .card select:focus,
+.pmf-wrap .card textarea:focus,
+.pricing-wrap .card input:focus,
+.pricing-wrap .card select:focus,
+.pricing-wrap .card textarea:focus,
+.estimate-wrap .card input:focus,
+.estimate-wrap .card select:focus,
+.estimate-wrap .card textarea:focus {
+  outline: none;
+  border-color: var(--ink-2);
+  box-shadow: 0 0 0 3px rgba(26, 22, 20, .06);
+}
+
+/* Picker layouts — the topic-picker `<select>` plus "Open →" button.
+   Without these the select sat at default browser width. */
+.ost-picker .row select,
+.empathy-picker .row select,
+.iv-picker .row select,
+.pmf-picker .row select,
+.pricing-picker .row select {
+  flex: 1; min-width: 200px;
+  padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+  font-size: 13px;
+}
+.ost-picker .row input[type="text"],
+.empathy-picker .row input[type="text"],
+.iv-picker .row input[type="text"],
+.pmf-picker .row input[type="text"],
+.pricing-picker .row input[type="text"] {
+  padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+  font-size: 13px;
+}
+
+/* OST tree — make the topbar-actions buttons match the rest of the
+   topbar pattern across the app (rounded surface + icon). */
+.ost-wrap .topbar-actions .btn {
+  padding: 8px 14px;
+  font-size: 12.5px;
+  border-radius: 999px;
+}
+
+/* OST: outcome edit-button needed elevated text on dark mode. */
+[data-theme="dark"] #ost-outcome-edit-btn {
+  background: var(--surface-2);
+}
+
+/* PMF: inputs include type=number; existing rule only matched type=text.
+   Without this the persona/score/etc. number fields rendered with
+   browser-default chrome that didn't match the rest of the form. */
+.pmf-form input[type=number] {
+  width: 100%; padding: 7px 10px; border: 1px solid var(--line);
+  border-radius: 6px; font-size: 12.5px; margin-top: 2px;
+  background: var(--surface); color: var(--ink); font-family: inherit;
+}
+
+/* Pricing: tab strip needs more breathing room above the panes and
+   should not wrap. */
+.pricing-tabs { padding: 0 4px; gap: 8px; flex-wrap: nowrap; overflow-x: auto; }
+.pricing-tab:hover { color: var(--ink-1); }
+
+/* Empathy quadrant grid — collapse to 1 column on narrow widths so the
+   four quadrants stack instead of squashing. */
+@media (max-width: 720px) {
+  .empathy-grid { grid-template-columns: 1fr; }
+}
+
+/* Interview card layout fixes. .iv-meta items can run long in the
+   "no persona / video / 30 min" line; drop the in-line dot separator
+   if the layout wraps so we don't get an orphan "·" on a new line. */
+.iv-meta span:empty { display: none; }
+
+/* Empty-state "(none yet)" list bullets in empathy quadrants need
+   the same muted styling whether the list-item came from the array
+   or the placeholder. */
+.empathy-quad-list li.muted { list-style: none; margin-left: -18px; font-style: italic; font-size: 12px; }
+
+/* OST modal/grid: the `.ost-modal` was sitting on top of the standard
+   modal-backdrop CSS. Lift it slightly so it doesn't overlap the
+   collect-status bar. */
+.ost-modal-bg { z-index: 10000; }
+
+/* PRD: Raw markdown pane needs the textarea to stretch full width. */
+.prd-raw { padding: 0; border: 0; background: transparent; }
+.prd-raw .prd-textarea { background: var(--surface); color: var(--ink); }
+
+/* Estimate: contain wide PERT table on small viewports. */
+.estimate-wrap .pert-table-wrap { overflow-x: auto; }
+
+/* ── Audience personas screen (2026-05-03) ──────────────────────────
+ * Cluster cards live inside the standard `.topic-grid` so they pick up
+ * the existing responsive `auto-fit, minmax(min(260px, 100%), 1fr)`
+ * layout. The styles below cover the bits unique to this screen:
+ * gradient avatar, says/wants/hates mini-quadrants, vocab pills.
+ */
+.aud-card { display: flex; flex-direction: column; min-width: 0; }
+.aud-avatar {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 18px; color: #1A1614;
+  flex-shrink: 0;
+}
+.aud-quad-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+  margin-top: 10px;
+}
+@media (max-width: 720px) {
+  .aud-quad-grid { grid-template-columns: 1fr; }
+}
+.aud-quad {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  min-width: 0;
+}
+.aud-quad-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: 1.5px;
+  color: var(--ink-3); font-weight: 700; margin-bottom: 6px;
+}
+.aud-quad ul {
+  margin: 0; padding-left: 16px;
+  font-size: 12px; line-height: 1.5;
+}
+.aud-quad li { margin: 3px 0; }
+.aud-quad.q-says   { border-left: 3px solid #1d4ed8; }
+.aud-quad.q-wants  { border-left: 3px solid #047857; }
+.aud-quad.q-hates  { border-left: 3px solid #be123c; }
+.aud-card details > summary { list-style: none; }
+.aud-card details > summary::-webkit-details-marker { display: none; }
+.aud-card details > summary::before {
+  content: '▸ '; color: var(--ink-3); font-size: 10px;
+}
+.aud-card details[open] > summary::before { content: '▾ '; }
+
+/* ── Iterate / Autoresearch screen (2026-05-03) ─────────────────────
+ * Highlights the row carrying the current best score so the user can
+ * see at a glance which config won across the grid sweep.
+ */
+.iter-best { background: rgba(4, 120, 87, 0.08); }
+.iter-best td:first-child { border-left: 3px solid #047857; }
+
+/* ── Deliberation tier badges (2026-05-03 Phase 3) ──────────────────
+ * Stamp on every finding card the engine reviewed. Green = Confirmed,
+ * yellow = Probable, grey = Minority, red = Discarded. Findings flagged
+ * Discarded are NOT removed — they're shown with the strikethrough so
+ * users can see the disputed signal. Auditable, not silent.
+ */
+.tier-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: 1px; font-weight: 700;
+  padding: 2px 7px; border-radius: 4px; text-transform: uppercase;
+}
+.tier-badge.tier-confirmed { background: rgba(4, 120, 87, 0.14);  color: #047857; }
+.tier-badge.tier-probable  { background: rgba(202, 138, 4, 0.14); color: #92400e; }
+.tier-badge.tier-minority  { background: rgba(100, 116, 139, 0.14); color: #475569; }
+.tier-badge.tier-discarded { background: rgba(190, 18, 60, 0.14); color: #be123c; }
+.finding-discarded { opacity: 0.55; }
+.finding-discarded .finding-title { text-decoration: line-through; }
+
+/* Improve screen — pipeline checkpoint cards inherit `.card` styling.
+   The accent border on the card-head signals which stage is being
+   read first. */
+.improve-stage-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
 /* ── Persona agents screen (2026-05-12) ────────────────────────────
  * Whole-card click → opens persona detail; per-button actions inside
  * use stopPropagation. Hover lifts the card to reinforce affordance.

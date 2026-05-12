@@ -49,7 +49,7 @@ const PHASES = [
       { hash: '#/ingest', label: 'Ingest CSV / past data' },
       { hash: '#/ingest-video', label: 'Ingest video transcripts' },
       { hash: '#/ost', label: 'Open Opportunity Solution Tree' },
-      { hash: '#/empathy', label: 'Empathy maps (Says/Thinks/Does/Feels)' },
+      { hash: '#/empathy', label: 'Empathy Maps (Says/Thinks/Does/Feels)' },
       { hash: '#/interviews', label: 'Customer Discovery Interviews (Mom Test)' },
     ],
     checks: [
@@ -72,8 +72,8 @@ const PHASES = [
       { hash: '#/find', label: 'Local semantic search over the corpus' },
       { hash: '#/ost', label: 'Opportunity Solution Tree' },
       { hash: '#/products', label: 'Four Risks + Stage-Gate verdict' },
-      { hash: '#/pmf', label: 'Sean Ellis PMF survey (40% threshold)' },
-      { hash: '#/pricing', label: 'Pricing surveys (Van Westendorp / NPS / MaxDiff)' },
+      { hash: '#/pmf', label: 'Sean Ellis PMF Survey (40% threshold)' },
+      { hash: '#/pricing', label: 'Pricing Surveys (Van Westendorp / NPS / MaxDiff)' },
     ],
     checks: [
       'Run Insights synthesis — opportunity-scored findings with citations.',

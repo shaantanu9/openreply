@@ -89,6 +89,60 @@ def _drop_client_if_any() -> None:
         _CLIENT_CACHE = {}
 
 
+# HNSW self-heal: when the on-disk vector index is corrupt (most often after
+# a hard kill mid-write), Chroma raises errors like "Failed to apply logs to
+# the hnsw segment writer" or "InvalidArgumentError: HNSW index". The fix
+# is to drop the cached client, move the corrupt segment dirs aside, and
+# let the next `get_palace()` rebuild a fresh empty store. The corpus is
+# safe — it lives in `posts` / `topic_posts` and `reindex_all()` repopulates.
+_HNSW_ERROR_MARKERS = (
+    "hnsw segment writer",
+    "hnsw index",
+    "failed to apply logs",
+    "invalidargumenterror: hnsw",
+    "could not load",
+    "no such file or directory",
+    "segment id",
+    "corrupt",
+)
+
+
+def _looks_like_hnsw_corruption(err: Exception) -> bool:
+    msg = str(err).lower()
+    return any(m in msg for m in _HNSW_ERROR_MARKERS)
+
+
+def heal_corrupt_index() -> dict:
+    """Move the on-disk palace dir aside so the next `get_palace()` call
+    creates a fresh, empty store. Idempotent. Caller is expected to kick
+    off `reindex_all()` afterwards (or let the lazy upsert path repopulate
+    incrementally).
+
+    Returns: ``{ok, healed: bool, backup_path?, reason?}``.
+    """
+    import os as _os
+    import time as _time
+    _drop_client_if_any()
+    try:
+        path = _palace_path()
+    except Exception as e:
+        return {"ok": False, "healed": False, "reason": f"path resolve: {e}"}
+    if not _os.path.isdir(path):
+        return {"ok": True, "healed": False, "reason": "no palace dir to heal"}
+    backup = path.rstrip("/") + f".corrupt_backup_{int(_time.time())}"
+    try:
+        _os.rename(path, backup)
+        _os.makedirs(path, exist_ok=True)
+        logger.warning(
+            "palace: HNSW index appears corrupt at %s — moved to %s; "
+            "next query will return empty until reindex_all() runs.",
+            path, backup,
+        )
+        return {"ok": True, "healed": True, "backup_path": backup}
+    except OSError as e:
+        return {"ok": False, "healed": False, "reason": f"rename failed: {e}"}
+
+
 def _maybe_evict_idle() -> None:
     """If the cache has a live client but we haven't embedded in
     ``_IDLE_EVICT_SECS`` seconds, drop it before anyone else touches it.
@@ -497,8 +551,48 @@ def search_posts(
             where=where or None,
         )
     except Exception as e:
-        logger.warning("palace query failed: %s", e)
-        return {"ok": False, "error": str(e), "results": []}
+        # HNSW self-heal: corrupt on-disk index (e.g. after a hard kill
+        # mid-write) raises distinctive errors. Move the broken store
+        # aside and retry once with a fresh client. After heal the
+        # palace is empty until `reindex_all()` runs, so the retry
+        # returns an empty result-set rather than a crash. The caller
+        # (search_all aggressive, GUI, MCP) sees `ok=True, results=[],
+        # healed=True` and can fall back to SQL.
+        if _looks_like_hnsw_corruption(e):
+            logger.warning(
+                "palace query hit HNSW corruption (%s) — auto-healing.", e,
+            )
+            heal = heal_corrupt_index()
+            if heal.get("healed"):
+                got2 = get_palace()
+                if got2 is not None:
+                    _, coll2 = got2
+                    try:
+                        raw = coll2.query(
+                            query_texts=[query], n_results=n_results,
+                            where=where or None,
+                        )
+                    except Exception as e2:
+                        logger.warning("palace post-heal query failed: %s", e2)
+                        return {
+                            "ok": True, "results": [], "count": 0,
+                            "healed": True,
+                            "reason": "index_was_corrupt_now_empty",
+                            "hint": "run reindex_all() to repopulate",
+                        }
+                else:
+                    return {
+                        "ok": True, "results": [], "count": 0,
+                        "healed": True,
+                        "reason": "index_was_corrupt_now_empty",
+                        "hint": "run reindex_all() to repopulate",
+                    }
+            else:
+                logger.warning("palace heal failed: %s", heal)
+                return {"ok": False, "error": str(e)[:200], "results": []}
+        else:
+            logger.warning("palace query failed: %s", e)
+            return {"ok": False, "error": str(e)[:200], "results": []}
     _bump_embed_ts()
 
     # Chroma returns lists of lists (one per query). We only have 1 query.

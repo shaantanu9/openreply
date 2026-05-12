@@ -7,6 +7,11 @@
 //   #/pmf            → topic picker
 //   #/pmf/<topic>    → response list + score panel + add-response form
 //                      (also segments by persona — Vohra/Superhuman 2019).
+//
+// Design language matches Home/Topics: crumbs + topbar-spacer in topbar,
+// .stat-grid for the headline score, .two-col for list+form, .card-head
+// + .card-body for every panel, btn-primary/btn-ghost/btn-bordered for
+// every button.
 import { api, esc } from '../api.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -25,52 +30,80 @@ const DISAPPOINT_LABEL = {
   dont_use:              "I no longer use it",
 };
 
-function bucketChip(b, n) {
-  return `<span class="pmf-chip pmf-${b}">${esc(DISAPPOINT_LABEL[b] || b)}: ${n}</span>`;
-}
-
-function scorePanel(score) {
+function scoreStats(score) {
   if (!score || (score.n_total || 0) === 0) {
-    return `<div class="pmf-score-card card muted">No PMF responses yet — collect at least 40 for a statistically meaningful read.</div>`;
+    return `
+      <section class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-head">
+            <div class="stat-icon mint"><i data-lucide="bar-chart-3"></i></div>
+          </div>
+          <div class="stat-num">—</div>
+          <div class="stat-label">No PMF responses yet (need ≥40)</div>
+        </div>
+      </section>
+    `;
   }
   const pct = score.pct_very_disappointed || 0;
-  const verdict = score.threshold_met
-    ? `<span class="pmf-verdict pmf-met">✅ PMF threshold met (≥40%)</span>`
-    : `<span class="pmf-verdict pmf-unmet">⚠ Below 40% threshold</span>`;
-  const bar = `<div class="pmf-bar"><div class="pmf-bar-fill" style="width:${Math.min(100, pct)}%"></div><div class="pmf-bar-mark" style="left:40%"></div></div>`;
   const counts = score.counts || {};
-  const personas = (score.personas || []).slice(0, 8).map(p => `
+  const trendCls = score.threshold_met ? 'trend-up' : 'trend-down';
+  const trendLabel = score.threshold_met ? '✓ ≥40%' : '⚠ <40%';
+  const total = score.n_total || 0;
+  return `
+    <section class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon mint"><i data-lucide="heart"></i></div>
+          <div class="stat-trend ${trendCls}">${trendLabel}</div>
+        </div>
+        <div class="stat-num">${pct.toFixed(1)}%</div>
+        <div class="stat-label">"very disappointed"</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon sky"><i data-lucide="users"></i></div>
+        </div>
+        <div class="stat-num">${total}</div>
+        <div class="stat-label">Total responses</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon lavender"><i data-lucide="trending-down"></i></div>
+        </div>
+        <div class="stat-num">${counts.somewhat_disappointed || 0}</div>
+        <div class="stat-label">Somewhat disappointed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon peach"><i data-lucide="x-circle"></i></div>
+        </div>
+        <div class="stat-num">${counts.not_disappointed || 0}</div>
+        <div class="stat-label">Not disappointed</div>
+      </div>
+    </section>
+  `;
+}
+
+function personaPanel(score) {
+  if (!score || !(score.personas || []).length) return '';
+  const rows = (score.personas || []).slice(0, 8).map(p => `
     <div class="pmf-persona-row">
       <strong>${esc(p.persona)}</strong>
       <span class="pmf-persona-pct">${p.pct_very_disappointed.toFixed(1)}%</span>
       <span class="muted">n=${p.n}</span>
       ${p.threshold_met ? '<span class="pmf-met">✓</span>' : '<span class="pmf-unmet">×</span>'}
     </div>
-  `).join('') || '<div class="muted" style="font-size:12px">No persona segmentation yet.</div>';
+  `).join('');
   return `
-    <section class="pmf-score-card card">
-      <h3>Sean Ellis PMF Score</h3>
-      <div class="pmf-headline">
-        <div class="pmf-pct">${pct.toFixed(1)}%</div>
+    <div class="card">
+      <div class="card-head">
         <div>
-          <div>very disappointed if they could no longer use it</div>
-          ${verdict}
+          <h3>By persona</h3>
+          <p>Vohra/Superhuman 2019 — over-serve the high-PMF segment</p>
         </div>
       </div>
-      ${bar}
-      <div class="pmf-counts">
-        ${bucketChip('very_disappointed',     counts.very_disappointed     || 0)}
-        ${bucketChip('somewhat_disappointed', counts.somewhat_disappointed || 0)}
-        ${bucketChip('not_disappointed',      counts.not_disappointed      || 0)}
-        ${bucketChip('dont_use',              counts.dont_use              || 0)}
-      </div>
-      <p class="muted" style="font-size:11px;margin-top:8px">
-        Vohra/Superhuman (2019): segment by persona to find the high-PMF
-        sub-audience and over-serve them.
-      </p>
-      <h4 style="margin-top:14px">By persona</h4>
-      <div class="pmf-persona-grid">${personas}</div>
-    </section>
+      <div class="card-body" style="padding:14px 20px">${rows}</div>
+    </div>
   `;
 }
 
@@ -86,45 +119,63 @@ function responseRow(r) {
       ${r.main_benefit          ? `<div><b>Main benefit:</b> ${esc(r.main_benefit)}</div>` : ''}
       ${r.ideal_user            ? `<div><b>Ideal user:</b> ${esc(r.ideal_user)}</div>` : ''}
       ${r.improvement           ? `<div><b>Improvement:</b> ${esc(r.improvement)}</div>` : ''}
-      <div class="pmf-actions"><button class="btn-mini pmf-delete" data-rid="${esc(r.id)}">delete</button></div>
+      <div class="pmf-actions"><button class="btn btn-ghost btn-xs btn-bordered pmf-delete" data-rid="${esc(r.id)}">Delete</button></div>
     </li>
   `;
 }
 
 function renderShell(topic, responses, score) {
   const list = (responses || []).map(responseRow).join('') ||
-    `<div class="empty-big" style="padding:18px"><p>No responses yet — add the first one with the form on the right.</p></div>`;
+    `<div class="empty-state" style="padding:28px">No responses yet — add the first one with the form on the right.</div>`;
   return `
     <header class="topbar">
       <div class="crumbs">
-        <a href="#/pmf">PMF survey</a> ›
+        <a href="#/pmf">PMF Survey</a> /
         <strong>${esc(topic)}</strong>
-        <span class="muted" style="font-size:11px;margin-left:8px">${(responses || []).length} responses</span>
       </div>
+      <div class="topbar-spacer"></div>
+      <span class="pill">${(responses || []).length} responses</span>
     </header>
 
-    <div class="pmf-wrap">
-      <section class="pmf-q card">
-        <h3>The core question</h3>
-        <blockquote>"How would you feel if you could no longer use <em>this product</em>?"</blockquote>
-        <p class="muted" style="font-size:12px">
-          Ellis (2010) — the gold-standard 1-question PMF measurement.
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-head">
+        <div>
+          <h3>The core question</h3>
+          <p>Sean Ellis 2010 — gold-standard 1-question PMF measurement</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <blockquote style="border-left:3px solid var(--ink-3);padding:8px 14px;margin:0;font-size:14px;font-style:italic;color:var(--ink-2);background:var(--surface-2);border-radius:0 6px 6px 0">
+          "How would you feel if you could no longer use <em>this product</em>?"
+        </blockquote>
+        <p class="muted" style="font-size:12px;margin-top:10px;line-height:1.55">
           Threshold: <b>≥40% answering "very disappointed"</b> means
           you have product-market fit. Aim for ≥40 respondents who
           experienced the core value.
         </p>
-      </section>
+      </div>
+    </div>
 
-      ${scorePanel(score)}
+    ${scoreStats(score)}
 
-      <div class="pmf-grid">
-        <section class="pmf-list card">
-          <h3>Responses</h3>
-          <ul class="pmf-rows">${list}</ul>
-        </section>
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Responses</h3>
+            <p>${(responses || []).length} on file · sortable below</p>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0">
+          <ul class="pmf-rows" style="padding:14px 20px">${list}</ul>
+        </div>
+      </div>
 
-        <section class="pmf-form card">
-          <h3>Add a response</h3>
+      <div class="card">
+        <div class="card-head">
+          <div><h3>Add a response</h3><p>Captures one survey reply</p></div>
+        </div>
+        <div class="card-body pmf-form">
           <label>How would they feel?
             <select id="pmf-disappoint">
               <option value="very_disappointed">Very disappointed</option>
@@ -151,10 +202,14 @@ function renderShell(topic, responses, score) {
           <label>Improvement
             <textarea id="pmf-improve" rows="2" placeholder="How can we improve for them?"></textarea>
           </label>
-          <button class="btn primary" id="pmf-add">Add response</button>
-        </section>
+          <div style="margin-top:12px">
+            <button class="btn btn-primary btn-sm" id="pmf-add">Add response</button>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
+
+    ${personaPanel(score)}
   `;
 }
 
@@ -207,9 +262,11 @@ async function renderTopicPmf(root, topic) {
 async function renderPicker(root) {
   root.innerHTML = `
     <header class="topbar">
-      <div class="crumbs"><strong>PMF Survey</strong> · Sean Ellis, 2010</div>
+      <div class="crumbs">Workspace / <strong>PMF Survey</strong></div>
+      <div class="topbar-spacer"></div>
+      <span class="muted" style="font-size:12px">Sean Ellis, 2010</span>
     </header>
-    <div class="pmf-wrap"><div id="pmf-pick-mount"><div class="empty-state">loading…</div></div></div>
+    <div id="pmf-pick-mount"><div class="empty-state">loading…</div></div>
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {
@@ -219,22 +276,31 @@ async function renderPicker(root) {
   }
   if (!topics?.length) {
     $('#pmf-pick-mount', root).innerHTML = `
-      <div class="empty-big"><h3>No topics yet</h3>
-      <a class="btn primary" href="#/topics">Open Topics</a></div>`;
+      <div class="empty-big">
+        <h3>No topics yet</h3>
+        <p>Create a topic first — PMF responses are scoped per topic.</p>
+        <a class="btn btn-primary btn-sm" href="#/topics">Open Topics</a>
+      </div>`;
     return;
   }
   const opts = topics.map(t => `<option value="${esc(t.topic)}">${esc(t.topic)}</option>`).join('');
   $('#pmf-pick-mount', root).innerHTML = `
-    <div class="pmf-picker card">
-      <h2>Run the Sean Ellis PMF survey</h2>
-      <p class="muted" style="font-size:13px;line-height:1.6;max-width:680px">
-        Ask users who experienced the core value: how disappointed would they be
-        if they could no longer use it? <b>≥40% answering "very disappointed"</b>
-        signals product-market fit.
-      </p>
-      <div class="row" style="gap:8px;margin-top:14px;align-items:center">
-        <select id="pmf-topic-pick">${opts}</select>
-        <button class="btn primary" id="pmf-go">Open →</button>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Run the Sean Ellis PMF Survey</h3>
+          <p>≥40% answering "very disappointed" = product-market fit</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="muted" style="font-size:13px;line-height:1.6;margin-bottom:14px">
+          Ask users who experienced the core value: how disappointed would they be
+          if they could no longer use it? Aim for ≥40 respondents.
+        </p>
+        <div class="row">
+          <select id="pmf-topic-pick" style="flex:1;min-width:240px">${opts}</select>
+          <button class="btn btn-primary btn-sm" id="pmf-go">Open →</button>
+        </div>
       </div>
     </div>
   `;

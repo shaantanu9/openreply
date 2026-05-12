@@ -122,6 +122,50 @@ def _wrap_tool_for_logging(orig_decorator):
 mcp.tool = _wrap_tool_for_logging(mcp.tool)  # type: ignore[assignment]
 
 
+# ── Hard-timeout safety net for long-running tools ────────────────────
+# MCP transports (stdio/SSE) don't tolerate single-call durations past
+# ~60-120s on most clients (the connection looks "hung" and the client
+# terminates). Long pipelines should use `reddit_jobs_submit(...)` for
+# true backgrounding — but heavy synchronous tools (synthesize, paper
+# draft, gaps) still need a hard ceiling so a stuck LLM call can never
+# kill the session. The helper runs the body on a worker thread and
+# raises a helpful "job_id" hint if it exceeds the deadline, telling
+# the caller exactly which async tool to use instead.
+_DEFAULT_TOOL_TIMEOUT_S = 90.0
+
+
+def _run_with_timeout(fn, *, timeout: float, async_hint: str | None = None,
+                      args=(), kwargs=None):
+    """Run `fn` on a thread, return result or a structured timeout dict.
+
+    `async_hint`, if supplied, is the tool name to recommend for async
+    execution. Returns a dict on timeout (never raises) so MCP schema
+    validation always passes."""
+    import concurrent.futures as _fut
+    kwargs = kwargs or {}
+    with _fut.ThreadPoolExecutor(max_workers=1) as _ex:
+        fut = _ex.submit(fn, *args, **kwargs)
+        try:
+            return fut.result(timeout=timeout)
+        except _fut.TimeoutError:
+            msg = (
+                f"Tool exceeded {timeout:.0f}s ceiling. "
+                f"Re-run via reddit_jobs_submit("
+                f"{async_hint!r}, args) — that returns a job_id you "
+                f"can poll with reddit_jobs_get."
+            ) if async_hint else (
+                f"Tool exceeded {timeout:.0f}s ceiling. "
+                f"This usually means the LLM provider is slow — retry "
+                f"or switch provider in Settings."
+            )
+            return {
+                "ok": False, "timed_out": True,
+                "timeout_seconds": timeout,
+                "error": msg,
+                "async_alternative": async_hint,
+            }
+
+
 @mcp.tool()
 def reddit_fetch_posts(
     sub: str,
@@ -292,7 +336,29 @@ def reddit_query_db(sql: str) -> list[dict[str, Any]]:
         )
     if any(k in lower for k in (" insert ", " update ", " delete ", " drop ", " alter ")):
         raise ValueError("Destructive statements are blocked.")
-    return list(get_db().query(s))
+    # Retry once on transient `database is locked` / `disk I/O error`
+    # caused by a concurrent palace upsert or stale WAL frames. The
+    # `get_db()` self-heal already runs at first boot; this catches
+    # races during the same session.
+    import sqlite3 as _sqlite3
+    import time as _time
+    try:
+        return list(get_db().query(s))
+    except (_sqlite3.OperationalError, _sqlite3.DatabaseError) as e:
+        msg = str(e).lower()
+        if "locked" in msg or "i/o error" in msg or "disk i/o" in msg:
+            _time.sleep(0.4)
+            try:
+                return list(get_db().query(s))
+            except Exception as e2:
+                # Force a new per-thread handle on the second failure so
+                # the next call doesn't keep tripping on a stuck cursor.
+                try:
+                    get_db.cache_clear()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+                raise e2
+        raise
 
 
 @mcp.tool()
@@ -1275,6 +1341,8 @@ def reddit_synthesize_insights(
     topic: str,
     min_score: int = 0,
     provider: str | None = None,
+    deliberate: bool = False,
+    deliberate_rounds: int = 1,
 ) -> dict:
     """Run the insight synthesis pipeline on the topic's corpus and return
     the parsed report. Persists to both `topic_insights` (primary) and
@@ -1288,9 +1356,47 @@ def reddit_synthesize_insights(
     """
     from ..research.insights import synthesize_insights
     import json as _json
-    res = synthesize_insights(topic=topic, provider=provider, persist=True, min_score=min_score)
     try:
-        if isinstance(res, dict) and res.get("ok") is not False:
+        res = _run_with_timeout(
+            synthesize_insights,
+            timeout=_DEFAULT_TOOL_TIMEOUT_S,
+            async_hint="reddit_synthesize_insights",
+            kwargs={
+                "topic": topic, "provider": provider,
+                "persist": True, "min_score": min_score,
+                "deliberate": deliberate,
+                "deliberate_rounds": deliberate_rounds,
+            },
+        )
+        # Timeout → structured dict, propagate as-is.
+        if isinstance(res, dict) and res.get("timed_out"):
+            res.setdefault("topic", topic)
+            res.setdefault("findings", [])
+            return res
+    except Exception as e:
+        return {
+            "ok": False, "error": str(e)[:500], "topic": topic,
+            "findings": [], "report": {},
+        }
+    # Normalize so MCP schema validation always passes: top-level shape
+    # is `{ok, topic, ...}` whether the LLM returned the report inline
+    # or wrapped it under "report".
+    if not isinstance(res, dict):
+        return {
+            "ok": False, "error": f"unexpected return type: {type(res).__name__}",
+            "topic": topic, "findings": [], "report": {},
+        }
+    res.setdefault("ok", True)
+    res.setdefault("topic", topic)
+    # `findings` may live at top level (one-shot path) or nested under
+    # `report` (chunked path). Hoist for the GUI / MCP client.
+    if "findings" not in res and isinstance(res.get("report"), dict):
+        nested = res.get("report") or {}
+        if "findings" in nested:
+            res["findings"] = nested.get("findings") or []
+    res.setdefault("findings", [])
+    try:
+        if res.get("ok") is not False:
             from ..core.db import save_mcp_analysis
             report = res if "findings" in res else res.get("report") or {}
             save_mcp_analysis(
@@ -1299,7 +1405,7 @@ def reddit_synthesize_insights(
                 tool="reddit_synthesize_insights",
                 source="mcp",
                 content_type="json",
-                content=_json.dumps(report),
+                content=_json.dumps(report, default=str),
                 params={"topic": topic, "min_score": min_score, "provider": provider},
                 provider=res.get("provider", "") or "",
                 model=res.get("model", "") or "",
@@ -1720,11 +1826,28 @@ def reddit_semantic_search(
     metadata: {topic, source_type, sub, url, author, score, num_comments,
     created_utc}}]}. Each post has the first 600 chars in `text`; use
     reddit_query_db to fetch full body when needed.
+
+    On HNSW corruption: the call auto-heals (moves the corrupt index
+    aside) and queues a background reindex via the jobs table so the
+    palace repopulates without blocking this call. The first response
+    after a heal carries `healed=True` + a `reindex_job_id` so callers
+    know the next call may have more data.
     """
     from ..retrieval import palace
-    return palace.search_posts(
+    res = palace.search_posts(
         query, topic=topic, source_type=source_type, k=k, rerank=rerank,
     )
+    # If the call auto-healed, kick off reindex_all in the background so
+    # the empty-result window is as short as possible. Idempotent — if a
+    # reindex job is already running this submission is harmless.
+    if isinstance(res, dict) and res.get("healed"):
+        try:
+            from . import jobs as _jobs
+            job = _jobs.submit("reddit_palace_reindex", {})
+            res["reindex_job_id"] = job.get("job_id") if isinstance(job, dict) else None
+        except Exception as e:
+            res["reindex_submit_error"] = str(e)[:200]
+    return res
 
 
 @mcp.tool()
@@ -1737,6 +1860,342 @@ def reddit_related_posts(post_id: str, k: int = 10, topic: str | None = None) ->
     """
     from ..retrieval import palace
     return palace.related_posts(post_id, k=k, topic=topic)
+
+
+@mcp.tool()
+def reddit_deliberate(
+    topic: str,
+    items: list[dict] | None = None,
+    rounds: int = 1,
+    provider: str | None = None,
+    use_llm: bool = True,
+) -> dict:
+    """Run the 5-persona deliberation engine over a list of findings (or
+    any structured items with title/evidence/mention_count).
+
+    When `items` is None, the engine pulls the most-recent findings for
+    `topic` from `topic_insights` and runs the debate over them
+    in-place — useful for "tier the existing report without
+    re-synthesizing."
+
+    Personas: Synthesizer (de-dupe / taxonomy), Skeptic (evidence),
+    Quantifier (numbers), Risk Officer (actionability), Devil's
+    Advocate (≥50% disputes, must propose alternatives). When the topic
+    has audience clusters (built via reddit_audience_personas), each
+    cluster also casts an endorsement vote so consensus is citation-
+    grounded, not just LLM-vs-itself.
+
+    Returns: `{ok, topic, n_input, rounds, personas_used,
+    audience_grounded, tiers: {confirmed, probable, minority,
+    discarded}, transcripts, ...}`. Always returns a usable dict —
+    LLM failures degrade to a heuristic fallback that uses evidence
+    presence + audience endorsements only.
+    """
+    from ..research.deliberate import deliberate as _run
+    if items is None:
+        # Pull the latest cached findings for the topic.
+        try:
+            from ..core.db import get_db
+            db = get_db()
+            row = db.execute(
+                "SELECT report_json FROM topic_insights WHERE topic = ?",
+                [topic],
+            ).fetchone()
+            if not row:
+                return {
+                    "ok": False, "topic": topic,
+                    "error": "no cached insights — run reddit_synthesize_insights first",
+                    "tiers": {"confirmed": [], "probable": [], "minority": [], "discarded": []},
+                }
+            import json as _json
+            report = _json.loads(row[0]) if row[0] else {}
+            items = report.get("findings") or []
+        except Exception as e:
+            return {
+                "ok": False, "topic": topic, "error": str(e)[:200],
+                "tiers": {"confirmed": [], "probable": [], "minority": [], "discarded": []},
+            }
+    res = _run_with_timeout(
+        _run,
+        timeout=_DEFAULT_TOOL_TIMEOUT_S,
+        async_hint="reddit_deliberate",
+        kwargs={
+            "items": items, "topic": topic,
+            "rounds": rounds, "provider": provider,
+            "use_llm": use_llm, "persist_log": True,
+        },
+    )
+    if isinstance(res, dict) and res.get("timed_out"):
+        res.setdefault("topic", topic)
+        return res
+    if not isinstance(res, dict):
+        return {"ok": False, "topic": topic, "error": f"unexpected return: {type(res).__name__}"}
+    return res
+
+
+@mcp.tool()
+def reddit_audience_personas(
+    topic: str,
+    llm: bool = True,
+    provider: str | None = None,
+    min_posts_per_author: int = 3,
+) -> dict:
+    """Cluster the topic's real authors into ICP personas backed by
+    their actual posts. Produces a citation-grounded persona per
+    cluster with: members, exemplar post, top subs, vocab signatures,
+    says/wants/hates clauses, demographics keyword scan, 7×24 activity
+    heatmap, silhouette tightness. Optional LLM augmentation (one call
+    per cluster) adds a label + 2000-char narrative + structured
+    demographics + personal_memory bullets that cite specific post_ids.
+
+    Persists to `audience_personas(topic, cluster_id)` so reads are
+    instant. Pairs with `reddit_audience_personas_get(topic)` for cached
+    reads and feeds the GUI's Audience screen + Launch Brief.
+    """
+    from ..research.audience import build_audience_personas
+    res = _run_with_timeout(
+        build_audience_personas,
+        timeout=_DEFAULT_TOOL_TIMEOUT_S,
+        async_hint="reddit_audience_personas",
+        kwargs={
+            "topic": topic, "llm": llm, "provider": provider,
+            "persist": True, "min_posts_per_author": min_posts_per_author,
+        },
+    )
+    if isinstance(res, dict) and res.get("timed_out"):
+        res.setdefault("topic", topic)
+        return res
+    if not isinstance(res, dict):
+        return {"ok": False, "topic": topic, "error": f"unexpected return type: {type(res).__name__}"}
+    res.setdefault("ok", True)
+    res.setdefault("topic", topic)
+    return res
+
+
+@mcp.tool()
+def reddit_audience_personas_get(topic: str) -> dict:
+    """Read cached audience personas for a topic. Returns
+    `{ok, topic, personas: [...], cached, count}`. Call
+    `reddit_audience_personas(topic)` first if no personas exist."""
+    from ..research.audience import get_audience_personas
+    try:
+        return get_audience_personas(topic)
+    except Exception as e:
+        return {"ok": False, "topic": topic, "error": str(e)[:200], "personas": []}
+
+
+@mcp.tool()
+def reddit_launch_brief(
+    topic: str,
+    llm: bool = True,
+    provider: str | None = None,
+) -> dict:
+    """Build a complete go-to-market Launch Brief for `topic`. Combines
+    deterministic signal-extraction (channels, post timing, top authors,
+    MVP features by RICE, pricing/PMF/NPS aggregates, persona shapes
+    from empathy_maps + interviews) with optional LLM augmentation
+    (refined ICP personas, demographics inference, channel fit re-rank,
+    external channel suggestions, positioning statement, 3-step launch
+    sequence).
+
+    Always returns a usable dict — LLM failures degrade silently to the
+    deterministic-only sections. Persists to `launch_briefs(topic)` so
+    `reddit_launch_brief_get(topic)` can serve cached reads.
+
+    Args:
+        topic: which topic to brief.
+        llm: if True (default), run the LLM augmentation pass. Disable
+             for offline / no-key environments to get the deterministic
+             slice only.
+        provider: override provider chain (anthropic / openai / etc.).
+
+    Returns: full brief shape — see `research/launch.py` docstring.
+    """
+    from ..research.launch import build_launch_brief
+    res = _run_with_timeout(
+        build_launch_brief,
+        timeout=_DEFAULT_TOOL_TIMEOUT_S,
+        async_hint="reddit_launch_brief",
+        kwargs={"topic": topic, "llm": llm, "provider": provider, "persist": True},
+    )
+    if isinstance(res, dict) and res.get("timed_out"):
+        res.setdefault("topic", topic)
+        return res
+    if not isinstance(res, dict):
+        return {"ok": False, "topic": topic, "error": f"unexpected return type: {type(res).__name__}"}
+    res.setdefault("ok", True)
+    res.setdefault("topic", topic)
+    return res
+
+
+@mcp.tool()
+def reddit_launch_brief_get(topic: str) -> dict:
+    """Read the most-recent cached Launch Brief for `topic`. Use this
+    when the brief was already generated (e.g. by the GUI) and you only
+    need to read it. Returns `{ok: False, error}` if no brief exists —
+    call `reddit_launch_brief(topic)` first."""
+    from ..research.launch import get_launch_brief
+    try:
+        return get_launch_brief(topic)
+    except Exception as e:
+        return {"ok": False, "topic": topic, "error": str(e)[:200]}
+
+
+@mcp.tool()
+def reddit_diagnostics() -> dict:
+    """Single-call health probe across every subsystem the other MCP
+    tools depend on. Use FIRST when a tool fails — the response tells
+    you whether it's a DB issue, palace corruption, missing LLM key,
+    or empty corpus, and which fix tool to call next.
+
+    Returns: ``{ok, db, palace, llm, corpus, suggestions: [str, ...]}``.
+    Each section is its own dict with `ok` + `detail` so you can see at
+    a glance which subsystem is wedged.
+
+    Example response when palace is corrupt:
+    ```
+    {
+      "ok": false,
+      "db": {"ok": true, "tables": 47, "wal_pages": 0},
+      "palace": {"ok": false, "ready": false, "count": 0,
+                 "detail": "HNSW segment writer corrupt"},
+      "llm": {"ok": true, "provider": "anthropic"},
+      "corpus": {"ok": true, "topics": 6, "posts": 4221},
+      "suggestions": ["Call reddit_palace_repair(also_reindex=True)"]
+    }
+    ```
+    """
+    out: dict = {"ok": True, "suggestions": []}
+
+    # ── DB
+    try:
+        from ..core.db import get_db
+        db = get_db()
+        tables = list(db.table_names())
+        wal = db.conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+        wal_pages = (wal or [0, 0, 0])[1] if wal else 0
+        out["db"] = {"ok": True, "tables": len(tables), "wal_pages": wal_pages}
+    except Exception as e:
+        out["ok"] = False
+        out["db"] = {"ok": False, "detail": str(e)[:200]}
+        out["suggestions"].append(
+            "DB error — restart the sidecar; "
+            "boot triggers the WAL self-heal automatically."
+        )
+
+    # ── Palace
+    try:
+        from ..retrieval import palace
+        if not palace.is_available():
+            out["palace"] = {"ok": False, "ready": False,
+                             "detail": "chromadb not installed"}
+            out["suggestions"].append(
+                "Install retrieval extras: `pip install -e '.[retrieval]'`"
+            )
+        else:
+            status = palace.model_status()
+            stats = palace.stats()
+            ready = bool(status.get("ready"))
+            count = int(stats.get("count") or 0)
+            # Probe with an empty query — if it raises, the index is corrupt.
+            probe_err = None
+            try:
+                palace.search_posts("__diag_probe__", k=1)
+            except Exception as pe:
+                probe_err = str(pe)[:200]
+            out["palace"] = {
+                "ok": ready and probe_err is None,
+                "ready": ready,
+                "count": count,
+                "probe_error": probe_err,
+            }
+            if probe_err and palace._looks_like_hnsw_corruption(Exception(probe_err)):
+                out["ok"] = False
+                out["suggestions"].append(
+                    "Call reddit_palace_repair(also_reindex=True) to "
+                    "rebuild the corrupt vector index."
+                )
+            elif not ready:
+                out["suggestions"].append(
+                    "Palace not warmed up — call reddit_palace_warmup."
+                )
+            elif count == 0:
+                out["suggestions"].append(
+                    "Palace empty — call reddit_palace_reindex (or "
+                    "submit as a job: reddit_jobs_submit('reddit_palace_reindex'))."
+                )
+    except Exception as e:
+        out["palace"] = {"ok": False, "detail": str(e)[:200]}
+
+    # ── LLM provider chain
+    try:
+        from ..analyze.providers.base import resolve_provider
+        try:
+            prov = resolve_provider(None)
+            out["llm"] = {"ok": True, "provider": prov}
+        except RuntimeError as e:
+            out["ok"] = False
+            out["llm"] = {"ok": False, "detail": str(e)[:200]}
+            out["suggestions"].append(
+                "No LLM provider configured — set ANTHROPIC_API_KEY / "
+                "OPENAI_API_KEY (or another provider key) and restart."
+            )
+    except Exception as e:
+        out["llm"] = {"ok": False, "detail": f"resolve failed: {e!s:.200}"}
+
+    # ── Corpus shape
+    try:
+        from ..core.db import get_db
+        db = get_db()
+        posts = db.execute("SELECT count(*) FROM posts").fetchone()[0]
+        topics = (
+            db.execute("SELECT count(DISTINCT topic) FROM topic_posts").fetchone()[0]
+            if "topic_posts" in db.table_names() else 0
+        )
+        out["corpus"] = {"ok": True, "topics": topics, "posts": posts}
+        if posts == 0:
+            out["suggestions"].append(
+                "No posts collected — run reddit_research_collect first."
+            )
+    except Exception as e:
+        out["corpus"] = {"ok": False, "detail": str(e)[:200]}
+
+    if not out["suggestions"]:
+        out["suggestions"].append("All subsystems healthy.")
+    return out
+
+
+@mcp.tool()
+def reddit_palace_repair(also_reindex: bool = False) -> dict:
+    """Heal a corrupt palace (HNSW segment writer / 'failed to apply logs'
+    / 'invalid argument: hnsw') by moving the on-disk index aside so the
+    next `reddit_semantic_search` call rebuilds a fresh, empty store.
+
+    Use when `reddit_semantic_search` returns errors mentioning the HNSW
+    segment writer, or after a hard kill that left the palace half-written.
+    Safe — the corpus stays in `posts` / `topic_posts`; only the derived
+    vector index is moved.
+
+    Args:
+        also_reindex: if True, kick off `reindex_all()` synchronously
+                      after healing (slow — minutes for 20k posts).
+                      Otherwise the index repopulates incrementally on
+                      future upserts. Prefer False + a separate
+                      `reddit_jobs_submit("reddit_palace_reindex", {})`.
+
+    Returns: ``{ok, healed, backup_path?, reason?, reindex?}``.
+    """
+    from ..retrieval import palace
+    res = palace.heal_corrupt_index()
+    if also_reindex and res.get("healed"):
+        try:
+            from . import jobs as _jobs
+            res["reindex"] = palace.reindex_all(
+                progress=_jobs.make_progress_logger(prefix="[repair-reindex] "),
+            )
+        except Exception as e:
+            res["reindex_error"] = str(e)[:200]
+    return res
 
 
 @mcp.tool()
@@ -1936,16 +2395,46 @@ def reddit_collect_quality_check(topic: str) -> dict:
 
 
 @mcp.tool()
-def reddit_global_competitors(min_topics: int = 2, threshold: float = 0.80) -> list[dict]:
+def reddit_global_competitors(min_topics: int = 2, threshold: float = 0.80) -> dict:
     """T2.5 — Unify competitor mentions across ALL topics. Clusters
     graph_nodes WHERE kind='product' by embedding cosine ≥ threshold.
-    Returns `[{canonical_name, aliases[], topics[], total_mentions}]`."""
+
+    Returns `{ok, skipped?, total_products_seen, clusters_returned,
+    threshold, min_topics, competitors: [{canonical_name, aliases[],
+    topics[], total_mentions}, ...]}`. The wrapper always coerces the
+    return into a stable dict shape so MCP schema validation passes
+    even when the implementation changes (e.g. returns a bare list,
+    raises, or is missing chromadb)."""
     from ..research.competitors import global_competitors
     try:
-        return global_competitors(min_topics=min_topics, threshold=threshold)
-    except TypeError:
-        # Older signature fallback
-        return global_competitors(min_topics=min_topics)
+        try:
+            res = global_competitors(min_topics=min_topics, threshold=threshold)
+        except TypeError:
+            res = global_competitors(min_topics=min_topics)
+    except Exception as e:
+        return {
+            "ok": False, "error": str(e)[:300],
+            "competitors": [], "clusters_returned": 0,
+            "min_topics": min_topics, "threshold": threshold,
+        }
+    # Normalize: implementation may return bare list (legacy) or dict.
+    if isinstance(res, list):
+        return {
+            "ok": True, "competitors": res,
+            "clusters_returned": len(res),
+            "min_topics": min_topics, "threshold": threshold,
+        }
+    if not isinstance(res, dict):
+        return {
+            "ok": False, "error": f"unexpected return type: {type(res).__name__}",
+            "competitors": [], "clusters_returned": 0,
+        }
+    res.setdefault("ok", True)
+    res.setdefault("competitors", [])
+    res.setdefault("clusters_returned", len(res.get("competitors") or []))
+    res.setdefault("min_topics", min_topics)
+    res.setdefault("threshold", threshold)
+    return res
 
 
 @mcp.tool()

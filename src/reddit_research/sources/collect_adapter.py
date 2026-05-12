@@ -357,7 +357,7 @@ def run_youtube(
     Data API v3 if yt-dlp is unavailable AND ``YOUTUBE_API_KEY`` is set;
     otherwise logs an empty result.
     """
-    from .youtube import fetch_youtube_comments, search_youtube_videos
+    from .youtube import fetch_youtube_comments, fetch_youtube_video_meta, search_youtube_videos
 
     kws, stopic = _as_keywords(topic_or_keywords)
     fid = log_fetch_start(
@@ -377,10 +377,18 @@ def run_youtube(
                 if not vid or vid in seen_video_ids:
                     continue
                 seen_video_ids.add(vid)
-                rows = fetch_youtube_comments(
-                    vid, video_title=v.get("title") or "", limit=comments_per_video,
+                title = v.get("title") or ""
+                # Pull comments first (existing behaviour), then ask yt-dlp
+                # for the description + transcript so a persona ingest over
+                # this topic sees what the speaker actually said, not just
+                # what commenters reacted to. meta is best-effort — videos
+                # with subs disabled return [] and we still keep comments.
+                comment_rows = fetch_youtube_comments(
+                    vid, video_title=title, limit=comments_per_video,
                 )
-                rows = [r for r in rows if "_error" not in r]
+                comment_rows = [r for r in comment_rows if "_error" not in r]
+                meta_rows = fetch_youtube_video_meta(vid, video_title=title)
+                rows = comment_rows + meta_rows
                 if not rows:
                     continue
                 total += _persist(stopic, rows, source_tag=f"youtube:{vid}")

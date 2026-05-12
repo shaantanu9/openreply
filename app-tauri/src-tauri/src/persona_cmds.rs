@@ -184,6 +184,29 @@ pub async fn persona_agent_ingest(
         .map_err(err_to_string)
 }
 
+/// Streaming teach-from-video — emits the same `persona_ingest:progress` /
+/// `persona_ingest:done` events as the regular ingest path so the UI's
+/// existing listener handles both. The leading `teach:start` / `teach:fetched`
+/// / `teach:error` events ride on the same `:progress` channel; the UI
+/// pattern-matches by `ev.event` to render the fetch phase distinctly.
+#[tauri::command]
+pub async fn persona_agent_teach_video(
+    app: AppHandle,
+    persona_id: i64,
+    url: String,
+    comments_limit: Option<u32>,
+) -> Result<(), String> {
+    let id_s = persona_id.to_string();
+    let cl_s = comments_limit.unwrap_or(100).to_string();
+    let args: Vec<&str> = vec![
+        "persona", "teach-video", &id_s, &url,
+        "--comments", &cl_s, "--json",
+    ];
+    run_cli_streaming(&app, args, "persona_ingest:progress", "persona_ingest:done")
+        .await
+        .map_err(err_to_string)
+}
+
 // ─── Phase 2b — graph + conclusions ───
 
 #[tauri::command]

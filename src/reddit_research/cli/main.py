@@ -2483,6 +2483,213 @@ def cmd_research_moscow_categorize(
     _emit(categorize_topic(topic=topic, provider=resolved), as_json)
 
 
+@research_app.command("iterate-start")
+def cmd_research_iterate_start(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    loop: str = typer.Option("deliberate", "--loop", "-l",
+        help="Loop kind: deliberate | audience"),
+    grid_json: Optional[str] = typer.Option(None, "--grid",
+        help="JSON list of config dicts to sweep. Empty = use default grid."),
+    notes: str = typer.Option("", "--notes"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Create an iterate run row in 'pending' state. Returns run_id."""
+    import json as _json
+    from ..research.iterate import start_run
+    grid = _json.loads(grid_json) if grid_json else None
+    _emit(start_run(topic=topic, loop_kind=loop, grid=grid, notes=notes), as_json)
+
+
+@research_app.command("iterate-execute")
+def cmd_research_iterate_execute(
+    run_id: str = typer.Option(..., "--run-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Synchronously execute a previously-started iterate run."""
+    from ..research.iterate import execute_run
+    _emit(execute_run(run_id), as_json)
+
+
+@research_app.command("iterate-run")
+def cmd_research_iterate_run(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    loop: str = typer.Option("deliberate", "--loop", "-l"),
+    grid_json: Optional[str] = typer.Option(None, "--grid"),
+    notes: str = typer.Option("", "--notes"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """One-shot: start + execute an iterate run inline."""
+    import json as _json
+    from ..research.iterate import start_run, execute_run, get_run
+    grid = _json.loads(grid_json) if grid_json else None
+    started = start_run(topic=topic, loop_kind=loop, grid=grid, notes=notes)
+    if not started.get("ok"):
+        _emit(started, as_json); return
+    execute_run(started["run_id"])
+    _emit(get_run(started["run_id"]), as_json)
+
+
+@research_app.command("iterate-status")
+def cmd_research_iterate_status(
+    run_id: str = typer.Option(..., "--run-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Get a single run's full state including iterations + best config."""
+    from ..research.iterate import get_run
+    _emit(get_run(run_id), as_json)
+
+
+@research_app.command("iterate-list")
+def cmd_research_iterate_list(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    limit: int = typer.Option(30, "--limit"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List recent iterate runs (filter by topic if given)."""
+    from ..research.iterate import list_runs
+    _emit(list_runs(topic=topic, limit=limit), as_json)
+
+
+@research_app.command("iterate-cancel")
+def cmd_research_iterate_cancel(
+    run_id: str = typer.Option(..., "--run-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Mark a running run as cancelled. The runner checks per iteration."""
+    from ..research.iterate import cancel_run
+    _emit(cancel_run(run_id), as_json)
+
+
+@research_app.command("iterate-apply")
+def cmd_research_iterate_apply(
+    run_id: str = typer.Option(..., "--run-id"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Apply a finished run's winning config to topic_pipeline_config."""
+    from ..research.iterate import apply_best_config
+    _emit(apply_best_config(run_id), as_json)
+
+
+@research_app.command("iterate-applied")
+def cmd_research_iterate_applied(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List the per-topic best configs that have been applied."""
+    from ..research.iterate import list_applied_configs
+    _emit(list_applied_configs(topic), as_json)
+
+
+@research_app.command("pipeline-run")
+def cmd_research_pipeline_run(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    force: bool = typer.Option(False, "--force/--no-force"),
+    no_llm: bool = typer.Option(False, "--no-llm"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Walk the audience → synthesize → deliberate → launch chain."""
+    from ..research.pipeline import run_pipeline
+    _emit(run_pipeline(topic=topic, force=force, llm=not no_llm,
+                       llm_provider=provider), as_json)
+
+
+@research_app.command("pipeline-status")
+def cmd_research_pipeline_status(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Lightweight read of stage cache freshness."""
+    from ..research.pipeline import pipeline_status
+    _emit(pipeline_status(topic), as_json)
+
+
+@research_app.command("deliberate")
+def cmd_research_deliberate(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    rounds: int = typer.Option(1, "--rounds", "-r",
+        help="1-3 debate rounds. Each round re-shows items + prior rationales."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    no_llm: bool = typer.Option(False, "--no-llm",
+        help="Skip the LLM pass; use heuristic + audience-endorsement only."),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Re-tier the cached findings for a topic via the 5-persona debate."""
+    from ..research.deliberate import deliberate as _run
+    from ..core.db import get_db
+    import json as _json
+    db = get_db()
+    row = db.execute("SELECT report_json FROM topic_insights WHERE topic = ?", [topic]).fetchone()
+    if not row:
+        _emit({"ok": False, "topic": topic,
+               "error": "no cached insights — run synthesize-insights first"}, as_json)
+        return
+    report = _json.loads(row[0]) if row[0] else {}
+    items = report.get("findings") or []
+    res = _run(items, topic=topic, rounds=rounds, provider=provider,
+               use_llm=not no_llm, persist_log=True)
+    _emit(res, as_json)
+
+
+@research_app.command("audience-build")
+def cmd_research_audience_build(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    llm: bool = typer.Option(True, "--llm/--no-llm",
+        help="LLM augmentation (1 call per cluster) — adds label, persona "
+             "narrative, personal_memory, demographics inference."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    min_posts: int = typer.Option(3, "--min-posts",
+        help="Authors with fewer than this many posts in the topic are dropped."),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Cluster real authors in a topic into ICP personas backed by their
+    actual posts. Builds the citation-grounded persona used by the
+    Audience screen + Launch Brief."""
+    from ..research.audience import build_audience_personas
+    _emit(
+        build_audience_personas(
+            topic=topic, llm=llm, provider=provider,
+            persist=True, min_posts_per_author=min_posts,
+        ),
+        as_json,
+    )
+
+
+@research_app.command("audience-get")
+def cmd_research_audience_get(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Read the most-recent cached audience personas for a topic."""
+    from ..research.audience import get_audience_personas
+    _emit(get_audience_personas(topic), as_json)
+
+
+@research_app.command("launch-brief")
+def cmd_research_launch_brief(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    llm: bool = typer.Option(True, "--llm/--no-llm",
+        help="Run optional LLM augmentation (refines personas, demographics, "
+             "channel fit, positioning, launch sequence)."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Build a Go-to-Market Launch Brief — target audience, demographics,
+    where to launch, and market requirements — for a topic."""
+    from ..research.launch import build_launch_brief
+    _emit(build_launch_brief(topic=topic, llm=llm, provider=provider, persist=True), as_json)
+
+
+@research_app.command("launch-brief-get")
+def cmd_research_launch_brief_get(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Read the most-recent cached Launch Brief for a topic."""
+    from ..research.launch import get_launch_brief
+    _emit(get_launch_brief(topic), as_json)
+
+
 @research_app.command("empathy-build")
 def cmd_research_empathy_build(
     topic: str = typer.Option(..., "--topic", "-t"),

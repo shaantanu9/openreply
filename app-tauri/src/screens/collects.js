@@ -75,6 +75,7 @@ async function initiateCollect(topic, { aggressive = true, ifBusy = 'error', sou
       const looksUnknown = !runningTopic
         || /\(unknown/i.test(runningTopic)
         || elapsedSecs > 60 * 60 * 24 * 30;  // > 30 days = bogus
+      let isOrphan = false;
       if (looksUnknown) {
         const snap = getCollectSnapshot().find((s) => s.status === 'running');
         if (snap) {
@@ -82,8 +83,12 @@ async function initiateCollect(topic, { aggressive = true, ifBusy = 'error', sou
           elapsedSecs = snap.started_ms
             ? Math.floor((Date.now() - snap.started_ms) / 1000) : 0;
         } else {
+          // Slot held but no live collect anywhere — orphan lock from a
+          // previous crash / HMR. Surface the Unstick affordance instead
+          // of Queue / Stop-and-start, both of which trap the user.
           runningTopic = '(name not available — orphan sidecar)';
           elapsedSecs = 0;
+          isOrphan = true;
         }
       }
       const elapsedStr = elapsedSecs > 0 ? fmtElapsedSecs(elapsedSecs) : 'unknown';
@@ -91,7 +96,18 @@ async function initiateCollect(topic, { aggressive = true, ifBusy = 'error', sou
         newTopic: topic,
         runningTopic,
         elapsedStr,
+        isOrphan,
       });
+      if (choice === 'unstick') {
+        try {
+          await api.clearOrphanCollectLock();
+        } catch (_) {
+          // Even if the IPC call fails, we still try the start — the
+          // sweeper will get to it eventually and the user sees a real
+          // error from start_collect rather than a swallowed unstick.
+        }
+        return initiateCollect(topic, { aggressive, ifBusy: 'error', sources, skipReddit });
+      }
       if (choice === 'queue') {
         return initiateCollect(topic, { aggressive, ifBusy: 'queue', sources, skipReddit });
       }
@@ -424,6 +440,10 @@ export async function renderCollects(root) {
   for (const evt of [
     'collect:done', 'collect:progress',
     'collect:queue:enqueued', 'collect:queue:dequeued', 'collect:queue:cancelled',
+    // Sweeper or start_collect just reaped a stale lock — re-render so the
+    // (topic name lost) row clears immediately instead of after the next
+    // 1.5s polling tick.
+    'collect:orphan:reaped',
   ]) {
     try { unlisteners.push(await listen(evt, () => refresh())); } catch {}
   }

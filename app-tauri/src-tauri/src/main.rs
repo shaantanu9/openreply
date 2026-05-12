@@ -9,9 +9,9 @@ mod schedule;
 mod worker;
 
 use cli::{
-    cancel_active_chat, cancel_active_job, cancel_active_stream,
+    cancel_active_chat, cancel_active_job_silent, cancel_active_stream,
     ActiveChat, ActiveChatPid, ActiveCollects, ActiveEnrich, ActiveEnrichPid, ActiveGraphOps,
-    ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid, CollectQueue,
+    ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid, CollectCancelMarker, CollectQueue,
 };
 use std::sync::Arc;
 use tauri::RunEvent;
@@ -60,6 +60,7 @@ fn main() {
         .manage(ActiveGraphOps::default())
         .manage(ActiveCollects::default())
         .manage(CollectQueue::default())
+        .manage(CollectCancelMarker::default())
         .manage(Arc::new(ExtractionWorker::default()))
         .setup(|app| {
             // Splash safety net + cold-boot webview heal.
@@ -114,6 +115,88 @@ fn main() {
                     main.open_devtools();
                 }
             }
+
+            // Periodic orphan-lock sweeper. The single-flight collect slot
+            // (`ActiveJob` / `ActiveJobPid`) can end up "held" with no
+            // matching entry in `ActiveCollects` if a sidecar dies without
+            // its `Terminated` event reaching us. Symptoms in the UI: the
+            // busy modal shows "(orphan sidecar — name unavailable)" with
+            // "unknown elapsed", and Queue waits forever because
+            // `collect:done` never fires.
+            //
+            // `start_collect` already auto-reaps before each new collect
+            // call, but the user can sit on a screen looking at a stale
+            // "Collecting now: …" status bar without ever triggering a new
+            // collect — this loop catches that case. Every 8s, if the slot
+            // is held but the topic map is empty, kill the slot and emit
+            // `collect:orphan:reaped` so the status bar / modal can update.
+            // Boot-time: `ActiveJob` defaults to empty so this is a no-op
+            // on the first tick — the tick exists to catch in-session
+            // orphans, not boot state.
+            let app_handle_sweeper = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use tauri::{Emitter, Manager};
+                // Two-tick confirmation: only reap if we observe the
+                // orphan condition twice in a row, ~20 s apart. Defensive
+                // belt against a brief race between `run_collect_inner`
+                // inserting the topic into `ActiveCollects` and
+                // `run_cli_streaming` setting the slot. The root cause
+                // (premature map removal) was fixed elsewhere, but a
+                // short-lived empty-map window can still appear during a
+                // queue drain transition.
+                let mut prev_orphan = false;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                    let map_empty = match app_handle_sweeper
+                        .try_state::<ActiveCollects>()
+                    {
+                        Some(s) => s
+                            .0
+                            .lock()
+                            .ok()
+                            .map(|g| g.is_empty())
+                            .unwrap_or(true),
+                        None => true,
+                    };
+                    if !map_empty {
+                        prev_orphan = false;
+                        continue;
+                    }
+                    let slot_held = {
+                        let mut held = false;
+                        if let Some(s) = app_handle_sweeper.try_state::<ActiveJob>() {
+                            if s.0.lock().ok().map(|g| g.is_some()).unwrap_or(false) {
+                                held = true;
+                            }
+                        }
+                        if !held {
+                            if let Some(s) = app_handle_sweeper.try_state::<ActiveJobPid>() {
+                                if s.0.lock().ok().map(|g| g.is_some()).unwrap_or(false) {
+                                    held = true;
+                                }
+                            }
+                        }
+                        held
+                    };
+                    let curr_orphan = slot_held;
+                    if curr_orphan && prev_orphan {
+                        // Silent kill — sweeper-triggered reaps shouldn't
+                        // mark the next collect's exit as "cancelled by
+                        // user", since this is a maintenance action.
+                        let killed = cancel_active_job_silent(&app_handle_sweeper);
+                        let _ = app_handle_sweeper.emit(
+                            "collect:orphan:reaped",
+                            serde_json::json!({
+                                "trigger": "sweeper",
+                                "killed": killed,
+                            }),
+                        );
+                        prev_orphan = false;
+                    } else {
+                        prev_orphan = curr_orphan;
+                    }
+                }
+            });
 
             // Auto-start the extraction worker on boot IFF any topic already
             // has ≥ ENRICH_THRESHOLD posts. This gates Phase-B (async
@@ -175,6 +258,7 @@ fn main() {
             commands::canonicalize_topic,
             commands::start_collect,
             commands::cancel_collect,
+            commands::clear_orphan_collect_lock,
             commands::collect_status,
             commands::list_collect_queue,
             commands::cancel_queued_collect,
@@ -306,6 +390,25 @@ fn main() {
             // Page explainer — eye-icon "why this page exists"
             commands::page_explanation_get,
             commands::page_explanations_list,
+            // Audience personas (2026-05-03) — cluster real authors per topic
+            commands::audience_personas_build,
+            commands::audience_personas_get,
+            // Iterate / Autoresearch (2026-05-03 Phase 4)
+            commands::iterate_run,
+            commands::iterate_start,
+            commands::iterate_execute,
+            commands::iterate_status,
+            commands::iterate_list,
+            commands::iterate_cancel,
+            commands::iterate_apply,
+            commands::iterate_applied,
+            commands::pipeline_run,
+            commands::pipeline_status,
+            // Deliberation (2026-05-03 Phase 3) — 5-persona debate
+            commands::deliberate,
+            // Launch & GTM (2026-05-02)
+            commands::launch_brief,
+            commands::launch_brief_get,
             // Discovery framework expansion (2026-05-01_04) — OST + RICE +
             // MoSCoW + Empathy Maps + Four Risks + Value Curve.
             commands::ost_build,
@@ -419,6 +522,8 @@ fn main() {
             persona_cmds::persona_agent_memories,
             persona_cmds::persona_agent_chat,
             persona_cmds::persona_agent_ingest,
+            // Phase 5 — surgical teach-from-video (2026-05-12)
+            persona_cmds::persona_agent_teach_video,
             // Phase 2b — graph + conclusions
             persona_cmds::persona_agent_graph,
             persona_cmds::persona_agent_backfill,
@@ -445,7 +550,10 @@ fn main() {
     // `ended_at=NULL` row that the UI reads as "still running".
     app.run(|app_handle, event| {
         if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
-            let _ = cancel_active_job(app_handle);
+            // Use the silent variant on shutdown — there's no UI left to
+            // read a "cancelled by user" label, and we don't want stale
+            // marker state surviving into a fast-relaunch scenario.
+            let _ = cancel_active_job_silent(app_handle);
             let _ = cancel_active_chat(app_handle);
             let _ = cancel_active_stream(app_handle);
             // Extraction worker has its own state slot (not ActiveJob) so it's

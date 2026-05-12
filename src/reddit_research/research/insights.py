@@ -323,6 +323,8 @@ def synthesize_insights(
     provider: str | None = None,
     persist: bool = True,
     min_score: int = 0,
+    deliberate: bool = False,
+    deliberate_rounds: int = 1,
 ) -> dict[str, Any]:
     """Run the one-shot synthesis call and return the parsed report.
 
@@ -540,6 +542,69 @@ def synthesize_insights(
             report["_relevance_gate_error"] = str(e)
 
     _attach_suggested_tactics(report)
+
+    # Per-topic best-config override for deliberate (2026-05-03 Phase 4).
+    # When `iterate.apply_best_config(run_id)` was called for this
+    # topic + 'deliberate' loop, those values override the caller's
+    # request unless the caller explicitly passed non-default values.
+    if deliberate:
+        try:
+            from . import iterate as _it
+            applied = _it.get_applied_config(topic, "deliberate")
+            if applied and isinstance(applied.get("config"), dict):
+                cfg = applied["config"]
+                if deliberate_rounds == 1 and "rounds" in cfg:
+                    deliberate_rounds = int(cfg["rounds"])
+        except Exception:
+            pass
+
+    # Phase 3 (2026-05-03) — optional 5-persona deliberation.
+    # When `deliberate=True`, every finding is reviewed by the 5 personas
+    # (Synthesizer / Skeptic / Quantifier / Risk Officer / Devil's
+    # Advocate) plus the topic's audience clusters; each lands tagged
+    # Confirmed / Probable / Minority / Discarded. The discard tier is
+    # NOT pruned from `findings` — callers can filter on
+    # `f["consensus"]["tier"]` instead, so we never silently drop signal.
+    if deliberate and isinstance(report.get("findings"), list) and report["findings"]:
+        try:
+            from .deliberate import deliberate as _run_deliberation
+            d = _run_deliberation(
+                report["findings"],
+                topic=topic,
+                rounds=deliberate_rounds,
+                provider=provider,
+                use_llm=True,
+                persist_log=True,
+            )
+            # Build a fast lookup so we can stamp `consensus` onto each
+            # finding by index. The deliberate engine returns tier
+            # buckets; flatten them and re-zip into the original list
+            # ordering.
+            stamped: dict[int, dict[str, Any]] = {}
+            for tier_items in d.get("tiers", {}).values():
+                for it in tier_items:
+                    cons = it.get("consensus")
+                    # Match by title — the deliberate engine doesn't
+                    # carry an external ID. Title duplicates would be
+                    # caught by the Synthesizer persona's DISPUTE.
+                    title = (it.get("title") or it.get("label") or "").strip()
+                    for i, f in enumerate(report["findings"]):
+                        if (f.get("title") or f.get("label") or "").strip() == title and i not in stamped:
+                            stamped[i] = cons
+                            break
+            for i, f in enumerate(report["findings"]):
+                if i in stamped:
+                    f["consensus"] = stamped[i]
+            report["deliberation"] = {
+                "rounds": d.get("rounds"),
+                "personas_used": d.get("personas_used"),
+                "audience_grounded": d.get("audience_grounded"),
+                "counts": d.get("counts"),
+                "provider": d.get("provider"),
+                "generated_at": d.get("generated_at"),
+            }
+        except Exception as e:
+            report["deliberation_error"] = str(e)[:200]
 
     if persist:
         model = os.getenv("LLM_MODEL") or getattr(prov, "_model", "") or ""

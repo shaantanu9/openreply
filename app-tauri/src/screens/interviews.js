@@ -9,6 +9,10 @@
 // Routes:
 //   #/interviews              → topic picker
 //   #/interviews/<topic>      → interview list + summary panel + new form
+//
+// Design: matches Home/Topics — slash crumbs + topbar-spacer,
+// card-head/card-body, btn-primary/btn-ghost-bordered, .stat-grid for
+// summary metrics, .section-head transitions.
 import { api, esc } from '../api.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -68,41 +72,88 @@ function renderInterviewCard(iv) {
         ${iv.willingness_to_pay ? `<div><b>WTP:</b> ${esc(iv.willingness_to_pay)}</div>` : ''}
       </div>
       <div class="iv-actions">
-        <button class="btn-mini iv-edit"   data-iv-id="${esc(iv.id)}">Edit</button>
-        <button class="btn-mini iv-fu-cycle" data-iv-id="${esc(iv.id)}" data-fu="${esc(iv.follow_up || 'none')}">Cycle follow-up</button>
-        <button class="btn-mini iv-delete" data-iv-id="${esc(iv.id)}">×</button>
+        <button class="btn btn-ghost btn-xs btn-bordered iv-edit" data-iv-id="${esc(iv.id)}">Edit</button>
+        <button class="btn btn-ghost btn-xs btn-bordered iv-fu-cycle" data-iv-id="${esc(iv.id)}" data-fu="${esc(iv.follow_up || 'none')}">Cycle follow-up</button>
+        <button class="btn btn-ghost btn-xs btn-bordered iv-delete" data-iv-id="${esc(iv.id)}">Delete</button>
       </div>
     </article>
   `;
 }
 
-function renderSummaryPanel(s) {
+function summaryStats(s) {
   if (!s || s.count === 0) {
-    return `<div class="iv-summary-card card muted">No interviews yet — capture your first one to see themes here.</div>`;
+    return `
+      <section class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-head">
+            <div class="stat-icon mint"><i data-lucide="mic"></i></div>
+          </div>
+          <div class="stat-num">0</div>
+          <div class="stat-label">Interviews on file</div>
+        </div>
+      </section>
+    `;
   }
-  const themes = (s.themes || []).slice(0, 5).map(t =>
+  const rigour = (s.rigour_avg || 0).toFixed(1);
+  const rigourCls = s.rigour_avg >= 3.5 ? 'trend-up' : s.rigour_avg >= 2 ? 'trend-flat' : 'trend-down';
+  const themes = (s.themes || []).slice(0, 1)[0]?.label || '—';
+  const wtp    = (s.willingness_to_pay || []).slice(0, 1)[0]?.label || '—';
+  return `
+    <section class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon mint"><i data-lucide="users"></i></div>
+        </div>
+        <div class="stat-num">${s.count}</div>
+        <div class="stat-label">Interviews on file</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon sky"><i data-lucide="target"></i></div>
+          <div class="stat-trend ${rigourCls}">${rigour}/5</div>
+        </div>
+        <div class="stat-num">${rigour}</div>
+        <div class="stat-label">Mom Test rigour avg</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon lavender"><i data-lucide="layers"></i></div>
+        </div>
+        <div class="stat-num" style="font-size:14px;font-weight:600">${esc(themes)}</div>
+        <div class="stat-label">Top current solution</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon peach"><i data-lucide="dollar-sign"></i></div>
+        </div>
+        <div class="stat-num" style="font-size:14px;font-weight:600">${esc(wtp)}</div>
+        <div class="stat-label">Top WTP signal</div>
+      </div>
+    </section>
+  `;
+}
+
+function themesPanel(s) {
+  if (!s || s.count === 0) return '';
+  const themes = (s.themes || []).slice(0, 8).map(t =>
     `<div class="iv-theme-row"><span>${esc(t.label)}</span><span class="muted">${t.n}×</span></div>`,
   ).join('') || '<div class="muted" style="font-size:12px">No repeated solution themes yet.</div>';
-  const wtp = (s.willingness_to_pay || []).slice(0, 5).map(w =>
+  const wtp = (s.willingness_to_pay || []).slice(0, 8).map(w =>
     `<div class="iv-theme-row"><span>${esc(w.label)}</span><span class="muted">${w.n}×</span></div>`,
   ).join('') || '<div class="muted" style="font-size:12px">No WTP signals yet.</div>';
   return `
-    <section class="iv-summary-card card">
-      <h3>Themes (n=${s.count})</h3>
-      <div class="iv-theme-grid">
-        <div>
-          <h4>Current solutions</h4>
-          ${themes}
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <div><h3>Current solutions</h3><p>What they're using today</p></div>
         </div>
-        <div>
-          <h4>Willingness to pay</h4>
-          ${wtp}
+        <div class="card-body">${themes}</div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div><h3>Willingness to pay</h3><p>Price points mentioned</p></div>
         </div>
-        <div>
-          <h4>Rigour</h4>
-          <p class="iv-rigour-display">${(s.rigour_avg || 0).toFixed(1)}/5 avg</p>
-          <p class="muted" style="font-size:11px">Aim for ≥3.5 — Mom Test rigour means asking about the past, not the future.</p>
-        </div>
+        <div class="card-body">${wtp}</div>
       </div>
     </section>
   `;
@@ -110,37 +161,64 @@ function renderSummaryPanel(s) {
 
 function renderShell(topic, interviews, summary) {
   const cards = (interviews || []).map(renderInterviewCard).join('') ||
-    `<div class="empty-big" style="padding:20px"><h3>No interviews yet</h3><p>Click <b>+ New interview</b> to capture your first one.</p></div>`;
+    `<div class="empty-state" style="padding:28px">No interviews yet — click <b>+ New interview</b> above.</div>`;
   return `
     <header class="topbar">
       <div class="crumbs">
-        <a href="#/interviews">Interviews</a> ›
+        <a href="#/interviews">Interviews</a> /
         <strong>${esc(topic)}</strong>
-        <span class="muted" style="font-size:11px;margin-left:8px">${(interviews || []).length} on file</span>
       </div>
-      <div class="topbar-actions">
-        <button class="btn primary icon-btn" id="iv-new">
-          <i data-lucide="plus"></i> New interview
-        </button>
-      </div>
+      <div class="topbar-spacer"></div>
+      <button class="btn btn-primary btn-sm icon-btn" id="iv-new">
+        <i data-lucide="plus"></i> New interview
+      </button>
     </header>
 
-    <div class="iv-wrap">
-      <section class="iv-mom-test card">
-        <h3>The Mom Test (Fitzpatrick 2013) — never ask</h3>
-        <p class="muted" style="font-size:12px;margin-top:0">
-          ❌ "Would you use this?" · ❌ "Would you pay for this?" — people lie about future behaviour.
-        </p>
-        <h3 style="margin-top:14px">Always ask</h3>
-        <ul class="iv-mom-list">
-          ${MOM_TEST_PROMPTS.map(p => `<li>${esc(p)}</li>`).join('')}
-        </ul>
-      </section>
+    ${summaryStats(summary)}
 
-      ${renderSummaryPanel(summary)}
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>The Mom Test — never ask</h3>
+            <p>Fitzpatrick 2013 — past behaviour over future intent</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <p class="muted" style="font-size:12.5px;margin:0 0 10px">
+            ❌ "Would you use this?" · ❌ "Would you pay for this?"
+            — people lie about future behaviour.
+          </p>
+          <div class="muted" style="font-size:11px;letter-spacing:1px;font-weight:700;margin-bottom:6px">ALWAYS ASK</div>
+          <ul class="iv-mom-list" style="margin:0;padding-left:18px">
+            ${MOM_TEST_PROMPTS.map(p => `<li>${esc(p)}</li>`).join('')}
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div><h3>Why interviews</h3><p>Real 1:1 signal vs. social-media corpus</p></div>
+        </div>
+        <div class="card-body">
+          <p class="muted" style="font-size:12.5px;line-height:1.55;margin:0">
+            Captures who, persona, JTBD quote, current solution, willingness
+            to pay, and a Mom Test rigour self-rating per interview. The
+            PRD generator pulls quotes from this table when shipping the
+            "Customer voice" section.
+          </p>
+        </div>
+      </div>
+    </section>
 
-      <section class="iv-list">${cards}</section>
+    ${themesPanel(summary)}
+
+    <div class="section-head">
+      <div>
+        <h2>Interviews</h2>
+        <p>${(interviews || []).length} on file</p>
+      </div>
     </div>
+    <section class="iv-list">${cards}</section>
   `;
 }
 
@@ -150,7 +228,7 @@ function showInterviewModal({ topic, existing, onSave }) {
   const v = existing || {};
   wrap.innerHTML = `
     <div class="iv-modal">
-      <header><h3>${existing ? 'Edit' : 'New'} interview</h3><button class="btn-mini iv-modal-close">×</button></header>
+      <header><h3>${existing ? 'Edit' : 'New'} interview</h3><button class="btn btn-ghost btn-xs btn-bordered iv-modal-close">×</button></header>
       <label>Interviewee name
         <input id="iv-name" type="text" value="${esc(v.interviewee_name || '')}" placeholder="e.g. Sarah K."/>
       </label>
@@ -205,8 +283,8 @@ function showInterviewModal({ topic, existing, onSave }) {
         </label>
       </div>
       <footer>
-        <button class="btn iv-modal-cancel">Cancel</button>
-        <button class="btn primary iv-modal-save">${existing ? 'Save changes' : 'Create interview'}</button>
+        <button class="btn btn-ghost btn-sm btn-bordered iv-modal-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm iv-modal-save">${existing ? 'Save changes' : 'Create interview'}</button>
       </footer>
     </div>
   `;
@@ -311,9 +389,11 @@ async function renderTopicInterviews(root, topic) {
 async function renderPicker(root) {
   root.innerHTML = `
     <header class="topbar">
-      <div class="crumbs"><strong>Customer Discovery Interviews</strong> · Mom Test, Fitzpatrick 2013</div>
+      <div class="crumbs">Workspace / <strong>Customer Discovery Interviews</strong></div>
+      <div class="topbar-spacer"></div>
+      <span class="muted" style="font-size:12px">Mom Test, Fitzpatrick 2013</span>
     </header>
-    <div class="iv-wrap"><div id="iv-pick-mount"><div class="empty-state">loading…</div></div></div>
+    <div id="iv-pick-mount"><div class="empty-state">loading…</div></div>
   `;
 
   let topics = [];
@@ -327,22 +407,27 @@ async function renderPicker(root) {
       <div class="empty-big">
         <h3>No topics yet</h3>
         <p>Create or pick a topic first — interviews are scoped to a topic so they sit alongside the corpus.</p>
-        <a class="btn primary" href="#/topics">Open Topics</a>
+        <a class="btn btn-primary btn-sm" href="#/topics">Open Topics</a>
       </div>`;
     return;
   }
   const opts = topics.map(t => `<option value="${esc(t.topic)}">${esc(t.topic)} · ${t.posts || 0} posts</option>`).join('');
   $('#iv-pick-mount', root).innerHTML = `
-    <div class="iv-picker card">
-      <h2>Open interviews for a topic</h2>
-      <p class="muted" style="font-size:13px;line-height:1.6;max-width:680px">
-        Real 1:1 user interviews — distinct from your collected social-media corpus.
-        Capture the raw notes here so the PRD can quote them later.
-      </p>
-      <div class="row" style="gap:8px;margin-top:14px;align-items:center">
-        <label for="iv-topic-pick" class="muted">Topic</label>
-        <select id="iv-topic-pick">${opts}</select>
-        <button class="btn primary" id="iv-go">Open →</button>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h3>Open interviews for a topic</h3>
+          <p>Real 1:1 user interviews — distinct from your social-media corpus</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="muted" style="font-size:13px;line-height:1.6;margin:0 0 14px">
+          Capture the raw notes here so the PRD can quote them later.
+        </p>
+        <div class="row">
+          <select id="iv-topic-pick" style="flex:1;min-width:240px">${opts}</select>
+          <button class="btn btn-primary btn-sm" id="iv-go">Open →</button>
+        </div>
       </div>
     </div>
   `;

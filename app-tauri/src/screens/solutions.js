@@ -329,22 +329,28 @@ export async function loadSolutions(contentEl, topic) {
     set('<div class="empty-state">loading…</div>');
   }
 
-  const painpoints = await fetchSolutionsData(topic);
+  // Bundled fetch — was 1 + 2*N round-trips (one per painpoint × interventions
+  // × papers). Now a single Tauri call that returns pre-stitched cards.
+  let bundle;
+  try {
+    bundle = await api.solutionsDataBundle(topic);
+  } catch (e) {
+    if (paintedFromCache) return;
+    set(`<div class="empty-big"><h3>Couldn't load solutions</h3><p>${escape(e?.message || e)}</p></div>`);
+    return;
+  }
   if (contentEl.dataset.tab !== 'solutions') return;
+  const bundledPainpoints = bundle?.painpoints || [];
 
-  if (!painpoints.length) {
+  if (!bundledPainpoints.length) {
     if (paintedFromCache) return;   // keep stale-but-valid paint
     set(`<div class="empty-state"><p>No painpoints found for <b>${escape(topic)}</b>. Build the gap map first.</p></div>`);
     return;
   }
 
-  // Check whether any solutions exist — if not, show "run pipeline" CTA.
-  const anySolutions = await api.runQuery(
-    "SELECT count(*) AS c FROM graph_nodes WHERE topic = :topic AND kind = 'intervention'",
-    topic,
-  );
-  if (contentEl.dataset.tab !== 'solutions') return;
-  const haveSolutions = (anySolutions?.[0]?.c || 0) > 0;
+  // Any interventions across all painpoints? Cheap check on the bundle —
+  // no extra round-trip needed (was a separate run_query before).
+  const haveSolutions = bundledPainpoints.some(c => (c.interventions || []).length > 0);
 
   if (!haveSolutions) {
     if (paintedFromCache) return;   // keep stale-but-valid paint
@@ -388,17 +394,9 @@ export async function loadSolutions(contentEl, topic) {
     return;
   }
 
-  // Fetch interventions + papers for each painpoint, then cache the
-  // structured cards so the next visit paints from localStorage.
-  const cards = await Promise.all(painpoints.map(async pp => {
-    const [interventions, papers] = await Promise.all([
-      fetchInterventionsForPainpoint(topic, pp.painpoint_id),
-      fetchPapersForPainpoint(topic, pp.painpoint_id),
-    ]);
-    return { pp, interventions, papers };
-  }));
-  if (contentEl.dataset.tab !== 'solutions') return;
-
-  if (cards.length > 0) writeScreenCache(CACHE_KEY, cards);
-  renderCards(cards);
+  // Persist + render the bundle. The bundle's shape already matches what
+  // renderCards wants (`{ pp, interventions, papers }`), so no per-painpoint
+  // fan-out — it's just a write + render.
+  if (bundledPainpoints.length > 0) writeScreenCache(CACHE_KEY, bundledPainpoints);
+  renderCards(bundledPainpoints);
 }

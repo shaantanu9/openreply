@@ -1049,16 +1049,16 @@ export async function renderProductDashboard(root, { params }) {
     <div id="pd-header"></div>
     <div class="pd-discovery-toolbar">
       <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/empathy/${esc(encodeURIComponent(id))}">
-        <i data-lucide="users"></i> Empathy map
+        <i data-lucide="users"></i> Empathy Map
       </a>
       <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/interviews/${esc(encodeURIComponent(id))}">
         <i data-lucide="mic"></i> Interviews
       </a>
       <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/pmf/${esc(encodeURIComponent(id))}">
-        <i data-lucide="bar-chart-3"></i> PMF survey
+        <i data-lucide="bar-chart-3"></i> PMF Survey
       </a>
       <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/pricing/${esc(encodeURIComponent(id))}">
-        <i data-lucide="dollar-sign"></i> Pricing surveys
+        <i data-lucide="dollar-sign"></i> Pricing Surveys
       </a>
       <a class="btn btn-ghost btn-sm btn-bordered icon-btn" href="#/estimate/${esc(encodeURIComponent(id))}">
         <i data-lucide="calculator"></i> PERT &amp; cost

@@ -155,6 +155,9 @@ export async function mountCollectStatusBar() {
     'collect:queue:enqueued',
     'collect:queue:dequeued',
     'collect:queue:cancelled',
+    // Sweeper / start_collect dropped a stale lock — refresh so the
+    // "Collecting now: …" row vanishes immediately.
+    'collect:orphan:reaped',
   ]) {
     try {
       const off = await listen(evt, () => refresh());

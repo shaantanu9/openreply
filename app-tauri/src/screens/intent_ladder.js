@@ -1,4 +1,5 @@
-// Intent action-ladder card — shown at the top of every topic page.
+// Intent action-ladder card — mounted in #intent-ladder-host below the tab
+// strip on the Home tab (see topic.js `#topic-home-chrome`).
 // Reads the topic's intent preset, checks completion state for each step
 // via topic_intent_get, and renders a 3-4 step ladder where each step is:
 //   ✓ done      (green, no button)
@@ -237,6 +238,38 @@ const NODE_GROUPS = {
   semantic: { label: 'Extracted', kinds: ['painpoint', 'workaround', 'feature_wish', 'product', 'mechanism', 'intervention', 'evidence_paper', 'source_sentiment', 'insight', 'concept', 'temporal_gap'] },
 };
 
+/** Pretty labels for post `source_type` counts (matches topic header badges). */
+const SOURCE_TYPE_LABELS = {
+  reddit: 'Reddit',
+  hn: 'Hacker News',
+  arxiv: 'arXiv',
+  openalex: 'OpenAlex',
+  pubmed: 'PubMed',
+  scholar: 'Scholar',
+  appstore: 'App Store',
+  playstore: 'Play Store',
+  devto: 'Dev.to',
+  stackoverflow: 'Stack Overflow',
+  github: 'GitHub',
+  gnews: 'Google News',
+  trends: 'Trends',
+  trustpilot: 'Trustpilot',
+  producthunt: 'Product Hunt',
+  alternativeto: 'AlternativeTo',
+  ingest: 'Ingest',
+};
+
+function labelForSourceType(raw) {
+  const k = String(raw ?? '').trim().toLowerCase();
+  return SOURCE_TYPE_LABELS[k] || k.replace(/_/g, ' ') || 'unknown';
+}
+
+function humanizeEdgeKind(kind) {
+  return String(kind ?? '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 const NODE_META = {
   post:             { label: 'Posts',           icon: 'file-text' },
   comment:          { label: 'Comments',        icon: 'message-circle' },
@@ -302,24 +335,51 @@ async function mountCoverage(host, topic) {
     `;
   };
 
-  // Source-type row (posts broken down by where they came from)
-  const srcRow = sources.length
-    ? `<div class="intent-cov-sources">
-         ${sources.map(s => `<span class="intent-cov-src" title="${escape(s.source_type)}: ${s.c}">
-           <span class="intent-cov-src-name">${escape(s.source_type)}</span>
-           <span class="intent-cov-src-n">${Number(s.c).toLocaleString()}</span>
-         </span>`).join('')}
-       </div>`
+  const sourcesSorted = [...sources].sort(
+    (a, b) => Number(b.c) - Number(a.c),
+  );
+
+  const srcRow = sourcesSorted.length
+    ? `<section class="intent-cov-breakdown intent-cov-breakdown-sources" aria-label="Post counts by ingest source">
+         <header class="intent-cov-breakdown-head">
+           <strong>Corpus sources</strong>
+           <span class="intent-cov-breakdown-hint">where posts in this topic came from</span>
+         </header>
+         <ul class="intent-cov-src-list">
+           ${sourcesSorted.map((s) => {
+             const key = escape(s.source_type);
+             const label = escape(labelForSourceType(s.source_type));
+             const n = Number(s.c).toLocaleString();
+             return `<li class="intent-cov-src-row">
+               <span class="intent-cov-src-name" title="${key}">${label}</span>
+               <span class="intent-cov-src-n">${n}</span>
+             </li>`;
+           }).join('')}
+         </ul>
+       </section>`
     : '';
 
-  // Edge summary — only show kinds with >0, kept compact
-  const edgeRow = edges.filter(e => e.c > 0).length
-    ? `<div class="intent-cov-edges">
-         <span class="intent-cov-edges-label">Relations:</span>
-         ${edges.filter(e => e.c > 0).map(e =>
-           `<span class="intent-cov-edge" title="${escape(e.kind)}: ${e.c}">${escape(e.kind)} <b>${Number(e.c).toLocaleString()}</b></span>`
-         ).join('')}
-       </div>`
+  const edgesPositive = [...edges].filter((e) => Number(e.c) > 0);
+  edgesPositive.sort((a, b) => Number(b.c) - Number(a.c));
+
+  const edgeRow = edgesPositive.length
+    ? `<section class="intent-cov-breakdown intent-cov-breakdown-edges" aria-label="Graph relation counts">
+         <header class="intent-cov-breakdown-head">
+           <strong>Graph relations</strong>
+           <span class="intent-cov-breakdown-hint">edge types linking findings in the gap map</span>
+         </header>
+         <ul class="intent-cov-edge-chips">
+           ${edgesPositive
+             .map(
+               (e) => `
+             <li class="intent-cov-edge-chip" title="${escape(e.kind)}: ${e.c}">
+               <span class="intent-cov-edge-label">${escape(humanizeEdgeKind(e.kind))}</span>
+               <span class="intent-cov-edge-n">${Number(e.c).toLocaleString()}</span>
+             </li>`,
+             )
+             .join('')}
+         </ul>
+       </section>`
     : '';
 
   host.innerHTML = `

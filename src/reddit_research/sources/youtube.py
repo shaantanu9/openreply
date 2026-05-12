@@ -9,7 +9,9 @@ adapter in ``collect_adapter.py`` works unchanged.
 """
 from __future__ import annotations
 
+import html
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -138,6 +140,234 @@ def _comments_via_ytdlp(video_id: str, video_title: str, limit: int) -> list[dic
     return rows
 
 
+# ── transcript / description (yt-dlp only) ─────────────────────────────────
+#
+# The persona-agents ingest in src/reddit_research/persona/ingest.py reads
+# `posts.title` + `posts.selftext` from rows joined to a topic. To let a
+# persona learn from the *content* of a video (not just its comments) we
+# fetch the auto-captions + description from yt-dlp and emit additional
+# posts rows. Each transcript is split into ~1400-char chunks so it lines
+# up with the ingest body trim (1500 chars at ingest.py:194) and so a single
+# 30-min video doesn't dominate ChromaDB recall.
+
+_TC_LINE_RE       = re.compile(r"^\s*\d{1,2}:\d{2}(?::\d{2})?(?:\.\d{1,3})?\s*-->")
+_INLINE_TAG_RE    = re.compile(r"<[^>]+>")                  # <c.colorE5E5E5>, <00:00:01.000>, etc.
+_TRANSCRIPT_MAX_CHUNKS = 24  # hard cap per video — protects against pathological long-form
+_TRANSCRIPT_CHUNK_CHARS = 1400  # < ingest.py body trim (1500) so chunks survive intact
+_TRANSCRIPT_LANG_PRIORITY = ("en", "en-US", "en-GB", "en-orig", "en-auto")
+
+
+def _vtt_to_text(vtt: str) -> str:
+    """Strip WebVTT headers, timecodes, cue settings, and inline tags.
+
+    YouTube's auto-captions are emitted as a karaoke-style stream where each
+    word has its own `<00:00:01.500>` inline timestamp; left in place that
+    triples the byte count and clutters the LLM prompt. We also drop the
+    file-level header block (everything before the first cue: ``WEBVTT``,
+    ``Kind: captions``, ``Language: en``, optional STYLE/REGION blocks) and
+    de-duplicate consecutive identical lines (yt-auto-captions repeat the
+    last line of each cue at the top of the next cue for accessibility).
+    """
+    if not vtt:
+        return ""
+    lines: list[str] = []
+    in_note = False
+    seen_first_cue = False
+    for raw in vtt.splitlines():
+        s = raw.strip()
+        if not s:
+            in_note = False
+            continue
+        if "-->" in s and _TC_LINE_RE.search(s):
+            seen_first_cue = True
+            continue
+        if not seen_first_cue:
+            # File header (WEBVTT, Kind:, Language:, STYLE/REGION/NOTE blocks)
+            # — drop everything before the first cue timing line.
+            continue
+        if s.upper().startswith("NOTE"):
+            in_note = True
+            continue
+        if in_note:
+            continue
+        cleaned = _INLINE_TAG_RE.sub("", s)
+        cleaned = html.unescape(cleaned).strip()
+        if not cleaned:
+            continue
+        if lines and lines[-1] == cleaned:
+            continue
+        lines.append(cleaned)
+    text = " ".join(lines)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _chunk_transcript(text: str, chunk_chars: int = _TRANSCRIPT_CHUNK_CHARS) -> list[str]:
+    """Split a long transcript into ~chunk_chars segments on sentence boundaries.
+
+    No overlap — we want each chunk to map to one persona memory without
+    duplicate-evidence noise polluting the union-find clustering in
+    persona/conclude.py.
+    """
+    if not text:
+        return []
+    if len(text) <= chunk_chars:
+        return [text]
+    # Sentence-ish split. Keep the punctuation; tolerate "Mr." etc. by not
+    # over-engineering — the trailing fragments get joined to the next chunk.
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks: list[str] = []
+    buf: list[str] = []
+    buf_len = 0
+    for sent in sentences:
+        if not sent:
+            continue
+        sl = len(sent) + 1
+        if buf_len + sl > chunk_chars and buf:
+            chunks.append(" ".join(buf).strip())
+            buf, buf_len = [], 0
+        # If a single "sentence" is itself longer than the cap (rare — long
+        # caption line with no punctuation), hard-slice it.
+        while sl > chunk_chars:
+            chunks.append(sent[:chunk_chars])
+            sent = sent[chunk_chars:]
+            sl = len(sent) + 1
+        buf.append(sent)
+        buf_len += sl
+    if buf:
+        chunks.append(" ".join(buf).strip())
+    return chunks[:_TRANSCRIPT_MAX_CHUNKS]
+
+
+def _pick_caption_url(captions: dict, languages: tuple[str, ...]) -> str | None:
+    """Return the first vtt URL matching the language priority list.
+
+    yt-dlp shapes both `subtitles` and `automatic_captions` as
+    ``{lang: [{ext, url, name, ...}, ...]}``. Prefer the ``vtt`` ext; fall
+    back to ``srv3``/``srv2``/``srv1`` (XML-ish) only if no vtt exists.
+    """
+    if not isinstance(captions, dict):
+        return None
+    # Build (lang, formats) ordered by priority + everything-else.
+    ordered_keys = [k for k in languages if k in captions]
+    for k in captions:
+        if k not in ordered_keys:
+            ordered_keys.append(k)
+    for lang in ordered_keys:
+        fmts = captions.get(lang) or []
+        for ext_pref in ("vtt", "srv3", "srv2", "srv1", "ttml"):
+            for f in fmts:
+                if (f.get("ext") or "").lower() == ext_pref and f.get("url"):
+                    return f["url"]
+    return None
+
+
+def _fetch_caption_text(url: str) -> str:
+    try:
+        r = httpx.get(url, timeout=20)
+        r.raise_for_status()
+    except httpx.HTTPError:
+        return ""
+    body = r.text or ""
+    # srv* / ttml formats are XML; do a coarse tag strip rather than building
+    # a full parser. Good enough to feed an LLM filter.
+    if "<transcript" in body or "<tt " in body or "<text " in body:
+        body = re.sub(r"<[^>]+>", " ", body)
+        body = html.unescape(body)
+        return re.sub(r"\s+", " ", body).strip()
+    return _vtt_to_text(body)
+
+
+def _video_meta_via_ytdlp(video_id: str, video_title: str) -> list[dict] | None:
+    """Fetch video description + transcript (manual subs > auto-captions) as
+    posts-shaped rows. Returns ``None`` if yt-dlp is unavailable; returns
+    ``[]`` if the video has neither a description nor any caption track.
+
+    The row shape mirrors :func:`_comments_via_ytdlp` so :func:`_persist`
+    needs no changes. Each row gets a distinct ``source_type`` so downstream
+    consumers (insights, persona-graph) can tell them apart from comments.
+    """
+    try:
+        import yt_dlp
+    except Exception:
+        return None
+    opts = _ytdlp_opts({
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": list(_TRANSCRIPT_LANG_PRIORITY),
+        "subtitlesformat": "vtt",
+        # Don't actually write files to disk; we only need the populated
+        # `subtitles` / `automatic_captions` dicts on the info object.
+        "allsubtitles": False,
+    })
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False) or {}
+    except Exception:
+        return None
+
+    title = (video_title or info.get("title") or "")[:200]
+    description = (info.get("description") or "").strip()
+    uploader = info.get("uploader") or info.get("channel") or "[channel]"
+    try:
+        upload_ts = float(info.get("epoch") or 0.0)
+    except (TypeError, ValueError):
+        upload_ts = 0.0
+
+    rows: list[dict] = []
+
+    if description:
+        rows.append({
+            "id": f"yt_{video_id}_desc",
+            "sub": f"youtube:{video_id}",
+            "source_type": "youtube_description",
+            "author": uploader,
+            "title": title,
+            "selftext": description[:4000],
+            "url": f"https://youtu.be/{video_id}",
+            "score": int(info.get("view_count") or 0),
+            "upvote_ratio": None,
+            "num_comments": int(info.get("comment_count") or 0),
+            "created_utc": upload_ts,
+            "is_self": 1,
+            "over_18": 0,
+            "flair": None,
+            "permalink": f"https://youtu.be/{video_id}",
+            "fetched_at": _now_iso(),
+        })
+
+    # Prefer human-uploaded subs; fall back to auto-captions.
+    cap_url = (
+        _pick_caption_url(info.get("subtitles") or {}, _TRANSCRIPT_LANG_PRIORITY)
+        or _pick_caption_url(info.get("automatic_captions") or {}, _TRANSCRIPT_LANG_PRIORITY)
+    )
+    if cap_url:
+        transcript = _fetch_caption_text(cap_url)
+        if transcript:
+            chunks = _chunk_transcript(transcript)
+            for i, chunk in enumerate(chunks):
+                rows.append({
+                    "id": f"yt_{video_id}_tx{i:02d}",
+                    "sub": f"youtube:{video_id}",
+                    "source_type": "youtube_transcript",
+                    "author": uploader,
+                    "title": f"{title} · transcript {i + 1}/{len(chunks)}"[:200],
+                    "selftext": chunk[:2000],
+                    "url": f"https://youtu.be/{video_id}",
+                    "score": int(info.get("view_count") or 0),
+                    "upvote_ratio": None,
+                    "num_comments": 0,
+                    "created_utc": upload_ts,
+                    "is_self": 1,
+                    "over_18": 0,
+                    "flair": None,
+                    "permalink": f"https://youtu.be/{video_id}",
+                    "fetched_at": _now_iso(),
+                })
+    return rows
+
+
 # ── YouTube Data API v3 backend (legacy fallback) ───────────────────────────
 
 def _api_key() -> str | None:
@@ -245,3 +475,18 @@ def fetch_youtube_comments(video_id: str, video_title: str = "", limit: int = 10
         if rows is not None:
             return rows
     return _comments_via_api(video_id, video_title, limit)
+
+
+def fetch_youtube_video_meta(video_id: str, video_title: str = "") -> list[dict]:
+    """Fetch description + transcript chunks for a video as posts rows.
+
+    yt-dlp only — the YouTube Data API v3 caption endpoint requires OAuth +
+    per-video billing, so transcripts only flow when yt-dlp is available.
+    Returns an empty list if yt-dlp is missing or the video has neither a
+    description nor any caption track. Callers should treat absence as a
+    soft miss (still ingest the comments) rather than an error.
+    """
+    if not _ytdlp_ready():
+        return []
+    rows = _video_meta_via_ytdlp(video_id, video_title)
+    return rows or []

@@ -134,10 +134,13 @@ def _tag_posts(topic: str, post_ids: list[str], source: str) -> int:
     except (TypeError, ValueError):
         gate_threshold = 0.28
 
-    # Local-file ingestion already carries explicit user intent ("ingest this
-    # file into this topic"), so semantic relevance gating can incorrectly
-    # drop the synthetic local_doc post and break provenance linking.
-    skip_relevance_gate = str(source or "").startswith("local:")
+    # Local-file ingestion and explicit persona-teach actions already carry
+    # explicit user intent ("ingest this file" / "teach this persona this
+    # video"), so semantic relevance gating can incorrectly drop the
+    # synthetic post and break provenance linking. The "teach:" prefix is
+    # set by persona.teach.teach_from_youtube.
+    src_str = str(source or "")
+    skip_relevance_gate = src_str.startswith("local:") or src_str.startswith("teach:")
     if (not skip_relevance_gate) and gate_threshold > 0 and post_ids:
         try:
             from .relevance import score_posts
@@ -338,6 +341,16 @@ def collect(
     # before anything fans out. We keep the user's original `topic` as the
     # storage key so the UI still labels it with what they typed; only search
     # queries use the canonical string.
+    #
+    # First call to `_canonicalize_topic` triggers an LLM round-trip on cache
+    # miss. With Ollama cold-start (first prompt after app boot) that can
+    # take 30-90 s, during which the UI shows zero progress and the user
+    # thinks the app is hung. Emit a `canonicalizing topic via LLM…` line
+    # before the call and a `→ canonical: "X"` line after, so the wait is
+    # legible. Cache hits return in <1 ms — `_canonicalize_topic` itself
+    # checks the SQLite cache before any provider call.
+    if progress:
+        progress(f"canonicalizing topic via LLM (first run may take ~30-60s on cold model)…")
     try:
         from .discover import _canonicalize_topic
         _canon = _canonicalize_topic(topic)
@@ -346,8 +359,17 @@ def collect(
             if (_canon.get("confidence") in ("high", "low"))
             else topic
         )
+        if progress and isinstance(_canon, dict):
+            _conf = _canon.get("confidence", "unknown")
+            _canonical = _canon.get("canonical") or topic
+            if _canonical and _canonical.strip().lower() != topic.strip().lower():
+                progress(f"  → canonical: \"{_canonical}\" (confidence: {_conf})")
+            else:
+                progress(f"  → canonical: \"{_canonical}\" (confidence: {_conf}, no rewrite)")
     except Exception:
         search_topic = topic
+        if progress:
+            progress("  ! canonicalize failed; using user-typed topic as-is")
     if search_topic != topic:
         result.errors.append(
             f"info: search using canonical '{search_topic}' (user typed '{topic}')"

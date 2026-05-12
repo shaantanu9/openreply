@@ -856,6 +856,7 @@ async function loadActiveCollect(root) {
 
 export async function renderTopicsList(root) {
   root.innerHTML = `
+    <div class="topics-page">
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Topics</strong></div>
       <div class="topbar-spacer"></div>
@@ -867,12 +868,39 @@ export async function renderTopicsList(root) {
     </header>
     <div class="section-head">
       <div><h2>All topics</h2><p id="topics-count">Loading…</p></div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="topics-filter" placeholder="Filter by name…" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;font-size:var(--fs-13);font-family:inherit;background:var(--surface)" />
+      <div class="filter-bar topics-toolbar">
+        <input id="topics-filter" type="search" autocomplete="off" class="topics-field topics-field--pill topics-field--search" placeholder="Search topics…" />
+        <select id="topics-sort" class="topics-field topics-field--pill" aria-label="Sort topics">
+          <option value="updated_desc">Latest activity</option>
+          <option value="posts_desc">Most posts</option>
+          <option value="pains_desc">Most painpoints</option>
+          <option value="name_asc">Name A-Z</option>
+        </select>
+        <select id="topics-filter-status" class="topics-field topics-field--pill" aria-label="Filter by corpus">
+          <option value="all">All</option>
+          <option value="with_posts">With posts</option>
+          <option value="with_pains">With painpoints</option>
+          <option value="with_sources">With sources</option>
+        </select>
+        <select id="topics-page-size" class="topics-field topics-field--pill" aria-label="Topics per page">
+          <option value="12">12 / page</option>
+          <option value="24" selected>24 / page</option>
+          <option value="48">48 / page</option>
+        </select>
         <button class="btn btn-primary btn-sm icon-btn" id="topics-new"><i data-lucide="plus"></i> New topic</button>
       </div>
     </div>
-    <div id="topics-grid-slot"><div class="empty-state" style="padding:24px">loading…</div></div>
+    <div class="card topics-quick-card">
+      <div class="topics-quick-row">
+        <input id="topics-quick-create" type="text" class="topics-field topics-field--grow" placeholder="Quick create — e.g. Bloomberg NSE" />
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="topics-quick-open"><i data-lucide="sparkles"></i> Open in creator</button>
+        <button class="btn btn-primary btn-sm icon-btn" id="topics-quick-create-btn"><i data-lucide="plus"></i> Create</button>
+      </div>
+      <p class="topics-quick-tip">Press Enter for a fast path. Duplicates are checked in the creator flow.</p>
+    </div>
+    <div id="topics-grid-slot"><div class="empty-state">loading…</div></div>
+    <div id="topics-pagination" class="topics-pagination" aria-live="polite"></div>
+    </div>
   `;
   root.querySelector('#topics-new').onclick = () => window.gapmapOpenNewTopic?.();
   root.querySelector('#topics-bell').onclick = () => { location.hash = '#/activity'; };
@@ -880,13 +908,42 @@ export async function renderTopicsList(root) {
   window.refreshIcons?.();
 
   const slot = root.querySelector('#topics-grid-slot');
+  const paginationEl = root.querySelector('#topics-pagination');
   const countEl = root.querySelector('#topics-count');
   const filterInput = root.querySelector('#topics-filter');
+  const sortSelect = root.querySelector('#topics-sort');
+  const statusSelect = root.querySelector('#topics-filter-status');
+  const pageSizeSelect = root.querySelector('#topics-page-size');
+  const quickCreateInput = root.querySelector('#topics-quick-create');
+  const quickCreateBtn = root.querySelector('#topics-quick-create-btn');
+  const quickOpenBtn = root.querySelector('#topics-quick-open');
+
+  const normalizeTopicInput = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const openCreateModalPrefilled = (topicName) => {
+    window.gapmapOpenNewTopic?.();
+    if (!topicName) return;
+    setTimeout(() => {
+      const input = document.getElementById('new-topic-input');
+      if (!input) return;
+      input.value = topicName;
+      input.focus();
+      input.select?.();
+    }, 80);
+  };
 
   let topics = [];
+  let filtered = [];
+  let page = 1;
+  let pageSize = Number(pageSizeSelect.value) || 24;
+  let lastGridHtml = '';
+  let lastPagerHtml = '';
+
   try {
     const r = await api.listTopics();
-    topics = Array.isArray(r) ? r : [];
+    topics = (Array.isArray(r) ? r : []).map((t) => ({
+      ...t,
+      _topicNorm: (t.topic || '').toLowerCase(),
+    }));
   } catch (e) {
     const msg = (e?.message || e || '').toString();
     // "no such table: topic_posts" means no collect has ever been run —
@@ -906,18 +963,75 @@ export async function renderTopicsList(root) {
         </div>`;
     slot.querySelector('#topics-empty-new')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
     slot.querySelector('#topics-empty-retry')?.addEventListener('click', () => renderTopicsList(root));
+    paginationEl.innerHTML = '';
     window.refreshIcons?.();
     return;
   }
 
-  const paint = (list) => {
-    countEl.textContent = `${list.length} ${list.length === 1 ? 'topic' : 'topics'}`;
-    if (!list.length) {
-      const filtering = filterInput.value.trim().length > 0;
+  const sortRows = (rows) => {
+    const key = sortSelect.value;
+    const out = rows.slice();
+    if (key === 'name_asc') out.sort((a, b) => (a._topicNorm || '').localeCompare(b._topicNorm || ''));
+    else if (key === 'posts_desc') out.sort((a, b) => (b.posts || 0) - (a.posts || 0));
+    else if (key === 'pains_desc') out.sort((a, b) => (b.painpoints || 0) - (a.painpoints || 0));
+    else out.sort((a, b) => (new Date(b.last_collect_at || 0).getTime() || 0) - (new Date(a.last_collect_at || 0).getTime() || 0));
+    return out;
+  };
+
+  const applyFilters = () => {
+    const q = filterInput.value.trim().toLowerCase();
+    const status = statusSelect.value;
+    const base = topics.filter((t) => {
+      if (q && !t._topicNorm.includes(q)) return false;
+      if (status === 'with_posts' && !(t.posts > 0)) return false;
+      if (status === 'with_pains' && !(t.painpoints > 0)) return false;
+      if (status === 'with_sources' && !(t.sources > 0)) return false;
+      return true;
+    });
+    filtered = sortRows(base);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    if (page > totalPages) page = totalPages;
+  };
+
+  const renderPagination = () => {
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const from = total === 0 ? 0 : ((page - 1) * pageSize) + 1;
+    const to = Math.min(total, page * pageSize);
+    const html = `
+      <span class="topics-pagination-meta">${from}-${to} of ${total}</span>
+      <div class="topics-pagination-controls">
+        <button class="btn btn-ghost btn-sm btn-bordered" id="topics-page-prev" ${page <= 1 ? 'disabled' : ''}>Prev</button>
+        <span class="topics-pagination-meta">Page ${page} / ${totalPages}</span>
+        <button class="btn btn-ghost btn-sm btn-bordered" id="topics-page-next" ${page >= totalPages ? 'disabled' : ''}>Next</button>
+      </div>
+    `;
+    if (html !== lastPagerHtml) {
+      paginationEl.innerHTML = html;
+      lastPagerHtml = html;
+    }
+    paginationEl.querySelector('#topics-page-prev')?.addEventListener('click', () => {
+      if (page <= 1) return;
+      page -= 1;
+      paint();
+    });
+    paginationEl.querySelector('#topics-page-next')?.addEventListener('click', () => {
+      const max = Math.max(1, Math.ceil(filtered.length / pageSize));
+      if (page >= max) return;
+      page += 1;
+      paint();
+    });
+  };
+
+  const paint = () => {
+    applyFilters();
+    countEl.textContent = `${filtered.length} ${filtered.length === 1 ? 'topic' : 'topics'}`;
+    if (!filtered.length) {
+      const filtering = filterInput.value.trim().length > 0 || statusSelect.value !== 'all';
       slot.innerHTML = filtering
         ? `<div class="empty-big">
              <h3>No matching topics</h3>
-             <p>Try clearing the filter, or start a new one.</p>
+             <p>Try changing filters, or start a new one.</p>
              <button class="btn btn-primary icon-btn" id="topics-empty-new"><i data-lucide="plus"></i> Start new topic</button>
            </div>`
         : `<div class="empty-big">
@@ -926,22 +1040,59 @@ export async function renderTopicsList(root) {
              <button class="btn btn-primary icon-btn" id="topics-empty-new"><i data-lucide="plus"></i> Start new topic</button>
            </div>`;
       slot.querySelector('#topics-empty-new')?.addEventListener('click', () => window.gapmapOpenNewTopic?.());
+      paginationEl.innerHTML = '';
+      lastPagerHtml = '';
       window.refreshIcons?.();
       return;
     }
-    slot.innerHTML = `<section class="topic-grid">${list.map((t, i) => topicTile(t, i)).join('')}</section>`;
+
+    const start = (page - 1) * pageSize;
+    const pageRows = filtered.slice(start, start + pageSize);
+    const gridHtml = `<section class="topic-grid">${pageRows.map((t, i) => topicTile(t, i + start)).join('')}</section>`;
+    if (gridHtml !== lastGridHtml) {
+      setHTMLIfChanged(slot, gridHtml);
+      lastGridHtml = gridHtml;
+    }
     slot.querySelectorAll('.topic-tile').forEach(el => {
       el.addEventListener('click', () => { location.hash = el.dataset.href; });
     });
+    renderPagination();
     window.refreshIcons?.();
   };
 
-  paint(topics);
+  paint();
 
+  let filterDebounce = null;
   filterInput.addEventListener('input', () => {
-    const q = filterInput.value.trim().toLowerCase();
-    if (!q) return paint(topics);
-    paint(topics.filter(t => (t.topic || '').toLowerCase().includes(q)));
+    clearTimeout(filterDebounce);
+    filterDebounce = setTimeout(() => {
+      page = 1;
+      paint();
+    }, 120);
+  });
+  sortSelect.addEventListener('change', () => { page = 1; paint(); });
+  statusSelect.addEventListener('change', () => { page = 1; paint(); });
+  pageSizeSelect.addEventListener('change', () => {
+    pageSize = Number(pageSizeSelect.value) || 24;
+    page = 1;
+    paint();
+  });
+
+  const submitQuickCreate = () => {
+    const topic = normalizeTopicInput(quickCreateInput.value);
+    if (!topic) {
+      quickCreateInput.focus();
+      return;
+    }
+    openCreateModalPrefilled(topic);
+  };
+  quickOpenBtn?.addEventListener('click', submitQuickCreate);
+  quickCreateBtn?.addEventListener('click', submitQuickCreate);
+  quickCreateInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitQuickCreate();
+    }
   });
 }
 

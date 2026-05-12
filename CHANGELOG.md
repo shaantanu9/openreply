@@ -49,3 +49,13 @@ Wired paper-pipeline actions into the Report tab UI and Tauri invoke bridge.
 - `app-tauri/src-tauri/src/commands.rs`
 - `app-tauri/src-tauri/src/main.rs`
 - `CHANGELOG.md`
+
+## [2026-05-01a]
+Fixed warm-daemon LLM settings reload so newly saved NVIDIA defaults are picked up without restarting the app.
+
+### Added
+- `tests/test_cli_daemon_env.py`
+
+### Changed
+- `src/reddit_research/cli/main.py`
+- `CHANGELOG.md`

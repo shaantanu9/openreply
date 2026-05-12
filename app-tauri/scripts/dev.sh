@@ -27,7 +27,11 @@ SELF_PID=$$
 USER_ID=$(id -u)
 
 # ── 1. find every cargo / rustc / tauri-cli we own ─────────────────────────
-mapfile -t STALE < <(ps -u "$USER_ID" -o pid=,comm= 2>/dev/null \
+# Bash 3.2 (macOS default) has no mapfile; use a portable read loop.
+STALE=()
+while IFS= read -r _pid; do
+  [[ -n "$_pid" ]] && STALE+=("$_pid")
+done < <(ps -u "$USER_ID" -o pid=,comm= 2>/dev/null \
   | awk '$2 ~ /(cargo|rustc|tauri-cli)$/ { print $1 }' \
   | grep -v "^${SELF_PID}\$" || true)
 
@@ -50,4 +54,7 @@ fi
 
 # ── 3. hand off to the real tauri dev ─────────────────────────────────────
 cd "$(dirname "$0")/.."
+if [[ -x ./node_modules/.bin/tauri ]]; then
+  exec ./node_modules/.bin/tauri dev "$@"
+fi
 exec npx tauri dev "$@"

@@ -29,7 +29,7 @@ function renderSectionList(rows) {
 function renderCitations(items) {
   if (!items || !items.length) return '';
   return `
-    <h3>Citations</h3>
+    <p class="why-kicker">Citations</p>
     <ol class="why-cites">
       ${items.map(c => `<li>${esc(c)}</li>`).join('')}
     </ol>
@@ -45,6 +45,7 @@ function renderFrameworks(items) {
 
 function renderExplanation(e) {
   return `
+    <div class="why-page shell">
     <header class="topbar">
       <div class="crumbs">
         <a href="#/why">Why & Science</a> ›
@@ -83,11 +84,13 @@ function renderExplanation(e) {
         <a class="btn primary" href="#/why">← Browse all page explanations</a>
       </section>
     </div>
+    </div>
   `;
 }
 
 function renderIndex(rows) {
   return `
+    <div class="why-page shell">
     <header class="topbar">
       <div class="crumbs"><strong>Why & Science</strong> · explainers for every screen</div>
     </header>
@@ -99,6 +102,7 @@ function renderIndex(rows) {
       <section class="why-section card">
         <ul class="why-index">${renderSectionList(rows)}</ul>
       </section>
+    </div>
     </div>
   `;
 }

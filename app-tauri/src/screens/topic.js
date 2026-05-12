@@ -754,6 +754,8 @@ async function openSourcePickerModal(topic) {
     // cause: bug 2026-04-20 where selecting only playstore still searched
     // Reddit).
     void includeReddit; void externalSources; void aggressive; void checked;
+    // Close immediately so the modal never lingers over the collect screen.
+    close();
     location.hash = `#/collect/${encodeURIComponent(topic)}`;
   };
 }
@@ -1029,34 +1031,6 @@ export async function renderTopic(root, { params }) {
       </div>
     </header>
 
-    <!-- Home-tab chrome. Wraps three panels (intent ladder, extraction
-         prefs override row, coverage gaps) that used to sit globally above
-         the tab strip and were cluttering every non-Home tab. Now one
-         hideable block, shown only when activeTab equals home. Painters
-         (mountIntentLadder, _renderExtractionOverrideRow, coverage-gaps)
-         keep their existing id hooks so none of them need to change. -->
-    <div id="topic-home-chrome" data-home-chrome="1">
-      <!-- Intent action-ladder card (per-topic deliverable routing).
-           Spec: docs/superpowers/specs/2026-04-21-intent-layer.md. Shows
-           the user WHAT they're producing and a 3-4 step path to get
-           there. Every tab stays accessible — intent is a lens, not a gate. -->
-      <div id="intent-ladder-host"></div>
-
-      <!-- Task 9.5 — Extraction prefs override row. Tiny one-liner:
-           "This topic uses: Auto · 100 posts · batch 5 · [Override]".
-           The Override button toggles an inline popover with the 3 core
-           sliders scoped to this topic. Writes through extractionPrefsSet
-           with scope="topic:<slug>". -->
-      <div id="extract-override-row" style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:6px 0 4px;font-size:12.5px;color:var(--ink-3);border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);display:none" data-role="extract-override"></div>
-
-      <!-- Coverage gaps panel. "+ Add X" buttons fire
-           api.startCollect(topic, false, [src], false). Hidden when there
-           are no gaps. Moved inside the home-chrome wrapper 2026-04-24 so
-           Map/Report/etc don't show an enrichment strip that belongs to
-           the Home overview. -->
-      <div class="coverage-gaps" id="coverage-gaps" hidden></div>
-    </div>
-
     <!-- Topic tabs: always visible, horizontally scrollable.
          Restores the pre-dropdown flow so Home/Map/Evidence/etc are directly
          discoverable without hidden menu interaction. -->
@@ -1078,6 +1052,17 @@ export async function renderTopic(root, { params }) {
       <button type="button" class="tab" data-tab="search"><i data-lucide="search-code"></i> Search<span class="tab-freshness" id="tab-fresh-search"></span></button>
       <button type="button" class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
       <button type="button" class="tab" data-tab="ai_analyses"><i data-lucide="sparkles"></i> AI Analyses<span class="tab-freshness" id="tab-fresh-ai"></span></button>
+    </div>
+
+    <!-- Home-tab chrome sits *below* the tab strip so Home reads as:
+         pick tab → see overview (ladder + coverage) → scroll into tab body.
+         Hidden on non-Home tabs via syncHomeChromeVisibility(). -->
+    <div id="topic-home-chrome" data-home-chrome="1">
+      <div id="intent-ladder-host"></div>
+
+      <div id="extract-override-row" style="display:flex;align-items:center;gap:8px;padding:6px 10px;margin:6px 0 4px;font-size:12.5px;color:var(--ink-3);border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);display:none" data-role="extract-override"></div>
+
+      <div class="coverage-gaps" id="coverage-gaps" hidden></div>
     </div>
 
     <div id="tab-content"><div class="empty-state">loading…</div></div>
@@ -4497,11 +4482,9 @@ export async function renderTopic(root, { params }) {
     // render. See `writeIfTab()` helper further down — the fix for stale
     // tab content was spec'd here on 2026-04-20.
     contentEl.dataset.tab = name;
-    // Show the home-chrome wrapper (intent ladder + extraction override +
-    // coverage gaps) only on the Home tab. Declutters Map/Report/etc while
-    // keeping every element reachable. Painters inside the wrapper continue
-    // running in the background so the chrome is fully populated the moment
-    // the user switches back to Home.
+    // Home chrome (intent ladder + Gap Map coverage + extraction override +
+    // coverage gaps) lives below the tab strip; show only on Home so other
+    // tabs stay focused. DOM stays mounted — we only toggle display.
     syncHomeChromeVisibility(name);
     // Highlight primary tabs by data-tab match. Also highlight the More
     // button when a non-primary tab is active, so the user can see their
