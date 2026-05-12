@@ -871,6 +871,122 @@ async function mountIngestTab(host, persona) {
   });
 }
 
+// ─── orchestra dashboard (#/agents) ───────────────────────────────────────
+// Phase 4b — live multi-persona view. Auto-refreshes while visible so the
+// user sees memories landing in real-time during ingest. Cleans up its
+// interval when the user navigates away (route() reassigns main innerHTML
+// which orphans listeners; we use MutationObserver to detect that).
+
+export async function renderAgentsDashboard(root) {
+  root.innerHTML = `
+    <div class="screen-pad" style="padding:24px 28px 48px;max-width:1400px;margin:0 auto">
+      <div class="page-head" style="margin-bottom:18px;display:flex;align-items:flex-start;gap:14px">
+        <div style="flex:1">
+          <h1 style="font-size:28px;letter-spacing:-.01em;margin:0 0 6px">Agents orchestra</h1>
+          <p class="muted" style="margin:0;max-width:820px;line-height:1.55;font-size:13.5px">
+            All your active personas at a glance — what each has learned, their
+            most recent memory, their most-confident belief. Auto-refreshes every
+            5 seconds while this page is open so you can watch them learn in
+            real time during a collect.
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="ao-pulse" class="muted" style="font-size:11px">live · 5s</span>
+          <a href="#/personas" class="btn btn-ghost-bordered btn-sm" style="text-decoration:none">Manage personas</a>
+        </div>
+      </div>
+      <div id="ao-grid" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill, minmax(360px, 1fr))"></div>
+    </div>
+  `;
+
+  let interval = null;
+  let lastTickAt = 0;
+  let stopped = false;
+
+  async function tick() {
+    if (stopped) return;
+    lastTickAt = Date.now();
+    const r = unwrap(await api.personaList());
+    const rows = (r?.personas || []).filter(p => p.active);
+    const grid = $('#ao-grid', root);
+    if (!grid) return;
+    if (!rows.length) {
+      grid.innerHTML = '<div class="muted">no active personas — <a href="#/personas">create one</a>.</div>';
+      return;
+    }
+    // Fetch the per-persona latest memory + top conclusion in parallel
+    const enriched = await Promise.all(rows.map(async p => {
+      const [memRes, conRes] = await Promise.all([
+        api.personaMemories(p.id, { limit: 3 }).catch(() => null),
+        api.personaConclusions(p.id, 1).catch(() => null),
+      ]);
+      const mems = unwrap(memRes)?.memories || [];
+      const cons = unwrap(conRes)?.conclusions || [];
+      return { ...p, recentMems: mems, topConclusion: cons[0] || null };
+    }));
+    grid.innerHTML = enriched.map(p => orchestraCard(p)).join('');
+    refreshIcons();
+    const pulse = $('#ao-pulse', root);
+    if (pulse) pulse.textContent = `live · refreshed ${new Date().toLocaleTimeString()}`;
+  }
+
+  await tick();
+  interval = setInterval(tick, 5000);
+
+  // Auto-cleanup: when the route hands main over to another screen, the
+  // root subtree is replaced. Watch for that with a MutationObserver on
+  // root.parentElement (the route container itself isn't replaced; its
+  // children are). When root is detached, kill the interval.
+  const obs = new MutationObserver(() => {
+    if (!root.isConnected) {
+      stopped = true;
+      if (interval) clearInterval(interval);
+      obs.disconnect();
+    }
+  });
+  if (root.parentElement) obs.observe(root.parentElement, { childList: true, subtree: false });
+}
+
+function orchestraCard(p) {
+  const color = p.color || '#7c3aed';
+  const s = p.stats || {};
+  const recent = (p.recentMems || []).slice(0, 3);
+  const con = p.topConclusion;
+  return `
+    <div class="card persona-card" style="border-left:4px solid ${esc(color)};cursor:default">
+      <div class="card-body" style="padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="width:32px;height:32px;border-radius:8px;background:${esc(color)}22;color:${esc(color)};display:grid;place-items:center">
+            <i data-lucide="${esc(p.icon || 'sparkles')}"></i>
+          </div>
+          <div style="flex:1;min-width:0">
+            <a href="#/persona/${p.id}" style="text-decoration:none;color:inherit"><h3 style="margin:0;font-size:15px">${esc(p.name)}</h3></a>
+            <p class="muted" style="margin:1px 0 0;font-size:11px">lens: ${esc(p.lens)} · ${s.memories || 0} mem · ${s.edges || 0} edges · ${s.conclusions || 0} concl</p>
+          </div>
+          <a href="#/persona/${p.id}" class="btn btn-ghost-bordered btn-sm" style="text-decoration:none;font-size:11px">Open</a>
+        </div>
+        ${con ? `
+          <div style="margin:8px 0 10px;padding:8px 10px;background:${esc(color)}11;border-radius:6px">
+            <div style="font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:${esc(color)};margin-bottom:4px">TOP BELIEF · conf ${((con.confidence||0)).toFixed(2)}</div>
+            <div style="font-size:12.5px;line-height:1.4">${esc((con.statement || '').slice(0,220))}</div>
+          </div>
+        ` : ''}
+        <div style="font-size:11px;letter-spacing:.5px;text-transform:uppercase" class="muted">RECENT MEMORIES</div>
+        <div style="margin-top:6px">
+          ${recent.length === 0 ? '<div class="muted" style="font-size:12px;font-style:italic">(no memories yet)</div>' :
+            recent.map(m => `
+              <div style="font-size:12px;line-height:1.4;padding:5px 0;border-bottom:1px solid var(--line, #2a2a2a3a)">
+                <span class="muted" style="font-size:10px">[${esc(m.topic || '—')}] mem#${m.id}</span><br/>
+                ${esc((m.lesson || '').slice(0,180))}
+              </div>
+            `).join('')
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // ─── share modal ──────────────────────────────────────────────────────────
 
 async function openShareModal(fromPersona, memoryId) {

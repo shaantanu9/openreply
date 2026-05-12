@@ -113,7 +113,7 @@ import { renderGlobalCompetitors } from './screens/global_competitors.js';
 // ── Global collect status bar (running + queue) ──
 import { mountCollectStatusBar } from './components/CollectStatusBar.js';
 // ── Persona agents (Phase 1 — 2026-05-12) ──
-import { renderPersonas, renderPersona, setupPersonaAutoIngest } from './screens/personas.js';
+import { renderPersonas, renderPersona, renderAgentsDashboard, setupPersonaAutoIngest } from './screens/personas.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -167,6 +167,8 @@ const routes = [
   // ── Persona agents (Phase 1 — 2026-05-12) ──
   { match: /^\/personas\/?$/,               render: renderPersonas },
   { match: /^\/persona\/([0-9]+)\/?$/,      render: renderPersona },
+  // ── Agents orchestra (Phase 4b — 2026-05-12) ──
+  { match: /^\/agents\/?$/,                 render: renderAgentsDashboard },
 ];
 
 // Route generation counter — bumped on every navigation so screens can tell
