@@ -44,18 +44,19 @@ export function setupPersonaAutoIngest() {
   _autoIngestHookInstalled = true;
   api.onCollectDone(async (payload) => {
     if (!isPersonaAutoIngestEnabled()) return;
-    const topic = payload?.topic;
-    if (!topic) return;
-    // Debounce: collect:done can fire twice in tight succession on some
-    // resume paths. Throttle to once per 3s per topic.
+    // Phase 6b — Personas should learn from the WHOLE corpus, not just the
+    // topic just collected. The NOT-EXISTS dedup in _candidate_posts means
+    // each post is only LLM-filtered once per persona, so cross-topic
+    // sweeps are cheap — they only spend tokens on posts a given persona
+    // hasn't seen yet. Lets a memory landed under one topic still find
+    // links into a persona's lens from a different topic.
+    const topic = payload?.topic; // kept for logging only
     const now = Date.now();
     if (now - _lastAutoIngestAt < 3000) return;
     _lastAutoIngestAt = now;
     try {
-      // Fire-and-forget — the persona_ingest:* events stream regardless of
-      // whether anyone is listening, so the Ingest tab on a persona dashboard
-      // will pick up live progress if the user navigates to one.
-      await api.personaIngest({ topic, limit: 100 });
+      // topic intentionally omitted so the sidecar scans the full corpus.
+      await api.personaIngest({ limit: 200 });
     } catch (e) {
       console.warn('[persona auto-ingest] failed:', e);
     }
@@ -347,6 +348,71 @@ export async function renderPersona(root, { params } = {}) {
   $('#persona-head', root).innerHTML = renderHead(persona);
   refreshIcons();
 
+  // Phase 6c — Scan-all-corpus button. Streams persona_ingest:* events on
+  // the same channel the Ingest tab's log listens to, so switching to that
+  // tab while it runs shows the live progress.
+  const scanBtn = $('#scan-corpus', root);
+  const scanStatus = $('#scan-status', root);
+  if (scanBtn) {
+    let kept = 0, dropped = 0, errors = 0, running = false;
+    let progressUnsub = null, doneUnsub = null;
+    async function detach() {
+      if (progressUnsub) { try { await progressUnsub(); } catch {} progressUnsub = null; }
+      if (doneUnsub)     { try { await doneUnsub();     } catch {} doneUnsub = null; }
+    }
+    scanBtn.addEventListener('click', async () => {
+      if (running) return;
+      running = true;
+      kept = dropped = errors = 0;
+      scanBtn.disabled = true;
+      const orig = scanBtn.innerHTML;
+      scanBtn.innerHTML = '<i data-lucide="loader-2" style="width:12px;height:12px"></i>Scanning…';
+      refreshIcons();
+      scanStatus.textContent = 'starting…';
+      progressUnsub = await api.onPersonaIngestProgress(payload => {
+        const t = String(payload || '').trim();
+        if (!t) return;
+        try {
+          const ev = JSON.parse(t);
+          if (ev.event === 'start')   scanStatus.textContent = `0 / ${ev.candidates} posts processed`;
+          else if (ev.event === 'memory') { kept++; scanStatus.textContent = `${kept + dropped + errors} done — ${kept} learned`; }
+          else if (ev.event === 'skip')   { dropped++; scanStatus.textContent = `${kept + dropped + errors} done — ${kept} learned`; }
+          else if (ev.event === 'error')  { errors++; }
+        } catch {}
+      });
+      doneUnsub = await api.onPersonaIngestDone(async () => {
+        scanStatus.textContent = `scan done — ${kept} new memories${errors ? ` · ${errors} errors` : ''}`;
+        scanBtn.disabled = false;
+        scanBtn.innerHTML = orig;
+        refreshIcons();
+        running = false;
+        await detach();
+        // Refresh the head + currently-active tab so new counts/memories show
+        try {
+          const r = unwrap(await api.personaList());
+          const fresh = (r?.personas || []).find(p => p.id === persona.id);
+          if (fresh) {
+            Object.assign(persona, fresh);
+            $('#persona-head', root).innerHTML = renderHead(persona);
+            refreshIcons();
+            const active = $('.persona-tab-btn.active', root);
+            if (active) mountTab(active.dataset.tab, $('#persona-body', root), persona);
+          }
+        } catch {}
+      });
+      try {
+        await api.personaIngest({ personaId: persona.id, limit: 500 });
+      } catch (e) {
+        scanStatus.textContent = 'error: ' + String(e?.message || e);
+        scanBtn.disabled = false;
+        scanBtn.innerHTML = orig;
+        refreshIcons();
+        running = false;
+        await detach();
+      }
+    });
+  }
+
   const tabBtns = $$('.persona-tab-btn', root);
   tabBtns.forEach(b => b.addEventListener('click', () => {
     tabBtns.forEach(x => {
@@ -379,6 +445,13 @@ function renderHead(p) {
           <span><strong>${s.edges || 0}</strong> edges</span>
           <span><strong>${s.conclusions || 0}</strong> conclusions</span>
         </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <button id="scan-corpus" type="button" class="btn btn-primary btn-sm" title="Sweep the entire corpus across every topic — only posts this persona hasn't seen yet get LLM-filtered. Use this after creating a new persona, or whenever you want to surface cross-topic links to its lens.">
+          <i data-lucide="search" style="width:12px;height:12px"></i>
+          Scan all corpus
+        </button>
+        <span id="scan-status" class="muted" style="font-size:11px;min-height:14px;font-feature-settings:'tnum' 1"></span>
       </div>
     </div>
   `;

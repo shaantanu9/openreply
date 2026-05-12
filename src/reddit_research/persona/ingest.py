@@ -17,15 +17,29 @@ from .store import get_persona, list_personas
 
 _DISTILL_SYSTEM_TEMPLATE = (
     "{persona_system_prompt}\n\n"
-    "For each input post, decide whether it contains anything relevant to your lens "
-    "('{lens}'). If yes, distill the SINGLE most useful insight that fits your lens — "
-    "1-3 sentences, written as a generalised lesson (not a quote). Include a short "
-    "verbatim excerpt (≤200 chars) that supports the lesson, an importance score "
-    "(0..1), and 1-3 tag keywords.\n\n"
+    "Your job: for each input post, decide whether it contains a DIRECT or INDIRECT "
+    "link to your lens ('{lens}'). Be inclusive — a post about student stress can "
+    "still teach you about your lens if it mentions communication patterns, coping "
+    "behaviors, social dynamics, emotional language, or any related phenomenon. "
+    "Tangential is OK as long as you can extract a real insight.\n\n"
+    "link_type values:\n"
+    "  - 'direct'    — the post is primarily about your lens\n"
+    "  - 'indirect'  — the post is about something else but reveals a real "
+    "behavior/pattern relevant to your lens\n"
+    "  - 'tangential' — the post brushes against your lens through one detail "
+    "worth noting\n\n"
+    "{prior_memories_block}"
+    "If you find a link, distill ONE insight (1–3 sentences) written as a generalised "
+    "lesson — not a quote. If a prior memory above already covers this, write a "
+    "lesson that EVOLVES it (sharpens, qualifies, or extends), and list the prior "
+    "memory ids in `evolves_from`. If it's a brand-new angle, leave `evolves_from` "
+    "empty.\n\n"
     "Return ONLY valid JSON in this exact shape:\n"
-    '{{"relevant": <true|false>, "lesson": "<string>", "excerpt": "<string>", '
-    '"importance": <0..1>, "tags": ["<tag>", ...]}}\n'
-    "If not relevant, return: {{\"relevant\": false}}"
+    '{{"relevant": <true|false>, "link_type": "<direct|indirect|tangential>", '
+    '"lesson": "<string>", "excerpt": "<verbatim ≤200 chars>", '
+    '"importance": <0..1>, "tags": ["<tag>", ...], '
+    '"evolves_from": [<mem_id>, ...]}}\n'
+    'If no link at all, return: {{"relevant": false}}'
 )
 
 _USER_TEMPLATE = (
@@ -34,6 +48,33 @@ _USER_TEMPLATE = (
     "Title: {title}\n"
     "Body:\n{body}"
 )
+
+
+def _recent_memories_for_context(persona_id: int, k: int = 6) -> list[dict]:
+    """Top-K most-important recent memories — used as 'what you already know'
+    context in the distill prompt so new lessons evolve from old ones instead
+    of being amnesiac duplicates."""
+    db = get_db()
+    cur = db.execute(
+        "SELECT id, lesson, topic, importance FROM persona_memories "
+        "WHERE persona_id = ? "
+        "ORDER BY importance DESC, created_at DESC LIMIT ?",
+        [persona_id, int(k)],
+    )
+    cols = [c[0] for c in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _format_prior_memories_block(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+    lines = ["Memories you've already formed through this lens:"]
+    for m in rows:
+        lines.append(
+            f"  mem#{m['id']} (topic={m.get('topic') or '—'}, "
+            f"importance={m.get('importance') or 0:.2f}): {m.get('lesson') or ''}"
+        )
+    return "\n".join(lines) + "\n\n"
 
 
 def _now() -> str:
@@ -147,18 +188,64 @@ def _candidate_posts(
 
 
 def _store_memory(persona_id: int, post: dict, distilled: dict) -> int:
+    """Persist a memory + the link_type/evolves_from metadata from the wider-
+    link distillation (Phase 6a). link_type rides in the tags array as
+    'link:<direct|indirect|tangential>'; evolves_from is captured as
+    persona_edges rows with kind='builds_on' so the graph view shows the
+    inheritance trail."""
     db = get_db()
+    tags = list(distilled.get("tags") or [])
+    link_type = (distilled.get("link_type") or "").strip().lower()
+    if link_type in ("direct", "indirect", "tangential"):
+        tags = [f"link:{link_type}", *[t for t in tags if not str(t).startswith("link:")]]
+    tags = tags[:8]
     db["persona_memories"].insert({
         "persona_id": persona_id,
         "source_post_id": post.get("id"),
         "topic": post.get("topic") or "",
         "lesson": (distilled.get("lesson") or "").strip()[:1000],
         "excerpt": (distilled.get("excerpt") or "").strip()[:500],
-        "tags": json.dumps(distilled.get("tags") or [])[:500],
+        "tags": json.dumps(tags)[:500],
         "importance": float(distilled.get("importance") or 0.5),
         "created_at": _now(),
     })
-    return db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # builds_on edges — only when the LLM explicitly named prior memories
+    evolves = distilled.get("evolves_from") or []
+    if evolves:
+        now = _now()
+        for raw_pid in evolves:
+            try:
+                pid = int(raw_pid)
+            except (TypeError, ValueError):
+                continue
+            if pid == new_id or pid <= 0:
+                continue
+            # Verify the cited memory is real + belongs to this persona
+            owner = db.execute(
+                "SELECT 1 FROM persona_memories WHERE id = ? AND persona_id = ?",
+                [pid, persona_id],
+            ).fetchone()
+            if not owner:
+                continue
+            fid, tid = (pid, new_id) if pid < new_id else (new_id, pid)
+            existing = db.execute(
+                "SELECT id FROM persona_edges WHERE persona_id = ? AND "
+                "from_memory_id = ? AND to_memory_id = ? AND kind = 'builds_on'",
+                [persona_id, fid, tid],
+            ).fetchone()
+            if existing:
+                continue
+            db["persona_edges"].insert({
+                "persona_id": persona_id,
+                "from_memory_id": fid,
+                "to_memory_id": tid,
+                "kind": "builds_on",
+                "weight": 1.0,
+                "created_at": now,
+            })
+    return new_id
 
 
 def ingest_persona(
@@ -217,9 +304,13 @@ def ingest_persona(
         yield {"event": "error", "error": f"no llm configured: {e}"}
         return
 
+    # Phase 6a — pull a tight context of what this persona already knows
+    # so the LLM can flag new lessons as evolutions of existing ones.
+    prior = _recent_memories_for_context(persona_id, k=6)
     system = _DISTILL_SYSTEM_TEMPLATE.format(
         persona_system_prompt=persona.get("system_prompt") or "",
         lens=persona.get("lens") or "",
+        prior_memories_block=_format_prior_memories_block(prior),
     )
 
     kept = dropped = errors = 0
