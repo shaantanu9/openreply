@@ -38,6 +38,10 @@ jobs:
             args: ''
 
     runs-on: ${{ matrix.platform }}
+    # Job-level env hoisted so step `if:` can reference it. Actions doesn't
+    # allow `secrets.X` in step conditions, but it does allow `env.X`.
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' && 'yes' || 'no' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -176,7 +180,7 @@ jobs:
       # APPLE_SIGNING_IDENTITY="" and still tries to security-import
       # an empty .p12). Hard split avoids the trap.
       - name: Build and release Tauri bundle (signed)
-        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        if: env.HAS_APPLE_CERT == 'yes'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -209,7 +213,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Build and release Tauri bundle (unsigned)
-        if: ${{ secrets.APPLE_CERTIFICATE == '' }}
+        if: env.HAS_APPLE_CERT == 'no'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
