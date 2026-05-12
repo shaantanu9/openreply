@@ -113,7 +113,7 @@ import { renderGlobalCompetitors } from './screens/global_competitors.js';
 // ── Global collect status bar (running + queue) ──
 import { mountCollectStatusBar } from './components/CollectStatusBar.js';
 // ── Persona agents (Phase 1 — 2026-05-12) ──
-import { renderPersonas, renderPersona } from './screens/personas.js';
+import { renderPersonas, renderPersona, setupPersonaAutoIngest } from './screens/personas.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -316,6 +316,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   mountCollectStatusBar().catch((e) =>
     console.warn('[main] collect-status-bar mount failed:', e),
   );
+
+  // Phase 2d — auto-ingest hook. Listens for collect:done globally and
+  // fires persona ingest for every active persona on the new topic. Gated
+  // by a localStorage flag the user can toggle on the Personas screen.
+  setupPersonaAutoIngest();
 
   // Run the activation-flag heal BEFORE the first route() so the guard
   // below sees the correct state. Swallow errors — the sync check is the

@@ -11,6 +11,48 @@ import { api, esc } from '../api.js';
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+// ─── auto-ingest hook ─────────────────────────────────────────────────────
+// Phase 2d (2026-05-12). When a collect finishes, fan out persona ingest
+// over the newly-collected topic for every active persona. Off by default
+// on the user's first encounter (so they can opt in deliberately), but
+// toggle persists in localStorage once flipped either way.
+const AUTO_INGEST_KEY = 'gapmap.persona.auto_ingest';
+
+export function isPersonaAutoIngestEnabled() {
+  const v = localStorage.getItem(AUTO_INGEST_KEY);
+  return v === 'true'; // explicit opt-in; absent or 'false' → off
+}
+
+export function setPersonaAutoIngestEnabled(on) {
+  localStorage.setItem(AUTO_INGEST_KEY, on ? 'true' : 'false');
+}
+
+let _autoIngestHookInstalled = false;
+let _lastAutoIngestAt = 0;
+
+export function setupPersonaAutoIngest() {
+  if (_autoIngestHookInstalled) return;
+  _autoIngestHookInstalled = true;
+  api.onCollectDone(async (payload) => {
+    if (!isPersonaAutoIngestEnabled()) return;
+    const topic = payload?.topic;
+    if (!topic) return;
+    // Debounce: collect:done can fire twice in tight succession on some
+    // resume paths. Throttle to once per 3s per topic.
+    const now = Date.now();
+    if (now - _lastAutoIngestAt < 3000) return;
+    _lastAutoIngestAt = now;
+    try {
+      // Fire-and-forget — the persona_ingest:* events stream regardless of
+      // whether anyone is listening, so the Ingest tab on a persona dashboard
+      // will pick up live progress if the user navigates to one.
+      await api.personaIngest({ topic, limit: 100 });
+    } catch (e) {
+      console.warn('[persona auto-ingest] failed:', e);
+    }
+  });
+}
+
 // ─── helpers ───────────────────────────────────────────────────────────────
 
 function unwrap(rust) {
@@ -58,6 +100,18 @@ export async function renderPersonas(root) {
         </p>
       </div>
 
+      <div class="card" style="margin:12px 0;padding:10px 14px;display:flex;align-items:center;gap:12px">
+        <i data-lucide="zap" style="width:18px;height:18px"></i>
+        <div style="flex:1">
+          <div style="font-weight:600">Auto-ingest after every collect</div>
+          <div class="muted" style="font-size:12px">When ON, every collect:done event fans out persona ingest across active personas for that topic.</div>
+        </div>
+        <label class="switch" style="cursor:pointer">
+          <input id="ai-toggle" type="checkbox" />
+          <span style="margin-left:6px">enable</span>
+        </label>
+      </div>
+
       <div id="personas-list" class="personas-grid" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));margin:18px 0"></div>
 
       <div class="card" style="margin-top:24px">
@@ -77,6 +131,15 @@ export async function renderPersonas(root) {
       </div>
     </div>
   `;
+
+  // Wire auto-ingest toggle (reads/writes the same localStorage key the
+  // app-boot listener checks before firing).
+  const ai = $('#ai-toggle', root);
+  if (ai) {
+    ai.checked = isPersonaAutoIngestEnabled();
+    ai.addEventListener('change', () => setPersonaAutoIngestEnabled(ai.checked));
+  }
+  refreshIcons();
 
   await reloadList(root);
 
