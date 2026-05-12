@@ -112,6 +112,8 @@ import { renderCompare } from './screens/compare.js';
 import { renderGlobalCompetitors } from './screens/global_competitors.js';
 // ── Global collect status bar (running + queue) ──
 import { mountCollectStatusBar } from './components/CollectStatusBar.js';
+// ── Persona agents (Phase 1 — 2026-05-12) ──
+import { renderPersonas, renderPersona } from './screens/personas.js';
 
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
@@ -162,6 +164,9 @@ const routes = [
   { match: /^\/pricing\/([^/?]+).*$/,       render: renderPricing },
   { match: /^\/estimate\/([^/?]+).*$/,      render: renderEstimate },
   { match: /^\/prd\/([^/?]+).*$/,           render: renderPrd },
+  // ── Persona agents (Phase 1 — 2026-05-12) ──
+  { match: /^\/personas\/?$/,               render: renderPersonas },
+  { match: /^\/persona\/([0-9]+)\/?$/,      render: renderPersona },
 ];
 
 // Route generation counter — bumped on every navigation so screens can tell
