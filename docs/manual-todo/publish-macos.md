@@ -57,7 +57,7 @@ Store (signed + notarized DMG). The certs you have today are not this one.
 
 ## 5. Add GitHub Actions secrets
 
-Open <https://github.com/USER/reddit-myind/settings/secrets/actions> and add:
+Open <https://github.com/shaantanu9/gap-map-pro/settings/secrets/actions> and add:
 
 | Secret | Value |
 |---|---|
