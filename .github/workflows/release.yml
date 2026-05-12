@@ -76,6 +76,22 @@ jobs:
         run: |
           uv sync --frozen --all-extras || uv sync --all-extras
 
+      # Pre-download the ONNX MiniLM embedding model BEFORE the spec runs.
+      # The spec has logic to auto-download but its stdout `print()` calls
+      # get captured by PyInstaller's spec-evaluation context on CI and
+      # we can't observe whether it succeeded. Doing it explicitly via
+      # curl makes the step verifiable (exit code + file size) and lets
+      # the spec's "file already exists, skip download" branch take over.
+      # The 83MB tarball is gitignored so CI runners always need this.
+      - name: Pre-download ONNX MiniLM embedding model
+        shell: bash
+        run: |
+          mkdir -p scripts/onnx-model-cache/all-MiniLM-L6-v2
+          curl -fsSL --retry 3 --retry-delay 2 \
+            -o scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz \
+            https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz
+          ls -lh scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+
       # IMPORTANT: use the .spec file, not inline flags. The spec bundles
       # the 83MB ONNX MiniLM embedding model so semantic search works
       # offline on a fresh install. It also runs explicit `collect_all`
