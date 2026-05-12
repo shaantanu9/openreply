@@ -4,6 +4,7 @@
 mod cli;
 mod commands;
 mod db;
+mod persona_cmds;
 mod schedule;
 mod worker;
 
@@ -410,6 +411,14 @@ fn main() {
             commands::whisper_set_default,
             commands::ytdlp_version,
             commands::ytdlp_update,
+            // ── Persona agents (Phase 1 — 2026-05-12) ──
+            persona_cmds::persona_agent_list,
+            persona_cmds::persona_agent_create,
+            persona_cmds::persona_agent_update,
+            persona_cmds::persona_agent_delete,
+            persona_cmds::persona_agent_memories,
+            persona_cmds::persona_agent_chat,
+            persona_cmds::persona_agent_ingest,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");

@@ -1309,6 +1309,25 @@ export const api = {
   onChatDone:        (cb) => listen('chat:done',        e => cb(e.payload)),
   onStreamHit:       (cb) => listen('stream:hit',       e => cb(e.payload)),
   onStreamDone:      (cb) => listen('stream:done',      e => cb(e.payload)),
+
+  // ── Persona agents (Phase 1 — 2026-05-12) ──
+  // Self-contained block. Remove with the persona feature when no longer needed.
+  personaList:       ()                 => invoke('persona_agent_list'),
+  personaCreate:     (fields)           => invoke('persona_agent_create', fields),
+  personaUpdate:     (personaId, patch) => invoke('persona_agent_update', { personaId, ...patch }),
+  personaDelete:     (personaId)        => invoke('persona_agent_delete', { personaId }),
+  personaMemories:   (personaId, opts = {}) =>
+    invoke('persona_agent_memories', { personaId, topic: opts.topic || null, limit: opts.limit || 50 }),
+  personaChat:       (personaId, question, k = 8) =>
+    invoke('persona_agent_chat', { personaId, question, k }),
+  personaIngest:     (opts = {}) =>
+    invoke('persona_agent_ingest', {
+      personaId: opts.personaId || null,
+      topic: opts.topic || null,
+      limit: opts.limit || 50,
+    }),
+  onPersonaIngestProgress: (cb) => listen('persona_ingest:progress', e => cb(e.payload)),
+  onPersonaIngestDone:     (cb) => listen('persona_ingest:done',     e => cb(e.payload)),
 };
 
 // ---------- tiny DOM helpers ----------
