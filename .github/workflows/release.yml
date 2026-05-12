@@ -76,26 +76,19 @@ jobs:
         run: |
           uv sync --frozen --all-extras || uv sync --all-extras
 
+      # IMPORTANT: use the .spec file, not inline flags. The spec bundles
+      # the 83MB ONNX MiniLM embedding model so semantic search works
+      # offline on a fresh install. It also runs explicit `collect_all`
+      # for every lazy-imported source dep (google_play_scraper, pytrends,
+      # feedparser, lxml, pypdf, pandas, scipy, networkx, sgmllib3k).
+      # Without the spec, sidecar ships ~120MB lighter but fresh users
+      # have to download ONNX on first use and any source adapter using
+      # a lazy import inside a function body fails silently.
       - name: Build reddit-cli sidecar (PyInstaller) — Unix
         if: matrix.platform != 'windows-latest'
         shell: bash
         run: |
-          uv run pyinstaller \
-            --onefile \
-            --name reddit-cli \
-            --paths=src \
-            --collect-all reddit_research \
-            --collect-submodules praw \
-            --collect-submodules prawcore \
-            --collect-submodules sqlite_utils \
-            --collect-submodules openai \
-            --collect-submodules anthropic \
-            --collect-submodules httpx \
-            --hidden-import openai \
-            --hidden-import anthropic \
-            --add-data "prompts:prompts" \
-            --log-level WARN \
-            scripts/pyinstaller-entrypoint.py
+          uv run pyinstaller reddit-cli.spec
           mkdir -p app-tauri/src-tauri/binaries
           cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}
           chmod +x app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}
@@ -104,22 +97,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          uv run pyinstaller `
-            --onefile `
-            --name reddit-cli `
-            --paths=src `
-            --collect-all reddit_research `
-            --collect-submodules praw `
-            --collect-submodules prawcore `
-            --collect-submodules sqlite_utils `
-            --collect-submodules openai `
-            --collect-submodules anthropic `
-            --collect-submodules httpx `
-            --hidden-import openai `
-            --hidden-import anthropic `
-            --add-data "prompts;prompts" `
-            --log-level WARN `
-            scripts/pyinstaller-entrypoint.py
+          uv run pyinstaller reddit-cli.spec
           New-Item -ItemType Directory -Force -Path app-tauri/src-tauri/binaries | Out-Null
           Copy-Item dist/reddit-cli.exe "app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}.exe"
 
