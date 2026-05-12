@@ -227,6 +227,15 @@ def ingest_persona(
             yield {"event": "error", "post_id": post.get("id"), "error": f"persist failed: {e}"}
             continue
 
+        # Phase 2a — embed + build edges. Best-effort: if chromadb isn't
+        # available we still kept the memory; the graph just won't grow.
+        new_edges = 0
+        try:
+            from .graph import embed_and_link
+            new_edges = embed_and_link(persona_id, mid, (parsed.get("lesson") or "").strip())
+        except Exception:
+            new_edges = 0
+
         kept += 1
         yield {
             "event": "memory",
@@ -235,6 +244,7 @@ def ingest_persona(
             "lesson": parsed.get("lesson"),
             "topic": post.get("topic"),
             "importance": parsed.get("importance"),
+            "edges_added": new_edges,
         }
 
     yield {

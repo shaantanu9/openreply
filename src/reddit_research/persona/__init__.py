@@ -15,6 +15,13 @@ from .store import (
 )
 from .ingest import ingest_persona, ingest_all_personas
 from .chat import chat_persona
+from .graph import (
+    backfill_persona,
+    embed_and_link,
+    graph_payload,
+    is_available as graph_is_available,
+    list_edges,
+)
 
 __all__ = [
     "create_persona",
@@ -27,4 +34,9 @@ __all__ = [
     "ingest_persona",
     "ingest_all_personas",
     "chat_persona",
+    "backfill_persona",
+    "embed_and_link",
+    "graph_payload",
+    "graph_is_available",
+    "list_edges",
 ]
