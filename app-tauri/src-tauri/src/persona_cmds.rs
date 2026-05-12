@@ -139,6 +139,25 @@ pub async fn persona_agent_chat(
     .map_err(err_to_string)
 }
 
+/// Phase 4a — persona-of-personas. Streams `persona_ingest:progress` events
+/// (same channel as regular ingest) so the UI's existing listener handles
+/// both. Source key is `peer:<conclusion_id>` for provenance.
+#[tauri::command]
+pub async fn persona_agent_ingest_peers(
+    app: AppHandle,
+    persona_id: i64,
+    limit: Option<u32>,
+) -> Result<(), String> {
+    let id_s = persona_id.to_string();
+    let lim_s = limit.unwrap_or(50).to_string();
+    let args: Vec<&str> = vec![
+        "persona", "ingest-peers", &id_s, "--limit", &lim_s, "--json",
+    ];
+    run_cli_streaming(&app, args, "persona_ingest:progress", "persona_ingest:done")
+        .await
+        .map_err(err_to_string)
+}
+
 /// Streaming ingest — emits `persona_ingest:progress` events line-by-line
 /// and a final `persona_ingest:done` envelope. Pass persona_id=None to fan
 /// out across every active persona.

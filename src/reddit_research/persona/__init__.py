@@ -13,7 +13,7 @@ from .store import (
     persona_stats,
     list_memories,
 )
-from .ingest import ingest_persona, ingest_all_personas
+from .ingest import ingest_persona, ingest_all_personas, ingest_from_peers
 from .chat import chat_persona
 from .graph import (
     backfill_persona,
@@ -35,6 +35,7 @@ __all__ = [
     "list_memories",
     "ingest_persona",
     "ingest_all_personas",
+    "ingest_from_peers",
     "chat_persona",
     "backfill_persona",
     "embed_and_link",

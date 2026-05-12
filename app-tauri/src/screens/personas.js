@@ -311,7 +311,7 @@ export async function renderPersona(root, { params } = {}) {
   root.innerHTML = `
     <div class="screen-pad">
       <div id="persona-head"></div>
-      <div class="tabs" style="margin:14px 0;display:flex;gap:8px;border-bottom:1px solid var(--border, #2a2a2a);flex-wrap:wrap">
+      <div class="tabs" style="margin:14px 0;display:flex;gap:8px;border-bottom:1px solid var(--line);flex-wrap:wrap">
         <button class="tab-btn active" data-tab="memories"    style="padding:8px 14px;background:none;border:none;border-bottom:2px solid var(--accent, #7c3aed);cursor:pointer">Memories</button>
         <button class="tab-btn"        data-tab="graph"       style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Graph</button>
         <button class="tab-btn"        data-tab="conclusions" style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Conclusions</button>
@@ -427,39 +427,44 @@ async function mountMemoriesTab(host, persona) {
 }
 
 async function mountChatTab(host, persona) {
+  const raw = String(persona.color || '#7c3aed').trim();
+  const accentSafe = /^#[0-9A-Fa-f]{6}$/.test(raw) ? raw : /^#[0-9A-Fa-f]{3}$/.test(raw) ? raw : '#7c3aed';
   host.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div id="chat-history" style="min-height:200px;max-height:60vh;overflow-y:auto;padding:8px;border:1px solid var(--border, #2a2a2a);border-radius:8px"></div>
-      <div style="display:flex;gap:8px">
-        <input id="chat-q" placeholder="Ask ${esc(persona.name)} something…" style="flex:1"/>
-        <input id="chat-k" type="number" value="8" min="1" max="30" style="width:64px" title="memories to retrieve"/>
-        <button id="chat-send" class="btn btn-primary btn-sm"><i data-lucide="send" style="width:12px;height:12px"></i>Ask</button>
+    <div class="persona-chat" style="--persona-accent:${accentSafe}">
+      <div id="chat-history" class="persona-chat-history" aria-live="polite"></div>
+      <div class="persona-chat-composer">
+        <input id="chat-q" class="persona-chat-q" type="text" placeholder="Ask ${esc(persona.name)} something…" autocomplete="off" />
+        <input id="chat-k" class="persona-chat-k" type="number" value="8" min="1" max="30" title="Memories to retrieve for context (top‑K)" />
+        <button id="chat-send" type="button" class="btn btn-primary btn-sm"><i data-lucide="send" style="width:12px;height:12px"></i> Ask</button>
       </div>
-      <p class="muted" style="font-size:11px;margin:0">
-        Answers come ONLY from ${esc(persona.name)}'s own memories. Citations
-        like (M1, M3) point to the memories in the right-hand panel.
+      <p class="persona-chat-hint muted">
+        Answers use only ${esc(persona.name)}'s ingested memories. Inline tags like (M1, M3) match the <strong>Memories</strong> tab — open a citation block below to see which memory backed each phrase.
       </p>
     </div>
   `;
   const hist = $('#chat-history', host);
   function append(role, text, cits, beliefs, retrieval) {
+    const isUser = role === 'user';
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'margin:8px 0;padding:8px 12px;border-radius:8px;line-height:1.5';
-    wrap.style.background = role === 'user' ? 'var(--accent-soft, #7c3aed22)' : 'var(--bg-elev, #1a1a1a)';
-    const headExtras = retrieval ? `<span class="muted" style="font-size:10px;margin-left:8px">${esc(retrieval)} retrieval</span>` : '';
-    wrap.innerHTML = `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px" class="muted">${role}${headExtras}</div><div>${esc(text).replace(/\n/g,'<br/>')}</div>`;
+    wrap.className = `persona-chat-msg ${isUser ? 'persona-chat-msg--user' : 'persona-chat-msg--assistant'}`;
+    const label = isUser ? 'You' : esc(persona.name);
+    const headExtras = !isUser && retrieval
+      ? ` <span class="persona-chat-retrieval">· ${esc(retrieval)} retrieval</span>`
+      : '';
+    const body = esc(text).replace(/\n/g, '<br/>');
+    wrap.innerHTML = `<div class="persona-chat-msg-label">${label}${headExtras}</div><div class="persona-chat-msg-body">${body}</div>`;
     if (beliefs && beliefs.length) {
-      wrap.innerHTML += `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:11px">${beliefs.length} established beliefs</summary>` +
-        beliefs.map(b => `<div class="muted" style="margin-top:6px;font-size:11px"><strong>${esc(b.tag)}</strong> conf=${(b.confidence||0).toFixed(2)}: ${esc((b.statement||'').slice(0,220))}</div>`).join('') +
-        `</details>`;
+      wrap.innerHTML += `<details class="persona-chat-details"><summary>${beliefs.length} established beliefs</summary>` +
+        beliefs.map(b => `<div class="persona-chat-cite-line"><strong>${esc(b.tag)}</strong> conf=${(b.confidence || 0).toFixed(2)}: ${esc((b.statement || '').slice(0, 220))}</div>`).join('') +
+        '</details>';
     }
     if (cits && cits.length) {
-      wrap.innerHTML += `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:11px">${cits.length} memory citations</summary>` +
+      wrap.innerHTML += `<details class="persona-chat-details"><summary>${cits.length} memory citations</summary>` +
         cits.map(c => {
           const simBit = c.similarity != null ? ` · sim ${Number(c.similarity).toFixed(2)}` : '';
-          return `<div class="muted" style="margin-top:6px;font-size:11px"><strong>${esc(c.tag)}</strong> mem#${c.memory_id} (topic=${esc(c.topic || '—')}${simBit}): ${esc((c.lesson||'').slice(0,180))}</div>`;
+          return `<div class="persona-chat-cite-line"><strong>${esc(c.tag)}</strong> mem#${c.memory_id} (topic=${esc(c.topic || '—')}${simBit}): ${esc((c.lesson || '').slice(0, 180))}</div>`;
         }).join('') +
-        `</details>`;
+        '</details>';
     }
     hist.appendChild(wrap);
     hist.scrollTop = hist.scrollHeight;
@@ -471,26 +476,26 @@ async function mountChatTab(host, persona) {
     append('user', q, null, null, null);
     $('#chat-q', host).value = '';
     const placeholder = document.createElement('div');
-    placeholder.className = 'muted';
-    placeholder.style.cssText = 'margin:8px 0;padding:8px 12px;font-style:italic';
-    placeholder.textContent = `${persona.name} is thinking…`;
+    placeholder.className = 'persona-chat-msg persona-chat-msg--assistant persona-chat-msg--pending';
+    placeholder.innerHTML = `<div class="persona-chat-msg-label">${esc(persona.name)}</div><div class="persona-chat-msg-body">Thinking…</div>`;
     hist.appendChild(placeholder);
     hist.scrollTop = hist.scrollHeight;
     try {
       const r = unwrap(await api.personaChat(persona.id, q, k));
       placeholder.remove();
       if (!r.ok) {
-        append(persona.name, 'error: ' + (r.error || 'unknown'), null, null, null);
+        append(persona.name, 'Error: ' + (r.error || 'unknown'), null, null, null);
       } else {
         append(persona.name, r.answer || '(empty)', r.citations, r.beliefs, r.retrieval);
       }
     } catch (e) {
       placeholder.remove();
-      append(persona.name, 'error: ' + String(e?.message || e), null, null, null);
+      append(persona.name, 'Error: ' + String(e?.message || e), null, null, null);
     }
   }
   $('#chat-send', host).addEventListener('click', ask);
   $('#chat-q', host).addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+  window.refreshIcons?.();
 }
 
 // ─── Graph tab ────────────────────────────────────────────────────────────
@@ -702,8 +707,8 @@ async function mountConclusionsTab(host, persona) {
   host.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
       <span class="muted" style="font-size:13px">Synthesised beliefs — each clusters densely-connected memories into one falsifiable statement.</span>
-      <button id="c-refresh"   class="btn-ghost-bordered" style="margin-left:auto">Refresh</button>
-      <button id="c-synthesise" class="btn-primary">Synthesise</button>
+      <button id="c-refresh"   class="btn btn-ghost btn-bordered btn-sm" style="margin-left:auto"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i>Refresh</button>
+      <button id="c-synthesise" class="btn btn-primary btn-sm"><i data-lucide="sparkles" style="width:12px;height:12px"></i>Synthesise</button>
     </div>
     <div id="c-log" style="display:none;font-family:var(--mono, ui-monospace, monospace);font-size:12px;padding:10px;margin-bottom:12px;border:1px solid var(--border, #2a2a2a);border-radius:8px;max-height:240px;overflow-y:auto"></div>
     <div id="c-list" class="muted">loading…</div>
@@ -781,10 +786,12 @@ async function mountIngestTab(host, persona) {
         filters them through the lens, and stores any relevant lesson in
         ${esc(persona.name)}'s memory. Safe to re-run — already-ingested posts are skipped.
       </p>
-      <div style="display:flex;gap:8px;align-items:center;margin:12px 0">
+      <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap">
         <label>Limit posts to scan <input id="in-limit" type="number" value="50" min="1" max="500" style="width:80px;margin-left:6px"></label>
         <label>Topic (optional) <input id="in-topic" placeholder="(all topics)" style="margin-left:6px"></label>
-        <button id="in-run" class="btn-primary" style="margin-left:auto">Run ingest</button>
+        <span style="flex:1"></span>
+        <button id="in-peers" class="btn btn-ghost-bordered btn-sm" title="Ingest other personas' conclusions through THIS persona's lens — the persona-of-personas / meta-agent pass"><i data-lucide="users" style="width:12px;height:12px"></i>Ingest peers</button>
+        <button id="in-run" class="btn btn-primary btn-sm"><i data-lucide="play" style="width:12px;height:12px"></i>Run ingest</button>
       </div>
       <div id="in-log" style="font-family:var(--mono, ui-monospace, monospace);font-size:12px;padding:10px;border:1px solid var(--border, #2a2a2a);border-radius:8px;min-height:140px;max-height:50vh;overflow-y:auto"></div>
     </div>
@@ -827,6 +834,37 @@ async function mountIngestTab(host, persona) {
     });
     try {
       await api.personaIngest({ personaId: persona.id, topic, limit });
+    } catch (e) {
+      line('error: ' + String(e?.message || e));
+    }
+  });
+
+  // Peer ingest (Phase 4a)
+  $('#in-peers', host)?.addEventListener('click', async () => {
+    log.innerHTML = '';
+    const limit = parseInt($('#in-limit', host).value, 10) || 50;
+    line(`▶ starting peer-ingest (persona=${persona.name}, limit=${limit})`);
+    if (progressUnsub) await progressUnsub();
+    if (doneUnsub) await doneUnsub();
+    progressUnsub = await api.onPersonaIngestProgress(payload => {
+      const t = String(payload || '').trim();
+      if (!t) return;
+      try {
+        const ev = JSON.parse(t);
+        if (ev.event === 'start')      line(`  peer start — ${ev.candidates} candidate conclusions`);
+        else if (ev.event === 'memory') line(`  ✓ meta-mem#${ev.memory_id}: ${(ev.lesson || '').slice(0,150)}`);
+        else if (ev.event === 'skip')   line(`  · skip (${ev.reason})`, 'muted');
+        else if (ev.event === 'error')  line(`  ✗ ${(ev.error || '').slice(0,150)}`, 'muted');
+        else if (ev.event === 'done')   line(`  ▶ peer done — kept=${ev.kept} dropped=${ev.dropped} errors=${ev.errors}`);
+      } catch { line(t); }
+    });
+    doneUnsub = await api.onPersonaIngestDone(_payload => {
+      line('✔ peer ingest complete', '');
+      if (progressUnsub) progressUnsub();
+      if (doneUnsub) doneUnsub();
+    });
+    try {
+      await api.personaIngestPeers(persona.id, limit);
     } catch (e) {
       line('error: ' + String(e?.message || e));
     }

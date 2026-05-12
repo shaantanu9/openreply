@@ -20,6 +20,7 @@ from ..persona import (
     get_persona,
     graph_payload,
     ingest_all_personas,
+    ingest_from_peers as _ingest_peers,
     ingest_persona,
     list_conclusions,
     list_memories,
@@ -159,6 +160,32 @@ def cmd_ingest(
                 f"[{ev.get('persona_name')}] done — "
                 f"kept={ev['kept']} dropped={ev['dropped']} errors={ev['errors']}"
             )
+
+
+@persona_app.command("ingest-peers")
+def cmd_ingest_peers(
+    persona_id: int = typer.Argument(...),
+    limit: int = typer.Option(50, "--limit", "-n"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Persona-of-personas: ingest other personas' conclusions, distill as
+    meta-insights through THIS persona's lens."""
+    for ev in _ingest_peers(persona_id, limit=limit, provider=provider):
+        if as_json:
+            _emit(ev)
+            continue
+        kind = ev.get("event")
+        if kind == "start":
+            typer.echo(f"[peer] start — {ev['candidates']} peer-conclusion candidates")
+        elif kind == "memory":
+            typer.echo(f"  ✓ mem#{ev['memory_id']}: {(ev.get('lesson') or '')[:140]}")
+        elif kind == "skip":
+            typer.echo(f"  · skip: {ev.get('reason')}")
+        elif kind == "error":
+            typer.echo(f"  ✗ {ev.get('error','')[:160]}", err=True)
+        elif kind == "done":
+            typer.echo(f"[peer] done — kept={ev['kept']} dropped={ev['dropped']} errors={ev['errors']}")
 
 
 @persona_app.command("memories")

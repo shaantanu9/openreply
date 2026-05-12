@@ -426,6 +426,8 @@ fn main() {
             persona_cmds::persona_agent_conclusions,
             // Phase 3b — cross-persona memory share
             persona_cmds::persona_agent_share,
+            // Phase 4a — persona-of-personas (ingest peer conclusions)
+            persona_cmds::persona_agent_ingest_peers,
         ])
         .build(tauri::generate_context!())
         .expect("error while building gapmap");

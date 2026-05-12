@@ -1343,6 +1343,10 @@ export const api = {
   // Phase 3b — cross-persona memory share
   personaShare: (fromPersonaId, memoryId, toPersonaId) =>
     invoke('persona_agent_share', { fromPersonaId, memoryId, toPersonaId }),
+
+  // Phase 4a — persona-of-personas (ingest peer conclusions through own lens)
+  personaIngestPeers: (personaId, limit = 50) =>
+    invoke('persona_agent_ingest_peers', { personaId, limit }),
 };
 
 // ---------- tiny DOM helpers ----------
