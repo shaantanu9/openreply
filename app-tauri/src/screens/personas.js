@@ -195,10 +195,12 @@ export async function renderPersona(root, { params } = {}) {
   root.innerHTML = `
     <div class="screen-pad">
       <div id="persona-head"></div>
-      <div class="tabs" style="margin:14px 0;display:flex;gap:8px;border-bottom:1px solid var(--border, #2a2a2a)">
-        <button class="tab-btn active" data-tab="memories" style="padding:8px 14px;background:none;border:none;border-bottom:2px solid var(--accent, #7c3aed);cursor:pointer">Memories</button>
-        <button class="tab-btn"        data-tab="chat"     style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Chat</button>
-        <button class="tab-btn"        data-tab="ingest"   style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Ingest</button>
+      <div class="tabs" style="margin:14px 0;display:flex;gap:8px;border-bottom:1px solid var(--border, #2a2a2a);flex-wrap:wrap">
+        <button class="tab-btn active" data-tab="memories"    style="padding:8px 14px;background:none;border:none;border-bottom:2px solid var(--accent, #7c3aed);cursor:pointer">Memories</button>
+        <button class="tab-btn"        data-tab="graph"       style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Graph</button>
+        <button class="tab-btn"        data-tab="conclusions" style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Conclusions</button>
+        <button class="tab-btn"        data-tab="chat"        style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Chat</button>
+        <button class="tab-btn"        data-tab="ingest"      style="padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer">Ingest</button>
       </div>
       <div id="persona-body"></div>
     </div>
@@ -256,9 +258,11 @@ function renderHead(p) {
 }
 
 function mountTab(tab, host, persona) {
-  if (tab === 'memories') return mountMemoriesTab(host, persona);
-  if (tab === 'chat')     return mountChatTab(host, persona);
-  if (tab === 'ingest')   return mountIngestTab(host, persona);
+  if (tab === 'memories')    return mountMemoriesTab(host, persona);
+  if (tab === 'graph')       return mountGraphTab(host, persona);
+  if (tab === 'conclusions') return mountConclusionsTab(host, persona);
+  if (tab === 'chat')        return mountChatTab(host, persona);
+  if (tab === 'ingest')      return mountIngestTab(host, persona);
 }
 
 async function mountMemoriesTab(host, persona) {
@@ -356,6 +360,286 @@ async function mountChatTab(host, persona) {
   }
   $('#chat-send', host).addEventListener('click', ask);
   $('#chat-q', host).addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+}
+
+// ─── Graph tab ────────────────────────────────────────────────────────────
+
+async function mountGraphTab(host, persona) {
+  host.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+      <span class="muted" style="font-size:13px">Memory graph — node size by importance, edge weight by cosine similarity.</span>
+      <button id="g-refresh"  class="btn-ghost-bordered" style="margin-left:auto">Refresh</button>
+      <button id="g-backfill" class="btn-ghost-bordered" title="Re-embed every memory and recompute every edge from scratch">Backfill</button>
+    </div>
+    <div id="g-stage" style="position:relative;width:100%;height:520px;border:1px solid var(--border, #2a2a2a);border-radius:8px;overflow:hidden;background:var(--bg-elev, #111)">
+      <svg id="g-svg" width="100%" height="100%" style="display:block"></svg>
+      <div id="g-tooltip" style="position:absolute;display:none;pointer-events:none;background:#000c;color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;max-width:340px;line-height:1.4;z-index:5"></div>
+    </div>
+    <p class="muted" style="font-size:11px;margin:6px 0">Drag nodes to explore. Hover to read the memory.</p>
+  `;
+  const svg = $('#g-svg', host);
+  const tip = $('#g-tooltip', host);
+
+  async function load() {
+    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#888" font-size="12">loading…</text>';
+    const r = unwrap(await api.personaGraph(persona.id));
+    const g = (r && r.graph) || { nodes: [], edges: [] };
+    if (!g.nodes.length) {
+      svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#888" font-size="12">no graph yet — ingest memories or click Backfill.</text>';
+      return;
+    }
+    drawForceGraph(svg, tip, g, persona);
+  }
+
+  $('#g-refresh', host).addEventListener('click', load);
+  $('#g-backfill', host).addEventListener('click', async () => {
+    $('#g-backfill', host).disabled = true;
+    $('#g-backfill', host).textContent = 'backfilling…';
+    try {
+      const r = unwrap(await api.personaBackfill(persona.id));
+      const stats = r?.ok ? `${r.embeddings_added || 0} added, ${r.edges_written || 0} edges` : (r?.error || 'unknown');
+      $('#g-backfill', host).textContent = `Backfill (${stats})`;
+      await load();
+    } catch (e) {
+      $('#g-backfill', host).textContent = 'Backfill (error)';
+    } finally {
+      $('#g-backfill', host).disabled = false;
+      setTimeout(() => { $('#g-backfill', host).textContent = 'Backfill'; }, 4000);
+    }
+  });
+
+  await load();
+}
+
+// Tiny vanilla force-directed graph — no D3 dep, ~100 lines of math.
+// Sufficient for graphs of <500 nodes/<1000 edges which is well within
+// the Phase-2 ceiling (top-5 edges/memory * a few hundred memories).
+function drawForceGraph(svg, tip, g, persona) {
+  const W = svg.clientWidth || 600;
+  const H = svg.clientHeight || 520;
+  const color = persona.color || '#7c3aed';
+  // Pull stable size from importance
+  const nodes = g.nodes.map((n, i) => ({
+    id: n.id,
+    lesson: n.lesson || '',
+    topic: n.topic || '',
+    importance: n.importance ?? 0.5,
+    x: W / 2 + (Math.random() - 0.5) * 80,
+    y: H / 2 + (Math.random() - 0.5) * 80,
+    vx: 0, vy: 0,
+    r: 6 + (n.importance ?? 0.5) * 8,
+  }));
+  const idx = new Map(nodes.map(n => [n.id, n]));
+  const edges = g.edges
+    .filter(e => idx.has(e.from_memory_id) && idx.has(e.to_memory_id))
+    .map(e => ({
+      from: idx.get(e.from_memory_id),
+      to:   idx.get(e.to_memory_id),
+      w: e.weight || 0,
+    }));
+
+  // Force-sim params — tuned for graphs of 10..500 nodes.
+  const REPULSE = 1800;
+  const SPRING  = 0.05;
+  const DAMP    = 0.78;
+  const CENTER  = 0.012;
+  const TICKS   = 220;
+
+  for (let t = 0; t < TICKS; t++) {
+    // Repulsion between all pairs (O(N²) — fine at this scale)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d2 = dx * dx + dy * dy + 1;
+        const f = REPULSE / d2;
+        const d = Math.sqrt(d2);
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        a.vx -= fx; a.vy -= fy;
+        b.vx += fx; b.vy += fy;
+      }
+    }
+    // Spring on edges (target length proportional to (1 - weight))
+    for (const e of edges) {
+      const dx = e.to.x - e.from.x, dy = e.to.y - e.from.y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      const target = 60 + (1 - e.w) * 80;
+      const k = SPRING * (d - target);
+      const fx = (dx / d) * k, fy = (dy / d) * k;
+      e.from.vx += fx; e.from.vy += fy;
+      e.to.vx   -= fx; e.to.vy   -= fy;
+    }
+    // Centering + damping
+    for (const n of nodes) {
+      n.vx = (n.vx + (W / 2 - n.x) * CENTER) * DAMP;
+      n.vy = (n.vy + (H / 2 - n.y) * CENTER) * DAMP;
+      n.x += n.vx;
+      n.y += n.vy;
+      // clamp to viewport
+      n.x = Math.max(n.r + 4, Math.min(W - n.r - 4, n.x));
+      n.y = Math.max(n.r + 4, Math.min(H - n.r - 4, n.y));
+    }
+  }
+
+  // Render
+  const NS = 'http://www.w3.org/2000/svg';
+  svg.innerHTML = '';
+  // Edges first so nodes paint on top
+  for (const e of edges) {
+    const line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', e.from.x);
+    line.setAttribute('y1', e.from.y);
+    line.setAttribute('x2', e.to.x);
+    line.setAttribute('y2', e.to.y);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-opacity', String(0.15 + e.w * 0.6));
+    line.setAttribute('stroke-width', String(0.5 + e.w * 1.8));
+    svg.appendChild(line);
+  }
+  for (const n of nodes) {
+    const g = document.createElementNS(NS, 'g');
+    g.style.cursor = 'grab';
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', n.x);
+    c.setAttribute('cy', n.y);
+    c.setAttribute('r', n.r);
+    c.setAttribute('fill', color);
+    c.setAttribute('fill-opacity', '0.85');
+    c.setAttribute('stroke', '#fff');
+    c.setAttribute('stroke-opacity', '0.45');
+    c.setAttribute('stroke-width', '1');
+    g.appendChild(c);
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', n.x);
+    t.setAttribute('y', n.y + 4);
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('fill', '#fff');
+    t.setAttribute('font-size', '10');
+    t.setAttribute('pointer-events', 'none');
+    t.textContent = String(n.id);
+    g.appendChild(t);
+    g.addEventListener('mouseenter', (ev) => {
+      tip.style.display = 'block';
+      tip.textContent = `mem#${n.id} (${n.topic || '—'}, imp ${n.importance.toFixed(2)})\n${n.lesson.slice(0,260)}`;
+      tip.style.whiteSpace = 'pre-line';
+    });
+    g.addEventListener('mousemove', (ev) => {
+      const rect = svg.getBoundingClientRect();
+      tip.style.left = (ev.clientX - rect.left + 12) + 'px';
+      tip.style.top  = (ev.clientY - rect.top + 12) + 'px';
+    });
+    g.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+    // Drag
+    let dragging = false, ox = 0, oy = 0;
+    g.addEventListener('mousedown', (ev) => {
+      dragging = true;
+      ox = ev.clientX - n.x;
+      oy = ev.clientY - n.y;
+      g.style.cursor = 'grabbing';
+    });
+    const onMove = (ev) => {
+      if (!dragging) return;
+      n.x = ev.clientX - ox;
+      n.y = ev.clientY - oy;
+      c.setAttribute('cx', n.x);
+      c.setAttribute('cy', n.y);
+      t.setAttribute('x', n.x);
+      t.setAttribute('y', n.y + 4);
+      // Re-route incident edges
+      for (const e of edges) {
+        if (e.from === n || e.to === n) {
+          const line = svg.querySelectorAll('line')[edges.indexOf(e)];
+          if (line) {
+            line.setAttribute('x1', e.from.x);
+            line.setAttribute('y1', e.from.y);
+            line.setAttribute('x2', e.to.x);
+            line.setAttribute('y2', e.to.y);
+          }
+        }
+      }
+    };
+    const onUp = () => { dragging = false; g.style.cursor = 'grab'; };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    svg.appendChild(g);
+  }
+}
+
+// ─── Conclusions tab ──────────────────────────────────────────────────────
+
+async function mountConclusionsTab(host, persona) {
+  host.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+      <span class="muted" style="font-size:13px">Synthesised beliefs — each clusters densely-connected memories into one falsifiable statement.</span>
+      <button id="c-refresh"   class="btn-ghost-bordered" style="margin-left:auto">Refresh</button>
+      <button id="c-synthesise" class="btn-primary">Synthesise</button>
+    </div>
+    <div id="c-log" style="display:none;font-family:var(--mono, ui-monospace, monospace);font-size:12px;padding:10px;margin-bottom:12px;border:1px solid var(--border, #2a2a2a);border-radius:8px;max-height:240px;overflow-y:auto"></div>
+    <div id="c-list" class="muted">loading…</div>
+  `;
+
+  async function load() {
+    $('#c-list', host).innerHTML = '<div class="muted">loading…</div>';
+    const r = unwrap(await api.personaConclusions(persona.id));
+    const rows = r?.conclusions || [];
+    if (!rows.length) {
+      $('#c-list', host).innerHTML = '<div class="muted">no conclusions yet — click Synthesise (needs ≥3 connected memories).</div>';
+      return;
+    }
+    $('#c-list', host).innerHTML = rows.map(c => `
+      <div class="card" style="margin-bottom:10px">
+        <div class="card-body" style="padding:12px 16px">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">
+            <span class="chip" style="font-size:11px;padding:1px 7px;border-radius:5px;background:var(--accent-soft, #7c3aed22)">confidence ${(c.confidence || 0).toFixed(2)}</span>
+            <span class="muted" style="font-size:11px">${(c.evidence || []).length} supporting memories</span>
+            <span class="muted" style="font-size:11px;margin-left:auto">${fmtTime(c.updated_at || c.created_at)}</span>
+          </div>
+          <p style="margin:0 0 8px;line-height:1.5;font-size:14px">${esc(c.statement || '')}</p>
+          <details>
+            <summary class="muted" style="cursor:pointer;font-size:11px">evidence (mem ${(c.evidence||[]).join(', ')})</summary>
+            <div class="muted" style="margin-top:6px;font-size:11px">scroll to those memory ids in the Memories tab to see the source lessons.</div>
+          </details>
+        </div>
+      </div>
+    `).join('');
+  }
+  $('#c-refresh', host).addEventListener('click', load);
+
+  let unsubP, unsubD;
+  $('#c-synthesise', host).addEventListener('click', async () => {
+    const log = $('#c-log', host);
+    log.style.display = 'block';
+    log.innerHTML = '';
+    const line = (t) => { const d = document.createElement('div'); d.textContent = t; log.appendChild(d); log.scrollTop = log.scrollHeight; };
+    if (unsubP) await unsubP();
+    if (unsubD) await unsubD();
+    unsubP = await api.onPersonaConcludeProgress(payload => {
+      try {
+        const ev = JSON.parse(String(payload || '').trim());
+        if (ev.event === 'start')      line(`▶ start — ${ev.clusters} clusters`);
+        else if (ev.event === 'concluded') {
+          line(`  ✓ #${ev.conclusion_id} conf=${(ev.confidence||0).toFixed(2)} ev=${ev.evidence}`);
+          line(`    ${(ev.statement||'').slice(0,200)}`);
+        } else if (ev.event === 'skip')  line(`  · skip (${ev.reason})`);
+        else if (ev.event === 'error')   line(`  ✗ ${(ev.error||'').slice(0,160)}`);
+        else if (ev.event === 'done')    line(`done — written=${ev.written} refreshed=${ev.refreshed} skipped=${ev.skipped} errors=${ev.errors}`);
+      } catch {
+        line(String(payload));
+      }
+    });
+    unsubD = await api.onPersonaConcludeDone(_ => {
+      load();
+      if (unsubP) unsubP();
+      if (unsubD) unsubD();
+    });
+    try {
+      await api.personaConclude(persona.id);
+    } catch (e) {
+      line('error: ' + String(e?.message || e));
+    }
+  });
+
+  await load();
 }
 
 async function mountIngestTab(host, persona) {
