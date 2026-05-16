@@ -1,0 +1,61 @@
+name: Bug Report
+description: Report a bug in Gap Map (CLI, MCP server, or desktop app)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill out the fields below.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      description: Which part of the app is affected?
+      options:
+        - CLI (reddit-cli)
+        - MCP server
+        - Desktop app (Gap Map.app)
+        - Python library / source adapter
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python version
+      placeholder: "macOS 14.4, Python 3.11.9, uv 0.4.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or action
+      description: The exact command you ran or what you did in the UI.
+      placeholder: "uv run reddit-cli research collect --topic 'meditation apps'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / error output
+      description: Paste the full error output as text (not a screenshot).
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant (LLM provider, data source, file type, etc.)

@@ -1,191 +1,235 @@
-# reddit-myind
+# Gap Map
 
-Reddit research toolkit — **PRAW fetch → SQLite store → optional LLM analysis**.
-Two surfaces: a `reddit-cli` for humans/scripts, and an MCP server for Claude Code.
+**Multi-source product research — desktop app, MCP server, and CLI.**
 
-> **Full guide:** [`docs/GAP_MAP_GUIDE.md`](docs/GAP_MAP_GUIDE.md) — every feature, every data source, every knob. Start there.
-> Quick walk-through: [`docs/HOW_TO_USE.md`](docs/HOW_TO_USE.md).
+Gap Map collects signals from 23+ sources (Reddit, Hacker News, arXiv, PubMed, GitHub, App Store, YouTube, and more), runs LLM synthesis across 8 providers, and surfaces the gaps competitors haven't filled.
 
-## Install (uv — one command)
+Three surfaces, one SQLite store:
 
-This project is managed by [uv](https://docs.astral.sh/uv/) — it handles Python,
-the venv, and the lockfile automatically. Install uv once:
+| Surface | Use it when |
+|---|---|
+| **Desktop app** (`Gap Map.app`) | GUI research — collect, synthesize, graph, export |
+| **MCP server** (90+ tools) | Claude Code / Cursor integration — research inside your IDE |
+| **CLI** (`reddit-cli`) | Automation, scripting, headless pipelines |
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# or: pip install uv
-```
+---
 
-Then:
+## Install
 
-```bash
-git clone <this-repo> && cd reddit-myind
-uv sync --all-extras               # everything (praw + mcp + analyze + dev)
-# or: uv sync                      # base only
-# or: uv sync --extra mcp          # base + MCP server
-# or: uv sync --extra analyze      # base + LLM analysis
-```
+### MCP server + CLI (Python, no desktop required)
 
-Run commands with `uv run`, or activate the venv:
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv run reddit-cli --help
-# or:
-source .venv/bin/activate
-reddit-cli --help
+git clone https://github.com/shaantanu9/gap-map-pro.git && cd gap-map-pro
+uv sync --all-extras        # everything (fetch + mcp + analyze + dev)
+# or: uv sync               # base fetch only
+# or: uv sync --extra mcp   # + MCP server
+# or: uv sync --extra analyze  # + LLM analysis
 ```
 
-## Setup (OAuth, no password stored)
+### Desktop app
 
-1. Go to https://www.reddit.com/prefs/apps → **create another app**
-2. Type: **web app**. Redirect URI: `http://localhost:8080`
-3. Note the **client ID** (small text under the app name) and **secret**.
-4. Run:
+Download the latest `.dmg` (macOS) / `.msi` (Windows) / `.AppImage` (Linux) from the [Releases](https://github.com/shaantanu9/gap-map-pro/releases) page.
+
+---
+
+## Quick start
+
+### 1. Reddit auth (OAuth — no password stored)
 
 ```bash
-reddit-cli auth login      # prompts for client id+secret, opens browser, writes ~/.config/reddit-myind/.env
-reddit-cli auth check      # verify it works
+uv run reddit-cli auth login    # opens browser, writes token to ~/.config/reddit-myind/.env
+uv run reddit-cli auth check    # verify
 ```
 
-The OAuth refresh token is stored in `~/.config/reddit-myind/.env` (chmod 600). Your Reddit password is never asked for or stored. PRAW refreshes the access token automatically from here on.
-
-## CLI usage
-
-Prefix every command below with `uv run` (or activate `.venv` once).
+### 2. Add an LLM key (for synthesis and gap-finding)
 
 ```bash
-# fetch — all writes to SQLite (data/reddit.db) with dedup
-uv run reddit-cli fetch posts --sub resumes --sort hot --limit 100
-uv run reddit-cli fetch comments --post <post_id> --depth 5
-uv run reddit-cli fetch user --name spez --limit 200
-uv run reddit-cli search "ATS resume" --sub cscareerquestions --limit 50
-
-# stream — keyword monitor that appends hits to SQLite
-uv run reddit-cli stream --sub resumes --keywords "ats,rejection"
-
-# query / export — zero LLM
-uv run reddit-cli query "SELECT author, count(*) c FROM posts WHERE sub='resumes' GROUP BY author ORDER BY c DESC LIMIT 20"
-uv run reddit-cli export posts --sub resumes --since 7d --format csv --out out.csv
-
-# analyze — needs an LLM key
-uv run reddit-cli analyze themes --sub resumes --since 7d --provider anthropic
-uv run reddit-cli analyze summarize --post <post_id>
-uv run reddit-cli analyze painpoints --sub cscareerquestions --top 50
-
-# mcp
-uv run reddit-cli mcp serve
+export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY / GEMINI_API_KEY / OLLAMA auto-detected
 ```
 
-All commands support `--json` for machine-readable output.
-
-## Gap-finding workflow (any app / any topic)
-
-### Data sources
-
-Two complementary backends, automatically merged into one SQLite:
-
-| Source | Timeframe | Role |
-|---|---|---|
-| Reddit `.json` | **May 2025 → now** | Live, recent, high engagement |
-| Pullpush (Pushshift successor) | **Dec 2012 → May 2025** | 13+ years of history |
-
-This lets us classify pain points as:
-- 🟥 **CHRONIC** — strong in both eras → durable gap, safe bet
-- 🟨 **EMERGING** — only recent → early-mover opportunity
-- ⬜ **FADING** — only historical → may be solved
-
-### Commands
+### 3. Research a topic end-to-end
 
 ```bash
-# 1. Find the right subs
-uv run reddit-cli research discover --topic "meditation apps"
-
-# 2. Build a corpus
-uv run reddit-cli research collect --topic "meditation apps"
-
-# Aggressive mode: max limits + all categories + 3y historical
-uv run reddit-cli research collect --topic "meditation apps" --aggressive
-
-# Or pick: --historical --historical-days 1095 --per-sub 100 etc.
-
-# 3. Inspect
-uv run reddit-cli research corpus --topic "meditation apps" --limit 20
-
-# 4. Extract gaps via LLM
-uv run reddit-cli research gaps --topic "meditation apps" --provider anthropic
-uv run reddit-cli research temporal-gaps --topic "meditation apps"  # CHRONIC/EMERGING/FADING
-
-# 5. Render a human report
-uv run reddit-cli research report --topic "meditation apps" --out report.md
+uv run reddit-cli research discover --topic "meditation apps"   # find subreddits
+uv run reddit-cli research collect  --topic "meditation apps"   # pull all sources
+uv run reddit-cli research gaps     --topic "meditation apps" --provider anthropic
+uv run reddit-cli research report   --topic "meditation apps" --out report.md
 ```
 
-All prompts and query templates live in `prompts/*.yaml` — tune them without
-touching code. Set `REDDIT_MYIND_PROMPTS_DIR` to point at your own set.
+---
 
-### Standalone historical fetch
+## MCP server (Claude Code / Cursor)
 
-```bash
-uv run reddit-cli fetch historical --sub resumes --days 730 --limit 1000
-uv run reddit-cli fetch historical --sub resumes --kind comment --days 30
-```
-
-## MCP (Claude Code)
-
-Add to your Claude Code settings:
-
-**Easiest — one command:**
+Add to your Claude Code config in one command:
 
 ```bash
 uv run reddit-cli mcp install
 ```
 
-That writes the server block into `~/.claude.json`. Restart Claude Code.
-
-Or set it manually:
+Or wire it manually:
 
 ```json
 {
   "mcpServers": {
     "reddit-myind": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/reddit-myind", "run", "reddit-cli", "mcp", "serve"]
+      "args": ["--directory", "/absolute/path/to/gap-map-pro", "run", "reddit-cli", "mcp", "serve"]
     }
   }
 }
 ```
 
-**12 tools exposed to Claude:**
+For Cursor (HTTP daemon, survives 5-min cycling):
 
-Core: `reddit_fetch_posts`, `reddit_fetch_comments`, `reddit_fetch_user`,
-`reddit_search`, `reddit_query_db`, `reddit_sub_stats`.
+```bash
+uv run reddit-cli mcp install --client cursor
+bash scripts/mcp_http_daemon.sh start
+```
 
-Historical (pullpush): `reddit_fetch_historical`.
+**90+ tools across 9 categories:**
 
-Research (gap-finding): `reddit_discover_subs`, `reddit_research_collect`,
-`reddit_get_corpus`, `reddit_corpus_temporal_split`, `reddit_topic_stats`.
+| Category | Example tools |
+|---|---|
+| Fetch | `reddit_fetch_posts`, `reddit_fetch_hn`, `reddit_fetch_arxiv`, `reddit_fetch_youtube` |
+| Research | `reddit_research_collect`, `reddit_find_gaps`, `reddit_synthesize_insights` |
+| Papers | `reddit_paper_research_pipeline`, `reddit_paper_chunk_search`, `reddit_paper_fulltext` |
+| Graph | `reddit_graph_build`, `reddit_graph_communities`, `reddit_graph_pagerank` |
+| Product mode | `reddit_product_signals`, `reddit_product_digest`, `reddit_product_sweep` |
+| Personas | `reddit_audience_personas`, `reddit_launch_brief` |
+| Export | `reddit_export_docx`, `reddit_export_pptx`, `reddit_papers_export` |
+| Jobs | `reddit_jobs_submit`, `reddit_jobs_get` (async, survives reconnects) |
+| Admin | `reddit_diagnostics`, `reddit_describe_schema`, `reddit_query_db` |
 
-The MCP server intentionally has **no LLM calls** — Claude Code is the LLM.
+Full reference: [`MCP_TOOLS.md`](MCP_TOOLS.md)
 
-## Data model (SQLite)
+---
 
-- `fetches` — audit log of every fetch
-- `subreddits`, `posts`, `comments`, `users` — deduped on Reddit ID
-- `streams`, `stream_hits` — keyword monitor hits
+## CLI reference
+
+```bash
+# Fetch (all writes to SQLite with dedup)
+uv run reddit-cli fetch posts --sub resumes --sort hot --limit 100
+uv run reddit-cli fetch hn    --query "product research" --limit 50
+uv run reddit-cli fetch arxiv --query "LLM agents" --limit 20
+uv run reddit-cli fetch historical --sub resumes --days 730  # pullpush, 2012–2025
+
+# Search, query, export
+uv run reddit-cli search "ATS resume" --sub cscareerquestions
+uv run reddit-cli query "SELECT author, count(*) c FROM posts GROUP BY author ORDER BY c DESC LIMIT 20"
+uv run reddit-cli export posts --sub resumes --since 7d --format csv --out out.csv
+
+# Analyze
+uv run reddit-cli analyze themes     --sub resumes --since 7d --provider anthropic
+uv run reddit-cli analyze painpoints --sub cscareerquestions --top 50
+
+# Ingest local files
+uv run reddit-cli ingest file   path/to/doc.pdf  --topic "meditation apps"
+uv run reddit-cli ingest folder path/to/docs/    --topic "meditation apps"
+
+# MCP
+uv run reddit-cli mcp serve          # stdio (Claude Code)
+uv run reddit-cli mcp install        # write to ~/.claude.json
+uv run reddit-cli mcp status
+```
+
+All commands support `--json` for machine-readable NDJSON output.
+
+Full reference: [`CLI_REFERENCE.md`](CLI_REFERENCE.md)
+
+---
+
+## Data sources
+
+| Source | Via | Timeframe |
+|---|---|---|
+| Reddit live | PRAW OAuth | May 2025 → now |
+| Reddit historical | Pullpush (Pushshift successor) | Dec 2012 → May 2025 |
+| Hacker News | Algolia API | All time |
+| arXiv / PubMed / OpenAlex / Semantic Scholar / Crossref | Public APIs | All time |
+| GitHub repos + issues | GitHub API | All time |
+| App Store + Google Play | Scraper | Current |
+| YouTube | yt-dlp | Current |
+| Google News + Trends | gnews / pytrends | Current |
+| Stack Overflow | API | All time |
+| Dev.to / ProductHunt | API | Current |
+| Bluesky / Lemmy / Mastodon | API | Current |
+| RSS | feedparser | Current |
+| Trustpilot / AlternativeTo | Scraper | Current |
+| Wikipedia | REST API | Current |
+| Local files | PDF, CSV, MD, VTT, SRT | — |
+
+---
+
+## Pain-point classification
+
+Historical + live data lets you classify gaps as:
+
+- **CHRONIC** — strong in both eras → durable, safe to build
+- **EMERGING** — only recent → early-mover opportunity
+- **FADING** — only historical → likely solved
+
+---
+
+## Architecture
+
+```
+gap-map-pro/
+  src/reddit_research/
+    sources/     # 23+ source adapters (one file each)
+    core/        # client, db, config, exporters
+    fetch/       # posts, comments, users, search, stream
+    analyze/     # providers (anthropic/openai/ollama/gemini) + themes/gaps/synthesis
+    graph/       # knowledge graph (structural + semantic + relations)
+    mcp/         # FastMCP server (90+ tools, async job queue, Palace search)
+    cli/         # Typer entry point (reddit-cli)
+  app-tauri/     # Tauri 2 desktop app (Gap Map.app)
+    src/         # Vanilla JS frontend (main.js, api.js, style.css)
+    src-tauri/   # Rust shell + Python sidecar bridge
+  prompts/       # YAML prompt templates — tune without touching code
+  scripts/       # build, publish, fetch-ffmpeg, mcp_http_daemon
+```
+
+Full architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+
+---
 
 ## Project layout
 
 ```
-src/reddit_research/
-  core/      # client, db, config, exporters
-  fetch/     # posts, comments, users, search, stream
-  analyze/   # providers (anthropic/openai/ollama) + themes/summarize/painpoints
-  cli/       # Typer app (entry point: reddit-cli)
-  mcp/       # FastMCP server
+ARCHITECTURE.md   — system design, data flow, component map
+MCP_TOOLS.md      — all 90+ MCP tools with parameters
+CLI_REFERENCE.md  — all CLI commands
+docs/
+  GAP_MAP_GUIDE.md      — end-user desktop app guide
+  MCP_INFRA.md          — MCP transport, job queue, operating playbook
+  FEATURES.md           — feature coverage and status
+  manual-todo/          — manual steps (certs, secrets, store setup)
 ```
+
+---
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The quickest way to contribute:
+
+- **New data source** — add a source adapter in `src/reddit_research/sources/` (~50 lines, follow `arxiv.py`)
+- **Prompt improvements** — edit any `prompts/*.yaml` without touching code
+- **Tests** — `tests/` is sparse; any coverage of real behavior is welcome
+- **Bug reports** — use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml)
+
+---
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
+
+---
 
 ## Responsible use
 
 This tool is for **research and analysis**, not mass posting or vote manipulation.
 Respect [Reddit's API terms](https://support.reddithelp.com/hc/en-us/articles/16160319875092)
 and the [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564).
-PRAW's built-in rate limiting (100 req/min OAuth) is left on by default — do not disable it.
+PRAW's built-in rate limiting (100 req/min OAuth) is left on — do not disable it.

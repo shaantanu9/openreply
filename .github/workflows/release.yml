@@ -145,6 +145,19 @@ jobs:
           echo '— externalBin after strip —'
           python3 -c "import json; print(json.loads(open('tauri.conf.json').read())['bundle']['externalBin'])"
 
+      # JWT_DESKTOP_SECRET is baked into the binary at compile time (build.rs).
+      # If the repo secret isn't set (e.g. open-source forks, unsigned builds),
+      # generate a random one so the release build doesn't panic. The license-
+      # activation flow won't work without a real stable secret — see LAUNCH.md.
+      - name: Set JWT_DESKTOP_SECRET fallback if not provided
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.JWT_DESKTOP_SECRET }}" ]; then
+            echo "JWT_DESKTOP_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
+          else
+            echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> $GITHUB_ENV
+          fi
+
       # ---------- Node + Rust toolchains ----------
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -178,10 +191,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Release builds REQUIRE this — build.rs panics if missing in
-          # release mode. Bakes a HMAC secret into the desktop license-
-          # activation flow. Must be ≥32 chars. Set as a repo secret.
-          JWT_DESKTOP_SECRET: ${{ secrets.JWT_DESKTOP_SECRET }}
+          # JWT_DESKTOP_SECRET is set by the fallback step above — always present.
+          JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
           # macOS code signing + notarization — all set together here.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -211,7 +222,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JWT_DESKTOP_SECRET: ${{ secrets.JWT_DESKTOP_SECRET }}
+          JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
         with:
           projectPath: ./app-tauri
           tagName: v__VERSION__
