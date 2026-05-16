@@ -74,3 +74,6 @@ act_suit/html_site copy/
 
 # Claude Code session state (per-session, not source of truth)
 .claude/
+
+# Archive folder — validation run dumps, HTML prototypes. Not source.
+_archive/

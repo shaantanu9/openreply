@@ -1,1 +1,0 @@
-Gap map for product research tools Dovetail Condens Notably: nothing extracted yet — run enrichment first.

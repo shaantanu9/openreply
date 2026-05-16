@@ -1,1 +1,0 @@
-Gap map for ATS resume and job search apps: nothing extracted yet — run enrichment first.

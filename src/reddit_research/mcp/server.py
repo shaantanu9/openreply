@@ -1724,6 +1724,214 @@ def reddit_fetch_package_stats(
     return {"error": f"unknown ecosystem: {ecosystem}"}
 
 
+# ── Paper research pipeline ──────────────────────────────────────────────────
+
+
+@mcp.tool()
+def reddit_paper_research_pipeline(
+    topic: str,
+    query: str | None = None,
+    limit_per_source: int = 5,
+    max_fulltext: int = 3,
+    year_from: int | None = None,
+    provider: str | None = None,
+    sources: list[str] | None = None,
+) -> dict:
+    """Full paper research pipeline: search → rank → fulltext → analyze → store.
+
+    One call to do everything: searches all 6 academic sources, fetches full
+    PDF text for the highest-cited papers, runs LLM analysis on each, and
+    persists everything to SQLite so the Insights tab and future MCP calls
+    can use the results immediately.
+
+    Args:
+        topic: The research topic tag (used for DB tagging and analysis context).
+        query: Search query string. Defaults to `topic` if not provided.
+        limit_per_source: Papers to fetch per source (total ≤ 6× this).
+        sources: Which sources to use. Defaults to all six:
+            ['arxiv','pubmed','openalex','semantic_scholar','crossref','scholar'].
+        max_fulltext: How many top-cited papers to attempt full-text fetch for.
+            Ranked by citation count descending before fulltext fetch.
+        year_from: Optional year lower-bound for sources that support it.
+        provider: LLM provider for paper analysis. Auto-resolved if not given.
+
+    Returns:
+        {ok, topic, query, search_total, by_source, fulltext_fetched,
+         fulltext_ok, analyzed, analyses: [{post_id, title, url,
+         source_type, citation_count, summary, relevance, takeaway}],
+         errors}
+    """
+    def _pipeline_impl():
+        from ..sources.arxiv import fetch_arxiv
+        from ..sources.pubmed import fetch_pubmed
+        from ..sources.openalex import fetch_openalex
+        from ..sources.semantic_scholar import fetch_semantic_scholar
+        from ..sources.crossref import fetch_crossref
+        from ..sources.scholar import fetch_scholar
+        from ..core.db import upsert_posts, get_db
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from datetime import datetime, timezone
+
+        q = query or topic
+        wanted_sources = sources or ["arxiv", "pubmed", "openalex", "semantic_scholar", "crossref", "scholar"]
+
+        runners = {
+            "arxiv":            lambda: fetch_arxiv(query=q, limit=limit_per_source),
+            "pubmed":           lambda: fetch_pubmed(query=q, limit=limit_per_source),
+            "openalex":         lambda: fetch_openalex(query=q, limit=limit_per_source, year_from=year_from),
+            "semantic_scholar": lambda: fetch_semantic_scholar(query=q, limit=limit_per_source, year_from=year_from),
+            "crossref":         lambda: fetch_crossref(query=q, limit=limit_per_source, year_from=year_from),
+            "scholar":          lambda: fetch_scholar(query=q, limit=limit_per_source, year_from=year_from),
+        }
+
+        by_source: dict[str, int] = {}
+        all_rows: list[dict] = []
+        errors: dict[str, str] = {}
+
+        # Run all sources in parallel
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            future_to_src = {ex.submit(runners[s]): s for s in wanted_sources if s in runners}
+            for fut in as_completed(future_to_src):
+                src = future_to_src[fut]
+                try:
+                    rows = fut.result() or []
+                    by_source[src] = len(rows)
+                    all_rows.extend(rows)
+                except Exception as e:
+                    errors[src] = str(e)[:200]
+                    by_source[src] = 0
+
+        # Dedupe by id
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for r in all_rows:
+            pid = r.get("id")
+            if pid and pid not in seen:
+                seen.add(pid)
+                unique.append(r)
+
+        # Persist all to posts table + tag to topic
+        if unique:
+            upsert_posts(unique)
+            db = get_db()
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            db["topic_posts"].insert_all(
+                [{"topic": topic, "post_id": r["id"], "source": r.get("source_type", ""),
+                  "added_at": now} for r in unique],
+                pk=("topic", "post_id"), replace=True,
+            )
+
+        # 2. RANK — sort by citation count (score field) descending, take top max_fulltext
+        ranked = sorted(unique, key=lambda r: int(r.get("score") or 0), reverse=True)
+        top_for_fulltext = ranked[:max_fulltext]
+
+        # 3. FULLTEXT — fetch PDF text for top papers
+        from ..research.paper_fulltext import get_full_text
+        fulltext_ok = 0
+        fulltext_fetched = 0
+        for paper in top_for_fulltext:
+            post_id = paper.get("id")
+            if not post_id:
+                continue
+            fulltext_fetched += 1
+            try:
+                result = get_full_text(post_id)
+                if result.get("ok"):
+                    fulltext_ok += 1
+            except Exception as e:
+                errors[f"fulltext_{post_id}"] = str(e)[:200]
+
+        # 4. ANALYZE — run LLM analysis for each paper that has content
+        from ..research.paper_analyze import analyze_paper
+        analyses_out = []
+        analyzed = 0
+        for paper in top_for_fulltext:
+            post_id = paper.get("id")
+            if not post_id:
+                continue
+            try:
+                res = analyze_paper(topic=topic, post_id=post_id, force=False)
+                if res.get("ok") and not res.get("skipped"):
+                    analyzed += 1
+                    analyses_out.append({
+                        "post_id": post_id,
+                        "title": paper.get("title", "")[:200],
+                        "url": paper.get("url", ""),
+                        "source_type": paper.get("source_type", ""),
+                        "citation_count": int(paper.get("score") or 0),
+                        "summary": res.get("summary", ""),
+                        "relevance": res.get("relevance", ""),
+                        "takeaway": res.get("takeaway", ""),
+                    })
+            except Exception as e:
+                errors[f"analyze_{post_id}"] = str(e)[:200]
+
+        return {
+            "ok": True,
+            "topic": topic,
+            "query": q,
+            "search_total": len(unique),
+            "by_source": by_source,
+            "fulltext_fetched": fulltext_fetched,
+            "fulltext_ok": fulltext_ok,
+            "analyzed": analyzed,
+            "analyses": analyses_out,
+            "errors": errors,
+        }
+
+    return _run_with_timeout(
+        _pipeline_impl,
+        timeout=120.0,
+        async_hint="reddit_paper_research_pipeline",
+    )
+
+
+@mcp.tool()
+def reddit_papers_for_topic(topic: str, limit: int = 50) -> dict:
+    """Return all analyzed academic papers for a topic, ranked by citation count.
+
+    Fast read — no LLM call, no network. Returns papers that have been
+    both fetched (in `posts` table) and analyzed (in `paper_analyses` table),
+    with their full metadata merged. Use after `reddit_paper_research_pipeline`
+    or `reddit_analyze_papers_bulk` to pull the evidence base.
+
+    Returns:
+        {ok, topic, count, papers: [{post_id, title, url, source_type,
+         citation_count, year, summary, relevance, takeaway,
+         provider, model, ts}]}
+    """
+    from ..core.db import get_db
+    db = get_db()
+    sql = """
+        SELECT
+            pa.post_id,
+            p.title,
+            p.url,
+            p.source_type,
+            coalesce(p.score, 0) AS citation_count,
+            strftime('%Y', datetime(p.created_utc, 'unixepoch')) AS year,
+            p.created_utc,
+            pa.summary,
+            pa.relevance,
+            pa.takeaway,
+            pa.provider,
+            pa.model,
+            pa.ts
+        FROM paper_analyses pa
+        JOIN posts p ON p.id = pa.post_id
+        WHERE pa.topic = :topic
+        ORDER BY coalesce(p.score, 0) DESC
+        LIMIT :lim
+    """
+    rows = list(db.query(sql, {"topic": topic, "lim": limit}))
+    return {
+        "ok": True,
+        "topic": topic,
+        "count": len(rows),
+        "papers": rows,
+    }
+
+
 # ── graph analysis (NetworkX) ────────────────────────────────────────────────
 
 
