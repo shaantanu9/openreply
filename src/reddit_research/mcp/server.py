@@ -3433,6 +3433,18 @@ def _start_idle_timeout_guard(timeout_seconds: int) -> None:
     t.start()
 
 
+# ── Sub-server composition ────────────────────────────────────────────────
+# Mount focused sub-servers without a namespace prefix so tool names stay
+# consistent with the `reddit_*` convention. New domains get their own
+# sub-server file under mcp/tools/ and a mount() call here.
+try:
+    from .tools.persona_tools import persona_server as _persona_server
+    mcp.mount(_persona_server)
+except Exception as _e:  # pragma: no cover
+    import warnings
+    warnings.warn(f"persona_tools sub-server failed to mount: {_e}", stacklevel=1)
+
+
 def run(
     transport: str = "stdio",
     host: str = "127.0.0.1",

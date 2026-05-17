@@ -4790,6 +4790,12 @@ app.add_typer(whisper_app, name="whisper")
 ytdlp_app = typer.Typer(help="yt-dlp version + overlay auto-updater controls.")
 app.add_typer(ytdlp_app, name="ytdlp")
 
+# ── persona learning agents ─────────────────────────────────────────────────
+# Self-contained Typer sub-app — the whole persona CLI is toggled by these
+# two lines (see cli/persona_cmds.py module docstring).
+from .persona_cmds import persona_app  # noqa: E402
+app.add_typer(persona_app, name="persona")
+
 
 @ingest_app.command("video")
 def cmd_ingest_video(

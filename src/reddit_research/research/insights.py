@@ -388,6 +388,40 @@ def synthesize_insights(
     except Exception:
         pass
 
+    # Graph context — inject top-ranked knowledge-graph nodes for this topic
+    # so the LLM sees the structural topology (pain-points, interventions,
+    # competitors already identified) before synthesising findings. Best-effort:
+    # silently skips when graph is empty or the table doesn't exist yet.
+    try:
+        from ..core.db import get_db as _get_db
+        _db = _get_db()
+        if "graph_nodes" in _db.table_names():
+            _grows = list(_db.query(
+                """
+                SELECT n.id, n.kind, n.label,
+                       (SELECT count(*) FROM graph_edges e
+                        WHERE e.topic = n.topic
+                          AND (e.src = n.id OR e.dst = n.id)) AS degree
+                FROM graph_nodes n
+                WHERE n.topic = ?
+                ORDER BY degree DESC LIMIT 20
+                """,
+                [topic],
+            ))
+            if _grows:
+                _glines = [
+                    f"[{r['kind']}] {r['label']} (degree={r['degree']})"
+                    for r in _grows
+                ]
+                user_prompt = (
+                    user_prompt
+                    + "\n\n## Knowledge Graph — top nodes already identified\n"
+                    + "\n".join(_glines)
+                    + "\nUse these to cross-check your findings and avoid duplicating known nodes."
+                )
+    except Exception:
+        pass
+
     # Adaptive max_tokens per provider. Phase-2's richer JSON schema
     # (Minto + hypothesis cards + disconfirming_evidence) wants ~12000
     # tokens of output budget on paid tiers, but free-tier OpenRouter

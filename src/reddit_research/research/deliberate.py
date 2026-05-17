@@ -110,6 +110,55 @@ PERSONA_KEYS = [p["key"] for p in PERSONAS]
 
 # ── Audience-cluster vote helpers ─────────────────────────────────────
 
+def _persona_conclusions_for_topic(db, topic: str) -> list[dict[str, Any]]:
+    """Read persona conclusions that have memories on this topic.
+
+    Returns `[{persona_name, lens, statement, confidence}, ...]`. Empty
+    when no personas have ingested posts for this topic yet.
+    """
+    if "persona_conclusions" not in db.table_names():
+        return []
+    if "persona_memories" not in db.table_names():
+        return []
+    try:
+        rows = list(db.query(
+            """
+            SELECT p.name AS persona_name, p.lens,
+                   pc.statement, pc.confidence
+            FROM persona_conclusions pc
+            JOIN personas p ON p.id = pc.persona_id
+            WHERE pc.persona_id IN (
+                SELECT DISTINCT persona_id FROM persona_memories
+                WHERE topic = ?
+            )
+            ORDER BY pc.confidence DESC LIMIT 15
+            """,
+            [topic],
+        ))
+        return rows
+    except Exception:
+        return []
+
+
+def _conclusion_endorses(finding: dict[str, Any], conclusion: dict[str, Any]) -> bool:
+    """Heuristic — does this persona conclusion support a finding?
+    True when ≥2 tokens from the conclusion statement appear in the
+    finding title/evidence. Low bar: we want signal, not precision."""
+    stmt = (conclusion.get("statement") or "").lower()
+    if not stmt:
+        return False
+    stmt_tokens = {w for w in re.split(r"\W+", stmt) if len(w) > 4}
+    if not stmt_tokens:
+        return False
+    fields = " ".join([
+        finding.get("title") or "",
+        finding.get("description") or finding.get("summary") or "",
+        finding.get("evidence") or "",
+    ]).lower()
+    matches = sum(1 for t in stmt_tokens if t in fields)
+    return matches >= 2
+
+
 def _audience_clusters(db, topic: str) -> list[dict[str, Any]]:
     """Read clusters from audience_personas. Returns
     `[{label, vocab, says, wants, hates, member_count}, ...]`. Empty list
@@ -249,8 +298,12 @@ def _build_persona_prompt(persona: dict[str, str], topic: str) -> str:
     )
 
 
-def _format_findings_for_review(items: list[dict[str, Any]], audience: list[dict[str, Any]]) -> str:
-    """Format findings + audience clusters as a compact user-prompt block."""
+def _format_findings_for_review(
+    items: list[dict[str, Any]],
+    audience: list[dict[str, Any]],
+    persona_conclusions: list[dict[str, Any]] | None = None,
+) -> str:
+    """Format findings + audience clusters + persona conclusions as a compact user-prompt block."""
     out: list[str] = []
     if audience:
         out.append("REAL AUDIENCE CLUSTERS (citation-grounded):")
@@ -258,6 +311,15 @@ def _format_findings_for_review(items: list[dict[str, Any]], audience: list[dict
             out.append(
                 f"- {c['label']} ({c['member_count']} authors, "
                 f"{c['post_count']} posts) — vocab: {', '.join(c['vocab'][:6]) or '(none)'}"
+            )
+        out.append("")
+    if persona_conclusions:
+        out.append("PERSONA LENSES (distilled beliefs from collected posts):")
+        for pc in persona_conclusions[:8]:
+            conf = pc.get("confidence") or 0.0
+            out.append(
+                f"- [{pc.get('persona_name') or '?'} / {pc.get('lens') or '?'}] "
+                f"(conf={conf:.2f}): {pc.get('statement') or ''}"
             )
         out.append("")
     out.append("FINDINGS:")
@@ -285,7 +347,7 @@ def _persona_vote(
     """Run one persona over the full item list. Returns a list of
     {i, vote, rationale} or None on failure."""
     sys_prompt = _build_persona_prompt(persona, topic)
-    user_prompt = _format_findings_for_review(items, audience)
+    user_prompt = _format_findings_for_review(items, audience, persona_conclusions)
     try:
         raw = prov_obj.complete(
             prompt=user_prompt, system=sys_prompt,
@@ -365,15 +427,21 @@ def _consensus_for_item(
     item: dict[str, Any],
     item_votes: list[tuple[str, str, str]],   # (persona_key, vote, rationale)
     audience_endorse_count: int,
+    persona_endorse_count: int = 0,
 ) -> dict[str, Any]:
-    """Aggregate per-persona votes + audience endorsements into a tier."""
+    """Aggregate per-persona votes + audience + persona-conclusion endorsements into a tier."""
     confirms = [v for v in item_votes if v[1] == "CONFIRM"]
     disputes = [v for v in item_votes if v[1] == "DISPUTE"]
     total = max(1, len(item_votes))
     confirm_count = len(confirms)
 
     # Audience cluster endorsements add up to +1 confirm equivalent.
-    effective_confirm = confirm_count + (1 if audience_endorse_count >= 2 else 0)
+    # Persona conclusion endorsements add another +1 when ≥2 conclusions back the finding.
+    effective_confirm = (
+        confirm_count
+        + (1 if audience_endorse_count >= 2 else 0)
+        + (1 if persona_endorse_count >= 2 else 0)
+    )
 
     if effective_confirm >= 3:    tier = "confirmed"
     elif effective_confirm == 2:  tier = "probable"
@@ -381,8 +449,8 @@ def _consensus_for_item(
     else:                          tier = "discarded"
 
     score = _composite_score(item, confirm_count, total)
-    # Boost slightly when audience clusters back the finding.
-    score = min(1.0, score + 0.05 * audience_endorse_count)
+    # Boost from audience clusters and persona conclusions.
+    score = min(1.0, score + 0.05 * audience_endorse_count + 0.04 * persona_endorse_count)
 
     rationales = {
         "confirm": [{"by": v[0], "why": v[2]} for v in confirms],
@@ -396,6 +464,7 @@ def _consensus_for_item(
             "dispute": len(disputes),
             "abstain": total - confirm_count - len(disputes),
             "audience_endorsements": audience_endorse_count,
+            "persona_endorsements": persona_endorse_count,
         },
         "rationales": rationales,
     }
@@ -432,7 +501,9 @@ def deliberate(
     """
     db = get_db()
     audience = _audience_clusters(db, topic)
+    persona_conclusions = _persona_conclusions_for_topic(db, topic)
     audience_grounded = bool(audience)
+    persona_grounded = bool(persona_conclusions)
     n = len(items)
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -441,17 +512,18 @@ def deliberate(
             "ok": True, "topic": topic, "n_input": 0,
             "rounds": 0, "personas_used": [],
             "audience_grounded": audience_grounded,
+            "persona_grounded": persona_grounded,
             "tiers": {"confirmed": [], "probable": [], "minority": [], "discarded": []},
             "transcripts": [],
             "generated_at": now_iso,
         }
 
-    # Compute audience endorsements for all items up front — used by both
-    # paths.
+    # Compute audience + persona endorsements for all items up front.
     audience_endorse: list[int] = []
+    persona_endorse: list[int] = []
     for it in items:
-        endorse_n = sum(1 for c in audience if _cluster_endorses(it, c))
-        audience_endorse.append(endorse_n)
+        audience_endorse.append(sum(1 for c in audience if _cluster_endorses(it, c)))
+        persona_endorse.append(sum(1 for pc in persona_conclusions if _conclusion_endorses(it, pc)))
 
     # ── LLM path ──
     votes_by_item: list[list[tuple[str, str, str]]] = [[] for _ in items]
@@ -509,7 +581,10 @@ def deliberate(
     }
     for idx, it in enumerate(items):
         if votes_by_item[idx]:
-            consensus = _consensus_for_item(it, votes_by_item[idx], audience_endorse[idx])
+            consensus = _consensus_for_item(
+                it, votes_by_item[idx],
+                audience_endorse[idx], persona_endorse[idx],
+            )
             tier = consensus["tier"]
         else:
             # Heuristic fallback (LLM unavailable or persona returned bad JSON).
@@ -520,6 +595,7 @@ def deliberate(
                 "votes": {
                     "confirm": 0, "dispute": 0, "abstain": 0,
                     "audience_endorsements": audience_endorse[idx],
+                    "persona_endorsements": persona_endorse[idx],
                 },
                 "rationales": {"confirm": [], "dispute": []},
                 "fallback": True,
@@ -541,6 +617,7 @@ def deliberate(
         "rounds": rounds_run,
         "personas_used": personas_used or ["heuristic_fallback"],
         "audience_grounded": audience_grounded,
+        "persona_grounded": persona_grounded,
         "tiers": tiers,
         "counts": {k: len(v) for k, v in tiers.items()},
         "transcripts": transcripts,
