@@ -1,15 +1,33 @@
 # Bundled binaries for the Tauri sidecar
 
-Two binaries ship alongside the Tauri app:
+Two binaries ship inside the built Tauri app. **Neither is committed to git** —
+they are large build artifacts (the Python sidecar alone is ~230 MB), and
+committing them once bloated the repo history to 1.5 GB. Build them locally on
+a fresh clone; CI rebuilds both fresh on every tagged release (see
+`.github/workflows/release.yml`).
 
-| File | Source | Size | Purpose |
+| File | Build with | Size | Purpose |
 |---|---|---|---|
-| `reddit-cli-aarch64-apple-darwin` | `pyinstaller reddit-cli.spec` | ~65 MB | Python sidecar (the CLI powering every feature) |
-| `ffmpeg-aarch64-apple-darwin` | `scripts/fetch-ffmpeg.sh` | ~30 MB | Static ffmpeg for yt-dlp audio extraction (video ingest) |
+| `reddit-cli-aarch64-apple-darwin` | `pyinstaller reddit-cli.spec` | ~230 MB | Python sidecar (the CLI powering every feature) |
+| `ffmpeg-aarch64-apple-darwin` | `scripts/fetch-ffmpeg.sh` | ~48 MB | Static ffmpeg for yt-dlp audio extraction (video ingest) |
 
-## `ffmpeg-aarch64-apple-darwin` — not in git
+Both are listed in `.gitignore`.
 
-Too big to commit. Run once on a fresh clone:
+## `reddit-cli-aarch64-apple-darwin` — build the Python sidecar
+
+```bash
+# From the repo root, with the project installed (`uv sync --all-extras`):
+pyinstaller reddit-cli.spec
+cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin
+chmod +x app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin
+codesign --force --deep --sign - \
+  app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin   # ad-hoc, dev only
+```
+
+`scripts/build-pyinstaller.sh` / `scripts/publish-mac.sh` wrap this. The `.spec`
+bundles the 83 MB ONNX MiniLM embedding model so semantic search works offline.
+
+## `ffmpeg-aarch64-apple-darwin` — fetch ffmpeg
 
 ```bash
 bash scripts/fetch-ffmpeg.sh
@@ -28,7 +46,7 @@ If nothing resolves, the Python side raises a clean error and the UI surfaces a 
 
 ## To include ffmpeg in the DMG
 
-After `scripts/fetch-ffmpeg.sh` drops the binary here, add it to `tauri.conf.json`:
+After `scripts/fetch-ffmpeg.sh` drops the binary here, `tauri.conf.json` already references it:
 
 ```json
 "bundle": {

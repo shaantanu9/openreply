@@ -41,8 +41,13 @@ scripts/onnx-model-cache/
 scripts/licenses/.keys/
 
 
-# Large static binary fetched by scripts/fetch-ffmpeg.sh — not committed.
-app-tauri/src-tauri/binaries/ffmpeg-aarch64-apple-darwin
+# Sidecar binaries — NOT committed. They were the cause of a 1.5 GB git
+# history (every PyInstaller rebuild added a fresh ~230 MB copy). Build them
+# locally: `pyinstaller reddit-cli.spec` (Python sidecar) and
+# `scripts/fetch-ffmpeg.sh` (ffmpeg). CI rebuilds both on every tagged
+# release — see release.yml. The README in this dir has full instructions.
+app-tauri/src-tauri/binaries/reddit-cli-*
+app-tauri/src-tauri/binaries/ffmpeg-*
 
 # Node.js / Next.js — never commit, regenerated via `npm i` / `npm run build`
 **/node_modules/
