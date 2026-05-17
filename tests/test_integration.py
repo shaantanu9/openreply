@@ -79,6 +79,7 @@ def test_db_init_creates_all_tables(clean_env: Path) -> None:
 # ─── Sub discovery (live Reddit) ────────────────────────────────────────────
 
 
+@pytest.mark.slow  # hits live Reddit — TCP-reachable ≠ API-accessible (CI IPs get 403)
 @pytest.mark.skipif(not REDDIT_OK, reason="reddit.com unreachable")
 def test_discover_subs_returns_real_results(clean_env: Path) -> None:
     from reddit_research.research.discover import discover_subs
@@ -102,6 +103,7 @@ def test_discover_subs_returns_real_results(clean_env: Path) -> None:
 # ─── Reddit fetch (live) ────────────────────────────────────────────────────
 
 
+@pytest.mark.slow  # hits live Reddit — TCP-reachable ≠ API-accessible (CI IPs get 403)
 @pytest.mark.skipif(not REDDIT_OK, reason="reddit.com unreachable")
 def test_fetch_posts_writes_to_db(clean_env: Path) -> None:
     from reddit_research.core.db import get_db
@@ -119,6 +121,7 @@ def test_fetch_posts_writes_to_db(clean_env: Path) -> None:
 # ─── LLM ping (live Ollama) ─────────────────────────────────────────────────
 
 
+@pytest.mark.slow  # hits live Ollama on localhost
 @pytest.mark.skipif(not OLLAMA_OK, reason="ollama not running on :11434")
 def test_ollama_ping_ok(clean_env: Path) -> None:
     """Try each installed Ollama model until one completes a 1-token ping.
@@ -156,6 +159,7 @@ def test_ollama_ping_ok(clean_env: Path) -> None:
 # ─── List installed Ollama models ───────────────────────────────────────────
 
 
+@pytest.mark.slow  # hits live Ollama on localhost
 @pytest.mark.skipif(not OLLAMA_OK, reason="ollama not running on :11434")
 def test_list_ollama_models(clean_env: Path) -> None:
     from reddit_research.research.chat import list_ollama_models
@@ -172,10 +176,12 @@ def test_mcp_module_importable() -> None:
     """The MCP server module must import cleanly (fastmcp may be optional)."""
     try:
         from reddit_research.mcp import server  # noqa: F401
-    except ImportError as e:
-        # fastmcp is an optional extra — only fail if the error isn't about it.
+    except (ImportError, RuntimeError) as e:
+        # fastmcp is an optional extra. server.py catches the bare ImportError
+        # and re-raises it as RuntimeError("Install the mcp extra ..."), so we
+        # must accept either type — only fail if it isn't about the mcp extra.
         msg = str(e).lower()
-        if "fastmcp" in msg:
+        if "fastmcp" in msg or "mcp extra" in msg:
             pytest.skip("fastmcp optional extra not installed")
         raise
 

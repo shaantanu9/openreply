@@ -37,11 +37,14 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install project (editable, with dev extras)
+      - name: Install project (editable, all extras)
         run: |
           python -m pip install --upgrade pip
-          # pyproject.toml drives deps; install the dev extra to pull in pytest.
-          pip install -e ".[dev]"
+          # Install ALL extras, not just `dev`. The test suite imports the MCP
+          # server (needs `fastmcp` from the `mcp` extra), source adapters,
+          # retrieval (chromadb) and docs deps. `.[dev]` alone makes
+          # test_mcp_module_importable fail on a missing `fastmcp`.
+          pip install -e ".[all]"
 
       - name: Parse-check every Python source file
         run: |
@@ -72,6 +75,18 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ./app-tauri/src-tauri -> target
+
+      # The sidecar binaries (reddit-cli, ffmpeg) are gitignored build artifacts
+      # — see app-tauri/src-tauri/binaries/README.md. tauri-build validates that
+      # every `externalBin` path exists, and it runs that check even during
+      # `cargo check` (via build.rs). CI never has the binaries, so the list is
+      # stripped here: `cargo check` type-checks the Rust source without the
+      # bundle step. The real bundle build in release.yml builds the binaries
+      # first, so it keeps externalBin intact.
+      - name: Strip externalBin for cargo check (binaries are gitignored artifacts)
+        working-directory: ./app-tauri/src-tauri
+        run: |
+          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[]; p.write_text(json.dumps(d, indent=2))"
 
       - name: cargo check
         working-directory: ./app-tauri/src-tauri
