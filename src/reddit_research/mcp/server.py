@@ -3166,13 +3166,33 @@ def _pidfile_path() -> "object":
 
 
 def _is_alive(pid: int) -> bool:
-    """Kill-0 to check if a PID is alive without touching it."""
+    """True only if PID is a *live* process.
+
+    ``os.kill(pid, 0)`` succeeds for a zombie/defunct process too — but a
+    zombie holds no resources and serves nothing, so a lock it appears to
+    "hold" must be reclaimable. We exclude zombies via the process state
+    (``ps ... -o state=`` → leading ``Z``). Without this, a crashed MCP
+    server the client hasn't reaped yet permanently blocks startup with
+    ``another_mcp_server_running`` — SIGTERM/SIGKILL cannot touch a zombie,
+    so takeover gives up. Best-effort: a ``ps`` failure (e.g. Windows, where
+    zombies don't exist anyway) falls back to the kill-0 result.
+    """
     import os
+    import subprocess
     try:
         os.kill(pid, 0)
-        return True
     except (OSError, ProcessLookupError):
         return False
+    try:
+        state = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "state="],
+            capture_output=True, text=True, timeout=2,
+        ).stdout.strip()
+        if state[:1] == "Z":
+            return False
+    except Exception:
+        pass
+    return True
 
 
 def _acquire_pidfile_lock() -> bool:
