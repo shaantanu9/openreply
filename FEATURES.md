@@ -507,7 +507,7 @@ These modules have a working Python core but **no MCP tool** — they are reache
 | Empathy (jobs) | early | LLM extraction incomplete |
 | Iterate / Bets / Tasks / Activity | schemas exist | UI incomplete / basic |
 
-**Known gaps:** P0 — the bundled sidecar binary in `app-tauri/src-tauri/binaries/` is from **Apr 21** and predates the paper pipeline, persona MCP/CLI surface, and all 2026-05 work; it must be rebuilt (`pyinstaller reddit-cli.spec` → copy → `codesign`) before any desktop release. P1 — 11 partial screens above. Video ingest (`whisper`/`ytdlp` CLI sub-apps, `sources/video.py:125`) is 🔒 behind the `video` pyproject extra.
+**Known gaps:** P1 — 11 partial screens above (data pipeline works, visualisation unfinished — not breakage). The sidecar binary is no longer committed (gitignored); `release.yml` rebuilds it fresh per release. Video ingest (`whisper`/`ytdlp` CLI sub-apps, `sources/video.py:125`) is 🔒 behind the `video` pyproject extra.
 
 ---
 
@@ -542,10 +542,10 @@ Recorded feedback is fed back into synthesis prompts via `research/feedback.py:7
 
 | Severity | Gap | Location |
 |---|---|---|
-| **P0** | Tauri sidecar binary is Apr-21 stale — predates paper pipeline + persona MCP/CLI surface | `app-tauri/src-tauri/binaries/` |
-| **P0** | Developer ID Application cert missing (Gatekeeper / notarization) | release pipeline — see `LAUNCH.md` |
-| **P0** | `JWT_DESKTOP_SECRET` not in GitHub Secrets (license activation) | CI — see `LAUNCH.md` |
-| **P1** | Auto-update not configured (users manually download `.dmg`) | `LAUNCH.md` |
+| ✅ resolved | Sidecar binary staleness — the binary is no longer committed (gitignored); `release.yml` rebuilds it fresh per release, local dev rebuilds via `pyinstaller reddit-cli.spec` | `app-tauri/src-tauri/binaries/` |
+| **deferred** | Developer ID cert + notarization — v0.1.0 ships as an unsigned beta by decision | `docs/manual-todo/future-scope-signing-and-secrets.md` |
+| **deferred** | `JWT_DESKTOP_SECRET` not in GitHub Secrets — unsigned beta uses the `release.yml` random fallback | `docs/manual-todo/future-scope-signing-and-secrets.md` |
+| **deferred** | Auto-update not configured (users manually download `.dmg`) | `docs/manual-todo/future-scope-signing-and-secrets.md` |
 | **P1** | 14 advanced analysis modules are 🟡 — core works, no MCP tool / unfinished Tauri screen | category 14 |
 | **P1** | 11 Tauri screens 🟡 — data pipeline works, visualisation unfinished | category 15 |
 | **P2** | No automated test coverage for the `persona/` module | `tests/` |
