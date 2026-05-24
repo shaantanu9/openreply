@@ -42,18 +42,34 @@
 
   /* Type scale (used across screens + inline styles) */
   --fs-11: 11px;
+  --fs-12: 12px;
   --fs-13: 13px;
+  --fs-14: 14px;
   --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-20: 20px;
+  --fs-24: 24px;
 
-  /* Page rhythm — main column padding + vertical gaps between blocks */
-  --page-pad-x: 28px;
-  --page-pad-y: 22px;
-  --page-pad-bottom: 44px;
-  --block-gap: 18px;
-  --block-gap-lg: 24px;
-  --block-gap-sm: 14px;
-  --card-pad-x: 22px;
-  --card-pad-y: 20px;
+  /* Spacing scale — 8pt grid. Single source of truth for padding,
+     margin, and gap. Use var(--space-N) everywhere; never hardcode px. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Page rhythm — semantic aliases onto the spacing scale. */
+  --page-pad-x: var(--space-6);
+  --page-pad-y: var(--space-5);
+  --page-pad-bottom: var(--space-7);
+  --block-gap: var(--space-4);
+  --block-gap-lg: var(--space-5);
+  --block-gap-sm: var(--space-3);
+  --card-pad-x: var(--space-5);
+  --card-pad-y: var(--space-5);
 
   /* Names used in inline screen styles — map to real tokens (dark mode follows) */
   --border: var(--line);
@@ -8649,3 +8665,98 @@ html.dark .persona-chat-msg--assistant {
 .persona-mono-log .persona-log-line--err  { color: #B84747; }
 .persona-mono-log .persona-log-line--info { color: var(--ink-3); }
 .persona-mono-log .persona-log-line--ok   { color: var(--mint-700, #2da44e); font-weight: 600; }
+
+/* ============================================================
+   Layout primitives — PageShell / LoadingSkeleton / ErrorCard.
+   See src/components/. Token-driven; no hardcoded px.
+   ============================================================ */
+
+/* ---- PageShell ---- */
+.page-shell {
+  padding: var(--page-pad-y) var(--page-pad-x) var(--page-pad-bottom);
+  display: flex;
+  flex-direction: column;
+  gap: var(--block-gap);
+}
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.page-header__text { min-width: 0; }
+.page-header__title {
+  font-size: var(--fs-20);
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+}
+.page-header__subtitle {
+  font-size: var(--fs-13);
+  color: var(--ink-3);
+  margin-top: var(--space-1);
+}
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.page-shell__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--block-gap);
+}
+
+/* ---- LoadingSkeleton ---- */
+.skel-wrap { display: flex; flex-direction: column; gap: var(--space-3); }
+.skel {
+  background: var(--line);
+  border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+  transform: translateX(-100%);
+  animation: skel-shimmer 1.4s ease-in-out infinite;
+}
+html.dark .skel::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent);
+}
+@keyframes skel-shimmer { 100% { transform: translateX(100%); } }
+.skel-line  { display: flex; align-items: center; gap: var(--space-3); }
+.skel-dot   { width: var(--space-5); height: var(--space-5); border-radius: 50%; flex-shrink: 0; }
+.skel-bar   { height: var(--space-3); flex: 1; }
+.skel-card  { height: var(--space-8); }
+.skel-row   { height: var(--space-6); }
+.skel-thead { height: var(--space-5); width: 40%; }
+
+/* ---- ErrorCard ---- */
+.error-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.error-card__icon {
+  width: var(--space-7);
+  height: var(--space-7);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--rose-soft);
+  color: var(--chronic);
+}
+.error-card__icon i { width: var(--space-5); height: var(--space-5); }
+.error-card__title   { font-size: var(--fs-15); font-weight: 700; color: var(--ink); }
+.error-card__message { font-size: var(--fs-13); color: var(--ink-3); max-width: 420px; }
+.error-card__retry   { margin-top: var(--space-2); }
