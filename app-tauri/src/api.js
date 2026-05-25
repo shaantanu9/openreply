@@ -1252,6 +1252,14 @@ export const api = {
   mcpStatus:    (client)  => invoke('mcp_status',    { client: client || null }),
   mcpInstall:   (client)  => invoke('mcp_install',   { client: client || null }),
   mcpUninstall: (client)  => invoke('mcp_uninstall', { client: client || null }),
+
+  // ----- CLI symlink (one-click install gapmap-cli to /usr/local/bin) -----
+  // Status: { installed, healthy, path, points_to, expected }
+  // Install/Uninstall prompt for admin via osascript.
+  cliSymlinkStatus:   ()  => invoke('cli_symlink_status'),
+  installCliSymlink:  ()  => invoke('install_cli_symlink'),
+  uninstallCliSymlink:()  => invoke('uninstall_cli_symlink'),
+
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
 
   // ── Unified cross-table search ───────────────────────────────────────

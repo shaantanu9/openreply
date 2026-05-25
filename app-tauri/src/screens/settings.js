@@ -174,6 +174,20 @@ export async function renderSettings(root) {
         <div class="empty-state" style="padding:12px">loading…</div>
       </div>
 
+      <!-- Command-line tool — one-click install gapmap-cli to /usr/local/bin/gapmap -->
+      <div class="settings-card" id="card-cli-symlink" style="grid-column:1/-1">
+        <h4>Command line tool</h4>
+        <p style="color:var(--ink-3)">
+          Use Gap Map from your terminal: <code>gapmap research collect --topic "X"</code>,
+          <code>gapmap query "SELECT …"</code>, etc. Installing creates a symlink at
+          <code>/usr/local/bin/gapmap</code> pointing at the bundled binary (a future app
+          update is picked up automatically). macOS will prompt for your password once.
+        </p>
+        <div id="cli-symlink-body" style="margin-top:10px">
+          <div class="empty-state" style="padding:10px">checking…</div>
+        </div>
+      </div>
+
       <!-- Task 9.5 — Extraction mode + token-cost controls.
            Persisted to ~/Library/Application Support/…/extraction.json via
            the extraction_prefs_{get,set} Rust commands. Per-topic overrides
@@ -357,6 +371,11 @@ export async function renderSettings(root) {
   api.cliInfo()
     .then(info => { if (alive()) fillTablesCard(root, info); })
     .catch(e => { if (alive()) reportError(root, 'info', e); });
+
+  // CLI symlink status — separate Settings card with Install/Uninstall buttons
+  api.cliSymlinkStatus()
+    .then(s => { if (alive()) fillCliSymlinkCard(root, s); })
+    .catch(e => { if (alive()) fillCliSymlinkCard(root, { error: String(e?.message || e) }); });
 
   Promise.all([api.appDataDir(), api.cliInfo().catch(() => ({}))])
     .then(async ([dataDir, info]) => {
@@ -1013,6 +1032,134 @@ function fillTablesCard(root, info) {
       ? Object.entries(t).map(([k, v]) => `<div class="kv-row"><b>${esc(k)}</b><span>${v}</span></div>`).join('')
       : `<div class="empty-state" style="padding:12px">No table info yet — run a collect to populate.</div>`}
   `;
+}
+
+// ─── Command-line tool symlink card ─────────────────────────────────────────
+// Three visible states:
+//   1. error          — backend command failed (osascript missing, etc.)
+//   2. not installed  — `Install command line tool` button
+//   3. installed      — green badge + path + "Uninstall" + "Re-install" buttons
+//      (re-install is for when the bundled binary has moved, e.g. app update
+//      copied the .app to a different location)
+function fillCliSymlinkCard(root, status) {
+  const body = root.querySelector('#cli-symlink-body');
+  if (!body) return;
+
+  const renderBusy = (msg) => {
+    body.innerHTML = `<div class="empty-state" style="padding:10px">${esc(msg)}</div>`;
+  };
+
+  const refresh = async () => {
+    try {
+      const next = await api.cliSymlinkStatus();
+      fillCliSymlinkCard(root, next);
+    } catch (e) {
+      fillCliSymlinkCard(root, { error: String(e?.message || e) });
+    }
+  };
+
+  if (status?.error) {
+    body.innerHTML = `
+      <div class="empty-state" style="padding:10px;color:var(--rose,#c33)">
+        Could not check CLI install state: ${esc(status.error)}
+      </div>`;
+    return;
+  }
+
+  const installed = !!status?.installed;
+  const healthy = !!status?.healthy;
+  const path = esc(status?.path || '/usr/local/bin/gapmap');
+  const pointsTo = esc(status?.points_to || '');
+  const expected = esc(status?.expected || '');
+
+  if (!installed) {
+    body.innerHTML = `
+      <div class="kv-row"><b>Status</b><span style="color:var(--ink-3)">Not installed</span></div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm icon-btn" id="cli-install">
+          <i data-lucide="download"></i> Install command line tool
+        </button>
+      </div>
+      <div style="color:var(--ink-3);font-size:12px;margin-top:8px">
+        Creates a symlink at <code>${path}</code> pointing at the bundled binary.
+      </div>`;
+    body.querySelector('#cli-install').addEventListener('click', async () => {
+      renderBusy('Requesting admin password…');
+      try {
+        const res = await api.installCliSymlink();
+        renderBusy(res?.message || 'Installed. Verifying…');
+        await refresh();
+      } catch (e) {
+        body.innerHTML = `
+          <div class="empty-state" style="padding:10px;color:var(--rose,#c33)">
+            ${esc(String(e?.message || e))}
+          </div>
+          <div style="margin-top:8px"><button class="btn btn-ghost btn-sm" id="cli-retry">Try again</button></div>`;
+        body.querySelector('#cli-retry').addEventListener('click', refresh);
+      }
+    });
+    window.refreshIcons?.();
+    return;
+  }
+
+  // Installed — show health, path details, uninstall
+  const healthBadge = healthy
+    ? `<span style="color:var(--mint,#2a8); font-weight:600">Healthy</span>`
+    : `<span style="color:var(--gold,#c80); font-weight:600">Stale — re-install</span>`;
+  body.innerHTML = `
+    <div class="kv-row"><b>Status</b><span>${healthBadge}</span></div>
+    <div class="kv-row"><b>Installed at</b><span><code>${path}</code></span></div>
+    <div class="kv-row"><b>Points to</b><span><code style="word-break:break-all">${pointsTo}</code></span></div>
+    ${healthy ? '' : `
+      <div class="kv-row"><b>Expected</b><span><code style="word-break:break-all">${expected}</code></span></div>`}
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      ${!healthy ? `
+        <button class="btn btn-primary btn-sm icon-btn" id="cli-reinstall">
+          <i data-lucide="refresh-cw"></i> Re-install to current binary
+        </button>` : ''}
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="cli-uninstall">
+        <i data-lucide="trash-2"></i> Uninstall
+      </button>
+      <button class="btn btn-ghost btn-sm" id="cli-test">Try in terminal</button>
+    </div>
+    <div style="color:var(--ink-3);font-size:12px;margin-top:8px">
+      Run <code>${path} --help</code> in your terminal to verify.
+    </div>`;
+  body.querySelector('#cli-uninstall').addEventListener('click', async () => {
+    if (!confirm(`Remove ${status.path}? You can re-install any time.`)) return;
+    renderBusy('Requesting admin password…');
+    try {
+      await api.uninstallCliSymlink();
+      await refresh();
+    } catch (e) {
+      body.innerHTML = `
+        <div class="empty-state" style="padding:10px;color:var(--rose,#c33)">
+          ${esc(String(e?.message || e))}
+        </div>`;
+    }
+  });
+  const reBtn = body.querySelector('#cli-reinstall');
+  if (reBtn) reBtn.addEventListener('click', async () => {
+    renderBusy('Requesting admin password…');
+    try {
+      await api.installCliSymlink();
+      await refresh();
+    } catch (e) {
+      body.innerHTML = `
+        <div class="empty-state" style="padding:10px;color:var(--rose,#c33)">
+          ${esc(String(e?.message || e))}
+        </div>`;
+    }
+  });
+  const testBtn = body.querySelector('#cli-test');
+  if (testBtn) testBtn.addEventListener('click', () => {
+    // Best UX would be to open Terminal.app pre-typed. Without that capability
+    // here, give the user the exact line to copy.
+    navigator.clipboard?.writeText(`${status.path} --help`).catch(() => {});
+    testBtn.textContent = 'Copied — paste in terminal';
+    setTimeout(() => { testBtn.textContent = 'Try in terminal'; }, 2000);
+  });
+  window.refreshIcons?.();
 }
 
 // ─── Palace (semantic search) card ──────────────────────────────────────────

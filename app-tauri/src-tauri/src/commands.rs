@@ -5107,6 +5107,107 @@ pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Val
     run_cli(&app, arg_refs).await.map_err(err_to_string)
 }
 
+// ── CLI symlink to /usr/local/bin/gapmap ──────────────────────────────────
+//
+// In a DMG install the Python sidecar binary lives at
+// `<Gap Map.app>/Contents/MacOS/gapmap-cli-aarch64-apple-darwin` — invisible
+// to the user's terminal. These commands manage a symlink at
+// `/usr/local/bin/gapmap` pointing at that bundled binary so the recipient
+// can `gapmap research collect ...` from anywhere. The link uses
+// `osascript with administrator privileges` since /usr/local/bin requires
+// sudo on a fresh Mac without homebrew.
+//
+// Symlink (not copy) so a future app update is picked up automatically.
+
+const CLI_SYMLINK_PATH: &str = "/usr/local/bin/gapmap";
+
+#[tauri::command]
+pub async fn cli_symlink_status() -> Result<Value, String> {
+    let target = std::path::Path::new(CLI_SYMLINK_PATH);
+    let installed = target.exists() || target.is_symlink();
+    let points_to: Option<String> = if target.is_symlink() {
+        std::fs::read_link(target).ok().map(|p| p.to_string_lossy().to_string())
+    } else if target.exists() {
+        // It's a regular file (copy, not symlink) — record path so UI can warn
+        Some(format!("(regular file at {})", CLI_SYMLINK_PATH))
+    } else {
+        None
+    };
+    let expected = resolve_sidecar_bin_path().map(|p| p.to_string_lossy().to_string());
+    let healthy = match (&points_to, &expected) {
+        (Some(p), Some(e)) => p == e,
+        _ => false,
+    };
+    Ok(serde_json::json!({
+        "installed": installed,
+        "healthy": healthy,
+        "path": CLI_SYMLINK_PATH,
+        "points_to": points_to,
+        "expected": expected,
+    }))
+}
+
+#[tauri::command]
+pub async fn install_cli_symlink() -> Result<Value, String> {
+    let sidecar = resolve_sidecar_bin_path()
+        .ok_or_else(|| "Could not locate the bundled gapmap-cli binary. Reinstall Gap Map and try again.".to_string())?;
+    let sidecar_str = sidecar.to_string_lossy().to_string();
+    // Escape single-quotes for embedding inside the AppleScript double-quoted
+    // shell command. AppleScript handles its own outer quoting; we just need
+    // the inner shell-safe path.
+    let safe = sidecar_str.replace('\'', r"'\''");
+    let script = format!(
+        r#"do shell script "mkdir -p /usr/local/bin && ln -sf '{src}' '{dst}'" with administrator privileges"#,
+        src = safe,
+        dst = CLI_SYMLINK_PATH,
+    );
+    let output = tokio::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .await
+        .map_err(|e| format!("Could not run osascript: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.contains("User canceled") || stderr.contains("(-128)") {
+            return Err("Install cancelled.".to_string());
+        }
+        return Err(format!("Install failed: {stderr}"));
+    }
+    Ok(serde_json::json!({
+        "ok": true,
+        "path": CLI_SYMLINK_PATH,
+        "points_to": sidecar_str,
+        "message": format!("Installed. Try `{} --help` in your terminal.", CLI_SYMLINK_PATH),
+    }))
+}
+
+#[tauri::command]
+pub async fn uninstall_cli_symlink() -> Result<Value, String> {
+    let target = std::path::Path::new(CLI_SYMLINK_PATH);
+    if !target.exists() && !target.is_symlink() {
+        return Ok(serde_json::json!({"ok": true, "removed": false, "message": "Not installed."}));
+    }
+    let script = format!(
+        r#"do shell script "rm -f '{dst}'" with administrator privileges"#,
+        dst = CLI_SYMLINK_PATH,
+    );
+    let output = tokio::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .await
+        .map_err(|e| format!("Could not run osascript: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.contains("User canceled") || stderr.contains("(-128)") {
+            return Err("Uninstall cancelled.".to_string());
+        }
+        return Err(format!("Uninstall failed: {stderr}"));
+    }
+    Ok(serde_json::json!({"ok": true, "removed": true}))
+}
+
 /// Structured activation check — shared by `license_status`, `ensure_mcp_allowed`,
 /// and anything else that needs to know *why* a licence is failing (not just
 /// that it is). Returns a `(code, human_message)` pair when the device is

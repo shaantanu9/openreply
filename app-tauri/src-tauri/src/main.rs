@@ -475,6 +475,10 @@ fn main() {
             commands::mcp_status,
             commands::mcp_install,
             commands::mcp_uninstall,
+            // CLI symlink — expose bundled gapmap-cli at /usr/local/bin/gapmap
+            commands::cli_symlink_status,
+            commands::install_cli_symlink,
+            commands::uninstall_cli_symlink,
             // ── AG-C: global-competitors (T2.5) + finding feedback (T2.4) ──
             commands::global_competitors,
             commands::feedback_record,
