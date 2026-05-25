@@ -319,6 +319,25 @@ export async function renderHome(root) {
       <div class="avatar" id="home-avatar" role="button" tabindex="0" title="Settings">${headerAvatar()}</div>
     </header>
 
+    <!-- First-launch warm-up notice — shows when the bundled Python sidecar
+         hasn't responded within 4s. macOS Gatekeeper verifies every .so
+         inside the PyInstaller binary on the FIRST launch only (~10-30s
+         on Apple Silicon). Without this banner the user sees only loading
+         skeletons and assumes the app is broken. Auto-hides the moment
+         the first api.cliInfo() returns. -->
+    <div id="first-launch-warmup" class="empty-state" style="display:none;margin:14px 0;padding:14px;background:var(--orange-pale);border:1px solid var(--orange);color:var(--ink-2)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="skel skel-round" style="width:14px;height:14px;border-radius:50%;flex-shrink:0"></span>
+        <div>
+          <div style="font-weight:600;color:var(--ink-1)">First-time setup — one moment</div>
+          <div style="color:var(--ink-3);font-size:12.5px">
+            macOS is verifying the Gap Map engine. This takes 10-30 seconds on first launch,
+            then never again.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="active-collect-slot"></div>
     <div id="byok-prompt-slot"></div>
     <div id="palace-nudge-slot"></div>
@@ -436,6 +455,35 @@ export async function renderHome(root) {
     }
     window.refreshIcons?.();
   }
+
+  // First-launch warm-up indicator. Show the explanatory banner if no
+  // sidecar response arrives within 4s; hide as soon as one does. Avoids
+  // the "skeletons forever — is it broken?" impression during the
+  // unavoidable one-time Gatekeeper verification of the PyInstaller
+  // binary's .so files (10-30s on Apple Silicon, first launch only).
+  const warmupBanner = root.querySelector('#first-launch-warmup');
+  let warmupShown = false;
+  const showWarmup = setTimeout(() => {
+    if (warmupBanner) {
+      warmupBanner.style.display = '';
+      warmupShown = true;
+    }
+  }, 4000);
+  const hideWarmup = () => {
+    clearTimeout(showWarmup);
+    if (warmupBanner && (warmupShown || warmupBanner.style.display === '')) {
+      // Fade-out micro-animation
+      warmupBanner.style.transition = 'opacity 240ms';
+      warmupBanner.style.opacity = '0';
+      setTimeout(() => { warmupBanner.style.display = 'none'; warmupBanner.style.opacity = ''; }, 260);
+    } else if (warmupBanner) {
+      warmupBanner.style.display = 'none';
+    }
+  };
+  // Any successful api response means the sidecar warmed up — hide the banner.
+  // overviewStats is what loadHeroAndStats calls first; pre-fire it solo so
+  // the banner reflects real readiness rather than the slowest slot.
+  api.overviewStats().then(hideWarmup).catch(hideWarmup);
 
   // Background refresh — fires all queries in parallel and rewrites slots
   // when fresher data arrives. Per-call failures are per-slot, never kill
