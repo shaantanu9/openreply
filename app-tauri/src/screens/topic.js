@@ -3291,6 +3291,7 @@ export async function renderTopic(root, { params }) {
       if (byok?.deepseek?.set)   configured.push('DeepSeek');
       if (byok?.mistral?.set)    configured.push('Mistral');
       if (byok?.google?.set)     configured.push('Google');
+      if (byok?.nvidia?.set)     configured.push('NVIDIA');
       if (byok?.ollama_base_url) configured.push('Ollama');
       const statusLine = configured.length
         ? `<p style="color:var(--ink-2);font-size:13px;margin:6px 0 0"><b>${configured.length}</b> provider${configured.length>1?'s':''} configured: ${esc(configured.join(', '))} — but no default picked.</p>`

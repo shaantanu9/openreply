@@ -335,6 +335,7 @@ async function renderStep3(root, body, info) {
     { k: 'deepseek',   label: 'DeepSeek',        chip: '#0EA5E9' },
     { k: 'mistral',    label: 'Mistral',         chip: '#FF7000' },
     { k: 'google',     label: 'Google Gemini',   chip: '#4285F4' },
+    { k: 'nvidia',     label: 'NVIDIA NIM',      chip: '#76B900' },
     { k: 'ollama',     label: 'Ollama (local)',  chip: '#64748B', isLocal: true },
   ];
   const isReady = (p) => p.isLocal ? (typeof byok[p.k] === 'string' && !!byok[p.k]) : !!byok[p.k]?.set;
@@ -363,7 +364,7 @@ async function renderStep3(root, body, info) {
             <h4>AI extraction <span style="color:var(--ink-3);font-size:var(--fs-13);font-weight:500">(recommended)</span></h4>
             <span class="pill ${readyCount ? 'active' : ''}">${readyCount ? `✓ ${readyCount} ready` : 'none set'}</span>
           </div>
-          <p style="margin-top:4px">Painpoints / features / DIY workarounds need an LLM. You can use any of 8 providers (incl. free local Ollama).</p>
+          <p style="margin-top:4px">Painpoints / features / DIY workarounds need an LLM. You can use any of 9 providers (incl. free local Ollama).</p>
           <div class="llm-grid" style="margin:10px 0 4px">
             ${providers.map(p => `
               <div class="llm-chip ${isReady(p) ? 'on' : 'off'}">
