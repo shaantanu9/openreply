@@ -161,7 +161,9 @@ fi
 # (--sign flag + notarytool). For ad-hoc beta builds we ship a .zip
 # alongside the .dmg — extracted files from a .zip don't carry the
 # from-DMG provenance check and copy cleanly.
-(cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles "$BUNDLES")
+# Build .app first (so we can zip it) — Tauri deletes the .app dir after
+# the DMG step, so we need .app present before .dmg gets created.
+(cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles app)
 
 APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/Gap Map.app"
 if [[ -d "$APP_PATH" ]]; then
@@ -169,12 +171,19 @@ if [[ -d "$APP_PATH" ]]; then
   mkdir -p "$ZIP_OUT"
   ZIP_PATH="${ZIP_OUT}/Gap Map_0.1.0_${ARCH}.zip"
   rm -f "$ZIP_PATH"
-  echo "▶ Step 6 — also produce a .zip (works on macOS 26.5+ where DMG drag fails)"
+  echo "▶ Step 5b — produce .zip (recommended path on macOS 26.5+ Tahoe)"
   # `ditto -ck --keepParent` is Apple's canonical way to zip a .app while
   # preserving extended attrs + code signature. --sequesterRsrc keeps
   # resource forks tidy. Plain `zip` is unsafe for .app bundles.
   ditto -ck --keepParent --sequesterRsrc --rsrc "$APP_PATH" "$ZIP_PATH"
   echo "✓ ZIP: $ZIP_PATH ($(du -sh "$ZIP_PATH" | cut -f1))"
+fi
+
+# Now build the DMG too (so the bundle dir has both artifacts). Tauri
+# rebuilds the .app from scratch in this pass, which is fine — we
+# already produced the .zip.
+if [[ "$BUNDLES" == *dmg* ]]; then
+  (cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles dmg)
 fi
 
 DMG=$(ls -t app-tauri/src-tauri/target/"$RUST_TRIPLE"/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
