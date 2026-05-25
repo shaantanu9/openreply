@@ -8,28 +8,39 @@ first-launch, the five most useful features, and how to send feedback.
 
 ---
 
-## 1. Install (2 minutes)
+## 1. Install (2 minutes) — **use the .zip on macOS 26.5+ (Tahoe)**
 
-> **⚠️ Important:** You **must** drag the app to `/Applications` before
-> opening it. Double-clicking Gap Map directly inside the mounted DMG
-> will cause the app to crash on startup with a `SIGBUS / KERN_MEMORY_ERROR`
-> — a known macOS limitation when WebKit-based apps run off a read-only
-> disk image. Drag to `/Applications`, eject the DMG, then launch.
+> **⚠️ macOS 26.5+ (Tahoe) blocks drag-installs from DMGs unless the app
+> is signed with Apple Developer ID + notarized.** We're working on
+> Developer ID — until then, **use `Gap Map_0.1.0_aarch64.zip` instead
+> of the DMG.** Same .app inside; the ZIP path bypasses Tahoe's
+> DMG-specific restrictions.
 
-1. Download the DMG you were sent. It's named `Gap Map_0.1.0_aarch64.dmg`
-   (about 159 MB).
-2. Double-click the DMG. A Finder window opens with **Gap Map.app** and an
+### Path A — ZIP (Tahoe-safe, recommended for beta)
+
+1. Download the file you were sent. It's named `Gap Map_0.1.0_aarch64.zip`
+   (about 60 MB compressed).
+2. Double-click the `.zip` — macOS Archive Utility extracts it, producing
+   `Gap Map.app` next to it.
+3. **Drag `Gap Map.app` to `/Applications`.** This drag works because the
+   files came out of a ZIP, not a DMG.
+4. Open Finder → Applications → **right-click `Gap Map.app` → Open**.
+   macOS warns "developer cannot be verified" — click **Open**. This
+   one-time approval persists; subsequent launches are normal double-click.
+5. App launches with the 5-step wizard.
+
+### Path B — DMG (only on macOS 15 / Sequoia or older)
+
+1. Download `Gap Map_0.1.0_aarch64.dmg` (~159 MB).
+2. Double-click the DMG → Finder window opens with **Gap Map.app** and an
    **Applications** shortcut.
-3. **DRAG `Gap Map.app` onto the `Applications` shortcut** that's in the
-   DMG window. Wait ~5 seconds for the copy to finish.
-4. **Eject the DMG** — right-click the "Gap Map" volume in Finder's
-   sidebar → Eject (or drag the volume icon to the Trash).
-5. Open `Applications` (Cmd-Shift-A in Finder) → find **Gap Map** → open
-   from there.
+3. **Drag `Gap Map.app` onto Applications.** Eject the DMG.
+4. Open `Applications` → right-click `Gap Map.app` → Open → Open in the
+   dialog.
 
-If Gap Map crashes immediately on first launch, you almost certainly
-opened it from the mounted DMG instead of from `/Applications`. See the
-warning above. Re-mount, drag, eject, open from `/Applications`.
+If you're on Tahoe (macOS 26.x) and the DMG drag silently produces a
+broken .app (empty / 0-byte binaries inside `Contents/MacOS/`), switch to
+the .zip from Path A — that's the symptom of Tahoe's signing enforcement.
 
 ### macOS Gatekeeper warning (one-time)
 

@@ -150,14 +150,32 @@ if [[ $REQUIRE_SIGN -eq 1 ]]; then
   fi
 fi
 
-# Run Tauri's standard bundle pipeline — produces .app + DMG in one go.
-# Tauri's bundler signs the .app wrapper. The inner sidecars (gapmap-cli,
-# ffmpeg) inherit clearance via the .app's signature when launched from a
-# proper install location (/Applications). Running from the DMG mount
-# itself is unsupported — BETA.md instructs users to drag the .app to
-# /Applications before opening, and the in-app router refuses to write
-# ephemeral DMG-mount paths into MCP client configs.
+# Run Tauri's standard bundle pipeline — produces .app and (when DMG is
+# requested) the DMG. Tauri's bundler signs the .app wrapper.
+#
+# IMPORTANT (macOS 26.5+ / Tahoe): Tahoe's strict code-signing enforcement
+# rejects unsigned/ad-hoc binaries inside DMGs during file-copy. Symptom:
+# users dragging Gap Map.app from the DMG mount to /Applications end up
+# with 0-byte / truncated inner binaries (cp returns success but reads
+# fail silently). The realistic fix is Developer ID + notarization
+# (--sign flag + notarytool). For ad-hoc beta builds we ship a .zip
+# alongside the .dmg — extracted files from a .zip don't carry the
+# from-DMG provenance check and copy cleanly.
 (cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles "$BUNDLES")
+
+APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/Gap Map.app"
+if [[ -d "$APP_PATH" ]]; then
+  ZIP_OUT="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/zip"
+  mkdir -p "$ZIP_OUT"
+  ZIP_PATH="${ZIP_OUT}/Gap Map_0.1.0_${ARCH}.zip"
+  rm -f "$ZIP_PATH"
+  echo "▶ Step 6 — also produce a .zip (works on macOS 26.5+ where DMG drag fails)"
+  # `ditto -ck --keepParent` is Apple's canonical way to zip a .app while
+  # preserving extended attrs + code signature. --sequesterRsrc keeps
+  # resource forks tidy. Plain `zip` is unsafe for .app bundles.
+  ditto -ck --keepParent --sequesterRsrc --rsrc "$APP_PATH" "$ZIP_PATH"
+  echo "✓ ZIP: $ZIP_PATH ($(du -sh "$ZIP_PATH" | cut -f1))"
+fi
 
 DMG=$(ls -t app-tauri/src-tauri/target/"$RUST_TRIPLE"/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
 if [[ -n "$DMG" ]]; then
