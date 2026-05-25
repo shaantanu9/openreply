@@ -105,11 +105,23 @@ echo
 # ─── 5. Tauri bundle ────────────────────────────────────────────────────
 echo "▶ Step 5/5 — cargo tauri build --target $RUST_TRIPLE --bundles $BUNDLES"
 # JWT_DESKTOP_SECRET is required for release builds (build.rs panics
-# without it). Generate locally with: openssl rand -hex 32
+# without it). MUST match Vercel's TOKEN_SIGNING_SECRET on gapmap.myind.ai
+# or every activation will fail with `invalid-signature` on the desktop.
+#
+# Auto-source .env.publish if it exists — that's the canonical location
+# for the production secret on this dev box (committed-gitignored).
+if [[ -z "${JWT_DESKTOP_SECRET:-}" && -f .env.publish ]]; then
+  # shellcheck disable=SC1091
+  set -a; source .env.publish; set +a
+  if [[ -n "${JWT_DESKTOP_SECRET:-}" ]]; then
+    echo "   ✓ JWT_DESKTOP_SECRET loaded from .env.publish (${#JWT_DESKTOP_SECRET} chars)"
+  fi
+fi
 if [[ -z "${JWT_DESKTOP_SECRET:-}" ]]; then
-  echo "   ⚠ JWT_DESKTOP_SECRET not set — using a per-build random value."
-  echo "     This DMG won't accept license tokens from your marketing site."
-  echo "     For production: export the SAME secret you've set in GitHub Actions."
+  echo "   ⚠ JWT_DESKTOP_SECRET not set and no .env.publish — using random."
+  echo "     This DMG WILL NOT activate against gapmap.myind.ai."
+  echo "     Fix: copy .env.publish.example → .env.publish, paste the same"
+  echo "     secret you set in Vercel as TOKEN_SIGNING_SECRET, retry."
   export JWT_DESKTOP_SECRET="local-dev-$(openssl rand -hex 32 | head -c 32)"
 fi
 

@@ -6448,14 +6448,31 @@ pub async fn license_server_check(api_base: String) -> Result<Value, String> {
     Err(format!("license server not reachable: {}", last_err))
 }
 
+/// Default License API URL pre-filled into onboarding Step 6.
+///
+/// Priority:
+///   1. `GAPMAP_LICENSE_API_BASE` env (highest — set by user/op for testing).
+///   2. `LICENSE_API_BASE` env (legacy alias).
+///   3. Compile-time constant `DEFAULT_LICENSE_API_BASE`.
+///
+/// Baking the URL into the binary means a DMG recipient sees
+/// `https://gapmap.myind.ai` pre-filled in onboarding — they don't have
+/// to know it. Override via env for staging / localhost dev.
+const DEFAULT_LICENSE_API_BASE: &str = "https://gapmap.myind.ai";
+
 #[tauri::command]
 pub async fn license_default_api_base() -> Result<Value, String> {
     let from_env = std::env::var("GAPMAP_LICENSE_API_BASE")
         .or_else(|_| std::env::var("LICENSE_API_BASE"))
         .unwrap_or_default();
     let base = from_env.trim().trim_end_matches('/').to_string();
+    let final_base = if base.is_empty() {
+        DEFAULT_LICENSE_API_BASE.to_string()
+    } else {
+        base
+    };
     Ok(serde_json::json!({
-        "api_base": base
+        "api_base": final_base
     }))
 }
 
