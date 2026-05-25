@@ -837,7 +837,7 @@ function renderStep5(root, body, info) {
   });
 }
 
-// ─── Step 6 · Mandatory activation (device-locked) ────────────────────────
+// ─── Step 6 · Activation (mandatory when license-gate is ON, optional when OFF) ──
 async function renderStep6Activation(root, body, info) {
   const pendingTopic = localStorage.getItem('gapmap.onboarding.pending_topic') || '';
   const pendingAggressive = localStorage.getItem('gapmap.onboarding.pending_aggressive') === 'true';
@@ -849,21 +849,38 @@ async function renderStep6Activation(root, body, info) {
   } catch {}
   const initialBase = savedBase || envBase;
   const savedEmail = localStorage.getItem('gapmap.license.email') || '';
+
+  // Read the license-gate feature flag. When OFF (default), reframe the step:
+  // primary action is "Skip — start using Gap Map", activation is the optional
+  // secondary. When ON, activation is required and the Skip path is hidden.
+  let gateEnabled = false;
+  try {
+    const g = await api.licenseGateStatus();
+    gateEnabled = !!g?.enabled;
+  } catch {}
+
+  const heroEyebrow = gateEnabled ? 'Final step' : 'Optional · final step';
+  const heroTitle   = gateEnabled ? 'Activate this device' : 'Activate now or skip';
+  const heroBlurb   = gateEnabled
+    ? `Internet is required once for activation. Your key will be bound to this device signature and cannot be reused on another machine.`
+    : `Activation is optional. You can use Gap Map immediately and activate later from Settings → Licence. Activation unlocks the per-device licence record on <code>${esc(initialBase || 'gapmap.myind.ai')}</code> — useful when we start issuing paid keys.`;
+
   body.innerHTML = `
     <section class="hero" style="grid-template-columns:1fr;width:min(100%,clamp(720px,92vw,1100px))">
       <div>
-        <div class="hero-eyebrow">Final step</div>
-        <h1 style="font-size:34px">Activate this device</h1>
-        <p>Internet is required once for activation. Your key will be bound to this device signature and cannot be reused on another machine.</p>
+        <div class="hero-eyebrow">${esc(heroEyebrow)}</div>
+        <h1 style="font-size:34px">${esc(heroTitle)}</h1>
+        <p>${heroBlurb}</p>
         <details style="margin-top:10px">
-          <summary style="cursor:pointer;color:var(--ink-2);font-size:12px">Why activation is required</summary>
+          <summary style="cursor:pointer;color:var(--ink-2);font-size:12px">${gateEnabled ? 'Why activation is required' : 'When should I activate?'}</summary>
           <p style="margin:8px 0 0;color:var(--ink-3);font-size:12px">
-            Activation ties your license to this device signature to prevent key sharing.
-            LLM provider keys remain optional, but license activation is mandatory before app use.
+            ${gateEnabled
+              ? 'Activation ties your license to this device signature to prevent key sharing. LLM provider keys remain optional, but license activation is mandatory before app use.'
+              : 'You only need to activate if you have a paid licence key from gapmap.myind.ai. The app, MCP server, and CLI all work without it. Activate later from Settings → Licence whenever you have a key.'}
           </p>
         </details>
         <div class="settings-profile-fields" style="max-width:620px;margin-top:16px">
-          <label><span>License API base URL</span><input id="lic-api-base" type="url" placeholder="https://license.yourdomain.com" value="${esc(initialBase)}" /></label>
+          <label><span>License API base URL</span><input id="lic-api-base" type="url" placeholder="https://gapmap.myind.ai" value="${esc(initialBase)}" /></label>
           <label><span>Login email</span><input id="lic-email" type="email" placeholder="you@company.com" value="${esc(savedEmail)}" /></label>
           <label><span>Password</span><input id="lic-password" type="password" placeholder="Your account password" /></label>
           <label><span>Activation key</span><input id="lic-key" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" /></label>
@@ -871,13 +888,49 @@ async function renderStep6Activation(root, body, info) {
         <div class="kv-row" style="margin-top:10px"><b>Pending first topic</b><span>${esc(pendingTopic || 'Not set')}</span></div>
         <div class="kv-row"><b>Aggressive collect</b><span>${pendingAggressive ? 'on' : 'off'}</span></div>
         <div id="lic-status" style="margin-top:12px;color:var(--ink-3);font-size:12px"></div>
+        ${gateEnabled ? '' : `
+        <div style="margin-top:10px">
+          <button class="btn btn-ghost btn-sm" id="ob-get-key" style="text-decoration:underline">
+            Don't have a key? Sign up at gapmap.myind.ai →
+          </button>
+        </div>`}
       </div>
     </section>
-      <div style="display:flex;gap:10px;margin-top:24px;justify-content:space-between;width:min(100%,clamp(720px,92vw,1100px))">
+      <div style="display:flex;gap:10px;margin-top:24px;justify-content:space-between;width:min(100%,clamp(720px,92vw,1100px));flex-wrap:wrap;row-gap:8px">
       <button class="btn btn-ghost" style="border:1px solid var(--line)" id="back-6">← Back</button>
-      <button class="btn btn-ghost btn-bordered" id="test-6">Test server</button>
-      <button class="btn btn-primary" id="activate-6">Activate & continue →</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-bordered" id="test-6">Test server</button>
+        ${gateEnabled
+          ? `<button class="btn btn-primary" id="activate-6">Activate &amp; continue →</button>`
+          : `<button class="btn btn-ghost btn-bordered" id="activate-6">Activate</button>
+             <button class="btn btn-primary" id="skip-6">Skip — start using Gap Map →</button>`}
+      </div>
     </div>`;
+  if (!gateEnabled) {
+    const getKey = document.getElementById('ob-get-key');
+    if (getKey) getKey.onclick = () => api.openUrl('https://gapmap.myind.ai/sign-in');
+    const skipBtn = document.getElementById('skip-6');
+    if (skipBtn) skipBtn.onclick = async () => {
+      markOnboardingComplete();
+      // Auto-bootstrap MCP clients on skip too — activation is optional but
+      // MCP integration should "just work" out of the box when the gate is OFF.
+      (async () => {
+        try {
+          const { bootstrapMcpClients } = await import('../lib/mcp_bootstrap.js');
+          await bootstrapMcpClients({ tag: 'mcp:onboarding-skip' });
+        } catch {}
+      })();
+      const topic = localStorage.getItem('gapmap.onboarding.pending_topic') || '';
+      const pendingRoute = localStorage.getItem('gapmap.onboarding.pending_route') || '';
+      localStorage.removeItem('gapmap.onboarding.pending_topic');
+      localStorage.removeItem('gapmap.onboarding.pending_aggressive');
+      localStorage.removeItem('gapmap.onboarding.pending_route');
+      // Route — same logic as post-activation: pending-route > collect topic > home.
+      if (pendingRoute) location.hash = pendingRoute;
+      else if (topic) location.hash = `#/collect/${encodeURIComponent(topic)}`;
+      else location.hash = '#/';
+    };
+  }
 
   const statusEl = document.getElementById('lic-status');
   try {

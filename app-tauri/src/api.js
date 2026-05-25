@@ -1260,6 +1260,9 @@ export const api = {
   installCliSymlink:  ()  => invoke('install_cli_symlink'),
   uninstallCliSymlink:()  => invoke('uninstall_cli_symlink'),
 
+  // ----- License gate feature flag (read-only — env-driven) -----
+  licenseGateStatus:  ()  => invoke('license_gate_status'),
+
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
 
   // ── Unified cross-table search ───────────────────────────────────────

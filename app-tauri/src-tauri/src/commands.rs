@@ -5258,7 +5258,42 @@ fn compute_activation_reason(app: &AppHandle) -> Result<Option<(String, String)>
     Ok(None)
 }
 
+/// True when the license gate should enforce activation as a precondition
+/// for MCP install/uninstall/status. Default OFF so a DMG can be shared
+/// without anyone needing an activation key first; flip ON when you start
+/// monetising via paid keys.
+///
+/// Read from `GAPMAP_LICENSE_GATE_ENABLED` env at runtime (truthy:
+/// "1", "true", "yes", "on" — anything else is OFF). Runtime not
+/// compile-time so the same DMG can be deployed both gated and ungated
+/// just by toggling the env (e.g. via a wrapper script that exports it
+/// before launching Gap Map.app).
+fn license_gate_enabled() -> bool {
+    matches!(
+        std::env::var("GAPMAP_LICENSE_GATE_ENABLED")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+#[tauri::command]
+pub async fn license_gate_status() -> Result<Value, String> {
+    Ok(serde_json::json!({
+        "enabled": license_gate_enabled(),
+        "env_var": "GAPMAP_LICENSE_GATE_ENABLED",
+    }))
+}
+
 fn ensure_mcp_allowed(app: &AppHandle) -> Result<(), String> {
+    // Feature flag — when OFF (default), MCP install/uninstall/status
+    // work regardless of activation. Lets you ship the DMG to anyone
+    // without provisioning a key for them first.
+    if !license_gate_enabled() {
+        return Ok(());
+    }
     match compute_activation_reason(app)? {
         None => Ok(()),
         Some((code, msg)) => Err(format!("[mcp:{code}] {msg}")),

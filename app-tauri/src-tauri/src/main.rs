@@ -479,6 +479,8 @@ fn main() {
             commands::cli_symlink_status,
             commands::install_cli_symlink,
             commands::uninstall_cli_symlink,
+            // License-gate feature flag inspector (no setter — env-only)
+            commands::license_gate_status,
             // ── AG-C: global-competitors (T2.5) + finding feedback (T2.4) ──
             commands::global_competitors,
             commands::feedback_record,
