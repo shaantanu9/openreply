@@ -130,14 +130,7 @@ export async function renderSettings(root) {
         <div class="skel skel-line" style="width:65%"></div>
       </div>
 
-      <!-- Export destination -->
-      <div class="settings-card" id="card-export-dir">
-        <h4>Export destination</h4>
-        <p style="color:var(--ink-3)">Choose where HTML/JSON/Markdown exports are saved.</p>
-        <div class="skel skel-line" style="width:85%;margin-top:10px"></div>
-      </div>
-
-      <!-- Export destination -->
+      <!-- Export destination — single card (duplicate removed 2026-05-26) -->
       <div class="settings-card" id="card-export-dir">
         <h4>Export destination</h4>
         <p style="color:var(--ink-3)">Choose where HTML/JSON/Markdown exports are saved.</p>
@@ -495,15 +488,12 @@ export async function renderSettings(root) {
       } catch {}
       if (alive()) fillDataCard(root, info, dataDir, dbSize);
     })
-    .catch(e => { if (alive()) reportError(root, 'data', e); });
+    .catch(e => cardError('#card-data', 'Local data', e));
 
+  // Single export-prefs fetch (the duplicate card was removed 2026-05-26).
   api.exportPrefsGet()
     .then(prefs => { if (alive()) fillExportCard(root, prefs); })
-    .catch(e => { if (alive()) reportError(root, 'export', e); });
-
-  api.exportPrefsGet()
-    .then(prefs => { if (alive()) fillExportCard(root, prefs); })
-    .catch(e => { if (alive()) reportError(root, 'export', e); });
+    .catch(e => cardError('#card-export-dir', 'Export destination', e));
 
   // Task 9.5 — Extraction pane. Loads global prefs + today's token spend
   // in parallel; renders the mode radios / sliders / cap input / cost
@@ -520,17 +510,20 @@ export async function renderSettings(root) {
     .then(([prefs, spend, byok, qRows]) => {
       if (alive()) fillExtractionCard(root, prefs, spend, byok, qRows);
     })
-    .catch(e => { if (alive()) reportError(root, 'extraction', e); });
+    .catch(e => cardError('#card-extraction', 'Extraction', e));
 
   // Palace / semantic-search card. Pull status + current doc count in
   // parallel, then render the right state (not-installed | not-ready |
-  // ready).
+  // ready). Inner .catches return defaults so the outer Promise.all
+  // never rejects — but if the cli is totally hung, the outer can
+  // still time out via the 90s invoke timeout. Mark the card as
+  // errored if so.
   Promise.all([
     api.palaceModelStatus().catch(() => ({ installed: false, ready: false })),
     api.palaceStats().catch(() => ({ ok: false, count: 0 })),
   ])
     .then(([ms, ps]) => { if (alive()) fillPalaceCard(root, ms, ps); })
-    .catch(e => { if (alive()) reportError(root, 'palace', e); });
+    .catch(e => cardError('#card-palace', 'Semantic search', e));
 
   // Whisper card — catalogue drives the installed/available table; yt-dlp
   // version line below it shows the overlay status.
@@ -539,7 +532,7 @@ export async function renderSettings(root) {
     api.ytdlpVersion().catch(() => ({ installed: '—', latest: '—' })),
   ])
     .then(([cat, ver]) => { if (alive()) fillWhisperCard(root, cat, ver); })
-    .catch(e => { if (alive()) reportError(root, 'whisper', e); });
+    .catch(e => cardError('#card-whisper', 'Whisper models', e));
 }
 
 // --- Profile card (sync) ----------------------------------------------------
