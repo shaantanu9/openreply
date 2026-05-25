@@ -174,6 +174,27 @@ export async function renderSettings(root) {
         <div class="empty-state" style="padding:12px">loading…</div>
       </div>
 
+      <!-- Beta feedback — first place users land when something feels off -->
+      <div class="settings-card" id="card-feedback" style="grid-column:1/-1">
+        <h4>Send feedback <span style="color:var(--ink-3);font-size:12px;font-weight:500">(beta)</span></h4>
+        <p style="color:var(--ink-3)">
+          Hit a bug, find something confusing, or have an idea? Tell us — beta
+          feedback is the most valuable thing right now. Pick the path that fits.
+        </p>
+        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm icon-btn" id="fb-email">
+            <i data-lucide="mail"></i> Email a bug report
+          </button>
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="fb-github">
+            <i data-lucide="github"></i> Open a GitHub issue
+          </button>
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="fb-logs">
+            <i data-lucide="folder-open"></i> Show log folder
+          </button>
+        </div>
+        <div id="feedback-status" style="margin-top:8px;color:var(--ink-3);font-size:12px"></div>
+      </div>
+
       <!-- Command-line tool — one-click install gapmap-cli to /usr/local/bin/gapmap -->
       <div class="settings-card" id="card-cli-symlink" style="grid-column:1/-1">
         <h4>Command line tool</h4>
@@ -376,6 +397,71 @@ export async function renderSettings(root) {
   api.cliSymlinkStatus()
     .then(s => { if (alive()) fillCliSymlinkCard(root, s); })
     .catch(e => { if (alive()) fillCliSymlinkCard(root, { error: String(e?.message || e) }); });
+
+  // ─── Beta feedback card wiring ───────────────────────────────────────────
+  // Three escape valves so a beta tester always has SOME way to reach us:
+  // pre-filled email (lowest friction), GitHub issue (best for repro), and
+  // a "show log folder" reveal so they can attach logs without hunting.
+  const fbEmail = root.querySelector('#fb-email');
+  const fbGithub = root.querySelector('#fb-github');
+  const fbLogs = root.querySelector('#fb-logs');
+  const fbStatus = root.querySelector('#feedback-status');
+  if (fbEmail) {
+    fbEmail.addEventListener('click', async () => {
+      // Try to enrich the email body with the app's current health snapshot
+      // so we never need to ask "what OS / version / mode are you on?"
+      let context = '';
+      try {
+        const info = await api.cliInfo();
+        context = [
+          `Gap Map beta feedback`,
+          `------------------------`,
+          `Mode:       ${info?.mode || 'unknown'}`,
+          `Data dir:   ${info?.data_dir || 'unknown'}`,
+          `Posts:      ${info?.tables?.posts ?? 'unknown'}`,
+          `Topics:     ${info?.tables?.topic_posts ?? 'unknown'}`,
+          `Graph:      ${info?.tables?.graph_nodes ?? 'unknown'}`,
+          `OS:         ${navigator.platform || navigator.userAgent}`,
+          ``,
+          `What I did:`,
+          ``,
+          `What I expected:`,
+          ``,
+          `What actually happened:`,
+          ``,
+        ].join('\n');
+      } catch {
+        context = 'Gap Map beta feedback\n\nWhat I did:\n\nWhat I expected:\n\nWhat actually happened:\n';
+      }
+      const subject = encodeURIComponent('Gap Map beta — ');
+      const body = encodeURIComponent(context);
+      api.openUrl(`mailto:sbombatkar@leaptodigital.com?subject=${subject}&body=${body}`);
+    });
+  }
+  if (fbGithub) {
+    fbGithub.addEventListener('click', () => {
+      api.openUrl('https://github.com/shaantanu98/reddit-myind/issues/new');
+    });
+  }
+  if (fbLogs) {
+    fbLogs.addEventListener('click', async () => {
+      // The CLI's data_dir is the canonical place for sidecar logs +
+      // mcp-events.db. Reveal it in Finder.
+      try {
+        const info = await api.cliInfo();
+        const dir = info?.data_dir || '';
+        if (dir) {
+          api.openUrl(`file://${dir.replace(/^~/, '')}`);
+          fbStatus.textContent = 'Opened log folder in Finder.';
+        } else {
+          fbStatus.textContent = 'Could not resolve the data dir.';
+        }
+      } catch (e) {
+        fbStatus.textContent = `Could not open: ${e?.message || e}`;
+      }
+      setTimeout(() => { if (fbStatus) fbStatus.textContent = ''; }, 3000);
+    });
+  }
 
   Promise.all([api.appDataDir(), api.cliInfo().catch(() => ({}))])
     .then(async ([dataDir, info]) => {
