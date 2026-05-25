@@ -39,7 +39,9 @@ const EXAMPLES = [
   { t: 'AI coding assistants',             icon: 'terminal',     cover: 'cover-2' },
 ];
 
-const STEPS = [
+// All possible steps. Step 6 (Activate device) is conditionally shown
+// based on the license-gate feature flag — see effectiveSteps() below.
+const ALL_STEPS = [
   { n: 1, label: 'What is Gap Map' },
   { n: 2, label: 'Your profile' },
   { n: 3, label: 'Connect sources' },
@@ -47,6 +49,29 @@ const STEPS = [
   { n: 5, label: 'Your first topic' },
   { n: 6, label: 'Activate device' },
 ];
+
+// Cached at module load. License gate is env-driven, so it doesn't change
+// during a single app session — safe to query once. Defaults to OFF (no
+// step 6) if the call fails so a flaky sidecar can't trap users at the
+// activation screen.
+let _licenseGateEnabled = false;
+let _licenseGateChecked = false;
+async function ensureLicenseGateChecked() {
+  if (_licenseGateChecked) return;
+  try {
+    const g = await api.licenseGateStatus();
+    _licenseGateEnabled = !!g?.enabled;
+  } catch {
+    _licenseGateEnabled = false;
+  }
+  _licenseGateChecked = true;
+}
+function effectiveSteps() {
+  return _licenseGateEnabled ? ALL_STEPS : ALL_STEPS.slice(0, 5);
+}
+// Backwards-compat alias so the existing rendering code keeps working
+// without a sweep — `STEPS` now reflects the visible-to-user steps.
+let STEPS = ALL_STEPS;
 
 function getStep() {
   const s = parseInt(localStorage.getItem(STEP_KEY) || '1', 10);
@@ -136,17 +161,26 @@ function humanizeActivationError(err) {
 }
 
 export async function renderWelcome(root) {
+  // Resolve the license-gate flag BEFORE first render so the stepper count
+  // is correct on the first paint. The check is cheap (env read) and
+  // bounded with a default-OFF fallback on failure.
+  await ensureLicenseGateChecked();
+  STEPS = effectiveSteps();
+  // Clamp the saved step in case the user previously advanced to step 6
+  // under a gate-ON build and we're now gate-OFF.
+  const cur = Math.min(getStep(), STEPS.length);
+  setStep(cur);
+
   // Render immediately with empty info — step 3 re-fetches live BYOK status
   // and step 2 doesn't need cliInfo to draw. Never block the wizard on a
   // cold sidecar.
-  renderStep(root, getStep(), {});
+  renderStep(root, cur, {});
   // Fetch cli info in background and re-render only if we're still on a
   // step that uses it.
   api.cliInfo().catch(() => null).then(info => {
     if (!info) return;
-    const cur = getStep();
-    // Only step 3 actually consumes cli info (mode, db_path shown).
-    if (cur === 3) renderStep(root, cur, info);
+    const now = getStep();
+    if (now === 3) renderStep(root, now, info);
   });
 }
 
@@ -156,7 +190,7 @@ function renderStep(root, step, info) {
     <header class="topbar">
       <div class="crumbs">Welcome · <strong>Step ${step} of ${STEPS.length}</strong></div>
       <div class="topbar-spacer"></div>
-      <button id="skip-onboarding" class="pill">Go to activation</button>
+      <button id="skip-onboarding" class="pill">${_licenseGateEnabled ? 'Go to activation' : 'Skip to app →'}</button>
     </header>
 
     <div class="wizard-stepper">
@@ -173,7 +207,19 @@ function renderStep(root, step, info) {
   `;
 
   document.getElementById('skip-onboarding').onclick = () => {
-    renderStep(root, 6, info);
+    if (_licenseGateEnabled) {
+      renderStep(root, 6, info);
+      return;
+    }
+    // Gate OFF — bail out of onboarding entirely, route to home.
+    markOnboardingComplete();
+    (async () => {
+      try {
+        const { bootstrapMcpClients } = await import('../lib/mcp_bootstrap.js');
+        await bootstrapMcpClients({ tag: 'mcp:onboarding-skip-header' });
+      } catch {}
+    })();
+    location.hash = '#/';
   };
 
   // Allow clicking a past step to jump back.
@@ -820,12 +866,37 @@ function renderStep5(root, body, info) {
   const startWith = (topic, allowEmpty = false) => {
     if (!topic && !allowEmpty) { input.focus(); return; }
     const aggressive = agg.checked;
-    // Stash topic/aggressive so post-activation we can jump directly into collect.
+    // Stash topic/aggressive so post-activation (or directly when the gate
+    // is off) we can jump straight into collect.
     localStorage.setItem('gapmap.onboarding.pending_topic', topic || '');
     localStorage.setItem('gapmap.onboarding.pending_aggressive', aggressive ? 'true' : 'false');
     localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
     localStorage.setItem('gapmap.pref.aggressive', aggressive ? 'true' : 'false');
-    renderStep(root, 6, info);
+
+    // Gate ON → continue to step 6 (Activate device) as before.
+    // Gate OFF (default) → finish onboarding right here. No activation
+    // required for the gate-off path; user can still activate from
+    // Settings → Licence later when they obtain a key.
+    if (_licenseGateEnabled) {
+      renderStep(root, 6, info);
+      return;
+    }
+    markOnboardingComplete();
+    // Fire-and-forget MCP bootstrap so /mcp clients pick Gap Map up
+    // without the user needing to visit Settings.
+    (async () => {
+      try {
+        const { bootstrapMcpClients } = await import('../lib/mcp_bootstrap.js');
+        await bootstrapMcpClients({ tag: 'mcp:onboarding-complete' });
+      } catch {}
+    })();
+    const pendingRoute = localStorage.getItem('gapmap.onboarding.pending_route') || '';
+    localStorage.removeItem('gapmap.onboarding.pending_topic');
+    localStorage.removeItem('gapmap.onboarding.pending_aggressive');
+    localStorage.removeItem('gapmap.onboarding.pending_route');
+    if (pendingRoute) location.hash = pendingRoute;
+    else if (topic) location.hash = `#/collect/${encodeURIComponent(topic)}`;
+    else location.hash = '#/';
   };
 
   document.getElementById('back-5').onclick = () => renderStep(root, 4, info);
