@@ -114,14 +114,47 @@ function throwIfParseError(name, result) {
   return result;
 }
 
+// Default 90s per-call timeout. Tauri's `invoke()` has no built-in timeout,
+// so a hung Python sidecar (cold-spawn, deadlock, anything) leaves every
+// caller stuck on a Promise that never resolves — which the UI renders as
+// infinite skeletons. Wrapping each invoke in a Promise.race surfaces a
+// clean error after 90s; the caller's .catch can show a Retry button.
+//
+// Override per-call by passing { __timeoutMs } in args (read here and
+// stripped before forwarding). Long-running commands (collect, paper
+// pipeline, deep enrich) should pass a higher value or run via the
+// dedicated streaming API instead of cachedInvoke.
+const DEFAULT_INVOKE_TIMEOUT_MS = 90_000;
+function invokeWithTimeout(name, args, timeoutMs) {
+  let cleanedArgs = args;
+  let ms = timeoutMs ?? DEFAULT_INVOKE_TIMEOUT_MS;
+  if (args && typeof args === 'object' && args.__timeoutMs != null) {
+    ms = Number(args.__timeoutMs) || ms;
+    cleanedArgs = { ...args };
+    delete cleanedArgs.__timeoutMs;
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const t = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Timed out after ${Math.round(ms / 1000)}s waiting for "${name}". The sidecar may be cold-starting or busy — try again.`));
+    }, ms);
+    invoke(name, cleanedArgs).then(
+      v => { if (settled) return; settled = true; clearTimeout(t); resolve(v); },
+      e => { if (settled) return; settled = true; clearTimeout(t); reject(e); },
+    );
+  });
+}
+
 async function invokeWithRetry(name, args) {
   try {
-    return throwIfParseError(name, await invoke(name, args));
+    return throwIfParseError(name, await invokeWithTimeout(name, args));
   } catch (e) {
     if (!isTransient(e)) throw e;
     // Back off once, then try again. If it still fails, surface the error.
     await new Promise(r => setTimeout(r, 500));
-    return throwIfParseError(name, await invoke(name, args));
+    return throwIfParseError(name, await invokeWithTimeout(name, args));
   }
 }
 

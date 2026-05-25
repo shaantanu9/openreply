@@ -381,17 +381,38 @@ export async function renderSettings(root) {
   // Always-available buttons while the async data loads
   root.querySelector('#btn-manage-keys-eager').onclick = () => openByokModal(() => renderSettings(root));
 
+  // Card-level error → replace the skeleton with an inline error + Retry.
+  // Beats the previous behavior of staying on an infinite skeleton when a
+  // call hangs / times out / errors. Each retry re-runs renderSettings so
+  // every card refreshes (cheap — the cache TTLs return immediately for
+  // anything that's still fresh).
+  function cardError(cardId, label, e) {
+    if (!alive()) return;
+    const card = root.querySelector(cardId);
+    if (!card) return;
+    card.innerHTML = `
+      <h4>${esc(label)}</h4>
+      <div class="empty-state" style="padding:10px;color:#B84747">
+        Couldn't load. ${esc(e?.message || String(e))}
+      </div>
+      <button class="btn btn-ghost btn-sm btn-bordered" id="${cardId.slice(1)}-retry">Retry</button>
+    `;
+    const btn = card.querySelector(`#${cardId.slice(1)}-retry`);
+    if (btn) btn.addEventListener('click', () => renderSettings(root));
+    reportError(root, label, e);  // keep the status-bar trail too
+  }
+
   // Fetch everything in parallel; fill cards independently as each resolves.
   // `alive()` guards every DOM write so a stale async response from a
   // previous mount can't clobber the current screen.
   api.byokStatus()
     .then(byok => { if (alive()) fillLlmCard(root, byok); return byok; })
     .then(byok => { if (alive()) fillRedditCard(root, byok); })
-    .catch(e => { if (alive()) reportError(root, 'keys', e); });
+    .catch(e => cardError('#card-llm', 'LLM providers', e));
 
   api.cliInfo()
     .then(info => { if (alive()) fillTablesCard(root, info); })
-    .catch(e => { if (alive()) reportError(root, 'info', e); });
+    .catch(e => cardError('#card-tables', 'Table counts', e));
 
   // CLI symlink status — separate Settings card with Install/Uninstall buttons
   api.cliSymlinkStatus()

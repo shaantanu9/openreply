@@ -2080,7 +2080,7 @@ select.topics-field {
 .skel-xs   { width: 64px;  height: 12px; margin-bottom: 10px; }
 .skel-h1   { width: 80%;   height: 40px; margin-bottom: 10px; border-radius: 10px; }
 .skel-h2   { width: 40%;   height: 24px; border-radius: 8px; }
-.skel-line { width: 90%;   height: 14px; margin-bottom: 6px; }
+.skel-line { width: 90%;   max-width: 100%; height: 14px; margin-bottom: 6px; }
 .skel-lg   { width: 70%;   height: 56px; margin-bottom: 14px; border-radius: 10px; }
 .skel-round{ width: 36px;  height: 36px; border-radius: 10px; }
 .hero-bar.skel { background: var(--surface-alt); border-radius: 3px; }
@@ -8715,6 +8715,9 @@ html.dark .persona-chat-msg--assistant {
   border-radius: var(--radius-sm);
   position: relative;
   overflow: hidden;
+  /* Belt-and-suspenders: every skeleton variant respects its container. */
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .skel::after {
   content: "";
@@ -8728,7 +8731,13 @@ html.dark .skel::after {
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.07), transparent);
 }
 @keyframes skel-shimmer { 100% { transform: translateX(100%); } }
-.skel-line  { display: flex; align-items: center; gap: var(--space-3); }
+/* Scoped to .skel-wrap so the legacy `.skel skel-line` (a standalone
+   shimmer bar used in Settings cards) doesn't get re-interpreted as a
+   flex container — which made it overflow the card and stretch via
+   gap+children. New LoadingSkeleton component wraps its rows in
+   <div class="skel-wrap">…<div class="skel-line">…</div>…</div>, so
+   this scoping leaves it intact while restoring the legacy bar. */
+.skel-wrap > .skel-line { display: flex; align-items: center; gap: var(--space-3); }
 .skel-dot   { width: var(--space-5); height: var(--space-5); border-radius: 50%; flex-shrink: 0; }
 .skel-bar   { height: var(--space-3); flex: 1; }
 .skel-card  { height: var(--space-8); }
