@@ -15,32 +15,32 @@
 │  └──────────────┘                    └───────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                                 │
-                        SQLite (reddit.db)
+                        SQLite (gapmap.db)
                                 │
           ┌─────────────────────┴───────────────────┐
           │                                         │
 ┌──────────────────┐                    ┌───────────────────────┐
-│  MCP Server      │                    │  CLI  (reddit-cli)    │
+│  MCP Server      │                    │  CLI  (gapmap)    │
 │  (FastMCP)       │                    │  (Typer, humans +     │
 │  stdio / HTTP    │                    │   scripts)            │
 │  90+ tools       │                    │                       │
 └──────────────────┘                    └───────────────────────┘
 ```
 
-All three surfaces share the same `core/` + `fetch/` + `research/` modules. The sidecar **is** the same Python package (`reddit_research`) invoked as a subprocess by Rust — no code duplication.
+All three surfaces share the same `core/` + `fetch/` + `research/` modules. The sidecar **is** the same Python package (`gapmap`) invoked as a subprocess by Rust — no code duplication.
 
 **Desktop app:** Tauri 2 shell in `app-tauri/`. Rust handles the IPC bridge (`src-tauri/src/commands.rs`). The frontend calls Rust commands; Rust spawns the Python sidecar or the dev `.venv`. The sidecar runs as a long-lived subprocess started at app launch.
 
-**MCP server:** FastMCP (`src/reddit_research/mcp/server.py`). 90+ tools. Clients: Claude Code (stdio), Claude Desktop (stdio), Cursor (HTTP daemon on `127.0.0.1:8765`). Long-running tools must use the async job queue — see `docs/MCP_INFRA.md`.
+**MCP server:** FastMCP (`src/gapmap/mcp/server.py`). 90+ tools. Clients: Claude Code (stdio), Claude Desktop (stdio), Cursor (HTTP daemon on `127.0.0.1:8765`). Long-running tools must use the async job queue — see `docs/MCP_INFRA.md`.
 
-**CLI:** Typer app, entry point `reddit-cli`. Every command supports `--json` for machine-readable output. Auth, fetch, analyze, research pipeline, and MCP management all live here.
+**CLI:** Typer app, entry point `gapmap`. Every command supports `--json` for machine-readable output. Auth, fetch, analyze, research pipeline, and MCP management all live here.
 
 ---
 
 ## Data flow
 
 ```
-External Sources           Python Fetch Layer          SQLite (reddit.db)
+External Sources           Python Fetch Layer          SQLite (gapmap.db)
 ─────────────────          ──────────────────          ──────────────────
 Reddit (PRAW)  ──────────► fetch/posts.py    ──────────► posts table
 HN / Algolia   ──────────► sources/hackernews.py         topic_posts table
@@ -80,7 +80,7 @@ NPM/PyPI stats ──────────► sources/npmstats.py
                               topic_insights / mcp_analyses
                               ─────────────────────────────
                               Surfaces: Desktop Insights tab,
-                              MCP reddit_synthesize_insights,
+                              MCP gapmap_synthesize_insights,
                               CLI research report
 ```
 
@@ -89,30 +89,30 @@ NPM/PyPI stats ──────────► sources/npmstats.py
 ## The research pipeline
 
 ```
-1. DISCOVER    reddit_discover_subs(topic)
+1. DISCOVER    gapmap_discover_subs(topic)
                → LLM-canonicalized topic + keyword fan-out
                → ranked subreddits
 
-2. COLLECT     reddit_research_collect(topic, aggressive=True)
+2. COLLECT     gapmap_research_collect(topic, aggressive=True)
                → Reddit: top-of-month + top-of-year per sub
                          parameterized searches (pain/features/complaints/diy)
                → External: 6-worker parallel fan-out across all non-Reddit sources
                → Historical: pullpush.io for pre-May-2025 data
                → All persisted to posts + topic_posts
 
-3. CORPUS      reddit_get_corpus(topic)  →  ranked by engagement
+3. CORPUS      gapmap_get_corpus(topic)  →  ranked by engagement
 
-4. GAPS        reddit_find_gaps(topic)   →  painpoints, feature_wishes,
+4. GAPS        gapmap_find_gaps(topic)   →  painpoints, feature_wishes,
                                             product_complaints, diy_workarounds
-               reddit_synthesize_insights(topic)  →  Minto-structured report
+               gapmap_synthesize_insights(topic)  →  Minto-structured report
 
-5. GRAPH       reddit_graph_build(topic)           →  structural edges
-               reddit_graph_upsert_semantic(...)   →  LLM-extracted nodes
-               reddit_graph_build_relations(topic) →  semantic cross-edges
+5. GRAPH       gapmap_graph_build(topic)           →  structural edges
+               gapmap_graph_upsert_semantic(...)   →  LLM-extracted nodes
+               gapmap_graph_build_relations(topic) →  semantic cross-edges
 
 6. EXPORT      Desktop: Report tab (markdown), Map tab (D3 force-graph)
-               MCP:    reddit_export_docx / reddit_export_pptx
-               CLI:    reddit-cli research report
+               MCP:    gapmap_export_docx / gapmap_export_pptx
+               CLI:    gapmap research report
 ```
 
 ---
@@ -121,31 +121,31 @@ NPM/PyPI stats ──────────► sources/npmstats.py
 
 ```
 1. SEARCH (parallel, 6 sources)
-   reddit_research_papers(query, topic)
+   gapmap_research_papers(query, topic)
    arXiv · PubMed · OpenAlex · Semantic Scholar · Crossref · Scholar
 
 2. FULLTEXT
-   reddit_paper_fulltext(post_id)   → download OA PDF → pypdf → cache
+   gapmap_paper_fulltext(post_id)   → download OA PDF → pypdf → cache
 
 3. SECTIONS
-   reddit_paper_sections(post_id)   → named section parse
-   reddit_paper_section_get(...)    → verbatim section text
+   gapmap_paper_sections(post_id)   → named section parse
+   gapmap_paper_section_get(...)    → verbatim section text
 
 4. CHUNKS + EMBED
-   reddit_paper_chunk(post_id)      → section-aware 1500-char windows
-   reddit_paper_chunk_topic(topic)  → bulk chunk all papers for a topic
+   gapmap_paper_chunk(post_id)      → section-aware 1500-char windows
+   gapmap_paper_chunk_topic(topic)  → bulk chunk all papers for a topic
 
 5. ANALYZE
-   reddit_analyze_paper(topic, post_id)  → LLM: summary/claims/methods/tier
-   reddit_analyze_papers_bulk(topic)     → bulk run
+   gapmap_analyze_paper(topic, post_id)  → LLM: summary/claims/methods/tier
+   gapmap_analyze_papers_bulk(topic)     → bulk run
 
 6. SEARCH / LINK
-   reddit_paper_chunk_search(query)      → hybrid vector+BM25 passage search
-   reddit_paper_search_papers(query)     → rolled up to paper level
-   reddit_research_link(topic)           → link findings to papers
+   gapmap_paper_chunk_search(query)      → hybrid vector+BM25 passage search
+   gapmap_paper_search_papers(query)     → rolled up to paper level
+   gapmap_research_link(topic)           → link findings to papers
 
 One-shot:
-   reddit_paper_research_pipeline(topic) → steps 1-5 in a single call
+   gapmap_paper_research_pipeline(topic) → steps 1-5 in a single call
 ```
 
 ---
@@ -173,18 +173,18 @@ One-shot:
 **Misc**
 `saved_views` · `prompt_overrides` · `trend_series` · `hypothesis_tests` · `extraction_queue` · `extraction_daily_usage` · `perf_traces` · `audience_personas` · `launch_briefs`
 
-Data dir: `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/` (macOS). One SQLite file: `reddit.db`. WAL mode; thread-local connections via `core/db.py`.
+Data dir: `~/Library/Application Support/com.shantanu.gapmap/gapmap/` (macOS). One SQLite file: `gapmap.db`. WAL mode; thread-local connections via `core/db.py`.
 
 ---
 
 ## LLM provider chain
 
 ```python
-# src/reddit_research/analyze/providers/base.py
+# src/gapmap/analyze/providers/base.py
 resolve_provider(hint=None)
   1. hint arg  (explicit override from caller)
   2. DEFAULT_LLM_PROVIDER env var
-  3. BYOK modal choices (persisted to ~/.config/reddit-myind/.env)
+  3. BYOK modal choices (persisted to ~/.config/gapmap/.env)
   4. First key found: ANTHROPIC → OPENAI → OPENROUTER → GROQ →
                        DEEPSEEK → MISTRAL → GEMINI → OLLAMA (local)
 ```
@@ -196,7 +196,7 @@ resolve_provider(hint=None)
 ## Key files map
 
 ```
-src/reddit_research/
+src/gapmap/
 ├── core/
 │   ├── config.py       — env/toml resolution, data-dir, secret validation
 │   ├── db.py           — SQLite schema, WAL, thread-local connections, upserts

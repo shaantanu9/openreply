@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reddit-myind"
+name = "gapmap"
 version = "0.1.0"
-description = "Reddit research CLI + MCP server — PRAW-based fetch, SQLite store, pluggable LLM analysis"
+description = "Gap Map — multi-source product gap finder. CLI + MCP server fusing Reddit, HN, arXiv, GitHub, App Store, and 10+ more sources into a single corpus, with pluggable LLM analysis."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -63,7 +63,7 @@ analyze = [
 # install (onnxruntime + chromadb + sentence-transformers' onnx model). All
 # offline; all local. Adds ~15 ms / post on ingest for embedding; ~15 ms p50
 # on a k=10 search at 2K documents. Separate .sqlite3 file under the app's
-# data dir (doesn't touch the existing reddit.db).
+# data dir (doesn't touch the existing gapmap.db).
 retrieval = [
     "chromadb>=1.5.4,<2",
     "rank-bm25>=0.2.2",
@@ -86,7 +86,7 @@ mcp = [
 # Stakeholder-ready DOCX + PPTX exports. Both are pure-Python, no system
 # deps (no pandoc, no LibreOffice, no Cairo) — work fine inside a
 # PyInstaller sidecar. Together ~10 MB. Drives `research export-deck`
-# and the `reddit_export_docx` / `reddit_export_pptx` MCP tools.
+# and the `gapmap_export_docx` / `gapmap_export_pptx` MCP tools.
 docs = [
     "python-docx>=1.1",
     "python-pptx>=0.6.23",
@@ -102,20 +102,19 @@ dev = [
     "ruff>=0.5",
     "pyinstaller>=6.10",
 ]
-all = ["reddit-myind[analyze,mcp,sources,dev,retrieval,video,docs]"]
+all = ["gapmap[analyze,mcp,sources,dev,retrieval,video,docs]"]
 
 [project.scripts]
-reddit-myind = "reddit_research.cli.main:app"
-reddit-cli   = "reddit_research.cli.main:app"
+gapmap = "gapmap.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 # Ship the LaTeX header + Lua filter that drive the markdown→PDF pipeline.
-# Without this, `pip install reddit-myind` would skip the assets and
+# Without this, `pip install gapmap` would skip the assets and
 # `build_pdf_from_markdown()` would error at runtime.
 [tool.setuptools.package-data]
-"reddit_research.research" = ["_doc_assets/pdf/*.tex", "_doc_assets/pdf/*.lua"]
+"gapmap.research" = ["_doc_assets/pdf/*.tex", "_doc_assets/pdf/*.lua"]
 
 [tool.ruff]
 line-length = 100

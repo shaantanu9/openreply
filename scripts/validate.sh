@@ -17,42 +17,42 @@ if [[ -z "$TOPIC" ]]; then
   exit 1
 fi
 
-export REDDIT_MYIND_DATA_DIR="$(cd "$(dirname "$0")/.." && pwd)/${DATA_DIR#./}"
-mkdir -p "$REDDIT_MYIND_DATA_DIR"
-OUT_HTML="${REDDIT_MYIND_DATA_DIR}/gap-map.html"
-OUT_MD="${REDDIT_MYIND_DATA_DIR}/findings.md"
-TWEET_MD="${REDDIT_MYIND_DATA_DIR}/tweet.md"
+export GAPMAP_DATA_DIR="$(cd "$(dirname "$0")/.." && pwd)/${DATA_DIR#./}"
+mkdir -p "$GAPMAP_DATA_DIR"
+OUT_HTML="${GAPMAP_DATA_DIR}/gap-map.html"
+OUT_MD="${GAPMAP_DATA_DIR}/findings.md"
+TWEET_MD="${GAPMAP_DATA_DIR}/tweet.md"
 
 echo "============================================================"
 echo " validating: \"$TOPIC\""
-echo " data dir:   $REDDIT_MYIND_DATA_DIR"
+echo " data dir:   $GAPMAP_DATA_DIR"
 echo "============================================================"
 echo ""
 
 cd "$(dirname "$0")/.."
 
 echo "→ [1/4] collecting (aggressive mode: Reddit + HN + App Store + Play Store + arXiv + OpenAlex + Scholar + gnews)"
-uv run reddit-cli research collect \
+uv run gapmap research collect \
     --topic "$TOPIC" \
     --aggressive \
     --sources "hn,appstore,playstore,arxiv,openalex,scholar,gnews,github_issues,lemmy"
 
 echo ""
 echo "→ [2/4] building structural graph"
-uv run reddit-cli research graph build --topic "$TOPIC"
+uv run gapmap research graph build --topic "$TOPIC"
 
 echo ""
 echo "→ [3/4] source breakdown:"
-uv run reddit-cli query "
+uv run gapmap query "
   SELECT coalesce(p.source_type,'reddit') source, count(*) n
   FROM posts p JOIN topic_posts tp ON tp.post_id=p.id
   WHERE tp.topic='$TOPIC' GROUP BY source ORDER BY n DESC"
 
 echo ""
 echo "→ [4/4] generating artifacts"
-uv run reddit-cli research graph export --topic "$TOPIC" --out "$OUT_HTML"
-uv run reddit-cli research findings --topic "$TOPIC" --out "$OUT_MD"
-uv run reddit-cli research findings --topic "$TOPIC" --tweet --out "$TWEET_MD"
+uv run gapmap research graph export --topic "$TOPIC" --out "$OUT_HTML"
+uv run gapmap research findings --topic "$TOPIC" --out "$OUT_MD"
+uv run gapmap research findings --topic "$TOPIC" --tweet --out "$TWEET_MD"
 
 echo ""
 echo "============================================================"
@@ -66,5 +66,5 @@ echo ""
 echo " NOTE: semantic enrichment (painpoints/products/workarounds)"
 echo "   was NOT run — Claude-in-MCP will do that interactively, or"
 echo "   set ANTHROPIC_API_KEY and run:"
-echo "     uv run reddit-cli research graph enrich --topic \"$TOPIC\" --provider anthropic"
+echo "     uv run gapmap research graph enrich --topic \"$TOPIC\" --provider anthropic"
 echo "============================================================"

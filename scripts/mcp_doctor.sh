@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mcp_doctor.sh — diagnose every common reason "MCP keeps failing / losing connection"
-# for the reddit-myind server across all 3 MCP clients (Claude Code, Claude
+# for the gapmap server across all 3 MCP clients (Claude Code, Claude
 # Desktop, Cursor). No fixes — just reports. Run this whenever a client says
 # the server disconnected.
 #
@@ -16,8 +16,8 @@
 
 set -u
 
-DATA_DIR="${REDDIT_MYIND_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.gapmap/reddit-myind}"
-PROJECT_DIR="${REDDIT_MYIND_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
+DATA_DIR="${GAPMAP_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.gapmap/gapmap}"
+PROJECT_DIR="${GAPMAP_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
 
 # Colors for readability — unset when piped (CI safety).
 if [ -t 1 ]; then
@@ -85,9 +85,9 @@ try:
   d = json.load(open(fp))
 except Exception as e:
   print(f"  ❌ unparseable JSON: {e}"); sys.exit(0)
-e = (d.get("mcpServers") or {}).get("reddit-myind")
+e = (d.get("mcpServers") or {}).get("gapmap")
 if not e:
-  print("  ℹ no reddit-myind entry"); sys.exit(0)
+  print("  ℹ no gapmap entry"); sys.exit(0)
 cmd = e.get("command") or ""
 args = e.get("args") or []
 env = e.get("env") or {}
@@ -110,7 +110,7 @@ else:
 # 2. uv vs direct binary
 if "uv" in cmd:
   print(f"  ⚠  uses 'uv run' — adds 1-3s startup overhead per reconnect, can hit 10s client timeouts")
-  print(f"     consider: command={os.path.expanduser('~/Documents/GitHub/reddit-myind/.venv/bin/reddit-cli')}, args=['mcp','serve']")
+  print(f"     consider: command={os.path.expanduser('~/Documents/GitHub/reddit-myind/.venv/bin/gapmap')}, args=['mcp','serve']")
 
 # 3. env block sanity
 takeover = (env.get("MCP_TAKEOVER_STALE_LOCK") or "").lower() in ("1","true","yes")
@@ -128,15 +128,15 @@ tag = (env.get("MCP_CLIENT_TAG") or "").strip().lower()
 if expected_tag and tag == expected_tag:
   print(f"  ✅ MCP_CLIENT_TAG={tag} — per-client pidfile, no cross-client thrash")
 elif expected_tag and not tag:
-  print(f"  ❌ MCP_CLIENT_TAG missing — this client shares a pidfile with the others. Cross-client SIGTERM will disconnect mid-tool-call. Re-run: reddit-cli mcp install --client {expected_tag}")
+  print(f"  ❌ MCP_CLIENT_TAG missing — this client shares a pidfile with the others. Cross-client SIGTERM will disconnect mid-tool-call. Re-run: gapmap mcp install --client {expected_tag}")
 elif expected_tag and tag != expected_tag:
   print(f"  ⚠  MCP_CLIENT_TAG={tag!r} but expected {expected_tag!r} — stale tag from a prior install. Re-sync.")
 
-dd = env.get("REDDIT_MYIND_DATA_DIR") or ""
+dd = env.get("GAPMAP_DATA_DIR") or ""
 if dd: print(f"  ✅ data_dir env: {dd}")
-else: print("  ⚠  REDDIT_MYIND_DATA_DIR unset — server uses fallback path, may not see your DB")
+else: print("  ⚠  GAPMAP_DATA_DIR unset — server uses fallback path, may not see your DB")
 
-tok = env.get("REDDIT_MYIND_TOKEN") or ""
+tok = env.get("GAPMAP_TOKEN") or ""
 if expected_tok and tok and expected_tok.strip() != tok.strip():
   print(f"  ❌ token mismatch — config token does not match {os.path.dirname(fp)}/mcp_token")
 elif tok and expected_tok:
@@ -149,7 +149,7 @@ done
 hdr "4. Client-side MCP logs (last 8 lines each, only if present)"
 for log in \
   "$HOME/Library/Logs/Claude/mcp.log" \
-  "$HOME/Library/Logs/Claude/mcp-server-reddit-myind.log" \
+  "$HOME/Library/Logs/Claude/mcp-server-gapmap.log" \
   "$HOME/Library/Application Support/Cursor/logs"/*/exthost*/anysphere.cursor-fetch \
   "$HOME/.claude/logs/mcp.log"; do
   if [ -f "$log" ]; then
@@ -159,8 +159,8 @@ for log in \
 done
 
 hdr "5. Smoke launch (verify server reaches startup:ready)"
-if [ -x "$PROJECT_DIR/.venv/bin/reddit-cli" ]; then
-  CMD="$PROJECT_DIR/.venv/bin/reddit-cli"
+if [ -x "$PROJECT_DIR/.venv/bin/gapmap" ]; then
+  CMD="$PROJECT_DIR/.venv/bin/gapmap"
   # Use a throwaway data dir so we don't pollute the real mcp_events table
   # AND don't fight the real PID lock. Then check the temp log.
   SMOKE_DD=$(mktemp -d)
@@ -169,7 +169,7 @@ if [ -x "$PROJECT_DIR/.venv/bin/reddit-cli" ]; then
   # and would exit on real EOF; we just want to verify imports + startup
   # logging succeed before mcp.run() starts. Wait up to 8s for the
   # `startup:ready` event to appear in the temp log, then SIGTERM.
-  ( REDDIT_MYIND_DATA_DIR="$SMOKE_DD" MCP_TAKEOVER_STALE_LOCK=1 \
+  ( GAPMAP_DATA_DIR="$SMOKE_DD" MCP_TAKEOVER_STALE_LOCK=1 \
     "$CMD" mcp serve < /dev/null > /tmp/mcp_smoke.out 2>&1 & echo $! > /tmp/mcp_smoke.pid )
   for i in 1 2 3 4 5 6 7 8; do
     sleep 1
@@ -200,13 +200,13 @@ for line in sys.stdin:
   fi
   rm -rf "$SMOKE_DD" /tmp/mcp_smoke.out /tmp/mcp_smoke.pid
 else
-  warn "no $PROJECT_DIR/.venv/bin/reddit-cli — run 'uv sync' or 'pip install -e .' in $PROJECT_DIR"
+  warn "no $PROJECT_DIR/.venv/bin/gapmap — run 'uv sync' or 'pip install -e .' in $PROJECT_DIR"
 fi
 
 echo ""
 info "Next steps if any ❌ above:"
 info "  1. To rewrite all 3 client configs to use the venv binary directly (recommended):"
-info "       $PROJECT_DIR/.venv/bin/reddit-cli mcp install --client claude-code"
-info "       $PROJECT_DIR/.venv/bin/reddit-cli mcp install --client claude-desktop"
-info "       $PROJECT_DIR/.venv/bin/reddit-cli mcp install --client cursor"
+info "       $PROJECT_DIR/.venv/bin/gapmap mcp install --client claude-code"
+info "       $PROJECT_DIR/.venv/bin/gapmap mcp install --client claude-desktop"
+info "       $PROJECT_DIR/.venv/bin/gapmap mcp install --client cursor"
 info "  2. Then restart the relevant client app."

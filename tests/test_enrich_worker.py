@@ -10,11 +10,11 @@ from __future__ import annotations
 def test_schema_creates_queue(tmp_path, monkeypatch):
     """init_schema() must create extraction_queue with the expected columns
     and indexes. Guards against the worker booting against a missing table."""
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
 
     # Force re-read of env-configured db_path — the per-thread cache from
     # other tests would otherwise return a stale DB handle.
-    from reddit_research.core.db import get_db
+    from gapmap.core.db import get_db
 
     get_db.cache_clear()
     db = get_db()
@@ -48,17 +48,17 @@ def test_tag_posts_enqueues(tmp_path, monkeypatch):
     pulls down chromadb + ONNX, which is out of scope for a unit test of
     the enqueue hook).
     """
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("GAPMAP_RELEVANCE_GATE_THRESHOLD", "0")
 
-    from reddit_research.core.db import get_db
+    from gapmap.core.db import get_db
 
     get_db.cache_clear()
     # Touch the schema before inserting — init_schema runs on first get_db()
     # and creates both topic_posts and extraction_queue.
     _ = get_db()
 
-    from reddit_research.research.collect import _tag_posts
+    from gapmap.research.collect import _tag_posts
 
     n = _tag_posts("meditation", ["p1", "p2", "p3"], "top:reddit:month")
     assert n == 3, f"expected 3 tagged rows, got {n}"
@@ -88,9 +88,9 @@ def test_drain_batch_removes_on_success(tmp_path, monkeypatch):
     pulls an LLM provider, which is out of scope for a unit test of the
     drain loop. Queue should be empty after one batch of two rows.
     """
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
 
-    from reddit_research.core.db import get_db
+    from gapmap.core.db import get_db
 
     get_db.cache_clear()
     db = get_db()
@@ -110,14 +110,14 @@ def test_drain_batch_removes_on_success(tmp_path, monkeypatch):
     # Stub the extractor on the semantic module — the worker re-imports it
     # from that module every batch so a monkeypatch takes effect without
     # a worker restart.
-    import reddit_research.graph.semantic as sem
+    import gapmap.graph.semantic as sem
 
     def _fake(topic, post_ids):
         return len(post_ids)
 
     monkeypatch.setattr(sem, "enrich_from_llm_for_posts", _fake, raising=False)
 
-    from reddit_research.research.enrich_worker import _drain_batch
+    from gapmap.research.enrich_worker import _drain_batch
 
     n = _drain_batch(db)
     assert n == 2, f"expected 2 rows drained, got {n}"

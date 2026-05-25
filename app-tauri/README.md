@@ -1,20 +1,20 @@
 # Gap Map — desktop app (Tauri)
 
-Soft-dashboard Tauri wrapper for the `reddit-myind` research tool.
+Soft-dashboard Tauri wrapper for the `gapmap` research tool.
 The Python CLI runs as a bundled sidecar; all UI is vanilla JS + the
 `variant-6-soft-dashboard` design.
 
 ## First-time setup
 
-From the `reddit-myind` repo root:
+From the `gapmap` repo root:
 
 ```bash
-# 1. Build the Python sidecar (reddit-cli binary)
+# 1. Build the Python sidecar (gapmap binary)
 ./scripts/build-pyinstaller.sh
 
 # 2. Copy the binary into app-tauri/src-tauri/binaries/
 # (Replace <triple> with your platform, e.g. aarch64-apple-darwin)
-cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin
+cp dist/gapmap app-tauri/src-tauri/binaries/gapmap-aarch64-apple-darwin
 
 # 3. Install Node deps (from app-tauri/)
 cd app-tauri
@@ -72,7 +72,7 @@ app-tauri/
 └── src-tauri/               # Rust backend
     ├── Cargo.toml
     ├── tauri.conf.json      # sidecar declared here
-    ├── binaries/            # platform-specific reddit-cli builds
+    ├── binaries/            # platform-specific gapmap builds
     └── src/
         ├── main.rs          # Tauri builder + invoke handlers
         ├── cli.rs           # sidecar wrapper (run_cli + run_cli_streaming)
@@ -83,7 +83,7 @@ app-tauri/
 
 | Command | Purpose |
 |---|---|
-| `cli_info()` | `reddit-cli info --json` |
+| `cli_info()` | `gapmap info --json` |
 | `list_topics()` | inventory of all collected topics |
 | `overview_stats()` | global post/painpoint/source counts |
 | `recent_activity()` | last 12 fetches |
@@ -92,7 +92,7 @@ app-tauri/
 | `build_graph(topic)` | `research graph build` |
 | `export_html(topic)` | generates gap-map HTML → returns path |
 | `get_findings(topic, kind)` | query painpoints/products/workarounds/features |
-| `app_data_dir()` | the `REDDIT_MYIND_DATA_DIR` path |
+| `app_data_dir()` | the `GAPMAP_DATA_DIR` path |
 
 Events:
 - `collect:progress` — fired per stdout/stderr line during a collect

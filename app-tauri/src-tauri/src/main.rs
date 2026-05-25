@@ -23,7 +23,7 @@ fn load_runtime_env_files() {
     // Search order:
     //   1) current dir .env
     //   2) parent dirs .env (up to 5 levels; catches app-tauri/.env in dev)
-    //   3) ~/.config/reddit-myind/.env (same path BYOK writes to)
+    //   3) ~/.config/gapmap/.env (same path BYOK writes to)
     let mut dir = std::env::current_dir().ok();
     let mut depth = 0usize;
     while let Some(d) = dir {
@@ -38,7 +38,7 @@ fn load_runtime_env_files() {
     if let Ok(home) = std::env::var("HOME") {
         let user_env = std::path::PathBuf::from(home)
             .join(".config")
-            .join("reddit-myind")
+            .join("gapmap")
             .join(".env");
         let _ = dotenvy::from_path(user_env);
     }
@@ -215,7 +215,7 @@ fn main() {
                     Ok(d) => d,
                     Err(_) => return,
                 };
-                let db_path = dir.join("reddit.db");
+                let db_path = dir.join("gapmap.db");
                 if !db_path.exists() {
                     return;
                 }
@@ -545,7 +545,7 @@ fn main() {
     //   - prod (PyInstaller sidecar, CommandChild::kill)
     //   - dev  (raw tokio pid → SIGTERM)
     // Without this the user's Activity Monitor fills up with zombie
-    // `reddit-cli` / `python -m reddit_research.cli.main` processes every
+    // `gapmap` / `python -m gapmap.cli.main` processes every
     // time they quit mid-collect, and the fetches table keeps an
     // `ended_at=NULL` row that the UI reads as "still running".
     app.run(|app_handle, event| {

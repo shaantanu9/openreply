@@ -45,21 +45,21 @@ def check_core_imports() -> list[str]:
     """Every module the Tauri sidecar will try to import on first `run_cli`."""
     errors: list[str] = []
     modules = [
-        "reddit_research",
-        "reddit_research.cli.main",
-        "reddit_research.core.db",
-        "reddit_research.research.collect",
-        "reddit_research.research.chat",
-        "reddit_research.research.gaps",
-        "reddit_research.analyze.painpoints",
-        "reddit_research.analyze.providers.base",
-        "reddit_research.analyze.providers.openai",
-        "reddit_research.analyze.providers.ollama",
-        "reddit_research.graph.build",
-        "reddit_research.graph.semantic",
-        "reddit_research.sources.collect_adapter",
-        "reddit_research.sources.rss",
-        "reddit_research.sources.rss_catalog",
+        "gapmap",
+        "gapmap.cli.main",
+        "gapmap.core.db",
+        "gapmap.research.collect",
+        "gapmap.research.chat",
+        "gapmap.research.gaps",
+        "gapmap.analyze.painpoints",
+        "gapmap.analyze.providers.base",
+        "gapmap.analyze.providers.openai",
+        "gapmap.analyze.providers.ollama",
+        "gapmap.graph.build",
+        "gapmap.graph.semantic",
+        "gapmap.sources.collect_adapter",
+        "gapmap.sources.rss",
+        "gapmap.sources.rss_catalog",
     ]
     for mod in modules:
         try:
@@ -74,7 +74,7 @@ def check_core_imports() -> list[str]:
 def check_sources_dict() -> list[str]:
     errors: list[str] = []
     try:
-        from reddit_research.sources.collect_adapter import SOURCES
+        from gapmap.sources.collect_adapter import SOURCES
     except Exception as e:
         fail(f"SOURCES import failed: {e}")
         return [str(e)]
@@ -110,10 +110,10 @@ def check_db_schema() -> list[str]:
         try:
             # Purge any cached get_db() that a previous import pinned to the
             # real DB path — otherwise init_schema initialises the wrong file.
-            from reddit_research.core import db as _db
+            from gapmap.core import db as _db
             if hasattr(_db, "_cache_clear"):
                 _db._cache_clear()
-            from reddit_research.core.db import get_db, init_schema
+            from gapmap.core.db import get_db, init_schema
 
             db = get_db()
             init_schema(db)
@@ -170,7 +170,7 @@ def check_optional_extras() -> list[str]:
 def check_llm_provider_resolution() -> list[str]:
     errors: list[str] = []
     try:
-        from reddit_research.analyze.providers.base import resolve_provider
+        from gapmap.analyze.providers.base import resolve_provider
         provider_name = resolve_provider()
         if provider_name:
             ok(f"resolved LLM provider: {provider_name}")

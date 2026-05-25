@@ -10,7 +10,7 @@ Three surfaces, one SQLite store:
 |---|---|
 | **Desktop app** (`Gap Map.app`) | GUI research — collect, synthesize, graph, export |
 | **MCP server** (90+ tools) | Claude Code / Cursor integration — research inside your IDE |
-| **CLI** (`reddit-cli`) | Automation, scripting, headless pipelines |
+| **CLI** (`gapmap`) | Automation, scripting, headless pipelines |
 
 ---
 
@@ -39,8 +39,8 @@ Download the latest `.dmg` (macOS) / `.msi` (Windows) / `.AppImage` (Linux) from
 ### 1. Reddit auth (OAuth — no password stored)
 
 ```bash
-uv run reddit-cli auth login    # opens browser, writes token to ~/.config/reddit-myind/.env
-uv run reddit-cli auth check    # verify
+uv run gapmap auth login    # opens browser, writes token to ~/.config/gapmap/.env
+uv run gapmap auth check    # verify
 ```
 
 ### 2. Add an LLM key (for synthesis and gap-finding)
@@ -52,10 +52,10 @@ export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY / GEMINI_API_KEY / OLLAMA 
 ### 3. Research a topic end-to-end
 
 ```bash
-uv run reddit-cli research discover --topic "meditation apps"   # find subreddits
-uv run reddit-cli research collect  --topic "meditation apps"   # pull all sources
-uv run reddit-cli research gaps     --topic "meditation apps" --provider anthropic
-uv run reddit-cli research report   --topic "meditation apps" --out report.md
+uv run gapmap research discover --topic "meditation apps"   # find subreddits
+uv run gapmap research collect  --topic "meditation apps"   # pull all sources
+uv run gapmap research gaps     --topic "meditation apps" --provider anthropic
+uv run gapmap research report   --topic "meditation apps" --out report.md
 ```
 
 ---
@@ -65,7 +65,7 @@ uv run reddit-cli research report   --topic "meditation apps" --out report.md
 Add to your Claude Code config in one command:
 
 ```bash
-uv run reddit-cli mcp install
+uv run gapmap mcp install
 ```
 
 Or wire it manually:
@@ -73,9 +73,9 @@ Or wire it manually:
 ```json
 {
   "mcpServers": {
-    "reddit-myind": {
+    "gapmap": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/gap-map-pro", "run", "reddit-cli", "mcp", "serve"]
+      "args": ["--directory", "/absolute/path/to/gap-map-pro", "run", "gapmap", "mcp", "serve"]
     }
   }
 }
@@ -84,7 +84,7 @@ Or wire it manually:
 For Cursor (HTTP daemon, survives 5-min cycling):
 
 ```bash
-uv run reddit-cli mcp install --client cursor
+uv run gapmap mcp install --client cursor
 bash scripts/mcp_http_daemon.sh start
 ```
 
@@ -92,15 +92,15 @@ bash scripts/mcp_http_daemon.sh start
 
 | Category | Example tools |
 |---|---|
-| Fetch | `reddit_fetch_posts`, `reddit_fetch_hn`, `reddit_fetch_arxiv`, `reddit_fetch_youtube` |
-| Research | `reddit_research_collect`, `reddit_find_gaps`, `reddit_synthesize_insights` |
-| Papers | `reddit_paper_research_pipeline`, `reddit_paper_chunk_search`, `reddit_paper_fulltext` |
-| Graph | `reddit_graph_build`, `reddit_graph_communities`, `reddit_graph_pagerank` |
-| Product mode | `reddit_product_signals`, `reddit_product_digest`, `reddit_product_sweep` |
-| Personas | `reddit_audience_personas`, `reddit_launch_brief` |
-| Export | `reddit_export_docx`, `reddit_export_pptx`, `reddit_papers_export` |
-| Jobs | `reddit_jobs_submit`, `reddit_jobs_get` (async, survives reconnects) |
-| Admin | `reddit_diagnostics`, `reddit_describe_schema`, `reddit_query_db` |
+| Fetch | `gapmap_fetch_posts`, `gapmap_fetch_hn`, `gapmap_fetch_arxiv`, `gapmap_fetch_youtube` |
+| Research | `gapmap_research_collect`, `gapmap_find_gaps`, `gapmap_synthesize_insights` |
+| Papers | `gapmap_paper_research_pipeline`, `gapmap_paper_chunk_search`, `gapmap_paper_fulltext` |
+| Graph | `gapmap_graph_build`, `gapmap_graph_communities`, `gapmap_graph_pagerank` |
+| Product mode | `gapmap_product_signals`, `gapmap_product_digest`, `gapmap_product_sweep` |
+| Personas | `gapmap_audience_personas`, `gapmap_launch_brief` |
+| Export | `gapmap_export_docx`, `gapmap_export_pptx`, `gapmap_papers_export` |
+| Jobs | `gapmap_jobs_submit`, `gapmap_jobs_get` (async, survives reconnects) |
+| Admin | `gapmap_diagnostics`, `gapmap_describe_schema`, `gapmap_query_db` |
 
 Full reference: [`MCP_TOOLS.md`](MCP_TOOLS.md)
 
@@ -110,28 +110,28 @@ Full reference: [`MCP_TOOLS.md`](MCP_TOOLS.md)
 
 ```bash
 # Fetch (all writes to SQLite with dedup)
-uv run reddit-cli fetch posts --sub resumes --sort hot --limit 100
-uv run reddit-cli fetch hn    --query "product research" --limit 50
-uv run reddit-cli fetch arxiv --query "LLM agents" --limit 20
-uv run reddit-cli fetch historical --sub resumes --days 730  # pullpush, 2012–2025
+uv run gapmap fetch posts --sub resumes --sort hot --limit 100
+uv run gapmap fetch hn    --query "product research" --limit 50
+uv run gapmap fetch arxiv --query "LLM agents" --limit 20
+uv run gapmap fetch historical --sub resumes --days 730  # pullpush, 2012–2025
 
 # Search, query, export
-uv run reddit-cli search "ATS resume" --sub cscareerquestions
-uv run reddit-cli query "SELECT author, count(*) c FROM posts GROUP BY author ORDER BY c DESC LIMIT 20"
-uv run reddit-cli export posts --sub resumes --since 7d --format csv --out out.csv
+uv run gapmap search "ATS resume" --sub cscareerquestions
+uv run gapmap query "SELECT author, count(*) c FROM posts GROUP BY author ORDER BY c DESC LIMIT 20"
+uv run gapmap export posts --sub resumes --since 7d --format csv --out out.csv
 
 # Analyze
-uv run reddit-cli analyze themes     --sub resumes --since 7d --provider anthropic
-uv run reddit-cli analyze painpoints --sub cscareerquestions --top 50
+uv run gapmap analyze themes     --sub resumes --since 7d --provider anthropic
+uv run gapmap analyze painpoints --sub cscareerquestions --top 50
 
 # Ingest local files
-uv run reddit-cli ingest file   path/to/doc.pdf  --topic "meditation apps"
-uv run reddit-cli ingest folder path/to/docs/    --topic "meditation apps"
+uv run gapmap ingest file   path/to/doc.pdf  --topic "meditation apps"
+uv run gapmap ingest folder path/to/docs/    --topic "meditation apps"
 
 # MCP
-uv run reddit-cli mcp serve          # stdio (Claude Code)
-uv run reddit-cli mcp install        # write to ~/.claude.json
-uv run reddit-cli mcp status
+uv run gapmap mcp serve          # stdio (Claude Code)
+uv run gapmap mcp install        # write to ~/.claude.json
+uv run gapmap mcp status
 ```
 
 All commands support `--json` for machine-readable NDJSON output.
@@ -176,14 +176,14 @@ Historical + live data lets you classify gaps as:
 
 ```
 gap-map-pro/
-  src/reddit_research/
+  src/gapmap/
     sources/     # 23+ source adapters (one file each)
     core/        # client, db, config, exporters
     fetch/       # posts, comments, users, search, stream
     analyze/     # providers (anthropic/openai/ollama/gemini) + themes/gaps/synthesis
     graph/       # knowledge graph (structural + semantic + relations)
     mcp/         # FastMCP server (90+ tools, async job queue, Palace search)
-    cli/         # Typer entry point (reddit-cli)
+    cli/         # Typer entry point (gapmap)
   app-tauri/     # Tauri 2 desktop app (Gap Map.app)
     src/         # Vanilla JS frontend (main.js, api.js, style.css)
     src-tauri/   # Rust shell + Python sidecar bridge
@@ -214,7 +214,7 @@ docs/
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). The quickest way to contribute:
 
-- **New data source** — add a source adapter in `src/reddit_research/sources/` (~50 lines, follow `arxiv.py`)
+- **New data source** — add a source adapter in `src/gapmap/sources/` (~50 lines, follow `arxiv.py`)
 - **Prompt improvements** — edit any `prompts/*.yaml` without touching code
 - **Tests** — `tests/` is sparse; any coverage of real behavior is welcome
 - **Bug reports** — use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml)

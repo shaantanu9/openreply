@@ -13,9 +13,9 @@ Last full revision: **2026-05-01**.
 - **Claude Code** and **Claude Desktop** keep stdio (their lifecycle is fine);
   they auto-spawn the server per chat session.
 - Long tools (collect, reindex, paper analysis, etc.) **must be invoked via
-  `reddit_jobs_submit`**, not directly — otherwise the call holds the MCP
+  `gapmap_jobs_submit`**, not directly — otherwise the call holds the MCP
   transport open for minutes and Cursor will drop it. Poll status with
-  `reddit_jobs_get(job_id)`.
+  `gapmap_jobs_get(job_id)`.
 
 ---
 
@@ -108,16 +108,16 @@ Claude Desktop config `.bak.before-eager`.
 
 ### Why
 
-Some MCP tools take 20–30 minutes (`reddit_research_collect` on a big
-topic, `reddit_palace_reindex` on 60K posts, bulk paper analysis,
+Some MCP tools take 20–30 minutes (`gapmap_research_collect` on a big
+topic, `gapmap_palace_reindex` on 60K posts, bulk paper analysis,
 graph rebuilds, LLM-heavy tools). A single synchronous `tools/call`
 holds the client connection open the whole time, fights every client's
 transport timeout, and ties up an entire agent reasoning turn just
 waiting.
 
 The queue moves long work into a 4-thread pool inside the same MCP
-daemon. `reddit_jobs_submit(tool_name, args)` returns a `job_id` in
-~50 ms. Agents poll `reddit_jobs_get(job_id)` whenever they want.
+daemon. `gapmap_jobs_submit(tool_name, args)` returns a `job_id` in
+~50 ms. Agents poll `gapmap_jobs_get(job_id)` whenever they want.
 Survives Cursor cycling, chat resets, and (via SQLite persistence)
 daemon restarts.
 
@@ -125,10 +125,10 @@ daemon restarts.
 
 | Tool | Returns | Notes |
 |---|---|---|
-| `reddit_jobs_submit(tool_name, args)` | `{ok, job_id, state="queued", tool_name, hint}` | Any of the 122 registered MCP tools. `args` = kwargs forwarded to the tool. |
-| `reddit_jobs_get(job_id)` | full row + inflated `result` when `state=done` | Truncated payloads (>1 MB) come back as `{_truncated:true, head_preview}`. |
-| `reddit_jobs_list(state?, tool_name?, limit=50)` | `{ok, count, jobs[]}` | newest-first; clamp 1..500. |
-| `reddit_jobs_cancel(job_id)` | `{ok, was_running, hint}` | Sets per-job `threading.Event`; queued rows go to `cancelled` immediately, running rows depend on the tool. |
+| `gapmap_jobs_submit(tool_name, args)` | `{ok, job_id, state="queued", tool_name, hint}` | Any of the 122 registered MCP tools. `args` = kwargs forwarded to the tool. |
+| `gapmap_jobs_get(job_id)` | full row + inflated `result` when `state=done` | Truncated payloads (>1 MB) come back as `{_truncated:true, head_preview}`. |
+| `gapmap_jobs_list(state?, tool_name?, limit=50)` | `{ok, count, jobs[]}` | newest-first; clamp 1..500. |
+| `gapmap_jobs_cancel(job_id)` | `{ok, was_running, hint}` | Sets per-job `threading.Event`; queued rows go to `cancelled` immediately, running rows depend on the tool. |
 
 ### State machine
 
@@ -170,7 +170,7 @@ CREATE INDEX idx_mcp_jobs_tool          ON mcp_jobs(tool_name, created_at DESC);
 
 Lives on the same `reddit.db` everything else uses
 (`$REDDIT_MYIND_DATA_DIR/reddit.db`). Auto-created on first
-`reddit_jobs_submit`.
+`gapmap_jobs_submit`.
 
 ### Worker lifecycle (in `mcp/jobs.py`)
 
@@ -236,11 +236,11 @@ in the MCP wrapper — no change to the underlying functions.
 
 | Tool | Progress source | Cancellable? |
 |---|---|---|
-| `reddit_research_collect` | per-source / per-subreddit msgs | ✅ on next progress() |
-| `reddit_palace_reindex` | per-batch (every 200 posts) | ✅ on next batch boundary |
-| `reddit_palace_warmup` | structured ONNX events | ✅ on next event |
-| `reddit_analyze_papers_bulk` | `[i/N] post_id` per paper | ✅ on next paper |
-| `reddit_find_gaps` | per-extractor msgs | ✅ on next extractor |
+| `gapmap_research_collect` | per-source / per-subreddit msgs | ✅ on next progress() |
+| `gapmap_palace_reindex` | per-batch (every 200 posts) | ✅ on next batch boundary |
+| `gapmap_palace_warmup` | structured ONNX events | ✅ on next event |
+| `gapmap_analyze_papers_bulk` | `[i/N] post_id` per paper | ✅ on next paper |
+| `gapmap_find_gaps` | per-extractor msgs | ✅ on next extractor |
 
 These tools are **monolithic** (no internal loop), so the wrapper
 emits start + done beats. Cancel-on-start works; mid-call cancel
@@ -248,9 +248,9 @@ isn't possible without thread-killing.
 
 | Tool | Beats | Cancellable? |
 |---|---|---|
-| `reddit_paper_fulltext` | start / done with status + char_count | ✅ pre-fetch only |
-| `reddit_paper_draft_generate` | start / done with markdown size | ✅ pre-LLM only |
-| `reddit_graph_build_relations` | start / done with edge count | ✅ pre-build only |
+| `gapmap_paper_fulltext` | start / done with status + char_count | ✅ pre-fetch only |
+| `gapmap_paper_draft_generate` | start / done with markdown size | ✅ pre-LLM only |
+| `gapmap_graph_build_relations` | start / done with edge count | ✅ pre-build only |
 
 ### How `JobCancelled` propagates
 
@@ -305,15 +305,15 @@ watch -n 2 "sqlite3 -column -header '$DB' \"SELECT state, progress_pct, substr(p
 ### Submitting a long job from the agent
 
 ```text
-job = reddit_jobs_submit(
-  tool_name="reddit_research_collect",
+job = gapmap_jobs_submit(
+  tool_name="gapmap_research_collect",
   args={"topic": "presentation skills", "max_posts": 5000, "aggressive": true}
 )
 # returns in 50ms with job.job_id
 
 # … do other work / answer the user / write code …
 
-reddit_jobs_get(job.job_id)   # state, progress_pct, progress_msg
+gapmap_jobs_get(job.job_id)   # state, progress_pct, progress_msg
 # when state == 'done': result is inflated and ready
 # when state == 'failed': traceback in error column
 ```
@@ -353,9 +353,9 @@ WHERE state IN ('done','failed','cancelled','interrupted')
   calls between its work units (the call also serves as a cancel
   checkpoint via `JobCancelled`).
 - **No SSE progress to the client** — Pattern A from the brainstorm.
-  Agents must poll `reddit_jobs_get`. Inline visibility for a
+  Agents must poll `gapmap_jobs_get`. Inline visibility for a
   human-watching-Cursor isn't there yet.
-- **`reddit_palace_reindex` may wedge on cold ChromaDB** — the
+- **`gapmap_palace_reindex` may wedge on cold ChromaDB** — the
   "Error sending backfill request to compactor" error during eager
   warmup is a known ChromaDB issue. Unrelated to the queue but
   particularly visible when running reindex via the queue.

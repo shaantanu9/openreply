@@ -24,8 +24,8 @@ Closes the "college student opens the app and gets real value" gap without chang
 - `oa_lookup(doi)`
 
 ### New MCP tools
-- `reddit_papers_export(topic, fmt, limit)` — Claude can dump a bibliography in 4 formats
-- `reddit_oa_lookup(doi)` — Claude can fetch legal free PDF URLs mid-conversation
+- `gapmap_papers_export(topic, fmt, limit)` — Claude can dump a bibliography in 4 formats
+- `gapmap_oa_lookup(doi)` — Claude can fetch legal free PDF URLs mid-conversation
 
 ### New UI
 - `screens/papers.js` — Papers tab: sortable table (src · title · year · cites · OA), 4 export buttons, Unpaywall OA button per row that opens the free PDF in a new window
@@ -90,4 +90,4 @@ Same flow for UX researchers building a research doc, same flow for a solopreneu
 
 ## Restart note
 
-Requires `tauri dev` restart because Rust commands were added. After restart: topics with papers (run Solutions pipeline first, or use MCP `reddit_research_papers`) show the new Papers tab in the More dropdown.
+Requires `tauri dev` restart because Rust commands were added. After restart: topics with papers (run Solutions pipeline first, or use MCP `gapmap_research_papers`) show the new Papers tab in the More dropdown.

@@ -10,9 +10,9 @@ workflows, and made every LLM-driven conclusion (from MCP tools or the
 app's own pipelines) land in one table the GUI can render. The client
 LLM in the MCP client (Claude Desktop / Cursor / Claude Code) drives
 the analysis; the app's configured provider is only used when an MCP
-tool itself needs to call an LLM (e.g. `reddit_synthesize_insights`),
+tool itself needs to call an LLM (e.g. `gapmap_synthesize_insights`),
 and those calls are persisted with their provider/model so the user
-can see what ran. Also loosened `reddit_query_db` to accept read-only
+can see what ran. Also loosened `gapmap_query_db` to accept read-only
 PRAGMAs so the client LLM can introspect the schema without hitting
 the write-guard (which was why the user saw
 `PRAGMA table_info(...)` fail earlier).
@@ -28,23 +28,23 @@ here.
   tokens_out, created_at)` with indexes on `(topic, created_at)`,
   `(topic, kind, created_at)`, `(source)`.
 - Added `save_mcp_analysis()` helper in `core/db.py`.
-- `reddit_query_db` now accepts read-only PRAGMAs (`table_info`,
+- `gapmap_query_db` now accepts read-only PRAGMAs (`table_info`,
   `table_list`, `index_info`, `index_list`, `index_xinfo`,
   `foreign_key_list`, `database_list`, `function_list`). SELECT/WITH
   plus destructive-keyword guard unchanged.
-- `reddit_discover_subs` now persists the ranked subs list to
+- `gapmap_discover_subs` now persists the ranked subs list to
   `mcp_analyses` (kind=`subreddit_ranking`).
-- `reddit_analyze_paper` mirrors its analysis (summary/relevance/takeaway)
+- `gapmap_analyze_paper` mirrors its analysis (summary/relevance/takeaway)
   into `mcp_analyses` (kind=`paper_analysis`).
-- `reddit_analyze_papers_bulk` writes a single rollup row
+- `gapmap_analyze_papers_bulk` writes a single rollup row
   (kind=`conclusion`) so the GUI list stays readable.
-- **New MCP tool** `reddit_synthesize_insights` — exposes
+- **New MCP tool** `gapmap_synthesize_insights` — exposes
   `research.insights.synthesize_insights()`. Writes to `mcp_analyses`
   (kind=`insights`).
-- **New MCP tool** `reddit_find_gaps` — exposes `research.gaps.find_gaps()`.
+- **New MCP tool** `gapmap_find_gaps` — exposes `research.gaps.find_gaps()`.
   Writes the 4-part report (painpoints / feature_wishes /
   product_complaints / diy_workarounds) to `mcp_analyses` (kind=`gaps`).
-- **New MCP tool** `reddit_mcp_analyses_list` — read tool a client LLM
+- **New MCP tool** `gapmap_mcp_analyses_list` — read tool a client LLM
   can call to see what's already been concluded for a topic/kind
   before running a fresh synthesis. Filters on topic + kind.
 - Topic page: added **AI Analyses** tab that lists `mcp_analyses`
@@ -60,12 +60,12 @@ here.
 
 - `src/reddit_research/core/db.py` — added `mcp_analyses` table to
   `init_schema()`, added `save_mcp_analysis()` helper, exported it.
-- `src/reddit_research/mcp/server.py` — loosened `reddit_query_db`
+- `src/reddit_research/mcp/server.py` — loosened `gapmap_query_db`
   guard for read-only PRAGMAs; wired persistence into
-  `reddit_discover_subs`, `reddit_analyze_paper`,
-  `reddit_analyze_papers_bulk`; added
-  `reddit_synthesize_insights`, `reddit_find_gaps`,
-  `reddit_mcp_analyses_list`; updated schema doc in `reddit_query_db`
+  `gapmap_discover_subs`, `gapmap_analyze_paper`,
+  `gapmap_analyze_papers_bulk`; added
+  `gapmap_synthesize_insights`, `gapmap_find_gaps`,
+  `gapmap_mcp_analyses_list`; updated schema doc in `gapmap_query_db`
   docstring to mention `mcp_analyses`.
 - `app-tauri/src/screens/topic.js` — added `ai_analyses` tab button,
   `loadAiAnalyses()` loader, and included it in the primary-tabs,

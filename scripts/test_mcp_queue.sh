@@ -11,9 +11,9 @@
 #   docs/MCP_VERIFICATION.md     — human-readable report (re-run safe)
 
 set -u
-ROOT="${REDDIT_MYIND_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
-DATA_DIR="${REDDIT_MYIND_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.gapmap/reddit-myind}"
-DB="$DATA_DIR/reddit.db"
+ROOT="${GAPMAP_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
+DATA_DIR="${GAPMAP_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.gapmap/gapmap}"
+DB="$DATA_DIR/gapmap.db"
 URL="http://127.0.0.1:8765/mcp"
 TOKEN_FILE="$DATA_DIR/mcp_token"
 TOKEN=""
@@ -98,7 +98,7 @@ submit_job() {
 import json, sys
 print(json.dumps({'tool_name': sys.argv[1], 'args': json.loads(sys.argv[2])}))
 " "$tool" "$args_json")
-  if ! mcp_call "$sid" "$out" "reddit_jobs_submit" "$args_outer"; then
+  if ! mcp_call "$sid" "$out" "gapmap_jobs_submit" "$args_outer"; then
     rm -f "$out"; echo ""; return 1
   fi
   extract_struct "$out" | jq -r '.job_id // empty'
@@ -158,7 +158,7 @@ pass "session-handshake" "sid=${SID:0:8}…"
 
 hdr "Job-control surface"
 # 1. unknown tool name → ok=false
-JOB=$(submit_job "$SID" "reddit_does_not_exist" '{}')
+JOB=$(submit_job "$SID" "gapmap_does_not_exist" '{}')
 if [ -z "$JOB" ]; then
   # ok=false from server returns no job_id field — that's the expected path
   pass "submit-unknown-tool" "rejected as expected"
@@ -167,7 +167,7 @@ else
 fi
 
 # 2. submit + immediate list shows it
-JOB1=$(submit_job "$SID" "reddit_palace_status" '{}')
+JOB1=$(submit_job "$SID" "gapmap_palace_status" '{}')
 if [ -n "$JOB1" ]; then
   pass "submit-success-fast-tool" "job=$JOB1"
 else
@@ -188,7 +188,7 @@ else
 fi
 
 # 4. jobs_list returns it
-mcp_call "$SID" /tmp/list.txt "reddit_jobs_list" '{"limit":5}' && \
+mcp_call "$SID" /tmp/list.txt "gapmap_jobs_list" '{"limit":5}' && \
   CNT=$(extract_struct /tmp/list.txt | jq '.count') || CNT=0
 if [ "$CNT" -gt 0 ] 2>/dev/null; then
   pass "jobs-list" "count=$CNT"
@@ -197,7 +197,7 @@ else
 fi
 
 # 5. cancel of unknown job
-mcp_call "$SID" /tmp/c.txt "reddit_jobs_cancel" '{"job_id":"j_does_not_exist"}'
+mcp_call "$SID" /tmp/c.txt "gapmap_jobs_cancel" '{"job_id":"j_does_not_exist"}'
 ERR=$(extract_struct /tmp/c.txt | jq -r '.error // empty')
 if [ "$ERR" = "not_found" ]; then
   pass "cancel-unknown" "clean error"
@@ -207,7 +207,7 @@ fi
 
 hdr "Failure capture"
 # 6. tool with missing required arg → state=failed with traceback
-JOB2=$(submit_job "$SID" "reddit_topic_stats" '{}')
+JOB2=$(submit_job "$SID" "gapmap_topic_stats" '{}')
 ST=$(wait_until_finished "$JOB2" 10)
 if [ "$ST" = "failed" ]; then
   ERR_TXT=$(get_job_field "$JOB2" "substr(error,1,80)")
@@ -221,7 +221,7 @@ fi
 
 hdr "Live progress + cancel mid-flight"
 # 7. submit research_collect (small), watch progress msgs flow, cancel
-JOB3=$(submit_job "$SID" "reddit_research_collect" \
+JOB3=$(submit_job "$SID" "gapmap_research_collect" \
   '{"topic":"smoke_test_'$$'","subs":["python"],"limit_per_sub":2,"limit_per_query":2,"scope_to_subs":false}')
 if [ -z "$JOB3" ]; then
   fail "live-progress" "submit failed"
@@ -244,7 +244,7 @@ else
   fi
 
   # Cancel it
-  mcp_call "$SID" /tmp/cancel.txt "reddit_jobs_cancel" "{\"job_id\":\"$JOB3\"}"
+  mcp_call "$SID" /tmp/cancel.txt "gapmap_jobs_cancel" "{\"job_id\":\"$JOB3\"}"
   CR=$(extract_struct /tmp/cancel.txt | jq -r '.was_running')
   if [ "$CR" = "true" ] || [ "$CR" = "false" ]; then
     pass "cancel-running-call" "was_running=$CR"
@@ -268,7 +268,7 @@ hdr "Concurrent submissions"
 # 8. submit 5 jobs in parallel; pool size is 4, so 5th should queue
 JOBS=()
 for i in 1 2 3 4 5; do
-  J=$(submit_job "$SID" "reddit_palace_status" '{}')
+  J=$(submit_job "$SID" "gapmap_palace_status" '{}')
   JOBS+=("$J")
 done
 SUBMITTED=${#JOBS[@]}
@@ -327,28 +327,28 @@ test_wrapper() {
   job=$(submit_job "$SID" "$tool" "$args")
   if [ -z "$job" ]; then fail "$name" "submit failed"; return; fi
   check_prefix "$job" "$prefix" "$name" "$timeout"
-  mcp_call "$SID" /dev/null "reddit_jobs_cancel" "{\"job_id\":\"$job\"}" >/dev/null 2>&1
+  mcp_call "$SID" /dev/null "gapmap_jobs_cancel" "{\"job_id\":\"$job\"}" >/dev/null 2>&1
   # Tiny pause so cancel lands before the next submission grabs the worker.
   sleep 1
 }
 
-test_wrapper "reddit_paper_fulltext" '{"post_id":"smoke_bogus_'$$'"}' "[fulltext]" "wrapper-paper-fulltext" 15
-test_wrapper "reddit_palace_warmup" '{}' "[warmup]" "wrapper-palace-warmup" 15
-test_wrapper "reddit_analyze_papers_bulk" '{"topic":"smoke_no_papers_'$$'"}' "[paper-bulk]" "wrapper-analyze-papers-bulk" 15
+test_wrapper "gapmap_paper_fulltext" '{"post_id":"smoke_bogus_'$$'"}' "[fulltext]" "wrapper-paper-fulltext" 15
+test_wrapper "gapmap_palace_warmup" '{}' "[warmup]" "wrapper-palace-warmup" 15
+test_wrapper "gapmap_analyze_papers_bulk" '{"topic":"smoke_no_papers_'$$'"}' "[paper-bulk]" "wrapper-analyze-papers-bulk" 15
 # Use a non-existent topic so the corpus fetch returns empty fast and
 # the first progress_cb("corpus", …) callback fires within seconds.
-test_wrapper "reddit_find_gaps" '{"topic":"smoke_empty_'$$'","corpus_limit":5,"min_score":0}' "[gaps]" "wrapper-find-gaps" 30
-test_wrapper "reddit_paper_draft_generate" '{"topic":"ai"}' "[paper-draft]" "wrapper-paper-draft-generate" 30
-test_wrapper "reddit_graph_build_relations" '{"topic":"ai"}' "[graph-relations]" "wrapper-graph-build-relations" 30
+test_wrapper "gapmap_find_gaps" '{"topic":"smoke_empty_'$$'","corpus_limit":5,"min_score":0}' "[gaps]" "wrapper-find-gaps" 30
+test_wrapper "gapmap_paper_draft_generate" '{"topic":"ai"}' "[paper-draft]" "wrapper-paper-draft-generate" 30
+test_wrapper "gapmap_graph_build_relations" '{"topic":"ai"}' "[graph-relations]" "wrapper-graph-build-relations" 30
 
-# Note: reddit_research_collect was already exercised in "Live progress" section.
-# Note: reddit_palace_reindex is intentionally not exercised end-to-end —
+# Note: gapmap_research_collect was already exercised in "Live progress" section.
+# Note: gapmap_palace_reindex is intentionally not exercised end-to-end —
 #       it hangs on a known cold-Chroma compactor issue (separate, pre-existing).
 #       But we DO confirm it can be submitted & cancelled, so the wrapper plumbing works:
-JX=$(submit_job "$SID" "reddit_palace_reindex" '{}')
+JX=$(submit_job "$SID" "gapmap_palace_reindex" '{}')
 if [ -n "$JX" ]; then
   sleep 2
-  mcp_call "$SID" /dev/null "reddit_jobs_cancel" "{\"job_id\":\"$JX\"}" >/dev/null 2>&1
+  mcp_call "$SID" /dev/null "gapmap_jobs_cancel" "{\"job_id\":\"$JX\"}" >/dev/null 2>&1
   pass "wrapper-palace-reindex-submittable" "submitted & cancel issued (full run skipped — known Chroma compactor issue)"
 else
   fail "wrapper-palace-reindex-submittable" "submit failed"
@@ -430,13 +430,13 @@ Pre-requisites:
 
 **Tested end-to-end via this script:**
 - HTTP transport + session handshake
-- All 4 job-control tools: \`reddit_jobs_submit\`, \`reddit_jobs_get\`, \`reddit_jobs_list\`, \`reddit_jobs_cancel\`
+- All 4 job-control tools: \`gapmap_jobs_submit\`, \`gapmap_jobs_get\`, \`gapmap_jobs_list\`, \`gapmap_jobs_cancel\`
 - Failure path (state=failed with traceback)
 - Live progress messages (collect)
 - Mid-flight cancel (collect)
 - Concurrent 5-job submission
 - All 8 wired long-tool wrappers fire their start beat
-- \`reddit_palace_reindex\` is at least submittable + cancellable
+- \`gapmap_palace_reindex\` is at least submittable + cancellable
   (full reindex skipped — separate known Chroma compactor issue)
 
 **Not covered by this script** (manual verification required):
@@ -445,7 +445,7 @@ Pre-requisites:
 - SIGKILL crash recovery (run \`kill -9\` on the daemon manually then
   restart and inspect \`mcp_jobs\` for \`state=interrupted\`)
 - Result truncation cap (>1 MB) — needs a tool that returns a huge payload
-- \`reddit_palace_reindex\` actually completing — blocked on the cold
+- \`gapmap_palace_reindex\` actually completing — blocked on the cold
   ChromaDB compactor issue, separate fix
 
 <!-- BEGIN OPERATOR NOTES — preserved across reruns -->

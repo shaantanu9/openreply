@@ -56,7 +56,7 @@
         "scope": {
           "allow": [
             "$APPDATA/**",
-            "$APPDATA/reddit-myind/**",
+            "$APPDATA/gapmap/**",
             "$APPLOCALDATA/**",
             "$APPLOCALDATA/paper_pdf_cache/**",
             "$HOME/Library/Application Support/com.shantanu.gapmap/**"
@@ -80,7 +80,7 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/reddit-cli",
+      "binaries/gapmap-cli",
       "binaries/ffmpeg"
     ],
     "macOS": {

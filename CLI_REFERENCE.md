@@ -1,7 +1,7 @@
 # Gap Map — CLI Reference
 
-> `reddit-cli` — Typer app. Every command supports `--json` for machine-readable NDJSON output.
-> Entry point: `uv run reddit-cli` (dev) or `reddit-cli` (installed).
+> `gapmap` — Typer app. Every command supports `--json` for machine-readable NDJSON output.
+> Entry point: `uv run gapmap` (dev) or `gapmap` (installed).
 
 ---
 
@@ -12,33 +12,33 @@
 uv sync --all-extras
 
 # Check Reddit API credentials
-reddit-cli auth login --client-id <ID> --client-secret <SECRET> --username <U> --password <P>
-reddit-cli auth check
+gapmap auth login --client-id <ID> --client-secret <SECRET> --username <U> --password <P>
+gapmap auth check
 
 # Connect MCP to Claude Code
-reddit-cli mcp install
+gapmap mcp install
 
 # Connect MCP to Cursor (HTTP daemon)
-reddit-cli mcp install --client cursor
+gapmap mcp install --client cursor
 bash scripts/mcp_http_daemon.sh start
 ```
 
-**Config resolution:** env vars → `~/.config/reddit-myind/.env` (chmod 600 recommended) → `config.toml`.
+**Config resolution:** env vars → `~/.config/gapmap/.env` (chmod 600 recommended) → `config.toml`.
 
-**Data dir:** `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/` (macOS). Override with `REDDIT_MYIND_DATA_DIR`.
+**Data dir:** `~/Library/Application Support/com.shantanu.gapmap/gapmap/` (macOS). Override with `GAPMAP_DATA_DIR`.
 
 ---
 
 ## 2. Auth
 
 ```bash
-reddit-cli auth login
+gapmap auth login
   --client-id ID          Reddit app client ID
   --client-secret SECRET  Reddit app secret
   --username USER         Reddit username
   --password PASS         Reddit password
 
-reddit-cli auth check     # Verify credentials work
+gapmap auth check     # Verify credentials work
 ```
 
 ---
@@ -47,22 +47,22 @@ reddit-cli auth check     # Verify credentials work
 
 ```bash
 # Fetch posts from a subreddit
-reddit-cli fetch posts --sub learnprogramming --sort top --time month --limit 100
-reddit-cli fetch posts -s nocode --sort hot --json
+gapmap fetch posts --sub learnprogramming --sort top --time month --limit 100
+gapmap fetch posts -s nocode --sort hot --json
 
 # Fetch comment tree for a post
-reddit-cli fetch comments --post abc123 --depth 3
+gapmap fetch comments --post abc123 --depth 3
 
 # Firehose of a sub's recent comments (no auth required)
-reddit-cli fetch sub-comments --sub startups --limit 200
+gapmap fetch sub-comments --sub startups --limit 200
 
 # Historical posts via pullpush archive (pre-May-2025)
-reddit-cli fetch historical --sub learnprogramming --kind submission --days 730 --limit 1000
-reddit-cli fetch historical -s machinelearning --kind comment --days 365
+gapmap fetch historical --sub learnprogramming --kind submission --days 730 --limit 1000
+gapmap fetch historical -s machinelearning --kind comment --days 365
 
 # Fetch a user's activity
-reddit-cli fetch user --name username --kind both --limit 200
-reddit-cli fetch user -u username --kind posts
+gapmap fetch user --name username --kind both --limit 200
+gapmap fetch user -u username --kind posts
 ```
 
 **`fetch posts` sort values:** hot | new | top | rising | controversial
@@ -74,13 +74,13 @@ reddit-cli fetch user -u username --kind posts
 
 ```bash
 # Search Reddit globally
-reddit-cli search "meditation apps" --sort relevance --time all --limit 50
+gapmap search "meditation apps" --sort relevance --time all --limit 50
 
 # Scope to a subreddit
-reddit-cli search "burnout" --sub cscareerquestions --sort top --time year
+gapmap search "burnout" --sub cscareerquestions --sort top --time year
 
 # Output as JSON
-reddit-cli search "LLM latency" --json
+gapmap search "LLM latency" --json
 ```
 
 ---
@@ -89,19 +89,19 @@ reddit-cli search "LLM latency" --json
 
 ```bash
 # Run a SQL query against the local SQLite store
-reddit-cli query "SELECT title, score FROM posts WHERE sub='learnprogramming' ORDER BY score DESC LIMIT 10"
-reddit-cli query "SELECT * FROM topic_posts WHERE topic = :topic" --topic "meditation apps"
+gapmap query "SELECT title, score FROM posts WHERE sub='learnprogramming' ORDER BY score DESC LIMIT 10"
+gapmap query "SELECT * FROM topic_posts WHERE topic = :topic" --topic "meditation apps"
 
 # Export posts/comments to JSON, CSV, or Parquet
-reddit-cli export posts --format json --out ./posts.json
-reddit-cli export posts --sub startups --since 7d --format csv --out ./startups.csv
-reddit-cli export comments --since 30d --format parquet --out ./comments.parquet
-reddit-cli export posts --sql "SELECT * FROM posts WHERE score > 100" --format json
+gapmap export posts --format json --out ./posts.json
+gapmap export posts --sub startups --since 7d --format csv --out ./startups.csv
+gapmap export comments --since 30d --format parquet --out ./comments.parquet
+gapmap export posts --sql "SELECT * FROM posts WHERE score > 100" --format json
 
 # Long-running keyword stream (blocking)
-reddit-cli stream --sub startups --keywords "painpoint,problem,frustrated" --watch both
-reddit-cli stream -s learnprogramming -k "help,stuck" --json   # NDJSON for UI
-reddit-cli stream -s AskReddit --watch posts   # no keyword filter = firehose
+gapmap stream --sub startups --keywords "painpoint,problem,frustrated" --watch both
+gapmap stream -s learnprogramming -k "help,stuck" --json   # NDJSON for UI
+gapmap stream -s AskReddit --watch posts   # no keyword filter = firehose
 ```
 
 ---
@@ -110,40 +110,40 @@ reddit-cli stream -s AskReddit --watch posts   # no keyword filter = firehose
 
 ```bash
 # Step 1: Discover relevant subreddits for a topic
-reddit-cli research discover --topic "presentation skills" --limit 10
-reddit-cli research discover -t "no-code tools" --json
+gapmap research discover --topic "presentation skills" --limit 10
+gapmap research discover -t "no-code tools" --json
 
 # Topic canonicalization (typo correction + keyword fan-out)
-reddit-cli research canonicalize --topic "meditaiton apps"
+gapmap research canonicalize --topic "meditaiton apps"
 
 # Step 2: Collect corpus (runs fetches across all sources)
-reddit-cli research collect --topic "presentation skills"
-reddit-cli research collect -t "nocode" --aggressive    # maxes all limits
-reddit-cli research collect -t "habit apps" --subs "habitica,selfimprovement,productivity"
+gapmap research collect --topic "presentation skills"
+gapmap research collect -t "nocode" --aggressive    # maxes all limits
+gapmap research collect -t "habit apps" --subs "habitica,selfimprovement,productivity"
 
 # Step 3: Get corpus stats
-reddit-cli research topic-stats --topic "presentation skills"
+gapmap research topic-stats --topic "presentation skills"
 
 # Step 4: Extract gaps
-reddit-cli research gaps --topic "presentation skills"
-reddit-cli research temporal-gaps -t "presentation skills"  # pre/post May-2025 split
+gapmap research gaps --topic "presentation skills"
+gapmap research temporal-gaps -t "presentation skills"  # pre/post May-2025 split
 
 # Step 5: Synthesize insights (LLM-backed)
-reddit-cli research synthesize --topic "presentation skills"
+gapmap research synthesize --topic "presentation skills"
 
 # Generate report (full pipeline summary)
-reddit-cli research report --topic "presentation skills" --format markdown
+gapmap research report --topic "presentation skills" --format markdown
 
 # Paper research
-reddit-cli research papers --topic "spaced repetition" --query "spaced repetition learning"
-reddit-cli research analyze-papers --topic "spaced repetition" --limit 10
+gapmap research papers --topic "spaced repetition" --query "spaced repetition learning"
+gapmap research analyze-papers --topic "spaced repetition" --limit 10
 
 # CSV import
-reddit-cli research ingest-csv --path ./user-interviews.csv --topic "presentation skills" --source-type interviews
+gapmap research ingest-csv --path ./user-interviews.csv --topic "presentation skills" --source-type interviews
 
 # Scheduling
-reddit-cli research schedule-enable --topic "presentation skills" --enabled
-reddit-cli research schedule-tick   # run all scheduled topics (used by launchd/cron)
+gapmap research schedule-enable --topic "presentation skills" --enabled
+gapmap research schedule-tick   # run all scheduled topics (used by launchd/cron)
 ```
 
 ---
@@ -152,12 +152,12 @@ reddit-cli research schedule-tick   # run all scheduled topics (used by launchd/
 
 ```bash
 # Single file (CSV, JSON, TXT, MD, PDF, VTT, SRT)
-reddit-cli ingest file --path ./interviews.csv --topic "my product" --source-type interviews
-reddit-cli ingest file -p ./design-doc.pdf -t "auth flow" -s spec
+gapmap ingest file --path ./interviews.csv --topic "my product" --source-type interviews
+gapmap ingest file -p ./design-doc.pdf -t "auth flow" -s spec
 
 # Entire folder (recursive, skips .git, node_modules, binaries)
-reddit-cli ingest folder --path ./learnings/ --topic "auth flow" --source-type learning_material
-reddit-cli ingest folder -p ./docs -t "presentation skills" --ext "md,pdf"
+gapmap ingest folder --path ./learnings/ --topic "auth flow" --source-type learning_material
+gapmap ingest folder -p ./docs -t "presentation skills" --ext "md,pdf"
 ```
 
 ---
@@ -166,16 +166,16 @@ reddit-cli ingest folder -p ./docs -t "presentation skills" --ext "md,pdf"
 
 ```bash
 # Cluster posts into themes
-reddit-cli analyze themes --sub learnprogramming --since 30d
-reddit-cli analyze themes --provider ollama --json
+gapmap analyze themes --sub learnprogramming --since 30d
+gapmap analyze themes --provider ollama --json
 
 # Summarize a single thread
-reddit-cli analyze summarize --post abc123
-reddit-cli analyze summarize -p abc123 --provider anthropic
+gapmap analyze summarize --post abc123
+gapmap analyze summarize -p abc123 --provider anthropic
 
 # Extract pain points from stored posts
-reddit-cli analyze painpoints --sub startups --since 7d
-reddit-cli analyze painpoints --provider groq --top 20 --json
+gapmap analyze painpoints --sub startups --since 7d
+gapmap analyze painpoints --provider groq --top 20 --json
 ```
 
 **`--provider` values:** anthropic | openai | openrouter | groq | deepseek | mistral | gemini | ollama
@@ -186,16 +186,16 @@ reddit-cli analyze painpoints --provider groq --top 20 --json
 
 ```bash
 # Build the structural knowledge graph
-reddit-cli research graph build --topic "presentation skills"
+gapmap research graph build --topic "presentation skills"
 
 # Graph stats
-reddit-cli research graph stats --topic "presentation skills"
+gapmap research graph stats --topic "presentation skills"
 
 # Top nodes by degree
-reddit-cli research graph top-nodes --topic "presentation skills" --kind painpoint --limit 20
+gapmap research graph top-nodes --topic "presentation skills" --kind painpoint --limit 20
 
 # Export graph as D3 JSON
-reddit-cli research graph export --topic "presentation skills" --out ./graph.json
+gapmap research graph export --topic "presentation skills" --out ./graph.json
 ```
 
 ---
@@ -204,28 +204,28 @@ reddit-cli research graph export --topic "presentation skills" --out ./graph.jso
 
 ```bash
 # Run MCP server (stdio — for Claude Code / Claude Desktop)
-reddit-cli mcp serve
+gapmap mcp serve
 
 # Run MCP HTTP daemon (for Cursor — survives 5-min cycling)
-reddit-cli mcp serve --transport http --host 127.0.0.1 --port 8765
+gapmap mcp serve --transport http --host 127.0.0.1 --port 8765
 
 # Install/remove MCP entry in a client config
-reddit-cli mcp install                          # → ~/.claude.json (Claude Code)
-reddit-cli mcp install --client cursor          # → ~/.cursor/mcp.json
-reddit-cli mcp install --client claude-desktop  # → ~/Library/Application Support/Claude/...
-reddit-cli mcp install --rotate-token           # generate fresh auth token
-reddit-cli mcp uninstall
+gapmap mcp install                          # → ~/.claude.json (Claude Code)
+gapmap mcp install --client cursor          # → ~/.cursor/mcp.json
+gapmap mcp install --client claude-desktop  # → ~/Library/Application Support/Claude/...
+gapmap mcp install --rotate-token           # generate fresh auth token
+gapmap mcp uninstall
 
 # Status
-reddit-cli mcp status
-reddit-cli mcp clients   # list known client configs
+gapmap mcp status
+gapmap mcp clients   # list known client configs
 
 # Diagnostics
-reddit-cli mcp stats                # tool call counts, slow calls
-reddit-cli mcp stats --slow         # tools >5s
-reddit-cli mcp logs                 # tail structured event log
-reddit-cli mcp logs --since 1h      # last hour
-reddit-cli mcp logs --severity error
+gapmap mcp stats                # tool call counts, slow calls
+gapmap mcp stats --slow         # tools >5s
+gapmap mcp logs                 # tail structured event log
+gapmap mcp logs --since 1h      # last hour
+gapmap mcp logs --severity error
 ```
 
 ---
@@ -238,4 +238,4 @@ reddit-cli mcp logs --severity error
 | `--help` | Show command help |
 | `--version` | Show version |
 
-All options are also readable from `reddit-cli <command> --help`.
+All options are also readable from `gapmap <command> --help`.

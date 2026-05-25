@@ -127,8 +127,8 @@ install_python() {
   # Install project + ALL optional extras used by the app (sources, ingest-rich,
   # analyze). Editable install so Python edits are picked up on next sidecar
   # restart with no reinstall needed.
-  # Check if reddit_research is importable first — skip heavy pip work if so.
-  if ! .venv/bin/python -c "import reddit_research, feedparser, pypdf, google_play_scraper, pytrends, networkx" 2>/dev/null; then
+  # Check if gapmap is importable first — skip heavy pip work if so.
+  if ! .venv/bin/python -c "import gapmap, feedparser, pypdf, google_play_scraper, pytrends, networkx" 2>/dev/null; then
     ok "installing package + extras (this can take ~30s first time)…"
     .venv/bin/pip install -e '.[sources,ingest-rich,analyze]' --quiet || \
       die "pip install failed — re-run: .venv/bin/pip install -e '.[sources,ingest-rich,analyze]'"
@@ -160,7 +160,7 @@ run_doctor() {
 
 reset_db() {
   hdr "reset the Tauri app's SQLite DB"
-  local app_db="$HOME/Library/Application Support/com.shantanu.gapmap/reddit-myind"
+  local app_db="$HOME/Library/Application Support/com.shantanu.gapmap/gapmap"
   if [ ! -d "$app_db" ]; then
     ok "no DB found at $app_db (already clean)"
     return
@@ -188,8 +188,8 @@ launch() {
   # The tauri-python-sidecar-app skill recommends a dev venv bypass so macOS
   # Gatekeeper doesn't hang the bundled PyInstaller binary for 2+ minutes on
   # first run. Rust `cli.rs` checks for GAPMAP_DEV_PYTHON and uses it when set.
-  export REDDIT_MYIND_DEV_PYTHON="$(pwd)/.venv/bin/python"
-  ok "REDDIT_MYIND_DEV_PYTHON=$REDDIT_MYIND_DEV_PYTHON"
+  export GAPMAP_DEV_PYTHON="$(pwd)/.venv/bin/python"
+  ok "GAPMAP_DEV_PYTHON=$GAPMAP_DEV_PYTHON"
   # cli.rs walks up 5 parent dirs looking for .venv/bin/python, so the explicit
   # override above is belt-and-braces. Setting it means the sidecar uses the
   # dev venv even if you launch Tauri from a different cwd.

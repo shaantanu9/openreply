@@ -664,11 +664,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   });
 
   // External-writer bridge: when the DB-mtime poller in api.js sees that
-  // reddit.db changed outside this process (MCP server, CLI, another Tauri
+  // gapmap.db changed outside this process (MCP server, CLI, another Tauri
   // window, background collect from a scheduled task), translate that into
   // a `gapmap:changed` event so the same re-render path fires.
   //
-  // Without this, MCP tools like `reddit_start_collect` successfully write
+  // Without this, MCP tools like `gapmap_start_collect` successfully write
   // topics/posts to the shared SQLite but the GUI renders stale cached data
   // until the user manually navigates.
   window.addEventListener('gapmap:db-changed', () => {

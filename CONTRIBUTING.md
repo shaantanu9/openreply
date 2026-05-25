@@ -23,8 +23,8 @@ Check the [open issues](https://github.com/shaantanu9/gap-map-pro/issues) — bu
 
 ### High-value areas
 
-- **New data sources** — add a source adapter in `src/reddit_research/sources/`. Each adapter is ~50 lines; follow the shape of `arxiv.py` or `hackernews.py`.
-- **MCP tools** — new tools in `src/reddit_research/mcp/server.py` following the `@mcp.tool()` pattern.
+- **New data sources** — add a source adapter in `src/gapmap/sources/`. Each adapter is ~50 lines; follow the shape of `arxiv.py` or `hackernews.py`.
+- **MCP tools** — new tools in `src/gapmap/mcp/server.py` following the `@mcp.tool()` pattern.
 - **Prompts** — improve any prompt in `prompts/*.yaml` without touching code.
 - **Tests** — `tests/` is sparse. Any new test that covers a real behavior is welcome.
 - **Docs** — fix errors, add examples, improve clarity in any `.md` file.
@@ -50,7 +50,7 @@ python -m py_compile $(find src -name "*.py")   # syntax check
 
 ## Adding a data source
 
-Each source lives in `src/reddit_research/sources/<name>.py`. The file must export a `fetch_<name>(query, limit, **kwargs) -> list[dict]` function. Each returned row must match the `posts` table shape:
+Each source lives in `src/gapmap/sources/<name>.py`. The file must export a `fetch_<name>(query, limit, **kwargs) -> list[dict]` function. Each returned row must match the `posts` table shape:
 
 ```python
 {
@@ -73,7 +73,7 @@ Each source lives in `src/reddit_research/sources/<name>.py`. The file must expo
 }
 ```
 
-Then wire it into `src/reddit_research/sources/__init__.py` and add an `@mcp.tool()` entry in `src/reddit_research/mcp/server.py`. See `ARCHITECTURE.md` for the full data flow.
+Then wire it into `src/gapmap/sources/__init__.py` and add an `@mcp.tool()` entry in `src/gapmap/mcp/server.py`. See `ARCHITECTURE.md` for the full data flow.
 
 ---
 

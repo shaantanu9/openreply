@@ -1,11 +1,11 @@
-# MCP — Schema-Aware `reddit_query_db` + `reddit_describe_schema`
+# MCP — Schema-Aware `gapmap_query_db` + `gapmap_describe_schema`
 
 **Date:** 2026-04-24
 **Type:** Fix + UX
 
 ## Problem
 
-The MCP `reddit_query_db` tool accepts raw SQL but its description only
+The MCP `gapmap_query_db` tool accepts raw SQL but its description only
 listed table names, not columns. Claude / any LLM client fell back to
 industry-default column names (`published_at`, `body`, `created_at`,
 `indexed_at`) which don't exist in this schema — the real names are
@@ -16,7 +16,7 @@ academic-papers query failed with `no such column: p.published_at`.
 
 Two changes in `src/reddit_research/mcp/server.py`:
 
-1. **Expanded docstring on `reddit_query_db`.** FastMCP emits the
+1. **Expanded docstring on `gapmap_query_db`.** FastMCP emits the
    function docstring as the tool's JSON-Schema `description`, so it
    ends up in the model's context every time the tool is offered.
    The new description documents every table (posts, comments,
@@ -26,7 +26,7 @@ Two changes in `src/reddit_research/mcp/server.py`:
    documents the date formatting pattern:
    `datetime(created_utc, 'unixepoch')`.
 
-2. **New tool `reddit_describe_schema(table=None)`.** Runtime
+2. **New tool `gapmap_describe_schema(table=None)`.** Runtime
    introspection via `PRAGMA table_info()`. Useful when the docstring
    is stale after a migration, or when the model wants exact column
    types before composing a complex join. Returns the full schema map
@@ -38,21 +38,21 @@ Two changes in `src/reddit_research/mcp/server.py`:
 
 ```
 Python syntax check: ✓ parses
-reddit_query_db defined
-reddit_describe_schema defined
+gapmap_query_db defined
+gapmap_describe_schema defined
 Old MCP server pid 74970 killed — next MCP call will restart with new tools.
 ```
 
 The running MCP process is spawned on demand by the Tauri app + any
 external MCP client. Killing the pid file's process is enough; the
 next tool call triggers a fresh spawn picking up the new docstrings
-and the new `reddit_describe_schema` endpoint.
+and the new `gapmap_describe_schema` endpoint.
 
 ## Files Modified
 
-- `src/reddit_research/mcp/server.py` — expanded `reddit_query_db`
+- `src/reddit_research/mcp/server.py` — expanded `gapmap_query_db`
   description (~85 lines of schema reference), added
-  `reddit_describe_schema` tool (~40 lines).
+  `gapmap_describe_schema` tool (~40 lines).
 
 ## For future similar bugs
 

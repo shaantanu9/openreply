@@ -7,7 +7,7 @@
 
 The Tauri app and the `reddit-myind` MCP server both use `reddit_research.core.db` but resolve `data_dir` from `REDDIT_MYIND_DATA_DIR`. The app sets it to `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/`. The MCP, launched by Claude Code via `~/.claude.json`, has no `env` block — so it falls back to `<repo>/data/`, a completely different `reddit.db`.
 
-Result: anything fetched/scraped/ingested through MCP tools (`reddit_research_collect`, `reddit_fetch_*`, `reddit_graph_*`) lands in a file the desktop app never reads. Two parallel realities.
+Result: anything fetched/scraped/ingested through MCP tools (`gapmap_research_collect`, `reddit_fetch_*`, `reddit_graph_*`) lands in a file the desktop app never reads. Two parallel realities.
 
 ## Goals
 
@@ -164,6 +164,6 @@ When v1 is in users' hands and we have signal, revisit:
 - **OS keychain** instead of plaintext token file (`security` framework on macOS, libsecret on Linux, DPAPI on Windows). Real secret protection for the token.
 - **Capability-scoped tokens.** Read-only token for query/search MCP tools; write-token only for `collect`/`ingest`. Lets users grant Claude read-only access to their corpus without letting it scribble.
 - **Time-boxed tokens.** Rotate every N days, app re-issues silently. Stale clones stop working without manual revoke.
-- **Telemetry on misuse.** Log to app-side audit table when MCP requests come in; user can see "Claude accessed this DB at HH:MM via reddit_research_collect" in an Activity → MCP tab.
+- **Telemetry on misuse.** Log to app-side audit table when MCP requests come in; user can see "Claude accessed this DB at HH:MM via gapmap_research_collect" in an Activity → MCP tab.
 
 None of these are needed for v1. Ship the same-DB, one-click flow. Make it real first, secure it second.

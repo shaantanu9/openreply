@@ -7,24 +7,24 @@ from pathlib import Path
 import pytest
 from sqlite_utils import Database
 
-from reddit_research.core.db import (
+from gapmap.core.db import (
     init_schema,
     log_fetch_end,
     log_fetch_start,
     upsert_comments,
     upsert_posts,
 )
-from reddit_research.core.exporters import export_rows
+from gapmap.core.exporters import export_rows
 
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Database:
     # Redirect the module-level singleton to this temp DB.
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
-    from reddit_research.core import db as db_mod
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    from gapmap.core import db as db_mod
 
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
-    from reddit_research.core.config import load_config  # noqa: F401
+    from gapmap.core.config import load_config  # noqa: F401
 
     return db_mod.get_db()
 

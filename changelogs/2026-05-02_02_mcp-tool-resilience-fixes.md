@@ -10,28 +10,28 @@ again — schema-shape mismatches, corrupt index crashes that survive
 across sessions, and timeouts that killed the whole MCP transport. Each
 failure mode is now fixed at the source so the same problem can't recur:
 
-1. `reddit_synthesize_insights` — output validation error: the LLM
+1. `gapmap_synthesize_insights` — output validation error: the LLM
    sometimes returned a shape that didn't match the declared schema.
-2. `reddit_semantic_search` — "Failed to apply logs to the hnsw segment
+2. `gapmap_semantic_search` — "Failed to apply logs to the hnsw segment
    writer" once the on-disk vector index got corrupted (typically after
    a hard kill mid-write) — every subsequent call kept failing forever.
-3. `reddit_search_all` (normal) — 0 hits for natural-language phrases
+3. `gapmap_search_all` (normal) — 0 hits for natural-language phrases
    because LIKE only matches verbatim substrings.
-4. `reddit_search_all` (aggressive) — connection closed when the LLM
+4. `gapmap_search_all` (aggressive) — connection closed when the LLM
    query-expansion or the corrupt palace search hung past the MCP
    transport idle window.
-5. `reddit_global_competitors` — schema mismatch (return type was
+5. `gapmap_global_competitors` — schema mismatch (return type was
    declared `list[dict]` but the implementation returned a `dict`).
-6. `reddit_query_db` — knock-on `database is locked` / `disk I/O error`
+6. `gapmap_query_db` — knock-on `database is locked` / `disk I/O error`
    after the HNSW writer crashed and left the SQLite WAL in a bad state.
 
 ## Changes
 
-- **`reddit_synthesize_insights`** wraps the call in try/except and
+- **`gapmap_synthesize_insights`** wraps the call in try/except and
   normalizes the response so the dict always has `{ok, topic, findings,
   ...}` regardless of which path produced it. Hoists `findings` from
   nested `report` so MCP clients don't have to introspect.
-- **`reddit_global_competitors`** signature changed from `list[dict]`
+- **`gapmap_global_competitors`** signature changed from `list[dict]`
   to `dict`. Wrapper also accepts both legacy-list and current-dict
   return shapes from the implementation and coerces to a stable
   `{ok, competitors[], clusters_returned, threshold, min_topics}`.
@@ -45,7 +45,7 @@ failure mode is now fixed at the source so the same problem can't recur:
   retries once. Returns `{ok:True, results:[], healed:True,
   hint:"run reindex_all()"}` on the retry path so callers degrade
   gracefully instead of crashing.
-- **`reddit_palace_repair`** — new MCP tool exposing the heal +
+- **`gapmap_palace_repair`** — new MCP tool exposing the heal +
   optional re-index from outside. Lets a user (or agent) trigger
   "fix my semantic search" in one call instead of doing the manual
   rm/sqlite-cli dance.
@@ -63,19 +63,19 @@ failure mode is now fixed at the source so the same problem can't recur:
   + `PRAGMA quick_check`; falls back to removing `*-wal`, `*-shm`,
   `*-journal` sidecar files when the checkpoint can't run. Idempotent
   via a module-level guard so healthy DBs pay no measurable cost.
-- **`reddit_query_db`** retries once on `database is locked` /
+- **`gapmap_query_db`** retries once on `database is locked` /
   `disk I/O error`, then forces a fresh per-thread DB handle so a
   stuck cursor can't keep tripping subsequent calls.
 
 ## Files Modified
 
 - `src/reddit_research/mcp/server.py`
-  - `reddit_synthesize_insights` — try/except + response normalisation
-  - `reddit_global_competitors` — return type fixed to `dict`, robust
+  - `gapmap_synthesize_insights` — try/except + response normalisation
+  - `gapmap_global_competitors` — return type fixed to `dict`, robust
     wrapper handles list / dict / exception cases
-  - `reddit_query_db` — retry on transient lock + cache-clear on hard
+  - `gapmap_query_db` — retry on transient lock + cache-clear on hard
     failure
-  - `reddit_palace_repair` — new tool
+  - `gapmap_palace_repair` — new tool
 
 - `src/reddit_research/retrieval/palace.py`
   - `_HNSW_ERROR_MARKERS`, `_looks_like_hnsw_corruption()`,

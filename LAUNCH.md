@@ -22,7 +22,7 @@
 | Onboarding / empty-state (welcome.js) | 🟡 | `welcome.js` exists with 32+ onboarding references; verify first-run UX end-to-end |
 | Tauri 2 build config (tauri.conf.json) | ✅ | `com.shantanu.gapmap`, arm64 + x86_64, icons, CSP, asset-protocol scope |
 | Splashscreen | ✅ | 360×240 transparent splash.html |
-| PyInstaller spec (reddit-cli.spec) | ✅ | ONNX bundled, all lazy-import deps declared |
+| PyInstaller spec (gapmap-cli.spec) | ✅ | ONNX bundled, all lazy-import deps declared |
 | Sidecar binary — arm64 on disk | 🟡 | 231 MB binary is from Apr 21; predates audience/iterate/launch/deliberate features. Must rebuild before release: `scripts/publish-mac.sh --arch arm64` |
 | ffmpeg sidecar | ✅ | 48 MB arm64 binary in binaries/; `scripts/fetch-ffmpeg.sh` handles CI + local |
 | macOS code signing (Developer ID Application cert) | 🔴 | User has Apple Developer Program but NOT Developer ID Application cert. Must create before signing/notarization works. See `docs/manual-todo/publish-macos.md` step 2. |
@@ -41,9 +41,9 @@
 | Item | Status | Notes |
 |---|---|---|
 | 90+ FastMCP tools registered | ✅ | All tool categories implemented and verified in source |
-| `reddit-cli mcp install` (Claude Code) | ✅ | Writes to `~/.claude.json`, aligns data dir, generates auth token |
-| `reddit-cli mcp install --client cursor` | ✅ | HTTP daemon config at `~/.cursor/mcp.json` |
-| `reddit-cli mcp install --client claude-desktop` | ✅ | |
+| `gapmap mcp install` (Claude Code) | ✅ | Writes to `~/.claude.json`, aligns data dir, generates auth token |
+| `gapmap mcp install --client cursor` | ✅ | HTTP daemon config at `~/.cursor/mcp.json` |
+| `gapmap mcp install --client claude-desktop` | ✅ | |
 | HTTP daemon for Cursor (`scripts/mcp_http_daemon.sh`) | ✅ | start/stop/restart/status/logs, survives Cursor 5-min cycling |
 | Async job queue (for long-running tools) | ✅ | 4-thread pool, SQLite-persisted, survives daemon restarts |
 | Cooperative cancel + live progress | ✅ | JobCancelled propagates as BaseException; 5 tools wired |
@@ -51,7 +51,7 @@
 | Tool timeout safety net (90s hard ceiling) | ✅ | Returns structured timeout dict with async_hint |
 | Structured event log + `mcp stats` | ✅ | Per-tool timing, slow-call threshold (>5s → warn) |
 | Auth token gating | 🟡 | Token generated and injected into env; actual request-level gating should be verified |
-| `reddit_diagnostics` health probe | ✅ | DB + Palace + LLM + corpus checks in one call |
+| `gapmap_diagnostics` health probe | ✅ | DB + Palace + LLM + corpus checks in one call |
 
 ---
 

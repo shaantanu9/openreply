@@ -9,7 +9,7 @@ const ICON = {
 };
 
 const LABEL = {
-  sidecar:  'Python engine (reddit-cli)',
+  sidecar:  'Python engine (gapmap)',
   data_dir: 'Data folder writable',
   db:       'Database schema',
   palace:   'Semantic search model (ONNX)',

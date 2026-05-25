@@ -81,7 +81,7 @@ next /improve run uses those values — improvement persisted
 - `src/reddit_research/research/audience.py` — `build_audience_personas` reads `topic_pipeline_config['audience']` and applies overrides when caller didn't pass non-default values.
 - `src/reddit_research/research/insights.py` — same override logic on the `deliberate_rounds` parameter.
 - `src/reddit_research/cli/main.py` — 9 new subcommands: iterate-start, iterate-execute, iterate-run, iterate-status, iterate-list, iterate-cancel, iterate-apply, iterate-applied, pipeline-run, pipeline-status.
-- `src/reddit_research/mcp/server.py` — already exposed `reddit_deliberate` and audience tools. iterate / pipeline live as CLI surfaces only (small footprint; the GUI calls them via Tauri commands; can be promoted to MCP tools later if agents need them).
+- `src/reddit_research/mcp/server.py` — already exposed `gapmap_deliberate` and audience tools. iterate / pipeline live as CLI surfaces only (small footprint; the GUI calls them via Tauri commands; can be promoted to MCP tools later if agents need them).
 - `app-tauri/src-tauri/src/commands.rs` — 10 new Tauri commands wrapping the iterate + pipeline CLI subcommands.
 - `app-tauri/src-tauri/src/main.rs` — all 10 registered in `generate_handler!`.
 - `app-tauri/src/api.js` — `api.iterateRun`, `iterateStart`, `iterateExecute`, `iterateStatus`, `iterateList`, `iterateCancel`, `iterateApply`, `iterateApplied`, `pipelineRun`, `pipelineStatus`.

@@ -17,7 +17,7 @@ TAG="${2:-}"
 snapshot() {
   local out=$1
   : > "$out"
-  for name in gapmap reddit-cli uv ollama node; do
+  for name in gapmap gapmap uv ollama node; do
     while read -r pid cmd; do
       if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ ]]; then continue; fi
       if [[ "$cmd" == *mem_diff.sh* || "$cmd" == *mem_probe.sh* || "$cmd" == *grep* ]]; then continue; fi

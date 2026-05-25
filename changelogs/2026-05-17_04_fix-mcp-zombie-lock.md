@@ -45,7 +45,7 @@ lock was permanently un-reclaimable until the client process itself exited.
 - Full suite: 90 passed / 7 deselected.
 - End-to-end: ran the exact Claude Code command + env with the zombie
   pidfile (PID 99498) still present → connected OK, 147 tools, live
-  `reddit_diagnostics` call succeeded.
+  `gapmap_diagnostics` call succeeded.
 
 ## Files Created
 

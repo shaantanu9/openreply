@@ -56,17 +56,17 @@ plus mirrored to the marketing site.
 Marketing corpus + tactic-library foundation for insights.
 
 ### Added
-- `src/reddit_research/research/tactic_library.py`
+- `src/gapmap/research/tactic_library.py`
 - `data/tactics_seed.json`
 - `scripts/ingest_marketing_books.py`
 - `CHANGELOG.md`
 
 ### Changed
-- `src/reddit_research/sources/rss_catalog.py`
-- `src/reddit_research/sources/collect_adapter.py`
-- `src/reddit_research/cli/main.py`
+- `src/gapmap/sources/rss_catalog.py`
+- `src/gapmap/sources/collect_adapter.py`
+- `src/gapmap/cli/main.py`
 - `app-tauri/src/screens/topic.js`
-- `src/reddit_research/research/insights.py`
+- `src/gapmap/research/insights.py`
 - `app-tauri/src/screens/insights.js`
 - `app-tauri/src/style.css`
 
@@ -74,10 +74,10 @@ Marketing corpus + tactic-library foundation for insights.
 Closed remaining proposal gaps with persistence and robustness.
 
 ### Changed
-- `src/reddit_research/graph/semantic.py`
-- `src/reddit_research/research/tactic_library.py`
-- `src/reddit_research/research/sentiment_by_source.py`
-- `src/reddit_research/graph/build.py`
+- `src/gapmap/graph/semantic.py`
+- `src/gapmap/research/tactic_library.py`
+- `src/gapmap/research/sentiment_by_source.py`
+- `src/gapmap/graph/build.py`
 - `scripts/ingest_marketing_books.py`
 - `data/tactics_seed.json`
 
@@ -85,11 +85,11 @@ Closed remaining proposal gaps with persistence and robustness.
 Added a structured paper-writing + experiment pipeline with CLI and MCP access.
 
 ### Added
-- `src/reddit_research/research/paper_pipeline.py`
+- `src/gapmap/research/paper_pipeline.py`
 
 ### Changed
-- `src/reddit_research/cli/main.py`
-- `src/reddit_research/mcp/server.py`
+- `src/gapmap/cli/main.py`
+- `src/gapmap/mcp/server.py`
 - `CHANGELOG.md`
 
 ## [2026-04-27d]
@@ -109,5 +109,5 @@ Fixed warm-daemon LLM settings reload so newly saved NVIDIA defaults are picked 
 - `tests/test_cli_daemon_env.py`
 
 ### Changed
-- `src/reddit_research/cli/main.py`
+- `src/gapmap/cli/main.py`
 - `CHANGELOG.md`

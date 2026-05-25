@@ -318,7 +318,7 @@ export async function renderTasks(root) {
         // streams — collects use the existing CollectStatusBar verbs.
         if (id.startsWith('mcp:')) {
           // No mcp_jobs_cancel exposed yet — flag a TODO marker.
-          alert('MCP job cancel: not wired to a Tauri command yet. Use the MCP server\'s reddit_jobs_cancel tool.');
+          alert('MCP job cancel: not wired to a Tauri command yet. Use the MCP server\'s gapmap_jobs_cancel tool.');
         } else if (id.startsWith('stream:')) {
           alert('Stream cancel: stop it from the Watch screen.');
         } else {

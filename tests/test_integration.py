@@ -44,11 +44,11 @@ OLLAMA_OK = _reachable("localhost", 11434)
 @pytest.fixture
 def clean_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Point every env lookup at tmp_path so tests are isolated."""
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.delenv("LLM_MODEL", raising=False)
     # Invalidate any memoized config / db.
-    from reddit_research.core import db as db_mod
+    from gapmap.core import db as db_mod
 
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     return tmp_path
@@ -58,7 +58,7 @@ def clean_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_config_respects_data_dir_env(clean_env: Path) -> None:
-    from reddit_research.core.config import load_config
+    from gapmap.core.config import load_config
 
     cfg = load_config()
     assert cfg.data_dir == clean_env
@@ -68,7 +68,7 @@ def test_config_respects_data_dir_env(clean_env: Path) -> None:
 
 
 def test_db_init_creates_all_tables(clean_env: Path) -> None:
-    from reddit_research.core.db import get_db
+    from gapmap.core.db import get_db
 
     db = get_db()
     names = set(db.table_names())
@@ -82,7 +82,7 @@ def test_db_init_creates_all_tables(clean_env: Path) -> None:
 @pytest.mark.slow  # hits live Reddit — TCP-reachable ≠ API-accessible (CI IPs get 403)
 @pytest.mark.skipif(not REDDIT_OK, reason="reddit.com unreachable")
 def test_discover_subs_returns_real_results(clean_env: Path) -> None:
-    from reddit_research.research.discover import discover_subs
+    from gapmap.research.discover import discover_subs
 
     result = discover_subs("note taking apps", limit=3)
     # discover_subs returns {"subs": [...], "confirmation": {...}} since the
@@ -106,8 +106,8 @@ def test_discover_subs_returns_real_results(clean_env: Path) -> None:
 @pytest.mark.slow  # hits live Reddit — TCP-reachable ≠ API-accessible (CI IPs get 403)
 @pytest.mark.skipif(not REDDIT_OK, reason="reddit.com unreachable")
 def test_fetch_posts_writes_to_db(clean_env: Path) -> None:
-    from reddit_research.core.db import get_db
-    from reddit_research.fetch.posts import fetch_posts
+    from gapmap.core.db import get_db
+    from gapmap.fetch.posts import fetch_posts
 
     rows = fetch_posts(sub="resumes", sort="top", limit=2, time_filter="week")
     # Must return at least one post and write it into the DB.
@@ -143,7 +143,7 @@ def test_ollama_ping_ok(clean_env: Path) -> None:
     if not candidates:
         pytest.skip("no chat-capable models installed in Ollama")
 
-    from reddit_research.research.chat import test_provider
+    from gapmap.research.chat import test_provider
 
     errors: list[str] = []
     for name in candidates:
@@ -162,7 +162,7 @@ def test_ollama_ping_ok(clean_env: Path) -> None:
 @pytest.mark.slow  # hits live Ollama on localhost
 @pytest.mark.skipif(not OLLAMA_OK, reason="ollama not running on :11434")
 def test_list_ollama_models(clean_env: Path) -> None:
-    from reddit_research.research.chat import list_ollama_models
+    from gapmap.research.chat import list_ollama_models
 
     result = list_ollama_models()
     assert result.get("ok") is True
@@ -175,7 +175,7 @@ def test_list_ollama_models(clean_env: Path) -> None:
 def test_mcp_module_importable() -> None:
     """The MCP server module must import cleanly (fastmcp may be optional)."""
     try:
-        from reddit_research.mcp import server  # noqa: F401
+        from gapmap.mcp import server  # noqa: F401
     except (ImportError, RuntimeError) as e:
         # fastmcp is an optional extra. server.py catches the bare ImportError
         # and re-raises it as RuntimeError("Install the mcp extra ..."), so we
@@ -191,7 +191,7 @@ def test_mcp_module_importable() -> None:
 
 def test_sql_helper_runs_select(clean_env: Path) -> None:
     """Confirm the same helper the Rust `run_query` command uses."""
-    from reddit_research.core.db import get_db
+    from gapmap.core.db import get_db
 
     db = get_db()
     # Seed a row so the query returns something
@@ -233,7 +233,7 @@ def test_enrich_uses_openrouter_when_configured(
     "route this OpenAI model through the OpenRouter gateway" — the provider
     stays openrouter; the model string is opaque.
     """
-    from reddit_research.analyze.providers.base import resolve_provider
+    from gapmap.analyze.providers.base import resolve_provider
 
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     # LLM_MODEL is set to mirror real user config; resolve_provider does
@@ -252,7 +252,7 @@ def test_enrich_uses_openrouter_when_configured(
     # End-to-end: enrich_from_llm must reach find_gaps (which errors with
     # "No corpus found" on a nonexistent topic) — NOT short-circuit to an
     # OPENAI_API_KEY error via the drifted duplicate resolver.
-    from reddit_research.graph.semantic import enrich_from_llm
+    from gapmap.graph.semantic import enrich_from_llm
 
     result = enrich_from_llm(topic="definitely-does-not-exist-topic-xyz")
     assert isinstance(result, dict)
@@ -269,7 +269,7 @@ def test_enrich_skip_gracefully_when_nothing_configured(
 ) -> None:
     """Enrich is called optimistically after every collect. When nothing is
     configured, it must return a skip payload, not raise."""
-    from reddit_research.graph.semantic import enrich_from_llm
+    from gapmap.graph.semantic import enrich_from_llm
 
     for k in (
         "LLM_PROVIDER", "LLM_MODEL",
@@ -301,7 +301,7 @@ def test_canonicalize_typo_correction(
 ) -> None:
     """A known typo should be corrected via the LLM pathway."""
     import json
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     # Pretend an LLM is configured.
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
@@ -326,7 +326,7 @@ def test_canonicalize_preserves_real_topic(
 ) -> None:
     """A correctly-spelled topic should pass through unchanged."""
     import json
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
@@ -347,8 +347,8 @@ def test_canonicalize_no_llm_passthrough(
     clean_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without any LLM configured, canonicalize returns the topic unchanged."""
-    from reddit_research.research import discover as discover_mod
-    from reddit_research.analyze.providers import base as provider_base
+    from gapmap.research import discover as discover_mod
+    from gapmap.analyze.providers import base as provider_base
     # Drive the cleanup list off the real provider table so adding a new
     # provider (e.g. nvidia) doesn't silently leak its key into this test.
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
@@ -369,7 +369,7 @@ def test_canonicalize_is_cached(
 ) -> None:
     """Repeated calls for the same topic must not invoke the LLM twice."""
     import json
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
@@ -402,7 +402,7 @@ def test_discover_subs_direct_match_shape(
     clean_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Well-formed topic with strong name matches → no confirmation needed."""
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     for k in ("LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
@@ -441,7 +441,7 @@ def test_discover_subs_weak_relevance_flags_modal(
     clean_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Zero token-in-name matches → needs_confirmation=True."""
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     for k in ("LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
@@ -470,7 +470,7 @@ def test_discover_subs_auto_corrected_flag(
 ) -> None:
     """High-confidence LLM correction → auto_corrected=True, no modal."""
     import json
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
@@ -520,7 +520,7 @@ def test_cluster_merges_near_duplicates(
     clean_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Two near-duplicate labels should merge into one with aliases."""
-    from reddit_research.retrieval.cluster import cluster_findings
+    from gapmap.retrieval.cluster import cluster_findings
 
     inp = {
         "painpoints": [
@@ -541,7 +541,7 @@ def test_cluster_preserves_distinct(
     clean_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Semantically distinct labels stay separate."""
-    from reddit_research.retrieval.cluster import cluster_findings
+    from gapmap.retrieval.cluster import cluster_findings
     inp = {
         "painpoints": [
             {"painpoint": "Barcode scanner is broken",     "frequency": 5},
@@ -557,8 +557,8 @@ def test_cluster_passthrough_without_chromadb(
     clean_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When chromadb isn't available, cluster_findings is a no-op."""
-    import reddit_research.retrieval.cluster as cluster_mod
-    from reddit_research.retrieval.cluster import cluster_findings
+    import gapmap.retrieval.cluster as cluster_mod
+    from gapmap.retrieval.cluster import cluster_findings
     monkeypatch.setattr(cluster_mod, "_embeddings_available", lambda: False)
     inp = {"painpoints": [{"painpoint": "A"}, {"painpoint": "B"}]}
     out = cluster_findings(inp)
@@ -573,7 +573,7 @@ def test_canonicalize_returns_search_keywords(
 ) -> None:
     """Canonicalize should parse search_keywords from the LLM response."""
     import json
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
@@ -607,7 +607,7 @@ def test_canonicalize_drops_malformed_keywords(
 ) -> None:
     """Malformed keyword entries (wrong types, bad relevance) are dropped."""
     import json
-    from reddit_research.research import discover as discover_mod
+    from gapmap.research import discover as discover_mod
 
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake")
@@ -643,8 +643,8 @@ def test_canonicalize_drops_malformed_keywords(
 
 def test_diff_returns_recent_only(clean_env: Path) -> None:
     from datetime import datetime, timezone, timedelta
-    from reddit_research.core.db import get_db
-    from reddit_research.graph.diff import diff_findings
+    from gapmap.core.db import get_db
+    from gapmap.graph.diff import diff_findings
 
     db = get_db()
     now = datetime.now(timezone.utc)
@@ -671,8 +671,8 @@ def test_diff_returns_recent_only(clean_env: Path) -> None:
 
 def test_diff_empty_ts_goes_to_stable(clean_env: Path) -> None:
     """Pre-migration rows with empty ts should bucket as stable."""
-    from reddit_research.core.db import get_db
-    from reddit_research.graph.diff import diff_findings
+    from gapmap.core.db import get_db
+    from gapmap.graph.diff import diff_findings
 
     db = get_db()
     db["graph_nodes"].insert_all([

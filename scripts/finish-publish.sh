@@ -145,4 +145,4 @@ echo "   git tag v0.1.0"
 echo "   git push origin v0.1.0"
 echo
 echo "release.yml will build arm64 + x86_64 DMGs, sign + notarize, and upload"
-echo "to a draft release at https://github.com/USER/reddit-myind/releases."
+echo "to a draft release at https://github.com/USER/gapmap/releases."

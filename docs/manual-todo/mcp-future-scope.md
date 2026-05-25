@@ -59,10 +59,10 @@ intentionally skips full reindex run because of this.
 
 ### 4. Result truncation > 1 MB cap — never exercised
 
-- [ ] Submit a tool that returns a >1 MB blob (e.g. `reddit_get_corpus`
+- [ ] Submit a tool that returns a >1 MB blob (e.g. `gapmap_get_corpus`
       with no limit on a big topic) via the queue. Confirm the row's
       `result_truncated=1`, `result_json` is a head-preview placeholder,
-      and `reddit_jobs_get` returns the `_truncated` marker.
+      and `gapmap_jobs_get` returns the `_truncated` marker.
 
 **Why:** the code path exists, the test script doesn't trigger it.
 Could quietly be broken.
@@ -81,8 +81,8 @@ auto-suite. Easy to regress.
 
 ### 6. Migrate paper_pipeline + graph/relations to expose `progress=`
 
-- [ ] Currently `reddit_paper_draft_generate`, `reddit_graph_build_relations`,
-      and `reddit_paper_fulltext` get start/done beats only — their
+- [ ] Currently `gapmap_paper_draft_generate`, `gapmap_graph_build_relations`,
+      and `gapmap_paper_fulltext` get start/done beats only — their
       bodies are monolithic. Cancel-on-start works but mid-call cancel
       doesn't.
 - [ ] If they grow to be longer/more important, push a `progress=`
@@ -101,7 +101,7 @@ versions will need it.
 - [ ] FastMCP supports `ctx.report_progress()` which emits
       `notifications/progress` over SSE. Cursor/Claude Code render
       these inline as "still working… 47/200 done". Today our queue
-      only persists to the row — the agent has to poll `reddit_jobs_get`.
+      only persists to the row — the agent has to poll `gapmap_jobs_get`.
 - [ ] Could be layered on top of the existing queue: when a tool emits
       progress, ALSO `ctx.report_progress(pct, msg)` so a
       foreground-watching user sees activity inline.
@@ -129,7 +129,7 @@ One-line UX fix.
 - [ ] After any MCP server change, manually:
   1. Open Cursor.
   2. Settings → MCP → toggle `reddit-myind` off/on.
-  3. In a Cursor chat, ask the agent to call `reddit_jobs_list({})`.
+  3. In a Cursor chat, ask the agent to call `gapmap_jobs_list({})`.
   4. Confirm response lands.
 - [ ] Cannot be automated — needs a real Cursor session.
 
@@ -148,13 +148,13 @@ not that Cursor's tool-list refresh actually picks up new tools.
 2026-05-01 — see `changelogs/2026-05-01_01_async-job-queue-for-long-mcp-calls.md`.
 
 ### ✅ Live progress + cooperative cancel for 5 long tools
-2026-05-01 — `reddit_research_collect`, `reddit_palace_reindex`,
-`reddit_palace_warmup`, `reddit_analyze_papers_bulk`,
-`reddit_find_gaps`.
+2026-05-01 — `gapmap_research_collect`, `gapmap_palace_reindex`,
+`gapmap_palace_warmup`, `gapmap_analyze_papers_bulk`,
+`gapmap_find_gaps`.
 
 ### ✅ Start/done beats for 3 monolithic long tools
-2026-05-01 — `reddit_paper_fulltext`, `reddit_paper_draft_generate`,
-`reddit_graph_build_relations`.
+2026-05-01 — `gapmap_paper_fulltext`, `gapmap_paper_draft_generate`,
+`gapmap_graph_build_relations`.
 
 ### ✅ Stale-job auto-recovery on daemon restart
 2026-05-01 — pidfile lock guarantees one daemon, so any `running` row

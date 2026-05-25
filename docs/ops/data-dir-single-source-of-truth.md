@@ -18,7 +18,7 @@ contract problem.
 Concretely:
 
 - Cursor opens a project at `~/code/my-project/`. User invokes
-  `reddit_research_collect` via the Gap Map MCP. A new SQLite DB and
+  `gapmap_research_collect` via the Gap Map MCP. A new SQLite DB and
   palace folder get created at `~/code/my-project/data/`.
 - Meanwhile, the desktop Gap Map app reads from
   `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/reddit.db`.
@@ -238,7 +238,7 @@ print(_resolve_data_dir())
 ### 4.3 Cross-surface integration test (manual)
 
 1. Open Gap Map desktop app → create a topic "testA".
-2. From a different CWD, open Cursor. Invoke `reddit_get_corpus(topic='testA')`.
+2. From a different CWD, open Cursor. Invoke `gapmap_get_corpus(topic='testA')`.
 3. Should return the rows created in step 1. If it returns empty → the
    MCP is reading the wrong DB → this fix isn't applied.
 

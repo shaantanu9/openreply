@@ -8,20 +8,20 @@ a fresh clone; CI rebuilds both fresh on every tagged release (see
 
 | File | Build with | Size | Purpose |
 |---|---|---|---|
-| `reddit-cli-aarch64-apple-darwin` | `pyinstaller reddit-cli.spec` | ~230 MB | Python sidecar (the CLI powering every feature) |
+| `gapmap-cli-aarch64-apple-darwin` | `pyinstaller gapmap-cli.spec` | ~230 MB | Python sidecar (the CLI powering every feature) |
 | `ffmpeg-aarch64-apple-darwin` | `scripts/fetch-ffmpeg.sh` | ~48 MB | Static ffmpeg for yt-dlp audio extraction (video ingest) |
 
 Both are listed in `.gitignore`.
 
-## `reddit-cli-aarch64-apple-darwin` — build the Python sidecar
+## `gapmap-cli-aarch64-apple-darwin` — build the Python sidecar
 
 ```bash
 # From the repo root, with the project installed (`uv sync --all-extras`):
-pyinstaller reddit-cli.spec
-cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin
-chmod +x app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin
+pyinstaller gapmap-cli.spec
+cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-aarch64-apple-darwin
+chmod +x app-tauri/src-tauri/binaries/gapmap-cli-aarch64-apple-darwin
 codesign --force --deep --sign - \
-  app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin   # ad-hoc, dev only
+  app-tauri/src-tauri/binaries/gapmap-cli-aarch64-apple-darwin   # ad-hoc, dev only
 ```
 
 `scripts/build-pyinstaller.sh` / `scripts/publish-mac.sh` wrap this. The `.spec`
@@ -51,7 +51,7 @@ After `scripts/fetch-ffmpeg.sh` drops the binary here, `tauri.conf.json` already
 ```json
 "bundle": {
   "externalBin": [
-    "binaries/reddit-cli",
+    "binaries/gapmap",
     "binaries/ffmpeg"
   ]
 }

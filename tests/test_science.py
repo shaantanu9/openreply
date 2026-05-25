@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from reddit_research.research import science as sci_mod
+from gapmap.research import science as sci_mod
 
 
 def _fixture_paper(pid: str, title: str, source: str = "pubmed") -> dict:

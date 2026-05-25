@@ -1,4 +1,4 @@
-// Search — ad-hoc Reddit search via PRAW (reddit-cli search).
+// Search — ad-hoc Reddit search via PRAW (gapmap search).
 // Top-level route at #/search. Not scoped to any topic.
 import { api, $, esc, timeAgo } from '../api.js';
 

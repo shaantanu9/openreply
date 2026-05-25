@@ -8,7 +8,7 @@ venv/
 .ruff_cache/
 build/
 dist/
-reddit-cli.spec
+gapmap-cli.spec
 # uv caches — but DO commit uv.lock (tracked for reproducibility)
 .uv-cache/
 !uv.lock
@@ -43,10 +43,10 @@ scripts/licenses/.keys/
 
 # Sidecar binaries — NOT committed. They were the cause of a 1.5 GB git
 # history (every PyInstaller rebuild added a fresh ~230 MB copy). Build them
-# locally: `pyinstaller reddit-cli.spec` (Python sidecar) and
+# locally: `pyinstaller gapmap-cli.spec` (Python sidecar) and
 # `scripts/fetch-ffmpeg.sh` (ffmpeg). CI rebuilds both on every tagged
 # release — see release.yml. The README in this dir has full instructions.
-app-tauri/src-tauri/binaries/reddit-cli-*
+app-tauri/src-tauri/binaries/gapmap-cli-*
 app-tauri/src-tauri/binaries/ffmpeg-*
 
 # Node.js / Next.js — never commit, regenerated via `npm i` / `npm run build`

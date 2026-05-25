@@ -43,13 +43,13 @@ Come back in a week, open the HTML, still see what you learned. The SQLite + gra
 
 Without graph:
 ```
-reddit_get_corpus(limit=300) → 300 posts into context → synthesize
+gapmap_get_corpus(limit=300) → 300 posts into context → synthesize
 ```
 
 With graph:
 ```
-reddit_graph_top_nodes(kind='painpoint', limit=15)   → 15 curated hubs
-reddit_graph_neighbors(node_id='...')                → evidence posts
+gapmap_graph_top_nodes(kind='painpoint', limit=15)   → 15 curated hubs
+gapmap_graph_neighbors(node_id='...')                → evidence posts
 → answer with 10× less context
 ```
 
@@ -62,7 +62,7 @@ On a long research session this is the difference between "3 questions then OOM"
 
 ### 3. Cross-session handoff
 
-Next Claude Code session opens fresh context. It calls `reddit_graph_stats(topic)` → knows exactly what's been researched. **The graph is the persistent state between sessions.** Without it, every session starts from zero.
+Next Claude Code session opens fresh context. It calls `gapmap_graph_stats(topic)` → knows exactly what's been researched. **The graph is the persistent state between sessions.** Without it, every session starts from zero.
 
 ### 4. Multi-agent compose
 
@@ -96,7 +96,7 @@ reddit-cli research graph build --topic "freelance invoicing"
 
 Then in a Claude Code session:
 
-- `reddit_graph_top_nodes(kind='painpoint', limit=20)`
+- `gapmap_graph_top_nodes(kind='painpoint', limit=20)`
 - Find painpoints linked to DIY workarounds **and** competitor complaints
 - Output: shortlist of 3 validated product bets + who to interview
 

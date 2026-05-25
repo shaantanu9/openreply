@@ -32,7 +32,7 @@
 **Where:**
 - UI: Topic page header → Delete → type-to-confirm modal → undo toast (10 s). Or Dashboard tile → right-click → Delete. Settings → Trash card lists everything soft-deleted with Restore buttons.
 - CLI: `reddit-cli research topic-soft-delete --topic T` · `topic-restore --topic T` · `topic-trash-list` · `topic-trash-purge --min-age-days 7`
-- MCP: `reddit_topic_soft_delete` / `reddit_topic_restore` / `reddit_topic_trash_list` / `reddit_topic_trash_purge`
+- MCP: `gapmap_topic_soft_delete` / `gapmap_topic_restore` / `gapmap_topic_trash_list` / `gapmap_topic_trash_purge`
 
 **How:**
 ```bash
@@ -47,7 +47,7 @@ reddit-cli research topic-trash-purge --min-age-days 7 --json
 
 **From an MCP client** (Claude Code):
 ```
-> Use reddit_topic_soft_delete to remove "stale-topic", then list the trash.
+> Use gapmap_topic_soft_delete to remove "stale-topic", then list the trash.
 ```
 
 ### 1.2 Type-to-confirm destructive modal
@@ -91,7 +91,7 @@ if (ok) await api.deleteTopic(topic);
 - Every new collect is automatically gated. Look for "dropped for relevance" in the collect log.
 - UI: Insights tab shows a "⚖ N off-topic findings dropped" fold under the Top Opportunities section, listing which findings were dropped and why.
 - CLI: `reddit-cli research clean-corpus --topic T [--threshold 0.30] [--apply]`
-- MCP: `reddit_clean_corpus(topic, threshold, apply, min_keep)`
+- MCP: `gapmap_clean_corpus(topic, threshold, apply, min_keep)`
 
 **How to clean an existing garbage topic:**
 ```bash
@@ -122,7 +122,7 @@ Blocked bot list: `AutoModerator, RemindMeBot, GoodBot_BadBot, stabbot, Mentione
 **Where:**
 - `GAPMAP_STRICT_QUALITY=1` env → collect-time gating escalates to strict.
 - CLI diagnostic: `reddit-cli research collect-quality-check --topic T` (non-mutating; reports lenient/strict fail counts).
-- MCP: `reddit_collect_quality_check(topic)`
+- MCP: `gapmap_collect_quality_check(topic)`
 
 **How:**
 ```bash
@@ -163,7 +163,7 @@ Graceful fallback: if `sentence-transformers` isn't installed the embedder warns
 - Auto — every collect runs through it.
 - `find-existing-topic` pre-check on the New Topic modal asks: *"A topic 'X' with N posts already exists. Open it, or create separate?"*
 - `merge-duplicate-topics` retroactively merges LLM-caused dupes. User re-searches are never merged.
-- MCP: `reddit_find_existing_topic`, `reddit_merge_duplicate_topics`.
+- MCP: `gapmap_find_existing_topic`, `gapmap_merge_duplicate_topics`.
 
 **How (retroactive cleanup):**
 ```bash
@@ -186,7 +186,7 @@ reddit-cli research merge-duplicate-topics --apply
 **Where:**
 - UI: every finding card in the Insights tab.
 - CLI: `reddit-cli research feedback-record --topic T --title "..." --kind painpoint --verdict wrong [--note "..."]`
-- MCP: `reddit_feedback_record(topic, finding_title, finding_kind, verdict, note)` + `reddit_feedback_list(topic)`
+- MCP: `gapmap_feedback_record(topic, finding_title, finding_kind, verdict, note)` + `gapmap_feedback_list(topic)`
 
 **How:**
 ```bash
@@ -211,7 +211,7 @@ reddit-cli research synthesize --topic "meditation apps"
 **Where:**
 - UI: Sidebar → **Competitors**.
 - CLI: `reddit-cli research global-competitors --min-topics 2 --threshold 0.80 --json`
-- MCP: `reddit_global_competitors(min_topics, threshold)`
+- MCP: `gapmap_global_competitors(min_topics, threshold)`
 
 **How:**
 ```bash
@@ -231,7 +231,7 @@ reddit-cli research global-competitors --threshold 0.90
 **Where:**
 - UI: Insights tab → saved-views bar mounted at the top of the Findings section.
 - CLI: `reddit-cli research saved-view-create --scope "topic:<slug>" --name "..." --filter-json '{"min_opportunity_score":15}' --pinned`
-- MCP: `reddit_saved_view_create(scope, name, filter_json, pinned)` + `reddit_saved_view_list(scope)`
+- MCP: `gapmap_saved_view_create(scope, name, filter_json, pinned)` + `gapmap_saved_view_list(scope)`
 
 **Filter schema** (all optional, combined with AND):
 ```json
@@ -252,7 +252,7 @@ reddit-cli research global-competitors --threshold 0.90
 **Where:**
 - UI: Settings → **Advanced: extractor prompts** (gated behind a "I know what I'm doing" checkbox). Lists every known prompt key, shows current text, lets you save or reset.
 - CLI: `prompt-list`, `prompt-get --key K`, `prompt-set --key K --file newprompt.txt`, `prompt-clear --key K`
-- MCP: `reddit_prompt_list`, `reddit_prompt_get(key)`, `reddit_prompt_set(key, override_text)`
+- MCP: `gapmap_prompt_list`, `gapmap_prompt_get(key)`, `gapmap_prompt_set(key, override_text)`
 
 **How:**
 ```bash
@@ -297,7 +297,7 @@ Per-node neighbor cap (default 8) prevents hairballs.
 
 **Where:**
 - Auto — runs at the tail of both `upsert_semantic` (every enrich) AND `build_structural` (every "Build graph" button click).
-- MCP: `reddit_graph_build_relations(topic)`.
+- MCP: `gapmap_graph_build_relations(topic)`.
 
 **How to densify an old graph** (no LLM cost):
 ```bash
@@ -343,7 +343,7 @@ Already existed (`btn-rerun`) — verified reachable.
 **Where:**
 - UI: Ingest screen → **Bulk CSV ingest** card.
 - CLI: `reddit-cli research ingest-csv --path /path/to/data.csv --topic T --source "csv"`
-- MCP: `reddit_ingest_csv(path, topic, source_type)`
+- MCP: `gapmap_ingest_csv(path, topic, source_type)`
 
 All ingested posts go through `_tag_posts` → the relevance gate still runs, so garbage CSVs don't poison the graph.
 
@@ -351,7 +351,7 @@ All ingested posts go through `_tag_posts` → the relevance gate still runs, so
 
 **What:** When typing a new topic in the modal, Gap Map checks for a semantically-identical topic first and asks "open existing or create separate?" instead of silently creating a duplicate.
 
-**Where:** Wired into the New Topic modal in `main.js`. Also available via MCP `reddit_find_existing_topic`.
+**Where:** Wired into the New Topic modal in `main.js`. Also available via MCP `gapmap_find_existing_topic`.
 
 ---
 
@@ -365,14 +365,14 @@ All shipped in the Dual-Mode Pivot (Phases A/B/C/F); MCP surface added this pass
 
 | Tool | What it does |
 |---|---|
-| `reddit_product_create(name, one_liner, category, topic, competitors)` | Register a Product |
-| `reddit_product_list(active_only)` | List registered products |
-| `reddit_product_sweep(product_id, trigger, skip_collect)` | Run the daily sweep + generate signals |
-| `reddit_product_signals(product_id, since_days, include_resolved, limit)` | List open signals ranked by severity × confidence |
-| `reddit_product_signal_action(signal_id, action, notes, snooze_days)` | dismissed / acted / snoozed / hypothesis |
-| `reddit_product_dashboard(product_id, days)` | One-call fetch of Mirror / Lens / Field / Signals |
-| `reddit_product_digest(product_id, days)` | Plain markdown for Slack / Notion |
-| `reddit_product_convert_topic(topic, name, one_liner)` | Seed a Product from an existing Topic's graph |
+| `gapmap_product_create(name, one_liner, category, topic, competitors)` | Register a Product |
+| `gapmap_product_list(active_only)` | List registered products |
+| `gapmap_product_sweep(product_id, trigger, skip_collect)` | Run the daily sweep + generate signals |
+| `gapmap_product_signals(product_id, since_days, include_resolved, limit)` | List open signals ranked by severity × confidence |
+| `gapmap_product_signal_action(signal_id, action, notes, snooze_days)` | dismissed / acted / snoozed / hypothesis |
+| `gapmap_product_dashboard(product_id, days)` | One-call fetch of Mirror / Lens / Field / Signals |
+| `gapmap_product_digest(product_id, days)` | Plain markdown for Slack / Notion |
+| `gapmap_product_convert_topic(topic, name, one_liner)` | Seed a Product from an existing Topic's graph |
 
 **Example from Cursor / Claude Code:**
 ```
@@ -427,34 +427,34 @@ All callable from Claude Code, Cursor, Claude Desktop, Windsurf, Cline. Installe
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `reddit_topic_soft_delete` | `(topic)` | Soft-delete, 7-day undo |
-| `reddit_topic_restore` | `(topic)` | Restore soft-deleted |
-| `reddit_topic_trash_list` | `()` | List trash + age |
-| `reddit_topic_trash_purge` | `(min_age_days=7)` | Hard-delete old trash |
-| `reddit_find_existing_topic` | `(user_input)` | Pre-check for dupes |
-| `reddit_merge_duplicate_topics` | `(apply=False)` | Merge LLM-caused dupes |
+| `gapmap_topic_soft_delete` | `(topic)` | Soft-delete, 7-day undo |
+| `gapmap_topic_restore` | `(topic)` | Restore soft-deleted |
+| `gapmap_topic_trash_list` | `()` | List trash + age |
+| `gapmap_topic_trash_purge` | `(min_age_days=7)` | Hard-delete old trash |
+| `gapmap_find_existing_topic` | `(user_input)` | Pre-check for dupes |
+| `gapmap_merge_duplicate_topics` | `(apply=False)` | Merge LLM-caused dupes |
 
 ### Corpus quality
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `reddit_clean_corpus` | `(topic, threshold=0.30, apply=False, min_keep=20)` | Retroactive relevance filter |
-| `reddit_collect_quality_check` | `(topic)` | Quality-gate diagnostic |
+| `gapmap_clean_corpus` | `(topic, threshold=0.30, apply=False, min_keep=20)` | Retroactive relevance filter |
+| `gapmap_collect_quality_check` | `(topic)` | Quality-gate diagnostic |
 
 ### Intelligence layer
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `reddit_feedback_record` | `(topic, finding_title, finding_kind, verdict, note)` | 👎 a finding |
-| `reddit_feedback_list` | `(topic=None)` | Read feedback back |
-| `reddit_global_competitors` | `(min_topics=2, threshold=0.80)` | Cross-topic competitor dedup |
-| `reddit_saved_view_create` | `(scope, name, filter_json, pinned)` | Save a filter |
-| `reddit_saved_view_list` | `(scope=None)` | List saved views |
-| `reddit_prompt_list` | `()` | List extractor prompts + overrides |
-| `reddit_prompt_get` | `(key)` | Read effective prompt |
-| `reddit_prompt_set` | `(key, override_text)` | Override a prompt |
-| `reddit_ingest_csv` | `(path, topic, source_type="csv")` | Bulk CSV ingest |
-| `reddit_graph_build_relations` | `(topic)` | Densify graph edges |
+| `gapmap_feedback_record` | `(topic, finding_title, finding_kind, verdict, note)` | 👎 a finding |
+| `gapmap_feedback_list` | `(topic=None)` | Read feedback back |
+| `gapmap_global_competitors` | `(min_topics=2, threshold=0.80)` | Cross-topic competitor dedup |
+| `gapmap_saved_view_create` | `(scope, name, filter_json, pinned)` | Save a filter |
+| `gapmap_saved_view_list` | `(scope=None)` | List saved views |
+| `gapmap_prompt_list` | `()` | List extractor prompts + overrides |
+| `gapmap_prompt_get` | `(key)` | Read effective prompt |
+| `gapmap_prompt_set` | `(key, override_text)` | Override a prompt |
+| `gapmap_ingest_csv` | `(path, topic, source_type="csv")` | Bulk CSV ingest |
+| `gapmap_graph_build_relations` | `(topic)` | Densify graph edges |
 | `reddit_research_link` | `(topic, k=3)` | Link findings to papers |
 | `reddit_research_links` | `(topic, finding=None)` | Read paper links back |
 
@@ -462,14 +462,14 @@ All callable from Claude Code, Cursor, Claude Desktop, Windsurf, Cline. Installe
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `reddit_product_create` | `(name, one_liner, category, topic, competitors)` | Register Product |
-| `reddit_product_list` | `(active_only=True)` | List Products |
-| `reddit_product_sweep` | `(product_id, trigger, skip_collect)` | Run sweep |
-| `reddit_product_signals` | `(product_id, since_days, include_resolved, limit)` | Read open signals |
-| `reddit_product_signal_action` | `(signal_id, action, notes, snooze_days)` | Dismiss/act/snooze/→hypothesis |
-| `reddit_product_dashboard` | `(product_id, days=7)` | Full dashboard data |
-| `reddit_product_digest` | `(product_id, days=7)` | Weekly markdown digest |
-| `reddit_product_convert_topic` | `(topic, name, one_liner)` | Topic → Product |
+| `gapmap_product_create` | `(name, one_liner, category, topic, competitors)` | Register Product |
+| `gapmap_product_list` | `(active_only=True)` | List Products |
+| `gapmap_product_sweep` | `(product_id, trigger, skip_collect)` | Run sweep |
+| `gapmap_product_signals` | `(product_id, since_days, include_resolved, limit)` | Read open signals |
+| `gapmap_product_signal_action` | `(signal_id, action, notes, snooze_days)` | Dismiss/act/snooze/→hypothesis |
+| `gapmap_product_dashboard` | `(product_id, days=7)` | Full dashboard data |
+| `gapmap_product_digest` | `(product_id, days=7)` | Weekly markdown digest |
+| `gapmap_product_convert_topic` | `(topic, name, one_liner)` | Topic → Product |
 
 Total MCP tools: **73** (was 45).
 

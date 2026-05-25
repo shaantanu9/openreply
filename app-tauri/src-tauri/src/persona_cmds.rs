@@ -5,7 +5,7 @@
 //   2. removing `mod persona_cmds;` from main.rs
 //   3. removing the `commands::persona_agent_*` entries from generate_handler!
 //   4. removing the api.js wrappers
-//   5. deleting src/reddit_research/persona/ + cli/persona_cmds.py
+//   5. deleting src/gapmap/persona/ + cli/persona_cmds.py
 //
 // Naming convention `persona_agent_*` chosen to avoid collision with the
 // pre-existing `commands::persona_view` (subreddit-author clustering).

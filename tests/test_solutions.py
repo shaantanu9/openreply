@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from reddit_research.research import solutions as sol_mod
+from gapmap.research import solutions as sol_mod
 
 
 class FakeProvider:

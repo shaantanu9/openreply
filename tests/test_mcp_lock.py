@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from reddit_research.mcp.server import _is_alive
+from gapmap.mcp.server import _is_alive
 
 
 def test_is_alive_true_for_self():

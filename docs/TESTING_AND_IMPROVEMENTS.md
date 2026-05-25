@@ -107,18 +107,18 @@ cd /Users/shantanubombatkar/Documents/GitHub/reddit-myind
 Connect to the MCP server (`.venv/bin/python -m reddit_research.mcp.server` or via the in-app "Connect to Claude Code" button) and from any MCP client:
 
 ```
-Call reddit_topic_trash_list()             → {ok: true, trash: [...]}
-Call reddit_find_existing_topic(user_input="x")  → {ok: true, match: null}
-Call reddit_clean_corpus(topic="ai", threshold=0.30, apply=false)
+Call gapmap_topic_trash_list()             → {ok: true, trash: [...]}
+Call gapmap_find_existing_topic(user_input="x")  → {ok: true, match: null}
+Call gapmap_clean_corpus(topic="ai", threshold=0.30, apply=false)
     → {ok, scored, dropped, sample_dropped: [...]}
-Call reddit_collect_quality_check(topic="ai")
+Call gapmap_collect_quality_check(topic="ai")
     → {ok, total, lenient_fail, strict_fail, sample_*: [...]}
-Call reddit_global_competitors(min_topics=2, threshold=0.80)
+Call gapmap_global_competitors(min_topics=2, threshold=0.80)
     → [{canonical_name, aliases, topics, total_mentions}, ...]
-Call reddit_prompt_list()
+Call gapmap_prompt_list()
     → {painpoints: {has_override, bundled_preview, override_preview}, ...}
-Call reddit_product_list(active_only=true) → [...]
-Call reddit_graph_build_relations(topic="ai")
+Call gapmap_product_list(active_only=true) → [...]
+Call gapmap_graph_build_relations(topic="ai")
     → {ok, relates_to_edges, co_evidenced_edges, ...}
 ```
 

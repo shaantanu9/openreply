@@ -89,7 +89,7 @@ reddit-cli mcp stats --since 7d
 #   → by_kind: startup:lock_failed >0 means a client lacks takeover env
 
 # Drill into a specific tool's traceback history:
-reddit-cli mcp logs --tool reddit_synthesize_insights --severity error --json | jq '.[].details.traceback'
+reddit-cli mcp logs --tool gapmap_synthesize_insights --severity error --json | jq '.[].details.traceback'
 ```
 
 ## Out of scope (follow-ups)

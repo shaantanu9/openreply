@@ -1,5 +1,5 @@
 // Trends tab — chronic / emerging / fading painpoint classification.
-// Calls reddit-cli research temporal-gaps via the Tauri sidecar.
+// Calls gapmap research temporal-gaps via the Tauri sidecar.
 import { api, esc } from '../api.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);

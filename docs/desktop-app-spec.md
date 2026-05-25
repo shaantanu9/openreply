@@ -129,11 +129,11 @@
 Exposed so AI agents can drive research without the desktop UI.
 Full list in `src/reddit_research/mcp/server.py`; key ones:
 
-- `reddit_research_collect(topic, aggressive=true, sources=[...])`
-- `reddit_graph_build(topic)` / `reddit_graph_stats(topic)` / `reddit_graph_pagerank(topic)`
-- `reddit_graph_upsert_semantic(topic, painpoints=[], features=[], ...)` — lets Claude persist its synthesis
-- `reddit_graph_export_json(topic)` — get the D3 data shape
-- `reddit_corpus_temporal_split(topic)` — pre/post-May-2025 for CHRONIC/EMERGING/FADING classification
+- `gapmap_research_collect(topic, aggressive=true, sources=[...])`
+- `gapmap_graph_build(topic)` / `gapmap_graph_stats(topic)` / `gapmap_graph_pagerank(topic)`
+- `gapmap_graph_upsert_semantic(topic, painpoints=[], features=[], ...)` — lets Claude persist its synthesis
+- `gapmap_graph_export_json(topic)` — get the D3 data shape
+- `gapmap_corpus_temporal_split(topic)` — pre/post-May-2025 for CHRONIC/EMERGING/FADING classification
 
 ---
 
@@ -318,15 +318,15 @@ Output: ~2,000-10,000 posts tagged under topic.
 3. Upsert (idempotent)
 ```
 
-### D.3 — Enrich pipeline (`research graph enrich` OR `reddit_graph_upsert_semantic` via MCP)
+### D.3 — Enrich pipeline (`research graph enrich` OR `gapmap_graph_upsert_semantic` via MCP)
 
 **Option A (CLI, needs LLM key):** Runs `research gaps` → persists to graph.
 
 **Option B (MCP, Claude-as-LLM, no key):**
 ```
-1. Claude calls reddit_get_corpus(topic, limit=200)
+1. Claude calls gapmap_get_corpus(topic, limit=200)
 2. Claude synthesizes in-context: 8-15 painpoints, 5-10 features, products, DIYs
-3. Claude calls reddit_graph_upsert_semantic(
+3. Claude calls gapmap_graph_upsert_semantic(
      topic,
      painpoints=[{painpoint, severity, frequency, classification, evidence, example_post_ids}],
      feature_wishes=[{feature, user_quote, frequency, example_post_ids}],

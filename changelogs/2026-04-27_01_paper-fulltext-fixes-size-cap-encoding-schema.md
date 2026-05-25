@@ -30,7 +30,7 @@ The user's second clarification was "tell the user before about this" — meanin
 
 ```
 === before fix (production DB) ===
-✗ Error calling tool 'reddit_paper_fulltext': no such column: metadata_json
+✗ Error calling tool 'gapmap_paper_fulltext': no such column: metadata_json
 
 === after fix, real arxiv posts from the user's DB ===
 arxiv_1805.02399v1  → ok · chars=30589

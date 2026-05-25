@@ -85,11 +85,11 @@ Provider and model are resolved **at call-time**, so switching the default in Se
 
 `grep -c "@mcp.tool" src/reddit_research/mcp/server.py` → **40**. Named groups:
 
-- Core fetch: `reddit_fetch_posts`, `reddit_fetch_comments`, `reddit_fetch_user`, `reddit_search`, `reddit_query_db`, `reddit_sub_stats`.
-- Historical: `reddit_fetch_historical`.
-- Research (gap-finding): `reddit_discover_subs`, `reddit_research_collect`, `reddit_get_corpus`, `reddit_corpus_temporal_split`, `reddit_topic_stats`.
-- Graph (agent memory): `reddit_graph_build`, `reddit_graph_stats`, `reddit_graph_top_nodes`, `reddit_graph_neighbors`, `reddit_graph_upsert_semantic`, `reddit_graph_export_json`.
-- Extra-source adapters: `reddit_fetch_hn`, `reddit_fetch_appstore`, `reddit_fetch_playstore`, `reddit_fetch_scholar`, `reddit_fetch_stackoverflow`, `reddit_fetch_trends`, `reddit_fetch_arxiv`, `reddit_fetch_openalex`, `reddit_fetch_pubmed`, … (+ lemmy/mastodon/devto/gnews/gh/etc.).
+- Core fetch: `gapmap_fetch_posts`, `gapmap_fetch_comments`, `gapmap_fetch_user`, `gapmap_search`, `gapmap_query_db`, `gapmap_sub_stats`.
+- Historical: `gapmap_fetch_historical`.
+- Research (gap-finding): `gapmap_discover_subs`, `gapmap_research_collect`, `gapmap_get_corpus`, `gapmap_corpus_temporal_split`, `gapmap_topic_stats`.
+- Graph (agent memory): `gapmap_graph_build`, `gapmap_graph_stats`, `gapmap_graph_top_nodes`, `gapmap_graph_neighbors`, `gapmap_graph_upsert_semantic`, `gapmap_graph_export_json`.
+- Extra-source adapters: `gapmap_fetch_hn`, `gapmap_fetch_appstore`, `gapmap_fetch_playstore`, `gapmap_fetch_scholar`, `gapmap_fetch_stackoverflow`, `gapmap_fetch_trends`, `gapmap_fetch_arxiv`, `gapmap_fetch_openalex`, `gapmap_fetch_pubmed`, … (+ lemmy/mastodon/devto/gnews/gh/etc.).
 
 The MCP server intentionally has **no LLM calls inside**. Claude Code is the LLM; the server is pure data access. One-line install: `uv run reddit-cli mcp install`.
 
@@ -198,7 +198,7 @@ reddit-cli research report --topic "freelance invoicing" --out report.md
 **Roadmap:** white-label / branded reports is a clear v2 play.
 
 ### 3.8 AI-agent builders (developer segment)
-**Use:** Persistent cross-session memory for Claude Code. The graph is structured state; `reddit_graph_top_nodes` + `reddit_graph_neighbors` give agents curated context 10× more efficient than `reddit_get_corpus(limit=300)`. Multi-agent compose: agent A collects, agent B enriches, agent C reports — each idempotent, typed, independent (see `docs/applications.md` §"What it does for AI agents").
+**Use:** Persistent cross-session memory for Claude Code. The graph is structured state; `gapmap_graph_top_nodes` + `gapmap_graph_neighbors` give agents curated context 10× more efficient than `gapmap_get_corpus(limit=300)`. Multi-agent compose: agent A collects, agent B enriches, agent C reports — each idempotent, typed, independent (see `docs/applications.md` §"What it does for AI agents").
 
 ### 3.9 Investors / equity analysts
 **Use:** Track App Store + Play Store review sentiment over time for public-comp companies. Aggressive mode pulls 3 years history → baseline → weekly delta = early catalyst.

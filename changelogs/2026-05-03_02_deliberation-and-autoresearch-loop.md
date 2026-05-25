@@ -64,8 +64,8 @@ making consensus *citation-grounded* rather than purely LLM-vs-itself.
   takes new `deliberate=False, deliberate_rounds=1` flags. When True,
   every finding is stamped with a `consensus` block.
 - `src/reddit_research/cli/main.py` — `research deliberate` subcommand.
-- `src/reddit_research/mcp/server.py` — `reddit_deliberate` tool;
-  `reddit_synthesize_insights` accepts `deliberate=True`.
+- `src/reddit_research/mcp/server.py` — `gapmap_deliberate` tool;
+  `gapmap_synthesize_insights` accepts `deliberate=True`.
 - `app-tauri/src-tauri/src/commands.rs` — `deliberate` Tauri command.
 - `app-tauri/src-tauri/src/main.rs` — registered in `generate_handler!`.
 - `app-tauri/src/api.js` — `api.deliberate(topic, opts)`.

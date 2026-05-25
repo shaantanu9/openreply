@@ -130,7 +130,7 @@ export async function renderActivity(root) {
   }, 4000);
 
   // Also refresh immediately when the DB-mtime poller detects an external
-  // write — covers the case where the user ran `reddit-cli` manually or an
+  // write — covers the case where the user ran `gapmap` manually or an
   // MCP server client wrote while we're on this page.
   const dbChangedListener = () => {
     if (document.visibilityState !== 'visible') return;

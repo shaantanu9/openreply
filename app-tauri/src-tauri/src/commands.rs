@@ -1,6 +1,6 @@
 //! Tauri commands invoked from the frontend via `invoke(...)`.
 //!
-//! Each command is a thin bridge to one reddit-cli invocation. Heavy
+//! Each command is a thin bridge to one gapmap invocation. Heavy
 //! lifting stays in Python.
 
 use crate::cli::{
@@ -241,7 +241,7 @@ fn forbidden_keyword_present(lower: &str, needle: &str) -> bool {
     }
 }
 
-/// `reddit-cli info` — config + table counts.
+/// `gapmap info` — config + table counts.
 #[tauri::command]
 pub async fn cli_info(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["info"]).await.map_err(err_to_string)
@@ -357,7 +357,7 @@ pub async fn topic_graph_summary(app: AppHandle, topic: String) -> Result<Value,
 /// queries are hardcoded string literals above, not user-supplied).
 async fn native_query(app: &AppHandle, sql: &str) -> Result<Value, String> {
     let dir = crate::cli::data_dir(app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -763,7 +763,7 @@ pub async fn start_collect(
 }
 
 /// Catalog of external sources the Python `research collect` will sweep.
-/// Mirrors the lists in `src/reddit_research/research/collect.py` so the
+/// Mirrors the lists in `src/gapmap/research/collect.py` so the
 /// "topic recon" card on the collect screen can preview the exact set
 /// that's about to be queried — without spinning up the sidecar first.
 ///
@@ -1417,7 +1417,7 @@ pub async fn export_brief(
     // We invoke CLI raw and return the string.
     let data_dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
     let data_str = data_dir.to_string_lossy().to_string();
-    let py = std::env::var("REDDIT_MYIND_DEV_PYTHON").ok().and_then(|p| {
+    let py = std::env::var("GAPMAP_DEV_PYTHON").ok().and_then(|p| {
         let pb = std::path::PathBuf::from(p);
         if pb.exists() { Some(pb) } else { None }
     }).or_else(|| {
@@ -1432,11 +1432,11 @@ pub async fn export_brief(
     if let Some(py) = py {
         // Dev path — tokio::process for direct stdout capture
         let output = tokio::process::Command::new(&py)
-            .arg("-m").arg("reddit_research.cli.main")
+            .arg("-m").arg("gapmap.cli.main")
             .arg("research").arg("export-brief")
             .arg("--topic").arg(&topic)
             .arg("--format").arg(&fmt)
-            .env("REDDIT_MYIND_DATA_DIR", &data_str)
+            .env("GAPMAP_DATA_DIR", &data_str)
             .env("PYTHONUNBUFFERED", "1")
             .output().await.map_err(|e| e.to_string())?;
         if !output.status.success() {
@@ -1448,10 +1448,10 @@ pub async fn export_brief(
     // wraps it in serde_json::from_str and returns Value::Null on parse
     // failure. We want the raw string, so we use shell().sidecar().
     use tauri_plugin_shell::ShellExt;
-    let output = app.shell().sidecar("reddit-cli")
+    let output = app.shell().sidecar("gapmap-cli")
         .map_err(|e| e.to_string())?
         .args(["research", "export-brief", "--topic", &topic, "--format", &fmt])
-        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("GAPMAP_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .output().await.map_err(|e| e.to_string())?;
     if !output.status.success() {
@@ -1590,7 +1590,7 @@ pub async fn research_links(
 //
 // Runs `research monitor-*` CLI commands. Drives the Dashboard's
 // "What's changed this week" card and per-topic delta indicators.
-// See src/reddit_research/research/monitor.py.
+// See src/gapmap/research/monitor.py.
 
 #[tauri::command]
 pub async fn monitor_run_topic(
@@ -1647,7 +1647,7 @@ pub async fn monitor_deltas(
 // stored in the `hypothesis_tests` SQLite table. The UI's "Save as bet"
 // button calls `hypothesis_create`; the Bets tab + state pills call
 // `hypothesis_update_status` and `hypothesis_list`. See
-// src/reddit_research/research/hypothesis_tracker.py for the state machine.
+// src/gapmap/research/hypothesis_tracker.py for the state machine.
 
 #[tauri::command]
 pub async fn hypothesis_create(
@@ -3756,7 +3756,7 @@ pub async fn app_data_dir(app: AppHandle) -> Result<String, String> {
         .map_err(err_to_string)
 }
 
-/// Onboarding / startup diagnostics. Wraps `reddit-cli health --json` with a
+/// Onboarding / startup diagnostics. Wraps `gapmap health --json` with a
 /// sidecar-spawn probe so the frontend can distinguish three failure modes:
 ///   (a) sidecar binary can't even launch (permissions / notarization / arch)
 ///   (b) sidecar launches but individual checks fail (data dir, DB, model, LLM)
@@ -3910,7 +3910,7 @@ pub async fn palace_reindex(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn db_mtime(app: AppHandle) -> Result<u64, String> {
     let dir = data_dir(&app).map_err(err_to_string)?;
-    let db = dir.join("reddit.db");
+    let db = dir.join("gapmap.db");
     match std::fs::metadata(&db) {
         Ok(m) => {
             let mt = m.modified().map_err(|e| e.to_string())?;
@@ -4081,7 +4081,7 @@ pub async fn run_query(
     // goes from 30-70s (bundled sidecar cold start on a fresh DMG) to
     // sub-10ms. See src/db.rs for the connection cache + param binding.
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         // No DB yet — return an empty array so the UI doesn't error out
         // on a fresh install before the first collect has landed.
@@ -4125,7 +4125,7 @@ pub async fn topic_insights_cached(
     topic: String,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({
             "ok": false, "topic": topic,
@@ -4213,7 +4213,7 @@ pub async fn topic_counts_bundle(
     topic: String,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({
             "painpoints": 0, "feature_wishes": 0, "workarounds": 0,
@@ -4284,7 +4284,7 @@ pub async fn papers_list_native(
 ) -> Result<Value, String> {
     let lim = limit.unwrap_or(200) as i64;
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -4360,7 +4360,7 @@ pub async fn hypothesis_list_native(
     include_archived: Option<bool>,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -4435,7 +4435,7 @@ pub async fn solutions_data_bundle(
     topic: String,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({ "painpoints": [] }));
     }
@@ -4537,10 +4537,10 @@ pub async fn solutions_data_bundle(
     Ok(bundle)
 }
 
-/// Path to the user's BYOK env file (`~/.config/reddit-myind/.env`).
+/// Path to the user's BYOK env file (`~/.config/gapmap/.env`).
 fn byok_env_path() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = std::path::PathBuf::from(home).join(".config").join("reddit-myind");
+    let dir = std::path::PathBuf::from(home).join(".config").join("gapmap");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join(".env"))
 }
@@ -4991,13 +4991,13 @@ fn normalize_models(provider: &str, raw: &Value) -> Vec<Value> {
 // ─── MCP ↔ App integration (one-click connect to Claude Code) ─────────────────
 //
 // Spec: docs/superpowers/specs/2026-04-21-mcp-app-integration.md (v1).
-// We shell out to `reddit-cli mcp {install,uninstall,status} --json` so all
+// We shell out to `gapmap mcp {install,uninstall,status} --json` so all
 // the JSON-merge / token-gen / atomic-write logic stays in one place
-// (src/reddit_research/mcp/install.py), testable from CLI.
+// (src/gapmap/mcp/install.py), testable from CLI.
 //
 // Two execution modes for the MCP entry's command:
 //   - Dev:  if `.venv/bin/python` is found near CWD → register as
-//           `uv --directory <repo> run reddit-cli mcp serve` (current dev flow).
+//           `uv --directory <repo> run gapmap mcp serve` (current dev flow).
 //   - Prod: bundled binary → register the absolute path to the sidecar exe
 //           inside Contents/MacOS so Claude Code spawns it directly without
 //           needing `uv` on the user's PATH.
@@ -5005,10 +5005,10 @@ fn normalize_models(provider: &str, raw: &Value) -> Vec<Value> {
 fn resolve_sidecar_bin_path() -> Option<std::path::PathBuf> {
     // In a packaged Tauri app, the sidecar lives next to the main exe in
     // Contents/MacOS/. `current_exe()` gives us the main app binary; its
-    // sibling `reddit-cli` (or `reddit-cli.exe` on Windows) is the sidecar.
+    // sibling `gapmap` (or `gapmap.exe` on Windows) is the sidecar.
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    for name in ["reddit-cli", "reddit-cli.exe"] {
+    for name in ["gapmap-cli", "gapmap-cli.exe"] {
         let candidate = dir.join(name);
         if candidate.exists() {
             return Some(candidate);
@@ -5060,7 +5060,7 @@ pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value,
 }
 
 /// Connect (or re-sync) Gap Map's MCP entry in the chosen client's config.
-/// Aligns REDDIT_MYIND_DATA_DIR and writes a token to the data dir.
+/// Aligns GAPMAP_DATA_DIR and writes a token to the data dir.
 #[tauri::command]
 pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value, String> {
     ensure_mcp_allowed(&app)?;
@@ -5423,7 +5423,7 @@ pub async fn topic_coverage_gaps(app: AppHandle, topic: String) -> Result<Value,
 //   whisper_*            → model catalogue / download / delete / default
 //   ytdlp_version|update → overlay auto-updater controls
 //
-// All wrap the Python CLI (src/reddit_research/cli/main.py → ingest video /
+// All wrap the Python CLI (src/gapmap/cli/main.py → ingest video /
 // whisper / ytdlp subcommands). Streaming commands emit events the webview
 // listens to via @tauri-apps/api/event::listen().
 
@@ -5754,7 +5754,7 @@ pub async fn extraction_prefs_get(
     let mut effective = compute_effective(&global_map, None);
     if let Some(t) = topic.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
         let dir = data_dir(&app).map_err(err_to_string)?;
-        let db_path = dir.join("reddit.db");
+        let db_path = dir.join("gapmap.db");
         if db_path.exists() {
             match read_topic_prefs_row(&db_path, &t) {
                 Ok(Some(row)) => {
@@ -5804,7 +5804,7 @@ pub async fn extraction_prefs_set(
             return Err("scope 'topic:' must include a topic name".into());
         }
         let dir = data_dir(&app).map_err(err_to_string)?;
-        let db_path = dir.join("reddit.db");
+        let db_path = dir.join("gapmap.db");
         if !db_path.exists() {
             return Err("db not initialized yet — run a collect first".into());
         }
@@ -5819,7 +5819,7 @@ pub async fn extraction_prefs_set(
 #[tauri::command]
 pub async fn today_token_spend(app: AppHandle) -> Result<Value, String> {
     let dir = data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("reddit.db");
+    let db_path = dir.join("gapmap.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({
             "tokens_in": 0, "tokens_out": 0, "est_usd": 0.0, "breakdown": []

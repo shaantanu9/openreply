@@ -68,20 +68,20 @@ echo "✓ frontend dist/ ready"
 echo
 
 # ─── 2. PyInstaller sidecar build ───────────────────────────────────────
-SIDECAR="app-tauri/src-tauri/binaries/reddit-cli-${RUST_TRIPLE}"
+SIDECAR="app-tauri/src-tauri/binaries/gapmap-cli-${RUST_TRIPLE}"
 if [[ $SKIP_SIDECAR -eq 1 && -x "$SIDECAR" ]]; then
   echo "▶ Step 2/5 — Reusing existing sidecar at $SIDECAR (--skip-sidecar)"
 else
   echo "▶ Step 2/5 — PyInstaller sidecar build (~2 min)"
   rm -rf build dist
   # Use the .spec which bundles ONNX + prompts + every lazy-imported dep.
-  uv run pyinstaller reddit-cli.spec
-  if [[ ! -x dist/reddit-cli ]]; then
-    echo "✗ PyInstaller failed — dist/reddit-cli not present" >&2
+  uv run pyinstaller gapmap-cli.spec
+  if [[ ! -x dist/gapmap-cli ]]; then
+    echo "✗ PyInstaller failed — dist/gapmap-cli not present" >&2
     exit 1
   fi
   mkdir -p app-tauri/src-tauri/binaries
-  cp dist/reddit-cli "$SIDECAR"
+  cp dist/gapmap-cli "$SIDECAR"
   chmod +x "$SIDECAR"
   echo "✓ sidecar at $SIDECAR ($(du -sh "$SIDECAR" | cut -f1))"
 fi

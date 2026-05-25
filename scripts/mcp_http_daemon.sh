@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mcp_http_daemon.sh — start/stop/status for the reddit-myind MCP server in
+# mcp_http_daemon.sh — start/stop/status for the gapmap MCP server in
 # HTTP transport mode. Cursor's stdio MCP client cycles servers every ~5 min,
 # which kills any in-flight long tool call. HTTP transport sidesteps this:
 # Cursor reconnects without ever signalling the server.
@@ -15,11 +15,11 @@
 
 set -u
 
-PROJECT_DIR="${REDDIT_MYIND_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
-DATA_DIR="${REDDIT_MYIND_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.gapmap/reddit-myind}"
-PORT="${REDDIT_MYIND_HTTP_PORT:-8765}"
-HOST="${REDDIT_MYIND_HTTP_HOST:-127.0.0.1}"
-BIN="$PROJECT_DIR/.venv/bin/reddit-cli"
+PROJECT_DIR="${GAPMAP_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
+DATA_DIR="${GAPMAP_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.gapmap/gapmap}"
+PORT="${GAPMAP_HTTP_PORT:-8765}"
+HOST="${GAPMAP_HTTP_HOST:-127.0.0.1}"
+BIN="$PROJECT_DIR/.venv/bin/gapmap"
 LOG_DIR="$DATA_DIR/logs"
 LOG_FILE="$LOG_DIR/mcp-http.stderr.log"
 PID_FILE="$DATA_DIR/mcp-http.pid"
@@ -49,12 +49,12 @@ cmd_start() {
   [ -f "$TOKEN_FILE" ] && TOKEN=$(cat "$TOKEN_FILE")
   # Export env (instead of inlining before nohup) so $! captures the actual
   # nohup-detached child reliably across bash + zsh.
-  export REDDIT_MYIND_DATA_DIR="$DATA_DIR"
-  export REDDIT_MYIND_TOKEN="$TOKEN"
-  export REDDIT_MYIND_PALACE_EAGER=1
+  export GAPMAP_DATA_DIR="$DATA_DIR"
+  export GAPMAP_TOKEN="$TOKEN"
+  export GAPMAP_PALACE_EAGER=1
   export MCP_TAKEOVER_STALE_LOCK=1
   export MCP_CLIENT_TAG=http-daemon
-  export REDDIT_MYIND_NO_IDLE_GUARD=1
+  export GAPMAP_NO_IDLE_GUARD=1
   nohup "$BIN" mcp serve --transport http --host "$HOST" --port "$PORT" \
     >>"$LOG_FILE" 2>&1 &
   PID=$!

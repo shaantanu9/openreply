@@ -100,7 +100,7 @@ The 5 default personas (Architecture / Security / Performance / Reliability / De
 | Command | Behaviour | Gap Map fit |
 |---|---|---|
 | `autoresearch:scenario` | Seed scenario → derivative scenarios + edge cases | Generate "what if this finding is wrong?" / "what edge case breaks this experiment?" before running it |
-| `autoresearch:debug` | 7-technique scientific bug hunt loop | Already covered by our `reddit_diagnostics` tool — could deepen with this pattern |
+| `autoresearch:debug` | 7-technique scientific bug hunt loop | Already covered by our `gapmap_diagnostics` tool — could deepen with this pattern |
 | `autoresearch:fix` | Fix-until-zero (tests/types/lint/build) | Wrap `npm run test` + `cargo check` + `pytest` into one "fix everything" loop |
 | `autoresearch:learn` | Doc generation with validation-fix loop | Could regenerate the `docs/` folder when code changes (lower priority) |
 | `autoresearch:security` | STRIDE + OWASP + 4 red-team personas | Could audit the Tauri capabilities + Python sidecar surface (use the existing `/security-review` slash command instead) |
@@ -268,7 +268,7 @@ CREATE TABLE audience_personas (
 - **NEW** `src/reddit_research/research/audience.py` — `build_audience_personas(topic, k=None, llm=True, persist=True)`, `get_audience_personas(topic)`.
 - **NEW** `src/reddit_research/research/_clustering.py` — pure-deterministic helpers (vector building, HDBSCAN/k-means, silhouette).
 - **MODIFY** `src/reddit_research/cli/main.py` — `research audience-build` + `research audience-get` subcommands.
-- **MODIFY** `src/reddit_research/mcp/server.py` — `reddit_audience_personas(topic, llm=True)` + `reddit_audience_personas_get(topic)`.
+- **MODIFY** `src/reddit_research/mcp/server.py` — `gapmap_audience_personas(topic, llm=True)` + `gapmap_audience_personas_get(topic)`.
 - **MODIFY** `src/reddit_research/research/launch.py` — `_personas_from_existing` reads from `audience_personas` first, falls back to existing empathy/interview path.
 
 ### 3.2 — Persona cards UI

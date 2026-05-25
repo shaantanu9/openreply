@@ -104,18 +104,18 @@ After a successful download, `_auto_index_after_download(post_id)` runs the full
 
 | Tool | What it does |
 |------|-------------|
-| `reddit_paper_sections` | Parse sections for a paper (idempotent). |
-| `reddit_paper_section_get` | Pull verbatim text of one named section. |
-| `reddit_paper_chunk` | Chunk one paper + push to Mempalace. |
-| `reddit_paper_chunk_topic` | Bulk-chunk every cached paper for a topic. |
-| `reddit_paper_chunk_search` | Semantic + BM25 chunk search, with `sections=[…]` filter. |
-| `reddit_paper_search_papers` | Chunk retrieval rolled up to paper level. |
-| `reddit_paper_extract_refs` | Extract references from local PDF cache + auto-link. (Distinct from the existing S2-API-backed `reddit_paper_references`.) |
-| `reddit_paper_local_refs` | List locally-extracted refs for a post. |
-| `reddit_paper_cited_by` | Incoming citations from corpus papers. |
-| `reddit_paper_chunks_stats` | Mempalace stats for the chunks collection. |
+| `gapmap_paper_sections` | Parse sections for a paper (idempotent). |
+| `gapmap_paper_section_get` | Pull verbatim text of one named section. |
+| `gapmap_paper_chunk` | Chunk one paper + push to Mempalace. |
+| `gapmap_paper_chunk_topic` | Bulk-chunk every cached paper for a topic. |
+| `gapmap_paper_chunk_search` | Semantic + BM25 chunk search, with `sections=[…]` filter. |
+| `gapmap_paper_search_papers` | Chunk retrieval rolled up to paper level. |
+| `gapmap_paper_extract_refs` | Extract references from local PDF cache + auto-link. (Distinct from the existing S2-API-backed `gapmap_paper_references`.) |
+| `gapmap_paper_local_refs` | List locally-extracted refs for a post. |
+| `gapmap_paper_cited_by` | Incoming citations from corpus papers. |
+| `gapmap_paper_chunks_stats` | Mempalace stats for the chunks collection. |
 
-Each tool inherits the per-call logging from `2026-04-26_01` so `mcp logs --tool reddit_paper_chunk_search` works out of the box.
+Each tool inherits the per-call logging from `2026-04-26_01` so `mcp logs --tool gapmap_paper_chunk_search` works out of the box.
 
 ### H. Six new Typer CLI commands — `src/reddit_research/cli/main.py`
 

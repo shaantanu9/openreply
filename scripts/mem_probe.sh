@@ -7,7 +7,7 @@
 #   bash scripts/mem_probe.sh 5 0 leak.csv     # 5s tick, forever, write to leak.csv
 #
 # Output columns: ts,name,pid,rss_mb
-# Names sampled: gapmap (Tauri host), reddit-cli (Python sidecar), uv,
+# Names sampled: gapmap (Tauri host), gapmap (Python sidecar), uv,
 #                ollama (LLM), node (vite if running).
 #
 # Tip: open the app, run `await window.__gapmapMemStats()` in DevTools to also
@@ -23,7 +23,7 @@ INTERVAL="${1:-5}"
 TICKS="${2:-0}"   # 0 = forever
 OUTFILE="${3:-/dev/stdout}"
 
-declare -a NAMES=("gapmap" "reddit-cli" "uv" "ollama" "node")
+declare -a NAMES=("gapmap" "gapmap" "uv" "ollama" "node")
 
 echo "ts,name,pid,rss_mb" > "$OUTFILE"
 

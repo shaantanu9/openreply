@@ -2,7 +2,7 @@ import importlib
 
 
 def test_daemon_reload_user_env_overrides_stale_provider(monkeypatch, tmp_path):
-    cfg_dir = tmp_path / ".config" / "reddit-myind"
+    cfg_dir = tmp_path / ".config" / "gapmap"
     cfg_dir.mkdir(parents=True)
     env_path = cfg_dir / ".env"
     env_path.write_text(
@@ -17,7 +17,7 @@ def test_daemon_reload_user_env_overrides_stale_provider(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_MODEL", "llama3.2:3b")
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
 
-    main = importlib.import_module("reddit_research.cli.main")
+    main = importlib.import_module("gapmap.cli.main")
 
     main._reload_user_env_for_daemon()
 

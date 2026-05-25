@@ -203,11 +203,11 @@ message, history, provider?)`.
 
 | Tool | Wraps existing | Purpose |
 |---|---|---|
-| `search_corpus(query, k=10)` | `reddit_semantic_search` | Find evidence quotes for a question |
-| `find_gaps_excerpt(filter)` | `reddit_find_gaps` | Pull specific unmet-needs |
-| `top_personas(k=3)` | `reddit_audience_personas_get` | Surface ICPs |
+| `search_corpus(query, k=10)` | `gapmap_semantic_search` | Find evidence quotes for a question |
+| `find_gaps_excerpt(filter)` | `gapmap_find_gaps` | Pull specific unmet-needs |
+| `top_personas(k=3)` | `gapmap_audience_personas_get` | Surface ICPs |
 | `cited_quotes(claim)` | `reddit_research_link` | Back a claim with sourced quotes |
-| `paper_snippet(query, k=3)` | `reddit_paper_chunk_search` | Pull academic backing |
+| `paper_snippet(query, k=3)` | `gapmap_paper_chunk_search` | Pull academic backing |
 
 **Cost guardrails:**
 

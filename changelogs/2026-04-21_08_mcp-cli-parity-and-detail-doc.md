@@ -32,41 +32,41 @@ opening Gap Map.app. That's now possible.
 ## 28 new MCP tools
 
 ### Topic lifecycle (6)
-- `reddit_topic_soft_delete`
-- `reddit_topic_restore`
-- `reddit_topic_trash_list`
-- `reddit_topic_trash_purge`
-- `reddit_find_existing_topic`
-- `reddit_merge_duplicate_topics`
+- `gapmap_topic_soft_delete`
+- `gapmap_topic_restore`
+- `gapmap_topic_trash_list`
+- `gapmap_topic_trash_purge`
+- `gapmap_find_existing_topic`
+- `gapmap_merge_duplicate_topics`
 
 ### Corpus quality (2)
-- `reddit_clean_corpus`
-- `reddit_collect_quality_check`
+- `gapmap_clean_corpus`
+- `gapmap_collect_quality_check`
 
 ### Intelligence (10)
-- `reddit_feedback_record`
-- `reddit_feedback_list`
-- `reddit_global_competitors`
-- `reddit_saved_view_create`
-- `reddit_saved_view_list`
-- `reddit_prompt_list`
-- `reddit_prompt_get`
-- `reddit_prompt_set`
-- `reddit_graph_build_relations`
+- `gapmap_feedback_record`
+- `gapmap_feedback_list`
+- `gapmap_global_competitors`
+- `gapmap_saved_view_create`
+- `gapmap_saved_view_list`
+- `gapmap_prompt_list`
+- `gapmap_prompt_get`
+- `gapmap_prompt_set`
+- `gapmap_graph_build_relations`
 - `reddit_research_link`
 - `reddit_research_links`
 
 ### Product Mode (8)
-- `reddit_product_create`
-- `reddit_product_list`
-- `reddit_product_sweep`
-- `reddit_product_signals`
-- `reddit_product_signal_action`
-- `reddit_product_dashboard`
-- `reddit_product_digest`
-- `reddit_product_convert_topic`
+- `gapmap_product_create`
+- `gapmap_product_list`
+- `gapmap_product_sweep`
+- `gapmap_product_signals`
+- `gapmap_product_signal_action`
+- `gapmap_product_dashboard`
+- `gapmap_product_digest`
+- `gapmap_product_convert_topic`
 
-Plus `reddit_ingest_csv` and `reddit_graph_build_relations` (categorized
+Plus `gapmap_ingest_csv` and `gapmap_graph_build_relations` (categorized
 above) — actual count 28.
 
 ## CLI verification

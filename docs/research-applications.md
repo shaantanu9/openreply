@@ -49,7 +49,7 @@ Each entry follows a **5-slot template** so that any new research finding slots 
 - `src/reddit_research/research/discover.py` — LLM-backed topic canonicalization with SQLite cache (`8514e45`).
 - Temporal classifier CHRONIC / EMERGING / FADING — **rule-based** (pre/post May-2025 row counts), not embedding-based.
 - Graph edges — **structural** (this post is evidence for this painpoint because the LLM said so), no semantic similarity yet.
-- Chat tab — uses `reddit_graph_top_nodes` + `reddit_graph_neighbors` for context assembly. No vector retrieval in the loop.
+- Chat tab — uses `gapmap_graph_top_nodes` + `gapmap_graph_neighbors` for context assembly. No vector retrieval in the loop.
 
 **App / engineering (Tauri + sidecar):**
 - ONNX runtime already packaged via the Retrieval Palace.

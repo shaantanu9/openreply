@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-# Build the reddit-cli single-file binary via PyInstaller.
-# Output: dist/reddit-cli + dist/reddit-cli-<target-triple> (Tauri sidecar)
+# Build the gapmap-cli single-file binary via PyInstaller (the Tauri sidecar).
+# Output: dist/gapmap-cli + dist/gapmap-cli-<target-triple>
+# (User-facing CLI name remains `gapmap` when installed via pip/uv.)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 TRIPLE="${TARGET_TRIPLE:-$(rustc -vV 2>/dev/null | grep host | cut -d' ' -f2 || echo 'aarch64-apple-darwin')}"
-OUT_NAME="reddit-cli"
+OUT_NAME="gapmap-cli"
 
 echo "→ cleaning previous build"
-rm -rf build/ dist/ reddit-cli.spec
+rm -rf build/ dist/ gapmap-cli.spec
 
 echo "→ running pyinstaller (~2 min)"
 uv run pyinstaller \
   --onefile \
   --name "${OUT_NAME}" \
   --paths=src \
-  --collect-all reddit_research \
+  --collect-all gapmap \
   --collect-submodules praw \
   --collect-submodules prawcore \
   --collect-submodules sqlite_utils \

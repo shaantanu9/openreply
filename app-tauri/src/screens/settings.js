@@ -199,7 +199,7 @@ export async function renderSettings(root) {
         </div>
         <p style="font-size:var(--fs-11);color:var(--ink-3);margin-top:8px">
           Only topics you toggle on (from their page) will be refreshed. Logs go to
-          <code>~/Library/Application Support/com.shantanu.gapmap/reddit-myind/schedule.log</code>.
+          <code>~/Library/Application Support/com.shantanu.gapmap/gapmap/schedule.log</code>.
         </p>
       </div>
 

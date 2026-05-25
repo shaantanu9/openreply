@@ -5,9 +5,9 @@
 
 ## Summary
 
-Some MCP tools take 20–30 minutes (`reddit_research_collect` on a big
-topic, `reddit_palace_reindex` on a 60K-post corpus, bulk
-`reddit_paper_fulltext`, `reddit_graph_build_relations`, anything LLM-
+Some MCP tools take 20–30 minutes (`gapmap_research_collect` on a big
+topic, `gapmap_palace_reindex` on a 60K-post corpus, bulk
+`gapmap_paper_fulltext`, `gapmap_graph_build_relations`, anything LLM-
 heavy). A single synchronous `tools/call` over MCP holds the client
 connection open for that entire run — fights every client's transport
 timeout, dies on chat reset, and ties up one of the agent's reasoning
@@ -15,9 +15,9 @@ turns waiting for a result it can't even check on incrementally.
 
 Pattern B from the 2026-04-30 brainstorm: introduce an async job queue
 inside the same MCP daemon. Any registered tool can now be fired with
-`reddit_jobs_submit(tool_name, args)`, which returns a `job_id` in ~50
+`gapmap_jobs_submit(tool_name, args)`, which returns a `job_id` in ~50
 ms while the work runs in a 4-thread pool. Agents poll
-`reddit_jobs_get(job_id)` whenever they want — survives Cursor cycling,
+`gapmap_jobs_get(job_id)` whenever they want — survives Cursor cycling,
 chat resets, even daemon restarts (recovered to `interrupted` state on
 next startup).
 
@@ -39,10 +39,10 @@ next startup).
     paged retrieval.
 - `src/reddit_research/mcp/server.py`:
   - Added `_TOOL_REGISTRY` populated by the existing `@mcp.tool()`
-    logging wrapper at registration time. `reddit_jobs_submit`
+    logging wrapper at registration time. `gapmap_jobs_submit`
     dispatches via this dict, independent of FastMCP's private API.
-  - Four new MCP tools: `reddit_jobs_submit`, `reddit_jobs_get`,
-    `reddit_jobs_list`, `reddit_jobs_cancel`.
+  - Four new MCP tools: `gapmap_jobs_submit`, `gapmap_jobs_get`,
+    `gapmap_jobs_list`, `gapmap_jobs_cancel`.
   - `run()` calls `jobs.recover_stale()` at startup and registers
     `jobs.shutdown` via `atexit` so executor cleanup is graceful.
 
@@ -50,20 +50,20 @@ next startup).
 
 ```
 $ # 1. submit no-arg tool — returns instantly
-$ reddit_jobs_submit(tool_name="reddit_palace_status", args={})
+$ gapmap_jobs_submit(tool_name="gapmap_palace_status", args={})
 {"ok":true,"job_id":"j_9ce9976246","state":"queued",
- "tool_name":"reddit_palace_status",
- "hint":"poll with reddit_jobs_get(job_id) — runs in background, server stays responsive for other tool calls"}
+ "tool_name":"gapmap_palace_status",
+ "hint":"poll with gapmap_jobs_get(job_id) — runs in background, server stays responsive for other tool calls"}
 # HTTP 200 in 50 ms
 
-$ reddit_jobs_get(job_id="j_9ce9976246")    # 1 s later
+$ gapmap_jobs_get(job_id="j_9ce9976246")    # 1 s later
 state=done  progress_pct=100
 result={ok:true, ready:true, count:60302, ...}
 
-$ reddit_jobs_list(limit=5)
+$ gapmap_jobs_list(limit=5)
 2 jobs:
-  j_9ce9976246  reddit_palace_status   done    pct=100
-  j_03d7993b35  reddit_topic_stats     failed  pct=null  (missing required arg)
+  j_9ce9976246  gapmap_palace_status   done    pct=100
+  j_03d7993b35  gapmap_topic_stats     failed  pct=null  (missing required arg)
 ```
 
 Failure path verified: missing args produce `state=failed` with full
@@ -85,8 +85,8 @@ traceback in the row, never crash the daemon.
 
 ```
 # Long collect — fire and continue working
-job = reddit_jobs_submit(
-    tool_name="reddit_research_collect",
+job = gapmap_jobs_submit(
+    tool_name="gapmap_research_collect",
     args={"topic": "presentation skills", "max_posts": 5000},
 )
 # → returns in 50ms with job.job_id
@@ -94,7 +94,7 @@ job = reddit_jobs_submit(
 # … do other tool calls, answer the user, write code …
 
 # Whenever you're ready to check
-reddit_jobs_get(job.job_id)
+gapmap_jobs_get(job.job_id)
 # state: queued | running | done | failed | cancelled | interrupted
 # when state == done: result is inflated and ready
 ```
@@ -108,13 +108,13 @@ Migrated the five long tools that already accept a `progress=` hook so
 they auto-report into the job row AND honour cancel without any change
 to their underlying functions:
 
-- `reddit_research_collect` — emits per-source / per-subreddit msgs
+- `gapmap_research_collect` — emits per-source / per-subreddit msgs
   ("[collect] fetch r/python top(month) limit=5", "[gnews] starting…").
-- `reddit_palace_reindex` — emits "[palace] upserted N posts so far…".
-- `reddit_palace_warmup` — emits structured-event dicts adapted to text.
-- `reddit_analyze_papers_bulk` — emits "[i/N] post_id" so progress_pct
+- `gapmap_palace_reindex` — emits "[palace] upserted N posts so far…".
+- `gapmap_palace_warmup` — emits structured-event dicts adapted to text.
+- `gapmap_analyze_papers_bulk` — emits "[i/N] post_id" so progress_pct
   ticks up automatically (regex extracts pct from "i/N" patterns).
-- `reddit_find_gaps` — emits per-extractor msgs via `progress_cb=`.
+- `gapmap_find_gaps` — emits per-extractor msgs via `progress_cb=`.
 
 Mechanism (in `jobs.py`):
 
@@ -140,7 +140,7 @@ Verified end-to-end:
   sweep auto-marks the orphan as `interrupted` with prior worker_pid
   in the error column.
 - MCP daemon stays responsive (sub-second `tools/call` for
-  `reddit_jobs_cancel`) while a worker is doing real fetch work.
+  `gapmap_jobs_cancel`) while a worker is doing real fetch work.
 
 ## Tightened recovery sweep
 
@@ -162,13 +162,13 @@ all `queued` rows as `interrupted` immediately. Eliminates the
     instead of waiting for stale-heartbeat threshold.
 - `src/reddit_research/mcp/server.py`:
   - 5 long tools wired with `progress=jobs.make_progress_logger(...)`:
-    `reddit_research_collect`, `reddit_palace_reindex`,
-    `reddit_palace_warmup`, `reddit_analyze_papers_bulk`,
-    `reddit_find_gaps`.
+    `gapmap_research_collect`, `gapmap_palace_reindex`,
+    `gapmap_palace_warmup`, `gapmap_analyze_papers_bulk`,
+    `gapmap_find_gaps`.
   - 3 monolithic tools wrapped with start/done beats (cancel-on-start
     only, since they have no internal loop):
-    `reddit_paper_fulltext`, `reddit_paper_draft_generate`,
-    `reddit_graph_build_relations`.
+    `gapmap_paper_fulltext`, `gapmap_paper_draft_generate`,
+    `gapmap_graph_build_relations`.
 
 ## Tracking doc
 

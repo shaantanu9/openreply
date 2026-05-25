@@ -16,7 +16,7 @@ def _stub_tier(d: Path, tier: str) -> Path:
 def test_discover_finds_hf_hub_snapshot(tmp_path, monkeypatch):
     """A tier present under the HuggingFace hub cache gets detected as
     ``source='hf_hub'`` with the path pointing at the snapshot dir."""
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path / "data"))
     hf_root = tmp_path / "hf"
     monkeypatch.setenv("HF_HUB_CACHE", str(hf_root))
     monkeypatch.delenv("GAPMAP_WHISPER_MODELS_DIR", raising=False)
@@ -26,7 +26,7 @@ def test_discover_finds_hf_hub_snapshot(tmp_path, monkeypatch):
     (hf_root / "models--Systran--faster-whisper-small.en" / "refs").mkdir(parents=True, exist_ok=True)
     (hf_root / "models--Systran--faster-whisper-small.en" / "refs" / "main").write_text("abc123")
 
-    from reddit_research.transcribe.models import discover_installed_external
+    from gapmap.transcribe.models import discover_installed_external
 
     rows = discover_installed_external()
     by_tier = {r["tier"]: r for r in rows}
@@ -37,7 +37,7 @@ def test_discover_finds_hf_hub_snapshot(tmp_path, monkeypatch):
 
 def test_env_override_takes_priority(tmp_path, monkeypatch):
     """GAPMAP_WHISPER_MODELS_DIR beats the HF cache when both have the tier."""
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path / "data"))
 
     custom = tmp_path / "custom-models"
     _stub_tier(custom / "medium.en", "medium.en")
@@ -49,31 +49,31 @@ def test_env_override_takes_priority(tmp_path, monkeypatch):
     snap = hf / "models--Systran--faster-whisper-medium.en" / "snapshots" / "rev"
     _stub_tier(snap, "medium.en")
 
-    from reddit_research.transcribe.models import discover_installed_external
+    from gapmap.transcribe.models import discover_installed_external
 
     rows = {r["tier"]: r for r in discover_installed_external()}
     assert rows["medium.en"]["source"] == "custom"
 
 
 def test_nothing_installed_returns_empty(tmp_path, monkeypatch):
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "empty-hf"))
     monkeypatch.setenv("HOME", str(tmp_path / "fake-home"))
     monkeypatch.delenv("GAPMAP_WHISPER_MODELS_DIR", raising=False)
 
-    from reddit_research.transcribe.models import discover_installed_external
+    from gapmap.transcribe.models import discover_installed_external
     assert discover_installed_external() == []
 
 
 def test_download_skips_when_external_exists(tmp_path, monkeypatch):
     """download_model must short-circuit when the tier is already loadable
     from an external location — no HuggingFace call attempted."""
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path / "data"))
     custom = tmp_path / "custom"
     _stub_tier(custom / "tiny.en", "tiny.en")
     monkeypatch.setenv("GAPMAP_WHISPER_MODELS_DIR", str(custom))
 
-    from reddit_research.transcribe import models as m
+    from gapmap.transcribe import models as m
 
     # If the short-circuit fails, we'd try to import huggingface_hub — blow
     # up loudly so the test fails fast instead of reaching the network.
@@ -91,13 +91,13 @@ def test_download_skips_when_external_exists(tmp_path, monkeypatch):
 
 def test_resolve_model_path_prefers_app_dir(tmp_path, monkeypatch):
     """When both app-managed and external have a tier, app-managed wins."""
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path / "data"))
     # External
     custom = tmp_path / "custom"
     _stub_tier(custom / "base.en", "base.en")
     monkeypatch.setenv("GAPMAP_WHISPER_MODELS_DIR", str(custom))
     # App-managed
-    from reddit_research.transcribe.models import models_root, resolve_model_path
+    from gapmap.transcribe.models import models_root, resolve_model_path
     _stub_tier(models_root() / "base.en", "base.en")
 
     p = resolve_model_path("base.en")
@@ -106,14 +106,14 @@ def test_resolve_model_path_prefers_app_dir(tmp_path, monkeypatch):
 
 
 def test_catalogue_marks_external_installed(tmp_path, monkeypatch):
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf"))
     monkeypatch.delenv("GAPMAP_WHISPER_MODELS_DIR", raising=False)
 
     snap = tmp_path / "hf" / "models--Systran--faster-whisper-large-v3" / "snapshots" / "r"
     _stub_tier(snap, "large-v3")
 
-    from reddit_research.transcribe.models import catalogue
+    from gapmap.transcribe.models import catalogue
     rows = {r["tier"]: r for r in catalogue()}
     assert rows["large-v3"]["installed"] is True
     assert rows["large-v3"]["source"] == "hf_hub"

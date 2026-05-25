@@ -621,11 +621,11 @@ so the GUI can render them.
 
 | Tier | Uses LLM? | Persists to DB? | Examples |
 |------|-----------|-----------------|----------|
-| Fetch tools | no | yes (raw corpus) | `reddit_fetch_hn`, `reddit_fetch_arxiv`, etc. |
-| Query tools | no | no | `reddit_query_db`, `reddit_graph_neighbors` |
-| Analysis tools (deterministic) | no | yes | `reddit_graph_build`, `reddit_cluster_painpoints` |
+| Fetch tools | no | yes (raw corpus) | `gapmap_fetch_hn`, `gapmap_fetch_arxiv`, etc. |
+| Query tools | no | no | `gapmap_query_db`, `gapmap_graph_neighbors` |
+| Analysis tools (deterministic) | no | yes | `gapmap_graph_build`, `reddit_cluster_painpoints` |
 | Analysis tools (LLM-backed) | yes | yes (new `mcp_analyses` table) | `reddit_summarize_topic`, `reddit_synthesize_findings` |
-| Orchestrator | yes (delegates) | yes | `reddit_research_collect` |
+| Orchestrator | yes (delegates) | yes | `gapmap_research_collect` |
 
 **New DB table (shared with GUI).**
 
@@ -654,7 +654,7 @@ CREATE INDEX IF NOT EXISTS idx_mcp_analyses_kind  ON mcp_analyses(topic, kind, c
 **Interleaved fetch/analyze in MCP.** Because the client LLM drives,
 no orchestrator change is needed — expose the fine-grained tools and
 the client will call them in whatever order. The one-shot
-`reddit_research_collect` remains for clients that want "do it all"
+`gapmap_research_collect` remains for clients that want "do it all"
 in a single call.
 
 **Decision gate.** Ship this *before* the streaming app rework (this

@@ -45,7 +45,7 @@ function renderEmpty(topic) {
     <div class="empty-state">
       <h3>No papers yet for <b>${escape(topic)}</b></h3>
       <p>Papers arrive when the Solutions Agent fetches evidence for painpoints,
-      or when you run <code>reddit_research_papers</code> via MCP. Start by
+      or when you run <code>gapmap_research_papers</code> via MCP. Start by
       running the Solutions pipeline or use the MCP tools directly:</p>
       <ul style="text-align:left;max-width:500px;margin:12px auto">
         <li><code>mcp__reddit-myind__reddit_research_papers(query, topic)</code></li>

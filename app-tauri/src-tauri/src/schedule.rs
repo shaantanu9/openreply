@@ -1,5 +1,5 @@
 //! Scheduled-run support — installs a macOS launchd agent that invokes
-//! `reddit-cli research schedule-tick` on an interval. Linux / Windows
+//! `gapmap research schedule-tick` on an interval. Linux / Windows
 //! return a "not supported" status response.
 //!
 //! The sidecar binary path is resolved dynamically at install time so the
@@ -36,7 +36,7 @@ fn sidecar_absolute(app: &tauri::AppHandle) -> Option<PathBuf> {
                 let cand = p
                     .join("src-tauri")
                     .join("binaries")
-                    .join("reddit-cli-aarch64-apple-darwin");
+                    .join("gapmap-cli-aarch64-apple-darwin");
                 if cand.exists() {
                     return Some(cand);
                 }
@@ -64,7 +64,7 @@ fn plist_body(interval_secs: u32, sidecar: &str, data_dir: &str) -> String {
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>REDDIT_MYIND_DATA_DIR</key><string>{data_dir}</string>
+    <key>GAPMAP_DATA_DIR</key><string>{data_dir}</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
   </dict>
   <key>StartInterval</key><integer>{interval}</integer>

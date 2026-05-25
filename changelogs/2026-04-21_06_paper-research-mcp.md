@@ -14,15 +14,15 @@ Turns Gap Map's MCP server into a first-class paper-research tool without spinni
 - `sources/crossref.py` — authoritative DOI metadata, funder/grant info, reference lists for paywalled papers. Free; `CROSSREF_MAILTO` env var puts us in the polite pool. Functions: `fetch_crossref`, `fetch_by_doi`.
 
 **9 new MCP tools** (server.py, paper-research toolkit block):
-- `reddit_fetch_semantic_scholar(query, limit, year_from, open_access_only)`
-- `reddit_paper_citations(paper_id, limit)` — accepts S2 id / DOI / arXiv id
-- `reddit_paper_references(paper_id, limit)`
-- `reddit_fetch_crossref(query, limit, year_from, filter_type)`
-- `reddit_fetch_by_doi(doi)` — one-shot canonical lookup
-- `reddit_research_papers(query, topic, limit_per_source, sources, year_from, persist)` — multi-source search across 6 paper sources in parallel, deduped by id, auto-persisted to `posts` and tagged to `topic` for downstream `semantic_search` / `graph_build` / `analyze_papers_bulk`
-- `reddit_analyze_paper(topic, post_id, force)` — LLM summary / claims / methods / tier / relevance (cached in `paper_analyses`)
-- `reddit_analyze_papers_bulk(topic, limit, force)` — batch analysis, citation-ordered
-- `reddit_paper_analyses(topic, limit)` — read cached LLM analyses, no LLM call
+- `gapmap_fetch_semantic_scholar(query, limit, year_from, open_access_only)`
+- `gapmap_paper_citations(paper_id, limit)` — accepts S2 id / DOI / arXiv id
+- `gapmap_paper_references(paper_id, limit)`
+- `gapmap_fetch_crossref(query, limit, year_from, filter_type)`
+- `gapmap_fetch_by_doi(doi)` — one-shot canonical lookup
+- `gapmap_research_papers(query, topic, limit_per_source, sources, year_from, persist)` — multi-source search across 6 paper sources in parallel, deduped by id, auto-persisted to `posts` and tagged to `topic` for downstream `semantic_search` / `graph_build` / `analyze_papers_bulk`
+- `gapmap_analyze_paper(topic, post_id, force)` — LLM summary / claims / methods / tier / relevance (cached in `paper_analyses`)
+- `gapmap_analyze_papers_bulk(topic, limit, force)` — batch analysis, citation-ordered
+- `gapmap_paper_analyses(topic, limit)` — read cached LLM analyses, no LLM call
 
 Claude can now do end-to-end literature review without touching the app UI:
 

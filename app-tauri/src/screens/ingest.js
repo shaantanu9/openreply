@@ -112,7 +112,7 @@ export async function renderIngest(root) {
           <li>Run <b>Rerun collect</b> on the topic to include them in the gap map.</li>
         </ol>
         <h4 style="margin-top:14px">CLI equivalent</h4>
-        <pre class="ingest-cli">reddit-cli ingest file \\
+        <pre class="ingest-cli">gapmap ingest file \\
   --path FILE \\
   --topic "YOUR TOPIC" \\
   --source-type SOURCE</pre>
@@ -168,7 +168,7 @@ export async function renderIngest(root) {
           <li><code>body</code>, <code>author</code>, <code>url</code>, <code>created_utc</code>, <code>source_type</code> — optional</li>
         </ul>
         <h4 style="margin-top:14px">CLI equivalent</h4>
-        <pre class="ingest-cli">reddit-cli research ingest-csv \\
+        <pre class="ingest-cli">gapmap research ingest-csv \\
   --path FILE.csv \\
   --topic "YOUR TOPIC"</pre>
       </aside>

@@ -1,4 +1,4 @@
-//! Thin wrapper around the bundled `reddit-cli` Python sidecar.
+//! Thin wrapper around the bundled `gapmap` Python sidecar.
 //!
 //! Every UI command funnels through here. We always pass `--json` and parse
 //! stdout; on non-zero exit we surface stderr as the error message.
@@ -9,9 +9,9 @@
 //! ## Dev-mode bypass
 //!
 //! On macOS, Gatekeeper verifies every `.so` inside the PyInstaller-bundled
-//! `reddit-cli` binary on every launch, which can take 2+ minutes per call.
+//! `gapmap` binary on every launch, which can take 2+ minutes per call.
 //! Unusable in dev. So in dev builds we detect a project `.venv/bin/python`
-//! relative to the Tauri working dir and invoke `python -m reddit_research.cli.main`
+//! relative to the Tauri working dir and invoke `python -m gapmap.cli.main`
 //! directly, which launches in ~200 ms. Production bundles (no .venv nearby)
 //! fall through to the sidecar binary as before.
 
@@ -40,7 +40,7 @@ pub fn find_dev_venv_python_pub() -> Option<std::path::PathBuf> {
 
 fn find_dev_venv_python() -> Option<std::path::PathBuf> {
     // Explicit override always wins.
-    if let Ok(p) = std::env::var("REDDIT_MYIND_DEV_PYTHON") {
+    if let Ok(p) = std::env::var("GAPMAP_DEV_PYTHON") {
         let pb = std::path::PathBuf::from(p);
         if pb.exists() {
             return Some(pb);
@@ -73,7 +73,7 @@ fn find_dev_venv_python() -> Option<std::path::PathBuf> {
 }
 
 /// Build a Tauri shell Command for the sidecar binary. Used for both dev
-/// and production — capabilities only whitelist `binaries/reddit-cli`, which
+/// and production — capabilities only whitelist `binaries/gapmap`, which
 /// keeps the DMG-shippable signature intact for any user.
 ///
 /// Pre-injects `GAPMAP_FFMPEG_PATH` when a bundled / system ffmpeg is
@@ -82,7 +82,7 @@ fn find_dev_venv_python() -> Option<std::path::PathBuf> {
 fn build_sidecar_cmd(app: &AppHandle, user_args: &[&str]) -> Result<Command> {
     let mut cmd = app
         .shell()
-        .sidecar("reddit-cli")
+        .sidecar("gapmap-cli")
         .map_err(|e| anyhow!("sidecar missing: {e}"))?;
     for a in user_args {
         cmd = cmd.arg(*a);
@@ -94,7 +94,7 @@ fn build_sidecar_cmd(app: &AppHandle, user_args: &[&str]) -> Result<Command> {
     Ok(cmd)
 }
 
-/// Dev-only helper: spawn `python -m reddit_research.cli.main` via
+/// Dev-only helper: spawn `python -m gapmap.cli.main` via
 /// `tokio::process::Command` so we bypass macOS Gatekeeper's 2+ minute
 /// PyInstaller verification. Only runs if a `.venv/bin/python` is found
 /// near CWD — production DMG installs never see this.
@@ -102,9 +102,9 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
     let t0 = std::time::Instant::now();
     eprintln!("[sidecar] dev-python {} args={:?}", py.display(), args);
     let mut cmd = tokio::process::Command::new(&py);
-    cmd.arg("-m").arg("reddit_research.cli.main");
+    cmd.arg("-m").arg("gapmap.cli.main");
     for a in args { cmd.arg(a); }
-    cmd.env("REDDIT_MYIND_DATA_DIR", data_dir)
+    cmd.env("GAPMAP_DATA_DIR", data_dir)
        .env("PYTHONUNBUFFERED", "1");
     // Propagate GAPMAP_FFMPEG_PATH — set by the caller (run_cli) via
     // ffmpeg_env_value(app). yt-dlp inside the sidecar reads this to point
@@ -135,7 +135,7 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
 // `run_cli` previously paid the full Python interpreter / module-import cost
 // on EVERY invocation (~300-1500 ms each). When the topic page mounts we fire
 // 3+ such calls in parallel (saturation, coverage-gaps, byok_status, …) and
-// each one spawns its own `python -m reddit_research.cli.main`. Multiply by
+// each one spawns its own `python -m gapmap.cli.main`. Multiply by
 // every page navigation and the perceived "even local DB feels slow" follows.
 //
 // The daemon process keeps the Python interpreter warm. It reads one
@@ -180,8 +180,8 @@ async fn spawn_dev_daemon(
     use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
 
     let mut cmd = tokio::process::Command::new(py);
-    cmd.arg("-m").arg("reddit_research.cli.main").arg("daemon");
-    cmd.env("REDDIT_MYIND_DATA_DIR", data_dir)
+    cmd.arg("-m").arg("gapmap.cli.main").arg("daemon");
+    cmd.env("GAPMAP_DATA_DIR", data_dir)
         .env("PYTHONUNBUFFERED", "1");
     if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
         if !ffmpeg.is_empty() {
@@ -365,7 +365,7 @@ pub struct ActiveJobPid(pub Arc<Mutex<Option<u32>>>);
 #[derive(Default, Clone)]
 pub struct ActiveChatPid(pub Arc<Mutex<Option<u32>>>);
 
-/// Same shape as ActiveJob — stores the live `reddit-cli stream` child handle so cancel can kill it.
+/// Same shape as ActiveJob — stores the live `gapmap stream` child handle so cancel can kill it.
 #[derive(Default)]
 pub struct ActiveStream(pub Arc<Mutex<Option<CommandChild>>>);
 
@@ -516,13 +516,13 @@ fn ffmpeg_env_value(app: &AppHandle) -> String {
 }
 
 /// Resolve the data dir used by the Python CLI for this app.
-/// `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`.
+/// `~/Library/Application Support/com.shantanu.gapmap/gapmap`.
 pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| anyhow!("app_data_dir failed: {e}"))?
-        .join("reddit-myind");
+        .join("gapmap");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
@@ -570,7 +570,7 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
 
     // build_sidecar_cmd pre-injects GAPMAP_FFMPEG_PATH itself — no need here.
     let sidecar = build_sidecar_cmd(app, &args)?
-        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("GAPMAP_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1");
 
     let output = sidecar
@@ -594,7 +594,7 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     Ok(parse_or_diagnostic(&stdout))
 }
 
-/// Dev-only streaming bypass — spawn `.venv/bin/python -m reddit_research.cli.main`
+/// Dev-only streaming bypass — spawn `.venv/bin/python -m gapmap.cli.main`
 /// via `tokio::process::Command`, pipe stdout+stderr, and emit per-line
 /// events on `progress_event`. When the child exits, emit a done event with
 /// `{code}` (for chat) or `{code, error_class, hint}` (for collect — see
@@ -622,9 +622,9 @@ async fn run_dev_python_streaming(
     let done_event = done_event.to_string();
 
     let mut cmd = tokio::process::Command::new(&py);
-    cmd.arg("-m").arg("reddit_research.cli.main");
+    cmd.arg("-m").arg("gapmap.cli.main");
     for a in args { cmd.arg(*a); }
-    cmd.env("REDDIT_MYIND_DATA_DIR", data_str)
+    cmd.env("GAPMAP_DATA_DIR", data_str)
        .env("PYTHONUNBUFFERED", "1")
        .stdout(Stdio::piped())
        .stderr(Stdio::piped());
@@ -758,7 +758,7 @@ pub async fn run_cli_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("GAPMAP_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
@@ -1004,7 +1004,7 @@ pub async fn run_cli_chat_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("GAPMAP_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
@@ -1118,7 +1118,7 @@ pub async fn run_cli_stream_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("GAPMAP_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
@@ -1170,7 +1170,7 @@ pub async fn run_cli_stream_streaming(
 /// Spawn the sidecar for a stream-mode enrich and forward each stdout line as
 /// a Tauri `progress_event` payload. Uses its own ActiveEnrich/ActiveEnrichPid
 /// slots so it doesn't collide with ActiveJob (collect) or ActiveStream
-/// (reddit-cli stream) — a user reading the map while a collect finishes still
+/// (gapmap stream) — a user reading the map while a collect finishes still
 /// gets progressive painpoints.
 ///
 /// Unlike the collect path, we DON'T refuse a second enrich here — the
@@ -1209,7 +1209,7 @@ pub async fn run_cli_enrich_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("REDDIT_MYIND_DATA_DIR", &data_str)
+        .env("GAPMAP_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;

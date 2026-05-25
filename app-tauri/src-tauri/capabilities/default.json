@@ -15,13 +15,13 @@
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        { "name": "binaries/reddit-cli", "sidecar": true, "args": true }
+        { "name": "binaries/gapmap", "sidecar": true, "args": true }
       ]
     },
     {
       "identifier": "shell:allow-spawn",
       "allow": [
-        { "name": "binaries/reddit-cli", "sidecar": true, "args": true }
+        { "name": "binaries/gapmap", "sidecar": true, "args": true }
       ]
     }
   ]

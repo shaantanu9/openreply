@@ -18,7 +18,7 @@ consistent action footers.
 
 **B. MCP resilience round 2** — adds a single-call diagnostics tool, a
 hard timeout safety net for synchronous LLM tools, and an automatic
-post-heal reindex job kickoff for `reddit_semantic_search`. Combined
+post-heal reindex job kickoff for `gapmap_semantic_search`. Combined
 with the round-1 fixes (changelog 02), the failure modes the user hit
 should now self-recover or surface a clear "call X next" hint.
 
@@ -61,13 +61,13 @@ should now self-recover or surface a clear "call X next" hint.
 
 ### B. MCP resilience round 2
 
-- **`reddit_diagnostics`** (new tool) — single call probes DB, palace,
+- **`gapmap_diagnostics`** (new tool) — single call probes DB, palace,
   LLM provider, and corpus; returns `{ok, db, palace, llm, corpus,
   suggestions: [str, ...]}`. Suggestions name the exact next tool to
-  call ("Call reddit_palace_repair(also_reindex=True)" / "Call
-  reddit_palace_warmup" / etc.) so a stuck agent can self-recover in
+  call ("Call gapmap_palace_repair(also_reindex=True)" / "Call
+  gapmap_palace_warmup" / etc.) so a stuck agent can self-recover in
   one round-trip.
-- **`reddit_semantic_search`** auto-submits a `reddit_palace_reindex`
+- **`gapmap_semantic_search`** auto-submits a `gapmap_palace_reindex`
   job when its in-line heal triggers. The first response after a heal
   carries `healed=True` + `reindex_job_id` so callers see the empty
   result-set and the recovery path in the same dict.
@@ -75,9 +75,9 @@ should now self-recover or surface a clear "call X next" hint.
   worker thread with a hard deadline; on timeout returns a structured
   `{ok:False, timed_out:True, timeout_seconds, error, async_alternative}`
   dict instead of letting the MCP transport idle out. The `error`
-  string names the async tool to use (`reddit_jobs_submit("name", …)`)
+  string names the async tool to use (`gapmap_jobs_submit("name", …)`)
   so the recovery path is obvious.
-- **`reddit_synthesize_insights`** wrapped in `_run_with_timeout` at
+- **`gapmap_synthesize_insights`** wrapped in `_run_with_timeout` at
   the default 90s ceiling.
 
 ## Files Modified
@@ -92,8 +92,8 @@ should now self-recover or surface a clear "call X next" hint.
                                           removed `#ost-outcome-edit-btn`
                                           override
 - `src/reddit_research/mcp/server.py`   — `_run_with_timeout` helper,
-                                          `reddit_diagnostics` tool,
-                                          `reddit_semantic_search`
+                                          `gapmap_diagnostics` tool,
+                                          `gapmap_semantic_search`
                                           auto-reindex on heal,
-                                          `reddit_synthesize_insights`
+                                          `gapmap_synthesize_insights`
                                           wrapped in timeout
