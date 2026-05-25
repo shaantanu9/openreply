@@ -150,6 +150,44 @@ if [[ $REQUIRE_SIGN -eq 1 ]]; then
   fi
 fi
 
+# Split the Tauri build into two passes so we can re-sign the nested
+# sidecar binaries (gapmap-cli, ffmpeg) BETWEEN .app assembly and DMG
+# packaging. Without this, the inner binaries inside Contents/MacOS/
+# end up unsigned — and macOS Gatekeeper SIGKILLs them on first launch
+# with no output (exit 137), which surfaces in the UI as "every card
+# stays on a loading skeleton forever" because every sidecar invoke
+# returns nothing.
+#
+# Pass 1: build only the .app
+(cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles app)
+
+APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/Gap Map.app"
+if [[ -d "$APP_PATH" ]]; then
+  echo "▶ Step 5b — re-sign nested sidecar binaries inside the .app"
+  # Identity for nested binaries: Developer ID if --sign was passed,
+  # else ad-hoc. Tauri itself signs the .app bundle wrapper, but its
+  # `--deep` pass apparently doesn't sign these PyInstaller / static
+  # binaries (we've observed `codesign -d -vvv` reports "not signed at
+  # all" for gapmap-cli inside the .app), so we do it explicitly.
+  SIGN_ID="-"
+  if [[ $REQUIRE_SIGN -eq 1 && -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+    SIGN_ID="$APPLE_SIGNING_IDENTITY"
+  fi
+  for bin in "$APP_PATH/Contents/MacOS"/gapmap-cli "$APP_PATH/Contents/MacOS"/ffmpeg; do
+    if [[ -x "$bin" ]]; then
+      codesign --force --options runtime --sign "$SIGN_ID" "$bin" 2>&1 | sed 's/^/   /'
+    fi
+  done
+  # Re-sign the outer .app wrapper too, since modifying nested binaries
+  # invalidates the bundle's sealed-resources signature. --deep makes
+  # codesign verify (and re-attach if missing) every nested signature.
+  codesign --force --deep --options runtime --sign "$SIGN_ID" "$APP_PATH" 2>&1 | sed 's/^/   /'
+  echo "✓ inner binaries signed (identity: $SIGN_ID)"
+fi
+
+# Pass 2: package the now-signed .app into the requested $BUNDLES
+# (defaults to dmg). Tauri sees an existing .app and packages it
+# without rebuilding from scratch.
 (cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles "$BUNDLES")
 
 DMG=$(ls -t app-tauri/src-tauri/target/"$RUST_TRIPLE"/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
