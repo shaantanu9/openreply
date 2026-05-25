@@ -10,13 +10,26 @@ first-launch, the five most useful features, and how to send feedback.
 
 ## 1. Install (2 minutes)
 
+> **⚠️ Important:** You **must** drag the app to `/Applications` before
+> opening it. Double-clicking Gap Map directly inside the mounted DMG
+> will cause the app to crash on startup with a `SIGBUS / KERN_MEMORY_ERROR`
+> — a known macOS limitation when WebKit-based apps run off a read-only
+> disk image. Drag to `/Applications`, eject the DMG, then launch.
+
 1. Download the DMG you were sent. It's named `Gap Map_0.1.0_aarch64.dmg`
    (about 159 MB).
 2. Double-click the DMG. A Finder window opens with **Gap Map.app** and an
    **Applications** shortcut.
-3. **Drag `Gap Map.app` onto Applications.** Wait ~5 seconds for the copy.
-4. Eject the DMG (right-click → Eject, or drag to Trash).
-5. Open `Applications` → find **Gap Map**.
+3. **DRAG `Gap Map.app` onto the `Applications` shortcut** that's in the
+   DMG window. Wait ~5 seconds for the copy to finish.
+4. **Eject the DMG** — right-click the "Gap Map" volume in Finder's
+   sidebar → Eject (or drag the volume icon to the Trash).
+5. Open `Applications` (Cmd-Shift-A in Finder) → find **Gap Map** → open
+   from there.
+
+If Gap Map crashes immediately on first launch, you almost certainly
+opened it from the mounted DMG instead of from `/Applications`. See the
+warning above. Re-mount, drag, eject, open from `/Applications`.
 
 ### macOS Gatekeeper warning (one-time)
 
