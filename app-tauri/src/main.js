@@ -748,6 +748,25 @@ window.addEventListener('DOMContentLoaded', async () => {
     // matters — bootstrap as soon as the wizard finishes.
     if (!isOnboardingComplete()) return;
     if (isActivationRequired() && !isLicenseActivatedLocally()) return;
+    // SKIP MCP install when the .app is running from an ephemeral mount
+    // (e.g. /Volumes/Gap Map/…). Writing that path into ~/.claude.json
+    // would brick MCP the moment the DMG ejects. Probe via mcp_status
+    // which now returns an `ephemeral_app_path` flag; if true, log a
+    // clear note and let the user fix it (move to /Applications + relaunch).
+    try {
+      const probe = await api.mcpStatus();
+      if (probe?.ephemeral_app_path) {
+        console.warn(
+          '[mcp:auto-bootstrap] skipped — app is on an ephemeral path. ' +
+          (probe.ephemeral_app_path_hint || 'Move Gap Map.app to /Applications first.'),
+        );
+        return;
+      }
+    } catch (e) {
+      // If status probe itself fails, fall through — the bootstrap will
+      // surface the same error and we get one log line either way.
+      console.warn('[mcp:auto-bootstrap] status probe failed', e);
+    }
     try {
       const { bootstrapMcpClients } = await import('./lib/mcp_bootstrap.js');
       await bootstrapMcpClients({ tag: 'mcp:auto-bootstrap', forceResync: true });

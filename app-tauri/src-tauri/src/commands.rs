@@ -5017,6 +5017,16 @@ fn resolve_sidecar_bin_path() -> Option<std::path::PathBuf> {
     None
 }
 
+/// True when the path looks ephemeral — i.e. on a mounted disk image,
+/// removable media, or a temp dir that will disappear once the user
+/// ejects/unmounts. MCP clients need a stable path; writing
+/// `/Volumes/Gap Map/Gap Map.app/...` into ~/.claude.json bricks MCP
+/// the moment the DMG ejects.
+fn is_ephemeral_path(p: &std::path::Path) -> bool {
+    let s = p.to_string_lossy();
+    s.starts_with("/Volumes/") || s.starts_with("/private/tmp/") || s.starts_with("/tmp/")
+}
+
 fn dev_project_dir() -> Option<std::path::PathBuf> {
     // Walk up looking for a `pyproject.toml` to mark the repo root. Same
     // 5-step budget as find_dev_venv_python so behaviour is consistent.
@@ -5056,7 +5066,25 @@ pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value,
         args.push("--client".into()); args.push(c.into());
     }
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    run_cli(&app, arg_refs).await.map_err(err_to_string)
+    let mut result = run_cli(&app, arg_refs).await.map_err(err_to_string)?;
+    // Decorate the status payload with a stable-path warning so the Settings
+    // UI can render a "move to /Applications first" prompt without itself
+    // having to compute the running .app's location.
+    if let Some(bin) = resolve_sidecar_bin_path() {
+        if is_ephemeral_path(&bin) {
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("ephemeral_app_path".into(), Value::Bool(true));
+                obj.insert(
+                    "ephemeral_app_path_hint".into(),
+                    Value::String(format!(
+                        "Gap Map.app is running from {}. Move it to /Applications and re-open from there before clicking Connect.",
+                        bin.display()
+                    )),
+                );
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// Connect (or re-sync) Gap Map's MCP entry in the chosen client's config.
@@ -5082,6 +5110,18 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
         args.push("--project-dir".into());
         args.push(proj.to_string_lossy().to_string());
     } else if let Some(bin) = resolve_sidecar_bin_path() {
+        // Refuse to write an ephemeral path (e.g. /Volumes/Gap Map/...)
+        // into the MCP client config. Once the DMG ejects or the test
+        // unmounts, every MCP spawn fails and the user has no recourse
+        // short of re-installing. Surface a clear actionable message.
+        if is_ephemeral_path(&bin) {
+            return Err(format!(
+                "Gap Map.app is running from a mounted disk image ({}). MCP needs a stable path. \
+                 Quit Gap Map, drag Gap Map.app to /Applications (eject the DMG), \
+                 then open it from /Applications and click Connect again.",
+                bin.display()
+            ));
+        }
         args.push("--bin".into());
         args.push(bin.to_string_lossy().to_string());
     }
