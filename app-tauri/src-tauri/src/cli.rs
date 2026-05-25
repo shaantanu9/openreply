@@ -323,6 +323,181 @@ pub async fn shutdown_dev_daemon() {
     if let Some(mut daemon) = guard.take() {
         let _ = daemon.child.kill().await;
     }
+    // Also kill the bundled-sidecar daemon if it's alive.
+    shutdown_sidecar_daemon().await;
+}
+
+// ─── Long-running BUNDLED-SIDECAR daemon ──────────────────────────────────
+//
+// Mirror of the dev-python daemon above, but driven from the PyInstaller
+// binary inside Gap Map.app/Contents/MacOS/gapmap-cli when no .venv is
+// present. The bundled CLI supports the same `daemon` subcommand
+// (gapmap.cli.main::daemon — JSON-line in / JSON-line out).
+//
+// Why: previously, every `run_cli` call in DMG mode spawned a fresh
+// PyInstaller process (~2-5 s of macOS Gatekeeper verification + Python
+// boot, even warm). Settings makes 6-8 such calls in parallel → cards
+// queue → 30 s of skeleton. The daemon keeps the Python interpreter +
+// import graph warm; round-trip drops to ~10-100 ms.
+//
+// The slot is keyed by the resolved binary path, so a user who moves
+// Gap Map.app between locations gets a fresh daemon for the new path
+// (and we kill the old one).
+
+static SIDECAR_DAEMON: std::sync::OnceLock<Arc<tokio::sync::Mutex<Option<DevDaemon>>>> =
+    std::sync::OnceLock::new();
+
+fn sidecar_daemon_slot() -> Arc<tokio::sync::Mutex<Option<DevDaemon>>> {
+    SIDECAR_DAEMON
+        .get_or_init(|| Arc::new(tokio::sync::Mutex::new(None)))
+        .clone()
+}
+
+async fn spawn_sidecar_daemon(
+    sidecar: &std::path::Path,
+    data_dir: &str,
+) -> Result<DevDaemon> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
+
+    let mut cmd = tokio::process::Command::new(sidecar);
+    cmd.arg("daemon");
+    cmd.env("GAPMAP_DATA_DIR", data_dir)
+        .env("PYTHONUNBUFFERED", "1");
+    if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
+        if !ffmpeg.is_empty() {
+            cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg);
+        }
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| anyhow!("sidecar daemon spawn failed: {e}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("sidecar daemon stdin not piped"))?;
+    let mut stdout = TokioBufReader::new(
+        child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("sidecar daemon stdout not piped"))?,
+    );
+
+    let mut handshake = String::new();
+    stdout
+        .read_line(&mut handshake)
+        .await
+        .map_err(|e| anyhow!("sidecar daemon handshake read failed: {e}"))?;
+    let v: Value = serde_json::from_str(handshake.trim())
+        .map_err(|e| anyhow!("sidecar daemon handshake invalid JSON ({e}): {}", handshake.trim()))?;
+    if v.get("_daemon_ready") != Some(&Value::Bool(true)) {
+        return Err(anyhow!(
+            "sidecar daemon handshake unexpected: {}",
+            handshake.trim()
+        ));
+    }
+    eprintln!("[sidecar] bundled daemon spawned, pid={:?}, path={}", child.id(), sidecar.display());
+
+    Ok(DevDaemon {
+        child,
+        stdin,
+        stdout,
+        next_id: 0,
+    })
+}
+
+async fn run_via_sidecar_daemon(
+    sidecar: &std::path::Path,
+    args: &[&str],
+    data_dir: &str,
+) -> DaemonOutcome {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+    let slot = sidecar_daemon_slot();
+    let mut guard = slot.lock().await;
+
+    if guard.is_none() {
+        match spawn_sidecar_daemon(sidecar, data_dir).await {
+            Ok(d) => *guard = Some(d),
+            Err(e) => return DaemonOutcome::DaemonBroken(format!("spawn: {e}")),
+        }
+    }
+
+    let daemon = guard.as_mut().expect("daemon slot just populated");
+    daemon.next_id += 1;
+    let req_id = daemon.next_id;
+
+    let request = serde_json::json!({ "id": req_id, "args": args });
+    let request_line = match serde_json::to_string(&request) {
+        Ok(s) => format!("{s}\n"),
+        Err(e) => return DaemonOutcome::DaemonBroken(format!("encode: {e}")),
+    };
+
+    if let Err(e) = daemon.stdin.write_all(request_line.as_bytes()).await {
+        let _ = guard.take();
+        return DaemonOutcome::DaemonBroken(format!("write: {e}"));
+    }
+    if let Err(e) = daemon.stdin.flush().await {
+        let _ = guard.take();
+        return DaemonOutcome::DaemonBroken(format!("flush: {e}"));
+    }
+
+    let mut response = String::new();
+    match daemon.stdout.read_line(&mut response).await {
+        Ok(0) => {
+            let _ = guard.take();
+            return DaemonOutcome::DaemonBroken("EOF on stdout".into());
+        }
+        Ok(_) => {}
+        Err(e) => {
+            let _ = guard.take();
+            return DaemonOutcome::DaemonBroken(format!("read: {e}"));
+        }
+    }
+
+    let resp: Value = match serde_json::from_str(response.trim()) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = guard.take();
+            return DaemonOutcome::DaemonBroken(format!("parse: {e}: {}", response.trim()));
+        }
+    };
+
+    if resp.get("ok") == Some(&Value::Bool(true)) {
+        DaemonOutcome::Ok(resp.get("result").cloned().unwrap_or(Value::Null))
+    } else {
+        let err = resp
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown daemon command error")
+            .to_string();
+        DaemonOutcome::CommandFailed(err)
+    }
+}
+
+pub async fn shutdown_sidecar_daemon() {
+    let slot = sidecar_daemon_slot();
+    let mut guard = slot.lock().await;
+    if let Some(mut daemon) = guard.take() {
+        let _ = daemon.child.kill().await;
+    }
+}
+
+/// Resolve the bundled `gapmap-cli` next to `current_exe`. Mirrors the
+/// same helper in commands.rs (kept local to cli.rs so daemon code is
+/// self-contained).
+fn resolve_bundled_sidecar() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    for name in ["gapmap-cli", "gapmap-cli.exe"] {
+        let candidate = dir.join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 /// Parse stdout as JSON; on failure return `{_parse_error, _raw, _parse_error_message}`
@@ -566,6 +741,26 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
             }
         }
         return run_dev_python_cli(py, &args, &data_str).await;
+    }
+
+    // Production fast path — bundled sidecar daemon. Same long-running
+    // process pattern, just spawned from gapmap-cli inside the .app
+    // bundle. Cuts every Settings/Topic/Audience call from ~2-5 s to
+    // ~10-100 ms. On daemon IPC failure we fall back to one-shot
+    // (the original Tauri shell.sidecar code path below).
+    if let Some(bundled) = resolve_bundled_sidecar() {
+        match run_via_sidecar_daemon(&bundled, &args, &data_str).await {
+            DaemonOutcome::Ok(v) => return Ok(v),
+            DaemonOutcome::CommandFailed(msg) => {
+                return Err(anyhow!("cli error: {}", msg));
+            }
+            DaemonOutcome::DaemonBroken(reason) => {
+                eprintln!(
+                    "[sidecar] bundled daemon broken ({reason}), falling back to one-shot"
+                );
+                // Slot cleared; next call re-spawns.
+            }
+        }
     }
 
     // build_sidecar_cmd pre-injects GAPMAP_FFMPEG_PATH itself — no need here.
