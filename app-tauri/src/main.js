@@ -273,8 +273,32 @@ function isLicenseActivatedLocally() {
   return localStorage.getItem('gapmap.license.activated') === 'true';
 }
 
+// Resolved at boot via api.licenseGateStatus(). When the gate is OFF
+// (the default for DMG distribution), the router treats every user as
+// effectively activated — `mustStayInOnboarding()` returns true only if
+// onboarding itself is incomplete. Flip GAPMAP_LICENSE_GATE_ENABLED to
+// re-introduce the activation requirement.
+let _licenseGateEnabled = false;
+let _licenseGateChecked = false;
+async function resolveLicenseGate() {
+  if (_licenseGateChecked) return;
+  try {
+    const g = await api.licenseGateStatus();
+    _licenseGateEnabled = !!g?.enabled;
+  } catch {
+    _licenseGateEnabled = false;  // default-OFF on any error
+  }
+  _licenseGateChecked = true;
+}
+function isActivationRequired() {
+  return _licenseGateEnabled;
+}
+
 function mustStayInOnboarding() {
-  return !isOnboardingComplete() || !isLicenseActivatedLocally();
+  if (!isOnboardingComplete()) return true;
+  // When the gate is OFF, no local activation needed — let users in.
+  if (!isActivationRequired()) return false;
+  return !isLicenseActivatedLocally();
 }
 
 async function route() {
@@ -414,6 +438,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   // by a localStorage flag the user can toggle on the Personas screen.
   setupPersonaAutoIngest();
 
+  // Resolve the license-gate flag BEFORE any guard. When OFF (default),
+  // the rest of the boot path treats the user as effectively activated.
+  await resolveLicenseGate();
+
   // Run the activation-flag heal BEFORE the first route() so the guard
   // below sees the correct state. Swallow errors — the sync check is the
   // last line of defence.
@@ -446,28 +474,34 @@ window.addEventListener('DOMContentLoaded', async () => {
   // If not, route straight to welcome — dashboard never renders until they finish.
   if (!location.hash || location.hash === '#/' || location.hash === '#') {
     // Fast, synchronous localStorage check — does not block on sidecar.
-    if (!isOnboardingComplete() || !isLicenseActivatedLocally()) {
+    if (mustStayInOnboarding()) {
       location.hash = '#/welcome';
     } else {
       location.hash = '#/';
     }
   }
 
-  // Hard gate: every boot must have a valid local activation marker, and if
-  // Rust state disagrees we force the user back to activation.
-  if (!isOnboardingComplete() || !isLicenseActivatedLocally()) {
-    location.hash = '#/welcome';
-  } else {
-    try {
-      const lic = await api.licenseStatus();
-      if (!lic?.activated) {
-        localStorage.removeItem('gapmap.license.activated');
-        location.hash = '#/welcome';
+  // Hard gate: when activation is required (gate ON), enforce both
+  // onboarding-complete AND a valid local activation marker, then re-confirm
+  // against the Rust side. When activation is NOT required (gate OFF —
+  // the default), only enforce onboarding completion.
+  if (isActivationRequired()) {
+    if (!isOnboardingComplete() || !isLicenseActivatedLocally()) {
+      location.hash = '#/welcome';
+    } else {
+      try {
+        const lic = await api.licenseStatus();
+        if (!lic?.activated) {
+          localStorage.removeItem('gapmap.license.activated');
+          location.hash = '#/welcome';
+        }
+      } catch {
+        // If license server/sidecar is unavailable, keep existing session
+        // locked to last known activation marker and continue.
       }
-    } catch {
-      // If license server/sidecar is unavailable, keep existing session locked
-      // to last known activation marker and continue.
     }
+  } else if (!isOnboardingComplete()) {
+    location.hash = '#/welcome';
   }
 
   // Delegated link interceptors for cmd-click / middle-click / right-click on
@@ -708,7 +742,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   // - forceResync=true here because users expect app-open to heal client
   //   config drift every time, even when status was previously "connected".
   (async () => {
-    if (!isOnboardingComplete() || !isLicenseActivatedLocally()) return;
+    // When activation is required, hold MCP bootstrap until the user is
+    // both onboarded AND activated (avoids spawning licensed-only paths
+    // for unactivated users). When the gate is OFF, only onboarding
+    // matters — bootstrap as soon as the wizard finishes.
+    if (!isOnboardingComplete()) return;
+    if (isActivationRequired() && !isLicenseActivatedLocally()) return;
     try {
       const { bootstrapMcpClients } = await import('./lib/mcp_bootstrap.js');
       await bootstrapMcpClients({ tag: 'mcp:auto-bootstrap', forceResync: true });

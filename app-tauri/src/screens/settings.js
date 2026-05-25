@@ -746,20 +746,29 @@ function wireStaticButtons(root) {
       }
     };
 
-    // MCP is activation-gated at backend too; mirror it here for clear UX.
-    // `license_status` returns reason_code + reason when not activated, so
-    // we can render the exact case (expired / device_mismatch / etc) and
-    // guide the user to the right recovery path.
+    // MCP is activation-gated at the backend only when the licence-gate
+    // feature flag is ON. When it's OFF (default), MCP install/uninstall
+    // work for everyone — skip the activation gate UI so the card renders
+    // normally.
+    let licenseGateEnabled = false;
     try {
-      const lic = await api.licenseStatus();
-      if (!lic?.activated) {
-        renderActivationGate(lic?.reason_code || 'not_activated', lic?.reason || '');
+      const g = await api.licenseGateStatus();
+      licenseGateEnabled = !!g?.enabled;
+    } catch {
+      licenseGateEnabled = false;
+    }
+    if (licenseGateEnabled) {
+      try {
+        const lic = await api.licenseStatus();
+        if (!lic?.activated) {
+          renderActivationGate(lic?.reason_code || 'not_activated', lic?.reason || '');
+          return;
+        }
+      } catch (e) {
+        // If we can't even probe the license status, behave as first-time user.
+        renderActivationGate('not_activated', e?.message || '');
         return;
       }
-    } catch (e) {
-      // If we can't even probe the license status, behave as first-time user.
-      renderActivationGate('not_activated', e?.message || '');
-      return;
     }
 
     // Populate client dropdown from the Python-resolved list (so OS-specific
