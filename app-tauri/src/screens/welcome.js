@@ -889,9 +889,12 @@ async function renderStep6Activation(root, body, info) {
         <div class="kv-row"><b>Aggressive collect</b><span>${pendingAggressive ? 'on' : 'off'}</span></div>
         <div id="lic-status" style="margin-top:12px;color:var(--ink-3);font-size:12px"></div>
         ${gateEnabled ? '' : `
-        <div style="margin-top:10px">
+        <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" id="ob-get-key" style="text-decoration:underline">
             Don't have a key? Sign up at gapmap.myind.ai →
+          </button>
+          <button class="btn btn-ghost btn-sm" id="ob-redeem-coupon" style="text-decoration:underline">
+            Have a coupon? Redeem for a free key →
           </button>
         </div>`}
       </div>
@@ -909,6 +912,8 @@ async function renderStep6Activation(root, body, info) {
   if (!gateEnabled) {
     const getKey = document.getElementById('ob-get-key');
     if (getKey) getKey.onclick = () => api.openUrl('https://gapmap.myind.ai/sign-in');
+    const redeem = document.getElementById('ob-redeem-coupon');
+    if (redeem) redeem.onclick = () => api.openUrl('https://gapmap.myind.ai/redeem');
     const skipBtn = document.getElementById('skip-6');
     if (skipBtn) skipBtn.onclick = async () => {
       markOnboardingComplete();
