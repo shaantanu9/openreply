@@ -9,26 +9,14 @@ cd "$(dirname "$0")/.."
 TRIPLE="${TARGET_TRIPLE:-$(rustc -vV 2>/dev/null | grep host | cut -d' ' -f2 || echo 'aarch64-apple-darwin')}"
 OUT_NAME="gapmap-cli"
 
-echo "→ cleaning previous build"
-rm -rf build/ dist/ gapmap-cli.spec
+echo "→ cleaning build/dist (keeping the .spec file — it's the source of truth)"
+rm -rf build/ dist/
 
-echo "→ running pyinstaller (~2 min)"
-uv run pyinstaller \
-  --onefile \
-  --name "${OUT_NAME}" \
-  --paths=src \
-  --collect-all gapmap \
-  --collect-submodules praw \
-  --collect-submodules prawcore \
-  --collect-submodules sqlite_utils \
-  --collect-submodules openai \
-  --collect-submodules anthropic \
-  --collect-submodules httpx \
-  --hidden-import openai \
-  --hidden-import anthropic \
-  --add-data "prompts:prompts" \
-  --log-level WARN \
-  scripts/pyinstaller-entrypoint.py
+echo "→ running pyinstaller via gapmap-cli.spec (~2 min)"
+# Use the .spec file so build-pyinstaller, publish-mac, and CI all share one
+# canonical configuration (collect_all list, hidden imports, lazy-dep deps).
+# DO NOT pass `--name` / `--paths` flags here — they conflict with the spec.
+uv run pyinstaller --log-level WARN gapmap-cli.spec
 
 if [[ ! -f "dist/${OUT_NAME}" ]]; then
   echo "× build failed: dist/${OUT_NAME} not found"

@@ -289,9 +289,14 @@ def _resolve_command(bin_path: Path | None, project_dir: Path | None) -> dict[st
         # `"command": "uv"` works from a shell-launched CLI but ENOENTs
         # in GUI clients, so resolve to absolute path at install time.
         uv_path = shutil.which("uv") or "uv"
+        # --all-extras is mandatory: plain `uv run` syncs to base deps only
+        # and PRUNES `fastmcp` (declared in [project.optional-dependencies].mcp),
+        # which crashes the server on import. See skill: tauri-python-sidecar-app
+        # gotcha "MCP server keeps disconnecting". Battle-tested on Gap Map 2026-05-18.
         return {
             "command": uv_path,
-            "args":    ["--directory", str(proj), "run", "gapmap", "mcp", "serve"],
+            "args":    ["--directory", str(proj), "run", "--all-extras",
+                        "gapmap", "mcp", "serve"],
         }
     return {
         "command": sys.executable,

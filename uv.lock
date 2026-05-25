@@ -790,6 +790,131 @@ wheels = [
 ]
 
 [[package]]
+name = "gapmap"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "anthropic" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "praw" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "sqlite-utils" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "beautifulsoup4" },
+    { name = "chromadb" },
+    { name = "faster-whisper" },
+    { name = "fastmcp" },
+    { name = "feedparser" },
+    { name = "google-play-scraper" },
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "markdownify" },
+    { name = "networkx" },
+    { name = "packaging" },
+    { name = "pyinstaller" },
+    { name = "pypandoc-binary" },
+    { name = "pypdf" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "python-docx" },
+    { name = "python-pptx" },
+    { name = "pytrends" },
+    { name = "rank-bm25" },
+    { name = "ruff" },
+    { name = "scipy" },
+    { name = "yt-dlp" },
+]
+analyze = [
+    { name = "httpx" },
+]
+dev = [
+    { name = "pyinstaller" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+docs = [
+    { name = "pypandoc-binary" },
+    { name = "python-docx" },
+    { name = "python-pptx" },
+]
+ingest-rich = [
+    { name = "opendataloader-pdf" },
+]
+mcp = [
+    { name = "fastmcp" },
+]
+retrieval = [
+    { name = "chromadb" },
+    { name = "rank-bm25" },
+]
+sources = [
+    { name = "beautifulsoup4" },
+    { name = "feedparser" },
+    { name = "google-play-scraper" },
+    { name = "markdownify" },
+    { name = "networkx" },
+    { name = "pypdf" },
+    { name = "pytrends" },
+    { name = "scipy" },
+]
+video = [
+    { name = "faster-whisper" },
+    { name = "huggingface-hub" },
+    { name = "packaging" },
+    { name = "yt-dlp" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", specifier = ">=0.34" },
+    { name = "beautifulsoup4", marker = "extra == 'sources'", specifier = ">=4.12" },
+    { name = "chromadb", marker = "extra == 'retrieval'", specifier = ">=1.5.4,<2" },
+    { name = "faster-whisper", marker = "extra == 'video'", specifier = ">=1.0" },
+    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=0.4" },
+    { name = "feedparser", marker = "extra == 'sources'", specifier = ">=6.0" },
+    { name = "gapmap", extras = ["analyze", "mcp", "sources", "dev", "retrieval", "video", "docs"], marker = "extra == 'all'" },
+    { name = "google-play-scraper", marker = "extra == 'sources'", specifier = ">=1.2" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'analyze'", specifier = ">=0.27" },
+    { name = "huggingface-hub", marker = "extra == 'video'", specifier = ">=0.24" },
+    { name = "markdownify", marker = "extra == 'sources'", specifier = ">=0.13" },
+    { name = "networkx", marker = "extra == 'sources'", specifier = ">=3.1" },
+    { name = "openai", specifier = ">=1.40" },
+    { name = "opendataloader-pdf", marker = "extra == 'ingest-rich'", specifier = ">=2.0" },
+    { name = "packaging", marker = "extra == 'video'", specifier = ">=23.0" },
+    { name = "praw", specifier = ">=7.7" },
+    { name = "pydantic", specifier = ">=2.6" },
+    { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6.10" },
+    { name = "pypandoc-binary", marker = "extra == 'docs'", specifier = ">=1.13" },
+    { name = "pypdf", marker = "extra == 'sources'", specifier = ">=4.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "python-docx", marker = "extra == 'docs'", specifier = ">=1.1" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "python-pptx", marker = "extra == 'docs'", specifier = ">=0.6.23" },
+    { name = "pytrends", marker = "extra == 'sources'", specifier = ">=4.9" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rank-bm25", marker = "extra == 'retrieval'", specifier = ">=0.2.2" },
+    { name = "rich", specifier = ">=13.7" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
+    { name = "scipy", marker = "extra == 'sources'", specifier = ">=1.11" },
+    { name = "sqlite-utils", specifier = ">=3.36" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
+    { name = "typer", specifier = ">=0.12" },
+    { name = "yt-dlp", marker = "extra == 'video'", specifier = ">=2024.10" },
+]
+provides-extras = ["sources", "ingest-rich", "analyze", "retrieval", "video", "mcp", "docs", "dev", "all"]
+
+[[package]]
 name = "google-play-scraper"
 version = "1.2.7"
 source = { registry = "https://pypi.org/simple" }
@@ -2757,131 +2882,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/fc/0a/f9579384aa017d8b4
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/21/f691fb2613100a62b3fa91e9988c991e9ca5b89ea31c0d3152a3210344f9/rank_bm25-0.2.2-py3-none-any.whl", hash = "sha256:7bd4a95571adadfc271746fa146a4bcfd89c0cf731e49c3d1ad863290adbe8ae", size = 8584, upload-time = "2022-02-16T12:10:50.626Z" },
 ]
-
-[[package]]
-name = "reddit-myind"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "anthropic" },
-    { name = "httpx" },
-    { name = "openai" },
-    { name = "praw" },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "sqlite-utils" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "beautifulsoup4" },
-    { name = "chromadb" },
-    { name = "faster-whisper" },
-    { name = "fastmcp" },
-    { name = "feedparser" },
-    { name = "google-play-scraper" },
-    { name = "httpx" },
-    { name = "huggingface-hub" },
-    { name = "markdownify" },
-    { name = "networkx" },
-    { name = "packaging" },
-    { name = "pyinstaller" },
-    { name = "pypandoc-binary" },
-    { name = "pypdf" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "python-docx" },
-    { name = "python-pptx" },
-    { name = "pytrends" },
-    { name = "rank-bm25" },
-    { name = "ruff" },
-    { name = "scipy" },
-    { name = "yt-dlp" },
-]
-analyze = [
-    { name = "httpx" },
-]
-dev = [
-    { name = "pyinstaller" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-docs = [
-    { name = "pypandoc-binary" },
-    { name = "python-docx" },
-    { name = "python-pptx" },
-]
-ingest-rich = [
-    { name = "opendataloader-pdf" },
-]
-mcp = [
-    { name = "fastmcp" },
-]
-retrieval = [
-    { name = "chromadb" },
-    { name = "rank-bm25" },
-]
-sources = [
-    { name = "beautifulsoup4" },
-    { name = "feedparser" },
-    { name = "google-play-scraper" },
-    { name = "markdownify" },
-    { name = "networkx" },
-    { name = "pypdf" },
-    { name = "pytrends" },
-    { name = "scipy" },
-]
-video = [
-    { name = "faster-whisper" },
-    { name = "huggingface-hub" },
-    { name = "packaging" },
-    { name = "yt-dlp" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", specifier = ">=0.34" },
-    { name = "beautifulsoup4", marker = "extra == 'sources'", specifier = ">=4.12" },
-    { name = "chromadb", marker = "extra == 'retrieval'", specifier = ">=1.5.4,<2" },
-    { name = "faster-whisper", marker = "extra == 'video'", specifier = ">=1.0" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=0.4" },
-    { name = "feedparser", marker = "extra == 'sources'", specifier = ">=6.0" },
-    { name = "google-play-scraper", marker = "extra == 'sources'", specifier = ">=1.2" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "httpx", marker = "extra == 'analyze'", specifier = ">=0.27" },
-    { name = "huggingface-hub", marker = "extra == 'video'", specifier = ">=0.24" },
-    { name = "markdownify", marker = "extra == 'sources'", specifier = ">=0.13" },
-    { name = "networkx", marker = "extra == 'sources'", specifier = ">=3.1" },
-    { name = "openai", specifier = ">=1.40" },
-    { name = "opendataloader-pdf", marker = "extra == 'ingest-rich'", specifier = ">=2.0" },
-    { name = "packaging", marker = "extra == 'video'", specifier = ">=23.0" },
-    { name = "praw", specifier = ">=7.7" },
-    { name = "pydantic", specifier = ">=2.6" },
-    { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6.10" },
-    { name = "pypandoc-binary", marker = "extra == 'docs'", specifier = ">=1.13" },
-    { name = "pypdf", marker = "extra == 'sources'", specifier = ">=4.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
-    { name = "python-docx", marker = "extra == 'docs'", specifier = ">=1.1" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "python-pptx", marker = "extra == 'docs'", specifier = ">=0.6.23" },
-    { name = "pytrends", marker = "extra == 'sources'", specifier = ">=4.9" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "rank-bm25", marker = "extra == 'retrieval'", specifier = ">=0.2.2" },
-    { name = "reddit-myind", extras = ["analyze", "mcp", "sources", "dev", "retrieval", "video", "docs"], marker = "extra == 'all'" },
-    { name = "rich", specifier = ">=13.7" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-    { name = "scipy", marker = "extra == 'sources'", specifier = ">=1.11" },
-    { name = "sqlite-utils", specifier = ">=3.36" },
-    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
-    { name = "typer", specifier = ">=0.12" },
-    { name = "yt-dlp", marker = "extra == 'video'", specifier = ">=2024.10" },
-]
-provides-extras = ["sources", "ingest-rich", "analyze", "retrieval", "video", "mcp", "docs", "dev", "all"]
 
 [[package]]
 name = "referencing"

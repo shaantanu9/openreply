@@ -100,22 +100,22 @@ jobs:
       # Without the spec, sidecar ships ~120MB lighter but fresh users
       # have to download ONNX on first use and any source adapter using
       # a lazy import inside a function body fails silently.
-      - name: Build reddit-cli sidecar (PyInstaller) — Unix
+      - name: Build gapmap-cli sidecar (PyInstaller) — Unix
         if: matrix.platform != 'windows-latest'
         shell: bash
         run: |
-          uv run pyinstaller reddit-cli.spec
+          uv run pyinstaller gapmap-cli.spec
           mkdir -p app-tauri/src-tauri/binaries
-          cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}
-          chmod +x app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}
+          cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}
+          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}
 
-      - name: Build reddit-cli sidecar (PyInstaller) — Windows
+      - name: Build gapmap-cli sidecar (PyInstaller) — Windows
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          uv run pyinstaller reddit-cli.spec
+          uv run pyinstaller gapmap-cli.spec
           New-Item -ItemType Directory -Force -Path app-tauri/src-tauri/binaries | Out-Null
-          Copy-Item dist/reddit-cli.exe "app-tauri/src-tauri/binaries/reddit-cli-${{ matrix.target }}.exe"
+          Copy-Item dist/gapmap-cli.exe "app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}.exe"
 
       # ---------- ffmpeg sidecar (macOS only) ----------
       # tauri.conf.json declares ffmpeg as externalBin. It's gitignored, so
