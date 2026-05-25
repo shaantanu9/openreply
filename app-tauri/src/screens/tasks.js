@@ -6,7 +6,7 @@
 // while visible and pauses when the tab loses focus so a stale tab
 // doesn't burn sidecar spawns indefinitely.
 //
-// Backend: src/reddit_research/runtime/snapshot.py via the
+// Backend: src/gapmap/runtime/snapshot.py via the
 // `runtime_snapshot` Tauri command.
 
 import { api, esc } from '../api.js';

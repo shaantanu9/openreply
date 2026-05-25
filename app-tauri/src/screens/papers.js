@@ -48,8 +48,8 @@ function renderEmpty(topic) {
       or when you run <code>gapmap_research_papers</code> via MCP. Start by
       running the Solutions pipeline or use the MCP tools directly:</p>
       <ul style="text-align:left;max-width:500px;margin:12px auto">
-        <li><code>mcp__reddit-myind__reddit_research_papers(query, topic)</code></li>
-        <li><code>mcp__reddit-myind__reddit_paper_citations(paper_id)</code></li>
+        <li><code>mcp__gapmap__gapmap_research_papers(query, topic)</code></li>
+        <li><code>mcp__gapmap__gapmap_paper_citations(paper_id)</code></li>
       </ul>
     </div>
   `;

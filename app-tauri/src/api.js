@@ -732,7 +732,7 @@ export const api = {
   // findings. `cardJson` is the JSON-stringified hypothesis card from the
   // Insight Engine synthesis output. Status values: draft / running /
   // validated / invalidated / paused / archived. See
-  // src/reddit_research/research/hypothesis_tracker.py for the state machine.
+  // src/gapmap/research/hypothesis_tracker.py for the state machine.
   hypothesisCreate: (topic, cardJson, status = 'draft') => {
     invalidate('hypothesis_list', 'hypothesis_stats');
     return invoke('hypothesis_create', { topic, cardJson, status });

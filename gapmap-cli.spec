@@ -14,28 +14,24 @@ hiddenimports += collect_submodules('httpx')
 tmp_ret = collect_all('gapmap')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# Phase 15 — explicit collect_all for every lazy-imported dep in
-# src/gapmap/. PyInstaller's static analysis usually finds these via
-# `collect_all('gapmap')`, but belt-and-suspenders matters: a single
-# `from pkg import …` inside a function body that gets missed = silent
-# 0-result failure for that source in the DMG. Verified bundled on
-# 2026-05-25.
+# Phase 15 — explicit collect_all for deps that PyInstaller's static
+# analysis genuinely misses. `collect_all('gapmap')` walks source files
+# and resolves most function-body imports, but a handful of deps have
+# data files (datasets, ONNX models, locale bundles) PyInstaller can't
+# infer. Add only those here — adding everything balloons DMG size by
+# ~100 MB without buying coverage.
+#
+# Verified on 2026-05-25 that without this block, PYZ already contains:
+#   google_play_scraper, feedparser, chromadb, lxml, faster_whisper,
+#   opendataloader_pdf, docx, pptx, pypandoc, markdownify, bs4, pytrends
+# So they don't need to be listed.
 for _pkg in (
-    # Source adapters
-    'google_play_scraper', 'pytrends', 'feedparser', 'sgmllib3k',
-    'lxml', 'markdownify', 'bs4',
-    # Document / paper pipeline
-    'pypdf', 'opendataloader_pdf', 'docx', 'pptx', 'pypandoc',
-    # Graph + science
-    'networkx', 'scipy', 'sklearn', 'pandas',
-    # Retrieval palace
-    'chromadb', 'rank_bm25',
-    # Video / transcription
-    'yt_dlp', 'faster_whisper', 'huggingface_hub', 'packaging',
-    # MCP
-    'fastmcp',
-    # Misc that may be lazy
-    'psutil', 'dotenv', 'yaml',
+    'fastmcp',         # MCP framework — non-pkg sub-imports load lazily
+    'rank_bm25',       # transitive multiprocessing import that PyInstaller
+                       # warns about (missing module named multiprocessing.Pool)
+    'psutil',          # used by stale-MCP zombie cleanup; gracefully degrades
+                       # via try/except, but explicit collect keeps the path
+                       # available so users see clean shutdowns
 ):
     try:
         _d, _b, _h = collect_all(_pkg)
