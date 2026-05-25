@@ -150,45 +150,67 @@ if [[ $REQUIRE_SIGN -eq 1 ]]; then
   fi
 fi
 
-# Split the Tauri build into two passes so we can re-sign the nested
-# sidecar binaries (gapmap-cli, ffmpeg) BETWEEN .app assembly and DMG
-# packaging. Without this, the inner binaries inside Contents/MacOS/
-# end up unsigned — and macOS Gatekeeper SIGKILLs them on first launch
-# with no output (exit 137), which surfaces in the UI as "every card
-# stays on a loading skeleton forever" because every sidecar invoke
-# returns nothing.
+# Two-stage build so we can re-sign the nested sidecar binaries
+# (gapmap-cli, ffmpeg) BEFORE they're packaged into the DMG. Without
+# this, Gatekeeper SIGKILLs the unsigned sidecar on first launch with
+# no output (exit 137), which surfaces in the UI as "every card stays
+# on a loading skeleton forever" because every sidecar invoke returns
+# nothing.
 #
-# Pass 1: build only the .app
+# Stage 1: build only the .app (Tauri's DMG step rebuilds the .app
+# from scratch, stripping any signatures we apply between passes, so
+# we skip Tauri's DMG step entirely).
 (cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles app)
 
 APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/Gap Map.app"
-if [[ -d "$APP_PATH" ]]; then
-  echo "▶ Step 5b — re-sign nested sidecar binaries inside the .app"
-  # Identity for nested binaries: Developer ID if --sign was passed,
-  # else ad-hoc. Tauri itself signs the .app bundle wrapper, but its
-  # `--deep` pass apparently doesn't sign these PyInstaller / static
-  # binaries (we've observed `codesign -d -vvv` reports "not signed at
-  # all" for gapmap-cli inside the .app), so we do it explicitly.
-  SIGN_ID="-"
-  if [[ $REQUIRE_SIGN -eq 1 && -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
-    SIGN_ID="$APPLE_SIGNING_IDENTITY"
-  fi
-  for bin in "$APP_PATH/Contents/MacOS"/gapmap-cli "$APP_PATH/Contents/MacOS"/ffmpeg; do
-    if [[ -x "$bin" ]]; then
-      codesign --force --options runtime --sign "$SIGN_ID" "$bin" 2>&1 | sed 's/^/   /'
-    fi
-  done
-  # Re-sign the outer .app wrapper too, since modifying nested binaries
-  # invalidates the bundle's sealed-resources signature. --deep makes
-  # codesign verify (and re-attach if missing) every nested signature.
-  codesign --force --deep --options runtime --sign "$SIGN_ID" "$APP_PATH" 2>&1 | sed 's/^/   /'
-  echo "✓ inner binaries signed (identity: $SIGN_ID)"
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "✗ Tauri did not produce $APP_PATH — bailing." >&2
+  exit 1
 fi
 
-# Pass 2: package the now-signed .app into the requested $BUNDLES
-# (defaults to dmg). Tauri sees an existing .app and packages it
-# without rebuilding from scratch.
-(cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles "$BUNDLES")
+echo "▶ Step 5b — codesign nested sidecar binaries inside the .app"
+SIGN_ID="-"   # ad-hoc; overridden by --sign + APPLE_SIGNING_IDENTITY below
+if [[ $REQUIRE_SIGN -eq 1 && -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+  SIGN_ID="$APPLE_SIGNING_IDENTITY"
+fi
+for bin in "$APP_PATH/Contents/MacOS"/gapmap-cli "$APP_PATH/Contents/MacOS"/ffmpeg; do
+  if [[ -x "$bin" ]]; then
+    codesign --force --options runtime --sign "$SIGN_ID" "$bin" 2>&1 | sed 's/^/   /'
+  fi
+done
+# Re-sign the outer .app wrapper too — modifying nested binaries
+# invalidates the bundle's sealed-resources signature.
+codesign --force --deep --options runtime --sign "$SIGN_ID" "$APP_PATH" 2>&1 | sed 's/^/   /'
+
+# Smoke-test: the just-signed inner binary should run without SIGKILL.
+echo "▶ Step 5c — smoke-test the signed sidecar"
+if "$APP_PATH/Contents/MacOS/gapmap-cli" --help >/dev/null 2>&1; then
+  echo "   ✓ gapmap-cli runs (exit 0)"
+else
+  RC=$?
+  echo "   ✗ gapmap-cli exited $RC — Gatekeeper may still be blocking it" >&2
+  [[ $RC -eq 137 ]] && echo "   (137 = SIGKILL: signature didn't take. Halting before DMG.)" >&2
+  [[ $RC -eq 137 ]] && exit 1
+fi
+echo "✓ inner binaries signed and verified (identity: $SIGN_ID)"
+
+# Stage 2: package the signed .app into a DMG manually with hdiutil
+# (bypasses Tauri's DMG step, which would re-build the .app and strip
+# our signatures). UDZO is zlib-compressed; matches Tauri's default.
+if [[ "$BUNDLES" == *dmg* ]]; then
+  DMG_OUT="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/dmg"
+  mkdir -p "$DMG_OUT"
+  DMG_PATH="${DMG_OUT}/Gap Map_0.1.0_${ARCH}.dmg"
+  rm -f "$DMG_PATH"
+  echo "▶ Step 5d — package signed .app into DMG via hdiutil"
+  STAGING=$(mktemp -d)
+  cp -R "$APP_PATH" "$STAGING/"
+  # /Applications shortcut so users can drag-drop without opening Finder
+  ln -s /Applications "$STAGING/Applications"
+  hdiutil create -volname "Gap Map" -srcfolder "$STAGING" -ov -format UDZO "$DMG_PATH"
+  rm -rf "$STAGING"
+  echo "✓ DMG packaged with signed sidecar at $DMG_PATH"
+fi
 
 DMG=$(ls -t app-tauri/src-tauri/target/"$RUST_TRIPLE"/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
 if [[ -n "$DMG" ]]; then
