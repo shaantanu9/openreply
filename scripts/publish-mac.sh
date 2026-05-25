@@ -108,12 +108,22 @@ echo "▶ Step 5/5 — cargo tauri build --target $RUST_TRIPLE --bundles $BUNDLE
 # without it). MUST match Vercel's TOKEN_SIGNING_SECRET on gapmap.myind.ai
 # or every activation will fail with `invalid-signature` on the desktop.
 #
-# Auto-source .env.publish if it exists — that's the canonical location
-# for the production secret on this dev box (committed-gitignored).
+# Auto-extract JUST JWT_DESKTOP_SECRET from .env.publish if it exists.
+# We deliberately do NOT auto-export the whole file — APPLE_SIGNING_IDENTITY
+# would then trigger Tauri's Developer-ID code path even on local ad-hoc
+# builds, failing with "no identity found" if the Developer ID cert isn't
+# loaded in the keychain. The Apple vars are sourced only when --sign is
+# explicitly requested (block below).
 if [[ -z "${JWT_DESKTOP_SECRET:-}" && -f .env.publish ]]; then
-  # shellcheck disable=SC1091
-  set -a; source .env.publish; set +a
-  if [[ -n "${JWT_DESKTOP_SECRET:-}" ]]; then
+  jwt_line=$(grep -E '^[[:space:]]*JWT_DESKTOP_SECRET[[:space:]]*=' .env.publish | head -1 || true)
+  if [[ -n "$jwt_line" ]]; then
+    # Strip leading whitespace + the var name + optional quotes.
+    jwt_value="${jwt_line#*=}"
+    jwt_value="${jwt_value%\"}"
+    jwt_value="${jwt_value#\"}"
+    jwt_value="${jwt_value%\'}"
+    jwt_value="${jwt_value#\'}"
+    export JWT_DESKTOP_SECRET="$jwt_value"
     echo "   ✓ JWT_DESKTOP_SECRET loaded from .env.publish (${#JWT_DESKTOP_SECRET} chars)"
   fi
 fi
