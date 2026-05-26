@@ -858,7 +858,37 @@ function wireStaticButtons(root) {
       btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
     };
 
+    // Cancellation epoch. Each call to refresh() bumps `refreshEpoch`. The
+    // in-flight Promise.race captures its own epoch on entry; when it
+    // resolves it checks against the live counter — if it changed, the
+    // user clicked Cancel or Refresh during the load and this result is
+    // stale. We discard it instead of painting (which would overwrite
+    // whatever the newer call has painted).
+    //
+    // Tauri's `invoke` doesn't expose AbortController, so we can't kill
+    // the underlying Python sidecar mid-call. But the daemon will keep
+    // running and the next call will reuse its warm state, so "cancel"
+    // is cheap — we just stop caring about the previous result.
+    let refreshEpoch = 0;
+    let cancelHandler = null;          // exposed for the Cancel button
+    let timerHandler = null;           // current setInterval id
+
     const refresh = async () => {
+      // Cancel any in-flight refresh: incrementing the epoch makes the
+      // previous awaited result a no-op when it lands.
+      refreshEpoch += 1;
+      const myEpoch = refreshEpoch;
+      if (timerHandler) { clearInterval(timerHandler); timerHandler = null; }
+      cancelHandler = () => {
+        // User clicked Cancel — bump the epoch and paint a neutral state.
+        refreshEpoch += 1;
+        if (timerHandler) { clearInterval(timerHandler); timerHandler = null; }
+        dot.dataset.state = 'off';
+        txt.innerHTML = `<span style="color:var(--ink-3)">Cancelled. Click <b>Refresh</b> to try again.</span>`;
+        detail.innerHTML = '';
+        cancelHandler = null;
+      };
+
       dot.dataset.state = 'loading';
       detail.innerHTML = '';
 
@@ -882,32 +912,38 @@ function wireStaticButtons(root) {
           hint: 'If this keeps spinning, the bundled sidecar may be stuck. The card will time out at 45s and show a retry button.' },
       ];
 
-      let stageIdx = 0;
       const renderStage = () => {
         const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-        // Find the current stage by elapsed time
         let cur = STAGES[0];
         for (const s of STAGES) {
           if (performance.now() - t0 >= s.at) cur = s;
         }
         txt.innerHTML =
-          `<span style="display:inline-flex;align-items:center;gap:8px">
+          `<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
              <span class="mcp-spinner" aria-hidden="true"></span>
              ${esc(cur.status)}
              <span style="color:var(--ink-3);font-variant-numeric:tabular-nums">${elapsed}s</span>
+             <button type="button" class="btn btn-ghost btn-sm" id="mcp-cancel-inline"
+               style="padding:2px 8px;font-size:var(--fs-12)">Cancel</button>
            </span>`;
+        const cancelBtn = txt.querySelector('#mcp-cancel-inline');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (cancelHandler) cancelHandler();
+          });
+        }
         if (cur.hint) {
           detail.innerHTML =
             `<span style="font-size:var(--fs-11);color:var(--ink-3)">${esc(cur.hint)}</span>`;
         }
       };
       renderStage();
-      // Tick the timer every 200ms so the elapsed counter visibly moves
-      // even if the underlying call is stuck. This is the single most
-      // important UX signal — "is this app frozen, or is it working?"
-      const ticker = setInterval(() => {
-        if (dot.dataset.state !== 'loading') {
-          clearInterval(ticker);
+      timerHandler = setInterval(() => {
+        if (refreshEpoch !== myEpoch) {
+          // A newer refresh (or a cancel) is in charge — stop ticking.
+          clearInterval(timerHandler);
+          timerHandler = null;
           return;
         }
         renderStage();
@@ -926,15 +962,14 @@ function wireStaticButtons(root) {
       );
       try {
         const s = await Promise.race([api.mcpStatus(cl), timeoutPromise]);
-        clearInterval(ticker);
+        if (refreshEpoch !== myEpoch) return;   // cancelled / superseded
+        if (timerHandler) { clearInterval(timerHandler); timerHandler = null; }
+        cancelHandler = null;
         renderState(s);
       } catch (e) {
-        clearInterval(ticker);
-        // A licence that was valid at page load can flip to expired/mismatch
-        // while the card is open (manual deactivate from the web portal,
-        // clock change, etc). If the error has the `[mcp:<code>]` prefix
-        // from `ensure_mcp_allowed`, re-render the activation gate with
-        // the specific reason instead of a raw "unable to read status".
+        if (refreshEpoch !== myEpoch) return;   // cancelled / superseded
+        if (timerHandler) { clearInterval(timerHandler); timerHandler = null; }
+        cancelHandler = null;
         const gate = parseMcpReason(e);
         if (gate) {
           renderActivationGate(gate.reason_code, gate.reason);
