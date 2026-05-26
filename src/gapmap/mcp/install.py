@@ -398,6 +398,12 @@ def status(
     out["client_tag_configured"] = (
         (env.get("MCP_CLIENT_TAG") or "").strip().lower() == expected_tag
     )
+    # Entries written before 2026-05-26 lack the explicit `timeout` field and
+    # inherit Claude Code's 12s default. Bundled-sidecar cold-starts on macOS
+    # 26.5+ regularly exceed 12s on first launch; the client gives up with
+    # "MCP timeout after 12000ms" before initialize lands. Re-syncing writes
+    # `timeout: 60000` so this never bites again.
+    out["timeout_configured"] = int(entry.get("timeout") or 0) >= 30000
 
     if not out["db_aligned"]:
         out["reason"] = f"Connected, but {out['client']} is reading a different DB. Click Re-sync to align."
@@ -407,6 +413,11 @@ def status(
         out["reason"] = (
             "Connected, but this entry predates stale-lock auto-recovery. "
             "Re-sync to avoid `another_mcp_server_running` errors on client restart."
+        )
+    elif not out["timeout_configured"]:
+        out["reason"] = (
+            "Connected, but this entry uses the 12s default timeout. Re-sync "
+            "so cold-starts on macOS Tahoe don't trip 'MCP timeout after 12000ms'."
         )
     elif not out["client_tag_configured"]:
         out["reason"] = (
@@ -458,6 +469,16 @@ def install(
     client_tag = (client or "claude-code").strip().lower()
     entry = {
         **cmd,
+        # Claude Code / Cursor / Claude Desktop default to a 12s timeout on
+        # the MCP `initialize` handshake. Our PyInstaller-bundled sidecar
+        # cold-starts in 30-60s the first time after install (macOS
+        # Gatekeeper verifies every .so on first launch). Without this
+        # field the client gives up before initialize lands, and the user
+        # sees "MCP timeout after 12000ms" with no recovery. Setting 60s
+        # buys enough room for first-launch + leaves headroom for slow
+        # disks. Subsequent launches use the Gatekeeper cache and respond
+        # in ~3-5s, well under either threshold.
+        "timeout": 60000,
         "env": {
             "GAPMAP_DATA_DIR": str(dd),
             "GAPMAP_TOKEN": token,
