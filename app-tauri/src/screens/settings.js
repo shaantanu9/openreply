@@ -4,6 +4,46 @@
 import { api, esc } from '../api.js';
 import { openByokModal } from './byok.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+
+// SWR helper for Settings cards. Each card pays a ~500-1500 ms sidecar
+// round-trip per visit; without a cache, the user watches skeletons fill
+// in one-by-one every time Settings opens. With this helper, the second
+// (and every subsequent) visit paints instantly from localStorage while
+// a fresh fetch runs in the background. Failures keep the stale paint.
+//
+// Don't cache "empty / error / not-ready" shapes — those are usually
+// transient (sidecar timing, missing key, schema change between versions)
+// and we'd rather re-fetch than show stale "no data".
+function _isCacheable(v) {
+  if (v == null) return false;
+  if (typeof v !== 'object') return true;
+  if (Array.isArray(v)) return v.length > 0;
+  // Don't cache plain failure shapes like { ok: false }
+  if (v.ok === false) return false;
+  return true;
+}
+function settingsCache(key, fetchFn, paint, opts = {}) {
+  const cached = readScreenCache(`settings.${key}`);
+  let paintedFromCache = false;
+  if (cached) {
+    try { paint(cached); paintedFromCache = true; } catch {}
+  }
+  return Promise.resolve()
+    .then(fetchFn)
+    .then(fresh => {
+      if (_isCacheable(fresh)) writeScreenCache(`settings.${key}`, fresh);
+      paint(fresh);
+      return fresh;
+    })
+    .catch(e => {
+      // If we painted from cache already, keep the stale view rather than
+      // flashing an error over readable content. Otherwise propagate so
+      // the card-level error handler can render the Retry button.
+      if (paintedFromCache && !opts.alwaysShowError) return cached;
+      throw e;
+    });
+}
 
 const PROFILE_KEYS = {
   name:  'gapmap.profile.name',
@@ -398,19 +438,28 @@ export async function renderSettings(root) {
   // Fetch everything in parallel; fill cards independently as each resolves.
   // `alive()` guards every DOM write so a stale async response from a
   // previous mount can't clobber the current screen.
-  api.byokStatus()
-    .then(byok => { if (alive()) fillLlmCard(root, byok); return byok; })
-    .then(byok => { if (alive()) fillRedditCard(root, byok); })
-    .catch(e => cardError('#card-llm', 'LLM providers', e));
+  //
+  // Each loader is wrapped in `settingsCache(...)` so the SECOND-and-onward
+  // visits to Settings paint from localStorage in <10 ms while a fresh
+  // fetch runs in the background. First-ever visit still pays the
+  // sidecar round-trip, but subsequent navigation is instant — which is
+  // what the user actually feels as "the page is fast now".
+  settingsCache('byok', () => api.byokStatus(), byok => {
+    if (!alive()) return;
+    fillLlmCard(root, byok);
+    fillRedditCard(root, byok);
+  }).catch(e => cardError('#card-llm', 'LLM providers', e));
 
-  api.cliInfo()
-    .then(info => { if (alive()) fillTablesCard(root, info); })
-    .catch(e => cardError('#card-tables', 'Table counts', e));
+  settingsCache('cliInfo', () => api.cliInfo(), info => {
+    if (alive()) fillTablesCard(root, info);
+  }).catch(e => cardError('#card-tables', 'Table counts', e));
 
   // CLI symlink status — separate Settings card with Install/Uninstall buttons
-  api.cliSymlinkStatus()
-    .then(s => { if (alive()) fillCliSymlinkCard(root, s); })
-    .catch(e => { if (alive()) fillCliSymlinkCard(root, { error: String(e?.message || e) }); });
+  settingsCache('symlink', () => api.cliSymlinkStatus(), s => {
+    if (alive()) fillCliSymlinkCard(root, s);
+  }).catch(e => {
+    if (alive()) fillCliSymlinkCard(root, { error: String(e?.message || e) });
+  });
 
   // ─── Beta feedback card wiring ───────────────────────────────────────────
   // Three escape valves so a beta tester always has SOME way to reach us:
@@ -477,40 +526,45 @@ export async function renderSettings(root) {
     });
   }
 
-  Promise.all([api.appDataDir(), api.cliInfo().catch(() => ({}))])
-    .then(async ([dataDir, info]) => {
-      let dbSize = null;
-      try {
-        const rows = await api.runQuery(
-          `SELECT (page_count * page_size) AS bytes FROM pragma_page_count, pragma_page_size`
-        );
-        if (Array.isArray(rows) && rows[0]?.bytes) dbSize = rows[0].bytes;
-      } catch {}
-      if (alive()) fillDataCard(root, info, dataDir, dbSize);
-    })
-    .catch(e => cardError('#card-data', 'Local data', e));
+  settingsCache('data', async () => {
+    const [dataDir, info] = await Promise.all([
+      api.appDataDir(),
+      api.cliInfo().catch(() => ({})),
+    ]);
+    let dbSize = null;
+    try {
+      const rows = await api.runQuery(
+        `SELECT (page_count * page_size) AS bytes FROM pragma_page_count, pragma_page_size`
+      );
+      if (Array.isArray(rows) && rows[0]?.bytes) dbSize = rows[0].bytes;
+    } catch {}
+    return { dataDir, info, dbSize };
+  }, ({ dataDir, info, dbSize }) => {
+    if (alive()) fillDataCard(root, info, dataDir, dbSize);
+  }).catch(e => cardError('#card-data', 'Local data', e));
 
   // Single export-prefs fetch (the duplicate card was removed 2026-05-26).
-  api.exportPrefsGet()
-    .then(prefs => { if (alive()) fillExportCard(root, prefs); })
-    .catch(e => cardError('#card-export-dir', 'Export destination', e));
+  settingsCache('exportPrefs', () => api.exportPrefsGet(), prefs => {
+    if (alive()) fillExportCard(root, prefs);
+  }).catch(e => cardError('#card-export-dir', 'Export destination', e));
 
   // Task 9.5 — Extraction pane. Loads global prefs + today's token spend
   // in parallel; renders the mode radios / sliders / cap input / cost
   // estimator as soon as both land. Individual Save clicks invoke
   // extractionPrefsSet({global}) and re-render the cost line in place.
-  Promise.all([
-    api.extractionPrefsGet(null).catch(() => null),
-    api.todayTokenSpend().catch(() => null),
-    api.byokStatus().catch(() => null),
-    api.runQuery(
-      "SELECT COALESCE(sum(1),0) AS n FROM extraction_queue"
-    ).catch(() => null),
-  ])
-    .then(([prefs, spend, byok, qRows]) => {
-      if (alive()) fillExtractionCard(root, prefs, spend, byok, qRows);
-    })
-    .catch(e => cardError('#card-extraction', 'Extraction', e));
+  settingsCache('extraction', async () => {
+    const [prefs, spend, byok, qRows] = await Promise.all([
+      api.extractionPrefsGet(null).catch(() => null),
+      api.todayTokenSpend().catch(() => null),
+      api.byokStatus().catch(() => null),
+      api.runQuery(
+        "SELECT COALESCE(sum(1),0) AS n FROM extraction_queue"
+      ).catch(() => null),
+    ]);
+    return { prefs, spend, byok, qRows };
+  }, ({ prefs, spend, byok, qRows }) => {
+    if (alive()) fillExtractionCard(root, prefs, spend, byok, qRows);
+  }).catch(e => cardError('#card-extraction', 'Extraction', e));
 
   // Palace / semantic-search card. Pull status + current doc count in
   // parallel, then render the right state (not-installed | not-ready |
@@ -518,21 +572,27 @@ export async function renderSettings(root) {
   // never rejects — but if the cli is totally hung, the outer can
   // still time out via the 90s invoke timeout. Mark the card as
   // errored if so.
-  Promise.all([
-    api.palaceModelStatus().catch(() => ({ installed: false, ready: false })),
-    api.palaceStats().catch(() => ({ ok: false, count: 0 })),
-  ])
-    .then(([ms, ps]) => { if (alive()) fillPalaceCard(root, ms, ps); })
-    .catch(e => cardError('#card-palace', 'Semantic search', e));
+  settingsCache('palace', async () => {
+    const [ms, ps] = await Promise.all([
+      api.palaceModelStatus().catch(() => ({ installed: false, ready: false })),
+      api.palaceStats().catch(() => ({ ok: false, count: 0 })),
+    ]);
+    return { ms, ps };
+  }, ({ ms, ps }) => {
+    if (alive()) fillPalaceCard(root, ms, ps);
+  }).catch(e => cardError('#card-palace', 'Semantic search', e));
 
   // Whisper card — catalogue drives the installed/available table; yt-dlp
   // version line below it shows the overlay status.
-  Promise.all([
-    api.whisperCatalogue().catch(() => []),
-    api.ytdlpVersion().catch(() => ({ installed: '—', latest: '—' })),
-  ])
-    .then(([cat, ver]) => { if (alive()) fillWhisperCard(root, cat, ver); })
-    .catch(e => cardError('#card-whisper', 'Whisper models', e));
+  settingsCache('whisper', async () => {
+    const [cat, ver] = await Promise.all([
+      api.whisperCatalogue().catch(() => []),
+      api.ytdlpVersion().catch(() => ({ installed: '—', latest: '—' })),
+    ]);
+    return { cat, ver };
+  }, ({ cat, ver }) => {
+    if (alive()) fillWhisperCard(root, cat, ver);
+  }).catch(e => cardError('#card-whisper', 'Whisper models', e));
 }
 
 // --- Profile card (sync) ----------------------------------------------------
@@ -773,6 +833,22 @@ function wireStaticButtons(root) {
         btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
         return;
       }
+      // Entries written before the timeout: 60000 fix surface a separate
+      // re-sync prompt — the entry "works" but trips the client's 12s
+      // default the first time the bundled sidecar cold-starts. One
+      // click writes the timeout and the "MCP timeout after 12000ms"
+      // error stops happening.
+      if (s.timeout_configured === false) {
+        dot.dataset.state = 'warn';
+        txt.textContent = `Connected to ${label} · timeout too short`;
+        detail.innerHTML =
+          `This entry uses the 12s default timeout. On first launch the ` +
+          `bundled sidecar can take 30-60s to cold-start, tripping ` +
+          `<code>MCP timeout after 12000ms</code>. Re-sync to write a ` +
+          `60s timeout so this never bites again.`;
+        btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
+        return;
+      }
       dot.dataset.state = 'ok';
       txt.textContent = `Connected to ${label} · DB aligned`;
       const tokenNote = s.token_in_env ? '· token saved' : '· token will refresh on Re-sync';
@@ -786,13 +862,15 @@ function wireStaticButtons(root) {
       dot.dataset.state = 'loading';
       txt.textContent = 'checking…';
       detail.textContent = '';
-      // 12s safety timeout — Python sidecar cold-start on a freshly
-      // signed dev binary can take ~5-8s, well within bounds. Without
-      // this, a wedged sidecar (DB lock, frozen Ollama callback at
-      // import time, gatekeeper verification stall) leaves the card
-      // permanently in "checking…". Surfacing the timeout as an
-      // actionable error lets the user click Refresh / Re-sync.
-      const TIMEOUT_MS = 12000;
+      // 45s safety timeout. The PyInstaller-bundled sidecar on a fresh
+      // install can take 20-40s on its FIRST mcp_status call after
+      // launch (macOS Gatekeeper verifying every .so the first time).
+      // Subsequent calls share the warm cache and respond in ~3-5s.
+      // 12s used to be the default; on Tahoe it tripped before
+      // initialize finished and the card stuck on "checking…". 45s
+      // gives Gatekeeper enough headroom while still surfacing a real
+      // hang (frozen Ollama import, DB lock, etc.) within a minute.
+      const TIMEOUT_MS = 45000;
       const timeoutPromise = new Promise((_, rej) =>
         setTimeout(() => rej(new Error(`mcp_status timed out after ${TIMEOUT_MS}ms — sidecar may be stuck`)), TIMEOUT_MS)
       );
