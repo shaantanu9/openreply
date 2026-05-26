@@ -698,20 +698,34 @@ export const api = {
     invoke('semantic_search', { query, topic, source, k }),
   relatedPosts:       (postId, { k = 10, topic } = {}) =>
     invoke('related_posts', { postId, k, topic }),
-  reindexPalace:      ()     => invoke('reindex_palace'),
-  palaceStats:        ()     => invoke('palace_stats'),
+  reindexPalace:      ()     => {
+    invalidate('palace_stats'); invalidate('palace_model_status');
+    return invoke('reindex_palace');
+  },
+  // 30s in-memory + 5-minute persisted cache. Palace stats only change on
+  // explicit reindex (which invalidates both layers via mutated('graph')),
+  // so a cross-session warm read here saves the chromadb import on every
+  // Settings open. The first warm-up call after boot fills both caches.
+  palaceStats:        ()     => cachedInvoke('palace_stats',        null, 30000, 5 * 60 * 1000),
   // Hybrid-download opt-in. `installed` = retrieval extras wheels present,
   // `ready` = ONNX model file cached. UI renders different cards per state.
-  palaceModelStatus:  ()     => invoke('palace_model_status'),
+  // Same caching shape as palaceStats — only changes on Install/Reindex.
+  palaceModelStatus:  ()     => cachedInvoke('palace_model_status', null, 30000, 5 * 60 * 1000),
   // Kicks off the ~80 MB ONNX model download; subscribe to
   // `palace:warmup:progress` for {event, bytes, total, pct} events and
   // `palace:warmup:done` for the {code} exit.
-  palaceWarmup:       ()     => invoke('palace_warmup'),
+  palaceWarmup:       ()     => {
+    invalidate('palace_stats'); invalidate('palace_model_status');
+    return invoke('palace_warmup');
+  },
   // Re-embed every post into palace. Long-running; UI subscribes to
   // `palace:reindex:progress` for status + `palace:reindex:done` for
   // exit. Use after a chromadb upgrade (auto-heal resets palace) or
   // when the user clicks the explicit "Reindex" button in Settings.
-  palaceReindex:      ()     => invoke('palace_reindex'),
+  palaceReindex:      ()     => {
+    invalidate('palace_stats'); invalidate('palace_model_status');
+    return invoke('palace_reindex');
+  },
   onPalaceWarmupProgress: (cb) => listen('palace:warmup:progress', e => cb(e.payload)),
   onPalaceWarmupDone:     (cb) => listen('palace:warmup:done',     e => cb(e.payload)),
   // Phase-1 Insight Engine — one long-context synthesis call across the
@@ -1289,9 +1303,13 @@ export const api = {
   // ----- CLI symlink (one-click install gapmap-cli to /usr/local/bin) -----
   // Status: { installed, healthy, path, points_to, expected }
   // Install/Uninstall prompt for admin via osascript.
-  cliSymlinkStatus:   ()  => invoke('cli_symlink_status'),
-  installCliSymlink:  ()  => invoke('install_cli_symlink'),
-  uninstallCliSymlink:()  => invoke('uninstall_cli_symlink'),
+  // 30s in-memory + 10-minute persisted cache. The symlink only changes
+  // when the user explicitly clicks Install/Uninstall in Settings, both
+  // of which invalidate this key. A warm read on every Settings open
+  // saves a sidecar spawn for a trivial /usr/local/bin stat.
+  cliSymlinkStatus:   ()  => cachedInvoke('cli_symlink_status', null, 30000, 10 * 60 * 1000),
+  installCliSymlink:  ()  => { invalidate('cli_symlink_status'); return invoke('install_cli_symlink'); },
+  uninstallCliSymlink:()  => { invalidate('cli_symlink_status'); return invoke('uninstall_cli_symlink'); },
 
   // ----- License gate feature flag (read-only — env-driven) -----
   licenseGateStatus:  ()  => invoke('license_gate_status'),

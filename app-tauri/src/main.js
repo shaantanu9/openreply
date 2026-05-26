@@ -559,6 +559,45 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Failure is non-fatal (non-Tauri dev preview etc.).
   try { await api.closeSplash(); } catch {}
 
+  // ─── Post-boot warm-up of cachedInvoke ────────────────────────────────
+  // Background-fire the 8 calls Settings needs so the in-memory cache is
+  // hot before the user ever clicks Settings. Each call has its own TTL
+  // (30-300s in api.js), so the result is instantly served from memory
+  // on first Settings open — no daemon round-trips needed at click time.
+  //
+  // Fire after splash closes so this never blocks first paint. Errors
+  // are swallowed — a warm-up failure becomes a real fetch later, no
+  // user-visible impact. Sequenced into 3 groups by importance so the
+  // ones a user is most likely to hit first warm up first.
+  setTimeout(() => {
+    const warm = (fn, label) => {
+      try {
+        Promise.resolve(fn()).catch(() => {});
+        // No need to await — cachedInvoke writes to in-memory cache as
+        // soon as the daemon responds. Subsequent calls hit cache.
+      } catch (e) {
+        console.debug(`[warmup] ${label} skipped:`, e?.message || e);
+      }
+    };
+    // Group A — cheap, no SQL: 3 file/keychain reads
+    warm(() => api.cliInfo(),         'cli_info');
+    warm(() => api.byokStatus(),      'byok_status');
+    warm(() => api.exportPrefsGet(),  'export_prefs');
+    // Group B — light SQL: queue count + token spend
+    setTimeout(() => {
+      warm(() => api.todayTokenSpend(),    'today_token_spend');
+      warm(() => api.whisperCatalogue(),   'whisper_catalogue');
+    }, 1500);
+    // Group C — heaviest (chromadb import + filesystem walk):
+    // defer further so they don't compete with the dashboard's own
+    // background loads.
+    setTimeout(() => {
+      warm(() => api.palaceModelStatus(),  'palace_model_status');
+      warm(() => api.palaceStats(),        'palace_stats');
+      warm(() => api.ytdlpVersion(),       'ytdlp_version');
+    }, 3000);
+  }, 800);
+
   // Sidebar counters — populate on boot AND refresh on every `gapmap:changed`
   // mutation so adding/deleting a topic updates the count immediately.
   async function refreshNavCounts() {
