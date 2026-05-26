@@ -1103,7 +1103,12 @@ def stats() -> dict:
             "ok": True,
             "count": count,
             "path": _palace_path(),
-            "source": "sqlite_fallback",
+            # ChromaDB's internal SQLite is the AUTHORITATIVE store; reading
+            # counts via direct SQL is the FAST path (~5ms) versus going
+            # through chroma_api (~50-200ms with collection open). The
+            # "_fallback" suffix in the original label was misleading —
+            # this is the preferred path, not a degraded one.
+            "source": "chromadb_sqlite_fastpath",
             "by_topic": by_topic,
         }
     except Exception:

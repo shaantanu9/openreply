@@ -1265,41 +1265,56 @@ def cmd_research_gaps(
     """Extract gap signals from a collected corpus via LLM."""
     from ..research import find_gaps, run_extractor
 
-    if extractor:
-        result = run_extractor(
-            extractor, topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
-        )
-        try:
-            from ..core.db import save_mcp_analysis
-            save_mcp_analysis(
-                topic=topic, source="app", kind="quick_extract",
-                tool=f"research_gaps_{extractor}",
-                content=json.dumps(result, ensure_ascii=False, default=str),
-                content_type="json",
-                provider=provider or "", model="",
-                params={"extractor": extractor, "corpus_limit": corpus_limit,
-                        "min_score": min_score},
+    # Skip-gracefully pattern (tauri-python-sidecar-app skill Phase 4):
+    # LLM-driven commands must NOT raise on missing key — return a
+    # structured `{ok: false, skipped: True, reason: ...}` so the UI / Rust
+    # wrapper can render a meaningful "no LLM configured" hint instead of
+    # crashing with a Python traceback.
+    try:
+        if extractor:
+            result = run_extractor(
+                extractor, topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
             )
-        except Exception:
-            pass
-        _emit(result, as_json)
-    else:
-        report = find_gaps(
-            topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
-        )
-        try:
-            from ..core.db import save_mcp_analysis
-            save_mcp_analysis(
-                topic=topic, source="app", kind="quick_extract",
-                tool="research_gaps",
-                content=json.dumps(report, ensure_ascii=False, default=str),
-                content_type="json",
-                provider=provider or "", model="",
-                params={"corpus_limit": corpus_limit, "min_score": min_score},
+            try:
+                from ..core.db import save_mcp_analysis
+                save_mcp_analysis(
+                    topic=topic, source="app", kind="quick_extract",
+                    tool=f"research_gaps_{extractor}",
+                    content=json.dumps(result, ensure_ascii=False, default=str),
+                    content_type="json",
+                    provider=provider or "", model="",
+                    params={"extractor": extractor, "corpus_limit": corpus_limit,
+                            "min_score": min_score},
+                )
+            except Exception:
+                pass
+            _emit(result, as_json)
+        else:
+            report = find_gaps(
+                topic, provider=provider, corpus_limit=corpus_limit, min_score=min_score
             )
-        except Exception:
-            pass
-        _emit(report, as_json)
+            try:
+                from ..core.db import save_mcp_analysis
+                save_mcp_analysis(
+                    topic=topic, source="app", kind="quick_extract",
+                    tool="research_gaps",
+                    content=json.dumps(report, ensure_ascii=False, default=str),
+                    content_type="json",
+                    provider=provider or "", model="",
+                    params={"corpus_limit": corpus_limit, "min_score": min_score},
+                )
+            except Exception:
+                pass
+            _emit(report, as_json)
+    except RuntimeError as e:
+        # No LLM provider — emit structured skip + exit 0 so the wrapper
+        # can read the JSON and surface a settable hint.
+        msg = str(e)
+        if "No LLM provider" in msg or "no provider" in msg.lower() or "API key" in msg:
+            _emit({"ok": False, "skipped": True, "reason": msg,
+                   "error_class": "llm_key"}, as_json)
+            raise typer.Exit(code=0)
+        raise
 
 
 @research_app.command("search-all")
@@ -4036,9 +4051,13 @@ def cmd_research_palace_stats(
 
 
 @research_app.command("palace-model-status")
-def cmd_research_palace_model_status() -> None:
+def cmd_research_palace_model_status(
+    as_json: bool = typer.Option(True, "--json", hidden=True,
+        help="Accept --json from Rust wrapper (no-op, output is always JSON)."),
+) -> None:
     """Report whether the semantic-search ONNX model has been downloaded.
     Returns {installed, ready, archive_bytes, expected_bytes, cache_dir}."""
+    _ = as_json
     import sys as _sys
     from ..retrieval.palace import model_status
     typer.echo(json.dumps(model_status(), default=str))
