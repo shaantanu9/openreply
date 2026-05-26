@@ -612,6 +612,31 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }).catch(() => {});
 
+  // Shared skip list: which routes should NOT be auto-remounted by either
+  // `gapmap:db-changed` (external SQLite writes) or `gapmap:changed`
+  // (in-app mutations). Two reasons a route belongs here:
+  //   (a) it owns its own reactive refreshes — remounting would nuke
+  //       in-place tab/scroll state (collect, topic)
+  //   (b) it reads from FS / keychain / config, not SQLite — remounting
+  //       is pure UI thrash with no data benefit (settings, welcome,
+  //       activate, license)
+  // Without the (b) routes in this list, the bundled MCP daemon writing
+  // to gapmap.db (every Claude Code tool call → enrichment writes) makes
+  // Settings flicker / remount every few seconds, which the user
+  // experiences as "the app keeps refreshing".
+  const NO_REMOUNT_ROUTES = [
+    /^#\/collect\/[^/]+/,    // collect — owns its own refresh
+    /^#\/topic\/[^/?]+/,     // topic — owns its own refresh
+    /^#\/settings\b/,        // settings — FS-driven
+    /^#\/welcome\b/,         // welcome — no SQLite content
+    /^#\/activate\b/,        // activation — keychain/HTTP only
+    /^#\/license\b/,         // license — keychain only
+  ];
+  const shouldSkipRemount = () => {
+    const hash = location.hash || '';
+    return NO_REMOUNT_ROUTES.some((rx) => rx.test(hash));
+  };
+
   // Reactive re-render: any in-app mutation fires `gapmap:changed`. We refresh
   // the sidebar counters AND ask the currently-visible screen to re-render
   // itself (by re-running route() — cached reads are already invalidated
@@ -624,15 +649,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     // findings, etc.). Re-running route() triggers the screen's renderer,
     // which reads through the (now-invalidated) cache and pulls fresh data.
     if (['topics', 'collect', 'ingest', 'graph', 'findings', 'trash'].includes(kind)) {
-      // Avoid remounting the in-flight collect screen. Re-rendering the same
-      // route mid-collect can duplicate listeners and cause action-footer
-      // button state to appear inconsistent until a manual refresh.
-      const onCollectRoute = /^#\/collect\/[^/]+/.test(location.hash || '');
-      // Topic screen manages its own reactive refreshes per tab; forcing a full
-      // route() remount here resets tab state back to default and feels like
-      // "Map click bounced to Home". Let topic.js own in-place updates.
-      const onTopicRoute = /^#\/topic\/[^/?]+/.test(location.hash || '');
-      if (onCollectRoute || onTopicRoute) return;
+      if (shouldSkipRemount()) return;
       // Also wipe home's stale-while-revalidate localStorage cache so a
       // deleted topic doesn't flash before the fresh fetch returns.
       try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
@@ -707,24 +724,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   // until the user manually navigates.
   window.addEventListener('gapmap:db-changed', () => {
     refreshNavCounts();
-    // Skip remount on routes that either own their own reactive refresh
-    // (collect / topic — a route() rerun would nuke their in-place tab
-    // state) OR don't depend on SQLite content at all (settings, welcome,
-    // activate, license — these read from FS / keychain / config, not the
-    // DB, so a 5s remount loop just thrashes the UI without changing
-    // anything). Without this, the bundled MCP daemon writing to
-    // mcp-events.db on every tool call triggers a full Settings re-render
-    // every few seconds — the "app keeps refreshing" symptom.
-    const hash = location.hash || '';
-    const skipRoutes = [
-      /^#\/collect\/[^/]+/,    // collect — owns its own refresh
-      /^#\/topic\/[^/?]+/,     // topic — owns its own refresh
-      /^#\/settings\b/,        // settings — FS-driven, no SQLite content
-      /^#\/welcome\b/,         // welcome wizard — no SQLite content
-      /^#\/activate\b/,        // activation — keychain/HTTP only
-      /^#\/license\b/,         // license — keychain only
-    ];
-    if (skipRoutes.some(rx => rx.test(hash))) return;
+    // Same skip list as gapmap:changed above (see NO_REMOUNT_ROUTES).
+    // Routes that own their own refresh or don't read SQLite should not
+    // be force-remounted every 5s.
+    if (shouldSkipRemount()) return;
     try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
     route();
     // Poke the extraction worker in case the external write pushed a topic
