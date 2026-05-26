@@ -1341,6 +1341,18 @@ select.topics-field {
   margin-right: 6px;
 }
 
+/* MCP card status spinner — 12px, inline with the step status text so the
+   user can SEE work happening while mcp_status is running (cold-start can
+   take 20-40s on first launch). Without this, the card looks frozen. */
+.mcp-spinner {
+  display: inline-block;
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: #FF8C42;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
 .map-toolbar {
   /* Toolbar must wrap on narrow widths or the button labels break char-by-char
      ("Mode: Full" stacks vertically as M-o-d-e-…) — observed on a windowed

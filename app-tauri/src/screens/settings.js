@@ -860,24 +860,76 @@ function wireStaticButtons(root) {
 
     const refresh = async () => {
       dot.dataset.state = 'loading';
-      txt.textContent = 'checking…';
-      detail.textContent = '';
-      // 45s safety timeout. The PyInstaller-bundled sidecar on a fresh
-      // install can take 20-40s on its FIRST mcp_status call after
-      // launch (macOS Gatekeeper verifying every .so the first time).
-      // Subsequent calls share the warm cache and respond in ~3-5s.
-      // 12s used to be the default; on Tahoe it tripped before
-      // initialize finished and the card stuck on "checking…". 45s
-      // gives Gatekeeper enough headroom while still surfacing a real
-      // hang (frozen Ollama import, DB lock, etc.) within a minute.
+      detail.innerHTML = '';
+
+      // Progressive status. The user has no way to know the call is
+      // (a) actually running, (b) not the app's fault when it's slow.
+      // We step a status string + an elapsed timer + a contextual hint
+      // so they can SEE work happening and understand why first-launch
+      // takes ~30s while every subsequent launch is ~3s.
+      const t0 = performance.now();
+      const cl = currentClient();
+      const labelClient = clientLabels[cl] || cl;
+      const STAGES = [
+        { at: 0,     status: 'Talking to Gap Map sidecar…' },
+        { at: 1500,  status: `Reading ${labelClient} MCP config…` },
+        { at: 4000,  status: 'Probing existing MCP entry…' },
+        { at: 8000,  status: 'Validating database alignment…',
+          hint: 'macOS Gatekeeper is verifying the bundled binary. One-time on first launch (~30s); subsequent launches are ~3s.' },
+        { at: 20000, status: 'Still working — first-launch verification…',
+          hint: 'Almost there. Gatekeeper finishes any second now.' },
+        { at: 35000, status: 'Taking longer than usual…',
+          hint: 'If this keeps spinning, the bundled sidecar may be stuck. The card will time out at 45s and show a retry button.' },
+      ];
+
+      let stageIdx = 0;
+      const renderStage = () => {
+        const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+        // Find the current stage by elapsed time
+        let cur = STAGES[0];
+        for (const s of STAGES) {
+          if (performance.now() - t0 >= s.at) cur = s;
+        }
+        txt.innerHTML =
+          `<span style="display:inline-flex;align-items:center;gap:8px">
+             <span class="mcp-spinner" aria-hidden="true"></span>
+             ${esc(cur.status)}
+             <span style="color:var(--ink-3);font-variant-numeric:tabular-nums">${elapsed}s</span>
+           </span>`;
+        if (cur.hint) {
+          detail.innerHTML =
+            `<span style="font-size:var(--fs-11);color:var(--ink-3)">${esc(cur.hint)}</span>`;
+        }
+      };
+      renderStage();
+      // Tick the timer every 200ms so the elapsed counter visibly moves
+      // even if the underlying call is stuck. This is the single most
+      // important UX signal — "is this app frozen, or is it working?"
+      const ticker = setInterval(() => {
+        if (dot.dataset.state !== 'loading') {
+          clearInterval(ticker);
+          return;
+        }
+        renderStage();
+      }, 200);
+
+      // 45s safety timeout — the bundled PyInstaller sidecar on a fresh
+      // install can take 20-40s on its FIRST mcp_status call (macOS
+      // Gatekeeper verifying every .so). Subsequent calls are ~3s.
+      // After 45s we surface a retry button rather than spin forever.
       const TIMEOUT_MS = 45000;
       const timeoutPromise = new Promise((_, rej) =>
-        setTimeout(() => rej(new Error(`mcp_status timed out after ${TIMEOUT_MS}ms — sidecar may be stuck`)), TIMEOUT_MS)
+        setTimeout(
+          () => rej(new Error(`mcp_status timed out after ${TIMEOUT_MS / 1000}s — sidecar may be stuck. Click Refresh to retry.`)),
+          TIMEOUT_MS,
+        ),
       );
       try {
-        const s = await Promise.race([api.mcpStatus(currentClient()), timeoutPromise]);
+        const s = await Promise.race([api.mcpStatus(cl), timeoutPromise]);
+        clearInterval(ticker);
         renderState(s);
       } catch (e) {
+        clearInterval(ticker);
         // A licence that was valid at page load can flip to expired/mismatch
         // while the card is open (manual deactivate from the web portal,
         // clock change, etc). If the error has the `[mcp:<code>]` prefix

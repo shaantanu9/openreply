@@ -60,14 +60,18 @@ export async function bootstrapMcpClients({
         }
         continue;
       }
-      // Already fully wired with the 2026-04-24+ schema (takeover flag) →
-      // nothing to do. This check is intentionally strict so older installs
-      // self-heal on next bootstrap.
+      // Already fully wired with the 2026-04-24+ schema (takeover flag) AND
+      // the 2026-05-26+ timeout: 60000 fix → nothing to do. This check is
+      // intentionally strict so older installs self-heal on next bootstrap.
+      // The timeout_configured check covers entries written before today's
+      // install.py fix — without it, Claude Code would keep tripping
+      // "MCP timeout after 12000ms" on first launch of every cold day.
       if (
         before?.connected &&
         before?.db_aligned &&
         before?.token_in_env &&
-        before?.takeover_configured !== false
+        before?.takeover_configured !== false &&
+        before?.timeout_configured !== false
       ) {
         results.push({ client: cl, outcome: 'already_ready' });
         // eslint-disable-next-line no-console
