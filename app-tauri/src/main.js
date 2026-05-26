@@ -707,11 +707,24 @@ window.addEventListener('DOMContentLoaded', async () => {
   // until the user manually navigates.
   window.addEventListener('gapmap:db-changed', () => {
     refreshNavCounts();
-    // Skip remount on collect/topic routes — they own their own reactive
-    // refreshes and a route() rerun would nuke in-place tab state.
-    const onCollectRoute = /^#\/collect\/[^/]+/.test(location.hash || '');
-    const onTopicRoute = /^#\/topic\/[^/?]+/.test(location.hash || '');
-    if (onCollectRoute || onTopicRoute) return;
+    // Skip remount on routes that either own their own reactive refresh
+    // (collect / topic — a route() rerun would nuke their in-place tab
+    // state) OR don't depend on SQLite content at all (settings, welcome,
+    // activate, license — these read from FS / keychain / config, not the
+    // DB, so a 5s remount loop just thrashes the UI without changing
+    // anything). Without this, the bundled MCP daemon writing to
+    // mcp-events.db on every tool call triggers a full Settings re-render
+    // every few seconds — the "app keeps refreshing" symptom.
+    const hash = location.hash || '';
+    const skipRoutes = [
+      /^#\/collect\/[^/]+/,    // collect — owns its own refresh
+      /^#\/topic\/[^/?]+/,     // topic — owns its own refresh
+      /^#\/settings\b/,        // settings — FS-driven, no SQLite content
+      /^#\/welcome\b/,         // welcome wizard — no SQLite content
+      /^#\/activate\b/,        // activation — keychain/HTTP only
+      /^#\/license\b/,         // license — keychain only
+    ];
+    if (skipRoutes.some(rx => rx.test(hash))) return;
     try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
     route();
     // Poke the extraction worker in case the external write pushed a topic
