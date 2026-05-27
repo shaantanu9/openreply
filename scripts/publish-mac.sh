@@ -172,10 +172,20 @@ if [[ -d "$APP_PATH" ]]; then
   ZIP_PATH="${ZIP_OUT}/Gap Map_0.1.0_${ARCH}.zip"
   rm -f "$ZIP_PATH"
   echo "▶ Step 5b — produce .zip (recommended path on macOS 26.5+ Tahoe)"
-  # `ditto -ck --keepParent` is Apple's canonical way to zip a .app while
-  # preserving extended attrs + code signature. --sequesterRsrc keeps
-  # resource forks tidy. Plain `zip` is unsafe for .app bundles.
-  ditto -ck --keepParent --sequesterRsrc --rsrc "$APP_PATH" "$ZIP_PATH"
+  # Apple's canonical way to zip a SIGNED .app for distribution /
+  # notarization is plain `ditto -c -k --keepParent` — nothing else.
+  #
+  # DO NOT add --sequesterRsrc / --rsrc here. Those split resource forks
+  # into AppleDouble sidecar files (the `__MACOSX/._*` entries). When the
+  # recipient extracts with Archive Utility or `unzip`, those sidecars are
+  # NOT reattached, so the .app's sealed CodeResources manifest no longer
+  # matches what's on disk. Gatekeeper then refuses to launch with:
+  #   "Gap Map.app: code has no resources but signature indicates they
+  #    must be present"
+  # i.e. the app silently fails to open. Plain `ditto -c -k --keepParent`
+  # round-trips the signature intact through both Archive Utility and
+  # `unzip`.
+  ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
   echo "✓ ZIP: $ZIP_PATH ($(du -sh "$ZIP_PATH" | cut -f1))"
 fi
 
