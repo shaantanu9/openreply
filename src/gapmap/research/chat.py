@@ -873,10 +873,23 @@ def test_provider(provider: str | None = None, model: str | None = None) -> dict
     """Tiny round-trip ping. Returns {ok, provider, model, latency_ms, reply, error?}."""
     import time
 
+    # Did the CALLER explicitly pick this provider (e.g. BYOK Test button on
+    # the Anthropic row)? If so, we must NOT fall back to LLM_MODEL — that
+    # env var carries the user's CURRENTLY-SELECTED default model, which
+    # is usually for a DIFFERENT provider. Sending an NVIDIA model name to
+    # Anthropic produces a misleading 401/404. Use per-provider defaults
+    # instead so each Test row pings its own provider correctly.
+    explicit_provider = bool(provider)
     prov = (provider or os.getenv("LLM_PROVIDER") or _auto_detect_provider() or "").lower()
     if not prov:
         return {"ok": False, "error": "no provider configured"}
-    mdl = model or os.getenv("LLM_MODEL") or _default_model(prov)
+
+    if model:
+        mdl = model                                # caller supplied → trust
+    elif explicit_provider:
+        mdl = _default_model(prov)                 # per-provider default (no env fallback)
+    else:
+        mdl = os.getenv("LLM_MODEL") or _default_model(prov)
 
     t0 = time.time()
     try:
