@@ -514,6 +514,7 @@ fn main() {
             commands::ingest_video_preview,
             commands::ingest_video,
             commands::youtube_search,
+            commands::palace_prewarm,
             commands::whisper_list,
             commands::whisper_catalogue,
             commands::whisper_download,

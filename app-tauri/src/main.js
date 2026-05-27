@@ -596,6 +596,17 @@ window.addEventListener('DOMContentLoaded', async () => {
       warm(() => api.palaceStats(),        'palace_stats');
       warm(() => api.ytdlpVersion(),       'ytdlp_version');
     }, 3000);
+    // Group D — palace runtime prewarm (chromadb + ONNX MiniLM load via
+    // one throwaway query). Defer further so the dashboard + groups A-C
+    // finish first. This eliminates the 2-3 s (longer under load) cold
+    // start on the user's first semantic search / Insights / Map open —
+    // the cost is paid here, in the background, instead of when the
+    // user is staring at a spinner. Skipped silently if the ONNX
+    // model isn't downloaded yet (palace_prewarm returns ok:false in
+    // that case). Cheap on repeat calls (no-op if already warm).
+    setTimeout(() => {
+      warm(() => api.palacePrewarm(),      'palace_prewarm');
+    }, 6000);
   }, 800);
 
   // Sidebar counters — populate on boot AND refresh on every `gapmap:changed`

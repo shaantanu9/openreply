@@ -3867,6 +3867,27 @@ pub async fn palace_model_status(app: AppHandle) -> Result<Value, String> {
 
 /// Kick off the one-time ~80 MB ONNX model download. Streams progress via
 /// `palace:warmup:progress` events (one JSON object per line) and emits
+/// Runtime pre-warm — load chromadb + MiniLM ONNX into the sidecar daemon
+/// process by issuing one trivial search query. After this returns, the
+/// user's first real semantic search skips the 2-3s cold-start (~36s
+/// under contention) and lands in ~50-200 ms instead.
+///
+/// Idempotent + cheap (~2-3s on a clean system; longer if model not yet
+/// downloaded → returns {ok:false, skipped:true} in that case). Returns
+/// `{ok, elapsed_seconds, note}`. Never raises.
+///
+/// The intended caller is the JS post-boot warmer (main.js); fire 3-5s
+/// after splash closes so the cost is invisible.
+#[tauri::command]
+pub async fn palace_prewarm(app: AppHandle) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec!["research", "palace-prewarm", "--json"],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 /// `palace:warmup:done` when finished. Safe to call when the model is
 /// already cached — emits `{event:"done", ok:true, already:true}` instantly.
 #[tauri::command]

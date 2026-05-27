@@ -4137,6 +4137,51 @@ def cmd_research_palace_warmup() -> None:
     warmup_model(progress=emit)
 
 
+@research_app.command("palace-prewarm")
+def cmd_research_palace_prewarm(
+    as_json: bool = typer.Option(True, "--json", hidden=True),
+) -> None:
+    """Pre-load chromadb + ONNX MiniLM runtime + open the collection by
+    firing one trivial query. After this, the first user semantic search
+    skips the 2-3s cold-start (chromadb import + PersistentClient init +
+    ONNX session compile + first embed) and lands in ~50-200 ms.
+
+    Idempotent + cheap. The intended caller is the Tauri post-boot warmer:
+    fire this 3-5s after splash closes, share the warm sidecar daemon,
+    and the user's first Search/Insights/Map query feels instant.
+
+    Returns {ok, elapsed_seconds, note} — never raises (no LLM, no
+    network, all local).
+    """
+    _ = as_json
+    import time as _time
+    t0 = _time.time()
+    try:
+        from ..retrieval import palace as _palace
+        # Status probe first — if model isn't downloaded, skip the embed
+        # call (would fail). The status read also imports chromadb so
+        # that import cost is paid here too.
+        st = _palace.model_status()
+        if not st.get("ready"):
+            typer.echo(json.dumps({
+                "ok": False, "skipped": True, "elapsed_seconds": round(_time.time() - t0, 2),
+                "reason": "ONNX model not downloaded — run `research palace-warmup` first",
+            }))
+            return
+        # Fire ONE trivial query to warm the embedder + open the
+        # collection. Result is discarded.
+        _palace.search_posts(query="warmup", topic=None, k=1, rerank=False)
+        typer.echo(json.dumps({
+            "ok": True, "elapsed_seconds": round(_time.time() - t0, 2),
+            "note": "chromadb + MiniLM ONNX runtime loaded; first user search will be fast",
+        }))
+    except Exception as e:
+        typer.echo(json.dumps({
+            "ok": False, "elapsed_seconds": round(_time.time() - t0, 2),
+            "error": str(e), "error_class": "palace_prewarm",
+        }))
+
+
 @research_app.command("palace-reindex")
 def cmd_research_palace_reindex(
     batch_size: int = typer.Option(200, "--batch-size"),

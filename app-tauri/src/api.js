@@ -724,6 +724,11 @@ export const api = {
     invalidate('palace_stats'); invalidate('palace_model_status');
     return invoke('palace_warmup');
   },
+  // Runtime pre-warm — load chromadb + MiniLM ONNX into the sidecar daemon
+  // process by issuing one trivial search. After this, the user's first
+  // real semantic search skips the 2-3s cold-start (~36s under load) and
+  // lands in ~50-200 ms. Idempotent; safe to call any time.
+  palacePrewarm:      ()     => invoke('palace_prewarm'),
   // Re-embed every post into palace. Long-running; UI subscribes to
   // `palace:reindex:progress` for status + `palace:reindex:done` for
   // exit. Use after a chromadb upgrade (auto-heal resets palace) or
