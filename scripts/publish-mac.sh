@@ -136,17 +136,54 @@ if [[ -z "${JWT_DESKTOP_SECRET:-}" ]]; then
 fi
 
 if [[ $REQUIRE_SIGN -eq 1 ]]; then
-  : "${APPLE_SIGNING_IDENTITY:?APPLE_SIGNING_IDENTITY not set — see header comment}"
-  echo "   → Developer ID signing enabled: $APPLE_SIGNING_IDENTITY"
-  if [[ -n "${APPLE_API_KEY:-}" ]]; then
-    echo "   → notarize via App Store Connect API key: $APPLE_API_KEY"
-  elif [[ -n "${APPLE_ID:-}" ]]; then
-    : "${APPLE_PASSWORD:?APPLE_PASSWORD (app-specific) required for notarization}"
-    : "${APPLE_TEAM_ID:?APPLE_TEAM_ID required for notarization}"
+  # Auto-source the Developer-ID + notarization vars from .env.publish so
+  # users don't have to `export` them by hand. ONLY pulls the known keys
+  # (no blanket `source` — that would also export JWT etc. and we already
+  # handle JWT above).
+  if [[ -f .env.publish ]]; then
+    for k in APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_ID APPLE_PASSWORD \
+             APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
+      if [[ -z "${!k:-}" ]]; then
+        v=$(grep -E "^[[:space:]]*${k}[[:space:]]*=" .env.publish | head -1 || true)
+        if [[ -n "$v" ]]; then
+          v="${v#*=}"
+          v="${v#\"}"; v="${v%\"}"
+          v="${v#\'}"; v="${v%\'}"
+          # Expand $HOME / ~ in paths
+          v="${v/#\~/$HOME}"
+          export "$k=$v"
+        fi
+      fi
+    done
+  fi
+
+  : "${APPLE_SIGNING_IDENTITY:?APPLE_SIGNING_IDENTITY not set in env or .env.publish}"
+  : "${APPLE_TEAM_ID:?APPLE_TEAM_ID not set in env or .env.publish}"
+  echo "   → Developer ID signing: $APPLE_SIGNING_IDENTITY"
+
+  # Two notarization auth paths — API key preferred (no app-specific
+  # password, no Apple-ID rotation pain). API key file may live in .blitz/,
+  # ~/.private_keys/, or wherever .env.publish points.
+  if [[ -n "${APPLE_API_KEY_PATH:-}" && -f "$APPLE_API_KEY_PATH" ]]; then
+    : "${APPLE_API_ISSUER:?APPLE_API_ISSUER required with APPLE_API_KEY_PATH}"
+    : "${APPLE_API_KEY_ID:?APPLE_API_KEY_ID required with APPLE_API_KEY_PATH}"
+    NOTARY_AUTH=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+    echo "   → notarize via ASC API key: $APPLE_API_KEY_ID (issuer ${APPLE_API_ISSUER:0:8}…)"
+  elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" ]]; then
+    NOTARY_AUTH=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
     echo "   → notarize via Apple ID: $APPLE_ID (team $APPLE_TEAM_ID)"
   else
-    echo "   ⚠ no notarization credentials — DMG will be signed but not notarized."
-    echo "     Gatekeeper will block on first launch until user explicitly approves."
+    echo "   ✗ --sign requires either APPLE_API_KEY_PATH+APPLE_API_KEY_ID+APPLE_API_ISSUER" >&2
+    echo "     OR APPLE_ID+APPLE_PASSWORD+APPLE_TEAM_ID. None found." >&2
+    exit 1
+  fi
+
+  # Confirm the Developer ID cert is actually in the keychain before we
+  # waste a Tauri build on a doomed run.
+  if ! security find-identity -v -p codesigning | grep -q "$APPLE_SIGNING_IDENTITY"; then
+    echo "   ✗ Developer ID cert not in keychain: $APPLE_SIGNING_IDENTITY" >&2
+    echo "     Run: security find-identity -v -p codesigning" >&2
+    exit 1
   fi
 fi
 
@@ -183,8 +220,24 @@ if [[ -d "$APP_PATH" ]]; then
   # sidecar binaries. After this, `codesign --verify` passes and the seal
   # survives the zip→download→extract round-trip, so right-click→Open
   # works on any Mac. Verified on Gap Map 2026-05-27.
-  echo "▶ Step 5a — ad-hoc re-sign the .app bundle (seal CodeResources)"
-  codesign --force --deep --sign - "$APP_PATH"
+  # Step 5a — re-sign the bundle. Two paths:
+  #   --sign present → Developer ID Application + hardened runtime + timestamp
+  #                    (this is what notarization REQUIRES).
+  #   no --sign      → ad-hoc seal (works for local + right-click→Open; will
+  #                    show "could not verify malware" on first launch).
+  if [[ $REQUIRE_SIGN -eq 1 ]]; then
+    echo "▶ Step 5a — Developer ID re-sign (hardened runtime + timestamp)"
+    SIGN_ARGS=(--force --deep --sign "$APPLE_SIGNING_IDENTITY"
+               --options runtime --timestamp)
+    # Entitlements: pull from Tauri's default location if it exists.
+    if [[ -f app-tauri/src-tauri/Entitlements.plist ]]; then
+      SIGN_ARGS+=(--entitlements app-tauri/src-tauri/Entitlements.plist)
+    fi
+    codesign "${SIGN_ARGS[@]}" "$APP_PATH"
+  else
+    echo "▶ Step 5a — ad-hoc re-sign the .app bundle (seal CodeResources)"
+    codesign --force --deep --sign - "$APP_PATH"
+  fi
   if codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
     echo "✓ bundle signature verifies (sealed resources present)"
   else
@@ -249,6 +302,61 @@ if [[ "$BUNDLES" == *dmg* && -d "$APP_PATH" ]]; then
 fi
 
 DMG=$(ls -t app-tauri/src-tauri/target/"$RUST_TRIPLE"/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
+
+# ─── Step 6 — Notarize + staple (only when --sign was passed) ─────────────
+# Apple's notarization service scans the bundle and returns a ticket. We
+# staple the ticket onto BOTH the .zip-extracted app AND the DMG so the
+# recipient's Gatekeeper can verify offline.
+if [[ $REQUIRE_SIGN -eq 1 ]]; then
+  echo
+  echo "▶ Step 6/6 — notarize + staple"
+
+  notarize_and_staple() {
+    local what="$1"        # human label
+    local artifact="$2"    # path to .zip or .dmg
+    local target="$3"      # path to .app (for stapling) OR same as artifact for DMG
+    [[ -f "$artifact" ]] || { echo "   (skipping $what — not present)"; return 0; }
+    echo "   • submit $what → notarytool (waits, ~2-15 min)"
+    if ! xcrun notarytool submit "$artifact" "${NOTARY_AUTH[@]}" --wait --output-format json \
+         > /tmp/notarize-$$.json 2>&1; then
+      echo "     ✗ notarization submit failed:" >&2
+      cat /tmp/notarize-$$.json >&2
+      return 1
+    fi
+    STATUS=$(python3 -c "import json; print(json.load(open('/tmp/notarize-$$.json')).get('status','?'))" 2>/dev/null || echo "?")
+    SUB_ID=$(python3 -c "import json; print(json.load(open('/tmp/notarize-$$.json')).get('id','?'))" 2>/dev/null || echo "?")
+    rm -f /tmp/notarize-$$.json
+    echo "     status=$STATUS  id=$SUB_ID"
+    if [[ "$STATUS" != "Accepted" ]]; then
+      echo "     ✗ notarization NOT accepted — fetch log:" >&2
+      xcrun notarytool log "$SUB_ID" "${NOTARY_AUTH[@]}" >&2
+      return 1
+    fi
+    echo "   • staple ticket onto $target"
+    xcrun stapler staple "$target" || return 1
+    xcrun stapler validate "$target" >/dev/null && echo "   ✓ stapled OK" || return 1
+  }
+
+  # Notarize the ZIP (since it contains the .app). Apple staples are
+  # applied to the .APP inside the zip dir, then we re-zip.
+  if [[ -d "$APP_PATH" && -f "${ZIP_PATH:-}" ]]; then
+    notarize_and_staple "ZIP" "$ZIP_PATH" "$APP_PATH" || exit 1
+    # Re-zip so the stapled .app ships inside the .zip artifact.
+    rm -f "$ZIP_PATH"
+    ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+    echo "   ✓ re-zipped stapled .app: $ZIP_PATH"
+  fi
+
+  # Notarize the DMG (DMGs are stapled in-place — no re-build needed)
+  if [[ -n "$DMG" ]]; then
+    notarize_and_staple "DMG" "$DMG" "$DMG" || exit 1
+  fi
+
+  echo
+  echo "✓ Notarized + stapled. Gatekeeper will accept on every Mac:"
+  echo "  spctl -a -vvv \"$APP_PATH\"        # expect 'accepted source=Notarized Developer ID'"
+fi
+
 if [[ -n "$DMG" ]]; then
   echo
   echo "🎉 DMG: $DMG"
