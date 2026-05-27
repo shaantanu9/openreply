@@ -489,6 +489,12 @@ export const api = {
     invalidate('list_topics', 'overview_stats', 'get_findings', 'run_query');
     return invoke('ingest_video', { url, topic, model, language });
   },
+  // YouTube search via yt-dlp (no API key). Returns metadata for up to
+  // `limit` videos — pair with `ingestVideo(url, topic, …)` to actually
+  // pull the transcript into the corpus. Cached 60s; query+limit form
+  // the cache key so re-searching the same phrase is instant.
+  youtubeSearch:      (query, limit = 10) =>
+    cachedInvoke('youtube_search', { query, limit }, 60000),
   whisperList:        ()                     => cachedInvoke('whisper_list',     null, 10000),
   whisperCatalogue:   ()                     => cachedInvoke('whisper_catalogue', null, 10000),
   whisperDownload:    (tier)                 => invoke('whisper_download', { tier }),

@@ -5613,6 +5613,30 @@ pub async fn ingest_video_preview(app: AppHandle, url: String) -> Result<Value, 
     .map_err(err_to_string)
 }
 
+/// Search YouTube via yt-dlp (no API key needed). Returns metadata for up to
+/// `limit` videos: id, title, channel, url, thumbnail, duration_s,
+/// view_count, published, description. Pair with `ingest_video` to
+/// actually transcribe + ingest a chosen result.
+#[tauri::command]
+pub async fn youtube_search(
+    app: AppHandle,
+    query: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let limit_str = limit.unwrap_or(10).to_string();
+    run_cli(
+        &app,
+        vec![
+            "ingest", "youtube-search",
+            "--query", &query,
+            "--limit", &limit_str,
+            "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
 #[tauri::command]
 pub async fn ingest_video(
     app: AppHandle,

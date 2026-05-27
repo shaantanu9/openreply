@@ -513,6 +513,7 @@ fn main() {
             // ── Video ingest: yt-dlp + faster-whisper (docs/video-ingest.md) ──
             commands::ingest_video_preview,
             commands::ingest_video,
+            commands::youtube_search,
             commands::whisper_list,
             commands::whisper_catalogue,
             commands::whisper_download,

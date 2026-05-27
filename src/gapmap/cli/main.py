@@ -4853,6 +4853,28 @@ def cmd_ingest_video(
     _emit(result, as_json=as_json, table_title=f"video: {url}")
 
 
+@ingest_app.command("youtube-search")
+def cmd_ingest_youtube_search(
+    query: str = typer.Option(..., "--query", "-q"),
+    limit: int = typer.Option(10, "--limit", "-n"),
+    as_json: bool = typer.Option(True, "--json", hidden=True),
+) -> None:
+    """Search YouTube via yt-dlp (no API key needed). Returns metadata only —
+    pair with `ingest video --url <url>` to actually transcribe + ingest.
+
+    Each result row has: video_id, title, channel, url, thumbnail,
+    duration_s, view_count, published, description.
+    """
+    _ = as_json
+    from ..sources.youtube import search_youtube_videos
+    try:
+        results = search_youtube_videos(query=query, limit=limit) or []
+        typer.echo(json.dumps({"ok": True, "count": len(results), "results": results}, default=str))
+    except Exception as e:
+        typer.echo(json.dumps({"ok": False, "error": str(e), "error_class": "youtube_search"}))
+        raise typer.Exit(code=0)
+
+
 @whisper_app.command("list")
 def cmd_whisper_list(
     as_json: bool = typer.Option(False, "--json"),

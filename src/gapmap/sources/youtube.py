@@ -75,11 +75,25 @@ def _search_via_ytdlp(query: str, limit: int) -> list[dict] | None:
         vid = e.get("id") or e.get("video_id")
         if not vid:
             continue
+        # Build a complete row — UIs need url + thumbnail + duration too.
+        # `extract_flat=in_playlist` returns minimal data per entry; we
+        # synthesize the canonical URL from the id since YouTube IDs are
+        # 11 chars and the URL shape is deterministic.
+        url = e.get("url") or e.get("webpage_url") or f"https://www.youtube.com/watch?v={vid}"
         out.append({
             "video_id": vid,
             "title": e.get("title"),
             "channel": e.get("uploader") or e.get("channel"),
+            "channel_id": e.get("channel_id") or e.get("uploader_id"),
             "published": e.get("upload_date") or None,  # YYYYMMDD; informational only
+            "duration_s": e.get("duration"),
+            "view_count": e.get("view_count"),
+            "description": e.get("description"),
+            "thumbnail": e.get("thumbnail") or (
+                f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg" if vid else None
+            ),
+            "url": url,
+            "canonical_url": url,
         })
     return out
 
