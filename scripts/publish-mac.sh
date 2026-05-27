@@ -167,6 +167,32 @@ fi
 
 APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/Gap Map.app"
 if [[ -d "$APP_PATH" ]]; then
+  # ── Step 5a — re-sign the .app bundle ad-hoc (CRITICAL) ────────────────
+  # With `signingIdentity` unset, Tauri leaves the .app with only the Rust
+  # LINKER's automatic ad-hoc signature on the main Mach-O
+  # (flags=0x20002 adhoc,linker-signed, Sealed Resources=none). That is NOT
+  # a valid bundle signature: `codesign --verify` fails with
+  #   "code has no resources but signature indicates they must be present"
+  # On the build machine it launches anyway (Gatekeeper trusts local +
+  # no quarantine). But once the app is zipped, downloaded (→ quarantine
+  # xattr), and extracted on another Mac, Gatekeeper evaluates the broken
+  # signature and HARD-BLOCKS the launch — the app simply won't open.
+  #
+  # Fix: re-sign the WHOLE bundle ad-hoc so it gets a real
+  # `_CodeSignature/CodeResources` seal. --deep also re-signs the inner
+  # sidecar binaries. After this, `codesign --verify` passes and the seal
+  # survives the zip→download→extract round-trip, so right-click→Open
+  # works on any Mac. Verified on Gap Map 2026-05-27.
+  echo "▶ Step 5a — ad-hoc re-sign the .app bundle (seal CodeResources)"
+  codesign --force --deep --sign - "$APP_PATH"
+  if codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
+    echo "✓ bundle signature verifies (sealed resources present)"
+  else
+    echo "✗ bundle signature STILL invalid after re-sign — investigate" >&2
+    codesign --verify --deep --strict "$APP_PATH" 2>&1 | head -3 >&2
+    exit 1
+  fi
+
   ZIP_OUT="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/zip"
   mkdir -p "$ZIP_OUT"
   ZIP_PATH="${ZIP_OUT}/Gap Map_0.1.0_${ARCH}.zip"
@@ -189,11 +215,37 @@ if [[ -d "$APP_PATH" ]]; then
   echo "✓ ZIP: $ZIP_PATH ($(du -sh "$ZIP_PATH" | cut -f1))"
 fi
 
-# Now build the DMG too (so the bundle dir has both artifacts). Tauri
-# rebuilds the .app from scratch in this pass, which is fine — we
-# already produced the .zip.
-if [[ "$BUNDLES" == *dmg* ]]; then
-  (cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles dmg)
+# Build the DMG from the SAME re-signed .app (NOT via Tauri's --bundles
+# dmg, which would regenerate an unsigned .app and reintroduce the
+# broken-signature bug fixed in Step 5a). We stage the re-signed .app +
+# an /Applications symlink and make a compressed read-only DMG with
+# hdiutil. `ditto` is used for the copy because plain `cp -R` can strip
+# the code signature's extended attributes.
+if [[ "$BUNDLES" == *dmg* && -d "$APP_PATH" ]]; then
+  echo "▶ Step 5c — DMG from the re-signed .app (hdiutil, not Tauri)"
+  DMG_OUT="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/dmg"
+  mkdir -p "$DMG_OUT"
+  DMG_PATH="${DMG_OUT}/Gap Map_0.1.0_${ARCH}.dmg"
+  rm -f "$DMG_PATH"
+
+  STAGE="$(mktemp -d)"
+  ditto "$APP_PATH" "$STAGE/Gap Map.app"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "Gap Map" -srcfolder "$STAGE" \
+    -ov -format UDZO "$DMG_PATH" >/dev/null
+  rm -rf "$STAGE"
+  echo "✓ DMG: $DMG_PATH ($(du -sh "$DMG_PATH" | cut -f1))"
+
+  # Verify the .app INSIDE the DMG still has a valid signature.
+  MNT="$(mktemp -d)"
+  hdiutil attach "$DMG_PATH" -nobrowse -mountpoint "$MNT" >/dev/null
+  if codesign --verify --deep --strict "$MNT/Gap Map.app" 2>/dev/null; then
+    echo "✓ DMG .app signature verifies"
+  else
+    echo "⚠ DMG .app signature did not verify cleanly" >&2
+  fi
+  hdiutil detach "$MNT" >/dev/null 2>&1 || true
+  rm -rf "$MNT"
 fi
 
 DMG=$(ls -t app-tauri/src-tauri/target/"$RUST_TRIPLE"/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
