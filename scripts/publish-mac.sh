@@ -141,8 +141,15 @@ if [[ $REQUIRE_SIGN -eq 1 ]]; then
   # (no blanket `source` — that would also export JWT etc. and we already
   # handle JWT above).
   if [[ -f .env.publish ]]; then
+    # Tauri-bundler convention (per tauri.app/distribute/sign/macos):
+    #   APPLE_API_KEY        — the 10-char KEY ID
+    #   APPLE_API_ISSUER     — the issuer UUID
+    #   APPLE_API_KEY_PATH   — file path to AuthKey_<id>.p8
+    # Tauri reads these directly during --bundles dmg|app to auto-notarize,
+    # so we MUST use exactly these names — anything else (e.g. APPLE_API_KEY_ID)
+    # collides and 401s.
     for k in APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_ID APPLE_PASSWORD \
-             APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
+             APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH; do
       if [[ -z "${!k:-}" ]]; then
         v=$(grep -E "^[[:space:]]*${k}[[:space:]]*=" .env.publish | head -1 || true)
         if [[ -n "$v" ]]; then
@@ -162,18 +169,17 @@ if [[ $REQUIRE_SIGN -eq 1 ]]; then
   echo "   → Developer ID signing: $APPLE_SIGNING_IDENTITY"
 
   # Two notarization auth paths — API key preferred (no app-specific
-  # password, no Apple-ID rotation pain). API key file may live in .blitz/,
-  # ~/.private_keys/, or wherever .env.publish points.
+  # password, no Apple-ID rotation pain).
   if [[ -n "${APPLE_API_KEY_PATH:-}" && -f "$APPLE_API_KEY_PATH" ]]; then
     : "${APPLE_API_ISSUER:?APPLE_API_ISSUER required with APPLE_API_KEY_PATH}"
-    : "${APPLE_API_KEY_ID:?APPLE_API_KEY_ID required with APPLE_API_KEY_PATH}"
-    NOTARY_AUTH=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
-    echo "   → notarize via ASC API key: $APPLE_API_KEY_ID (issuer ${APPLE_API_ISSUER:0:8}…)"
+    : "${APPLE_API_KEY:?APPLE_API_KEY (the 10-char KEY ID, e.g. GP8F78A74R) required}"
+    NOTARY_AUTH=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
+    echo "   → notarize via ASC API key: $APPLE_API_KEY (issuer ${APPLE_API_ISSUER:0:8}…)"
   elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" ]]; then
     NOTARY_AUTH=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
     echo "   → notarize via Apple ID: $APPLE_ID (team $APPLE_TEAM_ID)"
   else
-    echo "   ✗ --sign requires either APPLE_API_KEY_PATH+APPLE_API_KEY_ID+APPLE_API_ISSUER" >&2
+    echo "   ✗ --sign requires either APPLE_API_KEY_PATH+APPLE_API_KEY+APPLE_API_ISSUER" >&2
     echo "     OR APPLE_ID+APPLE_PASSWORD+APPLE_TEAM_ID. None found." >&2
     exit 1
   fi
