@@ -959,6 +959,11 @@ export async function renderTopic(root, { params }) {
   // Per-instance tab state (fix: module-level state leaked between topics).
   // Default to topic home (implemented by the insights renderer).
   let activeTab = 'home';
+  // Set true once the initial mount's `switchTab(defaultTab)` resolves, so
+  // any `gapmap:changed` events queued mid-mount don't fire a second
+  // `switchTab(curr)` against a stale `activeTab` and cause the active tab
+  // to flicker / change without user input. See the listener guard below.
+  let initialMountComplete = false;
   // Keep tab DOM alive between switches so revisits are instant.
   // We move real DOM nodes in/out (not cloned HTML), so event listeners
   // attached by loaders survive round-trips.
@@ -1500,6 +1505,13 @@ export async function renderTopic(root, { params }) {
     // rerun that tab loader shortly after the mutation event so the visible
     // UI and persisted snapshot both advance to the latest data.
     if (changedRefreshTimer) clearTimeout(changedRefreshTimer);
+    // Gate: if a `gapmap:changed` event lands DURING initial mount (before
+    // the user's intended `switchTab(defaultTab)` has resolved), skip the
+    // refresh. Without this gate, stale events from the previous topic's
+    // listeners (still running until cleanup) fire a `switchTab(activeTab)`
+    // against the OLD activeTab value, and the user sees the just-clicked
+    // tab silently flip back to something else.
+    if (!initialMountComplete) return;
     changedRefreshTimer = setTimeout(() => {
       const curr = normalizeTabName(activeTab);
       if (!curr || !loaders[curr]) return;
@@ -1892,7 +1904,13 @@ export async function renderTopic(root, { params }) {
     //     landed AND user wants auto-refresh.
     // When dirty but auto-off: still serve cache, flip _mapRender.stale
     // true so the header shows a "data changed — click Rebuild" chip.
-    if (!force && _mapRender && contentEl.dataset.tab === 'map') {
+    //
+    // Use `activeTab === 'map'` (the closure variable set by switchTab),
+    // NOT `contentEl.dataset.tab === 'map'`. The dataset attribute is
+    // never assigned, so the original check ALWAYS failed and forced a
+    // full rebuild every visit — user saw "loading…" on every click even
+    // when an in-memory render was available.
+    if (!force && _mapRender && activeTab === 'map') {
       // Two dirty signals feed in:
       //   1. `dirtyTabs` — same-session writes (collect/enrich completed
       //      while the topic page was open).
@@ -1901,28 +1919,34 @@ export async function renderTopic(root, { params }) {
       //      stale even though dirtyTabs is fresh).
       // Either one trips dirty.
       const dirty = dirtyTabs.has('map') || _mapDirtyTopics.has(topic);
-      const autoUpdate = isMapAutoUpdateEnabled();
-      if (!dirty || !autoUpdate) {
-        if (dirty) _mapRender.stale = true;
-        contentEl.innerHTML = _mapRender.html;
-        // Inject / swap the stale chip if needed without redoing the whole
-        // toolbar, so we don't lose the iframe's scroll+layout state.
-        if (_mapRender.stale) {
-          const toolbar = contentEl.querySelector('.map-toolbar-info');
-          if (toolbar && !toolbar.querySelector('[data-stale-chip]')) {
-            const chip = document.createElement('span');
-            chip.className = 'th-chip';
-            chip.dataset.staleChip = '1';
-            chip.style.color = 'var(--warn, #d97706)';
-            chip.title = 'New data has landed since this map was built. Click Rebuild to refresh.';
-            chip.innerHTML = '⚠ stale';
-            toolbar.appendChild(chip);
-          }
+      // ALWAYS serve cache when one exists. The previous logic forced a
+      // full rebuild whenever `dirty && autoUpdate` — and autoUpdate
+      // defaults to true, so any background enrich / collect / ingest /
+      // findings event made the next Map visit show a loading screen
+      // EVEN THOUGH a perfectly good cached render was already in memory.
+      // User reported: "graph is built, why does the tab keep loading?".
+      // Now we serve the cache instantly, flip `.stale = true` so the
+      // toolbar shows a "data changed — click Rebuild" chip, and let
+      // the user trigger the refresh explicitly via the Rebuild button.
+      // (The button calls loadMap(true) which bypasses this short-circuit.)
+      if (dirty) _mapRender.stale = true;
+      contentEl.innerHTML = _mapRender.html;
+      // Inject / swap the stale chip if needed without redoing the whole
+      // toolbar, so we don't lose the iframe's scroll+layout state.
+      if (_mapRender.stale) {
+        const toolbar = contentEl.querySelector('.map-toolbar-info');
+        if (toolbar && !toolbar.querySelector('[data-stale-chip]')) {
+          const chip = document.createElement('span');
+          chip.className = 'th-chip';
+          chip.dataset.staleChip = '1';
+          chip.style.color = 'var(--warn, #d97706)';
+          chip.title = 'New data has landed since this map was built. Click Rebuild to refresh.';
+          chip.innerHTML = '⚠ stale';
+          toolbar.appendChild(chip);
         }
-        _wireMapToolbarButtons(_mapRender.outPath, _mapRender.mapMode, isMapAutoUpdateEnabled());
-        return;
       }
-      // else: dirty + auto on → fall through to full rebuild below.
+      _wireMapToolbarButtons(_mapRender.outPath, _mapRender.mapMode, isMapAutoUpdateEnabled());
+      return;
     }
     mapLoadInFlight = true;
     // Clear the in-session cache at the start of a real rebuild so a mid-
@@ -1933,7 +1957,10 @@ export async function renderTopic(root, { params }) {
     // Gated write — drop any innerHTML write that would land after the user
     // already clicked away to another tab. Keeps loadMap's slow post-await
     // graph-build render from overwriting, say, loadReport's skeleton.
-    const set = (html) => { if (contentEl.dataset.tab === 'map') contentEl.innerHTML = html; };
+    // Uses `activeTab` (the closure variable updated by switchTab) — the
+    // DOM dataset attribute was never set so the original check let every
+    // write land regardless of the active tab.
+    const set = (html) => { if (activeTab === 'map') contentEl.innerHTML = html; };
     const mapMode = (localStorage.getItem(MAP_MODE_KEY) || 'skeleton').toLowerCase() === 'full'
       ? 'full'
       : 'skeleton';
@@ -3852,6 +3879,20 @@ export async function renderTopic(root, { params }) {
     }
   }
 
+  // Throttle persisted writes to localStorage during a stream — without
+  // this, a navigation-away or app-reload mid-response would lose every
+  // token that hadn't yet reached `chat:done` (saveChatHistory was only
+  // called on done/error/cancel before). 2s cadence is cheap on the
+  // trimmed-to-50-message history.
+  let _chatSaveTimer = null;
+  const scheduleChatSave = () => {
+    if (_chatSaveTimer) return;
+    _chatSaveTimer = setTimeout(() => {
+      _chatSaveTimer = null;
+      saveChatHistory(topic);
+    }, 2000);
+  };
+
   function handleChatLine(line) {
     // CLI with --json emits one JSON event per line.
     //   RAG mode:   {event: 'start'|'token'|'done'|'error', ...}
@@ -3867,6 +3908,7 @@ export async function renderTopic(root, { params }) {
       if (typeof t !== 'string') return;
       last.text = (last.text || '') + t;
       renderAssistantInPlace(last);
+      scheduleChatSave();
     } else if (ev.event === 'tool_call') {
       if (statusText) statusText.textContent = `myind AI is using ${ev.name || 'a tool'}…`;
       last.toolCalls = last.toolCalls || [];
@@ -5000,6 +5042,10 @@ export async function renderTopic(root, { params }) {
     // Intent layer is additive — any failure falls back to pre-intent flow.
   }
   await switchTab(normalizeTabName(defaultTab));
+  // Mark mount complete so the gapmap:changed listener can fire normal
+  // tab refreshes from here on. Without this gate, stale events queued
+  // mid-mount silently switch tabs on the user.
+  initialMountComplete = true;
 }
 
 // Badge colors per source type — matches the source badge palette used on
