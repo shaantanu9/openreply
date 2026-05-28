@@ -467,7 +467,7 @@ async function renderStep3(root, body, info) {
   document.getElementById('ob-anthropic').onclick = () => api.openUrl('https://console.anthropic.com/settings/keys');
   document.getElementById('ob-ollama').onclick = () => api.openUrl('https://ollama.com/download');
   document.getElementById('ob-reddit-apps').onclick = () => api.openUrl('https://www.reddit.com/prefs/apps');
-  document.getElementById('ob-guide').onclick = () => api.openUrl('https://github.com/shaantanu98/reddit-myind#readme');
+  document.getElementById('ob-guide').onclick = () => api.openUrl('https://github.com/myind-ai/gapmap#readme');
   document.getElementById('back-3').onclick = () => renderStep(root, 2, info);
   const continueBtn = document.getElementById('next-3');
   const healthInlineStatus = document.getElementById('ob-health-inline-status');

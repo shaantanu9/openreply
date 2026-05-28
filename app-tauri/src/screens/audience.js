@@ -11,6 +11,7 @@
 // Each cluster card carries citation links to actual Reddit/HN/etc.
 // posts so users can verify the persona is grounded.
 import { api, esc } from '../api.js';
+import { postLink } from '../lib/postLink.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -143,7 +144,11 @@ function exemplarPostBlock(p) {
   const ex = p.exemplar_post;
   if (!ex && !p.exemplar_post_ids?.length) return '';
   const id = ex?.id || p.exemplar_post_ids?.[0];
-  const url = (ex?.url || ex?.permalink) || postLinkUrl(id);
+  // postLink() handles the multi-source case (Reddit-prefixes permalinks
+  // only for reddit/lemmy rows, returns p.url for the rest). If the
+  // exemplar carries no usable link, fall back to the id-shaped Reddit
+  // guess via postLinkUrl().
+  const url = postLink(ex) || postLinkUrl(id);
   const title = (ex?.title || '').slice(0, 200) || `(post ${id})`;
   return `
     <div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px">

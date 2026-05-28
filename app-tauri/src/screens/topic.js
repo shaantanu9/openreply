@@ -18,6 +18,7 @@ import { loadBets } from './bets.js';
 import { wireFreshnessBadge } from '../lib/enrichStatus.js';
 import { TAB_PIPELINES, TAB_READONLY, runAllForTopic, runTabPipeline, tabHasData, isAutoRunEnabled, setAutoRunEnabled, tabCountFromBundle } from '../lib/tabPipelines.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { postLink } from '../lib/postLink.js';
 
 const TOPIC_QUERY_TIMEOUT_MS = 25000;
 const TAB_LOAD_TIMEOUT_MS = 70000;
@@ -2899,10 +2900,16 @@ export async function renderTopic(root, { params }) {
                       GROUP BY coalesce(p.source_type,'reddit')
                       ORDER BY posts DESC`;
       // Pull up to 60 subs — frontend paginates with a show-more button.
+      // Scope to reddit/lemmy: for every other adapter `p.sub` is a
+      // free-form bucket (gnews=feed name, hn=site domain, github=repo,
+      // arxiv=venue, rss=feed slug, …) — long, often URL-shaped strings
+      // that don't belong under an `r/...` label and visually overflow
+      // the tile grid.
       const subsSql = `SELECT p.sub AS sub, count(*) AS posts
                        FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
                        WHERE tp.topic=:topic
                          AND p.sub IS NOT NULL AND p.sub <> ''
+                         AND coalesce(p.source_type,'reddit') IN ('reddit','lemmy')
                        GROUP BY p.sub ORDER BY posts DESC LIMIT 60`;
       const [sources, subs] = await Promise.all([
         api.runQuery(srcSql, topic),
@@ -3116,7 +3123,7 @@ export async function renderTopic(root, { params }) {
           <div class="paper-analyze-row" data-post-id="${esc(r.id)}" style="margin-top:10px">
             <button class="btn btn-ghost btn-sm btn-bordered paper-analyze-btn" data-analyze="${esc(r.id)}"><i data-lucide="sparkles"></i> Analyze</button>
           </div>`;
-        const url = r.url || r.permalink || '';
+        const url = postLink(r);
         const cites = r.source === 'scholar' || r.source === 'openalex'
           ? (r.score ? `${r.score.toLocaleString()} cites · ` : '')
           : '';
@@ -4220,7 +4227,7 @@ export async function renderTopic(root, { params }) {
           : '';
         const html = exp + [
           renderSection('Posts', 'file-text', b.posts, p => row(
-            `<a href="${esc(p.url || (p.permalink ? 'https://reddit.com' + p.permalink : '#'))}" target="_blank" rel="noopener"><b>${esc(p.title || '(untitled)')}</b></a>
+            `<a href="${esc(postLink(p) || '#')}" target="_blank" rel="noopener"><b>${esc(p.title || '(untitled)')}</b></a>
              <span class="muted"> · ${esc(p.source || 'reddit')} · score ${p.score || 0}</span>
              ${p.excerpt ? `<div class="muted" style="font-size:12px;margin-top:2px">${esc(p.excerpt)}…</div>` : ''}`)),
           renderSection('Findings', 'lightbulb', b.graph_nodes, n => row(

@@ -59,6 +59,7 @@ const LLM_LABELS = {
   deepseek:   'DeepSeek',
   mistral:    'Mistral',
   google:     'Google Gemini',
+  nvidia:     'NVIDIA NIM',
   ollama:     'Ollama (local)',
 };
 
@@ -503,7 +504,7 @@ export async function renderSettings(root) {
   }
   if (fbGithub) {
     fbGithub.addEventListener('click', () => {
-      api.openUrl('https://github.com/shaantanu98/reddit-myind/issues/new');
+      api.openUrl('https://github.com/myind-ai/gapmap/issues');
     });
   }
   if (fbLogs) {
@@ -1094,7 +1095,7 @@ function wireStaticButtons(root) {
     location.hash = '#/welcome';
   });
   root.querySelector('#btn-open-science')?.addEventListener('click', () => { location.hash = '#/science'; });
-  root.querySelector('#btn-open-readme')?.addEventListener('click', () => api.openUrl('https://github.com/shaantanu98/reddit-myind'));
+  root.querySelector('#btn-open-readme')?.addEventListener('click', () => api.openUrl('https://github.com/myind-ai/gapmap'));
   root.querySelector('#btn-mcp-docs')?.addEventListener('click', () => api.openUrl('https://modelcontextprotocol.io/docs'));
   root.querySelector('#btn-clear-profile')?.addEventListener('click', () => {
     if (!confirm('Clear your local profile (name/email/role)? LLM keys stay.')) return;
@@ -1205,7 +1206,7 @@ function fillRedditCard(root, byok) {
       <button class="btn btn-ghost btn-sm btn-bordered" id="btn-auth-docs">Setup guide</button>
     </div>`;
   card.querySelector('#btn-reddit-apps').onclick = () => api.openUrl('https://www.reddit.com/prefs/apps');
-  card.querySelector('#btn-auth-docs').onclick   = () => api.openUrl('https://github.com/shaantanu98/reddit-myind#readme');
+  card.querySelector('#btn-auth-docs').onclick   = () => api.openUrl('https://github.com/myind-ai/gapmap#readme');
 }
 
 function fillDataCard(root, info, dataDir, dbSize) {
@@ -1642,6 +1643,7 @@ function _estimateCost(queued, effective, byok) {
     'deepseek':   0.5,
     'mistral':    1.0,
     'google':     0.3,
+    'nvidia':     0.2,  // NVIDIA NIM — free for personal-tier API keys
     'ollama':     0.0,
     '':           0.15,
   };

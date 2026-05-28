@@ -112,6 +112,61 @@ function pushPersistedLine(topic, text, cls) {
   }
 }
 
+// Topic of the collect currently streaming `collect:progress` events. Tracked
+// at module scope so the global listener below knows which topic to attribute
+// incoming lines to even when the user is on a different screen. Rust enforces
+// single-flight (one active collect at a time), so a single variable is enough.
+let _activeTopic = null;
+export function setActiveCollectTopic(topic) { _activeTopic = topic || null; }
+export function getActiveCollectTopic() { return _activeTopic; }
+
+// Bind ONCE at module load. Without this, `collect:progress` events emitted
+// while the user is on any non-collect screen are silently dropped — Tauri
+// broadcasts them but no JS subscriber is listening, and Rust keeps no durable
+// buffer. Pushing into `_collectLogs` here means the persistent buffer always
+// has the full live tape, regardless of which page is mounted.
+let _globalCollectListenersBound = false;
+async function bindGlobalCollectListeners() {
+  if (_globalCollectListenersBound) return;
+  _globalCollectListenersBound = true;
+  try {
+    await api.onCollectProgress((line) => {
+      const t = _activeTopic;
+      if (!t || typeof line !== 'string') return;
+      let cls = null;
+      try { cls = classifyLine(line); } catch {}
+      pushPersistedLine(t, line, cls);
+      // Re-broadcast as a DOM event so the mounted UI (renderCollect) renders
+      // it. The mounted screen MUST NOT also subscribe to `collect:progress`
+      // directly — that would double-persist the line.
+      window.dispatchEvent(new CustomEvent('gapmap:collect-line', {
+        detail: { topic: t, line, cls },
+      }));
+    });
+    await api.onCollectDone((payload) => {
+      const t = _activeTopic;
+      const code = payload?.code;
+      const cls = payload?.error_class;
+      if (t) {
+        const next = code === 0
+          ? 'done'
+          : cls === 'cancelled' ? 'cancelled' : 'failed';
+        _collectStatus.set(t, next);
+      }
+      _activeTopic = null;
+      window.dispatchEvent(new CustomEvent('gapmap:collect-done-global', {
+        detail: { topic: t, payload },
+      }));
+    });
+  } catch {
+    // Tauri SDK not available (tests / preview). The screen-level fallback
+    // still works for the in-session case; persistence across navigation is
+    // only lost in environments without the global event bus.
+    _globalCollectListenersBound = false;
+  }
+}
+bindGlobalCollectListeners();
+
 export async function renderCollect(root, { params }) {
   const topic = decodeURIComponent(params[0] || '');
   const slug = params[0];
@@ -678,15 +733,28 @@ export async function renderCollect(root, { params }) {
   const nowSpinner = $('#now-spinner');
 
   // --- subscribe before starting ---
-  const unlistenProgress = await api.onCollectProgress(line => {
-    appendLine(line);
+  // Render-side listener. The module-scope global listener owns the
+  // persistence side: it pushes every `collect:progress` line into
+  // `_collectLogs[_activeTopic]` regardless of which screen is mounted, then
+  // re-dispatches `gapmap:collect-line` for us to render. That's why we listen
+  // to the DOM event here (not `api.onCollectProgress` directly) and call
+  // `appendLine` with `persist:false` — the global handler already persisted
+  // it.
+  const onCollectLine = (ev) => {
+    if (!stillHere()) return;
+    const detail = ev?.detail || {};
+    if (detail.topic !== topic || typeof detail.line !== 'string') return;
+    const line = detail.line;
+    appendLine(line, detail.cls || null, { persist: false });
     const short = line.slice(0, 140);
     sub.textContent = short;
     // Strip rich-formatting "• " prefix the sidecar prepends, then surface
     // the most recent meaningful line as the big "Now" banner text.
     const clean = line.replace(/^\s*[•·→]\s*/, '').trim();
     if (clean && nowText) nowText.textContent = clean.slice(0, 120);
-  });
+  };
+  window.addEventListener('gapmap:collect-line', onCollectLine);
+  const unlistenProgress = () => window.removeEventListener('gapmap:collect-line', onCollectLine);
 
   const setFinal = (label, bg, fg) => {
     statusPill.textContent = label;
@@ -887,6 +955,25 @@ export async function renderCollect(root, { params }) {
     for (const { text, cls } of persisted) {
       appendLine(text, cls, { persist: false });
     }
+    // Seed the "Now" banner + status sub-line from the last meaningful
+    // persisted line so revisits don't stare at "Starting up…" until the
+    // next live event arrives. Walk the tail backward to skip blank lines.
+    for (let i = persisted.length - 1; i >= 0; i--) {
+      const lastText = persisted[i]?.text || '';
+      const clean = lastText.replace(/^\s*[•·→]\s*/, '').trim();
+      if (clean) {
+        if (nowText) nowText.textContent = clean.slice(0, 120);
+        sub.textContent = lastText.slice(0, 140);
+        break;
+      }
+    }
+  }
+
+  // If we're revisiting an in-flight collect, set _activeTopic now so the
+  // global progress listener immediately attributes incoming lines to this
+  // topic. startCollect's already_running branch sets it again — idempotent.
+  if (_collectStatus.get(topic) === 'running') {
+    setActiveCollectTopic(topic);
   }
 
   // Paint the "Searching for…" strip as soon as possible. Canonicalize is
@@ -965,6 +1052,7 @@ export async function renderCollect(root, { params }) {
           appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
           _collectStatus.set(topic, 'running');
           _collectStart.set(topic, Date.now());
+          setActiveCollectTopic(topic);
         } else if (r?.blocked) {
           // Race: a real collect grabbed the slot between our unstick and
           // start — fall back to the normal blocked path.
@@ -982,6 +1070,7 @@ export async function renderCollect(root, { params }) {
           appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
           _collectStatus.set(topic, 'running');
           _collectStart.set(topic, Date.now());
+          setActiveCollectTopic(topic);
         }
       } catch (e) {
         appendLine(`✗ cancel-and-start failed: ${e?.message || e}`, 'err');
@@ -1029,10 +1118,12 @@ export async function renderCollect(root, { params }) {
       }
       _collectStatus.set(topic, 'running');
       _collectStart.set(topic, Date.now());
+      setActiveCollectTopic(topic);
     } else {
       appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
       _collectStatus.set(topic, 'running');
       _collectStart.set(topic, Date.now());
+      setActiveCollectTopic(topic);
     }
   } catch (e) {
     appendLine(`✗ failed to start: ${e?.message || e}`, 'err');

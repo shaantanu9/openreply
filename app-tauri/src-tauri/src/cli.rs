@@ -238,6 +238,17 @@ enum DaemonOutcome {
     DaemonBroken(String),
 }
 
+// Maximum time we wait for the daemon's request mutex before declaring lock
+// contention and falling back to a one-shot Python spawn. Pre-fix, a long
+// LLM job (sentiment-by-source, audience-build, concepts) could hold this
+// lock for 30-90s while every other `run_cli` call from the UI — settings
+// refreshes, topic queries, tab switches — queued behind it, making the
+// whole app feel frozen. The one-shot fallback costs ~200ms in dev (.venv
+// python) and ~2-5s in the bundled DMG (macOS Gatekeeper boot), so we keep
+// the dev wait shorter than the prod wait.
+const DAEMON_LOCK_TIMEOUT_DEV_SECS: u64 = 3;
+const DAEMON_LOCK_TIMEOUT_PROD_SECS: u64 = 6;
+
 async fn run_via_dev_daemon(
     py: &std::path::Path,
     args: &[&str],
@@ -246,7 +257,22 @@ async fn run_via_dev_daemon(
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
     let slot = dev_daemon_slot();
-    let mut guard = slot.lock().await;
+    let mut guard = match tokio::time::timeout(
+        std::time::Duration::from_secs(DAEMON_LOCK_TIMEOUT_DEV_SECS),
+        slot.lock(),
+    )
+    .await
+    {
+        Ok(g) => g,
+        Err(_) => {
+            // Long-running LLM job is holding the slot. Bail out so `run_cli`
+            // falls through to the one-shot path — UI queries can't be
+            // starved by background work.
+            return DaemonOutcome::DaemonBroken(format!(
+                "lock contention >{DAEMON_LOCK_TIMEOUT_DEV_SECS}s — falling back to one-shot"
+            ));
+        }
+    };
 
     // Lazy spawn / re-spawn after a previous broken slot.
     if guard.is_none() {
@@ -416,7 +442,23 @@ async fn run_via_sidecar_daemon(
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
     let slot = sidecar_daemon_slot();
-    let mut guard = slot.lock().await;
+    // Same lock-timeout pattern as the dev daemon. Prod timeout is longer
+    // because the one-shot fallback (`build_sidecar_cmd().output()`) pays
+    // a macOS Gatekeeper + Python-boot tax on every spawn, so we prefer to
+    // wait a bit longer for the warm daemon before giving up.
+    let mut guard = match tokio::time::timeout(
+        std::time::Duration::from_secs(DAEMON_LOCK_TIMEOUT_PROD_SECS),
+        slot.lock(),
+    )
+    .await
+    {
+        Ok(g) => g,
+        Err(_) => {
+            return DaemonOutcome::DaemonBroken(format!(
+                "lock contention >{DAEMON_LOCK_TIMEOUT_PROD_SECS}s — falling back to one-shot"
+            ));
+        }
+    };
 
     if guard.is_none() {
         match spawn_sidecar_daemon(sidecar, data_dir).await {

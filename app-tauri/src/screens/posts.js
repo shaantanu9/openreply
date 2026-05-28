@@ -2,6 +2,7 @@
 // Pure SQL via api.runQuery (joins topic_posts -> posts).
 import { api, esc, timeAgo } from '../api.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { postLink, REDDIT_FAMILY } from '../lib/postLink.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -75,12 +76,11 @@ async function fetchPosts(topic) {
   return { rows: rows || [], total: (countRows?.[0]?.n) || 0 };
 }
 
-// Sources that genuinely have a Reddit-style sub. For everything else,
-// `p.sub` is being reused as a free-form bucket (gnews=feed, hn=site,
-// stackoverflow=tag, github=repo, etc.) and must NOT be rendered with
-// the `r/...` prefix or linked to reddit.com — that produced the
-// "r/gnews" 404s we saw in production.
-const REDDIT_FAMILY = new Set(['reddit', 'lemmy']);
+// `REDDIT_FAMILY` lives in src/lib/postLink.js — every screen that
+// renders a finding's source URL imports from there to avoid drift.
+// `p.sub` is reused as a free-form bucket for non-Reddit sources
+// (gnews=feed, hn=site, stackoverflow=tag, github=repo, etc.) and must
+// NOT be rendered with the `r/...` prefix or linked to reddit.com.
 
 function subBucketLabel(source, sub) {
   // Per-source human label for the bucket field. Falls back to the raw
@@ -102,20 +102,6 @@ function subBucketLabel(source, sub) {
   return sub;
 }
 
-function postLink(p, source) {
-  // Pick the right target URL per source. Permalinks are reddit-shaped,
-  // so prepending reddit.com to a non-Reddit permalink would 404.
-  if (REDDIT_FAMILY.has(source) && p.permalink) {
-    return `https://www.reddit.com${p.permalink}`;
-  }
-  if (p.url) return p.url;
-  // Last-resort fallback to permalink (rare — only if a non-Reddit row
-  // somehow has a permalink but no url). Strip leading slash so it
-  // becomes a relative path the browser ignores rather than an apparent
-  // absolute path.
-  return p.permalink ? p.permalink.replace(/^\/+/, '') : '#';
-}
-
 function authorLine(p, source) {
   if (!p.author) return '';
   if (REDDIT_FAMILY.has(source))               return `u/${esc(p.author)}`;
@@ -130,7 +116,7 @@ function renderRow(p) {
     ? timeAgo(new Date(p.created_utc * 1000).toISOString())
     : '—';
   const source = p.source_type || 'reddit';
-  const link = postLink(p, source);
+  const link = postLink(p) || '#';
 
   // Source chip uses the human label, not the raw key, so users see
   // "Google News" instead of "gnews".

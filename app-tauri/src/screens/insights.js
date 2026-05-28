@@ -10,6 +10,7 @@ import { api, esc } from '../api.js';
 import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { postLink } from '../lib/postLink.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -652,7 +653,7 @@ async function showCounterEvidenceModal(topic, findingTitle, postIds) {
                 <span class="posts-source">${esc(r.source)}</span>
                 <span class="muted">u/${esc(r.author || 'anon')}</span>
               </div>
-              <a href="${esc(r.permalink ? 'https://reddit.com' + r.permalink : (r.url || '#'))}" target="_blank" rel="noopener" class="cep-title">${esc(r.title || '(untitled)')}</a>
+              <a href="${esc(postLink(r) || '#')}" target="_blank" rel="noopener" class="cep-title">${esc(r.title || '(untitled)')}</a>
               ${r.excerpt ? `<p class="cep-excerpt">${esc(r.excerpt)}${r.excerpt.length >= 400 ? '…' : ''}</p>` : ''}
             </div>
           `).join('')}
@@ -1013,7 +1014,7 @@ async function showResearchLinksModal(topic, findingTitle) {
           ? `<p class="muted">No linked papers yet. Run <code>research link-research --topic "${esc(topic)}"</code> or collect academic sources (arxiv/openalex/pubmed).</p>`
           : rows.map(r => {
               const sim = r.similarity != null ? (Math.round(r.similarity * 100) + '%') : '';
-              const href = r.url || (r.permalink ? 'https://reddit.com' + r.permalink : '#');
+              const href = postLink(r) || '#';
               return `
                 <div class="research-link-row">
                   <a href="${esc(href)}" target="_blank" rel="noopener" class="rlr-title">${esc(r.title || '(untitled paper)')}</a>
