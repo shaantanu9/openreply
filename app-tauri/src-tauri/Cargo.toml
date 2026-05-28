@@ -3,6 +3,8 @@ name = "gapmap"
 version = "0.1.3"
 description = "Gap Map — Multi-source research gap finder"
 authors = ["Shantanu Bombatkar"]
+homepage = "https://gapmap.myind.ai/"
+repository = "https://github.com/myind-ai/gapmap"
 edition = "2021"
 
 [build-dependencies]

@@ -300,6 +300,7 @@ export async function renderSettings(root) {
         <p>Re-run the welcome wizard or open the docs.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-reset-onboarding">Reset onboarding</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-website">gapmap.myind.ai →</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-science">Methodology →</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-readme">GitHub readme</button>
         </div>
@@ -1116,6 +1117,7 @@ function wireStaticButtons(root) {
     location.hash = '#/welcome';
   });
   root.querySelector('#btn-open-science')?.addEventListener('click', () => { location.hash = '#/science'; });
+  root.querySelector('#btn-open-website')?.addEventListener('click', () => api.openUrl('https://gapmap.myind.ai/'));
   root.querySelector('#btn-open-readme')?.addEventListener('click', () => api.openUrl('https://github.com/myind-ai/gapmap'));
   root.querySelector('#btn-mcp-docs')?.addEventListener('click', () => api.openUrl('https://modelcontextprotocol.io/docs'));
   root.querySelector('#btn-clear-profile')?.addEventListener('click', () => {

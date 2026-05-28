@@ -30,7 +30,9 @@ uv sync --all-extras        # everything (fetch + mcp + analyze + dev)
 
 ### Desktop app
 
-Download the latest `.dmg` (macOS) / `.msi` (Windows) / `.AppImage` (Linux) from the [Releases](https://github.com/shaantanu9/gap-map-pro/releases) page.
+**Download Gap Map → [gapmap.myind.ai](https://gapmap.myind.ai/)**
+
+Or pull a build directly: `.dmg` (macOS Apple Silicon + Intel) / `.msi` / `.exe` (Windows) / `.AppImage` / `.deb` (Linux) from the [latest release](https://github.com/myind-ai/gapmap/releases/latest).
 
 ---
 
