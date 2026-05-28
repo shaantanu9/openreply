@@ -254,3 +254,33 @@ jobs:
           releaseDraft: true
           prerelease: true
           args: ${{ matrix.args }}
+
+      # ── Post-build signing audit (macOS only) ──────────────────────────
+      # If APPLE_CERTIFICATE was set, the build above ran the SIGNED path
+      # and the produced .app should have Developer ID authority. Verify
+      # it explicitly so a future secret rotation (or accidentally
+      # unsetting the secret) doesn't silently downgrade us to ad-hoc.
+      # If APPLE_CERTIFICATE was NOT set we print a loud warning so it's
+      # obvious in the logs that this run shipped unsigned artifacts.
+      - name: Audit macOS signature (warn loud if not Developer ID)
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          BUNDLE_DIR="app-tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          APP=$(find "$BUNDLE_DIR" -maxdepth 1 -name "*.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then
+            echo "::warning::no .app bundle found at $BUNDLE_DIR — cannot audit signature"
+            exit 0
+          fi
+          echo "Auditing: $APP"
+          OUT=$(codesign -dv --verbose=2 "$APP" 2>&1 || true)
+          echo "$OUT"
+          if echo "$OUT" | grep -q "Authority=Developer ID Application"; then
+            echo "::notice::macOS bundle properly signed with Developer ID"
+            exit 0
+          fi
+          if echo "$OUT" | grep -q "Signature=adhoc"; then
+            echo "::warning title=Unsigned macOS bundle::This build is AD-HOC SIGNED, not Developer ID. Users will hit Gatekeeper. Set APPLE_CERTIFICATE + related secrets, or sign locally via scripts/publish-mac.sh --sign before publishing."
+          else
+            echo "::warning title=Unknown signature state::codesign output did not contain Developer ID or adhoc markers — manual inspection required."
+          fi

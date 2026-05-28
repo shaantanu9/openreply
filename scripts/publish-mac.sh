@@ -252,9 +252,13 @@ if [[ -d "$APP_PATH" ]]; then
     exit 1
   fi
 
+  # Read app version from tauri.conf.json so renames track the real
+  # release version (don't ever hardcode — three releases got bitten
+  # by a stale 0.1.0 fallback here).
+  APP_VERSION=$(python3 -c "import json; print(json.load(open('app-tauri/src-tauri/tauri.conf.json'))['version'])" 2>/dev/null || echo "0.0.0")
   ZIP_OUT="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/zip"
   mkdir -p "$ZIP_OUT"
-  ZIP_PATH="${ZIP_OUT}/Gap Map_0.1.0_${ARCH}.zip"
+  ZIP_PATH="${ZIP_OUT}/Gap Map_${APP_VERSION}_${ARCH}.zip"
   rm -f "$ZIP_PATH"
   echo "▶ Step 5b — produce .zip (recommended path on macOS 26.5+ Tahoe)"
   # Apple's canonical way to zip a SIGNED .app for distribution /
@@ -284,7 +288,10 @@ if [[ "$BUNDLES" == *dmg* && -d "$APP_PATH" ]]; then
   echo "▶ Step 5c — DMG from the re-signed .app (hdiutil, not Tauri)"
   DMG_OUT="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/dmg"
   mkdir -p "$DMG_OUT"
-  DMG_PATH="${DMG_OUT}/Gap Map_0.1.0_${ARCH}.dmg"
+  # Same version-from-config trick as Step 5b. APP_VERSION is set above
+  # iff we entered the zip branch; re-resolve here for the dmg-only path.
+  APP_VERSION="${APP_VERSION:-$(python3 -c "import json; print(json.load(open('app-tauri/src-tauri/tauri.conf.json'))['version'])" 2>/dev/null || echo "0.0.0")}"
+  DMG_PATH="${DMG_OUT}/Gap Map_${APP_VERSION}_${ARCH}.dmg"
   rm -f "$DMG_PATH"
 
   STAGE="$(mktemp -d)"
