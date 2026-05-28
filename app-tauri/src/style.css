@@ -8911,6 +8911,26 @@ html.dark .skel::after {
 }
 .sidebar-toggle svg { width: 14px; height: 14px; stroke-width: 2; }
 
+/* ── Full state — explicit override.
+   The base `.app` rule sets `grid-template-columns: 248px 1fr` so untagged
+   sessions render correctly. But when transitioning hidden→full via
+   `body.setAttribute('data-sidebar', 'full')`, some browsers can hold onto
+   a stale layout calc and the main column stays at 0-width (looks like
+   a "blank screen"). Spelling the rule explicitly under the "full"
+   selector forces re-resolution and matches the symmetry of "rail" /
+   "hidden" so all three states are reciprocal. Same for `.sidebar`:
+   re-stating `display: flex` ensures `display: none` from the prior
+   "hidden" state is overridden cleanly. */
+body[data-sidebar="full"] .app {
+  grid-template-columns: 248px 1fr;
+}
+body[data-sidebar="full"] .sidebar {
+  display: flex;
+}
+body[data-sidebar="full"] .sidebar-reveal-strip {
+  display: none;
+}
+
 /* ── Rail state: icon-only ~64px sidebar. Tooltip-on-hover relies on the
       existing `title` attributes already present on most nav links, so we
       don't need to render the labels in a popover. */
