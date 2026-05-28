@@ -589,6 +589,23 @@ export const api = {
   // enrich was actually running, so the follow-up `enrichGraphStream`
   // call will just spawn fresh with no surprise.
   cancelEnrich: (topic = null) => invoke('cancel_enrich_for_topic', { topic }),
+
+  // App reset / clean-install (Settings → Danger Zone). All three are
+  // safe to call from the FE without any user-confirmation flag — the
+  // confirmation lives in the UI layer (typed-DELETE modal). The Rust
+  // commands deliberately do NOT have a "are you sure" guard so the
+  // CLI / test harnesses can use them programmatically.
+  //
+  //   appResetPreview() → read-only summary {data_dir, data_mb,
+  //     topic_count, license_email, byok_providers:[]} for the modal.
+  //   appHardReset()    → wipes data_dir + BYOK env file; FE must
+  //     follow up with localStorage.clear() AND appRelaunch().
+  //   appRelaunch()     → calls Tauri's AppHandle::restart() — process
+  //     is replaced; the promise never resolves on success.
+  appResetPreview: () => invoke('app_reset_preview'),
+  appHardReset:    () => invoke('app_hard_reset'),
+  appRelaunch:     () => invoke('app_relaunch'),
+
   exportHtml:      (topic, forceOrOpts = false) => {
     const opts = (typeof forceOrOpts === 'object' && forceOrOpts !== null)
       ? forceOrOpts

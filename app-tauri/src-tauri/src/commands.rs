@@ -4613,8 +4613,17 @@ pub async fn solutions_data_bundle(
 }
 
 /// Path to the user's BYOK env file (`~/.config/gapmap/.env`).
+///
+/// macOS/Linux: `$HOME/.config/gapmap/.env`.
+/// Windows: `%USERPROFILE%\.config\gapmap\.env` — `HOME` is not set by
+/// default on Windows, so we fall back to `USERPROFILE` (the standard
+/// per-user root the OS guarantees). Same `.config/gapmap` suffix is
+/// kept so `gapmap reset` (and the bundled `.env` doc) point at the
+/// same location on every platform.
 fn byok_env_path() -> Result<std::path::PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|e| format!("HOME/USERPROFILE unset: {e}"))?;
     let dir = std::path::PathBuf::from(home).join(".config").join("gapmap");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join(".env"))
@@ -6814,6 +6823,246 @@ pub async fn license_logout(app: AppHandle) -> Result<Value, String> {
     }
     clear_access_token(&app);
     Ok(serde_json::json!({ "ok": true }))
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  App reset / clean-install — Danger Zone in Settings.
+//
+//  Three commands powering the "start fresh on this machine" flow:
+//    1. `app_reset_preview` — read-only summary of what would be
+//       deleted (paths, sizes, topic count, license email, BYOK
+//       provider list). Drives the confirmation modal so users know
+//       exactly what's going away before they type DELETE.
+//    2. `app_hard_reset` — wipes the entire data_dir contents
+//       (SQLite + license_state.json + caches + schedule.log) AND
+//       the BYOK env file. Caller (FE) is responsible for clearing
+//       localStorage and triggering relaunch.
+//    3. `app_relaunch` — calls Tauri's `app.restart()` so the user
+//       gets the fresh-install experience without manually quitting.
+//
+//  All three are cross-platform via `data_dir(app)` (Tauri resolves
+//  app_data_dir per OS: ~/Library/Application Support on macOS,
+//  %APPDATA% on Windows, ~/.local/share on Linux) and `byok_env_path()`
+//  (`HOME` with `USERPROFILE` fallback for Windows).
+// ════════════════════════════════════════════════════════════════════════
+
+/// Recursive size walker for the data_dir preview. Returns
+/// (file_count, total_bytes). Symlinks intentionally NOT followed —
+/// otherwise an `~/Library/Application Support/com.shantanu.gapmap/gapmap`
+/// containing a symlink to / would lock the UI for minutes.
+fn walk_dir_size(path: &std::path::Path) -> (u64, u64) {
+    fn recurse(p: &std::path::Path, files: &mut u64, bytes: &mut u64) {
+        let meta = match std::fs::symlink_metadata(p) {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+        let ft = meta.file_type();
+        if ft.is_symlink() {
+            return;
+        }
+        if ft.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(p) {
+                for entry in entries.flatten() {
+                    recurse(&entry.path(), files, bytes);
+                }
+            }
+        } else if ft.is_file() {
+            *files += 1;
+            *bytes += meta.len();
+        }
+    }
+    let mut files = 0;
+    let mut bytes = 0;
+    recurse(path, &mut files, &mut bytes);
+    (files, bytes)
+}
+
+/// Read-only preview of what `app_hard_reset` would delete. Safe to
+/// call any time — does not modify anything on disk.
+///
+/// Returns a JSON object the FE renders inside the confirmation modal:
+///   - `data_dir`: absolute path of the app data folder.
+///   - `data_files`, `data_bytes`, `data_mb`: total content under it.
+///   - `sqlite_present`: whether `gapmap.sqlite` exists.
+///   - `topic_count`: distinct topics with at least one post (0 if no DB).
+///   - `license_present`, `license_email`: license_state.json status.
+///   - `byok_env_path`: absolute path to the keys file (may be null
+///     if HOME/USERPROFILE unset).
+///   - `byok_present`: whether the file exists.
+///   - `byok_providers`: short names of providers with a non-empty key.
+#[tauri::command]
+pub async fn app_reset_preview(app: AppHandle) -> Result<Value, String> {
+    use crate::cli::data_dir;
+
+    let data = data_dir(&app).map_err(err_to_string)?;
+    let (files, bytes) = walk_dir_size(&data);
+
+    // SQLite topic count — open read-only so a held write-lock from the
+    // running app doesn't block us. Falls back to 0 silently on any
+    // error (schema missing, file absent, version mismatch).
+    let sqlite_path = data.join("gapmap.sqlite");
+    let sqlite_present = sqlite_path.exists();
+    let mut topic_count: i64 = 0;
+    if sqlite_present {
+        let uri = format!("file:{}?mode=ro", sqlite_path.to_string_lossy());
+        if let Ok(conn) = rusqlite::Connection::open_with_flags(
+            &uri,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        ) {
+            topic_count = conn
+                .query_row(
+                    "SELECT count(DISTINCT topic) FROM topic_posts",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(0);
+        }
+    }
+
+    // License email — best-effort parse, never error out.
+    let license_path = data.join("license_state.json");
+    let license_present = license_path.exists();
+    let mut license_email: Option<String> = None;
+    if license_present {
+        if let Ok(content) = std::fs::read_to_string(&license_path) {
+            if let Ok(json) = serde_json::from_str::<Value>(&content) {
+                license_email = json
+                    .get("email")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    // Some license payloads nest under "user".
+                    .or_else(|| {
+                        json.get("user")
+                            .and_then(|u| u.get("email"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                    });
+            }
+        }
+    }
+
+    // BYOK env file — list providers that have a non-empty key.
+    let byok_path = byok_env_path().ok();
+    let byok_present = byok_path
+        .as_ref()
+        .map(|p| p.exists())
+        .unwrap_or(false);
+    let mut byok_providers: Vec<String> = vec![];
+    if let Some(p) = byok_path.as_ref() {
+        if byok_present {
+            if let Ok(content) = std::fs::read_to_string(p) {
+                let map = parse_env(&content);
+                // (key in the env file, friendly name shown in the modal)
+                let providers: &[(&str, &str)] = &[
+                    ("ANTHROPIC_API_KEY",  "anthropic"),
+                    ("OPENAI_API_KEY",     "openai"),
+                    ("OPENROUTER_API_KEY", "openrouter"),
+                    ("GROQ_API_KEY",       "groq"),
+                    ("DEEPSEEK_API_KEY",   "deepseek"),
+                    ("MISTRAL_API_KEY",    "mistral"),
+                    ("GOOGLE_API_KEY",     "google"),
+                    ("NVIDIA_API_KEY",     "nvidia"),
+                    ("REDDIT_CLIENT_ID",   "reddit"),
+                ];
+                for (env_key, name) in providers {
+                    if map.get(*env_key).map_or(false, |v| !v.is_empty()) {
+                        byok_providers.push((*name).to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "data_dir": data.to_string_lossy().to_string(),
+        "data_files": files,
+        "data_bytes": bytes,
+        "data_mb": (bytes as f64 / 1_048_576.0 * 100.0).round() / 100.0,
+        "sqlite_present": sqlite_present,
+        "topic_count": topic_count,
+        "license_present": license_present,
+        "license_email": license_email,
+        "byok_env_path": byok_path.map(|p| p.to_string_lossy().to_string()),
+        "byok_present": byok_present,
+        "byok_providers": byok_providers,
+    }))
+}
+
+/// Wipe the app data dir contents + BYOK env file. Idempotent — re-running
+/// on an already-clean machine returns `removed: []`.
+///
+/// We `remove_dir_all` + `create_dir_all` the data_dir rather than walking
+/// + removing per-file so transient locked files (Tauri's own log handle,
+/// in-flight SQLite WAL) bubble up as one clear error instead of partial
+/// state. The recreate ensures the next launch doesn't blow up looking
+/// for a missing app data folder.
+///
+/// Caller MUST:
+///   1. Clear browser-side localStorage (data_dir wipe doesn't touch
+///      WebView storage — that's separate per-app on Tauri).
+///   2. Call `app_relaunch` (or instruct user to Cmd+Q + reopen) so any
+///      cached in-memory state from before the reset is discarded.
+#[tauri::command]
+pub async fn app_hard_reset(app: AppHandle) -> Result<Value, String> {
+    use crate::cli::data_dir;
+
+    let data = data_dir(&app).map_err(err_to_string)?;
+    let mut removed: Vec<String> = vec![];
+    let mut errors: Vec<String> = vec![];
+
+    // Wipe + recreate. Recreating an empty dir is safe — next launch's
+    // data_dir() call will be a no-op since it already exists.
+    if data.exists() {
+        match std::fs::remove_dir_all(&data) {
+            Ok(_) => removed.push(data.to_string_lossy().to_string()),
+            Err(e) => errors.push(format!("remove {}: {e}", data.display())),
+        }
+        if let Err(e) = std::fs::create_dir_all(&data) {
+            errors.push(format!("recreate {}: {e}", data.display()));
+        }
+    }
+
+    // BYOK env file — delete the file but leave the .config/gapmap
+    // directory so future `byok_set` calls don't have to recreate it.
+    if let Ok(env_path) = byok_env_path() {
+        if env_path.exists() {
+            match std::fs::remove_file(&env_path) {
+                Ok(_) => removed.push(env_path.to_string_lossy().to_string()),
+                Err(e) => errors.push(format!("remove {}: {e}", env_path.display())),
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Ok(serde_json::json!({
+            "ok": false,
+            "removed": removed,
+            "errors": errors,
+        }));
+    }
+    Ok(serde_json::json!({
+        "ok": true,
+        "removed": removed,
+    }))
+}
+
+/// Restart the running app. Equivalent to the user quitting (Cmd+Q on
+/// macOS, Alt+F4 on Windows) and re-launching from Applications / Start
+/// Menu / Launcher. The current process is replaced — this command does
+/// not return.
+///
+/// Called by the Hard Reset flow right after `app_hard_reset` so the
+/// user lands in the wizard with zero in-memory state from the pre-reset
+/// session. On Tauri 2 this is `AppHandle::restart()`; we don't have
+/// to thread an exit code since Tauri handles the spawn-then-exit
+/// dance internally.
+#[tauri::command]
+pub async fn app_relaunch(app: AppHandle) -> Result<(), String> {
+    // restart() returns Infallible / `!` on Tauri 2 — the call never
+    // returns because the current process is replaced. The Result wrap
+    // keeps the command shape consistent with the rest of the API so the
+    // FE can `await` it without special-casing.
+    app.restart();
 }
 
 #[cfg(test)]

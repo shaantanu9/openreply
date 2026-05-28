@@ -1,6 +1,6 @@
 [package]
 name = "gapmap"
-version = "0.1.2"
+version = "0.1.3"
 description = "Gap Map — Multi-source research gap finder"
 authors = ["Shantanu Bombatkar"]
 edition = "2021"

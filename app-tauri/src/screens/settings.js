@@ -316,12 +316,33 @@ export async function renderSettings(root) {
       </div>
 
       <!-- Danger -->
-      <div class="settings-card" style="border-color:#F5DADA;background:#FFFBFB">
+      <div class="settings-card" style="border-color:#F5DADA;background:#FFFBFB;grid-column:1/-1">
         <h4 style="color:#B84747"><i data-lucide="alert-triangle"></i> Danger zone</h4>
         <p>These actions can't be undone.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn btn-danger btn-sm" id="btn-clear-profile">Clear profile</button>
           <button class="btn btn-danger-ghost btn-sm" id="btn-clear-prefs">Reset all preferences</button>
+          <button class="btn btn-danger-ghost btn-sm" id="btn-reset-ui-state">Reset UI state (keep data + keys)</button>
+        </div>
+        <!-- Hard reset — separated visually so the most-destructive action is
+             its own block, not lost in a row of buttons. Opens the typed-DELETE
+             modal (see openHardResetModal). -->
+        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #F5DADA">
+          <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:240px">
+              <div style="font-weight:600;color:#B84747">Delete all app data &amp; start fresh</div>
+              <div style="color:var(--ink-3);font-size:var(--fs-12);margin-top:4px">
+                Wipes every topic, finding, sentiment, graph, license, and LLM
+                key from this Mac. The app restarts in the welcome wizard with
+                a clean slate. Use before sharing the app with someone else, or
+                to simulate a first install on this machine. Requires typing
+                <b>DELETE</b> to confirm.
+              </div>
+            </div>
+            <button class="btn btn-danger btn-sm icon-btn" id="btn-hard-reset">
+              <i data-lucide="trash-2"></i> Delete &amp; reset
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1109,6 +1130,31 @@ function wireStaticButtons(root) {
       .filter(k => !k.startsWith('gapmap.onboarding'))
       .forEach(k => localStorage.removeItem(k));
     renderSettings(root);
+  });
+  // Reset UI state — clears EVERY gapmap.* localStorage key (including
+  // onboarding, tab cache, dismissed banners, dashboard SWR cache).
+  // Keeps the SQLite DB + license + BYOK env intact. Used to recover
+  // from a wedged UI without losing data. Triggers a hard reload so
+  // every module re-bootstraps with empty in-memory state.
+  root.querySelector('#btn-reset-ui-state')?.addEventListener('click', () => {
+    if (!confirm(
+      'Reset all UI state? This clears onboarding progress, tab cache, ' +
+      'dismissed banners, and dashboard cache. Your topics, findings, ' +
+      'LLM keys, and license are kept. The app will reload.'
+    )) return;
+    const removed = Object.keys(localStorage)
+      .filter(k => k.startsWith('gapmap.'));
+    removed.forEach(k => localStorage.removeItem(k));
+    // Also nuke sessionStorage in case anything cached the run-mode there.
+    try { sessionStorage.clear(); } catch {}
+    location.hash = '#/';
+    location.reload();
+  });
+  // Hard reset — wipes data_dir + BYOK env file + localStorage, then
+  // relaunches the app. Opens the typed-DELETE confirmation modal so it
+  // can't be triggered by a stray click.
+  root.querySelector('#btn-hard-reset')?.addEventListener('click', () => {
+    openHardResetModal();
   });
   // T1.3 trash card — restore / purge
   fillTrashCard(root);
@@ -2164,4 +2210,167 @@ async function fillWhisperCard(root, catalogueRows, ytdlpVer) {
       updBtn.textContent = orig;
     }
   });
+}
+
+// ─── Hard-reset modal ──────────────────────────────────────────────────
+// Opens a full-screen-ish modal that:
+//   1. Calls api.appResetPreview() so the user sees EXACTLY what's about
+//      to disappear (topic count, license email, BYOK provider list,
+//      data folder size in MB).
+//   2. Requires the user to type "DELETE" (case-sensitive) into a text
+//      input to enable the red Delete & restart button. This isn't
+//      paranoia — it's a deliberate friction so the most-destructive
+//      button in the app can't be triggered by a stray click or muscle
+//      memory.
+//   3. On confirm: calls api.appHardReset() to wipe data_dir + BYOK env,
+//      then localStorage.clear() + sessionStorage.clear() to drop UI
+//      state, then api.appRelaunch() to restart the process.
+//
+// Cleanup: Escape key + click-on-backdrop both close. Focus returns to
+// the button that triggered the modal so keyboard nav stays smooth.
+function openHardResetModal() {
+  const returnFocusTo = document.activeElement;
+  const host = document.createElement('div');
+  host.className = 'modal-backdrop';
+  host.id = 'hard-reset-modal';
+  // Inline the markup. The skeleton placeholders render INSTANTLY so the
+  // modal never opens to an empty screen while the preview RPC is in
+  // flight — the preview typically lands in 50-200 ms.
+  host.innerHTML = `
+    <div class="modal" style="max-width:560px;width:100%">
+      <div class="modal-head" style="display:flex;align-items:center;gap:10px">
+        <i data-lucide="alert-triangle" style="color:#B84747;width:22px;height:22px"></i>
+        <div>
+          <h3 style="margin:0;color:#B84747">Delete all app data?</h3>
+          <p style="margin:2px 0 0;color:var(--ink-3);font-size:var(--fs-13)">
+            This wipes every topic, finding, license, and LLM key on this Mac.
+            Cannot be undone.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-body" id="hard-reset-preview" style="margin:14px 0">
+        <div class="skel skel-line" style="width:80%"></div>
+        <div class="skel skel-line" style="width:60%"></div>
+        <div class="skel skel-line" style="width:70%"></div>
+      </div>
+
+      <div style="background:#FFFBFB;border:1px solid #F5DADA;border-radius:8px;padding:12px;margin-bottom:14px">
+        <div style="font-size:var(--fs-13);color:var(--ink-2);margin-bottom:8px">
+          Type <code style="background:#fff;padding:2px 6px;border-radius:4px;font-weight:700;color:#B84747">DELETE</code> below to confirm.
+        </div>
+        <input type="text" id="hard-reset-confirm-input" autocomplete="off" autocorrect="off"
+               autocapitalize="off" spellcheck="false"
+               placeholder="Type DELETE"
+               style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-family:inherit;font-size:14px" />
+      </div>
+
+      <div class="modal-actions" style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" id="hard-reset-cancel">Cancel</button>
+        <button class="btn btn-danger btn-sm icon-btn" id="hard-reset-go" disabled>
+          <i data-lucide="trash-2"></i> Delete &amp; restart
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(host);
+  window.refreshIcons?.();
+
+  const cleanup = () => {
+    host.remove();
+    document.removeEventListener('keydown', escHandler);
+    if (returnFocusTo?.focus) returnFocusTo.focus();
+  };
+  function escHandler(e) { if (e.key === 'Escape') { e.preventDefault(); cleanup(); } }
+  document.addEventListener('keydown', escHandler);
+  host.addEventListener('click', e => { if (e.target === host) cleanup(); });
+  host.querySelector('#hard-reset-cancel').onclick = cleanup;
+
+  // Confirm input gating — only enable the Delete button when the user
+  // types DELETE (case-sensitive). Trimmed compare so trailing spaces
+  // from a paste don't block confirmation.
+  const input = host.querySelector('#hard-reset-confirm-input');
+  const goBtn = host.querySelector('#hard-reset-go');
+  input.addEventListener('input', () => {
+    goBtn.disabled = input.value.trim() !== 'DELETE';
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !goBtn.disabled) { e.preventDefault(); goBtn.click(); }
+  });
+  setTimeout(() => input.focus(), 30);
+
+  // Fetch preview in parallel — UI is already mounted, no race.
+  api.appResetPreview().then(p => {
+    const body = host.querySelector('#hard-reset-preview');
+    if (!body) return;
+    const rows = [];
+    rows.push(`<div style="display:flex;gap:8px;padding:6px 0">
+      <i data-lucide="database" style="color:var(--ink-3);width:16px;height:16px;flex-shrink:0;margin-top:2px"></i>
+      <div><b>${p.topic_count || 0}</b> topic${p.topic_count === 1 ? '' : 's'} with collected posts ·
+      <span class="muted">${p.data_mb || 0} MB across ${p.data_files || 0} files at <code>${esc(p.data_dir || '')}</code></span></div>
+    </div>`);
+    if (p.license_present) {
+      rows.push(`<div style="display:flex;gap:8px;padding:6px 0">
+        <i data-lucide="badge-check" style="color:var(--ink-3);width:16px;height:16px;flex-shrink:0;margin-top:2px"></i>
+        <div>Local license ${p.license_email ? `for <b>${esc(p.license_email)}</b>` : '(no email on file)'} — will be removed</div>
+      </div>`);
+    }
+    if (p.byok_present && p.byok_providers?.length) {
+      rows.push(`<div style="display:flex;gap:8px;padding:6px 0">
+        <i data-lucide="key-round" style="color:var(--ink-3);width:16px;height:16px;flex-shrink:0;margin-top:2px"></i>
+        <div>API keys for <b>${p.byok_providers.map(esc).join(', ')}</b> at <code>${esc(p.byok_env_path || '')}</code></div>
+      </div>`);
+    }
+    if (!p.topic_count && !p.license_present && !(p.byok_present && p.byok_providers?.length)) {
+      rows.push(`<div class="muted" style="padding:6px 0">Nothing user-data-sized to delete — the data folder is already empty. The reset will still clear the UI state and restart.</div>`);
+    }
+    body.innerHTML = rows.join('');
+    window.refreshIcons?.();
+  }).catch(e => {
+    const body = host.querySelector('#hard-reset-preview');
+    if (body) {
+      body.innerHTML = `<div class="muted" style="color:#B84747">Couldn't read preview: ${esc(e?.message || e)}. The reset will still run.</div>`;
+    }
+  });
+
+  // Execute reset → clear LS → relaunch.
+  goBtn.onclick = async () => {
+    goBtn.disabled = true;
+    input.disabled = true;
+    goBtn.innerHTML = '<span class="spinner-inline"></span> Resetting…';
+    try {
+      const r = await api.appHardReset();
+      if (r && r.ok === false) {
+        // Partial failure — surface the errors and stop. Don't relaunch
+        // into a half-wiped state where the next session sees stale rows
+        // mixed with a fresh schema.
+        const msg = Array.isArray(r.errors) ? r.errors.join('\n') : 'unknown error';
+        alert(`Hard reset partially failed:\n\n${msg}\n\nApp NOT restarted. Investigate the listed paths manually.`);
+        goBtn.disabled = false;
+        input.disabled = false;
+        goBtn.innerHTML = '<i data-lucide="trash-2"></i> Delete & restart';
+        window.refreshIcons?.();
+        return;
+      }
+      // Wipe browser-side storage AFTER the Rust wipe — if Rust failed
+      // and we returned above, LS stays intact so the user can retry.
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+      // Relaunch — process is replaced; the promise typically never
+      // resolves on success. Catch swallows any "ChannelClosed" noise
+      // from the call landing mid-restart.
+      await api.appRelaunch().catch(() => {});
+      // Belt-and-braces: if relaunch returned (it shouldn't on success),
+      // navigate to welcome so the current process at least shows the
+      // wizard until the user manually quits.
+      location.hash = '#/welcome';
+      location.reload();
+    } catch (e) {
+      alert(`Hard reset failed: ${e?.message || e}`);
+      goBtn.disabled = false;
+      input.disabled = false;
+      goBtn.innerHTML = '<i data-lucide="trash-2"></i> Delete & restart';
+      window.refreshIcons?.();
+    }
+  };
 }
