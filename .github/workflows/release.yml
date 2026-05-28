@@ -391,6 +391,12 @@ jobs:
           # mac .app.tar.gz → .zip (extract + zip via ditto so the bundle's
           # macOS-extended-attribute codesignature stays intact — `tar` would
           # silently strip the xattrs).
+          # Resolve the publish dir as an ABSOLUTE path BEFORE we cd
+          # anywhere — the zip step below has to target this dir from
+          # inside a mktemp tmpdir, and relative paths break on Linux
+          # runners (mktemp -d on Linux returns /tmp/xyz, so `../../`
+          # resolves to `/` → "Permission denied" → exit 15).
+          PUB_DIR="$PWD"
           for tar in Gap.Map_aarch64.app.tar.gz Gap.Map_x64.app.tar.gz; do
             [ -f "$tar" ] || continue
             case "$tar" in
@@ -407,8 +413,15 @@ jobs:
               # signed + stapled; consumers staple-validate against the
               # ticket Apple embedded, not against xattrs that survive
               # transport.
-              (cd "$tmp" && zip -qry "../../Gap.Map_${NUM}_${arch}.zip" "$(basename "$APP")")
-              mv "/tmp/Gap.Map_${NUM}_${arch}.zip" "./Gap.Map_${NUM}_${arch}.zip" 2>/dev/null || true
+              #
+              # IMPORTANT: write the zip to an ABSOLUTE path (PUB_DIR/...)
+              # so this works regardless of where mktemp -d places the
+              # tmpdir. The previous relative `../../Gap.Map_...zip` was
+              # only correct when mktemp landed two levels below the
+              # current PWD — which happens on macOS (/var/folders/...)
+              # but NOT on Linux (/tmp/xyz, where `../../` is `/`).
+              DEST="$PUB_DIR/Gap.Map_${NUM}_${arch}.zip"
+              (cd "$tmp" && zip -qry "$DEST" "$(basename "$APP")")
               echo "  rezipped: Gap.Map_${NUM}_${arch}.zip"
             fi
             rm -rf "$tmp" "$tar"
