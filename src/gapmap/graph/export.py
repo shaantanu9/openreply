@@ -224,15 +224,43 @@ def export_graph_json(topic: str, mode: str = "skeleton", max_post_nodes: int = 
             "metadata": p.get("metadata", {}),
         })
 
+    # Surface link metadata to the viewer so it can style edges by
+    # graphify-style confidence (EXTRACTED / INFERRED / AMBIGUOUS), draw
+    # heavier strokes for shared-evidence edges, and highlight cross-
+    # community "surprising connections" without a second fetch.
+    def _link_md(row: dict) -> dict:
+        raw = row.get("metadata_json")
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw) or {}
+        except Exception:
+            return {}
+
     links_out = [
-        {"source": r["src"], "target": r["dst"], "kind": r["kind"], "weight": r.get("weight") or 1.0}
+        {
+            "source": r["src"],
+            "target": r["dst"],
+            "kind": r["kind"],
+            "weight": r.get("weight") or 1.0,
+            "metadata": _link_md(r),
+        }
         for r in all_edges
         if r["src"] in keep_ids and r["dst"] in keep_ids
     ]
 
     kinds_count: dict[str, int] = {}
+    confidence_count: dict[str, int] = {}
+    community_count: dict[str, int] = {}
     for n in nodes_out:
         kinds_count[n["kind"]] = kinds_count.get(n["kind"], 0) + 1
+        cid = (n.get("metadata") or {}).get("community_id")
+        if cid is not None:
+            community_count[str(cid)] = community_count.get(str(cid), 0) + 1
+    for l in links_out:
+        c = (l.get("metadata") or {}).get("confidence")
+        if c:
+            confidence_count[c] = confidence_count.get(c, 0) + 1
 
     findings = _findings_for_topic(topic)
 
@@ -251,6 +279,10 @@ def export_graph_json(topic: str, mode: str = "skeleton", max_post_nodes: int = 
             "total_edges": full_total_edges,
             "nodes_by_kind": kinds_count,
             "classification_summary": _classification_summary(findings["painpoint"]),
+            # graphify-style additive metadata for the D3 viewer to color +
+            # legend by. Empty dicts are fine; the JS handles missing keys.
+            "edge_confidence": confidence_count,
+            "community_sizes": community_count,
         },
         "findings": findings,
         "nodes": nodes_out,
@@ -486,6 +518,48 @@ _HTML_TEMPLATE = """<!doctype html>
     font-size:11px; user-select:none; }
   .controls input { margin-right:4px; vertical-align:middle; }
 
+  /* ── graphify-style lens controls ─────────────────────────────────────── */
+  .lenses {
+    display:flex; flex-wrap:wrap; gap:5px; margin: 4px 0 12px;
+    padding: 8px; background: var(--surface-2);
+    border:1px solid var(--border); border-radius:8px;
+  }
+  .lenses #graphSearch {
+    flex: 1 1 100%;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 5px 8px; font-size: 11px;
+    margin-bottom: 4px;
+  }
+  .lenses #graphSearch:focus { outline:none; border-color: var(--accent); }
+  .lens-btn {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 14px;
+    padding: 3px 9px; font-size: 11px; cursor: pointer;
+    user-select: none; transition: all .15s;
+  }
+  .lens-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .lens-btn.active {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+
+  /* Edge styling by graphify-style confidence. Set via class on the line. */
+  .link.confidence-EXTRACTED { stroke-dasharray: none; }
+  .link.confidence-INFERRED  { stroke-dasharray: 5 3; }
+  .link.confidence-AMBIGUOUS { stroke-dasharray: 1 3; stroke-opacity: 0.32; }
+  /* Surprising-connections lens: thick orange outline on cross-community edges */
+  .link.surprising { stroke: var(--accent) !important; stroke-width: 2.5px !important; stroke-opacity: 0.85 !important; }
+  /* Lens dim — used for non-matched nodes/edges when a lens is active */
+  .node.dim circle { opacity: 0.18; }
+  .node.dim text { opacity: 0.18; }
+  .link.dim { stroke-opacity: 0.08 !important; }
+  /* Knowledge-gap and bridge highlights: extra stroke + glow on circles. */
+  .node.gap circle { stroke: var(--v-chronic); stroke-width: 3.5px; }
+  .node.bridge circle { stroke: var(--v-mint); stroke-width: 3.5px;
+    filter: drop-shadow(0 0 4px var(--v-mint)); }
+  /* Community ring — appended as a second circle; coloured per community. */
+  .community-ring { fill: none; stroke-width: 2; opacity: 0.85; pointer-events: none; }
+
   .empty { color:var(--muted); font-size:11px; font-style:italic; padding:4px; }
 
   footer { position:fixed; bottom:4px; right:10px; font-size:9px; color:var(--muted); }
@@ -537,6 +611,16 @@ _HTML_TEMPLATE = """<!doctype html>
     <div class="controls">
       <button id="resetZoom">Reset zoom</button>
       <label><input type="checkbox" id="showUsers"> Show users</label>
+    </div>
+    <!-- graphify-style insight lenses: surprising / gaps / bridges
+         + a search box. All toggle-style overlays on the same graph. -->
+    <div class="lenses" id="lenses">
+      <input type="search" id="graphSearch" placeholder="Search findings…" />
+      <button class="lens-btn" id="lensSurprising" title="Highlight cross-community edges (the unexpected connections)">⚡ Surprising</button>
+      <button class="lens-btn" id="lensGaps" title="Highlight painpoints with no candidate solver in the graph">🕳 Gaps</button>
+      <button class="lens-btn" id="lensBridges" title="Highlight findings triangulated across ≥3 source kinds">🌉 Bridges</button>
+      <button class="lens-btn" id="lensConfidence" title="Cycle edge filter by graphify-style confidence">⊕ All edges</button>
+      <button class="lens-btn" id="lensCommunities" title="Color nodes by community membership">🎨 Communities</button>
     </div>
     <div id="details" class="details">
       <p class="empty">Click any finding on the left — the graph zooms to its evidence and this panel shows the posts.</p>
@@ -1207,6 +1291,222 @@ function showNodeDetails(node) {
     el.addEventListener("click", () => selectNodeById(el.dataset.nodeId));
   });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// graphify-style additive lenses (2026-05-28). Everything below is purely
+// additive — touches only newly-introduced DOM nodes and adds classes to
+// the existing nodeSel / linkSel. Removing this whole block restores the
+// viewer to its prior behaviour.
+// ───────────────────────────────────────────────────────────────────────────
+
+// 1. Tag every link with its graphify-style confidence class so the CSS
+//    (.link.confidence-EXTRACTED / -INFERRED / -AMBIGUOUS) can style it.
+linkSel.each(function(d) {
+  const md = (d && d.metadata) || {};
+  const conf = md.confidence;
+  if (conf) this.classList.add("confidence-" + conf);
+});
+
+// 2. Compute per-node lens flags from the existing data so the lens
+//    buttons are instant (no fetch). These are stable for the session.
+const _gapKindIn = new Set(["could_address","potentially_solves","solves"]);
+const _solvedSet = new Set();
+links.forEach(l => {
+  if (_gapKindIn.has(l.kind)) {
+    const tid = typeof l.target === "object" ? l.target.id : l.target;
+    _solvedSet.add(tid);
+  }
+});
+Object.values(nodesById).forEach(n => {
+  n._isGap = (n.kind === "painpoint") && !_solvedSet.has(n.id);
+  const sd = (n.metadata || {}).source_diversity || 0;
+  n._isBridge = sd >= 3;
+  n._communityId = (n.metadata || {}).community_id;
+});
+
+// 3. Community color overlay — a second outer ring per node, coloured by
+//    community_id. Hidden until the "Communities" lens is on.
+const communityColors = d3.scaleOrdinal(d3.schemeTableau10);
+nodeSel.insert("circle", "circle")
+  .attr("class", "community-ring")
+  .attr("r", d => radiusOf(d) + 3.5)
+  .attr("stroke", d => d._communityId != null
+        ? communityColors(String(d._communityId)) : "transparent")
+  .style("display", "none");
+
+// 4. Confidence-filter cycler. Order: ALL → INFERRED only → EXTRACTED only
+//    → AMBIGUOUS only → ALL …
+const _confidenceStates = [null, "INFERRED", "EXTRACTED", "AMBIGUOUS"];
+let _confidenceIdx = 0;
+function applyConfidenceFilter() {
+  const want = _confidenceStates[_confidenceIdx];
+  const btn = document.getElementById("lensConfidence");
+  if (want) btn.textContent = "⊕ " + want.toLowerCase();
+  else btn.textContent = "⊕ All edges";
+  btn.classList.toggle("active", want != null);
+  linkSel.classed("dim", function(d) {
+    if (!want) return false;
+    const c = (d.metadata || {}).confidence;
+    return c !== want;
+  });
+}
+
+// 5. Lens state — at most one of surprising/gaps/bridges may be on. Search
+//    works alongside any lens. Communities is independent of the rest.
+const lensState = { surprising:false, gaps:false, bridges:false, communities:false };
+
+function applyLenses() {
+  const anyHighlight = lensState.surprising || lensState.gaps || lensState.bridges;
+
+  // Reset transient classes
+  linkSel.classed("surprising", false);
+  nodeSel.classed("gap", false).classed("bridge", false);
+  nodeSel.classed("dim", false);
+  linkSel.classed("dim", false);
+
+  // Surprising connections: cross-community + decent weight (≥0.45).
+  // Also covers co_evidenced where weight is a shared-count integer.
+  if (lensState.surprising) {
+    linkSel.classed("surprising", d => {
+      const s = typeof d.source === "object" ? d.source : nodesById[d.source];
+      const t = typeof d.target === "object" ? d.target : nodesById[d.target];
+      if (!s || !t) return false;
+      const sc = s._communityId, tc = t._communityId;
+      if (sc == null || tc == null || sc === tc) return false;
+      const okKind = ["relates_to","co_evidenced","potentially_solves","could_address"].includes(d.kind);
+      if (!okKind) return false;
+      const w = +d.weight || 0;
+      // relates_to uses cosine ∈ [0,1]; co_evidenced uses shared-post count.
+      return d.kind === "co_evidenced" ? w >= 1 : w >= 0.45;
+    });
+  }
+
+  // Knowledge gaps: painpoints with no solver. Highlight + dim rest.
+  if (lensState.gaps) {
+    nodeSel.classed("gap", d => !!d._isGap);
+    nodeSel.classed("dim", d => !d._isGap);
+    linkSel.classed("dim", true);
+  }
+
+  // Cross-source bridges: ≥3 source kinds on a finding. Highlight + dim rest.
+  if (lensState.bridges) {
+    nodeSel.classed("bridge", d => !!d._isBridge);
+    nodeSel.classed("dim", d => !d._isBridge);
+    linkSel.classed("dim", true);
+  }
+
+  // If only "surprising" is on, dim everything that's not a surprising edge
+  // or an endpoint of one — so the lens reads cleanly.
+  if (lensState.surprising && !lensState.gaps && !lensState.bridges) {
+    const keepIds = new Set();
+    linkSel.each(function(d) {
+      if (this.classList.contains("surprising")) {
+        const sid = typeof d.source === "object" ? d.source.id : d.source;
+        const tid = typeof d.target === "object" ? d.target.id : d.target;
+        keepIds.add(sid); keepIds.add(tid);
+      }
+    });
+    nodeSel.classed("dim", d => !keepIds.has(d.id));
+    linkSel.classed("dim", function(d) { return !this.classList.contains("surprising"); });
+  }
+
+  // Communities overlay is independent of the three highlight lenses.
+  nodeSel.select("circle.community-ring")
+    .style("display", lensState.communities ? null : "none");
+
+  // Always re-apply confidence filter at the end so it composes correctly.
+  applyConfidenceFilter();
+
+  // Sync button visual state.
+  ["surprising","gaps","bridges","communities"].forEach(k => {
+    const btn = document.getElementById("lens" + k[0].toUpperCase() + k.slice(1));
+    if (btn) btn.classList.toggle("active", !!lensState[k]);
+  });
+}
+
+function bindLens(key) {
+  const btn = document.getElementById("lens" + key[0].toUpperCase() + key.slice(1));
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    // surprising/gaps/bridges are mutually exclusive — toggling one off
+    // turns the others off too. Communities is independent.
+    if (key === "communities") {
+      lensState.communities = !lensState.communities;
+    } else {
+      const next = !lensState[key];
+      lensState.surprising = lensState.gaps = lensState.bridges = false;
+      lensState[key] = next;
+    }
+    applyLenses();
+  });
+}
+bindLens("surprising");
+bindLens("gaps");
+bindLens("bridges");
+bindLens("communities");
+
+document.getElementById("lensConfidence").addEventListener("click", () => {
+  _confidenceIdx = (_confidenceIdx + 1) % _confidenceStates.length;
+  applyLenses();
+});
+
+// 6. Search — dims non-matching nodes (and their orphan edges) without
+//    hiding so the layout stays stable. Empty string clears.
+const searchEl = document.getElementById("graphSearch");
+let _searchTimer = null;
+searchEl.addEventListener("input", () => {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => {
+    const q = searchEl.value.trim().toLowerCase();
+    if (!q) {
+      // Re-apply lenses (clears search-driven dims).
+      applyLenses();
+      return;
+    }
+    const matchIds = new Set();
+    nodeSel.classed("dim", d => {
+      const lbl = (d.label || "").toLowerCase();
+      const hit = lbl.includes(q);
+      if (hit) matchIds.add(d.id);
+      return !hit;
+    });
+    linkSel.classed("dim", l => {
+      const sid = typeof l.source === "object" ? l.source.id : l.source;
+      const tid = typeof l.target === "object" ? l.target.id : l.target;
+      return !(matchIds.has(sid) || matchIds.has(tid));
+    });
+  }, 120);
+});
+
+// 7. Append a confidence + community count line to the existing legend
+//    so the new visual cues have a discoverable meaning.
+(function augmentLegend() {
+  const legendEl = document.getElementById("legend");
+  if (!legendEl) return;
+  const conf = (meta && meta.edge_confidence) || {};
+  const sizes = (meta && meta.community_sizes) || {};
+  const commCount = Object.keys(sizes).length;
+  let extra = "";
+  if (Object.keys(conf).length) {
+    const parts = [];
+    if (conf.EXTRACTED) parts.push(`<span title="Deterministic SQL join">— solid: ${conf.EXTRACTED}</span>`);
+    if (conf.INFERRED)  parts.push(`<span title="LLM extraction or strong structural signal">- - - dashed: ${conf.INFERRED}</span>`);
+    if (conf.AMBIGUOUS) parts.push(`<span title="Cosine-only similarity, no other signal">… dotted: ${conf.AMBIGUOUS}</span>`);
+    extra += parts.join(" · ");
+  }
+  if (commCount) {
+    if (extra) extra += " · ";
+    extra += `<span title="Run 'graph communities' to populate">🎨 ${commCount} communities</span>`;
+  }
+  if (extra) {
+    const div = document.createElement("div");
+    div.style.cssText = "width:100%; margin-top:4px; font-size:10px; color:var(--muted);";
+    div.innerHTML = extra;
+    legendEl.appendChild(div);
+  }
+})();
+
+applyLenses();  // sync initial state
 </script>
 </body>
 </html>

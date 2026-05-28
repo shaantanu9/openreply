@@ -82,3 +82,8 @@ act_suit/html_site copy/
 
 # Archive folder — validation run dumps, HTML prototypes. Not source.
 _archive/
+.agents/
+.codex/
+graphify-out/
+AGENTS.md
+CLAUDE.md

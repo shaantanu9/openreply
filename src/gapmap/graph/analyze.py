@@ -22,16 +22,79 @@ def _require_nx():
     return nx
 
 
-def build_nx(topic: str) -> Any:
-    """Build a NetworkX graph from the SQLite graph_* tables for a topic."""
+# ── build_nx memoization ──────────────────────────────────────────────────
+# pagerank / detect_communities / betweenness_bridges / graph_summary all
+# call build_nx(topic). On the same process this is wasted work — the
+# NetworkX object is rebuilt from SQL on every call. Memoize keyed by
+# (topic, version_token) where version_token is the topic's max(ts) on
+# graph_nodes — any upsert touches ts so the cache invalidates the
+# moment new data lands. ≤4 topics kept (LRU bound).
+_BUILD_NX_CACHE: dict[str, tuple[str, Any]] = {}
+_BUILD_NX_CACHE_LIMIT = 4
+
+
+def _topic_version(db, topic: str) -> str:
+    """A monotonic-ish token for cache invalidation. Bumps on any node
+    insert/update because build._upsert_node refreshes ts. We also fold
+    in node + edge counts so a pure-delete (rebuild) busts the cache."""
+    try:
+        row = list(db.query(
+            "SELECT max(ts) m, count(*) n FROM graph_nodes WHERE topic = ?",
+            [topic],
+        ))
+        nodes_m = (row[0]["m"] if row else "") or ""
+        nodes_n = (row[0]["n"] if row else 0) or 0
+        erow = list(db.query(
+            "SELECT count(*) n FROM graph_edges WHERE topic = ?", [topic]
+        ))
+        edges_n = (erow[0]["n"] if erow else 0) or 0
+        return f"{nodes_m}|n{nodes_n}|e{edges_n}"
+    except Exception:
+        # If ts column doesn't exist yet, fall back to counts only — at
+        # least delete-then-rebuild busts the cache.
+        return "no-ts"
+
+
+def _cache_set(topic: str, version: str, graph: Any) -> None:
+    if topic in _BUILD_NX_CACHE:
+        _BUILD_NX_CACHE.pop(topic)
+    elif len(_BUILD_NX_CACHE) >= _BUILD_NX_CACHE_LIMIT:
+        # Drop the oldest entry (Python 3.7+ dicts preserve insertion order).
+        _BUILD_NX_CACHE.pop(next(iter(_BUILD_NX_CACHE)))
+    _BUILD_NX_CACHE[topic] = (version, graph)
+
+
+def clear_build_nx_cache(topic: str | None = None) -> None:
+    """Drop memoized NetworkX graphs. Exposed for tests + the daemon
+    worker that mutates the graph mid-process."""
+    if topic is None:
+        _BUILD_NX_CACHE.clear()
+    else:
+        _BUILD_NX_CACHE.pop(topic, None)
+
+
+def build_nx(topic: str, *, use_cache: bool = True) -> Any:
+    """Build a NetworkX graph from the SQLite graph_* tables for a topic.
+
+    Memoized in-process by (topic, version_token). The version_token
+    folds in max(ts) + node_count + edge_count so any meaningful change
+    invalidates the cache automatically.
+    """
     nx = _require_nx()
     db = get_db()
+    if use_cache:
+        version = _topic_version(db, topic)
+        cached = _BUILD_NX_CACHE.get(topic)
+        if cached and cached[0] == version:
+            return cached[1]
     G = nx.DiGraph()
     for r in db.query("SELECT * FROM graph_nodes WHERE topic = ?", [topic]):
         G.add_node(r["id"], kind=r["kind"], label=r["label"])
     for r in db.query("SELECT * FROM graph_edges WHERE topic = ?", [topic]):
         if r["src"] in G and r["dst"] in G:
             G.add_edge(r["src"], r["dst"], kind=r["kind"], weight=r.get("weight") or 1.0)
+    if use_cache:
+        _cache_set(topic, version, G)
     return G
 
 

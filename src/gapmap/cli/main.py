@@ -1905,6 +1905,46 @@ def cmd_collect_quality_check(
     _emit(out, as_json)
 
 
+def _snapshot_topic_graph(db, topic: str) -> Optional[Path]:
+    """Dump a topic's nodes + edges to data/backups/<slug>_<ts>.json so the
+    next destructive operation can be undone by hand if needed.
+
+    Best-effort: returns None and logs to stderr on any failure rather
+    than blocking the destructive op the user explicitly requested.
+
+    Mirrors graphify's `backup_if_protected()` (export.py) but writes a
+    raw JSON pair instead of a markdown report.
+    """
+    try:
+        from datetime import datetime, timezone
+        nodes = list(db.query(
+            "SELECT * FROM graph_nodes WHERE topic = ?", [topic]
+        ))
+        edges = list(db.query(
+            "SELECT * FROM graph_edges WHERE topic = ?", [topic]
+        ))
+        if not nodes and not edges:
+            return None  # nothing to back up
+        out_dir = Path("data") / "backups"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        slug = "".join(c if (c.isalnum() or c in "-_") else "_"
+                       for c in topic.lower())
+        path = out_dir / f"{slug}_{ts}.json"
+        path.write_text(
+            json.dumps(
+                {"topic": topic, "ts": ts, "nodes": nodes, "edges": edges},
+                ensure_ascii=False, default=str,
+            ),
+            encoding="utf-8",
+        )
+        return path
+    except Exception as e:
+        console.print(f"[yellow]warning:[/yellow] backup failed ({e}) — "
+                      f"proceeding without snapshot")
+        return None
+
+
 @research_app.command("repair-topic-graph")
 def cmd_repair_topic_graph(
     topic: str = typer.Option(..., "--topic", "-t"),
@@ -1932,6 +1972,10 @@ def cmd_repair_topic_graph(
         120, "--limit", "-n",
         help="Corpus size for enrich step (if enabled).",
     ),
+    backup: bool = typer.Option(
+        True, "--backup/--no-backup",
+        help="Snapshot the topic's nodes+edges to data/backups/ before delete.",
+    ),
     as_json: bool = typer.Option(True, "--json"),
 ) -> None:
     """Clean off-topic corpus rows and fully rebuild graph for an existing topic.
@@ -1954,6 +1998,8 @@ def cmd_repair_topic_graph(
     )
 
     db = get_db()
+    # graphify-style backup-on-destructive-edit: snapshot before delete.
+    backup_path = _snapshot_topic_graph(db, topic) if backup else None
     db.conn.execute("DELETE FROM graph_edges WHERE topic = ?", (topic,))
     db.conn.execute("DELETE FROM graph_nodes WHERE topic = ?", (topic,))
     db.conn.commit()
@@ -1993,6 +2039,7 @@ def cmd_repair_topic_graph(
         "graph_reset": {
             "deleted_topic_rows": True,
             "tables": ["graph_nodes", "graph_edges"],
+            "backup_path": str(backup_path) if backup_path else None,
         },
         "build": rebuilt,
         "enrich": enrich_out,
@@ -4478,6 +4525,123 @@ def cmd_graph_export(
     else:
         console.print(f"[red]unknown format:[/red] {fmt} (use html|json)")
         raise typer.Exit(1)
+
+
+# ── graphify-style additions (2026-05-28) ────────────────────────────────────
+# All additive — these sit alongside `graph build/enrich/relate/export` and
+# produce new artifacts (community ids, GRAPH_REPORT.md, insight queries, a
+# cost ledger). No existing command changes behavior.
+
+@graph_app.command("communities")
+def cmd_graph_communities(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    resolution: float = typer.Option(0.5, "--resolution",
+                                     help="Higher → more, smaller communities. "
+                                          "0.5 is tuned for sparse reddit graphs; "
+                                          "raise to 1.0+ for dense corpora."),
+    hub_percentile: int = typer.Option(100, "--hub-percentile",
+                                       help="Exclude top (100-N)%% of nodes by degree from initial pass. "
+                                            "100 (default) = keep all hubs — they're connectors here, not noise."),
+    max_fraction: float = typer.Option(0.25, "--max-fraction",
+                                       help="Split any community larger than this share of the graph"),
+    min_community_size: int = typer.Option(3, "--min-community-size",
+                                           help="Drop communities smaller than this (set community_id=null on those nodes)"),
+    all_nodes: bool = typer.Option(False, "--all-nodes",
+                                   help="Cluster every node (default: skeleton only — ~20× faster, "
+                                        "matches what the D3 viewer renders)."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run Leiden (fallback Louvain) and persist community_id into node metadata.
+
+    Required before `graph report` can populate the surprising-connections
+    section. Safe to re-run after every enrich/relate pass.
+    """
+    from ..graph import detect_communities_leiden
+
+    summary = detect_communities_leiden(
+        topic,
+        resolution=resolution,
+        hub_percentile=hub_percentile,
+        max_fraction=max_fraction,
+        min_community_size=min_community_size,
+        skeleton_only=not all_nodes,
+    )
+    _emit(summary, as_json)
+
+
+@graph_app.command("report")
+def cmd_graph_report(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    out_dir: Optional[Path] = typer.Option(None, "--out-dir",
+                                           help="Directory to write GRAPH_REPORT_<topic>.md into "
+                                                "(default: graphify-out/)"),
+) -> None:
+    """Emit a human-readable markdown audit (GRAPH_REPORT.md) for a topic."""
+    from ..graph import emit_report
+
+    path = emit_report(topic, out_dir=out_dir)
+    console.print(f"[green]wrote[/green] {path}")
+    console.print(f"[dim]preview: head -40 {path}[/dim]")
+
+
+@graph_app.command("insights")
+def cmd_graph_insights(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    section: str = typer.Option(
+        "all", "--section",
+        help="all | surprising | gaps | bridges | god",
+    ),
+    limit: int = typer.Option(20, "--limit", "-n"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run individual insight queries: surprising / gaps / bridges / god."""
+    from ..graph import (
+        cross_source_bridges,
+        god_nodes,
+        knowledge_gaps,
+        surprising_connections,
+    )
+
+    out: dict[str, Any] = {}
+    if section in ("all", "surprising"):
+        out["surprising"] = surprising_connections(topic, limit=limit)
+    if section in ("all", "gaps"):
+        out["gaps"] = knowledge_gaps(topic, limit=limit)
+    if section in ("all", "bridges"):
+        out["bridges"] = cross_source_bridges(topic, limit=limit)
+    if section in ("all", "god"):
+        out["god_nodes"] = god_nodes(topic, limit=limit)
+    if section not in ("all", "surprising", "gaps", "bridges", "god"):
+        console.print(f"[red]unknown section:[/red] {section}")
+        raise typer.Exit(1)
+    _emit(out, as_json)
+
+
+@graph_app.command("cost")
+def cmd_graph_cost(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show the per-topic LLM cost ledger summary."""
+    from ..graph import cost_summary
+
+    _emit(cost_summary(topic), as_json)
+
+
+@graph_app.command("backfill-confidence")
+def cmd_graph_backfill_confidence(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Tag pre-existing edges with EXTRACTED / INFERRED / AMBIGUOUS provenance.
+
+    Idempotent. Run once after upgrading; new edges are tagged inline going
+    forward. Required to make `graph report` show meaningful confidence counts
+    on topics enriched before this feature landed.
+    """
+    from ..graph import backfill_edge_confidence
+
+    _emit(backfill_edge_confidence(topic), as_json)
 
 
 @research_app.command("corpus")

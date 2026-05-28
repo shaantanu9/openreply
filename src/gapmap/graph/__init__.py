@@ -10,6 +10,19 @@ from .analyze import (
     betweenness_bridges,
     graph_summary,
 )
+# graphify-style additive ports (2026-05-28).
+# These do NOT replace anything above — they sit alongside the existing
+# Louvain/HTML/JSON pipeline and produce new, complementary artifacts.
+from .communities import detect_communities_leiden
+from .insights import (
+    surprising_connections,
+    knowledge_gaps,
+    cross_source_bridges,
+    god_nodes,
+    backfill_edge_confidence,
+)
+from .report import render_report, emit_report
+from .cost import log_cost, read_ledger, cost_summary, estimate_usd
 
 __all__ = [
     "ensure_graph_schema",
@@ -28,4 +41,17 @@ __all__ = [
     "detect_communities",
     "betweenness_bridges",
     "graph_summary",
+    # graphify-style additions
+    "detect_communities_leiden",
+    "surprising_connections",
+    "knowledge_gaps",
+    "cross_source_bridges",
+    "god_nodes",
+    "backfill_edge_confidence",
+    "render_report",
+    "emit_report",
+    "log_cost",
+    "read_ledger",
+    "cost_summary",
+    "estimate_usd",
 ]

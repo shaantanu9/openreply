@@ -21,7 +21,7 @@ from ..core.db import get_db
 from ..research.gaps import find_gaps
 from ..research.relevance import filter_findings
 from ..research.tactic_library import find_matching_tactics, seed_from_json
-from .build import _upsert_edge, _upsert_node
+from .build import _BATCH, _upsert_edge, _upsert_node
 from .schema import ensure_graph_schema, make_node_id
 
 
@@ -147,6 +147,15 @@ def backfill_source_evidence(topic: str) -> dict[str, Any]:
     Useful for older topics created before source_evidence was added, where the
     graph has findings but no finding->source links in Map.
     """
+    _prev_conf = _BATCH.default_confidence
+    _BATCH.default_confidence = "INFERRED"
+    try:
+        return _backfill_source_evidence_body(topic)
+    finally:
+        _BATCH.default_confidence = _prev_conf
+
+
+def _backfill_source_evidence_body(topic: str) -> dict[str, Any]:
     db = get_db()
     evidence_kinds = ("evidenced_by", "wished_in", "about_product", "built_in", "solves")
     sem_kinds = ("painpoint", "feature_wish", "product", "workaround")
@@ -228,6 +237,27 @@ def upsert_semantic(
     This is the "Claude-as-LLM" path: Claude Code synthesizes from the corpus
     and calls this to persist the results. Schemas match prompts/*.yaml.
     """
+    # graphify-style provenance: everything this function writes is the
+    # product of an LLM extraction (or directly mirrors one). Tag the
+    # default for the duration of the call so each _upsert_edge below
+    # stays terse. relations.py overrides per-edge for cosine relates_to.
+    _prev_conf = _BATCH.default_confidence
+    _BATCH.default_confidence = "INFERRED"
+    try:
+        return _upsert_semantic_body(
+            topic, painpoints, feature_wishes, product_complaints, diy_workarounds
+        )
+    finally:
+        _BATCH.default_confidence = _prev_conf
+
+
+def _upsert_semantic_body(
+    topic: str,
+    painpoints: list[dict[str, Any]] | None,
+    feature_wishes: list[dict[str, Any]] | None,
+    product_complaints: list[dict[str, Any]] | None,
+    diy_workarounds: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
     ensure_graph_schema()
     db = get_db()
     # Alias lookup only — if a prior LLM canonicalization bound this topic
@@ -540,6 +570,36 @@ def enrich_from_llm(
     summary["provider"] = chain[0] if chain else None
     summary["provider_chain"] = chain
     summary["finding_relevance_threshold"] = finding_threshold
+
+    # graphify-style cost ledger — best-effort, never blocks. Pulls token
+    # counts off the report if find_gaps exposes them; otherwise logs the
+    # call with zeros so the ledger still shows "N enrich calls" even when
+    # the provider didn't surface usage stats.
+    try:
+        from .cost import log_cost as _log_cost
+        usage = (report.get("usage") or report.get("token_usage")
+                 or {}) if isinstance(report, dict) else {}
+        _log_cost(
+            topic,
+            provider=summary.get("provider"),
+            model=report.get("model") if isinstance(report, dict) else None,
+            op="enrich",
+            input_tokens=int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0),
+            output_tokens=int(usage.get("output_tokens") or usage.get("completion_tokens") or 0),
+            meta={
+                "corpus_size": summary.get("corpus_size"),
+                "provider_chain": chain,
+                "findings_added": (
+                    summary.get("painpoints_added", 0)
+                    + summary.get("feature_wishes_added", 0)
+                    + summary.get("products_added", 0)
+                    + summary.get("workarounds_added", 0)
+                ),
+            },
+        )
+    except Exception:
+        pass  # cost logging is best-effort
+
     summary["dropped_off_topic_findings"] = {
         "painpoints": len(pain_res.get("dropped", [])),
         "feature_wishes": len(wish_res.get("dropped", [])),

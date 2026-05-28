@@ -35,7 +35,14 @@ from .schema import ensure_graph_schema, make_node_id
 class _BatchState(threading.local):
     """Per-thread buffer state — only the active build_structural call
     in this thread participates. Other threads / unrelated callers see
-    `active=False` and get the original per-row upsert path."""
+    `active=False` and get the original per-row upsert path.
+
+    `default_confidence` is graphify-style edge provenance the structural
+    builder turns on for the duration of the build — every edge it
+    creates is EXTRACTED (deterministic SQL join), so the call sites
+    don't have to spell that out 12 times. Semantic.py / relations.py
+    pass their own confidence explicitly and overrule this default.
+    """
     def __init__(self):
         super().__init__()
         self.active = False
@@ -44,6 +51,7 @@ class _BatchState(threading.local):
         self.seen_nodes: set[str] = set()       # de-dup repeated _upsert_node calls
         self.seen_edges: set[tuple] = set()     # de-dup repeated _upsert_edge calls
         self.existing_ts: dict[str, str] = {}   # pre-loaded for ts preservation
+        self.default_confidence: str | None = None
 
 _BATCH = _BatchState()
 
@@ -133,8 +141,9 @@ def _upsert_edge(
     #               structural signal (e.g. shared evidence posts)
     #   AMBIGUOUS — cosine-only similarity with no corroborating signal
     md = dict(metadata or {}) if metadata else {}
-    if confidence and "confidence" not in md:
-        md["confidence"] = confidence
+    effective_confidence = confidence or _BATCH.default_confidence
+    if effective_confidence and "confidence" not in md:
+        md["confidence"] = effective_confidence
     md_json = json.dumps(md, default=str, ensure_ascii=False)
 
     # ── Batch fast path ────────────────────────────────────────────────────
@@ -222,6 +231,10 @@ def build_structural(topic: str) -> dict[str, Any]:
     _BATCH.edges = []
     _BATCH.seen_nodes = set()
     _BATCH.seen_edges = set()
+    # Every edge created during the structural pass is a deterministic
+    # SQL join — graphify-style "EXTRACTED" provenance. Stamped via the
+    # batch state so individual call sites stay terse.
+    _BATCH.default_confidence = "EXTRACTED"
 
     try:
         try:
@@ -242,6 +255,7 @@ def build_structural(topic: str) -> dict[str, Any]:
         _BATCH.seen_nodes = set()
         _BATCH.seen_edges = set()
         _BATCH.existing_ts = {}
+        _BATCH.default_confidence = None
 
     _elapsed = _time.time() - _t0
     result["elapsed_seconds"] = round(_elapsed, 2)

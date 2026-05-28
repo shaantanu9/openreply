@@ -198,12 +198,22 @@ def _build_relates_to(
             if (src, dst) in emitted:
                 continue
             emitted.add((src, dst))
+            # graphify-style provenance: if the pair is corroborated by
+            # shared evidence OR lexical overlap, the edge is INFERRED;
+            # cosine-only with no corroboration → AMBIGUOUS so the UI can
+            # de-emphasize it.
+            rel_confidence = (
+                "INFERRED"
+                if (shared_evidence > 0 or lex_sim >= lexical_floor)
+                else "AMBIGUOUS"
+            )
             _upsert_edge(db, topic, src, dst, "relates_to", weight=float(sim),
                          metadata={
                              "similarity": round(sim, 3),
                              "lexical_overlap": round(lex_sim, 3),
                              "shared_evidence": shared_evidence,
-                         })
+                         },
+                         confidence=rel_confidence)
             edges_written += 1
 
             # Extra cross-kind edges — stronger semantic claim, so more useful
@@ -221,14 +231,16 @@ def _build_relates_to(
                     pp = a if ka == "painpoint" else b
                     _upsert_edge(db, topic, wa["id"], pp["id"],
                                  "potentially_solves", weight=float(sim),
-                                 metadata={"similarity": round(sim, 3)})
+                                 metadata={"similarity": round(sim, 3)},
+                                 confidence="INFERRED")
                     edges_written += 1
                 elif pair == {"feature_wish", "painpoint"}:
                     fw = a if ka == "feature_wish" else b
                     pp = a if ka == "painpoint" else b
                     _upsert_edge(db, topic, fw["id"], pp["id"],
                                  "could_address", weight=float(sim),
-                                 metadata={"similarity": round(sim, 3)})
+                                 metadata={"similarity": round(sim, 3)},
+                                 confidence="INFERRED")
                     edges_written += 1
     return edges_written
 
@@ -268,10 +280,14 @@ def _build_co_evidenced(
             if len(shared) < min_shared:
                 continue
             src, dst = (a_id, b_id) if a_id < b_id else (b_id, a_id)
+            # co_evidenced is a strong structural signal independent of
+            # label similarity — graphify-style "INFERRED" (two findings
+            # share the same Reddit thread / paper).
             _upsert_edge(db, topic, src, dst, "co_evidenced",
                          weight=float(len(shared)),
                          metadata={"shared_posts": sorted(shared)[:20],
-                                   "shared_count": len(shared)})
+                                   "shared_count": len(shared)},
+                         confidence="INFERRED")
             edges += 1
     return edges
 
