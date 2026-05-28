@@ -139,22 +139,28 @@ def knowledge_gaps(
     or proposed a fix.
 
     Ranked by evidence_count descending so the loudest gaps surface first.
+
+    PERF — split into two index-friendly queries instead of a correlated
+    NOT EXISTS subquery. With the JSON-path indexes added in schema.py,
+    SQLite was choosing a quadratic plan for the correlated form
+    (188 seconds on a 5K-node topic). The two-query form uses the
+    (topic, kind) composite index for the outer and the per-column
+    indexes on graph_edges for the inner — both index lookups, no scan.
     """
     db = get_db()
-    rows = list(db.query(
-        """
-        SELECT n.id, n.label, n.metadata_json
-        FROM graph_nodes n
-        WHERE n.topic = ? AND n.kind = 'painpoint'
-              AND NOT EXISTS (
-                  SELECT 1 FROM graph_edges e
-                  WHERE e.topic = n.topic
-                    AND e.dst = n.id
-                    AND e.kind IN ('could_address','potentially_solves','solves')
-              )
-        """,
+    pp_rows = list(db.query(
+        "SELECT id, label, metadata_json FROM graph_nodes "
+        "WHERE topic = ? AND kind = 'painpoint'",
         [topic],
     ))
+    solved_ids = {
+        r["dst"] for r in db.query(
+            "SELECT dst FROM graph_edges "
+            "WHERE topic = ? AND kind IN ('could_address','potentially_solves','solves')",
+            [topic],
+        )
+    }
+    rows = [r for r in pp_rows if r["id"] not in solved_ids]
 
     out: list[dict[str, Any]] = []
     for r in rows:

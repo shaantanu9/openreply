@@ -52,6 +52,25 @@ def ensure_graph_schema() -> None:
         db["graph_edges"].create_index(["src"])
         db["graph_edges"].create_index(["dst"])
         db["graph_edges"].create_index(["kind"])
+        # Composite for the common (topic, kind) filter pattern used by
+        # the insights queries — without it, SQLite's planner sometimes
+        # picks the JSON-path index added below and runs O(N) scans of
+        # graph_edges per call.
+        db["graph_edges"].create_index(["topic", "kind"])
+
+    # ── Composite (topic, kind) index on graph_edges, retro-added for
+    #    existing databases — the in-block create_index above only fires
+    #    when the table is being CREATEd. Without this, `SELECT dst FROM
+    #    graph_edges WHERE topic=? AND kind IN (...)` runs ~10x slower
+    #    on a populated DB because the planner picks one of the new
+    #    JSON-path indexes instead.
+    try:
+        db.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_graph_edges_topic_kind "
+            "ON graph_edges(topic, kind)"
+        )
+    except Exception:
+        pass
 
     # ── JSON-expression indexes on metadata hot paths (SQLite ≥3.9) ─────
     # The insights queries filter by `community_id`, `confidence`, and
@@ -79,6 +98,15 @@ def ensure_graph_schema() -> None:
             db.conn.execute(stmt)
         except Exception:
             pass  # older SQLite / non-JSON1 build — fall back to scans.
+
+    # Refresh planner stats once after introducing new indexes so the
+    # optimizer picks the right one (we hit a degenerate plan where the
+    # planner stayed on a stale JSON-path index even though the new
+    # (topic, kind) composite was strictly better). Best-effort.
+    try:
+        db.conn.execute("ANALYZE")
+    except Exception:
+        pass
 
 
 def make_node_id(topic: str, kind: str, key: str) -> str:
