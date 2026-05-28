@@ -16,6 +16,14 @@ on:
     tags:
       - 'v*'
 
+# Opt in to Node 24 for JavaScript actions. As of mid-2026 GitHub flags every
+# v4/v5 action that still ships a Node 20 runtime ("Node.js 20 actions are
+# deprecated") — pinning forward silences that noise so the only warnings
+# left in a clean run are upstream-dep ones we can't fix here. Set at
+# workflow scope so every job (mac arm64/x86_64, linux, windows) inherits.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   release:
     permissions:
