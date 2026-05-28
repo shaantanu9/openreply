@@ -16,10 +16,18 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-mark">G</div>
-      <div>
+      <div class="brand-text">
         <div class="brand-name">Gap Map</div>
         <div class="brand-sub">research workspace</div>
       </div>
+      <!-- Sidebar minimize toggle. Cycles full → rail → hidden → full.
+           Wired in main.js along with the ⌘B / Ctrl+B shortcut. The icon
+           and title swap to reflect the NEXT state in the cycle so users
+           know what their click will do. -->
+      <button class="sidebar-toggle" id="sidebar-toggle" type="button"
+              title="Collapse to icons (⌘B)" aria-label="Toggle sidebar">
+        <i data-lucide="panel-left-close"></i>
+      </button>
     </div>
 
     <div class="nav-section-label">Workspace</div>
@@ -148,7 +156,7 @@
     <div class="nav-section-label">Account</div>
     <nav class="nav">
       <a href="#/settings" data-route="/settings"><span class="nav-ic"><i data-lucide="settings"></i></span><span>Settings</span></a>
-      <a href="https://github.com/shaantanu98/reddit-myind" target="_blank"><span class="nav-ic"><i data-lucide="help-circle"></i></span><span>Help &amp; docs</span></a>
+      <a href="https://github.com/myind-ai/gapmap" target="_blank"><span class="nav-ic"><i data-lucide="help-circle"></i></span><span>Help &amp; docs</span></a>
     </nav>
 
     <a class="pro-card" href="#/science" style="text-decoration:none;cursor:pointer" id="sidebar-science-card">
@@ -198,6 +206,14 @@
     </div>
   </div>
 </div>
+
+<!-- Sidebar hover-reveal strip — only visible (display:block) when the
+     sidebar state is "hidden". Click to restore the sidebar to "full".
+     Lives outside `.app` so its fixed positioning isn't clipped by the
+     grid's overflow:hidden. See `.sidebar-reveal-strip` rules in
+     style.css. -->
+<button class="sidebar-reveal-strip" id="sidebar-reveal-strip"
+        type="button" title="Show sidebar (⌘B)" aria-label="Show sidebar"></button>
 
 <script type="module" src="/src/main.js"></script>
 </body>

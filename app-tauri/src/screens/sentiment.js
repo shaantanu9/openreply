@@ -91,21 +91,221 @@ function renderEmptyCta(topic) {
   `;
 }
 
-async function runAndRender(contentEl, topic) {
-  contentEl.innerHTML = `<div class="empty-state">Analyzing sentiment per source… 30-90 seconds.</div>`;
+// Stages cycled through during the "Analyzing…" loader so the user sees
+// what's happening behind the single-blocking-call `runSentimentBySource`
+// API (no progress NDJSON stream is plumbed for this endpoint — the LLM
+// fans out per-source server-side and returns one consolidated payload).
+// Times are coarse: chosen so the 6th stage shows up around the 60-second
+// mark — past the median run-time but well inside the 30–90s expected
+// window. The user reads them in order, not by clock; the value is "this
+// is doing real work" not "this is exactly at step 4".
+const SENT_STAGES = [
+  'Connecting to LLM…',
+  'Sampling posts from each source…',
+  'Reading what the community actually says…',
+  'Detecting tone and emotion per source…',
+  'Pulling out representative quotes…',
+  'Summarizing per-source sentiment…',
+  'Almost done — packaging results…',
+];
+
+// Mount a full-bleed "Analyzing" loading state that FEELS alive:
+//   • 44px orange spinner up top so eyes have something obvious to track.
+//   • Cycling stage messages every ~9s (see SENT_STAGES above).
+//   • Live elapsed-seconds counter ticking every 1s.
+//   • Asymptotic progress bar (0 → 90% via 1 - e^(-t/45), never reaches
+//     100% until the API resolves) — feels like progress without lying
+//     about an unknown ETA.
+//   • Skeleton cards mirroring the eventual `.sent-grid` layout, so when
+//     real cards arrive the page doesn't visually reflow.
+// Returns a cleanup function the caller MUST invoke when replacing this
+// markup; otherwise the interval keeps firing against a detached DOM.
+function renderAnalyzingState(contentEl, { headline = 'Analyzing sentiment per source' } = {}) {
+  const skeletonCard = `
+    <div class="sent-card sent-card-skel">
+      <div class="sent-card-head">
+        <div class="skel skel-bar" style="width:55%;height:14px;border-radius:6px"></div>
+        <div class="sent-card-meta">
+          <span class="skel" style="width:60px;height:14px;border-radius:999px"></span>
+          <span class="skel" style="width:48px;height:14px;border-radius:999px"></span>
+          <span class="skel" style="width:80px;height:12px;border-radius:6px"></span>
+        </div>
+      </div>
+      <div class="sent-emos">
+        <span class="skel" style="width:54px;height:18px;border-radius:999px"></span>
+        <span class="skel" style="width:62px;height:18px;border-radius:999px"></span>
+        <span class="skel" style="width:50px;height:18px;border-radius:999px"></span>
+      </div>
+      <div class="skel skel-bar" style="width:92%;height:12px;border-radius:6px"></div>
+      <div class="skel skel-bar" style="width:80%;height:12px;border-radius:6px"></div>
+      <div class="skel" style="height:42px;border-radius:6px;margin-top:4px"></div>
+    </div>
+  `;
+  contentEl.innerHTML = `
+    <div class="sent-tab sent-analyzing" aria-busy="true" aria-live="polite">
+      <div class="sent-analyzing-hero">
+        <div class="sent-spinner-lg" aria-hidden="true"></div>
+        <h3 class="sent-analyzing-title">${esc(headline)}</h3>
+        <p class="sent-analyzing-stage" id="sent-analyzing-stage">${esc(SENT_STAGES[0])}</p>
+        <div class="sent-analyzing-meta">
+          <span class="sent-analyzing-elapsed" id="sent-analyzing-elapsed">0s elapsed</span>
+          <span class="sent-analyzing-eta">typically 30–90 seconds</span>
+        </div>
+        <div class="sent-progress-bar" role="progressbar" aria-label="Analyzing progress">
+          <div class="sent-progress-fill" id="sent-progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="sent-grid sent-grid-skel" aria-hidden="true">
+        ${skeletonCard}${skeletonCard}${skeletonCard}
+      </div>
+    </div>
+  `;
+
+  const startedAt = Date.now();
+  const stageEl = contentEl.querySelector('#sent-analyzing-stage');
+  const elapsedEl = contentEl.querySelector('#sent-analyzing-elapsed');
+  const fillEl = contentEl.querySelector('#sent-progress-fill');
+
+  const tick = setInterval(() => {
+    // Detached-DOM guard: if the caller forgot to call cleanup, at least
+    // self-terminate when our elements are gone from the tree.
+    if (!document.body.contains(elapsedEl)) {
+      clearInterval(tick);
+      return;
+    }
+    const elapsed = (Date.now() - startedAt) / 1000;
+    elapsedEl.textContent = `${Math.round(elapsed)}s elapsed`;
+    // Asymptotic 0 → 90%: 1 - e^(-t/45). At t=30s → 49%, t=60s → 74%,
+    // t=90s → 86%. Never reaches 100% on its own — the cleanup call
+    // (or the resolve path) snaps it to 100%.
+    const pct = Math.min(90, 90 * (1 - Math.exp(-elapsed / 45)));
+    if (fillEl) fillEl.style.width = `${pct.toFixed(1)}%`;
+    // Stage cycle — index by elapsed-seconds / 9, capped.
+    const stageIdx = Math.min(SENT_STAGES.length - 1, Math.floor(elapsed / 9));
+    if (stageEl && stageEl.textContent !== SENT_STAGES[stageIdx]) {
+      stageEl.textContent = SENT_STAGES[stageIdx];
+    }
+  }, 1000);
+
+  return function cleanup({ snapToComplete = false } = {}) {
+    clearInterval(tick);
+    if (snapToComplete && fillEl && document.body.contains(fillEl)) {
+      fillEl.style.width = '100%';
+    }
+  };
+}
+
+// How many distinct sources the Python run will visit, so the "X of N done"
+// counter is meaningful from the first poll. `run_query` hits SQLite directly
+// in Rust — it does NOT go through the sidecar daemon — so it returns even
+// while the LLM call is blocking that daemon's mutex.
+async function countSourcesForTopic(topic) {
   try {
-    const result = await api.runSentimentBySource(topic);
+    const rows = await api.runQuery(
+      `SELECT count(distinct coalesce(p.source_type, 'reddit')) AS n
+       FROM topic_posts tp JOIN posts p ON p.id = tp.post_id
+       WHERE tp.topic = :topic`,
+      topic,
+    );
+    const n = rows?.[0]?.n;
+    return typeof n === 'number' && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+// Live polling on top of the "Analyzing…" hero. The Python sentiment loop
+// persists each source's row to `graph_nodes` as soon as its LLM call returns
+// (sentiment_by_source.py — `persist_sentiment_for_source` inside the loop).
+// `fetchSentimentData` bypasses the daemon, so we can poll every 1.5s and
+// progressively swap skeleton cards for real ones as they land. Returns a
+// `stop()` function — caller MUST invoke it when leaving this state.
+function startLiveSentimentPolling(contentEl, topic, totalSources) {
+  const grid = contentEl.querySelector('.sent-grid-skel') || contentEl.querySelector('.sent-grid');
+  if (!grid) return () => {};
+  const heroMeta = contentEl.querySelector('.sent-analyzing-meta');
+  let counterEl = contentEl.querySelector('#sent-analyzing-count');
+  if (heroMeta && !counterEl) {
+    counterEl = document.createElement('span');
+    counterEl.id = 'sent-analyzing-count';
+    counterEl.className = 'sent-analyzing-count';
+    counterEl.textContent = totalSources ? `0 of ${totalSources} sources analyzed` : '0 sources analyzed';
+    heroMeta.appendChild(counterEl);
+  }
+  const seen = new Set();
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped || !document.body.contains(grid)) return;
+    let sources = [];
+    try { sources = await fetchSentimentData(topic); } catch { return; }
+    if (stopped || !document.body.contains(grid)) return;
+    for (const s of sources) {
+      const key = s.source || s.label;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const wrap = document.createElement('div');
+      wrap.innerHTML = renderCard(s);
+      const card = wrap.firstElementChild;
+      if (!card) continue;
+      // Replace one skeleton if any remain; otherwise insert at the top so
+      // newly-finished real cards stay visible above any leftover skeletons.
+      const skel = grid.querySelector('.sent-card-skel');
+      if (skel) skel.replaceWith(card);
+      else grid.insertBefore(card, grid.firstChild);
+    }
+    if (counterEl) {
+      counterEl.textContent = totalSources
+        ? `${seen.size} of ${totalSources} sources analyzed`
+        : `${seen.size} source${seen.size === 1 ? '' : 's'} analyzed`;
+    }
+  };
+
+  // Run immediately so an already-complete row (re-run case) shows up on the
+  // first paint without a 1.5s gap, then poll on a cadence the LLM can keep
+  // up with.
+  tick();
+  const timer = setInterval(tick, 1500);
+
+  return function stop() {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+async function runAndRender(contentEl, topic) {
+  const stopAnalyzing = renderAnalyzingState(contentEl);
+  // Best-effort source count for the counter. Don't block the LLM kickoff
+  // on this — fire both in parallel.
+  const totalPromise = countSourcesForTopic(topic);
+  let stopPolling = () => {};
+  try {
+    const runPromise = api.runSentimentBySource(topic);
+    const total = await totalPromise;
+    stopPolling = startLiveSentimentPolling(contentEl, topic, total);
+    const result = await runPromise;
     if (result?.skipped) {
+      stopPolling();
+      stopAnalyzing();
       contentEl.innerHTML = `<div class="empty-state"><p>Skipped: ${esc(result.reason || 'no LLM provider')}.</p><p>Add a key in Settings.</p></div>`;
       return;
     }
     if (result?.error) {
+      stopPolling();
+      stopAnalyzing();
       contentEl.innerHTML = `<div class="empty-state"><p>${esc(result.error)}</p></div>`;
       return;
     }
+    // Snap progress to 100% for a beat before the real content paints —
+    // makes the transition feel like the bar "completed" rather than
+    // disappearing mid-fill.
+    stopPolling();
+    stopAnalyzing({ snapToComplete: true });
     // After persistence, re-load from DB so renders are uniform.
     await loadSentiment(contentEl, topic);
   } catch (e) {
+    stopPolling();
+    stopAnalyzing();
     contentEl.innerHTML = `<div class="empty-state"><p>Error: ${esc(e?.message || String(e))}</p></div>`;
   }
 }
@@ -117,15 +317,47 @@ async function runAndRender(contentEl, topic) {
 const _sentimentRunning = new Set();  // topic
 
 export async function loadSentiment(contentEl, topic) {
-  contentEl.innerHTML = `<div class="empty-state">loading…</div>`;
+  // Initial DB read — usually 50-200ms. A spinner-flash for that brief is
+  // worse than a small placeholder, so we use the lightweight inline
+  // loader here. The heavy "Analyzing…" hero is reserved for the actual
+  // LLM call below (which takes 30-90s).
+  contentEl.innerHTML = `<div class="empty-state" style="padding:40px;text-align:center">
+    <div class="map-building-spinner" style="margin:0 auto 10px"></div>
+    <div style="color:var(--ink-3);font-size:var(--fs-13)">Loading sentiment…</div>
+  </div>`;
   const sources = await fetchSentimentData(topic);
 
   if (!sources.length) {
     // Auto-run on first view: persistence means subsequent opens pull the
     // DB rows directly (fast path above). If an auto-run is already in
-    // flight, show the running-spinner rather than re-firing.
+    // flight from another tab open, mount the full "Analyzing…" hero so
+    // both surfaces show the same alive-feeling loader rather than a
+    // dead text line. Tab auto-refresh still happens via the in-flight
+    // runAndRender call's own loadSentiment recursion.
     if (_sentimentRunning.has(topic)) {
-      contentEl.innerHTML = `<div class="empty-state">Analyzing sentiment per source… 30–90 seconds. Tab will auto-refresh.</div>`;
+      const stopAnalyzing = renderAnalyzingState(contentEl, {
+        headline: 'Analyzing sentiment per source (in another tab)',
+      });
+      // Live polling: progressively replace skeleton cards with real ones as
+      // the in-flight run lands sources in the DB. Same hero, real progress.
+      const total = await countSourcesForTopic(topic);
+      const stopPolling = startLiveSentimentPolling(contentEl, topic, total);
+      // Termination watcher — when the flag clears (the running tab's
+      // runAndRender finishes), re-load to swap to the final layout.
+      const watcher = setInterval(async () => {
+        if (!document.body.contains(contentEl) || contentEl.dataset.tab !== 'sentiment') {
+          clearInterval(watcher);
+          stopPolling();
+          stopAnalyzing();
+          return;
+        }
+        if (!_sentimentRunning.has(topic)) {
+          clearInterval(watcher);
+          stopPolling();
+          stopAnalyzing({ snapToComplete: true });
+          await loadSentiment(contentEl, topic);
+        }
+      }, 1500);
       return;
     }
     _sentimentRunning.add(topic);

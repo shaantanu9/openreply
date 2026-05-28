@@ -648,8 +648,11 @@ async function loadTopicGrid(root) {
   }
 
   const slot = root.querySelector('#topic-grid-slot');
+  if (!slot) return; // not on home — e.g. delete/undo refreshed #main-content from another route
   const subtitle = root.querySelector('#topics-subtitle');
-  subtitle.textContent = `${topics.length} active ${topics.length === 1 ? 'project' : 'projects'}`;
+  if (subtitle) {
+    subtitle.textContent = `${topics.length} active ${topics.length === 1 ? 'project' : 'projects'}`;
+  }
 
   if (!topics.length) {
     // Phase 6 — replace bland empty with 5 quick-start chips for <30s first Minto.

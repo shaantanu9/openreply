@@ -4,6 +4,7 @@
 // that links to Settings → Semantic search to enable it.
 
 import { api, $, esc, timeAgo } from '../api.js';
+import { REDDIT_FAMILY } from '../lib/postLink.js';
 
 const state = {
   query: '',
@@ -35,8 +36,15 @@ function renderResult(hit) {
   const srcTag = meta.source_type
     ? `<span class="find-src-tag">${esc(sourceLabel(meta.source_type))}</span>`
     : '';
+  // `meta.sub` is reused as a free-form bucket for non-Reddit adapters
+  // (gnews=feed, hn=site, github=repo, …). Only prefix with `r/` for
+  // the reddit family — everything else gets a plain bucket pill so we
+  // don't mint fake subreddit links and don't overflow the row.
+  const subSource = meta.source_type || 'reddit';
   const subTag = meta.sub
-    ? `<span class="find-sub-tag">r/${esc(meta.sub)}</span>`
+    ? (REDDIT_FAMILY.has(subSource)
+        ? `<span class="find-sub-tag">r/${esc(meta.sub)}</span>`
+        : `<span class="find-sub-tag">${esc(meta.sub)}</span>`)
     : '';
   const topicTag = meta.topic
     ? `<a class="find-topic-tag" href="#/topic/${encodeURIComponent(meta.topic)}">${esc(meta.topic)}</a>`

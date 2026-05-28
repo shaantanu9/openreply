@@ -1306,6 +1306,16 @@ function wireKeyboard() {
       if (a) tabStore.close(a.id);
       return;
     }
+    // Sidebar minimize cycle: full → rail → hidden → full. Lives in the
+    // same Chrome-style listener (fires while typing in inputs, no guard)
+    // so it's consistent with ⌘W / ⌘R. Browsers don't use ⌘B as a global
+    // shortcut and the app has no bold-text editor surface to compete
+    // with, so the override is safe. See `cycleSidebar` in initSidebarMinimize.
+    if (e.key === 'b' || e.key === 'B') {
+      e.preventDefault();
+      window.__cycleSidebar?.();
+      return;
+    }
     // Chrome-like refresh of the current route.
     if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) {
       e.preventDefault();
@@ -1484,4 +1494,88 @@ function openShortcutsHelp() {
   host.addEventListener('click', e => { if (e.target === host) close(); });
   host.querySelector('#shortcuts-close').onclick = close;
   setTimeout(() => host.querySelector('#shortcuts-close')?.focus(), 10);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Sidebar minimize — full / rail / hidden state machine.
+   Persisted to localStorage so the choice survives reload + new tabs.
+   Triggered three ways:
+     1. Click the toggle button in the sidebar header (#sidebar-toggle).
+     2. ⌘B / Ctrl+B (wired in the Chrome-style keydown listener above —
+        delegates here via window.__cycleSidebar).
+     3. Click the reveal strip on the left edge (#sidebar-reveal-strip),
+        which only appears in the "hidden" state and always jumps back
+        to "full" (most users want their sidebar back, not the rail
+        intermediate, when they decide to re-show it).
+   ──────────────────────────────────────────────────────────────────── */
+const SIDEBAR_STATES = ['full', 'rail', 'hidden'];
+const SIDEBAR_LS_KEY = 'gapmap.sidebarState.v1';
+
+// Per-state metadata: which lucide icon the toggle button shows AND what
+// the title attribute reads. Both describe the NEXT state the click will
+// produce (so users know what they're about to do). `panel-left-close`
+// reads "click to close" in lucide conventions, `panel-left` is the
+// rail-ish icon, `panel-left-open` is the expand-back arrow.
+const SIDEBAR_NEXT_META = {
+  full:   { icon: 'panel-left-close',  label: 'Collapse to icons' },
+  rail:   { icon: 'panel-left',        label: 'Hide sidebar' },
+  hidden: { icon: 'panel-left-open',   label: 'Show sidebar' },
+};
+
+function applySidebarState(state) {
+  if (!SIDEBAR_STATES.includes(state)) state = 'full';
+  document.body.setAttribute('data-sidebar', state);
+  try { localStorage.setItem(SIDEBAR_LS_KEY, state); } catch {}
+  const btn = document.getElementById('sidebar-toggle');
+  if (btn) {
+    const meta = SIDEBAR_NEXT_META[state] || SIDEBAR_NEXT_META.full;
+    btn.title = `${meta.label} (⌘B)`;
+    btn.setAttribute('aria-label', meta.label);
+    const i = btn.querySelector('i[data-lucide]');
+    if (i) {
+      i.setAttribute('data-lucide', meta.icon);
+      // refreshIcons is the wrapper around lucide.createIcons used
+      // everywhere else when re-rendering icons dynamically.
+      window.refreshIcons?.();
+    }
+  }
+}
+
+function cycleSidebar() {
+  const cur = document.body.getAttribute('data-sidebar') || 'full';
+  const idx = SIDEBAR_STATES.indexOf(cur);
+  const next = SIDEBAR_STATES[(idx + 1) % SIDEBAR_STATES.length];
+  applySidebarState(next);
+}
+
+function initSidebarMinimize() {
+  // Restore last state (or default to "full" for first-time users / when
+  // localStorage is blocked, e.g. webview with cookies disabled).
+  let saved = 'full';
+  try {
+    const s = localStorage.getItem(SIDEBAR_LS_KEY);
+    if (s && SIDEBAR_STATES.includes(s)) saved = s;
+  } catch {}
+  applySidebarState(saved);
+
+  document.getElementById('sidebar-toggle')?.addEventListener('click', cycleSidebar);
+  // Reveal strip always jumps back to "full" — see the comment block at
+  // the top of this section for the rationale (cycling to "rail" first
+  // is a confusing UX when the user just clicked "show me the sidebar").
+  document.getElementById('sidebar-reveal-strip')?.addEventListener('click', () => {
+    applySidebarState('full');
+  });
+
+  // Expose for the ⌘B handler in the Chrome-style keydown listener.
+  // Using a window-scoped function (rather than direct import) keeps the
+  // listener registration site short and avoids reshuffling the existing
+  // shortcut block.
+  window.__cycleSidebar = cycleSidebar;
+}
+
+// Kick off after DOMContentLoaded so the sidebar markup definitely exists.
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', initSidebarMinimize, { once: true });
+} else {
+  initSidebarMinimize();
 }

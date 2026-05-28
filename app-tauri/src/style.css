@@ -1648,13 +1648,31 @@ select.topics-field {
 .sub-tile {
   padding: 12px 14px; border-radius: 10px; background: var(--surface-alt);
   border: 1px solid var(--line);
+  /* grid auto-fill tracks are min-content by default; min-width:0 lets the
+     track actually shrink so long sub names ellipsis inside the tile
+     instead of pushing the whole tile wider than its column. */
+  min-width: 0;
+  overflow: hidden;
 }
 .sub-tile h5 {
   margin: 0 0 4px; font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--ink-1);
+  /* Long sub names (21-char reddit limit) usually fit, but defensive
+     ellipsis covers any future non-reddit bucket that slips through and
+     the rare extra-wide font-rendering case. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
-.sub-tile span { font-size: 11px; color: var(--ink-3); }
+.sub-tile span {
+  font-size: 11px; color: var(--ink-3);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* --- Settings profile + LLM chips + toggles --- */
 /* Profile always spans every column in the grid (1/-1 works for any track count). */
@@ -4410,6 +4428,96 @@ html.dark .delete-confirm-modal .dc-match-text {
   display: inline-block; padding: 3px 9px; border-radius: 999px;
   background: var(--orange-soft); color: #B85A1E;
   font-size: 11px; font-weight: 600;
+}
+
+/* ─── Sentiment "Analyzing…" hero — 2026-05-28 ─────────────────────────
+   The old loader was a single line of grey text — felt frozen for the
+   30–90s LLM round-trip. This rebuilds it as a full-bleed status panel
+   with a big spinner, cycling stage messages, live elapsed counter, an
+   asymptotic progress bar, and skeleton cards previewing the eventual
+   layout. Markup + JS lives in screens/sentiment.js renderAnalyzingState.
+   ─────────────────────────────────────────────────────────────────── */
+.sent-analyzing { display: flex; flex-direction: column; gap: 18px; }
+.sent-analyzing-hero {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 36px 28px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.sent-spinner-lg {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 4px solid var(--line);
+  border-top-color: var(--orange);
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+.sent-analyzing-title {
+  font-size: 18px; font-weight: 700; color: var(--ink);
+  margin: 0;
+}
+.sent-analyzing-stage {
+  font-size: 14px; color: var(--ink-2);
+  margin: 0;
+  min-height: 1.4em;
+  transition: opacity .15s ease;
+}
+.sent-analyzing-meta {
+  display: flex; gap: 12px; align-items: center;
+  font-size: 12px; color: var(--ink-3);
+}
+.sent-analyzing-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.sent-analyzing-eta::before { content: "·"; margin-right: 8px; color: var(--line-2); }
+
+.sent-progress-bar {
+  width: min(420px, 100%);
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.sent-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--orange) 0%, #FFA563 100%);
+  border-radius: 999px;
+  transition: width .8s cubic-bezier(.4, .0, .2, 1);
+  /* Subtle shimmer overlay so the bar still looks alive when the JS-
+     driven width updates pause briefly (e.g. main thread busy). */
+  background-image:
+    linear-gradient(90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,0.35) 50%,
+      rgba(255,255,255,0) 100%),
+    linear-gradient(90deg, var(--orange) 0%, #FFA563 100%);
+  background-size: 80px 100%, 100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  background-position: -80px 0, 0 0;
+  animation: sent-progress-shimmer 1.6s linear infinite;
+}
+@keyframes sent-progress-shimmer {
+  0%   { background-position: -80px 0, 0 0; }
+  100% { background-position: calc(100% + 80px) 0, 0 0; }
+}
+
+/* Skeleton cards mirror the .sent-card layout so the page doesn't reflow
+   when the real cards drop in. Uses the existing .skel shimmer (defined
+   in the Dashboard skeleton block above). */
+.sent-grid-skel .sent-card-skel {
+  background: var(--surface);
+  opacity: 0.85;
+}
+.sent-grid-skel .sent-card-skel .skel {
+  /* The dashboard .skel rule already animates, but the per-element
+     widths/heights we set inline override its defaults — re-assert here
+     to be explicit that these are placeholders, not real chips. */
+  display: inline-block;
 }
 
 /* ─── Health check card (onboarding + settings + top banner) ──────────── */
@@ -8781,3 +8889,85 @@ html.dark .skel::after {
 .error-card__title   { font-size: var(--fs-15); font-weight: 700; color: var(--ink); }
 .error-card__message { font-size: var(--fs-13); color: var(--ink-3); max-width: 420px; }
 .error-card__retry   { margin-top: var(--space-2); }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Sidebar minimize — full / rail / hidden cycle. Added 2026-05-28.
+   Wired in main.js (cycleSidebar + ⌘B / Ctrl+B keyboard shortcut).
+   State lives on `body[data-sidebar="<state>"]`; default = "full"
+   so untagged sessions render the original 248px sidebar.
+   ──────────────────────────────────────────────────────────────────── */
+.sidebar-toggle {
+  margin-left: auto;
+  width: 28px; height: 28px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2); color: var(--ink-2);
+  display: grid; place-items: center; cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.sidebar-toggle:hover {
+  background: var(--surface); color: var(--ink);
+  border-color: var(--orange);
+}
+.sidebar-toggle svg { width: 14px; height: 14px; stroke-width: 2; }
+
+/* ── Rail state: icon-only ~64px sidebar. Tooltip-on-hover relies on the
+      existing `title` attributes already present on most nav links, so we
+      don't need to render the labels in a popover. */
+body[data-sidebar="rail"] .app {
+  grid-template-columns: 64px 1fr;
+}
+body[data-sidebar="rail"] .sidebar {
+  padding: 18px 8px 24px;
+  gap: 14px;
+}
+body[data-sidebar="rail"] .brand {
+  flex-direction: column; align-items: center; gap: 8px;
+  padding: 4px 0 8px;
+}
+body[data-sidebar="rail"] .brand-text { display: none; }
+body[data-sidebar="rail"] .sidebar-toggle { margin-left: 0; }
+body[data-sidebar="rail"] .nav-section-label { display: none; }
+body[data-sidebar="rail"] .nav a {
+  justify-content: center;
+  padding: 8px;
+  gap: 0;
+}
+/* Hide everything inside a nav link except the icon span. The icon span
+   has class `.nav-ic`; the label and count are bare/unclassed spans. */
+body[data-sidebar="rail"] .nav a > span:not(.nav-ic) { display: none; }
+body[data-sidebar="rail"] .pro-card { display: none; }
+
+/* ── Hidden state: sidebar fully removed from layout, reveal strip shown.
+      Use `display:none` (not `visibility:hidden`) so it doesn't block
+      pointer events along the left edge — the strip needs that space. */
+body[data-sidebar="hidden"] .app {
+  grid-template-columns: 0 1fr;
+}
+body[data-sidebar="hidden"] .sidebar { display: none; }
+body[data-sidebar="hidden"] .sidebar-reveal-strip { display: block; }
+
+/* Hover-reveal strip — sits at the very left edge of the viewport when
+   the sidebar is hidden. 8px transparent default so it doesn't visually
+   intrude; widens + gets a subtle gradient on hover so users can find
+   it. Click → JS swaps state back to "full". */
+.sidebar-reveal-strip {
+  display: none;              /* default — only shown when state="hidden" */
+  position: fixed; left: 0; top: 0; bottom: 0;
+  width: 8px;
+  background: transparent;
+  border: 0; padding: 0; margin: 0;
+  cursor: pointer;
+  z-index: 100;
+  transition: width .15s ease, background .15s ease;
+}
+.sidebar-reveal-strip:hover {
+  width: 16px;
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--orange) 18%, transparent),
+    transparent);
+}
+.sidebar-reveal-strip:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: -2px;
+}
