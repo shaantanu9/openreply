@@ -370,6 +370,50 @@ def build_audience_personas(
     personas: list[dict[str, Any]] = []
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+    # Pre-create the persistence table + clear stale rows BEFORE the loop so
+    # the UI can poll for incremental inserts. Previously this entire flow
+    # was batched into one `insert_all` at the very end (after every
+    # cluster's LLM call had returned), which gave the UI no visibility into
+    # progress — it just stared at "Analyzing…" for 30-90s. By inserting
+    # each persona inside the loop the frontend's run_query polling sees
+    # personas appear one at a time as they finish.
+    if persist:
+        try:
+            _ensure_table(db)
+            db.execute("DELETE FROM audience_personas WHERE topic = ?", [topic])
+        except Exception as e:
+            # Persist setup failed — fall back to the legacy batched path
+            # below so the caller still gets a usable response.
+            persist_incremental = False
+        else:
+            persist_incremental = True
+    else:
+        persist_incremental = False
+
+    def _row_for_persist(p: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "topic":                p["topic"],
+            "cluster_id":           p["cluster_id"],
+            "label":                p.get("label") or "",
+            "bio":                  p.get("bio") or "",
+            "persona":              p.get("persona") or "",
+            "personal_memory":      p.get("personal_memory") or "",
+            "member_authors":       json.dumps(p["members"], ensure_ascii=False),
+            "exemplar_post_ids":    json.dumps(p["exemplar_post_ids"], ensure_ascii=False),
+            "top_subs":             json.dumps(p["top_subs"], ensure_ascii=False),
+            "vocab_signatures":     json.dumps(p["vocab_signatures"], ensure_ascii=False),
+            "says_wants_hates_json": json.dumps(p["says_wants_hates"], ensure_ascii=False),
+            "demographics_json":    json.dumps(p["demographics"], ensure_ascii=False),
+            "activity_heatmap_json": json.dumps(p["activity_heatmap"], ensure_ascii=False),
+            "tightness":            p["tightness"],
+            "post_count":           p["post_count"],
+            "member_count":         p["member_count"],
+            "generated_at":         p["generated_at"],
+            "provider":             p.get("provider") or "",
+            "model":                p.get("model") or "",
+            "llm_augmented":        1 if p.get("llm_augmented") else 0,
+        }
+
     for cid in sorted(cluster_rows.keys()):
         c_rows = cluster_rows[cid]
         c_authors = cluster_authors[cid]
@@ -450,40 +494,30 @@ def build_audience_personas(
 
         personas.append(persona)
 
-    # Largest clusters first for the UI.
+        # Incremental persist: insert THIS persona immediately so the UI's
+        # polling loop sees it land. Skipping a single row on error leaves
+        # the rest of the run intact (better than aborting); the in-memory
+        # `personas` list is still authoritative for the final return shape.
+        if persist_incremental:
+            try:
+                db["audience_personas"].insert_all([_row_for_persist(persona)], pk="id")
+            except Exception:
+                pass
+
+    # Largest clusters first for the UI. The DB rows keep their natural
+    # insertion order; the in-memory list (returned to the caller) is sorted
+    # here so the legacy non-polling path still returns biggest-first.
     personas.sort(key=lambda p: -p["member_count"])
 
-    if persist:
+    if persist and not persist_incremental:
+        # Fallback batched insert — only runs if the incremental setup at
+        # the top of the function failed. Preserves the original semantics
+        # for callers that don't poll.
         try:
             _ensure_table(db)
-            # Replace-by-topic so re-runs don't accumulate stale rows.
             db.execute("DELETE FROM audience_personas WHERE topic = ?", [topic])
             db["audience_personas"].insert_all(
-                [
-                    {
-                        "topic":                p["topic"],
-                        "cluster_id":           p["cluster_id"],
-                        "label":                p.get("label") or "",
-                        "bio":                  p.get("bio") or "",
-                        "persona":              p.get("persona") or "",
-                        "personal_memory":      p.get("personal_memory") or "",
-                        "member_authors":       json.dumps(p["members"], ensure_ascii=False),
-                        "exemplar_post_ids":    json.dumps(p["exemplar_post_ids"], ensure_ascii=False),
-                        "top_subs":             json.dumps(p["top_subs"], ensure_ascii=False),
-                        "vocab_signatures":     json.dumps(p["vocab_signatures"], ensure_ascii=False),
-                        "says_wants_hates_json": json.dumps(p["says_wants_hates"], ensure_ascii=False),
-                        "demographics_json":    json.dumps(p["demographics"], ensure_ascii=False),
-                        "activity_heatmap_json": json.dumps(p["activity_heatmap"], ensure_ascii=False),
-                        "tightness":            p["tightness"],
-                        "post_count":           p["post_count"],
-                        "member_count":         p["member_count"],
-                        "generated_at":         p["generated_at"],
-                        "provider":             p.get("provider") or "",
-                        "model":                p.get("model") or "",
-                        "llm_augmented":        1 if p.get("llm_augmented") else 0,
-                    }
-                    for p in personas
-                ],
+                [_row_for_persist(p) for p in personas],
                 pk="id",
             )
         except Exception as e:

@@ -65,7 +65,14 @@ class OpenAIProvider(LLMProvider):
         # The instance `name` identifies which provider this is, so callers
         # (and logs) can see `mistral` / `groq` rather than the generic "openai".
         self.name = prov
-        self._client = OpenAI(api_key=api_key, base_url=cfg["base_url"])
+        # Cap every HTTP request so a hung connection (NVIDIA NIM cold-boot,
+        # OpenRouter 502 with no body, etc.) can't pin the Tauri daemon
+        # mutex indefinitely. Default 300s safely covers 30-90s
+        # sentiment/audience-build runs; user can override via
+        # LLM_REQUEST_TIMEOUT=N in their .env (Ollama has its own
+        # OLLAMA_TIMEOUT for the same reason).
+        timeout_s = float(os.getenv("LLM_REQUEST_TIMEOUT") or 300.0)
+        self._client = OpenAI(api_key=api_key, base_url=cfg["base_url"], timeout=timeout_s)
         # `LLM_MODEL` is per-provider. When the user pins LLM_PROVIDER=ollama
         # with LLM_MODEL=llama3.2:3b and the FallbackProvider walks down to
         # OpenRouter / Groq / etc., we must NOT pass that Ollama model name

@@ -368,34 +368,192 @@ function wireActions(root, topic) {
   $('#aud-rebuild-offline', root)?.addEventListener('click', () => buildAndRender(root, topic, { llm: false }));
 }
 
-async function buildAndRender(root, topic, { llm = true } = {}) {
-  root.innerHTML = `
+// Mount the persistent build shell — once painted, we ONLY mutate
+// `#aud-status`, `#aud-info`, `#aud-stats-host`, and individual cards inside
+// `#aud-grid`. We never reassign `root.innerHTML` again during the build, so
+// the screen doesn't flash / reload as personas land. Skeleton cards (5,
+// covering the upper end of the `k_candidates` range) get replaced one at a
+// time as real personas finish.
+function renderBuildingShell(topic, { llm = true } = {}) {
+  const skelCard = `
+    <div class="topic-tile aud-card-skel" aria-hidden="true">
+      <div class="skel skel-bar" style="width:55%;height:18px;border-radius:6px;margin-bottom:8px"></div>
+      <div class="skel skel-bar" style="width:80%;height:12px;border-radius:6px;margin-bottom:6px"></div>
+      <div class="skel skel-bar" style="width:70%;height:12px;border-radius:6px;margin-bottom:6px"></div>
+      <div class="skel skel-bar" style="width:60%;height:12px;border-radius:6px;margin-bottom:6px"></div>
+      <div class="skel skel-bar" style="width:50%;height:12px;border-radius:6px"></div>
+    </div>
+  `;
+  return `
     <header class="topbar">
       <div class="crumbs"><a href="#/audience">Audience</a> / <strong>${esc(topic)}</strong></div>
       <div class="topbar-spacer"></div>
+      <span class="pill" id="aud-live-pill">● ${llm ? 'clustering' : 'clustering (offline)'}</span>
     </header>
-    <div class="empty-state" style="padding:36px">${llm ? 'Clustering authors and writing personas — this can take 20–60s when LLM is on…' : 'Clustering authors (offline mode) — should be quick…'}</div>
+    <div class="muted" id="aud-info" style="font-size:11.5px;margin-bottom:14px">
+      ${llm
+        ? 'Clustering authors and writing personas — each appears here as it finishes (no need to wait for everything)'
+        : 'Clustering authors (offline mode) — appears here as soon as clusters are scored'}
+    </div>
+    <div id="aud-stats-host"></div>
+    <div class="section-head">
+      <div>
+        <h2>Personas grounded in your corpus</h2>
+        <p id="aud-status" style="margin:0;color:var(--ink-3);font-size:13px">Starting…</p>
+      </div>
+    </div>
+    <section class="topic-grid" id="aud-grid">${skelCard.repeat(5)}</section>
   `;
-  let resp;
+}
+
+async function buildAndRender(root, topic, { llm = true } = {}) {
+  // Initial shell — deliberate user-initiated paint. After this point we
+  // surgically update children only; no further `root.innerHTML = …` writes.
+  root.innerHTML = renderBuildingShell(topic, { llm });
+  window.refreshIcons?.();
+
+  const grid = $('#aud-grid', root);
+  const statusEl = $('#aud-status', root);
+  const infoEl = $('#aud-info', root);
+  const livePill = $('#aud-live-pill', root);
+  const statHost = $('#aud-stats-host', root);
+
+  // Stamp the build's start time so the polling loop can ignore stale
+  // personas from a PREVIOUS run that might still be in the DB during the
+  // brief window between `buildAndRender` mounting and Python's DELETE.
+  // Without this, the same cluster_id from the prior run would shadow the
+  // first new persona of this run.
+  const buildStartedAt = Date.now() - 3000; // 3s slack for clock drift / timing
+  const seen = new Set();
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped || !root.isConnected) return;
+    let resp;
+    try { resp = await api.audiencePersonasGet(topic); } catch { return; }
+    if (stopped || !root.isConnected) return;
+    const personas = resp?.personas || [];
+    for (const p of personas) {
+      const gen = p.generated_at ? new Date(p.generated_at).getTime() : 0;
+      if (gen && gen < buildStartedAt) continue; // belongs to a prior run
+      const key = `${p.cluster_id}_${p.generated_at || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // Replace one skeleton, else append at top so newly-finished real
+      // cards stay visible above any remaining skeletons.
+      const skel = grid.querySelector('.aud-card-skel');
+      const wrap = document.createElement('div');
+      wrap.innerHTML = personaCard(p, topic);
+      const card = wrap.firstElementChild;
+      if (!card) continue;
+      if (skel) skel.replaceWith(card);
+      else grid.insertBefore(card, grid.firstChild);
+    }
+    if (statusEl) {
+      statusEl.textContent = `${seen.size} persona${seen.size === 1 ? '' : 's'} ready…`;
+    }
+  };
+
+  await tick();
+  const pollTimer = setInterval(tick, 1500);
+
+  let runResult = null;
+  let runError = null;
   try {
-    resp = await api.audiencePersonasBuild(topic, { llm });
+    runResult = await api.audiencePersonasBuild(topic, { llm });
   } catch (e) {
-    root.innerHTML = `<div class="empty-big"><h3>Couldn't build audience</h3><p>${esc(e?.message || e)}</p></div>`;
+    runError = e;
+  }
+  stopped = true;
+  clearInterval(pollTimer);
+  // One final pass to catch any persona that landed between the last poll
+  // and the build's completion.
+  await tick();
+
+  // --- error / fallback handling. Don't blow away partial cards. ---
+  if (runError) {
+    if (livePill) { livePill.textContent = '● failed'; livePill.style.background = 'var(--rose-soft)'; }
+    if (statusEl) {
+      statusEl.textContent = `Build error: ${runError?.message || runError}`;
+      statusEl.style.color = '#B84747';
+    }
+    // If nothing landed, swap skeletons for the error CTA inside the grid
+    // (don't replace the whole shell — the header/buttons stay).
+    if (!seen.size) {
+      grid.innerHTML = `<div class="empty-big" style="grid-column:1 / -1"><p>${esc(runError?.message || String(runError))}</p>
+        <button class="btn btn-ghost btn-sm btn-bordered" id="aud-fallback">Try offline mode</button></div>`;
+      $('#aud-fallback', root)?.addEventListener('click', () => buildAndRender(root, topic, { llm: false }));
+    } else {
+      grid.querySelectorAll('.aud-card-skel').forEach(s => s.remove());
+    }
     return;
   }
-  if (resp?.timed_out) {
-    root.innerHTML = `<div class="empty-big"><h3>Build timed out</h3><p>${esc(resp.error || 'try again or use offline mode')}</p>
-      <button class="btn btn-ghost btn-sm btn-bordered" id="aud-fallback">Build offline (no LLM)</button></div>`;
-    $('#aud-fallback', root)?.addEventListener('click', () => buildAndRender(root, topic, { llm: false }));
+  if (runResult?.timed_out) {
+    if (livePill) { livePill.textContent = '● timed out'; livePill.style.background = 'var(--rose-soft)'; }
+    if (statusEl) {
+      statusEl.textContent = runResult.error || 'Build timed out';
+      statusEl.style.color = '#B84747';
+    }
+    if (!seen.size) {
+      grid.innerHTML = `<div class="empty-big" style="grid-column:1 / -1"><p>${esc(runResult.error || 'try again or use offline mode')}</p>
+        <button class="btn btn-ghost btn-sm btn-bordered" id="aud-fallback">Build offline (no LLM)</button></div>`;
+      $('#aud-fallback', root)?.addEventListener('click', () => buildAndRender(root, topic, { llm: false }));
+    } else {
+      grid.querySelectorAll('.aud-card-skel').forEach(s => s.remove());
+    }
     return;
   }
-  if (resp?.ok === false) {
-    root.innerHTML = `<div class="empty-big"><h3>Couldn't build audience</h3><p>${esc(resp.error || 'unknown error')}</p>
-      <button class="btn btn-ghost btn-sm btn-bordered" id="aud-fallback">Try offline mode</button></div>`;
-    $('#aud-fallback', root)?.addEventListener('click', () => buildAndRender(root, topic, { llm: false }));
+  if (runResult?.ok === false) {
+    if (livePill) { livePill.textContent = '● error'; livePill.style.background = 'var(--rose-soft)'; }
+    if (statusEl) {
+      statusEl.textContent = runResult.error || 'Couldn\'t build audience';
+      statusEl.style.color = '#B84747';
+    }
+    if (!seen.size) {
+      grid.innerHTML = `<div class="empty-big" style="grid-column:1 / -1"><p>${esc(runResult.error || 'unknown error')}</p>
+        <button class="btn btn-ghost btn-sm btn-bordered" id="aud-fallback">Try offline mode</button></div>`;
+      $('#aud-fallback', root)?.addEventListener('click', () => buildAndRender(root, topic, { llm: false }));
+    } else {
+      grid.querySelectorAll('.aud-card-skel').forEach(s => s.remove());
+    }
     return;
   }
-  root.innerHTML = renderShell(topic, resp);
+
+  // --- success: surgical updates only, no root.innerHTML reassignment ---
+  grid.querySelectorAll('.aud-card-skel').forEach(s => s.remove());
+  const k = runResult?.k != null ? `k=${runResult.k}` : '';
+  const sil = runResult?.silhouette != null ? ` · silhouette ${runResult.silhouette.toFixed(3)}` : '';
+  const generated = (runResult?.personas || [])[0]?.generated_at
+    ? `Generated ${new Date(runResult.personas[0].generated_at).toLocaleString()}`
+    : '';
+  if (infoEl) infoEl.textContent = `${generated}${generated && k ? ' · ' : ''}${k}${sil}`;
+  if (statHost) statHost.innerHTML = statGrid(runResult);
+  if (livePill) { livePill.textContent = '● done'; livePill.style.background = 'var(--mint, #C7E5D6)'; livePill.style.color = '#1A3424'; }
+  if (statusEl) {
+    statusEl.textContent = `${seen.size} persona${seen.size === 1 ? '' : 's'} clustered`;
+    statusEl.style.color = '#2d7a3e';
+    setTimeout(() => { if (statusEl.isConnected) statusEl.textContent = ''; }, 4000);
+  }
+  // The "How these were built" footer + Re-build buttons aren't part of the
+  // building shell. Add them now without rewriting the rest of the screen.
+  if (!$('#aud-rebuild', root)) {
+    const header = root.querySelector('header.topbar');
+    if (header && livePill) {
+      const rebuildOffline = document.createElement('button');
+      rebuildOffline.className = 'btn btn-ghost btn-sm btn-bordered icon-btn';
+      rebuildOffline.id = 'aud-rebuild-offline';
+      rebuildOffline.title = 'Re-cluster without LLM';
+      rebuildOffline.innerHTML = '<i data-lucide="rotate-ccw"></i> Re-cluster';
+      const rebuildLlm = document.createElement('button');
+      rebuildLlm.className = 'btn btn-primary btn-sm icon-btn';
+      rebuildLlm.id = 'aud-rebuild';
+      rebuildLlm.title = 'Re-cluster + re-write personas with LLM';
+      rebuildLlm.innerHTML = '<i data-lucide="sparkles"></i> Re-build with AI';
+      header.insertBefore(rebuildOffline, livePill);
+      header.insertBefore(rebuildLlm, livePill);
+      livePill.remove();
+    }
+  }
   window.refreshIcons?.();
   wireActions(root, topic);
 }

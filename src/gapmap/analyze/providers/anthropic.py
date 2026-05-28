@@ -21,7 +21,13 @@ class AnthropicProvider(LLMProvider):
         cfg = load_config()
         if not cfg.anthropic_api_key:
             raise RuntimeError("ANTHROPIC_API_KEY not set in environment.")
-        self._client = Anthropic(api_key=cfg.anthropic_api_key)
+        # Cap every HTTP request so a hung connection can't pin the Tauri
+        # daemon mutex indefinitely (every other UI query queues behind us).
+        # Default 300s is safely above the 30-90s sentiment / audience-build
+        # call duration; user can lower it for snappy machines via
+        # LLM_REQUEST_TIMEOUT=120 in their .env.
+        timeout_s = float(os.getenv("LLM_REQUEST_TIMEOUT") or 300.0)
+        self._client = Anthropic(api_key=cfg.anthropic_api_key, timeout=timeout_s)
         # Honour LLM_MODEL only when the user pinned anthropic — same gate as
         # the OpenAI-compat path. Without this, a user who pinned Ollama with
         # LLM_MODEL=llama3.2:3b would have the Anthropic fallback try to call

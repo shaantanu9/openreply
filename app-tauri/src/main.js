@@ -675,12 +675,34 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Settings flicker / remount every few seconds, which the user
   // experiences as "the app keeps refreshing".
   const NO_REMOUNT_ROUTES = [
-    /^#\/collect\/[^/]+/,    // collect — owns its own refresh
-    /^#\/topic\/[^/?]+/,     // topic — owns its own refresh
-    /^#\/settings\b/,        // settings — FS-driven
+    /^#\/collect\/[^/]+/,    // collect — owns its own refresh (live progress polling)
+    /^#\/topic\/[^/?]+/,     // topic — owns its own refresh (tab-level loaders)
+    /^#\/settings\b/,        // settings — FS / keychain driven, no SQLite content
     /^#\/welcome\b/,         // welcome — no SQLite content
-    /^#\/activate\b/,        // activation — keychain/HTTP only
+    /^#\/activate\b/,        // activation — keychain / HTTP only
     /^#\/license\b/,         // license — keychain only
+    // ---- 2026-05-28: stop the "app keeps refreshing" feel during enrichment ----
+    // Screens that have their own internal refresh / polling / interactive
+    // state. Remounting them on every external DB write blows away in-place
+    // tab state, scroll position, modal open state, etc. — and they already
+    // surface fresh data via their own renderers.
+    /^#\/audience\/[^/]+/,   // audience detail — buildAndRender owns live polling
+    /^#\/personas\b/,        // personas — own ingest progress event stream
+    /^#\/tasks\b/,           // Task Manager — own refresh
+    /^#\/collects\b/,        // Active Collects — own refresh
+    /^#\/activity\b/,        // Activity — own 4s db-mtime poller
+    /^#\/database\b/,        // Database console — query-driven, no auto-render
+    /^#\/find\b/,            // Find — interactive query input
+    /^#\/search\b/,          // Search — interactive query input
+    /^#\/watch\b/,           // Watch — own refresh
+    /^#\/iterate\b/,         // Iterate — long-running auto-research session
+    /^#\/improve\b/,         // Improve — multi-step pipeline UX
+    // (Home `/`, /topics, /products, /competitors, /reports, /ingest,
+    //  /ingest-video, /science, /playbook, /ost, /empathy, /interviews,
+    //  /pmf, /pricing, /launch DO still remount — they show
+    //  "list-of-everything" views where fresh data matters and they
+    //  don't own a polling loop. The new debounce below keeps the
+    //  remount cadence sane during a write burst.)
   ];
   const shouldSkipRemount = () => {
     const hash = location.hash || '';
@@ -772,17 +794,33 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Without this, MCP tools like `gapmap_start_collect` successfully write
   // topics/posts to the shared SQLite but the GUI renders stale cached data
   // until the user manually navigates.
+  // Coalesce a burst of DB writes into ONE remount after a 2s quiet period.
+  // Without this, the bundled MCP daemon + enrichment worker writing every
+  // few seconds during a long collect causes a fresh remount on every tick
+  // of the 5s db-mtime poller — the user experiences this as "the app keeps
+  // refreshing." Sidebar counters still update immediately on every event
+  // (cheap, no DOM remount); only the full screen remount is debounced.
+  let _dbChangedTimer = null;
+  let _dbChangedPokedWorker = false;
   window.addEventListener('gapmap:db-changed', () => {
     refreshNavCounts();
-    // Same skip list as gapmap:changed above (see NO_REMOUNT_ROUTES).
-    // Routes that own their own refresh or don't read SQLite should not
-    // be force-remounted every 5s.
     if (shouldSkipRemount()) return;
-    try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
-    route();
-    // Poke the extraction worker in case the external write pushed a topic
-    // past the enrichment threshold — idempotent.
-    api.startExtractionWorker().catch(() => {});
+    // Poke the extraction worker once per debounce window — idempotent on
+    // the Rust side, but no point firing on every poll tick.
+    if (!_dbChangedPokedWorker) {
+      _dbChangedPokedWorker = true;
+      api.startExtractionWorker().catch(() => {});
+    }
+    if (_dbChangedTimer) return; // already scheduled
+    _dbChangedTimer = setTimeout(() => {
+      _dbChangedTimer = null;
+      _dbChangedPokedWorker = false;
+      // Re-check the skip flag at fire time — user may have navigated to a
+      // skip-list route during the debounce window.
+      if (shouldSkipRemount()) return;
+      try { localStorage.removeItem('gapmap.dashboard.cache.v1'); } catch {}
+      route();
+    }, 2000);
   });
 
   // Boot-time health probe: on every launch, confirm the sidecar spawns and
