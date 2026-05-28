@@ -268,6 +268,7 @@ fn main() {
             commands::enrich_graph_stream,
             commands::relate_graph,
             commands::clear_graph_inflight,
+            commands::cancel_enrich_for_topic,
             commands::mem_stats,
             commands::export_html,
             commands::export_graph_json,

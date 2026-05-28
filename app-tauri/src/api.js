@@ -581,6 +581,14 @@ export const api = {
   // enrich (the Rust side auto-expires after 10 min; this is the manual
   // override). Omit both args to clear everything.
   clearGraphInflight: (topic = null, op = null) => invoke('clear_graph_inflight', { topic, op }),
+  // Preempt an in-flight enrich: SIGTERMs the live sidecar child AND clears
+  // the per-topic dedup lock in one round-trip. Use when a manual user
+  // click should take priority over a background auto-enrich that's still
+  // running. Pass null/omit `topic` to preempt every enrich. Returns
+  // `{ok, killed:boolean, cleared:string[]}` — `killed:false` means no
+  // enrich was actually running, so the follow-up `enrichGraphStream`
+  // call will just spawn fresh with no surprise.
+  cancelEnrich: (topic = null) => invoke('cancel_enrich_for_topic', { topic }),
   exportHtml:      (topic, forceOrOpts = false) => {
     const opts = (typeof forceOrOpts === 'object' && forceOrOpts !== null)
       ? forceOrOpts

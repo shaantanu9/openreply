@@ -1275,6 +1275,38 @@ pub fn cancel_active_stream(app: &AppHandle) -> bool {
     killed
 }
 
+/// Kill the most-recently-started enrich child (and its dev-venv PID twin),
+/// returning whether anything was actually terminated. Mirrors
+/// `cancel_active_chat` / `cancel_active_stream` so the caller doesn't have
+/// to know which sidecar arm (prod-bundle CommandChild vs dev-venv tokio
+/// Child) the current enrich is using.
+///
+/// IMPORTANT: this only kills the process; it does NOT remove the
+/// `enrich:<topic>` lock from `ActiveGraphOps`. Callers that want to free
+/// the slot for a fresh enrich must clear it separately (the `cancel_enrich
+/// _for_topic` command above does both in one round-trip — that is the
+/// preferred entry point for UI code).
+pub fn cancel_active_enrich(app: &AppHandle) -> bool {
+    let mut killed = false;
+    if let Some(state) = app.try_state::<ActiveEnrich>() {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(child) = guard.take() {
+                let _ = child.kill();
+                killed = true;
+            }
+        }
+    }
+    if let Some(state) = app.try_state::<ActiveEnrichPid>() {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(pid) = guard.take() {
+                kill_pid(pid);
+                killed = true;
+            }
+        }
+    }
+    killed
+}
+
 /// Start the sidecar for stream — streams NDJSON hits, uses its own state
 /// (doesn't conflict with a concurrent collect or chat).
 pub async fn run_cli_stream_streaming(

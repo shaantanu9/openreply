@@ -224,7 +224,32 @@ function clearTabDirtyAcrossNav(topic, tab) {
     if (s.size === 0) _dirtyTopicTabs.delete(topic);
   }
 }
-async function runEnrichStreamForTopic(topic, { onComplete, only = null, parallel = false, bannerId = 'map-enrich-banner' } = {}) {
+// `opts.manual` (default false) — when true, a hit on the per-topic dedup
+//   lock (`already_running:true`) is treated as "preempt the in-flight
+//   enrich and run mine instead" rather than the default "subscribe + show
+//   piggy-back banner". The Map-tab auto-enrich keeps `manual:false` so
+//   re-opening the Map for the same topic doesn't kill its own in-flight
+//   first call. Every visible Enrich/Run button in the UI passes
+//   `manual:true` so a user click always wins over a background pass.
+//
+// `opts.fillMissingAfter` (default false) — when true AND `only` is a
+//   single category, after this stream finalizes successfully fire a
+//   follow-up `runEnrichStreamForTopic(topic, { only: null })` so the
+//   remaining 3 categories also get extracted. Matches the user's
+//   "auto-queue an all-categories pass after yours finishes" preference
+//   so picking 'painpoints only' doesn't strand features/workarounds/
+//   complaints empty until the next manual click. The follow-up runs with
+//   `manual:false` (no self-preempt) and `fillMissingAfter:false` (no
+//   recursion). Cheap re-run of painpoints (~10-20s on Ollama) is the
+//   price for one sidecar spawn instead of three.
+async function runEnrichStreamForTopic(topic, {
+  onComplete,
+  only = null,
+  parallel = false,
+  bannerId = 'map-enrich-banner',
+  manual = false,
+  fillMissingAfter = false,
+} = {}) {
   const mod = await import('@tauri-apps/api/event');
   const bannerSelector = `#${bannerId}`;
   const banner = () => document.querySelector(bannerSelector);
@@ -321,7 +346,9 @@ async function runEnrichStreamForTopic(topic, { onComplete, only = null, paralle
           document.getElementById('banner-change-llm')?.addEventListener('click', () =>
             openByokModal(() => location.reload()));
           document.getElementById('banner-retry-painpoints')?.addEventListener('click', () =>
-            runEnrichStreamForTopic(topic, { onComplete, only: 'painpoints' }));
+            runEnrichStreamForTopic(topic, {
+              onComplete, only: 'painpoints', manual: true, fillMissingAfter: true,
+            }));
         } else {
           b.className = 'map-enrich-banner ok';
           const parts = [];
@@ -335,6 +362,51 @@ async function runEnrichStreamForTopic(topic, { onComplete, only = null, paralle
       recordEnrichResult(topic, lastSummary, lastSummary?.ok === false ? lastSummary?.error : null);
       try { await onComplete?.(lastSummary); }
       catch (e) { console.warn('enrich onComplete errored:', e); }
+      // "Auto-queue an all-categories pass" — fires when the caller asked
+      // for a single category (e.g. "painpoints only") and we just finished
+      // it successfully. Without this, picking painpoints-only strands the
+      // other 3 categories empty until the next manual click. Conditions:
+      //   1. `fillMissingAfter` was opted in (only the user-facing pickers
+      //      set it — the auto-enrich path doesn't, since it already runs
+      //      all 4 categories by default).
+      //   2. `only` is set (no point filling "missing" when we already ran
+      //      every category).
+      //   3. The current run finished cleanly — don't pile a follow-up on
+      //      top of a skipped/failed enrich, that just confuses the banner.
+      // The follow-up runs `manual:false` so a competing manual click can
+      // preempt IT in turn (preserves user-action-wins ordering), and
+      // `fillMissingAfter:false` so we never recurse here. `parallel:false`
+      // keeps Ollama's queue clean — cloud users see a slower follow-up
+      // than the parallel manual one, but it's a background fill and the
+      // banner makes that explicit.
+      const shouldFill = fillMissingAfter
+        && typeof only === 'string' && only.length > 0
+        && !lastSummary?.skipped && lastSummary?.ok !== false;
+      if (shouldFill) {
+        // Detach from this promise — the caller's `await` has already been
+        // satisfied (resolve below). The follow-up runs as a fire-and-
+        // forget background pass and updates the banner via its own
+        // stream subscription.
+        (async () => {
+          try {
+            const b = banner();
+            if (b) {
+              b.className = 'map-enrich-banner info';
+              b.innerHTML = `<div class="map-enrich-row">
+                <span class="map-building-spinner" style="width:14px;height:14px;border-width:2px;flex-shrink:0"></span>
+                <span id="map-enrich-status">Filling remaining categories…</span>
+              </div>
+              <div id="map-enrich-samples" class="map-enrich-samples"></div>`;
+            }
+            await runEnrichStreamForTopic(topic, {
+              onComplete, only: null, parallel: false, bannerId,
+              manual: false, fillMissingAfter: false,
+            });
+          } catch (e) {
+            console.warn('fillMissingAfter follow-up errored:', e);
+          }
+        })();
+      }
       resolve(lastSummary);
     };
 
@@ -367,6 +439,34 @@ async function runEnrichStreamForTopic(topic, { onComplete, only = null, paralle
         const age = Number(start.age_seconds || 0);
         const remaining = Number(start.auto_clears_in_seconds || 0);
         const ageLabel = age > 0 ? ` (started ${age}s ago)` : '';
+        // Manual-click preempt: the user's explicit Enrich/Run click should
+        // always beat a background auto-enrich for the same topic. Kill the
+        // in-flight sidecar, clear the lock, and retry the spawn fresh with
+        // the caller's `only` / `parallel` — so picking "painpoints only"
+        // doesn't get joined to a slow "all categories sequential" auto pass.
+        // Recursion guard: the retry passes `manual:true` so a second-level
+        // collision would also preempt, but in practice the lock was just
+        // cleared so the recursive call spawns immediately.
+        if (manual) {
+          try {
+            try { unlistenProgress(); } catch {}
+            try { unlistenDone(); } catch {}
+            _activeEnrichUnlistens.delete(unlistenProgress);
+            _activeEnrichUnlistens.delete(unlistenDone);
+            setStatus(`Preempting current run${ageLabel} — starting your request…`);
+            await api.cancelEnrich(topic);
+            const retry = await runEnrichStreamForTopic(topic, {
+              onComplete, only, parallel, bannerId, manual: true, fillMissingAfter,
+            });
+            resolve(retry);
+            return;
+          } catch (e) {
+            setStatus(`✗ Preempt failed: ${e?.message || e}`);
+            lastSummary = { ok: false, error: e?.message || String(e) };
+            await finalize();
+            return;
+          }
+        }
         setStatus(`Another enrichment for this topic is already running${ageLabel} — piggy-backing on it…`);
         // Inject an inline Unstick button into the banner so users don't
         // have to dig into dev tools or wait for the Rust-side 10 min
@@ -391,7 +491,9 @@ async function runEnrichStreamForTopic(topic, { onComplete, only = null, paralle
               // resolved via finalize() at the end of the retry chain,
               // so we call the helper and resolve this outer promise
               // to its result.
-              const retry = await runEnrichStreamForTopic(topic, { onComplete, only, parallel, bannerId });
+              const retry = await runEnrichStreamForTopic(topic, {
+                onComplete, only, parallel, bannerId, manual, fillMissingAfter,
+              });
               resolve(retry);
             } catch (e) {
               setStatus(`✗ Unstick failed: ${e?.message || e}`);
@@ -1547,56 +1649,78 @@ export async function renderTopic(root, { params }) {
   // "is a provider configured" (local Ollama counts equally with cloud keys).
   const checkLlmReady = hasLlmConfigured;
 
+  // Toolbar Enrich button. Migrated 2026-05-28 from the non-streaming
+  // `api.enrichGraph` + confirm() dialog to the streaming path so the user
+  // gets:
+  //   1. Live progress (extractor names, sample painpoint titles) instead
+  //      of a 2-6 minute silent spinner.
+  //   2. Preempt-over-piggy-back when their click lands on top of an
+  //      in-flight auto-enrich — see `runEnrichStreamForTopic`'s `manual`
+  //      opt. The confirm() popup is gone; cancelling the auto pass and
+  //      starting fresh is the new default behavior.
+  // We mount the streaming banner under the toolbar so it has somewhere
+  // to render progress even when `loadMap` didn't already create one
+  // (e.g. re-clicking Enrich after findings already exist — the auto
+  // path skipped the banner because `findingsBefore > 0`).
   async function runEnrichFromMap() {
     const btn = $('#btn-map-enrich');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2"></i> Enriching…'; window.refreshIcons?.(); }
-    let errMsg = '';
-    let alreadyRunning = false;
+    // Ensure a banner exists. If the auto-enrich path already mounted one
+    // we reuse it; otherwise inject a fresh banner right above the iframe
+    // so progress events have a target. Clears any previous error/done
+    // styling so the new run reads as in-progress.
+    let bannerEl = document.getElementById('map-enrich-banner');
+    if (!bannerEl) {
+      const toolbar = contentEl.querySelector('.map-toolbar');
+      const iframe = contentEl.querySelector('iframe.viewer-frame');
+      bannerEl = document.createElement('div');
+      bannerEl.id = 'map-enrich-banner';
+      bannerEl.className = 'map-enrich-banner info';
+      bannerEl.innerHTML = `<div class="map-enrich-row">
+        <span class="map-building-spinner" style="width:14px;height:14px;border-width:2px;flex-shrink:0"></span>
+        <span id="map-enrich-status">Starting LLM extraction…</span>
+      </div>
+      <div id="map-enrich-samples" class="map-enrich-samples"></div>`;
+      if (iframe?.parentNode) iframe.parentNode.insertBefore(bannerEl, iframe);
+      else if (toolbar?.parentNode) toolbar.parentNode.insertBefore(bannerEl, toolbar.nextSibling);
+    } else {
+      bannerEl.className = 'map-enrich-banner info';
+      bannerEl.innerHTML = `<div class="map-enrich-row">
+        <span class="map-building-spinner" style="width:14px;height:14px;border-width:2px;flex-shrink:0"></span>
+        <span id="map-enrich-status">Starting LLM extraction…</span>
+      </div>
+      <div id="map-enrich-samples" class="map-enrich-samples"></div>`;
+    }
     try {
-      const e = await api.enrichGraph(topic);
-      if (e?.already_running) {
-        alreadyRunning = true;
-      } else if (e?.skipped) {
-        errMsg = `Enrichment skipped: ${e.reason || 'no LLM configured'}`;
-        recordEnrichResult(topic, e, null);
-      } else if (e?.ok === false) {
-        errMsg = `Enrichment failed: ${e.error || 'unknown'}`;
-        recordEnrichResult(topic, e, e.error || 'unknown');
-      } else {
-        recordEnrichResult(topic, e, null);
-      }
+      await runEnrichStreamForTopic(topic, {
+        // Toolbar click → preempt any background auto-enrich for this topic.
+        // `fillMissingAfter:false` because the toolbar always runs all 4
+        // categories already (no `only`), so there's nothing to fill in.
+        manual: true,
+        fillMissingAfter: false,
+        onComplete: async (summary) => {
+          if (summary?.ok === false) {
+            recordEnrichResult(topic, summary, summary?.error || 'unknown');
+          } else {
+            recordEnrichResult(topic, summary || {}, null);
+          }
+          // Force a fresh rebuild — enrich just landed, the user clicked
+          // the button specifically to see new findings. Without force=true
+          // the in-session cache would short-circuit back to the pre-enrich
+          // render.
+          loadMap(true);
+        },
+      });
     } catch (err) {
-      errMsg = `Enrichment errored: ${err?.message || err}`;
+      showToast('Enrichment issue', `Enrichment errored: ${err?.message || err}`, 'warn');
       recordEnrichResult(topic, null, err?.message || String(err));
-    }
-    // Rust-side dedup guard: another enrich for this topic is already in
-    // flight. We still want to let the user recover from stuck locks
-    // (crashed sidecar, killed dev server mid-run) — offer an "Unstick"
-    // path that calls clear_graph_inflight + retries immediately.
-    if (alreadyRunning) {
-      const proceed = confirm(
-        'Another enrichment for this topic is already running. ' +
-        'If it\'s stuck (e.g. you killed the sidecar), click OK to force-clear and retry. ' +
-        'Click Cancel to wait.'
-      );
-      if (proceed) {
-        try {
-          await api.clearGraphInflight(topic, 'enrich');
-          showToast('Inflight lock cleared', 'Retrying enrichment…', 'ok', 2000);
-          return runEnrichFromMap();
-        } catch (e) {
-          showToast('Unstick failed', `${e?.message || e}`, 'err');
-          return;
-        }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="sparkles"></i> Enrich';
+        window.refreshIcons?.();
       }
-      showToast('Waiting', 'Enrichment lock will auto-clear after 10 minutes if truly stuck.', 'warn');
-      return;
     }
-    if (errMsg) showToast('Enrichment issue', errMsg, 'warn');
-    // Force a fresh rebuild — enrich just landed, the user clicked the
-    // button specifically to see new findings. Without force=true the
-    // in-session cache would short-circuit back to the pre-enrich render.
-    loadMap(true);
   }
 
   // Same shape as runEnrichFromMap but reloads the caller instead of the Map.
@@ -2168,6 +2292,12 @@ export async function renderTopic(root, { params }) {
           }
           await runEnrichStreamForTopic(topic, {
             only, parallel,
+            // User clicked Run in the banner picker — preempt any background
+            // auto-enrich for this topic. `fillMissingAfter` only kicks in
+            // when `only` is set (single category), so picking "All
+            // categories" is a no-op for the follow-up logic.
+            manual: true,
+            fillMissingAfter: true,
             onComplete: async () => {
               _topicStatsPromise = null;
               try { await api.relateGraph(topic); } catch {}

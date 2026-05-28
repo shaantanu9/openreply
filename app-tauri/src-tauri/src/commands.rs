@@ -4,9 +4,10 @@
 //! lifting stays in Python.
 
 use crate::cli::{
-    cancel_active_chat, cancel_active_job, cancel_active_stream, data_dir, run_cli,
-    run_cli_chat_streaming, run_cli_enrich_streaming, run_cli_stream_streaming, run_cli_streaming,
-    ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream, ActiveStreamPid,
+    cancel_active_chat, cancel_active_enrich, cancel_active_job, cancel_active_stream, data_dir,
+    run_cli, run_cli_chat_streaming, run_cli_enrich_streaming, run_cli_stream_streaming,
+    run_cli_streaming, ActiveChat, ActiveChatPid, ActiveJob, ActiveJobPid, ActiveStream,
+    ActiveStreamPid,
 };
 use tauri::{Emitter, Listener};
 use serde_json::Value;
@@ -974,6 +975,59 @@ pub async fn clear_graph_inflight(
         "ok": true,
         "cleared": to_remove,
         "cleared_count": to_remove.len(),
+    }))
+}
+
+/// Preempt an in-flight enrich so the caller can immediately start a fresh
+/// one with new params. Does both halves of a clean preempt in a single
+/// round-trip: (1) SIGTERM the live sidecar child via `cancel_active_enrich`
+/// so it stops burning LLM tokens, (2) remove the `enrich:<topic>` key
+/// from `ActiveGraphOps` so `enrich_graph_stream` doesn't return
+/// `already_running:true` to the retry call.
+///
+/// Why this exists vs the existing `clear_graph_inflight` + a manual kill:
+/// the FE was calling `clear_graph_inflight` after a stuck enrich and then
+/// re-spawning a sidecar, but the *previous* sidecar kept running in the
+/// background, double-writing painpoints to SQLite and burning Ollama
+/// queue slots until it finished. A single command that kills + clears
+/// keeps that bookkeeping atomic from the FE's perspective.
+///
+/// Returns `{ok, killed, cleared}` so the caller can show "Preempting…"
+/// only when something was actually running (killed=true) — a no-op
+/// preempt (no in-flight enrich) just falls through to the fresh spawn.
+#[tauri::command]
+pub async fn cancel_enrich_for_topic(
+    app: AppHandle,
+    topic: Option<String>,
+) -> Result<Value, String> {
+    use crate::cli::ActiveGraphOps;
+
+    let killed = cancel_active_enrich(&app);
+
+    // Free the per-topic lock. When `topic` is None, clear every `enrich:*`
+    // key (matches the existing `clear_graph_inflight` semantics for the
+    // op-only filter). The common UI path passes the specific topic.
+    let mut cleared: Vec<String> = Vec::new();
+    if let Some(state) = app.try_state::<ActiveGraphOps>() {
+        let mut map = state.0.lock().map_err(|e| e.to_string())?;
+        let to_remove: Vec<String> = map
+            .keys()
+            .filter(|k| match &topic {
+                Some(t) => k.as_str() == format!("enrich:{}", t),
+                None => k.starts_with("enrich:"),
+            })
+            .cloned()
+            .collect();
+        for k in &to_remove {
+            map.remove(k);
+        }
+        cleared = to_remove;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "killed": killed,
+        "cleared": cleared,
     }))
 }
 
