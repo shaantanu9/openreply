@@ -1,11 +1,19 @@
 name: release
 
-# Tag-driven release: push a tag like `v0.1.0` to trigger a cross-platform build.
-# Also runnable on demand via the Actions tab (workflow_dispatch).
+# Tag-driven release for macOS (arm64 + x86_64) + Windows.
+# Push a tag like `v0.1.0` → this workflow fires.
+#
+# Linux is intentionally NOT in this matrix — the Linux Tauri compile
+# (no sccache, cold WebKit2GTK link) takes 30+ min and blocks the fast
+# path to publishing macOS DMGs / Windows MSIs. It runs as a separate
+# workflow (`.github/workflows/release-linux.yml`) so the platforms
+# that ship publicly (mac arm64 → myind-ai/gapmap) don't wait on it.
+# Trigger the Linux build manually via the Actions tab → "release (linux)"
+# → "Run workflow" with the tag name.
 #
 # Each platform builds its own PyInstaller sidecar, copies it into
-# app-tauri/src-tauri/binaries/, then runs `tauri build` and uploads the
-# resulting bundle to a GitHub Release.
+# app-tauri/src-tauri/binaries/, then runs `tauri build` and uploads
+# the resulting bundle to the same GitHub Release object.
 #
 # Signing env vars (APPLE_*, TAURI_SIGNING_*) are wired up but optional —
 # set them as repo secrets to get signed/notarized artifacts. Unset = unsigned.
@@ -38,12 +46,12 @@ jobs:
           - platform: macos-latest
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            args: ''
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             args: ''
+          # Linux moved to .github/workflows/release-linux.yml — see header
+          # for the reasoning. Re-add here once sccache / a faster runner
+          # brings Linux Tauri-bundle time under 10 min.
 
     runs-on: ${{ matrix.platform }}
     # Job-level env hoisted so step `if:` can reference it. Actions doesn't

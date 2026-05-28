@@ -1,0 +1,146 @@
+name: release (linux)
+
+# Linux Tauri bundle, decoupled from the main `release` workflow.
+#
+# Why separate: the Linux `cargo tauri build` step takes 30+ min on a
+# stock ubuntu-22.04 runner (cold WebKit2GTK link, 400-crate compile,
+# no sccache). Running it alongside the mac + windows jobs blocked the
+# fast path to publishing macOS DMGs.
+#
+# Triggers:
+#   - workflow_dispatch — manually fire it from the Actions tab against
+#     any tag (used by the team to ship Linux artifacts after the macOS
+#     + Windows release has already gone live)
+#   - workflow_run — auto-fires after the main `release` workflow
+#     completes successfully on a v* tag (so Linux ships eventually
+#     even if nobody manually triggers it)
+#
+# Both paths upload to the SAME draft GitHub Release that the main
+# `release` workflow already created — tauri-action looks up the
+# release by tag name and appends assets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build Linux artifacts for (e.g. v0.1.1)'
+        required: true
+        default: 'v0.1.1'
+  workflow_run:
+    workflows: ['release']
+    types: [completed]
+    branches-ignore: ['**']   # only fire on tag pushes, never branch pushes
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  linux:
+    # Only run the workflow_run path on successful main releases.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      # Tag name comes from manual input OR the upstream workflow_run.
+      TAG_NAME: ${{ github.event.inputs.tag || github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+
+      - name: Install Linux WebKit + libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python deps
+        shell: bash
+        run: uv sync --frozen --all-extras || uv sync --all-extras
+
+      - name: Pre-download ONNX MiniLM embedding model
+        shell: bash
+        run: |
+          mkdir -p scripts/onnx-model-cache/all-MiniLM-L6-v2
+          curl -fsSL --retry 3 --retry-delay 2 \
+            -o scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz \
+            https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz
+          ls -lh scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+
+      - name: Build gapmap-cli sidecar (PyInstaller)
+        shell: bash
+        run: |
+          uv run pyinstaller gapmap-cli.spec
+          mkdir -p app-tauri/src-tauri/binaries
+          cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-x86_64-unknown-linux-gnu
+          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-x86_64-unknown-linux-gnu
+
+      # Linux doesn't ship ffmpeg as a sidecar yet — strip the externalBin
+      # reference so `cargo tauri build` doesn't fail looking for it.
+      - name: Strip ffmpeg externalBin
+        shell: bash
+        run: |
+          cd app-tauri/src-tauri
+          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; p.write_text(json.dumps(d, indent=2))"
+
+      # JWT secret + Node/Rust toolchains
+      - name: Set JWT_DESKTOP_SECRET fallback
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.JWT_DESKTOP_SECRET }}" ]; then
+            echo "JWT_DESKTOP_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
+          else
+            echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app-tauri/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./app-tauri/src-tauri -> target
+
+      - name: Install frontend deps
+        working-directory: ./app-tauri
+        run: npm ci
+
+      # Append Linux artifacts (.deb / .rpm / .AppImage) to the existing
+      # release draft created by the main release workflow.
+      - name: Build and append Linux bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
+        with:
+          projectPath: ./app-tauri
+          tagName: ${{ env.TAG_NAME }}
+          releaseName: Gap Map ${{ env.TAG_NAME }}
+          releaseDraft: true
+          prerelease: false
+          args: ''
