@@ -74,6 +74,35 @@ export function getCollectSnapshot() {
   return out;
 }
 
+// Public hook the cancel-running button in the central CollectsManager
+// (collects.js) calls so the JS snapshot's `status` flips out of
+// 'running' the moment the user clicks Stop — without waiting for the
+// Rust-side `collect:done` event to round-trip.
+//
+// Why this matters: the Task Manager pane reads the snapshot via
+// `find(s => s.status === 'running')`. If we cancel topic A and the
+// user immediately starts topic B, both have status='running' in the
+// JS-side map until A's collect:done arrives. The find returns
+// whichever was inserted first — usually the stale A — so the user
+// sees "A is still fetching" when really only B is running.
+//
+// Defensive: also stamps ALL OTHER topics out of 'running' so the
+// snapshot can only ever have one running at a time (matches the Rust
+// side's "one slot" semantic). Idempotent + safe to call any time.
+export function markCollectCancelled(topic) {
+  if (topic && _collectStatus.get(topic) === 'running') {
+    _collectStatus.set(topic, 'cancelled');
+  }
+  // Sweep any other lingering 'running' entries — only one collect can
+  // be actually running at a time (Rust enforces this), so a second
+  // 'running' in the JS map is by definition stale.
+  for (const [t, st] of _collectStatus.entries()) {
+    if (t !== topic && st === 'running') {
+      _collectStatus.set(t, 'cancelled');
+    }
+  }
+}
+
 function pushPersistedLine(topic, text, cls) {
   if (!_collectLogs.has(topic)) _collectLogs.set(topic, []);
   const arr = _collectLogs.get(topic);
@@ -791,6 +820,11 @@ export async function renderCollect(root, { params }) {
     btn.disabled = true;
     try {
       const killed = await api.cancelCollect();
+      // Flip the JS-side status IMMEDIATELY, don't wait for the
+      // collect:done round-trip. Otherwise the Task Manager pane keeps
+      // showing this topic as "running" until the next user action,
+      // and a fresh collect started in the meantime gets masked behind it.
+      markCollectCancelled(topic);
       appendLine(killed ? '✗ cancelled by user' : 'no active job', 'err');
       setFinal('cancelled', 'var(--fading, #8A8178)', 'white');
     } catch (e) {

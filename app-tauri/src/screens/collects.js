@@ -15,7 +15,7 @@
 
 import { api, esc } from '../api.js';
 import { listen } from '@tauri-apps/api/event';
-import { getCollectSnapshot } from './collect.js';
+import { getCollectSnapshot, markCollectCancelled } from './collect.js';
 import { showCollectBusyModal } from '../components/CollectBusyModal.js';
 
 const REFRESH_MS = 1500;
@@ -40,11 +40,12 @@ function fmtRelative(msAgo) {
 
 function statusBadge(status) {
   const map = {
-    running:  { txt: 'running',  bg: '#1F4E79', fg: '#fff' },
-    queued:   { txt: 'queued',   bg: '#E6EFF7', fg: '#1F4E79' },
-    done:     { txt: 'done',     bg: '#E8F5EE', fg: '#0F6E56' },
-    failed:   { txt: 'failed',   bg: '#FBE7E2', fg: '#B5581A' },
-    idle:     { txt: 'idle',     bg: '#F1F5F9', fg: '#64748b' },
+    running:   { txt: 'running',   bg: '#1F4E79', fg: '#fff' },
+    queued:    { txt: 'queued',    bg: '#E6EFF7', fg: '#1F4E79' },
+    done:      { txt: 'done',      bg: '#E8F5EE', fg: '#0F6E56' },
+    failed:    { txt: 'failed',    bg: '#FBE7E2', fg: '#B5581A' },
+    cancelled: { txt: 'cancelled', bg: '#F4ECDF', fg: '#8A6A1F' },
+    idle:      { txt: 'idle',      bg: '#F1F5F9', fg: '#64748b' },
   };
   const s = map[status] || map.idle;
   return `<span class="cm-badge" style="background:${s.bg};color:${s.fg}">${s.txt}</span>`;
@@ -262,7 +263,23 @@ export async function renderCollects(root) {
 
     if (cancelRunning) {
       e.preventDefault();
+      // Capture which topic is the currently-displayed running one BEFORE
+      // we kill it so we can flip its snapshot status synchronously.
+      // Without this, refresh() picks up the stale 'running' entry and the
+      // pane keeps rendering the just-stopped collect until the next
+      // collect:done event arrives.
+      let runningTopic = null;
+      try {
+        const active = (await api.activeCollects()) || {};
+        runningTopic = Object.keys(active)[0] || null;
+        if (!runningTopic) {
+          const snap = getCollectSnapshot().find((s) => s.status === 'running');
+          runningTopic = snap?.topic || null;
+        }
+      } catch {}
       try { await api.cancelCollect(); } catch {}
+      if (runningTopic) markCollectCancelled(runningTopic);
+      else markCollectCancelled(null);  // sweep any lingering 'running' entries
       refresh();
       return;
     }
@@ -298,12 +315,28 @@ export async function renderCollects(root) {
     const snapRunning = snapshot.find((s) => s.status === 'running');
 
     // Merge: prefer Rust map → fall back to JS snapshot → orphan slot.
+    // BUT: if the Rust map says topic X is active and OUR snapshot
+    // says X was cancelled (user just clicked Stop), trust the
+    // snapshot. Rust takes a moment to actually kill the sidecar and
+    // clear its map; without this guard the pane keeps showing the
+    // just-stopped topic until the next collect:done event arrives.
     const activeTopics = Object.keys(active);
     let runningTopic = null;
     let startedAt = 0;
     if (activeTopics.length > 0) {
-      runningTopic = activeTopics[0];
-      startedAt = Number(active[runningTopic] || 0);
+      const candidate = activeTopics[0];
+      const snapForCandidate = snapshot.find((s) => s.topic === candidate);
+      if (snapForCandidate && snapForCandidate.status === 'cancelled') {
+        // Stale Rust entry — see if the snapshot has a different live one.
+        const snapAlive = snapshot.find((s) => s.status === 'running');
+        if (snapAlive) {
+          runningTopic = snapAlive.topic;
+          startedAt = Math.floor((snapAlive.started_ms || 0) / 1000);
+        }
+      } else {
+        runningTopic = candidate;
+        startedAt = Number(active[candidate] || 0);
+      }
     } else if (snapRunning) {
       runningTopic = snapRunning.topic;
       startedAt = Math.floor((snapRunning.started_ms || 0) / 1000);
