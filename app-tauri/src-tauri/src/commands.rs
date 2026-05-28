@@ -5077,6 +5077,128 @@ fn normalize_models(provider: &str, raw: &Value) -> Vec<Value> {
 //           inside Contents/MacOS so Claude Code spawns it directly without
 //           needing `uv` on the user's PATH.
 
+/// LetsMove-style auto-relocation. If we're running under macOS App
+/// Translocation (which Gatekeeper forces on quarantined .apps launched
+/// from anywhere other than /Applications), ask the user once to move
+/// us into /Applications, then do it — copy, clear the quarantine xattr
+/// that's causing the translocation to keep happening, and relaunch
+/// from the stable location. Return true if relocation kicked off
+/// (caller MUST exit so the translocated process dies).
+///
+/// Why this matters: MCP install writes Claude's `command:` to the path
+/// it sees right now. Under translocation that's a randomized
+/// `/private/var/folders/.../AppTranslocation/<UUID>/d/Gap Map.app/...`
+/// path that reaps when the app quits. Claude saves it, then can't find
+/// it on the next launch — the user sees "gapmap" in /mcp but "failed
+/// to start" every time.
+///
+/// All the dialogs use `osascript display dialog` so we don't need to
+/// pull in a Tauri plugin we'd otherwise not use, and the prompts work
+/// before the webview has even loaded.
+#[cfg(target_os = "macos")]
+#[allow(dead_code)] // called from main.rs setup() only in release builds
+pub fn maybe_relocate_to_applications() -> bool {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let exe_str = exe.to_string_lossy();
+    if !exe_str.contains("/AppTranslocation/") {
+        return false;
+    }
+    // .app/Contents/MacOS/<exe> → .app
+    let app_path = match exe
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+    {
+        Some(p) => p.to_path_buf(),
+        None => return false,
+    };
+    let app_name = match app_path.file_name() {
+        Some(n) => n.to_string_lossy().to_string(),
+        None => return false,
+    };
+    if !app_name.ends_with(".app") {
+        return false;
+    }
+    let target = std::path::PathBuf::from("/Applications").join(&app_name);
+
+    // Ask the user. `osascript` returns exit 0 on the default/right
+    // button (Move) and exit 1 on Cancel.
+    let prompt = format!(
+        r#"display dialog "Gap Map needs to live in your Applications folder for MCP and auto-updates to work properly.\n\nMove it now? (recommended)" \
+           with title "Move Gap Map to Applications" \
+           buttons {{"Cancel", "Move to Applications"}} default button "Move to Applications" \
+           with icon caution"#,
+    );
+    let ok = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&prompt)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !ok {
+        return false;
+    }
+
+    // If something already lives at /Applications/Gap Map.app, ask
+    // before clobbering — could be an older version the user wants to
+    // keep, or a stuck-installed one we should replace.
+    if target.exists() {
+        let confirm = r#"display dialog "An older Gap Map.app already lives in /Applications. Replace it with this version?" \
+                       with title "Replace existing Gap Map" \
+                       buttons {"Cancel", "Replace"} default button "Replace" \
+                       with icon caution"#;
+        let ok2 = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(confirm)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok2 {
+            return false;
+        }
+        let _ = std::fs::remove_dir_all(&target);
+    }
+
+    // `ditto` preserves macOS metadata (codesignature xattrs, resource
+    // forks) where `cp -R` strips them and breaks the signature. The
+    // translocated source is a read-only copy but ditto handles that.
+    let copy_ok = std::process::Command::new("ditto")
+        .arg(&app_path)
+        .arg(&target)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !copy_ok {
+        let err = r#"display alert "Couldn't copy Gap Map to /Applications" message "Drag Gap Map.app to /Applications manually, then reopen it from there." as critical"#;
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(err)
+            .status();
+        return false;
+    }
+
+    // Clear quarantine on the destination. WITHOUT this the next
+    // launch from /Applications would just translocate again — quarantine
+    // attribute is what triggers Gatekeeper's translocation feature.
+    let _ = std::process::Command::new("xattr")
+        .args(["-dr", "com.apple.quarantine"])
+        .arg(&target)
+        .status();
+
+    // Relaunch the newly-moved copy. `open` treats this as a fresh
+    // launch and the new process inherits no state from us.
+    let _ = std::process::Command::new("open").arg(&target).status();
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn maybe_relocate_to_applications() -> bool {
+    false
+}
+
 fn resolve_sidecar_bin_path() -> Option<std::path::PathBuf> {
     // In a packaged Tauri app, the sidecar lives next to the main exe in
     // Contents/MacOS/. `current_exe()` gives us the main app binary; its

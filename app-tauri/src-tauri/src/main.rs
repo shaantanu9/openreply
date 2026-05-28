@@ -63,6 +63,25 @@ fn main() {
         .manage(CollectCancelMarker::default())
         .manage(Arc::new(ExtractionWorker::default()))
         .setup(|app| {
+            // ── LetsMove-style auto-relocation ──────────────────────────
+            // If macOS Gatekeeper translocated this .app (which it does
+            // for any quarantined .app launched from outside /Applications),
+            // prompt the user once to move it to /Applications, then
+            // self-relocate + relaunch. Without this every MCP install
+            // writes a randomized `/private/var/.../AppTranslocation/<UUID>`
+            // path into Claude's config that goes stale the instant the
+            // app quits — the user sees "gapmap" in /mcp but it never
+            // connects. See commands::maybe_relocate_to_applications.
+            //
+            // Release-builds only. Dev builds run from target/debug and
+            // never hit translocation.
+            #[cfg(all(target_os = "macos", not(debug_assertions)))]
+            {
+                if commands::maybe_relocate_to_applications() {
+                    std::process::exit(0);
+                }
+            }
+
             // Splash safety net + cold-boot webview heal.
             //
             // Two separate failure modes this guards against:
