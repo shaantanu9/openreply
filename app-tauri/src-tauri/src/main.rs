@@ -338,6 +338,7 @@ fn main() {
             commands::search_findings_global,
             commands::related_topics_for,
             commands::export_brief,
+            commands::paper_research_pipeline,
             commands::paper_outline_generate,
             commands::paper_draft_generate,
             commands::experiment_plan_generate,

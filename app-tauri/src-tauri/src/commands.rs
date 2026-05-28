@@ -1514,6 +1514,44 @@ pub async fn export_brief(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Run the full paper research pipeline for a topic + query.
+/// Triggers the Papers tab's "Find papers" button — searches 6 academic
+/// sources, dedupes + ranks, fetches fulltext for top-cited papers, runs
+/// LLM analysis, stores everything to SQLite. The UI re-reads `papers_list`
+/// when this returns to show the freshly-discovered papers.
+#[tauri::command]
+pub async fn paper_research_pipeline(
+    app: AppHandle,
+    topic: String,
+    query: Option<String>,
+    limit_per_source: Option<u32>,
+    max_fulltext: Option<u32>,
+    year_from: Option<i32>,
+    provider: Option<String>,
+    sources: Option<String>,
+) -> Result<Value, String> {
+    let lps = limit_per_source.unwrap_or(5).to_string();
+    let mft = max_fulltext.unwrap_or(3).to_string();
+    let yf  = year_from.map(|y| y.to_string()).unwrap_or_default();
+    let q   = query.unwrap_or_default();
+    let p   = provider.unwrap_or_default();
+    let src = sources.unwrap_or_default();
+
+    let mut args: Vec<&str> = vec![
+        "research", "papers",
+        "--topic", &topic,
+        "--limit-per-source", &lps,
+        "--max-fulltext", &mft,
+        "--json",
+    ];
+    if !q.is_empty()   { args.push("--query");      args.push(q.as_str()); }
+    if !yf.is_empty()  { args.push("--year-from");  args.push(yf.as_str()); }
+    if !p.is_empty()   { args.push("--provider");   args.push(p.as_str()); }
+    if !src.is_empty() { args.push("--sources");    args.push(src.as_str()); }
+
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Research-paper pipeline stage 1 — structured outline.
 #[tauri::command]
 pub async fn paper_outline_generate(

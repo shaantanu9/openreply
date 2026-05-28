@@ -1319,6 +1319,21 @@ export const api = {
     invoke('papers_list', { topic, limit }),
   papersExport: (topic, fmt = 'bibtex', limit = null) => invoke('papers_export', { topic, fmt, limit }),
   oaLookup:     (doi) => invoke('oa_lookup', { doi }),
+  // Full paper research pipeline — Papers tab's "Find papers" button.
+  // Searches 6 academic sources in parallel, dedupes + ranks, fetches
+  // fulltext for the top-cited ones, runs LLM analysis. Long-running
+  // (typical 20-90 s for limitPerSource=5). Caller refreshes the cached
+  // list via `papersList()` once this resolves.
+  paperResearchPipeline: (topic, query = null, opts = {}) =>
+    invoke('paper_research_pipeline', {
+      topic,
+      query: query || null,
+      limitPerSource: opts.limitPerSource ?? 5,
+      maxFulltext:    opts.maxFulltext    ?? 3,
+      yearFrom:       opts.yearFrom       ?? null,
+      provider:       opts.provider       || null,
+      sources:        opts.sources        || null,
+    }),
   // Mirror a remote PDF into the app's local cache so the webview can
   // render it without tripping CORS / X-Frame-Options. Returns
   // { ok, path, size } — feed `path` through convertFileSrc to get an

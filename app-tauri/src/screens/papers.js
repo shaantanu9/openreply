@@ -40,15 +40,38 @@ function extractDoi(url) {
   return '';
 }
 
+// Search header — rendered at the top of both the list view AND the
+// empty state so users can always trigger a fresh research run from
+// the Papers tab. Wires up to `paperResearchPipeline` via the JS
+// wrapper in api.js, which dispatches to the Python sidecar's
+// `research papers` command — same pipeline the MCP tool uses.
+function renderSearchHeader(topic) {
+  return `
+    <div class="papers-search-bar" style="display:flex;gap:8px;margin-bottom:14px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;align-items:center;flex-wrap:wrap">
+      <input type="search" id="papers-search-q"
+             placeholder="Search query (defaults to topic)"
+             value="${escape(topic)}"
+             style="flex:1 1 240px;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:13px">
+      <button class="btn btn-primary btn-sm" id="papers-search-btn" type="button">
+        <i data-lucide="search"></i> Find papers
+      </button>
+      <span id="papers-search-status" class="muted" style="font-size:11px;flex:1 1 220px;min-width:0"></span>
+    </div>
+  `;
+}
+
 function renderEmpty(topic) {
   return `
+    ${renderSearchHeader(topic)}
     <div class="empty-state">
       <h3>No papers yet for <b>${escape(topic)}</b></h3>
-      <p>Papers arrive when the Solutions Agent fetches evidence for painpoints,
-      or when you run <code>gapmap_research_papers</code> via MCP. Start by
-      running the Solutions pipeline or use the MCP tools directly:</p>
-      <ul style="text-align:left;max-width:500px;margin:12px auto">
-        <li><code>mcp__gapmap__gapmap_research_papers(query, topic)</code></li>
+      <p>Type a search above and click <b>Find papers</b> — Gap Map will
+      query 6 academic sources in parallel (arXiv, OpenAlex, Semantic
+      Scholar, Crossref, PubMed, Google Scholar), dedupe, and rank by
+      citation count. Or trigger it from Claude / Cursor via MCP:</p>
+      <ul style="text-align:left;max-width:560px;margin:12px auto">
+        <li><code>mcp__gapmap__gapmap_paper_research_pipeline(topic, query)</code></li>
+        <li><code>mcp__gapmap__gapmap_papers_for_topic(topic)</code> &nbsp;<span class="muted">cached read-back</span></li>
         <li><code>mcp__gapmap__gapmap_paper_citations(paper_id)</code></li>
       </ul>
     </div>
@@ -113,6 +136,7 @@ function renderList(topic, posts) {
   const byCites = [...posts].sort((a, b) => (b.score || 0) - (a.score || 0));
   return `
     <div class="papers-tab">
+      ${renderSearchHeader(topic)}
       <div class="papers-toolbar">
         <div class="muted">${posts.length} papers for <b>${escape(topic)}</b></div>
         <div class="papers-actions">
@@ -168,6 +192,57 @@ function showExportModal(topic, fmt, text, count) {
   });
 }
 
+// Wires the #papers-search-btn (rendered by renderSearchHeader) to fire
+// the full paper research pipeline and refresh the list. Re-binds the
+// onclick on every render — there's only ever one button in the DOM
+// (renderSearchHeader is the only place that creates it), and we
+// always look it up fresh inside contentEl, so stale handlers from a
+// previous render don't accumulate.
+function wireSearchButton(contentEl, topic) {
+  const btn    = $('#papers-search-btn', contentEl);
+  const input  = $('#papers-search-q', contentEl);
+  const status = $('#papers-search-status', contentEl);
+  if (!btn || !input) return;
+  btn.onclick = async () => {
+    const q = (input.value || '').trim() || topic;
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2"></i> searching…';
+    window.refreshIcons?.();
+    if (status) status.textContent = 'Querying 6 academic sources in parallel…';
+    try {
+      const r = await api.paperResearchPipeline(topic, q, {
+        limitPerSource: 5,
+        maxFulltext:    3,
+      });
+      if (status) {
+        if (r?.ok) {
+          const total     = r.search_total    ?? 0;
+          const fulltextN = r.fulltext_ok     ?? 0;
+          const analyzed  = r.analyzed        ?? 0;
+          status.textContent =
+            `✓ ${total} found · ${fulltextN} fulltext · ${analyzed} analyzed`;
+        } else {
+          status.textContent = `✗ ${r?.reason || 'pipeline failed'}`;
+        }
+      }
+      // Re-render the list with the freshly-discovered papers. The
+      // cached `papersList` call inside loadPapers gets its 30s cache
+      // bypassed because we just wrote new rows server-side; the
+      // cachedInvoke layer will refetch on miss-or-stale anyway, but
+      // we re-run loadPapers explicitly to be sure the user sees the
+      // new data without having to switch tabs and come back.
+      await loadPapers(contentEl, topic);
+    } catch (e) {
+      if (status) status.textContent = `✗ ${e?.message || e}`;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+      window.refreshIcons?.();
+    }
+  };
+}
+
 export async function loadPapers(contentEl, topic) {
   const set = (html) => { if (contentEl.dataset.tab === 'papers') contentEl.innerHTML = html; };
 
@@ -182,6 +257,7 @@ export async function loadPapers(contentEl, topic) {
       contentEl.dataset.cached = '1';
       window.refreshIcons?.();
     }
+    wireSearchButton(contentEl, topic);
     paintedFromCache = true;
   } else {
     set('<div class="empty-state">loading papers…</div>');
@@ -201,6 +277,7 @@ export async function loadPapers(contentEl, topic) {
     if (paintedFromCache) return;
     set(renderEmpty(topic));
     window.refreshIcons?.();
+    wireSearchButton(contentEl, topic);
     return;
   }
 
@@ -209,6 +286,13 @@ export async function loadPapers(contentEl, topic) {
   if (contentEl.dataset.tab !== 'papers') return;
   contentEl.dataset.cached = '';
   window.refreshIcons?.();
+
+  // Wire the "Find papers" search button — visible in both list-view
+  // and empty-state renders. On click: pipe topic + user query to the
+  // backend pipeline, surface progress text, then re-fetch the cached
+  // list. Re-bind every render path so a previously-clicked button
+  // doesn't end up with a stale handler after an SWR refresh.
+  wireSearchButton(contentEl, topic);
 
   const doExport = async (fmt) => {
     const btn = $(`#btn-export-${fmt}`, contentEl);
@@ -240,7 +324,15 @@ export async function loadPapers(contentEl, topic) {
       try {
         const r = await api.oaLookup(doi);
         if (r?.best_oa_url) {
-          await openPdfViewer(r.best_oa_url, doi, null);
+          // Pull the real paper title from the row we live inside, falling
+          // back to the DOI string only if there's no title cell to read.
+          // The previous code passed `doi` as `title`, so the PDF modal
+          // header read "10.1234/..." instead of the paper name.
+          const row = btn.closest('tr');
+          const titleEl = row?.querySelector('.paper-title a');
+          const realTitle = (titleEl?.textContent || '').trim() || doi;
+          const postId = row?.dataset.postId || null;
+          await openPdfViewer(r.best_oa_url, realTitle, postId);
           btn.innerHTML = '<i data-lucide="check"></i> OA';
         } else {
           btn.innerHTML = '<i data-lucide="lock"></i> —';

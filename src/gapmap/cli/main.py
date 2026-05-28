@@ -3340,6 +3340,64 @@ def cmd_research_intent_set(
     typer.echo(f"{verb} {topic} → intent={intent}")
 
 
+@research_app.command("papers")
+def cmd_research_papers(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    query: Optional[str] = typer.Option(None, "--query", "-q",
+        help="Search query; defaults to topic if not given."),
+    limit_per_source: int = typer.Option(5, "--limit-per-source",
+        help="Papers to fetch per academic source (total ≤ 6× this)."),
+    max_fulltext: int = typer.Option(3, "--max-fulltext",
+        help="How many top-cited papers to attempt full-text fetch for."),
+    year_from: Optional[int] = typer.Option(None, "--year-from",
+        help="Lower-bound publication year for sources that support it."),
+    provider: Optional[str] = typer.Option(None, "--provider",
+        help="LLM provider for paper analysis. Auto-resolved if not given."),
+    sources: Optional[str] = typer.Option(None, "--sources",
+        help="Comma-separated subset of: arxiv,pubmed,openalex,semantic_scholar,crossref,scholar"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Full paper research pipeline — search → rank → fulltext → analyze → store.
+
+    Wraps the MCP tool of the same name so the desktop app's Papers tab
+    can trigger fresh searches via the existing CLI dispatch path,
+    without bypassing the canonical pipeline implementation.
+    """
+    # Import the MCP tool's underlying implementation directly so we don't
+    # have to duplicate orchestration. The function is decorated with
+    # @mcp.tool() but Python keeps the original callable accessible by
+    # name in the module — same pattern other CLI ↔ MCP shared commands
+    # use across this codebase.
+    from ..mcp.server import gapmap_paper_research_pipeline as _impl
+    src_list = [s.strip() for s in (sources or "").split(",") if s.strip()] or None
+    try:
+        result = _impl(
+            topic=topic,
+            query=query,
+            limit_per_source=limit_per_source,
+            max_fulltext=max_fulltext,
+            year_from=year_from,
+            provider=provider,
+            sources=src_list,
+        )
+    except Exception as e:
+        result = {"ok": False, "reason": f"pipeline failed: {e}"}
+
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+        raise typer.Exit(0 if result.get("ok") else 1)
+
+    if not result.get("ok"):
+        console.print(f"[red]{result.get('reason', 'pipeline failed')}[/red]")
+        raise typer.Exit(1)
+    console.print(
+        f"[green]ok[/green] · "
+        f"{result.get('search_total', 0)} found · "
+        f"{result.get('fulltext_ok', 0)} fulltext · "
+        f"{result.get('analyzed', 0)} analyzed"
+    )
+
+
 @research_app.command("papers-export")
 def cmd_research_papers_export(
     topic: str = typer.Option(..., "--topic", "-t"),
