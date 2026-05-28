@@ -1032,10 +1032,19 @@ export async function renderTopic(root, { params }) {
   // some signal we missed (background daemon write, manual sqlite poke).
   let _mapRender = null;  // { html, outPath, mapMode, ts, stale, statsKey } — single-topic scope.
   {
-    const cached = _mapRenderCache.get(topic);
+    // Restore order:
+    //   1. In-memory `_mapRenderCache` (fastest; same session)
+    //   2. localStorage via `_readMapRenderFromLS` (survives app restart)
+    // Either path goes through the same TTL check inside the reader.
+    let cached = _mapRenderCache.get(topic);
+    if (!cached) {
+      const fromLS = _readMapRenderFromLS(topic);
+      if (fromLS) {
+        cached = fromLS;
+        _mapRenderCache.set(topic, fromLS);  // promote to memory cache
+      }
+    }
     if (cached && (Date.now() - (cached.ts || 0)) < MAP_RENDER_CACHE_TTL_MS) {
-      // Share the reference — `stale` mutations from the cache short-
-      // circuit below should persist to subsequent re-entries on this topic.
       _mapRender = cached;
     } else if (cached) {
       _mapRenderCache.delete(topic);
@@ -2371,11 +2380,12 @@ export async function renderTopic(root, { params }) {
         stale: false,
         statsKey: `${nodeCount}:${edgeCount}`,
       };
-      // Persist to the module-level cache so leaving and returning to this
-      // topic short-circuits the 3 sidecar spawns. Single-entry per topic;
-      // overwriting is fine since renderTopic always seeds `_mapRender`
-      // from this Map at the top.
+      // Persist to BOTH the in-memory cache (same-session re-entry)
+      // AND localStorage (survives app restart). Without the LS leg,
+      // every cold app launch sees "Building gap map…" on first Map
+      // open even though the topic's data hasn't moved an inch.
       _mapRenderCache.set(topic, _mapRender);
+      _writeMapRenderToLS(topic, _mapRender);
       // Any dirty flag that landed during the rebuild is now resolved.
       dirtyTabs.delete('map');
       _mapDirtyTopics.delete(topic);
