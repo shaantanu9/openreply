@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased — 2026-05-28] · Graphify-pattern port + perf
+## [v0.1.1 — 2026-05-28] · Graphify-pattern port + perf
 
 Ported the high-value patterns from the external `graphify` tool into our
 own knowledge graph (`src/gapmap/graph/`). Additive only — every existing
