@@ -13,6 +13,36 @@
 
 export const REDDIT_FAMILY = new Set(['reddit', 'lemmy']);
 
+// YouTube subtypes — `youtube` = comments + video meta, `youtube_description`
+// = the video description text, `youtube_transcript` = caption/transcript
+// chunk. All three should display as "YouTube", group together in source
+// tiles, and use the same posts.url for linking. Keep in sync with
+// src/gapmap/sources/source_families.py YT_FAMILY.
+export const YT_FAMILY = new Set(['youtube', 'youtube_description', 'youtube_transcript']);
+
+// Friendly subtype label so the Posts / Find tabs can show users WHAT
+// kind of YouTube row they're looking at (comment vs description vs
+// transcript chunk). Returns '' for non-YouTube or unknown subtypes —
+// callers can fall back to their existing source label.
+export function youtubeSubtypeLabel(source) {
+  switch ((source || '').toLowerCase()) {
+    case 'youtube':             return 'comment';
+    case 'youtube_description': return 'video description';
+    case 'youtube_transcript':  return 'transcript';
+    default:                    return '';
+  }
+}
+
+// Collapse fine-grained subtypes into the coarse family name. Mirrors
+// the Python ``normalize_source_type`` so FE filters / displays group
+// content the same way the LLM extractors do. Idempotent.
+export function normalizedSource(source) {
+  if (!source) return 'reddit';
+  const s = String(source).toLowerCase();
+  if (YT_FAMILY.has(s)) return 'youtube';
+  return s;
+}
+
 // Returns an absolute URL the browser can follow, or '' when nothing
 // usable is available (callers can `||` with their own fallback).
 //

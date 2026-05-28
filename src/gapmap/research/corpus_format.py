@@ -60,6 +60,15 @@ _SOURCE_FORMATTERS = {
     "ingest":        lambda r: f"[ingest:{_ingest_name(r)}] Local file",
     "wikipedia":     lambda r: f"[wiki:{r['id']}] Wikipedia",
     "discourse":     lambda r: f"[discourse:{r['id']}] Forum",
+    # ── YouTube: three distinct content kinds, each labelled so the LLM
+    # knows what it's reading (user reaction vs speaker-authored). The
+    # ``sub`` column carries the channel name for all three. Without
+    # these entries the default Reddit fallback would tag a transcript
+    # chunk as ``r/<channel> (0↑ 0c)`` which the LLM might read as a
+    # low-engagement Reddit post.
+    "youtube":             lambda r: f"[yt:{r['id']}] YouTube comment on “{(r.get('sub') or '?')}” ({r.get('score',0)}↑)",
+    "youtube_description": lambda r: f"[yt-desc:{r['id']}] YouTube video description — channel “{(r.get('sub') or '?')}”",
+    "youtube_transcript":  lambda r: f"[yt-tx:{r['id']}] YouTube transcript chunk — channel “{(r.get('sub') or '?')}” (speaker's words)",
 }
 
 

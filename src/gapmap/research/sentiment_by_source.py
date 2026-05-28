@@ -79,15 +79,22 @@ def _parse_json(raw: str) -> dict[str, Any]:
 
 
 def _sources_for_topic(topic: str) -> list[dict[str, Any]]:
-    """Return [{source: 'reddit', n_posts: 247}, ...] sorted by n_posts desc."""
+    """Return [{source: 'reddit', n_posts: 247}, ...] sorted by n_posts desc.
+
+    Uses the NORMALIZED source family — so all youtube_* rows (comments,
+    descriptions, transcripts) roll up under a single ``youtube`` bucket
+    instead of fragmenting into 3 separate sentiment cards. See
+    ``sources/source_families.py`` for the normalization rules.
+    """
+    from ..sources.source_families import NORMALIZED_SOURCE_SQL
     db = get_db()
     rows = list(db.query(
-        """
-        SELECT coalesce(p.source_type, 'reddit') AS source, count(*) AS n
+        f"""
+        SELECT {NORMALIZED_SOURCE_SQL} AS source, count(*) AS n
         FROM topic_posts tp
         JOIN posts p ON p.id = tp.post_id
         WHERE tp.topic = :topic
-        GROUP BY coalesce(p.source_type, 'reddit')
+        GROUP BY {NORMALIZED_SOURCE_SQL}
         ORDER BY n DESC
         """,
         {"topic": topic},
@@ -96,14 +103,22 @@ def _sources_for_topic(topic: str) -> list[dict[str, Any]]:
 
 
 def _sample_posts_for_source(topic: str, source_type: str, limit: int) -> list[dict[str, Any]]:
+    """Sample posts for ONE source family.
+
+    Filters by the NORMALIZED family — so asking for ``source='youtube'``
+    pulls every YouTube row regardless of subtype (comment / description
+    / transcript). The sentiment prompt sees the full picture rather
+    than a single fragment.
+    """
+    from ..sources.source_families import NORMALIZED_SOURCE_SQL
     db = get_db()
     return list(db.query(
-        """
+        f"""
         SELECT p.id, p.title, substr(coalesce(p.selftext, ''), 1, 600) AS selftext,
                p.score, p.num_comments
         FROM topic_posts tp
         JOIN posts p ON p.id = tp.post_id
-        WHERE tp.topic = :topic AND coalesce(p.source_type, 'reddit') = :src
+        WHERE tp.topic = :topic AND {NORMALIZED_SOURCE_SQL} = :src
         ORDER BY coalesce(p.score, 0) + coalesce(p.num_comments, 0) DESC, p.created_utc DESC
         LIMIT :lim
         """,

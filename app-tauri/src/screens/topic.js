@@ -1578,11 +1578,22 @@ export async function renderTopic(root, { params }) {
   // clicking Evidence / Sources / Chat paints instantly instead of waiting
   // on a cold Python process spawn. Fire-and-forget; errors are swallowed
   // (the tab-click path re-runs with proper UI feedback on failure).
-  const srcSql = `SELECT coalesce(p.source_type,'reddit') AS source, count(*) AS posts,
+  // Normalized source bucket — collapses youtube/youtube_description/
+  // youtube_transcript into one "youtube" tile (and any future
+  // family-with-subtypes the same way). Keeps the Sources tab readable
+  // instead of fragmenting YouTube content across three tiles. Mirrors
+  // ``sources/source_families.py::NORMALIZED_SOURCE_SQL`` on the
+  // Python side — keep both in sync.
+  const NORMALIZED_SOURCE = `CASE
+    WHEN lower(coalesce(p.source_type,'')) LIKE 'youtube%' THEN 'youtube'
+    WHEN p.source_type IS NULL OR p.source_type='' THEN 'reddit'
+    ELSE lower(p.source_type)
+  END`;
+  const srcSql = `SELECT ${NORMALIZED_SOURCE} AS source, count(*) AS posts,
                          min(p.created_utc) AS earliest, max(p.created_utc) AS latest
                   FROM topic_posts tp JOIN posts p ON p.id=tp.post_id
                   WHERE tp.topic=:topic
-                  GROUP BY coalesce(p.source_type,'reddit')
+                  GROUP BY ${NORMALIZED_SOURCE}
                   ORDER BY posts DESC`;
   const subsSql = `SELECT p.sub AS sub, count(*) AS posts
                    FROM topic_posts tp JOIN posts p ON p.id=tp.post_id

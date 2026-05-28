@@ -72,11 +72,18 @@ def _ensure_table(db) -> None:
 def _load_topic_posts(db, topic: str, limit: int = 5000) -> list[dict]:
     """Pull every post for `topic` (capped) with the columns the
     clustering pipeline reads. Returns plain dicts so the helpers in
-    `_clustering.py` stay agnostic about sqlite_utils row types."""
-    sql = """
+    `_clustering.py` stay agnostic about sqlite_utils row types.
+
+    ``source_type`` is returned in NORMALIZED form (youtube_* → youtube,
+    null/empty → reddit) so persona clustering doesn't fragment YouTube
+    voices across three sub-buckets. The raw subtype is preserved in
+    the posts table for any caller that needs it via a separate query.
+    """
+    from ..sources.source_families import NORMALIZED_SOURCE_SQL
+    sql = f"""
         SELECT p.id, p.title, p.selftext, p.author, p.score, p.num_comments,
                p.created_utc, p.url, p.permalink,
-               coalesce(p.source_type, 'reddit') AS source_type, p.sub
+               {NORMALIZED_SOURCE_SQL} AS source_type, p.sub
         FROM posts p
         JOIN topic_posts tp ON tp.post_id = p.id
         WHERE tp.topic = :topic

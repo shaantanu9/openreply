@@ -94,7 +94,9 @@ function subBucketLabel(source, sub) {
   if (source === 'gnews')          return sub;                       // feed name
   if (source === 'rss')            return sub;                       // feed slug
   if (source === 'bluesky' || source === 'mastodon') return `@${sub}`;
-  if (source === 'youtube')        return sub;                       // channel
+  if (source === 'youtube' || source === 'youtube_description' || source === 'youtube_transcript') {
+    return sub;                       // channel name (all 3 YT subtypes carry it in `sub`)
+  }
   if (source === 'appstore' || source === 'playstore') return sub;   // app id
   if (source === 'arxiv' || source === 'openalex' || source === 'pubmed' || source === 'scholar') {
     return sub;  // venue/journal
@@ -108,6 +110,8 @@ function authorLine(p, source) {
   if (source === 'bluesky' || source === 'mastodon') return `@${esc(p.author)}`;
   if (source === 'github' || source === 'github_issue') return `@${esc(p.author)}`;
   if (source === 'youtube')                    return `channel: ${esc(p.author)}`;
+  if (source === 'youtube_description')        return `channel: ${esc(p.author)} · video description`;
+  if (source === 'youtube_transcript')         return `channel: ${esc(p.author)} · transcript chunk`;
   return esc(p.author);
 }
 

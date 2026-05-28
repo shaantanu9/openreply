@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { postLink, REDDIT_FAMILY } from './postLink.js';
+import { postLink, REDDIT_FAMILY, YT_FAMILY, youtubeSubtypeLabel, normalizedSource } from './postLink.js';
 
 describe('postLink', () => {
   it('builds a reddit.com URL from a reddit permalink', () => {
@@ -71,5 +71,33 @@ describe('postLink', () => {
     assert.equal(REDDIT_FAMILY.has('lemmy'), true);
     assert.equal(REDDIT_FAMILY.has('hn'), false);
     assert.equal(REDDIT_FAMILY.has('arxiv'), false);
+  });
+
+  it('exports YT_FAMILY containing all 3 YouTube subtypes', () => {
+    assert.equal(YT_FAMILY.has('youtube'), true);
+    assert.equal(YT_FAMILY.has('youtube_description'), true);
+    assert.equal(YT_FAMILY.has('youtube_transcript'), true);
+    assert.equal(YT_FAMILY.has('reddit'), false);
+  });
+
+  it('youtubeSubtypeLabel returns friendly labels for each subtype', () => {
+    assert.equal(youtubeSubtypeLabel('youtube'), 'comment');
+    assert.equal(youtubeSubtypeLabel('youtube_description'), 'video description');
+    assert.equal(youtubeSubtypeLabel('youtube_transcript'), 'transcript');
+    assert.equal(youtubeSubtypeLabel('hn'), '');
+    assert.equal(youtubeSubtypeLabel(null), '');
+    assert.equal(youtubeSubtypeLabel(undefined), '');
+  });
+
+  it('normalizedSource collapses youtube_* into youtube', () => {
+    assert.equal(normalizedSource('youtube'), 'youtube');
+    assert.equal(normalizedSource('youtube_description'), 'youtube');
+    assert.equal(normalizedSource('youtube_transcript'), 'youtube');
+    assert.equal(normalizedSource('YOUTUBE_TRANSCRIPT'), 'youtube'); // case-insensitive
+    assert.equal(normalizedSource('hn'), 'hn');                       // unchanged
+    assert.equal(normalizedSource('reddit'), 'reddit');               // unchanged
+    assert.equal(normalizedSource(''), 'reddit');                     // default
+    assert.equal(normalizedSource(null), 'reddit');                   // default
+    assert.equal(normalizedSource(undefined), 'reddit');              // default
   });
 });
