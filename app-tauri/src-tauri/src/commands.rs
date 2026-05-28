@@ -5093,13 +5093,24 @@ fn resolve_sidecar_bin_path() -> Option<std::path::PathBuf> {
 }
 
 /// True when the path looks ephemeral — i.e. on a mounted disk image,
-/// removable media, or a temp dir that will disappear once the user
-/// ejects/unmounts. MCP clients need a stable path; writing
-/// `/Volumes/Gap Map/Gap Map.app/...` into ~/.claude.json bricks MCP
-/// the moment the DMG ejects.
+/// removable media, a temp dir that will disappear once the user
+/// ejects/unmounts, OR a macOS App Translocation path. MCP clients need
+/// a stable path; writing any of these into ~/.claude.json bricks MCP
+/// the moment the temp location is reaped.
+///
+/// **App Translocation** (the one that bit us in v0.1.x): macOS
+/// Gatekeeper copies a freshly-downloaded .app to a randomized
+/// `/private/var/folders/.../AppTranslocation/<UUID>/d/Foo.app` when
+/// it's run from anywhere other than /Applications. That path is
+/// re-generated on each launch and reaped on quit — Claude saves it,
+/// then can't find it. Detect by the literal "/AppTranslocation/"
+/// segment which is unique to this feature.
 fn is_ephemeral_path(p: &std::path::Path) -> bool {
     let s = p.to_string_lossy();
-    s.starts_with("/Volumes/") || s.starts_with("/private/tmp/") || s.starts_with("/tmp/")
+    s.starts_with("/Volumes/")
+        || s.starts_with("/private/tmp/")
+        || s.starts_with("/tmp/")
+        || s.contains("/AppTranslocation/")
 }
 
 fn dev_project_dir() -> Option<std::path::PathBuf> {
@@ -5185,17 +5196,40 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
         args.push("--project-dir".into());
         args.push(proj.to_string_lossy().to_string());
     } else if let Some(bin) = resolve_sidecar_bin_path() {
-        // Refuse to write an ephemeral path (e.g. /Volumes/Gap Map/...)
-        // into the MCP client config. Once the DMG ejects or the test
-        // unmounts, every MCP spawn fails and the user has no recourse
-        // short of re-installing. Surface a clear actionable message.
+        // Refuse to write an ephemeral path into the MCP client config.
+        // Once the temp/translocation/DMG path is reaped, every MCP
+        // spawn fails and the user has no recourse short of re-running
+        // install. Surface a path-specific actionable message.
         if is_ephemeral_path(&bin) {
-            return Err(format!(
-                "Gap Map.app is running from a mounted disk image ({}). MCP needs a stable path. \
-                 Quit Gap Map, drag Gap Map.app to /Applications (eject the DMG), \
-                 then open it from /Applications and click Connect again.",
-                bin.display()
-            ));
+            let bin_str = bin.to_string_lossy().to_string();
+            let msg = if bin_str.contains("/AppTranslocation/") {
+                format!(
+                    "Gap Map.app is running under macOS App Translocation ({}). \
+                     This happens when the .app is launched from anywhere other than \
+                     /Applications (e.g. from the DMG mount, Downloads, or Desktop). \
+                     The translocated path changes on every launch — Claude can't \
+                     find the MCP binary after a restart. \
+                     \n\nFix: Quit Gap Map. Move (don't copy) Gap Map.app to /Applications. \
+                     Run in Terminal: xattr -dr com.apple.quarantine '/Applications/Gap Map.app'. \
+                     Reopen from /Applications. MCP will auto-connect on the next launch.",
+                    bin_str
+                )
+            } else if bin_str.starts_with("/Volumes/") {
+                format!(
+                    "Gap Map.app is running from a mounted disk image ({}). \
+                     MCP needs a stable path. Quit Gap Map, drag Gap Map.app to \
+                     /Applications (eject the DMG), then open it from /Applications \
+                     and click Connect again.",
+                    bin_str
+                )
+            } else {
+                format!(
+                    "Gap Map.app is running from a temporary location ({}). \
+                     Move Gap Map.app to /Applications and reopen it from there.",
+                    bin_str
+                )
+            };
+            return Err(msg);
         }
         args.push("--bin".into());
         args.push(bin.to_string_lossy().to_string());
