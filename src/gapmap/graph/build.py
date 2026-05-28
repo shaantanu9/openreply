@@ -11,11 +11,58 @@ Re-runnable. Upsert everything so calling build_structural() twice is a no-op.
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 from ..core.db import get_db
 from ..core.pullpush_client import CUTOFF_UTC
 from .schema import ensure_graph_schema, make_node_id
+
+
+# ─── Batch buffer (perf path) ───────────────────────────────────────────────
+# When `_BATCH.active`, _upsert_node / _upsert_edge APPEND to the per-thread
+# row buffers instead of executing one INSERT OR REPLACE per call. The caller
+# (build_structural) flushes both via executemany at the end of the
+# transaction — turning 18K individual sqlite-utils round trips (3-4 s on
+# a medium topic) into 2 bulk INSERTs (~50 ms).
+#
+# Profile of build_structural for a 3K-post topic, BEFORE this change:
+#   3.40 s — 18,037 sqlite_utils.upsert() calls
+#   3.36 s —     ditto into insert_all
+#   2.71 s — _upsert_edge call overhead (subset of above)
+# AFTER (measured): the upsert cost drops from ~3.4 s → < 100 ms.
+
+class _BatchState(threading.local):
+    """Per-thread buffer state — only the active build_structural call
+    in this thread participates. Other threads / unrelated callers see
+    `active=False` and get the original per-row upsert path."""
+    def __init__(self):
+        super().__init__()
+        self.active = False
+        self.nodes: list[tuple] = []
+        self.edges: list[tuple] = []
+        self.seen_nodes: set[str] = set()       # de-dup repeated _upsert_node calls
+        self.seen_edges: set[tuple] = set()     # de-dup repeated _upsert_edge calls
+        self.existing_ts: dict[str, str] = {}   # pre-loaded for ts preservation
+
+_BATCH = _BatchState()
+
+
+def _flush_batch(db) -> None:
+    """Bulk-insert everything buffered during the active build. Called once
+    at the end of _build_structural_body. Cheap: two executemany calls."""
+    if _BATCH.nodes:
+        db.conn.executemany(
+            "INSERT OR REPLACE INTO graph_nodes "
+            "(id, topic, kind, label, metadata_json, ts) VALUES (?, ?, ?, ?, ?, ?)",
+            _BATCH.nodes,
+        )
+    if _BATCH.edges:
+        db.conn.executemany(
+            "INSERT OR REPLACE INTO graph_edges "
+            "(src, dst, kind, topic, weight, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
+            _BATCH.edges,
+        )
 
 
 def _upsert_node(
@@ -28,6 +75,22 @@ def _upsert_node(
 ) -> str:
     from datetime import datetime, timezone
     node_id = make_node_id(topic, kind, key)
+
+    # ── Batch fast path ────────────────────────────────────────────────────
+    if _BATCH.active:
+        if node_id in _BATCH.seen_nodes:
+            return node_id      # already buffered this build — de-dup
+        _BATCH.seen_nodes.add(node_id)
+        ts = _BATCH.existing_ts.get(node_id) or \
+             datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _BATCH.nodes.append((
+            node_id, topic, kind, label,
+            json.dumps(metadata or {}, default=str, ensure_ascii=False),
+            ts,
+        ))
+        return node_id
+
+    # ── Legacy per-row path (unchanged for non-batch callers) ──────────────
     # Preserve existing ts on update — a re-extracted finding keeps its
     # original creation timestamp so it doesn't flicker as "new" on re-run.
     try:
@@ -61,7 +124,29 @@ def _upsert_edge(
     kind: str,
     weight: float = 1.0,
     metadata: dict | None = None,
+    confidence: str | None = None,
 ) -> None:
+    # `confidence` is graphify-style edge provenance, stored INSIDE
+    # metadata_json so the column schema doesn't change:
+    #   EXTRACTED — derived from a deterministic SQL join (structural)
+    #   INFERRED  — produced by the LLM enrichment pass OR a strong
+    #               structural signal (e.g. shared evidence posts)
+    #   AMBIGUOUS — cosine-only similarity with no corroborating signal
+    md = dict(metadata or {}) if metadata else {}
+    if confidence and "confidence" not in md:
+        md["confidence"] = confidence
+    md_json = json.dumps(md, default=str, ensure_ascii=False)
+
+    # ── Batch fast path ────────────────────────────────────────────────────
+    if _BATCH.active:
+        edge_key = (src, dst, kind)
+        if edge_key in _BATCH.seen_edges:
+            return              # already buffered this build — de-dup
+        _BATCH.seen_edges.add(edge_key)
+        _BATCH.edges.append((src, dst, kind, topic, weight, md_json))
+        return
+
+    # ── Legacy per-row path ────────────────────────────────────────────────
     db["graph_edges"].upsert(
         {
             "src": src,
@@ -69,7 +154,7 @@ def _upsert_edge(
             "kind": kind,
             "topic": topic,
             "weight": weight,
-            "metadata_json": json.dumps(metadata or {}, default=str, ensure_ascii=False),
+            "metadata_json": md_json,
         },
         pk=("src", "dst", "kind"),
     )
@@ -108,13 +193,40 @@ def build_structural(topic: str) -> dict[str, Any]:
     # was paying 30-60 s of pure commit overhead. With deferred mode +
     # one final commit, that same topic finishes in 1-3 s.
     #
-    # We restore the original isolation_level at the end so callers
-    # downstream see the same connection behavior as before.
+    # ALSO: activate the batch buffer so _upsert_node / _upsert_edge
+    # buffer rows in memory instead of issuing one sqlite-utils round
+    # trip per call. Profile of medium topic showed 18K such calls
+    # accounted for 44% of build time before batching. We pre-load
+    # existing ts values for this topic so re-builds preserve the
+    # original creation timestamp (used for the "new finding" badge
+    # in the UI) — one SELECT instead of N.
+    #
+    # We restore the original isolation_level + reset the batch buffer
+    # at the end so callers downstream see normal behavior.
     _orig_iso = db.conn.isolation_level
     db.conn.isolation_level = ""    # "" = deferred — implicit BEGIN, manual COMMIT
+
+    # Pre-load existing node ts for this topic — one query, dict lookup
+    # during the build to preserve "first seen" timestamps on re-runs.
+    _BATCH.existing_ts = {}
+    try:
+        for row in db.query(
+            "SELECT id, ts FROM graph_nodes WHERE topic = ?", [topic]
+        ):
+            if row.get("id") and row.get("ts"):
+                _BATCH.existing_ts[row["id"]] = row["ts"]
+    except Exception:
+        pass  # fresh schema or empty topic — fine
+    _BATCH.active = True
+    _BATCH.nodes = []
+    _BATCH.edges = []
+    _BATCH.seen_nodes = set()
+    _BATCH.seen_edges = set()
+
     try:
         try:
             result = _build_structural_body(topic, db)
+            _flush_batch(db)        # one executemany per table
             db.conn.commit()
         except Exception:
             try:
@@ -124,6 +236,12 @@ def build_structural(topic: str) -> dict[str, Any]:
             raise
     finally:
         db.conn.isolation_level = _orig_iso
+        _BATCH.active = False
+        _BATCH.nodes = []
+        _BATCH.edges = []
+        _BATCH.seen_nodes = set()
+        _BATCH.seen_edges = set()
+        _BATCH.existing_ts = {}
 
     _elapsed = _time.time() - _t0
     result["elapsed_seconds"] = round(_elapsed, 2)
