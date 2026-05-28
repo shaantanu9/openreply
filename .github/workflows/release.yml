@@ -231,16 +231,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # JWT_DESKTOP_SECRET is set by the fallback step above — always present.
           JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
-          # macOS code signing + notarization — all set together here.
+          # macOS code signing.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # App Store Connect API key path is materialized at job start
-          # from the inlined APPLE_API_KEY_CONTENT secret. Preferred over
-          # APPLE_ID + APPLE_PASSWORD for CI per Apple's docs.
+          # Notarization via App Store Connect API key — preferred over
+          # APPLE_ID + APPLE_PASSWORD for CI per Apple's docs. The .p8
+          # content is inlined as APPLE_API_KEY_CONTENT (secret) and
+          # materialized to a file path at job start (step above).
+          #
+          # CRITICAL: we intentionally do NOT pass APPLE_ID + APPLE_PASSWORD
+          # here. tauri-bundler's notarization picker prefers Apple-ID auth
+          # over API-key auth when APPLE_ID is set, even if APPLE_PASSWORD
+          # is missing — that lands a 401 "Invalid credentials" because the
+          # app-specific password isn't there. Leaving APPLE_ID out forces
+          # the API-key path that we actually have working creds for.
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
