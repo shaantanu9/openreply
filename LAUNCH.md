@@ -11,7 +11,13 @@
 | Multi-source collect (13+ sources, 6-worker parallel) | ✅ | Reddit, HN, arXiv, PubMed, OpenAlex, Semantic Scholar, Crossref, GitHub, App Store, Play Store, Google News, Trends, Dev.to, SO, YouTube, RSS, Bluesky, Lemmy, Mastodon, Wikipedia, Trustpilot, AlternativeTo, ProductHunt |
 | LLM synthesis — Insights tab (Minto + Ulwick + deliberation) | ✅ | 8 providers, per-provider corpus caps, persisted to `topic_insights` |
 | Paper research pipeline (search → fulltext → chunk → analyze) | ✅ | 6 academic sources, Palace chunk search |
-| Knowledge graph (structural + semantic + relations) | ✅ | PageRank, Louvain communities, betweenness |
+| Knowledge graph (structural + semantic + relations) | ✅ | PageRank, Louvain + **Leiden** communities, betweenness |
+| Graph: edge confidence (EXTRACTED / INFERRED / AMBIGUOUS) | ✅ | Graphify-style provenance per edge. Backfill via `graph backfill-confidence`. |
+| Graph: `GRAPH_REPORT.md` markdown audit | ✅ | 8-section per-topic audit via `graph report`. Corpus, communities, gaps, bridges, cost. |
+| Graph: insight lenses (surprising / gaps / bridges / god) | ✅ | `graph insights` + four toggle lenses in the exported D3 viewer. |
+| Graph: cost ledger (per-topic JSONL) | ✅ | 13 models pre-priced. `graph cost` summary. Hooked into `enrich_from_llm`. |
+| Graph perf (skeleton clustering, JSON indexes, composite, ANALYZE) | ✅ | `knowledge_gaps` 33,657× faster (188s → 5.6ms), `build_nx` 112× faster on warm cache. |
+| Graph: backup-on-destructive-edit | ✅ | `research repair-topic-graph` snapshots to `data/backups/` before delete. |
 | Topic management (soft-delete, restore, trash, duplicate merge) | ✅ | 7-day soft-delete recovery |
 | Product Mode (register product → sweep → signals → digest) | ✅ | Daily sweeps, DOCX/PPTX export |
 | Audience personas + Launch Brief | ✅ | ICP clustering from real authors, go-to-market brief |
