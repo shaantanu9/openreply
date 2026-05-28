@@ -435,6 +435,27 @@ export async function openByokModal(onClose) {
     }));
   };
 
+  // Refresh the Default Provider tab's <select> options so the
+  // "(ready)" / "(key missing)" labels stay accurate after the user
+  // saves or clears a key in the LLM tab. Previously these were rendered
+  // ONCE at modal open from the initial `status` snapshot, so a freshly-
+  // saved key showed as "(key missing)" in the Default tab until the
+  // user closed and reopened the modal. Preserves the current selection.
+  const refreshDefaultProviderOptions = (latestSt) => {
+    if (!latestSt) return;
+    const provSel = host.querySelector('#byok-provider-sel');
+    if (!provSel) return;
+    const keep = provSel.value;
+    provSel.innerHTML =
+      `<option value="">— pick one —</option>` +
+      LLM_PROVIDERS.map(p =>
+        `<option value="${p.key}" ${p.key === keep ? 'selected' : ''}>
+           ${esc(p.label)} ${providerReady(p, latestSt) ? '(ready)' : '(key missing)'}
+         </option>`
+      ).join('');
+    latestStatus = latestSt;
+  };
+
   // Single wire-up delegated on the modal root so re-renders still work.
   host.addEventListener('click', async (e) => {
     const chip = e.target.closest?.('.byok-curated-chip');
@@ -527,7 +548,10 @@ export async function openByokModal(onClose) {
         setStatus(`${field.label} should start with "${field.prefix}"`, false);
         return;
       }
-      saveBtn.disabled = true; saveBtn.textContent = 'saving…';
+      saveBtn.disabled = true;
+      // Visible spinner during save so the user sees something happening —
+      // text-only "saving…" didn't always read as activity.
+      saveBtn.innerHTML = '<span class="spinner-inline"></span>saving…';
       try {
         await api.byokSet(field.envKey, val);
         input.value = '';
@@ -538,10 +562,15 @@ export async function openByokModal(onClose) {
         pill.textContent = isSet ? '✓ saved' : '× not set';
         row.querySelector('.byok-preview').textContent = typeof fs === 'string' ? fs : (fs?.preview || '');
         setStatus('Saved ✓', true);
+        // Sync the Default Provider tab so its dropdown options reflect
+        // the new key state — previously the (ready) / (key missing)
+        // labels were stale until the user closed and reopened the modal.
+        refreshDefaultProviderOptions(fresh);
       } catch (e) {
         setStatus(`Save failed: ${e?.message || e}`, false);
       } finally {
-        saveBtn.disabled = false; saveBtn.textContent = 'Save';
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
       }
     };
     clearBtn.onclick = async () => {
@@ -555,6 +584,7 @@ export async function openByokModal(onClose) {
         pill.textContent = isSet ? '✓ saved' : '× not set';
         row.querySelector('.byok-preview').textContent = typeof fs === 'string' ? fs : (fs?.preview || '');
         setStatus('Removed ✓', true);
+        refreshDefaultProviderOptions(fresh);
       } catch (e) { setStatus(`Clear failed: ${e?.message || e}`, false); }
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBtn.click(); });
@@ -566,10 +596,13 @@ export async function openByokModal(onClose) {
       testBtn.onclick = async () => {
         testBtn.disabled = true;
         const orig = testBtn.textContent;
-        testBtn.textContent = 'testing…';
+        // Visible spinner during the test — the cloud ping is 1-7 s and
+        // the user needs to know the click registered. Previously this
+        // was just a text change which read as a frozen UI.
+        testBtn.innerHTML = '<span class="spinner-inline"></span>testing…';
         testResultEl.hidden = false;
         testResultEl.className = 'byok-test-result byok-test-running';
-        testResultEl.textContent = 'pinging LLM…';
+        testResultEl.innerHTML = '<span class="mcp-spinner"></span> pinging LLM…';
         try {
           // For Ollama: resolve a model from the live installed list if none saved.
           // Avoids the "llama3.1 not found" fallback when user hasn't picked one yet.
