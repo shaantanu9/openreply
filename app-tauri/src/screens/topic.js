@@ -146,8 +146,36 @@ const _activeEnrichUnlistens = new Set();
 //     serving cache + adds the "stale — Rebuild" chip), and the user can
 //     manually rebuild OR auto-update will rebuild on the next open.
 //   - ts: epoch ms; entries older than MAP_RENDER_CACHE_TTL_MS are evicted.
+// In-memory mirror of the localStorage-backed Map render cache. Built
+// lazily on each renderTopic() call from the persisted snapshot.
+// Module-level so multiple renderTopic instances in the same session
+// share state, but the source of truth lives in localStorage so cache
+// survives across app restarts (it didn't before — `new Map()` is
+// memory-only).
 const _mapRenderCache = new Map();
-const MAP_RENDER_CACHE_TTL_MS = 30 * 60 * 1000;  // 30 min
+const MAP_RENDER_LS_KEY = 'gapmap.topic.mapRender.';
+// 7-day TTL: the only thing that makes a Map cache stale is the user
+// running a fresh collect/enrich, and the `gapmap:changed` listener
+// already flips `_mapDirtyTopics` on that signal. The TTL is just a
+// belt-and-braces eviction so very-old snapshots get rebuilt even on
+// dormant topics. Previously 30 min — too aggressive for a local app.
+const MAP_RENDER_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
+
+function _readMapRenderFromLS(topic) {
+  try {
+    const raw = localStorage.getItem(MAP_RENDER_LS_KEY + topic);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.html || !parsed.ts) return null;
+    if (Date.now() - parsed.ts > MAP_RENDER_CACHE_TTL_MS) return null;
+    return parsed;
+  } catch { return null; }
+}
+function _writeMapRenderToLS(topic, entry) {
+  try {
+    localStorage.setItem(MAP_RENDER_LS_KEY + topic, JSON.stringify(entry));
+  } catch {} // ignore quota errors — cache miss is recoverable
+}
 
 // Topics whose Map cache has been invalidated by a write since render time.
 // Populated by the global `gapmap:changed` listener below — survives nav.
@@ -955,7 +983,18 @@ export async function renderTopic(root, { params }) {
   const TAB_HTML_CACHE_KEY = `gapmap.topic.tab.html.${topic}.`;
   const MAP_MODE_KEY = `gapmap.topic.mapMode.${topic}`;
   const MAP_AUTO_UPDATE_KEY = `gapmap.topic.mapAutoUpdate.${topic}`;
-  const TAB_HTML_CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
+  // This is a LOCAL app reading a LOCAL SQLite — the only thing that
+  // makes a cached snapshot stale is the user explicitly running a
+  // collect / enrich / ingest. The dirtyTabs / mutation listener above
+  // already handles that case (it forces a fresh load via switchTab).
+  // So the TTL here is just a belt-and-braces eviction for snapshots
+  // older than a week — long enough that "come back tomorrow" never
+  // shows a loading spinner on a tab whose data hasn't changed.
+  //
+  // Previously this was 10 min. User feedback: "this is 2026 why is it
+  // loading? why isn't it instant?" — the 10 min cap was an artifact
+  // from when the cache was experimental.
+  const TAB_HTML_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
   // Per-instance tab state (fix: module-level state leaked between topics).
   // Default to topic home (implemented by the insights renderer).
   let activeTab = 'home';
@@ -1016,7 +1055,12 @@ export async function renderTopic(root, { params }) {
   function readTabHtmlSnapshot(name) {
     if (!PERSISTED_CACHEABLE_TABS.has(name)) return null;
     try {
-      const raw = sessionStorage.getItem(getTabHtmlCacheKey(name));
+      // localStorage, not sessionStorage. sessionStorage is wiped when
+      // the Tauri webview reloads (which happens on every app launch),
+      // so the previous implementation only ever served cache WITHIN
+      // a single session. localStorage persists across launches —
+      // open the topic tomorrow, painted instantly from disk.
+      const raw = localStorage.getItem(getTabHtmlCacheKey(name));
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return null;
@@ -1038,13 +1082,21 @@ export async function renderTopic(root, { params }) {
       // Avoid persisting transient skeleton / error shells.
       if (
         html.includes('Loading ') ||
+        html.includes('loading…') ||
         html.includes('map-building-spinner') ||
+        html.includes('Building gap map') ||
         html.includes('empty-state">Error:') ||
         html.includes('error-card')
       ) {
         return;
       }
-      sessionStorage.setItem(
+      // localStorage, not sessionStorage — see readTabHtmlSnapshot above.
+      // QuotaExceededError surface area: typical HTML snapshot is
+      // 5-50 KB; even 20 tabs × 100 topics fits comfortably in the
+      // 5-10 MB localStorage budget. On overflow we drop the write
+      // silently (catch below) — better than blowing up the user's
+      // app on a corner-case eviction.
+      localStorage.setItem(
         getTabHtmlCacheKey(name),
         JSON.stringify({ ts: Date.now(), html })
       );
