@@ -220,6 +220,177 @@ Warmup banner on home helps, but step 3 health check can show failing rows while
 
 ---
 
+## How to implement the changes (phased checklist)
+
+Work in this order so you can test each slice on a “fresh” machine (see next section).
+
+### Phase A — Copy & defaults (1–2 hours, no risky behavior change)
+
+| # | File | Change |
+|---|------|--------|
+| A1 | `app-tauri/src/screens/welcome.js` | Step 1: only show “activation is required” when `_licenseGateEnabled`. |
+| A2 | `welcome.js` step 5 | Button label: gate off → `Continue →`; gate on → `Continue to activation →`. |
+| A3 | `welcome.js` step 5 | Default `#ob-aggressive` **unchecked**; `gapmap.pref.aggressive` = `'false'` on first save unless user checks it. |
+| A4 | `welcome.js` step 5 | Add small table: Quick (~3–5 min, Reddit) vs Aggressive (~15 min, all sources). |
+| A5 | `welcome.js` step 3 | If `readyCount === 0`, show yellow callout: “Collect works without AI; Insights need one provider.” |
+
+### Phase B — First-run collect behavior (half day)
+
+| # | File | Change |
+|---|------|--------|
+| B1 | `app-tauri/src/screens/collect.js` | On first successful `collect:done`, set `gapmap.first_collect.done` and navigate to `#/topic/<slug>` (Insights tab if supported). |
+| B2 | `collect.js` | Optional modal before redirect: “Brief ready — Open insights”. |
+| B3 | `collect.js` | First collect only: if `!gapmap.first_collect.done` and no `last_aggressive` in localStorage, default `aggressive = false`. |
+
+### Phase C — Empty home (half day)
+
+| # | File | Change |
+|---|------|--------|
+| C1 | `app-tauri/src/screens/home.js` | When `topics.length === 0`, render single hero + quick-start; hide BYOK / products / top-opportunities slots. |
+| C2 | `home.js` | After first topic exists, restore full dashboard layout. |
+
+### Phase D — Post-first-session (later)
+
+| # | File | Change |
+|---|------|--------|
+| D1 | `home.js` | 3-step checklist card until user dismisses or completes items. |
+| D2 | `welcome.js` step 1 | Defer “Product Mode” branch until `gapmap.first_collect.done` is set. |
+
+### Build & ship to the other PC
+
+```bash
+# From repo root — production DMG (macOS)
+cd app-tauri
+npm run tauri build
+
+# Or dev build for faster iteration
+npm run tauri dev
+```
+
+Copy the `.dmg` from `app-tauri/src-tauri/target/release/bundle/dmg/` (path may vary by version) to the test machine, install, then reset state using the guide below.
+
+---
+
+## Fresh install testing (other PC or same Mac)
+
+Three levels: **soft** (onboarding only), **medium** (UI state), **hard** (true first install).
+
+### Level 1 — Soft reset (wizard only, keeps DB & keys)
+
+In the running app:
+
+1. **Settings** → scroll to onboarding → **Reset onboarding**
+2. Quit the app fully (Cmd+Q), reopen
+3. You should land on `#/welcome` step 1
+
+Or in DevTools console (right-click → Inspect if dev build; production may need `tauri dev` or enable devtools):
+
+```javascript
+localStorage.removeItem('gapmap.onboarding.completed');
+localStorage.removeItem('gapmap.onboarding.step');
+localStorage.removeItem('gapmap.onboarding.pending_topic');
+localStorage.removeItem('gapmap.onboarding.pending_aggressive');
+localStorage.removeItem('gapmap.onboarding.pending_route');
+localStorage.removeItem('gapmap.first_collect.done'); // after you add Phase B
+location.hash = '#/welcome';
+location.reload();
+```
+
+**Does not clear:** SQLite topics, API keys (`~/.config/gapmap/.env`), licence file.
+
+---
+
+### Level 2 — Medium reset (feels new, keeps corpus)
+
+1. Quit Gap Map completely.
+2. Delete **webview / UI state** by clearing app support (see paths below) **or** run in DevTools before quit:
+
+```javascript
+Object.keys(localStorage)
+  .filter(k => k.startsWith('gapmap.'))
+  .forEach(k => localStorage.removeItem(k));
+```
+
+3. Reopen → welcome wizard, empty tabs, no dashboard cache.
+
+**Optional:** Settings → **Reset every local preference** (keeps onboarding keys unless you removed them in step 2).
+
+**Keeps:** `gapmap/gapmap.db` (all topics/posts) unless you delete the data folder.
+
+---
+
+### Level 3 — Hard reset (true fresh install)
+
+Quit the app, then delete these locations for bundle id **`com.shantanu.gapmap`**:
+
+#### macOS
+
+```bash
+# App data (SQLite, licence, exports, chroma, etc.)
+rm -rf "$HOME/Library/Application Support/com.shantanu.gapmap"
+
+# BYOK / shared env (API keys written by Settings)
+rm -rf "$HOME/.config/gapmap"
+
+# Optional: legacy path mentioned in HOW_TO_USE.md
+rm -rf "$HOME/.config/reddit-myind"
+```
+
+Then **uninstall** Gap Map (drag from Applications to Trash) and install your test `.dmg` again.
+
+#### Windows
+
+```powershell
+# Typical Tauri app data (adjust if your installer uses a different folder)
+Remove-Item -Recurse -Force "$env:APPDATA\com.shantanu.gapmap" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:USERPROFILE\.config\gapmap" -ErrorAction SilentlyContinue
+```
+
+Uninstall from Settings → Apps, then reinstall.
+
+#### Linux
+
+```bash
+rm -rf "$HOME/.local/share/com.shantanu.gapmap"
+rm -rf "$HOME/.config/gapmap"
+```
+
+---
+
+### What each store controls
+
+| Location | What it affects |
+|----------|-----------------|
+| **WebView `localStorage`** (`gapmap.*`) | Onboarding done, wizard step, profile name, prefs, tab strip (`gapmap.tabs.v1`), dashboard cache, dismiss flags |
+| **`~/Library/Application Support/com.shantanu.gapmap/gapmap/`** | SQLite DB, graphs, vectors, reports |
+| **`~/Library/Application Support/com.shantanu.gapmap/license_state.json`** | Device activation (when gate on) |
+| **`~/.config/gapmap/.env`** | LLM / Reddit API keys |
+
+---
+
+### macOS “first launch slow” (Gatekeeper) — separate from cache
+
+The **10–30s warmup** on first open is macOS verifying the **bundled Python sidecar**, not your SQLite/localStorage. Clearing data **does not** replay that unless you:
+
+- Delete and reinstall the `.app`, or
+- Remove quarantine: `xattr -cr "/Applications/Gap Map.app"` (dev/testing only)
+
+On a **second PC**, the first open after installing the DMG will still show the warmup once per machine.
+
+---
+
+### Recommended test script (other PC)
+
+1. **Hard reset** (or never installed before).
+2. Install DMG from your build.
+3. First launch → note warmup banner timing.
+4. Complete wizard with a **quick** topic (after Phase A3: aggressive off).
+5. Wait for collect → confirm redirect to Insights (after Phase B).
+6. Quit app → **Level 1** reset → confirm wizard returns, topics still in sidebar/list.
+7. **Level 3** reset → confirm empty home + wizard + no topics.
+
+---
+
 ## Related docs
 
 - `docs/HOW_TO_USE.md` — end-user usage
@@ -234,3 +405,4 @@ Warmup banner on home helps, but step 3 health check can show failing rows while
 | Date | Change |
 |------|--------|
 | 2026-05-28 | Initial analysis document |
+| 2026-05-28 | Added implementation checklist + fresh-install reset guide |

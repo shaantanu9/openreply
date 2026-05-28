@@ -171,11 +171,16 @@ body {
 /* ---------- Layout ---------- */
 .app {
   display: grid;
-  grid-template-columns: 248px 1fr;
+  grid-template-columns: 248px minmax(0, 1fr);
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
 }
+
+/* Pin columns explicitly so when the sidebar is `display:none` (removed from
+   the grid) the main column does not auto-place into the zero-width track. */
+.app > .sidebar { grid-column: 1; grid-row: 1; }
+.app > .main-col { grid-column: 2; grid-row: 1; }
 
 .sidebar {
   background: var(--surface); border-right: 1px solid var(--line);
@@ -1015,7 +1020,8 @@ select.topics-field {
   .hero { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .app > .main-col { grid-column: 1; grid-row: 1; }
   .sidebar { display: none; }
 }
 
@@ -2642,9 +2648,11 @@ kbd {
 
 @media (max-width: 820px) {
   .app {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr;
   }
+  .app > .sidebar { grid-column: 1; grid-row: 1; }
+  .app > .main-col { grid-column: 1; grid-row: 2; }
   .sidebar {
     position: sticky; top: 0; z-index: 50;
     display: flex; flex-direction: row; align-items: center; gap: 8px;
@@ -4437,7 +4445,14 @@ html.dark .delete-confirm-modal .dc-match-text {
    asymptotic progress bar, and skeleton cards previewing the eventual
    layout. Markup + JS lives in screens/sentiment.js renderAnalyzingState.
    ─────────────────────────────────────────────────────────────────── */
-.sent-analyzing { display: flex; flex-direction: column; gap: 18px; }
+.sent-analyzing {
+  display: flex; flex-direction: column; gap: 18px;
+  /* Belt + suspenders: any nested element with intrinsic content (long
+     stage text, oversized skeleton bar, etc.) must NOT push the column
+     wider than its grid/tab parent. */
+  min-width: 0; max-width: 100%;
+  box-sizing: border-box;
+}
 .sent-analyzing-hero {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -4446,6 +4461,25 @@ html.dark .delete-confirm-modal .dc-match-text {
   display: flex; flex-direction: column; align-items: center;
   gap: 14px;
   text-align: center;
+  /* `padding: 36px 28px` would otherwise push the visible width past 100%
+     of the parent when `width:100%` is implicit. box-sizing:border-box
+     pulls the padding inside the declared width. */
+  width: 100%;
+  box-sizing: border-box;
+  /* Belt+suspenders for any inner element that might be wider than the
+     hero (e.g. a long cycling-stage string). */
+  overflow: hidden;
+}
+.sent-analyzing-stage,
+.sent-analyzing-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sent-analyzing-stage {
+  /* Allow up to two lines but never explode the hero width */
+  white-space: normal;
+  word-break: break-word;
 }
 .sent-spinner-lg {
   width: 44px; height: 44px; border-radius: 50%;
@@ -4509,15 +4543,35 @@ html.dark .delete-confirm-modal .dc-match-text {
 /* Skeleton cards mirror the .sent-card layout so the page doesn't reflow
    when the real cards drop in. Uses the existing .skel shimmer (defined
    in the Dashboard skeleton block above). */
+.sent-grid-skel,
+.sent-grid {
+  /* `repeat(auto-fit, minmax(min(320px, 100%), 1fr))` already wraps; the
+     extra `min-width:0` + box-sizing on the grid container itself
+     guarantees the grid TRACK can't exceed its parent when the tab is
+     narrow (sidebar full + window resized). */
+  min-width: 0; max-width: 100%;
+  box-sizing: border-box;
+}
 .sent-grid-skel .sent-card-skel {
   background: var(--surface);
   opacity: 0.85;
+  /* Inherits .sent-card display:flex column + min-width:0 + padding from
+     the dual-class declaration above. Adding box-sizing + max-width here
+     makes the skeleton match the real card's box model exactly so there's
+     no reflow on swap, AND prevents the card from spilling outside its
+     grid track if a skel bar's intrinsic width exceeds the parent. */
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .sent-grid-skel .sent-card-skel .skel {
-  /* The dashboard .skel rule already animates, but the per-element
-     widths/heights we set inline override its defaults — re-assert here
-     to be explicit that these are placeholders, not real chips. */
-  display: inline-block;
+  /* Block layout (not inline-block) so percent widths anchor to the flex
+     parent rather than its content-box. Inline-block would let an
+     intrinsic-width skel bar push the card width past its grid track on
+     some Safari builds. */
+  display: block;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* ─── Health check card (onboarding + settings + top banner) ──────────── */
@@ -8922,10 +8976,13 @@ html.dark .skel::after {
    re-stating `display: flex` ensures `display: none` from the prior
    "hidden" state is overridden cleanly. */
 body[data-sidebar="full"] .app {
-  grid-template-columns: 248px 1fr;
+  grid-template-columns: 248px minmax(0, 1fr);
 }
 body[data-sidebar="full"] .sidebar {
   display: flex;
+}
+body[data-sidebar="full"] .app > .main-col {
+  grid-column: 2;
 }
 body[data-sidebar="full"] .sidebar-reveal-strip {
   display: none;
@@ -8935,7 +8992,10 @@ body[data-sidebar="full"] .sidebar-reveal-strip {
       existing `title` attributes already present on most nav links, so we
       don't need to render the labels in a popover. */
 body[data-sidebar="rail"] .app {
-  grid-template-columns: 64px 1fr;
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+body[data-sidebar="rail"] .app > .main-col {
+  grid-column: 2;
 }
 body[data-sidebar="rail"] .sidebar {
   padding: 18px 8px 24px;
@@ -8960,11 +9020,19 @@ body[data-sidebar="rail"] .pro-card { display: none; }
 
 /* ── Hidden state: sidebar fully removed from layout, reveal strip shown.
       Use `display:none` (not `visibility:hidden`) so it doesn't block
-      pointer events along the left edge — the strip needs that space. */
+      pointer events along the left edge — the strip needs that space.
+      Single-column grid — NOT `0 1fr`. With two tracks and only .main-col
+      in the grid (sidebar is display:none), auto-placement put main in the
+      0px track → blank screen until resize. */
 body[data-sidebar="hidden"] .app {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 body[data-sidebar="hidden"] .sidebar { display: none; }
+body[data-sidebar="hidden"] .app > .main-col {
+  grid-column: 1;
+  width: 100%;
+  min-width: 0;
+}
 body[data-sidebar="hidden"] .sidebar-reveal-strip { display: block; }
 
 /* Hover-reveal strip — sits at the very left edge of the viewport when
@@ -8990,4 +9058,21 @@ body[data-sidebar="hidden"] .sidebar-reveal-strip { display: block; }
 .sidebar-reveal-strip:focus-visible {
   outline: 2px solid var(--orange);
   outline-offset: -2px;
+}
+
+/* Stacked layout (≤820px): sidebar states must not keep desktop grid-column: 2 */
+@media (max-width: 820px) {
+  body[data-sidebar="full"] .app > .main-col,
+  body[data-sidebar="rail"] .app > .main-col {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  body[data-sidebar="hidden"] .app > .main-col {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  body[data-sidebar="rail"] .sidebar,
+  body[data-sidebar="full"] .sidebar {
+    display: flex;
+  }
 }

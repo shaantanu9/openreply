@@ -1577,31 +1577,10 @@ function applySidebarState(state) {
       window.refreshIcons?.();
     }
   }
-  // Force a layout flush so the new grid-template-columns + sidebar
-  // display: flex commit immediately. Without this, transitioning out of
-  // the "hidden" state (where .app's grid was `0 1fr` and .sidebar was
-  // `display: none`) can leave the browser holding a stale layout —
-  // user sees a blank main column until they resize the window or
-  // scroll. `void offsetWidth` is the canonical synchronous reflow.
+  // Synchronous reflow after grid track / grid-column changes (hidden ↔ full).
   void document.body.offsetWidth;
-  // Belt-and-braces — if the main column is still 0-width after the
-  // reflow (some webview engines are stickier than others), kick the
-  // <main> element to re-establish its width.
-  const main = document.getElementById('main-content');
-  if (main) {
-    const w = main.getBoundingClientRect().width;
-    if (w < 50 && state !== 'hidden') {
-      // Temporarily toggle display to force the grid to re-measure
-      // the second column.
-      const app = document.querySelector('.app');
-      if (app) {
-        const prev = app.style.display;
-        app.style.display = 'none';
-        void app.offsetWidth;
-        app.style.display = prev || '';
-      }
-    }
-  }
+  const mainCol = document.querySelector('.app > .main-col');
+  if (mainCol) void mainCol.offsetWidth;
 }
 
 function cycleSidebar() {

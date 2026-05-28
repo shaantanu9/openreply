@@ -1140,26 +1140,45 @@ export async function renderTopic(root, { params }) {
     </header>
 
     <!-- Topic tabs: always visible, horizontally scrollable.
-         Restores the pre-dropdown flow so Home/Map/Evidence/etc are directly
-         discoverable without hidden menu interaction. -->
+         Order follows the natural research journey so a user pulled into
+         tab N feels the pull toward tab N+1 (Zeigarnik + goal-gradient):
+
+           Phase 1 — Orient & engage:    Home → Map → Chat
+             Land on overview, see the graph, then "ask anything" —
+             modern LLM-app users expect the conversational hook early.
+           Phase 2 — Synthesize:         Report → Sentiment → Trends
+             The AI's structured answer, the emotional pulse, the time
+             arc.
+           Phase 3 — Trust & raw:        Sources → Posts → Evidence
+             Where the signal came from, the raw rows, cited quotes.
+           Phase 4 — Ideate:             Solutions → Bets
+             Adjacent solutions / workarounds, then prioritized bets.
+           Phase 5 — Context & science:  Concepts → Research → Papers
+             Conceptual frames, the academic corpus, paper analyses.
+           Phase 6 — Power tools & act:  AI Analyses → Search → Actions
+             LLM run history, full-text re-search, then trigger an action.
+
+         Reordering rationale lives here intentionally — switchTab is
+         name-based so DOM order is purely UX. Don't shuffle without a
+         user-research reason. -->
     <div class="tabs" id="topic-tabs">
       <button type="button" class="tab active" data-tab="home"><i data-lucide="house"></i> Home<span class="tab-freshness" id="tab-fresh-insights"></span></button>
       <button type="button" class="tab" data-tab="map"><i data-lucide="network"></i> Map<span class="tab-freshness" id="tab-fresh-map"></span></button>
+      <button type="button" class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
       <button type="button" class="tab" data-tab="report"><i data-lucide="file-text"></i> Report<span class="tab-freshness" id="tab-fresh-report"></span></button>
-      <button type="button" class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends<span class="tab-freshness" id="tab-fresh-trends"></span></button>
       <button type="button" class="tab" data-tab="sentiment"><i data-lucide="smile"></i> Sentiment<span class="tab-freshness" id="tab-fresh-sentiment"></span></button>
+      <button type="button" class="tab" data-tab="trends"><i data-lucide="trending-up"></i> Trends<span class="tab-freshness" id="tab-fresh-trends"></span></button>
       <button type="button" class="tab" data-tab="sources"><i data-lucide="boxes"></i> Sources<span class="tab-freshness" id="tab-fresh-sources"></span></button>
       <button type="button" class="tab" data-tab="posts"><i data-lucide="list"></i> Posts<span class="tab-freshness" id="tab-fresh-posts"></span></button>
-      <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
-      <button type="button" class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions<span class="tab-freshness" id="tab-fresh-solutions"></span></button>
-      <button type="button" class="tab" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts<span class="tab-freshness" id="tab-fresh-concepts"></span></button>
-      <button type="button" class="tab" data-tab="papers"><i data-lucide="book-marked"></i> Papers<span class="tab-freshness" id="tab-fresh-papers"></span></button>
-      <button type="button" class="tab" data-tab="bets"><i data-lucide="target"></i> Bets<span class="tab-freshness" id="tab-fresh-bets"></span></button>
       <button type="button" class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence<span class="tab-freshness" id="tab-fresh-evidence"></span></button>
-      <button type="button" class="tab" data-tab="chat"><i data-lucide="message-square"></i> Chat</button>
+      <button type="button" class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions<span class="tab-freshness" id="tab-fresh-solutions"></span></button>
+      <button type="button" class="tab" data-tab="bets"><i data-lucide="target"></i> Bets<span class="tab-freshness" id="tab-fresh-bets"></span></button>
+      <button type="button" class="tab" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts<span class="tab-freshness" id="tab-fresh-concepts"></span></button>
+      <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
+      <button type="button" class="tab" data-tab="papers"><i data-lucide="book-marked"></i> Papers<span class="tab-freshness" id="tab-fresh-papers"></span></button>
+      <button type="button" class="tab" data-tab="ai_analyses"><i data-lucide="sparkles"></i> AI Analyses<span class="tab-freshness" id="tab-fresh-ai"></span></button>
       <button type="button" class="tab" data-tab="search"><i data-lucide="search-code"></i> Search<span class="tab-freshness" id="tab-fresh-search"></span></button>
       <button type="button" class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
-      <button type="button" class="tab" data-tab="ai_analyses"><i data-lucide="sparkles"></i> AI Analyses<span class="tab-freshness" id="tab-fresh-ai"></span></button>
     </div>
 
     <!-- Home-tab chrome sits *below* the tab strip so Home reads as:
