@@ -1,28 +1,30 @@
-name: release
+name: release (legacy monolithic — manual only)
 
-# Tag-driven release for macOS (arm64 + x86_64) + Windows.
-# Push a tag like `v0.1.0` → this workflow fires.
+# ⚠️ LEGACY — kept as a manual-only escape hatch. As of v0.1.4 the
+# normal tag-driven release path is SPLIT into three independent
+# workflows that run in parallel and each ship their own platform
+# to the public release the moment they finish:
 #
-# Linux is intentionally NOT in this matrix — the Linux Tauri compile
-# (no sccache, cold WebKit2GTK link) takes 30+ min and blocks the fast
-# path to publishing macOS DMGs / Windows MSIs. It runs as a separate
-# workflow (`.github/workflows/release-linux.yml`) so the platforms
-# that ship publicly (mac arm64 → myind-ai/gapmap) don't wait on it.
-# Trigger the Linux build manually via the Actions tab → "release (linux)"
-# → "Run workflow" with the tag name.
+#   .github/workflows/release-mac.yml      → mac arm64 + x64
+#   .github/workflows/release-windows.yml  → windows MSI + EXE
+#   .github/workflows/release-linux.yml    → linux AppImage + .deb + .rpm
 #
-# Each platform builds its own PyInstaller sidecar, copies it into
-# app-tauri/src-tauri/binaries/, then runs `tauri build` and uploads
-# the resulting bundle to the same GitHub Release object.
+# Each per-platform workflow also runs `scripts/promote-release-if-
+# complete.sh` at the end — whichever finishes last and finds all
+# required platform artifacts present flips the public release from
+# draft → latest published. Linux is treated as OPTIONAL (mac+win
+# can promote alone), so linux finishing 20 min later just appends
+# to an already-published release.
 #
-# Signing env vars (APPLE_*, TAURI_SIGNING_*) are wired up but optional —
-# set them as repo secrets to get signed/notarized artifacts. Unset = unsigned.
+# This file remains so you can manually rebuild EVERYTHING in one
+# go via the Actions tab → "release (legacy monolithic)" →
+# "Run workflow". Useful when one of the per-platform workflows is
+# broken and you want a guaranteed full rebuild from a single trigger.
+# The tag-push trigger is DELIBERATELY OMITTED here to avoid racing
+# the per-platform workflows.
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 # Opt in to Node 24 for JavaScript actions. As of mid-2026 GitHub flags every
 # v4/v5 action that still ships a Node 20 runtime ("Node.js 20 actions are

@@ -1,29 +1,28 @@
-name: release (linux)
+name: release (windows)
 
-# Linux Tauri bundle — part of the per-platform release architecture
-# (release-mac.yml, release-windows.yml, release-linux.yml).
+# Windows-only release path — splits out from the monolithic release.yml
+# so windows users get their MSI/EXE the moment the windows build finishes
+# (~14 min), instead of being one of three matrix jobs that all gate
+# the public release.
 #
-# Why separate: the Linux `cargo tauri build` step takes 30+ min on a
-# stock ubuntu-22.04 runner (cold WebKit2GTK link, 400-crate compile).
-# Running it alongside mac + windows would block the fast path to
-# publishing macOS DMGs / Windows MSIs.
+# Triggers on v* tag push (parallel with release-mac.yml + release-linux.yml).
+# Each platform workflow uploads its own artifact to myind-ai/gapmap;
+# the last to finish promotes draft → latest published via
+# scripts/promote-release-if-complete.sh.
 #
-# Triggers:
-#   - workflow_dispatch — manual rebuild against any tag
-#   - push tag v* — auto-fires in parallel with release-mac.yml +
-#     release-windows.yml. Linux is treated as OPTIONAL by the
-#     promote-if-complete check, so mac+windows can flip the public
-#     release to "latest" without waiting for Linux. Once Linux
-#     finishes (10-20 min later), it appends its .AppImage / .deb
-#     to the already-published release.
-#
-# Tier 1 caches: sccache + PyInstaller dist + ONNX model.
+# Tier 1 caches added (vs the old release.yml's windows path):
+#   - sccache → 30-50% Rust compile reduction (Windows hits the largest
+#     dep tree because of webview2-com bindings, so this is the biggest
+#     single win in the whole pipeline).
+#   - PyInstaller dist cache → if Python source + deps unchanged, skip
+#     the 3m 15s rebuild and restore from cache.
+#   - ONNX model cache.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build Linux artifacts for (e.g. v0.1.4)'
+        description: 'Tag to build (e.g. v0.1.4)'
         required: true
   push:
     tags:
@@ -33,31 +32,25 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  linux:
-    runs-on: ubuntu-22.04
+  windows:
     permissions:
       contents: write
+    runs-on: windows-latest
     env:
       TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: 'true'
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG_NAME }}
 
+      # ---------- sccache for Rust (biggest single win on Windows) ----------
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Install Linux WebKit + libs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
+      # ---------- Python sidecar ----------
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -89,37 +82,35 @@ jobs:
           else
             echo "  ✓ ONNX tarball restored from cache"
           fi
-          ls -lh scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
 
       - name: Cache PyInstaller dist
         id: pyi-cache
         uses: actions/cache@v4
         with:
-          path: dist/gapmap-cli
-          key: pyinstaller-linux-${{ hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
+          path: dist/gapmap-cli.exe
+          key: pyinstaller-windows-${{ hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
 
       - name: Build gapmap-cli sidecar (PyInstaller)
         if: steps.pyi-cache.outputs.cache-hit != 'true'
-        shell: bash
+        shell: pwsh
         run: uv run pyinstaller gapmap-cli.spec
 
       - name: Stage sidecar binary
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p app-tauri/src-tauri/binaries
-          cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-x86_64-unknown-linux-gnu
-          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-x86_64-unknown-linux-gnu
+          New-Item -ItemType Directory -Force -Path app-tauri/src-tauri/binaries | Out-Null
+          Copy-Item dist/gapmap-cli.exe "app-tauri/src-tauri/binaries/gapmap-cli-x86_64-pc-windows-msvc.exe"
 
-      # Linux doesn't ship ffmpeg as a sidecar yet — strip the externalBin
-      # reference so `cargo tauri build` doesn't fail looking for it.
+      # Windows has no ffmpeg sidecar — strip externalBin so tauri-bundler
+      # doesn't fail looking for it.
       - name: Strip ffmpeg externalBin
         shell: bash
         run: |
           cd app-tauri/src-tauri
           python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; p.write_text(json.dumps(d, indent=2))"
 
-      # JWT secret + Node/Rust toolchains
-      - name: Set JWT_DESKTOP_SECRET fallback
+      # ---------- JWT ----------
+      - name: Set JWT_DESKTOP_SECRET fallback if not provided
         shell: bash
         run: |
           if [ -z "${{ secrets.JWT_DESKTOP_SECRET }}" ]; then
@@ -128,6 +119,7 @@ jobs:
             echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> $GITHUB_ENV
           fi
 
+      # ---------- Node + Rust toolchains ----------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -142,15 +134,14 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: ./app-tauri/src-tauri -> target
-          shared-key: linux-tauri
+          shared-key: windows-tauri
 
       - name: Install frontend deps
         working-directory: ./app-tauri
         run: npm ci
 
-      # Append Linux artifacts (.deb / .rpm / .AppImage) to the gap-map-pro
-      # release draft (whichever platform workflow created it first).
-      - name: Build and append Linux bundle
+      # ---------- Build + upload to gap-map-pro draft ----------
+      - name: Build and release Tauri bundle
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -159,12 +150,19 @@ jobs:
           projectPath: ./app-tauri
           tagName: v__VERSION__
           releaseName: Gap Map v__VERSION__
+          releaseBody: |
+            Download the installer for your platform below.
+
+            - macOS (Apple Silicon): `*_arm64.dmg`
+            - macOS (Intel): `*_x64.dmg`
+            - Windows: `*_x64_en-US.msi` / `*_x64-setup.exe`
+            - Linux: `*.AppImage` / `*.deb`
           releaseDraft: true
           prerelease: false
           args: ''
 
       # ---------- Publish to public repo ----------
-      - name: Publish linux artifact to public repo
+      - name: Publish windows artifact to public repo
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           GH_TOKEN_SRC: ${{ secrets.GITHUB_TOKEN }}
@@ -179,9 +177,8 @@ jobs:
           mkdir -p ./pub
           GH_TOKEN="$GH_TOKEN_SRC" gh release download "$VER" \
             --repo "${{ github.repository }}" --dir ./pub \
-            --pattern "Gap.Map_*_amd64.AppImage" \
-            --pattern "Gap.Map_*_amd64.deb" \
-            --pattern "Gap.Map_*_x86_64.rpm" 2>&1 | tail -5 || true
+            --pattern "Gap.Map_*_x64_en-US.msi" \
+            --pattern "Gap.Map_*_x64-setup.exe" 2>&1 | tail -5 || true
           ls -lh ./pub/ | head -10
 
           if ! gh release view "$VER" --repo "$PUBLIC" >/dev/null 2>&1; then
@@ -193,17 +190,13 @@ jobs:
 
           cd ./pub
           shopt -s nullglob
-          FILES=(Gap.Map_*_amd64.AppImage Gap.Map_*_amd64.deb Gap.Map_*_x86_64.rpm)
+          FILES=(Gap.Map_*_x64_en-US.msi Gap.Map_*_x64-setup.exe)
           if [ ${#FILES[@]} -gt 0 ]; then
             gh release upload "$VER" --repo "$PUBLIC" "${FILES[@]}" --clobber
-            echo "  ✓ uploaded ${#FILES[@]} linux artifact(s)"
+            echo "  ✓ uploaded ${#FILES[@]} windows artifact(s)"
           fi
 
       # ---------- Promote if all platforms uploaded ----------
-      # Linux is OPTIONAL in the promote check (mac + windows alone can
-      # promote). This run typically lands AFTER the release is already
-      # latest-published, in which case promote-release-if-complete.sh
-      # is a no-op (idempotent).
       - name: Promote release to latest if all platforms are uploaded
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}

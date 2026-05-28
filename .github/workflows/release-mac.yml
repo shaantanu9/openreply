@@ -1,0 +1,335 @@
+name: release (mac)
+
+# macOS-only release path — splits out from the old monolithic `release.yml`
+# so Mac users get their DMG the moment the mac build matrix finishes,
+# instead of waiting for Windows (~14 min) to also complete.
+#
+# Triggers on v* tag push (parallel with release-windows.yml + release-linux.yml).
+# Each platform workflow does its own upload to the public release repo
+# (idempotent: first to finish creates the draft, subsequent ones just
+# append). The last workflow to finish runs the promote-if-complete
+# check and flips draft → latest published.
+#
+# Quality: same signing (Developer ID Application + notarytool via API
+# key) + same notarization as before. Tier 1 caches added:
+#   - sccache (mozilla-actions/sccache-action@v0.0.6) → 30-50% Rust
+#     compile reduction across runs.
+#   - PyInstaller dist cache → if the sidecar deps + Python source
+#     haven't changed since last build, skip the 1m 35s rebuild and
+#     restore from cache (~5s).
+#   - actions/cache for ONNX model tarball (83 MB) → avoid the S3
+#     download on warm cache.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.1.4)'
+        required: true
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  mac:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+
+    runs-on: macos-latest
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' && 'yes' || 'no' }}
+      TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+      # sccache hooks into rustc as the compiler wrapper. GHA cache backend
+      # (free for public repos) auto-discovers via SCCACHE_GHA_ENABLED.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+
+      # ---------- sccache for Rust ----------
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      # ---------- Python sidecar ----------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python deps
+        shell: bash
+        run: uv sync --frozen --all-extras || uv sync --all-extras
+
+      # Cache the 83 MB ONNX MiniLM tarball — same URL every release, so a
+      # restore-on-hit avoids the S3 round-trip (sometimes 30-60s on
+      # cold AWS CDN). Keyed on a static name; never invalidates unless
+      # we change the URL in this workflow.
+      - name: Cache ONNX MiniLM embedding model
+        uses: actions/cache@v4
+        with:
+          path: scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+          key: onnx-minilm-l6-v2-v1
+
+      - name: Pre-download ONNX MiniLM embedding model (if not cached)
+        shell: bash
+        run: |
+          mkdir -p scripts/onnx-model-cache/all-MiniLM-L6-v2
+          if [ ! -f scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz ]; then
+            curl -fsSL --retry 3 --retry-delay 2 \
+              -o scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz \
+              https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz
+          else
+            echo "  ✓ ONNX tarball restored from cache"
+          fi
+          ls -lh scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+
+      # Cache the PyInstaller `dist/` output. Key includes the spec file,
+      # uv.lock (Python deps), and every .py source file under src/. Any
+      # touched dep or source line invalidates; otherwise restore = ~3s.
+      - name: Cache PyInstaller dist
+        id: pyi-cache
+        uses: actions/cache@v4
+        with:
+          path: dist/gapmap-cli
+          key: pyinstaller-${{ matrix.target }}-${{ hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
+
+      - name: Build gapmap-cli sidecar (PyInstaller)
+        if: steps.pyi-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: uv run pyinstaller gapmap-cli.spec
+
+      - name: Stage sidecar binary
+        shell: bash
+        run: |
+          mkdir -p app-tauri/src-tauri/binaries
+          cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}
+          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}
+
+      # ---------- ffmpeg sidecar ----------
+      - name: Fetch ffmpeg sidecar (arm64)
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh arm64
+
+      - name: Fetch ffmpeg sidecar (x86_64)
+        if: matrix.target == 'x86_64-apple-darwin'
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh x86_64
+
+      # ---------- JWT + Apple keys ----------
+      - name: Set JWT_DESKTOP_SECRET fallback if not provided
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.JWT_DESKTOP_SECRET }}" ]; then
+            echo "JWT_DESKTOP_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
+          else
+            echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> $GITHUB_ENV
+          fi
+
+      - name: Materialize APPLE_API_KEY_PATH from secret content
+        if: env.HAS_APPLE_CERT == 'yes'
+        shell: bash
+        env:
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          if [ -z "$APPLE_API_KEY_CONTENT" ]; then
+            echo "::warning::APPLE_API_KEY_CONTENT secret is empty"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/asc-keys"
+          KEY_PATH="$RUNNER_TEMP/asc-keys/AuthKey_${{ secrets.APPLE_API_KEY }}.p8"
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> $GITHUB_ENV
+
+      # ---------- Node + Rust toolchains ----------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app-tauri/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./app-tauri/src-tauri -> target
+          # Share the cache across the two mac jobs (arm64 + x64) so the
+          # second one inherits compiled deps from the first.
+          shared-key: mac-tauri
+
+      - name: Install frontend deps
+        working-directory: ./app-tauri
+        run: npm ci
+
+      # ---------- Build + sign + upload to gap-map-pro draft ----------
+      - name: Build and release Tauri bundle (signed)
+        if: env.HAS_APPLE_CERT == 'yes'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: ./app-tauri
+          tagName: v__VERSION__
+          releaseName: Gap Map v__VERSION__
+          releaseBody: |
+            Download the installer for your platform below.
+
+            - macOS (Apple Silicon): `*_arm64.dmg`
+            - macOS (Intel): `*_x64.dmg`
+            - Windows: `*_x64_en-US.msi` / `*_x64-setup.exe`
+            - Linux: `*.AppImage` / `*.deb`
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build and release Tauri bundle (unsigned fallback)
+        if: env.HAS_APPLE_CERT == 'no'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
+        with:
+          projectPath: ./app-tauri
+          tagName: v__VERSION__
+          releaseName: Gap Map v__VERSION__ (unsigned)
+          releaseBody: |
+            **Unsigned build** — for testing only.
+          releaseDraft: true
+          prerelease: true
+          args: ${{ matrix.args }}
+
+      - name: Audit macOS signature
+        shell: bash
+        run: |
+          BUNDLE_DIR="app-tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          APP=$(find "$BUNDLE_DIR" -maxdepth 1 -name "*.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then exit 0; fi
+          OUT=$(codesign -dv --verbose=2 "$APP" 2>&1 || true)
+          echo "$OUT"
+          if echo "$OUT" | grep -q "Authority=Developer ID Application"; then
+            echo "::notice::macOS bundle properly signed"
+          elif echo "$OUT" | grep -q "Signature=adhoc"; then
+            echo "::warning title=Unsigned macOS bundle::This build is AD-HOC SIGNED, not Developer ID."
+          fi
+
+      # ---------- Publish to public repo (per-platform) ----------
+      # Each mac job uploads its own DMG/zip to myind-ai/gapmap. Idempotent
+      # release create + clobber on upload, so jobs racing each other (and
+      # racing release-windows.yml / release-linux.yml) all succeed cleanly.
+      - name: Publish mac artifact to public repo
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          GH_TOKEN_SRC: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ env.TAG_NAME }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PUBLIC_RELEASE_TOKEN not set — skipping public publish"
+            exit 0
+          fi
+
+          mkdir -p ./pub
+          # Download THIS PLATFORM's artifacts from the draft on this repo.
+          # Patterns match what tauri-action uploaded above.
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            GH_TOKEN="$GH_TOKEN_SRC" gh release download "$VER" \
+              --repo "${{ github.repository }}" --dir ./pub \
+              --pattern "Gap.Map_*_aarch64.dmg" \
+              --pattern "Gap.Map_aarch64.app.tar.gz" 2>&1 | tail -5 || true
+          else
+            GH_TOKEN="$GH_TOKEN_SRC" gh release download "$VER" \
+              --repo "${{ github.repository }}" --dir ./pub \
+              --pattern "Gap.Map_*_x64.dmg" \
+              --pattern "Gap.Map_x64.app.tar.gz" 2>&1 | tail -5 || true
+          fi
+
+          # Rename aarch64 → arm64 and rezip .app for the public convention.
+          cd ./pub
+          NUM="${VER#v}"
+          if [ -f "Gap.Map_${NUM}_aarch64.dmg" ]; then
+            mv "Gap.Map_${NUM}_aarch64.dmg" "Gap.Map_${NUM}_arm64.dmg"
+          fi
+          for tar in Gap.Map_aarch64.app.tar.gz Gap.Map_x64.app.tar.gz; do
+            [ -f "$tar" ] || continue
+            case "$tar" in
+              *aarch64*) arch=arm64 ;;
+              *x64*)     arch=x64 ;;
+            esac
+            tmp=$(mktemp -d)
+            tar -xzf "$tar" -C "$tmp"
+            APP=$(find "$tmp" -maxdepth 1 -name "*.app" -type d | head -1)
+            if [ -n "$APP" ]; then
+              (cd "$tmp" && zip -qry "$RUNNER_TEMP/zipout.zip" "$(basename "$APP")")
+              mv "$RUNNER_TEMP/zipout.zip" "./Gap.Map_${NUM}_${arch}.zip"
+            fi
+            rm -rf "$tmp" "$tar"
+          done
+          ls -lh
+
+          # Create the public release as draft if it doesn't exist yet.
+          if ! gh release view "$VER" --repo "$PUBLIC" >/dev/null 2>&1; then
+            gh release create "$VER" --repo "$PUBLIC" --target main --draft \
+              --title "Gap Map $VER" \
+              --notes "Release artifacts attached. See repo CHANGELOG for details."
+            echo "  ✓ created draft on $PUBLIC"
+          fi
+
+          # Upload — --clobber lets us re-upload if a previous job's
+          # artifact had a stale signature.
+          shopt -s nullglob
+          FILES=(Gap.Map_*.dmg Gap.Map_*.zip)
+          if [ ${#FILES[@]} -gt 0 ]; then
+            gh release upload "$VER" --repo "$PUBLIC" "${FILES[@]}" --clobber
+            echo "  ✓ uploaded ${#FILES[@]} mac artifact(s)"
+          fi
+
+      # ---------- Promote if all platforms uploaded ----------
+      # Runs at the end of each mac job. If both arm64 + x64 + windows
+      # are present in the public release, flip draft → latest published.
+      # First job to satisfy the condition wins; second is a no-op since
+      # `gh release edit --draft=false` is idempotent.
+      - name: Promote release to latest if all platforms are uploaded
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          VER: ${{ env.TAG_NAME }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then exit 0; fi
+          bash scripts/promote-release-if-complete.sh "$VER" "$PUBLIC"
