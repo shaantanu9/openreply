@@ -22,10 +22,14 @@ PUBLIC="${2:?owner/repo required}"
 echo "── promote-if-complete: $VER on $PUBLIC ──"
 
 # What we MUST have before promoting. Linux artifacts are bonus.
+# Patterns match the user-friendly names produced by the rename step in
+# each per-platform release workflow. Keep in sync with the inlined
+# REQUIRED arrays inside release-{mac,windows,linux}.yml and with
+# scripts/rename-public-release-assets.sh.
 REQUIRED_PATTERNS=(
-  '_arm64\.dmg$'
-  '_x64\.dmg$'
-  '_x64_en-US\.msi$|_x64-setup\.exe$'   # either MSI or EXE counts as "windows present"
+  '-macOS-Apple-Silicon\.dmg$'
+  '-macOS-Intel\.dmg$'
+  '-Windows\.msi$|-Windows-Installer\.exe$'   # either MSI or EXE counts as "windows present"
 )
 
 # Pull asset name list once.

@@ -279,32 +279,51 @@ jobs:
               --pattern "Gap.Map_x64.app.tar.gz" 2>&1 | tail -5 || true
           fi
 
-          # Rename aarch64 → arm64 and rezip .app for the public convention.
+          # Rename to user-friendly public-convention names so a user
+          # looking at the GitHub release page can tell at a glance which
+          # installer fits their machine:
+          #   Gap.Map_X_aarch64.dmg       → Gap-Map-X-macOS-Apple-Silicon.dmg
+          #   Gap.Map_X_x64.dmg           → Gap-Map-X-macOS-Intel.dmg
+          #   Gap.Map_aarch64.app.tar.gz  → Gap-Map-X-macOS-Apple-Silicon.zip
+          #   Gap.Map_x64.app.tar.gz      → Gap-Map-X-macOS-Intel.zip
+          # Naming chosen 2026-05-29 — Apple's official wording is
+          # "Apple Silicon" / "Intel". Keep in sync with scripts/
+          # promote-release-if-complete.sh (matching regex) and the
+          # rename-public-release-assets.sh migration tool.
           cd ./pub
           NUM="${VER#v}"
+          # DMG renames — straightforward `mv`.
           if [ -f "Gap.Map_${NUM}_aarch64.dmg" ]; then
-            mv "Gap.Map_${NUM}_aarch64.dmg" "Gap.Map_${NUM}_arm64.dmg"
+            mv "Gap.Map_${NUM}_aarch64.dmg" "Gap-Map-${NUM}-macOS-Apple-Silicon.dmg"
           fi
+          if [ -f "Gap.Map_${NUM}_x64.dmg" ]; then
+            mv "Gap.Map_${NUM}_x64.dmg" "Gap-Map-${NUM}-macOS-Intel.dmg"
+          fi
+          # .app.tar.gz → .zip via ditto-equivalent so the bundle's
+          # macOS-extended-attribute codesignature stays intact (`tar`
+          # would silently strip the xattrs).
           for tar in Gap.Map_aarch64.app.tar.gz Gap.Map_x64.app.tar.gz; do
             [ -f "$tar" ] || continue
             case "$tar" in
-              *aarch64*) arch=arm64 ;;
-              *x64*)     arch=x64 ;;
+              *aarch64*) friendly="Gap-Map-${NUM}-macOS-Apple-Silicon.zip" ;;
+              *x64*)     friendly="Gap-Map-${NUM}-macOS-Intel.zip" ;;
             esac
             tmp=$(mktemp -d)
             tar -xzf "$tar" -C "$tmp"
             APP=$(find "$tmp" -maxdepth 1 -name "*.app" -type d | head -1)
             if [ -n "$APP" ]; then
               (cd "$tmp" && zip -qry "$RUNNER_TEMP/zipout.zip" "$(basename "$APP")")
-              mv "$RUNNER_TEMP/zipout.zip" "./Gap.Map_${NUM}_${arch}.zip"
+              mv "$RUNNER_TEMP/zipout.zip" "./$friendly"
             fi
             rm -rf "$tmp" "$tar"
           done
           ls -lh
 
           # Create the public release as draft if it doesn't exist yet.
+          # Release notes use the friendly names so they line up with the
+          # asset list rendered below.
           if ! gh release view "$VER" --repo "$PUBLIC" >/dev/null 2>&1; then
-            NOTES=$'## Gap Map '"$VER"$'\n\n**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\nInstallers:\n\n- macOS Apple Silicon — `*_arm64.dmg`\n- macOS Intel — `*_x64.dmg`\n- Windows — `*_x64_en-US.msi` / `*_x64-setup.exe`\n- Linux — `*.AppImage` / `*.deb`\n\nSee the [source repo](https://github.com/shaantanu9/gap-map-pro) `changelogs/` folder for what changed.'
+            NOTES=$'## Gap Map '"$VER"$'\n\n**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\nInstallers:\n\n- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n- **Windows** — `Gap-Map-*-Windows.msi` (managed deploy) or `Gap-Map-*-Windows-Installer.exe` (click-to-install)\n- **Linux** — `Gap-Map-*-Linux.AppImage` (portable) or `Gap-Map-*-Linux.deb` (Debian/Ubuntu APT)\n\nSee the [source repo](https://github.com/shaantanu9/gap-map-pro) `changelogs/` folder for what changed.'
             gh release create "$VER" --repo "$PUBLIC" --target main --draft \
               --title "Gap Map $VER" \
               --notes "$NOTES"
@@ -314,7 +333,7 @@ jobs:
           # Upload — --clobber lets us re-upload if a previous job's
           # artifact had a stale signature.
           shopt -s nullglob
-          FILES=(Gap.Map_*.dmg Gap.Map_*.zip)
+          FILES=(Gap-Map-*-macOS-*.dmg Gap-Map-*-macOS-*.zip)
           if [ ${#FILES[@]} -gt 0 ]; then
             gh release upload "$VER" --repo "$PUBLIC" "${FILES[@]}" --clobber
             echo "  ✓ uploaded ${#FILES[@]} mac artifact(s)"
@@ -341,7 +360,15 @@ jobs:
             echo "  release $VER not found on $PUBLIC — nothing to promote"; exit 0
           }
           echo "  current assets:"; echo "$ASSETS" | sed 's/^/    - /'
-          REQUIRED=( '_arm64\.dmg$' '_x64\.dmg$' '_x64_en-US\.msi$|_x64-setup\.exe$' )
+          # Required patterns for promote — matches the friendly names
+          # produced by the rename step above (and by release-windows.yml
+          # / release-linux.yml's equivalent rename steps). Keep in sync
+          # with scripts/promote-release-if-complete.sh.
+          REQUIRED=(
+            '-macOS-Apple-Silicon\.dmg$'
+            '-macOS-Intel\.dmg$'
+            '-Windows\.msi$|-Windows-Installer\.exe$'
+          )
           MISSING=()
           for pat in "${REQUIRED[@]}"; do
             echo "$ASSETS" | grep -qE "$pat" || MISSING+=("$pat")

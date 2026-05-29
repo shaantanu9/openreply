@@ -184,17 +184,34 @@ jobs:
             --pattern "Gap.Map_*_x86_64.rpm" 2>&1 | tail -5 || true
           ls -lh ./pub/ | head -10
 
+          # Rename to user-friendly public-convention names. Linux only
+          # builds x86_64 today; if/when arm64 Linux lands, extend this
+          # block + the FILES glob + the parent download patterns above.
+          # Keep in sync with release-mac.yml, release-windows.yml, and
+          # scripts/promote-release-if-complete.sh.
+          cd ./pub
+          NUM="${VER#v}"
+          if [ -f "Gap.Map_${NUM}_amd64.AppImage" ]; then
+            mv "Gap.Map_${NUM}_amd64.AppImage" "Gap-Map-${NUM}-Linux.AppImage"
+          fi
+          if [ -f "Gap.Map_${NUM}_amd64.deb" ]; then
+            mv "Gap.Map_${NUM}_amd64.deb" "Gap-Map-${NUM}-Linux.deb"
+          fi
+          if [ -f "Gap.Map_${NUM}_x86_64.rpm" ]; then
+            mv "Gap.Map_${NUM}_x86_64.rpm" "Gap-Map-${NUM}-Linux.rpm"
+          fi
+          ls -lh
+
           if ! gh release view "$VER" --repo "$PUBLIC" >/dev/null 2>&1; then
-            NOTES=$'## Gap Map '"$VER"$'\n\n**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\nInstallers:\n\n- macOS Apple Silicon — `*_arm64.dmg`\n- macOS Intel — `*_x64.dmg`\n- Windows — `*_x64_en-US.msi` / `*_x64-setup.exe`\n- Linux — `*.AppImage` / `*.deb`\n\nSee the [source repo](https://github.com/shaantanu9/gap-map-pro) `changelogs/` folder for what changed.'
+            NOTES=$'## Gap Map '"$VER"$'\n\n**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\nInstallers:\n\n- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n- **Windows** — `Gap-Map-*-Windows.msi` (managed deploy) or `Gap-Map-*-Windows-Installer.exe` (click-to-install)\n- **Linux** — `Gap-Map-*-Linux.AppImage` (portable) or `Gap-Map-*-Linux.deb` (Debian/Ubuntu APT)\n\nSee the [source repo](https://github.com/shaantanu9/gap-map-pro) `changelogs/` folder for what changed.'
             gh release create "$VER" --repo "$PUBLIC" --target main --draft \
               --title "Gap Map $VER" \
               --notes "$NOTES"
             echo "  ✓ created draft on $PUBLIC"
           fi
 
-          cd ./pub
           shopt -s nullglob
-          FILES=(Gap.Map_*_amd64.AppImage Gap.Map_*_amd64.deb Gap.Map_*_x86_64.rpm)
+          FILES=(Gap-Map-*-Linux.AppImage Gap-Map-*-Linux.deb Gap-Map-*-Linux.rpm)
           if [ ${#FILES[@]} -gt 0 ]; then
             gh release upload "$VER" --repo "$PUBLIC" "${FILES[@]}" --clobber
             echo "  ✓ uploaded ${#FILES[@]} linux artifact(s)"
@@ -220,7 +237,15 @@ jobs:
             echo "  release $VER not found on $PUBLIC — nothing to promote"; exit 0
           }
           echo "  current assets:"; echo "$ASSETS" | sed 's/^/    - /'
-          REQUIRED=( '_arm64\.dmg$' '_x64\.dmg$' '_x64_en-US\.msi$|_x64-setup\.exe$' )
+          # Required patterns — friendly names produced by all 3 platform
+          # workflows' rename steps. Linux artifacts are NOT required for
+          # promote; mac+windows alone are enough. Keep in sync with
+          # release-mac.yml, release-windows.yml, scripts/promote-...sh.
+          REQUIRED=(
+            '-macOS-Apple-Silicon\.dmg$'
+            '-macOS-Intel\.dmg$'
+            '-Windows\.msi$|-Windows-Installer\.exe$'
+          )
           MISSING=()
           for pat in "${REQUIRED[@]}"; do
             echo "$ASSETS" | grep -qE "$pat" || MISSING+=("$pat")
