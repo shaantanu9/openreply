@@ -73,14 +73,29 @@ function riceBadge(rice) {
 async function fetchSolutionsData(topic) {
   // One painpoint per row: includes why metadata + counts of linked
   // mechanism/intervention/evidence_paper nodes.
+  //
+  // Sort by `severity × frequency` desc — promotes the painpoints with the
+  // most user pain AND most corpus evidence to the top. Severity ("high" /
+  // "medium" / "low" string from the LLM) maps to 3/2/1; frequency is an
+  // int from the LLM. Both live inside metadata_json (set by
+  // analyze/painpoints.py + persisted by graph/semantic.py::upsert_semantic).
+  // Stable tiebreak on label keeps two equal-score painpoints in a
+  // deterministic order across reloads.
   const sql = `
     SELECT
       n.id AS painpoint_id,
       n.label AS painpoint_label,
-      n.metadata_json
+      n.metadata_json,
+      CASE lower(coalesce(json_extract(n.metadata_json, '$.severity'), ''))
+        WHEN 'high'   THEN 3
+        WHEN 'medium' THEN 2
+        WHEN 'low'    THEN 1
+        ELSE 0
+      END AS sev_score,
+      coalesce(cast(json_extract(n.metadata_json, '$.frequency') AS INTEGER), 0) AS freq_score
     FROM graph_nodes n
     WHERE n.topic = :topic AND n.kind = 'painpoint'
-    ORDER BY n.label
+    ORDER BY (sev_score * freq_score) DESC, sev_score DESC, freq_score DESC, n.label
   `;
   const painpoints = await api.runQuery(sql, topic);
   return painpoints || [];
@@ -156,10 +171,28 @@ function renderPainpointCard(pp, interventions, papers) {
         return `<li>${tierBadge(m.tier)} <a href="${escape(url)}" target="_blank" rel="noopener">${escape(p.label)}</a></li>`;
       }).join('')}</ul>`;
 
+  // Surface severity (LLM-rated low/medium/high) + frequency (corpus count)
+  // as compact badges next to the painpoint title. Combined with the
+  // severity*frequency ORDER BY in fetchPainpoints, this turns the
+  // alphabetical list into a ranked "build this first" list.
+  const sevRaw = (meta.severity || '').toLowerCase();
+  const sevCls = sevRaw === 'high' ? 'sev-high'
+               : sevRaw === 'medium' ? 'sev-medium'
+               : sevRaw === 'low' ? 'sev-low'
+               : '';
+  const sevBadge = sevCls
+    ? `<span class="painpoint-sev ${sevCls}" title="LLM-rated severity">${escape(sevRaw)}</span>`
+    : '';
+  const freqVal = Number(meta.frequency) || 0;
+  const freqBadge = freqVal > 0
+    ? `<span class="painpoint-freq" title="Corpus frequency">${freqVal}×</span>`
+    : '';
+
   return `
     <details class="solutions-card">
       <summary>
         <span class="painpoint-title">${escape(pp.painpoint_label)}</span>
+        ${sevBadge}${freqBadge}
         <span class="emotions">${emotions}</span>
       </summary>
       <div class="card-body">

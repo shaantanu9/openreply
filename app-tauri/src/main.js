@@ -301,7 +301,23 @@ function mustStayInOnboarding() {
   return !isLicenseActivatedLocally();
 }
 
+// Reflect the onboarding-gate state onto <body> so CSS can visibly DIM and
+// disable the sidebar nav while the gate is active. Without this, a
+// first-run user clicks a sidebar link, gets silently bounced back to
+// #/welcome, and reports "no sidebar buttons are clickable on new install".
+// The dim + "Finish setup to unlock" label makes the WHY obvious instead of
+// looking broken. Cleared the moment the gate opens.
+function syncOnboardingBodyFlag() {
+  document.body.setAttribute(
+    'data-onboarding',
+    mustStayInOnboarding() ? 'incomplete' : 'complete',
+  );
+}
+
 async function route() {
+  // Keep the <body data-onboarding> flag in sync on every navigation so the
+  // sidebar nav dims/undims as the gate opens/closes (see CSS).
+  syncOnboardingBodyFlag();
   // Full hash (with leading `#`) for tab-store ops; stripped hash for regex match.
   const fullHash = location.hash || '#/';
   const hash = fullHash.replace(/^#/, '');
@@ -1535,33 +1551,41 @@ function openShortcutsHelp() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   Sidebar minimize — full / rail / hidden state machine.
+   Sidebar minimize — full ⇄ rail toggle (header button never fully HIDES
+   the sidebar — that was the "icon click hides the whole sidebar with no
+   way back" bug). A third "hidden" state still exists for completeness and
+   is restorable via the always-visible floating reveal button
+   (#sidebar-reveal-strip), but the header toggle + ⌘B only swing between
+   full and rail so the sidebar can never vanish without an obvious control
+   to bring it back.
    Persisted to localStorage so the choice survives reload + new tabs.
-   Triggered three ways:
-     1. Click the toggle button in the sidebar header (#sidebar-toggle).
-     2. ⌘B / Ctrl+B (wired in the Chrome-style keydown listener above —
-        delegates here via window.__cycleSidebar).
-     3. Click the reveal strip on the left edge (#sidebar-reveal-strip),
-        which only appears in the "hidden" state and always jumps back
-        to "full" (most users want their sidebar back, not the rail
-        intermediate, when they decide to re-show it).
+   Triggered:
+     1. Click the toggle button in the sidebar header (#sidebar-toggle) → full⇄rail.
+     2. ⌘B / Ctrl+B (Chrome-style keydown listener → window.__cycleSidebar) → full⇄rail.
+     3. Click the floating reveal button (#sidebar-reveal-strip), visible only
+        in the "hidden" state, always jumps back to "full".
    ──────────────────────────────────────────────────────────────────── */
-const SIDEBAR_STATES = ['full', 'rail', 'hidden'];
+// States the header toggle / ⌘B cycle through. "hidden" is intentionally
+// NOT here so the sidebar never disappears from a header click.
+const SIDEBAR_TOGGLE_STATES = ['full', 'rail'];
+// All valid states applySidebarState will accept (hidden is set on restore
+// or by legacy persisted values; the floating button brings it back).
+const SIDEBAR_VALID_STATES = ['full', 'rail', 'hidden'];
 const SIDEBAR_LS_KEY = 'gapmap.sidebarState.v1';
 
 // Per-state metadata: which lucide icon the toggle button shows AND what
 // the title attribute reads. Both describe the NEXT state the click will
 // produce (so users know what they're about to do). `panel-left-close`
-// reads "click to close" in lucide conventions, `panel-left` is the
-// rail-ish icon, `panel-left-open` is the expand-back arrow.
+// reads "click to close" in lucide conventions, `panel-left-open` is the
+// expand-back arrow.
 const SIDEBAR_NEXT_META = {
   full:   { icon: 'panel-left-close',  label: 'Collapse to icons' },
-  rail:   { icon: 'panel-left',        label: 'Hide sidebar' },
+  rail:   { icon: 'panel-left-open',   label: 'Expand sidebar' },
   hidden: { icon: 'panel-left-open',   label: 'Show sidebar' },
 };
 
 function applySidebarState(state) {
-  if (!SIDEBAR_STATES.includes(state)) state = 'full';
+  if (!SIDEBAR_VALID_STATES.includes(state)) state = 'full';
   document.body.setAttribute('data-sidebar', state);
   try { localStorage.setItem(SIDEBAR_LS_KEY, state); } catch {}
   const btn = document.getElementById('sidebar-toggle');
@@ -1584,9 +1608,12 @@ function applySidebarState(state) {
 }
 
 function cycleSidebar() {
+  // Header toggle / ⌘B only swing full ⇄ rail. If we're somehow in "hidden"
+  // (restored from a legacy persisted value), treat this as "show" → full.
   const cur = document.body.getAttribute('data-sidebar') || 'full';
-  const idx = SIDEBAR_STATES.indexOf(cur);
-  const next = SIDEBAR_STATES[(idx + 1) % SIDEBAR_STATES.length];
+  if (cur === 'hidden') { applySidebarState('full'); return; }
+  const idx = SIDEBAR_TOGGLE_STATES.indexOf(cur);
+  const next = SIDEBAR_TOGGLE_STATES[(idx + 1) % SIDEBAR_TOGGLE_STATES.length];
   applySidebarState(next);
 }
 
@@ -1596,7 +1623,7 @@ function initSidebarMinimize() {
   let saved = 'full';
   try {
     const s = localStorage.getItem(SIDEBAR_LS_KEY);
-    if (s && SIDEBAR_STATES.includes(s)) saved = s;
+    if (s && SIDEBAR_VALID_STATES.includes(s)) saved = s;
   } catch {}
   applySidebarState(saved);
 

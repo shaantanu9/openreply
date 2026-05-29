@@ -207,13 +207,16 @@
   </div>
 </div>
 
-<!-- Sidebar hover-reveal strip — only visible (display:block) when the
-     sidebar state is "hidden". Click to restore the sidebar to "full".
-     Lives outside `.app` so its fixed positioning isn't clipped by the
-     grid's overflow:hidden. See `.sidebar-reveal-strip` rules in
-     style.css. -->
+<!-- Floating "show sidebar" button — only visible (display:flex) when the
+     sidebar state is "hidden". A clearly visible hamburger pill, NOT the old
+     invisible 8px hover strip (users couldn't find it → "no way to bring the
+     sidebar back"). Click restores the sidebar to "full". Lives outside
+     `.app` so its fixed positioning isn't clipped by the grid's
+     overflow:hidden. See `.sidebar-reveal-strip` rules in style.css. -->
 <button class="sidebar-reveal-strip" id="sidebar-reveal-strip"
-        type="button" title="Show sidebar (⌘B)" aria-label="Show sidebar"></button>
+        type="button" title="Show sidebar (⌘B)" aria-label="Show sidebar">
+  <i data-lucide="panel-left-open"></i>
+</button>
 
 <script type="module" src="/src/main.js"></script>
 </body>

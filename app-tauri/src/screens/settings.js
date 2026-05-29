@@ -110,6 +110,17 @@ export async function renderSettings(root) {
     <div class="section-head"><div><h2>Settings</h2><p>Profile · keys · data · preferences</p></div></div>
 
     <div class="settings-grid" id="settings-grid">
+      <!-- Section labels — full-width dividers. Card grouping is done via CSS
+           order (see .settings-grid order rules in style.css) so we don't
+           have to physically reshuffle 18 cards. Each label's order value
+           sits at the top of its group's band, and being full-width
+           (grid-column:1/-1) it forces a clean row break before the group. -->
+      <div class="settings-section-label" style="order:10">Profile &amp; preferences</div>
+      <div class="settings-section-label" style="order:20">AI &amp; search</div>
+      <div class="settings-section-label" style="order:30">Data &amp; sources</div>
+      <div class="settings-section-label" style="order:40">Integrations &amp; tools</div>
+      <div class="settings-section-label" style="order:50">Danger zone</div>
+
       <!-- PROFILE (renders instantly) -->
       <div class="settings-card settings-profile">
         <div class="settings-profile-head">
@@ -273,7 +284,7 @@ export async function renderSettings(root) {
       </div>
 
       <!-- Preferences -->
-      <div class="settings-card">
+      <div class="settings-card" id="card-preferences">
         <h4>Preferences</h4>
         <p>Behaviour knobs</p>
         <label class="settings-toggle">
@@ -295,7 +306,7 @@ export async function renderSettings(root) {
       </div>
 
       <!-- Onboarding + help -->
-      <div class="settings-card">
+      <div class="settings-card" id="card-onboarding">
         <h4>Onboarding &amp; help</h4>
         <p>Re-run the welcome wizard or open the docs.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
@@ -317,7 +328,7 @@ export async function renderSettings(root) {
       </div>
 
       <!-- Danger -->
-      <div class="settings-card" style="border-color:#F5DADA;background:#FFFBFB;grid-column:1/-1">
+      <div class="settings-card" id="card-danger" style="border-color:#F5DADA;background:#FFFBFB;grid-column:1/-1">
         <h4 style="color:#B84747"><i data-lucide="alert-triangle"></i> Danger zone</h4>
         <p>These actions can't be undone.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
@@ -388,7 +399,7 @@ export async function renderSettings(root) {
       </div>
 
       <!-- About -->
-      <div class="settings-card">
+      <div class="settings-card" id="card-about">
         <h4>About</h4>
         <p>Gap Map · v0.1.0 · Python sidecar + Tauri · variant-6 soft-dashboard</p>
       </div>

@@ -260,6 +260,14 @@ def init_schema(db: Database) -> None:
             },
             pk="id",
         )
+        # Hot paths the Activity tab + dashboard counter queries hit:
+        #   - sparkline:    GROUP BY substr(started_at,1,10) WHERE substr ≥ ...
+        #   - kind filter:  WHERE kind = ? (or kind LIKE 'source:%')
+        #   - errors-only:  WHERE error IS NOT NULL ORDER BY started_at DESC
+        #   - live-check:   WHERE ended_at IS NULL LIMIT 1
+        # Indices for (kind, started_at) + (started_at) cover all four.
+        db["fetches"].create_index(["started_at"])
+        db["fetches"].create_index(["kind", "started_at"])
 
     if "streams" not in db.table_names():
         db["streams"].create(
@@ -757,6 +765,37 @@ def init_schema(db: Database) -> None:
     # are LLM-distilled 1-3 sentence lessons with a source-post evidence
     # trail. Edges + conclusions are populated by Phase-2 consolidation.
     _ensure_persona_schema(db)
+
+    # ── Retro-add hot-path indices (2026-05-30) ─────────────────────────
+    # `create_index` in the table-create blocks above only fires the first
+    # time a table is created. For databases that already exist (every user
+    # who's run a previous version), the indices below were never added.
+    # `IF NOT EXISTS` is safe on every startup; SQLite materializes once.
+    #
+    # Hot paths these cover:
+    #   - Activity tab sparkline (GROUP BY substr(started_at,1,10)).
+    #   - Activity table filter (WHERE kind = ? OR kind LIKE 'source:%').
+    #   - Errors-only filter (WHERE error IS NOT NULL ORDER BY started_at).
+    #   - "Is a collect running?" probe (WHERE ended_at IS NULL LIMIT 1).
+    _retro_idx = [
+        "CREATE INDEX IF NOT EXISTS idx_fetches_started_at ON fetches(started_at)",
+        "CREATE INDEX IF NOT EXISTS idx_fetches_kind_started ON fetches(kind, started_at)",
+        "CREATE INDEX IF NOT EXISTS idx_fetches_ended_at ON fetches(ended_at) WHERE ended_at IS NULL",
+        "CREATE INDEX IF NOT EXISTS idx_topic_posts_topic ON topic_posts(topic)",
+        "CREATE INDEX IF NOT EXISTS idx_topic_posts_post ON topic_posts(post_id)",
+    ]
+    for _stmt in _retro_idx:
+        try:
+            db.conn.execute(_stmt)
+        except Exception:
+            pass  # older SQLite or partial-index unsupported — fall back to scans
+
+    # Refresh planner stats so the optimizer picks the new indices on the
+    # next query. Best-effort; ANALYZE is idempotent and cheap.
+    try:
+        db.conn.execute("ANALYZE")
+    except Exception:
+        pass
 
 
 def _ensure_persona_schema(db: Database) -> None:

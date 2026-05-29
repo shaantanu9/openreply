@@ -404,6 +404,14 @@ def status(
     # "MCP timeout after 12000ms" before initialize lands. Re-syncing writes
     # `timeout: 60000` so this never bites again.
     out["timeout_configured"] = int(entry.get("timeout") or 0) >= 30000
+    # Entries written before 2026-05-29 don't pin GAPMAP_IDLE_TIMEOUT=0, so
+    # server.py's idle watcher self-exits (os._exit) after 30 min idle and the
+    # client marks the server permanently disconnected ("MCP keeps
+    # disconnecting"). Treat a non-"0" / missing value as a re-sync trigger so
+    # older installs self-heal.
+    out["idle_disabled"] = (
+        str(env.get("GAPMAP_IDLE_TIMEOUT") or "").strip() == "0"
+    )
 
     if not out["db_aligned"]:
         out["reason"] = f"Connected, but {out['client']} is reading a different DB. Click Re-sync to align."
@@ -424,6 +432,12 @@ def status(
             "Connected, but this entry predates per-client pidfile scoping. "
             "Re-sync so this client stops fighting other MCP clients for "
             "the same lock (cause of mid-tool-call disconnects)."
+        )
+    elif not out["idle_disabled"]:
+        out["reason"] = (
+            "Connected, but this entry's idle-timeout watcher can self-exit "
+            "after 30 min idle, which the client reads as a permanent "
+            "disconnect. Re-sync to pin GAPMAP_IDLE_TIMEOUT=0."
         )
     return out
 
@@ -497,6 +511,17 @@ def install(
             # `mcp-server.<tag>.pid` and they coexist quietly. See
             # _pidfile_path() in server.py.
             "MCP_CLIENT_TAG": client_tag,
+            # Disable the idle-timeout watcher for client-managed entries.
+            # server.py's watcher calls os._exit(0) after GAPMAP_IDLE_TIMEOUT
+            # seconds (default 1800 = 30 min) of no tool calls. But when a
+            # stdio MCP server self-exits, the CLIENT (Claude Code / Cursor /
+            # Claude Desktop) marks it disconnected and does NOT auto-respawn
+            # — it thinks the server finished its job. The user perceives this
+            # as "MCP keeps disconnecting" and has to restart the client to
+            # get tools back. The client already owns this subprocess's
+            # lifecycle (spawns on launch, kills on quit), so the idle guard
+            # is redundant AND harmful here. "0" disables it.
+            "GAPMAP_IDLE_TIMEOUT": "0",
         },
     }
 
