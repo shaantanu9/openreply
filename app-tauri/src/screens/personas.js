@@ -1146,6 +1146,12 @@ export async function renderAgentsDashboard(root) {
 
   await tick();
   interval = setInterval(tick, 5000);
+
+  const onLeave = () => {
+    stop();
+    window.removeEventListener('hashchange', onLeave);
+  };
+  window.addEventListener('hashchange', onLeave);
 }
 
 function orchestraCard(p) {

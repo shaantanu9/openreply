@@ -9035,25 +9035,46 @@ body[data-sidebar="hidden"] .app > .main-col {
 }
 body[data-sidebar="hidden"] .sidebar-reveal-strip { display: block; }
 
-/* Hover-reveal strip — sits at the very left edge of the viewport when
-   the sidebar is hidden. 8px transparent default so it doesn't visually
-   intrude; widens + gets a subtle gradient on hover so users can find
-   it. Click → JS swaps state back to "full". */
+/* Reveal strip — sits at the very left edge of the viewport when the
+   sidebar is hidden. Previously a fully-transparent 8px strip that only
+   appeared on hover — users had no idea it existed, hit `cycleSidebar`
+   once, and were stranded with no visible way back. Now: a 28px-wide
+   always-visible strip with a soft gradient + a chevron glyph so it
+   reads as a button. Hover widens + brightens. Click → cycle back to
+   "full". */
 .sidebar-reveal-strip {
   display: none;              /* default — only shown when state="hidden" */
   position: fixed; left: 0; top: 0; bottom: 0;
-  width: 8px;
-  background: transparent;
+  width: 28px;
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--orange) 14%, var(--surface)),
+    transparent);
   border: 0; padding: 0; margin: 0;
   cursor: pointer;
   z-index: 100;
   transition: width .15s ease, background .15s ease;
+  /* The chevron — rendered via ::before so we don't need a lucide refresh
+     here. Always-visible "›" hint so users see "this is a button". */
+}
+.sidebar-reveal-strip::before {
+  content: "›";
+  position: absolute;
+  left: 8px; top: 50%;
+  transform: translateY(-50%);
+  font: 700 22px/1 -apple-system, sans-serif;
+  color: var(--ink-2);
+  opacity: 0.85;
+  pointer-events: none;
 }
 .sidebar-reveal-strip:hover {
-  width: 16px;
+  width: 40px;
   background: linear-gradient(to right,
-    color-mix(in srgb, var(--orange) 18%, transparent),
+    color-mix(in srgb, var(--orange) 28%, var(--surface)),
     transparent);
+}
+.sidebar-reveal-strip:hover::before {
+  color: var(--ink);
+  opacity: 1;
 }
 .sidebar-reveal-strip:focus-visible {
   outline: 2px solid var(--orange);

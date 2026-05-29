@@ -1610,8 +1610,8 @@ export async function renderTopic(root, { params }) {
   // Route through the same incremental invalidation path.
   const onDbChangedTask8 = () => onGapmapChangedTask8({ detail: { kind: 'db', topic } });
   window.addEventListener('gapmap:db-changed', onDbChangedTask8);
-  // renderTopic owns no explicit teardown hook, but re-renders replace
-  // #topic-saturation / #coverage-gaps — stale listeners just no-op.
+  // Teardown is in hashCleanup below (gapmap:changed / db-changed must not
+  // accumulate — each topic visit used to add two permanent window listeners).
 
   // Paint the active-LLM pill in the header. Clicking opens the BYOK modal
   // and on close re-paints so the user sees their new choice immediately.
@@ -5103,6 +5103,13 @@ export async function renderTopic(root, { params }) {
     try { chatStream.unlistenDone?.(); } catch {}
     clearInterval(activeChipInterval);
     if (chatTsInterval) { clearInterval(chatTsInterval); chatTsInterval = null; }
+    if (changedRefreshTimer) clearTimeout(changedRefreshTimer);
+    window.removeEventListener('gapmap:changed', onGapmapChangedTask8);
+    window.removeEventListener('gapmap:db-changed', onDbChangedTask8);
+    for (const off of _activeEnrichUnlistens) {
+      try { off(); } catch {}
+    }
+    _activeEnrichUnlistens.clear();
     // Nuke any in-flight toast auto-remove timers — they'd otherwise try to
     // remove() DOM nodes that belong to this (now-unmounted) screen.
     for (const t of _activeToastTimers) clearTimeout(t);

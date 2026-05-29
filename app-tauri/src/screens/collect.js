@@ -152,6 +152,12 @@ async function bindGlobalCollectListeners() {
           ? 'done'
           : cls === 'cancelled' ? 'cancelled' : 'failed';
         _collectStatus.set(t, next);
+        // Drop persisted log tape for finished collects — keeps session RAM
+        // bounded when many topics are collected (was unbounded Map growth).
+        if (next === 'done' || next === 'failed' || next === 'cancelled') {
+          _collectLogs.delete(t);
+          _collectStart.delete(t);
+        }
       }
       _activeTopic = null;
       window.dispatchEvent(new CustomEvent('gapmap:collect-done-global', {

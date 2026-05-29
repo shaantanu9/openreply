@@ -65,7 +65,13 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX corrupts compiled extension modules (.so/.dylib) on macOS arm64 —
+    # the PyInstaller bootloader then fails at runtime with
+    # "decompression resulted in return code -1!" on entries like
+    # __mypyc.cpython-311-darwin.so and hf_xet/hf_xet.abi3.so, which 255-exits
+    # the sidecar and breaks every data/LLM/MCP feature on a fresh install.
+    # Keep UPX OFF. (Larger binary is the price; correctness wins.)
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
