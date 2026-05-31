@@ -24,6 +24,13 @@ const CONCEPT_STAGES = [
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
+// Per-topic in-flight guard so opening the tab, switching away, and returning
+// (or a db-changed re-run) doesn't double-fire the blocking Concept Agent call.
+// On re-entry we re-show the alive loader (continuing from the real elapsed via
+// the shared loader's runKey) instead of kicking a second run.
+const _conceptsRunning = new Set();  // topic
+const conceptsRunKey = (topic) => `concepts:${topic}`;
+
 function escape(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -166,9 +173,12 @@ export async function loadConcepts(contentEl, topic) {
     if (contentEl.dataset.tab !== 'concepts') return;
     window.refreshIcons?.();
     $('#btn-rerun-concepts', contentEl)?.addEventListener('click', async () => {
+      if (_conceptsRunning.has(topic)) return;
+      _conceptsRunning.add(topic);
       const stop = renderAnalyzingState(contentEl, {
         headline: 'Re-running Concept Agent', stages: CONCEPT_STAGES,
         medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+        runKey: conceptsRunKey(topic),
       });
       try {
         const result = await api.runConcepts(topic);
@@ -182,6 +192,8 @@ export async function loadConcepts(contentEl, topic) {
       } catch (e) {
         stop();
         set(`<div class="empty-big"><h3>Couldn't run</h3><p>${escape(e?.message || e)}</p></div>`);
+      } finally {
+        _conceptsRunning.delete(topic);
       }
     });
   };
@@ -197,12 +209,26 @@ export async function loadConcepts(contentEl, topic) {
   // blanking on what might be a transient sidecar hiccup); otherwise
   // show the empty CTA.
   if (paintedFromCache) return;
+  // A run is already in flight (kicked on an earlier tab open). Re-show the
+  // alive loader — continuing from the REAL elapsed via runKey — rather than
+  // the empty CTA, and do NOT start a second run. The in-flight run repaints
+  // via renderAndBind when it lands.
+  if (_conceptsRunning.has(topic)) {
+    renderAnalyzingState(contentEl, {
+      headline: 'Ideating product concepts', stages: CONCEPT_STAGES,
+      medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+      runKey: conceptsRunKey(topic),
+    });
+    return;
+  }
   set(renderEmpty(topic));
   if (contentEl.dataset.tab !== 'concepts') return;
   window.refreshIcons?.();
 
   const runBtn = $('#btn-run-concepts', contentEl);
   const runPipeline = async () => {
+    if (_conceptsRunning.has(topic)) return;  // already running — don't double-fire
+    _conceptsRunning.add(topic);
     if (runBtn) runBtn.disabled = true;
     // Full-bleed alive loader replaces the empty CTA while the single
     // blocking LLM call runs. On any non-render outcome we fall back to the
@@ -210,6 +236,7 @@ export async function loadConcepts(contentEl, topic) {
     const stop = renderAnalyzingState(contentEl, {
       headline: 'Ideating product concepts', stages: CONCEPT_STAGES,
       medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+      runKey: conceptsRunKey(topic),
     });
     const backToEmpty = (msg) => {
       stop();
@@ -236,6 +263,8 @@ export async function loadConcepts(contentEl, topic) {
       await renderAndBind(result.concepts);
     } catch (e) {
       backToEmpty(`Error: ${e?.message || e}`);
+    } finally {
+      _conceptsRunning.delete(topic);
     }
   };
   runBtn?.addEventListener('click', runPipeline);

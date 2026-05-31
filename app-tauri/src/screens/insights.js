@@ -18,6 +18,14 @@ const $ = (sel, root = document) => root.querySelector(sel);
 // Domain stages for the one-shot insight synthesis (single long-context
 // LLM call): pack the full corpus, score opportunities (Ulwick), build the
 // Minto pyramid + hypothesis cards + competitor landscape.
+// Per-topic in-flight guard so opening the Insights tab, switching away, and
+// returning (or a db-changed re-run) doesn't double-fire the blocking synthesis
+// call. On re-entry we re-show the alive loader continuing from the real elapsed
+// (shared loader runKey) instead of kicking a second run. Shared across the
+// fast (runSynth) and chunked (runChunkedSynth) paths — only one runs per tab.
+const _insightsRunning = new Set();  // topic
+const insightsRunKey = (topic) => `insights:${topic}`;
+
 const INSIGHT_STAGES = [
   'Packing your full corpus into one call…',
   'Clustering painpoints, wishes & workarounds…',
@@ -761,6 +769,18 @@ export async function loadInsights(contentEl, topic) {
   // alone — the user gets old-but-valid data instead of a flash of empty.
   if (paintedFromCache) return;
 
+  // A synthesis is already in flight (kicked on an earlier tab open). Re-show
+  // the alive loader continuing from the REAL elapsed via runKey, and do NOT
+  // start a second run — the in-flight run repaints when it lands.
+  if (_insightsRunning.has(topic)) {
+    renderAnalyzingState(contentEl, {
+      headline: 'Generating insights', stages: INSIGHT_STAGES,
+      medianRuntimeSec: 45, etaText: 'typically 30–90 seconds', skeletonCount: 3,
+      runKey: insightsRunKey(topic),
+    });
+    return;
+  }
+
   set(renderEmpty(cached?.error));
   wireRunButton(contentEl, topic);
   window.refreshIcons?.();
@@ -771,6 +791,9 @@ export async function loadInsights(contentEl, topic) {
 }
 
 async function runSynth(contentEl, topic) {
+  if (_insightsRunning.has(topic)) return;  // already running — don't double-fire
+  _insightsRunning.add(topic);
+  try {
   const set = (html) => { if (contentEl.dataset.tab === 'insights') contentEl.innerHTML = html; };
   // Full-bleed alive loader while the blocking synthesis call runs. We snap
   // it to complete just before painting the report, and stop() (no snap)
@@ -778,6 +801,7 @@ async function runSynth(contentEl, topic) {
   const stop = renderAnalyzingState(contentEl, {
     headline: 'Generating insights', stages: INSIGHT_STAGES,
     medianRuntimeSec: 45, etaText: 'typically 30–90 seconds', skeletonCount: 3,
+    runKey: insightsRunKey(topic),
   });
   // Use monitor_run_topic instead of raw synthesize — same synthesis call,
   // but wrapped in the Phase-4 delta recorder. Every regenerate now
@@ -827,6 +851,9 @@ async function runSynth(contentEl, topic) {
     setTimeout(() => toast.remove(), 5000);
   }
   window.refreshIcons?.();
+  } finally {
+    _insightsRunning.delete(topic);
+  }
 }
 
 function wireRunButton(contentEl, topic) {
@@ -840,12 +867,16 @@ function wireRunButton(contentEl, topic) {
 // input tokens of corpus) so low-credit providers can still produce
 // findings. Deterministic merge on the Python side dedupes across chunks.
 async function runChunkedSynth(contentEl, topic) {
+  if (_insightsRunning.has(topic)) return;  // already running — don't double-fire
+  _insightsRunning.add(topic);
+  try {
   const set = (html) => { if (contentEl.dataset.tab === 'insights') contentEl.innerHTML = html; };
   // Alive loader for the chunked map-reduce path. Same cleanup contract as
   // runSynth — snap on success, stop() before any error/empty render.
   const stop = renderAnalyzingState(contentEl, {
     headline: 'Deep scan (chunked mode)', stages: INSIGHT_CHUNKED_STAGES,
     medianRuntimeSec: 60, etaText: 'longer than the fast path — works on low-credit providers', skeletonCount: 3,
+    runKey: insightsRunKey(topic),
   });
   let report;
   try {
@@ -882,6 +913,9 @@ async function runChunkedSynth(contentEl, topic) {
   wireCards(contentEl, topic, report);
   $('#btn-insights-regen', contentEl)?.addEventListener('click', () => runSynth(contentEl, topic));
   window.refreshIcons?.();
+  } finally {
+    _insightsRunning.delete(topic);
+  }
 }
 
 // ─── Phase 8 — Chat sidebar on Insights tab ──────────────────────────

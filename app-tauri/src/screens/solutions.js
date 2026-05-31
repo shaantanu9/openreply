@@ -8,6 +8,13 @@ import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
+// Per-topic in-flight guard so opening the tab, switching away, and returning
+// (or a db-changed re-run) doesn't double-fire the blocking solutions pipeline.
+// On re-entry we re-show the alive loader (continuing from the real elapsed via
+// the shared loader's runKey) instead of kicking a second run.
+const _solutionsRunning = new Set();  // topic
+const solutionsRunKey = (topic) => `solutions:${topic}`;
+
 // Domain stages for the blocking solutions pipeline LLM call. The pipeline
 // runs Problem → Why (JTBD/emotions) → Science (paper fetch) → Solution
 // (intervention synthesis) → Kano per painpoint, so these mirror that loop.
@@ -302,9 +309,12 @@ export async function loadSolutions(contentEl, topic) {
     });
 
     $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
+      if (_solutionsRunning.has(topic)) return;
+      _solutionsRunning.add(topic);
       const stop = renderAnalyzingState(contentEl, {
         headline: 'Re-running solutions pipeline', stages: SOLUTION_STAGES,
         medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+        runKey: solutionsRunKey(topic),
       });
       let err = null;
       try {
@@ -312,6 +322,8 @@ export async function loadSolutions(contentEl, topic) {
       } catch (e) {
         err = e;
         console.error('solutions pipeline failed:', e);
+      } finally {
+        _solutionsRunning.delete(topic);
       }
       if (err) {
         stop();
@@ -407,11 +419,24 @@ export async function loadSolutions(contentEl, topic) {
 
   if (!haveSolutions) {
     if (paintedFromCache) return;   // keep stale-but-valid paint
+    // A run is already in flight (kicked on an earlier tab open). Re-show the
+    // alive loader continuing from the REAL elapsed via runKey, and do NOT
+    // start a second run — the in-flight run repaints when it lands.
+    if (_solutionsRunning.has(topic)) {
+      renderAnalyzingState(contentEl, {
+        headline: 'Running solutions pipeline', stages: SOLUTION_STAGES,
+        medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+        runKey: solutionsRunKey(topic),
+      });
+      return;
+    }
     set(renderEmpty(topic));
     if (contentEl.dataset.tab !== 'solutions') return;
     window.refreshIcons?.();
     const runBtn = $('#btn-run-solutions', contentEl);
     const runPipeline = async () => {
+      if (_solutionsRunning.has(topic)) return;  // already running — don't double-fire
+      _solutionsRunning.add(topic);
       if (runBtn) runBtn.disabled = true;
       // Full-bleed alive loader replaces the empty CTA while the blocking
       // pipeline runs. On skip/error we fall back to the empty CTA + a
@@ -419,6 +444,7 @@ export async function loadSolutions(contentEl, topic) {
       const stop = renderAnalyzingState(contentEl, {
         headline: 'Running solutions pipeline', stages: SOLUTION_STAGES,
         medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+        runKey: solutionsRunKey(topic),
       });
       const backToEmpty = (msg) => {
         stop();
@@ -442,6 +468,8 @@ export async function loadSolutions(contentEl, topic) {
         await loadSolutions(contentEl, topic);
       } catch (e) {
         backToEmpty(`Error: ${e?.message || e}`);
+      } finally {
+        _solutionsRunning.delete(topic);
       }
     };
     runBtn?.addEventListener('click', runPipeline);
