@@ -266,18 +266,24 @@ def concepts_for_topic(
     Each concept includes evidence_painpoint_labels tying it back to the source.
     """
     pps = _painpoints_for_topic(topic, limit=15)
-    if len(pps) < 2:
+    sents = _sentiment_blocks_for_topic(topic)
+    was = _workarounds_for_topic(topic, limit=10)
+
+    # Block ONLY when there is genuinely nothing to ground concepts on. The
+    # concept agent reads painpoints + sentiment + workarounds, and the
+    # deterministic fallback works from painpoints + workarounds — so a single
+    # painpoint (or even just a workaround) is enough to propose ideas.
+    # The old `len(pps) < 2` gate locked out usable topics that had one
+    # painpoint plus sentiment, workarounds, and a full corpus.
+    if len(pps) + len(was) == 0:
         return {
             "topic": topic,
             "concepts": [],
             "persisted": 0,
-            "reason": f"Only {len(pps)} painpoints for this topic. Run gap extraction "
-                      f"(Solutions tab or 'research gaps') first to give the concept "
-                      f"agent something to work with.",
+            "reason": "No painpoints or workarounds extracted for this topic yet. "
+                      "Run gap extraction (Solutions tab or 'research gaps') first to "
+                      "give the concept agent something to work with.",
         }
-
-    sents = _sentiment_blocks_for_topic(topic)
-    was = _workarounds_for_topic(topic, limit=10)
 
     ext = load_extractor("concept")
     user = ext["user_template"].format(
