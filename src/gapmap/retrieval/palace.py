@@ -1046,6 +1046,18 @@ def paper_neighbors(post_id: str, *, k: int = 8, topic: str | None = None) -> di
     import numpy as np
     mean_vec = np.mean(vecs, axis=0).tolist()
     where = {"topic": topic} if topic else None
+    # Empty-filter guard: chromadb's Rust backend SEGFAULTS (uncatchable — it
+    # kills the whole Python sidecar) when query() is handed a `where` filter
+    # that matches zero documents. Mirror the guard used in search_paper_chunks.
+    # No-op when where is None (the crash is specific to zero-match filters,
+    # not to the no-filter path).
+    if where is not None:
+        try:
+            if coll.count(where=where) == 0:
+                return {"ok": True, "results": [], "count": 0,
+                        "skipped_reason": "no_indexed_chunks_for_filter"}
+        except Exception:
+            pass
     try:
         raw = coll.query(query_embeddings=[mean_vec], n_results=max(k * 6, 30), where=where)
     except Exception as e:
@@ -1061,10 +1073,13 @@ def paper_neighbors(post_id: str, *, k: int = 8, topic: str | None = None) -> di
             continue
         sim = max(0.0, 1.0 - (d or 0.0) / 2.0)
         cur = best.get(pid)
-        if cur is None or sim > cur["score"]:
+        if cur is None:
             best[pid] = {"post_id": pid, "score": round(sim, 4), "n_chunks": 1}
         else:
+            # Accumulate every matching chunk; keep the strongest score.
             cur["n_chunks"] += 1
+            if sim > cur["score"]:
+                cur["score"] = round(sim, 4)
     results = sorted(best.values(), key=lambda r: r["score"], reverse=True)[:k]
     return {"ok": True, "results": results, "count": len(results)}
 
