@@ -8,6 +8,8 @@
 import { api } from '../api.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { skelRows } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -260,7 +262,7 @@ export async function loadPapers(contentEl, topic) {
     wireSearchButton(contentEl, topic);
     paintedFromCache = true;
   } else {
-    set('<div class="empty-state">loading papers…</div>');
+    set(skelRows(8));
   }
 
   let posts = [];
@@ -295,9 +297,6 @@ export async function loadPapers(contentEl, topic) {
   wireSearchButton(contentEl, topic);
 
   const doExport = async (fmt) => {
-    const btn = $(`#btn-export-${fmt}`, contentEl);
-    const orig = btn?.innerHTML;
-    if (btn) { btn.disabled = true; btn.textContent = 'exporting…'; }
     try {
       const r = await api.papersExport(topic, fmt, null);
       if (!r?.ok) throw new Error(r?.reason || 'export failed');
@@ -305,14 +304,14 @@ export async function loadPapers(contentEl, topic) {
     } catch (e) {
       alert(`Export failed: ${e?.message || e}`);
     } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = orig; window.refreshIcons?.(); }
+      window.refreshIcons?.();
     }
   };
 
-  $('#btn-export-bibtex', contentEl)?.addEventListener('click', () => doExport('bibtex'));
-  $('#btn-export-ris',    contentEl)?.addEventListener('click', () => doExport('ris'));
-  $('#btn-export-apa',    contentEl)?.addEventListener('click', () => doExport('apa'));
-  $('#btn-export-md',     contentEl)?.addEventListener('click', () => doExport('md'));
+  $('#btn-export-bibtex', contentEl)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, () => doExport('bibtex'), { busyLabel: 'Exporting…' }));
+  $('#btn-export-ris',    contentEl)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, () => doExport('ris'),    { busyLabel: 'Exporting…' }));
+  $('#btn-export-apa',    contentEl)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, () => doExport('apa'),    { busyLabel: 'Exporting…' }));
+  $('#btn-export-md',     contentEl)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, () => doExport('md'),     { busyLabel: 'Exporting…' }));
 
   // Unpaywall — resolve a free-PDF URL for one DOI, then open inline.
   contentEl.querySelectorAll('.btn-oa').forEach(btn => {

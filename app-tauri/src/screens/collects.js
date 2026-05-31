@@ -14,6 +14,7 @@
 // All controls converge on the same Tauri commands. No screen-jumping.
 
 import { api, esc } from '../api.js';
+import { skelRows } from '../lib/skeleton.js';
 import { listen } from '@tauri-apps/api/event';
 import { getCollectSnapshot, markCollectCancelled } from './collect.js';
 import { showCollectBusyModal } from '../components/CollectBusyModal.js';
@@ -190,17 +191,17 @@ export async function renderCollects(root) {
 
       <section class="cm-pane cm-pane--running" id="cm-pane-running">
         <h3 class="cm-pane-title">Running</h3>
-        <div class="cm-loading">Loading…</div>
+        ${skelRows(1)}
       </section>
 
       <section class="cm-pane cm-pane--queue" id="cm-pane-queue">
         <h3 class="cm-pane-title">Queue</h3>
-        <div class="cm-loading">Loading…</div>
+        ${skelRows(2)}
       </section>
 
       <section class="cm-pane cm-pane--recent" id="cm-pane-recent">
         <h3 class="cm-pane-title">This session</h3>
-        <div class="cm-loading">Loading…</div>
+        ${skelRows(3)}
       </section>
     </div>
   `;

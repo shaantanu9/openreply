@@ -1,6 +1,8 @@
 // Full fetches log — paginated, filterable. The home dashboard only shows
 // the last 12 rows; this page exposes everything.
 import { api, esc, timeAgo } from '../api.js';
+import { skelRows, skelStats } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const PAGE_SIZE = 50;
 const QUERY_TIMEOUT_MS = 15000;
@@ -46,7 +48,7 @@ export async function renderActivity(root) {
     <div class="card" style="margin-bottom:18px">
       <div class="card-head"><div><h3>Last 30 days</h3><p>Daily pipeline volume</p></div></div>
       <div class="card-body" id="activity-spark" style="padding:14px 20px 20px">
-        <div class="empty-state">loading…</div>
+        ${skelStats(1)}
       </div>
     </div>
 
@@ -82,7 +84,7 @@ export async function renderActivity(root) {
     </div>
 
     <div class="activity-table-wrap" id="activity-table">
-      <div class="empty-state">loading…</div>
+      ${skelRows(8)}
     </div>
 
     <div class="pager" id="activity-pager"></div>
@@ -107,7 +109,10 @@ export async function renderActivity(root) {
     checkLive(root);
   };
 
-  root.querySelector('#btn-activity-refresh').onclick = refresh;
+  root.querySelector('#btn-activity-refresh').onclick = (e) =>
+    withButtonBusy(e.currentTarget, () =>
+      Promise.all([loadPage(root), loadSpark(root), checkLive(root)]),
+      { busyLabel: 'Refreshing…' });
   root.querySelector('#f-kind').onchange   = e => { state.kind = e.target.value;   state.page = 0; loadPage(root); };
   root.querySelector('#f-topic').onchange  = e => { state.topic = e.target.value;  state.page = 0; loadPage(root); };
   root.querySelector('#f-errors').onchange = e => { state.errorsOnly = e.target.checked; state.page = 0; loadPage(root); };
@@ -217,7 +222,7 @@ async function loadPage(root) {
   const myGen = root.dataset.routeGen;
   const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   const tbl = root.querySelector('#activity-table');
-  tbl.innerHTML = `<div class="empty-state">loading…</div>`;
+  tbl.innerHTML = skelRows(8);
 
   // Parameterized WHERE — :kind / :topic bound via runQuery's param map
   // (sqlite-utils binds safely). Never interpolate raw user input into SQL;

@@ -1,6 +1,7 @@
 // Search — ad-hoc Reddit search via PRAW (gapmap search).
 // Top-level route at #/search. Not scoped to any topic.
 import { api, $, esc, timeAgo } from '../api.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const state = {
   query: '',
@@ -147,7 +148,7 @@ export async function renderSearch(root) {
     state.sub   = $('#search-sub', root).value;
     state.sort  = $('#search-sort', root).value;
     state.time  = $('#search-time', root).value;
-    doSearch(root);
+    withButtonBusy($('#search-go', root), () => doSearch(root), { busyLabel: 'Searching…' });
   });
 
   // Delegated external-link handler — every `[data-extlink]` button in

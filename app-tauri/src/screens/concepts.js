@@ -9,6 +9,7 @@ import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
+import { skelGrid } from '../lib/skeleton.js';
 
 // Domain stages for the Concept Agent's single blocking LLM call (no
 // incremental persist — the whole 3-5 concept payload lands at once, so this
@@ -162,7 +163,7 @@ export async function loadConcepts(contentEl, topic) {
     // Defer to after renderAndBind is defined (a few lines down).
     queueMicrotask(() => renderAndBind?.(cachedConcepts));
   } else {
-    set('<div class="empty-state">loading…</div>');
+    set(skelGrid(6));
   }
 
   const existing = await fetchExistingConcepts(topic);

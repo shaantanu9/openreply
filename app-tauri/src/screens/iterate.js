@@ -15,6 +15,8 @@
 // Design: standard Home/Topics primitives (slash crumbs, stat-grid,
 // section-head, btn-primary / btn-ghost-bordered).
 import { api, esc } from '../api.js';
+import { skelRows, skelDetail } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -84,7 +86,7 @@ function stopPolling() { if (_pollHandle) { clearInterval(_pollHandle); _pollHan
 
 async function renderRunDetail(root, runId) {
   stopPolling();
-  root.innerHTML = `<div class="empty-state">Loading run ${esc(runId)}…</div>`;
+  root.innerHTML = skelDetail({ paras: 5 });
   let run;
   try {
     run = await api.iterateStatus(runId);
@@ -223,25 +225,27 @@ function paintRunDetail(root, rec) {
     </div>
   `;
   window.refreshIcons?.();
-  $('#run-cancel', root)?.addEventListener('click', async () => {
-    await api.iterateCancel(rec.run_id);
-    setTimeout(() => renderRunDetail(root, rec.run_id), 500);
-  });
-  $('#run-apply', root)?.addEventListener('click', async () => {
-    const r = await api.iterateApply(rec.run_id);
-    if (r?.ok) {
-      alert(`Applied. Future ${rec.loop_kind} runs on "${rec.topic}" will use ${fmtCfg(r.config)}`);
-    } else {
-      alert(`Apply failed: ${r?.error || 'unknown'}`);
-    }
-  });
+  $('#run-cancel', root)?.addEventListener('click', (e) =>
+    withButtonBusy(e.currentTarget, async () => {
+      await api.iterateCancel(rec.run_id);
+      setTimeout(() => renderRunDetail(root, rec.run_id), 500);
+    }, { busyLabel: 'Cancelling…' }));
+  $('#run-apply', root)?.addEventListener('click', (e) =>
+    withButtonBusy(e.currentTarget, async () => {
+      const r = await api.iterateApply(rec.run_id);
+      if (r?.ok) {
+        alert(`Applied. Future ${rec.loop_kind} runs on "${rec.topic}" will use ${fmtCfg(r.config)}`);
+      } else {
+        alert(`Apply failed: ${r?.error || 'unknown'}`);
+      }
+    }, { busyLabel: 'Applying…' }));
 }
 
 // ── Topic-scoped runs feed ────────────────────────────────────────────
 
 async function renderTopicIterate(root, topic) {
   stopPolling();
-  root.innerHTML = `<div class="empty-state">Loading…</div>`;
+  root.innerHTML = skelRows(6);
   let runs, applied;
   try {
     [runs, applied] = await Promise.all([
@@ -333,21 +337,20 @@ async function renderTopicIterate(root, topic) {
     </div>
   `;
   window.refreshIcons?.();
-  const launch = async (loopKind) => {
+  const launch = (loopKind) => {
     const btn = $(`#run-${loopKind}`, root);
-    if (btn) { btn.disabled = true; btn.innerHTML = `<i data-lucide="loader"></i> Running…`; window.refreshIcons?.(); }
-    try {
-      const res = await api.iterateRun(topic, loopKind, {});
-      if (res?.run_id) {
-        location.hash = `#/iterate/run/${encodeURIComponent(res.run_id)}`;
-      } else {
-        alert('Run failed to start.');
-        if (btn) { btn.disabled = false; }
+    return withButtonBusy(btn, async () => {
+      try {
+        const res = await api.iterateRun(topic, loopKind, {});
+        if (res?.run_id) {
+          location.hash = `#/iterate/run/${encodeURIComponent(res.run_id)}`;
+        } else {
+          alert('Run failed to start.');
+        }
+      } catch (e) {
+        alert(`Run error: ${e?.message || e}`);
       }
-    } catch (e) {
-      alert(`Run error: ${e?.message || e}`);
-      if (btn) { btn.disabled = false; }
-    }
+    }, { busyLabel: 'Starting…' });
   };
   $('#run-deliberate', root)?.addEventListener('click', () => launch('deliberate'));
   $('#run-audience', root)?.addEventListener('click', () => launch('audience'));
@@ -363,7 +366,7 @@ async function renderPicker(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Karpathy-style improvement loops · persistent</span>
     </header>
-    <div id="iter-pick"><div class="empty-state">loading…</div></div>
+    <div id="iter-pick">${skelRows(6)}</div>
   `;
   let topics = [], runs = [];
   try {

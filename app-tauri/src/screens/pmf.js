@@ -13,6 +13,8 @@
 // + .card-body for every panel, btn-primary/btn-ghost/btn-bordered for
 // every button.
 import { api, esc } from '../api.js';
+import { skelStats, skelRows } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -214,7 +216,7 @@ function renderShell(topic, responses, score) {
 }
 
 async function renderTopicPmf(root, topic) {
-  root.innerHTML = `<div class="empty-state">Loading PMF data…</div>`;
+  root.innerHTML = `${skelStats(4)}${skelRows(5)}`;
   const reload = () => renderTopicPmf(root, topic);
   let listResp, scoreResp;
   try {
@@ -229,7 +231,7 @@ async function renderTopicPmf(root, topic) {
   root.innerHTML = renderShell(topic, listResp?.responses || [], scoreResp);
   window.refreshIcons?.();
 
-  $('#pmf-add', root)?.addEventListener('click', async () => {
+  $('#pmf-add', root)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, async () => {
     const payload = {
       disappointment:        $('#pmf-disappoint', root).value,
       persona:               $('#pmf-persona', root).value.trim(),
@@ -246,7 +248,7 @@ async function renderTopicPmf(root, topic) {
     } catch (e) {
       alert(`Add failed: ${e?.message || e}`);
     }
-  });
+  }, { busyLabel: 'Adding…' }));
 
   $$('.pmf-delete', root).forEach(b => b.addEventListener('click', async () => {
     if (!confirm('Delete this response?')) return;
@@ -266,7 +268,7 @@ async function renderPicker(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Sean Ellis, 2010</span>
     </header>
-    <div id="pmf-pick-mount"><div class="empty-state">loading…</div></div>
+    <div id="pmf-pick-mount">${skelRows(4)}</div>
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {

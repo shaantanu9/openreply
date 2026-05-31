@@ -15,6 +15,7 @@
 // btn-primary / btn-ghost-bordered.
 import { api, esc } from '../api.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
+import { skelDetail } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -317,11 +318,45 @@ function launchSequence(brief) {
   `;
 }
 
+// Friendly, actionable copy per LLM error class (set by launch.py).
+const LLM_ERROR_COPY = {
+  rate_limit: 'The AI provider is rate-limited right now. The brief below is the deterministic version — retry in a minute for AI-refined personas & sequence.',
+  llm_key:    'No working AI provider key is configured. Add one in Settings → Keys, then retry. Showing the deterministic brief meanwhile.',
+  llm_model:  'The configured AI model is unavailable. Pick a different model in Settings → Keys, then retry. Showing the deterministic brief meanwhile.',
+  network:    'Couldn’t reach the AI provider (network/timeout). The brief below is deterministic — retry once you’re back online.',
+  llm:        'AI augmentation failed, so the brief below is the deterministic version. Retry to refine personas, demographics & the launch sequence.',
+};
+
+function llmErrorBanner(brief) {
+  if (!brief?.llm_error) return '';
+  const cls = brief.llm_error_class || 'llm';
+  const msg = LLM_ERROR_COPY[cls] || LLM_ERROR_COPY.llm;
+  return `
+    <div class="card" style="border-left:3px solid #d97706;background:rgba(217,119,6,0.06);margin-bottom:14px">
+      <div class="card-body" style="display:flex;gap:12px;align-items:flex-start">
+        <i data-lucide="triangle-alert" style="color:#d97706;flex:0 0 auto;margin-top:2px"></i>
+        <div style="flex:1">
+          <strong style="font-size:13px">AI augmentation unavailable (${esc(cls)})</strong>
+          <div style="font-size:12.5px;color:var(--ink-2);margin-top:3px">${esc(msg)}</div>
+          <div class="muted" style="font-size:11px;margin-top:4px">${esc(String(brief.llm_error).slice(0, 180))}</div>
+        </div>
+        <button class="btn btn-primary btn-sm icon-btn" id="launch-retry-llm" style="flex:0 0 auto">
+          <i data-lucide="refresh-cw"></i> Retry with AI
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 function renderShell(topic, brief) {
   const stale = brief?.cached
     ? `Cached ${new Date(brief.generated_at).toLocaleString()}`
     : (brief?.generated_at ? `Generated ${new Date(brief.generated_at).toLocaleString()}` : '');
-  const llmTag = brief?.llm_augmented ? '<span class="pill">LLM ✓</span>' : '<span class="pill">deterministic only</span>';
+  const llmTag = brief?.llm_augmented
+    ? '<span class="pill">LLM ✓</span>'
+    : (brief?.llm_error
+        ? '<span class="pill" style="background:rgba(217,119,6,0.12);color:#b45309">AI failed</span>'
+        : '<span class="pill">deterministic</span>');
 
   return `
     <header class="topbar">
@@ -430,7 +465,7 @@ async function renderTopicLaunch(root, topic) {
   // routeGen guard — JS analog of Flutter context.mounted
   const myGen = root.dataset.routeGen;
   const alive = () => root.dataset.routeGen === myGen && root.isConnected;
-  root.innerHTML = `<div class="empty-state">Loading launch brief…</div>`;
+  root.innerHTML = skelDetail({ paras: 6 });
   let brief;
   try {
     brief = await api.launchBriefGet(topic);
@@ -483,7 +518,7 @@ async function renderPicker(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Audience · Demographics · Channels · Market requirements</span>
     </header>
-    <div id="launch-picker-mount"><div class="empty-state">loading…</div></div>
+    <div id="launch-picker-mount">${skelDetail({ paras: 4 })}</div>
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {

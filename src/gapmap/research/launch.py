@@ -349,7 +349,146 @@ def _author_signals(db, topic: str) -> dict[str, Any]:
     }
 
 
+# ── Deterministic fallbacks (offline / no-LLM) ─────────────────────────
+# These keep the Audience and Launch-sequence sections from rendering
+# empty when the LLM pass is unavailable (offline build, no key, rate
+# limit, network error). They derive entirely from corpus signals we
+# already computed, so they're honest and citation-anchored.
+
+def _channel_label(c: dict[str, Any]) -> str:
+    if not c:
+        return "your primary channel"
+    if c.get("type") == "reddit":
+        return f"r/{c.get('name')}"
+    return c.get("name") or c.get("type") or "your primary channel"
+
+
+def _personas_fallback(
+    db, topic: str, channels: list[dict[str, Any]], sigs: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Build up to 3 deterministic ICP personas from corpus occupation
+    signals + the top engaged channels. Used only when no audience /
+    empathy / interview personas exist AND the LLM pass didn't run."""
+    out: list[dict[str, Any]] = []
+    occs = sigs.get("occupations") or []
+    top = channels[0] if channels else None
+    chan_label = _channel_label(top) if top else None
+    samples = sigs.get("samples") or 0
+
+    # Friendly labels for abbreviated/awkward occupation tokens so personas
+    # read naturally (e.g. "pm" → "Product Managers", not "Pms").
+    _OCC_LABELS = {
+        "pm": "Product Managers", "ux": "UX Designers", "ceo": "Founders & CEOs",
+        "founder": "Founders", "engineer": "Engineers", "developer": "Developers",
+        "designer": "Designers", "manager": "Managers", "freelance": "Freelancers",
+        "consultant": "Consultants", "marketer": "Marketers", "analyst": "Analysts",
+        "researcher": "Researchers", "teacher": "Teachers", "doctor": "Doctors",
+        "nurse": "Nurses", "lawyer": "Lawyers", "product manager": "Product Managers",
+        "data scientist": "Data Scientists",
+    }
+
+    # One persona per dominant occupation signal (max 2).
+    for occ in occs[:2]:
+        token = (occ or "").strip().lower()
+        if not token:
+            continue
+        plural = _OCC_LABELS.get(token) or (token.title() if token.title().endswith("s") else f"{token.title()}s")
+        out.append({
+            "name": plural,
+            "one_liner": (
+                f"{plural} discussing {topic}"
+                + (f" — most active in {chan_label}" if chan_label else "")
+            ),
+            "jtbd": f"Find a more reliable way to handle {topic}",
+            "signals_count": samples,
+            "source": "corpus-signals",
+            "from_real_users": bool(top and top.get("top_authors")),
+            "exemplars": (top.get("top_authors") if top else [])[:3],
+        })
+
+    # Always anchor one persona on the top engaged community.
+    if top:
+        authors = top.get("top_authors") or []
+        out.append({
+            "name": f"Engaged {chan_label} member" if chan_label else "Engaged community member",
+            "one_liner": (
+                f"Highly active contributor in {chan_label} around {topic}"
+                if chan_label else f"Active contributor discussing {topic}"
+            ),
+            "jtbd": f"Stay on top of {topic} and share or find working solutions",
+            "signals_count": top.get("posts") or 0,
+            "source": "top-channel",
+            "from_real_users": bool(authors),
+            "exemplars": authors[:3],
+        })
+
+    # Dedup by name, cap at 3.
+    seen: set[str] = set()
+    uniq: list[dict[str, Any]] = []
+    for p in out:
+        k = p["name"].lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    return uniq[:3]
+
+
+def _launch_sequence_fallback(
+    topic: str, channels: list[dict[str, Any]], best_time: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Templated 3-step launch plan anchored on the REAL top channels and
+    best post window. Used when the LLM launch_sequence is unavailable."""
+    owned = [_channel_label(c) for c in (channels or [])[:2]] or ["your primary channel"]
+    adjacent = [_channel_label(c) for c in (channels or [])[2:5]]
+    timing = ""
+    if best_time and best_time.get("hour_utc") is not None:
+        h = best_time["hour_utc"]
+        dow = best_time.get("day_of_week") or ""
+        ampm = "PM" if h >= 12 else "AM"
+        h12 = h % 12 or 12
+        timing = f" Post around {dow} {h12}{ampm} UTC for peak engagement.".replace("  ", " ")
+    return [
+        {
+            "step": 1,
+            "action": "Seed in your highest-engagement communities" + timing,
+            "target_channels": owned,
+            "success_metric": "≥50 upvotes and ≥15 substantive comments on the launch post",
+            "eta": "Week 1",
+        },
+        {
+            "step": 2,
+            "action": "Expand to adjacent communities and one external launch platform",
+            "target_channels": (adjacent or owned) + ["Product Hunt"],
+            "success_metric": "≥3 inbound signups or waitlist joins per channel",
+            "eta": "Week 2",
+        },
+        {
+            "step": 3,
+            "action": "Collect feedback, fix the top objection, then re-post the improved angle",
+            "target_channels": owned + ["Hacker News (Show HN)"],
+            "success_metric": "Identify the #1 retention blocker from comments and ship a fix",
+            "eta": "Weeks 3–4",
+        },
+    ]
+
+
 # ── LLM augmentation (optional) ────────────────────────────────────────
+
+def _classify_llm_error(exc: Exception) -> str:
+    """Tag an LLM failure with a coarse error class so the UI can show a
+    helpful message. Mirrors the error-class convention used elsewhere."""
+    msg = str(exc).lower()
+    if any(k in msg for k in ("rate limit", "ratelimit", "429", "too many requests", "quota", "overloaded")):
+        return "rate_limit"
+    if any(k in msg for k in ("api key", "api_key", "unauthorized", "401", "403", "no provider", "not configured", "missing key", "invalid key")):
+        return "llm_key"
+    if any(k in msg for k in ("model", "not found", "404", "does not exist")):
+        return "llm_model"
+    if any(k in msg for k in ("timeout", "timed out", "connection", "network", "dns", "ssl", "unreachable")):
+        return "network"
+    return "llm"
+
 
 _LLM_PROMPT = """You are a go-to-market analyst.
 
@@ -393,18 +532,21 @@ that match the topic. Be specific, action-oriented, falsifiable.
 """
 
 
-def _llm_augment(topic: str, det: dict[str, Any], provider: str | None = None) -> dict[str, Any] | None:
-    """Run the optional LLM pass. Returns the parsed JSON dict on success,
-    or None on any failure (no LLM key, parse error, network)."""
+def _llm_augment(topic: str, det: dict[str, Any], provider: str | None = None) -> dict[str, Any]:
+    """Run the optional LLM pass. Returns a dict that is either:
+      - {"parsed": <json>, "provider": str, "model": str}  on success, or
+      - {"error": <message>, "error_class": <class>}        on failure.
+    The caller surfaces the error to the UI rather than silently showing a
+    deterministic-only brief (the old behaviour)."""
     try:
         from ..analyze.providers.base import resolve_provider, get_provider
         prov_name = resolve_provider(provider)
-    except Exception:
-        return None
+    except Exception as e:
+        return {"error": f"No LLM provider configured: {e!s:.180}", "error_class": _classify_llm_error(e)}
     try:
         prov = get_provider(prov_name)
-    except Exception:
-        return None
+    except Exception as e:
+        return {"error": f"Couldn't initialise provider {prov_name!r}: {e!s:.180}", "error_class": _classify_llm_error(e)}
     prompt = _LLM_PROMPT.format(
         topic=topic,
         channels=json.dumps([{"name": c["name"], "type": c["type"], "engagement": c["total_engagement"]} for c in det["launch_channels"][:8]]),
@@ -417,8 +559,8 @@ def _llm_augment(topic: str, det: dict[str, Any], provider: str | None = None) -
     )
     try:
         raw = prov.complete(prompt=prompt, system="You output only valid JSON.", max_tokens=2000, temperature=0.3)
-    except Exception:
-        return None
+    except Exception as e:
+        return {"error": f"LLM call failed: {e!s:.180}", "error_class": _classify_llm_error(e)}
     cleaned = (raw or "").strip()
     for fence in ("```json", "```"):
         if cleaned.startswith(fence):
@@ -433,10 +575,10 @@ def _llm_augment(topic: str, det: dict[str, Any], provider: str | None = None) -
             cleaned = cleaned[i:j + 1]
     try:
         parsed = json.loads(cleaned)
-    except Exception:
-        return None
+    except Exception as e:
+        return {"error": f"LLM returned non-JSON output: {e!s:.120}", "error_class": "llm"}
     if not isinstance(parsed, dict):
-        return None
+        return {"error": "LLM output was not a JSON object", "error_class": "llm"}
     return {
         "parsed": parsed,
         "provider": prov_name,
@@ -520,7 +662,12 @@ def build_launch_brief(
 
     if llm:
         aug = _llm_augment(topic, det, provider=provider)
-        if aug:
+        if aug and aug.get("error"):
+            # Surface the failure instead of silently degrading to an empty
+            # deterministic brief. The UI shows a banner + Retry.
+            det["llm_error"] = aug["error"]
+            det["llm_error_class"] = aug.get("error_class") or "llm"
+        if aug and aug.get("parsed"):
             p = aug["parsed"]
             # Merge LLM output non-destructively. Deterministic data wins
             # for counts/measures; LLM wins for narrative text.
@@ -568,6 +715,19 @@ def build_launch_brief(
             det["llm_augmented"] = True
             det["provider"] = aug["provider"]
             det["model"] = aug["model"]
+
+    # ── Deterministic safety net ──────────────────────────────────────
+    # Whether the LLM was skipped (offline) or failed, the Audience and
+    # Launch-sequence sections must never render empty. Fill them from
+    # corpus signals when the richer LLM/empathy data isn't present.
+    if not det["audience"]["icp_personas"]:
+        fb = _personas_fallback(db, topic, channels, sigs)
+        det["audience"]["icp_personas"] = fb
+        det["audience"]["persona_count"] = len(fb)
+        det["audience"]["personas_fallback"] = True
+    if not det["launch_sequence"]:
+        det["launch_sequence"] = _launch_sequence_fallback(topic, channels, det["best_post_time"])
+        det["sequence_fallback"] = True
 
     if persist:
         try:

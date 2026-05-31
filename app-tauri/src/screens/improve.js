@@ -14,6 +14,7 @@
 //   #/improve/<topic>      → checkpoint dashboard + Run/Force buttons
 import { api, esc } from '../api.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
+import { skelStats, skelDetail } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -131,6 +132,7 @@ async function refreshAndPaint(root, topic) {
   // this is the JS analog of Flutter's `context.mounted` check.
   const myGen = root.dataset.routeGen;
   const alive = () => root.dataset.routeGen === myGen && root.isConnected;
+  root.innerHTML = skelStats(4);
   let status;
   try {
     status = await api.pipelineStatus(topic);
@@ -243,7 +245,7 @@ async function renderPicker(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">audience → synthesize → deliberate → launch</span>
     </header>
-    <div id="imp-pick"><div class="empty-state">loading…</div></div>
+    <div id="imp-pick">${skelDetail({ paras: 4 })}</div>
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {

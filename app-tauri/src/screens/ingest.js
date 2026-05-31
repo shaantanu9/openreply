@@ -3,6 +3,7 @@
 
 import { api, esc } from '../api.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const SOURCE_TYPES = [
   { v: 'learning_material', label: 'Learning material',  hint: 'Design docs, README, notes, specs in .md' },
@@ -294,10 +295,7 @@ export async function renderIngest(root) {
     el.style.color = ok ? '#2E7D5B' : '#B84747';
   }
 
-  submitBtn.addEventListener('click', async () => {
-    submitBtn.disabled = true;
-    const origText = submitBtn.textContent;
-    submitBtn.textContent = 'ingesting…';
+  submitBtn.addEventListener('click', (ev) => withButtonBusy(ev.currentTarget, async () => {
     setStatus('');
     const topic = resolveTopic();
     const sourceType = resolveSourceType();
@@ -333,10 +331,9 @@ export async function renderIngest(root) {
     } catch (e) {
       setStatus(`✗ ${e?.message || e}`, false);
     } finally {
-      submitBtn.textContent = origText;
       updateSubmit();
     }
-  });
+  }, { busyLabel: 'Ingesting…' }));
 
   // ── AG-D: CSV ingest ── wire the bulk-CSV card. Mirrors the single-file
   // picker above but posts to api.ingestCsv which goes through the new
@@ -389,26 +386,24 @@ export async function renderIngest(root) {
   root.querySelector('#bulk-btn-change').addEventListener('click', (e) => { e.stopPropagation(); bulkPick(); });
   bulkTopicSel.addEventListener('change', bulkUpdate);
 
-  bulkBtn.addEventListener('click', async () => {
+  bulkBtn.addEventListener('click', (ev) => {
     if (!bulkPath || !bulkTopicSel.value) return;
-    bulkBtn.disabled = true;
-    const orig = bulkBtn.textContent;
-    bulkBtn.textContent = 'ingesting…';
-    bulkStatus('');
-    try {
-      const res = await api.ingestCsv(bulkTopicSel.value, bulkPath);
-      const parsed  = res?.parsed  ?? 0;
-      const skipped = res?.skipped ?? 0;
-      const tagged  = res?.tagged  ?? 0;
-      bulkStatus(`✓ parsed ${parsed}, skipped ${skipped}, tagged ${tagged} into "${bulkTopicSel.value}" — run Rerun collect to rebuild the map.`);
-      bulkPath = null;
-      root.querySelector('#bulk-drop-empty').hidden = false;
-      root.querySelector('#bulk-drop-chosen').hidden = true;
-    } catch (e) {
-      bulkStatus(`✗ ${e?.message || e}`, false);
-    } finally {
-      bulkBtn.textContent = orig;
-      bulkUpdate();
-    }
+    return withButtonBusy(ev.currentTarget, async () => {
+      bulkStatus('');
+      try {
+        const res = await api.ingestCsv(bulkTopicSel.value, bulkPath);
+        const parsed  = res?.parsed  ?? 0;
+        const skipped = res?.skipped ?? 0;
+        const tagged  = res?.tagged  ?? 0;
+        bulkStatus(`✓ parsed ${parsed}, skipped ${skipped}, tagged ${tagged} into "${bulkTopicSel.value}" — run Rerun collect to rebuild the map.`);
+        bulkPath = null;
+        root.querySelector('#bulk-drop-empty').hidden = false;
+        root.querySelector('#bulk-drop-chosen').hidden = true;
+      } catch (e) {
+        bulkStatus(`✗ ${e?.message || e}`, false);
+      } finally {
+        bulkUpdate();
+      }
+    }, { busyLabel: 'Ingesting…' });
   });
 }

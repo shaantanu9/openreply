@@ -12,6 +12,8 @@
 // Design: matches Home/Topics — slash crumbs + topbar-spacer, tabs as
 // .pill .active style, .stat-grid for headline values, card-head/body.
 import { api, esc } from '../api.js';
+import { skelStats, skelRows } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -272,7 +274,7 @@ function renderShell(topic, vwAgg, nps, md) {
 }
 
 async function renderTopicPricing(root, topic) {
-  root.innerHTML = `<div class="empty-state">Loading pricing data…</div>`;
+  root.innerHTML = `${skelStats(4)}${skelRows(4)}`;
   const reload = () => renderTopicPricing(root, topic);
 
   let vwAgg = {}, nps = {}, md = {};
@@ -296,7 +298,7 @@ async function renderTopicPricing(root, topic) {
     $$('.pricing-pane', root).forEach(p => p.hidden = p.dataset.pane !== k);
   }));
 
-  $('#vw-add', root)?.addEventListener('click', async () => {
+  $('#vw-add', root)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, async () => {
     const payload = {
       too_expensive:           parseFloat($('#vw-too-exp', root).value || '0'),
       expensive_but_acceptable: parseFloat($('#vw-exp-acc', root).value || '0'),
@@ -313,9 +315,9 @@ async function renderTopicPricing(root, topic) {
       await api.vwAdd(topic, payload);
       await reload();
     } catch (e) { alert(`Add failed: ${e?.message || e}`); }
-  });
+  }, { busyLabel: 'Adding…' }));
 
-  $('#nps-add', root)?.addEventListener('click', async () => {
+  $('#nps-add', root)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, async () => {
     const payload = {
       score:      parseInt($('#nps-score-in', root).value || '0', 10),
       persona:    $('#nps-persona', root).value.trim(),
@@ -326,9 +328,9 @@ async function renderTopicPricing(root, topic) {
       await api.npsAdd(topic, payload);
       await reload();
     } catch (e) { alert(`Add failed: ${e?.message || e}`); }
-  });
+  }, { busyLabel: 'Adding…' }));
 
-  $('#md-add', root)?.addEventListener('click', async () => {
+  $('#md-add', root)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, async () => {
     const opts = ($('#md-options', root).value || '')
       .split(/\n/).map(s => s.trim()).filter(Boolean);
     const payload = {
@@ -347,7 +349,7 @@ async function renderTopicPricing(root, topic) {
       await api.maxdiffAdd(topic, payload);
       await reload();
     } catch (e) { alert(`Add failed: ${e?.message || e}`); }
-  });
+  }, { busyLabel: 'Adding…' }));
 }
 
 async function renderPicker(root) {
@@ -357,7 +359,7 @@ async function renderPicker(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Van Westendorp · NPS · MaxDiff</span>
     </header>
-    <div id="prc-pick-mount"><div class="empty-state">loading…</div></div>
+    <div id="prc-pick-mount">${skelRows(4)}</div>
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {
