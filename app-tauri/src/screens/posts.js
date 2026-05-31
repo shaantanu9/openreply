@@ -3,6 +3,7 @@
 import { api, esc, timeAgo } from '../api.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { postLink, REDDIT_FAMILY } from '../lib/postLink.js';
+import { skelRows } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -320,7 +321,7 @@ async function rerender(contentEl, topic) {
     paintFromData(contentEl, topic, cached, cached.sourcesInTopic || []);
     paintedFromCache = true;
   } else {
-    set(`<div class="empty-state">loading…</div>`);
+    set(`<div class="posts-tab"><div class="posts-list">${skelRows(8)}</div></div>`);
   }
 
   let data, sourcesInTopic;

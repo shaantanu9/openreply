@@ -1,8 +1,17 @@
 // Trends tab — chronic / emerging / fading painpoint classification.
 // Calls gapmap research temporal-gaps via the Tauri sidecar.
 import { api, esc } from '../api.js';
+import { withRichLoader, withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+const TRENDS_STAGES = [
+  'Splitting the corpus at May 2025…',
+  'Counting painpoint frequency before & after…',
+  'Classifying chronic / emerging / fading…',
+  'Scoring severity and pulling evidence quotes…',
+  'Assembling the trend grid…',
+];
 
 const CATEGORIES = [
   { key: 'CHRONIC',  label: 'Chronic',  icon: 'flame',         hint: 'Present in BOTH pre-May-2025 AND post-May-2025 corpora — well-established pain.' },
@@ -98,11 +107,22 @@ function renderResults(topic, items) {
 
 async function runAndRender(contentEl, topic, force = false) {
   const set = (html) => { if (contentEl.dataset.tab === 'trends') contentEl.innerHTML = html; };
-  set(`<div class="empty-state">${force ? 'Re-running' : 'Running'} temporal-gaps analysis… this may take 30-90 seconds.</div>`);
   try {
     // force=true bypasses the graph_nodes cache (kind='temporal_gap') on the
     // Python side and re-calls the LLM. Default cache-hit returns in <100ms.
-    const result = await api.runTemporalGaps(topic, force);
+    // The rich loader (spinner + elapsed + cycling stages + skeletons) fills
+    // the tab while the 30-90s LLM job runs; on cache-hit it flashes briefly.
+    const result = await withRichLoader(
+      contentEl,
+      () => api.runTemporalGaps(topic, force),
+      {
+        headline: force ? 'Re-running temporal-gaps analysis' : 'Analyzing trends',
+        stages: TRENDS_STAGES,
+        medianRuntimeSec: 55,
+        skeletonCount: 6,
+        runKey: `trends:${topic}`,
+      },
+    );
     if (contentEl.dataset.tab !== 'trends') return;
     if (result && typeof result === 'object' && !Array.isArray(result)) {
       // Error / parse-error / skipped — NONE of these are cached, so the
@@ -198,7 +218,16 @@ export async function loadTrends(contentEl, topic) {
   // No cache → auto-run. Dedup in case user flips tabs during the 30-90s
   // LLM call (second call would queue behind Ollama and stall the UI).
   if (_trendsRunning.has(topic)) {
-    contentEl.innerHTML = `<div class="empty-state">Running temporal-gaps analysis… 30–90 seconds. Tab will auto-populate.</div>`;
+    // Another auto-run for this topic is already in flight (user flipped tabs
+    // mid-call). Show the same rich loader so this view reads as "working"
+    // too; the in-flight run will paint the real grid when it resolves.
+    withRichLoader(contentEl, () => new Promise(() => {}), {
+      headline: 'Analyzing trends',
+      stages: TRENDS_STAGES,
+      medianRuntimeSec: 55,
+      skeletonCount: 6,
+      runKey: `trends:${topic}`,
+    });
     return;
   }
   _trendsRunning.add(topic);

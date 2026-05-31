@@ -10,6 +10,7 @@
 // alphabetically so users can browse.
 
 import { api, esc } from '../api.js';
+import { skelDetail } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -114,7 +115,7 @@ export async function renderWhy(root) {
   const slug = slugFromHash();
 
   if (!slug) {
-    root.innerHTML = `<div class="empty-state">Loading explanations…</div>`;
+    root.innerHTML = skelDetail({ paras: 6 });
     let rows = [];
     try {
       const out = await api.pageExplanationsList();
@@ -130,7 +131,7 @@ export async function renderWhy(root) {
     return;
   }
 
-  root.innerHTML = `<div class="empty-state">Loading…</div>`;
+  root.innerHTML = skelDetail({ paras: 6 });
   let exp;
   try {
     exp = await api.pageExplanationGet(slug);

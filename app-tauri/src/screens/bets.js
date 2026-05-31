@@ -6,6 +6,7 @@
 // See docs/ROADMAP.md §"Phase 3" for the full state machine.
 import { api, esc } from '../api.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { skelGrid } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -149,12 +150,7 @@ export async function loadBets(contentEl, topic) {
     renderRows(cachedRows);
     paintedFromCache = true;
   } else {
-    set(`
-      <div class="empty-state" style="padding:40px;text-align:center">
-        <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-      <div style="color:var(--ink-3);font-size:var(--fs-13)">Loading your bets…</div>
-      </div>
-    `);
+    set(skelGrid(4, { lines: 4 }));
   }
 
   let rows = [];

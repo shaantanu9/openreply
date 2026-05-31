@@ -8,6 +8,8 @@
 // nav link in index.html + this file to fully roll back.
 import { api, esc } from '../api.js';
 import { currentRouteGen } from '../main.js';
+import { skelGrid, skelRows } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -184,7 +186,8 @@ export async function renderPersonas(root) {
 
   await reloadList(root);
 
-  $('#np-create', root).addEventListener('click', async () => {
+  $('#np-create', root).addEventListener('click', (ev) => {
+    const createBtn = ev.currentTarget;
     const fields = {
       name:         $('#np-name', root).value.trim(),
       goal:         $('#np-goal', root).value.trim(),
@@ -198,24 +201,26 @@ export async function renderPersonas(root) {
       return;
     }
     $('#np-msg', root).textContent = 'creating…';
-    try {
-      const r = unwrap(await api.personaCreate(fields));
-      if (!r.ok) {
-        $('#np-msg', root).textContent = 'error: ' + (r.error || 'unknown');
-        return;
+    return withButtonBusy(createBtn, async () => {
+      try {
+        const r = unwrap(await api.personaCreate(fields));
+        if (!r.ok) {
+          $('#np-msg', root).textContent = 'error: ' + (r.error || 'unknown');
+          return;
+        }
+        $('#np-msg', root).textContent = `created persona #${r.id} '${r.name}'`;
+        $$('#np-name, #np-goal, #np-lens, #np-sp', root).forEach(i => i.value = '');
+        await reloadList(root);
+      } catch (e) {
+        $('#np-msg', root).textContent = 'error: ' + String(e?.message || e);
       }
-      $('#np-msg', root).textContent = `created persona #${r.id} '${r.name}'`;
-      $$('#np-name, #np-goal, #np-lens, #np-sp', root).forEach(i => i.value = '');
-      await reloadList(root);
-    } catch (e) {
-      $('#np-msg', root).textContent = 'error: ' + String(e?.message || e);
-    }
+    }, { busyLabel: 'Creating…' });
   });
 }
 
 async function reloadList(root) {
   const grid = $('#personas-list', root);
-  grid.innerHTML = '<div class="muted" style="padding:18px">loading…</div>';
+  grid.innerHTML = skelGrid(3, { lines: 3 });
   try {
     const r = unwrap(await api.personaList());
     const rows = r?.personas || [];
@@ -477,7 +482,7 @@ async function mountMemoriesTab(host, persona) {
   `;
   async function load() {
     const listEl = $('#m-list', host);
-    listEl.innerHTML = '<div class="persona-empty">Loading memories…</div>';
+    listEl.innerHTML = skelRows(5);
     const topic = $('#m-topic', host).value.trim() || null;
     const limit = parseInt($('#m-limit', host).value, 10) || 50;
     const r = unwrap(await api.personaMemories(persona.id, { topic, limit }));
@@ -507,7 +512,7 @@ async function mountMemoriesTab(host, persona) {
       if (btn) btn.addEventListener('click', () => openShareModal(persona, parseInt(card.dataset.memId, 10)));
     });
   }
-  $('#m-refresh', host).addEventListener('click', load);
+  $('#m-refresh', host).addEventListener('click', (ev) => withButtonBusy(ev.currentTarget, load, { busyLabel: 'Refreshing…' }));
   $('#m-topic', host).addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
   await load();
 }
@@ -617,7 +622,7 @@ async function mountGraphTab(host, persona) {
     drawForceGraph(svg, tip, g, persona);
   }
 
-  $('#g-refresh', host).addEventListener('click', load);
+  $('#g-refresh', host).addEventListener('click', (ev) => withButtonBusy(ev.currentTarget, load, { busyLabel: 'Refreshing…' }));
   $('#g-backfill', host).addEventListener('click', async () => {
     $('#g-backfill', host).disabled = true;
     $('#g-backfill', host).textContent = 'backfilling…';
@@ -812,7 +817,7 @@ async function mountConclusionsTab(host, persona) {
 
   async function load() {
     const listEl = $('#c-list', host);
-    listEl.innerHTML = '<div class="persona-empty">Loading conclusions…</div>';
+    listEl.innerHTML = skelRows(4);
     const r = unwrap(await api.personaConclusions(persona.id));
     const rows = r?.conclusions || [];
     if (!rows.length) {
@@ -838,7 +843,7 @@ async function mountConclusionsTab(host, persona) {
   async function loadRejections() {
     const box = $('#c-rejections', host);
     if (!box) return;
-    box.innerHTML = '<div class="persona-empty">Loading rejections…</div>';
+    box.innerHTML = skelRows(3);
     try {
       const r = unwrap(await api.personaRejections(persona.id, { direction: 'as_receiver', limit: 20 }));
       const rows = r?.rejections || [];
@@ -857,7 +862,8 @@ async function mountConclusionsTab(host, persona) {
       box.innerHTML = `<div class="persona-empty">error: ${esc(String(e?.message || e))}</div>`;
     }
   }
-  $('#c-refresh', host).addEventListener('click', () => { load(); loadRejections(); });
+  $('#c-refresh', host).addEventListener('click', (ev) =>
+    withButtonBusy(ev.currentTarget, () => Promise.all([load(), loadRejections()]), { busyLabel: 'Refreshing…' }));
 
   let unsubP, unsubD;
   $('#c-synthesise', host).addEventListener('click', async () => {

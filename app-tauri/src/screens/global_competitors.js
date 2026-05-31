@@ -8,6 +8,8 @@
 // Data source: `api.globalCompetitors(minTopics, threshold)` → Python
 // `research.competitors.global_competitors` over `graph_nodes`.
 import { api, esc } from '../api.js';
+import { skelGrid } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 function renderCard(c) {
   const topics = Array.isArray(c.topics) ? c.topics : [];
@@ -80,7 +82,7 @@ export async function renderGlobalCompetitors(main) {
           <button class="btn btn-primary btn-sm" id="gc-refresh">Refresh</button>
         </div>
       </header>
-      <div id="gc-content"><div class="empty-state">Loading…</div></div>
+      <div id="gc-content">${skelGrid(6)}</div>
     </div>
   `;
 
@@ -92,7 +94,7 @@ export async function renderGlobalCompetitors(main) {
   async function load() {
     const minTopics = Math.max(1, parseInt(minEl.value || '2', 10));
     const threshold = Math.min(1, Math.max(0.5, parseFloat(thEl.value || '0.80')));
-    contentEl.innerHTML = '<div class="empty-state">Loading competitors…</div>';
+    contentEl.innerHTML = skelGrid(6);
     try {
       const resp = await api.globalCompetitors(minTopics, threshold);
       if (!resp || resp.skipped) {
@@ -141,7 +143,7 @@ export async function renderGlobalCompetitors(main) {
     }
   }
 
-  refreshBtn.addEventListener('click', load);
+  refreshBtn.addEventListener('click', (e) => withButtonBusy(e.currentTarget, () => load(), { busyLabel: 'Refreshing…' }));
   minEl.addEventListener('change', load);
   thEl.addEventListener('change', load);
 

@@ -12,6 +12,7 @@
 // future tweaks to insights.js don't break this screen.
 
 import { api, esc } from '../api.js';
+import { skelDetail } from '../lib/skeleton.js';
 
 // ── Normalisers for the client-side intersection ─────────────────────
 // Drop punctuation + non-word chars, collapse whitespace, casefold.
@@ -215,7 +216,7 @@ export async function renderCompare(root, { params }) {
       </div>
     </div>
 
-    <div id="compare-body"><div class="empty-state">Loading both reports…</div></div>
+    <div id="compare-body"><div class="compare-grid">${skelDetail({ paras: 6 })}${skelDetail({ paras: 6 })}</div></div>
   `;
   window.refreshIcons?.();
 

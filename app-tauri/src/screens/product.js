@@ -8,6 +8,8 @@
 // Every surface is silent when empty and populates lively when the user has data.
 
 import { api, esc } from '../api.js';
+import { skelGrid, skelRows, skelStats, skelInline } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -214,9 +216,6 @@ export async function renderProductSetup(root, { params }) {
 
   document.getElementById('ps-save').onclick = async () => {
     const btn = document.getElementById('ps-save');
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader"></i> Registering…';
-    window.refreshIcons?.();
 
     const payload = {
       name: document.getElementById('ps-name').value.trim(),
@@ -236,25 +235,22 @@ export async function renderProductSetup(root, { params }) {
 
     if (!payload.name) {
       alert('Name is required.');
-      btn.disabled = false;
-      btn.innerHTML = '<i data-lucide="check"></i> Register &amp; run initial sweep';
-      window.refreshIcons?.();
       return;
     }
 
     try {
-      const created = await api.productCreate(payload);
-      if (!created?.ok) {
-        throw new Error(created?.error || 'registration failed');
-      }
-      const pid = created.product?.id;
-      if (!pid) throw new Error('no product id returned');
-      // Fire initial sweep in background (skip-collect because topic may be fresh)
-      api.productSweep(pid, 'initial', true).catch(() => {});
-      location.hash = `#/product/${encodeURIComponent(pid)}`;
+      await withButtonBusy(btn, async () => {
+        const created = await api.productCreate(payload);
+        if (!created?.ok) {
+          throw new Error(created?.error || 'registration failed');
+        }
+        const pid = created.product?.id;
+        if (!pid) throw new Error('no product id returned');
+        // Fire initial sweep in background (skip-collect because topic may be fresh)
+        api.productSweep(pid, 'initial', true).catch(() => {});
+        location.hash = `#/product/${encodeURIComponent(pid)}`;
+      }, { busyLabel: 'Registering…' });
     } catch (e) {
-      btn.disabled = false;
-      btn.innerHTML = '<i data-lucide="check"></i> Register &amp; run initial sweep';
       window.refreshIcons?.();
       alert(`Couldn't register: ${e?.message || e}`);
     }
@@ -304,16 +300,14 @@ async function showConvertTopicPicker() {
     const topic = backdrop.querySelector('#ctp-topic').value;
     const name = backdrop.querySelector('#ctp-name').value.trim() || null;
     const btn = backdrop.querySelector('#ctp-convert');
-    btn.disabled = true;
-    btn.textContent = 'Converting…';
     try {
-      const out = await api.productConvertTopic(topic, name);
-      if (!out?.ok) throw new Error(out?.error || 'convert failed');
-      close();
-      location.hash = `#/product/${encodeURIComponent(out.product.id)}`;
+      await withButtonBusy(btn, async () => {
+        const out = await api.productConvertTopic(topic, name);
+        if (!out?.ok) throw new Error(out?.error || 'convert failed');
+        close();
+        location.hash = `#/product/${encodeURIComponent(out.product.id)}`;
+      }, { busyLabel: 'Converting…' });
     } catch (e) {
-      btn.disabled = false;
-      btn.textContent = 'Convert';
       alert(`Couldn't convert: ${e?.message || e}`);
     }
   };
@@ -371,7 +365,7 @@ function renderFourRisksPanel(risks) {
 async function renderFourRisksAsync(productId) {
   const mount = document.getElementById('pd-four-risks');
   if (!mount) return;
-  mount.innerHTML = '<div class="card muted" style="padding:10px 14px;font-size:11.5px">Loading four-risks…</div>';
+  mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${skelInline('Loading four-risks…')}</div>`;
   let result;
   try {
     result = await api.fourRisksGet(productId);
@@ -576,7 +570,7 @@ function renderValueCurvePanel(curve, competitors) {
 async function renderValueCurveAsync(productId, competitors) {
   const mount = document.getElementById('pd-value-curve');
   if (!mount) return;
-  mount.innerHTML = '<div class="card muted" style="padding:10px 14px;font-size:11.5px">Loading value curve…</div>';
+  mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${skelInline('Loading value curve…')}</div>`;
   let result;
   try {
     result = await api.valueCurveGet(productId);
@@ -679,18 +673,16 @@ async function renderValueCurveAsync(productId, competitors) {
     // Save
     document.getElementById('vc-save')?.addEventListener('click', async () => {
       const btn = document.getElementById('vc-save');
-      btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        await api.valueCurveSet(productId, {
+        await withButtonBusy(btn, () => api.valueCurveSet(productId, {
           factors: state.factors,
           self: state.self,
           competitors: state.competitors,
           four_actions: state.four_actions,
-        });
-        btn.textContent = '✓ Saved';
+        }), { busyLabel: 'Saving…' });
+        btn.disabled = true; btn.textContent = '✓ Saved';
         setTimeout(() => { btn.disabled = false; btn.textContent = 'Save value curve'; }, 1500);
       } catch (e) {
-        btn.disabled = false; btn.textContent = 'Save value curve';
         alert(`Couldn't save: ${e?.message || e}`);
       }
     });
@@ -754,6 +746,7 @@ function renderTamSamSomPanel(d) {
 async function renderTamSamSomAsync(productId) {
   const mount = document.getElementById('pd-tam-sam-som');
   if (!mount) return;
+  mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${skelInline('Loading market sizing…')}</div>`;
   let result;
   try {
     result = await api.tamSamSomGet(productId);
@@ -782,13 +775,11 @@ async function renderTamSamSomAsync(productId) {
       };
     });
     const btn = document.getElementById('tss-save');
-    btn.disabled = true; btn.textContent = 'Saving…';
     try {
-      await api.tamSamSomSet(productId, payload);
-      btn.textContent = '✓ Saved';
+      await withButtonBusy(btn, () => api.tamSamSomSet(productId, payload), { busyLabel: 'Saving…' });
+      btn.disabled = true; btn.textContent = '✓ Saved';
       setTimeout(() => renderTamSamSomAsync(productId), 800);
     } catch (e) {
-      btn.disabled = false; btn.textContent = 'Save market sizing';
       alert(`Save failed: ${e?.message || e}`);
     }
   });
@@ -836,6 +827,7 @@ function renderPorterPanel(forces) {
 async function renderPorterAsync(productId) {
   const mount = document.getElementById('pd-porter');
   if (!mount) return;
+  mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${skelInline('Loading five forces…')}</div>`;
   let result;
   try {
     result = await api.porterGet(productId);
@@ -943,6 +935,7 @@ function renderPositioningPanel(d) {
 async function renderPositioningAsync(productId) {
   const mount = document.getElementById('pd-positioning');
   if (!mount) return;
+  mount.innerHTML = `<div class="card muted" style="padding:10px 14px;font-size:11.5px">${skelInline('Loading positioning map…')}</div>`;
   let data;
   try { data = await api.positioningGet(productId); }
   catch (e) {
@@ -1005,15 +998,13 @@ async function renderPositioningAsync(productId) {
 
     document.getElementById('pp-save')?.addEventListener('click', async () => {
       const btn = document.getElementById('pp-save');
-      btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        await api.positioningSet(productId, {
+        await withButtonBusy(btn, () => api.positioningSet(productId, {
           x_axis: state.x_axis, y_axis: state.y_axis, points: state.points,
-        });
-        btn.textContent = '✓ Saved';
+        }), { busyLabel: 'Saving…' });
+        btn.disabled = true; btn.textContent = '✓ Saved';
         setTimeout(() => { btn.disabled = false; btn.textContent = 'Save positioning map'; }, 1500);
       } catch (e) {
-        btn.disabled = false; btn.textContent = 'Save positioning map';
         alert(`Save failed: ${e?.message || e}`);
       }
     });
@@ -1084,6 +1075,15 @@ export async function renderProductDashboard(root, { params }) {
   window.refreshIcons?.();
 
   const renderAll = async (cacheAllowed = true) => {
+    // Shape-matching skeletons while the dashboard payload is in flight, so the
+    // empty slots read as "loading, here's the shape" instead of a blank page.
+    const skel = (sel, html) => { const el = document.getElementById(sel); if (el) el.innerHTML = html; };
+    skel('pd-header', skelStats(3));
+    skel('pd-signals', skelRows(5));
+    skel('pd-mirror', skelGrid(1, { lines: 4 }));
+    skel('pd-lens', skelGrid(1, { lines: 4 }));
+    skel('pd-field', skelGrid(2, { lines: 3 }));
+    skel('pd-sweeps', skelRows(3));
     let data;
     try {
       data = cacheAllowed
@@ -1131,18 +1131,17 @@ export async function renderProductDashboard(root, { params }) {
 
   document.getElementById('pd-sweep').onclick = async () => {
     const btn = document.getElementById('pd-sweep');
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader"></i> Sweeping…';
-    window.refreshIcons?.();
     try {
-      const out = await api.productSweep(id, 'manual', true);
-      const n = out?.signals_generated || 0;
-      const toast = document.createElement('div');
-      toast.className = 'toast toast-success';
-      toast.innerHTML = `✨ Sweep complete — ${n} signal${n === 1 ? '' : 's'} generated`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3500);
-      await renderAll(false);
+      await withButtonBusy(btn, async () => {
+        const out = await api.productSweep(id, 'manual', true);
+        const n = out?.signals_generated || 0;
+        const toast = document.createElement('div');
+        toast.className = 'toast toast-success';
+        toast.innerHTML = `✨ Sweep complete — ${n} signal${n === 1 ? '' : 's'} generated`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+        await renderAll(false);
+      }, { busyLabel: 'Sweeping…' });
     } catch (e) {
       const toast = document.createElement('div');
       toast.className = 'toast toast-error';
@@ -1150,28 +1149,25 @@ export async function renderProductDashboard(root, { params }) {
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 4500);
     } finally {
-      btn.disabled = false;
-      btn.innerHTML = '<i data-lucide="refresh-cw"></i> Run sweep';
       window.refreshIcons?.();
     }
   };
 
   document.getElementById('pd-digest').onclick = async () => {
     const btn = document.getElementById('pd-digest');
-    btn.disabled = true;
     try {
-      const out = await api.productDigest(id, 7);
-      const md = out?.markdown || out || '';
-      await navigator.clipboard.writeText(md);
-      const toast = document.createElement('div');
-      toast.className = 'toast toast-success';
-      toast.innerHTML = `📋 Weekly digest copied (${(md || '').length.toLocaleString()} chars)`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3500);
+      await withButtonBusy(btn, async () => {
+        const out = await api.productDigest(id, 7);
+        const md = out?.markdown || out || '';
+        await navigator.clipboard.writeText(md);
+        const toast = document.createElement('div');
+        toast.className = 'toast toast-success';
+        toast.innerHTML = `📋 Weekly digest copied (${(md || '').length.toLocaleString()} chars)`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+      }, { busyLabel: 'Building digest…' });
     } catch (e) {
       alert(`Couldn't build digest: ${e?.message || e}`);
-    } finally {
-      btn.disabled = false;
     }
   };
 

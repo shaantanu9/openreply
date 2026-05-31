@@ -12,6 +12,8 @@ import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { postLink } from '../lib/postLink.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
+import { skelDetail } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -731,10 +733,7 @@ export async function loadInsights(contentEl, topic) {
     }
     paintedFromCache = true;
   } else {
-    set(`<div class="empty-state" style="padding:40px;text-align:center">
-      <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-    <div style="color:var(--ink-3);font-size:var(--fs-13)">Loading insights…</div>
-    </div>`);
+    set(skelDetail({ paras: 6 }));
   }
 
   // ─── Phase 1: background refresh (cached server-side, ~500-1500 ms) ──
@@ -1129,24 +1128,25 @@ function wireCards(contentEl, topic, report) {
       if (!exportMenu.contains(e.target) && e.target !== exportBtn) exportMenu.hidden = true;
     });
     exportMenu.querySelectorAll('.export-dropdown-item').forEach(item => {
-      item.addEventListener('click', async () => {
+      item.addEventListener('click', () => {
         const format = item.dataset.format;
-        exportMenu.hidden = true;
-        try {
+        withButtonBusy(item, async () => {
           const md = await api.exportBrief(topic, format);
           await navigator.clipboard.writeText(md || '');
+          exportMenu.hidden = true;
           const toast = document.createElement('div');
           toast.className = 'toast toast-success';
           toast.innerHTML = `📋 ${format} brief copied to clipboard (${(md || '').length.toLocaleString()} chars)`;
           document.body.appendChild(toast);
           setTimeout(() => toast.remove(), 3500);
-        } catch (err) {
+        }, { busyLabel: 'Exporting…' }).catch((err) => {
+          exportMenu.hidden = true;
           const toast = document.createElement('div');
           toast.className = 'toast toast-error';
           toast.innerHTML = `Export failed: ${esc(err?.message || String(err))}`;
           document.body.appendChild(toast);
           setTimeout(() => toast.remove(), 4000);
-        }
+        });
       });
     });
   }

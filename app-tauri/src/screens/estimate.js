@@ -9,6 +9,8 @@
 //
 // Route: #/estimate/<productId>
 import { api, esc } from '../api.js';
+import { skelDetail } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -211,7 +213,7 @@ export async function renderEstimate(root, { params }) {
     root.innerHTML = `<div class="empty-big"><h3>No product ID</h3></div>`;
     return;
   }
-  root.innerHTML = `<div class="empty-state">Loading estimation…</div>`;
+  root.innerHTML = skelDetail({ paras: 6 });
   const reload = async () => {
     const { product, tasks, rollup, cost } = await recomputeAndRender(root, id);
     root.innerHTML = renderShell(id, product?.product || product, tasks, rollup, cost);
@@ -327,13 +329,12 @@ export async function renderEstimate(root, { params }) {
     $('#cost-save', root)?.addEventListener('click', async () => {
       const payload = buildPayload();
       const btn = $('#cost-save', root);
-      btn.disabled = true; btn.textContent = 'Saving…';
       try {
-        await api.costModelSet(id, payload);
+        await withButtonBusy(btn, () => api.costModelSet(id, payload), { busyLabel: 'Saving…' });
+        // withButtonBusy restores the original label; flash a confirmation.
         btn.textContent = '✓ Saved';
-        setTimeout(() => { btn.disabled = false; btn.textContent = 'Save cost model'; }, 1500);
+        setTimeout(() => { btn.textContent = 'Save cost model'; }, 1500);
       } catch (e) {
-        btn.disabled = false; btn.textContent = 'Save cost model';
         alert(`Save failed: ${e?.message || e}`);
       }
     });

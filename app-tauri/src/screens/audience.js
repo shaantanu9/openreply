@@ -12,6 +12,7 @@
 // posts so users can verify the persona is grounded.
 import { api, esc } from '../api.js';
 import { postLink } from '../lib/postLink.js';
+import { skelGrid, skelRows } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -559,7 +560,7 @@ async function buildAndRender(root, topic, { llm = true } = {}) {
 }
 
 async function renderTopicAudience(root, topic) {
-  root.innerHTML = `<div class="empty-state">Loading audience personas…</div>`;
+  root.innerHTML = skelGrid(6);
   let resp;
   try {
     resp = await api.audiencePersonasGet(topic);
@@ -608,7 +609,7 @@ async function renderPicker(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Real-user personas · clustered from your corpus</span>
     </header>
-    <div id="aud-picker-mount"><div class="empty-state">loading…</div></div>
+    <div id="aud-picker-mount">${skelRows(4)}</div>
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {

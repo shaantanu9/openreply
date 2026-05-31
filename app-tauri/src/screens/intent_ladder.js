@@ -9,6 +9,7 @@
 // Each "available" step click maps to an existing command the user could
 // otherwise reach via a tab. Intent ladder is orchestration, not new logic.
 import { api } from '../api.js';
+import { skelGrid } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -144,7 +145,7 @@ export async function mountIntentLadder(hostEl, topic, opts = {}) {
         ${ladder.map((s, i) => renderStep(s, i, states[i])).join('')}
       </ol>
       <div class="intent-coverage" id="intent-coverage-host">
-        <div class="intent-coverage-loading">loading gap map coverage…</div>
+        ${skelGrid(2, { lines: 2 })}
       </div>
     </section>
   `;

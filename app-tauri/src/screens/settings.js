@@ -5,6 +5,7 @@ import { api, esc } from '../api.js';
 import { openByokModal } from './byok.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { skelRows } from '../lib/skeleton.js';
 
 // SWR helper for Settings cards. Each card pays a ~500-1500 ms sidecar
 // round-trip per visit; without a cache, the user watches skeletons fill
@@ -216,7 +217,7 @@ export async function renderSettings(root) {
       <div class="settings-card" id="card-tables">
         <h4>Table counts</h4>
         <p>As reported by the CLI at launch</p>
-        <div class="empty-state" style="padding:12px">loading…</div>
+        ${skelRows(4)}
       </div>
 
       <!-- Beta feedback — first place users land when something feels off -->

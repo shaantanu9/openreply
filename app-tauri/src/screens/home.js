@@ -4,6 +4,7 @@
 import { api, esc, fmtN, timeAgo } from '../api.js';
 import { avatarInitials } from './settings.js';
 import { setHTMLIfChanged } from '../lib/screenCache.js';
+import { skelGrid, skelRows, skelInline } from '../lib/skeleton.js';
 
 function normalizeTopicLabel(value) {
   const s = String(value ?? '');
@@ -364,7 +365,7 @@ export async function renderHome(root) {
           </div>
         </div>
         <div class="card-body" id="momentum-body" style="padding:18px 20px 16px">
-          <div class="empty-state">loading chart…</div>
+          <div class="empty-state">${skelInline('Loading chart…')}</div>
         </div>
       </div>
       <div class="card">
@@ -375,9 +376,7 @@ export async function renderHome(root) {
           </div>
           <a href="#/activity" class="pill" style="text-decoration:none;color:inherit">See all →</a>
         </div>
-        <div class="activity" id="activity-feed">
-          <div class="empty-state" style="padding:24px">loading…</div>
-        </div>
+        <div class="activity" id="activity-feed">${skelRows(6)}</div>
       </div>
     </section>
 
@@ -588,7 +587,7 @@ async function loadMomentum(root) {
   const body = root.querySelector('#momentum-body');
   // Only show skeleton if we have no cached chart for this range.
   const cached = readDashCache()?.momentumByRange?.[momentumRange];
-  if (!cached) setHTMLIfChanged(body, `<div class="empty-state">loading chart…</div>`);
+  if (!cached) setHTMLIfChanged(body, `<div class="empty-state">${skelInline('Loading chart…')}</div>`);
   try {
     const rows = await api.runQuery(
       `SELECT substr(started_at,1,10) AS day, count(*) AS n \
@@ -949,7 +948,7 @@ export async function renderTopicsList(root) {
       </div>
       <p class="topics-quick-tip">Press Enter for a fast path. Duplicates are checked in the creator flow.</p>
     </div>
-    <div id="topics-grid-slot"><div class="empty-state">loading…</div></div>
+    <div id="topics-grid-slot">${skelGrid(6, { lines: 2 })}</div>
     <div id="topics-pagination" class="topics-pagination" aria-live="polite"></div>
     </div>
   `;

@@ -3,6 +3,7 @@
 // Pulls live DB counts where relevant so the numbers reflect your actual corpus.
 
 import { api, esc } from '../api.js';
+import { skelGrid } from '../lib/skeleton.js';
 
 const SOURCES = [
   {
@@ -871,7 +872,7 @@ export async function renderScience(root) {
     </div>
 
     <div class="science-src-list" id="science-src-list">
-      <div class="empty-state">loading…</div>
+      ${skelGrid(6, { lines: 2 })}
     </div>
 
     <div class="section-head">
