@@ -1,6 +1,5 @@
 """Tests for arbitrary two-topic merge (topic_resolver.merge_topics)."""
-import tempfile
-import threading
+from pathlib import Path
 
 import pytest
 
@@ -8,18 +7,26 @@ from gapmap.core import db as db_mod
 
 
 @pytest.fixture
-def clean_db(monkeypatch):
-    """Isolated temp DB for each test."""
-    tmpdir = tempfile.mkdtemp()
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", tmpdir)
-    if hasattr(db_mod.get_db, "cache_clear"):
-        db_mod.get_db.cache_clear()
-    db_mod._thread_local = threading.local()
+def clean_db(tmp_path: Path, monkeypatch):
+    """Isolated temp DB per test — canonical pattern (see test_smoke.py::db).
+
+    CRITICAL: the data-dir env var is GAPMAP_DATA_DIR (core/config.py
+    _resolve_data_dir). The legacy REDDIT_MYIND_DATA_DIR is NOT honored;
+    using it silently falls through to the REAL app database, so these
+    tests would run against — and mutate — production data. Always
+    GAPMAP_DATA_DIR + cache_clear(), then assert the attached file is the
+    temp one before doing anything.
+    """
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    db_mod.get_db.cache_clear()
     db = db_mod.get_db()
     db_mod.init_schema(db)
+    # Hard isolation guard — sqlite_utils.Database has no .path, so read the
+    # actually-attached file. Abort before any write if it's not the temp DB.
+    attached = list(db.conn.execute("PRAGMA database_list"))[0][2]
+    assert str(tmp_path) in attached, f"test DB not isolated! attached={attached}"
     yield db
-    if hasattr(db_mod.get_db, "cache_clear"):
-        db_mod.get_db.cache_clear()
+    db_mod.get_db.cache_clear()
 
 
 def _seed(db):
