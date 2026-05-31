@@ -530,6 +530,7 @@ fn main() {
             commands::mcp_clients,
             commands::mcp_status,
             commands::mcp_install,
+            commands::mcp_config_snippet,
             commands::mcp_uninstall,
             // CLI symlink — expose bundled gapmap-cli at /usr/local/bin/gapmap
             commands::cli_symlink_status,

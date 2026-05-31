@@ -387,8 +387,13 @@ export async function renderSettings(root) {
         <div id="mcp-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
           <button class="btn primary btn-sm" id="btn-mcp-connect" hidden><i data-lucide="link"></i> Connect</button>
           <button class="btn btn-sm btn-bordered" id="btn-mcp-resync" hidden><i data-lucide="refresh-cw"></i> Re-sync paths</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-mcp-copy" title="Copy the JSON config to paste into this client (or any MCP client) by hand"><i data-lucide="clipboard-copy"></i> Copy config</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-mcp-disconnect" hidden><i data-lucide="unlink"></i> Disconnect</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-mcp-docs">MCP spec →</button>
+        </div>
+        <div id="mcp-snippet-wrap" hidden style="margin-top:10px">
+          <div style="font-size:var(--fs-11);color:var(--ink-3);margin-bottom:4px">Paste this into <code id="mcp-snippet-path"></code>:</div>
+          <pre id="mcp-snippet" style="max-height:180px;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11px;white-space:pre"></pre>
         </div>
 
         <p style="font-size:var(--fs-11);color:var(--ink-3);margin-top:10px">
@@ -1130,6 +1135,46 @@ function wireStaticButtons(root) {
       const cl = currentClient();
       if (!confirm(`Disconnect Gap Map from ${clientLabels[cl] || cl}? Other MCP servers stay registered.`)) return;
       runWith('disconnecting…', () => api.mcpUninstall(cl));
+    });
+
+    // Copy config — show + clipboard the exact JSON entry for the selected
+    // client so the user can paste it by hand (or into a client we don't
+    // auto-write). Dry-run: never touches any config file.
+    const btnCopy = card.querySelector('#btn-mcp-copy');
+    const snipWrap = card.querySelector('#mcp-snippet-wrap');
+    const snipPre  = card.querySelector('#mcp-snippet');
+    const snipPath = card.querySelector('#mcp-snippet-path');
+    btnCopy?.addEventListener('click', async () => {
+      const cl = currentClient();
+      const orig = btnCopy.innerHTML;
+      btnCopy.disabled = true;
+      btnCopy.innerHTML = '<i data-lucide="loader"></i> Building…';
+      window.refreshIcons?.();
+      try {
+        const res = await api.mcpConfigSnippet(cl);
+        if (!res || res.ok === false) throw new Error(res?.reason || 'could not build config');
+        const json = JSON.stringify(res.snippet, null, 2);
+        if (snipPre)  snipPre.textContent = json;
+        if (snipPath) snipPath.textContent = res.config_path || '';
+        if (snipWrap) snipWrap.hidden = false;
+        let copied = false;
+        try { await navigator.clipboard.writeText(json); copied = true; } catch {}
+        btnCopy.innerHTML = copied
+          ? '<i data-lucide="check"></i> Copied!'
+          : '<i data-lucide="clipboard-copy"></i> Shown below';
+      } catch (e) {
+        btnCopy.innerHTML = '<i data-lucide="triangle-alert"></i> Failed';
+        if (snipPre)  snipPre.textContent = String(e?.message || e);
+        if (snipPath) snipPath.textContent = '';
+        if (snipWrap) snipWrap.hidden = false;
+      } finally {
+        window.refreshIcons?.();
+        setTimeout(() => {
+          btnCopy.disabled = false;
+          btnCopy.innerHTML = orig;
+          window.refreshIcons?.();
+        }, 2000);
+      }
     });
 
     refresh();

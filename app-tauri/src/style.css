@@ -1712,8 +1712,8 @@ select.topics-field {
 }
 .chat-composer {
   width: 100%;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: none;            /* outer border removed — the textarea keeps its own */
+  background: transparent;
   border-radius: 12px;
   padding: 8px 10px 8px;
 }

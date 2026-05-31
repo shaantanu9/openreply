@@ -543,6 +543,49 @@ def install(
     }
 
 
+def config_snippet(
+    *,
+    client: str | None = None,
+    data_dir: Path | None = None,
+    bin_path: Path | None = None,
+    project_dir: Path | None = None,
+    server_name: str = DEFAULT_SERVER_NAME,
+    config_path: Path | None = None,
+) -> dict[str, Any]:
+    """Dry-run of :func:`install`: build the EXACT ``mcpServers`` entry that
+    install() would write, WITHOUT touching any file or creating a token.
+
+    Powers the Settings "Copy config" button so users can paste the entry
+    into a client we don't auto-write (or add it by hand). The entry is
+    byte-for-byte what Connect would write, including the hardening fields
+    (``timeout``, ``MCP_TAKEOVER_STALE_LOCK``, ``MCP_CLIENT_TAG``,
+    ``GAPMAP_IDLE_TIMEOUT``) that prevent the cold-start / idle / lock churn.
+    """
+    cfg_path = _resolve_config(config_path, client)
+    dd = (data_dir or default_data_dir()).expanduser()
+    # Read an existing token but DON'T mint one on a pure preview.
+    token = _read_token(dd)
+    cmd = _resolve_command(bin_path, project_dir)
+    client_tag = (client or "claude-code").strip().lower()
+    env: dict[str, str] = {"GAPMAP_DATA_DIR": str(dd)}
+    if token:
+        env["GAPMAP_TOKEN"] = token
+    env["MCP_TAKEOVER_STALE_LOCK"] = "1"
+    env["MCP_CLIENT_TAG"] = client_tag
+    env["GAPMAP_IDLE_TIMEOUT"] = "0"
+    entry = {**cmd, "timeout": 60000, "env": env}
+    return {
+        "ok": True,
+        "client": client_tag,
+        "config_path": str(cfg_path),
+        "server_name": server_name,
+        "has_token": bool(token),
+        "entry": entry,
+        # Ready-to-paste wrapper — drop this into the client's config file.
+        "snippet": {"mcpServers": {server_name: entry}},
+    }
+
+
 def uninstall(
     *,
     config_path: Path | None = None,

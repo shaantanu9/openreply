@@ -6084,6 +6084,64 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
     run_cli(&app, arg_refs).await.map_err(err_to_string)
 }
 
+/// Dry-run sibling of `mcp_install`: build the EXACT mcpServers entry Connect
+/// would write and return it (as `{ok, snippet, config_path, ...}`) WITHOUT
+/// touching any config file or creating a token-write. Powers the Settings
+/// "Copy config" button so users can paste the entry into any MCP client by
+/// hand. Mirrors `mcp_install`'s command/path resolution byte-for-byte (dev →
+/// `--project-dir`, prod → `--bin`, same ephemeral-path guard) so the shown
+/// snippet matches what Connect would actually write.
+#[tauri::command]
+pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    ensure_mcp_allowed(&app)?;
+    let dd = data_dir(&app).map_err(err_to_string)?;
+    let dd_str = dd.to_string_lossy().to_string();
+
+    let mut args: Vec<String> = vec![
+        "mcp".into(), "config".into(),
+        "--data-dir".into(), dd_str,
+        "--json".into(),
+    ];
+    if let Some(c) = client.as_deref().filter(|s| !s.is_empty()) {
+        args.push("--client".into()); args.push(c.into());
+    }
+    if let Some(proj) = dev_project_dir() {
+        args.push("--project-dir".into());
+        args.push(proj.to_string_lossy().to_string());
+    } else if let Some(bin) = resolve_sidecar_bin_path() {
+        if is_ephemeral_path(&bin) {
+            let bin_str = bin.to_string_lossy().to_string();
+            let msg = if bin_str.contains("/AppTranslocation/") {
+                format!(
+                    "Gap Map.app is running under macOS App Translocation ({}). \
+                     Move Gap Map.app to /Applications and reopen it from there \
+                     before copying the MCP config — the current path changes on \
+                     every launch and won't work after a restart.",
+                    bin_str
+                )
+            } else if bin_str.starts_with("/Volumes/") {
+                format!(
+                    "Gap Map.app is running from a mounted disk image ({}). \
+                     Drag it to /Applications (eject the DMG) and reopen from there \
+                     before copying the MCP config.",
+                    bin_str
+                )
+            } else {
+                format!(
+                    "Gap Map.app is running from a temporary location ({}). \
+                     Move it to /Applications and reopen before copying the config.",
+                    bin_str
+                )
+            };
+            return Err(msg);
+        }
+        args.push("--bin".into());
+        args.push(bin.to_string_lossy().to_string());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
 /// Remove Gap Map's MCP entry from the chosen client's config + delete the token.
 #[tauri::command]
 pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Value, String> {
