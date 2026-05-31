@@ -9421,3 +9421,36 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
   animation: gm-az-spin 0.7s linear infinite;
   display: inline-block; vertical-align: -2px;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Loader / skeleton containment floor — never overflow the parent box.
+   Reported 2026-05-31: some skeletons rendered wider than their container
+   ("loading going outside the box"). One defensive pass so EVERY loading
+   primitive stays inside its box at any window width: the new `.sk-*`
+   builders, the legacy `.skeleton*` + dashboard `.skel*` families, and the
+   rich `.gm-az` analyzing hero. Appended last so it wins the cascade.
+   ──────────────────────────────────────────────────────────────────────── */
+.skel, .skel-line, .skel-h1, .skel-h2, .skel-xs, .skel-lg, .skel-round,
+.skeleton, .skeleton-line, .skeleton-card {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+/* Block-level skeleton wrappers take exactly the parent's width — no more. */
+.sk-grid, .sk-rows, .sk-stats, .sk-detail {
+  width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+}
+.sk-card, .sk-row, .sk-stat {
+  min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden;
+}
+/* Grids stay fluid on narrow panels — the min track clamps to 100% of the
+   container so a wide column can never push the grid past its parent. */
+.sk-grid { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); }
+
+/* Rich "Analyzing" hero + its skeleton grid. */
+.gm-az, .gm-az-hero, .gm-az-grid, .gm-az-card, .gm-az-bar,
+.gm-az-stage, .gm-az-title, .gm-az-meta {
+  max-width: 100%; min-width: 0; box-sizing: border-box;
+}
+.gm-az-grid { grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); }
+/* Long stage/title strings wrap instead of widening the hero. */
+.gm-az-stage, .gm-az-title { overflow-wrap: anywhere; }
