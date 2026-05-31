@@ -1019,6 +1019,56 @@ def search_papers(
     return {"ok": True, "results": rolled, "count": len(rolled)}
 
 
+def paper_neighbors(post_id: str, *, k: int = 8, topic: str | None = None) -> dict:
+    """Semantic neighbors of a paper (paper→paper). Mean-pools the paper's own
+    chunk embeddings, queries the paper-chunk collection with that vector, rolls
+    chunk hits up to paper level, drops self. Returns
+    ``{ok, results: [{post_id, score, n_chunks}], count}`` (ranked desc)."""
+    if not is_available():
+        return {"ok": False, "skipped": True, "reason": "chromadb not installed", "results": []}
+    coll = get_paper_chunks_collection()
+    if coll is None:
+        return {"ok": False, "skipped": True, "reason": "palace unavailable", "results": []}
+    try:
+        own = coll.get(where={"post_id": post_id}, include=["embeddings"])
+    except Exception as e:
+        logger.warning("paper_neighbors get failed: %s", e)
+        return {"ok": False, "error": str(e), "results": []}
+    _own_dict = own if isinstance(own, dict) else {}
+    vecs = _own_dict.get("embeddings")
+    if vecs is None or (hasattr(vecs, "__len__") and len(vecs) == 0):
+        return {"ok": True, "results": [], "count": 0, "reason": "paper not embedded"}
+    # Convert to list-of-lists to be safe before numpy
+    import numpy as _np_pre
+    vecs = _np_pre.asarray(vecs, dtype="float32")
+    if vecs.ndim < 2 or vecs.shape[0] == 0:
+        return {"ok": True, "results": [], "count": 0, "reason": "paper not embedded"}
+    import numpy as np
+    mean_vec = np.mean(vecs, axis=0).tolist()
+    where = {"topic": topic} if topic else None
+    try:
+        raw = coll.query(query_embeddings=[mean_vec], n_results=max(k * 6, 30), where=where)
+    except Exception as e:
+        logger.warning("paper_neighbors query failed: %s", e)
+        return {"ok": False, "error": str(e), "results": []}
+    _bump_embed_ts()
+    metas = (raw.get("metadatas") or [[]])[0]
+    dists = (raw.get("distances") or [[]])[0]
+    best: dict[str, dict] = {}
+    for m, d in zip(metas, dists):
+        pid = (m or {}).get("post_id", "")
+        if not pid or pid == post_id:
+            continue
+        sim = max(0.0, 1.0 - (d or 0.0) / 2.0)
+        cur = best.get(pid)
+        if cur is None or sim > cur["score"]:
+            best[pid] = {"post_id": pid, "score": round(sim, 4), "n_chunks": 1}
+        else:
+            cur["n_chunks"] += 1
+    results = sorted(best.values(), key=lambda r: r["score"], reverse=True)[:k]
+    return {"ok": True, "results": results, "count": len(results)}
+
+
 def paper_chunks_stats() -> dict:
     """Return ``{ok, count, by_section, papers_indexed}`` for the
     paper_chunks collection. Best-effort SQLite-direct read first to
