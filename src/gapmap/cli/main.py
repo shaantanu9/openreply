@@ -3791,6 +3791,30 @@ def cmd_research_paper_stats(as_json: bool = typer.Option(False, "--json")) -> N
         console.print(f"  {sec:<16} {n}")
 
 
+@research_app.command("paper-neighbors")
+def cmd_research_paper_neighbors(
+    post_id: str = typer.Option(..., "--id"),
+    k: int = typer.Option(8, "--k"),
+    topic: str = typer.Option("", "--topic", "-t"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Semantic paper→paper neighbors for a single paper (mean-pooled chunk embeddings)."""
+    from ..retrieval import palace
+    _emit(palace.paper_neighbors(post_id, k=k, topic=(topic or None)), as_json)
+
+
+@research_app.command("paper-relations-build")
+def cmd_research_paper_relations_build(
+    topic: str = typer.Option("", "--topic", "-t"),
+    kinds: str = typer.Option("relates_to,cites", "--kinds"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Materialize paper→paper relates_to + cites edges into graph_edges."""
+    from ..research.paper_relations import build
+    klist = [k.strip() for k in kinds.split(",") if k.strip()]
+    _emit(build(topic=(topic or None), kinds=klist), as_json)
+
+
 @research_app.command("oa-lookup")
 def cmd_research_oa_lookup(
     doi: str = typer.Option(..., "--doi"),
