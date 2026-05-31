@@ -627,7 +627,7 @@ _HTML_TEMPLATE = """<!doctype html>
     </div>
   </aside>
 </main>
-<footer>gapmap · gap map · <a href="https://github.com/shaantanu98/reddit-myind/blob/master/docs/methodology.md" target="_blank">methodology</a></footer>
+<footer>gapmap · gap map · <a href="https://github.com/myind-ai/gapmap/blob/main/docs/methodology.md" target="_blank">methodology</a></footer>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js"></script>

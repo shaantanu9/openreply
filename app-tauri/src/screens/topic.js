@@ -5458,8 +5458,19 @@ function renderMarkdown(md) {
   return out.join('\n');
 }
 function inlineMd(s) {
-  return s
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+  // SECURITY: this renders untrusted text (LLM output + collected posts/papers)
+  // as HTML. Escape raw HTML FIRST so markdown source can't inject tags/attrs,
+  // and allow only safe link schemes — otherwise `[x](javascript:…)` / a stray
+  // `<img onerror>` would execute. (esc imported from api.js; same guard as the
+  // post-link anchors elsewhere in this file.)
+  return esc(s)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
+      const h = href.trim().toLowerCase();
+      const safe = h.startsWith('https://') || h.startsWith('http://')
+        || h.startsWith('asset://') || h.startsWith('mailto:');
+      // href is already HTML-escaped by esc() above → attribute-safe.
+      return safe ? `<a href="${href}" target="_blank" rel="noopener">${text}</a>` : text;
+    })
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>');

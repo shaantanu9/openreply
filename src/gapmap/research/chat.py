@@ -485,7 +485,8 @@ def _stream_openai_compatible(
     client = OpenAI(api_key=api_key, base_url=base)
     extra_headers = {}
     if provider == "openrouter":
-        extra_headers["HTTP-Referer"] = "https://github.com/shaantanu98/reddit-myind"
+        from ..core.identity import GITHUB_URL
+        extra_headers["HTTP-Referer"] = GITHUB_URL
         extra_headers["X-Title"] = "Gap Map"
 
     stream = client.chat.completions.create(

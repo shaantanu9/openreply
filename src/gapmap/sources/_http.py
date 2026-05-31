@@ -17,16 +17,16 @@ import time
 
 import httpx
 
+from ..core.identity import GITHUB_URL, CONTACT_EMAIL
 
 # Identification block. Keep `+URL` for policy reviewers to find the repo,
 # `mailto:` so APIs like OpenAlex / arXiv can reach out if we misbehave.
-# Contact address comes from the user's profile at session start — override
-# with GAPMAP_CONTACT env if you fork this for a different maintainer.
-_DEFAULT_CONTACT = os.getenv("GAPMAP_CONTACT", "shantanubombatkar2@gmail.com")
+# Repo URL + contact come from core.identity (single source of truth).
+_DEFAULT_CONTACT = CONTACT_EMAIL  # back-compat alias
 USER_AGENT = (
     "gapmap/0.1 "
-    "(+https://github.com/shaantanu98/reddit-myind; "
-    f"mailto:{_DEFAULT_CONTACT})"
+    f"(+{GITHUB_URL}; "
+    f"mailto:{CONTACT_EMAIL})"
 )
 
 # 20 s default timeout — long enough for slow science APIs (Scholar +
