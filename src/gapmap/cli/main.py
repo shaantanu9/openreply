@@ -1825,6 +1825,23 @@ def cmd_merge_duplicate_topics(
     _emit(out, as_json)
 
 
+@research_app.command("topic-merge")
+def cmd_topic_merge(
+    source: str = typer.Option(..., "--source", "-s"),
+    target: str = typer.Option(..., "--target", "-t"),
+    apply: bool = typer.Option(False, "--apply",
+        help="Actually merge. Default dry-run shows what would move."),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Merge one topic into another: re-point ALL of source's data into
+    target across every topic-keyed table, then remove source. Unlike
+    merge-duplicate-topics, this merges two topics the user explicitly
+    chose — regardless of name similarity. Dry-run (preview) unless --apply.
+    """
+    from ..research.topic_resolver import merge_topics
+    _emit(merge_topics(source, target, apply=apply), as_json)
+
+
 @research_app.command("clean-corpus")
 def cmd_clean_corpus(
     topic: str = typer.Option(..., "--topic", "-t"),

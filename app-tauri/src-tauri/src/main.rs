@@ -413,6 +413,7 @@ fn main() {
             commands::schedule_mark_seen,
             commands::clean_corpus,
             commands::merge_duplicate_topics,
+            commands::merge_topics,
             commands::find_existing_topic,
             commands::restore_topic,
             commands::list_trash,

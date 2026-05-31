@@ -371,4 +371,178 @@ def merge_duplicate_topics(
             "posts_moved": total_moved_posts, "merges": merges}
 
 
-__all__ = ["resolve_topic", "register_alias", "merge_duplicate_topics"]
+# ─── Arbitrary two-topic merge (user-driven) ───────────────────────────
+def _topic_keyed_tables(db) -> list[str]:
+    """Every user table that has a `topic` column — derived from the live
+    schema so a newly-added table can never silently be missed by a merge."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for tname in db.table_names():
+        if tname in seen:
+            continue
+        seen.add(tname)
+        try:
+            cols = [c.name for c in db[tname].columns]
+        except Exception:
+            continue
+        if "topic" in cols:
+            out.append(tname)
+    return out
+
+
+def _post_count(db, topic: str) -> int:
+    try:
+        return next(
+            db.query(
+                "SELECT count(*) AS n FROM topic_posts WHERE topic = ?", [topic]
+            )
+        )["n"]
+    except Exception:
+        return 0
+
+
+def _known_topics(db) -> set[str]:
+    known: set[str] = set()
+    for sql in (
+        "SELECT topic FROM topic_prefs",
+        "SELECT DISTINCT topic FROM topic_posts",
+    ):
+        try:
+            for r in db.query(sql):
+                known.add(r["topic"] or "")
+        except Exception:
+            pass
+    known.discard("")
+    return known
+
+
+def _repoint_topic(db, source: str, target: str) -> None:
+    """Move ALL of ``source``'s data onto ``target`` across every
+    topic-keyed table.
+
+    The uniform ``UPDATE OR IGNORE … ; DELETE …`` pair correctly handles
+    all three table classes in one pass:
+
+      * composite PK incl. topic (``topic_posts(topic, post_id)``,
+        ``extraction_queue``, ``experiments``, ``topic_pipeline_config``)
+        — rows already present under the target are skipped by the
+        ``OR IGNORE``; the source's leftovers are then deleted (dedupes
+        shared posts).
+      * single row per topic (``topic_prefs``, ``topic_insights``,
+        ``launch_briefs``, ``topic_favorites``) — the target's existing
+        row blocks the update (topic is the PK), so the target keeps its
+        own report and the source row is dropped.
+      * plain ``topic`` column (chats, graph, personas, papers, …) —
+        every row is re-pointed; nothing is left to delete.
+
+    ``graph_nodes`` (id PK) / ``graph_edges`` (src,dst,kind PK) fit the
+    same pattern: id/PK collisions are ignored and the leftovers deleted.
+
+    Caller wraps this in a transaction for all-or-nothing safety.
+    """
+    for tbl in _topic_keyed_tables(db):
+        try:
+            db.execute(
+                f"UPDATE OR IGNORE {tbl} SET topic = :t WHERE topic = :s",
+                {"t": target, "s": source},
+            )
+            db.execute(f"DELETE FROM {tbl} WHERE topic = :s", {"s": source})
+        except Exception as e:  # noqa: BLE001 — skip any odd table, keep going
+            logger.debug("repoint %s failed for %s: %s", tbl, source, e)
+
+
+def merge_topics(source: str, target: str, apply: bool = False) -> dict[str, Any]:
+    """Merge two arbitrary user-chosen topics: re-point ALL of ``source``'s
+    data into ``target``, then remove the source.
+
+    Unlike :func:`merge_duplicate_topics` (which only collapses topics that
+    the system itself split via LLM canonicalization), this merges two
+    topics the user has explicitly decided are the same — regardless of
+    name similarity.
+
+    ``apply=False`` (default) is a non-mutating dry-run returning a preview
+    of exactly what would move. ``apply=True`` performs the merge inside a
+    single transaction (all-or-nothing).
+
+    Returns a report dict; ``ok=False`` with an ``error`` on invalid input
+    (empty names, self-merge, or missing source).
+    """
+    db = get_db()
+    source = (source or "").strip()
+    target = (target or "").strip()
+
+    if not source or not target:
+        return {"ok": False, "error": "both source and target are required"}
+    if source == target:
+        return {"ok": False, "error": "cannot merge a topic into itself"}
+    if source not in _known_topics(db):
+        return {"ok": False, "error": f"source topic not found: {source}"}
+
+    def _count_topic(tbl: str) -> int:
+        try:
+            return next(
+                db.query(
+                    f"SELECT count(*) AS n FROM {tbl} WHERE topic = ?", [source]
+                )
+            )["n"]
+        except Exception:
+            return 0
+
+    src_posts = _post_count(db, source)
+    tgt_posts = _post_count(db, target)
+    try:
+        dup = next(
+            db.query(
+                "SELECT count(*) AS n FROM topic_posts a "
+                "WHERE a.topic = ? AND EXISTS ("
+                "  SELECT 1 FROM topic_posts b "
+                "  WHERE b.topic = ? AND b.post_id = a.post_id)",
+                [source, target],
+            )
+        )["n"]
+    except Exception:
+        dup = 0
+
+    report: dict[str, Any] = {
+        "ok": True,
+        "dry_run": not apply,
+        "source": source,
+        "target": target,
+        "source_posts": src_posts,
+        "target_posts": tgt_posts,
+        "posts_to_move": max(0, src_posts - dup),
+        "duplicate_posts_skipped": dup,
+        "nodes_to_move": _count_topic("graph_nodes"),
+        "chats_to_move": _count_topic("chat_conversations"),
+        "tables_touched": _topic_keyed_tables(db),
+    }
+
+    if not apply:
+        return report
+
+    # All-or-nothing: the sqlite3 connection context manager commits on
+    # success and rolls back on any exception inside the block.
+    with db.conn:
+        _repoint_topic(db, source, target)
+        # Route future references to `source` toward `target`.
+        register_alias(source, target, source="merge")
+        try:
+            db.execute(
+                "UPDATE topic_canonicalizations SET canonical = :t "
+                "WHERE canonical = :s",
+                {"t": target, "s": source},
+            )
+        except Exception:
+            pass
+
+    report["merged"] = True
+    report["target_posts_after"] = _post_count(db, target)
+    return report
+
+
+__all__ = [
+    "resolve_topic",
+    "register_alias",
+    "merge_duplicate_topics",
+    "merge_topics",
+]

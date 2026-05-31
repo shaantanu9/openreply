@@ -682,6 +682,17 @@ export const api = {
     mutated('trash');
     return p;
   },
+
+  // Merge two arbitrary topics. apply=false → non-mutating preview (counts
+  // of what would move). apply=true → performs the merge in one transaction
+  // then invalidates topic caches. Re-enrichment of `target` is kicked
+  // separately by the caller (mergeModal) via api.enrichGraph.
+  mergeTopics: (source, target, apply = false) => {
+    const p = invoke('merge_topics', { source, target, apply });
+    if (!apply) return p;
+    return p.then((res) => { mutated('topics', { topic: target, source, action: 'merge' }); return res; });
+  },
+
   revealInFinder:  (path)    => invoke('reveal_in_finder', { path }),
   exportPrefsSet:  (exportDir) => {
     const p = invoke('export_prefs_set', { exportDir });

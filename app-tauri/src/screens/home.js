@@ -5,6 +5,7 @@ import { api, esc, fmtN, timeAgo } from '../api.js';
 import { avatarInitials } from './settings.js';
 import { setHTMLIfChanged } from '../lib/screenCache.js';
 import { skelGrid, skelRows, skelInline } from '../lib/skeleton.js';
+import { openMergeModal } from './mergeModal.js';
 
 function normalizeTopicLabel(value) {
   const s = String(value ?? '');
@@ -714,6 +715,9 @@ function showTopicContextMenu(x, y, topic) {
     <button class="ctx-recol"  style="display:flex;width:100%;gap:8px;padding:8px 10px;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit">
       <i data-lucide="refresh-cw"></i><span>Re-collect fresh data</span>
     </button>
+    <button class="ctx-merge"  style="display:flex;width:100%;gap:8px;padding:8px 10px;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit">
+      <i data-lucide="git-merge"></i><span>Merge into…</span>
+    </button>
     <div style="height:1px;background:var(--border-soft,#EADFC8);margin:4px 0"></div>
     <button class="ctx-delete" style="display:flex;width:100%;gap:8px;padding:8px 10px;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:4px;font-family:inherit;color:#B84747">
       <i data-lucide="trash-2"></i><span>Delete (soft, 7-day undo)</span>
@@ -730,6 +734,10 @@ function showTopicContextMenu(x, y, topic) {
     setTimeout(() => window.dispatchEvent(new CustomEvent('gapmap:start-collect',
       { detail: { topic, aggressive: true } })), 100);
     close();
+  };
+  menu.querySelector('.ctx-merge').onclick = () => {
+    close();
+    openMergeModal(topic);
   };
   menu.querySelector('.ctx-delete').onclick = async () => {
     close();

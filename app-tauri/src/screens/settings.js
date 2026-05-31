@@ -6,6 +6,9 @@ import { openByokModal } from './byok.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { skelRows } from '../lib/skeleton.js';
+// Side-effect: registers the global [data-open-merge] click-delegation so
+// the "Merge topics…" card button works even if Home was never visited.
+import './mergeModal.js';
 
 // SWR helper for Settings cards. Each card pays a ~500-1500 ms sidecar
 // round-trip per visit; without a cache, the user watches skeletons fill

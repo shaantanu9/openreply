@@ -1914,6 +1914,29 @@ pub async fn merge_duplicate_topics(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+/// Merge one user-chosen topic into another: re-point ALL of `source`'s
+/// data into `target` across every topic-keyed table, then remove the
+/// source. Dry-run by default (returns a preview); pass `apply=true` to
+/// perform the merge. Auto re-enrichment of the merged corpus is driven
+/// from the frontend (via the existing enrich-graph stream) so the user
+/// sees progress and it reuses the per-topic dedup lock.
+#[tauri::command]
+pub async fn merge_topics(
+    app: AppHandle,
+    source: String,
+    target: String,
+    apply: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<&str> = vec![
+        "research", "topic-merge",
+        "--source", &source,
+        "--target", &target,
+        "--json",
+    ];
+    if apply.unwrap_or(false) { args.push("--apply"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Relevance-gate cleanup for an existing topic. Dry-run by default.
 #[tauri::command]
 pub async fn clean_corpus(
@@ -6090,6 +6113,44 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
                 )
             };
             return Err(msg);
+        }
+        args.push("--bin".into());
+        args.push(bin.to_string_lossy().to_string());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&app, arg_refs).await.map_err(err_to_string)
+}
+
+/// Build (dry-run) the exact mcpServers entry Connect WOULD write, without
+/// touching any file. Powers the Settings "Copy config" button so users can
+/// paste it into a client by hand. Mirrors mcp_install's path resolution so
+/// the snippet is byte-identical to what Connect produces.
+#[tauri::command]
+pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Result<Value, String> {
+    ensure_mcp_allowed(&app)?;
+    let dd = data_dir(&app).map_err(err_to_string)?;
+    let dd_str = dd.to_string_lossy().to_string();
+
+    let mut args: Vec<String> = vec![
+        "mcp".into(), "config".into(),
+        "--data-dir".into(), dd_str,
+        "--json".into(),
+    ];
+    if let Some(c) = client.as_deref().filter(|s| !s.is_empty()) {
+        args.push("--client".into()); args.push(c.into());
+    }
+    if let Some(proj) = dev_project_dir() {
+        args.push("--project-dir".into());
+        args.push(proj.to_string_lossy().to_string());
+    } else if let Some(bin) = resolve_sidecar_bin_path() {
+        // Don't hand the user a snippet with an ephemeral path that will
+        // break after the .app is reaped/relaunched — same guard as install.
+        if is_ephemeral_path(&bin) {
+            return Err(
+                "Gap Map.app is running from a temporary/translocated location, so the \
+                 MCP binary path isn't stable. Move Gap Map.app to /Applications and reopen \
+                 it from there, then copy the config.".into(),
+            );
         }
         args.push("--bin".into());
         args.push(bin.to_string_lossy().to_string());
