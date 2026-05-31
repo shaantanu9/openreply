@@ -4040,6 +4040,9 @@ export async function renderTopic(root, { params }) {
       ? `<div class="chat-msg-ts" data-ts="${last.ts}">${timeAgo(last.ts / 1000)}</div>`
       : '';
     bodyEl.innerHTML = assistantInnerHtml(last, chatStream.active) + tsHtml;
+    // The assistant bubble is now a capped-height scroll box — keep it pinned
+    // to the newest tokens while streaming, then pin the panel too.
+    if (chatStream.active) bodyEl.scrollTop = bodyEl.scrollHeight;
     box.scrollTop = box.scrollHeight;
     window.refreshIcons?.();
   }

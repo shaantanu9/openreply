@@ -924,6 +924,8 @@ select.topics-field {
 /* Tabs on topic detail */
 .tabs {
   display: flex;
+  flex-wrap: nowrap;        /* explicit: tab bar is a single row that scrolls,
+                               never wraps — overrides the generic defense tail */
   gap: 6px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--line);
@@ -1481,7 +1483,7 @@ select.topics-field {
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 16px; overflow: hidden;
-  min-height: 520px;
+  min-height: min(520px, 70vh);
   box-shadow: 0 10px 28px rgba(29, 22, 14, 0.05);
 }
 .chat-head {
@@ -1516,7 +1518,7 @@ select.topics-field {
 .chat-preset-body small { display: block; font-size: 11px; color: var(--ink-3); line-height: 1.35; }
 
 .chat-messages {
-  flex: 1; min-height: 200px; max-height: 540px; overflow-y: auto;
+  flex: 1; min-height: 200px; max-height: min(540px, 56vh); overflow-y: auto;
   padding: 14px 18px;
   background:
     radial-gradient(circle at 8% 2%, rgba(255, 140, 66, 0.06), transparent 38%),
@@ -1531,7 +1533,7 @@ select.topics-field {
   background: var(--surface-alt); flex-shrink: 0;
   border: 1px solid var(--line);
 }
-.chat-msg-body { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-1); }
+.chat-msg-body { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--ink-1); }
 .chat-msg-body b {
   display: block; font-size: 11px; color: var(--ink-3);
   text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;
@@ -1541,11 +1543,21 @@ select.topics-field {
   border: 1px solid #F0D7BD;
 }
 .chat-msg-asst .chat-msg-body {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
+  /* A long reply becomes a self-contained, scrollable box rather than
+     a giant block that overflows the panel and hides its last lines. */
+  max-height: min(460px, 52vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
+.chat-msg-asst .chat-msg-body::-webkit-scrollbar { width: 8px; }
+.chat-msg-asst .chat-msg-body::-webkit-scrollbar-thumb {
+  background: var(--line-2, #d8d2c8); border-radius: 8px;
+}
+.chat-msg-asst .chat-msg-body::-webkit-scrollbar-track { background: transparent; }
 .chat-typing {
   display: inline-block; color: var(--ink-3); font-style: italic;
   animation: typingPulse 1.4s ease-in-out infinite;
@@ -1607,9 +1619,11 @@ select.topics-field {
 .chat-msg-body.markdown-view p { margin: 0 0 10px; }
 .chat-msg-body.markdown-view p:last-child { margin-bottom: 0; }
 .chat-msg-body.markdown-view ul { padding-left: 20px; margin: 0 0 10px; }
-.chat-msg-body.markdown-view h1 { font-size: 17px; margin: 10px 0 6px; }
-.chat-msg-body.markdown-view h2 { font-size: 15px; margin: 10px 0 5px; }
-.chat-msg-body.markdown-view h3 { font-size: 14px; margin: 8px 0 4px; }
+.chat-msg-body.markdown-view h1 { font-size: 15px; margin: 10px 0 6px; }
+.chat-msg-body.markdown-view h2 { font-size: 14px; margin: 10px 0 5px; }
+.chat-msg-body.markdown-view h3 { font-size: 13px; margin: 8px 0 4px; }
+.chat-msg-body.markdown-view ol { padding-left: 20px; margin: 0 0 10px; }
+.chat-msg-body.markdown-view li { margin: 0 0 4px; }
 .chat-msg-body.markdown-view pre {
   background: var(--surface-alt); padding: 10px 12px;
   border-radius: 8px; overflow-x: auto; font-size: 12px;
@@ -9275,3 +9289,69 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
 .gm-az-card-meta { display: flex; gap: 8px; flex-wrap: wrap; }
 .gm-az-card-skel { background: var(--surface); opacity: 0.85; }
 .gm-az-card-skel .skel { display: block; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Responsive defense tail (Phase 18) — appended LAST so it wins on cascade
+   order while costing ZERO specificity via :where(). It only layers sane
+   defaults onto the universal overflow anti-patterns; it never overrides an
+   intentional rule. This is the app-wide "resize doesn't break the layout"
+   safety net that complements the per-component breakpoints above.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Flex rows that hold user content must wrap instead of overflowing.
+   NOTE: `.tabs` is intentionally EXCLUDED — tab bars scroll horizontally
+   (single row), they must never wrap to multiple rows. See `.tabs` base rule. */
+:where(
+  .topbar, .section-head, .row, .filter-bar, .toolbar,
+  .modal-actions, .form-actions, .card-actions, .actions,
+  .settings-toggle, .byok-row, .llm-grid,
+  .chat-head, .chat-head-actions, .chat-presets, .chat-composer-foot,
+  .chat-msg-actions, .crumbs, .pill-row, .chip-row
+) { flex-wrap: wrap; }
+
+/* 2. Buttons / pills / chips never punch out of their container. */
+:where(.btn, .pill, .chip, .th-chip, .tab) {
+  max-width: 100%; overflow-wrap: anywhere;
+}
+.btn.icon-btn, :where(.tab) { white-space: nowrap; }  /* icon/tab labels stay one line */
+
+/* 3. Flex children that can receive long text must be allowed to shrink. */
+:where(
+  .topbar, .section-head, .row, .crumbs, .chat-head, .chat-head-main,
+  .card, .flex, .filter-bar
+) > * { min-width: 0; }
+
+/* 3b. Grids declared with a bare `1fr` track (= minmax(auto,1fr)) blow out
+   when a cell holds long unbreakable content. Giving the grid ITEMS
+   `min-width: 0` lets them shrink — the same effect as `minmax(0,1fr)` on
+   the track — without touching each grid declaration. */
+:where(
+  .tm-stat-row, .pb-phase-list, .science-process-grid, .search-form,
+  .watch-form, .src-pick-grid, .empathy-grid, .vw-form-grid, .iv-row-2,
+  .estimate-rollup-grid, .aud-quad-grid, .gc-body
+) > * { min-width: 0; }
+
+/* 4. Inputs / textareas / selects obey their box. */
+:where(input):not([type=checkbox]):not([type=radio]):not([type=range]),
+:where(textarea, select) { max-width: 100%; box-sizing: border-box; }
+
+/* 5. Wide tables scroll horizontally inside their own wrapper. */
+:where(.table-wrap, .table-scroll) { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+:where(table) { max-width: 100%; }
+
+/* 6. Modals / dialogs cap to the viewport so nothing clips off-screen. */
+:where(.modal, .dialog, .sheet, .src-pick) {
+  max-height: calc(100vh - 32px); overflow-y: auto;
+}
+
+/* 7. Media + preformatted blocks never force horizontal scroll on the page. */
+:where(img, video, canvas, svg, pre) { max-width: 100%; }
+:where(pre) { overflow-x: auto; }
+
+/* 8. Narrow-window tightening that the existing breakpoints don't all cover. */
+@media (max-width: 680px) {
+  :where(.modal, .dialog, .sheet) { width: calc(100vw - 24px); }
+  :where(.btn) { font-size: 13px; }
+  .chat-input-row { padding: 10px 12px; }
+  .chat-messages, .chat-presets { padding: 12px 12px; }
+}
