@@ -113,12 +113,20 @@ export async function renderActivity(root) {
   root.querySelector('#f-errors').onchange = e => { state.errorsOnly = e.target.checked; state.page = 0; loadPage(root); };
 
   // Live poll: if a collect is running (ended_at IS NULL), refresh every 4s.
+  // `alive()` mirrors the app-wide routeGen guard (main.js). The hashchange
+  // cleanup below misses tab switches done via history.replaceState, so the
+  // tick self-clears the moment the screen is no longer mounted — otherwise
+  // the timer keeps polling and mutating a detached DOM.
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(async () => {
+    if (!alive()) { clearInterval(refreshTimer); refreshTimer = null; return; }
     try {
       const rows = await withTimeout(api.runQuery(
         `SELECT 1 FROM fetches WHERE ended_at IS NULL LIMIT 1`
       ), QUERY_TIMEOUT_MS, 'activity live check');
+      if (!alive()) { clearInterval(refreshTimer); refreshTimer = null; return; }
       const pill = root.querySelector('#activity-live-pill');
       if (Array.isArray(rows) && rows.length) {
         if (pill) pill.hidden = false;
@@ -150,6 +158,8 @@ export async function renderActivity(root) {
 async function loadSpark(root) {
   const el = root.querySelector('#activity-spark');
   if (!el) return;
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   try {
     const rows = await withTimeout(api.runQuery(
       `SELECT substr(started_at,1,10) AS day, count(*) AS n, \
@@ -157,6 +167,7 @@ async function loadSpark(root) {
        FROM fetches WHERE substr(started_at,1,10) >= date('now','-29 days') \
        GROUP BY substr(started_at,1,10) ORDER BY day ASC`
     ), QUERY_TIMEOUT_MS, 'activity sparkline');
+    if (!alive()) return;
     const map = {}; (rows || []).forEach(r => { map[r.day] = r; });
     const today = new Date();
     const days = [];
@@ -181,17 +192,21 @@ async function loadSpark(root) {
         }).join('')}
       </div>`;
   } catch (e) {
+    if (!alive()) return;
     el.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}</div>`;
   }
 }
 
 async function checkLive(root) {
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   try {
     const rows = await withTimeout(
       api.runQuery(`SELECT 1 FROM fetches WHERE ended_at IS NULL LIMIT 1`),
       QUERY_TIMEOUT_MS,
       'activity live status'
     );
+    if (!alive()) return;
     const pill = root.querySelector('#activity-live-pill');
     if (pill) pill.hidden = !(Array.isArray(rows) && rows.length);
   } catch {}
@@ -199,6 +214,8 @@ async function checkLive(root) {
 
 async function loadPage(root) {
   state.loading = true;
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   const tbl = root.querySelector('#activity-table');
   tbl.innerHTML = `<div class="empty-state">loading…</div>`;
 
@@ -240,10 +257,12 @@ async function loadPage(root) {
       api.runQuery(countSql, null, params),
       api.runQuery(listSql, null, params),
     ]), QUERY_TIMEOUT_MS, 'activity table');
+    if (!alive()) return;
     state.totalCount = Array.isArray(countRes) && countRes[0] ? (countRes[0].n || 0) : 0;
     state.rows = Array.isArray(rowsRes) ? rowsRes : [];
     renderTable(root);
   } catch (e) {
+    if (!alive()) return;
     tbl.innerHTML = `<div class="empty-state">Error: ${esc(e?.message || e)}<br/><button id="activity-retry" class="btn btn-ghost btn-sm btn-bordered" style="margin-top:8px">Retry</button></div>`;
     const retry = root.querySelector('#activity-retry');
     retry?.addEventListener('click', () => loadPage(root));
@@ -349,7 +368,7 @@ function activityRow(r) {
     } catch { return '—'; }
   })();
   const statusPill = error
-    ? `<span class="pill" style="background:var(--rose-soft);color:#B84747">✗ error</span>`
+    ? `<span class="pill pill-error">✗ error</span>`
     : running
       ? `<span class="pill pill-running"><span class="pulse-dot sm"></span> running</span>`
       : `<span class="pill active">✓ ok</span>`;

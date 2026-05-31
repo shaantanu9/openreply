@@ -38,17 +38,15 @@ function fmtRelative(msAgo) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// Colors live in style.css (.cm-badge--<status>) — centralized in the GUI
+// tokenization pass instead of inline hex here. Same palette, no visual change.
+const STATUS_LABELS = {
+  running: 'running', queued: 'queued', done: 'done',
+  failed: 'failed', cancelled: 'cancelled', idle: 'idle',
+};
 function statusBadge(status) {
-  const map = {
-    running:   { txt: 'running',   bg: '#1F4E79', fg: '#fff' },
-    queued:    { txt: 'queued',    bg: '#E6EFF7', fg: '#1F4E79' },
-    done:      { txt: 'done',      bg: '#E8F5EE', fg: '#0F6E56' },
-    failed:    { txt: 'failed',    bg: '#FBE7E2', fg: '#B5581A' },
-    cancelled: { txt: 'cancelled', bg: '#F4ECDF', fg: '#8A6A1F' },
-    idle:      { txt: 'idle',      bg: '#F1F5F9', fg: '#64748b' },
-  };
-  const s = map[status] || map.idle;
-  return `<span class="cm-badge" style="background:${s.bg};color:${s.fg}">${s.txt}</span>`;
+  const key = STATUS_LABELS[status] ? status : 'idle';
+  return `<span class="cm-badge cm-badge--${key}">${STATUS_LABELS[key]}</span>`;
 }
 
 function tailLinesHtml(tail) {

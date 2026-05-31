@@ -8,8 +8,21 @@
 //
 // Route: #/prd/<productId>
 import { api, esc } from '../api.js';
+import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+// Domain stages for the single blocking PRD build (api.prdExport aggregates
+// every discovery artefact, then the LLM drafts the full PRD markdown). The
+// payload lands at once — hero-only loader, no per-card polling.
+const PRD_STAGES = [
+  'Aggregating discovery artefacts…',
+  'Reading JTBD, opportunities & Four Risks…',
+  'Folding in TAM/SAM/SOM & pricing models…',
+  'Drafting the PRD narrative…',
+  'Structuring sections & PERT estimates…',
+  'Almost done — formatting markdown…',
+];
 
 function productIdFromHash() {
   const m = (location.hash || '').match(/^#\/prd\/([^/?]+)/);
@@ -74,6 +87,9 @@ function inline(s) {
 }
 
 export async function renderPrd(root, { params }) {
+  // routeGen guard — JS analog of Flutter context.mounted
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   const id = decodeURIComponent(params?.[0] || '');
   if (!id) {
     root.innerHTML = `<div class="empty-big"><h3>No product ID</h3></div>`;
@@ -102,18 +118,28 @@ export async function renderPrd(root, { params }) {
   const wrap = $('.prd-wrap', root);
 
   const build = async () => {
-    wrap.innerHTML = '<div class="empty-state">Building PRD…</div>';
+    // Full-bleed alive loader while the blocking PRD build runs (5+ s — the
+    // sidecar aggregates every artefact then the LLM drafts the markdown).
+    const stop = renderAnalyzingState(wrap, {
+      headline: 'Building PRD', stages: PRD_STAGES,
+      medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+    });
     let result;
     try {
       result = await api.prdExport(id);
+      if (!alive()) return;
     } catch (e) {
+      if (!alive()) return;
+      stop();
       wrap.innerHTML = `<div class="empty-big"><h3>Couldn't build PRD</h3><p>${esc(e?.message || e)}</p></div>`;
       return;
     }
     if (!result?.ok) {
+      stop();
       wrap.innerHTML = `<div class="empty-big"><h3>${esc(result?.error || 'PRD failed')}</h3></div>`;
       return;
     }
+    stop({ snapToComplete: true });
     const md = result.markdown || '';
     wrap.innerHTML = `
       <section class="prd-meta card">
@@ -148,6 +174,7 @@ export async function renderPrd(root, { params }) {
     $('#prd-copy', root).onclick = async () => {
       try {
         await navigator.clipboard.writeText(md);
+        if (!alive()) return;
         const btn = $('#prd-copy', root);
         btn.innerHTML = '<i data-lucide="check"></i> Copied';
         window.refreshIcons?.();

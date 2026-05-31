@@ -524,6 +524,18 @@ body {
   background: var(--surface-2); color: var(--ink-2); cursor: pointer;
 }
 .pill.active { background: var(--ink); color: white; }
+/* Activity error pill — was inline color:#B84747 in activity.js (same hex). */
+.pill-error { background: var(--rose-soft); color: #B84747; }
+
+/* Improve-screen stage status — colors centralized from improve.js
+   checkmark()/stageRow() inline styles. Same hex, no visual change. */
+.imp-mark { font-size: 18px; }
+.imp-stat--ok   { color: #047857; }
+.imp-stat--warn { color: #92400e; }
+.imp-stat--bad  { color: #be123c; }
+.imp-tone--ok   { background: rgba(4,120,87,0.14);  color: #047857; }
+.imp-tone--warn { background: rgba(202,138,4,0.14); color: #92400e; }
+.imp-tone--bad  { background: rgba(190,18,60,0.14); color: #be123c; }
 
 /* ---------- Activity feed ---------- */
 .activity { padding: 8px 0; }
@@ -4987,6 +4999,14 @@ html.dark .delete-confirm-modal .dc-match-text {
   font: 700 10px/1.4 system-ui, sans-serif; text-transform: uppercase;
   letter-spacing: 1px;
 }
+/* Status variants — colors centralized here instead of inline styles in
+   collects.js statusBadge(). Same hex as before (no visual change). */
+.cm-badge--running   { background: #1F4E79; color: #fff; }
+.cm-badge--queued    { background: #E6EFF7; color: #1F4E79; }
+.cm-badge--done      { background: #E8F5EE; color: #0F6E56; }
+.cm-badge--failed    { background: #FBE7E2; color: #B5581A; }
+.cm-badge--cancelled { background: #F4ECDF; color: #8A6A1F; }
+.cm-badge--idle      { background: #F1F5F9; color: #64748b; }
 .btn-danger {
   background: #fff; color: #B5581A;
   border: 1px solid #FBE7E2;
@@ -5222,8 +5242,23 @@ html.dark .delete-confirm-modal .dc-match-text {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
   color: #222;
+  background: #E8E8E8; /* default / unknown source */
 }
 .insight-src-badge b { font-weight: 700; }
+/* Per-source tints — moved out of the inline SRC{} map in insights.js
+   renderSourceBadges(). Same hex, keyed off the data-source attribute. */
+.insight-src-badge[data-source="reddit"]        { background: #FFE4D4; }
+.insight-src-badge[data-source="hn"]            { background: #FFECDA; }
+.insight-src-badge[data-source="arxiv"]         { background: #FBE3E6; }
+.insight-src-badge[data-source="openalex"]      { background: #EFE7FB; }
+.insight-src-badge[data-source="pubmed"]        { background: #E4F0FA; }
+.insight-src-badge[data-source="scholar"]       { background: #E1F2EA; }
+.insight-src-badge[data-source="appstore"]      { background: #F0E8FA; }
+.insight-src-badge[data-source="playstore"]     { background: #E0F2D9; }
+.insight-src-badge[data-source="devto"]         { background: #E8E8E8; }
+.insight-src-badge[data-source="stackoverflow"] { background: #FEE8D6; }
+.insight-src-badge[data-source="github"]        { background: #E8E8E8; }
+.insight-src-badge[data-source="gnews"]         { background: #E1EEFC; }
 
 /* Competitor cards */
 .competitor-card {
@@ -9175,3 +9210,68 @@ body[data-onboarding="incomplete"] #nav-workspace::after {
 body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
   display: none;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Shared "Analyzing…" loader (.gm-az-*) — generic version of the sentiment
+   loader, used by lib/analyzingLoader.js so every LLM tab gets the same
+   alive-feeling five-element loader (spinner + elapsed counter + cycling
+   stages + asymptotic bar + skeleton cards). The original .sent-* classes
+   stay for back-compat; new adopters use these. See the loader-progress-ux
+   skill. Added 2026-05-30.
+   ──────────────────────────────────────────────────────────────────── */
+.gm-az { display: flex; flex-direction: column; gap: 18px; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.gm-az-hero {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 32px 24px 24px; gap: 10px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  width: 100%; box-sizing: border-box; overflow: hidden;
+}
+.gm-az-spinner {
+  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+  border: 4px solid var(--line); border-top-color: var(--orange);
+  animation: gm-az-spin 0.9s linear infinite;
+}
+@keyframes gm-az-spin { to { transform: rotate(360deg); } }
+.gm-az-title { font-size: 17px; font-weight: 650; color: var(--ink); margin: 4px 0 0; }
+.gm-az-stage {
+  font-size: 13px; color: var(--ink-2); margin: 0; min-height: 18px;
+  max-width: 100%; white-space: normal; word-break: break-word;
+}
+.gm-az-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+  font-size: 12px; color: var(--ink-3); max-width: 100%;
+}
+.gm-az-elapsed { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink-2); }
+.gm-az-eta::before { content: "·"; margin-right: 8px; color: var(--line-2); }
+.gm-az-count { font-weight: 600; color: var(--orange); font-variant-numeric: tabular-nums; }
+.gm-az-count::before { content: "·"; margin-right: 8px; color: var(--line-2); }
+.gm-az-bar {
+  width: min(420px, 100%); height: 8px; margin-top: 6px;
+  background: var(--surface-2); border-radius: 999px; overflow: hidden;
+}
+.gm-az-fill {
+  height: 100%; width: 0%; border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.35) 50%, rgba(255,255,255,0) 100%),
+    linear-gradient(90deg, var(--orange) 0%, #FFA563 100%);
+  background-size: 80px 100%, 100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  background-position: -80px 0, 0 0;
+  animation: gm-az-shimmer 1.6s linear infinite;
+}
+@keyframes gm-az-shimmer {
+  0%   { background-position: -80px 0, 0 0; }
+  100% { background-position: calc(100% + 80px) 0, 0 0; }
+}
+.gm-az-grid {
+  display: grid; gap: 14px; min-width: 0; max-width: 100%; box-sizing: border-box;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+}
+.gm-az-card {
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 16px;
+  display: flex; flex-direction: column; gap: 10px; min-width: 0; max-width: 100%; box-sizing: border-box;
+}
+.gm-az-card-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+.gm-az-card-skel { background: var(--surface); opacity: 0.85; }
+.gm-az-card-skel .skel { display: block; }

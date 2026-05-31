@@ -8,6 +8,19 @@ import { api } from '../api.js';
 import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { renderAnalyzingState } from '../lib/analyzingLoader.js';
+
+// Domain stages for the Concept Agent's single blocking LLM call (no
+// incremental persist — the whole 3-5 concept payload lands at once, so this
+// is a hero-only loader, no per-card polling).
+const CONCEPT_STAGES = [
+  'Reading painpoints & workarounds…',
+  'Clustering unmet needs…',
+  'Drafting candidate product concepts…',
+  'Grounding each concept in evidence…',
+  'Scoring confidence & effort…',
+  'Almost done — packaging concepts…',
+];
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -153,15 +166,21 @@ export async function loadConcepts(contentEl, topic) {
     if (contentEl.dataset.tab !== 'concepts') return;
     window.refreshIcons?.();
     $('#btn-rerun-concepts', contentEl)?.addEventListener('click', async () => {
-      set('<div class="empty-state">Re-running Concept Agent…</div>');
+      const stop = renderAnalyzingState(contentEl, {
+        headline: 'Re-running Concept Agent', stages: CONCEPT_STAGES,
+        medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+      });
       try {
         const result = await api.runConcepts(topic);
+        stop({ snapToComplete: true });
+        if (contentEl.dataset.tab !== 'concepts') return;
         if (result?.reason && !result.concepts?.length) {
           set(`<div class="empty-big"><h3>No concepts</h3><p>${escape(result.reason)}</p></div>`);
           return;
         }
         await loadConcepts(contentEl, topic);
       } catch (e) {
+        stop();
         set(`<div class="empty-big"><h3>Couldn't run</h3><p>${escape(e?.message || e)}</p></div>`);
       }
     });
@@ -183,36 +202,40 @@ export async function loadConcepts(contentEl, topic) {
   window.refreshIcons?.();
 
   const runBtn = $('#btn-run-concepts', contentEl);
-  // Re-query the status element on every assignment because the empty
-  // template can be replaced (`set(renderEmpty(...))` rebuilds DOM, tab
-  // re-renders fire while a run is in flight, etc). A captured ref goes
-  // null on the next innerHTML write and `status.textContent = …` throws
-  // `TypeError: null is not an object`. `setStatus` no-ops if the host
-  // is gone — same pattern used by the chat composer.
-  const setStatus = (msg) => {
-    const el = contentEl.querySelector('#concepts-status');
-    if (el) el.textContent = msg;
-  };
   const runPipeline = async () => {
     if (runBtn) runBtn.disabled = true;
-    setStatus('Running… this may take 20-60 seconds.');
+    // Full-bleed alive loader replaces the empty CTA while the single
+    // blocking LLM call runs. On any non-render outcome we fall back to the
+    // empty CTA + a status line so the user can retry.
+    const stop = renderAnalyzingState(contentEl, {
+      headline: 'Ideating product concepts', stages: CONCEPT_STAGES,
+      medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+    });
+    const backToEmpty = (msg) => {
+      stop();
+      if (contentEl.dataset.tab !== 'concepts') return;
+      set(renderEmpty(topic));
+      window.refreshIcons?.();
+      const el = contentEl.querySelector('#concepts-status');
+      if (el) el.textContent = msg;
+      const b = $('#btn-run-concepts', contentEl);
+      if (b) b.addEventListener('click', runPipeline);
+    };
     try {
       const result = await api.runConcepts(topic);
-      if (contentEl.dataset.tab !== 'concepts') return;
+      if (contentEl.dataset.tab !== 'concepts') { stop(); return; }
       if (result?.skipped) {
-        setStatus(`Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`);
-        if (runBtn) runBtn.disabled = false;
+        backToEmpty(`Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`);
         return;
       }
       if (!result?.concepts?.length) {
-        setStatus(result?.reason || 'No concepts returned. Try re-running.');
-        if (runBtn) runBtn.disabled = false;
+        backToEmpty(result?.reason || 'No concepts returned. Try re-running.');
         return;
       }
+      stop({ snapToComplete: true });
       await renderAndBind(result.concepts);
     } catch (e) {
-      setStatus(`Error: ${e?.message || e}`);
-      if (runBtn) runBtn.disabled = false;
+      backToEmpty(`Error: ${e?.message || e}`);
     }
   };
   runBtn?.addEventListener('click', runPipeline);

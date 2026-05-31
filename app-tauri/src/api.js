@@ -48,6 +48,19 @@ function cacheKey(name, args) {
 // from disk in microseconds instead of paying a Python-sidecar spawn. Only
 // callers that opt in via `persistTtlMs` write/read here.
 const PERSIST_PREFIX = 'gapmap.api.cache.';
+
+// Cross-navigation SWR window for read-only "build output" reads (empathy
+// maps, product-strategy analyses, PMF/pricing surveys, PERT, audience
+// personas, launch briefs, …). These change ONLY on an explicit user
+// build/run, and every such mutation calls `invalidate('<command>')` (which
+// clears both the in-memory map AND this localStorage mirror). So a generous
+// persist window is safe: a revisit paints instantly from disk while a
+// background fetch refreshes, and the next mutation wipes the stale entry.
+// Deliberately NOT applied to volatile status/poll reads (pipeline_status,
+// iterate_status, *_worker_status, runtime_snapshot, collect/stream/chat
+// status) — a stale "running 3/7" there is worse than a slow-but-fresh one.
+const SWR_BUILD_OUTPUT_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
+
 function readPersisted(key, ttlMs) {
   try {
     const raw = localStorage.getItem(PERSIST_PREFIX + key);
@@ -447,7 +460,7 @@ export const api = {
   byokStatus:      ()        => cachedInvoke('byok_status',    null, 60000, 30 * 60 * 1000),
   deviceSignature: ()        => cachedInvoke('device_signature', null, 60000),
   licenseStatus:   ()        => cachedInvoke('license_status', null, 10000),
-  getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 30000),
+  getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 30000, SWR_BUILD_OUTPUT_MS),
   runQuery:        (sql, topic, params) => cachedInvoke('run_query', { sql, topic, params }, 10000),
 
   // Bundled per-topic counts for every tab freshness badge. One rusqlite
@@ -474,7 +487,7 @@ export const api = {
     invalidate('paper_analyses_get');
     return invoke('analyze_papers_bulk', { topic, limit });
   },
-  paperAnalysesGet:  (topic) => cachedInvoke('paper_analyses_get', { topic }, 30000),
+  paperAnalysesGet:  (topic) => cachedInvoke('paper_analyses_get', { topic }, 30000, SWR_BUILD_OUTPUT_MS),
 
   // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
   scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),
@@ -808,7 +821,7 @@ export const api = {
       noExperiments: opts.noExperiments ?? false,
     });
   },
-  listExperiments: (topic) => cachedInvoke('list_experiments', { topic }, 30000),
+  listExperiments: (topic) => cachedInvoke('list_experiments', { topic }, 30000, SWR_BUILD_OUTPUT_MS),
   personaView: (topic, persona) => invoke('persona_view', { topic, persona }),
 
   // Phase-3 Hypothesis Tracking — tracked bets for user-validated research
@@ -893,8 +906,12 @@ export const api = {
     invoke('paper_outline_generate', { topic, provider }),
   paperDraftGenerate: (topic, provider = null, style = 'IMRaD') =>
     invoke('paper_draft_generate', { topic, provider, style }),
-  experimentPlanGenerate: (topic, provider = null) =>
-    invoke('experiment_plan_generate', { topic, provider }),
+  experimentPlanGenerate: (topic, provider = null) => {
+    // Writes the `experiments` table → drop the persisted list_experiments
+    // SWR cache so the Experiments tab doesn't show stale data for 7 days.
+    invalidate('list_experiments');
+    return invoke('experiment_plan_generate', { topic, provider });
+  },
   paperExportWithCitations: (topic, provider = null, format = 'markdown', style = 'IMRaD') =>
     invoke('paper_export_with_citations', { topic, provider, format, style }),
 
@@ -940,9 +957,9 @@ export const api = {
     return invoke('product_create', payload);
   },
   productList: (activeOnly = true) =>
-    cachedInvoke('product_list', { activeOnly }, 10000),
+    cachedInvoke('product_list', { activeOnly }, 10000, SWR_BUILD_OUTPUT_MS),
   productGet: (productId) =>
-    cachedInvoke('product_get', { productId }, 10000),
+    cachedInvoke('product_get', { productId }, 10000, SWR_BUILD_OUTPUT_MS),
   productUpdate: (productId, fields) => {
     invalidate('product_list'); invalidate('product_get'); invalidate('product_dashboard');
     return invoke('product_update', { productId, fields });
@@ -1057,7 +1074,7 @@ export const api = {
     });
   },
   audiencePersonasGet: (topic) =>
-    cachedInvoke('audience_personas_get', { topic }, 10000),
+    cachedInvoke('audience_personas_get', { topic }, 10000, SWR_BUILD_OUTPUT_MS),
 
   // ── Launch & GTM (2026-05-02) ─────────────────────────────────────
   // Per-topic Launch Brief: target audience, demographics, where to
@@ -1067,7 +1084,7 @@ export const api = {
     return invoke('launch_brief', { topic, llm, provider });
   },
   launchBriefGet: (topic) =>
-    cachedInvoke('launch_brief_get', { topic }, 10000),
+    cachedInvoke('launch_brief_get', { topic }, 10000, SWR_BUILD_OUTPUT_MS),
 
   // ── Discovery framework expansion (2026-05-01_04) ──────────────────
   // Opportunity Solution Tree (Torres, 2016) — outcome → opportunities
@@ -1096,7 +1113,7 @@ export const api = {
     });
   },
   ostExperimentsList: (topic, painpointId = null) =>
-    cachedInvoke('ost_experiments_list', { topic, painpointId: painpointId || null }, 10000),
+    cachedInvoke('ost_experiments_list', { topic, painpointId: painpointId || null }, 10000, SWR_BUILD_OUTPUT_MS),
   experimentUpdate: (experimentId, fields) => {
     invalidate('ost_build', 'ost_experiments_list');
     return invoke('ost_experiment_update', {
@@ -1139,13 +1156,13 @@ export const api = {
     return invoke('run_empathy_build', { topic, persona });
   },
   empathyGet: (topic, persona = 'primary') =>
-    cachedInvoke('empathy_get', { topic, persona }, 10000),
+    cachedInvoke('empathy_get', { topic, persona }, 10000, SWR_BUILD_OUTPUT_MS),
   empathyList: (topic) =>
-    cachedInvoke('empathy_list', { topic }, 10000),
+    cachedInvoke('empathy_list', { topic }, 10000, SWR_BUILD_OUTPUT_MS),
 
   // Cagan's Four Risks (Inspired, 2017).
   fourRisksGet: (productId) =>
-    cachedInvoke('four_risks_get', { productId }, 5000),
+    cachedInvoke('four_risks_get', { productId }, 5000, SWR_BUILD_OUTPUT_MS),
   fourRisksSet: (productId, risk, status, notes = '') => {
     invalidate('four_risks_get', 'product_get');
     return invoke('four_risks_set', { productId, risk, status, notes });
@@ -1153,7 +1170,7 @@ export const api = {
 
   // Blue Ocean Value Curve (Kim & Mauborgne, 2005).
   valueCurveGet: (productId) =>
-    cachedInvoke('value_curve_get', { productId }, 10000),
+    cachedInvoke('value_curve_get', { productId }, 10000, SWR_BUILD_OUTPUT_MS),
   valueCurveSet: (productId, payload) => {
     invalidate('value_curve_get', 'product_get');
     return invoke('value_curve_set', {
@@ -1164,7 +1181,7 @@ export const api = {
 
   // ── TAM / SAM / SOM (Blank & Dorf, 2012) ────────────────────────────
   tamSamSomGet: (productId) =>
-    cachedInvoke('tam_sam_som_get', { productId }, 10000),
+    cachedInvoke('tam_sam_som_get', { productId }, 10000, SWR_BUILD_OUTPUT_MS),
   tamSamSomSet: (productId, payload) => {
     invalidate('tam_sam_som_get', 'product_get');
     return invoke('tam_sam_som_set', {
@@ -1175,7 +1192,7 @@ export const api = {
 
   // ── Porter's Five Forces (Porter, 1979) ─────────────────────────────
   porterGet: (productId) =>
-    cachedInvoke('porter_get', { productId }, 10000),
+    cachedInvoke('porter_get', { productId }, 10000, SWR_BUILD_OUTPUT_MS),
   porterSet: (productId, force, score, notes = '') => {
     invalidate('porter_get', 'product_get');
     return invoke('porter_set', { productId, force, score, notes });
@@ -1183,7 +1200,7 @@ export const api = {
 
   // ── 2x2 positioning map (Ries & Trout, 1981) ────────────────────────
   positioningGet: (productId) =>
-    cachedInvoke('positioning_get', { productId }, 10000),
+    cachedInvoke('positioning_get', { productId }, 10000, SWR_BUILD_OUTPUT_MS),
   positioningSet: (productId, payload) => {
     invalidate('positioning_get', 'product_get');
     return invoke('positioning_set', {
@@ -1194,7 +1211,7 @@ export const api = {
 
   // ── Cost model + pricing tiers ──────────────────────────────────────
   costModelGet: (productId) =>
-    cachedInvoke('cost_model_get', { productId }, 10000),
+    cachedInvoke('cost_model_get', { productId }, 10000, SWR_BUILD_OUTPUT_MS),
   costModelSet: (productId, payload) => {
     invalidate('cost_model_get', 'product_get');
     return invoke('cost_model_set', {
@@ -1223,11 +1240,11 @@ export const api = {
     return invoke('interview_delete', { interviewId });
   },
   interviewGet: (interviewId) =>
-    cachedInvoke('interview_get', { interviewId }, 5000),
+    cachedInvoke('interview_get', { interviewId }, 5000, SWR_BUILD_OUTPUT_MS),
   interviewList: (topic = '', productId = '') =>
-    cachedInvoke('interview_list', { topic, productId }, 5000),
+    cachedInvoke('interview_list', { topic, productId }, 5000, SWR_BUILD_OUTPUT_MS),
   interviewSummary: (topic, productId = '') =>
-    cachedInvoke('interview_summary', { topic, productId }, 10000),
+    cachedInvoke('interview_summary', { topic, productId }, 10000, SWR_BUILD_OUTPUT_MS),
 
   // ── Sean Ellis PMF survey (Ellis 2010) ──────────────────────────────
   pmfAdd: (topic, payload) => {
@@ -1235,9 +1252,9 @@ export const api = {
     return invoke('pmf_add', { topic, payloadJson: JSON.stringify(payload || {}) });
   },
   pmfList: (topic = '', productId = '') =>
-    cachedInvoke('pmf_list', { topic, productId }, 5000),
+    cachedInvoke('pmf_list', { topic, productId }, 5000, SWR_BUILD_OUTPUT_MS),
   pmfScore: (topic, productId = '') =>
-    cachedInvoke('pmf_score', { topic, productId }, 10000),
+    cachedInvoke('pmf_score', { topic, productId }, 10000, SWR_BUILD_OUTPUT_MS),
   pmfDelete: (responseId) => {
     invalidate('pmf_list', 'pmf_score');
     return invoke('pmf_delete', { responseId });
@@ -1249,21 +1266,21 @@ export const api = {
     return invoke('vw_add', { topic, payloadJson: JSON.stringify(payload || {}) });
   },
   vwAggregate: (topic, productId = '') =>
-    cachedInvoke('vw_aggregate', { topic, productId }, 10000),
+    cachedInvoke('vw_aggregate', { topic, productId }, 10000, SWR_BUILD_OUTPUT_MS),
   npsAdd: (topic, payload) => {
     invalidate('nps_score', 'survey_list');
     return invoke('nps_add', { topic, payloadJson: JSON.stringify(payload || {}) });
   },
   npsScore: (topic, productId = '') =>
-    cachedInvoke('nps_score', { topic, productId }, 10000),
+    cachedInvoke('nps_score', { topic, productId }, 10000, SWR_BUILD_OUTPUT_MS),
   maxdiffAdd: (topic, payload) => {
     invalidate('maxdiff_ranking', 'survey_list');
     return invoke('maxdiff_add', { topic, payloadJson: JSON.stringify(payload || {}) });
   },
   maxdiffRanking: (topic, productId = '') =>
-    cachedInvoke('maxdiff_ranking', { topic, productId }, 10000),
+    cachedInvoke('maxdiff_ranking', { topic, productId }, 10000, SWR_BUILD_OUTPUT_MS),
   surveyList: (topic = '', productId = '', kind = '') =>
-    cachedInvoke('survey_list', { topic, productId, kind }, 5000),
+    cachedInvoke('survey_list', { topic, productId, kind }, 5000, SWR_BUILD_OUTPUT_MS),
   surveyDelete: (responseId) => {
     invalidate('survey_list', 'vw_aggregate', 'nps_score', 'maxdiff_ranking');
     return invoke('survey_delete', { responseId });
@@ -1291,7 +1308,7 @@ export const api = {
     return invoke('pert_delete', { taskId });
   },
   pertList: (productId, tier = '') =>
-    cachedInvoke('pert_list', { productId, tier }, 5000),
+    cachedInvoke('pert_list', { productId, tier }, 5000, SWR_BUILD_OUTPUT_MS),
   pertRollup: (productId, opts = {}) =>
     cachedInvoke('pert_rollup', {
       productId,

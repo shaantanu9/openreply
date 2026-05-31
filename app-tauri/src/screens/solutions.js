@@ -4,8 +4,21 @@ import { api } from '../api.js';
 import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
+import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+// Domain stages for the blocking solutions pipeline LLM call. The pipeline
+// runs Problem → Why (JTBD/emotions) → Science (paper fetch) → Solution
+// (intervention synthesis) → Kano per painpoint, so these mirror that loop.
+const SOLUTION_STAGES = [
+  'Reading painpoints for this topic…',
+  'Extracting why-data (JTBD + emotions)…',
+  'Fetching supporting science papers…',
+  'Synthesizing evidence-backed interventions…',
+  'Categorizing by Kano / scoring impact…',
+  'Almost done — packaging solutions…',
+];
 
 function escape(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -289,7 +302,10 @@ export async function loadSolutions(contentEl, topic) {
     });
 
     $('#btn-rerun-solutions', contentEl)?.addEventListener('click', async () => {
-      set('<div class="empty-state">Re-running…</div>');
+      const stop = renderAnalyzingState(contentEl, {
+        headline: 'Re-running solutions pipeline', stages: SOLUTION_STAGES,
+        medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+      });
       let err = null;
       try {
         await api.runSolutionsPipeline(topic);
@@ -298,6 +314,8 @@ export async function loadSolutions(contentEl, topic) {
         console.error('solutions pipeline failed:', e);
       }
       if (err) {
+        stop();
+        if (contentEl.dataset.tab !== 'solutions') return;
         set(
           `<div class="empty-big"><h3>Couldn't re-run solutions</h3>
             <p>${(err && (err.message || String(err))) || 'unknown error'}</p>
@@ -307,6 +325,8 @@ export async function loadSolutions(contentEl, topic) {
           </div>`);
         return;
       }
+      stop({ snapToComplete: true });
+      if (contentEl.dataset.tab !== 'solutions') return;
       await loadSolutions(contentEl, topic);
     });
 
@@ -391,30 +411,37 @@ export async function loadSolutions(contentEl, topic) {
     if (contentEl.dataset.tab !== 'solutions') return;
     window.refreshIcons?.();
     const runBtn = $('#btn-run-solutions', contentEl);
-    // Re-query #solutions-status on every assignment so a tab re-render
-    // mid-run doesn't strand the captured ref. Without this, a captured
-    // `status` goes null after `set(renderEmpty(...))` runs again or
-    // when the user switches tabs and back, and the next assignment
-    // throws `TypeError: null is not an object`. setStatus no-ops if
-    // the host is gone — matches the pattern in concepts.js / chat.
-    const setStatus = (msg) => {
-      const el = contentEl.querySelector('#solutions-status');
-      if (el) el.textContent = msg;
-    };
     const runPipeline = async () => {
       if (runBtn) runBtn.disabled = true;
-      setStatus('Running… this may take 1-3 minutes.');
+      // Full-bleed alive loader replaces the empty CTA while the blocking
+      // pipeline runs. On skip/error we fall back to the empty CTA + a
+      // status line so the user can retry.
+      const stop = renderAnalyzingState(contentEl, {
+        headline: 'Running solutions pipeline', stages: SOLUTION_STAGES,
+        medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 3,
+      });
+      const backToEmpty = (msg) => {
+        stop();
+        if (contentEl.dataset.tab !== 'solutions') return;
+        set(renderEmpty(topic));
+        window.refreshIcons?.();
+        const el = contentEl.querySelector('#solutions-status');
+        if (el) el.textContent = msg;
+        const b = $('#btn-run-solutions', contentEl);
+        if (b) b.addEventListener('click', runPipeline);
+      };
       try {
         const result = await api.runSolutionsPipeline(topic);
+        if (contentEl.dataset.tab !== 'solutions') { stop(); return; }
         if (result?.skipped) {
-          setStatus(`Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`);
-          if (runBtn) runBtn.disabled = false;
+          backToEmpty(`Skipped: ${result.reason || 'unknown'}. Add an LLM key in Settings.`);
           return;
         }
+        stop({ snapToComplete: true });
+        if (contentEl.dataset.tab !== 'solutions') return;
         await loadSolutions(contentEl, topic);
       } catch (e) {
-        setStatus(`Error: ${e?.message || e}`);
-        if (runBtn) runBtn.disabled = false;
+        backToEmpty(`Error: ${e?.message || e}`);
       }
     };
     runBtn?.addEventListener('click', runPipeline);

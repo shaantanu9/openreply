@@ -13,6 +13,7 @@
 //   #/improve              → topic picker
 //   #/improve/<topic>      → checkpoint dashboard + Run/Force buttons
 import { api, esc } from '../api.js';
+import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -20,6 +21,20 @@ function topicFromHash() {
   const m = (location.hash || '').match(/^#\/improve\/([^/?]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
+
+// Domain stages for the single blocking full-pipeline run (api.pipelineRun
+// walks audience → synthesize → deliberate → launch). It blocks until every
+// stale stage finishes, so the dashboard would otherwise sit frozen behind a
+// static "Running…" line. Mount the alive loader for the duration, then
+// repaint the real checkpoint dashboard from pipeline_status().
+const PIPELINE_STAGES = [
+  'Clustering real authors into ICP personas…',
+  'Synthesizing findings from the corpus…',
+  'Debating findings across 5 personas…',
+  'Collecting cluster endorsements…',
+  'Refreshing the launch brief…',
+  'Almost done — finalizing checkpoints…',
+];
 
 const STAGE_INFO = {
   audience:   { label: 'Audience clusters',  sub: 'Personas from real Reddit users',           icon: 'users',         next: '/audience/' },
@@ -29,9 +44,10 @@ const STAGE_INFO = {
 };
 
 function checkmark(stage) {
-  if (stage.ready && stage.fresh) return '<span style="color:#047857;font-size:18px">✓</span>';
-  if (stage.ready)                return '<span style="color:#92400e;font-size:18px">~</span>';
-  return                                  '<span style="color:#be123c;font-size:18px">✗</span>';
+  // Colors in style.css (.imp-stat--ok/warn/bad) — no inline hex.
+  if (stage.ready && stage.fresh) return '<span class="imp-mark imp-stat--ok">✓</span>';
+  if (stage.ready)                return '<span class="imp-mark imp-stat--warn">~</span>';
+  return                                  '<span class="imp-mark imp-stat--bad">✗</span>';
 }
 
 function stageRow(stage, topic) {
@@ -54,9 +70,10 @@ function stageRow(stage, topic) {
   const statusLabel = stage.ready
     ? (stage.fresh ? 'fresh' : 'stale (>24h)')
     : 'missing';
-  const tone = stage.ready
-    ? (stage.fresh ? 'background:rgba(4,120,87,0.14);color:#047857' : 'background:rgba(202,138,4,0.14);color:#92400e')
-    : 'background:rgba(190,18,60,0.14);color:#be123c';
+  // Tone palette lives in style.css (.imp-tone--ok/warn/bad) — no inline hex.
+  const toneClass = stage.ready
+    ? (stage.fresh ? 'imp-tone--ok' : 'imp-tone--warn')
+    : 'imp-tone--bad';
   const nextHref = (info.next || '').includes(':')
     ? null
     : (info.next + encodeURIComponent(topic));
@@ -70,7 +87,7 @@ function stageRow(stage, topic) {
             <p>${esc(info.sub)} · <span class="muted" style="font-size:11px">${esc(detailStr)}</span></p>
           </div>
         </div>
-        <span class="pill" style="${tone};font-family:'DM Mono',monospace;font-size:11px">${esc(statusLabel)}</span>
+        <span class="pill ${toneClass}" style="font-family:'DM Mono',monospace;font-size:11px">${esc(statusLabel)}</span>
         ${nextHref ? `<a class="btn btn-ghost btn-xs btn-bordered" href="#${nextHref}">Open →</a>` : ''}
       </div>
     </div>
@@ -109,13 +126,20 @@ function statHeadline(status) {
 }
 
 async function refreshAndPaint(root, topic) {
+  // routeGen guard — a slow pipelineStatus() can resolve after the user has
+  // navigated away; main.js bumps root.dataset.routeGen on every route, so
+  // this is the JS analog of Flutter's `context.mounted` check.
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   let status;
   try {
     status = await api.pipelineStatus(topic);
   } catch (e) {
+    if (!alive()) return;
     root.innerHTML = `<div class="empty-big"><h3>Couldn't load pipeline status</h3><p>${esc(e?.message || e)}</p></div>`;
     return;
   }
+  if (!alive()) return;
   paintImprove(root, topic, status);
 }
 
@@ -182,19 +206,27 @@ function paintImprove(root, topic, status) {
 }
 
 async function runPipeline(root, topic, { force = false } = {}) {
-  // Show "running" state on each stage button.
-  const buttons = root.querySelectorAll('.btn');
-  buttons.forEach(b => { b.disabled = true; });
-  const live = root.querySelector('.muted');
-  if (live) live.innerHTML = `<strong>Running pipeline${force ? ' (force=true)' : ''}…</strong> stages will update as they complete.`;
+  // pipelineRun blocks until every stale stage finishes (audience →
+  // synthesize → deliberate → launch — minutes, not seconds). Replace the
+  // dashboard with the full-bleed alive loader so the wait doesn't look
+  // frozen, then repaint the real checkpoints from pipeline_status().
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
+  const stop = renderAnalyzingState(root, {
+    headline: `Running full pipeline${force ? ' (force)' : ''}`,
+    stages: PIPELINE_STAGES,
+    medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 4,
+  });
   try {
     const res = await api.pipelineRun(topic, { force });
-    if (res?.ok === false) {
+    if (alive() && res?.ok === false) {
       alert(`Pipeline error: ${res.error || 'unknown'}`);
     }
   } catch (e) {
-    alert(`Pipeline error: ${e?.message || e}`);
+    if (alive()) alert(`Pipeline error: ${e?.message || e}`);
   }
+  stop({ snapToComplete: true });
+  if (!alive()) return;
   refreshAndPaint(root, topic);
 }
 
@@ -203,6 +235,8 @@ async function renderTopicImprove(root, topic) {
 }
 
 async function renderPicker(root) {
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Improve a topic</strong></div>
@@ -213,9 +247,11 @@ async function renderPicker(root) {
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {
+    if (!alive()) return;
     $('#imp-pick', root).innerHTML = `<div class="empty-big"><h3>Couldn't list topics</h3><p>${esc(e?.message || e)}</p></div>`;
     return;
   }
+  if (!alive()) return;
   if (!topics?.length) {
     $('#imp-pick', root).innerHTML = `
       <div class="empty-big">

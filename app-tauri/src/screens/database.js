@@ -102,6 +102,11 @@ export async function renderDatabase(root) {
     const sql = sqlEl.value.trim();
     if (!sql) return;
     state.lastQuery = sql;
+    // Guard against stale renders: a slow query can resolve after the user
+    // has navigated to another screen. `alive()` mirrors the app-wide
+    // routeGen guard (see main.js) so we never write to a detached node.
+    const myGen = root.dataset.routeGen;
+    const alive = () => root.dataset.routeGen === myGen && root.isConnected;
     const out = root.querySelector('#db-query-result');
     const meta = root.querySelector('#db-query-meta');
     out.innerHTML = `<div class="empty-state">running…</div>`;
@@ -110,12 +115,14 @@ export async function renderDatabase(root) {
     const t0 = performance.now();
     try {
       const rows = await api.runQuery(sql);
+      if (!alive()) return;
       const ms = Math.round(performance.now() - t0);
       meta.textContent = `${Array.isArray(rows) ? rows.length : 0} rows · ${ms}ms`;
       state.lastRows = Array.isArray(rows) ? rows : [];
       renderResult(out, state.lastRows);
       if (state.lastRows.length) csvBtn.hidden = false;
     } catch (e) {
+      if (!alive()) return;
       // Parse sqlite's "near \"X\": syntax error" format into a friendlier
       // two-line error with the offending token highlighted.
       const raw = String(e?.message || e);
@@ -152,6 +159,8 @@ export async function renderDatabase(root) {
 
 async function renderTableList(root) {
   const list = root.querySelector('#db-table-list');
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
 
   // Get counts for curated tables in a single query.
   const countSql = CURATED_TABLES
@@ -162,6 +171,7 @@ async function renderTableList(root) {
     const res = await api.runQuery(`SELECT ${countSql}`);
     if (Array.isArray(res) && res[0]) counts = res[0];
   } catch {}
+  if (!alive()) return;
 
   list.innerHTML = CURATED_TABLES.map(t => `
     <button class="db-table-btn" data-table="${esc(t.name)}">
@@ -181,6 +191,8 @@ async function renderTableList(root) {
 
 async function browseTable(root, table) {
   state.activeTable = table;
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   root.querySelectorAll('.db-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === 'browse'));
   root.querySelector('#db-pane-browse').classList.remove('hidden');
   root.querySelector('#db-pane-query').classList.add('hidden');
@@ -194,6 +206,7 @@ async function browseTable(root, table) {
       api.runQuery(`SELECT * FROM ${table} ORDER BY rowid DESC LIMIT ${SAMPLE_LIMIT}`),
       api.runQuery(`PRAGMA table_info(${table})`),
     ]);
+    if (!alive()) return;
     const count = Array.isArray(countRes) && countRes[0] ? countRes[0].n : 0;
     const rows  = Array.isArray(sampleRes) ? sampleRes : [];
     const schema = Array.isArray(schemaRes) ? schemaRes : [];
@@ -229,6 +242,7 @@ async function browseTable(root, table) {
       root.querySelector('#db-pane-query').classList.remove('hidden');
     });
   } catch (e) {
+    if (!alive()) return;
     pane.innerHTML = `<div class="db-error">Error loading ${esc(table)}: ${esc(e?.message || e)}</div>`;
   }
 }

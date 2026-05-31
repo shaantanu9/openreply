@@ -11,8 +11,21 @@
 // Design: matches Home/Topics design language — slash crumbs +
 // topbar-spacer, card-head/card-body, btn-primary/btn-ghost-bordered.
 import { api, esc } from '../api.js';
+import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+// Domain stages for the blocking empathy-map build (research/empathy.py):
+// mine verbatim quotes, behavioural signals, emotion clusters, then LLM-fill
+// Thinks + the Says-vs-Does gap insight.
+const EMPATHY_STAGES = [
+  'Mining the corpus for this persona…',
+  'Pulling verbatim quotes (Says)…',
+  'Detecting workarounds & behaviour (Does)…',
+  'Clustering emotion words (Feels)…',
+  'Inferring beliefs (Thinks) with the LLM…',
+  'Writing the Says-vs-Does gap insight…',
+];
 
 function isMissingMapError(err) {
   const msg = String(err?.message || err || '').toLowerCase();
@@ -126,6 +139,9 @@ function renderEmpathyShell(topic, persona, map, state) {
 }
 
 async function renderTopicEmpathy(root, topic) {
+  // routeGen guard — JS analog of Flutter context.mounted
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   const persona =
     new URLSearchParams((location.hash.split('?')[1] || '')).get('persona')
     || 'primary';
@@ -134,12 +150,27 @@ async function renderTopicEmpathy(root, topic) {
   let result;
   try {
     result = await api.empathyGet(topic, persona);
+    if (!alive()) return;
   } catch (e) {
+    if (!alive()) return;
     if (isMissingMapError(e) || isNoLlmError(e)) {
+      // No map yet → auto-bootstrap with a blocking build. Replace the
+      // terse "Loading…" with the alive loader for this 5+s LLM call.
+      const stop = renderAnalyzingState(root, {
+        headline: 'Building empathy map', stages: EMPATHY_STAGES,
+        medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 4,
+      });
       try {
         await api.runEmpathyBuild(topic, persona);
+        if (!alive()) return;
         result = await api.empathyGet(topic, persona);
+        if (!alive()) return;
+        stop({ snapToComplete: true });
+        if (topicFromHash() !== topic) return;
       } catch (bootstrapErr) {
+        if (!alive()) return;
+        stop();
+        if (topicFromHash() !== topic) return;
         if (isNoLlmError(bootstrapErr)) {
           root.innerHTML = `<div class="empty-big"><h3>No LLM configured</h3><p>The empathy map can still run in offline mode from local corpus data. Click Build / refresh to try again.</p></div>`;
         } else {
@@ -173,29 +204,44 @@ async function renderTopicEmpathy(root, topic) {
   window.refreshIcons?.();
 
   $('#empathy-build', root)?.addEventListener('click', async () => {
-    const btn = $('#empathy-build', root);
+    // routeGen guard — JS analog of Flutter context.mounted
+    const myGen = root.dataset.routeGen;
+    const alive = () => root.dataset.routeGen === myGen && root.isConnected;
     const personaIn = ($('#empathy-persona', root)?.value || 'primary').trim() || 'primary';
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader"></i> Building…';
-    window.refreshIcons?.();
+    // Full-bleed alive loader while the blocking empathy build runs. On
+    // success we reload the topic view (which re-mounts the grid); on
+    // failure we re-render the shell and surface the error via alert.
+    const stop = renderAnalyzingState(root, {
+      headline: 'Building empathy map', stages: EMPATHY_STAGES,
+      medianRuntimeSec: 40, etaText: 'typically 20–60 seconds', skeletonCount: 4,
+    });
     try {
       const out = await api.runEmpathyBuild(topic, personaIn);
+      if (!alive()) return;
       if (out?.ok === false) throw new Error(out.error || 'build failed');
+      stop({ snapToComplete: true });
+      if (topicFromHash() !== topic) return;
       location.hash = `#/empathy/${encodeURIComponent(topic)}?persona=${encodeURIComponent(personaIn)}&t=${Date.now()}`;
       setTimeout(() => renderTopicEmpathy(root, topic), 0);
     } catch (e) {
+      if (!alive()) return;
+      stop();
+      if (topicFromHash() !== topic) return;
       const msg = isNoLlmError(e)
         ? 'No LLM configured — offline mode is available.'
         : `Couldn't build empathy map: ${e?.message || e}`;
+      // Re-render the shell so the loader is replaced by the map view +
+      // a working Build/refresh button, then surface the reason.
+      setTimeout(() => renderTopicEmpathy(root, topic), 0);
       alert(msg);
-      btn.disabled = false;
-      btn.innerHTML = '<i data-lucide="refresh-cw"></i> Build / refresh';
-      window.refreshIcons?.();
     }
   });
 }
 
 async function renderPicker(root) {
+  // routeGen guard — JS analog of Flutter context.mounted
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Empathy Maps</strong></div>
@@ -206,7 +252,8 @@ async function renderPicker(root) {
   `;
 
   let topics = [];
-  try { topics = await api.listTopics(); } catch (e) {
+  try { topics = await api.listTopics(); if (!alive()) return; } catch (e) {
+    if (!alive()) return;
     $('#empathy-picker-mount', root).innerHTML =
       `<div class="empty-big"><h3>Couldn't list topics</h3><p>${esc(e?.message || e)}</p></div>`;
     return;

@@ -14,9 +14,22 @@
 // stat-grid headline, two-col blocks, section-head transitions,
 // btn-primary / btn-ghost-bordered.
 import { api, esc } from '../api.js';
+import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+// Domain stages for the single blocking LLM-augmented launch-brief build
+// (api.launchBrief with {llm:true}). The whole brief lands at once — hero-only
+// loader. Offline mode (deterministic SQL) is sub-second and keeps plain text.
+const LAUNCH_STAGES = [
+  'Mining the corpus for this topic…',
+  'Inferring ICP personas & demographics…',
+  'Ranking launch channels by fit…',
+  'Synthesizing market requirements & pricing…',
+  'Writing the launch sequence…',
+  'Almost done — assembling the brief…',
+];
 
 function topicFromHash() {
   const m = (location.hash || '').match(/^#\/launch\/([^/?]+)/);
@@ -360,20 +373,39 @@ function renderShell(topic, brief) {
 }
 
 async function generateAndRender(root, topic, { llm = true } = {}) {
+  // routeGen guard — JS analog of Flutter context.mounted
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs"><a href="#/launch">Launch &amp; GTM</a> / <strong>${esc(topic)}</strong></div>
       <div class="topbar-spacer"></div>
     </header>
-    <div class="empty-state" style="padding:40px">${llm ? 'Synthesizing the launch brief — this can take 30–90 s when LLM augmentation is on…' : 'Building deterministic brief from cached data…'}</div>
+    <div id="launch-gen-mount"></div>
   `;
+  const mount = $('#launch-gen-mount', root);
+  // LLM augmentation is the 5+ s blocking call — show the full-bleed alive
+  // loader. Offline mode is deterministic SQL (sub-second) — keep plain text.
+  let stop = null;
+  if (llm) {
+    stop = renderAnalyzingState(mount, {
+      headline: 'Synthesizing the launch brief', stages: LAUNCH_STAGES,
+      medianRuntimeSec: 40, etaText: 'typically 30–90 seconds', skeletonCount: 4,
+    });
+  } else {
+    mount.innerHTML = `<div class="empty-state" style="padding:40px">Building deterministic brief from cached data…</div>`;
+  }
   let brief;
   try {
     brief = await api.launchBrief(topic, { llm });
   } catch (e) {
+    if (!alive()) return;
+    stop?.();
     root.innerHTML = `<div class="empty-big"><h3>Couldn't generate brief</h3><p>${esc(e?.message || e)}</p></div>`;
     return;
   }
+  stop?.({ snapToComplete: true });
+  if (!alive()) return;
   if (brief?.timed_out) {
     root.innerHTML = `<div class="empty-big"><h3>Brief generation timed out</h3><p>${esc(brief.error || 'try again or switch to offline mode')}</p>
       <button class="btn btn-ghost btn-sm btn-bordered" id="launch-fallback">Build offline (no LLM)</button></div>`;
@@ -395,6 +427,9 @@ function wireActions(root, topic) {
 }
 
 async function renderTopicLaunch(root, topic) {
+  // routeGen guard — JS analog of Flutter context.mounted
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   root.innerHTML = `<div class="empty-state">Loading launch brief…</div>`;
   let brief;
   try {
@@ -402,6 +437,7 @@ async function renderTopicLaunch(root, topic) {
   } catch (e) {
     brief = { ok: false, error: String(e?.message || e) };
   }
+  if (!alive()) return;
   if (brief?.ok && brief.cached) {
     root.innerHTML = renderShell(topic, brief);
     window.refreshIcons?.();
@@ -438,6 +474,9 @@ async function renderTopicLaunch(root, topic) {
 }
 
 async function renderPicker(root) {
+  // routeGen guard — JS analog of Flutter context.mounted
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Launch &amp; GTM</strong></div>
@@ -448,10 +487,12 @@ async function renderPicker(root) {
   `;
   let topics = [];
   try { topics = await api.listTopics(); } catch (e) {
+    if (!alive()) return;
     $('#launch-picker-mount', root).innerHTML =
       `<div class="empty-big"><h3>Couldn't list topics</h3><p>${esc(e?.message || e)}</p></div>`;
     return;
   }
+  if (!alive()) return;
   if (!topics?.length) {
     $('#launch-picker-mount', root).innerHTML = `
       <div class="empty-big">

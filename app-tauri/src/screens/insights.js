@@ -11,8 +11,32 @@ import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { postLink } from '../lib/postLink.js';
+import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+// Domain stages for the one-shot insight synthesis (single long-context
+// LLM call): pack the full corpus, score opportunities (Ulwick), build the
+// Minto pyramid + hypothesis cards + competitor landscape.
+const INSIGHT_STAGES = [
+  'Packing your full corpus into one call…',
+  'Clustering painpoints, wishes & workarounds…',
+  'Scoring opportunities (importance × satisfaction)…',
+  'Mapping the competitor landscape…',
+  'Drafting falsifiable hypothesis cards…',
+  'Assembling the Minto-structured brief…',
+];
+
+// Chunked map-reduce path — many small calls for low-credit providers, then
+// a deterministic merge. Longer than the fast path.
+const INSIGHT_CHUNKED_STAGES = [
+  'Splitting the corpus into small chunks…',
+  'Synthesizing each chunk in parallel…',
+  'Deduplicating findings across chunks…',
+  'Merging into one opportunity-scored list…',
+  'Building competitor landscape & quadrant…',
+  'Assembling the final brief…',
+];
 
 // Ulwick opportunity score is 0-20 scale (importance + max(imp-sat, 0)).
 // Thresholds match the methodology doc: >15 extreme, 10-15 clear, <10 overserved.
@@ -50,13 +74,10 @@ function renderSourceBadges(breakdown) {
   const entries = Object.entries(breakdown).filter(([, n]) => n > 0);
   if (!entries.length) return '';
   entries.sort((a, b) => b[1] - a[1]);
-  const SRC = {
-    reddit: '#FFE4D4', hn: '#FFECDA', arxiv: '#FBE3E6', openalex: '#EFE7FB',
-    pubmed: '#E4F0FA', scholar: '#E1F2EA', appstore: '#F0E8FA', playstore: '#E0F2D9',
-    devto: '#E8E8E8', stackoverflow: '#FEE8D6', github: '#E8E8E8', gnews: '#E1EEFC',
-  };
+  // Per-source tint comes from .insight-src-badge[data-source="…"] in
+  // style.css — keyed off the attribute below, no inline color here.
   return entries.map(([src, n]) =>
-    `<span class="insight-src-badge" data-source="${esc(src)}" style="background:${SRC[src] || '#E8E8E8'}"><b>${n}</b> ${esc(src)}</span>`
+    `<span class="insight-src-badge" data-source="${esc(src)}"><b>${n}</b> ${esc(src)}</span>`
   ).join('');
 }
 
@@ -604,12 +625,19 @@ function renderCompetitorMatrix(data) {
 }
 
 async function loadCompetitorMatrix(contentEl, topic) {
+  // Sub-tab liveness guard — this loader runs inside topic.js's tab system,
+  // so the active-screen signal is `contentEl.dataset.tab` (the same gate the
+  // `set()` helper uses), NOT routeGen (which lives on #main-content, not on
+  // this #tab-content element). A slow matrix fetch must not paint into a tab
+  // the user has since switched away from.
+  const alive = () => contentEl.dataset.tab === 'insights' && contentEl.isConnected;
   const slot = contentEl.querySelector('#competitor-matrix-slot');
   if (!slot) return;
   let data;
   try {
     data = await api.competitorMatrix(topic);
-  } catch { slot.innerHTML = ''; return; }
+  } catch { if (!alive()) return; slot.innerHTML = ''; return; }
+  if (!alive()) return;
   if (!data || !data.ok || !(data.features || []).length) { slot.innerHTML = ''; return; }
   slot.innerHTML = renderCompetitorMatrix(data);
   window.refreshIcons?.();
@@ -744,13 +772,13 @@ export async function loadInsights(contentEl, topic) {
 
 async function runSynth(contentEl, topic) {
   const set = (html) => { if (contentEl.dataset.tab === 'insights') contentEl.innerHTML = html; };
-  set(`
-    <div class="empty-state" style="padding:40px;text-align:center">
-      <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-      <div style="font-weight:600;margin-bottom:4px">Generating insights with Claude…</div>
-      <div style="color:var(--ink-3);font-size:var(--fs-13)">Packing your full corpus into one synthesis call. 30–90 s.</div>
-    </div>
-  `);
+  // Full-bleed alive loader while the blocking synthesis call runs. We snap
+  // it to complete just before painting the report, and stop() (no snap)
+  // before any error/empty render.
+  const stop = renderAnalyzingState(contentEl, {
+    headline: 'Generating insights', stages: INSIGHT_STAGES,
+    medianRuntimeSec: 45, etaText: 'typically 30–90 seconds', skeletonCount: 3,
+  });
   // Use monitor_run_topic instead of raw synthesize — same synthesis call,
   // but wrapped in the Phase-4 delta recorder. Every regenerate now
   // writes a topic_runs row, which populates the Dashboard weekly card.
@@ -758,14 +786,16 @@ async function runSynth(contentEl, topic) {
   try {
     runResult = await api.monitorRunTopic(topic, true);  // skip_collect=true for speed
   } catch (e) {
+    stop();
     if (contentEl.dataset.tab !== 'insights') return;
     set(renderError(e?.message || String(e)));
     wireRunButton(contentEl, topic);
     window.refreshIcons?.();
     return;
   }
-  if (contentEl.dataset.tab !== 'insights') return;
+  if (contentEl.dataset.tab !== 'insights') { stop(); return; }
   if (!runResult || !runResult.ok) {
+    stop();
     set(renderError(
       runResult?.error || 'Synthesis returned no report.',
       runResult?.error_code,
@@ -775,6 +805,8 @@ async function runSynth(contentEl, topic) {
     window.refreshIcons?.();
     return;
   }
+  stop({ snapToComplete: true });
+  if (contentEl.dataset.tab !== 'insights') return;
   const report = runResult.report;
   // Phase-10 — fire-and-forget link refresh. Runs the palace linker in the
   // background so next insights load shows research chips. Failure here is
@@ -809,13 +841,12 @@ function wireRunButton(contentEl, topic) {
 // findings. Deterministic merge on the Python side dedupes across chunks.
 async function runChunkedSynth(contentEl, topic) {
   const set = (html) => { if (contentEl.dataset.tab === 'insights') contentEl.innerHTML = html; };
-  set(`
-    <div class="empty-state" style="padding:40px;text-align:center">
-      <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-      <div style="font-weight:600;margin-bottom:4px">Deep scan (chunked mode)…</div>
-      <div style="color:var(--ink-3);font-size:var(--fs-13)">Splitting the corpus into small chunks and synthesizing each in parallel. Longer than the fast path but works on low-credit providers.</div>
-    </div>
-  `);
+  // Alive loader for the chunked map-reduce path. Same cleanup contract as
+  // runSynth — snap on success, stop() before any error/empty render.
+  const stop = renderAnalyzingState(contentEl, {
+    headline: 'Deep scan (chunked mode)', stages: INSIGHT_CHUNKED_STAGES,
+    medianRuntimeSec: 60, etaText: 'longer than the fast path — works on low-credit providers', skeletonCount: 3,
+  });
   let report;
   try {
     report = await api.synthesizeInsightsChunked(topic, {
@@ -824,14 +855,16 @@ async function runChunkedSynth(contentEl, topic) {
       maxTokensPerChunk: 800,
     });
   } catch (e) {
+    stop();
     if (contentEl.dataset.tab !== 'insights') return;
     set(renderError(e?.message || String(e)));
     wireRunButton(contentEl, topic);
     window.refreshIcons?.();
     return;
   }
-  if (contentEl.dataset.tab !== 'insights') return;
+  if (contentEl.dataset.tab !== 'insights') { stop(); return; }
   if (!report || !report.ok) {
+    stop();
     set(renderError(
       report?.error || 'Chunked synth returned no report.',
       report?.error_code,
@@ -841,6 +874,8 @@ async function runChunkedSynth(contentEl, topic) {
     window.refreshIcons?.();
     return;
   }
+  stop({ snapToComplete: true });
+  if (contentEl.dataset.tab !== 'insights') return;
   api.linkResearch(topic, 3).catch(() => {});
   await annotateWithResearchLinks(report, topic);
   set(renderFull(report, contentEl, topic));
