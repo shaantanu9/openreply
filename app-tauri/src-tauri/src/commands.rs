@@ -2754,6 +2754,102 @@ pub async fn empathy_list(app: AppHandle, topic: String) -> Result<Value, String
     Ok(result)
 }
 
+// ── Persistent topic AI chat conversations (2026-05-31) ──────────────────
+//
+// ChatGPT-style saved threads per topic. Native read-WRITE rusqlite
+// (db.rs chat_conv_*) — no Python sidecar spawn on the hot path. The UI
+// stores its in-memory message array as a JSON blob per conversation.
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// List conversation metadata. `topic` omitted → every conversation
+/// across all topics (the global Chats view).
+#[tauri::command]
+pub async fn chat_conv_list(app: AppHandle, topic: Option<String>) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(Value::Array(vec![]));
+    }
+    tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        crate::db::chat_conv_list(&db_path, topic.as_deref())
+            .map(Value::Array)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("chat_conv_list failed: {e}"))?
+}
+
+/// Fetch one conversation with its full message array.
+#[tauri::command]
+pub async fn chat_conv_get(app: AppHandle, id: String) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(Value::Null);
+    }
+    tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        crate::db::chat_conv_get(&db_path, &id)
+            .map(|o| o.unwrap_or(Value::Null))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("chat_conv_get failed: {e}"))?
+}
+
+/// Upsert a conversation (create on first save, update thereafter).
+#[tauri::command]
+pub async fn chat_conv_save(
+    app: AppHandle,
+    id: String,
+    topic: String,
+    title: String,
+    messages_json: String,
+) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    let now = now_ms();
+    tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        crate::db::chat_conv_save(&db_path, &id, &topic, &title, &messages_json, now)
+            .map(|n| serde_json::json!({ "ok": true, "id": id, "msg_count": n }))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("chat_conv_save failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn chat_conv_rename(app: AppHandle, id: String, title: String) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    let now = now_ms();
+    tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        crate::db::chat_conv_rename(&db_path, &id, &title, now)
+            .map(|_| serde_json::json!({ "ok": true }))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("chat_conv_rename failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn chat_conv_delete(app: AppHandle, id: String) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        crate::db::chat_conv_delete(&db_path, &id)
+            .map(|_| serde_json::json!({ "ok": true }))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("chat_conv_delete failed: {e}"))?
+}
+
 // ── Native rusqlite readers for the products-table JSON-blob getters ──────
 //
 // four_risks / value_curve / tam_sam_som / porter / positioning / cost_model

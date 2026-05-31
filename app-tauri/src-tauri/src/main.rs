@@ -493,6 +493,12 @@ fn main() {
             commands::interview_get,
             commands::interview_list,
             commands::interview_summary,
+            // Persistent topic AI chat conversations (ChatGPT-style history)
+            commands::chat_conv_list,
+            commands::chat_conv_get,
+            commands::chat_conv_save,
+            commands::chat_conv_rename,
+            commands::chat_conv_delete,
             commands::pmf_add,
             commands::pmf_list,
             commands::pmf_score,

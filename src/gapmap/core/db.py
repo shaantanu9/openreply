@@ -574,6 +574,27 @@ def init_schema(db: Database) -> None:
         db["saved_views"].create_index(["scope"])
         db["saved_views"].create_index(["pinned"])
 
+    # Persistent topic AI chat conversations (2026-05-31) — ChatGPT-style
+    # saved threads per topic. Stored as a JSON message-array blob per
+    # conversation (mirrors the UI's in-memory chatHistory shape). Reads
+    # and writes go through the native Rust path (db.rs chat_conv_*); this
+    # block just guarantees the table exists for fresh databases.
+    if "chat_conversations" not in db.table_names():
+        db["chat_conversations"].create(
+            {
+                "id": str,             # client-generated conversation id
+                "topic": str,
+                "title": str,          # auto from first user message, renameable
+                "messages_json": str,  # full message array (UI chatHistory shape)
+                "msg_count": int,
+                "created_at": int,     # epoch ms
+                "updated_at": int,     # epoch ms (sort key)
+            },
+            pk="id",
+        )
+        db["chat_conversations"].create_index(["topic", "updated_at"])
+        db["chat_conversations"].create_index(["updated_at"])
+
     # Favorites / pinned topics (T6.6).
     if "topic_favorites" not in db.table_names():
         db["topic_favorites"].create(

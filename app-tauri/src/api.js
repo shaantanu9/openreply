@@ -722,6 +722,13 @@ export const api = {
   startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
   cancelChat:      ()        => invoke('cancel_chat'),
   chatStatus:      ()        => invoke('chat_status'),
+  // Persistent ChatGPT-style conversations (native rusqlite). topic omitted
+  // → every conversation across all topics (global Chats view).
+  chatConvList:    (topic = null) => invoke('chat_conv_list', { topic }),
+  chatConvGet:     (id)        => invoke('chat_conv_get', { id }),
+  chatConvSave:    (id, topic, title, messagesJson) => invoke('chat_conv_save', { id, topic, title, messagesJson }),
+  chatConvRename:  (id, title) => invoke('chat_conv_rename', { id, title }),
+  chatConvDelete:  (id)        => invoke('chat_conv_delete', { id }),
   testLlm:         (provider, model) => invoke('test_llm', { provider, model }),
   listOllamaModels: ()       => cachedInvoke('list_ollama_models', null, 10000),
   // Dynamic model list from any configured cloud provider's /models endpoint.

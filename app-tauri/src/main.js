@@ -164,6 +164,8 @@ import { renderPrd } from './screens/prd.js';
 // Launch & GTM (2026-05-02) — per-topic go-to-market brief that
 // synthesizes audience + demographics + channels + MVP + pricing.
 import { renderLaunch } from './screens/launch.js';
+// Global Chats (2026-05-31) — every saved topic-AI conversation in one list.
+import { renderChats } from './screens/chats.js';
 // Audience (2026-05-03) — clusters of REAL authors per topic.
 // Replaces every LLM-imagined-persona surface with citation-backed clusters.
 import { renderAudience } from './screens/audience.js';
@@ -197,6 +199,7 @@ const routes = [
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },
+  { match: /^\/chats\/?$/,          render: renderChats },
   { match: /^\/activity\/?$/,       render: renderActivity },
   { match: /^\/database\/?$/,       render: renderDatabase },
   { match: /^\/science\/?$/,        render: renderScience },

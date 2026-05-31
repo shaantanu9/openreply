@@ -36,8 +36,18 @@ async function withTimeout(promise, ms, label = 'request') {
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
 // key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
-// Hydrated from localStorage on first access per topic (survives page reload).
+// This is the IN-MEMORY buffer for the *currently open* conversation. It is
+// hydrated from (and persisted to) SQLite per-conversation via the native
+// chat_conv_* commands — ChatGPT-style saved threads, durable across restarts.
 const chatHistory = new Map();
+// topic -> active conversation id (the thread currently shown in the buffer).
+const chatActiveConv = new Map();
+// convId -> manual title override (set via rename; wins over the auto-title).
+const chatConvTitleOverride = new Map();
+// Topics whose DB hydration (+ legacy localStorage migration) already ran this
+// session, so re-opening the Chat tab keeps the selected thread instead of
+// reloading the most-recent one.
+const chatHydrated = new Set();
 
 // ─── Per-topic stats cache (instant first-paint) ───────────────────────────
 // Persists the last `topicStats()` result to localStorage keyed by topic so
@@ -558,23 +568,117 @@ async function runEnrichStreamForTopic(topic, {
   });
 }
 
+// Legacy single-thread localStorage key (pre-2026-05-31). Read once during
+// migration into a real DB conversation, then removed.
 const CHAT_HISTORY_KEY = (topic) => `gapmap.chat.${topic}`;
+// Remembers which conversation was last open per topic, so re-opening the
+// app restores the same thread instead of the most-recent one.
+const CHAT_ACTIVE_KEY = (topic) => `gapmap.chat.active.${topic}`;
+
 function loadChatHistory(topic) {
-  if (chatHistory.has(topic)) return chatHistory.get(topic);
-  try {
-    const raw = localStorage.getItem(CHAT_HISTORY_KEY(topic));
-    const arr = raw ? JSON.parse(raw) : [];
-    chatHistory.set(topic, Array.isArray(arr) ? arr : []);
-  } catch { chatHistory.set(topic, []); }
+  // In-memory buffer only — DB hydration happens in hydrateChat() before any
+  // render. Callers (send/renderMessages) read this synchronously.
+  if (!chatHistory.has(topic)) chatHistory.set(topic, []);
   return chatHistory.get(topic);
 }
+
+function genConvId() {
+  return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function deriveConvTitle(topic) {
+  const id = chatActiveConv.get(topic);
+  if (id && chatConvTitleOverride.has(id)) return chatConvTitleOverride.get(id);
+  const msgs = chatHistory.get(topic) || [];
+  const firstUser = msgs.find(m => m.role === 'user' && (m.text || '').trim());
+  const t = (firstUser?.text || '').trim().replace(/\s+/g, ' ');
+  if (!t) return 'New chat';
+  return t.length > 48 ? `${t.slice(0, 47)}…` : t;
+}
+
+function getActiveConvId(topic, { create = false } = {}) {
+  let id = chatActiveConv.get(topic);
+  if (!id && create) {
+    id = genConvId();
+    chatActiveConv.set(topic, id);
+    try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), id); } catch {}
+  }
+  return id || null;
+}
+
+// Durable persist of the active conversation to SQLite. Fire-and-forget —
+// callers don't await. A conversation id is minted lazily on the first
+// message so empty threads never clutter the saved list.
+function persistActiveConv(topic) {
+  const msgs = chatHistory.get(topic) || [];
+  if (!msgs.length && !chatActiveConv.get(topic)) return Promise.resolve();
+  const id = getActiveConvId(topic, { create: msgs.length > 0 });
+  if (!id) return Promise.resolve();
+  const title = deriveConvTitle(topic);
+  return api.chatConvSave(id, topic, title, JSON.stringify(msgs)).catch(() => {});
+}
+
 function saveChatHistory(topic) {
+  // Fire-and-forget durable write of the active conversation.
+  void persistActiveConv(topic);
+}
+
+// One-time per session: migrate any legacy localStorage thread into a DB
+// conversation, then pick the active conversation (stored → most-recent →
+// fresh) and load its messages into the in-memory buffer.
+async function hydrateChat(topic) {
+  // Deep-link from the global Chats screen — force-open a specific thread even
+  // if this topic was already hydrated this session. Honoured before the guard.
+  let forceOpen = null;
+  try { forceOpen = localStorage.getItem(`gapmap.chat.open.${topic}`); } catch {}
+  if (forceOpen) {
+    try { localStorage.removeItem(`gapmap.chat.open.${topic}`); } catch {}
+    chatHydrated.add(topic);
+    chatActiveConv.set(topic, forceOpen);
+    try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), forceOpen); } catch {}
+    const conv = await api.chatConvGet(forceOpen).catch(() => null);
+    chatHistory.set(topic, (conv && Array.isArray(conv.messages)) ? conv.messages : []);
+    return;
+  }
+
+  if (chatHydrated.has(topic)) return;
+  chatHydrated.add(topic);
+
+  // 1. Migrate the old single-thread localStorage blob (once).
   try {
-    const arr = chatHistory.get(topic) || [];
-    // Keep last 50 messages to avoid localStorage bloat on long sessions.
-    const trimmed = arr.slice(-50);
-    localStorage.setItem(CHAT_HISTORY_KEY(topic), JSON.stringify(trimmed));
+    const legacyRaw = localStorage.getItem(CHAT_HISTORY_KEY(topic));
+    if (legacyRaw) {
+      let legacy = [];
+      try { legacy = JSON.parse(legacyRaw) || []; } catch { legacy = []; }
+      if (Array.isArray(legacy) && legacy.length) {
+        const existing = await api.chatConvList(topic).catch(() => []);
+        if (!existing || !existing.length) {
+          const id = genConvId();
+          const firstUser = legacy.find(m => m.role === 'user' && (m.text || '').trim());
+          const title = firstUser ? `${(firstUser.text || '').trim().slice(0, 47)}` : 'Imported chat';
+          await api.chatConvSave(id, topic, title || 'Imported chat', JSON.stringify(legacy)).catch(() => {});
+        }
+      }
+      localStorage.removeItem(CHAT_HISTORY_KEY(topic));
+    }
   } catch {}
+
+  // 2. Resolve the active conversation.
+  let activeId = null;
+  try { activeId = localStorage.getItem(CHAT_ACTIVE_KEY(topic)); } catch {}
+  const list = await api.chatConvList(topic).catch(() => []);
+  const ids = new Set((list || []).map(c => c.id));
+  if (!activeId || !ids.has(activeId)) {
+    activeId = (list && list[0]) ? list[0].id : null;
+  }
+  if (activeId) {
+    chatActiveConv.set(topic, activeId);
+    try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), activeId); } catch {}
+    const conv = await api.chatConvGet(activeId).catch(() => null);
+    chatHistory.set(topic, (conv && Array.isArray(conv.messages)) ? conv.messages : []);
+  } else if (!chatHistory.has(topic)) {
+    chatHistory.set(topic, []);
+  }
 }
 
 // ─── Toast helper (replaces alert() for non-blocking feedback) ───────────
@@ -3535,6 +3639,13 @@ export async function renderTopic(root, { params }) {
     const agentDefault = localStorage.getItem('gapmap.chat.agent') === 'true';
     if (contentEl.dataset.tab !== 'chat') return;
 
+    // Hydrate the active conversation from SQLite (+ one-time legacy
+    // migration) before first paint so renderMessages shows the right thread.
+    if (anyReady) {
+      try { await hydrateChat(topic); } catch {}
+      if (contentEl.dataset.tab !== 'chat') return;
+    }
+
     // Build chat body outside the outer template — nested ternary + IIFE inside a template
     // literal breaks Vite import-analysis (parse error near closing backtick + brace).
     let chatMainHtml;
@@ -3595,39 +3706,56 @@ export async function renderTopic(root, { params }) {
           </div>`;
     }
 
+    const railHtml = anyReady ? `
+      <aside class="chat-conv-rail">
+        <div class="chat-conv-rail-head">
+          <span>Chats</span>
+          <button class="btn btn-primary btn-sm icon-btn" id="btn-chat-new" title="Start a new chat (current one stays saved)"><i data-lucide="plus"></i> New</button>
+        </div>
+        <div class="chat-conv-list" id="chat-conv-list"><div class="muted" style="font-size:11px;padding:10px">Loading…</div></div>
+      </aside>` : '';
+
     set(`
-      <div class="chat-wrap">
-        <div class="chat-head">
-          <div class="chat-head-main">
-            <h3 style="margin:0 0 2px">Topic AI Chat</h3>
-            <p class="chat-head-sub">
-              ${anyReady
-                ? `Provider: <b>${esc(providerLabel)}</b> · Model: <b>${esc(modelLabel)}</b>`
-                : '<span style="color:#B84747">No LLM key configured yet.</span>'}
-            </p>
-          </div>
-          <div class="chat-head-actions">
-            <label class="mode-toggle" title="Agent mode — LLM can call tools to explore the database (Anthropic only)">
-              <input type="checkbox" id="chat-agent" ${agentDefault ? 'checked' : ''} />
-              <span><i data-lucide="bot"></i> myind AI Agent</span>
-            </label>
-            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-keys"><i data-lucide="key-round"></i> Keys</button>
-            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-export" title="Download the conversation as markdown"><i data-lucide="download"></i> Export</button>
-            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-clear">Clear</button>
+      <div class="chat-layout${anyReady ? '' : ' no-rail'}">
+        ${railHtml}
+        <div class="chat-main-col">
+          <div class="chat-wrap">
+            <div class="chat-head">
+              <div class="chat-head-main">
+                <h3 style="margin:0 0 2px">Topic AI Chat</h3>
+                <p class="chat-head-sub">
+                  ${anyReady
+                    ? `Provider: <b>${esc(providerLabel)}</b> · Model: <b>${esc(modelLabel)}</b>`
+                    : '<span style="color:#B84747">No LLM key configured yet.</span>'}
+                </p>
+              </div>
+              <div class="chat-head-actions">
+                <label class="mode-toggle" title="Agent mode — LLM can call tools to explore the database (Anthropic only)">
+                  <input type="checkbox" id="chat-agent" ${agentDefault ? 'checked' : ''} />
+                  <span><i data-lucide="bot"></i> myind AI Agent</span>
+                </label>
+                <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-keys"><i data-lucide="key-round"></i> Keys</button>
+                <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-export" title="Download the conversation as markdown"><i data-lucide="download"></i> Export</button>
+                <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-clear" title="Delete the current chat and start fresh">Clear</button>
+              </div>
+            </div>
+
+            ${chatMainHtml}
           </div>
         </div>
-
-        ${chatMainHtml}
       </div>
     `);
 
     // Header actions always available
     $('#btn-chat-keys')?.addEventListener('click', () => openByokModal(() => loadChat()));
-    $('#btn-chat-clear')?.addEventListener('click', () => {
-      chatHistory.set(topic, []);
-      saveChatHistory(topic);
-      renderMessages();
+    $('#btn-chat-new')?.addEventListener('click', () => newConversation(topic));
+    $('#btn-chat-clear')?.addEventListener('click', async () => {
+      // "Clear" deletes the current thread (others stay saved) and starts fresh.
+      const id = chatActiveConv.get(topic);
+      if (id) { try { await api.chatConvDelete(id); } catch {} }
+      newConversation(topic);
     });
+    if (anyReady) refreshConvRail(topic);
     $('#btn-chat-add-key')?.addEventListener('click', () => openByokModal(() => loadChat()));
     // Soft "Enrich now" inside the no-findings hint chip. Fires
     // build+enrich in the background, replaces the hint with a status
@@ -3788,6 +3916,91 @@ export async function renderTopic(root, { params }) {
     }, 30000);
   }
 
+  // ── Conversation rail (ChatGPT-style saved threads) ──────────────────
+  async function refreshConvRail(topic) {
+    const listEl = $('#chat-conv-list');
+    if (!listEl) return;
+    let list = [];
+    try { list = (await api.chatConvList(topic)) || []; } catch {}
+    const activeId = chatActiveConv.get(topic);
+    if (!list.length) {
+      listEl.innerHTML = `<div class="muted" style="font-size:11px;padding:10px">No saved chats yet. Ask something to start one.</div>`;
+      return;
+    }
+    listEl.innerHTML = list.map(c => `
+      <div class="chat-conv-item${c.id === activeId ? ' active' : ''}" data-conv="${esc(c.id)}" title="${esc(c.title || 'Untitled')}">
+        <i data-lucide="message-square" class="chat-conv-ic"></i>
+        <span class="chat-conv-title">${esc(c.title || 'Untitled')}</span>
+        <span class="chat-conv-meta">${c.msg_count || 0}</span>
+        <button class="chat-conv-del" data-conv="${esc(c.id)}" title="Delete chat"><i data-lucide="trash-2"></i></button>
+      </div>`).join('');
+    window.refreshIcons?.();
+    listEl.querySelectorAll('.chat-conv-item').forEach(it => {
+      it.addEventListener('click', (e) => {
+        if (e.target.closest('.chat-conv-del')) return;
+        const id = it.dataset.conv;
+        if (id && id !== chatActiveConv.get(topic)) selectConversation(topic, id);
+      });
+      it.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.chat-conv-del')) return;
+        renameConversation(topic, it.dataset.conv);
+      });
+    });
+    listEl.querySelectorAll('.chat-conv-del').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteConversation(topic, btn.dataset.conv);
+      });
+    });
+  }
+
+  async function selectConversation(topic, id) {
+    if (chatStream.active) { showToast('Busy', 'Wait for the current reply to finish.', 'warn'); return; }
+    chatActiveConv.set(topic, id);
+    try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), id); } catch {}
+    let conv = null;
+    try { conv = await api.chatConvGet(id); } catch {}
+    chatHistory.set(topic, (conv && Array.isArray(conv.messages)) ? conv.messages : []);
+    renderMessages();
+    refreshConvRail(topic);
+  }
+
+  function newConversation(topic) {
+    if (chatStream.active) { showToast('Busy', 'Wait for the current reply to finish.', 'warn'); return; }
+    chatActiveConv.delete(topic);
+    try { localStorage.removeItem(CHAT_ACTIVE_KEY(topic)); } catch {}
+    chatHistory.set(topic, []);
+    renderMessages();
+    refreshConvRail(topic);
+    $('#chat-input')?.focus();
+  }
+
+  async function renameConversation(topic, id) {
+    if (!id) return;
+    const item = $(`.chat-conv-item[data-conv="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`);
+    const cur = item?.querySelector('.chat-conv-title')?.textContent || '';
+    const next = (window.prompt('Rename chat', cur) || '').trim();
+    if (!next || next === cur) return;
+    chatConvTitleOverride.set(id, next);
+    try { await api.chatConvRename(id, next); } catch {}
+    refreshConvRail(topic);
+  }
+
+  async function deleteConversation(topic, id) {
+    if (!id) return;
+    if (!window.confirm('Delete this chat? This cannot be undone.')) return;
+    try { await api.chatConvDelete(id); } catch {}
+    if (chatActiveConv.get(topic) === id) {
+      chatActiveConv.delete(topic);
+      try { localStorage.removeItem(CHAT_ACTIVE_KEY(topic)); } catch {}
+      const list = await api.chatConvList(topic).catch(() => []);
+      if (list && list[0]) { await selectConversation(topic, list[0].id); }
+      else { chatHistory.set(topic, []); renderMessages(); refreshConvRail(topic); }
+    } else {
+      refreshConvRail(topic);
+    }
+  }
+
   function renderMessages() {
     const box = $('#chat-messages');
     if (!box) return;
@@ -3879,8 +4092,10 @@ export async function renderTopic(root, { params }) {
     hist.push({ role: 'user', mode: agent ? `agent · ${mode}` : mode, text: question, ts: now });
     hist.push({ role: 'assistant', mode, text: '', toolCalls: [], ts: now });
     chatHistory.set(topic, hist);
-    saveChatHistory(topic);
     renderMessages();
+    // Persist (mints the conversation id on first message) then surface it in
+    // the rail. Await so the rail query sees the freshly-written row.
+    persistActiveConv(topic).then(() => refreshConvRail(topic));
 
     // UI state
     const sendBtn = $('#btn-chat-send');
@@ -3956,8 +4171,9 @@ export async function renderTopic(root, { params }) {
       } else {
         finishStream(code === 0 ? 'Done — response ready.' : '⚠ Provider exited early; partial response shown.');
       }
-      // Persist whatever made it through to localStorage.
-      saveChatHistory(topic);
+      // Persist the completed turn durably, then refresh the rail so the
+      // conversation's title (first message) + ordering reflect the result.
+      persistActiveConv(topic).then(() => refreshConvRail(topic));
     });
 
     try {
@@ -3971,11 +4187,10 @@ export async function renderTopic(root, { params }) {
     }
   }
 
-  // Throttle persisted writes to localStorage during a stream — without
-  // this, a navigation-away or app-reload mid-response would lose every
-  // token that hadn't yet reached `chat:done` (saveChatHistory was only
-  // called on done/error/cancel before). 2s cadence is cheap on the
-  // trimmed-to-50-message history.
+  // Throttle durable conversation writes to SQLite during a stream —
+  // without this, a navigation-away or app-reload mid-response would lose
+  // every token that hadn't yet reached `chat:done`. 2s cadence; each
+  // write is a single upsert of the active conversation's message array.
   let _chatSaveTimer = null;
   const scheduleChatSave = () => {
     if (_chatSaveTimer) return;
