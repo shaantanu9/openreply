@@ -367,6 +367,8 @@ fn main() {
             commands::paper_draft_generate,
             commands::experiment_plan_generate,
             commands::paper_export_with_citations,
+            commands::paper_neighbors,
+            commands::paper_relations_build,
             commands::competitor_matrix,
             commands::link_research,
             commands::research_links,

@@ -914,6 +914,8 @@ export const api = {
   },
   paperExportWithCitations: (topic, provider = null, format = 'markdown', style = 'IMRaD') =>
     invoke('paper_export_with_citations', { topic, provider, format, style }),
+  paperNeighbors: (postId, k = 8, topic = null) => invoke('paper_neighbors', { postId, k, topic }),
+  paperRelationsBuild: (topic = null, kinds = 'relates_to,cites') => invoke('paper_relations_build', { topic, kinds }),
 
   // Phase-9 — competitor matrix
   competitorMatrix: (topic) =>
