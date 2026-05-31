@@ -423,6 +423,14 @@ def init_schema(db: Database) -> None:
         db["graph_edges"].create_index(["dst"])
         db["graph_edges"].create_index(["kind"])
 
+    if "paper_gaps" not in db.table_names():
+        db["paper_gaps"].create({
+            "id": str, "topic": str, "kind": str, "title": str,
+            "detail_json": str, "evidence_post_ids_json": str,
+            "score": float, "created_at": str,
+        }, pk="id")
+        db["paper_gaps"].create_index(["topic", "kind"])
+
     if "topic_canonicalizations" not in db.table_names():
         db["topic_canonicalizations"].create(
             {
