@@ -211,7 +211,13 @@ function personaCard(p, topic) {
           </details>
         ` : ''}
 
-        <div class="aud-quad-grid">
+        <!-- SAYS/WANTS/HATES hold full sentences, so the hard 3-column grid
+             squished each column to ~70px inside a narrow card and wrapped text
+             one word per line. auto-fit + minmax(240px) lets them sit side-by-
+             side only when the card is genuinely wide, otherwise they stack
+             full-width. Inline here (not style.css) to avoid colliding with an
+             in-flight refactor of the shared stylesheet. -->
+        <div class="aud-quad-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
           <div class="aud-quad q-says">
             <div class="aud-quad-label">SAYS</div>
             <ul>${quadrantList(swh.says, '')}</ul>
@@ -403,7 +409,11 @@ function renderBuildingShell(topic, { llm = true } = {}) {
         <p id="aud-status" style="margin:0;color:var(--ink-3);font-size:13px">Starting…</p>
       </div>
     </div>
-    <section class="topic-grid" id="aud-grid">${skelCard.repeat(5)}</section>
+    <!-- Wider min than the default .topic-grid (260px) so a persona card has
+         room for its title (no more "Clust…" truncation) + side-by-side
+         SAYS/WANTS/HATES on roomy windows. -->
+    <section class="topic-grid" id="aud-grid"
+             style="grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))">${skelCard.repeat(5)}</section>
   `;
 }
 
