@@ -93,6 +93,15 @@ IDLE_SLEEPS = {
     "cold": 600,
 }
 
+# Back-off after a per-iteration exception (transient "database is locked" on
+# the queue SELECT, a momentary I/O error). Long enough that a persistent
+# fault emits ~1 error every few seconds instead of hot-spinning, short enough
+# that a one-off lock barely delays the next drain. The Rust supervisor's
+# give-up window is 300s; keeping the worker alive through transient contention
+# (instead of crashing) is what prevents the "stopped after repeated crashes"
+# banner during rapid tab switching.
+ERROR_BACKOFF_SEC = 5
+
 # ── Signal handling ─────────────────────────────────────────────────────────
 # Both SIGTERM (clean shutdown from Rust's ExitRequested) and SIGINT
 # (Ctrl-C in dev) flip the same flag. The main loop polls it between batches
@@ -595,34 +604,64 @@ def serve() -> None:
     last_batch_ts = time.time()
 
     while not _stop:
-        processed = _drain_batch(db)
+        # The whole iteration is wrapped so a transient fault in the queue
+        # SELECT or the idle count can't kill the process. Only the batch
+        # *body* used to be crash-safe (try/except inside _drain_batch); the
+        # SELECT that feeds it and the idle-tick count were unguarded, so a
+        # brief "database is locked" — far more likely now that the Rust
+        # native read-path fires frequent reads on the same WAL during rapid
+        # tab switching — propagated out of serve() and crashed the worker.
+        # Three such crashes in 300s tripped the supervisor's give-up. Catch
+        # it, surface a non-fatal enrich:error, and keep draining.
+        sleep_for = 0
+        try:
+            processed = _drain_batch(db)
 
-        if processed > 0:
-            # Back-to-back: queue had work, try again immediately.
-            last_batch_ts = time.time()
-            _memory_governor()
-            continue
+            if processed > 0:
+                # Back-to-back: queue had work, try again immediately.
+                last_batch_ts = time.time()
+                _memory_governor()
+                continue
 
-        # Queue is empty (or every row is poisoned). Classify idleness and
-        # back off. Active topic keeps us in "warm" so new rows from a
-        # live collect don't wait 5 minutes.
-        idle_sec = time.time() - last_batch_ts
-        active = _active_topics()
-        if active and idle_sec < 600:
-            mode = "warm"
-        elif idle_sec < 1800:
-            mode = "cool"
-        else:
-            mode = "cold"
+            # Queue is empty (or every row is poisoned). Classify idleness and
+            # back off. Active topic keeps us in "warm" so new rows from a
+            # live collect don't wait 5 minutes.
+            idle_sec = time.time() - last_batch_ts
+            active = _active_topics()
+            if active and idle_sec < 600:
+                mode = "warm"
+            elif idle_sec < 1800:
+                mode = "cool"
+            else:
+                mode = "cold"
 
-        # Cool/cold are long sleeps — reclaim before napping so we don't
-        # sit on 600 MB of chromadb state overnight.
-        if mode in ("cool", "cold"):
-            _memory_governor()
+            # Cool/cold are long sleeps — reclaim before napping so we don't
+            # sit on 600 MB of chromadb state overnight.
+            if mode in ("cool", "cold"):
+                _memory_governor()
 
-        _emit("enrich:idle", mode=mode, queued=db["extraction_queue"].count)
+            try:
+                queued = db["extraction_queue"].count
+            except Exception:
+                # Transient read failure on the count — report "unknown"
+                # rather than crash; the next tick re-reads it.
+                queued = -1
+            _emit("enrich:idle", mode=mode, queued=queued)
 
-        sleep_for = IDLE_SLEEPS[mode]
+            sleep_for = IDLE_SLEEPS[mode]
+        except SystemExit:
+            # _memory_governor() raises this via sys.exit(137) when RSS stays
+            # over the ceiling after reclaim — an INTENTIONAL restart request
+            # to the Rust supervisor. Never swallow it.
+            raise
+        except Exception as e:
+            # Any other per-iteration failure (most often a transient DB lock
+            # under read contention). Non-fatal: log it and back off so a
+            # persistent fault can't hot-spin, then keep looping. This is what
+            # the docstring's "crash-safe" promise requires.
+            _emit("enrich:error", message=str(e)[:500], fatal=False)
+            sleep_for = ERROR_BACKOFF_SEC
+
         # Break sleep into 1-second ticks so SIGTERM shuts us down within
         # a second regardless of which mode we're in.
         for _ in range(int(sleep_for)):
@@ -633,4 +672,11 @@ def serve() -> None:
     _emit("enrich:stopped")
 
 
-__all__ = ["serve", "BATCH_SIZE", "MAX_ATTEMPTS", "RSS_CEILING_MB", "IDLE_SLEEPS"]
+__all__ = [
+    "serve",
+    "BATCH_SIZE",
+    "MAX_ATTEMPTS",
+    "RSS_CEILING_MB",
+    "IDLE_SLEEPS",
+    "ERROR_BACKOFF_SEC",
+]

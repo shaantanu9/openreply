@@ -124,3 +124,63 @@ def test_drain_batch_removes_on_success(tmp_path, monkeypatch):
     assert db["extraction_queue"].count == 0, (
         f"queue should be empty after successful drain; got {db['extraction_queue'].count} rows"
     )
+
+
+def test_serve_survives_transient_read_error(tmp_path, monkeypatch):
+    """A transient failure in the per-iteration work (e.g. a brief
+    'database is locked' on the queue SELECT while the Rust native read-path
+    hammers the same WAL during rapid tab switching) must NOT crash the
+    worker.
+
+    Regression for the supervisor "Gave up after 3 restarts in 300s" banner:
+    serve()'s loop body wrapped only the batch body in try/except, leaving the
+    queue SELECT (and idle count) unguarded — so a transient read error
+    propagated out of serve(), the process exited non-clean, and the Rust
+    supervisor counted it toward the 3-strikes give-up. serve() must instead
+    catch it, emit a non-fatal enrich:error, and keep draining.
+    """
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+
+    from gapmap.core.db import get_db
+
+    get_db.cache_clear()
+    _ = get_db()  # create schema
+
+    import gapmap.research.enrich_worker as ew
+
+    ew._stop = False
+
+    calls = {"n": 0}
+
+    def _flaky_drain(db):  # noqa: ANN001
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # Simulate the unguarded SELECT at the top of _drain_batch raising
+            # under read contention. sqlite3.OperationalError subclasses
+            # Exception, which is what the live failure surfaces as.
+            raise RuntimeError("database is locked")
+        # Second iteration: signal a clean stop so serve() returns.
+        ew._stop = True
+        return 0
+
+    monkeypatch.setattr(ew, "_drain_batch", _flaky_drain)
+    monkeypatch.setattr(ew.time, "sleep", lambda *_a, **_k: None)
+
+    events: list[tuple[str, dict]] = []
+    monkeypatch.setattr(ew, "_emit", lambda kind, **d: events.append((kind, d)))
+
+    try:
+        # On the buggy code this raises RuntimeError (worker crashes); the fix
+        # must make serve() catch it and return normally.
+        ew.serve()
+    finally:
+        ew._stop = False  # reset module-level flag for other tests
+
+    kinds = [k for k, _ in events]
+    assert "enrich:error" in kinds, (
+        f"transient read error should surface as a non-fatal enrich:error; got {kinds}"
+    )
+    assert calls["n"] >= 2, (
+        f"serve() should have retried after the transient error, not crashed; "
+        f"drain was called {calls['n']}x"
+    )

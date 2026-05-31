@@ -957,7 +957,11 @@ function wireEnrichErrorBanner() {
   const render = (msg, { dead = false } = {}) => {
     const main = document.getElementById('main-content');
     if (!main) return;
-    if (!hostEl) {
+    // Re-create when missing OR detached: the router replaces #main-content's
+    // innerHTML on every tab switch, which orphans a previously-inserted
+    // banner. Without the isConnected check we'd write the message into a
+    // detached node and the banner would silently never appear on the new tab.
+    if (!hostEl || !hostEl.isConnected) {
       hostEl = document.createElement('div');
       hostEl.className = 'hc-topbar enrich-err-topbar';
       main.insertBefore(hostEl, main.firstChild);
