@@ -1,0 +1,22 @@
+def test_cites_edges_from_resolved_refs(tmp_path, monkeypatch):
+    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    from gapmap.core.db import get_db, init_schema
+    db = get_db(); init_schema(db)
+    for pid in ("a", "b"):
+        db["posts"].insert({"id": pid, "title": pid, "source_type": "arxiv"}, pk="id")
+    db["topic_posts"].insert_all([
+        {"topic": "t", "post_id": "a"}, {"topic": "t", "post_id": "b"}], pk=("topic", "post_id"))
+    # a resolved reference: a cites b
+    from gapmap.research.paper_references import _ensure_table
+    _ensure_table()
+    db["paper_references"].insert({
+        "src_post_id": "a", "dst_post_id": "b", "dst_doi": "",
+        "dst_arxiv_id": "", "dst_title": "b", "dst_year": 2024, "dst_authors_json": "[]",
+        "raw": "b et al", "resolution_status": "ok", "extractor": "test",
+        "fetched_at": ""})
+    from gapmap.research.paper_relations import build
+    out = build(topic="t", kinds=["cites"])
+    assert out["ok"] is True
+    edges = list(db.query(
+        "SELECT src, dst, kind FROM graph_edges WHERE kind='cites'"))
+    assert {"src": "a", "dst": "b", "kind": "cites"} in [dict(e) for e in edges]
