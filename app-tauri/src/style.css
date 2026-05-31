@@ -2882,6 +2882,7 @@ kbd {
 .toast-err  { border-left: 3px solid #B84747; }
 .toast-warn { border-left: 3px solid #E69447; }
 .toast-ok   { border-left: 3px solid #2E7D5B; }
+.toast-info { border-left: 3px solid #3B6FB8; }
 .toast-ic { flex-shrink: 0; margin-top: 1px; }
 .toast-body { flex: 1; min-width: 0; }
 .toast-title { font-weight: 700; margin-bottom: 2px; }
