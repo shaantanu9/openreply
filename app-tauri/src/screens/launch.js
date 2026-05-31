@@ -130,12 +130,20 @@ function personasCard(brief) {
       ${p.jtbd ? `<blockquote style="border-left:3px solid var(--ink-3);padding:4px 10px;margin:6px 0 0;font-size:12px;color:var(--ink-2);font-style:italic">JTBD: ${esc(p.jtbd)}</blockquote>` : ''}
     </li>
   `).join('');
+  const isFallback = brief?.audience?.personas_fallback;
+  const subhead = isFallback
+    ? 'Derived from corpus signals — build with AI to refine'
+    : `Top ${ps.length} from corpus + interviews${brief?.llm_augmented ? ' + LLM' : ''}`;
+  const fallbackNote = isFallback
+    ? `<p class="muted" style="font-size:11px;margin:0 0 8px">Inferred deterministically from occupation mentions & top channels. <strong>Build with AI</strong> for sharper personas with JTBD.</p>`
+    : '';
   return `
     <div class="card">
       <div class="card-head">
-        <div><h3>ICP personas</h3><p>Top ${ps.length} from corpus + interviews + LLM</p></div>
+        <div><h3>ICP personas</h3><p>${subhead}</p></div>
       </div>
       <div class="card-body">
+        ${fallbackNote}
         <ul style="list-style:none;padding:0;margin:0">${rows}</ul>
       </div>
     </div>
@@ -295,9 +303,12 @@ function pricingCard(brief) {
 function launchSequence(brief) {
   const seq = brief?.launch_sequence || [];
   if (!seq.length) return '';
+  const seqSub = brief?.sequence_fallback
+    ? `${seq.length}-step starter plan from your top channels — build with AI for a tailored sequence`
+    : `${seq.length}-step plan with target channels and metrics`;
   return `
     <div class="section-head" style="margin-top:18px">
-      <div><h2>Launch sequence</h2><p>${seq.length}-step plan with target channels and metrics</p></div>
+      <div><h2>Launch sequence</h2><p>${seqSub}</p></div>
     </div>
     <ol style="list-style:none;padding:0;margin:0;display:grid;gap:10px">
       ${seq.map(s => `
@@ -375,6 +386,8 @@ function renderShell(topic, brief) {
     </header>
 
     <div class="muted" style="font-size:11.5px;margin-bottom:14px">${esc(stale)}</div>
+
+    ${llmErrorBanner(brief)}
 
     ${statGrid(brief)}
 
@@ -459,6 +472,7 @@ async function generateAndRender(root, topic, { llm = true } = {}) {
 function wireActions(root, topic) {
   $('#launch-regen', root)?.addEventListener('click', () => generateAndRender(root, topic, { llm: true }));
   $('#launch-regen-no-llm', root)?.addEventListener('click', () => generateAndRender(root, topic, { llm: false }));
+  $('#launch-retry-llm', root)?.addEventListener('click', () => generateAndRender(root, topic, { llm: true }));
 }
 
 async function renderTopicLaunch(root, topic) {

@@ -12,6 +12,7 @@
 // topbar-spacer, card-head/card-body, btn-primary/btn-ghost-bordered.
 import { api, esc } from '../api.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
+import { skelGrid, skelRows } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -146,7 +147,7 @@ async function renderTopicEmpathy(root, topic) {
     new URLSearchParams((location.hash.split('?')[1] || '')).get('persona')
     || 'primary';
 
-  root.innerHTML = `<div class="empty-state">Loading empathy map…</div>`;
+  root.innerHTML = skelGrid(4, { lines: 4 });
   let result;
   try {
     result = await api.empathyGet(topic, persona);
@@ -248,7 +249,7 @@ async function renderPicker(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Gray, 2010</span>
     </header>
-    <div id="empathy-picker-mount"><div class="empty-state">loading…</div></div>
+    <div id="empathy-picker-mount">${skelRows(4)}</div>
   `;
 
   let topics = [];

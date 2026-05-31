@@ -10,6 +10,7 @@
 // card-head/card-body, btn-primary/btn-ghost-bordered, .stat-grid for
 // the outcome banner, .section-head transitions, .pill filters.
 import { api, esc } from '../api.js';
+import { skelStats, skelGrid, skelRows } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -315,7 +316,7 @@ function showExperimentModal(opts) {
 const STATUS_CYCLE = ['planned', 'running', 'validated', 'invalidated', 'inconclusive'];
 
 async function renderTopicTree(root, topic) {
-  root.innerHTML = '<div class="empty-state">Loading the tree…</div>';
+  root.innerHTML = `${skelStats(1)}${skelGrid(3, { lines: 4 })}`;
   let tree;
   try {
     tree = await api.ostBuild(topic);
@@ -460,7 +461,7 @@ export async function renderOst(root) {
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Torres, 2016</span>
     </header>
-    <div id="ost-picker-mount"><div class="empty-state">loading…</div></div>
+    <div id="ost-picker-mount">${skelRows(4)}</div>
   `;
 
   let topics = [];

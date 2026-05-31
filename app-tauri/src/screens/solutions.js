@@ -5,6 +5,7 @@ import { isAutoRunEnabled } from '../lib/tabPipelines.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
+import { skelGrid } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -391,7 +392,7 @@ export async function loadSolutions(contentEl, topic) {
     renderCards(cachedCards);
     paintedFromCache = true;
   } else {
-    set('<div class="empty-state">loading…</div>');
+    set(skelGrid(6));
   }
 
   // Bundled fetch — was 1 + 2*N round-trips (one per painpoint × interventions
