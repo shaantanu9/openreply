@@ -59,6 +59,7 @@ bold "1. Version pins"
 TAURI_CONF="app-tauri/src-tauri/tauri.conf.json"
 PKG_JSON="app-tauri/package.json"
 CARGO_TOML="app-tauri/src-tauri/Cargo.toml"
+PYPROJECT_TOML="pyproject.toml"
 
 # Use python3 (guaranteed on macOS + Linux) for JSON parsing — BSD sed
 # regex flavors differ from GNU and made the value strings come out dirty.
@@ -104,6 +105,23 @@ else
   else
     fail "Cargo.toml version = '$CARGO_VER'  (expected '$VERSION_NUM')"
     yellow "        fix: edit $CARGO_TOML → version = \"$VERSION_NUM\""
+  fi
+fi
+
+if [ ! -f "$PYPROJECT_TOML" ]; then
+  fail "$PYPROJECT_TOML not found"
+else
+  # First `^version =` line after a [project] header (TOML)
+  PYPROJECT_VER=$(awk '/^\[project\]/{p=1; next} /^\[/{p=0} p && /^version[[:space:]]*=/{
+    sub(/^version[[:space:]]*=[[:space:]]*"/,"")
+    sub(/".*$/,"")
+    print; exit
+  }' "$PYPROJECT_TOML")
+  if [ "$PYPROJECT_VER" = "$VERSION_NUM" ]; then
+    ok "pyproject.toml version = $PYPROJECT_VER"
+  else
+    fail "pyproject.toml version = '$PYPROJECT_VER'  (expected '$VERSION_NUM')"
+    yellow "        fix: edit $PYPROJECT_TOML → version = \"$VERSION_NUM\""
   fi
 fi
 

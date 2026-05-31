@@ -56,7 +56,7 @@ def neighbors(
     full_params = params.copy()
     if direction == "both":
         full_params = params + params
-    sql = " UNION ALL ".join(parts) + f" LIMIT {limit}"
+    sql = " UNION ALL ".join(parts) + f" LIMIT {int(limit)}"
     rows = list(db.query(sql, full_params))
     return [_parse_metadata(r) for r in rows]
 

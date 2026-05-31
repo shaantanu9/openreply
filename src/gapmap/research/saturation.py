@@ -24,7 +24,9 @@ _CLUSTER_KINDS = (
 
 def compute(topic: str) -> dict:
     db = get_db()
-    kinds_sql = ",".join(f"'{k}'" for k in _CLUSTER_KINDS)
+    placeholders = ",".join(f":k{i}" for i in range(len(_CLUSTER_KINDS)))
+    params = {"topic": topic}
+    params.update({f"k{i}": k for i, k in enumerate(_CLUSTER_KINDS)})
     rows = list(db.query(f"""
         WITH recent_posts AS (
           SELECT post_id, added_at FROM topic_posts
@@ -40,8 +42,8 @@ def compute(topic: str) -> dict:
           LEFT JOIN graph_nodes gn
             ON gn.id = ge.src
            AND gn.topic = :topic
-           AND gn.kind IN ({kinds_sql})
-    """, {"topic": topic}))
+           AND gn.kind IN ({placeholders})
+    """, params))
     r = rows[0] if rows else {"clusters": 0, "window_start": None}
     clusters = int(r.get("clusters") or 0)
 
