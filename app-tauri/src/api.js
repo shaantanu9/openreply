@@ -977,13 +977,18 @@ export const api = {
     return invoke('product_delete', { productId });
   },
   productSweep: (productId, trigger = 'manual', skipCollect = true) => {
+    // product_get aggregates open_signal_count — a sweep changes it, so drop
+    // its (now 7-day-persisted) cache too, not just dashboard/signals.
     invalidate('product_dashboard'); invalidate('product_signals');
+    invalidate('product_get'); invalidate('product_list');
     return invoke('product_sweep', { productId, trigger, skipCollect });
   },
   productSignals: (productId, sinceDays = 7, includeResolved = false, limit = 100) =>
     cachedInvoke('product_signals', { productId, sinceDays, includeResolved, limit }, 10000),
   productSignalAction: (signalId, action, notes = '', snoozeDays = 7) => {
+    // Resolving/snoozing a signal changes product_get.open_signal_count.
     invalidate('product_signals'); invalidate('product_dashboard');
+    invalidate('product_get'); invalidate('product_list');
     return invoke('product_signal_action', { signalId, action, notes, snoozeDays });
   },
   productDigest: (productId, days = 7) =>
