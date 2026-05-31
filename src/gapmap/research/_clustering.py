@@ -8,9 +8,12 @@ Pure-deterministic. Two-stage approach:
    vector space the rest of the app already knows.
 
 2. **Cluster** with k-means at k ∈ {3, 5, 7} and pick the k with the
-   highest silhouette score. Sklearn's k-means is already in the
-   sidecar's tree (transitive dep of chromadb / sentence-transformers);
-   we never add it as a new requirement.
+   highest silhouette score. Uses sklearn's k-means when it's installed,
+   otherwise falls back to a pure-numpy k-means++ + silhouette
+   implementation (`_np_kmeans` / `_np_silhouette`). numpy is always
+   present whenever clustering runs (the chromadb embedder pulls it), so
+   no new requirement is added — and a sklearn-less venv/bundle no longer
+   breaks the Audience tab.
 
 Outputs are stable: each cluster carries a centroid, member author IDs,
 and a tightness score. Re-running on the same corpus produces the same
@@ -127,6 +130,65 @@ def pick_k(n_samples: int, candidates: Sequence[int] = (3, 5, 7)) -> list[int]:
     return [k for k in candidates if 2 <= k <= max(2, n_samples - 1)]
 
 
+def _np_kmeans(np, X, k: int, seed: int, n_iter: int = 50):
+    """Pure-numpy k-means++ — deterministic for a fixed seed. Returns
+    (labels int-array, centroids float-array). Fallback for when sklearn
+    isn't installed; numpy is always present whenever clustering runs."""
+    rng = np.random.default_rng(seed)
+    n = X.shape[0]
+    # k-means++ seeding: each new center is chosen with prob ∝ squared
+    # distance to the nearest already-chosen center.
+    centers = [X[int(rng.integers(n))]]
+    for _ in range(1, k):
+        C = np.asarray(centers, dtype="float32")
+        d2 = ((X[:, None, :] - C[None, :, :]) ** 2).sum(axis=2).min(axis=1)
+        total = float(d2.sum())
+        if total <= 1e-12:
+            centers.append(X[int(rng.integers(n))])
+        else:
+            centers.append(X[int(rng.choice(n, p=d2 / total))])
+    C = np.asarray(centers, dtype="float32")
+    labels = np.full(n, -1, dtype="int64")
+    for _ in range(n_iter):
+        # assign via ‖x-c‖² = ‖x‖² + ‖c‖² − 2x·c (n×k, memory-cheap)
+        d = (X ** 2).sum(1)[:, None] + (C ** 2).sum(1)[None, :] - 2.0 * (X @ C.T)
+        new_labels = d.argmin(axis=1)
+        new_C = np.stack([
+            X[new_labels == j].mean(axis=0) if bool((new_labels == j).any()) else C[j]
+            for j in range(k)
+        ]).astype("float32")
+        done = np.array_equal(new_labels, labels) and np.allclose(new_C, C)
+        labels, C = new_labels, new_C
+        if done:
+            break
+    return labels, C
+
+
+def _np_silhouette(np, X, labels) -> float:
+    """Mean silhouette coefficient (numpy). O(n²) pairwise distance — fine
+    for the tens-to-low-hundreds of authors audience clustering produces."""
+    labels = np.asarray(labels)
+    n = X.shape[0]
+    sq = (X ** 2).sum(axis=1)
+    D = np.sqrt(np.maximum(sq[:, None] + sq[None, :] - 2.0 * (X @ X.T), 0.0))
+    uniq = list(dict.fromkeys(labels.tolist()))
+    sil = np.zeros(n, dtype="float64")
+    for i in range(n):
+        same = labels == labels[i]
+        same[i] = False
+        a = float(D[i, same].mean()) if bool(same.any()) else 0.0
+        b = math.inf
+        for c in uniq:
+            if c == labels[i]:
+                continue
+            m = labels == c
+            if bool(m.any()):
+                b = min(b, float(D[i, m].mean()))
+        denom = max(a, b)
+        sil[i] = 0.0 if (b is math.inf or denom <= 0.0) else (b - a) / denom
+    return float(sil.mean())
+
+
 def kmeans_with_silhouette(
     vectors: Sequence[Sequence[float]],
     candidates: Sequence[int] = (3, 5, 7),
@@ -135,16 +197,16 @@ def kmeans_with_silhouette(
 ) -> dict[str, Any]:
     """Try each k in `candidates`, pick the one with the highest
     silhouette score. Returns
-    `{ok, k, labels, silhouette, centroids, all_scores}`.
-    Returns `{ok: False, reason}` if sklearn unavailable or vectors are
-    too small for any k in the candidate set."""
+    `{ok, k, labels, silhouette, centroids, all_scores, backend}`.
+    Returns `{ok: False, reason}` only when vectors are missing/too small —
+    a missing sklearn now falls back to a pure-numpy implementation rather
+    than failing the whole Audience build."""
     if not vectors:
         return {"ok": False, "reason": "no vectors"}
     try:
         np = _lazy_numpy()
-        KMeans, silhouette_score = _lazy_sklearn()
     except Exception as e:
-        return {"ok": False, "reason": f"sklearn unavailable: {e!s:.150}"}
+        return {"ok": False, "reason": f"numpy unavailable: {e!s:.150}"}
 
     arr = np.asarray(vectors, dtype="float32")
     if arr.ndim != 2 or arr.shape[0] < 4:
@@ -154,23 +216,42 @@ def kmeans_with_silhouette(
     if not valid_k:
         return {"ok": False, "reason": "no valid k for this sample size"}
 
+    # Prefer sklearn when installed (battle-tested); otherwise the numpy
+    # fallback keeps Audience working. The old code assumed sklearn was a
+    # transitive dep of chromadb/sentence-transformers — it isn't, in the
+    # venv OR the PyInstaller bundle, which broke the whole tab.
+    try:
+        KMeans, silhouette_score = _lazy_sklearn()
+        use_sklearn = True
+    except Exception:
+        use_sklearn = False
+
     best: dict[str, Any] | None = None
     all_scores: dict[int, float] = {}
     for k in valid_k:
         try:
-            km = KMeans(n_clusters=k, n_init=10, random_state=random_state)
-            labels = km.fit_predict(arr)
+            if use_sklearn:
+                km = KMeans(n_clusters=k, n_init=10, random_state=random_state)
+                labels_arr = km.fit_predict(arr)
+                centroids = km.cluster_centers_.tolist()
+            else:
+                labels_arr, centroids_arr = _np_kmeans(np, arr, k, random_state)
+                centroids = centroids_arr.tolist()
+            labels_list = labels_arr.tolist()
             # Need at least 2 distinct labels for silhouette to be defined.
-            if len(set(labels.tolist())) < 2:
+            if len(set(labels_list)) < 2:
                 continue
-            score = float(silhouette_score(arr, labels))
+            score = (
+                float(silhouette_score(arr, labels_arr)) if use_sklearn
+                else _np_silhouette(np, arr, labels_arr)
+            )
             all_scores[k] = score
             if best is None or score > best["silhouette"]:
                 best = {
                     "k": k,
-                    "labels": labels.tolist(),
+                    "labels": labels_list,
                     "silhouette": score,
-                    "centroids": km.cluster_centers_.tolist(),
+                    "centroids": centroids,
                 }
         except Exception:
             continue
@@ -179,6 +260,7 @@ def kmeans_with_silhouette(
         return {"ok": False, "reason": "no k produced ≥2 clusters"}
     best["ok"] = True
     best["all_scores"] = all_scores
+    best["backend"] = "sklearn" if use_sklearn else "numpy"
     return best
 
 
