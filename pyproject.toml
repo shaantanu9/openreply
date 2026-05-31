@@ -27,6 +27,12 @@ dependencies = [
     # for Anthropic — the first-class BYOK provider shouldn't need extras.
     "openai>=1.40",
     "anthropic>=0.34",
+    # Author clustering for the Audience-personas pipeline (k-means +
+    # silhouette). Base dep — NOT an extra — because Audience is a
+    # first-class feature and the previous "sklearn is a transitive dep of
+    # chromadb" assumption was false, breaking the tab on every install.
+    # `_clustering.py` still ships a pure-numpy fallback for slim installs.
+    "scikit-learn>=1.4",
 ]
 
 

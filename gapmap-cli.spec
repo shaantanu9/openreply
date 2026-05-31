@@ -32,6 +32,16 @@ for _pkg in (
     'psutil',          # used by stale-MCP zombie cleanup; gracefully degrades
                        # via try/except, but explicit collect keeps the path
                        # available so users see clean shutdowns
+    # Audience clustering (research/_clustering.py). sklearn is LAZY-imported
+    # inside `_lazy_sklearn()`, so collect_all('gapmap') static analysis never
+    # sees it — without these the bundled binary ImportErrors and the tab
+    # silently degrades to the slower pure-numpy fallback. scipy/joblib/
+    # threadpoolctl are sklearn's runtime deps; sklearn also ships compiled
+    # .so extension modules + small data files collect_all picks up.
+    'sklearn',
+    'scipy',
+    'joblib',
+    'threadpoolctl',
 ):
     try:
         _d, _b, _h = collect_all(_pkg)
