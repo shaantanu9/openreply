@@ -6121,10 +6121,13 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
     run_cli(&app, arg_refs).await.map_err(err_to_string)
 }
 
-/// Build (dry-run) the exact mcpServers entry Connect WOULD write, without
-/// touching any file. Powers the Settings "Copy config" button so users can
-/// paste it into a client by hand. Mirrors mcp_install's path resolution so
-/// the snippet is byte-identical to what Connect produces.
+/// Dry-run sibling of `mcp_install`: build the EXACT mcpServers entry Connect
+/// would write and return it (as `{ok, snippet, config_path, ...}`) WITHOUT
+/// touching any config file or creating a token-write. Powers the Settings
+/// "Copy config" button so users can paste the entry into any MCP client by
+/// hand. Mirrors `mcp_install`'s command/path resolution byte-for-byte (dev →
+/// `--project-dir`, prod → `--bin`, same ephemeral-path guard) so the shown
+/// snippet matches what Connect would actually write.
 #[tauri::command]
 pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Result<Value, String> {
     ensure_mcp_allowed(&app)?;
@@ -6146,11 +6149,30 @@ pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Resul
         // Don't hand the user a snippet with an ephemeral path that will
         // break after the .app is reaped/relaunched — same guard as install.
         if is_ephemeral_path(&bin) {
-            return Err(
-                "Gap Map.app is running from a temporary/translocated location, so the \
-                 MCP binary path isn't stable. Move Gap Map.app to /Applications and reopen \
-                 it from there, then copy the config.".into(),
-            );
+            let bin_str = bin.to_string_lossy().to_string();
+            let msg = if bin_str.contains("/AppTranslocation/") {
+                format!(
+                    "Gap Map.app is running under macOS App Translocation ({}). \
+                     Move Gap Map.app to /Applications and reopen it from there \
+                     before copying the MCP config — the current path changes on \
+                     every launch and won't work after a restart.",
+                    bin_str
+                )
+            } else if bin_str.starts_with("/Volumes/") {
+                format!(
+                    "Gap Map.app is running from a mounted disk image ({}). \
+                     Drag it to /Applications (eject the DMG) and reopen from there \
+                     before copying the MCP config.",
+                    bin_str
+                )
+            } else {
+                format!(
+                    "Gap Map.app is running from a temporary location ({}). \
+                     Move it to /Applications and reopen before copying the config.",
+                    bin_str
+                )
+            };
+            return Err(msg);
         }
         args.push("--bin".into());
         args.push(bin.to_string_lossy().to_string());

@@ -712,6 +712,49 @@ def cmd_mcp_install(
     console.print(f"\n[dim]{result['message']}[/dim]")
 
 
+@mcp_app.command("config")
+def cmd_mcp_config(
+    claude_config: Optional[Path] = typer.Option(None, "--config"),
+    client: Optional[str] = typer.Option(
+        None, "--client",
+        help="MCP client preset (only changes the suggested config path).",
+    ),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+    project_dir: Optional[Path] = typer.Option(None, "--project-dir"),
+    bin_path: Optional[Path] = typer.Option(None, "--bin"),
+    server_name: str = typer.Option("gapmap", "--name"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Print the mcpServers entry Connect WOULD write — WITHOUT writing it.
+
+    For copy-pasting Gap Map's MCP config into a client by hand (or one we
+    don't auto-write). Does not create a token or touch any file.
+    """
+    from ..mcp.install import config_snippet
+
+    try:
+        result = config_snippet(
+            config_path=claude_config,
+            client=client,
+            data_dir=data_dir,
+            bin_path=bin_path,
+            project_dir=project_dir,
+            server_name=server_name,
+        )
+    except Exception as e:  # noqa: BLE001
+        result = {"ok": False, "reason": f"config build failed: {e}"}
+
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+        raise typer.Exit(0 if result.get("ok") else 1)
+
+    if not result.get("ok"):
+        console.print(f"[red]{result.get('reason', 'config build failed')}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[dim]Paste into {result['config_path']}:[/dim]")
+    console.print_json(data=result["snippet"])
+
+
 @mcp_app.command("uninstall")
 def cmd_mcp_uninstall(
     claude_config: Optional[Path] = typer.Option(None, "--config"),

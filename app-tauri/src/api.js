@@ -1391,6 +1391,7 @@ export const api = {
   mcpClients:   ()        => invoke('mcp_clients'),
   mcpStatus:    (client)  => invoke('mcp_status',    { client: client || null }),
   mcpInstall:   (client)  => invoke('mcp_install',   { client: client || null }),
+  mcpConfigSnippet: (client) => invoke('mcp_config_snippet', { client: client || null }),
   mcpUninstall: (client)  => invoke('mcp_uninstall', { client: client || null }),
 
   // ----- CLI symlink (one-click install gapmap-cli to /usr/local/bin) -----
