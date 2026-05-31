@@ -10,6 +10,8 @@
 // `runtime_snapshot` Tauri command.
 
 import { api, esc } from '../api.js';
+import { skelStats, skelRows } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -218,9 +220,9 @@ function renderHeader(snap) {
 
 function renderEmpty() {
   return `
-    <div class="empty-big">
-      <h3>Loading runtime snapshot…</h3>
-      <p class="muted">Reading every queue table. This usually takes &lt; 1 s on first call.</p>
+    <div class="tm-wrap" aria-busy="true">
+      ${skelStats(4)}
+      ${skelRows(5)}
     </div>
   `;
 }
@@ -301,7 +303,8 @@ export async function renderTasks(root) {
     paint(root, snap);
 
     // Re-wire after every paint (innerHTML wipes listeners).
-    root.querySelector('#tm-refresh')?.addEventListener('click', tick);
+    root.querySelector('#tm-refresh')?.addEventListener('click', (e) =>
+      withButtonBusy(e.currentTarget, () => tick(), { busyLabel: 'Refreshing…' }));
     root.querySelector('#tm-pause')?.addEventListener('change', (e) => {
       paused = !!e.target.checked;
       if (!paused) tick();

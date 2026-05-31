@@ -3,6 +3,8 @@
 
 import { api, esc, timeAgo } from '../api.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { skelRows, skelDetail } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 function fmtSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -50,7 +52,7 @@ export async function renderReports(root) {
 
     <div class="reports-layout">
       <div class="reports-list" id="reports-list">
-        <div class="empty-state">loading…</div>
+        ${skelRows(6)}
       </div>
       <div class="reports-preview" id="reports-preview">
         <div class="empty-state" style="padding:40px">Pick a file to preview it here.</div>
@@ -63,7 +65,8 @@ export async function renderReports(root) {
     const dir = await api.appDataDir();
     await api.revealInFinder(dir);
   };
-  root.querySelector('#btn-refresh').onclick = () => loadList(root);
+  root.querySelector('#btn-refresh').onclick = (e) =>
+    withButtonBusy(e.currentTarget, () => loadList(root), { busyLabel: 'Refreshing…' });
   window.refreshIcons?.();
 
   root.querySelectorAll('.reports-filters .pill').forEach(p => {
@@ -156,7 +159,9 @@ async function preview(root, path, ext) {
   renderList(root); // re-render to update .active
   const pane = root.querySelector('#reports-preview');
   const name = path.split('/').pop();
-  pane.innerHTML = `<div class="empty-state" style="padding:40px">loading ${esc(name)}…</div>`;
+  pane.innerHTML = `
+    <div class="report-preview-head"><b>${esc(name)}</b></div>
+    ${skelDetail({ paras: 6 })}`;
 
   try {
     if (ext === 'html') {

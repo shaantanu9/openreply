@@ -3,6 +3,8 @@
 // The underlying Rust command rejects anything that isn't read-only.
 
 import { api, esc } from '../api.js';
+import { skelRows } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const SAMPLE_LIMIT = 50;
 
@@ -44,7 +46,7 @@ export async function renderDatabase(root) {
       <aside class="db-tables">
         <h4>Tables</h4>
         <div class="db-table-list" id="db-table-list">
-          <div class="empty-state" style="padding:14px">loading…</div>
+          ${skelRows(5)}
         </div>
       </aside>
 
@@ -109,7 +111,7 @@ export async function renderDatabase(root) {
     const alive = () => root.dataset.routeGen === myGen && root.isConnected;
     const out = root.querySelector('#db-query-result');
     const meta = root.querySelector('#db-query-meta');
-    out.innerHTML = `<div class="empty-state">running…</div>`;
+    out.innerHTML = skelRows(6);
     meta.textContent = '';
     csvBtn.hidden = true;
     const t0 = performance.now();
@@ -141,7 +143,7 @@ export async function renderDatabase(root) {
       out.innerHTML = `<div class="db-error">✗ ${esc(raw)}${hintHtml}${ro}</div>`;
     }
   };
-  runBtn.onclick = runQuery;
+  runBtn.onclick = () => withButtonBusy(runBtn, runQuery, { busyLabel: 'Running…' });
   sqlEl.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); }
   });

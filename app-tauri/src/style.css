@@ -9355,3 +9355,69 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
   .chat-input-row { padding: 10px 12px; }
   .chat-messages, .chat-presets { padding: 12px 12px; }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Shared skeleton layout wrappers (lib/skeleton.js) + button busy spinners
+   (lib/busyButton.js). The grey shimmer comes from the existing `.skel`
+   class (skel-shimmer keyframe) — these only add the LAYOUT shells so every
+   sidebar screen can show a layout-shaped loading state with a one-line swap.
+   Added 2026-05-31. See the loader-progress-ux skill.
+   ──────────────────────────────────────────────────────────────────────── */
+.sk-grid {
+  display: grid; gap: 14px; min-width: 0; max-width: 100%; box-sizing: border-box;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+}
+.sk-card {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; background: var(--surface);
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 0; max-width: 100%; box-sizing: border-box;
+}
+.sk-card-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+
+.sk-rows { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sk-row {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; background: var(--surface);
+  min-width: 0; max-width: 100%; box-sizing: border-box;
+}
+
+.sk-stats {
+  display: grid; gap: 12px; min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+}
+.sk-stat {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; background: var(--surface); min-width: 0; box-sizing: border-box;
+}
+
+.sk-detail {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 22px; background: var(--surface); max-width: 760px;
+  min-width: 0; box-sizing: border-box;
+}
+
+.sk-inline {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--ink-3); font-size: var(--fs-13, 13px);
+}
+.sk-inline-spin {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--line); border-top-color: var(--orange);
+  animation: gm-az-spin 0.8s linear infinite;
+}
+
+/* Inline busy spinner injected into a button by withButtonBusy(). Sized to
+   sit on the button's text baseline; inherits currentColor so it reads on
+   both primary (white text) and ghost (ink text) buttons. */
+.btn.is-busy { cursor: progress; opacity: 0.92; }
+.btn.is-busy > * { display: inline-flex; align-items: center; }
+.btn-spin {
+  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+  margin-right: 7px;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  animation: gm-az-spin 0.7s linear infinite;
+  display: inline-block; vertical-align: -2px;
+}

@@ -5,6 +5,8 @@
 
 import { api, $, esc, timeAgo } from '../api.js';
 import { REDDIT_FAMILY } from '../lib/postLink.js';
+import { skelRows } from '../lib/skeleton.js';
+import { withButtonBusy } from '../lib/busyButton.js';
 
 const state = {
   query: '',
@@ -70,7 +72,7 @@ function renderResult(hit) {
 }
 
 function renderResults() {
-  if (state.loading) return `<div class="empty-state">Searching corpus…</div>`;
+  if (state.loading) return skelRows(Math.min(8, state.k || 6));
   if (state.error)   return `<div class="empty-state" style="color:#B84747">✗ ${esc(state.error)}</div>`;
   if (state.rows == null) {
     return `<div class="empty-big">
@@ -199,7 +201,7 @@ export async function renderFind(root) {
       <button class="btn btn-primary btn-sm" id="find-btn">Search</button>
     </div>
 
-    <div id="find-body"><div class="empty-state">Checking model status…</div></div>
+    <div id="find-body">${skelRows(4)}</div>
   `;
 
   // Check model readiness first. If not ready, render the prompt + exit.
@@ -233,7 +235,11 @@ export async function renderFind(root) {
     state.topic = topicSel.value;
     state.source = srcSel.value;
     state.k = Number(kSel.value) || 10;
-    runSearch(root);
+    return withButtonBusy(
+      root.querySelector('#find-btn'),
+      () => runSearch(root),
+      { busyLabel: 'Searching…' },
+    );
   };
   root.querySelector('#find-btn').onclick = go;
   qEl.addEventListener('keydown', (e) => {
