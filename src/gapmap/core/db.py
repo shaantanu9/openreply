@@ -45,13 +45,29 @@ def _wal_self_heal(db_path: str) -> None:
     Chroma HNSW writer crashes inside the same process and takes the
     sqlite WAL with it), the next process to open `gapmap.db` can hit
     "database is locked" or "disk I/O error" on `gapmap_query_db`.
-    The fix is normally:
+    The safe fix is:
         sqlite3 gapmap.db "PRAGMA wal_checkpoint(TRUNCATE);"
-    or, if that fails, removing `gapmap.db-wal` / `gapmap.db-shm`.
 
-    This helper does both, in order, with every step swallowed so a
-    healthy DB never pays a measurable cost. Idempotent across calls
-    via the module-level `_wal_self_heal_done` flag.
+    DANGER — what this function must NEVER do: delete `gapmap.db-wal` /
+    `gapmap.db-shm` while ANOTHER process has the database open. A WAL
+    file holds committed-but-not-yet-checkpointed pages; deleting it
+    discards every transaction that lives only in the WAL. With a
+    second reader/writer attached (e.g. a Tauri sidecar AND an MCP
+    server, or a stray standalone script), removing the side files
+    silently destroys data that was never lost in the first place.
+    (Battle-tested the hard way 2026-05-31: a standalone process ran
+    this heal while two MCP servers held the DB; ~56k topic_posts rows
+    that lived in the shared WAL were discarded.)
+
+    So this helper now ONLY attempts a checkpoint. It never unlinks the
+    side files. A genuinely corrupt WAL is a far rarer event than a
+    multi-process attach, and the cure (deleting committed data) is
+    worse than the disease. If a checkpoint truly cannot proceed, we
+    leave the files untouched and let the normal connection surface a
+    real, debuggable error instead of papering over it with data loss.
+
+    Every step is swallowed so a healthy DB never pays a measurable
+    cost. Idempotent across calls via `_wal_self_heal_done`.
     """
     global _wal_self_heal_done
     if _wal_self_heal_done:
@@ -62,48 +78,22 @@ def _wal_self_heal(db_path: str) -> None:
         import sqlite3 as _sqlite3
         if not _os.path.isfile(db_path):
             return  # fresh DB will be created later
-        # 1) Try to checkpoint WAL — usual no-op on a clean DB, real fix
-        # when the WAL has uncommitted frames left over from a hard kill.
+        # Checkpoint WAL — usual no-op on a clean DB, real fix when the
+        # WAL has uncommitted frames left over from a hard kill. A PASSIVE
+        # checkpoint never blocks or interferes with other connections; it
+        # simply folds what it can into the main file. We deliberately do
+        # NOT use TRUNCATE here (which needs an exclusive moment) and we
+        # NEVER delete the -wal/-shm side files — doing so with another
+        # process attached destroys committed data (see docstring).
+        _conn = _sqlite3.connect(db_path, timeout=2.0, isolation_level=None)
         try:
-            _conn = _sqlite3.connect(db_path, timeout=2.0, isolation_level=None)
-            try:
-                _conn.execute("PRAGMA busy_timeout=2000")
-                _conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
-                # Quick integrity probe — full check is expensive, but
-                # `quick_check` catches the corruption modes we care
-                # about (page-level + index-level).
-                row = _conn.execute("PRAGMA quick_check").fetchone()
-                if row and row[0] != "ok":
-                    raise RuntimeError(f"sqlite quick_check: {row[0]!r}")
-            finally:
-                _conn.close()
-            return  # checkpoint + integrity passed; nothing more to do
-        except Exception as e:
-            # 2) Last-resort: nuke side-files. Safe ONLY if no other
-            # process holds the DB; the sidecar always runs as a single
-            # daemon so this holds in practice. The next connection
-            # rebuilds an empty WAL/SHM. We do NOT touch the main .db.
-            try:
-                _conn.close()  # type: ignore[has-type]
-            except Exception:
-                pass
-            for ext in ("-wal", "-shm", "-journal"):
-                p = db_path + ext
-                if _os.path.isfile(p):
-                    try:
-                        _os.remove(p)
-                    except OSError:
-                        pass
-            # Log via stderr so it shows up in the sidecar log without
-            # requiring logging config to be ready.
-            import sys as _sys
-            print(
-                f"[db] WAL self-heal: dropped sidecar files for {db_path} "
-                f"(reason: {e!s})",
-                file=_sys.stderr,
-            )
+            _conn.execute("PRAGMA busy_timeout=2000")
+            _conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchall()
+        finally:
+            _conn.close()
     except Exception:
-        # Never block boot on the heal path itself.
+        # Never block boot on the heal path itself, and never escalate to
+        # deleting side files. A real error will surface on first use.
         pass
 
 
