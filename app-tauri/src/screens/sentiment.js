@@ -3,6 +3,7 @@
 // Python sentiment_by_source pipeline). Run button kicks off the LLM
 // aggregation; results land in the same node table for fast re-renders.
 import { api, esc } from '../api.js';
+import { skelGrid } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -336,14 +337,11 @@ const _sentimentRunning = new Set();  // topic
 const _sentimentRunStart = new Map();  // topic -> ms
 
 export async function loadSentiment(contentEl, topic) {
-  // Initial DB read — usually 50-200ms. A spinner-flash for that brief is
-  // worse than a small placeholder, so we use the lightweight inline
-  // loader here. The heavy "Analyzing…" hero is reserved for the actual
-  // LLM call below (which takes 30-90s).
-  contentEl.innerHTML = `<div class="empty-state" style="padding:40px;text-align:center">
-    <div class="map-building-spinner" style="margin:0 auto 10px"></div>
-    <div style="color:var(--ink-3);font-size:var(--fs-13)">Loading sentiment…</div>
-  </div>`;
+  // Initial DB read — usually 50-200ms. Show a card-shaped skeleton matching
+  // the per-source sentiment grid that lands here, so the brief read reads as
+  // "loading these cards" rather than a dead text line. The heavy "Analyzing…"
+  // hero is reserved for the actual LLM call below (which takes 30-90s).
+  contentEl.innerHTML = skelGrid(4, { lines: 3 });
   const sources = await fetchSentimentData(topic);
 
   if (!sources.length) {
