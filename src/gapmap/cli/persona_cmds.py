@@ -29,6 +29,7 @@ from ..persona import (
     share_memory as _share,
     synthesize_conclusions,
     teach_from_youtube as _teach_yt,
+    teach_from_video as _teach_video,
     update_persona as _update,
 )
 
@@ -167,15 +168,16 @@ def cmd_ingest(
 @persona_app.command("teach-video")
 def cmd_teach_video(
     persona_id: int = typer.Argument(...),
-    url: str = typer.Argument(..., help="YouTube URL or 11-char video id"),
+    url: str = typer.Argument(..., help="YouTube or Instagram URL (or 11-char YT id)"),
     comments_limit: int = typer.Option(100, "--comments", "-c",
-        help="Top comments to fetch per video (in addition to transcript + description)."),
+        help="Top comments to fetch (YouTube only; ignored for Instagram)."),
     provider: Optional[str] = typer.Option(None, "--provider"),
     as_json: bool = typer.Option(False, "--json"),
 ):
-    """Teach one persona from one YouTube video — description + transcript +
-    top comments. Streams NDJSON events on stdout (teach:* + ingest:* shapes)."""
-    for ev in _teach_yt(persona_id, url, comments_limit=comments_limit, provider=provider):
+    """Teach one persona from one video. YouTube → captions + transcript + top
+    comments; Instagram (and other URLs) → Whisper transcript. Streams NDJSON
+    events on stdout (teach:* + ingest:* shapes)."""
+    for ev in _teach_video(persona_id, url, comments_limit=comments_limit, provider=provider):
         if as_json:
             _emit(ev)
             continue
