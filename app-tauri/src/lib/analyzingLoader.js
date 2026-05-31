@@ -31,6 +31,44 @@ export const DEFAULT_STAGES = [
   'Almost done — packaging output…',
 ];
 
+// Persistent run-start registry. The loader's elapsed / progress / stage are
+// a function of WHEN THE RUN STARTED, not when this particular mount happened.
+// Without this, re-mounting the loader (e.g. switching a topic tab away and
+// back mid-run) reset the counter to "0s / 0% / stage-0" even though the
+// backend call kept running — the reported sentiment-loader bug. Pass a stable
+// `runKey` (e.g. `concepts:<topic>`) and every re-mount continues from the real
+// elapsed. Keys auto-expire so a leaked (never-cleaned-up) run can't pin a
+// future fresh run to a stale start.
+const RUN_STALE_MS = 15 * 60 * 1000;
+const _runStarts = new Map(); // runKey -> startedAtMs
+
+function resolveRunStart(runKey, explicitStartedAt, now) {
+  if (runKey) {
+    const prev = _runStarts.get(runKey);
+    if (Number.isFinite(prev) && now - prev < RUN_STALE_MS) return prev;
+    _runStarts.set(runKey, now);
+    return now;
+  }
+  return Number.isFinite(explicitStartedAt) ? explicitStartedAt : now;
+}
+
+/**
+ * Pure derivation of the loader's elapsed / progress / stage from the run's
+ * REAL start. Side-effect-free so a re-mounted loader can paint the correct
+ * state on frame 1 and continue ticking from the actual elapsed time.
+ *   • pct: asymptotic 0 → 90% via 1 - e^(-t/τ) (never hits 100% on its own).
+ *   • stageIdx: elapsed / stageStep, capped at the last stage; stageStep is
+ *     sized so the final stage lands ~median runtime.
+ */
+export function analyzingProgress(startedAtMs, nowMs, { medianRuntimeSec = 45, stageCount = DEFAULT_STAGES.length } = {}) {
+  const start = Number.isFinite(startedAtMs) ? startedAtMs : nowMs;
+  const elapsedSec = Math.max(0, (nowMs - start) / 1000);
+  const pct = Math.min(90, 90 * (1 - Math.exp(-elapsedSec / medianRuntimeSec)));
+  const stageStepSec = Math.max(4, (medianRuntimeSec / Math.max(1, stageCount)) * 1.2);
+  const stageIdx = Math.min(Math.max(0, stageCount - 1), Math.floor(elapsedSec / stageStepSec));
+  return { elapsedSec, pct, stageIdx, stageStepSec };
+}
+
 // One generic skeleton card. Mirrors a typical card: title bar + two meta
 // chips + two text lines. Pass `skeletonCardHtml` to match a specific layout
 // (prevents reflow on swap-in).
@@ -71,22 +109,29 @@ export function renderAnalyzingState(contentEl, opts = {}) {
     etaText = 'typically 30–90 seconds',
     skeletonCount = 3,
     skeletonCardHtml = genericSkeletonCard(),
+    runKey = null,      // stable per-run id → elapsed continues across re-mounts
+    startedAt: explicitStartedAt,  // explicit alternative when caller owns the timestamp
   } = opts;
 
   const stageList = Array.isArray(stages) && stages.length ? stages : DEFAULT_STAGES;
+  // Resolve the run's REAL start so a re-mount continues the count.
+  const startedAt = resolveRunStart(runKey, explicitStartedAt, Date.now());
+  const progressOpts = { medianRuntimeSec, stageCount: stageList.length };
+  // Initial values from real elapsed → no "0s / 0%" flash when re-mounting.
+  const init = analyzingProgress(startedAt, Date.now(), progressOpts);
 
   contentEl.innerHTML = `
     <div class="gm-az" aria-busy="true" aria-live="polite">
       <div class="gm-az-hero">
         <div class="gm-az-spinner" aria-hidden="true"></div>
         <h3 class="gm-az-title">${esc(headline)}</h3>
-        <p class="gm-az-stage" id="gm-az-stage">${esc(stageList[0])}</p>
+        <p class="gm-az-stage" id="gm-az-stage">${esc(stageList[init.stageIdx])}</p>
         <div class="gm-az-meta">
-          <span class="gm-az-elapsed" id="gm-az-elapsed">0s elapsed</span>
+          <span class="gm-az-elapsed" id="gm-az-elapsed">${Math.round(init.elapsedSec)}s elapsed</span>
           <span class="gm-az-eta">${esc(etaText)}</span>
         </div>
         <div class="gm-az-bar" role="progressbar" aria-label="Working">
-          <div class="gm-az-fill" id="gm-az-fill" style="width:0%"></div>
+          <div class="gm-az-fill" id="gm-az-fill" style="width:${init.pct.toFixed(1)}%"></div>
         </div>
       </div>
       <div class="gm-az-grid" aria-hidden="true">
@@ -94,27 +139,25 @@ export function renderAnalyzingState(contentEl, opts = {}) {
       </div>
     </div>`;
 
-  const startedAt = Date.now();
   const stageEl = contentEl.querySelector('#gm-az-stage');
   const elapsedEl = contentEl.querySelector('#gm-az-elapsed');
   const fillEl = contentEl.querySelector('#gm-az-fill');
-  // Stage cadence so the LAST stage lands around the median runtime.
-  const stageStepSec = Math.max(4, (medianRuntimeSec / stageList.length) * 1.2);
 
   const tick = setInterval(() => {
     if (!document.body.contains(elapsedEl)) { clearInterval(tick); return; }
-    const elapsed = (Date.now() - startedAt) / 1000;
-    elapsedEl.textContent = `${Math.round(elapsed)}s elapsed`;
-    const pct = Math.min(90, 90 * (1 - Math.exp(-elapsed / medianRuntimeSec)));
+    const { elapsedSec, pct, stageIdx } = analyzingProgress(startedAt, Date.now(), progressOpts);
+    elapsedEl.textContent = `${Math.round(elapsedSec)}s elapsed`;
     if (fillEl) fillEl.style.width = `${pct.toFixed(1)}%`;
-    const idx = Math.min(stageList.length - 1, Math.floor(elapsed / stageStepSec));
-    if (stageEl && stageEl.textContent !== stageList[idx]) {
-      stageEl.textContent = stageList[idx];
+    if (stageEl && stageEl.textContent !== stageList[stageIdx]) {
+      stageEl.textContent = stageList[stageIdx];
     }
   }, 1000);
 
   return function cleanup({ snapToComplete = false } = {}) {
     clearInterval(tick);
+    // Run is over (success or error) — forget its start so the next fresh run
+    // begins at 0 rather than continuing this one's elapsed.
+    if (runKey) _runStarts.delete(runKey);
     if (snapToComplete && fillEl && document.body.contains(fillEl)) {
       fillEl.style.width = '100%';
     }
