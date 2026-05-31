@@ -82,6 +82,30 @@ fn main() {
                 }
             }
 
+            // ── Reap orphaned PyInstaller `_MEI*` temp dirs ─────────────
+            // The bundled sidecar is a PyInstaller onefile: it extracts
+            // ~130 MB into a fresh `_MEIxxxxxx` temp dir on every spawn and
+            // cleans up on graceful exit. Crashes / SIGKILLs (sidecar
+            // lock-timeout, Claude Code reloading the MCP server, app
+            // force-quit) leave the dir behind. Across sessions they pile up
+            // and fill the disk, after which EVERY sidecar spawn 255-exits
+            // with `Could not create temporary directory!` /
+            // `decompression resulted in return code -1!` — the whole app
+            // (and MCP install) looks broken on a fresh, tight-disk machine.
+            // Sweep stale ones (>6 h, never a live extraction) off the boot
+            // path so this can't silently recur. Runs on its own thread so a
+            // slow temp dir never delays the window. See
+            // cli::reap_pyinstaller_orphans.
+            std::thread::spawn(|| {
+                let (n, bytes) = cli::reap_pyinstaller_orphans();
+                if n > 0 {
+                    eprintln!(
+                        "[boot] reaped {n} orphaned _MEI dir(s), freed {:.1} MB",
+                        bytes as f64 / 1_048_576.0
+                    );
+                }
+            });
+
             // Splash safety net + cold-boot webview heal.
             //
             // Two separate failure modes this guards against:

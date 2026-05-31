@@ -72,6 +72,93 @@ fn find_dev_venv_python() -> Option<std::path::PathBuf> {
     None
 }
 
+/// Recursively sum the on-disk size of a directory (best-effort; ignores
+/// unreadable entries). Used only to report how much the orphan reaper freed.
+fn dir_size_bytes(path: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for e in entries.flatten() {
+            match e.metadata() {
+                Ok(m) if m.is_dir() => total += dir_size_bytes(&e.path()),
+                Ok(m) => total += m.len(),
+                Err(_) => {}
+            }
+        }
+    }
+    total
+}
+
+/// Reap orphaned PyInstaller onefile extraction dirs (`_MEI*`) from the
+/// system temp dir.
+///
+/// PyInstaller's onefile bootloader extracts ~130 MB of Python runtime +
+/// `.so` files into a fresh `_MEIxxxxxx` dir on EVERY sidecar spawn and
+/// removes it on graceful exit. A crash / SIGKILL (sidecar lock-timeout,
+/// Claude Code reloading the MCP server, the user force-quitting the app)
+/// leaves the dir behind. Across many sessions these accumulate — on Gap
+/// Map a user reached 41 dirs = 4.56 GB, which filled the boot volume and
+/// made `mkdtemp` / `.so` extraction fail with
+/// `[PYI-NNNNN:ERROR] Could not create temporary directory!` and
+/// `decompression resulted in return code -1!`. That 255-exits EVERY
+/// sidecar call — data tabs, audience build, table counts, AND MCP install —
+/// so the whole app looks broken on a fresh install with a tight disk.
+///
+/// Safety: only dirs whose mtime is older than `min_age` are removed, so we
+/// never touch a currently-extracting sidecar or a freshly-started MCP
+/// server (mtime is stamped at extraction = process start). Default 6 h is
+/// well past any single sidecar call and past a normal Claude Code MCP
+/// session cycle; override via `GAPMAP_MEI_REAP_MIN_AGE_SECS`. Returns
+/// `(dirs_removed, bytes_freed)`. Cheap to call on boot; safe to call often.
+pub fn reap_pyinstaller_orphans() -> (u64, u64) {
+    let min_age_secs: u64 = std::env::var("GAPMAP_MEI_REAP_MIN_AGE_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(6 * 60 * 60);
+    let tmp = std::env::temp_dir();
+    let now = std::time::SystemTime::now();
+    let mut removed = 0u64;
+    let mut freed = 0u64;
+    let entries = match std::fs::read_dir(&tmp) {
+        Ok(e) => e,
+        Err(_) => return (0, 0),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_mei = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with("_MEI"))
+            .unwrap_or(false);
+        if !is_mei {
+            continue;
+        }
+        let meta = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !meta.is_dir() {
+            continue;
+        }
+        // Age gate: skip anything younger than min_age — it could be a live
+        // extraction or a running MCP server we must not yank out from under.
+        let old_enough = meta
+            .modified()
+            .ok()
+            .and_then(|m| now.duration_since(m).ok())
+            .map(|d| d.as_secs() >= min_age_secs)
+            .unwrap_or(false);
+        if !old_enough {
+            continue;
+        }
+        let dir_bytes = dir_size_bytes(&path);
+        if std::fs::remove_dir_all(&path).is_ok() {
+            removed += 1;
+            freed += dir_bytes;
+        }
+    }
+    (removed, freed)
+}
+
 /// Build a Tauri shell Command for the sidecar binary. Used for both dev
 /// and production — capabilities only whitelist `binaries/gapmap`, which
 /// keeps the DMG-shippable signature intact for any user.

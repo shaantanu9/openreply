@@ -1395,10 +1395,51 @@ pub async fn run_gap_discovery(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+/// Mirror gap_discovery.list_experiments hydration: `citations_json` →
+/// `citations` (pop, default []), `design_json` → `design` (pop, default {}).
+fn hydrate_experiment_row(row: &mut Value) {
+    if let Some(o) = row.as_object_mut() {
+        let citations = match o.remove("citations_json") {
+            Some(Value::String(s)) => serde_json::from_str(&s).unwrap_or_else(|_| Value::Array(vec![])),
+            _ => Value::Array(vec![]),
+        };
+        o.insert("citations".into(), citations);
+        let design = match o.remove("design_json") {
+            Some(Value::String(s)) => serde_json::from_str(&s).unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
+            _ => Value::Object(serde_json::Map::new()),
+        };
+        o.insert("design".into(), design);
+    }
+}
+
 #[tauri::command]
 pub async fn list_experiments(app: AppHandle, topic: String) -> Result<Value, String> {
-    run_cli(&app, vec!["research", "experiments-list", "--topic", &topic, "--json"])
-        .await.map_err(err_to_string)
+    // Native — mirrors gap_discovery.list_experiments + the experiments-list
+    // CLI envelope `{"topic": …, "experiments": [...]}`.
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"topic": topic, "experiments": []}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("t".into(), Value::String(topic.clone()));
+        let sql = "SELECT * FROM experiments WHERE topic = :t ORDER BY created_at DESC";
+        match crate::db::query_db(&db_path, sql, Some(&params)) {
+            Ok(mut rows) => {
+                for r in &mut rows { hydrate_experiment_row(r); }
+                Ok(serde_json::json!({ "topic": topic, "experiments": rows }))
+            }
+            Err(e) => {
+                if e.to_string().contains("no such table") {
+                    Ok(serde_json::json!({"topic": topic, "experiments": []}))
+                } else { Err(e.to_string()) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("list_experiments failed: {e}"))??;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -2476,13 +2517,37 @@ pub async fn ost_experiments_list(
     topic: String,
     painpoint_id: Option<String>,
 ) -> Result<Value, String> {
+    // Native — mirrors ost.list_experiments (painpoint_id → WHERE topic AND
+    // painpoint_id, else WHERE topic; ORDER BY created_at DESC; no hydration)
+    // + the `{"experiments": [...]}` CLI envelope.
     let pp = painpoint_id.unwrap_or_default();
-    let mut args: Vec<&str> = vec!["research", "ost-experiments-list", "--topic", &topic, "--json"];
-    if !pp.is_empty() {
-        args.push("--painpoint-id");
-        args.push(&pp);
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"experiments": []}));
     }
-    run_cli(&app, args).await.map_err(err_to_string)
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("topic".into(), Value::String(topic));
+        let sql = if !pp.is_empty() {
+            params.insert("pp".into(), Value::String(pp));
+            "SELECT * FROM ost_experiments WHERE topic = :topic AND painpoint_id = :pp \
+             ORDER BY created_at DESC"
+        } else {
+            "SELECT * FROM ost_experiments WHERE topic = :topic ORDER BY created_at DESC"
+        };
+        match crate::db::query_db(&db_path, sql, Some(&params)) {
+            Ok(rows) => Ok(serde_json::json!({ "experiments": rows })),
+            Err(e) => {
+                if e.to_string().contains("no such table") {
+                    Ok(serde_json::json!({"experiments": []}))
+                } else { Err(e.to_string()) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("ost_experiments_list failed: {e}"))??;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -2571,33 +2636,259 @@ pub async fn run_empathy_build(
     ).await.map_err(err_to_string)
 }
 
+/// Mirror of Python `research.empathy._slugify`:
+/// `re.sub(r"[^a-z0-9]+", "-", s.strip().lower()).strip("-")`, default
+/// "persona". Collapses every run of non-alphanumeric chars to a single
+/// dash, trims leading/trailing dashes. Non-ASCII letters become dashes
+/// (matches Python, since its post-lowercase regex only keeps `a-z0-9`).
+fn slugify_persona(s: &str) -> String {
+    let lower = s.trim().to_lowercase();
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in lower.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    if trimmed.is_empty() { "persona".to_string() } else { trimmed.to_string() }
+}
+
 #[tauri::command]
 pub async fn empathy_get(
     app: AppHandle,
     topic: String,
     persona: Option<String>,
 ) -> Result<Value, String> {
+    // Native rusqlite read (Phase 17/27) — mirrors Python
+    // `research.empathy.get_empathy_map`. Was a ~2s one-shot sidecar spawn
+    // (30-70s cold on a fresh DMG); now ~10ms. Transform parity verified
+    // against the Python `empathy-get --json` golden output.
     let p = persona.unwrap_or_else(|| "primary".to_string());
-    run_cli(
-        &app,
-        vec!["research", "empathy-get", "--topic", &topic, "--persona", &p, "--json"],
-    ).await.map_err(err_to_string)
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"ok": false, "error": "empathy_maps table missing"}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        // Python: pid = f"{topic}::{_slugify(persona)}"
+        let pid = format!("{}::{}", topic, slugify_persona(&p));
+        let mut params = serde_json::Map::new();
+        params.insert("id".into(), Value::String(pid));
+        match crate::db::query_db(&db_path, "SELECT * FROM empathy_maps WHERE id = :id", Some(&params)) {
+            Ok(rows) => {
+                let Some(r) = rows.into_iter().next() else {
+                    return Ok(serde_json::json!({
+                        "ok": false, "error": format!("empathy map for '{p}' not found")
+                    }));
+                };
+                let obj = r.as_object().cloned().unwrap_or_default();
+                // says/thinks/does/feels are JSON-array text columns → decode,
+                // default to [] exactly like Python's `json.loads(... or "[]")`.
+                let arr = |key: &str| -> Value {
+                    obj.get(key).and_then(|v| v.as_str())
+                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                        .unwrap_or_else(|| Value::Array(vec![]))
+                };
+                let s = |key: &str| -> String {
+                    obj.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                };
+                Ok(serde_json::json!({
+                    "ok": true,
+                    "topic": obj.get("topic").cloned().unwrap_or(Value::Null),
+                    "persona": obj.get("persona").cloned().unwrap_or(Value::Null),
+                    "says": arr("says_json"),
+                    "thinks": arr("thinks_json"),
+                    "does": arr("does_json"),
+                    "feels": arr("feels_json"),
+                    "gap_notes": s("gap_notes"),
+                    "updated_at": s("updated_at"),
+                    // No such column in the schema — Python's `.get()` returns
+                    // falsy, so this is always false. Kept for UI shape parity.
+                    "built_offline": obj.get("built_offline").and_then(|v| v.as_bool()).unwrap_or(false),
+                }))
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("no such table") {
+                    Ok(serde_json::json!({"ok": false, "error": "empathy_maps table missing"}))
+                } else { Err(msg) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("empathy_get failed: {e}"))??;
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn empathy_list(app: AppHandle, topic: String) -> Result<Value, String> {
-    run_cli(
-        &app,
-        vec!["research", "empathy-list", "--topic", &topic, "--json"],
-    ).await.map_err(err_to_string)
+    // Native rusqlite read — mirrors Python `research.empathy.list_empathy_maps`
+    // wrapped in the `{"maps": [...]}` envelope the CLI emits.
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"maps": []}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("topic".into(), Value::String(topic));
+        let sql = "SELECT id, topic, persona, gap_notes, updated_at FROM empathy_maps \
+                   WHERE topic = :topic ORDER BY updated_at DESC";
+        match crate::db::query_db(&db_path, sql, Some(&params)) {
+            Ok(rows) => Ok(serde_json::json!({ "maps": rows })),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("no such table") {
+                    Ok(serde_json::json!({"maps": []}))
+                } else { Err(msg) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("empathy_list failed: {e}"))??;
+    Ok(result)
+}
+
+// ── Native rusqlite readers for the products-table JSON-blob getters ──────
+//
+// four_risks / value_curve / tam_sam_som / porter / positioning / cost_model
+// all share one Python shape (research/product.py): read a single
+// `<column>_json` from `products WHERE id=?`, JSON-decode it (empty/invalid →
+// {}), then scaffold a fixed-shape payload with defaults. Porting these to
+// native rusqlite turns a ~2s sidecar spawn (30-70s cold DMG) into ~10ms.
+// The `py*` helpers below reproduce Python's truthiness defaults EXACTLY —
+// notably `float(x or 18.0)` treats a stored 0 as falsy → 18.0, and
+// `str(x or "USD")` treats "" as falsy → "USD".
+
+/// `float(v or default)` — Python falsy (None / 0 / 0.0 / "" / missing) → default.
+fn py_float(v: Option<&Value>, default: f64) -> f64 {
+    match v {
+        Some(Value::Number(n)) => {
+            let f = n.as_f64().unwrap_or(0.0);
+            if f == 0.0 { default } else { f }
+        }
+        Some(Value::String(s)) => {
+            if s.trim().is_empty() { default } else { s.trim().parse().unwrap_or(default) }
+        }
+        Some(Value::Bool(true)) => 1.0,
+        _ => default,
+    }
+}
+/// `str(v or default)` — Python falsy ("" / None / missing) → default.
+fn py_str(v: Option<&Value>, default: &str) -> String {
+    match v {
+        Some(Value::String(s)) if !s.is_empty() => s.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => default.to_string(),
+    }
+}
+/// `int(v or 0)` then truncates floats like Python's `int()`.
+fn py_int(v: Option<&Value>, default: i64) -> i64 {
+    match v {
+        Some(Value::Number(n)) => {
+            if let Some(i) = n.as_i64() { i }
+            else { n.as_f64().map(|f| f as i64).unwrap_or(default) }
+        }
+        Some(Value::String(s)) => s.trim().parse().unwrap_or(default),
+        _ => default,
+    }
+}
+/// `list(v or [])` — array passes through, anything else → [].
+fn py_arr(v: Option<&Value>) -> Value {
+    match v {
+        Some(x) if x.is_array() => x.clone(),
+        _ => Value::Array(vec![]),
+    }
+}
+/// `dict(v or {})` — object passes through, anything else → {}.
+fn py_obj(v: Option<&Value>) -> Value {
+    match v {
+        Some(x) if x.is_object() => x.clone(),
+        _ => Value::Object(serde_json::Map::new()),
+    }
+}
+/// First N Unicode scalar values (mirrors Python `s[:N]` on a str).
+fn take_chars(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
+/// Shared native reader: `SELECT <column> FROM products WHERE id=:id`, decode
+/// the JSON blob, hand the decoded object to `shape` to build the payload.
+/// Mirrors the missing-table / missing-product error envelopes Python returns.
+async fn product_blob_get(
+    app: &AppHandle,
+    product_id: String,
+    column: &'static str,
+    shape: impl FnOnce(&str, &serde_json::Map<String, Value>) -> Value + Send + 'static,
+) -> Result<Value, String> {
+    let dir = crate::cli::data_dir(app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"ok": false, "error": "products table not initialized"}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("id".into(), Value::String(product_id.clone()));
+        let sql = format!("SELECT {column} FROM products WHERE id = :id");
+        match crate::db::query_db(&db_path, &sql, Some(&params)) {
+            Ok(rows) => {
+                let Some(r) = rows.into_iter().next() else {
+                    return Ok(serde_json::json!({
+                        "ok": false, "error": format!("product '{product_id}' not found")
+                    }));
+                };
+                let blob = r.as_object()
+                    .and_then(|o| o.get(column))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let data: serde_json::Map<String, Value> = if blob.is_empty() {
+                    serde_json::Map::new()
+                } else {
+                    serde_json::from_str::<Value>(blob)
+                        .ok()
+                        .and_then(|v| v.as_object().cloned())
+                        .unwrap_or_default()
+                };
+                Ok(shape(&product_id, &data))
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("no such table") {
+                    Ok(serde_json::json!({"ok": false, "error": "products table not initialized"}))
+                } else { Err(msg) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("product_blob_get failed: {e}"))??;
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn four_risks_get(app: AppHandle, product_id: String) -> Result<Value, String> {
-    run_cli(
-        &app,
-        vec!["research", "four-risks-get", "--id", &product_id, "--json"],
-    ).await.map_err(err_to_string)
+    // Mirror Python four_risks_get: {ok, product_id, risks:{<key>:{status,notes,decided_at}}}
+    product_blob_get(&app, product_id, "four_risks_json", |pid, data| {
+        const RISK_KEYS: [&str; 4] = ["value", "usability", "feasibility", "viability"];
+        const VALID: [&str; 3] = ["unknown", "pass", "fail"];
+        let mut risks = serde_json::Map::new();
+        for k in RISK_KEYS {
+            let r = data.get(k).and_then(|v| v.as_object());
+            let status = r.and_then(|o| o.get("status")).and_then(|v| v.as_str()).unwrap_or("");
+            let status = if VALID.contains(&status) { status } else { "unknown" };
+            let notes = take_chars(
+                r.and_then(|o| o.get("notes")).and_then(|v| v.as_str()).unwrap_or(""), 600);
+            let decided_at = r.and_then(|o| o.get("decided_at")).and_then(|v| v.as_str()).unwrap_or("");
+            risks.insert(k.into(), serde_json::json!({
+                "status": status, "notes": notes, "decided_at": decided_at
+            }));
+        }
+        serde_json::json!({"ok": true, "product_id": pid, "risks": risks})
+    }).await
 }
 
 #[tauri::command]
@@ -2618,10 +2909,15 @@ pub async fn four_risks_set(
 
 #[tauri::command]
 pub async fn value_curve_get(app: AppHandle, product_id: String) -> Result<Value, String> {
-    run_cli(
-        &app,
-        vec!["research", "value-curve-get", "--id", &product_id, "--json"],
-    ).await.map_err(err_to_string)
+    product_blob_get(&app, product_id, "value_curve_json", |pid, data| {
+        serde_json::json!({
+            "ok": true, "product_id": pid,
+            "factors": py_arr(data.get("factors")),
+            "self": py_arr(data.get("self")),
+            "competitors": py_arr(data.get("competitors")),
+            "four_actions": py_obj(data.get("four_actions")),
+        })
+    }).await
 }
 
 #[tauri::command]
@@ -2640,8 +2936,22 @@ pub async fn value_curve_set(
 // ── TAM / SAM / SOM ────────────────────────────────────────────────
 #[tauri::command]
 pub async fn tam_sam_som_get(app: AppHandle, product_id: String) -> Result<Value, String> {
-    run_cli(&app, vec!["research", "tam-sam-som-get", "--id", &product_id, "--json"])
-        .await.map_err(err_to_string)
+    product_blob_get(&app, product_id, "tam_sam_som_json", |pid, data| {
+        let node = |k: &str| -> Value {
+            let o = data.get(k).and_then(|v| v.as_object());
+            serde_json::json!({
+                "value": py_float(o.and_then(|m| m.get("value")), 0.0),
+                "units": py_str(o.and_then(|m| m.get("units")), "USD"),
+                "method": py_str(o.and_then(|m| m.get("method")), ""),
+                "source": py_str(o.and_then(|m| m.get("source")), ""),
+                "notes": py_str(o.and_then(|m| m.get("notes")), ""),
+            })
+        };
+        serde_json::json!({
+            "ok": true, "product_id": pid,
+            "tam": node("tam"), "sam": node("sam"), "som": node("som"),
+        })
+    }).await
 }
 
 #[tauri::command]
@@ -2658,8 +2968,25 @@ pub async fn tam_sam_som_set(
 // ── Porter's Five Forces ──────────────────────────────────────────────
 #[tauri::command]
 pub async fn porter_get(app: AppHandle, product_id: String) -> Result<Value, String> {
-    run_cli(&app, vec!["research", "porter-get", "--id", &product_id, "--json"])
-        .await.map_err(err_to_string)
+    product_blob_get(&app, product_id, "porter_forces_json", |pid, data| {
+        const FORCES: [&str; 5] =
+            ["new_entrants", "supplier_power", "buyer_power", "substitutes", "rivalry"];
+        let mut forces = serde_json::Map::new();
+        for k in FORCES {
+            match data.get(k).and_then(|v| v.as_object()) {
+                Some(o) => {
+                    let score = py_int(o.get("score"), 0).clamp(0, 5);
+                    let notes = take_chars(
+                        o.get("notes").and_then(|v| v.as_str()).unwrap_or(""), 600);
+                    forces.insert(k.into(), serde_json::json!({"score": score, "notes": notes}));
+                }
+                None => {
+                    forces.insert(k.into(), serde_json::json!({"score": 0, "notes": ""}));
+                }
+            }
+        }
+        serde_json::json!({"ok": true, "product_id": pid, "forces": forces})
+    }).await
 }
 
 #[tauri::command]
@@ -2680,8 +3007,14 @@ pub async fn porter_set(
 // ── 2x2 positioning map ───────────────────────────────────────────────
 #[tauri::command]
 pub async fn positioning_get(app: AppHandle, product_id: String) -> Result<Value, String> {
-    run_cli(&app, vec!["research", "positioning-get", "--id", &product_id, "--json"])
-        .await.map_err(err_to_string)
+    product_blob_get(&app, product_id, "positioning_map_json", |pid, data| {
+        serde_json::json!({
+            "ok": true, "product_id": pid,
+            "x_axis": py_str(data.get("x_axis"), "Price"),
+            "y_axis": py_str(data.get("y_axis"), "Feature depth"),
+            "points": py_arr(data.get("points")),
+        })
+    }).await
 }
 
 #[tauri::command]
@@ -2698,8 +3031,18 @@ pub async fn positioning_set(
 // ── Cost model + pricing tiers ────────────────────────────────────────
 #[tauri::command]
 pub async fn cost_model_get(app: AppHandle, product_id: String) -> Result<Value, String> {
-    run_cli(&app, vec!["research", "cost-model-get", "--id", &product_id, "--json"])
-        .await.map_err(err_to_string)
+    product_blob_get(&app, product_id, "cost_model_json", |pid, data| {
+        serde_json::json!({
+            "ok": true, "product_id": pid,
+            "blended_rate": py_float(data.get("blended_rate"), 0.0),
+            "infra_monthly": py_float(data.get("infra_monthly"), 0.0),
+            "maintenance_pct": py_float(data.get("maintenance_pct"), 18.0),
+            "ltv": py_float(data.get("ltv"), 0.0),
+            "cac": py_float(data.get("cac"), 0.0),
+            "tiers": py_arr(data.get("tiers")),
+            "currency": py_str(data.get("currency"), "USD"),
+        })
+    }).await
 }
 
 #[tauri::command]
@@ -2748,8 +3091,47 @@ pub async fn interview_delete(app: AppHandle, interview_id: String) -> Result<Va
 
 #[tauri::command]
 pub async fn interview_get(app: AppHandle, interview_id: String) -> Result<Value, String> {
-    run_cli(&app, vec!["research", "interview-get", "--id", &interview_id, "--json"])
-        .await.map_err(err_to_string)
+    // Native — mirrors interviews.get_interview + _to_dict (tags_json → tags).
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"ok": false, "error": "interviews table missing"}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("id".into(), Value::String(interview_id.clone()));
+        match crate::db::query_db(&db_path, "SELECT * FROM interviews WHERE id = :id", Some(&params)) {
+            Ok(rows) => {
+                let Some(mut row) = rows.into_iter().next() else {
+                    return Ok(serde_json::json!({
+                        "ok": false, "error": format!("interview '{interview_id}' not found")
+                    }));
+                };
+                hydrate_interview_row(&mut row);
+                Ok(serde_json::json!({"ok": true, "interview": row}))
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("no such table") {
+                    Ok(serde_json::json!({"ok": false, "error": "interviews table missing"}))
+                } else { Err(msg) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("interview_get failed: {e}"))??;
+    Ok(result)
+}
+
+/// Mirror interviews._to_dict: `tags_json` → `tags` (default []), drop the raw column.
+fn hydrate_interview_row(row: &mut Value) {
+    if let Some(o) = row.as_object_mut() {
+        let tags = o.get("tags_json").and_then(|v| v.as_str())
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .unwrap_or_else(|| Value::Array(vec![]));
+        o.insert("tags".into(), tags);
+        o.remove("tags_json");
+    }
 }
 
 #[tauri::command]
@@ -2758,10 +3140,57 @@ pub async fn interview_list(
     topic: Option<String>,
     product_id: Option<String>,
 ) -> Result<Value, String> {
+    // Native — mirrors interviews.list_interviews (product_id → topic → all
+    // LIMIT 200, ORDER BY conducted_at DESC) + per-row tags hydration.
     let t = topic.unwrap_or_default();
     let p = product_id.unwrap_or_default();
-    run_cli(&app, vec!["research", "interview-list", "--topic", &t, "--product-id", &p, "--json"])
-        .await.map_err(err_to_string)
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"interviews": []}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut rows = match list_topic_product_rows(
+            &db_path, "interviews", "conducted_at", 200, &t, &p) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+        for r in &mut rows { hydrate_interview_row(r); }
+        Ok(serde_json::json!({ "interviews": rows }))
+    })
+    .await
+    .map_err(|e| format!("interview_list failed: {e}"))??;
+    Ok(result)
+}
+
+/// Shared native reader for topic/product-scoped list tables. Mirrors the
+/// Python `if product_id: … elif topic: … else: all LIMIT n` branch with
+/// `ORDER BY <order_col> DESC`. Returns [] on a missing table.
+fn list_topic_product_rows(
+    db_path: &std::path::Path,
+    table: &str,
+    order_col: &str,
+    all_limit: i64,
+    topic: &str,
+    product_id: &str,
+) -> Result<Vec<Value>, String> {
+    let mut params = serde_json::Map::new();
+    let sql = if !product_id.is_empty() {
+        params.insert("product_id".into(), Value::String(product_id.to_string()));
+        format!("SELECT * FROM {table} WHERE product_id = :product_id ORDER BY {order_col} DESC")
+    } else if !topic.is_empty() {
+        params.insert("topic".into(), Value::String(topic.to_string()));
+        format!("SELECT * FROM {table} WHERE topic = :topic ORDER BY {order_col} DESC")
+    } else {
+        format!("SELECT * FROM {table} ORDER BY {order_col} DESC LIMIT {all_limit}")
+    };
+    let p = if params.is_empty() { None } else { Some(&params) };
+    match crate::db::query_db(db_path, &sql, p) {
+        Ok(rows) => Ok(rows),
+        Err(e) => {
+            if e.to_string().contains("no such table") { Ok(vec![]) } else { Err(e.to_string()) }
+        }
+    }
 }
 
 #[tauri::command]
@@ -2794,10 +3223,23 @@ pub async fn pmf_list(
     topic: Option<String>,
     product_id: Option<String>,
 ) -> Result<Value, String> {
+    // Native — mirrors pmf.list_responses (product_id → topic → all LIMIT 500,
+    // ORDER BY responded_at DESC). No per-row hydration. `{"responses": [...]}`.
     let t = topic.unwrap_or_default();
     let p = product_id.unwrap_or_default();
-    run_cli(&app, vec!["research", "pmf-list", "--topic", &t, "--product-id", &p, "--json"])
-        .await.map_err(err_to_string)
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"responses": []}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let rows = list_topic_product_rows(
+            &db_path, "pmf_responses", "responded_at", 500, &t, &p)?;
+        Ok(serde_json::json!({ "responses": rows }))
+    })
+    .await
+    .map_err(|e| format!("pmf_list failed: {e}"))??;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -2895,12 +3337,69 @@ pub async fn survey_list(
     product_id: Option<String>,
     kind: Option<String>,
 ) -> Result<Value, String> {
+    // Native — mirrors pricing.list_responses (topic/product_id/kind each an
+    // independent AND filter; ORDER BY responded_at DESC LIMIT 500; per-row
+    // `data_json` → `data`, RAW column kept) + `{"responses": [...]}`.
     let t = topic.unwrap_or_default();
     let p = product_id.unwrap_or_default();
     let k = kind.unwrap_or_default();
-    run_cli(&app, vec!["research", "survey-list", "--topic", &t, "--product-id", &p,
-        "--kind", &k, "--json"])
-        .await.map_err(err_to_string)
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"responses": []}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        let mut where_parts: Vec<&str> = vec![];
+        if !t.is_empty() { where_parts.push("topic = :topic"); params.insert("topic".into(), Value::String(t)); }
+        if !p.is_empty() { where_parts.push("product_id = :pid"); params.insert("pid".into(), Value::String(p)); }
+        if !k.is_empty() { where_parts.push("kind = :kind"); params.insert("kind".into(), Value::String(k)); }
+        let mut sql = String::from("SELECT * FROM survey_responses");
+        if !where_parts.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&where_parts.join(" AND "));
+        }
+        sql.push_str(" ORDER BY responded_at DESC LIMIT 500");
+        let p_opt = if params.is_empty() { None } else { Some(&params) };
+        match crate::db::query_db(&db_path, &sql, p_opt) {
+            Ok(mut rows) => {
+                for r in &mut rows {
+                    if let Some(o) = r.as_object_mut() {
+                        // `json.loads(data_json or "{}") or {}` — falsy decode → {}.
+                        let decoded = o.get("data_json").and_then(|v| v.as_str())
+                            .and_then(|s| serde_json::from_str::<Value>(s).ok());
+                        let data = match decoded {
+                            Some(v) if !is_py_falsy(&v) => v,
+                            _ => Value::Object(serde_json::Map::new()),
+                        };
+                        o.insert("data".into(), data);  // data_json intentionally kept
+                    }
+                }
+                Ok(serde_json::json!({ "responses": rows }))
+            }
+            Err(e) => {
+                if e.to_string().contains("no such table") {
+                    Ok(serde_json::json!({"responses": []}))
+                } else { Err(e.to_string()) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("survey_list failed: {e}"))??;
+    Ok(result)
+}
+
+/// Python truthiness for the `x or default` idiom: null / false / 0 / "" /
+/// [] / {} are all falsy.
+fn is_py_falsy(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Bool(b) => !b,
+        Value::Number(n) => n.as_f64().map(|f| f == 0.0).unwrap_or(false),
+        Value::String(s) => s.is_empty(),
+        Value::Array(a) => a.is_empty(),
+        Value::Object(o) => o.is_empty(),
+    }
 }
 
 #[tauri::command]
@@ -2957,9 +3456,58 @@ pub async fn pert_list(
     product_id: String,
     tier: Option<String>,
 ) -> Result<Value, String> {
+    // Native — mirrors pert.list_tasks (product_id [+ tier]; ORDER BY
+    // created_at ASC) + `_decorate` (expected/stddev) + `{"tasks": [...]}`.
     let t = tier.unwrap_or_default();
-    run_cli(&app, vec!["research", "pert-list", "--id", &product_id, "--tier", &t, "--json"])
-        .await.map_err(err_to_string)
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(serde_json::json!({"tasks": []}));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("pid".into(), Value::String(product_id));
+        let sql = if !t.is_empty() {
+            params.insert("tier".into(), Value::String(t));
+            "SELECT * FROM pert_tasks WHERE product_id = :pid AND tier = :tier ORDER BY created_at"
+        } else {
+            "SELECT * FROM pert_tasks WHERE product_id = :pid ORDER BY created_at"
+        };
+        match crate::db::query_db(&db_path, sql, Some(&params)) {
+            Ok(mut rows) => {
+                for r in &mut rows { pert_decorate_row(r); }
+                Ok(serde_json::json!({ "tasks": rows }))
+            }
+            Err(e) => {
+                if e.to_string().contains("no such table") {
+                    Ok(serde_json::json!({"tasks": []}))
+                } else { Err(e.to_string()) }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("pert_list failed: {e}"))??;
+    Ok(result)
+}
+
+/// `round(x, 2)` with banker's rounding (round-half-to-even), matching
+/// Python's built-in `round()`.
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round_ties_even() / 100.0
+}
+
+/// Mirror pert._decorate: expected = round((o + 4m + p) / 6, 2),
+/// stddev = round(max(0, (p - o) / 6), 2). Uses `float(x or 0)` semantics.
+fn pert_decorate_row(row: &mut Value) {
+    if let Some(o) = row.as_object_mut() {
+        let opt = py_float(o.get("optimistic"), 0.0);
+        let ml = py_float(o.get("most_likely"), 0.0);
+        let pess = py_float(o.get("pessimistic"), 0.0);
+        let expected = round2((opt + 4.0 * ml + pess) / 6.0);
+        let stddev = round2(((pess - opt) / 6.0).max(0.0));
+        o.insert("expected".into(), serde_json::json!(expected));
+        o.insert("stddev".into(), serde_json::json!(stddev));
+    }
 }
 
 #[tauri::command]
@@ -3428,16 +3976,31 @@ pub async fn paper_analyses_get(
     app: AppHandle,
     topic: String,
 ) -> Result<Value, String> {
-    let sql =
-        "SELECT pa.post_id, pa.topic, pa.summary, pa.relevance, pa.takeaway, \
-         pa.ts, pa.provider, pa.model \
-         FROM paper_analyses pa WHERE pa.topic = :topic";
-    run_cli(
-        &app,
-        vec!["query", sql, "--topic", &topic, "--json"],
-    )
+    // Native — was a sidecar `query` round-trip; identical SELECT, ~10ms now.
+    // Returns the bare rows array the `query` command emitted.
+    let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
+    let db_path = dir.join("gapmap.db");
+    if !db_path.exists() {
+        return Ok(Value::Array(vec![]));
+    }
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("topic".into(), Value::String(topic));
+        let sql =
+            "SELECT pa.post_id, pa.topic, pa.summary, pa.relevance, pa.takeaway, \
+             pa.ts, pa.provider, pa.model \
+             FROM paper_analyses pa WHERE pa.topic = :topic";
+        match crate::db::query_db(&db_path, sql, Some(&params)) {
+            Ok(rows) => Ok(Value::Array(rows)),
+            Err(e) => {
+                if e.to_string().contains("no such table") { Ok(Value::Array(vec![])) }
+                else { Err(e.to_string()) }
+            }
+        }
+    })
     .await
-    .map_err(err_to_string)
+    .map_err(|e| format!("paper_analyses_get failed: {e}"))??;
+    Ok(result)
 }
 
 /// Export the gap-map HTML for a topic. Returns absolute path.
