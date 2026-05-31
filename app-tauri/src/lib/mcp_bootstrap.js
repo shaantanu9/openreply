@@ -72,6 +72,7 @@ export async function bootstrapMcpClients({
         before?.token_in_env &&
         before?.takeover_configured !== false &&
         before?.timeout_configured !== false &&
+        before?.client_tag_configured !== false &&
         before?.idle_disabled !== false
       ) {
         results.push({ client: cl, outcome: 'already_ready' });

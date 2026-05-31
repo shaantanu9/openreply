@@ -883,6 +883,36 @@ function wireStaticButtons(root) {
         btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
         return;
       }
+      // Entries written before per-client pidfile scoping lack MCP_CLIENT_TAG,
+      // so multiple MCP clients fight over the same lock file and SIGTERM each
+      // other mid-tool-call (surfaces as "lost connection"). One re-sync writes
+      // the tag and the cross-client thrash stops.
+      if (s.client_tag_configured === false) {
+        dot.dataset.state = 'warn';
+        txt.textContent = `Connected to ${label} · needs per-client scoping`;
+        detail.innerHTML =
+          `This entry predates per-client pidfile scoping. When more than one ` +
+          `MCP client runs, they fight over the same lock and disconnect each ` +
+          `other mid-tool-call. Re-sync to scope this client's pidfile.`;
+        btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
+        return;
+      }
+      // Entries written before 2026-05-29 don't pin GAPMAP_IDLE_TIMEOUT=0, so
+      // the server's idle watcher calls os._exit(0) after 30 min idle. The
+      // client reads that self-exit as a permanent disconnect and does NOT
+      // auto-respawn — user sees "MCP keeps disconnecting". One re-sync writes
+      // GAPMAP_IDLE_TIMEOUT=0 and the spurious disconnects stop.
+      if (s.idle_disabled === false) {
+        dot.dataset.state = 'warn';
+        txt.textContent = `Connected to ${label} · idle watcher active`;
+        detail.innerHTML =
+          `This entry's idle-timeout watcher can self-exit after 30 min idle, ` +
+          `which ${esc(label)} reads as a permanent disconnect (no auto-respawn). ` +
+          `Re-sync to pin <code>GAPMAP_IDLE_TIMEOUT=0</code> so MCP stays ` +
+          `connected for the whole session.`;
+        btnConn.hidden = true; btnSync.hidden = false; btnDis.hidden = false;
+        return;
+      }
       dot.dataset.state = 'ok';
       txt.textContent = `Connected to ${label} · DB aligned`;
       const tokenNote = s.token_in_env ? '· token saved' : '· token will refresh on Re-sync';
