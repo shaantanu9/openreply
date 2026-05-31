@@ -439,6 +439,22 @@ fn on_worker_exit(
         }
     }
 
+    // OOM (exit 137) is the memory governor doing its job — it intentionally
+    // exits so we restart with fresh memory after dropping chromadb+ONNX.
+    // That is RECOVERABLE and expected under heavy extraction, so it must NOT
+    // count toward the crash give-up window (otherwise 3 OOM-recycles in 300s
+    // wrongly trips "extraction worker gave up"). Restart with a short backoff
+    // and leave the crash counter untouched; only genuine crashes (import
+    // error, segfault, non-137 non-clean exits) accrue toward give-up.
+    if code == 137 {
+        let app_spawn = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            let _ = start_worker(app_spawn).await;
+        });
+        return;
+    }
+
     // Tally restarts within the sliding window.
     let now = Instant::now();
     let (attempt_idx, give_up) = {

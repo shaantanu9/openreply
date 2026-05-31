@@ -79,9 +79,13 @@ _cap_fired_today: set[tuple[str, str]] = set()
 MAX_ATTEMPTS = 3
 
 # Hard ceiling. If RSS crosses this, the governor drops chromadb + gc.
-# If still over, the worker exits 137 and Rust restarts it. 600 MB is chosen
-# to keep total app footprint ≤ 700 MB (Rust shell + SQLite + worker).
-RSS_CEILING_MB = 600
+# If still over, the worker exits 137 and Rust restarts it (recoverable — the
+# supervisor does NOT count exit-137 toward its give-up window, see worker.rs).
+# 600 MB was too tight: chromadb + the ONNX MiniLM model alone are ~300 MB, and
+# a large extraction batch spiked past 600 routinely → OOM exit every few
+# batches → 3 in 300s → "extraction worker gave up". 1400 MB gives real
+# headroom while still bounding a genuine leak. Env-overridable for tuning.
+RSS_CEILING_MB = int(os.getenv("GAPMAP_WORKER_RSS_MB") or 1400)
 
 # Sleep ladder between drain attempts. "hot" = back-to-back, "warm" = user
 # is active, "cool" = idle, "cold" = fully idle. Cold includes app
