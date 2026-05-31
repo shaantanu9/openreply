@@ -132,6 +132,20 @@ def chunk_paper(post_id: str, *, force: bool = False, embed: bool = True) -> dic
 
     Returns ``{ok, post_id, n_chunks, n_new, n_unchanged, embedded}``.
     """
+    # Explicit academic-source guard (defense in depth — chunking normally only
+    # runs after the academic-only full-text gate, but never embed a
+    # reddit/appstore/etc. post into the paper palace by accident).
+    if embed:
+        from .sources import is_academic_source
+        _src_rows = list(get_db().query(
+            "SELECT coalesce(source_type,'reddit') AS s FROM posts WHERE id = ?",
+            [post_id],
+        ))
+        if _src_rows and not is_academic_source(_src_rows[0]["s"]):
+            return {"ok": True, "post_id": post_id, "n_chunks": 0,
+                    "n_new": 0, "n_unchanged": 0, "embedded": 0,
+                    "skipped": "non_academic_source"}
+
     text, source = _load_full_text(post_id)
     if text is None:
         return {"ok": False, "post_id": post_id,

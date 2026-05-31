@@ -1681,6 +1681,24 @@ pub async fn paper_export_with_citations(
 }
 
 #[tauri::command]
+pub async fn paper_neighbors(app: AppHandle, post_id: String, k: Option<u32>, topic: Option<String>) -> Result<Value, String> {
+    let kk = k.unwrap_or(8).to_string();
+    let mut args = vec!["research", "paper-neighbors", "--id", &post_id, "--k", &kk, "--json"];
+    let t = topic.unwrap_or_default();
+    if !t.is_empty() { args.push("--topic"); args.push(&t); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn paper_relations_build(app: AppHandle, topic: Option<String>, kinds: Option<String>) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let ks = kinds.unwrap_or_else(|| "relates_to,cites".into());
+    let mut args = vec!["research", "paper-relations-build", "--kinds", &ks, "--json"];
+    if !t.is_empty() { args.push("--topic"); args.push(&t); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
 pub async fn competitor_matrix(
     app: AppHandle,
     topic: String,
