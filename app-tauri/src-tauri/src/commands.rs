@@ -5517,6 +5517,20 @@ pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Va
 /// Open a URL in the user's default browser.
 #[tauri::command]
 pub async fn open_url(_app: AppHandle, url: String) -> Result<(), String> {
+    // SECURITY: only hand web/mail URLs to the OS opener. Without this, a
+    // malicious link in rendered markdown (LLM output / collected posts) could
+    // pass `file://` (open an arbitrary local file/app), `javascript:`, or a
+    // custom-scheme handler straight to `open` / `xdg-open` / `cmd start`.
+    let lower = url.trim().to_ascii_lowercase();
+    let allowed = lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("mailto:");
+    if !allowed {
+        return Err(format!(
+            "refused to open non-web URL: {}",
+            url.chars().take(80).collect::<String>()
+        ));
+    }
     let cmd_result = {
         #[cfg(target_os = "macos")]
         { std::process::Command::new("open").arg(&url).spawn() }
