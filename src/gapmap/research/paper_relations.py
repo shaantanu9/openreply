@@ -40,7 +40,11 @@ def build(topic: str | None = None, *, kinds: list[str] | None = None,
             for ref in get_references(pid):
                 dst = ref.get("dst_post_id") or ""
                 if ref.get("resolution_status") == "ok" and dst and dst in ids:
-                    _upsert_edge(db, pid, dst, "cites", topic, 1.0,
+                    # Distinct edge kind — `cites`/`relates_to` are already used
+                    # by the dense-graph-relations system for painpoint/feature/
+                    # concept NODES. Namespacing as `paper_*` keeps the paper
+                    # citation graph unambiguous and queryable on its own.
+                    _upsert_edge(db, pid, dst, "paper_cites", topic, 1.0,
                                  {"via": ref.get("extractor", "")})
                     made["cites"] += 1
 
@@ -52,7 +56,7 @@ def build(topic: str | None = None, *, kinds: list[str] | None = None,
                 for r in nb.get("results", []):
                     dst = r["post_id"]
                     if dst in ids:
-                        _upsert_edge(db, pid, dst, "relates_to", topic,
+                        _upsert_edge(db, pid, dst, "paper_relates_to", topic,
                                      r["score"], {"score": r["score"]})
                         made["relates_to"] += 1
 

@@ -18,5 +18,7 @@ def test_cites_edges_from_resolved_refs(tmp_path, monkeypatch):
     out = build(topic="t", kinds=["cites"])
     assert out["ok"] is True
     edges = list(db.query(
-        "SELECT src, dst, kind FROM graph_edges WHERE kind='cites'"))
-    assert {"src": "a", "dst": "b", "kind": "cites"} in [dict(e) for e in edges]
+        "SELECT src, dst, kind FROM graph_edges WHERE kind='paper_cites'"))
+    assert {"src": "a", "dst": "b", "kind": "paper_cites"} in [dict(e) for e in edges]
+    # Must NOT collide with the dense-graph-relations `cites` kind.
+    assert list(db.query("SELECT 1 FROM graph_edges WHERE kind='cites'")) == []
