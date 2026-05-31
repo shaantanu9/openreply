@@ -99,7 +99,7 @@ function renderEmptyCta(topic) {
 // mark — past the median run-time but well inside the 30–90s expected
 // window. The user reads them in order, not by clock; the value is "this
 // is doing real work" not "this is exactly at step 4".
-const SENT_STAGES = [
+export const SENT_STAGES = [
   'Connecting to LLM…',
   'Sampling posts from each source…',
   'Reading what the community actually says…',
@@ -108,6 +108,20 @@ const SENT_STAGES = [
   'Summarizing per-source sentiment…',
   'Almost done — packaging results…',
 ];
+
+// Pure derivation of the loader's elapsed / progress / stage from the run's
+// REAL start timestamp. Kept side-effect-free so the analyzing hero can be
+// re-mounted (e.g. after a tab switch away and back) and continue from the
+// actual elapsed time instead of resetting to 0 — see sentiment.progress.test.mjs.
+//   • pct: asymptotic 0 → 90% via 1 - e^(-t/45) (never hits 100% on its own).
+//   • stageIdx: elapsed-seconds / 9, capped at the last stage.
+export function sentimentLoaderProgress(startedAtMs, nowMs) {
+  const start = Number.isFinite(startedAtMs) ? startedAtMs : nowMs;
+  const elapsedSec = Math.max(0, (nowMs - start) / 1000);
+  const pct = Math.min(90, 90 * (1 - Math.exp(-elapsedSec / 45)));
+  const stageIdx = Math.min(SENT_STAGES.length - 1, Math.floor(elapsedSec / 9));
+  return { elapsedSec, pct, stageIdx };
+}
 
 // Mount a full-bleed "Analyzing" loading state that FEELS alive:
 //   • 44px orange spinner up top so eyes have something obvious to track.
@@ -120,7 +134,13 @@ const SENT_STAGES = [
 //     real cards arrive the page doesn't visually reflow.
 // Returns a cleanup function the caller MUST invoke when replacing this
 // markup; otherwise the interval keeps firing against a detached DOM.
-function renderAnalyzingState(contentEl, { headline = 'Analyzing sentiment per source' } = {}) {
+function renderAnalyzingState(contentEl, { headline = 'Analyzing sentiment per source', startedAt } = {}) {
+  // `startedAt` is the run's REAL start time (persisted across tab re-entries
+  // in `_sentimentRunStart`). When omitted we default to now (fresh run).
+  const startedAtMs = Number.isFinite(startedAt) ? startedAt : Date.now();
+  // Initial values computed from the real elapsed so a re-mount paints the
+  // right state on frame 1 instead of flashing "0s elapsed / 0% / stage 0".
+  const init = sentimentLoaderProgress(startedAtMs, Date.now());
   const skeletonCard = `
     <div class="sent-card sent-card-skel">
       <div class="sent-card-head">
@@ -146,13 +166,13 @@ function renderAnalyzingState(contentEl, { headline = 'Analyzing sentiment per s
       <div class="sent-analyzing-hero">
         <div class="sent-spinner-lg" aria-hidden="true"></div>
         <h3 class="sent-analyzing-title">${esc(headline)}</h3>
-        <p class="sent-analyzing-stage" id="sent-analyzing-stage">${esc(SENT_STAGES[0])}</p>
+        <p class="sent-analyzing-stage" id="sent-analyzing-stage">${esc(SENT_STAGES[init.stageIdx])}</p>
         <div class="sent-analyzing-meta">
-          <span class="sent-analyzing-elapsed" id="sent-analyzing-elapsed">0s elapsed</span>
+          <span class="sent-analyzing-elapsed" id="sent-analyzing-elapsed">${Math.round(init.elapsedSec)}s elapsed</span>
           <span class="sent-analyzing-eta">typically 30–90 seconds</span>
         </div>
         <div class="sent-progress-bar" role="progressbar" aria-label="Analyzing progress">
-          <div class="sent-progress-fill" id="sent-progress-fill" style="width:0%"></div>
+          <div class="sent-progress-fill" id="sent-progress-fill" style="width:${init.pct.toFixed(1)}%"></div>
         </div>
       </div>
       <div class="sent-grid sent-grid-skel" aria-hidden="true">
@@ -161,7 +181,6 @@ function renderAnalyzingState(contentEl, { headline = 'Analyzing sentiment per s
     </div>
   `;
 
-  const startedAt = Date.now();
   const stageEl = contentEl.querySelector('#sent-analyzing-stage');
   const elapsedEl = contentEl.querySelector('#sent-analyzing-elapsed');
   const fillEl = contentEl.querySelector('#sent-progress-fill');
@@ -173,15 +192,11 @@ function renderAnalyzingState(contentEl, { headline = 'Analyzing sentiment per s
       clearInterval(tick);
       return;
     }
-    const elapsed = (Date.now() - startedAt) / 1000;
-    elapsedEl.textContent = `${Math.round(elapsed)}s elapsed`;
-    // Asymptotic 0 → 90%: 1 - e^(-t/45). At t=30s → 49%, t=60s → 74%,
-    // t=90s → 86%. Never reaches 100% on its own — the cleanup call
-    // (or the resolve path) snaps it to 100%.
-    const pct = Math.min(90, 90 * (1 - Math.exp(-elapsed / 45)));
+    // Elapsed/progress/stage derive from the run's REAL start (startedAtMs),
+    // so a re-mounted loader continues the count instead of resetting to 0.
+    const { elapsedSec, pct, stageIdx } = sentimentLoaderProgress(startedAtMs, Date.now());
+    elapsedEl.textContent = `${Math.round(elapsedSec)}s elapsed`;
     if (fillEl) fillEl.style.width = `${pct.toFixed(1)}%`;
-    // Stage cycle — index by elapsed-seconds / 9, capped.
-    const stageIdx = Math.min(SENT_STAGES.length - 1, Math.floor(elapsed / 9));
     if (stageEl && stageEl.textContent !== SENT_STAGES[stageIdx]) {
       stageEl.textContent = SENT_STAGES[stageIdx];
     }
@@ -273,8 +288,8 @@ function startLiveSentimentPolling(contentEl, topic, totalSources) {
   };
 }
 
-async function runAndRender(contentEl, topic) {
-  const stopAnalyzing = renderAnalyzingState(contentEl);
+async function runAndRender(contentEl, topic, startedAt = Date.now()) {
+  const stopAnalyzing = renderAnalyzingState(contentEl, { startedAt });
   // Best-effort source count for the counter. Don't block the LLM kickoff
   // on this — fire both in parallel.
   const totalPromise = countSourcesForTopic(topic);
@@ -315,6 +330,10 @@ async function runAndRender(contentEl, topic) {
 // in flight (a second call would queue behind Ollama's inference lock and
 // stall the UI the same way the enrich pileup did).
 const _sentimentRunning = new Set();  // topic
+// Real start timestamp of each in-flight run, keyed by topic. Lets the
+// analyzing loader continue from the actual elapsed time when it is
+// re-mounted on tab re-entry, instead of resetting to 0 (the reported bug).
+const _sentimentRunStart = new Map();  // topic -> ms
 
 export async function loadSentiment(contentEl, topic) {
   // Initial DB read — usually 50-200ms. A spinner-flash for that brief is
@@ -337,6 +356,7 @@ export async function loadSentiment(contentEl, topic) {
     if (_sentimentRunning.has(topic)) {
       const stopAnalyzing = renderAnalyzingState(contentEl, {
         headline: 'Analyzing sentiment per source (in another tab)',
+        startedAt: _sentimentRunStart.get(topic),  // continue from the real elapsed
       });
       // Live polling: progressively replace skeleton cards with real ones as
       // the in-flight run lands sources in the DB. Same hero, real progress.
@@ -361,10 +381,12 @@ export async function loadSentiment(contentEl, topic) {
       return;
     }
     _sentimentRunning.add(topic);
+    _sentimentRunStart.set(topic, Date.now());
     try {
-      await runAndRender(contentEl, topic);
+      await runAndRender(contentEl, topic, _sentimentRunStart.get(topic));
     } finally {
       _sentimentRunning.delete(topic);
+      _sentimentRunStart.delete(topic);
     }
     return;
   }
