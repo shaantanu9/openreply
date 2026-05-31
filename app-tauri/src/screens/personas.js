@@ -10,6 +10,7 @@ import { api, esc } from '../api.js';
 import { currentRouteGen } from '../main.js';
 import { skelGrid, skelRows } from '../lib/skeleton.js';
 import { withButtonBusy } from '../lib/busyButton.js';
+import { confirmDestructiveAction } from '../lib/deleteConfirm.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -357,23 +358,35 @@ export async function renderPersona(root, { params } = {}) {
   // the same channel the Ingest tab's log listens to, so switching to that
   // tab while it runs shows the live progress.
   const scanBtn = $('#scan-corpus', root);
+  const learnAllBtn = $('#learn-all', root);
   const scanStatus = $('#scan-status', root);
-  if (scanBtn) {
+  if (scanBtn || learnAllBtn) {
     let kept = 0, dropped = 0, errors = 0, running = false;
     let progressUnsub = null, doneUnsub = null;
+    const allBtns = [scanBtn, learnAllBtn].filter(Boolean);
     async function detach() {
       if (progressUnsub) { try { await progressUnsub(); } catch {} progressUnsub = null; }
       if (doneUnsub)     { try { await doneUnsub();     } catch {} doneUnsub = null; }
     }
-    scanBtn.addEventListener('click', async () => {
+    // Shared streaming-ingest runner for both buttons. `limit` is how many
+    // un-seen posts to distill (500 for the quick scan; the full un-ingested
+    // count for "Learn from all"). Posts are distilled in batches of 8 on the
+    // Python side, so this is resumable + idempotent (NOT-EXISTS filter).
+    async function runIngest(triggerBtn, limit, busyLabel) {
       if (running) return;
       running = true;
       kept = dropped = errors = 0;
-      scanBtn.disabled = true;
-      const orig = scanBtn.innerHTML;
-      scanBtn.innerHTML = '<i data-lucide="loader-2" style="width:12px;height:12px"></i>Scanning…';
+      allBtns.forEach(b => { b.disabled = true; });
+      const orig = triggerBtn.innerHTML;
+      triggerBtn.innerHTML = `<i data-lucide="loader-2" style="width:12px;height:12px"></i>${esc(busyLabel)}`;
       refreshIcons();
       scanStatus.textContent = 'starting…';
+      const restore = () => {
+        allBtns.forEach(b => { b.disabled = false; });
+        triggerBtn.innerHTML = orig;
+        refreshIcons();
+        running = false;
+      };
       progressUnsub = await api.onPersonaIngestProgress(payload => {
         const t = String(payload || '').trim();
         if (!t) return;
@@ -386,11 +399,8 @@ export async function renderPersona(root, { params } = {}) {
         } catch {}
       });
       doneUnsub = await api.onPersonaIngestDone(async () => {
-        scanStatus.textContent = `scan done — ${kept} new memories${errors ? ` · ${errors} errors` : ''}`;
-        scanBtn.disabled = false;
-        scanBtn.innerHTML = orig;
-        refreshIcons();
-        running = false;
+        scanStatus.textContent = `done — ${kept} new memories${errors ? ` · ${errors} errors` : ''}`;
+        restore();
         await detach();
         // Refresh the head + currently-active tab so new counts/memories show
         try {
@@ -406,16 +416,56 @@ export async function renderPersona(root, { params } = {}) {
         } catch {}
       });
       try {
-        await api.personaIngest({ personaId: persona.id, limit: 500 });
+        await api.personaIngest({ personaId: persona.id, limit });
       } catch (e) {
         scanStatus.textContent = 'error: ' + String(e?.message || e);
-        scanBtn.disabled = false;
-        scanBtn.innerHTML = orig;
-        refreshIcons();
-        running = false;
+        restore();
         await detach();
       }
-    });
+    }
+
+    if (scanBtn) {
+      scanBtn.addEventListener('click', () => runIngest(scanBtn, 500, 'Scanning…'));
+    }
+    if (learnAllBtn) {
+      learnAllBtn.addEventListener('click', async () => {
+        if (running) return;
+        scanStatus.textContent = 'counting corpus…';
+        // Count un-ingested posts via the native rusqlite read path (daemon-
+        // free, sub-10ms) so the confirm shows the real scale.
+        let count = 0;
+        try {
+          const rows = await api.runQuery(
+            'SELECT count(*) AS n FROM posts p WHERE NOT EXISTS '
+            + '(SELECT 1 FROM persona_memories m WHERE m.persona_id = CAST(:pid AS INTEGER) '
+            + 'AND m.source_post_id = p.id)',
+            null,
+            { pid: String(persona.id) },
+          );
+          count = Number((rows && rows[0] && rows[0].n) || 0);
+        } catch (e) {
+          scanStatus.textContent = 'could not count corpus: ' + String(e?.message || e);
+          return;
+        }
+        if (count <= 0) {
+          scanStatus.textContent = 'nothing new — this persona has already learned from the whole corpus';
+          return;
+        }
+        const batches = Math.ceil(count / 8);
+        scanStatus.textContent = `${count.toLocaleString()} new posts available`;
+        const ok = await confirmDestructiveAction({
+          title: `Learn from all ${count.toLocaleString()} posts?`,
+          body: `${persona.name} will distill every corpus post it hasn't seen yet — about ${batches.toLocaleString()} LLM calls (8 posts per call). This can take a while and use tokens. You can keep using the app; progress streams here and in the Ingest tab. It's resumable — re-run any time and only un-learned posts are processed.`,
+          matchText: persona.name,
+          confirmLabel: 'Learn from all',
+          confirmDanger: false,
+          caseInsensitive: true,
+          hint: `type "${persona.name}" to confirm`,
+        });
+        if (!ok) { scanStatus.textContent = ''; return; }
+        runIngest(learnAllBtn, count, 'Learning…');
+      });
+    }
   }
 
   const tabBtns = $$('.persona-tab-btn', root);
@@ -452,10 +502,16 @@ function renderHead(p) {
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-        <button id="scan-corpus" type="button" class="btn btn-primary btn-sm" title="Sweep the entire corpus across every topic — only posts this persona hasn't seen yet get LLM-filtered. Use this after creating a new persona, or whenever you want to surface cross-topic links to its lens.">
-          <i data-lucide="search" style="width:12px;height:12px"></i>
-          Scan all corpus
-        </button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button id="scan-corpus" type="button" class="btn btn-ghost btn-sm btn-bordered" title="Quick sweep — LLM-filters up to the next 500 corpus posts this persona hasn't seen yet. Good for a fast top-up.">
+            <i data-lucide="search" style="width:12px;height:12px"></i>
+            Scan 500
+          </button>
+          <button id="learn-all" type="button" class="btn btn-primary btn-sm" title="Have this persona learn from EVERY corpus post it hasn't seen yet — the full corpus, not just 500. Distills 8 posts per LLM call. Shows the exact count + a confirm before running, and is resumable.">
+            <i data-lucide="brain" style="width:12px;height:12px"></i>
+            Learn from all
+          </button>
+        </div>
         <span id="scan-status" class="muted" style="font-size:11px;min-height:14px;font-feature-settings:'tnum' 1"></span>
       </div>
     </div>

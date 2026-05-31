@@ -7,6 +7,7 @@ Callers either iterate (CLI/sidecar) or `list(...)` (one-shot scripts).
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -48,6 +49,90 @@ _USER_TEMPLATE = (
     "Title: {title}\n"
     "Body:\n{body}"
 )
+
+# ── Batched distillation (learn-from-all) ───────────────────────────────────
+# One LLM call distills up to BATCH_SIZE posts at once — ≈BATCH_SIZE× fewer
+# calls (and tokens) for full-corpus runs. The model returns a JSON ARRAY with
+# one object per RELEVANT post, keyed by 1-based post number `i`, so each
+# distilled lesson still maps back to its own source post (per-post memory +
+# evidence trail preserved). Env-tunable; set PERSONA_INGEST_BATCH_SIZE=1 to
+# fall back to one-post-per-call behaviour.
+BATCH_SIZE = max(1, int(os.getenv("PERSONA_INGEST_BATCH_SIZE") or 8))
+
+_DISTILL_BATCH_SYSTEM_TEMPLATE = (
+    "{persona_system_prompt}\n\n"
+    "You are reviewing a BATCH of posts. For EACH post, decide whether it "
+    "contains a DIRECT or INDIRECT link to your lens ('{lens}'). Be inclusive — "
+    "a post about something else can still teach you about your lens through "
+    "communication patterns, coping behaviors, social dynamics, emotional "
+    "language, or any related phenomenon. Tangential is OK as long as you can "
+    "extract a real insight.\n\n"
+    "link_type values:\n"
+    "  - 'direct'     — the post is primarily about your lens\n"
+    "  - 'indirect'   — about something else but reveals a behavior/pattern "
+    "relevant to your lens\n"
+    "  - 'tangential' — brushes against your lens through one detail worth noting\n\n"
+    "{prior_memories_block}"
+    "For each post you find relevant, distill ONE insight (1–3 sentences) written "
+    "as a generalised lesson — not a quote. If a prior memory above already covers "
+    "it, write a lesson that EVOLVES it (sharpens, qualifies, or extends) and list "
+    "the prior memory ids in `evolves_from`; otherwise leave `evolves_from` empty.\n\n"
+    "Return ONLY valid JSON — an ARRAY with ONE object per RELEVANT post:\n"
+    '[{{"i": <1-based post number>, "link_type": "<direct|indirect|tangential>", '
+    '"lesson": "<string>", "excerpt": "<verbatim ≤200 chars>", '
+    '"importance": <0..1>, "tags": ["<tag>", ...], "evolves_from": [<mem_id>, ...]}}]\n'
+    "OMIT posts with no link. If NONE are relevant, return []."
+)
+
+
+def _format_batch_user(posts: list[dict]) -> str:
+    """Render up to BATCH_SIZE posts as a numbered block for one LLM call."""
+    blocks = []
+    for i, post in enumerate(posts, start=1):
+        blocks.append(
+            f"=== POST {i} ===\n"
+            f"Topic: {post.get('topic') or '(unknown)'}\n"
+            f"Source: {post.get('source_type') or '(unknown)'}\n"
+            f"Title: {(post.get('title') or '').strip()[:200]}\n"
+            f"Body:\n{(post.get('selftext') or '').strip()[:1500]}"
+        )
+    return "\n\n".join(blocks)
+
+
+def _parse_json_array(raw: str) -> list | None:
+    """Tolerant parse of a JSON array — strips ```json fences, then falls back
+    to extracting the outermost ``[...]``. Returns None if no array parses."""
+    if not raw:
+        return None
+    s = raw.strip()
+    s = re.sub(r"^```(?:json)?\s*", "", s)
+    s = re.sub(r"\s*```\s*$", "", s)
+    try:
+        v = json.loads(s)
+        return v if isinstance(v, list) else None
+    except (ValueError, TypeError):
+        pass
+    start = s.find("[")
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start, len(s)):
+        if s[i] == "[":
+            depth += 1
+        elif s[i] == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    v = json.loads(s[start:i + 1])
+                    return v if isinstance(v, list) else None
+                except (ValueError, TypeError):
+                    return None
+    return None
+
+
+def _chunked(seq: list, n: int):
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
 
 
 def _recent_memories_for_context(persona_id: int, k: int = 6) -> list[dict]:
@@ -146,7 +231,8 @@ def _candidate_posts(
             return []
         placeholders = ",".join(["?"] * len(dedup))
         sql = (
-            "SELECT p.id, p.title, p.selftext, p.source_type, p.score, "
+            "SELECT p.id, p.title, substr(p.selftext, 1, 2000) AS selftext, "
+            "p.source_type, p.score, "
             "(SELECT topic FROM topic_posts tp WHERE tp.post_id = p.id "
             " ORDER BY ROWID DESC LIMIT 1) AS topic "
             "FROM posts p "
@@ -159,7 +245,8 @@ def _candidate_posts(
         params = [*dedup, persona_id, int(limit)]
     elif topic:
         sql = (
-            "SELECT p.id, p.title, p.selftext, p.source_type, p.score, "
+            "SELECT p.id, p.title, substr(p.selftext, 1, 2000) AS selftext, "
+            "p.source_type, p.score, "
             "tp.topic AS topic "
             "FROM posts p "
             "JOIN topic_posts tp ON tp.post_id = p.id "
@@ -172,7 +259,8 @@ def _candidate_posts(
         params = [topic, persona_id, int(limit)]
     else:
         sql = (
-            "SELECT p.id, p.title, p.selftext, p.source_type, p.score, "
+            "SELECT p.id, p.title, substr(p.selftext, 1, 2000) AS selftext, "
+            "p.source_type, p.score, "
             "(SELECT topic FROM topic_posts tp WHERE tp.post_id = p.id "
             " ORDER BY ROWID DESC LIMIT 1) AS topic "
             "FROM posts p "
@@ -307,80 +395,107 @@ def ingest_persona(
     # Phase 6a — pull a tight context of what this persona already knows
     # so the LLM can flag new lessons as evolutions of existing ones.
     prior = _recent_memories_for_context(persona_id, k=6)
-    system = _DISTILL_SYSTEM_TEMPLATE.format(
+    system = _DISTILL_BATCH_SYSTEM_TEMPLATE.format(
         persona_system_prompt=persona.get("system_prompt") or "",
         lens=persona.get("lens") or "",
         prior_memories_block=_format_prior_memories_block(prior),
     )
 
     kept = dropped = errors = 0
-    for post in candidates:
-        body = (post.get("selftext") or "").strip()
-        title = (post.get("title") or "").strip()
-        if not (body or title):
-            dropped += 1
-            yield {"event": "skip", "post_id": post.get("id"), "reason": "empty"}
+    # Distill in batches of BATCH_SIZE — one LLM call per batch. The model
+    # returns a JSON array keyed by 1-based post number so each lesson maps
+    # back to its own post; failures isolate to the batch (its posts stay
+    # un-ingested and get retried on the next scan via the NOT-EXISTS filter).
+    for batch in _chunked(candidates, BATCH_SIZE):
+        usable: list[dict] = []
+        for post in batch:
+            if (post.get("selftext") or "").strip() or (post.get("title") or "").strip():
+                usable.append(post)
+            else:
+                dropped += 1
+                yield {"event": "skip", "post_id": post.get("id"), "reason": "empty"}
+        if not usable:
             continue
-        # Trim body to keep tokens predictable; 1500 chars is enough signal.
-        user_prompt = _USER_TEMPLATE.format(
-            topic=post.get("topic") or "(unknown)",
-            source=post.get("source_type") or "(unknown)",
-            title=title[:200],
-            body=body[:1500],
-        )
+
         try:
             raw = prov.complete(
-                prompt=user_prompt,
+                prompt=_format_batch_user(usable),
                 system=system,
-                max_tokens=400,
+                # ~240 output tokens per post, capped so a big batch can't run
+                # away on the token budget.
+                max_tokens=min(2400, 240 * len(usable)),
                 temperature=0.2,
             )
         except Exception as e:
-            errors += 1
-            yield {"event": "error", "post_id": post.get("id"), "error": str(e)[:200]}
+            errors += len(usable)
+            for post in usable:
+                yield {"event": "error", "post_id": post.get("id"), "error": str(e)[:200]}
             # Back off briefly on rate-limit-flavored errors
             if any(s in str(e).lower() for s in ("rate limit", "429", "overloaded")):
                 time.sleep(1.0)
             continue
 
-        parsed = _parse_json_blob(raw or "")
-        if not parsed:
-            errors += 1
-            yield {"event": "error", "post_id": post.get("id"),
-                   "error": "llm returned unparseable json", "raw_preview": (raw or "")[:200]}
+        parsed = _parse_json_array(raw or "")
+        if parsed is None:
+            errors += len(usable)
+            for post in usable:
+                yield {"event": "error", "post_id": post.get("id"),
+                       "error": "llm returned unparseable batch json",
+                       "raw_preview": (raw or "")[:200]}
             continue
 
-        if not parsed.get("relevant") or not (parsed.get("lesson") or "").strip():
-            dropped += 1
-            yield {"event": "skip", "post_id": post.get("id"), "reason": "not_relevant"}
-            continue
+        # Map results back to posts by 1-based index. Missing index = the model
+        # judged that post not relevant.
+        by_index: dict[int, dict] = {}
+        for obj in parsed:
+            if isinstance(obj, dict):
+                try:
+                    by_index[int(obj.get("i"))] = obj
+                except (TypeError, ValueError):
+                    continue
 
-        try:
-            mid = _store_memory(persona_id, post, parsed)
-        except Exception as e:
-            errors += 1
-            yield {"event": "error", "post_id": post.get("id"), "error": f"persist failed: {e}"}
-            continue
+        for idx, post in enumerate(usable, start=1):
+            obj = by_index.get(idx)
+            if not obj or not (obj.get("lesson") or "").strip():
+                dropped += 1
+                yield {"event": "skip", "post_id": post.get("id"), "reason": "not_relevant"}
+                continue
+            # Normalize to the single-post distilled shape _store_memory expects.
+            distilled = {
+                "relevant": True,
+                "link_type": obj.get("link_type"),
+                "lesson": (obj.get("lesson") or "").strip(),
+                "excerpt": (obj.get("excerpt") or "").strip(),
+                "importance": obj.get("importance"),
+                "tags": obj.get("tags") or [],
+                "evolves_from": obj.get("evolves_from") or [],
+            }
+            try:
+                mid = _store_memory(persona_id, post, distilled)
+            except Exception as e:
+                errors += 1
+                yield {"event": "error", "post_id": post.get("id"), "error": f"persist failed: {e}"}
+                continue
 
-        # Phase 2a — embed + build edges. Best-effort: if chromadb isn't
-        # available we still kept the memory; the graph just won't grow.
-        new_edges = 0
-        try:
-            from .graph import embed_and_link
-            new_edges = embed_and_link(persona_id, mid, (parsed.get("lesson") or "").strip())
-        except Exception:
+            # Phase 2a — embed + build edges. Best-effort: if chromadb isn't
+            # available we still kept the memory; the graph just won't grow.
             new_edges = 0
+            try:
+                from .graph import embed_and_link
+                new_edges = embed_and_link(persona_id, mid, distilled["lesson"])
+            except Exception:
+                new_edges = 0
 
-        kept += 1
-        yield {
-            "event": "memory",
-            "post_id": post.get("id"),
-            "memory_id": mid,
-            "lesson": parsed.get("lesson"),
-            "topic": post.get("topic"),
-            "importance": parsed.get("importance"),
-            "edges_added": new_edges,
-        }
+            kept += 1
+            yield {
+                "event": "memory",
+                "post_id": post.get("id"),
+                "memory_id": mid,
+                "lesson": distilled["lesson"],
+                "topic": post.get("topic"),
+                "importance": distilled["importance"],
+                "edges_added": new_edges,
+            }
 
     yield {
         "event": "done",
