@@ -1,0 +1,80 @@
+name: release-promote
+
+# Race-proof public-release promotion.
+#
+# The per-platform workflows (release-mac/windows/linux) each carry an
+# inlined "promote-if-complete" step, but those run *mid-job* right after
+# that job's own upload — so depending on timing none of them may observe
+# all required platforms present at the instant they check, and the public
+# release can get stranded as a draft (observed on v0.1.7).
+#
+# This workflow is the deterministic backstop: it fires AFTER each platform
+# workflow has fully completed, re-reads the *current* public-release asset
+# list, and promotes draft → latest the moment mac + windows are both
+# present. Because it re-checks on every platform completion (and is fully
+# idempotent), the last workflow to finish always lands the promotion.
+#
+# NOTE: workflow_run only triggers when this file exists on the repo's
+# DEFAULT branch (multi-source). Keep it committed there.
+
+on:
+  workflow_run:
+    workflows:
+      - "release (mac)"
+      - "release (windows)"
+      - "release (linux)"
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to promote (e.g. v0.1.7)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag to promote
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          # For a tag-triggered workflow_run, head_branch holds the tag name.
+          WR_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WR_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        shell: bash
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            # Only act on a successful platform build; a failed run still
+            # leaves the successful siblings' run to trigger the promote.
+            if [ "$WR_CONCLUSION" != "success" ]; then
+              echo "triggering run concluded '$WR_CONCLUSION' — skipping"
+              echo "skip=1" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            TAG="$WR_BRANCH"
+          fi
+          case "$TAG" in
+            v*) echo "tag=$TAG" >> "$GITHUB_OUTPUT" ;;
+            *)  echo "head_branch '$TAG' is not a version tag — skipping"
+                echo "skip=1" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Promote release if all required platforms are uploaded
+        if: steps.resolve.outputs.skip != '1'
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PUBLIC_RELEASE_TOKEN not set — cannot promote public release"
+            exit 0
+          fi
+          bash scripts/promote-release-if-complete.sh "${{ steps.resolve.outputs.tag }}" "$PUBLIC"
