@@ -969,14 +969,14 @@ async function mountIngestTab(host, persona) {
               <i data-lucide="graduation-cap" style="width:16px;height:16px"></i>
               Teach ${esc(persona.name)} from a video
             </h3>
-            <p>Paste a YouTube URL. ${esc(persona.name)} reads the speaker's words (transcript), the video description, and the top commenter reactions — all filtered through the <strong style="color:${esc(persona.color || '#7c3aed')}">${esc(persona.lens)}</strong> lens.</p>
+            <p>Paste a <strong>YouTube</strong> or <strong>Instagram</strong> link. ${esc(persona.name)} reads the speaker's words (transcript) — plus, on YouTube, the description and top commenter reactions — all filtered through the <strong style="color:${esc(persona.color || '#7c3aed')}">${esc(persona.lens)}</strong> lens. Instagram is transcribed on-device with Whisper (the first one downloads the model).</p>
           </div>
         </div>
         <div class="card-body" style="display:grid;gap:12px;padding-top:12px">
           <div class="np-form" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
             <label class="np-field" style="flex:1;min-width:280px">
-              <span>YouTube URL or video id</span>
-              <input id="teach-url" type="text" placeholder="https://www.youtube.com/watch?v=…  or  youtu.be/…  or 11-char id" />
+              <span>YouTube or Instagram URL</span>
+              <input id="teach-url" type="text" placeholder="youtu.be/…  ·  youtube.com/watch?v=…  ·  instagram.com/reel/…" />
             </label>
             <label class="np-field" style="width:120px">
               <span>Comments</span>
