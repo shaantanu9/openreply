@@ -88,14 +88,18 @@ jobs:
       # checkout fails the check:
       #   - tauri-build verifies every `externalBin` path exists (the sidecar
       #     binaries — see app-tauri/src-tauri/binaries/README.md)
+      #   - tauri-build ALSO resolves every `resources` glob; the onedir sidecar
+      #     glob `binaries/gapmap-cli-onedir/**/*` matches nothing on a bare
+      #     checkout and aborts the build script (exit 101).
       #   - generate_context!() reads `frontendDist` (../dist), the Vite bundle
       # CI only type-checks the Rust source — it doesn't bundle. So strip
-      # externalBin and stub a minimal frontend dist. The real bundle build in
-      # release.yml builds the binaries + frontend first and keeps both intact.
+      # externalBin + resources and stub a minimal frontend dist. The real
+      # bundle build in release.yml builds the binaries + frontend first and
+      # keeps both intact.
       - name: Prep tauri.conf.json + stub frontend for cargo check
         working-directory: ./app-tauri
         run: |
-          python3 -c "import json, pathlib; p=pathlib.Path('src-tauri/tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[]; p.write_text(json.dumps(d, indent=2))"
+          python3 -c "import json, pathlib; p=pathlib.Path('src-tauri/tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[]; d['bundle']['resources']=[]; p.write_text(json.dumps(d, indent=2))"
           mkdir -p dist
           echo '<!doctype html><title>ci stub</title>' > dist/index.html
 
