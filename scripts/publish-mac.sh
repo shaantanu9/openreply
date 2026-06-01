@@ -233,9 +233,41 @@ fi
 # (--sign flag + notarytool). For ad-hoc beta builds we ship a .zip
 # alongside the .dmg — extracted files from a .zip don't carry the
 # from-DMG provenance check and copy cleanly.
+# ── Pre-sign the ONEDIR engine + nested Mach-O with Developer ID ──────────
+# Tauri copies binaries/gapmap-cli-onedir/** into Contents/Resources via the
+# `resources` glob, but its --deep sign does NOT cover loose Mach-O in
+# Resources. Without signing them here (with the SAME identity + hardened
+# runtime + secure timestamp the wrapper uses), notarization rejects all ~128
+# .so + the engine: "not signed with a valid Developer ID / no secure
+# timestamp / hardened runtime not enabled". Signing in binaries/ BEFORE the
+# bundle means the signatures ride along into Resources (Tauri's deep-sign
+# leaves Resources Mach-O untouched, verified 2026-06-02).
+if [[ $REQUIRE_SIGN -eq 1 && -d "$ONEDIR_DEST" ]]; then
+  echo "▶ Pre-signing onedir engine + nested Mach-O (Developer ID + hardened runtime + timestamp)"
+  n_pre=0; n_fail=0
+  while IFS= read -r macho; do
+    [[ -z "$macho" ]] && continue
+    if codesign --force --timestamp --options runtime \
+         --sign "$APPLE_SIGNING_IDENTITY" "$macho" 2>/dev/null; then
+      n_pre=$((n_pre + 1))
+    else
+      n_fail=$((n_fail + 1)); echo "   ! failed to sign $macho" >&2
+    fi
+  done < <(find "$ONEDIR_DEST" -type f \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) 2>/dev/null)
+  echo "   ✓ pre-signed $n_pre onedir Mach-O ($n_fail failed)"
+  [[ $n_fail -gt 0 ]] && { echo "   ✗ some onedir Mach-O failed to sign — notarization would reject" >&2; exit 1; }
+fi
+
 # Build .app first (so we can zip it) — Tauri deletes the .app dir after
 # the DMG step, so we need .app present before .dmg gets created.
-(cd app-tauri && npx tauri build --target "$RUST_TRIPLE" --bundles app)
+# Sign-only: unset the notarization creds for THIS subshell so Tauri's bundler
+# signs but does NOT auto-notarize. We notarize explicitly in Step 6 AFTER all
+# nested code (incl. the onedir in Resources) and the wrapper are signed —
+# Tauri's mid-build notarization fired BEFORE the nested Resources Mach-O were
+# Developer-ID signed and rejected the whole bundle (fix 2026-06-02).
+(cd app-tauri && env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH \
+   -u APPLE_ID -u APPLE_PASSWORD \
+   npx tauri build --target "$RUST_TRIPLE" --bundles app)
 
 APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/Gap Map.app"
 if [[ -d "$APP_PATH" ]]; then
