@@ -795,6 +795,15 @@ def cmd_mcp_status(
     client: Optional[str] = typer.Option(None, "--client"),
     data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
     server_name: str = typer.Option("gapmap", "--name"),
+    probe: bool = typer.Option(
+        False, "--probe",
+        help="Spawn the configured command and do a real MCP handshake "
+             "(detects an entry that's written but hangs on startup).",
+    ),
+    probe_timeout: float = typer.Option(
+        60.0, "--probe-timeout",
+        help="Seconds to wait for the handshake (bundled cold-start can be 30-50s).",
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Report whether Gap Map is connected to the chosen MCP client and DB-aligned."""
@@ -806,6 +815,8 @@ def cmd_mcp_status(
             client=client,
             data_dir=data_dir,
             server_name=server_name,
+            probe=probe,
+            probe_timeout=probe_timeout,
         )
     except Exception as e:  # noqa: BLE001
         result = {"ok": False, "reason": f"status failed: {e}"}
@@ -817,6 +828,12 @@ def cmd_mcp_status(
     typer.echo(f"config:        {result['config_path']}")
     typer.echo(f"data_dir:      {result['data_dir']}")
     typer.echo(f"connected:     {result.get('connected')}")
+    if probe:
+        typer.echo(f"live:          {result.get('live')}")
+        if result.get("handshake_ms") is not None:
+            typer.echo(f"handshake_ms:  {result.get('handshake_ms')}")
+        if result.get("probe_error"):
+            typer.echo(f"probe_error:   {result.get('probe_error')}")
     typer.echo(f"db_aligned:    {result.get('db_aligned')}")
     typer.echo(f"has_token:     {result.get('has_token')}")
     typer.echo(f"token_in_env:  {result.get('token_in_env')}")
@@ -3873,6 +3890,19 @@ def cmd_research_paper_relations_build(
     from ..research.paper_relations import build
     klist = [k.strip() for k in kinds.split(",") if k.strip()]
     _emit(build(topic=(topic or None), kinds=klist), as_json)
+
+
+@research_app.command("paper-map")
+def cmd_research_paper_map(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    rebuild: bool = typer.Option(False, "--rebuild"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Paper relationship map as D3 JSON — academic-paper nodes + paper↔paper
+    edges (semantic / cites / shared finding / same author). Lazily builds the
+    edges on first call (or with --rebuild)."""
+    from ..research.paper_relations import get_paper_map
+    _emit(get_paper_map(topic, rebuild=rebuild), as_json)
 
 
 @research_app.command("oa-lookup")

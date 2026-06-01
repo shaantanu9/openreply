@@ -369,6 +369,7 @@ fn main() {
             commands::paper_export_with_citations,
             commands::paper_neighbors,
             commands::paper_relations_build,
+            commands::paper_map,
             commands::competitor_matrix,
             commands::link_research,
             commands::research_links,

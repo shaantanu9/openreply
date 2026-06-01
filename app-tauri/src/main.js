@@ -15,6 +15,7 @@ import { renderActivity } from './screens/activity.js';
 import { renderDatabase } from './screens/database.js';
 import { renderScience } from './screens/science.js';
 import { renderSearch } from './screens/search.js';
+import { renderPaperMap } from './screens/paperMap.js';
 import { renderWatch } from './screens/watch.js';
 import { renderFind } from './screens/find.js';
 import { renderProductsList, renderProductDashboard, renderProductSetup } from './screens/product.js';
@@ -204,6 +205,8 @@ const routes = [
   { match: /^\/database\/?$/,       render: renderDatabase },
   { match: /^\/science\/?$/,        render: renderScience },
   { match: /^\/search\/?$/,         render: renderSearch },
+  // Paper Map — relationship graph of a topic's academic papers.
+  { match: /^\/paper-map\/([^/?]+).*$/, render: renderPaperMap },
   { match: /^\/find\/?$/,           render: renderFind },
   { match: /^\/watch\/?$/,          render: renderWatch },
   // Dual-Mode Pivot — Product Mode routes

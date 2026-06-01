@@ -1698,6 +1698,17 @@ pub async fn paper_relations_build(app: AppHandle, topic: Option<String>, kinds:
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+/// Paper relationship map for a topic — academic-paper nodes + paper↔paper
+/// edges (semantic / cites / shared finding / same author) as D3 JSON. Powers
+/// the Paper Map screen. Lazily materializes edges on first call; pass
+/// rebuild=true to force a fresh edge build (re-runs the semantic pass).
+#[tauri::command]
+pub async fn paper_map(app: AppHandle, topic: String, rebuild: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["research", "paper-map", "--topic", &topic, "--json"];
+    if rebuild.unwrap_or(false) { args.push("--rebuild"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 #[tauri::command]
 pub async fn competitor_matrix(
     app: AppHandle,

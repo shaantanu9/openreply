@@ -142,6 +142,7 @@ function renderList(topic, posts) {
       <div class="papers-toolbar">
         <div class="muted">${posts.length} papers for <b>${escape(topic)}</b></div>
         <div class="papers-actions">
+          <button class="btn btn-sm btn-bordered" id="btn-paper-map" title="Relationship map of these papers"><i data-lucide="git-fork"></i> View map</button>
           <button class="btn btn-sm btn-bordered" id="btn-export-bibtex"><i data-lucide="file-text"></i> BibTeX</button>
           <button class="btn btn-sm btn-bordered" id="btn-export-ris"><i data-lucide="file-down"></i> RIS (Zotero)</button>
           <button class="btn btn-sm btn-bordered" id="btn-export-apa"><i data-lucide="quote"></i> APA</button>
@@ -307,6 +308,10 @@ export async function loadPapers(contentEl, topic) {
       window.refreshIcons?.();
     }
   };
+
+  $('#btn-paper-map', contentEl)?.addEventListener('click', () => {
+    location.hash = `#/paper-map/${encodeURIComponent(topic)}`;
+  });
 
   $('#btn-export-bibtex', contentEl)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, () => doExport('bibtex'), { busyLabel: 'Exporting…' }));
   $('#btn-export-ris',    contentEl)?.addEventListener('click', (e) => withButtonBusy(e.currentTarget, () => doExport('ris'),    { busyLabel: 'Exporting…' }));
