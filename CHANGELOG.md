@@ -1,5 +1,42 @@
 # Changelog
 
+## [v0.1.7 — 2026-05-31] · Topic merge · MCP Copy config · data-safety
+
+### New
+
+- **User-driven topic merge** — merge two topics (and their posts, findings,
+  and chats) from the GUI or CLI, with a dry-run preview of exactly what moves
+  and a clear "this cannot be undone" confirmation.
+- **MCP "Copy config" button** (Settings) — copies the exact `mcpServers` entry
+  Connect would write, so you can paste it into any MCP client by hand. Backed
+  by a new `mcp_config_snippet` command that mirrors the installer's path
+  resolution and refuses to hand out an unstable/translocated path.
+- **MCP-disconnect diagnosis** — clearer guidance when the app runs from a DMG
+  mount or a macOS App-Translocation path (move to /Applications and reopen).
+
+### Fixed
+
+- **WAL data-loss fix (critical)** — the SQLite WAL self-heal no longer deletes
+  the live `-wal`/`-shm` side files; deleting them while another process held
+  the database open could silently discard committed transactions. (This had
+  cost ~56k `topic_posts` rows in testing; recovered.)
+- **Security hardening** — `open_url` now allows only `http(s)`/`mailto`
+  schemes; CSP `script-src` tightened; markdown rendering XSS closed; user
+  values bound as SQL parameters (no string concatenation).
+- **Worker robustness** — an out-of-memory exit (137) is now treated as
+  recoverable and no longer counts toward the give-up threshold.
+- **Build fix** — created the missing shared `src/lib/toast.js` module that the
+  topic-merge modal imports (was breaking the production frontend build).
+- **Test isolation** — the topic-merge test fixture now uses an isolated
+  temp database (`GAPMAP_DATA_DIR` + `tmp_path`) and can no longer mutate the
+  real application database.
+
+### CI / Release
+
+- Race-proof public-release promotion: a dedicated `workflow_run` job now flips
+  the public release draft → latest once mac + windows artifacts are present,
+  instead of relying on per-job timing.
+
 ## [v0.1.1 — 2026-05-28] · Graphify-pattern port + perf
 
 Ported the high-value patterns from the external `graphify` tool into our

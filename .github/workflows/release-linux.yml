@@ -203,10 +203,25 @@ jobs:
           ls -lh
 
           if ! gh release view "$VER" --repo "$PUBLIC" >/dev/null 2>&1; then
-            NOTES=$'## Gap Map '"$VER"$'\n\n**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\nInstallers:\n\n- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n- **Windows** — `Gap-Map-*-Windows.msi` (managed deploy) or `Gap-Map-*-Windows-Installer.exe` (click-to-install)\n- **Linux** — `Gap-Map-*-Linux.AppImage` (portable) or `Gap-Map-*-Linux.deb` (Debian/Ubuntu APT)\n\nSee the [source repo](https://github.com/shaantanu9/gap-map-pro) `changelogs/` folder for what changed.'
+            # Pull this version's real changelog section from CHANGELOG.md
+            # (between its "## [vX.Y.Z ...]" header and the next "## [" header).
+            # No private-repo links in public notes.
+            CHANGES=$(awk -v ver="$VER" '$0 ~ ("^## \\[" ver "[^0-9.]") {f=1; next} f && /^## \[/{exit} f{print}' "$GITHUB_WORKSPACE/CHANGELOG.md")
+            if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
+            {
+              printf '## Gap Map %s\n\n' "$VER"
+              printf '**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\n'
+              printf 'Installers:\n\n'
+              printf -- '- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n'
+              printf -- '- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n'
+              printf -- '- **Windows** — `Gap-Map-*-Windows.msi` (managed deploy) or `Gap-Map-*-Windows-Installer.exe` (click-to-install)\n'
+              printf -- '- **Linux** — `Gap-Map-*-Linux.AppImage` (portable) or `Gap-Map-*-Linux.deb` (Debian/Ubuntu APT)\n\n'
+              printf "## What's changed\n"
+              printf '%s\n' "$CHANGES"
+            } > "$RUNNER_TEMP/release-notes.md"
             gh release create "$VER" --repo "$PUBLIC" --target main --draft \
               --title "Gap Map $VER" \
-              --notes "$NOTES"
+              --notes-file "$RUNNER_TEMP/release-notes.md"
             echo "  ✓ created draft on $PUBLIC"
           fi
 
