@@ -3938,6 +3938,31 @@ export async function renderTopic(root, { params }) {
         if (Number.isFinite(ts)) el.textContent = timeAgo(ts);
       });
     }, 30000);
+
+    // Viewport-fit the chat panel so the PAGE never scrolls — only the
+    // message list does. We set the layout's height to exactly the distance
+    // from its top to the viewport bottom (minus a small gap). CSS has a
+    // calc() fallback, but measuring is exact regardless of how tall the
+    // topbar/tab-strip wrapped. Re-measure on window resize; the handler
+    // self-removes once the chat layout is gone (tab switch / navigation).
+    const fitChatHeight = () => {
+      const layout = contentEl.querySelector('.chat-layout');
+      if (!layout || !layout.isConnected || contentEl.dataset.tab !== 'chat') {
+        window.removeEventListener('resize', fitChatHeight);
+        if (contentEl._chatFit === fitChatHeight) contentEl._chatFit = null;
+        return;
+      }
+      const top = layout.getBoundingClientRect().top;
+      const avail = Math.max(360, Math.round(window.innerHeight - top - 16));
+      layout.style.setProperty('--chat-h', avail + 'px');
+    };
+    // Replace any prior listener from an earlier loadChat render.
+    if (contentEl._chatFit) window.removeEventListener('resize', contentEl._chatFit);
+    contentEl._chatFit = fitChatHeight;
+    window.addEventListener('resize', fitChatHeight);
+    fitChatHeight();
+    // Re-measure on the next frame too — fonts/icons can shift the top a hair.
+    requestAnimationFrame(fitChatHeight);
   }
 
   // ── Conversation rail (ChatGPT-style saved threads) ──────────────────
