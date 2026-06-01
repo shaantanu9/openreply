@@ -48,6 +48,11 @@ const chatConvTitleOverride = new Map();
 // session, so re-opening the Chat tab keeps the selected thread instead of
 // reloading the most-recent one.
 const chatHydrated = new Set();
+// Topics with a freshly-started "New chat" that hasn't been persisted yet
+// (no message sent). The rail shows an active "New chat" placeholder row for
+// these so clicking + New gives immediate visual feedback; cleared the moment
+// the first message lands (which mints + saves the real conversation).
+const pendingNewConv = new Set();
 
 // ─── Per-topic stats cache (instant first-paint) ───────────────────────────
 // Persists the last `topicStats()` result to localStorage keyed by topic so
@@ -3923,19 +3928,50 @@ export async function renderTopic(root, { params }) {
     let list = [];
     try { list = (await api.chatConvList(topic)) || []; } catch {}
     const activeId = chatActiveConv.get(topic);
-    if (!list.length) {
-      listEl.innerHTML = `<div class="muted" style="font-size:11px;padding:10px">No saved chats yet. Ask something to start one.</div>`;
+    const pending = pendingNewConv.has(topic);
+
+    // Empty state — only when there are no saved chats AND no draft.
+    if (!list.length && !pending) {
+      listEl.innerHTML = `
+        <div class="chat-conv-empty">
+          <i data-lucide="messages-square"></i>
+          <p>No saved chats yet</p>
+          <span>Hit <b>+ New</b> or ask a question — every thread is saved here.</span>
+        </div>`;
+      window.refreshIcons?.();
       return;
     }
-    listEl.innerHTML = list.map(c => `
-      <div class="chat-conv-item${c.id === activeId ? ' active' : ''}" data-conv="${esc(c.id)}" title="${esc(c.title || 'Untitled')}">
+
+    // Draft "New chat" row — shown the instant + New is clicked, before any
+    // message is sent. Pinned to the top and marked active.
+    const draftRow = pending ? `
+      <div class="chat-conv-item is-draft active" data-pending="1" title="New chat (draft)">
+        <i data-lucide="pencil-line" class="chat-conv-ic"></i>
+        <span class="chat-conv-body">
+          <span class="chat-conv-title">New chat</span>
+          <span class="chat-conv-sub">Draft · type below to begin</span>
+        </span>
+      </div>` : '';
+
+    const savedRows = list.map(c => {
+      const isActive = !pending && c.id === activeId;
+      const n = c.msg_count || 0;
+      const when = c.updated_at ? timeAgo(c.updated_at) : '';
+      const sub = [n ? `${n} msg${n === 1 ? '' : 's'}` : '', when].filter(Boolean).join(' · ');
+      return `
+      <div class="chat-conv-item${isActive ? ' active' : ''}" data-conv="${esc(c.id)}" title="${esc(c.title || 'Untitled')}">
         <i data-lucide="message-square" class="chat-conv-ic"></i>
-        <span class="chat-conv-title">${esc(c.title || 'Untitled')}</span>
-        <span class="chat-conv-meta">${c.msg_count || 0}</span>
+        <span class="chat-conv-body">
+          <span class="chat-conv-title">${esc(c.title || 'Untitled')}</span>
+          <span class="chat-conv-sub">${esc(sub || 'No messages yet')}</span>
+        </span>
         <button class="chat-conv-del" data-conv="${esc(c.id)}" title="Delete chat"><i data-lucide="trash-2"></i></button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
+
+    listEl.innerHTML = draftRow + savedRows;
     window.refreshIcons?.();
-    listEl.querySelectorAll('.chat-conv-item').forEach(it => {
+    listEl.querySelectorAll('.chat-conv-item[data-conv]').forEach(it => {
       it.addEventListener('click', (e) => {
         if (e.target.closest('.chat-conv-del')) return;
         const id = it.dataset.conv;
@@ -3956,6 +3992,7 @@ export async function renderTopic(root, { params }) {
 
   async function selectConversation(topic, id) {
     if (chatStream.active) { showToast('Busy', 'Wait for the current reply to finish.', 'warn'); return; }
+    pendingNewConv.delete(topic);
     chatActiveConv.set(topic, id);
     try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), id); } catch {}
     let conv = null;
@@ -3970,6 +4007,10 @@ export async function renderTopic(root, { params }) {
     chatActiveConv.delete(topic);
     try { localStorage.removeItem(CHAT_ACTIVE_KEY(topic)); } catch {}
     chatHistory.set(topic, []);
+    // Show an active "New chat" row in the rail right away (it becomes a real
+    // saved row the moment the first message is sent). Without this, clicking
+    // New just blanks the panel with no list feedback.
+    pendingNewConv.add(topic);
     renderMessages();
     refreshConvRail(topic);
     $('#chat-input')?.focus();
@@ -4089,6 +4130,9 @@ export async function renderTopic(root, { params }) {
     const agent = document.getElementById('chat-agent')?.checked || false;
     const hist = loadChatHistory(topic);
     const now = Date.now();
+    // A message is being sent — this is now a real conversation, so drop the
+    // "New chat" placeholder; persistActiveConv mints the saved row.
+    pendingNewConv.delete(topic);
     hist.push({ role: 'user', mode: agent ? `agent · ${mode}` : mode, text: question, ts: now });
     hist.push({ role: 'assistant', mode, text: '', toolCalls: [], ts: now });
     chatHistory.set(topic, hist);
