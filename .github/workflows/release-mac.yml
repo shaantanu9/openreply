@@ -203,6 +203,60 @@ jobs:
         working-directory: ./app-tauri
         run: npm ci
 
+      # ---------- Pre-sign the ONEDIR Mach-O (CRITICAL for notarization) ----------
+      # Tauri copies binaries/gapmap-cli-onedir/** into Contents/Resources via
+      # the `resources` glob, but its bundler does NOT deep-sign loose Mach-O in
+      # Resources. Without signing them HERE (Developer ID + hardened runtime +
+      # secure timestamp), notarization returns status=Invalid and rejects the
+      # whole bundle for every ~128 nested .so/.dylib + the gapmap-cli engine:
+      #   "not signed with a valid Developer ID / no secure timestamp /
+      #    hardened runtime not enabled"  (observed run 26775805808, v0.1.8).
+      # Signing in binaries/ BEFORE the bundle means the signatures ride along
+      # into Resources (Tauri leaves already-signed Resources Mach-O untouched).
+      # Mirrors scripts/publish-mac.sh's --sign pre-signing block exactly.
+      - name: Pre-sign onedir Mach-O (Developer ID + hardened runtime + timestamp)
+        if: env.HAS_APPLE_CERT == 'yes'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          ONEDIR="app-tauri/src-tauri/binaries/gapmap-cli-onedir"
+          [ -d "$ONEDIR" ] || { echo "✗ onedir missing: $ONEDIR" >&2; exit 1; }
+
+          # Import the Developer ID cert into a dedicated keychain so codesign
+          # finds the identity BEFORE tauri-action runs (it re-imports into its
+          # own keychain during the build — harmless).
+          KC="$RUNNER_TEMP/presign.keychain-db"
+          KC_PWD="$(openssl rand -hex 16)"
+          security create-keychain -p "$KC_PWD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PWD" "$KC"
+          P12="$RUNNER_TEMP/presign-cert.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$P12"
+          security import "$P12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PWD" "$KC" >/dev/null
+          # Prepend our keychain to the user search list (keep the existing ones).
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | sed 's/"//g')
+          rm -f "$P12"
+
+          # Sign every nested Mach-O (.so / .dylib / the engine). codesign on a
+          # plain directory does NOT recurse, so iterate explicitly.
+          n=0; fail=0
+          while IFS= read -r m; do
+            [ -z "$m" ] && continue
+            if codesign --force --timestamp --options runtime --keychain "$KC" \
+                 --sign "$APPLE_SIGNING_IDENTITY" "$m" 2>/dev/null; then
+              n=$((n + 1))
+            else
+              fail=$((fail + 1)); echo "   ! failed to sign $m" >&2
+            fi
+          done < <(find "$ONEDIR" -type f \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) 2>/dev/null)
+          echo "✓ pre-signed $n onedir Mach-O ($fail failed)"
+          [ "$fail" -eq 0 ] || { echo "✗ some onedir Mach-O failed to sign — notarization would reject" >&2; exit 1; }
+
       # ---------- Build + sign + upload to gap-map-pro draft ----------
       - name: Build and release Tauri bundle (signed)
         if: env.HAS_APPLE_CERT == 'yes'
