@@ -408,7 +408,11 @@ jobs:
           # manual consolidation). Fix: pull matching assets from ALL releases
           # carrying this tag, by asset id. (Hardened 2026-06-02.)
           dl_src() {
-            gh api "/repos/${{ github.repository }}/releases" --paginate \
+            # The LIST call MUST use the SOURCE token — the ambient GH_TOKEN in
+            # this step is the PUBLIC repo token, which can't read the private
+            # source repo's releases (returns empty → downloads nothing → empty
+            # public release). The per-asset download below also uses it.
+            GH_TOKEN="$GH_TOKEN_SRC" gh api "/repos/${{ github.repository }}/releases" --paginate \
               -q ".[] | select(.tag_name==\"$VER\") | .assets[] | \"\(.id)\t\(.name)\"" \
             | while IFS="$(printf '\t')" read -r id name; do
                 matched=0
@@ -419,6 +423,7 @@ jobs:
                   "/repos/${{ github.repository }}/releases/assets/$id" > "./pub/$name" \
                   && echo "  ↓ $name" || echo "  ! failed $name"
               done
+            return 0
           }
           if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
             dl_src "Gap.Map_*_aarch64.dmg" "Gap.Map_aarch64.app.tar.gz"
