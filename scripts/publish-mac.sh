@@ -117,9 +117,14 @@ codesign --force --sign - "$SIDECAR" 2>/dev/null || true
 # in Step 5a (after the identity is sourced); this ad-hoc pass keeps dev
 # Gatekeeper warm and gives the bundle a valid baseline.
 if [[ -d "$ONEDIR_DEST" ]]; then
+  # Detect Mach-O by CONTENT (file), not by name — a *.so/*.dylib/gapmap-cli
+  # filter misses the extensionless `_internal/Python` interpreter and the
+  # `_internal/Python.framework` binaries (both rejected by notarization).
   while IFS= read -r macho; do
+    [[ -z "$macho" ]] && continue
+    case "$(file -b "$macho" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
     codesign --force --sign - "$macho" 2>/dev/null || true
-  done < <(find "$ONEDIR_DEST" -type f \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) 2>/dev/null)
+  done < <(find "$ONEDIR_DEST" -type f 2>/dev/null)
   echo "✓ ad-hoc signed launcher + onedir engine/nested Mach-O"
 else
   echo "✓ ad-hoc signed launcher (onedir dir absent — --skip-sidecar reuse)"
@@ -244,16 +249,21 @@ fi
 # leaves Resources Mach-O untouched, verified 2026-06-02).
 if [[ $REQUIRE_SIGN -eq 1 && -d "$ONEDIR_DEST" ]]; then
   echo "▶ Pre-signing onedir engine + nested Mach-O (Developer ID + hardened runtime + timestamp)"
+  # Detect Mach-O by CONTENT, not by name — a *.so/*.dylib/gapmap-cli filter
+  # misses the extensionless `_internal/Python` interpreter and the
+  # `_internal/Python.framework` binaries, which notarization rejects
+  # ("not signed with valid Developer ID / signature invalid"). Deepest-first.
   n_pre=0; n_fail=0
   while IFS= read -r macho; do
     [[ -z "$macho" ]] && continue
+    case "$(file -b "$macho" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
     if codesign --force --timestamp --options runtime \
          --sign "$APPLE_SIGNING_IDENTITY" "$macho" 2>/dev/null; then
       n_pre=$((n_pre + 1))
     else
       n_fail=$((n_fail + 1)); echo "   ! failed to sign $macho" >&2
     fi
-  done < <(find "$ONEDIR_DEST" -type f \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) 2>/dev/null)
+  done < <(find "$ONEDIR_DEST" -type f 2>/dev/null | awk '{print length"\t"$0}' | sort -rn | cut -f2-)
   echo "   ✓ pre-signed $n_pre onedir Mach-O ($n_fail failed)"
   [[ $n_fail -gt 0 ]] && { echo "   ✗ some onedir Mach-O failed to sign — notarization would reject" >&2; exit 1; }
 fi

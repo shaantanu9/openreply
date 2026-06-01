@@ -242,20 +242,36 @@ jobs:
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | sed 's/"//g')
           rm -f "$P12"
 
-          # Sign every nested Mach-O (.so / .dylib / the engine). codesign on a
-          # plain directory does NOT recurse, so iterate explicitly.
+          # Sign every nested Mach-O. Detect by CONTENT (file), NOT by name:
+          # a `*.so/*.dylib/gapmap-cli` name filter misses the extensionless
+          # `_internal/Python` interpreter AND the `_internal/Python.framework`
+          # binaries, which tripped notarization on v0.1.9 (run 26777384337:
+          # "not signed with a valid Developer ID / signature invalid").
+          # Sign deepest-path-first (sort by length desc) so nested framework
+          # binaries are signed before anything that contains them.
           n=0; fail=0
           while IFS= read -r m; do
             [ -z "$m" ] && continue
+            case "$(file -b "$m" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
             if codesign --force --timestamp --options runtime --keychain "$KC" \
                  --sign "$APPLE_SIGNING_IDENTITY" "$m" 2>/dev/null; then
               n=$((n + 1))
             else
               fail=$((fail + 1)); echo "   ! failed to sign $m" >&2
             fi
-          done < <(find "$ONEDIR" -type f \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) 2>/dev/null)
+          done < <(find "$ONEDIR" -type f 2>/dev/null | awk '{print length"\t"$0}' | sort -rn | cut -f2-)
           echo "✓ pre-signed $n onedir Mach-O ($fail failed)"
           [ "$fail" -eq 0 ] || { echo "✗ some onedir Mach-O failed to sign — notarization would reject" >&2; exit 1; }
+          # Belt-and-braces: verify NOTHING Mach-O remains unsigned (catches any
+          # path the loop somehow skipped before we waste ~4 min on notarytool).
+          unsigned=0
+          while IFS= read -r m; do
+            [ -z "$m" ] && continue
+            case "$(file -b "$m" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
+            codesign -v --strict "$m" 2>/dev/null || { echo "   ✗ still unsigned: $m" >&2; unsigned=$((unsigned + 1)); }
+          done < <(find "$ONEDIR" -type f 2>/dev/null)
+          [ "$unsigned" -eq 0 ] || { echo "✗ $unsigned Mach-O still unsigned — aborting before notarization" >&2; exit 1; }
+          echo "✓ verified all onedir Mach-O are signed"
 
       # ---------- Build + sign + upload to gap-map-pro draft ----------
       - name: Build and release Tauri bundle (signed)
