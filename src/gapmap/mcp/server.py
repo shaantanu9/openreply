@@ -1761,152 +1761,24 @@ def gapmap_paper_research_pipeline(
          source_type, citation_count, summary, relevance, takeaway}],
          errors}
     """
-    def _pipeline_impl():
-        from ..sources.arxiv import fetch_arxiv
-        from ..sources.pubmed import fetch_pubmed
-        from ..sources.openalex import fetch_openalex
-        from ..sources.semantic_scholar import fetch_semantic_scholar
-        from ..sources.crossref import fetch_crossref
-        from ..sources.scholar import fetch_scholar
-        from ..core.db import upsert_posts, get_db
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        from datetime import datetime, timezone
-
-        q = query or topic
-        wanted_sources = sources or ["arxiv", "pubmed", "openalex", "semantic_scholar", "crossref", "scholar"]
-
-        runners = {
-            "arxiv":            lambda: fetch_arxiv(query=q, limit=limit_per_source),
-            "pubmed":           lambda: fetch_pubmed(query=q, limit=limit_per_source),
-            "openalex":         lambda: fetch_openalex(query=q, limit=limit_per_source, year_from=year_from),
-            "semantic_scholar": lambda: fetch_semantic_scholar(query=q, limit=limit_per_source, year_from=year_from),
-            "crossref":         lambda: fetch_crossref(query=q, limit=limit_per_source, year_from=year_from),
-            "scholar":          lambda: fetch_scholar(query=q, limit=limit_per_source, year_from=year_from),
-        }
-
-        by_source: dict[str, int] = {}
-        all_rows: list[dict] = []
-        errors: dict[str, str] = {}
-
-        # Run all sources in parallel
-        with ThreadPoolExecutor(max_workers=6) as ex:
-            future_to_src = {ex.submit(runners[s]): s for s in wanted_sources if s in runners}
-            for fut in as_completed(future_to_src):
-                src = future_to_src[fut]
-                try:
-                    rows = fut.result() or []
-                    by_source[src] = len(rows)
-                    all_rows.extend(rows)
-                except Exception as e:
-                    errors[src] = str(e)[:200]
-                    by_source[src] = 0
-
-        # Dedupe by id
-        seen: set[str] = set()
-        unique: list[dict] = []
-        for r in all_rows:
-            pid = r.get("id")
-            if pid and pid not in seen:
-                seen.add(pid)
-                unique.append(r)
-
-        # Persist all to posts table + tag to topic
-        if unique:
-            upsert_posts(unique)
-            db = get_db()
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            db["topic_posts"].insert_all(
-                [{"topic": topic, "post_id": r["id"], "source": r.get("source_type", ""),
-                  "added_at": now} for r in unique],
-                pk=("topic", "post_id"), replace=True,
-            )
-
-        # 2. RANK — sort by citation count (score field) descending, take top max_fulltext
-        ranked = sorted(unique, key=lambda r: int(r.get("score") or 0), reverse=True)
-        top_for_fulltext = ranked[:max_fulltext]
-
-        # 3. FULLTEXT — fetch PDF text for top papers
-        from ..research.paper_fulltext import get_full_text
-        fulltext_ok = 0
-        fulltext_fetched = 0
-        fulltext_post_ids: list[str] = []  # papers that actually got full text
-        for paper in top_for_fulltext:
-            post_id = paper.get("id")
-            if not post_id:
-                continue
-            fulltext_fetched += 1
-            try:
-                result = get_full_text(post_id)
-                if result.get("ok"):
-                    fulltext_ok += 1
-                    fulltext_post_ids.append(post_id)
-            except Exception as e:
-                errors[f"fulltext_{post_id}"] = str(e)[:200]
-
-        # 3b. CHUNK + EMBED — chunk only the papers that actually got full
-        # text (respects max_fulltext; no extra network/CPU beyond the cap).
-        # chunk_paper is idempotent and local-CPU (ONNX embed). Skip the whole
-        # pass when the palace/ChromaDB embed backend is unavailable; guard each
-        # call so one chunk failure never aborts the pipeline.
-        papers_chunked = 0
-        try:
-            from ..retrieval import palace
-            embed_available = palace.is_available()
-        except Exception:
-            embed_available = False
-        if embed_available and fulltext_post_ids:
-            from ..research.paper_chunks import chunk_paper
-            for post_id in fulltext_post_ids:
-                try:
-                    res = chunk_paper(post_id, embed=True)
-                    if res.get("ok") and res.get("embedded"):
-                        papers_chunked += 1
-                except Exception as e:
-                    errors[f"chunk_{post_id}"] = str(e)[:200]
-
-        # 4. ANALYZE — run LLM analysis for each paper that has content
-        from ..research.paper_analyze import analyze_paper
-        analyses_out = []
-        analyzed = 0
-        for paper in top_for_fulltext:
-            post_id = paper.get("id")
-            if not post_id:
-                continue
-            try:
-                res = analyze_paper(topic=topic, post_id=post_id, force=False)
-                if res.get("ok") and not res.get("skipped"):
-                    analyzed += 1
-                    analyses_out.append({
-                        "post_id": post_id,
-                        "title": paper.get("title", "")[:200],
-                        "url": paper.get("url", ""),
-                        "source_type": paper.get("source_type", ""),
-                        "citation_count": int(paper.get("score") or 0),
-                        "summary": res.get("summary", ""),
-                        "relevance": res.get("relevance", ""),
-                        "takeaway": res.get("takeaway", ""),
-                    })
-            except Exception as e:
-                errors[f"analyze_{post_id}"] = str(e)[:200]
-
-        return {
-            "ok": True,
-            "topic": topic,
-            "query": q,
-            "search_total": len(unique),
-            "by_source": by_source,
-            "fulltext_fetched": fulltext_fetched,
-            "fulltext_ok": fulltext_ok,
-            "papers_chunked": papers_chunked,
-            "analyzed": analyzed,
-            "analyses": analyses_out,
-            "errors": errors,
-        }
+    # Pipeline body lives in research.paper_pipeline.run_paper_research so the
+    # chat agent's `fetch_more_papers` tool shares one code path with this MCP
+    # tool. We only own the wall-clock ceiling + async-hint here.
+    from ..research.paper_pipeline import run_paper_research
 
     return _run_with_timeout(
-        _pipeline_impl,
+        run_paper_research,
         timeout=120.0,
         async_hint="gapmap_paper_research_pipeline",
+        kwargs={
+            "topic": topic,
+            "query": query,
+            "limit_per_source": limit_per_source,
+            "max_fulltext": max_fulltext,
+            "year_from": year_from,
+            "provider": provider,
+            "sources": sources,
+        },
     )
 
 

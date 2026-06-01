@@ -671,7 +671,101 @@ AGENT_TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "fetch_more_papers",
+        "description": (
+            "EXPENSIVE / NETWORK + LLM. Go fetch NEW academic papers for a topic when the "
+            "existing corpus is thin or the user explicitly asks to 'find more papers / "
+            "research / studies'. Searches arXiv, PubMed, OpenAlex, Semantic Scholar, "
+            "Crossref and Google Scholar in parallel, stores the results, pulls full text "
+            "for the top-cited few, and runs LLM analysis on them. The new papers are then "
+            "queryable by the OTHER tools (`get_findings`, `run_query`, `semantic_search`) "
+            "and citable in your answer. Use AT MOST ONCE per answer — it can take 30-120s. "
+            "Do NOT call it just to re-summarize papers already in the corpus."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "The research topic to tag the new papers under."},
+                "query": {
+                    "type": "string",
+                    "description": "Optional search string. Narrow it to the user's angle (e.g. 'OCR for complex document layouts'). Defaults to the topic.",
+                },
+                "limit_per_source": {"type": "integer", "default": 4, "minimum": 1, "maximum": 6},
+                "max_fulltext": {
+                    "type": "integer", "default": 2, "minimum": 0, "maximum": 4,
+                    "description": "How many top-cited papers to pull full text + run LLM analysis on. Higher = slower.",
+                },
+                "year_from": {"type": "integer", "description": "Optional lower-bound publication year."},
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "fetch_more_evidence",
+        "description": (
+            "EXPENSIVE / NETWORK. Go fetch NEW community evidence (HN, Stack Overflow, "
+            "Dev.to, Google News, and optionally Reddit) for a topic when the corpus lacks "
+            "real-world signal or the user asks to 'pull more discussion / complaints / "
+            "posts'. New posts are stored, tagged to the topic, and become queryable by the "
+            "OTHER tools. Raw fetch only — it does NOT run painpoint extraction, so query "
+            "the new posts with `semantic_search` or `run_query` afterward. Reddit is the "
+            "slowest source (sub discovery); leave it off unless the user wants it. Use AT "
+            "MOST ONCE per answer — it can take 30-120s."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "The research topic to tag the new posts under."},
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Which non-Reddit sources to sweep. Defaults to "
+                        "['hn','stackoverflow','devto','gnews']. Valid: hn, stackoverflow, "
+                        "devto, gnews, appstore, playstore, trends, scholar."
+                    ),
+                },
+                "include_reddit": {
+                    "type": "boolean", "default": False,
+                    "description": "Also run the (slower) Reddit collection. Default false.",
+                },
+                "limit": {
+                    "type": "integer", "default": 25, "minimum": 5, "maximum": 60,
+                    "description": "Posts to fetch per query / source.",
+                },
+            },
+            "required": ["topic"],
+        },
+    },
 ]
+
+
+def _run_bounded(fn, timeout: float, *args, **kwargs) -> dict:
+    """Run a blocking fetch on a worker thread with a wall-clock ceiling.
+
+    Returns the fn's dict result, or a structured `{ok: false, timed_out}`
+    message on overrun so the agent loop never wedges on a slow network /
+    provider call. The underlying thread is left to finish on its own (the
+    fetched rows still land in SQLite), but the agent stops waiting."""
+    import concurrent.futures as _fut
+    with _fut.ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(fn, *args, **kwargs)
+        try:
+            return fut.result(timeout=timeout)
+        except _fut.TimeoutError:
+            return {
+                "ok": False,
+                "timed_out": True,
+                "error": (
+                    f"Fetch exceeded {timeout:.0f}s and is still running in the "
+                    "background. Any rows it has already pulled are saved — answer "
+                    "from the existing corpus now, and the user can re-ask in a "
+                    "moment for the rest."
+                ),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:300]}
 
 
 def _q_escape(s: str) -> str:
@@ -788,6 +882,81 @@ def _exec_tool(name: str, args: dict) -> dict:
                 })
             return {"hits": hits, "query": query, "count": len(hits)}
 
+        if name == "fetch_more_papers":
+            topic = (args.get("topic") or "").strip()
+            if not topic:
+                return {"error": "topic is required"}
+            from .paper_pipeline import run_paper_research
+            res = _run_bounded(
+                run_paper_research,
+                150.0,
+                topic=topic,
+                query=(args.get("query") or None),
+                limit_per_source=max(1, min(int(args.get("limit_per_source") or 4), 6)),
+                max_fulltext=max(0, min(int(args.get("max_fulltext") or 2), 4)),
+                year_from=args.get("year_from"),
+            )
+            if not res.get("ok"):
+                return res
+            # Trim the analyses to a citation-sized payload — the full text is
+            # already in SQLite and reachable via the other tools.
+            slim = [
+                {
+                    "title": a.get("title"),
+                    "url": a.get("url"),
+                    "source": a.get("source_type"),
+                    "citations": a.get("citation_count"),
+                    "takeaway": (a.get("takeaway") or a.get("summary") or "")[:400],
+                }
+                for a in (res.get("analyses") or [])
+            ]
+            return {
+                "ok": True,
+                "topic": res.get("topic"),
+                "query": res.get("query"),
+                "new_papers": res.get("search_total", 0),
+                "by_source": res.get("by_source", {}),
+                "fulltext_ok": res.get("fulltext_ok", 0),
+                "analyzed": res.get("analyzed", 0),
+                "papers": slim,
+                "note": "New papers are now in the corpus — cite them by title/URL, "
+                        "or call get_findings / semantic_search for more detail.",
+            }
+
+        if name == "fetch_more_evidence":
+            topic = (args.get("topic") or "").strip()
+            if not topic:
+                return {"error": "topic is required"}
+            from .collect import collect
+            srcs = args.get("sources")
+            if not isinstance(srcs, list) or not srcs:
+                srcs = ["hn", "stackoverflow", "devto", "gnews"]
+            include_reddit = bool(args.get("include_reddit", False))
+            limit = max(5, min(int(args.get("limit") or 25), 60))
+
+            def _do_collect():
+                r = collect(
+                    topic,
+                    sources=srcs,
+                    skip_reddit=not include_reddit,
+                    skip_extraction=True,   # raw fetch; agent queries the new rows itself
+                    limit_per_query=limit,
+                    limit_per_sub=limit,
+                )
+                return {
+                    "ok": True,
+                    "topic": getattr(r, "topic", topic),
+                    "posts_fetched": getattr(r, "posts_fetched", 0),
+                    "by_source": getattr(r, "by_source", {}) or {},
+                    "errors": (getattr(r, "errors", []) or [])[:5],
+                }
+
+            res = _run_bounded(_do_collect, 150.0)
+            if res.get("ok"):
+                res["note"] = ("New posts are now tagged to the topic — query them with "
+                               "semantic_search or run_query, then cite what you find.")
+            return res
+
         return {"error": f"unknown tool: {name}"}
     except Exception as e:
         return {"error": str(e)}
@@ -810,6 +979,18 @@ AGENT_SYSTEM = (
     "• `sample_posts` — raw post snippets for a topic, ordered by engagement. Use sparingly "
     "(findings are usually more useful).\n"
     "• `run_query` — last resort for ad-hoc aggregates / filters that don't fit the above.\n"
+    "• `fetch_more_papers` — EXPENSIVE. Go pull NEW academic papers when the corpus is thin "
+    "or the user asks to 'find more papers / research / studies'. Then re-query with "
+    "`get_findings` / `semantic_search` and cite the new papers. At most once per answer.\n"
+    "• `fetch_more_evidence` — EXPENSIVE. Go pull NEW community posts (HN, Stack Overflow, "
+    "Dev.to, news, optionally Reddit) when there's little real-world signal. It does no "
+    "extraction, so query the new posts with `semantic_search` / `run_query` afterward. "
+    "At most once per answer.\n"
+    "\n"
+    "Workflow: first check what's ALREADY collected with the read tools. Only reach for a "
+    "`fetch_more_*` tool when the existing corpus genuinely can't answer the question — and "
+    "when you do fetch, follow up by querying the freshly-added rows before you conclude. "
+    "Never call a fetch tool just to restate papers you already have.\n"
     "\n"
     "When you're done gathering, stop calling tools and write a concise answer in markdown."
 )

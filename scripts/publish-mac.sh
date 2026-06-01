@@ -76,15 +76,30 @@ else
   rm -rf build dist
   # Use the .spec which bundles ONNX + prompts + every lazy-imported dep.
   uv run pyinstaller gapmap-cli.spec
-  if [[ ! -x dist/gapmap-cli ]]; then
-    echo "✗ PyInstaller failed — dist/gapmap-cli not present" >&2
+  # ONEDIR build: PyInstaller produces dist/gapmap-cli/ (engine + _internal/),
+  # NOT a single file. The Tauri sidecar is a launcher SCRIPT at $SIDECAR (kept
+  # in git) that exec's this onedir engine from
+  # Contents/Resources/binaries/gapmap-cli-onedir/ (shipped via the
+  # tauri.conf.json `resources` glob). So: refresh that resources folder from
+  # the fresh build and LEAVE the launcher script intact (do NOT cp the dir
+  # over it). See binaries/gapmap-cli-aarch64-apple-darwin (the launcher).
+  if [[ ! -x dist/gapmap-cli/gapmap-cli ]]; then
+    echo "✗ PyInstaller failed — dist/gapmap-cli/gapmap-cli not present" >&2
     exit 1
   fi
   mkdir -p app-tauri/src-tauri/binaries
-  cp dist/gapmap-cli "$SIDECAR"
-  chmod +x "$SIDECAR"
-  echo "✓ sidecar at $SIDECAR ($(du -sh "$SIDECAR" | cut -f1))"
+  ONEDIR_DEST="app-tauri/src-tauri/binaries/gapmap-cli-onedir"
+  rm -rf "$ONEDIR_DEST"
+  cp -R dist/gapmap-cli "$ONEDIR_DEST"
+  if [[ ! -f "$SIDECAR" ]]; then
+    echo "✗ launcher script missing at $SIDECAR — the onedir sidecar needs it (it's tracked in git)" >&2
+    exit 1
+  fi
+  chmod +x "$SIDECAR" "$ONEDIR_DEST/gapmap-cli"
+  echo "✓ onedir engine → $ONEDIR_DEST ($(du -sh "$ONEDIR_DEST" | cut -f1)); launcher: $SIDECAR"
 fi
+# Path to the onedir engine + its nested Mach-O (needed by codesign + notarization).
+ONEDIR_DEST="${ONEDIR_DEST:-app-tauri/src-tauri/binaries/gapmap-cli-onedir}"
 echo
 
 # ─── 3. Ad-hoc codesign the sidecar ─────────────────────────────────────
@@ -93,8 +108,22 @@ echo
 # APPLE_SIGNING_IDENTITY is exported, but ad-hoc keeps Gatekeeper cache
 # warm in dev mode (so a re-run isn't a 2-minute first-launch hang).
 echo "▶ Step 3/5 — Ad-hoc codesign sidecar (Gatekeeper-cache warmup)"
-codesign --force --deep --sign - "$SIDECAR"
-echo "✓ ad-hoc signed"
+# Launcher script (externalBin → Contents/MacOS/gapmap-cli).
+codesign --force --sign - "$SIDECAR" 2>/dev/null || true
+# Onedir engine + every nested Mach-O (.so / .dylib / the engine itself). For
+# a plain directory codesign --deep does NOT recurse, so sign each Mach-O so
+# notarization (Step 6) doesn't choke on unsigned nested code shipped under
+# Contents/Resources/. Developer ID + hardened runtime is re-applied to these
+# in Step 5a (after the identity is sourced); this ad-hoc pass keeps dev
+# Gatekeeper warm and gives the bundle a valid baseline.
+if [[ -d "$ONEDIR_DEST" ]]; then
+  while IFS= read -r macho; do
+    codesign --force --sign - "$macho" 2>/dev/null || true
+  done < <(find "$ONEDIR_DEST" -type f \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) 2>/dev/null)
+  echo "✓ ad-hoc signed launcher + onedir engine/nested Mach-O"
+else
+  echo "✓ ad-hoc signed launcher (onedir dir absent — --skip-sidecar reuse)"
+fi
 echo
 
 # ─── 4. Fetch ffmpeg ────────────────────────────────────────────────────
@@ -238,6 +267,30 @@ if [[ -d "$APP_PATH" ]]; then
     # Entitlements: pull from Tauri's default location if it exists.
     if [[ -f app-tauri/src-tauri/Entitlements.plist ]]; then
       SIGN_ARGS+=(--entitlements app-tauri/src-tauri/Entitlements.plist)
+    fi
+    # INSIDE-OUT: sign the onedir engine's nested Mach-O (.so/.dylib + the
+    # engine) under Contents/Resources/ with Developer ID + hardened runtime
+    # FIRST. `codesign --deep` on the .app does NOT reliably recurse into loose
+    # Mach-O sitting in Resources/, so without this notarization rejects them as
+    # "not signed with a valid Developer ID". Search wherever Tauri placed the
+    # onedir (…/Resources/binaries/gapmap-cli-onedir or …/Resources/_up_/…).
+    onedir_machos=$(find "$APP_PATH/Contents/Resources" -type f \
+                      \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) \
+                      -path '*gapmap-cli-onedir*' 2>/dev/null)
+    if [[ -n "$onedir_machos" ]]; then
+      n_signed=0
+      while IFS= read -r macho; do
+        [[ -z "$macho" ]] && continue
+        if codesign --force --timestamp --options runtime \
+             --sign "$APPLE_SIGNING_IDENTITY" "$macho" 2>/dev/null; then
+          n_signed=$((n_signed + 1))
+        else
+          echo "   ! failed to Developer-ID sign $macho" >&2
+        fi
+      done <<< "$onedir_machos"
+      echo "   • inside-out signed $n_signed onedir Mach-O files under Resources"
+    else
+      echo "   ⚠ no onedir Mach-O found under Resources — sidecar may be missing from the bundle" >&2
     fi
     codesign "${SIGN_ARGS[@]}" "$APP_PATH"
   else

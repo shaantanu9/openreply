@@ -1654,7 +1654,12 @@ select.topics-field {
   display: block; font-size: 11px; color: var(--ink-3);
   text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px;
 }
-.chat-msg-user .chat-msg-body > div:not(.markdown-view) {
+/* Only the question text gets the orange bubble. Previously this matched
+   ANY direct child div (`> div:not(.markdown-view)`), which also wrapped the
+   `.chat-msg-ts` timestamp in its own box — the phantom "second box" showing
+   just "1m ago" under the question. Scope it to `.chat-msg-text` so the
+   timestamp stays a bare 10px caption. */
+.chat-msg-user .chat-msg-body > .chat-msg-text {
   padding: 10px 14px; border-radius: 12px; background: #FFF4E9;
   border: 1px solid #F0D7BD;
 }

@@ -3749,6 +3749,7 @@ export async function renderTopic(root, { params }) {
                   <input type="checkbox" id="chat-agent" ${agentDefault ? 'checked' : ''} />
                   <span><i data-lucide="bot"></i> myind AI Agent</span>
                 </label>
+                <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-fetch-papers" title="Search arXiv · PubMed · OpenAlex · Semantic Scholar · Crossref · Scholar for new papers on this topic and add them to the corpus. Works in Ask mode too."><i data-lucide="book-plus"></i> Fetch papers</button>
                 <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-keys"><i data-lucide="key-round"></i> Keys</button>
                 <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-export" title="Download the conversation as markdown"><i data-lucide="download"></i> Export</button>
                 <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-clear" title="Delete the current chat and start fresh">Clear</button>
@@ -3793,6 +3794,53 @@ export async function renderTopic(root, { params }) {
     });
     $('#chat-agent')?.addEventListener('change', (e) => {
       localStorage.setItem('gapmap.chat.agent', e.target.checked ? 'true' : 'false');
+    });
+
+    // "Fetch papers" — one-click corpus enlargement that works in plain Ask
+    // mode (no Agent toggle needed). Runs the multi-source paper pipeline
+    // (search → store → fulltext → analyze) for this topic, scoped to the
+    // composer text / last question when present, then reloads chat so the
+    // next answer is grounded on the freshly-pulled papers.
+    $('#btn-chat-fetch-papers')?.addEventListener('click', async () => {
+      const btn = $('#btn-chat-fetch-papers');
+      const st = $('#chat-status-text');
+      if (btn?.dataset.busy === '1') return;
+      // Query: prefer what's typed, else the most recent user question, else topic.
+      let q = ($('#chat-input')?.value || '').trim();
+      if (!q) {
+        const hist = chatHistory.get(topic) || [];
+        for (let i = hist.length - 1; i >= 0; i--) {
+          if (hist[i]?.role === 'user' && (hist[i].text || '').trim()) { q = hist[i].text.trim(); break; }
+        }
+      }
+      const origHtml = btn ? btn.innerHTML : '';
+      if (btn) { btn.dataset.busy = '1'; btn.disabled = true; btn.innerHTML = '<i data-lucide="loader"></i> Fetching…'; }
+      window.refreshIcons?.();
+      const prevStatus = st ? st.textContent : '';
+      if (st) st.textContent = '📚 Searching arXiv · PubMed · OpenAlex · Semantic Scholar · Crossref · Scholar…';
+      try {
+        const res = await api.paperResearchPipeline(topic, q || null, { limitPerSource: 5, maxFulltext: 3 });
+        const n = Number(res?.search_total || 0);
+        const analyzed = Number(res?.analyzed || 0);
+        if (res?.ok === false) {
+          showToast('Fetch papers failed', res?.error || 'Pipeline returned an error.', 'err');
+          if (st) st.textContent = '✗ Fetch failed — see toast.';
+        } else if (n === 0) {
+          showToast('No new papers', 'The academic sources returned nothing for this query. Try a more specific question in the composer, then Fetch papers again.', 'warn');
+          if (st) st.textContent = prevStatus || 'Ready — ask a question.';
+        } else {
+          showToast('Papers added', `Pulled ${n} paper${n === 1 ? '' : 's'} into the corpus${analyzed ? ` · analyzed ${analyzed}` : ''}. Your next answer will use them.`, 'ok');
+          if (st) st.textContent = `✓ Added ${n} paper${n === 1 ? '' : 's'} — ask away, answers now include them.`;
+          // Reload chat so corpus-size + palace counts refresh; history is preserved.
+          loadChat();
+        }
+      } catch (e) {
+        showToast('Fetch papers failed', e?.message || String(e), 'err');
+        if (st) st.textContent = '✗ Fetch failed — see toast.';
+      } finally {
+        if (btn) { btn.dataset.busy = ''; btn.disabled = false; btn.innerHTML = origHtml; }
+        window.refreshIcons?.();
+      }
     });
 
     if (!anyReady) return;
