@@ -84,21 +84,29 @@ pyz = PYZ(a.pure)
 # .so live on disk next to the exe under `_internal/`, so a cold spawn is
 # <1 s. `exclude_binaries=True` keeps binaries/datas OUT of the EXE; COLLECT
 # lays them out as a folder. Battle-tested fix (2026-06-01): 36 s → <1 s.
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
+# Platform split: macOS ships ONEDIR (the perf fix above — the Tauri app
+# spawns the sidecar dozens of times at boot, and onefile's ~36 s re-extract
+# per spawn under Gatekeeper made chat time out). Windows + Linux keep the
+# classic ONEFILE form that shipped fine through v0.1.x — they don't have the
+# Gatekeeper re-extract penalty, and onefile keeps their CI staging trivial
+# (a single self-contained binary, no launcher/_internal indirection). The
+# per-platform release workflows stage each form accordingly:
+#   • release-mac.yml   → dist/gapmap-cli/ (dir) → gapmap-cli-onedir/ + launcher
+#   • release-windows/linux.yml → dist/gapmap-cli[.exe] (file) → copied directly
+import sys as _sys
+_ONEDIR = _sys.platform == 'darwin'
+
+# Shared EXE kwargs. UPX corrupts compiled extension modules (.so/.dylib) on
+# macOS arm64 — the PyInstaller bootloader then fails at runtime with
+# "decompression resulted in return code -1!" on entries like
+# __mypyc.cpython-311-darwin.so and hf_xet/hf_xet.abi3.so, which 255-exits the
+# sidecar and breaks every data/LLM/MCP feature on a fresh install. Keep UPX
+# OFF on every platform. (Larger binary is the price; correctness wins.)
+_exe_kwargs = dict(
     name='gapmap-cli',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    # UPX corrupts compiled extension modules (.so/.dylib) on macOS arm64 —
-    # the PyInstaller bootloader then fails at runtime with
-    # "decompression resulted in return code -1!" on entries like
-    # __mypyc.cpython-311-darwin.so and hf_xet/hf_xet.abi3.so, which 255-exits
-    # the sidecar and breaks every data/LLM/MCP feature on a fresh install.
-    # Keep UPX OFF. (Larger binary is the price; correctness wins.)
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
@@ -110,12 +118,19 @@ exe = EXE(
     entitlements_file=None,
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name='gapmap-cli',
-)
+if _ONEDIR:
+    # ONEDIR: EXE holds only the bootloader+scripts; COLLECT lays binaries/
+    # datas out as a folder next to it under _internal/.
+    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, **_exe_kwargs)
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name='gapmap-cli',
+    )
+else:
+    # ONEFILE: everything packed into a single self-extracting binary.
+    exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], **_exe_kwargs)

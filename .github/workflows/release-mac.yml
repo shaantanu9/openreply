@@ -117,12 +117,29 @@ jobs:
         shell: bash
         run: uv run pyinstaller gapmap-cli.spec
 
-      - name: Stage sidecar binary
+      - name: Stage sidecar binary (ONEDIR)
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p app-tauri/src-tauri/binaries
-          cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}
-          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}
+          # macOS ships the PyInstaller ONEDIR bundle: dist/gapmap-cli/ is a
+          # DIRECTORY (engine + _internal), not a single file. Two pieces must
+          # land in binaries/ to match tauri.conf.json:
+          #   • resources   → binaries/gapmap-cli-onedir/**  (the engine dir)
+          #   • externalBin → binaries/gapmap-cli-<triple>   (scripts/onedir-launcher.sh,
+          #                   which Tauri copies to Contents/MacOS/gapmap-cli and
+          #                   which exec's the onedir engine under ../Resources/).
+          # Mirrors scripts/publish-mac.sh exactly.
+          if [ ! -d dist/gapmap-cli ]; then
+            echo "✗ expected ONEDIR dist/gapmap-cli/ (got a file?) — spec drift" >&2
+            ls -la dist/ >&2; exit 1
+          fi
+          rm -rf app-tauri/src-tauri/binaries/gapmap-cli-onedir
+          cp -R dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-onedir
+          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-onedir/gapmap-cli
+          cp scripts/onedir-launcher.sh "app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}"
+          chmod +x "app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}"
+          echo "✓ staged onedir engine + launcher for ${{ matrix.target }}"
 
       # ---------- ffmpeg sidecar ----------
       - name: Fetch ffmpeg sidecar (arm64)

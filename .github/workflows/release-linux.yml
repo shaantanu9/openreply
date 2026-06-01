@@ -111,12 +111,15 @@ jobs:
           chmod +x app-tauri/src-tauri/binaries/gapmap-cli-x86_64-unknown-linux-gnu
 
       # Linux doesn't ship ffmpeg as a sidecar yet — strip the externalBin
-      # reference so `cargo tauri build` doesn't fail looking for it.
-      - name: Strip ffmpeg externalBin
+      # reference so `cargo tauri build` doesn't fail looking for it. Also strip
+      # the macOS-only onedir resource: Linux ships the ONEFILE sidecar (see
+      # gapmap-cli.spec platform split), so binaries/gapmap-cli-onedir/ never
+      # exists here and the resource glob would otherwise error on a missing path.
+      - name: Strip ffmpeg externalBin + onedir resource
         shell: bash
         run: |
           cd app-tauri/src-tauri
-          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; p.write_text(json.dumps(d, indent=2))"
+          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; d['bundle']['resources']=[r for r in d['bundle'].get('resources',[]) if 'gapmap-cli-onedir' not in r]; p.write_text(json.dumps(d, indent=2))"
 
       # JWT secret + Node/Rust toolchains
       - name: Set JWT_DESKTOP_SECRET fallback
