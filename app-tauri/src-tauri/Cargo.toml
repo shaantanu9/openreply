@@ -1,6 +1,6 @@
 [package]
 name = "gapmap"
-version = "0.1.11"
+version = "0.1.12"
 description = "Gap Map — Multi-source research gap finder"
 authors = ["Shantanu Bombatkar"]
 homepage = "https://gapmap.myind.ai/"

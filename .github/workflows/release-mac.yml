@@ -65,15 +65,29 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.6
 
       # ---------- Python sidecar ----------
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
+      # Use a uv-managed python-build-standalone (NON-framework) Python — NOT
+      # actions/setup-python, which installs /Library/Frameworks/Python.framework.
+      # A framework Python makes PyInstaller bundle `_internal/Python.framework`
+      # into the onedir, and that nested framework can't be kept validly signed
+      # through Tauri's bundle-signing pass → notarization Invalid ("signature
+      # of the binary is invalid") even after correct pre-signing (Gap Map
+      # v0.1.8–v0.1.11). A standalone Python ships a loose libpython*.dylib that
+      # signs + notarizes cleanly like every other .dylib. Matches the known-good
+      # local build (sysconfig PYTHONFRAMEWORK = none). UV_PYTHON_PREFERENCE
+      # =only-managed forces uv to ignore any system/framework Python.
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
+
+      - name: Install non-framework Python (uv-managed standalone)
+        shell: bash
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+        run: |
+          uv python install 3.11
+          echo "UV_PYTHON_PREFERENCE=only-managed" >> "$GITHUB_ENV"
+          echo "UV_PYTHON=3.11" >> "$GITHUB_ENV"
 
       - name: Install Python deps
         shell: bash
@@ -110,7 +124,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dist/gapmap-cli
-          key: pyinstaller-${{ matrix.target }}-${{ hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
+          key: pyinstaller-nonfw-${{ matrix.target }}-${{ hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
 
       - name: Build gapmap-cli sidecar (PyInstaller)
         if: steps.pyi-cache.outputs.cache-hit != 'true'
