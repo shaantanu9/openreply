@@ -134,11 +134,93 @@ function renderRow(p) {
   `;
 }
 
+// "Build knowledge & write paper" workflow panel — the one-click pipeline
+// (full text → summarize → relations → gaps → insights) plus the gaps view
+// and the draft/export payoff. Lives at the top of the Papers tab.
+const PK_STAGES = [
+  ['fulltext', 'Full text'],
+  ['summarize', 'Summaries'],
+  ['relations', 'Relations'],
+  ['gaps', 'Patterns & gaps'],
+  ['insights', 'Insights'],
+];
+
+function renderKnowledgePanel(topic) {
+  const steps = PK_STAGES.map(([id, label]) =>
+    `<span class="pk-step" data-step="${id}"><i class="pk-dot"></i>${escape(label)}</span>`
+  ).join('<span class="pk-arrow">→</span>');
+  return `
+    <div class="pk-panel" id="pk-panel" style="background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="flex:1 1 320px;min-width:0">
+          <div style="font-weight:650;font-size:14px;display:flex;align-items:center;gap:6px">
+            <i data-lucide="brain-circuit"></i> Build knowledge &amp; write paper
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:2px">
+            Download full text, summarize, relate, then find research gaps — and draft a paper grounded in all of it.
+          </div>
+        </div>
+        <select id="pk-scope" class="pk-scope" title="How many papers to process" style="padding:6px 8px;border-radius:8px;background:var(--surface);border:1px solid var(--line);color:inherit">
+          <option value="all">All papers</option>
+          <option value="top50">Top 50 cited</option>
+          <option value="top25">Top 25 cited</option>
+          <option value="abstracts">Abstracts only (fast)</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="pk-build" type="button"><i data-lucide="play"></i> Build knowledge base</button>
+      </div>
+      <div class="pk-stepper" id="pk-stepper" style="display:none;margin-top:12px">
+        <div class="pk-steps" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px">${steps}</div>
+        <div class="pk-bar" style="height:4px;background:var(--line);border-radius:3px;margin-top:8px;overflow:hidden"><div id="pk-bar-fill" style="height:100%;width:0%;background:var(--accent,#5B8DB8);transition:width .3s"></div></div>
+        <div class="muted" id="pk-status" style="font-size:11px;margin-top:6px"></div>
+      </div>
+      <div id="pk-gaps" style="margin-top:12px"></div>
+      <div class="pk-write" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-sm btn-bordered" id="pk-draft" type="button"><i data-lucide="file-pen-line"></i> Generate paper draft</button>
+        <button class="btn btn-sm btn-bordered" id="pk-export" type="button"><i data-lucide="download"></i> Export with citations</button>
+      </div>
+    </div>
+  `;
+}
+
+function gapKindMeta(kind) {
+  return ({
+    understudied_intersection: ['Understudied intersection', '#FF8C42'],
+    contradiction:             ['Contradiction / open debate', '#C87070'],
+    temporal:                  ['Temporal gap', '#5B8DB8'],
+    method_replication:        ['Method / replication gap', '#7BA88C'],
+  })[kind] || [kind, '#888'];
+}
+
+function renderGaps(gl) {
+  const gaps = (gl && gl.gaps) || [];
+  if (!gaps.length) {
+    return `<div class="muted" style="font-size:12px">No research gaps yet — run “Build knowledge base” (or it found none for this corpus).</div>`;
+  }
+  const rows = gaps.map(g => {
+    const [label, colour] = gapKindMeta(g.kind);
+    const why = (g.detail && g.detail.why) || '';
+    const ev = (g.evidence || []).slice(0, 4).map(e =>
+      `<li class="muted" style="font-size:11px">${escape(e.title || e.post_id)}</li>`).join('');
+    return `
+      <div class="pk-gap" style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="src-badge" style="background:${colour}">${escape(label)}</span>
+          <b style="font-size:13px">${escape(g.title)}</b>
+          <span class="muted" style="margin-left:auto;font-size:11px">score ${(g.score ?? 0).toFixed?.(2) ?? g.score}</span>
+        </div>
+        ${why ? `<div style="font-size:12px;margin-top:4px">${escape(why)}</div>` : ''}
+        ${ev ? `<ul style="margin:6px 0 0;padding-left:18px">${ev}</ul>` : ''}
+      </div>`;
+  }).join('');
+  return `<div style="font-weight:600;font-size:12px;margin-bottom:6px">Research gaps (${gaps.length})</div>${rows}`;
+}
+
 function renderList(topic, posts) {
   const byCites = [...posts].sort((a, b) => (b.score || 0) - (a.score || 0));
   return `
     <div class="papers-tab">
       ${renderSearchHeader(topic)}
+      ${renderKnowledgePanel(topic)}
       <div class="papers-toolbar">
         <div class="muted">${posts.length} papers for <b>${escape(topic)}</b></div>
         <div class="papers-actions">
@@ -246,6 +328,159 @@ function wireSearchButton(contentEl, topic) {
   };
 }
 
+// Show a generated paper draft (markdown) in a scrollable modal with copy.
+function showDraftModal(topic, markdown, meta) {
+  const wrap = document.createElement('div');
+  wrap.className = 'papers-modal-backdrop';
+  const sub = meta?.grounded
+    ? `grounded in ${meta.papers_used || 0} papers`
+    : 'template (no LLM / no papers)';
+  wrap.innerHTML = `
+    <div class="papers-modal" style="width:min(900px,95vw);max-height:90vh;display:flex;flex-direction:column">
+      <div class="papers-modal-head">
+        <h3>Paper draft · ${escape(topic)} <span class="muted" style="font-weight:400;font-size:12px">· ${escape(sub)}</span></h3>
+        <button class="btn btn-ghost btn-sm" id="draft-close" aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <textarea class="papers-modal-text" readonly style="flex:1;min-height:340px">${escape(markdown || '')}</textarea>
+      <div class="papers-modal-actions">
+        <button class="btn primary btn-sm" id="draft-copy"><i data-lucide="clipboard"></i> Copy markdown</button>
+        <button class="btn btn-sm btn-bordered" id="draft-close-2">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  window.refreshIcons?.();
+  const close = () => wrap.remove();
+  $('#draft-close', wrap)?.addEventListener('click', close);
+  $('#draft-close-2', wrap)?.addEventListener('click', close);
+  wrap.addEventListener('click', e => { if (e.target === wrap) close(); });
+  $('#draft-copy', wrap)?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(markdown || '');
+      const b = $('#draft-copy', wrap);
+      if (b) { b.innerHTML = '<i data-lucide="check"></i> Copied'; window.refreshIcons?.(); }
+    } catch { $('.papers-modal-text', wrap)?.select(); }
+  });
+}
+
+// Wire the "Build knowledge & write paper" panel: load existing gaps, run the
+// streaming workflow with a live stepper, and the draft/export buttons.
+async function wirePaperKnowledge(contentEl, topic) {
+  const panel = $('#pk-panel', contentEl);
+  if (!panel) return;
+
+  // Paint any already-detected gaps immediately (pure read).
+  try {
+    const gl = await api.paperGapsList(topic);
+    const host = $('#pk-gaps', contentEl);
+    if (host && contentEl.dataset.tab === 'papers') host.innerHTML = renderGaps(gl);
+  } catch { /* gaps panel stays empty on read error */ }
+
+  const buildBtn = $('#pk-build', contentEl);
+  const stepper  = $('#pk-stepper', contentEl);
+  const barFill  = $('#pk-bar-fill', contentEl);
+  const statusEl = $('#pk-status', contentEl);
+  const scopeSel = $('#pk-scope', contentEl);
+
+  const setStep = (id, state) => {
+    const el = panel.querySelector(`.pk-step[data-step="${id}"]`);
+    if (el) el.dataset.state = state;  // active | done
+    if (el) el.style.opacity = state === 'done' ? '1' : (state === 'active' ? '1' : '0.5');
+    if (el) el.style.fontWeight = state === 'active' ? '700' : '400';
+  };
+
+  if (buildBtn) buildBtn.onclick = async () => {
+    const scope = scopeSel?.value || 'all';
+    const total = PK_STAGES.length;
+    // Declare unlisteners with `let … = null` BEFORE subscribing — the done
+    // callback references them inside its own body, so a `const` would sit in
+    // the temporal dead zone until the await resolved (the "Cannot access X
+    // before initialization" class of bug). null is safe to optional-call.
+    let unProg = null;
+    let unDone = null;
+    let doneIdx = 0;
+
+    const cleanup = () => {
+      try { unProg?.(); } catch {}
+      try { unDone?.(); } catch {}
+      unProg = null; unDone = null;
+    };
+
+    const onLine = (p) => {
+      if (!p || !p._event) return;
+      const ev = p._event;
+      if (ev === 'workflow:start') {
+        if (statusEl) statusEl.textContent = `Processing ${p.papers} papers (${p.scope})…`;
+      } else if (ev === 'stage:start') {
+        setStep(p.stage, 'active');
+        if (statusEl) statusEl.textContent = p.label || p.stage;
+      } else if (ev === 'stage:progress') {
+        if (statusEl) statusEl.textContent = `${p.stage}: ${p.msg || ''}`;
+        if (p.total && p.done && barFill) {
+          // within-stage fraction folded into the overall bar
+          const frac = (doneIdx + (p.done / p.total)) / total;
+          barFill.style.width = `${Math.min(100, Math.round(frac * 100))}%`;
+        }
+      } else if (ev === 'stage:done') {
+        setStep(p.stage, 'done');
+        doneIdx = Math.min(total, doneIdx + 1);
+        if (barFill) barFill.style.width = `${Math.round((doneIdx / total) * 100)}%`;
+      } else if (ev === 'workflow:done') {
+        if (barFill) barFill.style.width = '100%';
+        const s = p.summary || {};
+        if (statusEl) statusEl.textContent = s.ok ? '✓ Knowledge base built.' : `✗ ${s.error || s.reason || 'failed'}`;
+      }
+    };
+
+    try {
+      buildBtn.disabled = true;
+      buildBtn.innerHTML = '<i data-lucide="loader"></i> Building…';
+      window.refreshIcons?.();
+      if (stepper) stepper.style.display = 'block';
+      PK_STAGES.forEach(([id]) => setStep(id, 'pending'));
+
+      unProg = await api.onPaperKnowledgeProgress(onLine);
+      unDone = await api.onPaperKnowledgeDone(async () => {
+        cleanup();
+        buildBtn.disabled = false;
+        buildBtn.innerHTML = '<i data-lucide="refresh-cw"></i> Rebuild';
+        window.refreshIcons?.();
+        // Refresh the gaps panel + the papers list cache now that full text /
+        // summaries / gaps landed.
+        try {
+          const gl = await api.paperGapsList(topic);
+          const host = $('#pk-gaps', contentEl);
+          if (host && contentEl.dataset.tab === 'papers') host.innerHTML = renderGaps(gl);
+        } catch {}
+      });
+
+      const start = await api.buildPaperKnowledge(topic, scope, false);
+      if (start && start.already_running) {
+        if (statusEl) statusEl.textContent = start.reason || 'Already running — watching progress…';
+      }
+    } catch (e) {
+      cleanup();
+      if (statusEl) statusEl.textContent = `✗ ${e?.message || e}`;
+      buildBtn.disabled = false;
+      buildBtn.innerHTML = '<i data-lucide="play"></i> Build knowledge base';
+      window.refreshIcons?.();
+    }
+  };
+
+  const draftBtn = $('#pk-draft', contentEl);
+  if (draftBtn) draftBtn.addEventListener('click', (e) => withButtonBusy(e.currentTarget, async () => {
+    const r = await api.paperDraftGenerate(topic, null, 'IMRaD');
+    if (!r?.ok) throw new Error(r?.error || 'draft failed');
+    showDraftModal(topic, r.markdown, r);
+  }, { busyLabel: 'Drafting…' }));
+
+  const exportBtn = $('#pk-export', contentEl);
+  if (exportBtn) exportBtn.addEventListener('click', (e) => withButtonBusy(e.currentTarget, async () => {
+    const r = await api.paperExportWithCitations(topic, null, 'markdown', 'IMRaD');
+    if (!r?.ok) throw new Error(r?.error || 'export failed');
+    showDraftModal(topic, r.content, r);
+  }, { busyLabel: 'Exporting…' }));
+}
+
 export async function loadPapers(contentEl, topic) {
   const set = (html) => { if (contentEl.dataset.tab === 'papers') contentEl.innerHTML = html; };
 
@@ -261,6 +496,7 @@ export async function loadPapers(contentEl, topic) {
       window.refreshIcons?.();
     }
     wireSearchButton(contentEl, topic);
+    wirePaperKnowledge(contentEl, topic);
     paintedFromCache = true;
   } else {
     set(skelRows(8));
@@ -296,6 +532,7 @@ export async function loadPapers(contentEl, topic) {
   // list. Re-bind every render path so a previously-clicked button
   // doesn't end up with a stale handler after an SWR refresh.
   wireSearchButton(contentEl, topic);
+  wirePaperKnowledge(contentEl, topic);
 
   const doExport = async (fmt) => {
     try {

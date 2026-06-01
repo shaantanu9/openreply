@@ -29,6 +29,164 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def run_paper_research(
+    topic: str,
+    query: str | None = None,
+    limit_per_source: int = 5,
+    max_fulltext: int = 3,
+    year_from: int | None = None,
+    provider: str | None = None,
+    sources: list[str] | None = None,
+) -> dict[str, Any]:
+    """Search → rank → fulltext → analyze → store, in one synchronous call.
+
+    Shared by the `gapmap_paper_research_pipeline` MCP tool and the chat
+    agent's `fetch_more_papers` tool so both go through one code path. No
+    streaming, no job spawning — returns a result dict directly. Callers that
+    need a wall-clock ceiling should wrap this in their own timeout.
+    """
+    from ..sources.arxiv import fetch_arxiv
+    from ..sources.pubmed import fetch_pubmed
+    from ..sources.openalex import fetch_openalex
+    from ..sources.semantic_scholar import fetch_semantic_scholar
+    from ..sources.crossref import fetch_crossref
+    from ..sources.scholar import fetch_scholar
+    from ..core.db import upsert_posts, get_db
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    q = query or topic
+    wanted_sources = sources or [
+        "arxiv", "pubmed", "openalex", "semantic_scholar", "crossref", "scholar",
+    ]
+
+    runners = {
+        "arxiv":            lambda: fetch_arxiv(query=q, limit=limit_per_source),
+        "pubmed":           lambda: fetch_pubmed(query=q, limit=limit_per_source),
+        "openalex":         lambda: fetch_openalex(query=q, limit=limit_per_source, year_from=year_from),
+        "semantic_scholar": lambda: fetch_semantic_scholar(query=q, limit=limit_per_source, year_from=year_from),
+        "crossref":         lambda: fetch_crossref(query=q, limit=limit_per_source, year_from=year_from),
+        "scholar":          lambda: fetch_scholar(query=q, limit=limit_per_source, year_from=year_from),
+    }
+
+    by_source: dict[str, int] = {}
+    all_rows: list[dict] = []
+    errors: dict[str, str] = {}
+
+    # Run all sources in parallel
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        future_to_src = {ex.submit(runners[s]): s for s in wanted_sources if s in runners}
+        for fut in as_completed(future_to_src):
+            src = future_to_src[fut]
+            try:
+                rows = fut.result() or []
+                by_source[src] = len(rows)
+                all_rows.extend(rows)
+            except Exception as e:
+                errors[src] = str(e)[:200]
+                by_source[src] = 0
+
+    # Dedupe by id
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for r in all_rows:
+        pid = r.get("id")
+        if pid and pid not in seen:
+            seen.add(pid)
+            unique.append(r)
+
+    # Persist all to posts table + tag to topic
+    if unique:
+        upsert_posts(unique)
+        db = get_db()
+        now = _now_iso()
+        db["topic_posts"].insert_all(
+            [{"topic": topic, "post_id": r["id"], "source": r.get("source_type", ""),
+              "added_at": now} for r in unique],
+            pk=("topic", "post_id"), replace=True,
+        )
+
+    # 2. RANK — sort by citation count (score field) descending, take top max_fulltext
+    ranked = sorted(unique, key=lambda r: int(r.get("score") or 0), reverse=True)
+    top_for_fulltext = ranked[:max_fulltext]
+
+    # 3. FULLTEXT — fetch PDF text for top papers
+    from .paper_fulltext import get_full_text
+    fulltext_ok = 0
+    fulltext_fetched = 0
+    fulltext_post_ids: list[str] = []  # papers that actually got full text
+    for paper in top_for_fulltext:
+        post_id = paper.get("id")
+        if not post_id:
+            continue
+        fulltext_fetched += 1
+        try:
+            result = get_full_text(post_id)
+            if result.get("ok"):
+                fulltext_ok += 1
+                fulltext_post_ids.append(post_id)
+        except Exception as e:
+            errors[f"fulltext_{post_id}"] = str(e)[:200]
+
+    # 3b. CHUNK + EMBED — chunk only the papers that actually got full text.
+    # chunk_paper is idempotent and local-CPU (ONNX embed). Skip the whole
+    # pass when the palace/ChromaDB embed backend is unavailable; guard each
+    # call so one chunk failure never aborts the pipeline.
+    papers_chunked = 0
+    try:
+        from ..retrieval import palace
+        embed_available = palace.is_available()
+    except Exception:
+        embed_available = False
+    if embed_available and fulltext_post_ids:
+        from .paper_chunks import chunk_paper
+        for post_id in fulltext_post_ids:
+            try:
+                res = chunk_paper(post_id, embed=True)
+                if res.get("ok") and res.get("embedded"):
+                    papers_chunked += 1
+            except Exception as e:
+                errors[f"chunk_{post_id}"] = str(e)[:200]
+
+    # 4. ANALYZE — run LLM analysis for each paper that has content
+    from .paper_analyze import analyze_paper
+    analyses_out = []
+    analyzed = 0
+    for paper in top_for_fulltext:
+        post_id = paper.get("id")
+        if not post_id:
+            continue
+        try:
+            res = analyze_paper(topic=topic, post_id=post_id, force=False)
+            if res.get("ok") and not res.get("skipped"):
+                analyzed += 1
+                analyses_out.append({
+                    "post_id": post_id,
+                    "title": paper.get("title", "")[:200],
+                    "url": paper.get("url", ""),
+                    "source_type": paper.get("source_type", ""),
+                    "citation_count": int(paper.get("score") or 0),
+                    "summary": res.get("summary", ""),
+                    "relevance": res.get("relevance", ""),
+                    "takeaway": res.get("takeaway", ""),
+                })
+        except Exception as e:
+            errors[f"analyze_{post_id}"] = str(e)[:200]
+
+    return {
+        "ok": True,
+        "topic": topic,
+        "query": q,
+        "search_total": len(unique),
+        "by_source": by_source,
+        "fulltext_fetched": fulltext_fetched,
+        "fulltext_ok": fulltext_ok,
+        "papers_chunked": papers_chunked,
+        "analyzed": analyzed,
+        "analyses": analyses_out,
+        "errors": errors,
+    }
+
+
 def _ensure_report(topic: str, provider: str | None = None) -> dict[str, Any]:
     cached = load_insights(topic)
     if cached and isinstance(cached, dict):
@@ -275,6 +433,22 @@ def paper_draft_generate(topic: str, provider: str | None = None, style: str = "
         )
     findings_block = "\n".join(findings_lines) or "(no findings)"
 
+    # Build the research-gaps block — the open problems the paper should
+    # position its contribution against. Pulled from paper_gaps (understudied
+    # intersections / contradictions / temporal / method-replication). Empty
+    # when the detector hasn't run, so this degrades cleanly to the old behaviour.
+    gaps_block = ""
+    try:
+        from .paper_gaps import list_gaps
+        _gl = list_gaps(topic)
+        _gap_lines: list[str] = []
+        for g in (_gl.get("gaps") or [])[:8]:
+            _why = (g.get("detail") or {}).get("why") or ""
+            _gap_lines.append(f"- [{g.get('kind')}] {g.get('title')}" + (f" — {_why}" if _why else ""))
+        gaps_block = "\n".join(_gap_lines)
+    except Exception:
+        gaps_block = ""
+
     # Build the reference block the model must cite against.
     ref_lines: list[str] = []
     for r in refs:
@@ -315,15 +489,24 @@ def paper_draft_generate(topic: str, provider: str | None = None, style: str = "
             "REFERENCE PAPERS (cite these inline as [n] — do not invent others):",
             refs_txt,
         ]
+        if gaps_block:
+            parts += [
+                "",
+                "RESEARCH GAPS detected across the literature (understudied "
+                "intersections, contradictions, temporal lulls, under-replicated "
+                "findings) — frame the paper's contribution as addressing these:",
+                gaps_block,
+            ]
         if snip:
             parts += ["", "FULL-TEXT EXCERPTS FROM THE TOP PAPERS:", snip]
         parts += [
             "",
             "Write the full IMRaD paper in Markdown. Start with an H1 title. "
             "Ground every empirical claim in the findings or the reference "
-            "papers, citing papers inline as [n]. End with a '## References' "
-            "section listing each [n] paper. Be concrete and specific to the "
-            "topic — no boilerplate.",
+            "papers, citing papers inline as [n]. In Related Work and "
+            "Discussion, explicitly position the contribution against the "
+            "RESEARCH GAPS above. End with a '## References' section listing "
+            "each [n] paper. Be concrete and specific to the topic — no boilerplate.",
         ]
         return "\n".join(parts)
 

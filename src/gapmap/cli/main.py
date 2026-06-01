@@ -1613,6 +1613,66 @@ def cmd_research_paper_export(
     _emit(res, as_json)
 
 
+@research_app.command("paper-knowledge")
+def cmd_research_paper_knowledge(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    scope: str = typer.Option(
+        "all", "--scope",
+        help="all | top50 | top25 | abstracts. 'abstracts' skips full-text download.",
+    ),
+    provider: str | None = typer.Option(None, "--provider"),
+    force: bool = typer.Option(False, "--force", help="Redo summaries + gaps even if cached."),
+    stream: bool = typer.Option(
+        False, "--stream",
+        help="Emit NDJSON lifecycle events to stdout (workflow:start, stage:start, "
+             "stage:progress, stage:done, workflow:done). Used by the Papers-tab workflow UI.",
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Build the full paper knowledge base for a topic: download full text →
+    summarize → relate → detect gaps → synthesize. One resumable pipeline."""
+    from ..research.paper_workflow import build_paper_knowledge
+
+    if not stream:
+        out = build_paper_knowledge(topic=topic, scope=scope, provider=provider, force=force)
+        _emit(out, as_json)
+        return
+
+    import sys as _sys
+
+    def _emit_event(event: str, payload: dict) -> None:
+        # flush=True is critical — the Rust line-reader sees nothing until
+        # flush on macOS (4-8 KB buffer), defeating streaming. Mirrors the
+        # enrich stream emitter.
+        print(json.dumps({"_event": event, **payload}, default=str, ensure_ascii=False), flush=True)
+
+    try:
+        build_paper_knowledge(
+            topic=topic, scope=scope, provider=provider, force=force,
+            progress_cb=_emit_event,
+        )
+    except Exception as e:  # the workflow itself is fail-soft, but guard the spawn
+        _emit_event("workflow:done", {"summary": {"ok": False, "topic": topic,
+                                                   "error": f"workflow crashed: {e}"}})
+        raise typer.Exit(1)
+
+
+@research_app.command("paper-gaps")
+def cmd_research_paper_gaps(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    detect: bool = typer.Option(
+        False, "--detect", help="Run detection (LLM + deterministic) before listing."),
+    provider: str | None = typer.Option(None, "--provider"),
+    force: bool = typer.Option(False, "--force"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """List (or --detect then list) research gaps for a topic's papers."""
+    from ..research.paper_gaps import detect_gaps, list_gaps
+    if detect:
+        detect_gaps(topic=topic, provider=provider, force=force)
+    _emit(list_gaps(topic), as_json)
+
+
 @research_app.command("competitor-matrix")
 def cmd_competitor_matrix(
     topic: str = typer.Option(..., "--topic", "-t"),

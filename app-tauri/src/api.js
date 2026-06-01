@@ -947,6 +947,15 @@ export const api = {
   paperNeighbors: (postId, k = 8, topic = null) => invoke('paper_neighbors', { postId, k, topic }),
   paperRelationsBuild: (topic = null, kinds = 'relates_to,cites') => invoke('paper_relations_build', { topic, kinds }),
 
+  // Paper-knowledge workflow: one streaming pipeline (full text → summarize →
+  // relations → gaps → insights). Returns immediately with metadata; progress
+  // arrives on the paper:knowledge:* events below. scope ∈ all|top50|top25|abstracts.
+  buildPaperKnowledge: (topic, scope = 'all', force = false) =>
+    invoke('paper_knowledge_build', { topic, scope, force }),
+  // Read persisted research gaps (understudied / contradiction / temporal /
+  // method-replication) with evidence titles resolved.
+  paperGapsList: (topic) => invoke('paper_gaps_list', { topic }),
+
   // Phase-9 — competitor matrix
   competitorMatrix: (topic) =>
     cachedInvoke('competitor_matrix', { topic }, 30000),
@@ -1553,6 +1562,11 @@ export const api = {
   },
   onChatProgress:    (cb) => listen('chat:progress',    e => cb(e.payload)),
   onChatDone:        (cb) => listen('chat:done',        e => cb(e.payload)),
+  // Paper-knowledge workflow stream — each NDJSON lifecycle line (workflow:start,
+  // stage:start, stage:progress, stage:done, workflow:done) arrives on progress;
+  // done fires once when the sidecar exits.
+  onPaperKnowledgeProgress: (cb) => listen('paper:knowledge:progress', e => cb(e.payload)),
+  onPaperKnowledgeDone:     (cb) => listen('paper:knowledge:done',     e => cb(e.payload)),
   onStreamHit:       (cb) => listen('stream:hit',       e => cb(e.payload)),
   onStreamDone:      (cb) => listen('stream:done',      e => cb(e.payload)),
 

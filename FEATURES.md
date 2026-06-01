@@ -23,7 +23,7 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 5. Knowledge graph | 11 | 11 | 0 | 0 | 0 |
 | 6. Semantic search & memory palace | 7 | 7 | 0 | 0 | 0 |
 | 7. Persona agents | 9 | 9 | 0 | 0 | 0 |
-| 8. Paper research pipeline | 22 | 22 | 0 | 0 | 0 |
+| 8. Paper research pipeline | 24 | 24 | 0 | 0 | 0 |
 | 9. Product tracking | 9 | 9 | 0 | 0 | 0 |
 | 10. Audience & competitors | 3 | 3 | 0 | 0 | 0 |
 | 11. Export & documentation | 8 | 8 | 0 | 0 | 0 |
@@ -324,6 +324,19 @@ The MCP tools live in a dedicated **sub-server** — `src/gapmap/mcp/tools/perso
 **Flow:** one call — search → rank → fetch fulltext → analyze → store. Primary entry point for paper work (added 2026-05-16).
 **Implementation:** `server.py:1731` · `research/paper_pipeline.py:109`
 **Data:** `posts`, `paper_full_texts`, `paper_analyses`.
+
+### Build Knowledge & Write Paper workflow ✅
+**Entry points:** Papers tab → "Build Knowledge base" panel · `gapmap research paper-knowledge --stream` · Tauri `paper_knowledge_build`
+**User flow:** one button runs full text (all papers) → summarize each → relations → detect patterns & gaps → synthesize insights, with a live 5-stage stepper; then Generate-draft / Export buttons produce a paper grounded in the corpus + gaps.
+**Implementation:** `research/paper_workflow.py` (`build_paper_knowledge`) · CLI `cli/main.py` (`paper-knowledge`) · `commands.rs` (`paper_knowledge_build`, streaming) · `app-tauri/src/screens/papers.js` (`wirePaperKnowledge`, `renderKnowledgePanel`)
+**Data:** writes `paper_full_texts`, `paper_analyses`, `graph_edges` (paper_*), `paper_gaps`, `topic_insights`. Resumable (skips cached work); `scope` ∈ all|top50|top25|abstracts.
+**Validated:** OCR topic (180 papers) end-to-end, `workflow:done` ok.
+
+### Paper pattern & gap detection ✅
+**Entry points:** part of the workflow above · `gapmap research paper-gaps --topic … [--detect]` · Tauri `paper_gaps_list`
+**User flow:** detects + persists four gap kinds (understudied intersection, contradiction, temporal, method/replication), each cited to evidence papers; shown as a gaps panel on the Papers tab and folded into the draft prompt as the paper's positioning.
+**Implementation:** `research/paper_gaps.py` (`detect_gaps` / `list_gaps`) — deterministic temporal + one consolidated LLM pass; `research/paper_pipeline.py` draft prompt gaps block.
+**Data:** `paper_gaps` (previously empty table — now populated).
 
 | Feature | Status | MCP tool `server.py` | Implementation | Data |
 |---|---|---|---|---|

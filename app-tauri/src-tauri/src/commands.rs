@@ -1709,6 +1709,114 @@ pub async fn paper_map(app: AppHandle, topic: String, rebuild: Option<bool>) -> 
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+/// Read persisted research gaps for a topic (understudied intersections /
+/// contradictions / temporal / method-replication), evidence titles resolved.
+/// Pure read — the gaps are produced by `paper_knowledge_build`'s gaps stage.
+#[tauri::command]
+pub async fn paper_gaps_list(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "paper-gaps", "--topic", &topic, "--json"])
+        .await.map_err(err_to_string)
+}
+
+/// Streaming "build the paper knowledge base" workflow. Fires
+/// `paper:knowledge:progress` events (NDJSON lifecycle lines:
+/// workflow:start, stage:start, stage:progress, stage:done, workflow:done)
+/// as each stage (full text → summaries → relations → gaps → insights) runs,
+/// so the Papers-tab stepper shows live counts. A final `paper:knowledge:done`
+/// fires when the sidecar exits (catches a crash where workflow:done never
+/// arrived). Per-topic deduped via ActiveGraphOps so two builds can't race.
+///
+/// `scope` ∈ all|top50|top25|abstracts (default all). `force` redoes summaries+gaps.
+#[tauri::command]
+pub async fn paper_knowledge_build(
+    app: AppHandle,
+    topic: String,
+    scope: Option<String>,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    use crate::cli::ActiveGraphOps;
+
+    let key = format!("paper-knowledge:{}", topic);
+    {
+        let state = app.state::<ActiveGraphOps>();
+        let mut map = state.0.lock().map_err(|e| e.to_string())?;
+        let now = std::time::Instant::now();
+        if let Some(inserted_at) = map.get(&key) {
+            let age = now.saturating_duration_since(*inserted_at);
+            // Full-corpus runs are long (180 PDFs + summaries) — allow up to
+            // 60 min before a stale key is reclaimable.
+            let stale_after = std::time::Duration::from_secs(3600);
+            if age < stale_after {
+                return Ok(serde_json::json!({
+                    "ok": false, "already_running": true, "topic": topic,
+                    "op": "paper-knowledge", "age_seconds": age.as_secs(),
+                    "auto_clears_in_seconds": stale_after.saturating_sub(age).as_secs(),
+                    "reason": format!(
+                        "A paper-knowledge build for {:?} is already running (started {}s ago). Subscribe to paper:knowledge:progress to watch it.",
+                        topic, age.as_secs()
+                    ),
+                }));
+            }
+        }
+        map.insert(key.clone(), now);
+    }
+
+    let scope_lc = scope.unwrap_or_else(|| "all".into()).to_lowercase();
+    let mut args: Vec<&str> = vec![
+        "research", "paper-knowledge",
+        "--topic", &topic,
+        "--scope", &scope_lc,
+        "--stream", "--json",
+    ];
+    if force.unwrap_or(false) {
+        args.push("--force");
+    }
+
+    // Clear the dedup key + self-unlisten when the done event arrives (same
+    // pattern as enrich_graph_stream — without the self-unlisten each call
+    // leaks a handler).
+    let app_for_cleanup = app.clone();
+    let key_for_cleanup = key.clone();
+    let unlisten_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::EventId>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let unlisten_slot_for_closure = unlisten_slot.clone();
+    let unlisten_id = app.listen_any("paper:knowledge:done", move |_ev| {
+        if let Some(state) = app_for_cleanup.try_state::<ActiveGraphOps>() {
+            if let Ok(mut m) = state.0.lock() {
+                m.remove(&key_for_cleanup);
+            }
+        }
+        if let Ok(mut slot) = unlisten_slot_for_closure.lock() {
+            if let Some(id) = slot.take() {
+                app_for_cleanup.unlisten(id);
+            }
+        }
+    });
+    if let Ok(mut slot) = unlisten_slot.lock() {
+        *slot = Some(unlisten_id);
+    }
+
+    let spawn_result = run_cli_enrich_streaming(
+        &app, args, "paper:knowledge:progress", "paper:knowledge:done",
+    )
+    .await;
+
+    if let Err(ref e) = spawn_result {
+        let state = app.state::<ActiveGraphOps>();
+        if let Ok(mut map) = state.0.lock() {
+            map.remove(&key);
+        }
+        return Err(err_to_string(e.to_string()));
+    }
+    drop(spawn_result);
+
+    Ok(serde_json::json!({
+        "ok": true, "streaming": true, "topic": topic, "scope": scope_lc,
+        "progress_event": "paper:knowledge:progress",
+        "done_event": "paper:knowledge:done",
+    }))
+}
+
 #[tauri::command]
 pub async fn competitor_matrix(
     app: AppHandle,

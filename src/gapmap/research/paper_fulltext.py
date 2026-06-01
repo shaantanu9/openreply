@@ -794,6 +794,7 @@ def fetch_bulk(
     sources: list[str] | None = None,
     limit: int | None = None,
     skip_failed: bool = True,
+    progress: Any | None = None,
 ) -> dict[str, Any]:
     """Walk all paper rows for a topic (or every topic when topic=None)
     and fetch full text for any that don't already have a cached row.
@@ -802,6 +803,10 @@ def fetch_bulk(
     in a permanent-failure state (not_oa / download_failed / parse_failed
     / empty) so we don't retry forever. Pass force=True per-post via
     `get_full_text(force=True)` to retry.
+
+    `progress` (optional) is called as ``progress(i, total, post_id, status)``
+    after each paper so a streaming caller (the in-app workflow) can show
+    live "downloading 47/180" counts. A broken callback never breaks the batch.
     """
     _ensure_table()
     db = get_db()
@@ -837,10 +842,11 @@ def fetch_bulk(
     except Exception as e:
         return {"ok": False, "error": f"corpus query failed: {e}"}
 
-    out = {"ok": True, "topic": topic, "total": len(targets),
+    total = len(targets)
+    out = {"ok": True, "topic": topic, "total": total,
            "fetched": 0, "skipped": 0, "failed": 0,
            "by_status": {}}
-    for t in targets:
+    for i, t in enumerate(targets, 1):
         r = get_full_text(t["id"])
         st = r.get("status", "unknown")
         out["by_status"][st] = out["by_status"].get(st, 0) + 1
@@ -850,6 +856,11 @@ def fetch_bulk(
             out["skipped"] += 1
         else:
             out["failed"] += 1
+        if progress:
+            try:
+                progress(i, total, t["id"], st)
+            except Exception:
+                pass
         # Light politeness — don't hammer arxiv/openalex.
         time.sleep(0.3)
     return out

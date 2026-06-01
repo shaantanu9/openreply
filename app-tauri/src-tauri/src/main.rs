@@ -402,6 +402,8 @@ fn main() {
             commands::paper_neighbors,
             commands::paper_relations_build,
             commands::paper_map,
+            commands::paper_gaps_list,
+            commands::paper_knowledge_build,
             commands::competitor_matrix,
             commands::link_research,
             commands::research_links,
