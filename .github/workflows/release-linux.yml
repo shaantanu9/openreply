@@ -180,11 +180,24 @@ jobs:
             exit 0
           fi
           mkdir -p ./pub
-          GH_TOKEN="$GH_TOKEN_SRC" gh release download "$VER" \
-            --repo "${{ github.repository }}" --dir ./pub \
-            --pattern "Gap.Map_*_amd64.AppImage" \
-            --pattern "Gap.Map_*_amd64.deb" \
-            --pattern "Gap.Map_*_x86_64.rpm" 2>&1 | tail -5 || true
+          # Pull from ALL source-repo releases carrying this tag — tauri-action
+          # can race-create DUPLICATE drafts, and `gh release download <tag>`
+          # would hit only one (the linux assets may be on the other), silently
+          # downloading nothing. Download by asset id across all. (Hardened 2026-06-02.)
+          dl_src() {
+            gh api "/repos/${{ github.repository }}/releases" --paginate \
+              -q ".[] | select(.tag_name==\"$VER\") | .assets[] | \"\(.id)\t\(.name)\"" \
+            | while IFS="$(printf '\t')" read -r id name; do
+                matched=0
+                for g in "$@"; do case "$name" in $g) matched=1 ;; esac; done
+                [ "$matched" = 1 ] || continue
+                [ -f "./pub/$name" ] && continue
+                GH_TOKEN="$GH_TOKEN_SRC" gh api -H "Accept: application/octet-stream" \
+                  "/repos/${{ github.repository }}/releases/assets/$id" > "./pub/$name" \
+                  && echo "  ↓ $name" || echo "  ! failed $name"
+              done
+          }
+          dl_src "Gap.Map_*_amd64.AppImage" "Gap.Map_*_amd64.deb" "Gap.Map_*_x86_64.rpm"
           ls -lh ./pub/ | head -10
 
           # Rename to user-friendly public-convention names. Linux only

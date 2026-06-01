@@ -398,18 +398,32 @@ jobs:
           fi
 
           mkdir -p ./pub
-          # Download THIS PLATFORM's artifacts from the draft on this repo.
-          # Patterns match what tauri-action uploaded above.
+          # Download THIS PLATFORM's artifacts from the source-repo draft(s).
+          # NOTE: the source repo can hold DUPLICATE drafts for one tag —
+          # tauri-action's create-release isn't atomic, so parallel platform
+          # jobs (mac arm64/x64 + windows + linux) race and sometimes make two
+          # drafts. `gh release download <tag>` resolves to only ONE of them,
+          # so a platform whose asset landed on the OTHER draft silently
+          # downloads nothing → incomplete public release (v0.1.12 needed
+          # manual consolidation). Fix: pull matching assets from ALL releases
+          # carrying this tag, by asset id. (Hardened 2026-06-02.)
+          dl_src() {
+            gh api "/repos/${{ github.repository }}/releases" --paginate \
+              -q ".[] | select(.tag_name==\"$VER\") | .assets[] | \"\(.id)\t\(.name)\"" \
+            | while IFS="$(printf '\t')" read -r id name; do
+                matched=0
+                for g in "$@"; do case "$name" in $g) matched=1 ;; esac; done
+                [ "$matched" = 1 ] || continue
+                [ -f "./pub/$name" ] && continue
+                GH_TOKEN="$GH_TOKEN_SRC" gh api -H "Accept: application/octet-stream" \
+                  "/repos/${{ github.repository }}/releases/assets/$id" > "./pub/$name" \
+                  && echo "  ↓ $name" || echo "  ! failed $name"
+              done
+          }
           if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-            GH_TOKEN="$GH_TOKEN_SRC" gh release download "$VER" \
-              --repo "${{ github.repository }}" --dir ./pub \
-              --pattern "Gap.Map_*_aarch64.dmg" \
-              --pattern "Gap.Map_aarch64.app.tar.gz" 2>&1 | tail -5 || true
+            dl_src "Gap.Map_*_aarch64.dmg" "Gap.Map_aarch64.app.tar.gz"
           else
-            GH_TOKEN="$GH_TOKEN_SRC" gh release download "$VER" \
-              --repo "${{ github.repository }}" --dir ./pub \
-              --pattern "Gap.Map_*_x64.dmg" \
-              --pattern "Gap.Map_x64.app.tar.gz" 2>&1 | tail -5 || true
+            dl_src "Gap.Map_*_x64.dmg" "Gap.Map_x64.app.tar.gz"
           fi
 
           # Rename to user-friendly public-convention names so a user
