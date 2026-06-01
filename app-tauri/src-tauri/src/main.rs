@@ -96,7 +96,12 @@ fn main() {
             // path so this can't silently recur. Runs on its own thread so a
             // slow temp dir never delays the window. See
             // cli::reap_pyinstaller_orphans.
-            std::thread::spawn(|| {
+            // Runs in a loop (hourly) — not just at boot — so a long-running
+            // session can't accumulate crash-orphans either. The daemon
+            // pre-warm below stops the boot `_MEI` storm at its source; this
+            // is the safety net that guarantees any stragglers (LLM-job
+            // fallbacks, hard crashes) get swept before they can fill the disk.
+            std::thread::spawn(|| loop {
                 let (n, bytes) = cli::reap_pyinstaller_orphans();
                 if n > 0 {
                     eprintln!(
@@ -104,7 +109,34 @@ fn main() {
                         bytes as f64 / 1_048_576.0
                     );
                 }
+                std::thread::sleep(std::time::Duration::from_secs(60 * 60));
             });
+
+            // ── Pre-warm the bundled sidecar daemon ─────────────────────
+            // The frontend fires ~12 sidecar calls within ~1s of mount. If
+            // they all hit a COLD daemon at once they lose the lock race,
+            // time out, and each falls back to a cold one-shot PyInstaller
+            // spawn — the `_MEI` storm that makes the app feel frozen AND
+            // fills the disk (see DAEMON_LOCK_TIMEOUT_* in cli.rs). Kick a
+            // single cheap call HERE, before the webview JS runs, so the
+            // daemon pays its one-time import cost up front and the boot herd
+            // lands on the already-warm interpreter. Best-effort — a failure
+            // just falls back to the previous (slower) behaviour.
+            {
+                let app_handle_warm = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let t0 = std::time::Instant::now();
+                    match cli::run_cli(&app_handle_warm, vec!["info"]).await {
+                        Ok(_) => eprintln!(
+                            "[boot] sidecar daemon pre-warmed in {} ms",
+                            t0.elapsed().as_millis()
+                        ),
+                        Err(e) => eprintln!(
+                            "[boot] sidecar daemon pre-warm failed (non-fatal): {e}"
+                        ),
+                    }
+                });
+            }
 
             // Splash safety net + cold-boot webview heal.
             //

@@ -730,16 +730,21 @@ export const api = {
     invalidate('license_status');
     return invoke('license_logout');
   },
+  // start_chat is streaming (fire-and-forget; work arrives via chat:progress /
+  // chat:done) so it returns quickly — left raw like start_collect.
   startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
-  cancelChat:      ()        => invoke('cancel_chat'),
-  chatStatus:      ()        => invoke('chat_status'),
+  // The control + conversation-DB calls below are quick sqlite/control ops.
+  // Timeout-wrapped so a slow/wedged sidecar can't hang the Chats UI forever
+  // (raw invoke has no timeout) — same hardening as the new-topic modal calls.
+  cancelChat:      ()        => invokeWithTimeout('cancel_chat', null, 15000),
+  chatStatus:      ()        => invokeWithTimeout('chat_status', null, 15000),
   // Persistent ChatGPT-style conversations (native rusqlite). topic omitted
   // → every conversation across all topics (global Chats view).
-  chatConvList:    (topic = null) => invoke('chat_conv_list', { topic }),
-  chatConvGet:     (id)        => invoke('chat_conv_get', { id }),
-  chatConvSave:    (id, topic, title, messagesJson) => invoke('chat_conv_save', { id, topic, title, messagesJson }),
-  chatConvRename:  (id, title) => invoke('chat_conv_rename', { id, title }),
-  chatConvDelete:  (id)        => invoke('chat_conv_delete', { id }),
+  chatConvList:    (topic = null) => invokeWithTimeout('chat_conv_list', { topic }, 15000),
+  chatConvGet:     (id)        => invokeWithTimeout('chat_conv_get', { id }, 15000),
+  chatConvSave:    (id, topic, title, messagesJson) => invokeWithTimeout('chat_conv_save', { id, topic, title, messagesJson }, 15000),
+  chatConvRename:  (id, title) => invokeWithTimeout('chat_conv_rename', { id, title }, 15000),
+  chatConvDelete:  (id)        => invokeWithTimeout('chat_conv_delete', { id }, 15000),
   testLlm:         (provider, model) => invoke('test_llm', { provider, model }),
   listOllamaModels: ()       => cachedInvoke('list_ollama_models', null, 10000),
   // Dynamic model list from any configured cloud provider's /models endpoint.

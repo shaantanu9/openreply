@@ -110,10 +110,16 @@ fn dir_size_bytes(path: &std::path::Path) -> u64 {
 /// session cycle; override via `GAPMAP_MEI_REAP_MIN_AGE_SECS`. Returns
 /// `(dirs_removed, bytes_freed)`. Cheap to call on boot; safe to call often.
 pub fn reap_pyinstaller_orphans() -> (u64, u64) {
+    // Default lowered 6h → 2h (2026-06-01). 2h is still safely longer than any
+    // single sidecar run (the longest is an aggressive+historical collect,
+    // well under an hour) so we never yank a live extraction, but short enough
+    // that crash-orphaned `_MEI` dirs are swept the same session instead of
+    // lingering for hours. The periodic reaper in main.rs re-runs this on an
+    // interval so a long-running session can't accumulate them either.
     let min_age_secs: u64 = std::env::var("GAPMAP_MEI_REAP_MIN_AGE_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(6 * 60 * 60);
+        .unwrap_or(2 * 60 * 60);
     let tmp = std::env::temp_dir();
     let now = std::time::SystemTime::now();
     let mut removed = 0u64;
@@ -353,15 +359,29 @@ enum DaemonOutcome {
 }
 
 // Maximum time we wait for the daemon's request mutex before declaring lock
-// contention and falling back to a one-shot Python spawn. Pre-fix, a long
-// LLM job (sentiment-by-source, audience-build, concepts) could hold this
-// lock for 30-90s while every other `run_cli` call from the UI — settings
-// refreshes, topic queries, tab switches — queued behind it, making the
-// whole app feel frozen. The one-shot fallback costs ~200ms in dev (.venv
-// python) and ~2-5s in the bundled DMG (macOS Gatekeeper boot), so we keep
-// the dev wait shorter than the prod wait.
-const DAEMON_LOCK_TIMEOUT_DEV_SECS: u64 = 3;
-const DAEMON_LOCK_TIMEOUT_PROD_SECS: u64 = 6;
+// contention and falling back to a one-shot Python spawn.
+//
+// TRADE-OFF (raised 2026-06-01): these were 3s/6s to stop a long LLM job
+// (sentiment / audience-build / concepts, 30-90s through the daemon) from
+// starving UI calls. But that short wait caused a far worse failure at BOOT:
+// the app fires ~12 sidecar calls at once, they all lose the race against the
+// single COLD daemon (whose first request pays a ~6-15s import while holding
+// this lock), each times out, and each falls back to a COLD one-shot
+// PyInstaller spawn. Every such spawn extracts a ~390 MB `_MEI` temp dir;
+// dozens per launch pile up and FILL THE DISK, which 255-exits every
+// subsequent sidecar call (chat, data, MCP). Observed in the wild: 189
+// orphaned `_MEI` dirs = ~74 GB, disk full, whole app broken.
+//
+// We now wait long enough for the cold daemon to finish warming so the boot
+// herd lands on the WARM interpreter (~0.5s/call) instead of storming cold
+// one-shots. The daemon pre-warm in main.rs starts that spawn before the herd
+// arrives; these ceilings cover the remaining warm-up window. The LLM-job
+// starvation this re-introduces is bounded (a UI call waits up to this long,
+// then falls back to a SINGLE one-shot — not a storm) and the periodic
+// `_MEI` reaper cleans any stragglers. Boot happens every launch; long LLM
+// jobs are occasional — so we optimise for boot.
+const DAEMON_LOCK_TIMEOUT_DEV_SECS: u64 = 10;
+const DAEMON_LOCK_TIMEOUT_PROD_SECS: u64 = 20;
 
 // Hard ceiling on a single daemon request round-trip (write + read_line).
 // The lock timeouts above only bound how long we WAIT FOR the lock — once a

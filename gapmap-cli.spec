@@ -75,12 +75,20 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# ONEDIR build (not onefile). A onefile EXE re-extracts the entire ~390 MB
+# archive to a fresh `_MEI…` temp dir on EVERY spawn — ~36 s under macOS
+# Gatekeeper, plus a 390 MB temp leak per crash. The Tauri app spawns the
+# sidecar dozens of times at boot (collect/chat/enrich streams + one-shot
+# fallbacks), so onefile made chat time out (15 s frontend cap) and filled
+# the disk. ONEDIR extracts NOTHING at runtime — the interpreter + every
+# .so live on disk next to the exe under `_internal/`, so a cold spawn is
+# <1 s. `exclude_binaries=True` keeps binaries/datas OUT of the EXE; COLLECT
+# lays them out as a folder. Battle-tested fix (2026-06-01): 36 s → <1 s.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='gapmap-cli',
     debug=False,
     bootloader_ignore_signals=False,
@@ -100,4 +108,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='gapmap-cli',
 )
