@@ -938,13 +938,24 @@ export async function renderCollect(root, { params }) {
   // (Source-picker `aggressive` / `sourcesStr` / `skipReddit` were read at
   //  the top of this function so the recon-card mount above could see them.)
 
-  // Build a human-readable filter summary for the log line.
+  // Build a human-readable filter summary for the log line. Friendly source
+  // names (not raw ids) so the activity log reads clearly — e.g. a thesis
+  // goal logs "only arXiv, OpenAlex, PubMed, Google Scholar" instead of the
+  // bare "skip-reddit · only arxiv,openalex,…".
   const sourcesArg = sourcesStr ? sourcesStr : null;
+  const SRC_LABELS = {
+    arxiv: 'arXiv', openalex: 'OpenAlex', pubmed: 'PubMed', scholar: 'Google Scholar',
+    hn: 'Hacker News', devto: 'Dev.to', stackoverflow: 'Stack Overflow', github: 'GitHub',
+    github_issues: 'GitHub Issues', appstore: 'App Store', playstore: 'Play Store',
+    trustpilot: 'Trustpilot', producthunt: 'Product Hunt', gnews: 'Google News',
+    trends: 'Google Trends', lemmy: 'Lemmy', mastodon: 'Mastodon',
+  };
+  const humanizeSources = (s) => s.split(',').map(x => SRC_LABELS[x.trim()] || x.trim()).join(', ');
   let filterSummary;
   if (skipReddit && sourcesArg) {
-    filterSummary = `skip-reddit · only ${sourcesArg}`;
+    filterSummary = `only ${humanizeSources(sourcesArg)}`;
   } else if (sourcesArg) {
-    filterSummary = `reddit + ${sourcesArg}`;
+    filterSummary = `reddit + ${humanizeSources(sourcesArg)}`;
   } else if (aggressive) {
     filterSummary = 'aggressive — all sources + history';
   } else {

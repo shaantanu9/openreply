@@ -877,7 +877,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     // which now returns an `ephemeral_app_path` flag; if true, log a
     // clear note and let the user fix it (move to /Applications + relaunch).
     try {
-      const probe = await api.mcpStatus();
+      // Bounded — a wedged daemon used to leave this probe (and thus the whole
+      // app-open MCP bootstrap) hanging forever, so MCP never connected and the
+      // Settings card sat on "checking…". The Rust daemon now self-heals, but
+      // this timeout is a cheap belt-and-braces guard.
+      const probe = await Promise.race([
+        api.mcpStatus(),
+        new Promise((_, rej) => setTimeout(
+          () => rej(new Error('mcp status probe timed out after 12s')), 12000)),
+      ]);
       if (probe?.ephemeral_app_path) {
         console.warn(
           '[mcp:auto-bootstrap] skipped — app is on an ephemeral path. ' +
@@ -1095,6 +1103,29 @@ function wireModal() {
   const bd = $('#modal-backdrop');
   // Save which element had focus before opening so we can restore it on close.
   let returnFocusTo = null;
+  // Cached intent presets (from api.listIntents) so the start handler + pill
+  // clicks can read the picked goal's `collect` profile without a refetch.
+  let intentPresets = [];
+
+  // Reflect the selected goal's collect profile in the modal. A goal that pins
+  // its own fetch (e.g. thesis → academic sources, fast) hides the Aggressive
+  // row and shows a hint; goals without a profile restore the Aggressive row.
+  const applyIntentCollectProfile = (key) => {
+    const prof = intentPresets.find(p => p.key === key)?.collect || null;
+    const aggRow = $('#new-topic-aggressive-row');
+    const hint   = $('#new-topic-collect-hint');
+    if (prof) {
+      if (aggRow) aggRow.hidden = true;
+      if (hint) {
+        hint.hidden = false;
+        hint.innerHTML = `<i data-lucide="sparkles"></i> Fetches ${prof.summary || 'a focused source set'}${prof.eta ? ` · ${prof.eta}` : ''}`;
+        window.refreshIcons?.();
+      }
+    } else {
+      if (aggRow) aggRow.hidden = false;
+      if (hint) { hint.hidden = true; hint.innerHTML = ''; }
+    }
+  };
   const focusableSelector =
     'input, select, textarea, button, a[href], [tabindex]:not([tabindex="-1"])';
   const open  = () => {
@@ -1119,6 +1150,7 @@ function wireModal() {
     if (!host) return;
     let presets = [];
     try { presets = await api.listIntents(); } catch { presets = []; }
+    intentPresets = presets;
     if (!presets.length) {
       // Graceful degradation if the Python side isn't available — hide the
       // picker and let the user create a topic like before (defaults apply).
@@ -1140,8 +1172,11 @@ function wireModal() {
         host.querySelectorAll('.intent-pill').forEach(b => b.classList.remove('is-selected'));
         btn.classList.add('is-selected');
         localStorage.setItem('gapmap.new_topic.intent', btn.dataset.intent);
+        applyIntentCollectProfile(btn.dataset.intent);
       });
     });
+    // Reflect the initially-selected goal's profile on (re)render.
+    applyIntentCollectProfile(picked);
   }
   const close = () => {
     bd.hidden = true;
@@ -1191,7 +1226,14 @@ function wireModal() {
       input.focus();
       return;
     }
-    const aggressive = $('#new-topic-aggressive').checked;
+    const aggressiveChecked = $('#new-topic-aggressive').checked;
+    // The picked goal may pin its own collect profile (e.g. thesis → academic
+    // sources, skip-reddit, non-aggressive). When present it OVERRIDES the
+    // Aggressive checkbox — this is the fix for "picking 'research paper' still
+    // ran the full all-sources + historical sweep".
+    const pickedIntent = localStorage.getItem('gapmap.new_topic.intent') || 'product-new';
+    const collectProf  = intentPresets.find(p => p.key === pickedIntent)?.collect || null;
+    const aggressive   = collectProf ? !!collectProf.aggressive : aggressiveChecked;
 
     // P0-3 — if no LLM is configured, painpoints won't be extracted. Warn the
     // user up front rather than letting them reach a blank gap-map later.
@@ -1208,8 +1250,17 @@ function wireModal() {
       }
     }
 
+    // One-shot collect params for collect.js (it reads + clears these on mount).
     localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
-    localStorage.setItem('gapmap.pref.aggressive',          aggressive ? 'true' : 'false');
+    if (collectProf) {
+      localStorage.setItem('gapmap.collect.last_sources',     collectProf.sources || '');
+      localStorage.setItem('gapmap.collect.last_skip_reddit', collectProf.skip_reddit ? 'true' : 'false');
+    } else {
+      // No goal profile → don't pin sources; remember the user's aggressive pref.
+      localStorage.removeItem('gapmap.collect.last_sources');
+      localStorage.removeItem('gapmap.collect.last_skip_reddit');
+      localStorage.setItem('gapmap.pref.aggressive', aggressive ? 'true' : 'false');
+    }
 
     // Pre-check: does a semantically-identical topic (same loose / slug
     // normalization) already exist? If yes, ASK the user — we never
@@ -1240,7 +1291,7 @@ function wireModal() {
 
     // Persist the picked intent BEFORE the collect kicks off so the topic
     // opens to the right default tab the first time the user visits it.
-    const pickedIntent = localStorage.getItem('gapmap.new_topic.intent') || 'product-new';
+    // (pickedIntent was resolved above to drive the collect profile.)
     try {
       await api.topicIntentSet(effectiveTopic, pickedIntent);
     } catch {

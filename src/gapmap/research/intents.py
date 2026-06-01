@@ -108,12 +108,41 @@ INTENTS: dict[str, dict[str, Any]] = {
 }
 
 
+# ── per-intent collect profile ───────────────────────────────────────────────
+#
+# What "Start collect" should actually FETCH for each goal. Intents not listed
+# here fall through to the user's Aggressive toggle + the full default sweep
+# (unchanged behaviour). The thesis/research-paper goal pins a fast,
+# academic-only fetch (arXiv/OpenAlex/PubMed/Scholar, no Reddit, no 15-min
+# historical sweep) — previously picking "Write a thesis" still ran the full
+# all-sources + historical collect, which is the bug this fixes.
+#
+# `sources` must use the valid `collect --sources` ids (see cli/main.py): hn,
+# appstore, playstore, arxiv, openalex, pubmed, gnews, devto, stackoverflow,
+# github, trends, scholar, github_issues, lemmy, mastodon, rss_*.
+COLLECT_PROFILES: dict[str, dict[str, Any]] = {
+    "thesis": {
+        "sources": "arxiv,openalex,pubmed,scholar",
+        "skip_reddit": True,
+        "aggressive": False,
+        "summary": "academic papers — arXiv, OpenAlex, PubMed, Scholar",
+        "eta": "~3 min",
+    },
+}
+
+
+def collect_profile(key: str | None) -> dict[str, Any] | None:
+    """Return the collect profile for an intent key, or None when the goal
+    uses the default full sweep. Always safe to call."""
+    return COLLECT_PROFILES.get(key or DEFAULT_INTENT)
+
+
 def list_intents() -> list[dict[str, Any]]:
     """Return every preset as an ordered list of {key, label, icon, tagline,
-    default_tab, main_tabs, deliverable, action_ladder}."""
+    default_tab, main_tabs, deliverable, action_ladder, collect}."""
     out = []
     for key, preset in INTENTS.items():
-        out.append({"key": key, **preset})
+        out.append({"key": key, "collect": COLLECT_PROFILES.get(key), **preset})
     return out
 
 
@@ -123,7 +152,7 @@ def get_intent(key: str | None) -> dict[str, Any]:
     k = (key or DEFAULT_INTENT)
     if k not in INTENTS:
         k = DEFAULT_INTENT
-    return {"key": k, **INTENTS[k]}
+    return {"key": k, "collect": COLLECT_PROFILES.get(k), **INTENTS[k]}
 
 
 # ── per-topic CRUD ───────────────────────────────────────────────────────────

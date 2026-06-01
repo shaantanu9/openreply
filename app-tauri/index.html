@@ -200,10 +200,14 @@
     </div>
 
     <input id="new-topic-input" type="text" placeholder='e.g. "ATS resume and job search apps"' autofocus />
-    <label class="modal-check">
+    <label class="modal-check" id="new-topic-aggressive-row">
       <input type="checkbox" id="new-topic-aggressive" checked>
       <span>Aggressive mode (all sources · historical · ~15 min)</span>
     </label>
+    <!-- Goal-driven fetch hint. Shown (and the aggressive row hidden) when the
+         selected goal pins its own collect profile — e.g. "Write a thesis"
+         fetches academic sources only, fast. Set by main.js applyIntentCollectProfile(). -->
+    <div id="new-topic-collect-hint" class="modal-collect-hint" hidden></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
       <button class="btn btn-primary" id="modal-start">Start collect</button>
