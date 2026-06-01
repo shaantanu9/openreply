@@ -3,7 +3,8 @@
 Steps:
   1. Discover relevant subs (or accept user-provided list)
   2. Fetch top posts (month + year) from each sub
-  3. Run each query template category across those subs (or all of Reddit)
+  3. Run a budgeted, parallelized set of query-template searches against
+     r/all (covers every sub) — see the GAPMAP_SEARCH_* env knobs below
   4. Tag every collected post with the research topic so we can query it
      back later regardless of which sub it came from
 
@@ -11,11 +12,13 @@ Works in both auth and public mode; just uses the existing fetch modules.
 """
 from __future__ import annotations
 
+import itertools
 import os
 import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -37,9 +40,82 @@ _SLEEP = 2.0
 
 # Max concurrent workers for the "extra sources" stage. Each worker hits a
 # different provider (HN / arXiv / GitHub / …), so this is parallelism across
-# independent hosts — not hammering any single one. Reddit stages stay
-# sequential because Reddit does rate-limit aggressively.
+# independent hosts — not hammering any single one.
 _PARALLEL_SOURCES = 6
+
+
+# --- Reddit search fan-out controls (env-tunable) -------------------------
+# History: the search stage used to run every (template × keyword × sub)
+# combination SEQUENTIALLY with a 2 s sleep between each. With 24 templates,
+# 6 keywords and ~12 discovered subs that is 144 unique queries × 12 subs ≈
+# 1,700 searches × ~4 s ≈ over an hour, all on the main thread — the dominant
+# cause of "collect takes 15+ minutes / feels stuck on query expansion".
+#
+# Fixes (all overridable so behaviour can be tuned without a rebuild):
+#   * GAPMAP_MAX_SEARCH_QUERIES — cap the total number of distinct search
+#     queries actually executed (default 24). Queries are picked round-robin
+#     across keywords + categories so the budget keeps breadth, not just the
+#     first category of the first keyword.
+#   * GAPMAP_SEARCH_WORKERS — run the (now-capped) searches through a bounded
+#     thread pool instead of one-at-a-time (default 4).
+#   * GAPMAP_SEARCH_SUB_CAP — how many discovered subs to additionally scope
+#     each query to when sub_scope_search is on (default 0 = search r/all only,
+#     which already covers every sub and kills the ×N-subs multiplier).
+#   * GAPMAP_SOURCE_TIMEOUT_SEC — overall budget (seconds) to wait for the
+#     parallel external-source pool to drain before giving up on stragglers
+#     like yt-dlp / pytrends / pubmed (default 90).
+_SEARCH_PACING = 1.0  # light per-request politeness inside each search worker
+
+
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    try:
+        return max(minimum, float(os.getenv(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_search_worklist(
+    keywords: list[str],
+    categories: list[str] | None,
+    budget: int,
+) -> list[tuple[str, str]]:
+    """Return up to ``budget`` distinct ``(category, query)`` pairs.
+
+    Selection is round-robin across keywords AND categories so a small budget
+    still yields a spread (pain/features/complaints/diy for several keywords)
+    instead of front-loading all of one category for the primary keyword.
+    """
+    # Per keyword, interleave categories so index order isn't "all pain first".
+    per_kw: list[list[tuple[str, str]]] = []
+    for kw in keywords:
+        rq = render_queries(kw, categories=categories)
+        cols = [[(cat, q) for q in qs] for cat, qs in rq.items()]
+        interleaved = [it for tup in itertools.zip_longest(*cols) for it in tup if it]
+        if interleaved:
+            per_kw.append(interleaved)
+
+    flat: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    # Round-robin across keywords: kw1[0], kw2[0], …, kw1[1], kw2[1], …
+    for tup in itertools.zip_longest(*per_kw):
+        for item in tup:
+            if not item:
+                continue
+            _cat, q = item
+            if q in seen:
+                continue
+            seen.add(q)
+            flat.append(item)
+            if len(flat) >= budget:
+                return flat
+    return flat
 
 
 def _fallback_keyword_candidates(topic: str) -> list[str]:
@@ -371,8 +447,16 @@ def collect(
         if progress:
             progress("  ! canonicalize failed; using user-typed topic as-is")
     if search_topic != topic:
+        # Capture the original typed form BEFORE we overwrite `topic` below —
+        # we need it to register the user-typed → canonical alias. (Bug fix
+        # 2026-06-01: this previously bound canonical→canonical because both
+        # `topic` and `result.topic` were already reassigned to `search_topic`
+        # before the register_alias calls, so the typed form never resolved.
+        # A freshly-collected topic then looked empty when viewed under the
+        # name the user actually typed — papers and posts appeared missing.)
+        original_typed = topic
         result.errors.append(
-            f"info: search using canonical '{search_topic}' (user typed '{topic}')"
+            f"info: search using canonical '{search_topic}' (user typed '{original_typed}')"
         )
         # LLM rewrote the input. Use the canonical as the storage key; any
         # future search with the original typed form will now resolve to
@@ -382,11 +466,12 @@ def collect(
         result.topic = search_topic
         try:
             from .topic_resolver import register_alias
+            # Anchor the canonical to itself (idempotent) …
             register_alias(search_topic, search_topic, source="llm")
-            # Bind the user-typed original to the canonical — this is the
+            # … and bind the user-typed ORIGINAL to the canonical. This is the
             # ONLY place aliases get populated, which is why merges stay
             # system-only (user re-searches never create alias rows).
-            register_alias(result.topic, search_topic, source="llm")
+            register_alias(original_typed, search_topic, source="llm")
         except Exception:
             pass
 
@@ -575,46 +660,75 @@ def collect(
                             result.errors.append(msg)
                     time.sleep(_SLEEP)
 
-            # 3. Parameterized searches — fan out across all expanded keywords.
-            # render_queries(kw) gives us 4 category buckets; merge + dedup across
-            # keywords so we don't hit the same exact query twice.
-            merged: dict[str, list[str]] = {}
-            for _kw in search_keywords:
-                for _cat, _qs in render_queries(_kw, categories=query_categories).items():
-                    merged.setdefault(_cat, []).extend(_qs)
-            queries = {c: list(dict.fromkeys(qs)) for c, qs in merged.items()}
-            if len(search_keywords) > 1:
-                _log(f"query expansion: {len(search_keywords)} keywords → "
-                     f"{sum(len(v) for v in queries.values())} unique queries")
-            for category, qs in queries.items():
-                for q in qs:
-                    # If sub_scope_search: search each sub individually (slower but higher signal)
-                    targets: list[str | None] = subs if sub_scope_search else [None]
-                    for target in targets:
-                        try:
-                            _log(f"search {category!r}: {q!r}" + (f" in r/{target}" if target else ""))
-                            rows = search_reddit(
-                                query=q,
-                                sub=target,
-                                sort="relevance",
-                                time_filter="year",
-                                limit=limit_per_query,
-                            )
-                            tagged = _tag_posts(
-                                search_topic,
-                                [r["id"] for r in rows],
-                                source=f"search:{category}:{target or 'all'}:{q}",
-                            )
-                            with _log_lock:
-                                result.posts_fetched += tagged
-                                key = f"search:{category}"
-                                result.by_source[key] = result.by_source.get(key, 0) + tagged
-                        except Exception as e:
-                            msg = f"search {category} {q!r}: {e}"
+            # 3. Parameterized searches — fan out across expanded keywords, but
+            # CAPPED and PARALLELIZED (see the GAPMAP_SEARCH_* env docs above).
+            # We build a budgeted (category, query) worklist, decide the target
+            # subs (r/all by default — it already covers every sub), then run
+            # the searches through a bounded thread pool instead of one-at-a-time.
+            _budget = _env_int("GAPMAP_MAX_SEARCH_QUERIES", 24, minimum=1)
+            worklist = _build_search_worklist(search_keywords, query_categories, _budget)
+
+            # Targets: r/all by default. Only scope to individual subs if the
+            # caller asked AND a positive cap is configured — capped to the top
+            # N subs so we never re-introduce the ×(all subs) explosion.
+            _sub_cap = _env_int("GAPMAP_SEARCH_SUB_CAP", 0, minimum=0)
+            if sub_scope_search and subs and _sub_cap > 0:
+                targets: list[str | None] = [None, *subs[:_sub_cap]]
+            else:
+                targets = [None]
+
+            tasks = [(cat, q, tgt) for (cat, q) in worklist for tgt in targets]
+            _workers = min(_env_int("GAPMAP_SEARCH_WORKERS", 4, minimum=1), max(1, len(tasks)))
+            _log(
+                f"query expansion: {len(search_keywords)} keywords → "
+                f"{len(worklist)} queries (capped at {_budget}); "
+                f"{len(tasks)} searches across {_workers} workers"
+            )
+
+            def _run_search(task: tuple[str, str, str | None]):
+                cat, q, tgt = task
+                try:
+                    rows = search_reddit(
+                        query=q,
+                        sub=tgt,
+                        sort="relevance",
+                        time_filter="year",
+                        limit=limit_per_query,
+                    )
+                    tagged = _tag_posts(
+                        search_topic,
+                        [r["id"] for r in rows],
+                        source=f"search:{cat}:{tgt or 'all'}:{q}",
+                    )
+                    # Light per-request pacing so a wide pool doesn't burst the
+                    # public endpoint into a 429. PRAW (auth mode) self-throttles.
+                    time.sleep(_SEARCH_PACING)
+                    return (cat, q, tgt, tagged, None)
+                except Exception as e:  # noqa: BLE001 — captured per-task, never fatal
+                    return (cat, q, tgt, 0, e)
+
+            if tasks:
+                with ThreadPoolExecutor(
+                    max_workers=_workers, thread_name_prefix="gap-search"
+                ) as spool:
+                    sfutures = {spool.submit(_run_search, t): t for t in tasks}
+                    for fut in as_completed(sfutures):
+                        cat, q, tgt, tagged, err = fut.result()
+                        if err is not None:
+                            msg = f"search {cat} {q!r}: {err}"
                             _log(f"  ! {msg}")
                             with _log_lock:
                                 result.errors.append(msg)
-                        time.sleep(_SLEEP)
+                        else:
+                            _log(
+                                f"search {cat!r}: {q!r}"
+                                + (f" in r/{tgt}" if tgt else "")
+                                + f" → {tagged}"
+                            )
+                            with _log_lock:
+                                result.posts_fetched += tagged
+                                key = f"search:{cat}"
+                                result.by_source[key] = result.by_source.get(key, 0) + tagged
 
         # 4. Historical — pullpush (pre-May-2025). Runs on main thread after
         # Reddit stages finish; pullpush is a different host from Reddit's
@@ -649,27 +763,45 @@ def collect(
         # if a Reddit stage raised — keeps the pool from leaking threads.
         if ext_pool is not None and ext_futures:
             done_count = 0
-            for fut in as_completed(ext_futures):
-                src, out, err, elapsed = fut.result()
-                done_count += 1
-                prefix = f"[{done_count}/{len(ext_valid)}] [{src}]"
-                if err is not None:
-                    msg = f"{prefix} ✗ {err} ({elapsed:.1f}s)"
-                    _log(msg)
-                    with _log_lock:
-                        result.errors.append(f"source:{src}: {err}")
-                elif src == "trends":
-                    # trends returns dict of keyword → trend series, not a post count
-                    _log(f"{prefix} ✓ trends series collected ({elapsed:.1f}s)")
-                    with _log_lock:
-                        result.by_source[f"source:{src}"] = out
-                else:
-                    n = int(out or 0)
-                    _log(f"{prefix} ✓ {n} posts ({elapsed:.1f}s)")
-                    with _log_lock:
-                        result.posts_fetched += n
-                        result.by_source[f"source:{src}"] = n
-            ext_pool.shutdown(wait=True)
+            # Overall budget to wait for the pool. Stragglers (yt-dlp YouTube,
+            # pytrends, pubmed) can otherwise hang the entire collect for many
+            # minutes. We process whatever finishes within the budget and mark
+            # the rest as timed-out — see GAPMAP_SOURCE_TIMEOUT_SEC above.
+            _src_timeout = _env_float("GAPMAP_SOURCE_TIMEOUT_SEC", 90.0, minimum=5.0)
+            pending = set(ext_futures.keys())
+            try:
+                for fut in as_completed(ext_futures, timeout=_src_timeout):
+                    pending.discard(fut)
+                    src, out, err, elapsed = fut.result()
+                    done_count += 1
+                    prefix = f"[{done_count}/{len(ext_valid)}] [{src}]"
+                    if err is not None:
+                        msg = f"{prefix} ✗ {err} ({elapsed:.1f}s)"
+                        _log(msg)
+                        with _log_lock:
+                            result.errors.append(f"source:{src}: {err}")
+                    elif src == "trends":
+                        # trends returns dict of keyword → trend series, not a post count
+                        _log(f"{prefix} ✓ trends series collected ({elapsed:.1f}s)")
+                        with _log_lock:
+                            result.by_source[f"source:{src}"] = out
+                    else:
+                        n = int(out or 0)
+                        _log(f"{prefix} ✓ {n} posts ({elapsed:.1f}s)")
+                        with _log_lock:
+                            result.posts_fetched += n
+                            result.by_source[f"source:{src}"] = n
+            except FuturesTimeout:
+                # Budget elapsed before every source finished — keep what we got.
+                for fut in pending:
+                    if not fut.done():
+                        src = ext_futures[fut]
+                        _log(f"  ! [{src}] ✗ timed out after {_src_timeout:.0f}s — skipped")
+                        with _log_lock:
+                            result.errors.append(f"source:{src}: timed out after {_src_timeout:.0f}s")
+            # Don't block on still-running daemon-ish workers (yt-dlp etc.);
+            # cancel what hasn't started and let the rest die with the process.
+            ext_pool.shutdown(wait=False, cancel_futures=True)
 
     # Legacy inline-extraction path. Preserved for CLI back-compat with
     # callers that don't run the long-lived enrich worker. Tauri's
@@ -745,9 +877,7 @@ def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[st
     signal, and silently filtering it was a bug.
     """
     db = get_db()
-    return list(
-        db.query(
-            """
+    _sql = """
             SELECT p.id, p.sub, p.author, p.title, p.selftext,
                    p.score, p.num_comments, p.created_utc, p.permalink,
                    p.url, coalesce(p.source_type, 'reddit') AS source_type
@@ -757,7 +887,22 @@ def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[st
               AND (p.score >= ? OR coalesce(p.source_type,'reddit') != 'reddit')
             ORDER BY (p.num_comments * 2 + p.score) DESC
             LIMIT ?
-            """,
-            [topic, min_score, limit],
-        )
-    )
+            """
+    rows = list(db.query(_sql, [topic, min_score, limit]))
+    if rows:
+        return rows
+    # Zero rows under the literal topic. The corpus may live under a canonical
+    # name: collect resolves topics on WRITE (resolve_topic), so an older /
+    # drifted product topic (e.g. "Indian samaj community help app", whose data
+    # was LLM-canonicalized to "Indian community help app" at collect time) has
+    # its posts stored under the canonical key. Resolve READ-ONLY and retry
+    # ONCE. Guarded on empty so a topic that has its own corpus is never
+    # hijacked by a canonicalization mapping.
+    try:
+        from .topic_resolver import canonical_for_read
+        canonical = canonical_for_read(topic)
+    except Exception:
+        canonical = topic
+    if canonical and canonical != topic:
+        return list(db.query(_sql, [canonical, min_score, limit]))
+    return rows

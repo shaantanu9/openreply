@@ -126,6 +126,51 @@ def resolve_topic(user_input: str, register: bool = False) -> str:
     return stripped
 
 
+def canonical_for_read(topic: str) -> str:
+    """Resolve a topic to its canonical storage key for READ-ONLY lookups.
+
+    `resolve_topic` deliberately does NOT consult `topic_canonicalizations`
+    (the 2026-04-21 clarification: a write path must never silently redirect
+    what the user typed). But READ paths — corpus fetch, enrichment, map
+    export — just need to find where the data actually landed. When a user's
+    search was LLM-canonicalized at collect time (e.g. product topic
+    "Indian samaj community help app" → corpus stored under
+    "Indian community help app"), the alias table may not carry the binding
+    while `topic_canonicalizations.original` does. This helper honors both:
+
+      1. topic_aliases (loose/slug normalized)        — same as resolve_topic
+      2. topic_canonicalizations.original (casefold)  — legacy discover path
+
+    Returns the input unchanged when nothing maps. Never writes, never
+    registers. Safe to call on any read because callers gate on it (see
+    `corpus_for`, which only resolves when the literal topic has zero rows).
+    """
+    if not topic or not topic.strip():
+        return topic or ""
+    stripped = topic.strip()
+    # Step 1 — alias table (reuse resolve_topic's normalized lookup).
+    resolved = resolve_topic(stripped, register=False)
+    if resolved and resolved != stripped:
+        return resolved
+    # Step 2 — legacy LLM-canonicalization table, case-insensitive on the
+    # original side. Only honor a mapping that actually points somewhere else.
+    db = get_db()
+    try:
+        if "topic_canonicalizations" in db.table_names():
+            for r in db.query(
+                "SELECT canonical FROM topic_canonicalizations "
+                "WHERE lower(original) = lower(?) AND canonical != '' "
+                "AND canonical != original LIMIT 1",
+                [stripped],
+            ):
+                c = (r["canonical"] or "").strip()
+                if c:
+                    return c
+    except Exception as e:
+        logger.debug("canonical_for_read canonicalizations lookup failed: %s", e)
+    return stripped
+
+
 def find_existing_topic(user_input: str) -> dict[str, Any] | None:
     """Read-only: does a semantically-identical topic ALREADY exist in the
     corpus? Returns the best existing variant + post count, or None if

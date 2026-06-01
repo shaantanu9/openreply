@@ -177,6 +177,25 @@ export async function renderCollect(root, { params }) {
   const topic = decodeURIComponent(params[0] || '');
   const slug = params[0];
 
+  // Canonical storage key. collect() runs the topic through an LLM
+  // canonicalize step and stores ALL fetched posts/papers under the
+  // *canonical* form (see src/gapmap/research/collect.py) — not the string
+  // the user typed. If the LLM rewrites the topic at all (casing, a typo
+  // fix, a dropped word), the graph build / enrichment / insights refresh /
+  // "Open topic" button must all operate on — and navigate to — that same
+  // canonical key, or the topic looks empty: papers and posts are stored
+  // under the canonical while the UI sits on the typed name. `adoptCanonical`
+  // mirrors collect.py's gating exactly (canonical wins only on high/low
+  // confidence) so the front-end and back-end never disagree on the key.
+  let storageTopic = topic;
+  const adoptCanonical = (canon) => {
+    const c    = String(canon?.canonical  || '').trim();
+    const conf = String(canon?.confidence || '').toLowerCase();
+    if (c && (conf === 'high' || conf === 'low') && c.toLowerCase() !== topic.toLowerCase()) {
+      storageTopic = c;
+    }
+  };
+
   // routeGen gate — hoisted to the top so any early-path handler (e.g. the
   // catch in startCollect → showRetryAction) can call stillHere() without
   // hitting a TDZ. The router sets root.dataset.routeGen before dispatching,
@@ -811,8 +830,17 @@ export async function renderCollect(root, { params }) {
 
     appendLine('✓ collect finished — now building graph…', 'done');
     markStage('graph');
+    // Belt-and-suspenders: if the fetch finished before the recon
+    // canonicalize resolved (rare cold-start race), resolve it now. The
+    // call is cached at this point (collect already used it), so it's fast.
+    if (storageTopic === topic) {
+      try { adoptCanonical(await api.canonicalizeTopic(topic)); } catch {}
+    }
+    if (storageTopic !== topic) {
+      appendLine(`→ topic stored as canonical "${storageTopic}" (you typed "${topic}")`, 'info');
+    }
     try {
-      const g = await api.buildGraph(topic);
+      const g = await api.buildGraph(storageTopic);
       appendLine(`✓ structural graph built: ${g.total_nodes} nodes / ${g.total_edges} edges`, 'done');
 
       // Enrichment — LLM extracts painpoints / features / workarounds.
@@ -820,7 +848,7 @@ export async function renderCollect(root, { params }) {
       markStage('enrich');
       appendLine('→ extracting painpoints via LLM…', 'info');
       try {
-        const e = await api.enrichGraph(topic);
+        const e = await api.enrichGraph(storageTopic);
         if (e?.skipped) {
           appendLine(`⚠ enrichment skipped: ${e.reason || 'no LLM configured'}`, 'warn');
           appendLine('  gap map will show posts only, no painpoints. Add a key in Settings → API keys.', 'warn');
@@ -838,12 +866,12 @@ export async function renderCollect(root, { params }) {
 
       markStage('export');
       appendLine('✓ exporting HTML viewer…', 'done');
-      exportPath = await api.exportHtml(topic);
+      exportPath = await api.exportHtml(storageTopic);
       appendLine(`✓ ready: ${exportPath}`, 'done');
       // Keep Insights in sync with fresh multi-source data: regenerate in the
       // background after collect/enrich completes so conclusions are not stale.
       appendLine('→ refreshing insights from the latest cross-source corpus…', 'info');
-      api.monitorRunTopic(topic, true)
+      api.monitorRunTopic(storageTopic, true)
         .then((res) => {
           if (res?.ok) {
             appendLine('✓ insights refreshed (painpoints, product value, and user-value synthesis updated)', 'done');
@@ -911,7 +939,11 @@ export async function renderCollect(root, { params }) {
     setTimeout(() => { location.hash = '#/'; }, 900);
   });
 
-  openBtn.addEventListener('click', () => { location.hash = `#/topic/${slug}`; });
+  // Navigate to the canonical key the data was actually stored under — not
+  // the raw typed `slug` — so the topic opens populated instead of empty.
+  openBtn.addEventListener('click', () => {
+    location.hash = `#/topic/${encodeURIComponent(storageTopic)}`;
+  });
 
   function showRetryAction() {
     if (!stillHere()) return;
@@ -1001,6 +1033,9 @@ export async function renderCollect(root, { params }) {
   (async () => {
     try {
       const canon = await api.canonicalizeTopic(topic);
+      // Record the canonical the back-end will store under, so the done
+      // handler can build the graph + open the topic under the right key.
+      adoptCanonical(canon);
       if (!stillHere()) return;
       renderSearchKeywordsStrip(canon, { aggressive });
     } catch (e) {

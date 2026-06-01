@@ -199,8 +199,23 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
     if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
         if !ffmpeg.is_empty() { cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg); }
     }
-    let output = cmd.output().await
-        .map_err(|e| anyhow!("dev python spawn failed: {e}"))?;
+    // Bounded — the daemon path self-heals on wedge, but this one-shot fallback
+    // used to await an unbounded `output()`; a hung cold spawn would then freeze
+    // the run_cli caller forever, one layer below the daemon timeout.
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_secs(ONESHOT_REQUEST_TIMEOUT_SECS),
+        cmd.output(),
+    )
+    .await
+    {
+        Ok(r) => r.map_err(|e| anyhow!("dev python spawn failed: {e}"))?,
+        Err(_) => {
+            return Err(anyhow!(
+                "dev python one-shot timed out after {ONESHOT_REQUEST_TIMEOUT_SECS}s (args={:?})",
+                args
+            ));
+        }
+    };
     let elapsed = t0.elapsed().as_millis();
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -292,11 +307,23 @@ async fn spawn_dev_daemon(
     );
 
     // Handshake — daemon prints {"_daemon_ready": true} once imports finish.
+    // Bounded by DAEMON_HANDSHAKE_TIMEOUT_SECS so a wedged cold import can't
+    // block here forever while holding the slot guard.
     let mut handshake = String::new();
-    stdout
-        .read_line(&mut handshake)
-        .await
-        .map_err(|e| anyhow!("daemon handshake read failed: {e}"))?;
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(DAEMON_HANDSHAKE_TIMEOUT_SECS),
+        stdout.read_line(&mut handshake),
+    )
+    .await
+    {
+        Ok(r) => { r.map_err(|e| anyhow!("daemon handshake read failed: {e}"))?; }
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(anyhow!(
+                "daemon handshake timed out after {DAEMON_HANDSHAKE_TIMEOUT_SECS}s (cold import wedged)"
+            ));
+        }
+    }
     let v: Value = serde_json::from_str(handshake.trim())
         .map_err(|e| anyhow!("daemon handshake invalid JSON ({e}): {}", handshake.trim()))?;
     if v.get("_daemon_ready") != Some(&Value::Bool(true)) {
@@ -335,6 +362,36 @@ enum DaemonOutcome {
 // the dev wait shorter than the prod wait.
 const DAEMON_LOCK_TIMEOUT_DEV_SECS: u64 = 3;
 const DAEMON_LOCK_TIMEOUT_PROD_SECS: u64 = 6;
+
+// Hard ceiling on a single daemon request round-trip (write + read_line).
+// The lock timeouts above only bound how long we WAIT FOR the lock — once a
+// call holds it and writes a request, `read_line` previously awaited the
+// daemon's reply with NO timeout. A daemon that wedged mid-command (deadlock,
+// stuck I/O, runaway query) therefore blocked forever, holding the lock and
+// never returning — which froze the Settings MCP card on "loading…/checking…"
+// indefinitely. We now race the round-trip against this ceiling; on timeout we
+// KILL the wedged child (so the next call re-spawns a fresh daemon) and fall
+// back to one-shot. Generous enough (120s) never to abort a legitimately slow
+// command (a sync LLM job through the daemon can take 30-90s), but finite so a
+// genuine wedge self-heals instead of hanging the app.
+const DAEMON_REQUEST_TIMEOUT_SECS: u64 = 120;
+
+// Hard ceiling on the daemon HANDSHAKE read (waiting for `_daemon_ready`).
+// `spawn_*_daemon` reads the handshake line while HOLDING the slot guard; if
+// the cold daemon wedges during its first heavy import (chromadb / onnx /
+// torch) and never prints the ready line, that read_line previously awaited
+// forever — freezing every run_cli caller behind the held lock. Bounded here
+// so a stuck cold-start self-heals: on timeout we drop the spawn and the
+// caller falls back to one-shot. Generous (45s) for a legitimately slow
+// PyInstaller cold boot, finite so a genuine wedge can't hang the app.
+const DAEMON_HANDSHAKE_TIMEOUT_SECS: u64 = 45;
+
+// Hard ceiling on a one-shot (non-daemon) sidecar invocation — the FALLBACK
+// path taken when the daemon is broken/absent. The daemon round-trip is
+// already bounded by DAEMON_REQUEST_TIMEOUT_SECS; without this, a wedged cold
+// `output()` spawn could still hang a run_cli caller forever, one layer down.
+// Generous (120s) so a slow cold boot + heavy command still completes.
+const ONESHOT_REQUEST_TIMEOUT_SECS: u64 = 120;
 
 async fn run_via_dev_daemon(
     py: &std::path::Path,
@@ -383,25 +440,45 @@ async fn run_via_dev_daemon(
         Err(e) => return DaemonOutcome::DaemonBroken(format!("encode: {e}")),
     };
 
-    if let Err(e) = daemon.stdin.write_all(request_line.as_bytes()).await {
-        let _ = guard.take();
-        return DaemonOutcome::DaemonBroken(format!("write: {e}"));
-    }
-    if let Err(e) = daemon.stdin.flush().await {
-        let _ = guard.take();
-        return DaemonOutcome::DaemonBroken(format!("flush: {e}"));
-    }
-
+    // Bounded request round-trip — see DAEMON_REQUEST_TIMEOUT_SECS. The whole
+    // write+flush+read is raced against the ceiling; a wedged daemon used to
+    // block here forever with the lock held.
     let mut response = String::new();
-    match daemon.stdout.read_line(&mut response).await {
-        Ok(0) => {
-            let _ = guard.take();
-            return DaemonOutcome::DaemonBroken("EOF on stdout".into());
+    let roundtrip = async {
+        daemon
+            .stdin
+            .write_all(request_line.as_bytes())
+            .await
+            .map_err(|e| format!("write: {e}"))?;
+        daemon.stdin.flush().await.map_err(|e| format!("flush: {e}"))?;
+        match daemon.stdout.read_line(&mut response).await {
+            Ok(0) => Err("EOF on stdout".to_string()),
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("read: {e}")),
         }
-        Ok(_) => {}
-        Err(e) => {
-            let _ = guard.take();
-            return DaemonOutcome::DaemonBroken(format!("read: {e}"));
+    };
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(DAEMON_REQUEST_TIMEOUT_SECS),
+        roundtrip,
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(reason)) => {
+            if let Some(mut d) = guard.take() {
+                let _ = d.child.kill().await;
+            }
+            return DaemonOutcome::DaemonBroken(reason);
+        }
+        Err(_) => {
+            // Wedged mid-request: kill the child so the next call re-spawns a
+            // fresh daemon, then fall back to one-shot.
+            if let Some(mut d) = guard.take() {
+                let _ = d.child.kill().await;
+            }
+            return DaemonOutcome::DaemonBroken(format!(
+                "daemon request timeout >{DAEMON_REQUEST_TIMEOUT_SECS}s — killed wedged daemon, falling back to one-shot"
+            ));
         }
     }
 
@@ -498,11 +575,23 @@ async fn spawn_sidecar_daemon(
             .ok_or_else(|| anyhow!("sidecar daemon stdout not piped"))?,
     );
 
+    // Bounded by DAEMON_HANDSHAKE_TIMEOUT_SECS — a wedged cold PyInstaller boot
+    // (heavy first import) must not block here forever while holding the slot.
     let mut handshake = String::new();
-    stdout
-        .read_line(&mut handshake)
-        .await
-        .map_err(|e| anyhow!("sidecar daemon handshake read failed: {e}"))?;
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(DAEMON_HANDSHAKE_TIMEOUT_SECS),
+        stdout.read_line(&mut handshake),
+    )
+    .await
+    {
+        Ok(r) => { r.map_err(|e| anyhow!("sidecar daemon handshake read failed: {e}"))?; }
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(anyhow!(
+                "sidecar daemon handshake timed out after {DAEMON_HANDSHAKE_TIMEOUT_SECS}s (cold import wedged)"
+            ));
+        }
+    }
     let v: Value = serde_json::from_str(handshake.trim())
         .map_err(|e| anyhow!("sidecar daemon handshake invalid JSON ({e}): {}", handshake.trim()))?;
     if v.get("_daemon_ready") != Some(&Value::Bool(true)) {
@@ -564,25 +653,45 @@ async fn run_via_sidecar_daemon(
         Err(e) => return DaemonOutcome::DaemonBroken(format!("encode: {e}")),
     };
 
-    if let Err(e) = daemon.stdin.write_all(request_line.as_bytes()).await {
-        let _ = guard.take();
-        return DaemonOutcome::DaemonBroken(format!("write: {e}"));
-    }
-    if let Err(e) = daemon.stdin.flush().await {
-        let _ = guard.take();
-        return DaemonOutcome::DaemonBroken(format!("flush: {e}"));
-    }
-
+    // Bounded request round-trip — see DAEMON_REQUEST_TIMEOUT_SECS. The whole
+    // write+flush+read is raced against the ceiling; a wedged daemon used to
+    // block here forever with the lock held, freezing the MCP card.
     let mut response = String::new();
-    match daemon.stdout.read_line(&mut response).await {
-        Ok(0) => {
-            let _ = guard.take();
-            return DaemonOutcome::DaemonBroken("EOF on stdout".into());
+    let roundtrip = async {
+        daemon
+            .stdin
+            .write_all(request_line.as_bytes())
+            .await
+            .map_err(|e| format!("write: {e}"))?;
+        daemon.stdin.flush().await.map_err(|e| format!("flush: {e}"))?;
+        match daemon.stdout.read_line(&mut response).await {
+            Ok(0) => Err("EOF on stdout".to_string()),
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("read: {e}")),
         }
-        Ok(_) => {}
-        Err(e) => {
-            let _ = guard.take();
-            return DaemonOutcome::DaemonBroken(format!("read: {e}"));
+    };
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(DAEMON_REQUEST_TIMEOUT_SECS),
+        roundtrip,
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(reason)) => {
+            if let Some(mut d) = guard.take() {
+                let _ = d.child.kill().await;
+            }
+            return DaemonOutcome::DaemonBroken(reason);
+        }
+        Err(_) => {
+            // Wedged mid-request: kill the child so the next call re-spawns a
+            // fresh daemon, then fall back to one-shot.
+            if let Some(mut d) = guard.take() {
+                let _ = d.child.kill().await;
+            }
+            return DaemonOutcome::DaemonBroken(format!(
+                "daemon request timeout >{DAEMON_REQUEST_TIMEOUT_SECS}s — killed wedged daemon, falling back to one-shot"
+            ));
         }
     }
 
@@ -897,10 +1006,23 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
         .env("GAPMAP_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1");
 
-    let output = sidecar
-        .output()
-        .await
-        .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
+    // Bounded one-shot — see ONESHOT_REQUEST_TIMEOUT_SECS. This is the final
+    // fallback when the warm daemon is broken/absent; without a ceiling a wedged
+    // cold PyInstaller spawn hangs the run_cli caller (table counts, settings,
+    // modal pre-checks) indefinitely — the exact freeze the daemon timeout fixed.
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_secs(ONESHOT_REQUEST_TIMEOUT_SECS),
+        sidecar.output(),
+    )
+    .await
+    {
+        Ok(r) => r.map_err(|e| anyhow!("sidecar spawn failed: {e}"))?,
+        Err(_) => {
+            return Err(anyhow!(
+                "sidecar one-shot timed out after {ONESHOT_REQUEST_TIMEOUT_SECS}s"
+            ));
+        }
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();

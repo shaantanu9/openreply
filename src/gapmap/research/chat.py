@@ -450,13 +450,28 @@ def build_user_prompt(topic: str, question: str, mode: str,
 
 # --- streaming callers ----------------------------------------------------
 
+# Streaming-aware HTTP timeout shared by every provider client below.
+# Without it the OpenAI/Anthropic SDKs default to a 600 s ceiling, so a
+# provider that accepts the connection then stalls mid-stream (the classic
+# "NVIDIA socket stall" / "ollama runner crashed mid-load") leaves the chat
+# process hung for up to 10 minutes with zero tokens and no exit — the UI
+# spins until its 5-minute watchdog gives up. A short connect timeout fails
+# fast when the endpoint is unreachable; a generous read timeout tolerates a
+# slow free-tier first token (queue waits of 30-90 s are common) while still
+# bounding a genuine mid-stream stall to ~2 minutes, after which the SDK
+# raises and `cmd_research_chat` surfaces a clean `{event: "error"}`.
+def _stream_timeout():
+    import httpx
+    return httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
+
+
 def _stream_anthropic(model: str, system: str, user: str, max_tokens: int) -> Iterator[str]:
     from anthropic import Anthropic
 
     cfg = load_config()
     if not cfg.anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
-    client = Anthropic(api_key=cfg.anthropic_api_key)
+    client = Anthropic(api_key=cfg.anthropic_api_key, timeout=_stream_timeout())
     with client.messages.stream(
         model=model,
         max_tokens=max_tokens,
@@ -899,7 +914,7 @@ def test_provider(provider: str | None = None, model: str | None = None) -> dict
             cfg = load_config()
             if not cfg.anthropic_api_key:
                 return {"ok": False, "provider": prov, "error": "ANTHROPIC_API_KEY not set"}
-            client = Anthropic(api_key=cfg.anthropic_api_key)
+            client = Anthropic(api_key=cfg.anthropic_api_key, timeout=_stream_timeout())
             resp = client.messages.create(
                 model=mdl, max_tokens=20,
                 messages=[{"role": "user", "content": "Reply with just: OK"}],
@@ -915,7 +930,7 @@ def test_provider(provider: str | None = None, model: str | None = None) -> dict
                 if not api_key:
                     return {"ok": False, "provider": prov, "error": f"{env_key} not set"}
                 base = base_url
-            client = OpenAI(api_key=api_key, base_url=base)
+            client = OpenAI(api_key=api_key, base_url=base, timeout=_stream_timeout())
             resp = client.chat.completions.create(
                 model=mdl, max_tokens=20,
                 messages=[{"role": "user", "content": "Reply with just: OK"}],

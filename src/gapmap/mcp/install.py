@@ -304,6 +304,117 @@ def _resolve_command(bin_path: Path | None, project_dir: Path | None) -> dict[st
     }
 
 
+# ── liveness probe ──────────────────────────────────────────────────────────
+
+# How long to wait for a real `initialize` handshake before declaring the
+# server unreachable. Generous because the PyInstaller-bundled sidecar
+# cold-starts can take 30-50s (onefile archive extraction) on a busy/cold disk.
+DEFAULT_PROBE_TIMEOUT = 60.0
+
+
+def probe_server_handshake(
+    command: str,
+    args: list[str],
+    env: dict[str, str] | None = None,
+    *,
+    timeout: float = DEFAULT_PROBE_TIMEOUT,
+) -> dict[str, Any]:
+    """Spawn the configured MCP command and perform a real stdio `initialize`
+    handshake. Returns ``{live: bool, handshake_ms: int|None, error: str|None}``.
+
+    This is the ONLY honest test that the entry actually works — config
+    introspection (does the entry exist, does the data dir match) cannot detect
+    a binary that hangs on startup, which is exactly the failure mode where the
+    app shows "Connected" but the MCP client reports "failed to connect". Best
+    effort: never raises; always reaps the child process.
+    """
+    import json as _json
+    import subprocess
+    import threading
+    import time
+
+    merged = dict(os.environ)
+    if env:
+        merged.update({k: str(v) for k, v in env.items()})
+
+    init_req = (
+        _json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "gapmap-statusprobe", "version": "1"},
+                },
+            }
+        )
+        + "\n"
+    ).encode("utf-8")
+
+    started = time.monotonic()
+    proc: subprocess.Popen | None = None
+    result: dict[str, Any] = {"live": False, "handshake_ms": None, "error": None}
+    try:
+        proc = subprocess.Popen(
+            [command, *args],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=merged,
+            bufsize=0,
+        )
+    except (OSError, ValueError) as e:
+        result["error"] = f"spawn failed: {e}"
+        return result
+
+    found = threading.Event()
+
+    def _reader() -> None:
+        try:
+            assert proc is not None and proc.stdout is not None
+            for raw in proc.stdout:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    msg = _json.loads(line)
+                except (ValueError, TypeError):
+                    continue  # banner / log noise — keep reading
+                if isinstance(msg, dict) and msg.get("id") == 1 and "result" in msg:
+                    found.set()
+                    return
+        except Exception:
+            return
+
+    reader = threading.Thread(target=_reader, name="mcp-probe-reader", daemon=True)
+    reader.start()
+    try:
+        if proc.stdin is not None:
+            proc.stdin.write(init_req)
+            proc.stdin.flush()
+    except (OSError, ValueError) as e:
+        result["error"] = f"write failed: {e}"
+
+    if found.wait(timeout=timeout):
+        result["live"] = True
+        result["handshake_ms"] = int((time.monotonic() - started) * 1000)
+    elif result["error"] is None:
+        result["error"] = f"no initialize response within {int(timeout)}s"
+
+    # Always reap the child — terminate, then hard-kill if it ignores us.
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    except Exception:
+        pass
+    return result
+
+
 # ── public API ────────────────────────────────────────────────────────────────
 
 def _resolve_config(config_path: Path | None, client: str | None) -> Path:
@@ -320,12 +431,23 @@ def status(
     client: str | None = None,
     data_dir: Path | None = None,
     server_name: str = DEFAULT_SERVER_NAME,
+    probe: bool = False,
+    probe_timeout: float = DEFAULT_PROBE_TIMEOUT,
 ) -> dict[str, Any]:
     """Report the current state of the MCP entry.
 
+    By default this is pure config introspection (fast, no subprocess). Pass
+    ``probe=True`` to additionally spawn the configured command and perform a
+    real `initialize` handshake — the only way to detect an entry that is
+    written correctly but whose binary hangs on startup (the "app says
+    Connected, client says failed-to-connect" case).
+
     Returns:
         installed:    bool — Claude config has an entry under `server_name`
-        connected:    bool — same as installed (synonym for the UI)
+        connected:    bool — entry exists AND, when probe=True, handshake passed
+        live:         bool | None — handshake succeeded (None when probe=False)
+        handshake_ms: int | None — round-trip time of a successful handshake
+        probe_error:  str | None — why the handshake failed, if it did
         db_aligned:   bool — entry's GAPMAP_DATA_DIR matches the requested data_dir
         has_token:    bool — token file exists in the data_dir
         token_in_env: bool — entry's GAPMAP_TOKEN matches the token file
@@ -341,6 +463,9 @@ def status(
     out: dict[str, Any] = {
         "installed": False,
         "connected": False,
+        "live": None,
+        "handshake_ms": None,
+        "probe_error": None,
         "db_aligned": False,
         "has_token": False,
         "token_in_env": False,
@@ -413,7 +538,33 @@ def status(
         str(env.get("GAPMAP_IDLE_TIMEOUT") or "").strip() == "0"
     )
 
-    if not out["db_aligned"]:
+    # Optional liveness probe — the only check that catches a correctly-written
+    # entry whose binary hangs on startup (e.g. the PyInstaller onefile sidecar
+    # blocking on _MEI extraction when the disk is full). Without this, the app
+    # reports "Connected" purely because the config entry exists, while the MCP
+    # client reports "failed to connect".
+    if probe:
+        pr = probe_server_handshake(
+            entry.get("command") or "",
+            list(entry.get("args") or []),
+            {str(k): str(v) for k, v in (env or {}).items()},
+            timeout=probe_timeout,
+        )
+        out["live"] = bool(pr.get("live"))
+        out["handshake_ms"] = pr.get("handshake_ms")
+        out["probe_error"] = pr.get("error")
+        # Truthful UI: "connected" only stays True if the server actually
+        # answered. A configured-but-dead entry is NOT connected.
+        out["connected"] = out["live"]
+
+    if probe and not out["live"]:
+        out["reason"] = (
+            f"Entry is registered with {out['client']}, but the server did not "
+            f"respond to an MCP handshake ({out.get('probe_error') or 'no response'}). "
+            "The configured command is hanging or failing on startup — it will "
+            "show as 'failed to connect' in the client."
+        )
+    elif not out["db_aligned"]:
         out["reason"] = f"Connected, but {out['client']} is reading a different DB. Click Re-sync to align."
     elif not out["token_in_env"]:
         out["reason"] = "Connected, but token mismatch. Re-sync to refresh."

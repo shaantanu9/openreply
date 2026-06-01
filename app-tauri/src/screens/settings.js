@@ -735,6 +735,20 @@ function wireStaticButtons(root) {
 
     const currentClient = () => sel.value || 'claude-code';
 
+    // Bound any sidecar-backed call so a wedged Python daemon can't freeze
+    // the whole card. The Rust daemon now self-heals (it kills + re-spawns on
+    // a request timeout), but a belt-and-braces JS timeout on the *init*
+    // awaits below guarantees the card always reaches an interactive state —
+    // before this, `licenseGateStatus()` / `mcpClients()` had no timeout, so a
+    // single stuck daemon round-trip left the dropdown on "loading…" and the
+    // status on "checking…" forever (the 10-minute freeze).
+    const withTimeout = (p, ms, label = 'request') =>
+      Promise.race([
+        p,
+        new Promise((_, rej) => setTimeout(
+          () => rej(new Error(`${label} timed out after ${ms / 1000}s`)), ms)),
+      ]);
+
     // Per-reason messaging for the MCP activation gate. Kept in sync with
     // the Rust reason codes in commands.rs::compute_activation_reason.
     // Every case has an actionable primary button so the user never sees
@@ -1090,14 +1104,14 @@ function wireStaticButtons(root) {
     // normally.
     let licenseGateEnabled = false;
     try {
-      const g = await api.licenseGateStatus();
+      const g = await withTimeout(api.licenseGateStatus(), 15000, 'license gate');
       licenseGateEnabled = !!g?.enabled;
     } catch {
       licenseGateEnabled = false;
     }
     if (licenseGateEnabled) {
       try {
-        const lic = await api.licenseStatus();
+        const lic = await withTimeout(api.licenseStatus(), 15000, 'license status');
         if (!lic?.activated) {
           renderActivationGate(lic?.reason_code || 'not_activated', lic?.reason || '');
           return;
@@ -1112,7 +1126,10 @@ function wireStaticButtons(root) {
     // Populate client dropdown from the Python-resolved list (so OS-specific
     // paths stay in one place). Mark detected ones with a ✓ in the label.
     try {
-      const clients = await api.mcpClients();
+      // Generous (25s) — a COLD, lock-contended one-shot enumeration was
+      // observed at ~8.4s in dev; the timeout exists to break an infinite
+      // daemon wedge, NOT to abort a call that's still making progress.
+      const clients = await withTimeout(api.mcpClients(), 25000, 'mcp clients');
       const remembered = localStorage.getItem(STORAGE_KEY) || 'claude-code';
       sel.innerHTML = '';
       for (const c of clients) {
@@ -1180,7 +1197,30 @@ function wireStaticButtons(root) {
       }
     });
 
+    // Auto-connect every DETECTED MCP client when Settings opens (once per
+    // launch). Delegates to the SAME shared bootstrap helper main.js runs on
+    // app-open, so the behavior is identical — it auto-connects all detected
+    // clients and is idempotent for already-connected ones. This Settings-open
+    // pass self-heals the cases the app-open pass can miss (a client installed
+    // after launch, or app-open bootstrap skipped because onboarding wasn't
+    // complete yet). Skipped entirely when MCP is activation-gated (we already
+    // `return`ed above). Fire-and-forget — never blocks the visible card.
+    const AUTOCONNECT_SESSION_KEY = 'gapmap.mcp.autoconnect.settings.session';
+    const autoConnectDetected = async () => {
+      try {
+        if (sessionStorage.getItem(AUTOCONNECT_SESSION_KEY)) return;
+        sessionStorage.setItem(AUTOCONNECT_SESSION_KEY, '1');
+      } catch { /* private mode — fall through, worst case re-runs */ }
+      try {
+        const { bootstrapMcpClients } = await import('../lib/mcp_bootstrap.js');
+        await bootstrapMcpClients({ tag: 'mcp:settings-open' });
+        refresh();   // repaint the visible card for the selected client
+      } catch { /* bootstrap is best-effort; card already shows live status */ }
+    };
+
     refresh();
+    // Kick auto-connect after the visible card paints — never block the UI on it.
+    autoConnectDetected();
   })();
 
   root.querySelector('#pref-confirm-delete')?.addEventListener('change', e => {

@@ -3911,7 +3911,7 @@ export async function renderTopic(root, { params }) {
       if (!box) { clearInterval(chatTsInterval); chatTsInterval = null; return; }
       box.querySelectorAll('.chat-msg-ts[data-ts]').forEach(el => {
         const ts = parseInt(el.dataset.ts, 10);
-        if (Number.isFinite(ts)) el.textContent = timeAgo(ts / 1000);
+        if (Number.isFinite(ts)) el.textContent = timeAgo(ts);
       });
     }, 30000);
   }
@@ -4063,7 +4063,7 @@ export async function renderTopic(root, { params }) {
 
   function chatBubble(m, index) {
     const tsAttr = m.ts ? `data-ts="${m.ts}"` : '';
-    const tsHtml = m.ts ? `<div class="chat-msg-ts" ${tsAttr}>${timeAgo(m.ts / 1000)}</div>` : '';
+    const tsHtml = m.ts ? `<div class="chat-msg-ts" ${tsAttr}>${timeAgo(m.ts)}</div>` : '';
     if (m.role === 'user') {
       return `<div class="chat-msg chat-msg-user" data-idx="${index}">
         <div class="chat-msg-ic" title="User"><i data-lucide="user-round"></i></div>
@@ -4252,7 +4252,7 @@ export async function renderTopic(root, { params }) {
     if (!target) return;
     const bodyEl = target.querySelector('.chat-msg-body');
     const tsHtml = last.ts
-      ? `<div class="chat-msg-ts" data-ts="${last.ts}">${timeAgo(last.ts / 1000)}</div>`
+      ? `<div class="chat-msg-ts" data-ts="${last.ts}">${timeAgo(last.ts)}</div>`
       : '';
     bodyEl.innerHTML = assistantInnerHtml(last, chatStream.active) + tsHtml;
     // The assistant bubble is now a capped-height scroll box — keep it pinned

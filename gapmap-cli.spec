@@ -42,6 +42,16 @@ for _pkg in (
     'scipy',
     'joblib',
     'threadpoolctl',
+    # chromadb (palace RAG store) imports its telemetry backend DYNAMICALLY
+    # via importlib — `collect_all('gapmap')` static analysis reaches chromadb's
+    # top level but NOT `chromadb.telemetry.product.posthog`, so the bundled
+    # binary raised `ModuleNotFoundError: No module named
+    # 'chromadb.telemetry.product.posthog'` the moment any palace-grounded chat
+    # / RAG query ran — surfacing in the app as a chat that starts then dies
+    # (empty reply → "Provider may be unreachable" 5-min timeout). collect_all
+    # pulls in all 128 chromadb submodules so the dynamic import resolves.
+    # Verified 2026-06-01 via collect_submodules('chromadb').
+    'chromadb',
 ):
     try:
         _d, _b, _h = collect_all(_pkg)

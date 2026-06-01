@@ -952,8 +952,13 @@ export const api = {
   // already exists (case/slug variant), else {match: null}. The UI should
   // use this to offer "Open existing · N posts" vs "Fetch new data into it"
   // vs "Create separate topic" instead of silently merging.
+  // Timeout-wrapped: the new-topic modal `await`s this in its Start handler
+  // before navigating to #/collect. A raw invoke here hangs the whole "create
+  // topic" flow forever when the sidecar is cold/wedged ("collect never
+  // starts"). 15s is generous for a local DB lookup; the caller treats a
+  // failure as non-fatal and proceeds with the collect.
   findExistingTopic: (userInput) =>
-    invoke('find_existing_topic', { userInput }),
+    invokeWithTimeout('find_existing_topic', { userInput }, 15000),
 
   // Merge LLM-caused duplicate topic rows (retroactive). ONLY merges rows
   // whose duplication is traceable to a topic_canonicalizations / LLM-alias
@@ -1385,10 +1390,15 @@ export const api = {
   // ----- Intent layer (per-topic deliverable routing) -----
   listIntents:     ()              => cachedInvoke('list_intents', null, 300000),
   topicIntentGet:  (topic)         => invoke('topic_intent_get', { topic }),
-  topicIntentSet:  (topic, intent) => { invalidate('topic_intent_get'); return invoke('topic_intent_set', { topic, intent }); },
+  // Timeout-wrapped for the same reason as findExistingTopic — the new-topic
+  // modal awaits this before navigating to #/collect, so a raw hang here
+  // strands the user on the modal with no collect ever starting.
+  topicIntentSet:  (topic, intent) => { invalidate('topic_intent_get'); return invokeWithTimeout('topic_intent_set', { topic, intent }, 15000); },
 
   // ----- MCP ↔ App integration (multi-client) -----
-  mcpClients:   ()        => invoke('mcp_clients'),
+  // Timeout-wrapped: the Settings MCP card awaits this on mount; a raw hang
+  // leaves the card stuck on "loading…" forever when the sidecar is wedged.
+  mcpClients:   ()        => invokeWithTimeout('mcp_clients', null, 20000),
   mcpStatus:    (client)  => invoke('mcp_status',    { client: client || null }),
   mcpInstall:   (client)  => invoke('mcp_install',   { client: client || null }),
   mcpConfigSnippet: (client) => invoke('mcp_config_snippet', { client: client || null }),
