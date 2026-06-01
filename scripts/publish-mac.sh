@@ -248,24 +248,51 @@ fi
 # bundle means the signatures ride along into Resources (Tauri's deep-sign
 # leaves Resources Mach-O untouched, verified 2026-06-02).
 if [[ $REQUIRE_SIGN -eq 1 && -d "$ONEDIR_DEST" ]]; then
-  echo "▶ Pre-signing onedir engine + nested Mach-O (Developer ID + hardened runtime + timestamp)"
-  # Detect Mach-O by CONTENT, not by name — a *.so/*.dylib/gapmap-cli filter
-  # misses the extensionless `_internal/Python` interpreter and the
-  # `_internal/Python.framework` binaries, which notarization rejects
-  # ("not signed with valid Developer ID / signature invalid"). Deepest-first.
+  echo "▶ Pre-signing onedir frameworks + nested Mach-O (Developer ID + hardened runtime + timestamp)"
   n_pre=0; n_fail=0
+  # STEP A — frameworks as BUNDLES (sign each Versions/<X> dir). Signing a
+  # framework's inner binary LOOSE makes Apple reject it "signature of the
+  # binary is invalid" (Gap Map v0.1.10) — frameworks need a bundle-level seal.
+  while IFS= read -r fw; do
+    [[ -z "$fw" ]] && continue
+    signed=0
+    if [[ -d "$fw/Versions" ]]; then
+      while IFS= read -r vdir; do
+        [[ -z "$vdir" ]] && continue
+        [[ "$(basename "$vdir")" == "Current" ]] && continue
+        codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$vdir" 2>/dev/null \
+          && { n_pre=$((n_pre + 1)); signed=1; } || { n_fail=$((n_fail + 1)); echo "   ! framework ver failed: $vdir" >&2; }
+      done < <(find "$fw/Versions" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+    fi
+    [[ $signed -eq 0 ]] && { codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$fw" 2>/dev/null \
+      && n_pre=$((n_pre + 1)) || { n_fail=$((n_fail + 1)); echo "   ! framework failed: $fw" >&2; }; }
+  done < <(find "$ONEDIR_DEST" -type d -name '*.framework' 2>/dev/null | awk '{print length"\t"$0}' | sort -rn | cut -f2-)
+  # STEP B — loose Mach-O OUTSIDE frameworks, detected by CONTENT not name
+  # (catches the extensionless _internal/Python interpreter + .so/.dylib/engine).
   while IFS= read -r macho; do
     [[ -z "$macho" ]] && continue
+    case "$macho" in */*.framework/*) continue ;; esac
     case "$(file -b "$macho" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
-    if codesign --force --timestamp --options runtime \
-         --sign "$APPLE_SIGNING_IDENTITY" "$macho" 2>/dev/null; then
+    if codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$macho" 2>/dev/null; then
       n_pre=$((n_pre + 1))
     else
       n_fail=$((n_fail + 1)); echo "   ! failed to sign $macho" >&2
     fi
   done < <(find "$ONEDIR_DEST" -type f 2>/dev/null | awk '{print length"\t"$0}' | sort -rn | cut -f2-)
-  echo "   ✓ pre-signed $n_pre onedir Mach-O ($n_fail failed)"
+  echo "   ✓ pre-signed $n_pre onedir Mach-O + frameworks ($n_fail failed)"
   [[ $n_fail -gt 0 ]] && { echo "   ✗ some onedir Mach-O failed to sign — notarization would reject" >&2; exit 1; }
+  # STEP C — verify before notarization: frameworks --deep --strict, loose --strict.
+  bad=0
+  while IFS= read -r fw; do [[ -z "$fw" ]] && continue
+    codesign --verify --deep --strict "$fw" 2>/dev/null || { echo "   ✗ framework invalid: $fw" >&2; bad=$((bad + 1)); }
+  done < <(find "$ONEDIR_DEST" -type d -name '*.framework' 2>/dev/null)
+  while IFS= read -r macho; do [[ -z "$macho" ]] && continue
+    case "$macho" in */*.framework/*) continue ;; esac
+    case "$(file -b "$macho" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
+    codesign --verify --strict "$macho" 2>/dev/null || { echo "   ✗ Mach-O invalid: $macho" >&2; bad=$((bad + 1)); }
+  done < <(find "$ONEDIR_DEST" -type f 2>/dev/null)
+  [[ $bad -gt 0 ]] && { echo "   ✗ $bad signatures invalid — aborting before notarization" >&2; exit 1; }
+  echo "   ✓ verified all onedir signatures valid"
 fi
 
 # Build .app first (so we can zip it) — Tauri deletes the .app dir after
