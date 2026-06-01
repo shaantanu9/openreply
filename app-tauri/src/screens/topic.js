@@ -455,10 +455,20 @@ async function runEnrichStreamForTopic(topic, {
     };
 
     // Subscribe FIRST so we don't miss events from a fast-starting process.
-    const unlistenProgress = await mod.listen('enrich:progress', (e) => handleProgressLine(e?.payload));
-    const unlistenDone = await mod.listen('enrich:stream:done', async (_e) => {
-      try { unlistenProgress(); } catch {}
-      try { unlistenDone(); } catch {}
+    // Declare the unlisten handles with `let` BEFORE subscribing — the
+    // done-event callback references `unlistenDone` inside its own body, and a
+    // `const unlistenDone = await mod.listen(..., () => unlistenDone())` leaves
+    // the binding in the temporal dead zone until the await resolves. If the
+    // done event fires in that window the callback throws
+    // "Cannot access 'unlistenDone' before initialization". `let … = null`
+    // gives a safe pre-assigned value (the `?.()` calls no-op on null), so the
+    // painpoint / manual fetch paths can't hit the TDZ race.
+    let unlistenProgress = null;
+    let unlistenDone = null;
+    unlistenProgress = await mod.listen('enrich:progress', (e) => handleProgressLine(e?.payload));
+    unlistenDone = await mod.listen('enrich:stream:done', async (_e) => {
+      try { unlistenProgress?.(); } catch {}
+      try { unlistenDone?.(); } catch {}
       _activeEnrichUnlistens.delete(unlistenProgress);
       _activeEnrichUnlistens.delete(unlistenDone);
       await finalize();
@@ -493,8 +503,8 @@ async function runEnrichStreamForTopic(topic, {
         // cleared so the recursive call spawns immediately.
         if (manual) {
           try {
-            try { unlistenProgress(); } catch {}
-            try { unlistenDone(); } catch {}
+            try { unlistenProgress?.(); } catch {}
+            try { unlistenDone?.(); } catch {}
             _activeEnrichUnlistens.delete(unlistenProgress);
             _activeEnrichUnlistens.delete(unlistenDone);
             setStatus(`Preempting current run${ageLabel} — starting your request…`);
@@ -525,8 +535,8 @@ async function runEnrichStreamForTopic(topic, {
           unstickBtn.onclick = async () => {
             try {
               if (piggyWatchdog) { clearTimeout(piggyWatchdog); piggyWatchdog = null; }
-              try { unlistenProgress(); } catch {}
-              try { unlistenDone(); } catch {}
+              try { unlistenProgress?.(); } catch {}
+              try { unlistenDone?.(); } catch {}
               _activeEnrichUnlistens.delete(unlistenProgress);
               _activeEnrichUnlistens.delete(unlistenDone);
               await api.clearGraphInflight(topic, 'enrich');
@@ -564,8 +574,8 @@ async function runEnrichStreamForTopic(topic, {
     } catch (err) {
       setStatus(`✗ Failed to start: ${err?.message || err}`);
       lastSummary = { ok: false, error: err?.message || String(err) };
-      try { unlistenProgress(); } catch {}
-      try { unlistenDone(); } catch {}
+      try { unlistenProgress?.(); } catch {}
+      try { unlistenDone?.(); } catch {}
       _activeEnrichUnlistens.delete(unlistenProgress);
       _activeEnrichUnlistens.delete(unlistenDone);
       await finalize();
@@ -3787,8 +3797,17 @@ export async function renderTopic(root, { params }) {
 
     if (!anyReady) return;
 
-    // Render any prior messages for this topic
-    renderMessages();
+    // Render any prior messages for this topic.
+    // ISOLATED: a throw in message rendering (bad history data, a markdown
+    // edge case, a missing helper) must NEVER abort the composer wiring below
+    // — otherwise Send/Enter silently do nothing and chat looks "broken" with
+    // no clue why. The global error overlay (main.js) surfaces the actual
+    // cause; this guard keeps the input usable regardless.
+    try {
+      renderMessages();
+    } catch (e) {
+      console.error('[chat] renderMessages failed (composer still wired):', e);
+    }
 
     // Wire input
     const input = $('#chat-input');

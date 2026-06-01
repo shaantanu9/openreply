@@ -540,6 +540,13 @@ export const api = {
       topic, aggressive, sources, skipReddit, ifBusy,
     });
     mutated('collect', { topic });
+    // The Python collect writes the topic_prefs row (instant list_topics
+    // visibility) a moment after the sidecar spawns — slightly after this
+    // synchronous mutated() fires. Schedule a follow-up refresh so the new
+    // topic shows in the listing right away, not only after the first tagged
+    // posts land. Two ticks cover warm (venv daemon) and colder spawns.
+    setTimeout(() => { try { mutated('topics', { topic }); } catch {} }, 1200);
+    setTimeout(() => { try { mutated('topics', { topic }); } catch {} }, 3500);
     return p;
   },
   cancelCollect:   ()        => invoke('cancel_collect'),

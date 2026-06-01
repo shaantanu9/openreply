@@ -405,11 +405,28 @@ def collect(
     except Exception:
         pass
 
-    # Defer the topic_prefs insert until AFTER canonicalize runs below.
-    # Previously we inserted the user-typed form immediately (for instant
-    # list_topics visibility) then re-inserted the canonical later — that
-    # left a phantom row if tag_posts raced the canonicalize LLM window.
-    # See Phase "3-duplicate-rows" fix 2026-04-21.
+    # Instant visibility: create the topic_prefs row NOW — BEFORE the 30-60s
+    # canonicalize LLM call — so the topic shows up in `list_topics` the moment
+    # a collect starts instead of only after canonicalization (and the first
+    # tagged posts) land. If canonicalize later rewrites the name, we MIGRATE
+    # this row to the canonical below (dropping the typed-form row only when it
+    # has no posts). That migration is what prevents the phantom-duplicate the
+    # old "insert typed, then separately insert canonical" code left behind
+    # (the reason this insert was previously deferred — fix 2026-04-21).
+    # Instant-topic restore: 2026-06-01.
+    _typed_for_prefs = topic
+    try:
+        from ..core.db import get_db as _get_db
+        _db_early = _get_db()
+        _db_early.conn.execute(
+            "INSERT INTO topic_prefs (topic, scheduled, last_run_seen, last_run_ts) "
+            "VALUES (?, 0, ?, ?) "
+            "ON CONFLICT(topic) DO UPDATE SET last_run_ts=excluded.last_run_ts",
+            (topic, _ts_iso(), _ts_iso()),
+        )
+        _db_early.conn.commit()
+    except Exception:
+        pass
 
     # Canonicalize ONCE at the top so every downstream query (reddit sub
     # discovery, reddit search, HN, arXiv, OpenAlex, PubMed, Scholar, etc.)
@@ -475,6 +492,33 @@ def collect(
         except Exception:
             pass
 
+        # Migrate the early instant-visibility row from the typed form to the
+        # canonical. Ensure the canonical row exists, then drop the typed row
+        # ONLY when it has no tagged posts (i.e. it was the placeholder we just
+        # created) — so we never delete a real pre-existing topic that happens
+        # to match the typed string. This is what keeps instant-visibility from
+        # leaving a phantom duplicate.
+        try:
+            from ..core.db import get_db as _get_db
+            _dbm = _get_db()
+            _dbm.conn.execute(
+                "INSERT INTO topic_prefs (topic, scheduled, last_run_seen, last_run_ts) "
+                "VALUES (?, 0, ?, ?) "
+                "ON CONFLICT(topic) DO UPDATE SET last_run_ts=excluded.last_run_ts",
+                (search_topic, _ts_iso(), _ts_iso()),
+            )
+            if original_typed != search_topic:
+                _posts_n = _dbm.conn.execute(
+                    "SELECT count(*) FROM topic_posts WHERE topic = ?", (original_typed,)
+                ).fetchone()[0]
+                if not _posts_n:
+                    _dbm.conn.execute(
+                        "DELETE FROM topic_prefs WHERE topic = ?", (original_typed,)
+                    )
+            _dbm.conn.commit()
+        except Exception:
+            pass
+
     # Now that the canonical is settled, do the ONE topic_prefs insert.
     try:
         from ..core.db import get_db as _get_db
@@ -483,7 +527,7 @@ def collect(
             "INSERT INTO topic_prefs (topic, scheduled, last_run_seen, last_run_ts) "
             "VALUES (?, 0, ?, ?) "
             "ON CONFLICT(topic) DO UPDATE SET last_run_ts=excluded.last_run_ts",
-            (topic, _now_iso(), _now_iso()),
+            (topic, _ts_iso(), _ts_iso()),
         )
         _db.conn.commit()
     except Exception:

@@ -187,6 +187,48 @@ import { mountCollectStatusBar } from './components/CollectStatusBar.js';
 // ── Persona agents (Phase 1 — 2026-05-12) ──
 import { renderPersonas, renderPersona, renderAgentsDashboard, setupPersonaAutoIngest } from './screens/personas.js';
 
+// ─── Global JS error surfacing ─────────────────────────────────────────────
+// The app had NO global error handler, so any uncaught exception or rejected
+// promise (e.g. a throw mid-way through wiring a screen) failed SILENTLY — the
+// UI just looked "dead" (buttons that do nothing, chat that never sends) with
+// no clue why. This turns every such failure into a visible, dismissable
+// banner so problems are diagnosable instead of invisible. Self-contained
+// (no imports) so it works even if a module failed to load.
+(function installGlobalErrorOverlay() {
+  if (typeof window === 'undefined' || window.__gmErrOverlay) return;
+  window.__gmErrOverlay = true;
+  const show = (label, detail) => {
+    try {
+      let host = document.getElementById('gm-err-overlay');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'gm-err-overlay';
+        host.style.cssText =
+          'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;display:flex;' +
+          'flex-direction:column;gap:8px;pointer-events:none;font:12px/1.4 ui-monospace,monospace';
+        (document.body || document.documentElement).appendChild(host);
+      }
+      const card = document.createElement('div');
+      card.style.cssText =
+        'pointer-events:auto;background:#3A1416;color:#FFD9D9;border:1px solid #B84747;' +
+        'border-radius:8px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.35);' +
+        'max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-word';
+      const msg = (detail && (detail.stack || detail.message || detail)) || 'unknown error';
+      card.textContent = `⚠ ${label}: ${String(msg).slice(0, 600)}`;
+      const close = document.createElement('button');
+      close.textContent = '✕';
+      close.style.cssText = 'float:right;background:transparent;border:0;color:#FFD9D9;cursor:pointer;font-size:14px;margin-left:8px';
+      close.onclick = () => card.remove();
+      card.prepend(close);
+      host.appendChild(card);
+      // eslint-disable-next-line no-console
+      console.error(`[gm-error] ${label}:`, detail);
+    } catch { /* never let the error handler throw */ }
+  };
+  window.addEventListener('error', (e) => show('Uncaught error', e?.error || e?.message || e));
+  window.addEventListener('unhandledrejection', (e) => show('Unhandled promise rejection', e?.reason));
+})();
+
 const routes = [
   { match: /^\/?$/,                 render: renderHome },
   { match: /^\/welcome\/?$/,        render: renderWelcome },
