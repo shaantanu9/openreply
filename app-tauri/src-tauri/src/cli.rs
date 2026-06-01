@@ -372,16 +372,21 @@ enum DaemonOutcome {
 // subsequent sidecar call (chat, data, MCP). Observed in the wild: 189
 // orphaned `_MEI` dirs = ~74 GB, disk full, whole app broken.
 //
-// We now wait long enough for the cold daemon to finish warming so the boot
-// herd lands on the WARM interpreter (~0.5s/call) instead of storming cold
-// one-shots. The daemon pre-warm in main.rs starts that spawn before the herd
-// arrives; these ceilings cover the remaining warm-up window. The LLM-job
-// starvation this re-introduces is bounded (a UI call waits up to this long,
-// then falls back to a SINGLE one-shot — not a storm) and the periodic
-// `_MEI` reaper cleans any stragglers. Boot happens every launch; long LLM
-// jobs are occasional — so we optimise for boot.
-const DAEMON_LOCK_TIMEOUT_DEV_SECS: u64 = 10;
-const DAEMON_LOCK_TIMEOUT_PROD_SECS: u64 = 20;
+// These ceilings bound how long a UI call WAITS for the daemon lock before
+// falling back to a one-shot spawn. They were once 10s/20s to avoid a "cold
+// one-shot storm": with the old ONEFILE sidecar every fallback re-extracted
+// ~390 MB to a `_MEI` temp dir (~36s + disk-fill), so waiting for the warm
+// daemon was the lesser evil. The ONEDIR migration (2026-06-01) killed that:
+// a one-shot now spawns in ~1.3s warm and extracts NOTHING. So the tradeoff
+// flipped — a long LLM job (build_graph / enrich / synthesize, which run
+// through the daemon) holding the lock should NOT make every other tab wait
+// 20s. Keep the ceiling just above a warm round-trip (sub-second) plus margin
+// for a normal burst, so contended reads fall back to a cheap one-shot fast.
+// Boot is covered by the daemon pre-warm in main.rs; the `_MEI` reaper is now
+// a no-op safety net (onedir leaves no orphans). Net: tabs stay responsive
+// even while a long extraction holds the daemon. Battle-tested 2026-06-01.
+const DAEMON_LOCK_TIMEOUT_DEV_SECS: u64 = 3;
+const DAEMON_LOCK_TIMEOUT_PROD_SECS: u64 = 4;
 
 // Hard ceiling on a single daemon request round-trip (write + read_line).
 // The lock timeouts above only bound how long we WAIT FOR the lock — once a

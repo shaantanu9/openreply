@@ -911,7 +911,84 @@ def corpus_temporal_split(
     }
 
 
-def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[str, Any]]:
+# Source types that are academic papers with downloadable / cached full text.
+# These are the rows for which corpus_for(prefer_fulltext=True) substitutes
+# the cached full-text slice in place of the ≤500-char abstract excerpt.
+_ACADEMIC_SOURCES = frozenset(
+    {"arxiv", "openalex", "crossref", "pubmed", "semantic_scholar", "scholar"}
+)
+
+# Caps for the prefer_fulltext path. We keep total prompt tokens sane by
+# (a) bounding each paper's substituted text and (b) only substituting the
+# top-N academic rows by score/engagement (rows arrive pre-sorted from the
+# SQL ORDER BY, so "first N academic rows we encounter" == top-N).
+_FULLTEXT_MAX_CHARS = 3500          # per paper (abstract + a methods/results window)
+_FULLTEXT_HEAD_CHARS = 2200         # leading slice (title/abstract/intro/methods start)
+_FULLTEXT_MAX_PAPERS = 15           # how many academic papers get full text
+
+
+def _cached_fulltext_slice(source: str, post_id: str) -> str | None:
+    """Return a bounded, informative slice of an academic paper's ALREADY
+    CACHED full text — or None when nothing is cached.
+
+    IMPORTANT: this only ever READS the on-disk cache. It never triggers a
+    PDF download / network call (that would make gap-finding slow + networked).
+    We deliberately do NOT call ``get_full_text`` here because that function
+    falls through to downloading on a cache miss. Instead we recompute the
+    cache path from the CURRENT data root (the path column in
+    ``paper_full_texts`` can be stale after a data-dir move) and read it
+    directly if present.
+
+    Slice strategy: a head window (title + abstract + intro/methods start)
+    plus, if the paper is long, a second window anchored on the first
+    results/findings/limitations heading — so the gap extractors see what the
+    paper actually measured and where it fell short, not just the abstract.
+    """
+    try:
+        from .paper_fulltext import _cache_path  # local import: avoid cycle
+    except Exception:
+        return None
+    try:
+        cache = _cache_path(source, post_id)
+        if not cache.exists():
+            return None
+        text = cache.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    if len(text) < 200:  # mirrors paper_fulltext.MIN_USEFUL_CHARS
+        return None
+
+    if len(text) <= _FULLTEXT_MAX_CHARS:
+        return text
+
+    head = text[:_FULLTEXT_HEAD_CHARS]
+    remaining = _FULLTEXT_MAX_CHARS - len(head)
+    tail = ""
+    if remaining > 200:
+        import re as _re
+        m = _re.search(
+            r"\b(results?|findings?|discussion|limitations?|conclusions?|evaluation)\b",
+            text[_FULLTEXT_HEAD_CHARS:],
+            _re.IGNORECASE,
+        )
+        if m:
+            start = _FULLTEXT_HEAD_CHARS + m.start()
+            tail = text[start:start + remaining]
+        else:
+            # No recognizable results heading — fall back to the next window
+            # right after the head so we still surface mid-paper content.
+            tail = text[_FULLTEXT_HEAD_CHARS:_FULLTEXT_HEAD_CHARS + remaining]
+    if tail:
+        return f"{head}\n[…]\n{tail}"
+    return head
+
+
+def corpus_for(
+    topic: str,
+    limit: int = 200,
+    min_score: int = 1,
+    prefer_fulltext: bool = False,
+) -> list[dict[str, Any]]:
     """Pull the collected corpus for a topic, newest-engaged first.
 
     min_score only gates Reddit posts. Academic sources (arxiv / pubmed /
@@ -919,6 +996,17 @@ def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[st
     included regardless of score, because their fetchers don't populate a
     meaningful engagement number — a zero-citation arxiv paper is still
     signal, and silently filtering it was a bug.
+
+    prefer_fulltext (opt-in; default False keeps every existing caller's
+    behaviour byte-for-byte): for ACADEMIC rows only, replace the short
+    ``selftext`` abstract with a bounded slice of the paper's ALREADY-CACHED
+    full text (methodology / results / limitations), so the gap extractors
+    reason about the actual paper rather than a ≤500-char abstract. Only the
+    top ~15 academic papers (by the SQL engagement ordering) are substituted,
+    each capped to ~3500 chars, and only when full text is already on disk —
+    no PDF is downloaded here. Non-academic rows (reddit/hn/appstore/etc.) are
+    never touched, and an academic row with no cached full text keeps its
+    abstract excerpt (no regression). Only ``find_gaps`` enables this.
     """
     db = get_db()
     _sql = """
@@ -934,6 +1022,8 @@ def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[st
             """
     rows = list(db.query(_sql, [topic, min_score, limit]))
     if rows:
+        if prefer_fulltext:
+            _apply_fulltext(rows)
         return rows
     # Zero rows under the literal topic. The corpus may live under a canonical
     # name: collect resolves topics on WRITE (resolve_topic), so an older /
@@ -948,5 +1038,31 @@ def corpus_for(topic: str, limit: int = 200, min_score: int = 1) -> list[dict[st
     except Exception:
         canonical = topic
     if canonical and canonical != topic:
-        return list(db.query(_sql, [canonical, min_score, limit]))
+        crows = list(db.query(_sql, [canonical, min_score, limit]))
+        if prefer_fulltext:
+            _apply_fulltext(crows)
+        return crows
     return rows
+
+
+def _apply_fulltext(rows: list[dict[str, Any]]) -> None:
+    """In place: for the top-N academic rows that have cached full text,
+    overwrite ``selftext`` with the bounded full-text slice and set a
+    ``_fulltext`` flag so the formatter renders the whole slice instead of
+    re-truncating to the abstract excerpt length. Mutates ``rows``.
+
+    Rows arrive pre-sorted by engagement, so we substitute the first N
+    academic rows we encounter (== top-N by score). Non-academic rows and
+    academic rows without cached full text are left exactly as-is."""
+    used = 0
+    for r in rows:
+        if used >= _FULLTEXT_MAX_PAPERS:
+            break
+        source = (r.get("source_type") or "reddit").lower()
+        if source not in _ACADEMIC_SOURCES:
+            continue
+        slice_ = _cached_fulltext_slice(source, str(r.get("id") or ""))
+        if slice_:
+            r["selftext"] = slice_
+            r["_fulltext"] = True
+            used += 1

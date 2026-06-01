@@ -31,6 +31,33 @@ def _parse_json(raw: str) -> list[dict] | dict:
         return {"_raw": raw, "_parse_error": True}
 
 
+# Widest per-excerpt window for academic rows whose abstract was replaced
+# with cached full text (corpus_for(prefer_fulltext=True) flags them with
+# `_fulltext`). Must be >= corpus_for._FULLTEXT_MAX_CHARS so the substituted
+# slice isn't re-truncated back down to the Reddit-sized excerpt.
+_FULLTEXT_EXCERPT_CHARS = 4000
+
+
+def _format_corpus_mixed(rows: list[dict], excerpt_chars: int = 600) -> str:
+    """Like corpus_format.format_corpus, but rows flagged ``_fulltext`` (their
+    selftext is a cached academic full-text slice) are rendered with a wide
+    excerpt window so the full text reaches the LLM instead of being clipped
+    to the normal Reddit-sized excerpt. All other rows are unchanged.
+
+    Falls back to the standard formatter when no row is flagged, so behaviour
+    for non-prefer_fulltext callers is byte-identical to before.
+    """
+    if not any(r.get("_fulltext") for r in rows):
+        return _format_corpus(rows, excerpt_chars=excerpt_chars)
+    from .corpus_format import _format_row
+    wide = max(_FULLTEXT_EXCERPT_CHARS, excerpt_chars)
+    rendered = [
+        _format_row(r, excerpt_chars=(wide if r.get("_fulltext") else excerpt_chars))
+        for r in rows
+    ]
+    return "\n\n".join(rendered)
+
+
 def run_extractor(
     extractor: str,
     topic: str,
@@ -38,11 +65,23 @@ def run_extractor(
     corpus_limit: int = 120,
     min_score: int = 1,
     max_tokens: int = 2048,
+    prefer_fulltext: bool = False,
 ) -> list[dict] | dict:
-    """Run a single extractor ('painpoints', 'features', 'complaints', 'diy')."""
+    """Run a single extractor ('painpoints', 'features', 'complaints', 'diy').
+
+    prefer_fulltext (opt-in; only the find_gaps path enables it) asks
+    ``corpus_for`` to substitute cached academic full text for the abstract
+    excerpt on the top academic papers — see corpus_for's docstring. When on,
+    those rows are rendered with a wider per-excerpt window so the substituted
+    full text isn't re-truncated to the Reddit-sized excerpt; non-academic
+    rows still use the normal excerpt length.
+    """
     import os as _os
     from ..analyze.providers.base import resolve_provider
-    rows = corpus_for(topic, limit=corpus_limit, min_score=min_score)
+    rows = corpus_for(
+        topic, limit=corpus_limit, min_score=min_score,
+        prefer_fulltext=prefer_fulltext,
+    )
     if not rows:
         return []
     ext = load_extractor(extractor)
@@ -57,7 +96,7 @@ def run_extractor(
         excerpt_chars = int(_os.getenv("CORPUS_EXCERPT_CHARS") or default_excerpt)
     except ValueError:
         excerpt_chars = default_excerpt
-    corpus = _format_corpus(rows, excerpt_chars=excerpt_chars)
+    corpus = _format_corpus_mixed(rows, excerpt_chars=excerpt_chars)
     # Small local models generate painfully slowly with big num_predict under
     # format=json. Cap at 1024 for Ollama — more than enough for a JSON array
     # of 10-20 findings. Override with EXTRACTOR_MAX_TOKENS.
@@ -333,8 +372,18 @@ def find_gaps(
         if only_key is None or summary_key == only_key
     ]
 
+    # Academic rows get cached full text (methods/results/limitations)
+    # substituted for the ≤500-char abstract — see corpus_for(prefer_fulltext).
+    # Disable with GAPMAP_GAPS_FULLTEXT=0 if a provider's context is too small.
+    prefer_fulltext = (_os.getenv("GAPMAP_GAPS_FULLTEXT") or "1").strip() not in (
+        "0", "false", "no",
+    )
+
     out: dict[str, Any] = {"topic": topic, "provider": head_provider, "corpus_size": None}
-    rows = corpus_for(topic, limit=corpus_limit, min_score=min_score)
+    rows = corpus_for(
+        topic, limit=corpus_limit, min_score=min_score,
+        prefer_fulltext=prefer_fulltext,
+    )
     out["corpus_size"] = len(rows)
     if not rows:
         out["error"] = f"No corpus found for topic={topic!r}. Run `gapmap research collect` first."
@@ -359,6 +408,7 @@ def find_gaps(
             result = run_extractor(
                 file, topic, provider=provider,
                 corpus_limit=corpus_limit, min_score=min_score,
+                prefer_fulltext=prefer_fulltext,
             )
             if progress_cb is not None:
                 try: progress_cb("done", {"kind": short, "findings": result})

@@ -1757,7 +1757,7 @@ def gapmap_paper_research_pipeline(
 
     Returns:
         {ok, topic, query, search_total, by_source, fulltext_fetched,
-         fulltext_ok, analyzed, analyses: [{post_id, title, url,
+         fulltext_ok, papers_chunked, analyzed, analyses: [{post_id, title, url,
          source_type, citation_count, summary, relevance, takeaway}],
          errors}
     """
@@ -1829,6 +1829,7 @@ def gapmap_paper_research_pipeline(
         from ..research.paper_fulltext import get_full_text
         fulltext_ok = 0
         fulltext_fetched = 0
+        fulltext_post_ids: list[str] = []  # papers that actually got full text
         for paper in top_for_fulltext:
             post_id = paper.get("id")
             if not post_id:
@@ -1838,8 +1839,30 @@ def gapmap_paper_research_pipeline(
                 result = get_full_text(post_id)
                 if result.get("ok"):
                     fulltext_ok += 1
+                    fulltext_post_ids.append(post_id)
             except Exception as e:
                 errors[f"fulltext_{post_id}"] = str(e)[:200]
+
+        # 3b. CHUNK + EMBED — chunk only the papers that actually got full
+        # text (respects max_fulltext; no extra network/CPU beyond the cap).
+        # chunk_paper is idempotent and local-CPU (ONNX embed). Skip the whole
+        # pass when the palace/ChromaDB embed backend is unavailable; guard each
+        # call so one chunk failure never aborts the pipeline.
+        papers_chunked = 0
+        try:
+            from ..retrieval import palace
+            embed_available = palace.is_available()
+        except Exception:
+            embed_available = False
+        if embed_available and fulltext_post_ids:
+            from ..research.paper_chunks import chunk_paper
+            for post_id in fulltext_post_ids:
+                try:
+                    res = chunk_paper(post_id, embed=True)
+                    if res.get("ok") and res.get("embedded"):
+                        papers_chunked += 1
+                except Exception as e:
+                    errors[f"chunk_{post_id}"] = str(e)[:200]
 
         # 4. ANALYZE — run LLM analysis for each paper that has content
         from ..research.paper_analyze import analyze_paper
@@ -1874,6 +1897,7 @@ def gapmap_paper_research_pipeline(
             "by_source": by_source,
             "fulltext_fetched": fulltext_fetched,
             "fulltext_ok": fulltext_ok,
+            "papers_chunked": papers_chunked,
             "analyzed": analyzed,
             "analyses": analyses_out,
             "errors": errors,

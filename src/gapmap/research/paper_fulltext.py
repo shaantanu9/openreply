@@ -146,6 +146,205 @@ def _record_status(
 
 _ARXIV_PDF_RE = re.compile(r"https?://arxiv\.org/(?:pdf|abs)/([^/?\s]+)")
 
+# NCBI E-utilities + PMC OA service. We map PMID→PMCID (idconv) and then ask
+# the PMC OA service for a downloadable artifact. NCBI politeness: ≤3 req/sec
+# without a key, set a polite UA (reuse the project's DEFAULT_HEADERS), short
+# timeouts, and send NCBI_API_KEY when present for higher quota. The whole
+# helper fails SOFT — any network/parse error or a closed (non-OA) paper
+# returns None so the paper stays abstract-only with zero regression.
+_NCBI_EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+_NCBI_IDCONV = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
+_NCBI_OA = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
+# NCBI asks for <3 req/sec without a key; 0.34s spacing keeps us under that.
+_NCBI_REQ_SPACING = 0.34
+# Short timeout for the metadata lookups (idconv / oa.fcgi). Matches the
+# 20s science-API convention in sources/_http.py — these are tiny JSON/XML
+# responses, so a hung NCBI server surfaces quickly instead of blocking.
+_NCBI_TIMEOUT = 20.0
+# OA service returns <link format="pdf" href="..."> and/or format="tgz".
+_OA_PDF_LINK_RE = re.compile(
+    r'<link\b[^>]*\bformat="pdf"[^>]*\bhref="([^"]+)"', re.IGNORECASE
+)
+
+
+def _ncbi_params(extra: dict | None = None) -> dict:
+    """Merge an optional NCBI_API_KEY into request params (S2_API_KEY-style
+    env opt-in for higher quota). Mirrors sources/pubmed.py::_get."""
+    params = dict(extra or {})
+    key = os.getenv("NCBI_API_KEY")
+    if key:
+        params["api_key"] = key
+    return params
+
+
+def _pmid_from_post(post_id: str, url: str) -> str | None:
+    """Recover the bare PMID from a pubmed post row.
+
+    Pubmed rows are saved with id ``pubmed_<PMID>`` and a
+    ``https://pubmed.ncbi.nlm.nih.gov/<PMID>/`` URL (see sources/pubmed.py),
+    so we can derive the PMID without any extra column."""
+    if post_id and post_id.startswith("pubmed_"):
+        cand = post_id[len("pubmed_"):]
+        if cand.isdigit():
+            return cand
+    m = re.search(r"pubmed\.ncbi\.nlm\.nih\.gov/(\d+)", url or "")
+    if m:
+        return m.group(1)
+    return None
+
+
+def _pmid_to_pmcid(pmid: str) -> str | None:
+    """Map a PMID to its PMCID via the NCBI idconv service. Returns the
+    ``PMC<digits>`` string or None when the article has no PMC record
+    (i.e. not in PubMed Central at all). Fails soft on any error."""
+    try:
+        from ..sources._http import DEFAULT_HEADERS
+    except Exception:
+        DEFAULT_HEADERS = {"User-Agent": "gapmap/1.0 (paper-fulltext)"}
+    try:
+        params = _ncbi_params({"ids": pmid, "format": "json"})
+        r = httpx.get(
+            _NCBI_IDCONV, params=params, headers=DEFAULT_HEADERS,
+            timeout=_NCBI_TIMEOUT, follow_redirects=True,
+        )
+        if r.status_code != 200:
+            return None
+        records = (r.json() or {}).get("records") or []
+        for rec in records:
+            pmcid = rec.get("pmcid")
+            if isinstance(pmcid, str) and pmcid.upper().startswith("PMC"):
+                return pmcid.upper()
+        return None
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _pmcid_oa_pdf_url(pmcid: str) -> str | None:
+    """Ask the PMC OA service for a downloadable artifact for this PMCID.
+
+    Only papers in the PMC Open Access subset get a response with a
+    ``<link>``. A closed paper returns an ``<error>`` element (or no link),
+    in which case we return None and the caller treats it as not_oa.
+
+    We prefer a ``format="pdf"`` link because the downstream flow downloads a
+    PDF and runs pypdf over it — exactly what arXiv/OpenAlex already do. We
+    intentionally do NOT fall back to the ``tgz`` archive: it's a tarball,
+    not something ``_download_pdf`` / ``_extract_text`` can consume, so a
+    PDF-less OA paper stays abstract-only rather than yielding a broken
+    download. NB the OA link is usually an ftp:// URL which httpx won't
+    fetch, so we normalise it to https:// (NCBI serves the same path over
+    https)."""
+    try:
+        from ..sources._http import DEFAULT_HEADERS
+    except Exception:
+        DEFAULT_HEADERS = {"User-Agent": "gapmap/1.0 (paper-fulltext)"}
+    try:
+        params = _ncbi_params({"id": pmcid})
+        r = httpx.get(
+            _NCBI_OA, params=params, headers=DEFAULT_HEADERS,
+            timeout=_NCBI_TIMEOUT, follow_redirects=True,
+        )
+        if r.status_code != 200:
+            return None
+        m = _OA_PDF_LINK_RE.search(r.text or "")
+        if not m:
+            return None
+        href = (m.group(1) or "").strip()
+        if not href:
+            return None
+        # OA service hands back ftp:// links; httpx only speaks http(s).
+        if href.startswith("ftp://"):
+            href = "https://" + href[len("ftp://"):]
+        return href or None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def _strip_jats(xml: str) -> str:
+    """Extract readable body text from a PMC JATS XML document.
+
+    JATS marks the article body with <body>…</body>; inside it, paragraphs,
+    titles, and section headings carry the prose. We pull the <body>, drop
+    elements that aren't running text (tables/figures/formulae/xrefs), turn
+    block-level tags into newlines, strip the remaining tags, and unescape
+    entities. This is deliberately dependency-free (no lxml) — a tolerant
+    regex pass is enough to recover the methodology/results prose, which is
+    the whole point of going past the abstract. Returns "" if no body."""
+    import html as _html
+
+    body = re.search(r"<body\b[^>]*>(.*?)</body>", xml, re.DOTALL | re.IGNORECASE)
+    if not body:
+        return ""
+    txt = body.group(1)
+    # Drop non-prose subtrees that would otherwise dump markup/garbage.
+    for tag in ("table-wrap", "table", "fig", "disp-formula", "inline-formula",
+                "tex-math", "mml:math", "graphic", "media", "ext-link"):
+        txt = re.sub(rf"<{tag}\b.*?</{tag}>", " ", txt, flags=re.DOTALL | re.IGNORECASE)
+    # Block-level tags → paragraph breaks so the text stays readable.
+    txt = re.sub(r"</(p|title|sec|caption|list-item|td|tr|abstract)>",
+                 "\n", txt, flags=re.IGNORECASE)
+    # Strip every remaining tag, unescape entities, collapse blank runs.
+    txt = re.sub(r"<[^>]+>", "", txt)
+    txt = _html.unescape(txt)
+    txt = re.sub(r"[ \t]+", " ", txt)
+    txt = re.sub(r"\n{3,}", "\n\n", txt)
+    return txt.strip()
+
+
+def _fetch_pmc_jats_text(pmcid: str) -> tuple[str, str]:
+    """Fetch the JATS XML for a PMCID via efetch and extract body text.
+
+    Returns (text, error). Only OA-subset / author-manuscript articles
+    return a usable <body>; everything else yields "" (caller maps that to
+    not_oa/empty). Fails soft — never raises."""
+    try:
+        from ..sources._http import DEFAULT_HEADERS
+    except Exception:
+        DEFAULT_HEADERS = {"User-Agent": "gapmap/1.0 (paper-fulltext)"}
+    pmc_num = pmcid[3:] if pmcid.upper().startswith("PMC") else pmcid
+    try:
+        params = _ncbi_params({"db": "pmc", "id": pmc_num, "rettype": "xml"})
+        r = httpx.get(
+            f"{_NCBI_EUTILS_BASE}/efetch.fcgi", params=params,
+            headers=DEFAULT_HEADERS, timeout=_NCBI_TIMEOUT, follow_redirects=True,
+        )
+        if r.status_code != 200:
+            return "", f"efetch http {r.status_code}"
+        return _strip_jats(r.text or ""), ""
+    except httpx.HTTPError as e:
+        return "", f"httpx: {e}"
+    except Exception as e:  # tolerant: regex/decoding edge cases
+        return "", f"{type(e).__name__}: {e}"
+
+
+def _resolve_pmc_fulltext(pmid: str | None, doi: str | None = None) -> str | None:
+    """Resolve a PubMed paper to a downloadable PMC Open Access PDF URL, or
+    None.
+
+    Steps (each fails soft → None):
+      1. PMID → PMCID via NCBI idconv.
+      2. PMCID → OA PDF link via the PMC OA service.
+
+    NOTE: the OA service almost always offers only a ``tgz`` package (no
+    standalone ``format="pdf"`` link), so this PDF-resolution path returns
+    None for most papers — those are handled by the JATS-XML branch in
+    ``get_full_text`` instead (``_fetch_pmc_jats_text``), which is the
+    reliable route. This function is retained for the rare paper that *does*
+    expose a direct OA PDF and so can ride the shared PDF download+pypdf
+    flow.
+
+    ``doi`` is accepted for interface symmetry / future fallback (idconv can
+    also resolve a DOI) but PubMed rows always carry a PMID, so it's unused
+    for now. We space NCBI calls ≥0.34s apart to honour the <3 req/sec
+    etiquette."""
+    if not pmid:
+        return None
+    pmcid = _pmid_to_pmcid(pmid)
+    if not pmcid:
+        return None
+    time.sleep(_NCBI_REQ_SPACING)  # be polite between the two NCBI hops
+    return _pmcid_oa_pdf_url(pmcid)
+
 
 def _resolve_pdf_url(source: str, url: str, post_id: str, metadata: dict | None = None) -> str | None:
     """Map a paper row to a downloadable PDF URL when one is available.
@@ -188,9 +387,16 @@ def _resolve_pdf_url(source: str, url: str, post_id: str, metadata: dict | None 
         return None
 
     if src == "pubmed":
-        # TODO(v2): query NCBI E-utilities for PMC ID, then
-        # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC<id>/pdf/
-        return None
+        # PMID → PMCID → PMC OA PDF (only papers in the OA subset resolve;
+        # closed papers return None and stay abstract-only). PMID comes from
+        # the post id (`pubmed_<PMID>`) or the URL; metadata may carry an
+        # explicit pmid/doi hint from newer schemas.
+        pmid = (
+            (str(md.get("pmid")).strip() if md.get("pmid") else None)
+            or _pmid_from_post(post_id, url)
+        )
+        doi = str(md.get("doi")).strip() if md.get("doi") else None
+        return _resolve_pmc_fulltext(pmid, doi=doi)
 
     return None
 
@@ -288,6 +494,108 @@ def _extract_text(pdf_path: Path) -> tuple[str, str]:
         return "", f"{type(e).__name__}: {e}"
 
 
+def _finalize_text(
+    post_id: str, source: str, text: str, cache: Path, *, pdf_url: str = "",
+) -> dict[str, Any]:
+    """Shared tail for any successfully-extracted body text (PDF via pypdf
+    OR JATS XML via efetch): truncate, scrub bad surrogates, write the disk
+    cache, record status='ok', kick the auto-index pipeline, and return the
+    standard ok-shape dict. Keeps both extraction paths byte-identical in
+    their caching + return contract."""
+    if len(text) > MAX_TEXT_CHARS:
+        text = text[:MAX_TEXT_CHARS] + "\n\n[... truncated to MAX_TEXT_CHARS ...]"
+
+    # Some PDFs (especially math-heavy ones) yield extracted text with lone
+    # Unicode surrogate codepoints (e.g. \ud835 from a math italic char).
+    # Python's UTF-8 codec rejects those as "surrogates not allowed", which
+    # crashes the write. Round-trip through bytes with errors='replace' to
+    # substitute U+FFFD for any unencodable codepoint — we lose a few math
+    # glyphs but keep the surrounding 99% of the paper text.
+    try:
+        text = text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+    except UnicodeError:
+        # Belt-and-braces: if even the replace path fails, strip non-BMP.
+        text = "".join(ch for ch in text if 0x20 <= ord(ch) < 0xD800 or ord(ch) > 0xDFFF)
+
+    cache.write_text(text, encoding="utf-8")
+    _record_status(post_id, source, "ok",
+                   pdf_url=pdf_url, char_count=len(text),
+                   cache_path=str(cache))
+
+    # Auto-pipeline: section-parse → chunk → embed → extract refs.
+    # Each stage is best-effort and logs to its own table; failures are
+    # swallowed so a download that succeeded never appears as "failed"
+    # because, e.g., chromadb wasn't installed. Disable per-call by
+    # setting PAPER_FULLTEXT_AUTO_INDEX=0 (env) or programmatic callers
+    # who own their own pipeline.
+    if (os.getenv("PAPER_FULLTEXT_AUTO_INDEX") or "1").strip() not in ("0", "false", "no"):
+        _auto_index_after_download(post_id)
+
+    return {
+        "ok": True, "status": "ok", "cached": False,
+        "post_id": post_id, "source": source,
+        "pdf_url": pdf_url, "char_count": len(text),
+        "text": text, "cache_path": str(cache),
+    }
+
+
+def _pubmed_full_text(
+    post_id: str, source: str, url: str, metadata: dict, cache: Path,
+) -> dict[str, Any]:
+    """PubMed → PMC full-text branch.
+
+    PubMed papers carry no PDF in ``posts.url`` (it's the pubmed.gov landing
+    page). The reliable open-access route is PMC: map PMID→PMCID and pull
+    the JATS XML body via efetch. (The PMC OA service only hands back ``tgz``
+    packages, not a standalone PDF, so the shared PDF→pypdf flow can't be
+    used for the common case — JATS XML is both available and more reliable.)
+
+    Fails SOFT to status='not_oa' for any closed / non-PMC paper or network
+    error, so closed PubMed papers stay abstract-only with no regression."""
+    pmid = (
+        (str(metadata.get("pmid")).strip() if metadata.get("pmid") else None)
+        or _pmid_from_post(post_id, url)
+    )
+    if not pmid:
+        _record_status(post_id, source, "not_oa", error="no PMID on row")
+        return {"ok": False, "status": "not_oa",
+                "error": "no PMID derivable for this pubmed post",
+                "post_id": post_id, "source": source}
+
+    pmcid = _pmid_to_pmcid(pmid)
+    if not pmcid:
+        _record_status(post_id, source, "not_oa",
+                       error="PMID has no PMC record (not open access)")
+        return {"ok": False, "status": "not_oa",
+                "error": "no PMCID — paper is not in PubMed Central",
+                "post_id": post_id, "source": source}
+
+    pmc_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmcid}/"
+    time.sleep(_NCBI_REQ_SPACING)  # polite spacing between NCBI hops
+    text, ferr = _fetch_pmc_jats_text(pmcid)
+    if ferr:
+        # Treat fetch/parse failure as download_failed so fetch_bulk won't
+        # permanently skip it (a transient NCBI hiccup can be retried).
+        _record_status(post_id, source, "download_failed",
+                       pdf_url=pmc_url, error=ferr)
+        return {"ok": False, "status": "download_failed", "error": ferr,
+                "post_id": post_id, "source": source, "pdf_url": pmc_url}
+
+    text = (text or "").strip()
+    if len(text) < MIN_USEFUL_CHARS:
+        # PMCID exists but no usable <body> — closed full text / abstract-only
+        # OA record. Mark not_oa so it stays on the abstract tier.
+        _record_status(post_id, source, "not_oa",
+                       pdf_url=pmc_url, char_count=len(text),
+                       error="no JATS body (PMC record has no open full text)")
+        return {"ok": False, "status": "not_oa",
+                "error": f"no open full-text body ({len(text)} chars)",
+                "post_id": post_id, "source": source, "pdf_url": pmc_url,
+                "char_count": len(text)}
+
+    return _finalize_text(post_id, source, text, cache, pdf_url=pmc_url)
+
+
 # ── Public API ────────────────────────────────────────────────────────────
 
 
@@ -375,6 +683,13 @@ def get_full_text(post_id: str, *, force: bool = False) -> dict[str, Any]:
     except (ValueError, TypeError):
         metadata = {}
 
+    # PubMed has no PDF in posts.url — route it through the PMC JATS branch,
+    # which resolves PMID→PMCID→open full-text body and feeds the same cache
+    # + return contract as the PDF path. Fails soft to not_oa for closed
+    # papers (no regression — they stay abstract-only).
+    if source == "pubmed":
+        return _pubmed_full_text(post_id, source, p["url"], metadata, cache)
+
     pdf_url = _resolve_pdf_url(source, p["url"], post_id, metadata)
     if not pdf_url:
         _record_status(post_id, source, "not_oa")
@@ -410,41 +725,7 @@ def get_full_text(post_id: str, *, force: bool = False) -> dict[str, Any]:
                 "post_id": post_id, "source": source, "pdf_url": pdf_url,
                 "char_count": len(text)}
 
-    if len(text) > MAX_TEXT_CHARS:
-        text = text[:MAX_TEXT_CHARS] + "\n\n[... truncated to MAX_TEXT_CHARS ...]"
-
-    # Some PDFs (especially math-heavy ones) yield extracted text with lone
-    # Unicode surrogate codepoints (e.g. \ud835 from a math italic char).
-    # Python's UTF-8 codec rejects those as "surrogates not allowed", which
-    # crashes the write. Round-trip through bytes with errors='replace' to
-    # substitute U+FFFD for any unencodable codepoint — we lose a few math
-    # glyphs but keep the surrounding 99% of the paper text.
-    try:
-        text = text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
-    except UnicodeError:
-        # Belt-and-braces: if even the replace path fails, strip non-BMP.
-        text = "".join(ch for ch in text if 0x20 <= ord(ch) < 0xD800 or ord(ch) > 0xDFFF)
-
-    cache.write_text(text, encoding="utf-8")
-    _record_status(post_id, source, "ok",
-                   pdf_url=pdf_url, char_count=len(text),
-                   cache_path=str(cache))
-
-    # Auto-pipeline: section-parse → chunk → embed → extract refs.
-    # Each stage is best-effort and logs to its own table; failures are
-    # swallowed so a download that succeeded never appears as "failed"
-    # because, e.g., chromadb wasn't installed. Disable per-call by
-    # setting PAPER_FULLTEXT_AUTO_INDEX=0 (env) or programmatic callers
-    # who own their own pipeline.
-    if (os.getenv("PAPER_FULLTEXT_AUTO_INDEX") or "1").strip() not in ("0", "false", "no"):
-        _auto_index_after_download(post_id)
-
-    return {
-        "ok": True, "status": "ok", "cached": False,
-        "post_id": post_id, "source": source,
-        "pdf_url": pdf_url, "char_count": len(text),
-        "text": text, "cache_path": str(cache),
-    }
+    return _finalize_text(post_id, source, text, cache, pdf_url=pdf_url)
 
 
 def _auto_index_after_download(post_id: str) -> None:
@@ -524,7 +805,7 @@ def fetch_bulk(
     """
     _ensure_table()
     db = get_db()
-    src_list = sources or ["arxiv", "openalex", "semantic_scholar", "scholar"]
+    src_list = sources or ["arxiv", "openalex", "semantic_scholar", "scholar", "pubmed"]
     src_placeholders = ",".join(["?"] * len(src_list))
     params: list[Any] = list(src_list)
 
