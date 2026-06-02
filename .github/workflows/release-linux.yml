@@ -11,11 +11,11 @@ name: release (linux)
 # Triggers:
 #   - workflow_dispatch — manual rebuild against any tag
 #   - push tag v* — auto-fires in parallel with release-mac.yml +
-#     release-windows.yml. Linux is treated as OPTIONAL by the
-#     promote-if-complete check, so mac+windows can flip the public
-#     release to "latest" without waiting for Linux. Once Linux
-#     finishes (10-20 min later), it appends its .AppImage / .deb
-#     to the already-published release.
+#     release-windows.yml. The promote gate is MAC-ONLY: as soon as the
+#     two macOS DMGs are present the public release flips to "latest",
+#     without waiting for Windows OR Linux. Once Linux finishes (10-20
+#     min later), it appends its .AppImage / .deb to the already-
+#     published release.
 #
 # Tier 1 caches: sccache + PyInstaller dist + ONNX model.
 
@@ -45,6 +45,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0   # full history + tags for the release-notes git-log fallback
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.6
@@ -230,6 +231,17 @@ jobs:
             # (between its "## [vX.Y.Z ...]" header and the next "## [" header).
             # No private-repo links in public notes.
             CHANGES=$(awk -v ver="$VER" '$0 ~ ("^## \\[" ver "[^0-9.]") {f=1; next} f && /^## \[/{exit} f{print}' "$GITHUB_WORKSPACE/CHANGELOG.md")
+            # Fallback: if CHANGELOG has no section for this tag, synthesize
+            # notes from commit subjects since the previous tag so the card
+            # ALWAYS shows real detail (needs fetch-depth: 0 on checkout).
+            if [ -z "$CHANGES" ]; then
+              PREV=$(git -C "$GITHUB_WORKSPACE" describe --tags --abbrev=0 "${VER}^" 2>/dev/null || true)
+              if [ -n "$PREV" ]; then
+                LOG=$(git -C "$GITHUB_WORKSPACE" log --no-merges --pretty='- %s' "${PREV}..${VER}" 2>/dev/null \
+                  | grep -viE '^- (merge |wip:|chore.*bump|docs\(changelog\))' | head -40)
+                [ -n "$LOG" ] && CHANGES="_Auto-generated from commits since ${PREV}._"$'\n\n'"$LOG"
+              fi
+            fi
             if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
             {
               printf '## Gap Map %s\n\n' "$VER"
@@ -275,14 +287,14 @@ jobs:
             echo "  release $VER not found on $PUBLIC — nothing to promote"; exit 0
           }
           echo "  current assets:"; echo "$ASSETS" | sed 's/^/    - /'
-          # Required patterns — friendly names produced by all 3 platform
-          # workflows' rename steps. Linux artifacts are NOT required for
-          # promote; mac+windows alone are enough. Keep in sync with
-          # release-mac.yml, release-windows.yml, scripts/promote-...sh.
+          # Mac-only promote gate: mac DMGs alone publish the release;
+          # Windows + Linux artifacts append later. This Linux run usually
+          # lands AFTER the release is already latest-published, so the logic
+          # below is a no-op. Keep in sync with release-mac.yml,
+          # release-windows.yml, scripts/promote-release-if-complete.sh.
           REQUIRED=(
             '-macOS-Apple-Silicon\.dmg$'
             '-macOS-Intel\.dmg$'
-            '-Windows\.msi$|-Windows-Installer\.exe$'
           )
           MISSING=()
           for pat in "${REQUIRED[@]}"; do

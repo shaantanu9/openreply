@@ -7,8 +7,9 @@ name: release (mac)
 # Triggers on v* tag push (parallel with release-windows.yml + release-linux.yml).
 # Each platform workflow does its own upload to the public release repo
 # (idempotent: first to finish creates the draft, subsequent ones just
-# append). The last workflow to finish runs the promote-if-complete
-# check and flips draft → latest published.
+# append). The promote gate is MAC-ONLY: the moment both macOS DMGs are
+# present the public release flips draft → latest published; Windows +
+# Linux assets append afterward as those builds finish.
 #
 # Quality: same signing (Developer ID Application + notarytool via API
 # key) + same notarization as before. Tier 1 caches added:
@@ -59,6 +60,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0   # full history + tags for the release-notes git-log fallback
 
       # ---------- sccache for Rust ----------
       - name: Setup sccache
@@ -481,6 +483,17 @@ jobs:
             # (between its "## [vX.Y.Z ...]" header and the next "## [" header).
             # No private-repo links in public notes.
             CHANGES=$(awk -v ver="$VER" '$0 ~ ("^## \\[" ver "[^0-9.]") {f=1; next} f && /^## \[/{exit} f{print}' "$GITHUB_WORKSPACE/CHANGELOG.md")
+            # Fallback: if CHANGELOG has no section for this tag, synthesize
+            # notes from commit subjects since the previous tag so the card
+            # ALWAYS shows real detail (needs fetch-depth: 0 on checkout).
+            if [ -z "$CHANGES" ]; then
+              PREV=$(git -C "$GITHUB_WORKSPACE" describe --tags --abbrev=0 "${VER}^" 2>/dev/null || true)
+              if [ -n "$PREV" ]; then
+                LOG=$(git -C "$GITHUB_WORKSPACE" log --no-merges --pretty='- %s' "${PREV}..${VER}" 2>/dev/null \
+                  | grep -viE '^- (merge |wip:|chore.*bump|docs\(changelog\))' | head -40)
+                [ -n "$LOG" ] && CHANGES="_Auto-generated from commits since ${PREV}._"$'\n\n'"$LOG"
+              fi
+            fi
             if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
             {
               printf '## Gap Map %s\n\n' "$VER"
@@ -533,10 +546,15 @@ jobs:
           # produced by the rename step above (and by release-windows.yml
           # / release-linux.yml's equivalent rename steps). Keep in sync
           # with scripts/promote-release-if-complete.sh.
+          # Promote as soon as BOTH mac installers are present (they land
+          # together when this mac job finishes). Windows + Linux are now
+          # OPTIONAL — their assets append to the already-published release
+          # as each finishes (the upload step below + their own runs are
+          # idempotent). Keep in sync with the other workflows' REQUIRED
+          # arrays and scripts/promote-release-if-complete.sh.
           REQUIRED=(
             '-macOS-Apple-Silicon\.dmg$'
             '-macOS-Intel\.dmg$'
-            '-Windows\.msi$|-Windows-Installer\.exe$'
           )
           MISSING=()
           for pat in "${REQUIRED[@]}"; do

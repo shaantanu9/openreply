@@ -5,11 +5,12 @@
 # artifacts uploaded to the public release will flip it from draft →
 # latest published.
 #
-# Linux is treated as OPTIONAL because its build can take 30+ min and
-# we don't want mac+windows users to wait for it. Once linux finishes
-# later, this script re-runs from the linux workflow, sees the release
-# is already published, and exits cleanly (`gh release edit --latest`
-# is idempotent).
+# MAC IS THE ONLY GATE. The release goes live the moment both mac DMGs
+# are present (they land together when the mac job finishes). Windows and
+# Linux are OPTIONAL — their builds can take much longer and we don't want
+# mac users to wait. As each finishes later, its workflow re-runs this,
+# sees the release already published, and the `gh release edit --latest`
+# no-op is idempotent while its own upload step appends the new assets.
 #
 # Usage: promote-release-if-complete.sh <tag> <owner/repo>
 # Env:   GH_TOKEN must be set to a PAT with write access to <owner/repo>.
@@ -21,7 +22,8 @@ PUBLIC="${2:?owner/repo required}"
 
 echo "── promote-if-complete: $VER on $PUBLIC ──"
 
-# What we MUST have before promoting. Linux artifacts are bonus.
+# What we MUST have before promoting: BOTH mac installers. Windows + Linux
+# artifacts are bonus and append after the release is already live.
 # Patterns match the user-friendly names produced by the rename step in
 # each per-platform release workflow. Keep in sync with the inlined
 # REQUIRED arrays inside release-{mac,windows,linux}.yml and with
@@ -29,7 +31,6 @@ echo "── promote-if-complete: $VER on $PUBLIC ──"
 REQUIRED_PATTERNS=(
   '-macOS-Apple-Silicon\.dmg$'
   '-macOS-Intel\.dmg$'
-  '-Windows\.msi$|-Windows-Installer\.exe$'   # either MSI or EXE counts as "windows present"
 )
 
 # Pull asset name list once.

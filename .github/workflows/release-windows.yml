@@ -45,6 +45,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0   # full history + tags for the release-notes git-log fallback
 
       # ---------- sccache for Rust (biggest single win on Windows) ----------
       - name: Setup sccache
@@ -213,6 +214,17 @@ jobs:
             # (between its "## [vX.Y.Z ...]" header and the next "## [" header).
             # No private-repo links in public notes.
             CHANGES=$(awk -v ver="$VER" '$0 ~ ("^## \\[" ver "[^0-9.]") {f=1; next} f && /^## \[/{exit} f{print}' "$GITHUB_WORKSPACE/CHANGELOG.md")
+            # Fallback: if CHANGELOG has no section for this tag, synthesize
+            # notes from commit subjects since the previous tag so the card
+            # ALWAYS shows real detail (needs fetch-depth: 0 on checkout).
+            if [ -z "$CHANGES" ]; then
+              PREV=$(git -C "$GITHUB_WORKSPACE" describe --tags --abbrev=0 "${VER}^" 2>/dev/null || true)
+              if [ -n "$PREV" ]; then
+                LOG=$(git -C "$GITHUB_WORKSPACE" log --no-merges --pretty='- %s' "${PREV}..${VER}" 2>/dev/null \
+                  | grep -viE '^- (merge |wip:|chore.*bump|docs\(changelog\))' | head -40)
+                [ -n "$LOG" ] && CHANGES="_Auto-generated from commits since ${PREV}._"$'\n\n'"$LOG"
+              fi
+            fi
             if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
             {
               printf '## Gap Map %s\n\n' "$VER"
@@ -255,12 +267,13 @@ jobs:
             echo "  release $VER not found on $PUBLIC — nothing to promote"; exit 0
           }
           echo "  current assets:"; echo "$ASSETS" | sed 's/^/    - /'
-          # Required patterns — friendly names produced by all 3
-          # platform workflows' rename steps. Keep in sync.
+          # Mac-only promote gate: the release goes live the moment both mac
+          # DMGs are present; this Windows job just appends its assets to the
+          # already-published release. Keep in sync with the other workflows
+          # and scripts/promote-release-if-complete.sh.
           REQUIRED=(
             '-macOS-Apple-Silicon\.dmg$'
             '-macOS-Intel\.dmg$'
-            '-Windows\.msi$|-Windows-Installer\.exe$'
           )
           MISSING=()
           for pat in "${REQUIRED[@]}"; do
