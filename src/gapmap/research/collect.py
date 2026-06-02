@@ -635,6 +635,30 @@ def collect(
                     pass
             subs = subs[:12]
             _log(f"  → {subs}")
+            if not subs:
+                # Empty subs almost always means Reddit is unauthenticated:
+                # Reddit now 403-blocks the public JSON endpoints, so both
+                # discovery AND fetch return nothing — the user sees "no Reddit,
+                # old or new" with no explanation. Surface it loudly + tailor the
+                # message to whether Reddit credentials are even configured.
+                try:
+                    from ..core.config import load_config as _load_cfg
+                    _cfg = _load_cfg()
+                    _cid = (_cfg.get("reddit_client_id") if hasattr(_cfg, "get")
+                            else getattr(_cfg, "reddit_client_id", None))
+                    _has_reddit = bool(_cid)
+                except Exception:
+                    _has_reddit = False
+                if _has_reddit:
+                    _log("  ! No subreddits found — Reddit returned nothing "
+                         "(403/429 block or rate-limit). Other sources continue.")
+                    result.errors.append("reddit_blocked")
+                else:
+                    _log("  ! No subreddits found — Reddit is NOT connected. "
+                         "Reddit now blocks unauthenticated access (403). Add your "
+                         "Reddit API credentials in Settings → Reddit to fetch "
+                         "Reddit posts. Other sources (HN, arXiv, etc.) continue.")
+                    result.errors.append("reddit_not_connected")
             time.sleep(_SLEEP)
             result.subs = subs
         except Exception as e:
