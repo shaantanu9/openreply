@@ -2275,7 +2275,11 @@ export async function renderTopic(root, { params }) {
     const revealBtn = $('#btn-map-reveal');
     if (revealBtn && outPath) revealBtn.onclick = () => api.revealInFinder(outPath);
     const openExtBtn = $('#btn-map-open-ext');
-    if (openExtBtn && outPath) openExtBtn.onclick = () => api.openUrl(`file://${encodeURI(outPath)}`);
+    // open_url refuses non-web (file://) URLs by design, so reveal the exported
+    // HTML in Finder instead of throwing "refused to open non-web URL".
+    if (openExtBtn && outPath) openExtBtn.onclick = () => {
+      Promise.resolve(api.revealInFinder(outPath)).catch((e) => showToast('Reveal failed', String(e?.message || e), 'err', 2600));
+    };
     $('#btn-map-enrich')?.addEventListener('click', () => runEnrichFromMap());
     $('#btn-map-enrich-all')?.addEventListener('click', async () => {
       const btn = $('#btn-map-enrich-all');
@@ -2685,7 +2689,7 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
             ${localStorage.getItem('gapmap.flags.reveal') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>` : ''}
-            ${localStorage.getItem('gapmap.flags.openExt') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>` : ''}
+            ${localStorage.getItem('gapmap.flags.openExt') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Reveal HTML</button>` : ''}
           </div>
         </div>
         ${enrichBanner}
