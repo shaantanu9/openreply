@@ -213,10 +213,14 @@ export async function renderCollect(root, { params }) {
   const aggressive = localStorage.getItem('gapmap.collect.last_aggressive') !== 'false';
   const sourcesStr = localStorage.getItem('gapmap.collect.last_sources') || '';
   const skipReddit = localStorage.getItem('gapmap.collect.last_skip_reddit') === 'true';
+  // Deep = opt-in heavy 3yr × all-subs historical sweep (the "fetch more"
+  // action). Default collect is the fast 1-year backfill.
+  const deep = localStorage.getItem('gapmap.collect.last_deep') === 'true';
   // One-shot — clear so a manual reload doesn't carry the previous filter.
   localStorage.removeItem('gapmap.collect.last_aggressive');
   localStorage.removeItem('gapmap.collect.last_sources');
   localStorage.removeItem('gapmap.collect.last_skip_reddit');
+  localStorage.removeItem('gapmap.collect.last_deep');
 
   root.innerHTML = `
     <header class="topbar">
@@ -1099,7 +1103,7 @@ export async function renderCollect(root, { params }) {
         } else {
           appendLine(`↻ no stale lock to clear; starting "${topic}"…`, 'info');
         }
-        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit);
+        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'error', deep);
         if (r?.ok) {
           appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
           _collectStatus.set(topic, 'running');
@@ -1117,7 +1121,7 @@ export async function renderCollect(root, { params }) {
     } else if (choice === 'cancel-and-start') {
       appendLine(`✗ cancelling "${otherTopic}", starting "${topic}"…`, 'info');
       try {
-        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'cancel_and_start');
+        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'cancel_and_start', deep);
         if (r?.ok) {
           appendLine(`→ started collect for "${topic}" (${filterSummary})…`, 'info');
           _collectStatus.set(topic, 'running');
@@ -1130,7 +1134,7 @@ export async function renderCollect(root, { params }) {
       }
     } else if (choice === 'queue') {
       try {
-        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'queue');
+        const r = await api.startCollect(topic, aggressive, sourcesArg, skipReddit, 'queue', deep);
         const pos = r?.position || '?';
         appendLine(
           r?.already_queued

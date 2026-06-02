@@ -1303,6 +1303,7 @@ export async function renderTopic(root, { params }) {
         <div class="topic-header-spacer"></div>
         <button class="btn btn-ghost btn-sm btn-bordered" id="btn-cancel-collect" hidden style="color:#B84747;border-color:#E8C8C8" title="Stop the in-flight collect for this topic">Cancel fetch</button>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun" title="Rerun collect — pick sources"><i data-lucide="rotate-cw"></i> Rerun</button>
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-fetch-more" title="Fetch more — deep 3-year history across ALL subreddits + every source. Thorough but slow (~10-15 min). The first collect was a fast 1-year scan."><i data-lucide="history"></i> Fetch more</button>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-compare-topic" title="Compare this topic's insights with another topic side-by-side"><i data-lucide="git-compare"></i> Compare</button>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-delete" title="Delete topic (soft-delete, 7-day undo)" style="color:#B84747"><i data-lucide="trash-2"></i></button>
       </div>
@@ -5399,6 +5400,20 @@ export async function renderTopic(root, { params }) {
   });
 
   $('#btn-rerun').onclick = () => openSourcePickerModal(topic);
+  // "Fetch more" — explicit DEEP collect (3yr × all subs × every source). The
+  // first collect is a fast 1-year scan; this is the opt-in thorough pass.
+  $('#btn-fetch-more')?.addEventListener('click', () => {
+    const ok = confirm(
+      'Deep fetch pulls 3 years of Reddit history across ALL discovered '
+      + 'subreddits, plus every source — thorough but slow (~10-15 min).\n\n'
+      + 'Your first collect was a fast 1-year scan. New posts stream into the '
+      + 'topic as they land; you don\'t have to wait for it to finish.\n\nContinue?'
+    );
+    if (!ok) return;
+    localStorage.setItem('gapmap.collect.last_aggressive', 'true');
+    localStorage.setItem('gapmap.collect.last_deep', 'true');
+    location.hash = `#/collect/${encodeURIComponent(topic)}`;
+  });
 
   // ── AG-D: compare view ── picks a second topic via a minimal modal, then
   // navigates to #/compare/<this>/<other>. Uses the existing list_topics cache.
