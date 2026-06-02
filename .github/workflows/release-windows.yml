@@ -178,31 +178,18 @@ jobs:
             exit 0
           fi
           mkdir -p ./pub
-          # Pull from ALL source-repo releases carrying this tag — tauri-action
-          # can race-create DUPLICATE drafts, and `gh release download <tag>`
-          # would hit only one (the windows asset may be on the other), silently
-          # downloading nothing. Download by asset id across all. (Hardened 2026-06-02.)
-          dl_src() {
-            # The LIST call MUST use the SOURCE token — the ambient GH_TOKEN in
-            # this step is the PUBLIC repo token, which can't read the private
-            # source repo's releases (returns empty → downloads nothing → empty
-            # public release). The per-asset download below also uses it.
-            GH_TOKEN="$GH_TOKEN_SRC" gh api "/repos/${{ github.repository }}/releases" --paginate \
-              -q ".[] | select(.tag_name==\"$VER\") | .assets[] | \"\(.id)\t\(.name)\"" \
-            | while IFS="$(printf '\t')" read -r id name; do
-                id="${id%$'\r'}"; name="${name%$'\r'}"   # strip CRLF (Windows Git-Bash)
-                [ -n "$id" ] || continue
-                matched=0
-                for g in "$@"; do case "$name" in $g) matched=1 ;; esac; done
-                [ "$matched" = 1 ] || continue
-                [ -f "./pub/$name" ] && continue
-                GH_TOKEN="$GH_TOKEN_SRC" gh api -H "Accept: application/octet-stream" \
-                  "/repos/${{ github.repository }}/releases/assets/$id" > "./pub/$name" \
-                  && echo "  ↓ $name" || echo "  ! failed $name"
-              done || true
-            return 0
-          }
-          dl_src "Gap.Map_*_x64_en-US.msi" "Gap.Map_*_x64-setup.exe"
+          # NOTE: the `gh api | jq | while` download helper used by
+          # release-mac/linux (real bash) silently downloads nothing under
+          # Windows Git-Bash, so Windows uses the original `gh release download`
+          # (proven on Git-Bash — it shipped v0.1.12). Trade-off: if tauri-action
+          # race-creates DUPLICATE source drafts and the Windows asset lands on
+          # the other draft, this resolves to one draft and may miss — caught by
+          # the promote step (stays draft) and consolidated manually. Common
+          # single-draft case auto-publishes fine.
+          GH_TOKEN="$GH_TOKEN_SRC" gh release download "$VER" \
+            --repo "${{ github.repository }}" --dir ./pub \
+            --pattern "Gap.Map_*_x64_en-US.msi" \
+            --pattern "Gap.Map_*_x64-setup.exe" 2>&1 | tail -5 || true
           ls -lh ./pub/ | head -10
 
           # Rename to user-friendly public-convention names — keep in
