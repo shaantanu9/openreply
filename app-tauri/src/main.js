@@ -1180,6 +1180,11 @@ function wireModal() {
   const focusableSelector =
     'input, select, textarea, button, a[href], [tabindex]:not([tabindex="-1"])';
   const open  = () => {
+    // Warm the LLM the moment the New-topic modal opens — the user spends a few
+    // seconds typing + picking an intent, which is free lead time to load the
+    // model so the first collect's canonicalize is hot (not a 30-60s cold
+    // start). Complements the app-launch prewarm; fire-and-forget, fail-soft.
+    try { api.warmLlm?.(); } catch {}
     // Honour the user's "aggressive by default" preference from Settings.
     const aggPref = localStorage.getItem('gapmap.pref.aggressive') !== 'false';
     const cb = $('#new-topic-aggressive');
