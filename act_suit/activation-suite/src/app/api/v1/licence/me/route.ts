@@ -77,6 +77,10 @@ export async function GET(req: Request) {
       expires_at: licence.expiresAt,
       max_devices: licence.maxDevices,
       created_at: licence.createdAt,
+      // Full activation key — only returned because the caller authenticated
+      // as the licence's owner via Supabase Bearer. Used by the dashboard to
+      // show a Copy-friendly key card so users can paste into Gap Map.app.
+      activation_key: licence.activationKey,
       activation_key_preview: licence.activationKeyPreview,
       devices: licence.devices,
     },

@@ -1,10 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient, hasPublicSupabaseConfig } from "@/lib/supabaseBrowser";
 import { ROUTES } from "@/lib/constants";
+
+// Honor ?next=... (used by /redeem → /sign-in → back to /redeem),
+// but only for same-origin relative paths so an attacker can't link
+// /sign-in?next=https://evil.example
+function safeNext(raw: string | null): string | null {
+  if (!raw) return null;
+  // Single leading slash, no protocol, no doubled slash (network-path).
+  if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
+}
 
 type Tab = "login" | "register" | "forgot";
 type Role = "product" | "research" | "agency" | "other";
@@ -33,6 +43,12 @@ function parseError(err: unknown): string {
 
 export function SignInPanel() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = safeNext(searchParams?.get("next") ?? null);
+  // Post-auth landing — honor ?next=, otherwise the dashboard (which now
+  // surfaces the three "get a key" paths). Previously hard-coded /activate
+  // which was the wrong destination for users who don't yet have a key.
+  const postAuthDest = nextPath ?? ROUTES.dashboard;
   const [tab, setTab] = useState<Tab>("login");
   const [alert, setAlert] = useState<Alert>(null);
   const [envOk, setEnvOk] = useState(true);
@@ -98,7 +114,7 @@ export function SignInPanel() {
       // to a stale sign-in page. Short delay just gives the user a beat to
       // see the success banner; shorter than before (was 900ms).
       setTimeout(() => {
-        router.replace(ROUTES.activate);
+        router.replace(postAuthDest);
         router.refresh();
       }, 250);
     } catch (err) {
@@ -143,7 +159,7 @@ export function SignInPanel() {
         type: "success",
       });
       setTimeout(() => {
-        router.push(ROUTES.activate);
+        router.push(postAuthDest);
         router.refresh();
       }, 1500);
     } catch (err) {

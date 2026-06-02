@@ -195,15 +195,17 @@ a {
   border-radius: var(--radius-xl);
 }
 
-/* ── REVEAL (IntersectionObserver fade-in) ── */
-.reveal {
-  opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
-}
+/* ── REVEAL (removed) ── */
+/* The reveal-on-scroll IntersectionObserver hook was removed Apr 29 2026
+   because timing edges left content invisible and the failsafe added
+   complexity for a non-essential animation. We keep `.reveal` as a
+   no-op alias so existing cards that still carry the className render
+   immediately at full opacity instead of disappearing. */
+.reveal,
 .reveal.is-visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: none;
+  transition: none;
 }
 
 /* ── ANIMATIONS ── */

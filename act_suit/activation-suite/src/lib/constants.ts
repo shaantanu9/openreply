@@ -25,6 +25,7 @@ export const ROUTES = {
   signIn: "/sign-in",
   activate: "/activate",
   activationHelp: "/activation-help",
+  redeem: "/redeem",
   dashboard: "/dashboard",
   workspaces: "/workspaces",
   workspacesNew: "/workspaces/new",

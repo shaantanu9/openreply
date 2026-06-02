@@ -4,6 +4,7 @@ import { SiteShell } from "@/components/shell/SiteShell";
 import { PricingSection } from "@/components/marketing/PricingSection";
 import { ComparisonTable } from "@/components/marketing/ComparisonTable";
 import { CtaSection } from "@/components/marketing/CtaSection";
+import { ROUTES } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Gap Map — Pricing",
@@ -66,6 +67,12 @@ export default function PricingPage() {
           <p className="mt-4 text-[17px] leading-[1.7] text-[var(--muted)]">
             Start lean, then scale as your research volume grows. Every plan
             includes desktop app access, BYOK, and regular updates.
+          </p>
+          <p className="mt-3 text-[14px] text-[var(--muted)]">
+            Have a coupon?{" "}
+            <Link href={ROUTES.redeem} className="font-medium text-[var(--dark)] underline underline-offset-4 hover:opacity-80">
+              Redeem it for a free activation key →
+            </Link>
           </p>
         </div>
       </div>

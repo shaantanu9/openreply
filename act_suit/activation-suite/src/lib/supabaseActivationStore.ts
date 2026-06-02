@@ -220,6 +220,7 @@ export type LicenceSummary = {
   expiresAt: string | null;
   maxDevices: number;
   createdAt: string | null;
+  activationKey: string | null; // full key — only return to the authenticated owner (their own data)
   activationKeyPreview: string | null; // last 4 chars of the raw key if we can recover it, else null
   devices: Array<{
     signatureHash: string;
@@ -274,6 +275,7 @@ export async function supabaseLicenceForEmail(email: string): Promise<LicenceSum
     expiresAt: license.expires_at ?? null,
     maxDevices: license.max_devices,
     createdAt: license.created_at ?? null,
+    activationKey: license.activation_key ?? null,
     activationKeyPreview: preview,
     devices: rows.map((d) => ({
       signatureHash: d.signature_hash,

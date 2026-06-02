@@ -23,6 +23,7 @@ export type LicenceSummary = {
   expiresAt: string | null;
   maxDevices: number;
   createdAt: string | null;
+  activationKey: string | null; // full key — only present when authed as the owner
   activationKeyPreview: string | null;
   devices: DeviceSummary[];
 };
@@ -61,6 +62,7 @@ export async function fetchLicenceMe(): Promise<LicenceMeResponse> {
     expires_at: string | null;
     max_devices: number;
     created_at: string | null;
+    activation_key: string | null;
     activation_key_preview: string | null;
     devices: Array<{
       signatureHash?: string;
@@ -86,6 +88,7 @@ export async function fetchLicenceMe(): Promise<LicenceMeResponse> {
         expiresAt: licenceRaw.expires_at,
         maxDevices: licenceRaw.max_devices,
         createdAt: licenceRaw.created_at,
+        activationKey: licenceRaw.activation_key,
         activationKeyPreview: licenceRaw.activation_key_preview,
         devices: licenceRaw.devices.map((d) => ({
           signatureHash: String(d.signatureHash ?? d.signature_hash ?? ""),

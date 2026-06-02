@@ -20,7 +20,6 @@ import { FaqAccordion } from "@/components/marketing/FaqAccordion";
 import { FinalPromiseSection } from "@/components/marketing/FinalPromiseSection";
 import { CtaSection } from "@/components/marketing/CtaSection";
 import { StickyDownloadBar } from "@/components/marketing/StickyDownloadBar";
-import { RevealOnScroll } from "@/components/marketing/RevealOnScroll";
 
 // The marketing home is static — cache indefinitely, rebuild at release.
 export const revalidate = 3600;
@@ -76,8 +75,6 @@ export default function MarketingHome() {
         {/* ── CLOSE ── */}
         <FinalPromiseSection />
         <CtaSection />
-
-        <RevealOnScroll />
       </SiteShell>
       <StickyDownloadBar />
     </>

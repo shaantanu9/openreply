@@ -8,7 +8,6 @@ import { ROUTES } from "@/lib/constants";
 import {
   deactivateDeviceWeb,
   fetchLicenceMe,
-  getFreeKey,
   openBillingPortal,
   startTrial,
   type DeviceSummary,
@@ -16,12 +15,6 @@ import {
 } from "@/lib/licenceClient";
 import { openLemonSqueezyCheckout } from "@/lib/lemonSqueezy";
 import type { Features } from "@/lib/features";
-
-// Free mode (default): hide paid buttons, show the free-key flow. Flip
-// NEXT_PUBLIC_BILLING_ENABLED=1 to turn paid billing UI back on.
-const BILLING_ON = ["1", "true", "yes", "on"].includes(
-  (process.env.NEXT_PUBLIC_BILLING_ENABLED || "").trim().toLowerCase(),
-);
 
 type Banner =
   | { kind: "error" | "info" | "success"; msg: string }
@@ -78,7 +71,6 @@ export function DashboardPanel() {
   const [banner, setBanner] = useState<Banner>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
-  const [freeKey, setFreeKey] = useState<string | null>(null); // full key, shown once
   const [copied, setCopied] = useState(false);
 
   const reload = useCallback(async () => {
@@ -87,57 +79,12 @@ export function DashboardPanel() {
       const res = await fetchLicenceMe();
       setLicence(res.licence);
       setFeatures(res.features);
-      // Free mode: auto-issue a key the first time a logged-in user with no
-      // licence lands here, and show it once so they can copy it.
-      if (!BILLING_ON && !res.licence) {
-        try {
-          const free = await getFreeKey();
-          if (free.activation_key) setFreeKey(free.activation_key);
-          const after = await fetchLicenceMe();
-          setLicence(after.licence);
-          setFeatures(after.features);
-        } catch {
-          /* surfaced via the manual button */
-        }
-      }
     } catch (err) {
       setBanner({ kind: "error", msg: err instanceof Error ? err.message : String(err) });
     } finally {
       setLoading(false);
     }
   }, []);
-
-  async function handleGetKey() {
-    setActing("free");
-    setBanner(null);
-    try {
-      const free = await getFreeKey();
-      if (free.activation_key) {
-        setFreeKey(free.activation_key);
-        setBanner({ kind: "success", msg: "Here's your key — copy it and paste it into the desktop app." });
-      } else {
-        setBanner({
-          kind: "info",
-          msg: free.message || "You already have a key (shown once at sign-up). Reissue if you've lost it.",
-        });
-      }
-      await reload();
-    } catch (err) {
-      setBanner({ kind: "error", msg: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setActing(null);
-    }
-  }
-
-  async function copyKey(value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setBanner({ kind: "info", msg: "Copy failed — select the key and copy manually." });
-    }
-  }
 
   useEffect(() => {
     if (status === "ready" && !user) {
@@ -153,10 +100,10 @@ export function DashboardPanel() {
     setActing("trial");
     setBanner(null);
     try {
-      const res = await startTrial();
+      await startTrial();
       setBanner({
         kind: "success",
-        msg: `Trial started — ${res.trial_days} days. Your activation key is ${res.activation_key}. Open the desktop app to activate.`,
+        msg: `Trial started. Your activation key is ready below — copy it and paste into Gap Map.`,
       });
       await reload();
     } catch (err) {
@@ -199,6 +146,17 @@ export function DashboardPanel() {
     }
   }
 
+  async function copyKey() {
+    if (!licence?.activationKey) return;
+    try {
+      await navigator.clipboard.writeText(licence.activationKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* select-all fallback works in the UI */
+    }
+  }
+
   const name = getUserDisplayName(user) || user?.email || "";
   const trial = trialBanner(licence);
 
@@ -212,15 +170,14 @@ export function DashboardPanel() {
             </h1>
             <p className="mt-2 max-w-[480px] text-[15px] font-light text-[var(--muted)]">
               Signed in as <strong className="font-medium text-[var(--dark)]">{name}</strong>.
-              Manage your plan, devices, and billing here.
+              {licence
+                ? " Your activation key, devices, and billing live here."
+                : " Pick a path below to get your Gap Map activation key."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href={ROUTES.activate} className="btn-sm">
-              Activate another device
-            </Link>
             <Link href={ROUTES.activationHelp} className="btn-sm">
-              Help
+              Activation help
             </Link>
           </div>
         </div>
@@ -240,117 +197,169 @@ export function DashboardPanel() {
           </div>
         ) : null}
 
-        {/* License key (free mode) */}
-        {!BILLING_ON ? (
-          <section className="mb-8 rounded-[24px] border border-[var(--border-strong)] bg-white px-8 py-7">
-            <div className="text-[13px] uppercase tracking-[0.08em] text-[var(--muted-light)]">
-              Your license key
+        {/* ── Top: either KEY-CARD (has licence) or GET-KEY-PATHS (no licence) ── */}
+        {loading ? (
+          <section className="mb-8 rounded-[24px] border border-[var(--border-strong)] bg-white p-7 text-center text-[14px] text-[var(--muted)]">
+            Loading your licence…
+          </section>
+        ) : licence ? (
+          /* ─── Has licence → KEY CARD ─── */
+          <section className="mb-8 overflow-hidden rounded-[24px] border-2 border-[var(--orange)] bg-white">
+            <div className="bg-[var(--orange-pale)] px-7 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--orange)]">
+                  Your activation key
+                </span>
+                <span className="text-[12px] font-medium text-[var(--orange)]">
+                  Plan: {prettyPlan(licence.planId, licence.livePassActive, licence.isTrial)}
+                </span>
+              </div>
             </div>
-            {freeKey ? (
-              <>
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <code className="select-all rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-4 py-3 font-mono text-[18px] tracking-[2px] text-[var(--dark)]">
-                    {freeKey}
+            <div className="px-7 py-7">
+              {licence.activationKey ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <code className="block flex-1 select-all rounded-[10px] border border-[var(--border-strong)] bg-[var(--cream-mid)] px-4 py-3 text-center font-mono text-[18px] tracking-[0.12em] text-[var(--dark)]">
+                    {licence.activationKey}
                   </code>
-                  <button type="button" onClick={() => copyKey(freeKey)} className="btn-sm orange">
-                    {copied ? "Copied ✓" : "Copy key"}
+                  <button
+                    type="button"
+                    onClick={copyKey}
+                    className="btn-sm orange justify-center whitespace-nowrap"
+                  >
+                    {copied ? "✓ Copied" : "Copy key"}
                   </button>
                 </div>
-                <p className="mt-3 text-[13px] text-[var(--muted)]">
-                  We show the full key only once — keep it safe.
+              ) : (
+                <div className="rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-4 py-4 text-center text-[14px] text-[var(--muted)]">
+                  Your key is unavailable to show here. Check the email you got when you signed
+                  up, or contact support to reissue.
+                </div>
+              )}
+              <div className="mt-5 rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-5 py-4 text-[13px] leading-[1.7] text-[var(--muted)]">
+                <p className="mb-2 font-medium text-[var(--dark)]">
+                  How to activate Gap Map on your computer:
                 </p>
-              </>
-            ) : licence ? (
-              <div className="mt-2 text-[15px] text-[var(--dark)]">
-                Active — key ends in{" "}
-                <code className="font-mono">{licence.activationKeyPreview ?? "••••"}</code>
-                <p className="mt-2 text-[13px] font-normal text-[var(--muted)]">
-                  Your full key was shown once at issue. Activate the desktop app with it + your sign-in email.
-                </p>
+                <ol className="list-decimal space-y-1 pl-5">
+                  <li>Open <strong>Gap Map.app</strong> on your Mac.</li>
+                  <li>Onboarding step 6 (or Settings → Licence) opens the activation form.</li>
+                  <li>Email + password are the ones you signed in with here.</li>
+                  <li>Paste the key above into the <strong>Activation key</strong> field.</li>
+                  <li>Click <strong>Activate &amp; continue →</strong>. Gap Map verifies the
+                      key against gapmap.myind.ai and stores it on this device.</li>
+                </ol>
               </div>
-            ) : (
-              <>
-                <p className="mt-2 text-[13px] text-[var(--muted)]">
-                  Get your free key, then paste it into the desktop app to activate this machine.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleGetKey}
-                  disabled={acting === "free"}
-                  className="btn-sm orange mt-3"
-                >
-                  {acting === "free" ? "Getting…" : "Get my free key"}
-                </button>
-              </>
-            )}
-            <ol className="mt-5 grid list-decimal gap-1 pl-5 text-[13px] text-[var(--muted)]">
-              <li>Download &amp; open the Gap Map desktop app.</li>
-              <li>On the activation screen, paste your key + the email you signed in with.</li>
-              <li>The machine then appears under “Activated devices” below.</li>
-            </ol>
+              <div className="mt-4 flex flex-wrap gap-3 text-[13px] text-[var(--muted)]">
+                <span>
+                  <strong className="text-[var(--dark)]">
+                    {licence.devices.length} / {licence.maxDevices}
+                  </strong>{" "}
+                  device slot{licence.maxDevices === 1 ? "" : "s"} used
+                </span>
+                {licence.expiresAt ? (
+                  <span>
+                    · Renews <strong className="text-[var(--dark)]">{formatDate(licence.expiresAt)}</strong>
+                  </span>
+                ) : null}
+                {licence.isTrial && licence.trialEndsAt ? (
+                  <span>
+                    · Trial ends{" "}
+                    <strong className="text-[var(--dark)]">{formatDate(licence.trialEndsAt)}</strong>
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </section>
-        ) : null}
-
-        {/* Plan summary */}
-        <section className="mb-8 flex flex-col items-start gap-6 rounded-[24px] border border-[var(--border-strong)] bg-white px-8 py-7 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-[13px] uppercase tracking-[0.08em] text-[var(--muted-light)]">
-              Current plan
+        ) : (
+          /* ─── No licence → THREE PATHS ─── */
+          <section className="mb-8">
+            <div className="mb-5 rounded-[24px] border border-[var(--border-strong)] bg-white px-7 py-6 text-center">
+              <h2 className="font-serif text-[26px] font-normal leading-tight tracking-[-0.5px] text-[var(--dark)]">
+                Get your Gap Map activation key
+              </h2>
+              <p className="mx-auto mt-2 max-w-[520px] text-[14px] text-[var(--muted)]">
+                Three ways to get a key. Each issues a key bound to{" "}
+                <strong className="text-[var(--dark)]">{name}</strong> that you paste into the
+                desktop app.
+              </p>
             </div>
-            <div className="mt-1 text-[22px] font-medium text-[var(--dark)]">
-              {loading
-                ? "Loading…"
-                : licence
-                ? prettyPlan(licence.planId, licence.livePassActive, licence.isTrial)
-                : "Free — no licence"}
-            </div>
-            <div className="mt-1 text-[13px] text-[var(--muted)]">
-              {licence ? (
-                <>
-                  {licence.devices.length} of {licence.maxDevices} device
-                  {licence.maxDevices === 1 ? "" : "s"} used
-                  {licence.activationKeyPreview
-                    ? <> · key ends in <code className="font-mono text-[12px]">{licence.activationKeyPreview}</code></>
-                    : null}
-                </>
-              ) : features ? (
-                `Upgrade to unlock ${features.max_workspaces === null ? "unlimited" : features.max_workspaces + ""} workspaces, PDF/CSV export, and the scheduler.`
-              ) : null}
-            </div>
-          </div>
-          {BILLING_ON ? (
-            <div className="flex flex-wrap gap-2">
-              {licence && !licence.isTrial ? null : (
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+              {/* Trial card */}
+              <div className="flex flex-col rounded-[18px] border border-[var(--border-strong)] bg-white p-6">
+                <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--muted-light)]">
+                  Trial
+                </div>
+                <h3 className="font-serif text-[18px] font-medium text-[var(--dark)]">
+                  Start a 14-day Pro trial
+                </h3>
+                <p className="mt-2 flex-1 text-[13px] leading-[1.6] text-[var(--muted)]">
+                  Full Pro features for 14 days. No credit card. One trial per email.
+                </p>
                 <button
                   type="button"
                   onClick={handleStartTrial}
-                  disabled={acting === "trial" || (licence?.isTrial ?? false)}
-                  className="btn-sm"
+                  disabled={acting === "trial"}
+                  className="btn-sm mt-4 justify-center"
                 >
-                  {licence?.isTrial ? "Trial active" : acting === "trial" ? "Starting…" : "Start Pro trial"}
+                  {acting === "trial" ? "Starting…" : "Start free trial →"}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => openLemonSqueezyCheckout("pro")}
-                className="btn-sm orange"
-              >
-                Upgrade to Pro
-              </button>
-              <button
-                type="button"
-                onClick={() => openLemonSqueezyCheckout("live_pass")}
-                className="btn-sm"
-              >
-                Add Live Pass
-              </button>
+              </div>
+
+              {/* Buy card */}
+              <div className="flex flex-col rounded-[18px] border-2 border-[var(--orange)] bg-white p-6">
+                <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--orange)]">
+                  Buy
+                </div>
+                <h3 className="font-serif text-[18px] font-medium text-[var(--dark)]">
+                  Buy a Pro licence
+                </h3>
+                <p className="mt-2 flex-1 text-[13px] leading-[1.6] text-[var(--muted)]">
+                  Pro on multiple devices, optional Live Pass for cloud sync. Lemon Squeezy checkout — instant key issuance.
+                </p>
+                <div className="mt-4 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openLemonSqueezyCheckout("pro")}
+                    className="btn-sm orange justify-center"
+                  >
+                    Upgrade to Pro →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openLemonSqueezyCheckout("live_pass")}
+                    className="btn-sm justify-center"
+                  >
+                    Add Live Pass
+                  </button>
+                </div>
+              </div>
+
+              {/* Coupon card */}
+              <div className="flex flex-col rounded-[18px] border border-[var(--border-strong)] bg-white p-6">
+                <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--muted-light)]">
+                  Coupon
+                </div>
+                <h3 className="font-serif text-[18px] font-medium text-[var(--dark)]">
+                  Redeem a coupon code
+                </h3>
+                <p className="mt-2 flex-1 text-[13px] leading-[1.6] text-[var(--muted)]">
+                  Have an early-access or partner code? Redeem it for a free activation key.
+                </p>
+                <Link
+                  href={ROUTES.redeem}
+                  className="btn-sm mt-4 justify-center"
+                >
+                  Redeem coupon →
+                </Link>
+              </div>
             </div>
-          ) : (
-            <span className="rounded-full bg-[var(--orange-pale)] px-3 py-1 text-[12px] font-medium text-[var(--orange)]">
-              Free while in beta
-            </span>
-          )}
-        </section>
+            <p className="mt-4 text-center text-[12.5px] text-[var(--muted-light)]">
+              Need help picking?{" "}
+              <Link href={ROUTES.pricing} className="underline hover:text-[var(--orange)]">
+                Compare plans on the pricing page →
+              </Link>
+            </p>
+          </section>
+        )}
 
         {trial ? (
           <section className="mb-8 rounded-[16px] border border-[rgba(224,123,60,0.2)] bg-[var(--orange-pale)] px-6 py-4">
@@ -358,9 +367,13 @@ export function DashboardPanel() {
               <p className="text-[13.5px] font-medium text-[var(--dark)]">
                 Pro trial active — {trial.daysLeft} day{trial.daysLeft === 1 ? "" : "s"} remaining
               </p>
-              <span className="text-[13px] font-medium text-[var(--orange)]">
-                Ends {formatDate(licence?.trialEndsAt ?? null)}
-              </span>
+              <button
+                type="button"
+                onClick={() => openLemonSqueezyCheckout("pro")}
+                className="text-[13px] font-medium text-[var(--orange)] hover:underline"
+              >
+                Upgrade to keep your key →
+              </button>
             </div>
             <div className="h-[6px] rounded-full bg-[rgba(224,123,60,0.15)]">
               <div
@@ -371,66 +384,66 @@ export function DashboardPanel() {
           </section>
         ) : null}
 
-        {/* Devices */}
-        <section className="mb-8 rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
-          <div className="mb-1 flex items-center justify-between">
-            <div className="text-[14px] font-medium text-[var(--dark)]">
-              Activated devices
+        {/* Devices (only shown after activation) */}
+        {licence ? (
+          <section className="mb-8 rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
+            <div className="mb-1 flex items-center justify-between">
+              <div className="text-[14px] font-medium text-[var(--dark)]">
+                Activated devices
+              </div>
+              <span className="text-[12px] text-[var(--muted-light)]">
+                {licence.devices.length} / {licence.maxDevices}
+              </span>
             </div>
-            <span className="text-[12px] text-[var(--muted-light)]">
-              {licence ? `${licence.devices.length} / ${licence.maxDevices}` : ""}
-            </span>
-          </div>
-          <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
-            Deactivate here to free a slot. Device slots replenish immediately.
-          </div>
-          {loading ? (
-            <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-4 py-6 text-center text-[13px] text-[var(--muted)]">
-              Loading…
+            <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
+              Deactivate here to free a slot. Device slots replenish immediately.
             </div>
-          ) : !licence || licence.devices.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-4 py-6 text-center text-[13px] text-[var(--muted)]">
-              No devices activated yet. Open the desktop app and paste your key to activate this machine.
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {licence.devices.map((d) => (
-                <li
-                  key={d.signatureHash}
-                  className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-[14px] py-3"
-                >
-                  <div>
-                    <div className="text-[13px] font-medium text-[var(--dark)]">
-                      {d.os || "unknown"} · {d.arch || "unknown"}
-                    </div>
-                    <div className="text-[11px] text-[var(--muted-light)]">
-                      Activated {formatDate(d.activatedAt)} · last seen {formatDate(d.lastSeenAt)} · fingerprint{" "}
-                      <code className="font-mono">{d.signatureHash.slice(0, 12)}…</code>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeactivate(d)}
-                    disabled={acting === d.signatureHash}
-                    className="text-[12px] font-medium text-[var(--orange)] hover:underline disabled:opacity-50"
+            {licence.devices.length === 0 ? (
+              <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-4 py-6 text-center text-[13px] text-[var(--muted)]">
+                No devices activated yet. Paste the key above into the Gap Map desktop app to
+                activate this machine.
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {licence.devices.map((d) => (
+                  <li
+                    key={d.signatureHash}
+                    className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-[14px] py-3"
                   >
-                    {acting === d.signatureHash ? "Deactivating…" : "Deactivate"}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                    <div>
+                      <div className="text-[13px] font-medium text-[var(--dark)]">
+                        {d.os || "unknown"} · {d.arch || "unknown"}
+                      </div>
+                      <div className="text-[11px] text-[var(--muted-light)]">
+                        Activated {formatDate(d.activatedAt)} · last seen {formatDate(d.lastSeenAt)} · fingerprint{" "}
+                        <code className="font-mono">{d.signatureHash.slice(0, 12)}…</code>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeactivate(d)}
+                      disabled={acting === d.signatureHash}
+                      className="text-[12px] font-medium text-[var(--orange)] hover:underline disabled:opacity-50"
+                    >
+                      {acting === d.signatureHash ? "Deactivating…" : "Deactivate"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : null}
 
-        {/* Billing + feature summary */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {BILLING_ON ? (
+        {/* Billing + features (only shown after activation) */}
+        {licence ? (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
               <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">
                 Billing
               </div>
               <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
-                Manage your subscription, download invoices, and update your payment method via the Lemon Squeezy customer portal.
+                Manage your subscription, download invoices, and update your payment method via
+                the Lemon Squeezy customer portal.
               </div>
               <button
                 type="button"
@@ -440,47 +453,47 @@ export function DashboardPanel() {
               >
                 {acting === "billing" ? "Opening…" : "Open billing portal →"}
               </button>
-              {licence?.expiresAt ? (
+              {licence.expiresAt ? (
                 <p className="mt-3 text-[12px] text-[var(--muted-light)]">
                   Subscription renews on <strong>{formatDate(licence.expiresAt)}</strong>.
                 </p>
               ) : null}
             </section>
-          ) : null}
 
-          <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
-            <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">
-              What&rsquo;s unlocked
-            </div>
-            <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
-              Your current plan unlocks these capabilities in the desktop app.
-            </div>
-            {features ? (
-              <ul className="grid grid-cols-1 gap-[6px] text-[13px]">
-                {[
-                  ["Workspaces", features.max_workspaces === null ? "Unlimited" : `${features.max_workspaces}`],
-                  ["Sources", features.max_sources === null ? "Unlimited" : `${features.max_sources}`],
-                  ["Scheduler", features.scheduler ? "Enabled" : "—"],
-                  ["Monitors", features.monitors ? "Enabled" : "—"],
-                  ["PDF export", features.export_pdf ? "Enabled" : "—"],
-                  ["CSV export", features.export_csv ? "Enabled" : "—"],
-                  ["History", `${features.history_days} days`],
-                  ["Devices", `${features.max_devices}`],
-                ].map(([k, v]) => (
-                  <li
-                    key={k}
-                    className="flex items-center justify-between border-b border-[var(--border)] py-[6px] last:border-b-0"
-                  >
-                    <span className="text-[var(--muted)]">{k}</span>
-                    <span className="font-medium text-[var(--dark)]">{v}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="text-[13px] text-[var(--muted)]">Loading…</div>
-            )}
-          </section>
-        </div>
+            <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
+              <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">
+                What&rsquo;s unlocked
+              </div>
+              <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
+                Your current plan unlocks these capabilities in the desktop app.
+              </div>
+              {features ? (
+                <ul className="grid grid-cols-1 gap-[6px] text-[13px]">
+                  {[
+                    ["Workspaces", features.max_workspaces === null ? "Unlimited" : `${features.max_workspaces}`],
+                    ["Sources", features.max_sources === null ? "Unlimited" : `${features.max_sources}`],
+                    ["Scheduler", features.scheduler ? "Enabled" : "—"],
+                    ["Monitors", features.monitors ? "Enabled" : "—"],
+                    ["PDF export", features.export_pdf ? "Enabled" : "—"],
+                    ["CSV export", features.export_csv ? "Enabled" : "—"],
+                    ["History", `${features.history_days} days`],
+                    ["Devices", `${features.max_devices}`],
+                  ].map(([k, v]) => (
+                    <li
+                      key={k}
+                      className="flex items-center justify-between border-b border-[var(--border)] py-[6px] last:border-b-0"
+                    >
+                      <span className="text-[var(--muted)]">{k}</span>
+                      <span className="font-medium text-[var(--dark)]">{v}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-[13px] text-[var(--muted)]">Loading…</div>
+              )}
+            </section>
+          </div>
+        ) : null}
       </main>
     </div>
   );
