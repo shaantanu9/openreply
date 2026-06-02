@@ -190,6 +190,8 @@ jobs:
             GH_TOKEN="$GH_TOKEN_SRC" gh api "/repos/${{ github.repository }}/releases" --paginate \
               -q ".[] | select(.tag_name==\"$VER\") | .assets[] | \"\(.id)\t\(.name)\"" \
             | while IFS="$(printf '\t')" read -r id name; do
+                id="${id%$'\r'}"; name="${name%$'\r'}"   # strip CRLF (Windows Git-Bash)
+                [ -n "$id" ] || continue
                 matched=0
                 for g in "$@"; do case "$name" in $g) matched=1 ;; esac; done
                 [ "$matched" = 1 ] || continue
@@ -197,7 +199,7 @@ jobs:
                 GH_TOKEN="$GH_TOKEN_SRC" gh api -H "Accept: application/octet-stream" \
                   "/repos/${{ github.repository }}/releases/assets/$id" > "./pub/$name" \
                   && echo "  ↓ $name" || echo "  ! failed $name"
-              done
+              done || true
             return 0
           }
           dl_src "Gap.Map_*_x64_en-US.msi" "Gap.Map_*_x64-setup.exe"
