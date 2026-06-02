@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>V1 · Command Dock — Gap Map</title>
+<link rel="stylesheet" href="core.css"/>
+<style>
+  /* V1 — Command Dock: classic 3-col, both side panels collapse independently
+     to icon rails; a full-width chat bar docks at the bottom and expands up. */
+  .app { display:grid; grid-template-rows:52px 1fr auto; height:100vh; }
+  main { position:relative; display:grid; min-height:0;
+    grid-template-columns:360px minmax(0,1fr) 320px; transition:grid-template-columns .28s cubic-bezier(.2,.8,.2,1); }
+  main.left-collapsed  { grid-template-columns:40px minmax(0,1fr) 320px; }
+  main.right-collapsed { grid-template-columns:360px minmax(0,1fr) 40px; }
+  main.left-collapsed.right-collapsed { grid-template-columns:40px minmax(0,1fr) 40px; }
+  .col { overflow-y:auto; background:var(--panel); position:relative; min-width:0; }
+  .col.left  { border-right:1px solid var(--border); }
+  .col.right { border-left:1px solid var(--border); }
+  .col-head { position:sticky; top:0; z-index:2; background:var(--panel); display:flex; align-items:center;
+    justify-content:space-between; padding:10px 12px 8px; border-bottom:1px solid var(--border); }
+  .col-head b { font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  .col-body { padding:12px 14px; }
+  .collapse-btn { width:24px; height:24px; border-radius:7px; border:1px solid var(--border); background:var(--bg);
+    cursor:pointer; display:grid; place-items:center; font-size:12px; color:var(--v-ink-2); }
+  .collapse-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .col.collapsed .col-body, .col.collapsed .col-head b { display:none; }
+  .col.collapsed { display:flex; flex-direction:column; align-items:center; padding-top:10px; gap:10px; }
+  .col.collapsed .col-head { border:none; padding:0; background:transparent; position:static; }
+  .rail-vlabel { writing-mode:vertical-rl; transform:rotate(180deg); font-size:10px; letter-spacing:1.5px;
+    text-transform:uppercase; color:var(--muted); margin-top:6px; }
+  .col.collapsed .rail-vlabel { display:block; } .rail-vlabel { display:none; }
+  .graphwrap { position:relative; min-width:0; }
+
+  /* bottom chat dock — full width, collapsed by default, expands upward */
+  .dock { border-top:1px solid var(--border); background:var(--panel); box-shadow:0 -6px 20px rgba(26,22,20,.05);
+    display:flex; flex-direction:column; transition:max-height .3s ease; max-height:88px; overflow:hidden; }
+  .dock.open { max-height:46vh; }
+  .dock-log { flex:1; overflow-y:auto; padding:14px 18px; min-height:0; display:none; }
+  .dock.open .dock-log { display:block; }
+  .dock-bar { display:flex; align-items:center; gap:10px; padding:10px 18px; }
+  .dock-grip { flex:0 0 auto; display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px;
+    cursor:pointer; user-select:none; }
+  .dock-grip .ico { width:24px; height:24px; border-radius:7px; background:var(--v-orange-soft); color:#9a4a12;
+    display:grid; place-items:center; font-size:13px; }
+  .dock-bar .chat-composer { flex:1; }
+  .dock .suggest-row { padding:0 18px 10px; }
+  .perf-badge { font-size:10px; background:var(--v-mint-soft); color:#2f7a57; border:1px solid #bfe6d2;
+    border-radius:10px; padding:2px 8px; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="gm-header">
+    <div class="gm-brand"><div class="gm-logo">G</div>
+      <div><h1>Gap Map — note taking app</h1>
+      <div class="subtitle">3 painpoints · 5 products · 2 DIY workarounds · 2 feature wishes</div></div></div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <main id="main">
+    <aside class="col left" id="leftCol">
+      <div class="col-head"><b>Topic insights</b>
+        <button class="collapse-btn" data-collapse="left" title="Minimise">‹</button></div>
+      <div class="rail-vlabel">Insights</div>
+      <div class="col-body" id="insights"></div>
+    </aside>
+
+    <div class="graphwrap"><svg class="gm-graph" id="graph"></svg></div>
+
+    <aside class="col right" id="rightCol">
+      <div class="col-head"><b>Lenses</b>
+        <button class="collapse-btn" data-collapse="right" title="Minimise">›</button></div>
+      <div class="rail-vlabel">Lenses</div>
+      <div class="col-body"><div id="lenses"></div>
+        <div style="margin-top:12px;font-size:11px;color:var(--muted)" id="details">
+          Click any finding — the graph zooms to its evidence.</div></div>
+    </aside>
+  </main>
+
+  <section class="dock" id="dock">
+    <div class="dock-log chat-log" id="log"></div>
+    <div class="suggest-row" id="suggest"></div>
+    <div class="dock-bar">
+      <div class="dock-grip" id="grip"><span class="ico">💬</span><span>Chat with this map</span></div>
+      <div class="chat-composer">
+        <input id="input" placeholder="Ask about the painpoints, products, gaps…"/>
+        <button class="chat-send" id="send">➤</button>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="gm-footer">V1 · Command Dock · chat → highlight + zoom</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="core.js"></script>
+<script>
+const total = GM.applyStressFromURL();
+const graph = GM.GapGraph("#graph", { onNodeClick: showNode });
+GM.buildInsights(document.getElementById("insights"), graph);
+GM.buildLenses(document.getElementById("lenses"), graph);
+document.getElementById("stats").innerHTML =
+  `<b>${total.toLocaleString()}</b> nodes · <b>${GM.DATA.links.length.toLocaleString()}</b> edges `
+  + `<span class="perf-badge">${total>400?"skeleton mode":"full"}</span>`;
+
+// independent collapse for both side panels
+document.querySelectorAll("[data-collapse]").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    const side = btn.getAttribute("data-collapse");
+    const col = document.getElementById(side==="left"?"leftCol":"rightCol");
+    col.classList.toggle("collapsed");
+    document.getElementById("main").classList.toggle(side+"-collapsed");
+    btn.textContent = col.classList.contains("collapsed") ? (side==="left"?"›":"‹") : (side==="left"?"‹":"›");
+    setTimeout(()=>graph.resize(), 320);
+  });
+});
+
+// chat dock
+const log = document.getElementById("log"), input = document.getElementById("input"), dock = document.getElementById("dock");
+document.getElementById("grip").addEventListener("click", ()=> dock.classList.toggle("open"));
+const sug = document.getElementById("suggest");
+GM.ChatBrain.suggestions.forEach(s=>{ const c=document.createElement("button"); c.className="suggest-chip"; c.textContent=s;
+  c.onclick=()=>{ input.value=s; sendMsg(); }; sug.appendChild(c); });
+
+function bubble(cls, html){ const d=document.createElement("div"); d.className="msg "+cls; d.innerHTML=html; log.appendChild(d); log.scrollTop=log.scrollHeight; return d; }
+function showNode(d){ document.getElementById("details").innerHTML =
+  `<b>${d.label}</b><br><span style="color:var(--muted)">${GM.KIND_LABEL[d.kind]}</span>`
+  + (d.meta.quote?`<div class="card-evidence">${d.meta.quote}</div>`:""); }
+
+function sendMsg(){
+  const q = input.value.trim(); if(!q) return;
+  dock.classList.add("open"); bubble("user", q); input.value="";
+  const t = bubble("bot", `<span class="typing"><i></i><i></i><i></i></span>`);
+  setTimeout(()=>{
+    const r = GM.ChatBrain.respond(q);
+    graph.highlight(r.cites);
+    const chips = r.cites.map(id=>{ const n=graph.get(id); return n?`<span class="cite-chip" data-id="${id}">${n.label}</span>`:""; }).join("");
+    t.innerHTML = r.text + (chips?`<div class="cites">${chips}</div>`:"");
+    t.querySelectorAll(".cite-chip").forEach(ch=> ch.onclick=()=>{ const id=ch.getAttribute("data-id"); graph.focusNodeById(id); showNode(graph.get(id)); });
+    log.scrollTop=log.scrollHeight;
+  }, 520);
+}
+document.getElementById("send").onclick = sendMsg;
+input.addEventListener("keydown", e=>{ if(e.key==="Enter") sendMsg(); });
+window.addEventListener("resize", ()=> graph.resize());
+</script>
+</body>
+</html>
