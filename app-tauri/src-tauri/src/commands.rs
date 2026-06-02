@@ -409,6 +409,7 @@ fn build_collect_args(
     aggressive: bool,
     sources: Option<&str>,
     skip_reddit: bool,
+    deep: bool,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "research".into(),
@@ -418,6 +419,11 @@ fn build_collect_args(
     ];
     if aggressive {
         args.push("--aggressive".into());
+    }
+    // Opt-in heavy historical sweep (3yr × all-subs). Default collect is the
+    // fast 1-year backfill; the UI's "fetch more / deep" actions pass this.
+    if deep {
+        args.push("--deep".into());
     }
     if let Some(s) = sources {
         let trimmed = s.trim();
@@ -600,6 +606,7 @@ pub async fn start_collect(
     sources: Option<String>,
     skip_reddit: Option<bool>,
     if_busy: Option<String>,
+    deep: Option<bool>,
 ) -> Result<Value, String> {
     use crate::cli::{ActiveCollects, CollectQueue};
 
@@ -629,6 +636,7 @@ pub async fn start_collect(
         aggressive,
         sources.as_deref(),
         skip_reddit.unwrap_or(false),
+        deep.unwrap_or(false),
     );
 
     // Orphan auto-reap. The single-flight slot can end up "held" with no

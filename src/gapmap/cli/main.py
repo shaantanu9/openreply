@@ -1253,11 +1253,18 @@ def cmd_research_collect(
     aggressive: bool = typer.Option(
         False, "--aggressive", "-A",
         help=(
-            "Max limits + all categories + historical + 3-year depth + the "
-            "full 11-source free sweep (HN, App Store, Play Store, arXiv, "
-            "OpenAlex, PubMed, Google News, Dev.to, Stack Overflow, GitHub, "
-            "Google Trends)."
+            "Max limits + all categories + the full 11-source free sweep (HN, "
+            "App Store, Play Store, arXiv, OpenAlex, PubMed, Google News, "
+            "Dev.to, Stack Overflow, GitHub, Google Trends). FAST historical "
+            "backfill (1 year × top subs) by default — add --deep for the full "
+            "3-year × all-subs sweep."
         ),
+    ),
+    deep: bool = typer.Option(
+        False, "--deep",
+        help="Restore the heavy historical backfill (3 years × 1000/sub × ALL "
+             "subreddits). Thorough but slow (~10-15 min). The default is a fast "
+             "1-year backfill; use this for an explicit 'fetch more' pass.",
     ),
     skip_reddit: bool = typer.Option(
         False, "--skip-reddit/--no-skip-reddit",
@@ -1293,6 +1300,7 @@ def cmd_research_collect(
         historical_limit_per_sub=historical_per_sub,
         sources=src_list,
         aggressive=aggressive,
+        deep=deep,
         skip_reddit=skip_reddit,
         skip_extraction=skip_extraction,
         progress=lambda m: console.print(f"[dim]• {m}[/dim]"),

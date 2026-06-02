@@ -535,9 +535,9 @@ export const api = {
   // (cancel-and-start vs queue vs open-running-log) instead of the old
   // "another collect is already running. Cancel it first." error string.
   startCollect:    (topic, aggressive = true, sources = null, skipReddit = false,
-                    ifBusy = 'error') => {
+                    ifBusy = 'error', deep = false) => {
     const p = invoke('start_collect', {
-      topic, aggressive, sources, skipReddit, ifBusy,
+      topic, aggressive, sources, skipReddit, ifBusy, deep,
     });
     mutated('collect', { topic });
     // The Python collect writes the topic_prefs row (instant list_topics

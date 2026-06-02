@@ -311,6 +311,7 @@ def collect(
     historical_days: int = 730,
     historical_limit_per_sub: int = 500,
     aggressive: bool = False,
+    deep: bool = False,  # opt-in: restore the heavy 3yr × 1000/sub × all-subs historical sweep (slow)
     sources: list[str] | None = None,  # extra sources: hn/appstore/playstore/scholar/stackoverflow/trends
     skip_reddit: bool = False,  # skip Reddit fetch stages (2+3); useful for external-only reruns
     skip_extraction: bool = False,  # skip inline LLM extraction at end of collect
@@ -334,15 +335,18 @@ def collect(
         limit_per_sub = max(limit_per_sub, 100)
         limit_per_query = max(limit_per_query, 50)
         include_historical = True
-        # Tightened 2026-06-02: the old 3yr × 1000/sub pullpush backfill ran
-        # sequentially on the main thread and dominated collect wall-time
+        # FAST default (2026-06-02): the old 3yr × 1000/sub pullpush backfill
+        # ran sequentially on the main thread and dominated collect wall-time
         # (~10 min of a ~15 min collect, since pullpush is one slow rate-limited
-        # host). 1yr × 150/sub keeps a useful recent backfill while cutting the
-        # historical stage ~6x. Deeper backfill belongs in an explicit
-        # background "deepen" pass, not the blocking first collect. Override via
-        # the historical_* params if a caller genuinely needs the full sweep.
-        historical_days = 365            # was 1095 (3 years)
-        historical_limit_per_sub = 150   # was 1000
+        # host). The default first collect now pulls 1yr × 150/sub from the top
+        # subs (~2-3 min). `deep=True` (the user's explicit "fetch more" button)
+        # restores the full 3yr × 1000/sub × all-subs sweep — slow but thorough.
+        if deep:
+            historical_days = 1095           # 3 years
+            historical_limit_per_sub = 1000
+        else:
+            historical_days = 365            # 1 year (fast)
+            historical_limit_per_sub = 150
         query_categories = query_categories or ["pain", "features", "complaints", "diy"]
         if not sources:
             # Full free-and-reliable source sweep — matches the "10-source
@@ -791,7 +795,7 @@ def collect(
             # full sub list × pullpush backfill was a second hidden multiplier
             # on collect time; the top 5 cover the bulk of relevant historical
             # signal. Tunable via HISTORICAL_MAX_SUBS. (2026-06-02)
-            _hist_max = int(os.getenv("HISTORICAL_MAX_SUBS") or 5)
+            _hist_max = int(os.getenv("HISTORICAL_MAX_SUBS") or (999 if deep else 5))
             for sub in subs[:_hist_max]:
                 try:
                     _log(f"historical r/{sub} last {historical_days}d pre-cutoff, limit={historical_limit_per_sub}")
