@@ -1379,6 +1379,15 @@ export async function renderTopic(root, { params }) {
   const contentEl = $('#tab-content');
   window.refreshIcons?.();
 
+  // ── Map-view chat ──────────────────────────────────────────────────────
+  // A SECOND, independent chat instance that lives as a right-docked sidebar
+  // over the Map tab's graph iframe. Reuses the SAME streaming backend as the
+  // Chat tab (api.startChat + chat:progress/chat:done events) but keeps its
+  // own ephemeral in-topic history + stream state so it never touches the
+  // existing Chat tab. The Chat tab is left fully intact.
+  let _mapChatLog = [];                                    // [{role,text,ts}]
+  let _mapChatStream = { active: false, unsubP: null, unsubD: null };
+
   // Task 9.5 — fire-and-forget render of the extraction prefs override row.
   // Best-effort: any error just hides the row (it's purely informational).
   _renderExtractionOverrideRow(root, topic).catch(() => {});
@@ -2051,12 +2060,126 @@ export async function renderTopic(root, { params }) {
   // Expose to main.js + console for cross-screen triggering.
   try { window.runEnrichAllTopics = runEnrichAllTopics; } catch {}
 
+  // ── Map-view chat: render, send (streaming), wire ─────────────────────
+  function _mapChatBotHtml(m) {
+    const text = m.text || '';
+    if (!text.trim() && _mapChatStream.active) {
+      return '<span class="mapchat-typing"><i></i><i></i><i></i></span>';
+    }
+    // Split a trailing "Sources" / citations block off the answer so it can be
+    // shown as a collapsible accordion (matches the approved prototype).
+    const lines = text.split('\n');
+    let cut = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*#{1,6}\s*sources\b/i.test(lines[i]) || /^\s*\*{0,2}sources\*{0,2}\s*:?\s*$/i.test(lines[i])) { cut = i; break; }
+    }
+    let bodyMd = text, srcMd = '';
+    if (cut >= 0) { bodyMd = lines.slice(0, cut).join('\n'); srcMd = lines.slice(cut + 1).join('\n'); }
+    let html = renderMarkdown(bodyMd) || '';
+    if (srcMd.trim()) {
+      const n = (srcMd.match(/^\s*(?:[-*]|\d+[.)])\s+/gm) || []).length;
+      html += `<div class="cite-block">`
+        + `<button type="button" class="cite-acc-head"><span>📎 ${n || ''} citations</span><span class="acc-caret">▾</span></button>`
+        + `<div class="cite-acc-body">${renderMarkdown(srcMd)}</div></div>`;
+    }
+    return html;
+  }
+  function _renderMapChatLog() {
+    const log = document.getElementById('mapchat-log');
+    if (!log) return;
+    if (!_mapChatLog.length) {
+      log.innerHTML = `<div class="mapchat-empty">Ask anything about <b>${esc(topic)}</b> — answers are grounded on this topic's data and cite their sources.</div>`;
+      return;
+    }
+    log.innerHTML = _mapChatLog.map(m => m.role === 'user'
+      ? `<div class="mapchat-msg user">${esc(m.text)}</div>`
+      : `<div class="mapchat-msg bot">${_mapChatBotHtml(m)}</div>`).join('');
+    log.scrollTop = log.scrollHeight;
+    window.refreshIcons?.();
+  }
+  function _setMapChatBusy(busy, msg) {
+    const s = document.getElementById('mapchat-status');
+    const btn = document.getElementById('mapchat-send');
+    if (btn) btn.disabled = busy;
+    if (s) s.textContent = busy ? 'myind AI is thinking…' : (msg || '');
+  }
+  async function _mapChatSend() {
+    const inp = document.getElementById('mapchat-input');
+    const q = (inp?.value || '').trim();
+    if (!q || _mapChatStream.active) return;
+    inp.value = ''; inp.style.height = 'auto';
+    _mapChatLog.push({ role: 'user', text: q, ts: Date.now() });
+    const bot = { role: 'assistant', text: '', ts: Date.now() };
+    _mapChatLog.push(bot);
+    _renderMapChatLog();
+    _setMapChatBusy(true);
+    _mapChatStream.active = true;
+    let done = false;
+    const finish = (statusMsg) => {
+      if (done) return; done = true;
+      _mapChatStream.active = false;
+      try { _mapChatStream.unsubP?.(); } catch {}
+      try { _mapChatStream.unsubD?.(); } catch {}
+      _mapChatStream.unsubP = _mapChatStream.unsubD = null;
+      _setMapChatBusy(false, statusMsg);
+      _renderMapChatLog();
+    };
+    try {
+      _mapChatStream.unsubP = await api.onChatProgress(line => {
+        let ev; try { ev = JSON.parse(line); } catch { return; }
+        if (ev.event === 'token' || ev.event === 'text') {
+          if (typeof ev.text === 'string') { bot.text += ev.text; _renderMapChatLog(); }
+        } else if (ev.event === 'error') {
+          bot.text += `\n\n✗ Error: ${ev.error || 'unknown'}`;
+          finish('Error — see message above.');
+        }
+      });
+      _mapChatStream.unsubD = await api.onChatDone(payload => {
+        const code = (payload && typeof payload === 'object' && 'code' in payload) ? Number(payload.code) : 0;
+        if (code !== 0 && !bot.text.trim()) {
+          bot.text = `✗ Provider exited with code ${code}. Check your LLM key/model in Settings.`;
+        }
+        finish(code === 0 ? '' : 'Provider exited early; partial response shown.');
+      });
+      await api.startChat(topic, q, 'ask', false);
+    } catch (e) {
+      bot.text = `✗ Failed to start chat: ${e?.message || e}`;
+      finish('Failed to start. Check your LLM key/provider in Settings.');
+    }
+  }
+  // Idempotent — uses .onclick (replaces, never stacks) so the shared
+  // _wireMapToolbarButtons can call it on every map show (fresh + cached).
+  function wireMapChat() {
+    const drawer = document.getElementById('mapchat-drawer');
+    if (!drawer) return;
+    const scrim = document.getElementById('mapchat-scrim');
+    const open = () => { drawer.classList.add('open'); scrim?.classList.add('on'); document.getElementById('mapchat-input')?.focus(); };
+    const close = () => { drawer.classList.remove('open'); scrim?.classList.remove('on'); };
+    const openBtn = $('#btn-map-chat'); if (openBtn) openBtn.onclick = open;
+    const x = document.getElementById('mapchat-close'); if (x) x.onclick = close;
+    if (scrim) scrim.onclick = close;
+    const sendBtn = document.getElementById('mapchat-send'); if (sendBtn) sendBtn.onclick = _mapChatSend;
+    const inp = document.getElementById('mapchat-input');
+    if (inp) {
+      inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _mapChatSend(); } };
+      inp.oninput = () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 120) + 'px'; };
+    }
+    const log = document.getElementById('mapchat-log');
+    if (log) log.onclick = (e) => {
+      const h = e.target.closest && e.target.closest('.cite-acc-head'); if (!h) return;
+      const body = h.parentElement.querySelector('.cite-acc-body');
+      h.classList.toggle('collapsed'); body && body.classList.toggle('collapsed');
+    };
+    _renderMapChatLog();
+  }
+
   // Shared button wiring. Called from BOTH the full-render path and the
   // cache-restore path so click handlers hang off whichever iframe /
   // toolbar is currently in the DOM. outPath comes from the cache or the
   // fresh export; mapMode / mapAutoUpdate from their respective getters.
   function _wireMapToolbarButtons(outPath, mapMode, mapAutoUpdate) {
     window.refreshIcons?.();
+    wireMapChat();
     const modeBtn = $('#btn-map-mode');
     if (modeBtn) modeBtn.onclick = () => {
       const next = mapMode === 'full' ? 'skeleton' : 'full';
@@ -2482,10 +2605,24 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
+            <button class="btn btn-sm icon-btn" id="btn-map-chat" title="Ask myind AI about this map — grounded on this topic's data"><i data-lucide="message-circle"></i> Ask this map</button>
           </div>
         </div>
         ${enrichBanner}
-        <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>`);
+        <div class="mapchat-host">
+          <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>
+          <div class="mapchat-scrim" id="mapchat-scrim"></div>
+          <aside class="mapchat-drawer" id="mapchat-drawer">
+            <div class="mapchat-head"><b><i data-lucide="message-circle"></i> Ask this map</b>
+              <button class="mapchat-x" id="mapchat-close" title="Close">&times;</button></div>
+            <div class="mapchat-log" id="mapchat-log"></div>
+            <div class="mapchat-status" id="mapchat-status"></div>
+            <div class="mapchat-composer">
+              <textarea id="mapchat-input" rows="1" placeholder="Ask about this topic…"></textarea>
+              <button class="mapchat-send" id="mapchat-send" title="Send"><i data-lucide="arrow-up"></i></button>
+            </div>
+          </aside>
+        </div>`);
       if (contentEl.dataset.tab !== 'map') return;
       // Populate the in-session Map cache — next Map-tab open (on this
       // topic, in this session) short-circuits here without any sidecar
