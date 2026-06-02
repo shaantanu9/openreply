@@ -112,7 +112,7 @@ export function RoiSection() {
               <a href="/sign-in" className="btn btn-orange">
                 Start free account
               </a>
-              <a href="#pricing" className="btn border border-white/20 bg-white/[0.06] text-white hover:bg-white/10">
+              <a href="/pricing" className="btn border border-white/20 bg-white/[0.06] text-white hover:bg-white/10">
                 Compare plans →
               </a>
             </div>

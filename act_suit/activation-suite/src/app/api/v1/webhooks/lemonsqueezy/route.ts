@@ -9,6 +9,7 @@ import {
   supabaseUpsertLicenceFromWebhook,
 } from "@/lib/supabaseActivationStore";
 import { hasSupabaseConfig } from "@/lib/supabaseClient";
+import { billingEnabled } from "@/lib/billing";
 
 export const runtime = "nodejs";
 
@@ -31,6 +32,11 @@ export const runtime = "nodejs";
  * src/lib/lemonSqueezyServer.ts::resolveVariant for the shape.
  */
 export async function POST(req: Request) {
+  // Billing is OFF for now — ignore LemonSqueezy events so they don't mutate
+  // licenses. Flip BILLING_ENABLED=1 to turn paid billing back on.
+  if (!billingEnabled()) {
+    return NextResponse.json({ ok: true, handled: false, skipped: "billing_disabled" }, { status: 200 });
+  }
   const raw = await req.text();
   const sig = req.headers.get("x-signature") || req.headers.get("X-Signature") || "";
   if (!verifyLemonSqueezySignature(raw, sig)) {

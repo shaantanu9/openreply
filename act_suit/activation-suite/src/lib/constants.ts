@@ -8,6 +8,14 @@ export const BRAND = {
   footerStrap: "Desktop-first · BYOK · Privacy-native",
 } as const;
 
+// Public GitHub repo where desktop releases are published. Used by the
+// download resolver and the "star us" CTAs.
+export const GITHUB = {
+  repo: "myind-ai/gapmap",
+  url: "https://github.com/myind-ai/gapmap",
+  releases: "https://github.com/myind-ai/gapmap/releases",
+} as const;
+
 export const ROUTES = {
   home: "/",
   features: "/features",
@@ -28,14 +36,17 @@ export const ROUTES = {
   publishedResearch: (slug: string) => `/explore/${encodeURIComponent(slug)}`,
 } as const;
 
+// Nav points at REAL pages so links work from anywhere on the site
+// ("How it works" is a homepage anchor; it lands on home from sub-pages).
 export const NAV_LINKS = [
   { href: ROUTES.home, label: "Home", section: null },
-  { href: "#features", label: "Features", section: "features" },
-  { href: "#how", label: "How it works", section: "how" },
-  { href: "#pricing", label: "Pricing", section: "pricing" },
-  { href: "#faq", label: "FAQ", section: "faq" },
+  { href: ROUTES.features, label: "Features", section: "features" },
+  { href: "/#how", label: "How it works", section: "how" },
+  { href: ROUTES.pricing, label: "Pricing", section: "pricing" },
+  { href: ROUTES.faq, label: "FAQ", section: "faq" },
 ] as const;
 
+// Footer — only real, working destinations (no dead "#" placeholders).
 export const FOOTER_COLUMNS = [
   {
     title: "Product",
@@ -43,28 +54,23 @@ export const FOOTER_COLUMNS = [
       { href: ROUTES.features, label: "Features" },
       { href: ROUTES.pricing, label: "Pricing" },
       { href: ROUTES.download, label: "Download" },
-      { href: "#compare", label: "Comparison" },
-      { href: ROUTES.signIn, label: "Sign in" },
-      { href: ROUTES.activate, label: "Activate licence" },
-      { href: ROUTES.activationHelp, label: "Activation help" },
+      { href: ROUTES.explore, label: "Explore research" },
     ],
   },
   {
-    title: "Company",
+    title: "Account",
     links: [
-      { href: "#", label: "About" },
-      { href: "#", label: "Blog" },
-      { href: "#", label: "Changelog" },
-      { href: "#", label: "Roadmap" },
+      { href: ROUTES.signIn, label: "Sign in" },
+      { href: ROUTES.dashboard, label: "Dashboard" },
+      { href: ROUTES.activate, label: "Activate licence" },
+      { href: ROUTES.activationHelp, label: "Activation help" },
     ],
   },
   {
     title: "Support",
     links: [
       { href: ROUTES.faq, label: "FAQ" },
-      { href: "#", label: "Docs" },
       { href: `mailto:${BRAND.supportEmail}`, label: "Email support" },
-      { href: "#", label: "Privacy policy" },
     ],
   },
 ] as const;

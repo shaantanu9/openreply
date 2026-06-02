@@ -1,35 +1,60 @@
 import type { Metadata } from "next";
 import { SiteShell } from "@/components/shell/SiteShell";
 import { DownloadLink } from "@/components/shell/DownloadLink";
+import { fetchLatestRelease, RELEASES_PAGE_URL } from "@/lib/releases";
+import { GITHUB } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Gap Map — Download",
 };
 
-export const revalidate = 3600;
+// Re-pull the latest release roughly every 15 min so the version stays fresh
+// without re-rendering on every request.
+export const revalidate = 900;
 
-const PLATFORMS = [
+type Build = {
+  /** platform key passed to /api/download */
+  platform: string;
+  /** secondary download (alt format), optional */
+  altPlatform?: string;
+  altLabel?: string;
+};
+
+const PLATFORMS: Array<{
+  name: string;
+  status: string;
+  action: string;
+  build: Build;
+}> = [
   {
-    name: "macOS",
-    status: "Recommended — macOS 13+, Apple Silicon & Intel",
+    name: "macOS — Apple Silicon",
+    status: "Recommended for M1/M2/M3/M4 Macs · macOS 13+",
     action: "Download .dmg",
-    primary: true,
+    build: { platform: "mac-arm" },
+  },
+  {
+    name: "macOS — Intel",
+    status: "For older Intel-based Macs · macOS 13+",
+    action: "Download .dmg",
+    build: { platform: "mac-intel" },
   },
   {
     name: "Windows",
-    status: "Coming soon — targeted for next major release",
-    action: "Join waitlist",
-    primary: false,
+    status: "Windows 10/11 · 64-bit",
+    action: "Download installer",
+    build: { platform: "windows", altPlatform: "windows-msi", altLabel: ".msi" },
   },
   {
     name: "Linux",
-    status: "Planned",
-    action: "Request access",
-    primary: false,
+    status: "AppImage (portable) or .deb (Debian/Ubuntu)",
+    action: "Download AppImage",
+    build: { platform: "linux", altPlatform: "linux-deb", altLabel: ".deb" },
   },
-] as const;
+];
 
-export default function DownloadPage() {
+export default async function DownloadPage() {
+  const release = await fetchLatestRelease();
+
   return (
     <SiteShell offsetTop>
       <section className="px-8 py-20">
@@ -46,34 +71,72 @@ export default function DownloadPage() {
               Your workspace keeps all research organised in one desktop
               environment.
             </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3 text-[13px]">
+              {release ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border-strong)] bg-white px-3 py-1 font-medium text-[var(--dark)]">
+                  <span className="h-2 w-2 rounded-full bg-[var(--orange)]" />
+                  Latest: {release.tag}
+                </span>
+              ) : null}
+              <a
+                href={RELEASES_PAGE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--orange)] hover:underline"
+              >
+                View all releases &amp; changelog →
+              </a>
+              <a
+                href={GITHUB.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-strong)] bg-white px-3 py-1 font-medium text-[var(--dark)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
+              >
+                ⭐ Star us on GitHub
+              </a>
+            </div>
           </div>
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
+
+          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
             {PLATFORMS.map((p) => (
               <article
                 key={p.name}
                 className="flex flex-col items-start gap-4 rounded-[24px] border border-[var(--border-strong)] bg-white p-7"
               >
-                <h2 className="font-serif text-[28px] leading-none text-[var(--dark)]">
+                <h2 className="font-serif text-[22px] leading-tight text-[var(--dark)]">
                   {p.name}
                 </h2>
-                <p className="text-[13px] text-[var(--muted)]">{p.status}</p>
-                {p.primary ? (
-                  <DownloadLink className="btn btn-orange">{p.action}</DownloadLink>
-                ) : (
-                  <button type="button" disabled className="btn btn-ghost">
-                    {p.action}
-                  </button>
-                )}
+                <p className="flex-1 text-[13px] leading-[1.6] text-[var(--muted)]">
+                  {p.status}
+                </p>
+                <DownloadLink
+                  className="btn btn-orange"
+                  platform={p.build.platform}
+                >
+                  {p.action}
+                </DownloadLink>
+                {p.build.altPlatform ? (
+                  <DownloadLink
+                    className="text-[12.5px] font-medium text-[var(--muted)] transition-colors hover:text-[var(--orange)]"
+                    platform={p.build.altPlatform}
+                  >
+                    or download {p.build.altLabel}
+                  </DownloadLink>
+                ) : null}
               </article>
             ))}
           </div>
+
           <div className="mt-8 rounded-[24px] border border-[var(--border)] bg-[var(--cream-mid)] p-7 text-[14px] text-[var(--muted)]">
             <h3 className="mb-2 text-[16px] font-medium text-[var(--dark)]">
               Need help installing?
             </h3>
             <p className="leading-[1.7]">
-              Use the in-app onboarding flow after installation. For enterprise
-              deployment help, contact support through the FAQ page or email{" "}
+              Use the in-app onboarding flow after installation. macOS may warn
+              that the app is from an unidentified developer the first time —
+              right-click the app and choose <strong>Open</strong> to bypass.
+              For enterprise deployment help, contact support through the FAQ
+              page or email{" "}
               <a
                 href="mailto:support@gapmap.app"
                 className="text-[var(--orange)] hover:underline"

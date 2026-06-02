@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { purchasePlanAndIssueActivation } from "@/lib/registrationBillingService";
+import { billingEnabled } from "@/lib/billing";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,12 @@ type PurchaseRequest = {
 };
 
 export async function POST(req: Request) {
+  if (!billingEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: "billing_disabled", message: "Paid purchase is off — get a free key from your dashboard." },
+      { status: 403 },
+    );
+  }
   let body: PurchaseRequest;
   try {
     body = (await req.json()) as PurchaseRequest;

@@ -35,7 +35,7 @@ export function CtaSection() {
               Start free account →
             </a>
             <a
-              href="#pricing"
+              href="/pricing"
               className="btn btn-lg border border-white/20 bg-white/[0.06] text-white hover:bg-white/10"
             >
               View Pro plans →

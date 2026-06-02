@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { activateLicenseForDevice } from "@/lib/licenseService";
+import { isMasterKey, masterSignature } from "@/lib/masterKey";
+import { issueMasterToken, defaultActivationExpiryIso } from "@/lib/token";
+import { saveOnboarding } from "@/lib/onboardingStore";
 
 export const runtime = "nodejs";
 
@@ -11,6 +14,7 @@ type ActivateRequest = {
   app?: string;
   os?: string;
   arch?: string;
+  onboarding?: Record<string, unknown>;
 };
 
 export async function POST(req: Request) {
@@ -25,6 +29,33 @@ export async function POST(req: Request) {
   const password = body.password || "";
   const activationKey = (body.activation_key || "").trim();
   const deviceSignature = (body.device_signature || "").trim();
+
+  // Capture onboarding answers the app sends with activation (best-effort).
+  if (email && body.onboarding && typeof body.onboarding === "object") {
+    try { await saveOnboarding(email, body.onboarding); } catch { /* non-fatal */ }
+  }
+
+  // Master beta key — activates ANY device for ANY email, no password, no
+  // device limit. Revoked/rotated by changing MASTER_KEY in the server env.
+  if (isMasterKey(activationKey)) {
+    if (!/^[a-f0-9]{64}$/.test(deviceSignature.toLowerCase())) {
+      return NextResponse.json(
+        { ok: false, error: "device_signature must be a sha256 hex digest" },
+        { status: 400 },
+      );
+    }
+    const fp = deviceSignature.toLowerCase();
+    return NextResponse.json({
+      ok: true,
+      master: true,
+      token: issueMasterToken(fp, email, masterSignature()),
+      license_id: "lic_master",
+      user_id: "usr_master",
+      expires_at: defaultActivationExpiryIso(),
+      devices_used: 1,
+      max_devices: 999999,
+    });
+  }
 
   if (!email || !password || !activationKey || !deviceSignature) {
     return NextResponse.json(

@@ -131,6 +131,28 @@ export async function startTrial(): Promise<TrialStartResponse> {
   return body as TrialStartResponse;
 }
 
+export type FreeKeyResponse = {
+  ok: true;
+  already: boolean;
+  license_id: string;
+  activation_key: string | null;        // full key (only on first issue / file store)
+  activation_key_preview?: string | null;
+  status: string;
+  max_devices: number;
+  message?: string;
+};
+
+/** Issue (or fetch) the logged-in user's FREE license key. Idempotent. */
+export async function getFreeKey(): Promise<FreeKeyResponse> {
+  const headers = { ...(await authHeader()), "Content-Type": "application/json" };
+  const res = await fetch("/api/v1/licence/free", { method: "POST", headers });
+  const body = await res.json();
+  if (!res.ok || !body.ok) {
+    throw new Error(body.message || body.error || `could not get key (${res.status})`);
+  }
+  return body as FreeKeyResponse;
+}
+
 export async function openBillingPortal(): Promise<string> {
   const headers = await authHeader();
   const res = await fetch("/api/v1/billing/portal", { method: "GET", headers });

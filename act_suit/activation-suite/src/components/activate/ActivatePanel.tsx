@@ -1,11 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatActivationKey, isValidActivationKey, normalizeActivationKey } from "@/lib/activationKey";
-import { activateLicenseWeb, checkActivationService } from "@/lib/activateClient";
-import { mapActivationError } from "@/lib/activationErrors";
+import { formatActivationKey } from "@/lib/activationKey";
 import {
   openLemonSqueezyCheckout,
   openLemonSqueezyCustomerPortal,
@@ -16,109 +13,46 @@ import { ROUTES } from "@/lib/constants";
 import {
   deactivateDeviceWeb,
   fetchLicenceMe,
+  getFreeKey,
   startTrial,
   type LicenceSummary,
 } from "@/lib/licenceClient";
+import {
+  ShieldIcon,
+  planLabel,
+  planMetaText,
+  trialDaysLeft,
+  type Alert,
+  type TabKey,
+} from "./activateShared";
+import { ActivateTab } from "./ActivateTab";
+import { DevicesTab } from "./DevicesTab";
+import { BillingTab } from "./BillingTab";
 
-type Alert = { msg: string; type: "error" | "info" | "success" } | null;
+const TRIAL_TOTAL_DAYS = 14;
 
-type DeviceRow = {
-  key: string;
-  name: string;
-  meta: string;
-  status: "current" | "active";
-  signatureHash: string;
-};
+// We remember the full licence key in localStorage so the user can re-copy it
+// later. The server only returns the full key once (it's hashed at rest), so
+// this client-side memory is what makes "copy it again" actually work.
+const LS_LICENCE_KEY = "gapmap.licence.key";
 
-function formatExpiryDate(expiresAt: string | null): string {
-  if (!expiresAt) return "never";
-  try {
-    const d = new Date(expiresAt);
-    return d.toLocaleDateString(undefined, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return expiresAt;
-  }
-}
-
-function DeviceIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <rect x="2" y="3" width="12" height="9" rx="1.5" stroke="#6B6259" strokeWidth="1.2" />
-      <path d="M5 14h6M8 12v2" stroke="#6B6259" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
-      <path
-        d="M11 3L5 6v6c0 4 3 7.5 6 8.5 3-1 6-4.5 6-8.5V6L11 3Z"
-        stroke="#E07B3C"
-        strokeWidth="1.4"
-      />
-      <path
-        d="M8 11l2.5 2.5L15 8.5"
-        stroke="#E07B3C"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function devicesFromLicence(lic: LicenceSummary | null): DeviceRow[] {
-  if (!lic) return [];
-  return lic.devices.map((d, idx) => ({
-    key: d.signatureHash || `${idx}`,
-    name: `${d.os || "unknown"} · ${d.arch || "unknown"}`,
-    meta: `Activated ${formatExpiryDate(d.activatedAt)} · last seen ${formatExpiryDate(d.lastSeenAt)}`,
-    status: idx === 0 ? "current" : "active",
-    signatureHash: d.signatureHash,
-  }));
-}
-
-function planLabel(lic: LicenceSummary | null): string {
-  if (!lic) return "Free — no licence yet";
-  if (lic.isTrial) return "Pro — trial active";
-  if (lic.planId === "team") return "Team plan";
-  if (lic.livePassActive || lic.planId === "live_pass") return "Pro + Live Pass";
-  if (lic.planId === "pro") return "Pro — perpetual licence";
-  return "Free";
-}
-
-function planMetaHtml(lic: LicenceSummary | null): string {
-  if (!lic) return "Activate a key or start a 14-day trial to unlock the desktop app.";
-  const used = `${lic.devices.length} of ${lic.maxDevices} device${lic.maxDevices === 1 ? "" : "s"} used`;
-  if (lic.isTrial && lic.trialEndsAt) {
-    return `Trial expires <strong>${formatExpiryDate(lic.trialEndsAt)}</strong> · ${used}`;
-  }
-  if (lic.expiresAt) {
-    return `Renews <strong>${formatExpiryDate(lic.expiresAt)}</strong> · ${used}`;
-  }
-  return `${used}`;
-}
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "activate", label: "Activate" },
+  { key: "devices", label: "Devices" },
+  { key: "billing", label: "Billing" },
+];
 
 export function ActivatePanel() {
   const router = useRouter();
   const { user, status } = useSession();
-  const [keyInput, setKeyInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [alert, setAlert] = useState<Alert>({
-    msg: "Flow: sign in → buy/start trial → enter activation key → open desktop app.",
-    type: "info",
-  });
-  const [activated, setActivated] = useState(false);
-  const [jwt, setJwt] = useState("");
-  const [copied, setCopied] = useState(false);
+
+  const [tab, setTab] = useState<TabKey>("activate");
+  const [alert, setAlert] = useState<Alert>(null);
   const [licence, setLicence] = useState<LicenceSummary | null>(null);
   const [licenceLoading, setLicenceLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
+  const [licenceKey, setLicenceKey] = useState(""); // full key, for re-copy
+  const [keyCopied, setKeyCopied] = useState(false);
 
   const reloadLicence = useCallback(async () => {
     setLicenceLoading(true);
@@ -142,63 +76,62 @@ export function ActivatePanel() {
     }
   }, [status, user, router, reloadLicence]);
 
+  // Restore a previously-issued key so the user can copy it again.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LS_LICENCE_KEY);
+      if (saved) setLicenceKey(formatActivationKey(saved));
+    } catch {
+      /* localStorage unavailable — non-fatal */
+    }
+  }, []);
+
+  // Persist the full key (called after a trial/free key is issued).
+  const rememberKey = useCallback((raw: string) => {
+    const formatted = formatActivationKey(raw);
+    setLicenceKey(formatted);
+    try {
+      localStorage.setItem(LS_LICENCE_KEY, formatted);
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
+
   const desktopLinks = useMemo(() => {
     const env = getPublicEnv();
     return {
       deepLink: (env.appDeepLinkUrl || "gapmap://dashboard").trim(),
-      downloadUrl: env.appDownloadUrl.trim(),
+      // Prefer the env override; otherwise use the canonical /api/download
+      // route, which redirects to the latest GitHub release for the visitor's
+      // OS. This is always populated, so the download button never dead-ends.
+      downloadUrl: env.appDownloadUrl.trim() || "/api/download",
     };
   }, []);
 
-  const normalized = normalizeActivationKey(keyInput);
-  const keyReady = normalized.length === 16;
+  const name = getUserDisplayName(user) || "";
+  const email = user?.email || "";
+  const hasLicence = Boolean(licence);
 
   function showAlert(msg: string, type: "error" | "info" | "success") {
     setAlert({ msg, type });
   }
 
-  function onKeyChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setKeyInput(formatActivationKey(e.target.value));
-  }
-
-  async function pasteKey() {
-    try {
-      const t = await navigator.clipboard.readText();
-      setKeyInput(formatActivationKey(t));
-    } catch {
-      /* ignore */
-    }
-  }
-
-  async function handleActivate() {
-    if (!isValidActivationKey(keyInput)) {
-      showAlert("Use key format XXXX-XXXX-XXXX-XXXX (A-Z and 2-9).", "error");
-      return;
-    }
-    setBusy(true);
-    showAlert("Activating…", "info");
-    try {
-      const result = await activateLicenseWeb(keyInput);
-      setJwt(result.token);
-      setActivated(true);
-      showAlert("Licence activated. Open Gap Map desktop app now.", "success");
-      await reloadLicence();
-    } catch (err) {
-      showAlert(mapActivationError(err instanceof Error ? err.message : String(err)), "error");
-    } finally {
-      setBusy(false);
-    }
+  function copyKey() {
+    if (!licenceKey) return;
+    navigator.clipboard.writeText(licenceKey).catch(() => {});
+    setKeyCopied(true);
+    setTimeout(() => setKeyCopied(false), 1500);
   }
 
   async function handleStartTrial() {
     setActing("trial");
     try {
       const res = await startTrial();
+      rememberKey(res.activation_key);
       showAlert(
-        `Trial started — ${res.trial_days} days. Your activation key is ${res.activation_key}. Paste it above to activate this browser.`,
+        `Trial started — ${res.trial_days} days. Your key is shown below. Copy it, then open the app (step 3).`,
         "success",
       );
-      setKeyInput(formatActivationKey(res.activation_key));
       await reloadLicence();
     } catch (err) {
       showAlert(err instanceof Error ? err.message : String(err), "error");
@@ -207,11 +140,33 @@ export function ActivatePanel() {
     }
   }
 
-  async function handleDeactivate(device: DeviceRow) {
-    if (!window.confirm(`Deactivate ${device.name}?`)) return;
-    setActing(device.signatureHash);
+  async function handleGetFreeKey() {
+    setActing("free");
     try {
-      await deactivateDeviceWeb(device.signatureHash);
+      const res = await getFreeKey();
+      if (res.activation_key) {
+        rememberKey(res.activation_key);
+        showAlert("Free key issued — shown below. Copy it, then open the app (step 3).", "success");
+      } else {
+        showAlert(
+          res.message ||
+            "You already have a free licence. Your key is in your email — copy it from there.",
+          "info",
+        );
+      }
+      await reloadLicence();
+    } catch (err) {
+      showAlert(err instanceof Error ? err.message : String(err), "error");
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function handleDeactivate(signatureHash: string, deviceName: string) {
+    if (!window.confirm(`Deactivate ${deviceName}?`)) return;
+    setActing(signatureHash);
+    try {
+      await deactivateDeviceWeb(signatureHash);
       showAlert("Device deactivated.", "success");
       await reloadLicence();
     } catch (err) {
@@ -221,26 +176,10 @@ export function ActivatePanel() {
     }
   }
 
-  async function handleCheckService() {
-    try {
-      const ok = await checkActivationService();
-      if (ok) {
-        showAlert("Activation service is reachable. You can activate now.", "info");
-      } else {
-        showAlert(
-          "Activation service check failed. Verify NEXT_PUBLIC_LICENSE_API_BASE + API uptime + CORS.",
-          "error",
-        );
-      }
-    } catch (err) {
-      showAlert(mapActivationError(err instanceof Error ? err.message : String(err)), "error");
-    }
-  }
-
   function handleUpgrade() {
     if (!openLemonSqueezyCheckout("pro")) {
       showAlert(
-        "Set NEXT_PUBLIC_LEMONSQUEEZY_CHECKOUT_PRO (full Lemon Squeezy checkout link for Pro).",
+        "Set NEXT_PUBLIC_LEMONSQUEEZY_CHECKOUT_PRO (Lemon Squeezy checkout link for Pro).",
         "info",
       );
     }
@@ -264,39 +203,43 @@ export function ActivatePanel() {
     }
   }
 
-  function copyToken() {
-    if (!jwt) return;
-    navigator.clipboard.writeText(jwt).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
   function openDesktopApp() {
     if (!desktopLinks.deepLink) {
-      showAlert(
-        "Desktop deep-link not configured. Use Download desktop app instead.",
-        "info",
-      );
+      showAlert("Desktop deep-link not configured. Use Download the app instead.", "info");
       return;
     }
+    // Standard web→desktop "open vs download" pattern (Slack/Linear/VS Code):
+    // a website can't detect whether the app is installed, so we fire the deep
+    // link and watch for the tab losing focus. If the OS hands off to the app,
+    // the page is hidden/blurred → stay silent. If we're still in the
+    // foreground after the timeout, the app likely isn't installed → prompt a
+    // download instead of leaving the user stuck.
+    let handedOff = false;
+    const markHandoff = () => {
+      if (document.visibilityState === "hidden") handedOff = true;
+    };
+    const onBlur = () => {
+      handedOff = true;
+    };
+    document.addEventListener("visibilitychange", markHandoff);
+    window.addEventListener("blur", onBlur);
+
     try {
       window.location.href = desktopLinks.deepLink;
-      setTimeout(() => {
-        if (desktopLinks.downloadUrl) {
-          showAlert(
-            "If app did not open, install/update desktop app from the download link.",
-            "info",
-          );
-        } else {
-          showAlert(
-            "If app did not open, install Gap Map desktop app and retry.",
-            "info",
-          );
-        }
-      }, 1200);
     } catch {
-      showAlert("Could not trigger desktop app link.", "error");
+      showAlert("Could not open the desktop app link.", "error");
     }
+
+    window.setTimeout(() => {
+      document.removeEventListener("visibilitychange", markHandoff);
+      window.removeEventListener("blur", onBlur);
+      if (!handedOff) {
+        showAlert(
+          'Gap Map didn’t open — it may not be installed yet. Use "Download the app" below, then try again.',
+          "info",
+        );
+      }
+    }, 1500);
   }
 
   function downloadDesktopApp() {
@@ -311,466 +254,140 @@ export function ActivatePanel() {
   }
 
   function resendKeyHelp() {
-    const email = user?.email || "";
     const subject = encodeURIComponent("Gap Map activation key help");
     const body = encodeURIComponent(
-      `Hi Gap Map support,\n\nI need help with activation key delivery/resend.\nAccount email: ${
+      `Hi Gap Map support,\n\nI need help with my activation key.\nAccount email: ${
         email || "[your email]"
       }\nIssue: [did not receive key / key not working]\n\nThanks.`,
     );
     window.location.href = `mailto:support@gapmap.app?subject=${subject}&body=${body}`;
   }
 
-  const name = getUserDisplayName(user) || "Gap Map user";
-  const devices = devicesFromLicence(licence);
-  const maxDevices = licence?.maxDevices ?? 1;
-  const slotsUsed = devices.length;
-  const slots = Array.from({ length: Math.max(maxDevices, 1) }, (_, i) => i < slotsUsed);
-
-  // Trial banner
-  const trialMs =
-    licence?.isTrial && licence.trialEndsAt
-      ? new Date(licence.trialEndsAt).getTime() - Date.now()
-      : 0;
-  const trialDaysLeft = Math.max(0, Math.ceil(trialMs / (1000 * 60 * 60 * 24)));
-  const trialTotal = 14;
-  const trialPct = Math.min(100, Math.max(0, Math.round((trialDaysLeft / trialTotal) * 100)));
-  const showTrialBanner = Boolean(licence?.isTrial && licence.trialEndsAt);
-  const showStartTrialCta = !licenceLoading && !licence;
+  // Trial banner data
+  const daysLeft = trialDaysLeft(licence);
+  const showTrial = Boolean(licence?.isTrial && licence.trialEndsAt);
+  const trialPct = Math.min(100, Math.max(0, Math.round((daysLeft / TRIAL_TOTAL_DAYS) * 100)));
+  const deviceCount = licence?.devices.length ?? 0;
 
   return (
     <div className="min-h-screen bg-[var(--cream)]">
-      <main className="mx-auto max-w-[960px] px-8 py-14">
-        <div className="mb-12">
-          <h1 className="font-serif text-[36px] font-normal leading-tight tracking-[-1px] text-[var(--dark)]">
-            Licence &amp; <em className="italic text-[var(--orange)]">activation</em>
+      <main className="mx-auto max-w-[820px] px-6 py-12 md:px-8">
+        {/* Heading */}
+        <div className="mb-8">
+          <h1 className="font-serif text-[32px] font-normal leading-tight tracking-[-1px] text-[var(--dark)]">
+            Activate <em className="italic text-[var(--orange)]">Gap Map</em>
           </h1>
-          <p className="mt-2 max-w-[480px] text-[15px] font-light text-[var(--muted)]">
-            Manage your plan, activate devices, and set up your BYOK API keys.
-            All processing happens locally on your machine.
+          <p className="mt-2 max-w-[540px] text-[14px] font-light text-[var(--muted)]">
+            Just 3 steps: you&rsquo;re signed in, you get a licence key here, then you paste that key
+            into the desktop app. Everything runs locally on your Mac.
           </p>
         </div>
 
-        {/* Plan Status */}
-        <section className="mb-8 flex flex-col items-start gap-6 rounded-[24px] border border-[var(--border-strong)] bg-white px-8 py-7 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[rgba(224,123,60,0.2)] bg-[var(--orange-pale)]">
+        {/* Plan status strip */}
+        <section className="mb-5 flex flex-col gap-4 rounded-[18px] border border-[var(--border-strong)] bg-white px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[rgba(224,123,60,0.2)] bg-[var(--orange-pale)]">
               <ShieldIcon />
             </span>
             <div>
-              <div className="text-[18px] font-medium text-[var(--dark)]">
+              <div className="text-[16px] font-medium text-[var(--dark)]">
                 {licenceLoading ? "Loading licence…" : planLabel(licence)}
               </div>
-              <div
-                className="text-[13px] text-[var(--muted)]"
-                dangerouslySetInnerHTML={{ __html: planMetaHtml(licence) }}
-              />
-              {name ? (
+              <div className="text-[12.5px] text-[var(--muted)]">{planMetaText(licence)}</div>
+              {name || email ? (
                 <div className="mt-[2px] text-[12px] text-[var(--muted-light)]">
-                  Signed in as {name}
+                  Signed in as {name || email}
                 </div>
               ) : null}
             </div>
           </div>
-          <div className="flex flex-wrap gap-[10px]">
-            <Link href="/#pricing" className="btn-sm">
-              View plans
-            </Link>
-            {showStartTrialCta ? (
-              <button
-                type="button"
-                className="btn-sm primary"
-                onClick={handleStartTrial}
-                disabled={acting === "trial"}
-              >
-                {acting === "trial" ? "Starting…" : "Start 14-day trial"}
-              </button>
-            ) : null}
-            <button type="button" className="btn-sm orange" onClick={handleUpgrade}>
-              Upgrade to Pro — $69
-            </button>
-          </div>
+          {showTrial ? (
+            <div className="min-w-[180px] sm:text-right">
+              <div className="mb-[6px] text-[12.5px] font-medium text-[var(--orange)]">
+                {daysLeft} / {TRIAL_TOTAL_DAYS} trial days left
+              </div>
+              <div className="h-[6px] rounded-full bg-[rgba(224,123,60,0.15)]">
+                <div
+                  className="h-[6px] rounded-full bg-[var(--orange)] transition-all duration-500"
+                  style={{ width: `${trialPct}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
         </section>
 
-        {showTrialBanner ? (
-          <section className="mb-8 rounded-[16px] border border-[rgba(224,123,60,0.2)] bg-[var(--orange-pale)] px-6 py-4">
-            <div className="mb-[10px] flex items-center justify-between">
-              <p className="text-[13.5px] font-medium text-[var(--dark)]">
-                Pro trial active — {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} remaining
-              </p>
-              <span className="text-[13px] font-medium text-[var(--orange)]">
-                {trialDaysLeft} / {trialTotal} days left
-              </span>
-            </div>
-            <div className="h-[6px] rounded-full bg-[rgba(224,123,60,0.15)]">
-              <div
-                className="h-[6px] rounded-full bg-[var(--orange)] transition-all duration-500"
-                style={{ width: `${trialPct}%` }}
-              />
-            </div>
-            <p className="mt-2 text-[12px] text-[var(--muted)]">
-              Your trial includes all Pro features: unlimited workspaces, all 13
-              sources, PDF export, and 1-year history. Upgrade before it ends
-              to keep access.
-            </p>
-          </section>
-        ) : null}
-
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {/* Activate key card */}
-          <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
-            <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">
-              Activate a licence key
-            </div>
-            <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
-              Activation is required before using Gap Map desktop. Enter your
-              key from Lemon Squeezy email/portal. Keys are in the format{" "}
-              <code className="rounded bg-[var(--cream-dark)] px-[5px] font-mono text-[11px]">
-                XXXX-XXXX-XXXX-XXXX
-              </code>
-              .
-            </div>
-            <div className="relative mb-3">
-              <input
-                type="text"
-                value={keyInput}
-                onChange={onKeyChange}
-                spellCheck={false}
-                maxLength={19}
-                placeholder="ABCD-EF23-4567-89JK"
-                className="w-full rounded-[10px] border border-[var(--border-strong)] bg-[var(--cream-mid)] px-[14px] py-3 pr-16 font-mono text-[15px] uppercase tracking-[1px] text-[var(--dark)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
-              />
+        {/* Tab nav */}
+        <div className="mb-6 flex gap-1 rounded-[12px] border border-[var(--border)] bg-white p-1">
+          {TABS.map((t) => {
+            const isActive = tab === t.key;
+            const count = t.key === "devices" && licence ? licence.devices.length : null;
+            return (
               <button
+                key={t.key}
                 type="button"
-                onClick={pasteKey}
-                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent text-[11.5px] font-medium text-[var(--orange)] hover:opacity-70"
-              >
-                Paste
-              </button>
-            </div>
-            <p className="mb-4 text-[12px] text-[var(--muted-light)]">
-              Format:{" "}
-              <code className="rounded bg-[var(--cream-dark)] px-[5px] font-mono text-[11px]">
-                XXXX-XXXX-XXXX-XXXX
-              </code>{" "}
-              — check your purchase email
-            </p>
-            <div className="mb-4 flex flex-wrap gap-x-4 gap-y-[6px] text-[12px]">
-              <Link href={ROUTES.signIn} className="text-[var(--orange)] hover:underline">
-                Sign in / create account
-              </Link>
-              <Link
-                href={ROUTES.activationHelp}
-                className="text-[var(--orange)] hover:underline"
-              >
-                Activation help
-              </Link>
-              <button
-                type="button"
-                onClick={handleCheckService}
-                className="text-[var(--orange)] hover:underline"
-              >
-                Check activation service
-              </button>
-              <button
-                type="button"
-                onClick={handleUpgrade}
-                className="text-[var(--orange)] hover:underline"
-              >
-                Buy Pro key
-              </button>
-              <button
-                type="button"
-                onClick={handlePortal}
-                className="text-[var(--orange)] hover:underline"
-              >
-                Open customer portal
-              </button>
-              <button
-                type="button"
-                onClick={resendKeyHelp}
-                className="text-[var(--orange)] hover:underline"
-              >
-                Didn&rsquo;t get key?
-              </button>
-            </div>
-            <div className="mb-3 rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-3 py-[10px]">
-              <p className="mb-[6px] text-[12px] text-[var(--muted)]">After activation:</p>
-              <ol className="ml-4 grid list-decimal gap-1 text-[12.5px] text-[var(--text)]">
-                <li>Open Gap Map desktop app.</li>
-                <li>Sign in with the same email.</li>
-                <li>Your licence unlocks automatically on this device.</li>
-              </ol>
-            </div>
-            <button
-              type="button"
-              onClick={handleActivate}
-              disabled={!keyReady || busy}
-              className={`flex w-full items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-[14px] font-medium text-white transition-all ${
-                activated
-                  ? "bg-[var(--green)]"
-                  : "bg-[var(--dark)] hover:bg-[var(--dark-mid)]"
-              } disabled:pointer-events-none disabled:opacity-50`}
-            >
-              {activated
-                ? "Activated ✓"
-                : busy
-                ? "Activating…"
-                : "Activate licence"}
-            </button>
-            {alert ? (
-              <div
-                role="status"
-                className={`mt-3 rounded-[10px] border px-[14px] py-[11px] text-[13px] ${
-                  alert.type === "error"
-                    ? "border-[#F5C5C0] bg-[#FDF0EF] text-[#C0392B]"
-                    : alert.type === "success"
-                    ? "border-[#9FE1CB] bg-[#EDF8F1] text-[#0F6E56]"
-                    : "border-[rgba(224,123,60,0.2)] bg-[var(--orange-pale)] text-[var(--orange)]"
+                onClick={() => setTab(t.key)}
+                className={`flex-1 rounded-[9px] px-3 py-2 text-[13px] font-medium transition-colors ${
+                  isActive
+                    ? "bg-[var(--dark)] text-white"
+                    : "text-[var(--muted)] hover:bg-[var(--cream-mid)] hover:text-[var(--text)]"
                 }`}
               >
-                {alert.msg}
-              </div>
-            ) : null}
-            {activated ? (
-              <div className="mt-4 rounded-[16px] border border-[rgba(29,158,117,0.25)] bg-[var(--green-pale)] px-6 py-5">
-                <div className="mb-1 text-[14px] font-medium text-[#0F6E56]">
-                  Licence activated successfully
-                </div>
-                <p className="text-[12.5px] leading-[1.5] text-[#0F6E56]">
-                  Your device is now authorised. Open Gap Map desktop app — it
-                  will pick up the activation automatically.
-                </p>
-                <div className="mt-2 break-all rounded-[6px] bg-[rgba(29,158,117,0.08)] px-[10px] py-2 font-mono text-[11px] text-[#0F6E56]">
-                  {jwt || "—"}
-                </div>
-                <button
-                  type="button"
-                  onClick={copyToken}
-                  className="mt-2 inline-block text-[11.5px] text-[var(--green)]"
-                >
-                  {copied ? "Copied!" : "Copy JWT token"}
-                </button>
-                <div className="mt-3 flex flex-wrap gap-[10px]">
-                  <button
-                    type="button"
-                    onClick={openDesktopApp}
-                    className="inline-flex items-center gap-2 rounded-[9px] border border-[var(--orange)] bg-[var(--orange)] px-3 py-2 text-[12.5px] font-medium text-white"
-                  >
-                    Open desktop app
-                  </button>
-                  <button
-                    type="button"
-                    onClick={downloadDesktopApp}
-                    className="inline-flex items-center gap-2 rounded-[9px] border border-[var(--border-strong)] bg-white px-3 py-2 text-[12.5px] font-medium text-[var(--text)]"
-                  >
-                    Download desktop app
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-          {/* Devices */}
-          <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
-            <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">
-              Activated devices
-            </div>
-            <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
-              Your plan allows 1 device (Pro) or 2 devices (Pro + Live Pass).
-              Deactivate to free a slot.
-            </div>
-            <div className="flex flex-col gap-2">
-              {devices.length === 0 ? (
-                <p className="rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-[14px] py-4 text-[13px] text-[var(--muted)]">
-                  {licenceLoading
-                    ? "Loading devices…"
-                    : "No devices activated yet. Enter a key above to activate this browser."}
-                </p>
-              ) : (
-                devices.map((d) => (
-                  <div
-                    key={d.key}
-                    className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-[14px] py-3"
-                  >
-                    <div className="flex items-center gap-[10px]">
-                      <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[6px] bg-[var(--cream-dark)]">
-                        <DeviceIcon />
-                      </span>
-                      <div>
-                        <div className="text-[13px] font-medium text-[var(--dark)]">
-                          {d.name}
-                        </div>
-                        <div className="text-[11px] text-[var(--muted-light)]">
-                          {d.meta}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded-full px-[9px] py-[2px] text-[11px] font-medium ${
-                          d.status === "current"
-                            ? "bg-[var(--orange-pale)] text-[var(--orange)]"
-                            : "bg-[var(--green-pale)] text-[var(--green)]"
-                        }`}
-                      >
-                        {d.status === "current" ? "This device" : "Active"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeactivate(d)}
-                        disabled={acting === d.signatureHash}
-                        className="text-[11.5px] font-medium text-[var(--muted)] hover:text-[var(--red)] disabled:opacity-50"
-                      >
-                        {acting === d.signatureHash ? "Removing…" : "Deactivate"}
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="mt-4 flex gap-2">
-              {slots.map((used, i) => (
-                <span
-                  key={i}
-                  className={
-                    used
-                      ? "h-2 w-7 rounded-full bg-[var(--orange)]"
-                      : "h-2 w-7 rounded-full border border-dashed border-[rgba(30,20,10,0.15)] bg-[var(--cream-dark)]"
-                  }
-                />
-              ))}
-            </div>
-            <p className="mt-[6px] text-[12px] text-[var(--muted-light)]">
-              {slotsUsed} of {maxDevices} device slot
-              {maxDevices === 1 ? "" : "s"} used
-              {maxDevices <= 1 ? " · Upgrade to Live Pass for +1 slot" : ""}
-            </p>
-            <div className="mt-4 border-t border-[var(--border)] pt-4">
-              <div className="mb-[10px] text-[14px] font-medium text-[var(--dark)]">
-                Add Live Pass
-              </div>
-              <p className="mb-3 text-[12.5px] leading-[1.5] text-[var(--muted)]">
-                $39/year — adds daily brief scheduler, competitor monitors, new
-                source updates, and +1 device slot.
-              </p>
-              <button
-                type="button"
-                onClick={handleLivePass}
-                className="btn-sm orange w-full justify-center"
-              >
-                Add Live Pass — $39/yr
-              </button>
-            </div>
-          </section>
-
-          {/* BYOK */}
-          <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
-            <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">
-              BYOK — API keys
-            </div>
-            <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
-              Your keys are stored locally in your Keychain and never sent to
-              Gap Map servers.
-            </div>
-            {[
-              { label: "Anthropic Claude", sub: "Used for AI extraction sweeps", set: true },
-              { label: "OpenAI", sub: "Optional GPT-4o fallback", set: false },
-              { label: "Gemini", sub: "Optional free-tier extraction", set: false },
-            ].map((row) => (
-              <div
-                key={row.label}
-                className="flex items-center justify-between border-b border-[var(--border)] py-[10px] last:border-b-0"
-              >
-                <div>
-                  <div className="text-[13px] font-medium text-[var(--dark)]">
-                    {row.label}
-                  </div>
-                  <div className="text-[11.5px] text-[var(--muted-light)]">
-                    {row.sub}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
+                {t.label}
+                {count !== null ? (
                   <span
-                    className={`rounded-[6px] border border-[var(--border)] bg-[var(--cream-mid)] px-2 py-1 font-mono text-[11px] ${
-                      row.set ? "text-[var(--muted-light)]" : "text-[var(--muted-light)]"
+                    className={`ml-[6px] rounded-full px-[6px] py-[1px] text-[11px] ${
+                      isActive ? "bg-white/20 text-white" : "bg-[var(--cream-dark)] text-[var(--muted)]"
                     }`}
                   >
-                    {row.set ? "sk-ant-••••••8f3a" : "Not set"}
+                    {count}
                   </span>
-                  <span className="text-[11.5px] font-medium text-[var(--orange)]">
-                    {row.set ? "Change" : "Add"}
-                  </span>
-                </div>
-              </div>
-            ))}
-            <p className="mt-4 rounded-[10px] bg-[var(--cream-mid)] px-3 py-3 text-[12px] leading-[1.5] text-[var(--muted)]">
-              Keys are stored in macOS Keychain via{" "}
-              <code className="rounded bg-[var(--cream-dark)] px-1 py-[1px] font-mono text-[10.5px]">
-                Security.framework
-              </code>
-              . Gap Map never transmits them.
-            </p>
-          </section>
-
-          {/* Purchase history */}
-          <section className="rounded-[24px] border border-[var(--border-strong)] bg-white p-7">
-            <div className="mb-1 text-[14px] font-medium text-[var(--dark)]">
-              Purchase history
-            </div>
-            <div className="mb-5 text-[13px] leading-[1.5] text-[var(--muted)]">
-              All transactions via Lemon Squeezy. Download invoices directly
-              from your LS portal.
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between border-b border-[var(--border)] py-3">
-                <div>
-                  <div className="text-[13.5px] font-medium text-[var(--dark)]">
-                    Pro Trial (14 days)
-                  </div>
-                  <div className="mt-[2px] text-[12px] text-[var(--muted-light)]">
-                    3 Apr 2026
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[14px] font-medium text-[var(--dark)]">
-                    $0.00
-                  </div>
-                  <span className="mt-[2px] inline-block rounded-full bg-[var(--green-pale)] px-[9px] py-[2px] text-[11px] text-[var(--green)]">
-                    Active
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between py-3 opacity-50">
-                <div>
-                  <div className="text-[13.5px] font-medium text-[var(--dark)]">
-                    Pro — perpetual licence
-                  </div>
-                  <div className="mt-[2px] text-[12px] text-[var(--muted-light)]">
-                    Pending upgrade
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[14px] font-medium text-[var(--dark)]">
-                    $69.00
-                  </div>
-                  <span className="text-[11px] text-[var(--muted-light)]">
-                    Not purchased
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 border-t border-[var(--border)] pt-4">
-              <button
-                type="button"
-                onClick={handlePortal}
-                className="text-[13px] text-[var(--orange)] hover:underline"
-              >
-                Open Lemon Squeezy portal →
+                ) : null}
               </button>
-            </div>
-          </section>
+            );
+          })}
         </div>
+
+        {/* Tab content */}
+        {tab === "activate" ? (
+          <ActivateTab
+            email={email}
+            licenceLoading={licenceLoading}
+            hasLicence={hasLicence}
+            licenceKey={licenceKey}
+            keyPreview={licence?.activationKeyPreview ?? null}
+            keyCopied={keyCopied}
+            deviceCount={deviceCount}
+            acting={acting}
+            alert={alert}
+            onCopyKey={copyKey}
+            onStartTrial={handleStartTrial}
+            onGetFreeKey={handleGetFreeKey}
+            onUpgrade={handleUpgrade}
+            onResendHelp={resendKeyHelp}
+            openDesktopApp={openDesktopApp}
+            downloadDesktopApp={downloadDesktopApp}
+          />
+        ) : null}
+
+        {tab === "devices" ? (
+          <DevicesTab
+            licence={licence}
+            licenceLoading={licenceLoading}
+            acting={acting}
+            onDeactivate={handleDeactivate}
+            onLivePass={handleLivePass}
+          />
+        ) : null}
+
+        {tab === "billing" ? (
+          <BillingTab
+            licence={licence}
+            licenceLoading={licenceLoading}
+            onUpgrade={handleUpgrade}
+            onLivePass={handleLivePass}
+            onPortal={handlePortal}
+          />
+        ) : null}
       </main>
     </div>
   );

@@ -1,5 +1,5 @@
 import jwt, { type Secret, type SignOptions, type VerifyOptions } from "jsonwebtoken";
-import { Features, freeFeatures } from "@/lib/features";
+import { Features, freeFeatures, featuresFor } from "@/lib/features";
 
 export const JWT_ISSUER = "gapmap-activation-suite";
 export const JWT_AUDIENCE = "gapmap-desktop";
@@ -74,6 +74,64 @@ export function verifyActivationToken(token: string): VerifiedClaims {
     iss: String(claims.iss ?? JWT_ISSUER),
     aud: claims.aud ?? JWT_AUDIENCE,
   };
+}
+
+// ── Master (beta) token ────────────────────────────────────────────────────
+// A Pro token bound to one device fingerprint, carrying is_master + master_sig
+// so the validate route can revoke it when the master key rotates/clears.
+export function issueMasterToken(
+  deviceFingerprint: string,
+  email: string,
+  masterSig: string,
+  expiresIn: SignOptions["expiresIn"] = "180d",
+): string {
+  const features = featuresFor({
+    plan_id: "pro",
+    live_pass_active: false,
+    is_trial: false,
+    trial_ends_at: null,
+  });
+  const claims = {
+    sub: "lic_master",
+    user_id: "usr_master",
+    email: email || "beta@master",
+    device_fingerprint: deviceFingerprint,
+    plan_id: "pro",
+    live_pass_active: false,
+    is_trial: false,
+    trial_ends_at: null,
+    features,
+    is_master: true,
+    master_sig: masterSig,
+  };
+  return jwt.sign(claims as object, signingSecret(), {
+    algorithm: "HS256",
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+    expiresIn,
+  });
+}
+
+// Verify a token (sig/iss/aud/exp) AND return its master claims if present.
+export function readMasterClaims(
+  token: string,
+): { isMaster: boolean; masterSig: string; deviceFingerprint: string } | null {
+  try {
+    const decoded = jwt.verify(token, signingSecret(), {
+      algorithms: ["HS256"],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
+    if (typeof decoded === "string") return null;
+    const c = decoded as Record<string, unknown>;
+    return {
+      isMaster: c.is_master === true || c.sub === "lic_master",
+      masterSig: typeof c.master_sig === "string" ? c.master_sig : "",
+      deviceFingerprint: typeof c.device_fingerprint === "string" ? c.device_fingerprint : "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function defaultActivationExpiryIso(days = 180): string {

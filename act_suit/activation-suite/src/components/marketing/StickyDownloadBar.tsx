@@ -42,7 +42,7 @@ export function StickyDownloadBar() {
           Download for Mac
         </DownloadLink>
         <a
-          href="#pricing"
+          href="/pricing"
           className="text-[12.5px] font-medium text-white/70 transition-colors hover:text-white"
         >
           See plans →

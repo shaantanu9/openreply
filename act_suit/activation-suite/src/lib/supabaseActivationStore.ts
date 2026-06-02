@@ -464,6 +464,44 @@ export async function supabaseUpsertLicenceFromWebhook(input: {
   return { ok: true, licenseId: inserted.id, activationKey: rawKey, created: true };
 }
 
+export type AdminLicenseRow = {
+  email: string;
+  status: string;
+  planId: string;
+  maxDevices: number;
+  devicesUsed: number;
+  activationKeyPreview: string | null;
+  isTrial: boolean;
+  expiresAt: string | null;
+  trialEndsAt: string | null;
+};
+
+export async function supabaseListLicenses(): Promise<AdminLicenseRow[]> {
+  const supabase = getSupabaseServerClient();
+  const { data: lics } = await supabase
+    .from("licenses")
+    .select("id, email, status, plan_id, max_devices, expires_at, is_trial, trial_ends_at, activation_key, created_at")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  const rows = (lics as Array<Record<string, unknown>> | null) || [];
+  const { data: devs } = await supabase.from("license_devices").select("license_id");
+  const counts = new Map<string, number>();
+  for (const d of ((devs as Array<{ license_id: string }> | null) || [])) {
+    counts.set(d.license_id, (counts.get(d.license_id) || 0) + 1);
+  }
+  return rows.map((r) => ({
+    email: String(r.email || ""),
+    status: String(r.status || ""),
+    planId: String(r.plan_id || "pro"),
+    maxDevices: Number(r.max_devices || 0),
+    devicesUsed: counts.get(String(r.id)) || 0,
+    activationKeyPreview: r.activation_key ? String(r.activation_key).slice(-4).toUpperCase() : null,
+    isTrial: Boolean(r.is_trial),
+    expiresAt: (r.expires_at as string) ?? null,
+    trialEndsAt: (r.trial_ends_at as string) ?? null,
+  }));
+}
+
 export async function supabaseMarkLicenceFromWebhook(input: {
   email: string;
   planId?: PlanId | null;

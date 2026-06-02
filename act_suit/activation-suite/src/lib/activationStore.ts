@@ -176,7 +176,7 @@ export async function activateDevice(input: {
   if (authLicense.status === "revoked") {
     return { ok: false, status: 403, error: "license revoked" };
   }
-  if (authLicense.status === "expired") {
+  if (authLicense.status === "expired" || licenseExpiredNow(authLicense)) {
     return { ok: false, status: 403, error: "license expired" };
   }
 
@@ -256,4 +256,74 @@ export function issueTokenForLicense(
   signatureHash: string,
 ): string {
   return issueActivationToken(claimsFromLicense(record, signatureHash));
+}
+
+// True when the license is past its hard expiry or (for trials) its trial end.
+export function licenseExpiredNow(record: LicenseRecord): boolean {
+  const now = Date.now();
+  if (record.expiresAt && new Date(record.expiresAt).getTime() <= now) return true;
+  if (record.isTrial && record.trialEndsAt && new Date(record.trialEndsAt).getTime() <= now) return true;
+  return false;
+}
+
+export type AdminLicenseRow = {
+  email: string;
+  status: string;
+  planId: string;
+  maxDevices: number;
+  devicesUsed: number;
+  activationKeyPreview: string | null;
+  isTrial: boolean;
+  expiresAt: string | null;
+  trialEndsAt: string | null;
+};
+
+export async function listAllLicenses(): Promise<AdminLicenseRow[]> {
+  const store = await readStore();
+  return store.licenses.map((l) => ({
+    email: l.email,
+    status: l.status,
+    planId: l.planId,
+    maxDevices: l.maxDevices,
+    devicesUsed: l.devices.length,
+    activationKeyPreview: l.activationKey ? l.activationKey.slice(-4).toUpperCase() : null,
+    isTrial: l.isTrial,
+    expiresAt: l.expiresAt,
+    trialEndsAt: l.trialEndsAt,
+  }));
+}
+
+export async function findLicenseByEmail(email: string): Promise<LicenseRecord | null> {
+  const store = await readStore();
+  const cleaned = email.trim().toLowerCase();
+  // most-recent wins if somehow more than one
+  const matches = store.licenses.filter((l) => l.email === cleaned);
+  return matches.length ? matches[matches.length - 1] : null;
+}
+
+// Owner control: flip a license's status by email / licenseId / activationKey.
+// Used by the admin revoke endpoint to disable a key (app stops on next
+// activate + next periodic validate).
+export async function setLicenseStatusBySelector(
+  selector: { email?: string; licenseId?: string; activationKey?: string },
+  status: "active" | "revoked" | "expired",
+  opts: { setExpiryNow?: boolean } = {},
+): Promise<{ ok: boolean; matched: number }> {
+  const store = await readStore();
+  const email = selector.email?.trim().toLowerCase();
+  const key = selector.activationKey ? normalizeActivationKey(selector.activationKey) : undefined;
+  let matched = 0;
+  for (const l of store.licenses) {
+    const hit =
+      (email && l.email === email) ||
+      (selector.licenseId && l.licenseId === selector.licenseId) ||
+      (key && l.activationKey === key);
+    if (hit) {
+      l.status = status;
+      if (opts.setExpiryNow && status === "expired") l.expiresAt = new Date().toISOString();
+      matched++;
+    }
+  }
+  if (matched) await writeStore(store);
+  return { ok: matched > 0, matched };
 }
