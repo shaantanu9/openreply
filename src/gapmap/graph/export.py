@@ -1572,6 +1572,45 @@ document.querySelectorAll(".acc-head").forEach(h => h.addEventListener("click", 
   if (minBtn) minBtn.addEventListener("click", () => mainEl.classList.add("left-collapsed"));
   if (expandBtn) expandBtn.addEventListener("click", () => mainEl.classList.remove("left-collapsed"));
 })();
+
+// ── citation → graph bridge ───────────────────────────────────────────────
+// The chat (parent window) posts {type:'gapmap:focus', url, title} when a user
+// clicks a citation. We find the matching node (by source URL, else by title /
+// label) and highlight it + its relations + zoom — so the citation's place in
+// the graph is shown exactly like clicking a finding does.
+function focusByCitation(q) {
+  const url = (q && q.url || "").trim();
+  const title = (q && q.title || "").trim().toLowerCase();
+  let match = null;
+  if (url) {
+    for (const n of DATA.nodes) {
+      const md = n.metadata || {};
+      const nurl = String(md.url || md.permalink || md.link || "").trim();
+      if (nurl && (nurl === url || nurl.indexOf(url) >= 0 || url.indexOf(nurl) >= 0)) { match = n; break; }
+    }
+  }
+  if (!match && title) {
+    for (const n of DATA.nodes) {
+      const lbl = String(n.label || "").trim().toLowerCase();
+      if (lbl && (lbl === title || lbl.indexOf(title) >= 0 || (title.length > 8 && title.indexOf(lbl) >= 0))) { match = n; break; }
+    }
+  }
+  if (match) {
+    // ensure the panel is visible so the Selection detail is readable
+    document.querySelector("main").classList.remove("left-collapsed");
+    selectNodeById(match.id);
+    return true;
+  }
+  // fall back to the search lens so something still lights up
+  const s = document.getElementById("graphSearch");
+  if (s && (q && q.title)) { s.value = q.title; s.dispatchEvent(new Event("input")); }
+  return false;
+}
+window.addEventListener("message", (e) => {
+  const d = e.data;
+  if (!d || d.type !== "gapmap:focus") return;
+  try { focusByCitation(d); } catch (err) { /* non-fatal */ }
+});
 </script>
 </body>
 </html>

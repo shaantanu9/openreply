@@ -2078,12 +2078,39 @@ export async function renderTopic(root, { params }) {
     if (cut >= 0) { bodyMd = lines.slice(0, cut).join('\n'); srcMd = lines.slice(cut + 1).join('\n'); }
     let html = renderMarkdown(bodyMd) || '';
     if (srcMd.trim()) {
-      const n = (srcMd.match(/^\s*(?:[-*]|\d+[.)])\s+/gm) || []).length;
+      const cardsHtml = _renderMapCitations(srcMd);
+      const n = (cardsHtml.match(/class="cite-card"/g) || []).length;
       html += `<div class="cite-block">`
-        + `<button type="button" class="cite-acc-head"><span>📎 ${n || ''} citations</span><span class="acc-caret">▾</span></button>`
-        + `<div class="cite-acc-body">${renderMarkdown(srcMd)}</div></div>`;
+        + `<button type="button" class="cite-acc-head"><span>📎 ${n || ''} citations · click “Show in graph”</span><span class="acc-caret">▾</span></button>`
+        + `<div class="cite-acc-body">${cardsHtml}</div></div>`;
     }
     return html;
+  }
+  // Parse the backend "Sources" markdown into clickable citation cards. Each
+  // card keeps the external link AND a "Show in graph" action that highlights
+  // the matching node + its relations in the map iframe (via postMessage).
+  function _renderMapCitations(srcMd) {
+    const rows = [];
+    srcMd.split('\n').forEach(line => {
+      const t = line.trim();
+      if (!t || t === '---' || /^#{1,6}\s/.test(t)) return;
+      let m = t.match(/^\[(\d+)\]\s*\*\*(.+?)\*\*\s*[—–-]+\s*\[(.+?)\]\((.+?)\)\s*$/);
+      if (m) { rows.push({ n: m[1], prefix: m[2], title: m[3], url: m[4] }); return; }
+      m = t.match(/^\[(\d+)\]\s*\*\*(.+?)\*\*\s*[—–-]+\s*(.+?)\s*$/);
+      if (m) { rows.push({ n: m[1], prefix: m[2], title: m[3], url: '' }); return; }
+      m = t.match(/\[(.+?)\]\((.+?)\)/);
+      if (m) { rows.push({ n: '', prefix: '', title: m[1], url: m[2] }); return; }
+    });
+    if (!rows.length) return renderMarkdown(srcMd) || '';
+    return rows.map(r => {
+      const link = r.url ? `<a class="cc-link" href="${esc(r.url)}" target="_blank" rel="noopener" title="Open source">↗</a>` : '';
+      const pre = r.prefix ? `<span class="cc-kind">${esc(r.prefix)}</span>` : '';
+      const num = r.n ? `<span class="cc-n">${esc(r.n)}</span>` : '';
+      return `<div class="cite-card" data-url="${esc(r.url)}" data-title="${esc(r.title)}">`
+        + `<div class="cc-head">${num}${pre}<span class="cc-title">${esc(r.title)}</span></div>`
+        + `<div class="cc-actions"><button type="button" class="cc-graph"><i data-lucide="target"></i> Show in graph</button>${link}</div>`
+        + `</div>`;
+    }).join('');
   }
   function _renderMapChatLog() {
     const log = document.getElementById('mapchat-log');
@@ -2168,6 +2195,17 @@ export async function renderTopic(root, { params }) {
     }
     const log = document.getElementById('mapchat-log');
     if (log) log.onclick = (e) => {
+      // "Show in graph" → tell the map iframe to highlight this citation's node
+      const g = e.target.closest && e.target.closest('.cc-graph');
+      if (g) {
+        e.preventDefault();
+        const card = g.closest('.cite-card');
+        const url = card ? card.getAttribute('data-url') : '';
+        const title = card ? card.getAttribute('data-title') : '';
+        const frame = document.querySelector('.mapchat-host iframe.viewer-frame');
+        if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'gapmap:focus', url, title }, '*');
+        return;
+      }
       const h = e.target.closest && e.target.closest('.cite-acc-head'); if (!h) return;
       const body = h.parentElement.querySelector('.cite-acc-body');
       h.classList.toggle('collapsed'); body && body.classList.toggle('collapsed');
