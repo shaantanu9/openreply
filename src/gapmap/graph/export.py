@@ -371,6 +371,25 @@ _HTML_TEMPLATE = """<!doctype html>
   .acc-head.collapsed .acc-caret { transform:rotate(-90deg); }
   .acc-head + .acc-body { margin-bottom:14px; }
   .acc-body.collapsed { display:none; }
+
+  /* ── left-panel minimize / expand ─────────────────────────────────────── */
+  .left-head { display:flex; align-items:center; justify-content:space-between;
+    margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .left-head b { font-size:12px; font-weight:700; color:var(--v-ink); letter-spacing:.2px; }
+  .left-min { width:26px; height:26px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--muted); cursor:pointer; font-size:14px; line-height:1;
+    display:grid; place-items:center; transition:all .15s; }
+  .left-min:hover { border-color:var(--accent); color:var(--accent); }
+  /* collapsed: drop the left grid column so the graph takes the full width */
+  main.left-collapsed { grid-template-columns:1fr; }
+  main.left-collapsed > aside.left { display:none; }
+  /* floating pill to bring the panel back — mirrors the v2 prototype .pill.tl */
+  .left-expand { position:absolute; top:16px; left:16px; z-index:6; display:none;
+    align-items:center; gap:7px; background:var(--panel); border:1px solid var(--border);
+    border-radius:14px; padding:8px 14px; font-size:12px; font-weight:600; color:var(--muted);
+    cursor:pointer; box-shadow:var(--shadow); transition:all .15s; }
+  .left-expand:hover { border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
+  main.left-collapsed .left-expand { display:inline-flex; }
   aside.left h2 {
     font-size: 13px;
     font-weight: 700;
@@ -587,6 +606,10 @@ _HTML_TEMPLATE = """<!doctype html>
 </header>
 <main>
   <aside class="left">
+    <div class="left-head">
+      <b>Insights &amp; Lenses</b>
+      <button type="button" class="left-min" id="leftMin" title="Minimize panel">«</button>
+    </div>
     <!-- ── Insights (accordion) ── exec summary, source insights, findings ── -->
     <button type="button" class="acc-head" data-acc="accInsights"><span>📊 Insights</span><span class="acc-caret">▾</span></button>
     <div class="acc-body" id="accInsights">
@@ -646,6 +669,7 @@ _HTML_TEMPLATE = """<!doctype html>
   </aside>
 
   <svg id="graph"></svg>
+  <button type="button" class="left-expand" id="leftExpand" title="Show insights &amp; lenses">» Insights &amp; Lenses</button>
 </main>
 <footer>gapmap · gap map · <a href="https://github.com/myind-ai/gapmap/blob/main/docs/methodology.md" target="_blank">methodology</a></footer>
 
@@ -1539,6 +1563,15 @@ document.querySelectorAll(".acc-head").forEach(h => h.addEventListener("click", 
   h.classList.toggle("collapsed");
   body.classList.toggle("collapsed");
 }));
+
+// ── minimize / expand the whole left panel (gives the graph full width) ──
+(function () {
+  const mainEl = document.querySelector("main");
+  const minBtn = document.getElementById("leftMin");
+  const expandBtn = document.getElementById("leftExpand");
+  if (minBtn) minBtn.addEventListener("click", () => mainEl.classList.add("left-collapsed"));
+  if (expandBtn) expandBtn.addEventListener("click", () => mainEl.classList.remove("left-collapsed"));
+})();
 </script>
 </body>
 </html>

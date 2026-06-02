@@ -2153,9 +2153,10 @@ export async function renderTopic(root, { params }) {
     const drawer = document.getElementById('mapchat-drawer');
     if (!drawer) return;
     const scrim = document.getElementById('mapchat-scrim');
-    const open = () => { drawer.classList.add('open'); scrim?.classList.add('on'); document.getElementById('mapchat-input')?.focus(); };
-    const close = () => { drawer.classList.remove('open'); scrim?.classList.remove('on'); };
-    const openBtn = $('#btn-map-chat'); if (openBtn) openBtn.onclick = open;
+    const pill = document.getElementById('btn-map-chat');
+    const open = () => { drawer.classList.add('open'); scrim?.classList.add('on'); if (pill) pill.style.display = 'none'; document.getElementById('mapchat-input')?.focus(); };
+    const close = () => { drawer.classList.remove('open'); scrim?.classList.remove('on'); if (pill) pill.style.display = ''; };
+    if (pill) pill.onclick = open;
     const x = document.getElementById('mapchat-close'); if (x) x.onclick = close;
     if (scrim) scrim.onclick = close;
     const sendBtn = document.getElementById('mapchat-send'); if (sendBtn) sendBtn.onclick = _mapChatSend;
@@ -2605,12 +2606,13 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
-            <button class="btn btn-sm icon-btn" id="btn-map-chat" title="Ask myind AI about this map — grounded on this topic's data"><i data-lucide="message-circle"></i> Ask this map</button>
           </div>
         </div>
         ${enrichBanner}
         <div class="mapchat-host">
           <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>
+          <!-- floating bottom-center summon pill (matches v2-focus-canvas prototype) -->
+          <button class="mapchat-pill" id="btn-map-chat" title="Ask myind AI about this map — grounded on this topic's data"><i data-lucide="message-circle"></i> Ask this map</button>
           <div class="mapchat-scrim" id="mapchat-scrim"></div>
           <aside class="mapchat-drawer" id="mapchat-drawer">
             <div class="mapchat-head"><b><i data-lucide="message-circle"></i> Ask this map</b>

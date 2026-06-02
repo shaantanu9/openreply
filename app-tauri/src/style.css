@@ -9580,16 +9580,28 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
    Map-view chat — a right-docked sidebar that overlays the Map graph iframe.
    Independent of the Chat tab; shares the streaming backend. Added 2026-06-02.
    ════════════════════════════════════════════════════════════════════════ */
-.mapchat-host { position: relative; width: 100%; }
+.mapchat-host { position: relative; width: 100%; overflow: hidden; border-radius: var(--radius); }
+.mapchat-host .viewer-frame { display: block; }
+/* floating bottom-center summon pill (matches v2-focus-canvas .pill.ask) */
+.mapchat-pill {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 7;
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--orange); color: #fff; border: 1px solid var(--orange);
+  border-radius: 14px; padding: 11px 22px; font-size: 13px; font-weight: 600;
+  cursor: pointer; box-shadow: 0 8px 24px rgba(255,140,66,.35);
+  transition: transform .15s ease, filter .15s ease;
+}
+.mapchat-pill:hover { transform: translateX(-50%) translateY(-2px); filter: brightness(1.03); }
+.mapchat-pill i { width: 16px; height: 16px; }
 .mapchat-scrim {
-  position: absolute; inset: 0; z-index: 5; border-radius: var(--radius);
+  position: absolute; inset: 0; z-index: 6; border-radius: var(--radius);
   background: rgba(26,22,20,.05); opacity: 0; pointer-events: none;
   transition: opacity .2s ease;
 }
 .mapchat-scrim.on { opacity: 1; pointer-events: auto; }
 .mapchat-drawer {
-  position: absolute; top: 0; right: 0; bottom: 0; z-index: 6;
-  width: 400px; max-width: 92%;
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 8;
+  width: 380px; max-width: 92%;
   background: var(--surface); border-left: 1px solid var(--line);
   border-radius: 0 var(--radius) var(--radius) 0;
   box-shadow: -12px 0 40px rgba(26,22,20,.16);
