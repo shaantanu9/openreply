@@ -1673,6 +1673,16 @@ def cmd_research_paper_gaps(
     _emit(list_gaps(topic), as_json)
 
 
+@research_app.command("warm-llm")
+def cmd_research_warm_llm(
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Warm the LLM model (tiny completion) so the first collect's topic
+    canonicalization isn't a 30-60s cold start. Called on app launch."""
+    from ..research.discover import warm_llm
+    _emit(warm_llm(), as_json)
+
+
 @research_app.command("competitor-matrix")
 def cmd_competitor_matrix(
     topic: str = typer.Option(..., "--topic", "-t"),

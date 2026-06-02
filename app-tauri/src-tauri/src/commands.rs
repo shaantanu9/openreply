@@ -1817,6 +1817,15 @@ pub async fn paper_knowledge_build(
     }))
 }
 
+/// Warm the LLM model on app launch so the first collect's topic
+/// canonicalization isn't a 30-60s cold start (the #1 "collect feels hung"
+/// cause). Fire-and-forget from the frontend warm-up group; fail-soft.
+#[tauri::command]
+pub async fn warm_llm(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "warm-llm", "--json"])
+        .await.map_err(err_to_string)
+}
+
 #[tauri::command]
 pub async fn competitor_matrix(
     app: AppHandle,

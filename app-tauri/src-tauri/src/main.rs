@@ -404,6 +404,7 @@ fn main() {
             commands::paper_map,
             commands::paper_gaps_list,
             commands::paper_knowledge_build,
+            commands::warm_llm,
             commands::competitor_matrix,
             commands::link_research,
             commands::research_links,

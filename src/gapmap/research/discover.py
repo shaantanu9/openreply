@@ -174,6 +174,28 @@ def _cache_canonical(topic: str, result: dict) -> None:
     )
 
 
+def warm_llm() -> dict[str, Any]:
+    """Fire a tiny LLM completion to load the model BEFORE the user's first
+    collect. The first ``_canonicalize_topic`` call on a cold model takes
+    30-60s (Ollama model load / cloud serverless cold start) and BLOCKS the
+    whole collect before any posts are fetched — which reads as "hung". Warming
+    on app start (in the background, with maximum lead time) absorbs that cold
+    start so the user's real canonicalize returns in a few seconds.
+
+    Fail-soft: no provider configured / any error → ``{ok: False}``. Cheap and
+    idempotent on a warm model (≈1 token), so it's safe to call repeatedly."""
+    try:
+        from ..analyze.providers.base import resolve_provider, get_provider
+        resolve_provider(None)  # raises if nothing configured
+        get_provider().complete(
+            prompt="ok", system="Reply with the single word: ok.",
+            max_tokens=1, temperature=0,
+        )
+        return {"ok": True, "warmed": True}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "warmed": False, "reason": str(e)[:200]}
+
+
 def _canonicalize_topic(topic: str) -> dict[str, Any]:
     """Return a canonical form + variants + confidence for a topic.
 

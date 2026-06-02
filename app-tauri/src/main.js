@@ -643,6 +643,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.debug(`[warmup] ${label} skipped:`, e?.message || e);
       }
     };
+    // Group 0 — LLM prewarm FIRST (longest-running, highest value). The first
+    // collect's topic canonicalize is a 30-60s cold-model call that blocks the
+    // whole collect before any posts arrive ("feels hung"). Firing a 1-token
+    // warmup here, with maximum lead time, absorbs that cold start so the
+    // user's real first collect canonicalizes in a few seconds. Fail-soft.
+    warm(() => api.warmLlm(),         'llm_prewarm');
     // Group A — cheap, no SQL: 3 file/keychain reads
     warm(() => api.cliInfo(),         'cli_info');
     warm(() => api.byokStatus(),      'byok_status');

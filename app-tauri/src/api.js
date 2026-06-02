@@ -956,6 +956,10 @@ export const api = {
   // method-replication) with evidence titles resolved.
   paperGapsList: (topic) => invoke('paper_gaps_list', { topic }),
 
+  // Warm the LLM on app launch so the first collect's canonicalize isn't a
+  // 30-60s cold start. Fire-and-forget; fail-soft.
+  warmLlm: () => invoke('warm_llm'),
+
   // Phase-9 — competitor matrix
   competitorMatrix: (topic) =>
     cachedInvoke('competitor_matrix', { topic }, 30000),
