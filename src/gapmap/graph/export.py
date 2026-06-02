@@ -356,10 +356,21 @@ _HTML_TEMPLATE = """<!doctype html>
   .stats { font-size:11px; color:var(--muted); }
   .stats b { color:var(--text); }
   main { position:fixed; top:52px; left:0; right:0; bottom:0;
-    display:grid; grid-template-columns:360px 1fr 320px; }
+    display:grid; grid-template-columns:360px 1fr; }
   aside { overflow-y:auto; padding:12px 14px; border-right:1px solid var(--border);
     background:var(--panel); font-size:13px; }
   aside.right { border-right:none; border-left:1px solid var(--border); }
+
+  /* ── accordion: Insights + Lenses merged into the single left panel ─────── */
+  .acc-head { width:100%; display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface-2); border:1px solid var(--border); border-radius:9px;
+    padding:9px 11px; margin:0 0 8px; font-size:12px; font-weight:700; color:var(--v-ink);
+    cursor:pointer; font-family:inherit; }
+  .acc-head:hover { border-color:var(--accent); }
+  .acc-head .acc-caret { font-size:10px; color:var(--muted); transition:transform .2s; }
+  .acc-head.collapsed .acc-caret { transform:rotate(-90deg); }
+  .acc-head + .acc-body { margin-bottom:14px; }
+  .acc-body.collapsed { display:none; }
   aside.left h2 {
     font-size: 13px;
     font-weight: 700;
@@ -576,56 +587,65 @@ _HTML_TEMPLATE = """<!doctype html>
 </header>
 <main>
   <aside class="left">
-    <!-- EXEC SUMMARY — addresses "stakeholders won't read long reports" (CHRONIC) -->
-    <div class="exec" id="exec">
-      <h2>Executive summary</h2>
-      <div class="exec-tl" id="execThesis"></div>
-      <ol class="exec-ul" id="execTop3"></ol>
-      <div class="exec-actions">
-        <button id="copyTweet">📋 Copy as tweet</button>
-        <button id="copyMd">📋 Copy as markdown</button>
-        <button id="savePng">📸 Save as PNG</button>
+    <!-- ── Insights (accordion) ── exec summary, source insights, findings ── -->
+    <button type="button" class="acc-head" data-acc="accInsights"><span>📊 Insights</span><span class="acc-caret">▾</span></button>
+    <div class="acc-body" id="accInsights">
+      <!-- EXEC SUMMARY — addresses "stakeholders won't read long reports" (CHRONIC) -->
+      <div class="exec" id="exec">
+        <h2>Executive summary</h2>
+        <div class="exec-tl" id="execThesis"></div>
+        <ol class="exec-ul" id="execTop3"></ol>
+        <div class="exec-actions">
+          <button id="copyTweet">📋 Copy as tweet</button>
+          <button id="copyMd">📋 Copy as markdown</button>
+          <button id="savePng">📸 Save as PNG</button>
+        </div>
+      </div>
+
+      <div class="legend" id="legend"></div>
+      <h2>Top insights by source</h2>
+      <div id="sourceTopInsights" class="source-groups"></div>
+
+      <h2>🔥 Painpoints <span id="ppCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <div id="painpoints"></div>
+
+      <h2>🛠 DIY workarounds <span style="color:var(--muted);font-weight:400">· gap signal</span></h2>
+      <div id="workarounds"></div>
+
+      <h2>😡 Products complained about</h2>
+      <div id="products"></div>
+
+      <h2>💡 Feature wishes</h2>
+      <div id="features"></div>
+    </div>
+
+    <!-- ── Lenses (accordion) ── graphify-style overlays + search + controls ── -->
+    <button type="button" class="acc-head" data-acc="accLenses"><span>⚡ Lenses</span><span class="acc-caret">▾</span></button>
+    <div class="acc-body" id="accLenses">
+      <div class="controls">
+        <button id="resetZoom">Reset zoom</button>
+        <label><input type="checkbox" id="showUsers"> Show users</label>
+      </div>
+      <div class="lenses" id="lenses">
+        <input type="search" id="graphSearch" placeholder="Search findings…" />
+        <button class="lens-btn" id="lensSurprising" title="Highlight cross-community edges (the unexpected connections)">⚡ Surprising</button>
+        <button class="lens-btn" id="lensGaps" title="Highlight painpoints with no candidate solver in the graph">🕳 Gaps</button>
+        <button class="lens-btn" id="lensBridges" title="Highlight findings triangulated across ≥3 source kinds">🌉 Bridges</button>
+        <button class="lens-btn" id="lensConfidence" title="Cycle edge filter by graphify-style confidence">⊕ All edges</button>
+        <button class="lens-btn" id="lensCommunities" title="Color nodes by community membership">🎨 Communities</button>
       </div>
     </div>
 
-    <div class="legend" id="legend"></div>
-    <h2>Top insights by source</h2>
-    <div id="sourceTopInsights" class="source-groups"></div>
-
-    <h2>🔥 Painpoints <span id="ppCount" style="color:var(--muted);font-weight:400"></span></h2>
-    <div id="painpoints"></div>
-
-    <h2>🛠 DIY workarounds <span style="color:var(--muted);font-weight:400">· gap signal</span></h2>
-    <div id="workarounds"></div>
-
-    <h2>😡 Products complained about</h2>
-    <div id="products"></div>
-
-    <h2>💡 Feature wishes</h2>
-    <div id="features"></div>
+    <!-- ── Selection (accordion) ── auto-expands on node/finding click ── -->
+    <button type="button" class="acc-head collapsed" data-acc="accDetails"><span>🔎 Selection</span><span class="acc-caret">▾</span></button>
+    <div class="acc-body collapsed" id="accDetails">
+      <div id="details" class="details">
+        <p class="empty">Click any finding above — the graph zooms to its evidence and this panel shows the posts.</p>
+      </div>
+    </div>
   </aside>
 
   <svg id="graph"></svg>
-
-  <aside class="right">
-    <div class="controls">
-      <button id="resetZoom">Reset zoom</button>
-      <label><input type="checkbox" id="showUsers"> Show users</label>
-    </div>
-    <!-- graphify-style insight lenses: surprising / gaps / bridges
-         + a search box. All toggle-style overlays on the same graph. -->
-    <div class="lenses" id="lenses">
-      <input type="search" id="graphSearch" placeholder="Search findings…" />
-      <button class="lens-btn" id="lensSurprising" title="Highlight cross-community edges (the unexpected connections)">⚡ Surprising</button>
-      <button class="lens-btn" id="lensGaps" title="Highlight painpoints with no candidate solver in the graph">🕳 Gaps</button>
-      <button class="lens-btn" id="lensBridges" title="Highlight findings triangulated across ≥3 source kinds">🌉 Bridges</button>
-      <button class="lens-btn" id="lensConfidence" title="Cycle edge filter by graphify-style confidence">⊕ All edges</button>
-      <button class="lens-btn" id="lensCommunities" title="Color nodes by community membership">🎨 Communities</button>
-    </div>
-    <div id="details" class="details">
-      <p class="empty">Click any finding on the left — the graph zooms to its evidence and this panel shows the posts.</p>
-    </div>
-  </aside>
 </main>
 <footer>gapmap · gap map · <a href="https://github.com/myind-ai/gapmap/blob/main/docs/methodology.md" target="_blank">methodology</a></footer>
 
@@ -1178,6 +1198,10 @@ function _neighborsOf(nodeId) {
 function showNodeDetails(node) {
   const md = node.metadata || {};
   const host = document.getElementById("details");
+  // auto-expand the Selection accordion section so the click result is visible
+  const _selH = document.querySelector('.acc-head[data-acc="accDetails"]');
+  const _selB = document.getElementById("accDetails");
+  if (_selH && _selB) { _selH.classList.remove("collapsed"); _selB.classList.remove("collapsed"); }
   const title = esc(node.label || "(unnamed)");
   const kindLabel = esc(KIND_LABEL[node.kind] || node.kind);
 
@@ -1507,6 +1531,14 @@ searchEl.addEventListener("input", () => {
 })();
 
 applyLenses();  // sync initial state
+
+// ── accordion: collapse/expand Insights · Lenses · Selection sections ──
+document.querySelectorAll(".acc-head").forEach(h => h.addEventListener("click", () => {
+  const body = document.getElementById(h.getAttribute("data-acc"));
+  if (!body) return;
+  h.classList.toggle("collapsed");
+  body.classList.toggle("collapsed");
+}));
 </script>
 </body>
 </html>
