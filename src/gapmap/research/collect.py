@@ -334,8 +334,15 @@ def collect(
         limit_per_sub = max(limit_per_sub, 100)
         limit_per_query = max(limit_per_query, 50)
         include_historical = True
-        historical_days = max(historical_days, 1095)  # 3 years
-        historical_limit_per_sub = max(historical_limit_per_sub, 1000)
+        # Tightened 2026-06-02: the old 3yr × 1000/sub pullpush backfill ran
+        # sequentially on the main thread and dominated collect wall-time
+        # (~10 min of a ~15 min collect, since pullpush is one slow rate-limited
+        # host). 1yr × 150/sub keeps a useful recent backfill while cutting the
+        # historical stage ~6x. Deeper backfill belongs in an explicit
+        # background "deepen" pass, not the blocking first collect. Override via
+        # the historical_* params if a caller genuinely needs the full sweep.
+        historical_days = 365            # was 1095 (3 years)
+        historical_limit_per_sub = 150   # was 1000
         query_categories = query_categories or ["pain", "features", "complaints", "diy"]
         if not sources:
             # Full free-and-reliable source sweep — matches the "10-source
@@ -780,7 +787,12 @@ def collect(
         # still-running top/search burst. External-source pool keeps
         # streaming in parallel.
         if include_historical:
-            for sub in subs:
+            # Cap historical to the top subs (subs are discovery-ranked). The
+            # full sub list × pullpush backfill was a second hidden multiplier
+            # on collect time; the top 5 cover the bulk of relevant historical
+            # signal. Tunable via HISTORICAL_MAX_SUBS. (2026-06-02)
+            _hist_max = int(os.getenv("HISTORICAL_MAX_SUBS") or 5)
+            for sub in subs[:_hist_max]:
                 try:
                     _log(f"historical r/{sub} last {historical_days}d pre-cutoff, limit={historical_limit_per_sub}")
                     hrows = fetch_historical(
