@@ -2213,6 +2213,8 @@ export async function renderTopic(root, { params }) {
     const open = () => { drawer.classList.add('open'); if (pill) pill.style.display = 'none'; document.getElementById('mapchat-input')?.focus(); };
     const close = () => { drawer.classList.remove('open'); if (pill) pill.style.display = ''; };
     if (pill) pill.onclick = open;
+    // Top-toolbar "Ask this map" mirrors the floating pill — opens the same drawer.
+    const topAsk = document.getElementById('btn-map-chat-top'); if (topAsk) topAsk.onclick = open;
     const x = document.getElementById('mapchat-close'); if (x) x.onclick = close;
     const sendBtn = document.getElementById('mapchat-send'); if (sendBtn) sendBtn.onclick = _mapChatSend;
     const inp = document.getElementById('mapchat-input');
@@ -2676,13 +2678,14 @@ export async function renderTopic(root, { params }) {
                zero-width shim and confused the wrap. See the
                .map-toolbar rule in style.css. -->
           <div class="map-toolbar-actions" style="display:flex;flex-wrap:wrap;gap:8px;margin-left:auto;align-items:center">
+            <button class="btn btn-primary btn-sm icon-btn" id="btn-map-chat-top" title="Ask myind AI about this map — grounded on this topic's data"><i data-lucide="message-circle"></i> Ask this map</button>
             ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich" title="Re-run LLM extraction for this topic"><i data-lucide="sparkles"></i> Enrich</button>` : ''}
             ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich-all" title="Enrich every topic with ≥50 posts and 0 findings"><i data-lucide="layers"></i> Enrich all</button>` : ''}
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-mode" title="Toggle graph density (skeleton/full)">Mode: ${mapMode === 'full' ? 'Full' : 'Skeleton'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
             ${localStorage.getItem('gapmap.flags.reveal') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>` : ''}
-            <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
+            ${localStorage.getItem('gapmap.flags.openExt') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>` : ''}
           </div>
         </div>
         ${enrichBanner}
