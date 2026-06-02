@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import Iterator
 
 from ..core.config import load_config
@@ -84,6 +85,46 @@ def _default_model(provider: str) -> str:
 
 # --- topic context --------------------------------------------------------
 
+# How long chat will wait on the ChromaDB palace before giving up and
+# falling back to engagement-ranked SQL retrieval. The palace store is NOT
+# safe for concurrent cross-process access: while a collect runs, the
+# long-lived `enrich-worker --serve` process upserts embeddings into the
+# SAME `palace/chroma.sqlite3` + HNSW index, and a chat's inline read
+# (`stats()` / `search_posts()`) can then block on the writer's lock for the
+# whole duration of the collect — which surfaces as "chat hangs while a
+# collection is going". Bounding the read converts that indefinite hang into
+# a short, graceful degrade. Env-tunable for slow disks. Default 3 s — a warm
+# semantic query returns in <1 s, so 3 s only trips under real contention.
+_PALACE_CHAT_TIMEOUT = float(os.environ.get("GAPMAP_PALACE_CHAT_TIMEOUT") or 3.0)
+
+
+def _call_with_timeout(fn, timeout_s: float):
+    """Run a blocking palace/ChromaDB call under a wall-clock ceiling.
+
+    Returns (True, result) if `fn` finished in time, else (False, None) on
+    timeout OR any exception. On timeout the worker thread is left running as
+    a daemon — it can't be force-killed, but it's harmless: it just finishes
+    its ChromaDB read once the writer releases the store, then exits. We never
+    block waiting for it (that's the whole point), so we do NOT use a
+    ThreadPoolExecutor `with`-block here — its __exit__ calls
+    shutdown(wait=True), which would re-introduce the very hang we're killing.
+    """
+    box: dict = {}
+
+    def _run():
+        try:
+            box["v"] = fn()
+        except Exception as e:  # noqa: BLE001 — any failure → SQL fallback
+            box["e"] = e
+
+    t = threading.Thread(target=_run, name="palace-chat-lookup", daemon=True)
+    t.start()
+    t.join(timeout_s)
+    if t.is_alive() or "e" in box:
+        return False, None
+    return True, box.get("v")
+
+
 def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], str]:
     """Use Palace (ChromaDB + BM25) to retrieve posts most semantically
     relevant to the user's question.
@@ -116,15 +157,35 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
     # When `by_topic` isn't available (older palace builds), we still
     # try the query — segfaults on those installs are caller-visible
     # via the Tauri streaming watchdogs.
+    # The store I/O below (stats + count + query) is what blocks when the
+    # enrich-worker holds the ChromaDB palace during a collect. Run it under a
+    # wall-clock ceiling: on timeout we fall back to engagement-ranked SQL
+    # retrieval instead of hanging the whole chat. (The per-topic index gate
+    # also avoids the zero-match Rust-backend segfault — see palace.search_posts.)
+    # Heartbeat so the enrich-worker yields its ChromaDB writes while we read
+    # (see core.coordination + enrich_worker's chat-backoff). Best-effort.
     try:
-        st = palace.stats() or {}
-        by_topic = (st.get("by_topic") or {}) if isinstance(st, dict) else {}
-        if topic and isinstance(by_topic, dict) and int(by_topic.get(topic, 0) or 0) == 0:
-            return [], ""
+        from ..core.coordination import mark_chat_active
+        mark_chat_active()
     except Exception:
         pass
-    res = palace.search_posts(query=question, topic=topic, k=k, rerank=True)
-    if not res or not res.get("ok") or not res.get("results"):
+
+    def _lookup():
+        try:
+            st = palace.stats() or {}
+            by_topic = (st.get("by_topic") or {}) if isinstance(st, dict) else {}
+            if topic and isinstance(by_topic, dict) and int(by_topic.get(topic, 0) or 0) == 0:
+                return {"_skip": True}
+        except Exception:
+            pass
+        return palace.search_posts(query=question, topic=topic, k=k, rerank=True)
+
+    ok, res = _call_with_timeout(_lookup, _PALACE_CHAT_TIMEOUT)
+    if not ok:
+        # Palace busy (a collect is likely embedding into it) or it errored —
+        # degrade to SQL retrieval rather than block the chat.
+        return [], ""
+    if not res or res.get("_skip") or not res.get("ok") or not res.get("results"):
         return [], ""
 
     db = get_db()
@@ -171,6 +232,16 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
     # Rank by cross-source corroboration first, then evidence volume.
     findings = {}
     for kind in ("painpoint", "feature_wish", "product", "workaround"):
+        # `source_diversity` = # distinct source types of posts linked to a
+        # finding. CRITICAL: look posts up BY PRIMARY KEY via
+        # `p.id = substr(other_endpoint, len(prefix)+1)`. The previous form,
+        # `JOIN posts p ON (e2.src = :prefix || p.id OR e2.dst = :prefix || p.id)`,
+        # concatenated the prefix onto every post id, so no index applied and
+        # SQLite did a full posts scan PER edge PER finding-node — O(nodes ×
+        # edges × posts). On a big topic (124 painpoints, 198k edges, 157k
+        # posts) that ORDER BY made chat's context build take ~54 s ("chat
+        # hangs after the start event"). The PK-lookup rewrite is ~545x faster
+        # (54 s → 0.1 s), same results. Verified 2026-06-02.
         rows = list(db.query(
             "SELECT gn.label, gn.metadata_json, "
             "       (SELECT count(*) FROM graph_edges e "
@@ -179,7 +250,7 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
             "            AND e.kind IN ('evidenced_by','wished_in','about_product','built_in','solves','supports')) AS evidence_count, "
             "       (SELECT count(DISTINCT coalesce(p.source_type,'reddit')) "
             "          FROM graph_edges e2 "
-            "          JOIN posts p ON (e2.src = ? || p.id OR e2.dst = ? || p.id) "
+            "          JOIN posts p ON p.id = substr(CASE WHEN e2.src=gn.id THEN e2.dst ELSE e2.src END, length(?)+1) "
             "         WHERE e2.topic=gn.topic "
             "           AND (e2.src=gn.id OR e2.dst=gn.id) "
             "           AND e2.kind IN ('evidenced_by','wished_in','about_product','built_in','solves','supports')) AS source_diversity "
@@ -187,7 +258,7 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
             "WHERE gn.topic=? AND gn.kind=? "
             "ORDER BY source_diversity DESC, evidence_count DESC, gn.label ASC "
             "LIMIT 12",
-            (post_prefix, post_prefix, topic, kind),
+            (post_prefix, topic, kind),
         ))
         findings[kind] = rows
 
@@ -297,7 +368,11 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
             for p in posts:
                 if (p.get("source") or "") not in ("arxiv", "openalex", "semantic_scholar", "scholar"):
                     continue
-                ft = get_full_text(p["id"])
+                # cache_only=True: NEVER download here. A topic with N uncached
+                # papers would otherwise block chat for N×5-15s synchronously
+                # (the 57s "chat stalls after start" bug). Full text is
+                # populated ahead of time by the research pipeline.
+                ft = get_full_text(p["id"], cache_only=True)
                 if ft.get("ok") and ft.get("text"):
                     # Front-load the first 2.5k chars (intro/abstract) and
                     # last 1k (conclusions/limitations) — the bits an
@@ -865,9 +940,25 @@ def _exec_tool(name: str, args: dict) -> dict:
             topic = args.get("topic") or None
             source = args.get("source") or None
             limit = min(int(args.get("limit") or 10), 30)
-            r = search_posts(query, topic=topic, source_type=source, k=limit)
-            if not r.get("ok"):
-                return {"error": r.get("error") or r.get("reason") or "semantic_search failed"}
+            try:
+                from ..core.coordination import mark_chat_active
+                mark_chat_active()
+            except Exception:
+                pass
+            # Same cross-process hazard as _semantic_evidence: a collect's
+            # enrich-worker can hold the ChromaDB palace and block this read.
+            # Bound it so agent-mode chat degrades instead of hanging — the
+            # model is told to fall back to run_query/get_findings on a skip.
+            ok, r = _call_with_timeout(
+                lambda: search_posts(query, topic=topic, source_type=source, k=limit),
+                _PALACE_CHAT_TIMEOUT,
+            )
+            if not ok:
+                return {"skipped": True, "reason": "semantic search timed out "
+                        "(palace busy — a collection may be embedding). Use "
+                        "run_query with a LIKE clause or get_findings instead."}
+            if not r or not r.get("ok"):
+                return {"error": (r or {}).get("error") or (r or {}).get("reason") or "semantic_search failed"}
             # Strip giant text payloads down for the LLM context window —
             # 300 chars per hit is enough to ground a citation.
             hits = []

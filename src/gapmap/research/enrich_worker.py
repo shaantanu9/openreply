@@ -106,6 +106,17 @@ IDLE_SLEEPS = {
 # banner during rapid tab switching.
 ERROR_BACKOFF_SEC = 5
 
+# ── Chat ⇄ worker backoff ───────────────────────────────────────────────────
+# While a chat is reading the ChromaDB palace, our embedding writes contend on
+# the same store cross-process and force chat to fall back to SQL retrieval.
+# Defer draining a batch while a fresh chat heartbeat exists (see
+# core.coordination). CHAT_BACKOFF_TICK is how long we nap before re-checking
+# (short, so we resume promptly once chat finishes). CHAT_BACKOFF_MAX caps how
+# long we'll keep deferring so continuous chatting can't starve enrichment —
+# past the cap we let one batch through, then restart the window.
+CHAT_BACKOFF_TICK = float(os.environ.get("GAPMAP_ENRICH_CHAT_BACKOFF_TICK") or 2.0)
+CHAT_BACKOFF_MAX = float(os.environ.get("GAPMAP_ENRICH_CHAT_BACKOFF_MAX") or 30.0)
+
 # ── Signal handling ─────────────────────────────────────────────────────────
 # Both SIGTERM (clean shutdown from Rust's ExitRequested) and SIGINT
 # (Ctrl-C in dev) flip the same flag. The main loop polls it between batches
@@ -605,9 +616,42 @@ def serve() -> None:
     init_schema(db)
     _emit("enrich:started", pid=os.getpid())
 
+    # Cross-process chat backoff (best-effort — degrades to no-op on import
+    # failure so enrichment never depends on it).
+    try:
+        from ..core.coordination import is_chat_active
+    except Exception:  # pragma: no cover
+        def is_chat_active() -> bool:  # type: ignore[misc]
+            return False
+
     last_batch_ts = time.time()
+    _backoff_since = 0.0  # epoch when the current chat-backoff window started; 0 = not deferring
 
     while not _stop:
+        # Chat ⇄ worker backoff: while a chat is reading the ChromaDB palace,
+        # defer this batch so our embedding writes don't contend cross-process
+        # (which would force chat to fall back to SQL). Rows stay queued. A
+        # starvation cap (CHAT_BACKOFF_MAX) lets one batch through if chatting
+        # is continuous, so enrichment still makes progress.
+        if is_chat_active():
+            now = time.time()
+            if _backoff_since == 0.0:
+                _backoff_since = now
+                _emit("enrich:chat_backoff", state="defer")
+            if (now - _backoff_since) < CHAT_BACKOFF_MAX:
+                for _ in range(max(1, int(CHAT_BACKOFF_TICK))):
+                    if _stop:
+                        break
+                    time.sleep(1)
+                continue
+            # Past the cap — force one batch through, then restart the window.
+            _emit("enrich:chat_backoff", state="forced_drain",
+                  waited_s=round(now - _backoff_since, 1))
+            _backoff_since = now
+        elif _backoff_since != 0.0:
+            _emit("enrich:chat_backoff", state="resume")
+            _backoff_since = 0.0
+
         # The whole iteration is wrapped so a transient fault in the queue
         # SELECT or the idle count can't kill the process. Only the batch
         # *body* used to be crash-safe (try/except inside _drain_batch); the

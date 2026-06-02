@@ -599,9 +599,14 @@ def _pubmed_full_text(
 # ── Public API ────────────────────────────────────────────────────────────
 
 
-def get_full_text(post_id: str, *, force: bool = False) -> dict[str, Any]:
+def get_full_text(post_id: str, *, force: bool = False, cache_only: bool = False) -> dict[str, Any]:
     """Return the full text for a paper post, downloading + caching on first
     call. Subsequent calls hit the file cache and return in <5 ms.
+
+    Set ``cache_only=True`` to NEVER download — return a miss
+    (``status='not_cached'``) when the disk cache is cold. Hot paths that run
+    per-evidence-row (e.g. chat context building) MUST pass this, or a topic
+    with N uncached papers blocks for N × 5-15 s on synchronous PDF fetches.
 
     Returns:
         {
@@ -656,6 +661,15 @@ def get_full_text(post_id: str, *, force: bool = False) -> dict[str, Any]:
         except OSError:
             # Cache file is corrupt — nuke and re-fetch.
             cache.unlink(missing_ok=True)
+
+    # Cache-only callers stop here on a cold cache — NEVER trigger the network
+    # download below. This is what keeps chat's per-paper full-text splice fast
+    # (the cache is populated ahead of time by the research pipeline / a
+    # background fulltext pass), honoring the "we DON'T trigger downloads here"
+    # contract its callsite documents.
+    if cache_only:
+        return {"ok": False, "status": "not_cached", "cached": False,
+                "post_id": post_id, "source": source}
 
     # Pull metadata if the posts table actually has the column (older
     # schemas don't — the original `init_schema` never declared it). Use a
