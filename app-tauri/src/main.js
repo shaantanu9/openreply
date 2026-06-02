@@ -1213,7 +1213,7 @@ function wireModal() {
       $('#new-topic-intent-wrap')?.setAttribute('hidden', '');
       return;
     }
-    const picked = localStorage.getItem('gapmap.new_topic.intent') || 'product-new';
+    const picked = localStorage.getItem('gapmap.new_topic.intent') || 'market-report';
     host.innerHTML = presets.map(p => `
       <button type="button" class="intent-pill ${p.key === picked ? 'is-selected' : ''}"
               data-intent="${p.key}"
@@ -1287,7 +1287,7 @@ function wireModal() {
     // sources, skip-reddit, non-aggressive). When present it OVERRIDES the
     // Aggressive checkbox — this is the fix for "picking 'research paper' still
     // ran the full all-sources + historical sweep".
-    const pickedIntent = localStorage.getItem('gapmap.new_topic.intent') || 'product-new';
+    const pickedIntent = localStorage.getItem('gapmap.new_topic.intent') || 'market-report';
     const collectProf  = intentPresets.find(p => p.key === pickedIntent)?.collect || null;
     const aggressive   = collectProf ? !!collectProf.aggressive : aggressiveChecked;
 

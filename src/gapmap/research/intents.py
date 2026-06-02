@@ -23,7 +23,7 @@ from typing import Any
 
 from ..core.db import get_db
 
-DEFAULT_INTENT = "product-new"
+DEFAULT_INTENT = "market-report"  # "Market research report" — default research goal
 
 
 # ── preset registry ──────────────────────────────────────────────────────────
