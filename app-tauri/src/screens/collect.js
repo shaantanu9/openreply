@@ -726,6 +726,30 @@ export async function renderCollect(root, { params }) {
     return false;
   }
 
+  // Dismissible "Reddit not connected" banner — shown once when the collect
+  // streams the reddit-not-connected line (Reddit 403-blocks unauthenticated
+  // access, so no Reddit posts are fetched). Links straight to Settings; X to
+  // dismiss.
+  let _redditBannerShown = false;
+  const maybeShowRedditBanner = (text) => {
+    if (_redditBannerShown || !/Reddit is NOT connected|reddit_not_connected/i.test(text)) return;
+    _redditBannerShown = true;
+    const b = document.createElement('div');
+    b.id = 'reddit-not-connected-banner';
+    b.style.cssText = 'margin:10px 0;padding:12px 14px;background:#3A2A14;border:1px solid #B8893F;'
+      + 'border-radius:10px;display:flex;align-items:center;gap:10px;color:#F0D9A8;font-size:13px;flex-wrap:wrap';
+    b.innerHTML = '<i data-lucide="alert-triangle" style="flex-shrink:0"></i>'
+      + '<span style="flex:1;min-width:200px">Reddit isn’t connected — it blocks unauthenticated '
+      + 'access, so no Reddit posts were fetched. Add your Reddit API credentials to include Reddit.</span>'
+      + '<button class="btn btn-sm btn-primary" id="reddit-banner-connect" type="button">Connect Reddit</button>'
+      + '<button class="btn btn-sm btn-ghost" id="reddit-banner-dismiss" type="button" title="Dismiss" aria-label="Dismiss">✕</button>';
+    const anchor = document.getElementById('now-banner') || log;
+    anchor?.parentNode?.insertBefore(b, anchor);
+    window.refreshIcons?.();
+    b.querySelector('#reddit-banner-connect')?.addEventListener('click', () => { location.hash = '#/settings'; });
+    b.querySelector('#reddit-banner-dismiss')?.addEventListener('click', () => b.remove());
+  };
+
   const appendLine = (text, cls = null, { persist = true } = {}) => {
     lineCount++;
     const klass = cls || classifyLine(text);
@@ -745,6 +769,7 @@ export async function renderCollect(root, { params }) {
     // we pass persist=false so we don't double-count lines into the backing
     // array.
     if (persist) pushPersistedLine(topic, text, klass);
+    maybeShowRedditBanner(text);
   };
 
   // Elapsed timer — updates both the detailed-card elapsed chip and the

@@ -609,6 +609,28 @@ def collect(
             with _log_lock:
                 progress(msg)
 
+    # 0. Auto-skip Reddit when it's NOT connected. Reddit now 403-blocks every
+    # unauthenticated request, so discovery + each of the ~10 search queries
+    # just error out and flood the log, while the user silently gets no Reddit.
+    # Detect missing credentials up front, skip ALL Reddit stages cleanly (no
+    # 403 spam), and flag `reddit_not_connected` so the UI can show a one-click
+    # "Connect Reddit in Settings" banner.
+    if not skip_reddit and not subs:
+        try:
+            from ..core.config import load_config as _load_cfg
+            _cfg = _load_cfg()
+            _reddit_cid = (_cfg.get("reddit_client_id") if hasattr(_cfg, "get")
+                           else getattr(_cfg, "reddit_client_id", None))
+        except Exception:
+            _reddit_cid = None
+        if not _reddit_cid:
+            _log("⚠ Reddit is NOT connected — skipping Reddit (it now blocks "
+                 "unauthenticated access, 403). Add your Reddit API credentials "
+                 "in Settings → Reddit to include Reddit posts. Fetching all "
+                 "other sources (HN, arXiv, App Store, news, …) normally.")
+            result.errors.append("reddit_not_connected")
+            skip_reddit = True
+
     # 1. Discover if not provided (skip if skip_reddit and no subs given)
     if skip_reddit and not subs:
         # No need to discover subs if we're not fetching from Reddit at all.
