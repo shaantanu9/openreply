@@ -208,6 +208,54 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
     return posts, label
 
 
+# Map a natural-language question to a source FAMILY so the chat can answer
+# "what do the research papers say", "what does the news say", "what do users
+# reply", "what do app reviews complain about" — scoped to just those sources.
+# (label, source_type values in DB, trigger keywords/phrases)
+_SOURCE_FAMILIES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
+    ("research papers",
+     ("arxiv", "openalex", "pubmed", "crossref", "scholar", "semantic_scholar"),
+     ("paper", "papers", "research", "researcher", "academic", "academia", "study",
+      "studies", "literature", "scholar", "arxiv", "pubmed", "journal", "journals",
+      "citation", "citations", "peer-review", "peer reviewed", "scientific", "science says")),
+    ("news",
+     ("gnews", "rss", "google_news", "news"),
+     ("news", "article", "articles", "press", "media", "headline", "headlines",
+      "journalist", "reporter", "reporting", "coverage", "blog post", "blogs")),
+    ("app store reviews",
+     ("playstore", "appstore", "trustpilot", "producthunt", "oc_producthunt_today", "alternativeto"),
+     ("app store", "play store", "appstore", "playstore", "app review", "app reviews",
+      "store review", "store reviews", "review", "reviews", "rating", "ratings",
+      "trustpilot", "app complain", "app complaint", "app complaints", "reviewer", "reviewers")),
+    ("developer sources",
+     ("hn", "stackoverflow", "github", "github_issue", "devto"),
+     ("github", "stack overflow", "stackoverflow", "hacker news", "hackernews",
+      "developer", "developers", "issue tracker", "repo", "repos", "repository")),
+    ("video",
+     ("youtube", "youtube_transcript", "youtube_description"),
+     ("youtube", "video", "videos", "creator", "creators", "vlog", "channel")),
+    ("community discussion",
+     ("reddit", "lemmy", "mastodon", "bluesky", "oc_bluesky", "discourse"),
+     ("reddit", "redditor", "redditors", "subreddit", "user", "users", "people",
+      "reply", "replies", "community", "forum", "forums", "commenter", "commenters",
+      "discussion", "mastodon", "lemmy", "bluesky")),
+]
+
+
+def _detect_source_intent(question: str) -> tuple[str, tuple[str, ...]] | None:
+    """Return (label, source_types) if the question targets a source family,
+    else None. Scored by keyword hits; ties broken by family order above."""
+    q = f" {(question or '').lower()} "
+    best = None
+    best_score = 0
+    for label, sources, kws in _SOURCE_FAMILIES:
+        score = sum(1 for k in kws if k in q)
+        if score > best_score:
+            best_score = score
+            best = (label, sources)
+    return best if best_score > 0 else None
+
+
 def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None,
                    citations_out: list | None = None) -> str:
     """Build a compact markdown context block for the LLM.
@@ -305,7 +353,59 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
         posts = reddit_sample + other_sample
         evidence_heading = "## Evidence — top engagement (no semantic retrieval available)"
 
+    # ── Source-scoped answers ─────────────────────────────────────────────
+    # If the question targets a source family ("what do papers say", "what
+    # does the news say", "what do app reviews complain about"…), scope the
+    # evidence to just those source types so the answer reflects that source
+    # — topping up from SQL when semantic retrieval under-represented it.
+    scope_note = None
+    intent = _detect_source_intent(question or "")
+    if intent:
+        scope_label, scope_sources = intent
+        srcset = set(scope_sources)
+        scoped = [p for p in posts if (p.get("source") or "reddit") in srcset]
+        if len(scoped) < limit_posts:
+            have = {p.get("id") for p in scoped}
+            ph = ",".join("?" * len(scope_sources))
+            extra = list(db.query(
+                "SELECT p.id, p.title, p.sub AS subreddit, p.score, p.num_comments, "
+                "       coalesce(p.source_type,'reddit') AS source, p.url, "
+                "       substr(coalesce(p.selftext,''),1,400) AS snip "
+                "FROM topic_posts tp JOIN posts p ON p.id=tp.post_id "
+                f"WHERE tp.topic=? AND coalesce(p.source_type,'reddit') IN ({ph}) "
+                "ORDER BY coalesce(p.score,0) DESC, p.created_utc DESC "
+                "LIMIT ?",
+                (topic, *scope_sources, limit_posts * 3),
+            ))
+            for e in extra:
+                if e["id"] not in have:
+                    scoped.append(e)
+                    have.add(e["id"])
+                if len(scoped) >= limit_posts:
+                    break
+        if scoped:
+            posts = scoped[:limit_posts]
+            evidence_heading = f"## Evidence — scoped to {scope_label} ({', '.join(scope_sources)})"
+            scope_note = (
+                f"The user is asking specifically about **{scope_label}**. "
+                f"Answer using ONLY the {scope_label} evidence below "
+                f"(source types: {', '.join(scope_sources)}). Do not lean on other sources, "
+                f"and make clear the answer reflects {scope_label} specifically."
+            )
+        else:
+            posts = []
+            evidence_heading = f"## Evidence — none from {scope_label}"
+            scope_note = (
+                f"The user asked about **{scope_label}**, but this topic has NO data collected "
+                f"from those sources ({', '.join(scope_sources)}). Say so plainly and suggest "
+                f"collecting from that source — do NOT fabricate {scope_label} findings."
+            )
+
     parts = [f"# Topic: {topic}", ""]
+    if scope_note:
+        parts.append("## ⚠ Source scope")
+        parts.append(scope_note)
+        parts.append("")
 
     if sources:
         parts.append("## Source breakdown")
