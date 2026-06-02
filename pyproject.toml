@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gapmap"
-version = "0.1.16"
+version = "0.1.17"
 description = "Gap Map — multi-source product gap finder. CLI + MCP server fusing Reddit, HN, arXiv, GitHub, App Store, and 10+ more sources into a single corpus, with pluggable LLM analysis."
 readme = "README.md"
 requires-python = ">=3.11"
