@@ -202,8 +202,13 @@
     <input id="new-topic-input" type="text" placeholder='e.g. "ATS resume and job search apps"' autofocus />
     <label class="modal-check" id="new-topic-aggressive-row">
       <input type="checkbox" id="new-topic-aggressive" checked>
-      <span>Aggressive mode (all sources · historical · ~15 min)</span>
+      <span>All sources (Reddit + HN, arXiv, App/Play Store, news… · ~2-3 min)</span>
     </label>
+    <p class="modal-fetch-note" style="margin:4px 2px 0;font-size:11px;opacity:.7;line-height:1.4">
+      Fast scan: ~1 year of history. Posts stream into the topic as they arrive —
+      no need to wait. For the full 3-year deep sweep across <em>all</em> subreddits,
+      use <b>“Fetch more”</b> on the topic afterwards (~10-15 min).
+    </p>
     <!-- Goal-driven fetch hint. Shown (and the aggressive row hidden) when the
          selected goal pins its own collect profile — e.g. "Write a thesis"
          fetches academic sources only, fast. Set by main.js applyIntentCollectProfile(). -->
