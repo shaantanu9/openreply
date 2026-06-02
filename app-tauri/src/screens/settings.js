@@ -2,6 +2,7 @@
 // fills in each card as its sidecar call returns. No call blocks the UI.
 
 import { api, esc } from '../api.js';
+import { LICENCE_CARD_SKELETON, mountLicenceCard } from '../components/LicenceCard.js';
 import { openByokModal } from './byok.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
@@ -158,6 +159,9 @@ export async function renderSettings(root) {
           </div>
         </div>
       </div>
+
+      <!-- LICENCE & ACTIVATION (skeleton → filled by mountLicenceCard) -->
+      ${LICENCE_CARD_SKELETON}
 
       <!-- LLM card (skeleton → filled) -->
       <div class="settings-card" id="card-llm">
@@ -453,6 +457,8 @@ export async function renderSettings(root) {
   wireProfileCard(root);
   wireStaticButtons(root);
   wireAdvancedPromptsCard(root, alive);
+  // Licence & activation card — add/activate a key, re-check/renew, or sign out.
+  mountLicenceCard(root, alive).catch(e => cardError('#card-licence', 'Licence & activation', e));
 
   // Always-available buttons while the async data loads
   root.querySelector('#btn-manage-keys-eager').onclick = () => openByokModal(() => renderSettings(root));
@@ -775,7 +781,7 @@ function wireStaticButtons(root) {
       expired: {
         badge: 'Expired',
         heading: 'Licence expired',
-        body: 'Your licence term ended. Open the customer portal from Activate → Purchase history to renew, then re-activate this device to resume MCP.',
+        body: 'Your licence term ended. Renew from Activate → Billing on the website, then re-activate this device to resume MCP.',
         action: { label: 'Renew & re-activate', href: '#/activate' },
       },
       token_device_mismatch: {
@@ -820,7 +826,19 @@ function wireStaticButtons(root) {
            <span style="font-weight:600;color:var(--ink);font-size:13px">${esc(copy.heading)}</span>
          </div>
          <div style="margin-bottom:8px">${detailedBody}</div>
-         <a href="${copy.action.href}" class="btn btn-sm primary" id="mcp-gate-cta" style="text-decoration:none">${esc(copy.action.label)} →</a>`;
+         <button type="button" class="btn btn-sm primary" id="mcp-gate-cta" style="text-decoration:none">${esc(copy.action.label)} →</button>`;
+      // The licence UI lives in the "Licence & activation" card on this same
+      // Settings page (the old `#/activate` route never existed). Scroll to it
+      // and open the activation form instead of navigating to a dead route.
+      const cta = gate.querySelector('#mcp-gate-cta');
+      if (cta) cta.onclick = () => {
+        const licCard = document.querySelector('#card-licence');
+        if (!licCard) { location.hash = '#/settings'; return; }
+        const form = licCard.querySelector('#lic-form');
+        if (form) form.style.display = 'grid';
+        licCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        licCard.querySelector('#lic2-key')?.focus();
+      };
       dot.dataset.state = 'warn';
       txt.textContent = copy.heading;
       detail.textContent = '';
