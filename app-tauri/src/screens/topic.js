@@ -2247,8 +2247,6 @@ export async function renderTopic(root, { params }) {
     };
     const rebuildBtn = $('#btn-map-rebuild');
     if (rebuildBtn) rebuildBtn.onclick = () => loadMap(true);
-    const revealBtn = $('#btn-map-reveal');
-    if (revealBtn && outPath) revealBtn.onclick = () => api.revealInFinder(outPath);
     const openExtBtn = $('#btn-map-open-ext');
     if (openExtBtn && outPath) openExtBtn.onclick = () => api.openUrl(`file://${encodeURI(outPath)}`);
     $('#btn-map-enrich')?.addEventListener('click', () => runEnrichFromMap());
