@@ -1394,6 +1394,7 @@ export async function renderTopic(root, { params }) {
   // existing Chat tab. The Chat tab is left fully intact.
   let _mapChatLog = [];                                    // [{role,text,ts}]
   let _mapChatStream = { active: false, unsubP: null, unsubD: null };
+  let _mapChatConvId = null;                               // shared DB conversation id
 
   // Task 9.5 — fire-and-forget render of the extraction prefs override row.
   // Best-effort: any error just hides the row (it's purely informational).
@@ -2137,6 +2138,25 @@ export async function renderTopic(root, { params }) {
     if (btn) btn.disabled = busy;
     if (s) s.textContent = busy ? 'myind AI is thinking…' : (msg || '');
   }
+  // Persist the map-chat thread into the SAME conversation store the Chat tab
+  // reads, so map-view chats show up under the Chat section too. Mirrors the
+  // thread into the shared chat state and makes it the active conversation.
+  function _persistMapChat() {
+    if (!_mapChatLog.length) return;
+    if (!_mapChatConvId) _mapChatConvId = genConvId();
+    const msgs = _mapChatLog.map(m => ({ role: m.role, text: m.text || '', mode: 'ask', ts: m.ts || Date.now() }));
+    const firstUser = msgs.find(m => m.role === 'user' && (m.text || '').trim());
+    let title = (firstUser ? firstUser.text : 'Map chat').trim().replace(/\s+/g, ' ');
+    if (title.length > 48) title = title.slice(0, 47) + '…';
+    try {
+      chatHistory.set(topic, msgs.map(m => ({ ...m })));
+      chatActiveConv.set(topic, _mapChatConvId);
+      chatHydrated.add(topic);
+      pendingNewConv.delete(topic);
+      localStorage.setItem(CHAT_ACTIVE_KEY(topic), _mapChatConvId);
+    } catch {}
+    api.chatConvSave(_mapChatConvId, topic, title, JSON.stringify(msgs)).catch(() => {});
+  }
   async function _mapChatSend() {
     const inp = document.getElementById('mapchat-input');
     const q = (inp?.value || '').trim();
@@ -2157,6 +2177,7 @@ export async function renderTopic(root, { params }) {
       _mapChatStream.unsubP = _mapChatStream.unsubD = null;
       _setMapChatBusy(false, statusMsg);
       _renderMapChatLog();
+      _persistMapChat();   // make this thread visible in the Chat tab
     };
     try {
       _mapChatStream.unsubP = await api.onChatProgress(line => {
