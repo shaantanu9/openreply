@@ -2247,6 +2247,10 @@ export async function renderTopic(root, { params }) {
     };
     const rebuildBtn = $('#btn-map-rebuild');
     if (rebuildBtn) rebuildBtn.onclick = () => loadMap(true);
+    // Reveal button only exists when the `gapmap.flags.reveal` flag is on
+    // (default off) — wiring no-ops when absent.
+    const revealBtn = $('#btn-map-reveal');
+    if (revealBtn && outPath) revealBtn.onclick = () => api.revealInFinder(outPath);
     const openExtBtn = $('#btn-map-open-ext');
     if (openExtBtn && outPath) openExtBtn.onclick = () => api.openUrl(`file://${encodeURI(outPath)}`);
     $('#btn-map-enrich')?.addEventListener('click', () => runEnrichFromMap());
@@ -2656,6 +2660,7 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-mode" title="Toggle graph density (skeleton/full)">Mode: ${mapMode === 'full' ? 'Full' : 'Skeleton'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
+            ${localStorage.getItem('gapmap.flags.reveal') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>` : ''}
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Open in browser</button>
           </div>
         </div>
@@ -2944,7 +2949,7 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-ghost btn-sm icon-btn" id="btn-download-md">
               <i data-lucide="download"></i> Download
             </button>
-            <button class="btn btn-ghost btn-sm" id="btn-reveal-md">Reveal in Finder</button>
+            ${localStorage.getItem('gapmap.flags.reveal') === 'true' ? `<button class="btn btn-ghost btn-sm" id="btn-reveal-md">Reveal in Finder</button>` : ''}
             <button class="btn btn-ghost btn-sm icon-btn" id="btn-regen-md">
               <i data-lucide="rotate-cw"></i> Regenerate
             </button>
@@ -2986,7 +2991,8 @@ export async function renderTopic(root, { params }) {
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       };
-      $('#btn-reveal-md').onclick = () => api.revealInFinder(path);
+      // Reveal-in-Finder only present when the `gapmap.flags.reveal` flag is on.
+      const _revMd = $('#btn-reveal-md'); if (_revMd) _revMd.onclick = () => api.revealInFinder(path);
       $('#btn-regen-md').onclick  = () => loadReport();
       $('#btn-paper-outline').onclick = (e) => runPaperPipelineAction(e.currentTarget, 'outline');
       $('#btn-paper-draft').onclick = (e) => runPaperPipelineAction(e.currentTarget, 'draft');
