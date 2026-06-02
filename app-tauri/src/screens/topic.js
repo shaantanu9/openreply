@@ -2186,13 +2186,13 @@ export async function renderTopic(root, { params }) {
   function wireMapChat() {
     const drawer = document.getElementById('mapchat-drawer');
     if (!drawer) return;
-    const scrim = document.getElementById('mapchat-scrim');
     const pill = document.getElementById('btn-map-chat');
-    const open = () => { drawer.classList.add('open'); scrim?.classList.add('on'); if (pill) pill.style.display = 'none'; document.getElementById('mapchat-input')?.focus(); };
-    const close = () => { drawer.classList.remove('open'); scrim?.classList.remove('on'); if (pill) pill.style.display = ''; };
+    // Non-modal sidebar: opening does NOT add a click-catching scrim, so the
+    // graph stays fully interactive and clicking it never closes the chat.
+    const open = () => { drawer.classList.add('open'); if (pill) pill.style.display = 'none'; document.getElementById('mapchat-input')?.focus(); };
+    const close = () => { drawer.classList.remove('open'); if (pill) pill.style.display = ''; };
     if (pill) pill.onclick = open;
     const x = document.getElementById('mapchat-close'); if (x) x.onclick = close;
-    if (scrim) scrim.onclick = close;
     const sendBtn = document.getElementById('mapchat-send'); if (sendBtn) sendBtn.onclick = _mapChatSend;
     const inp = document.getElementById('mapchat-input');
     if (inp) {

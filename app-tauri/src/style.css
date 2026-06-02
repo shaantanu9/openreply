@@ -9593,12 +9593,10 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
 }
 .mapchat-pill:hover { transform: translateX(-50%) translateY(-2px); filter: brightness(1.03); }
 .mapchat-pill i { width: 16px; height: 16px; }
-.mapchat-scrim {
-  position: absolute; inset: 0; z-index: 6; border-radius: var(--radius);
-  background: rgba(26,22,20,.05); opacity: 0; pointer-events: none;
-  transition: opacity .2s ease;
-}
-.mapchat-scrim.on { opacity: 1; pointer-events: auto; }
+/* Non-modal: the chat is a docked sidebar, NOT a modal. The scrim never blocks
+   or dims the graph, so clicking nodes / panning while the chat is open works
+   and does NOT close the chat. Close is via the × button only. */
+.mapchat-scrim { display: none; }
 .mapchat-drawer {
   position: absolute; top: 0; right: 0; bottom: 0; z-index: 8;
   width: 380px; max-width: 92%;
