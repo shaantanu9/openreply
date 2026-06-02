@@ -1,5 +1,46 @@
 # Changelog
 
+## [v0.1.18 — 2026-06-02] · Faster collect · Reddit-not-connected UX · paper research
+
+### New
+
+- **Much faster first collect (~15 min → ~2–3 min).** A new topic now does a
+  fast scan — recent + top posts + every free source (HN, arXiv, App/Play Store,
+  news, …) in parallel + a 1-year Reddit backfill. The full 3-year, all-subreddit
+  deep sweep is now an explicit **“Fetch more”** button on the topic (and is
+  clearly labelled in the New-topic modal).
+- **LLM prewarm on launch + on opening the New-topic modal** — the first
+  topic-canonicalize call is no longer a 30–60 s cold start, so search feels
+  instant.
+- **“What do you want from this research?” defaults to Market research report.**
+- **Paper-knowledge workflow + literature-gap detector** — one action downloads
+  full text, summarizes, builds paper↔paper relations, and surfaces four kinds
+  of research gaps (understudied intersections, contradictions, temporal,
+  method/replication), then drafts a paper grounded in them.
+- **Map tab “Ask this map”** in the toolbar; map-view chat persists into the
+  topic’s Chat tab.
+
+### Fixed
+
+- **Reddit “fetches nothing, old or new” made clear.** Reddit now blocks
+  unauthenticated access (403), which silently produced an empty Reddit corpus.
+  Collect now detects missing Reddit credentials up front, **skips Reddit
+  cleanly (no error spam)**, and shows a **dismissible banner** linking to
+  Settings → Reddit. Add your Reddit API credentials there to fetch Reddit.
+- **macOS notarization** — release bundles are signed + notarized correctly
+  (the PyInstaller sidecar is built against a non-framework Python so there is
+  no embedded `Python.framework` to break signing).
+- **Streaming-listener crash** — fixed a “Cannot access … before
+  initialization” unhandled rejection in the enrich/chat/paper streams.
+- Chat single-scroll viewport + collect-during-chat robustness.
+
+### CI / Release
+
+- Cleaner public-release publishing (cross-draft artifact gathering on mac/linux;
+  Windows uses the Git-Bash-safe path); CI `cargo check` resources-glob fix.
+- The map **“Reveal”/“Open in browser”** file-exposing buttons are now behind a
+  `gapmap.flags.reveal` flag (default off).
+
 ## [v0.1.7 — 2026-05-31] · Topic merge · MCP Copy config · data-safety
 
 ### New
