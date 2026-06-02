@@ -35,6 +35,11 @@ struct LicenseState {
     user_id: Option<String>,
     expires_at: Option<String>,
     last_verified_at: Option<String>,
+    // Set true when a server re-validation says the licence is revoked /
+    // refunded / expired. `#[serde(default)]` keeps older state files (which
+    // never wrote this field) loading as `false`. The launch gate reads it.
+    #[serde(default)]
+    revoked: bool,
 }
 
 // Filename inside data_dir that holds the activation JWT. 0600 perms on Unix.
@@ -6468,12 +6473,21 @@ fn compute_activation_reason(app: &AppHandle) -> Result<Option<(String, String)>
             "Activation token is missing from local storage. Re-activate this device to refresh it.".into(),
         )));
     }
+    // Server-confirmed revocation/refund (set by `license_revalidate`). Takes
+    // priority over the local expiry check so a cancelled licence locks even
+    // before its stored expiry date passes.
+    if state.revoked {
+        return Ok(Some((
+            "revoked".into(),
+            "This licence was cancelled, refunded, or expired on the server. Renew on the website (Activate → Billing), then re-activate this device.".into(),
+        )));
+    }
     if !is_license_not_expired(&state.expires_at) {
         let when = state.expires_at.clone().unwrap_or_else(|| "unknown".into());
         return Ok(Some((
             "expired".into(),
             format!(
-                "Licence expired on {when}. Open the customer portal from Activate → Purchase history to renew, then re-activate."
+                "Licence expired on {when}. Renew from Activate → Billing on the website, then re-activate."
             ),
         )));
     }
@@ -7687,6 +7701,7 @@ pub async fn license_activate(
         user_id: parsed.user_id,
         expires_at: parsed.expires_at.clone(),
         last_verified_at: Some(local_today_iso()),
+        revoked: false,
     };
     save_access_token(&app, &state.access_token)?;
     save_license_state(&app, &state)?;
@@ -7696,6 +7711,111 @@ pub async fn license_activate(
         "license_id": license_id,
         "device_signature": sig,
         "expires_at": parsed.expires_at
+    }))
+}
+
+/// Re-check a previously-activated licence against the server and sync the
+/// result locally. This is what makes renewals and revocations take effect
+/// WITHOUT the user re-entering their key:
+///   - server says valid  → store the latest `expires_at` (+ any refreshed
+///     token), clear the `revoked` flag → a renewal unlocks automatically.
+///   - server says revoked / 401 / not-valid → set `revoked = true` → the
+///     launch gate locks the app on next check.
+///   - network/offline failure → leave cached state untouched (offline grace,
+///     never lock someone out for being on a plane).
+///
+/// Called on a timer from `setup()` (boot + every few hours) and can also be
+/// invoked from the frontend on demand (e.g. a "Refresh licence" button).
+#[tauri::command]
+pub async fn license_revalidate(app: AppHandle) -> Result<Value, String> {
+    let Some(mut state) = load_license_state(&app)? else {
+        return Ok(serde_json::json!({ "ok": true, "activated": false, "skipped": "not_activated" }));
+    };
+    let token = read_access_token(&app).unwrap_or_default();
+    if token.trim().is_empty() {
+        return Ok(serde_json::json!({ "ok": true, "activated": false, "skipped": "token_missing" }));
+    }
+    let sig = build_device_signature(&app)?;
+    let base = state.api_base.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return Err("license api base is missing from stored state".into());
+    }
+    let endpoint = format!("{}/v1/licence/validate", base);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(err_to_string)?;
+    let resp = client
+        .post(&endpoint)
+        .header("authorization", format!("Bearer {}", token))
+        .json(&serde_json::json!({ "device_fingerprint": sig }))
+        .send()
+        .await;
+
+    // Offline / network error: do NOT change anything. Keep the cached verdict.
+    let resp = match resp {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(serde_json::json!({
+                "ok": true,
+                "online": false,
+                "valid": !state.revoked,
+                "error": err_to_string(e)
+            }));
+        }
+    };
+
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    let parsed: Value = serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));
+    let valid = parsed.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
+    let revoked = parsed.get("revoked").and_then(|v| v.as_bool()).unwrap_or(false);
+    let reason = parsed
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // 401 (bad/expired token) OR explicit revoked OR not-valid → lock.
+    if status.as_u16() == 401 || revoked || !valid {
+        state.revoked = true;
+        state.last_verified_at = Some(local_today_iso());
+        save_license_state(&app, &state)?;
+        return Ok(serde_json::json!({
+            "ok": true, "valid": false, "revoked": true, "reason": reason
+        }));
+    }
+
+    // Valid — sync a refreshed token (if any) and the latest expiry, and clear
+    // the revoked flag so a renewed-then-revalidated licence unlocks itself.
+    let mut token_refreshed = false;
+    if let Some(rt) = parsed.get("refreshed_token").and_then(|v| v.as_str()) {
+        if !rt.is_empty() {
+            // Only persist a refreshed token if it verifies AND binds to this device.
+            if let Ok(claims) = verify_license_token(rt) {
+                if claims.device_fingerprint.as_deref() == Some(sig.as_str()) {
+                    state.access_token = rt.to_string();
+                    save_access_token(&app, rt)?;
+                    token_refreshed = true;
+                }
+            }
+        }
+    }
+    if parsed.get("expires_at").is_some() {
+        state.expires_at = parsed
+            .get("expires_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+    }
+    state.revoked = false;
+    state.last_verified_at = Some(local_today_iso());
+    save_license_state(&app, &state)?;
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "valid": true,
+        "revoked": false,
+        "expires_at": state.expires_at,
+        "token_refreshed": token_refreshed
     }))
 }
 

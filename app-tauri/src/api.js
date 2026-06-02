@@ -731,6 +731,13 @@ export const api = {
       onboarding,
     });
   },
+  // Re-check the activated licence with the server and sync the result
+  // (renewal → new expiry/token; cancellation → locked). Invalidate the
+  // cached status so the next `licenseStatus()` reflects the new verdict.
+  licenseRevalidate: () => {
+    invalidate('license_status');
+    return invoke('license_revalidate');
+  },
   licenseServerCheck: (apiBase) => invoke('license_server_check', { apiBase }),
   licenseDefaultApiBase: () => invoke('license_default_api_base'),
   licenseLogout:    () => {

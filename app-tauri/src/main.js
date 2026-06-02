@@ -471,6 +471,10 @@ window.addEventListener('hashchange', route);
 // machine.
 async function healActivationFlagsFromBackend() {
   try {
+    // Re-check the licence with the server so a renewal (new expiry) or a
+    // cancellation syncs even for an already-activated machine. Best-effort
+    // and non-blocking — the Rust timer also does this on a 6 h cadence.
+    api.licenseRevalidate?.().catch(() => {});
     if (localStorage.getItem('gapmap.license.activated') === 'true') return;
     const status = await api.licenseStatus();
     if (status?.activated && status?.license_id) {

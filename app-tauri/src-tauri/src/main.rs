@@ -320,6 +320,34 @@ fn main() {
                     let _ = worker::start_worker(app_handle.clone()).await;
                 }
             });
+
+            // ── Periodic licence re-validation ──────────────────────────
+            // Re-check the activated licence against the server shortly after
+            // boot and every 6 h thereafter. This is what makes renewals and
+            // revocations take effect WITHOUT the user re-entering their key:
+            // `license_revalidate` syncs the latest `expires_at`/token on
+            // success and flips the local `revoked` flag on cancellation.
+            // No-ops cheaply when the device isn't activated; offline failures
+            // leave cached state untouched (offline grace).
+            {
+                let app_handle_lic = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // Small initial delay so we don't race the boot herd.
+                    tokio::time::sleep(std::time::Duration::from_secs(12)).await;
+                    loop {
+                        match commands::license_revalidate(app_handle_lic.clone()).await {
+                            Ok(v) => {
+                                if v.get("revoked").and_then(|b| b.as_bool()) == Some(true) {
+                                    eprintln!("[licence] re-validation: licence revoked/expired on server");
+                                }
+                            }
+                            Err(e) => eprintln!("[licence] re-validation error: {e}"),
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(6 * 60 * 60)).await;
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -367,6 +395,7 @@ fn main() {
             commands::device_signature,
             commands::license_status,
             commands::license_activate,
+            commands::license_revalidate,
             commands::license_server_check,
             commands::license_default_api_base,
             commands::license_logout,
