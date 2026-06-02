@@ -71,7 +71,28 @@ function explainerSlugForHash(hash) {
   if (h.startsWith('/estimate'))      return 'estimate';
   if (h.startsWith('/prd'))           return 'prd';
   if (h.startsWith('/settings'))      return 'settings';
+  if (h.startsWith('/activate'))      return 'settings';
   return '';
+}
+
+// `#/activate` → render the Settings screen, then bring the Licence &
+// activation card into focus (scroll + open its form). The card mounts
+// asynchronously (it waits on license_status), so poll briefly for it.
+async function renderActivate(main, ctx) {
+  await renderSettings(main, ctx);
+  const deadline = Date.now() + 4000;
+  (function focusCard() {
+    const card = main.querySelector('#card-licence');
+    const form = card && card.querySelector('#lic-form');
+    if (card && form) {
+      try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+      if (form.style.display === 'none') form.style.display = 'grid';
+      const keyInput = form.querySelector('#lic2-key');
+      if (keyInput) { try { keyInput.focus(); } catch {} }
+      return;
+    }
+    if (Date.now() < deadline) setTimeout(focusCard, 150);
+  })();
 }
 
 // Audience-first nudge — when the user lands on a topic detail page
@@ -239,6 +260,10 @@ const routes = [
   // Linked from the global CollectStatusBar.
   { match: /^\/collects\/?$/,       render: renderCollects },
   { match: /^\/settings\/?$/,       render: renderSettings },
+  // Licence activation destination. The MCP gate + LicenceCard link here
+  // ("Activate this device"); the licence UI itself lives in Settings, so
+  // render Settings and scroll/expand the licence card into focus.
+  { match: /^\/activate\/?$/,       render: renderActivate },
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },

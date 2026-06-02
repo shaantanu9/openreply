@@ -790,6 +790,12 @@ function wireStaticButtons(root) {
         body: 'Something about this machine changed (hostname, hardware, or OS). Re-activate this device to refresh the token.',
         action: { label: 'Re-activate this device', href: '#/activate' },
       },
+      revoked: {
+        badge: 'Revoked',
+        heading: 'Licence was cancelled or refunded',
+        body: 'A server re-check found this licence is no longer active (cancelled, refunded, or expired). Renew from Activate → Billing on the website, then re-activate this device.',
+        action: { label: 'Renew & re-activate', href: '#/activate' },
+      },
       unknown: {
         badge: 'Locked',
         heading: 'MCP is locked until this device is activated',
