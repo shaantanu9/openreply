@@ -172,15 +172,15 @@ npm run tauri build                                  # + code-signing / notariza
 - [x] ✅ **DONE 2026-06-03 — rotated `ADMIN_SECRET`.** Set a strong `openssl rand -hex 32`
       in Vercel `gapmap-web` Production + redeployed. Verified: old placeholder → `bad_secret`/403,
       new secret → `authed:true`/200. New value saved (gitignored) in `.admin-creds.local.md`.
-- [ ] 🚨 **Verify/rotate `TOKEN_SIGNING_SECRET` (HIGH).** The **local `.env`**
-      `TOKEN_SIGNING_SECRET` is **placeholder-like** (len 53 — looks like the dev fallback
-      `dev-local-jwt-secret-change-before-release-…`). A weak value lets anyone forge licence
-      tokens. **Check the Vercel `gapmap-web` Production value.** If weak, rotation is a
-      *coordinated* change: set a strong value in Vercel **and** ship the next app release
-      built with the matching `JWT_DESKTOP_SECRET` — this invalidates all existing
-      activations (users must re-activate). `DEV_MINT_SECRET` + `MASTER_KEY` looked random.
-      **Step-by-step:** see `docs/runbooks/token-signing-secret-rotation.md` (graceful
-      dual-secret rotation vs. flag-day, with the exact website + app code changes).
+- [x] ✅ **DONE 2026-06-03 — `TOKEN_SIGNING_SECRET` verified SAFE (no rotation needed).**
+      Probed prod non-destructively: a token signed with the local placeholder secret is
+      **rejected (401)** by `gapmap.myind.ai/v1/licence/validate`, proving prod uses a
+      strong, different secret. The placeholder only lives in the **local `.env`** dev
+      fallback (localhost not exposed). `DEV_MINT_SECRET` + `MASTER_KEY` also looked random.
+      - ⚠️ **Standing requirement:** every signed app **release** must be built with
+        `JWT_DESKTOP_SECRET` = prod's `TOKEN_SIGNING_SECRET` (else activation fails with
+        `InvalidSignature`). If you ever DO rotate it, follow
+        `docs/runbooks/token-signing-secret-rotation.md`.
 - [x] ✅ **DONE 2026-06-03 — removed the stray `activation-suite` Vercel project**
       (created by mistake during the first wrong deploy).
 - [ ] **Confirm prod auto-deploy** for `gapmap-web` (which branch is production? is
