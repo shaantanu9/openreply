@@ -6511,13 +6511,21 @@ fn compute_activation_reason(app: &AppHandle) -> Result<Option<(String, String)>
 /// just by toggling the env (e.g. via a wrapper script that exports it
 /// before launching Gap Map.app).
 fn license_gate_enabled() -> bool {
-    matches!(
+    // DEFAULT ON: the app requires an activated licence. Until a valid key is
+    // entered the UI is gated to the activation screen and MCP commands are
+    // refused — but NO local data is ever touched (gating only blocks routes /
+    // commands, never the SQLite store).
+    //
+    // For local development you can bypass the gate by exporting
+    // GAPMAP_LICENSE_GATE_ENABLED=0 (also accepts false/no/off). Anything else
+    // — including the var being unset, as in a shipped DMG — keeps it ON.
+    !matches!(
         std::env::var("GAPMAP_LICENSE_GATE_ENABLED")
             .unwrap_or_default()
             .trim()
             .to_ascii_lowercase()
             .as_str(),
-        "1" | "true" | "yes" | "on"
+        "0" | "false" | "no" | "off"
     )
 }
 

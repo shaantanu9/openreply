@@ -139,9 +139,9 @@ export async function mountLicenceCard(root, alive = () => true) {
         <label><span>Account email</span><input id="lic2-email" type="email" placeholder="you@company.com" value="${esc(email)}" /></label>
         <label><span>Activation key</span><input id="lic2-key" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" spellcheck="false" /></label>
         <label><span>Password <span style="color:var(--ink-3);font-weight:400">(optional)</span></span><input id="lic2-password" type="password" placeholder="Only if your account uses one" /></label>
-        <label><span>Licence API base <span style="color:var(--ink-3);font-weight:400">(advanced)</span></span><input id="lic2-base" type="url" placeholder="${esc(resolvedDefaultBase)}" value="${esc(apiBase)}" /></label>
+        <p style="color:var(--ink-3);font-size:var(--fs-13);margin:2px 0 0">Activation server: <b>${esc(apiBase)}</b> <span style="opacity:.7">(set automatically)</span></p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px">
-          <button class="btn btn-ghost btn-sm btn-bordered" id="lic2-test">Test server</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="lic2-test">Test connection</button>
           <button class="btn btn-primary btn-sm" id="lic2-activate">${activated ? 'Switch key' : 'Activate this device'}</button>
         </div>
         <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">
@@ -213,7 +213,10 @@ export async function mountLicenceCard(root, alive = () => true) {
 
     const logout = card.querySelector('#lic2-logout');
     if (logout) logout.onclick = async () => {
-      if (!confirm('Sign out of this licence on this device? MCP will lock until you re-activate. Your local data is kept.')) return;
+      // Tauri routes window.confirm() to the (async) dialog plugin — must await
+      // it, and the dialog:allow-confirm capability must be granted.
+      const ok = await confirm('Sign out of this licence on this device? The app will lock until you re-activate — your local data is kept.');
+      if (!ok) return;
       logout.disabled = true;
       setStatus('Signing licence out…');
       try {
@@ -229,9 +232,7 @@ export async function mountLicenceCard(root, alive = () => true) {
 
     const test = card.querySelector('#lic2-test');
     if (test) test.onclick = async () => {
-      const base = normalizeApiBase(card.querySelector('#lic2-base')?.value);
-      const baseInput = card.querySelector('#lic2-base');
-      if (baseInput) baseInput.value = base;
+      const base = normalizeApiBase(apiBase);   // resolved server, no input
       setStatus('Testing server reachability…');
       try {
         const res = await api.licenseServerCheck(base);
@@ -243,9 +244,7 @@ export async function mountLicenceCard(root, alive = () => true) {
 
     const activate = card.querySelector('#lic2-activate');
     if (activate) activate.onclick = async () => {
-      const base = normalizeApiBase(card.querySelector('#lic2-base')?.value);
-      const baseInput = card.querySelector('#lic2-base');
-      if (baseInput) baseInput.value = base;
+      const base = normalizeApiBase(apiBase);   // resolved server, no input
       const email = (card.querySelector('#lic2-email')?.value || '').trim();
       // Password is optional: the server authenticates on (email, activation
       // key) and ignores the password value, but its presence check requires a
