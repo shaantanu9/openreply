@@ -309,7 +309,7 @@ async function togglePersona(id, makeActive, root) {
 }
 
 async function deletePersona(id, root) {
-  if (!confirm('Delete this persona and ALL its memories? This cannot be undone.')) return;
+  if (!(await confirm('Delete this persona and ALL its memories? This cannot be undone.'))) return;
   await api.personaDelete(id);
   await reloadList(root);
 }

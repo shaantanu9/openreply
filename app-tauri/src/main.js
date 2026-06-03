@@ -1323,7 +1323,7 @@ function wireModal() {
     // P0-3 — if no LLM is configured, painpoints won't be extracted. Warn the
     // user up front rather than letting them reach a blank gap-map later.
     if (aggressive && !(await hasLlmConfigured())) {
-      const go = confirm(
+      const go = await confirm(
         'No LLM key is configured. Collect will fetch posts but won\'t extract '
         + 'painpoints, features, or workarounds — the gap map will show sources only.\n\n'
         + 'Continue without AI? (Cancel to add a key first in Settings.)'
@@ -1361,7 +1361,7 @@ function wireModal() {
           + `Click OK to open the existing topic (recommended).\n`
           + `Click Cancel to create a separate new topic anyway.\n\n`
           + `(To add more data to the existing one, open it then click "Re-collect".)`;
-        const useExisting = confirm(msg);
+        const useExisting = await confirm(msg);
         if (useExisting) {
           close();
           location.hash = `#/topic/${encodeURIComponent(existing)}`;

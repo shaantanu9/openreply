@@ -376,7 +376,7 @@ async function renderTopicInterviews(root, topic) {
   }));
 
   $$('.iv-delete', root).forEach(b => b.addEventListener('click', async () => {
-    if (!confirm('Delete this interview?')) return;
+    if (!(await confirm('Delete this interview?'))) return;
     try {
       await api.interviewDelete(b.dataset.ivId);
       await reload();

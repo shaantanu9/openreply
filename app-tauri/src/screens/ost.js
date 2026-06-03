@@ -440,7 +440,7 @@ async function renderTopicTree(root, topic) {
 
   root.querySelectorAll('.ost-exp-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this experiment?')) return;
+      if (!(await confirm('Delete this experiment?'))) return;
       try {
         await api.experimentDelete(btn.dataset.expId);
         await reload();

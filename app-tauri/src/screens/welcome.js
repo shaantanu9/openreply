@@ -517,7 +517,7 @@ async function renderStep3(root, body, info) {
   continueBtn.onclick = async () => {
     if (continueBtn.dataset.blocked === '1') return;
     if (continueBtn.dataset.llmWarn === '1') {
-      const go = confirm(
+      const go = await confirm(
         'LLM provider setup is missing or failing. You can continue without AI extraction, or set up keys now.\n\nPress OK to continue without AI.\nPress Cancel to open key setup.'
       );
       if (!go) {

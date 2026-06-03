@@ -280,7 +280,7 @@ export async function renderEstimate(root, { params }) {
         });
       });
       tr.querySelector('.pert-delete')?.addEventListener('click', async () => {
-        if (!confirm('Delete this task?')) return;
+        if (!(await confirm('Delete this task?'))) return;
         try {
           await api.pertDelete(tid);
           await reload();

@@ -4347,7 +4347,7 @@ export async function renderTopic(root, { params }) {
 
   async function deleteConversation(topic, id) {
     if (!id) return;
-    if (!window.confirm('Delete this chat? This cannot be undone.')) return;
+    if (!(await window.confirm('Delete this chat? This cannot be undone.'))) return;
     try { await api.chatConvDelete(id); } catch {}
     if (chatActiveConv.get(topic) === id) {
       chatActiveConv.delete(topic);
@@ -5488,8 +5488,8 @@ export async function renderTopic(root, { params }) {
   $('#btn-rerun').onclick = () => openSourcePickerModal(topic);
   // "Fetch more" — explicit DEEP collect (3yr × all subs × every source). The
   // first collect is a fast 1-year scan; this is the opt-in thorough pass.
-  $('#btn-fetch-more')?.addEventListener('click', () => {
-    const ok = confirm(
+  $('#btn-fetch-more')?.addEventListener('click', async () => {
+    const ok = await confirm(
       'Deep fetch pulls 3 years of Reddit history across ALL discovered '
       + 'subreddits, plus every source — thorough but slow (~10-15 min).\n\n'
       + 'Your first collect was a fast 1-year scan. New posts stream into the '
@@ -5639,7 +5639,7 @@ export async function renderTopic(root, { params }) {
   // pid) paths are tried by cancel_active_job on the Rust side.
   if (cancelBtn) {
     cancelBtn.addEventListener('click', async () => {
-      if (!confirm(`Stop the in-flight fetch for "${topic}"? Partial results stay in the corpus — you can Rerun anytime.`)) return;
+      if (!(await confirm(`Stop the in-flight fetch for "${topic}"? Partial results stay in the corpus — you can Rerun anytime.`))) return;
       cancelBtn.disabled = true;
       const origText = cancelBtn.textContent;
       cancelBtn.textContent = 'Cancelling…';

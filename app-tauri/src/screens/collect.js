@@ -936,8 +936,8 @@ export async function renderCollect(root, { params }) {
     window.refreshIcons?.();
     setTimeout(() => { b.innerHTML = orig; window.refreshIcons?.(); }, 1400);
   };
-  $('#btn-clear-log').onclick = () => {
-    if (!confirm('Clear the on-screen log? (Doesn\'t cancel the collect.)')) return;
+  $('#btn-clear-log').onclick = async () => {
+    if (!(await confirm('Clear the on-screen log? (Doesn\'t cancel the collect.)'))) return;
     log.innerHTML = '';
     lineCount = 0; errCount = 0;
     linesEl.textContent = '0'; errsEl.textContent = '0';

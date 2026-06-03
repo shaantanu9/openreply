@@ -872,7 +872,7 @@ async function loadActiveCollect(root) {
         cancelBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           const label = topic ? `"${topic}"` : 'the active fetch';
-          if (!confirm(`Stop ${label}? Partial results stay in the corpus — you can Rerun anytime.`)) return;
+          if (!(await confirm(`Stop ${label}? Partial results stay in the corpus — you can Rerun anytime.`))) return;
           cancelBtn.disabled = true;
           const orig = cancelBtn.textContent;
           cancelBtn.textContent = 'Cancelling…';

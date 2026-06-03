@@ -251,7 +251,7 @@ async function renderTopicPmf(root, topic) {
   }, { busyLabel: 'Adding…' }));
 
   $$('.pmf-delete', root).forEach(b => b.addEventListener('click', async () => {
-    if (!confirm('Delete this response?')) return;
+    if (!(await confirm('Delete this response?'))) return;
     try {
       await api.pmfDelete(b.dataset.rid);
       await reload();
