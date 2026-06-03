@@ -61,3 +61,4 @@ Thumbs.db
 *.swp
 *.swo
 .admin-creds.local.md
+.admin-secret.txt

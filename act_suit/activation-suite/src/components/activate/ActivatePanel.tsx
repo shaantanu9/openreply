@@ -117,9 +117,13 @@ export function ActivatePanel() {
   }
 
   function copyKey() {
-    if (!licenceKey) return;
-    navigator.clipboard.writeText(licenceKey).catch(() => {});
+    // Prefer the full key the server returns for the owner; fall back to the
+    // one we remembered locally when it was first issued.
+    const value = licence?.activationKey || licenceKey;
+    if (!value) return;
+    navigator.clipboard.writeText(value).catch(() => {});
     setKeyCopied(true);
+    showAlert("Licence key copied to clipboard ✓", "success");
     setTimeout(() => setKeyCopied(false), 1500);
   }
 
@@ -353,7 +357,7 @@ export function ActivatePanel() {
             email={email}
             licenceLoading={licenceLoading}
             hasLicence={hasLicence}
-            licenceKey={licenceKey}
+            licenceKey={licence?.activationKey || licenceKey}
             keyPreview={licence?.activationKeyPreview ?? null}
             keyCopied={keyCopied}
             deviceCount={deviceCount}

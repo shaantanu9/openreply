@@ -5,6 +5,7 @@ import { billingEnabled, FREE_PLAN_ID, FREE_MAX_DEVICES } from "@/lib/billing";
 import { createLicenseRecord } from "@/lib/licenseService";
 import { supabaseLicenceForEmail } from "@/lib/supabaseActivationStore";
 import { findLicenseByEmail } from "@/lib/activationStore";
+import { sendLicenseKeyEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
         planId: FREE_PLAN_ID,
         maxDevices: FREE_MAX_DEVICES,
       });
+      const mail = await sendLicenseKeyEmail(email, created.activationKey).catch(() => ({ ok: false }));
       return NextResponse.json({
         ok: true,
         already: false,
@@ -69,7 +71,8 @@ export async function POST(req: Request) {
         activation_key: created.activationKey,
         status: "active",
         max_devices: created.maxDevices,
-        message: "Your license key — copy it now and paste it into the desktop app.",
+        emailed: !!mail?.ok,
+        message: "Your license key — copy it now and paste it into the desktop app." + (mail?.ok ? " We also emailed it to you." : ""),
       });
     }
 
@@ -91,6 +94,7 @@ export async function POST(req: Request) {
       planId: FREE_PLAN_ID,
       maxDevices: FREE_MAX_DEVICES,
     });
+    const mail = await sendLicenseKeyEmail(email, created.activationKey).catch(() => ({ ok: false }));
     return NextResponse.json({
       ok: true,
       already: false,
@@ -98,6 +102,7 @@ export async function POST(req: Request) {
       activation_key: created.activationKey,
       status: "active",
       max_devices: created.maxDevices,
+      emailed: !!mail?.ok,
     });
   } catch (err) {
     return NextResponse.json(

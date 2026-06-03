@@ -165,7 +165,11 @@ export function ActivateTab(props: {
                 </button>
               ) : null}
             </div>
-            <div className="break-all font-mono text-[17px] tracking-[2px] text-[var(--dark)]">
+            <div
+              className={`break-all font-mono text-[17px] tracking-[2px] text-[var(--dark)] ${licenceKey ? "cursor-pointer" : ""}`}
+              onClick={licenceKey ? props.onCopyKey : undefined}
+              title={licenceKey ? "Click to copy" : undefined}
+            >
               {licenceKey || keyPreview}
             </div>
             <p className="mt-2 text-[12px] leading-[1.5] text-[var(--muted)]">

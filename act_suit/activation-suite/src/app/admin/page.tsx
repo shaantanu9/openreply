@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type LicenseRow = {
   email: string;
@@ -11,114 +11,412 @@ type LicenseRow = {
   activationKeyPreview: string | null;
   isTrial: boolean;
   expiresAt: string | null;
+  trialEndsAt: string | null;
+  createdAt: string | null;
+  lastSeenAt: string | null;
 };
 
-const wrap: React.CSSProperties = { maxWidth: 860, margin: "48px auto", padding: "0 20px", fontFamily: "system-ui, sans-serif", color: "#1a1614" };
-const input: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid #ddd", borderRadius: 8, fontSize: 14 };
-const btn = (bg: string, fg = "#fff", border = "none"): React.CSSProperties => ({ padding: "8px 14px", borderRadius: 8, border, background: bg, color: fg, fontWeight: 600, cursor: "pointer", fontSize: 13 });
+type Detail = {
+  licence: {
+    licenseId: string; email: string; userId: string | null; appUserId: string | null;
+    status: string; planId: string; livePassActive: boolean; isTrial: boolean;
+    maxDevices: number; expiresAt: string | null; trialEndsAt: string | null;
+    createdAt: string | null; activationKey: string | null; activationKeyPreview: string | null;
+  };
+  devices: Array<{ signaturePreview: string; os: string; arch: string; activatedAt: string | null; lastSeenAt: string | null }>;
+  attempts: Array<{ outcome: string; errorCode: string | null; httpStatus: number | null; devicePreview: string | null; createdAt: string | null }>;
+};
+
+const C = {
+  ink: "#1a1614", ink2: "#5b5550", ink3: "#9a948e", line: "#e9e4dc", bg: "#f6f3ee",
+  panel: "#ffffff", green: "#2d7a3e", greenBg: "#e7f3ea", red: "#c0392b", redBg: "#fbeae8",
+  amber: "#b5821e", amberBg: "#fbf2df", blue: "#3b6cd9", orange: "#e07b3c",
+};
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function daysLeft(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return isNaN(t) ? null : Math.ceil((t - Date.now()) / 86_400_000);
+}
+function relative(iso: string | null): string {
+  if (!iso) return "never";
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return "—";
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24); if (d < 30) return `${d}d ago`;
+  return fmtDate(iso);
+}
+
+function Pill({ text, fg, bg }: { text: string; fg: string; bg: string }) {
+  return <span style={{ fontSize: 11, fontWeight: 700, color: fg, background: bg, padding: "3px 9px", borderRadius: 999, textTransform: "capitalize", whiteSpace: "nowrap" }}>{text}</span>;
+}
+function statusPill(status: string) {
+  const active = status === "active";
+  return <Pill text={status} fg={active ? C.green : C.red} bg={active ? C.greenBg : C.redBg} />;
+}
+function planPill(planId: string, isTrial: boolean) {
+  return isTrial ? <Pill text="Trial" fg={C.orange} bg={C.amberBg} /> : <Pill text={planId} fg={C.blue} bg="#eaf0fc" />;
+}
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [configured, setConfigured] = useState(true);
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ msg: string; ok: boolean } | null>(null);
   const [rows, setRows] = useState<LicenseRow[]>([]);
   const [masterOn, setMasterOn] = useState(false);
-
-  const loadSession = useCallback(async () => {
-    const r = await fetch("/api/v1/admin/auth").then((x) => x.json()).catch(() => ({}));
-    setConfigured(Boolean(r.configured));
-    setAuthed(Boolean(r.authed));
-    if (r.authed) loadLicenses();
-  }, []);
+  const [q, setQ] = useState("");
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const loadLicenses = useCallback(async () => {
     const r = await fetch("/api/v1/admin/licenses").then((x) => x.json()).catch(() => ({}));
     if (r.ok) { setRows(r.licenses || []); setMasterOn(Boolean(r.master_key_enabled)); }
   }, []);
-
+  const loadSession = useCallback(async () => {
+    const r = await fetch("/api/v1/admin/auth").then((x) => x.json()).catch(() => ({}));
+    setConfigured(Boolean(r.configured));
+    setAuthed(Boolean(r.authed));
+    if (r.authed) loadLicenses();
+  }, [loadLicenses]);
   useEffect(() => { loadSession(); }, [loadSession]);
+
+  const openUser = useCallback(async (email: string) => {
+    setSelected(email); setDetail(null); setDetailLoading(true); setMenuFor(null);
+    const r = await fetch(`/api/v1/admin/user?email=${encodeURIComponent(email)}`).then((x) => x.json()).catch(() => ({}));
+    setDetailLoading(false);
+    if (r.ok) setDetail(r as Detail);
+    else setNote({ msg: `${email}: ${r.error || "could not load"}`, ok: false });
+  }, []);
 
   async function login() {
     setBusy("login"); setNote(null);
     const r = await fetch("/api/v1/admin/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "login", secret }) }).then((x) => x.json()).catch(() => ({}));
     setBusy(null);
-    if (r.authed) { setSecret(""); setAuthed(true); loadLicenses(); }
-    else setNote("Wrong secret.");
+    if (r.authed) { setSecret(""); setAuthed(true); loadLicenses(); } else setNote({ msg: "Wrong secret.", ok: false });
   }
   async function logout() {
     await fetch("/api/v1/admin/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
-    setAuthed(false); setRows([]);
+    setAuthed(false); setRows([]); setSelected(null); setDetail(null);
   }
-  async function act(email: string, action: "revoke" | "reactivate" | "expire") {
-    setBusy(email + action); setNote(null);
-    const r = await fetch("/api/v1/admin/license", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, email }) }).then((x) => x.json()).catch(() => ({}));
+  async function post(email: string, action: string, extra: Record<string, unknown> = {}) {
+    setBusy(email + action); setNote(null); setMenuFor(null);
+    const r = await fetch("/api/v1/admin/license", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, email, ...extra }) }).then((x) => x.json()).catch(() => ({}));
     setBusy(null);
-    setNote(r.ok ? `${email}: ${action} ✓` : `${email}: ${r.error || "failed"}`);
+    setNote({ msg: r.ok ? `${email}: ${action.replace(/_/g, " ")} ✓` : `${email}: ${r.error || r.message || "failed"}`, ok: !!r.ok });
     loadLicenses();
+    if (selected === email) openUser(email);
+  }
+  function ask(email: string, action: "extend_trial" | "extend_expiry" | "set_max_devices", label: string, def: string) {
+    const v = window.prompt(label, def);
+    if (v == null) return;
+    const n = parseInt(v, 10);
+    if (!n) return;
+    post(email, action, action === "set_max_devices" ? { max_devices: n } : { days: n });
+  }
+  function copyText(text: string, label: string) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setNote({ msg: `Copied ${label.toLowerCase()} ✓`, ok: true });
+    window.setTimeout(() => setNote((n) => (n && n.msg.startsWith("Copied") ? null : n)), 1800);
   }
 
-  if (authed === null) return <main style={wrap}>Loading…</main>;
+  const filtered = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    return n ? rows.filter((r) => r.email.toLowerCase().includes(n)) : rows;
+  }, [rows, q]);
+  const stats = useMemo(() => {
+    let active = 0, trials = 0, expiring = 0, inactive = 0;
+    for (const r of rows) {
+      if (r.status === "active") active++; else inactive++;
+      if (r.isTrial) trials++;
+      const dl = daysLeft(r.isTrial ? r.trialEndsAt : r.expiresAt);
+      if (r.status === "active" && dl != null && dl >= 0 && dl <= 7) expiring++;
+    }
+    return { total: rows.length, active, trials, expiring, inactive };
+  }, [rows]);
 
+  if (authed === null) return <main style={{ padding: 48, fontFamily: "system-ui", color: C.ink3 }}>Loading…</main>;
   if (!configured) {
-    return <main style={wrap}><h1>License admin</h1><p style={{ color: "#c0392b" }}>Set <code>ADMIN_SECRET</code> in the server env to enable admin.</p></main>;
+    return <main style={{ maxWidth: 520, margin: "60px auto", fontFamily: "system-ui", color: C.ink, padding: "0 20px" }}><h1>Licence admin</h1><p style={{ color: C.red }}>Set <code>ADMIN_SECRET</code> in the server env to enable admin.</p></main>;
   }
-
   if (!authed) {
     return (
-      <main style={{ ...wrap, maxWidth: 420 }}>
-        <h1 style={{ fontSize: 24 }}>Admin login</h1>
-        <p style={{ color: "#6b6b6b", fontSize: 14, marginBottom: 20 }}>Enter the owner secret to manage licenses.</p>
-        <input type="password" value={secret} placeholder="ADMIN_SECRET" style={{ ...input, marginBottom: 14 }}
-          onChange={(e) => setSecret(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} />
-        <button onClick={login} disabled={busy === "login"} style={btn("#1a1614")}>{busy === "login" ? "Signing in…" : "Sign in"}</button>
-        {note ? <p style={{ color: "#c0392b", marginTop: 12, fontSize: 13 }}>{note}</p> : null}
+      <main style={{ minHeight: "100vh", background: C.bg, fontFamily: "system-ui", display: "grid", placeItems: "center", padding: 20 }}>
+        <div style={{ width: "100%", maxWidth: 380, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, padding: 28, boxShadow: "0 8px 30px rgba(0,0,0,.06)" }}>
+          <h1 style={{ fontSize: 22, margin: "0 0 4px", color: C.ink }}>Licence admin</h1>
+          <p style={{ color: C.ink3, fontSize: 13, margin: "0 0 18px" }}>Enter the owner secret to continue.</p>
+          <input type="password" value={secret} placeholder="ADMIN_SECRET" autoFocus
+            style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, marginBottom: 12, boxSizing: "border-box" }}
+            onChange={(e) => setSecret(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} />
+          <button onClick={login} disabled={busy === "login"} style={{ width: "100%", padding: "11px", borderRadius: 10, border: "none", background: C.ink, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{busy === "login" ? "Signing in…" : "Sign in"}</button>
+          {note ? <p style={{ color: C.red, marginTop: 12, fontSize: 13 }}>{note.msg}</p> : null}
+        </div>
       </main>
     );
   }
 
+  // ── Detail view ──────────────────────────────────────────────────────────
+  if (selected) {
+    const d = detail?.licence;
+    const dateIso = d ? (d.isTrial ? d.trialEndsAt : d.expiresAt) : null;
+    const dl = daysLeft(dateIso);
+    const actBtn = (label: string, fn: () => void, kind: "primary" | "danger" | "ghost" = "ghost") => (
+      <button onClick={fn} disabled={!!busy && busy.startsWith(selected)} style={{
+        padding: "8px 13px", borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap",
+        border: kind === "ghost" ? `1px solid ${C.line}` : "none",
+        background: kind === "primary" ? C.ink : kind === "danger" ? C.red : C.panel,
+        color: kind === "ghost" ? C.ink : "#fff",
+      }}>{label}</button>
+    );
+    return (
+      <main style={{ minHeight: "100vh", background: C.bg, fontFamily: "system-ui", color: C.ink }}>
+        <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 24px 60px" }}>
+          <button onClick={() => { setSelected(null); setDetail(null); }} style={{ background: "none", border: "none", color: C.ink2, fontSize: 14, cursor: "pointer", padding: "6px 0", marginBottom: 12 }}>← Back to all users</button>
+          {note ? <div style={{ fontSize: 13, marginBottom: 14, padding: "8px 12px", borderRadius: 8, background: note.ok ? C.greenBg : C.redBg, color: note.ok ? C.green : C.red }}>{note.msg}</div> : null}
+
+          {detailLoading || !d ? (
+            <p style={{ color: C.ink3 }}>{detailLoading ? "Loading user…" : "User not found."}</p>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+                <h1 style={{ fontSize: 24, margin: 0, fontWeight: 800 }}>{d.email}</h1>
+                {statusPill(d.status)} {planPill(d.planId, d.isTrial)}
+                {d.livePassActive ? <Pill text="Live Pass" fg={C.green} bg={C.greenBg} /> : null}
+              </div>
+              <p style={{ color: C.ink3, fontSize: 13, margin: "0 0 18px" }}>Joined {fmtDate(d.createdAt)} · {detail!.devices.length} device(s)</p>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}>
+                {d.status === "active"
+                  ? actBtn("Disable (revoke)", () => post(d.email, "revoke"), "danger")
+                  : actBtn("Enable (reactivate)", () => post(d.email, "reactivate"), "primary")}
+                {actBtn("Extend trial…", () => ask(d.email, "extend_trial", `Extend TRIAL for ${d.email} by how many days?`, "14"))}
+                {actBtn("Extend paid expiry…", () => ask(d.email, "extend_expiry", `Extend PAID expiry for ${d.email} by how many days?`, "365"))}
+                {actBtn("Set device seats…", () => ask(d.email, "set_max_devices", `Device-seat limit for ${d.email}?`, String(d.maxDevices || 1)))}
+                {actBtn("Reset devices", () => { if (window.confirm(`Clear ALL devices for ${d.email}? (frees seats)`)) post(d.email, "reset_devices"); })}
+                {actBtn("Expire now", () => { if (window.confirm(`Expire ${d.email}'s licence now?`)) post(d.email, "expire"); }, "danger")}
+              </div>
+
+              {/* Licence facts */}
+              <Section title="Licence">
+                <Facts items={[
+                  ["Status", d.status],
+                  ["Plan", d.planId + (d.isTrial ? " (trial)" : "")],
+                  ["Live Pass", d.livePassActive ? "yes" : "no"],
+                  [d.isTrial ? "Trial ends" : "Expires", dateIso ? `${fmtDate(dateIso)}${dl != null ? ` · ${dl <= 0 ? "expired" : `${dl}d left`}` : ""}` : "perpetual"],
+                  ["Device seats", `${detail!.devices.length} / ${d.maxDevices}`],
+                  ["Licence key", d.activationKey || "— (not stored for this licence)"],
+                  ["Licence ID", d.licenseId],
+                  ["Supabase user", d.userId || "—"],
+                  ["App user", d.appUserId || "—"],
+                  ["Created", fmtDateTime(d.createdAt)],
+                ]} onCopy={copyText} />
+              </Section>
+
+              {/* Devices */}
+              <Section title={`Activated devices (${detail!.devices.length})`}>
+                {detail!.devices.length === 0 ? <Empty text="No devices activated." /> : (
+                  <MiniTable head={["Device", "Fingerprint", "Activated", "Last seen"]} rows={detail!.devices.map((dv) => [
+                    `${dv.os} · ${dv.arch}`, `${dv.signaturePreview}…`, fmtDateTime(dv.activatedAt), relative(dv.lastSeenAt),
+                  ])} />
+                )}
+              </Section>
+
+              {/* Activation history */}
+              <Section title={`Activation history (${detail!.attempts.length})`}>
+                {detail!.attempts.length === 0 ? <Empty text="No recorded attempts." /> : (
+                  <MiniTable head={["When", "Outcome", "Code", "HTTP", "Device"]} rows={detail!.attempts.map((a) => [
+                    fmtDateTime(a.createdAt),
+                    a.outcome,
+                    a.errorCode || "—",
+                    a.httpStatus != null ? String(a.httpStatus) : "—",
+                    a.devicePreview ? `${a.devicePreview}…` : "—",
+                  ])} colorFirstByOutcome />
+                )}
+              </Section>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  // ── List view ────────────────────────────────────────────────────────────
+  const statCard = (label: string, value: number, color: string) => (
+    <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 16px", minWidth: 110 }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 12, color: C.ink3, marginTop: 4 }}>{label}</div>
+    </div>
+  );
+  const mItem = (text: string, fn: () => void, danger = false) => (
+    <button onClick={fn} style={{ display: "block", width: "100%", textAlign: "left", padding: "9px 14px", border: "none", background: "transparent", color: danger ? C.red : C.ink, fontSize: 13, cursor: "pointer", fontWeight: 500 }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>{text}</button>
+  );
+
   return (
-    <main style={wrap}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <h1 style={{ fontSize: 24, margin: 0 }}>License admin</h1>
-        <button onClick={logout} style={btn("#fff", "#333", "1px solid #ddd")}>Log out</button>
-      </div>
-      <p style={{ color: "#6b6b6b", fontSize: 13, marginBottom: 16 }}>
-        Disable a key (the desktop app locks on next check), re-enable, or expire it.
-        Beta master key: <strong style={{ color: masterOn ? "#0f6e56" : "#c0392b" }}>{masterOn ? "ENABLED" : "off"}</strong>{" "}
-        (rotate/clear <code>MASTER_KEY</code> in env to change/revoke).
-      </p>
-      {note ? <p style={{ fontSize: 13, marginBottom: 12, color: note.includes("✓") ? "#0f6e56" : "#c0392b" }}>{note}</p> : null}
-      <div style={{ overflowX: "auto", border: "1px solid #eee", borderRadius: 10 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: "#faf8f4", textAlign: "left" }}>
-              {["Email", "Status", "Plan", "Devices", "Key", "Actions"].map((h) => (
-                <th key={h} style={{ padding: "10px 12px", fontWeight: 600 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#999" }}>No licenses yet.</td></tr>
-            ) : rows.map((r) => (
-              <tr key={r.email + r.activationKeyPreview} style={{ borderTop: "1px solid #eee" }}>
-                <td style={{ padding: "10px 12px" }}>{r.email}</td>
-                <td style={{ padding: "10px 12px", color: r.status === "active" ? "#0f6e56" : "#c0392b", fontWeight: 600 }}>{r.status}</td>
-                <td style={{ padding: "10px 12px" }}>{r.planId}{r.isTrial ? " (trial)" : ""}</td>
-                <td style={{ padding: "10px 12px" }}>{r.devicesUsed}/{r.maxDevices}</td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace" }}>…{r.activationKeyPreview || "????"}</td>
-                <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
-                  <button onClick={() => act(r.email, "revoke")} disabled={!!busy} style={{ ...btn("#c0392b"), marginRight: 6 }}>Disable</button>
-                  <button onClick={() => act(r.email, "reactivate")} disabled={!!busy} style={{ ...btn("#0f6e56"), marginRight: 6 }}>Enable</button>
-                  <button onClick={() => act(r.email, "expire")} disabled={!!busy} style={btn("#fff", "#333", "1px solid #ddd")}>Expire</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <main style={{ minHeight: "100vh", background: C.bg, fontFamily: "system-ui", color: C.ink }}>
+      <div style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 24px 60px" }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
+          <div>
+            <h1 style={{ fontSize: 26, margin: 0, fontWeight: 800 }}>Licence admin</h1>
+            <p style={{ color: C.ink3, fontSize: 13, margin: "4px 0 0" }}>
+              Click a user for full detail. Master key:{" "}
+              <strong style={{ color: masterOn ? C.green : C.red }}>{masterOn ? "ENABLED" : "off"}</strong>
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={loadLicenses} style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${C.line}`, background: C.panel, color: C.ink, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>↻ Refresh</button>
+            <button onClick={logout} style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${C.line}`, background: C.panel, color: C.ink2, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Log out</button>
+          </div>
+        </header>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+          {statCard("Total users", stats.total, C.ink)}
+          {statCard("Active", stats.active, C.green)}
+          {statCard("On trial", stats.trials, C.orange)}
+          {statCard("Expiring ≤7d", stats.expiring, C.amber)}
+          {statCard("Disabled / expired", stats.inactive, C.red)}
+        </div>
+
+        <input value={q} placeholder="Search by email…" style={{ width: "100%", maxWidth: 380, padding: "10px 13px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, marginBottom: 12, boxSizing: "border-box" }} onChange={(e) => setQ(e.target.value)} />
+        {note ? <div style={{ fontSize: 13, marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: note.ok ? C.greenBg : C.redBg, color: note.ok ? C.green : C.red }}>{note.msg}</div> : null}
+
+        <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: C.ink3 }}>
+                  {["User", "Plan", "Status", "Devices", "Expiry", "Last seen", "Key", ""].map((h, i) => (
+                    <th key={i} style={{ padding: "12px 14px", fontWeight: 600, fontSize: 11.5, textTransform: "uppercase", letterSpacing: ".04em", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={8} style={{ padding: 30, textAlign: "center", color: C.ink3 }}>{rows.length ? "No matches." : "No licences yet."}</td></tr>
+                ) : filtered.map((r, idx) => {
+                  const dateIso = r.isTrial ? r.trialEndsAt : r.expiresAt;
+                  const dl = daysLeft(dateIso);
+                  const expFg = dl != null && dl <= 0 ? C.red : dl != null && dl <= 7 ? C.amber : C.ink2;
+                  const open = menuFor === r.email;
+                  return (
+                    <tr key={r.email + (r.activationKeyPreview || "")} style={{ background: idx % 2 ? "#fcfbf9" : C.panel }}>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}` }}>
+                        <button onClick={() => openUser(r.email)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", fontWeight: 600, color: C.blue, fontSize: 13 }}>{r.email}</button>
+                        <div style={{ color: C.ink3, fontSize: 11.5, marginTop: 1 }}>joined {fmtDate(r.createdAt)}</div>
+                      </td>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>{planPill(r.planId, r.isTrial)}</td>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}` }}>{statusPill(r.status)}</td>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, color: r.devicesUsed >= r.maxDevices ? C.amber : C.ink2, whiteSpace: "nowrap" }}>{r.devicesUsed}/{r.maxDevices}</td>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, color: expFg, whiteSpace: "nowrap" }}>
+                        {dateIso ? <>{fmtDate(dateIso)} <span style={{ color: C.ink3 }}>· {dl != null && dl <= 0 ? "expired" : `${dl}d`}</span></> : <span style={{ color: C.ink3 }}>perpetual</span>}
+                      </td>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, color: C.ink2, whiteSpace: "nowrap" }}>{relative(r.lastSeenAt)}</td>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, fontFamily: "ui-monospace, monospace", color: C.ink3 }}>…{r.activationKeyPreview || "????"}</td>
+                      <td style={{ padding: "8px 14px", borderBottom: `1px solid ${C.line}`, position: "relative", textAlign: "right" }}>
+                        <button onClick={() => setMenuFor(open ? null : r.email)} disabled={!!busy && busy.startsWith(r.email)}
+                          style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${C.line}`, background: open ? C.bg : C.panel, color: C.ink, fontWeight: 600, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" }}>Manage ▾</button>
+                        {open ? (
+                          <>
+                            <div onClick={() => setMenuFor(null)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
+                            <div style={{ position: "absolute", right: 14, top: "100%", marginTop: 4, zIndex: 20, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,.12)", minWidth: 200, padding: "5px 0", textAlign: "left" }}>
+                              {mItem("View details →", () => openUser(r.email))}
+                              <div style={{ height: 1, background: C.line, margin: "5px 0" }} />
+                              {r.status === "active"
+                                ? mItem("Disable (revoke)", () => post(r.email, "revoke"), true)
+                                : mItem("Enable (reactivate)", () => post(r.email, "reactivate"))}
+                              {mItem("Extend trial…", () => ask(r.email, "extend_trial", `Extend TRIAL for ${r.email} by how many days?`, "14"))}
+                              {mItem("Extend paid expiry…", () => ask(r.email, "extend_expiry", `Extend PAID expiry for ${r.email} by how many days?`, "365"))}
+                              {mItem("Set device seats…", () => ask(r.email, "set_max_devices", `Device-seat limit for ${r.email}?`, String(r.maxDevices || 1)))}
+                              {mItem("Reset devices", () => { if (window.confirm(`Clear ALL devices for ${r.email}? (frees seats)`)) post(r.email, "reset_devices"); })}
+                              {mItem("Expire now", () => { if (window.confirm(`Expire ${r.email}'s licence now?`)) post(r.email, "expire"); }, true)}
+                            </div>
+                          </>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </main>
   );
+}
+
+// ── Detail-view building blocks ──────────────────────────────────────────────
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px", marginBottom: 16 }}>
+      <h2 style={{ fontSize: 14, margin: "0 0 12px", fontWeight: 700, color: C.ink2, textTransform: "uppercase", letterSpacing: ".04em" }}>{title}</h2>
+      {children}
+    </section>
+  );
+}
+function Facts({ items, onCopy }: { items: Array<[string, string]>; onCopy?: (v: string, label: string) => void }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px 24px" }}>
+      {items.map(([k, v], i) => {
+        const copyable = !!onCopy && !!v && !v.startsWith("—") && v !== "perpetual" && v !== "no" && v !== "yes";
+        return (
+          <div key={i}>
+            <div style={{ fontSize: 11.5, color: C.ink3, marginBottom: 2 }}>{k}</div>
+            <div
+              onClick={copyable ? () => onCopy!(v, k) : undefined}
+              title={copyable ? "Click to copy" : undefined}
+              style={{ fontSize: 13.5, fontWeight: 600, wordBreak: "break-all", cursor: copyable ? "pointer" : "default", display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              {v}
+              {copyable ? <span style={{ color: C.ink3, fontWeight: 400, fontSize: 12 }}>⧉</span> : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function MiniTable({ head, rows, colorFirstByOutcome }: { head: string[]; rows: string[][]; colorFirstByOutcome?: boolean }) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <thead>
+          <tr style={{ textAlign: "left", color: C.ink3 }}>
+            {head.map((h, i) => <th key={i} style={{ padding: "8px 10px", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: ".03em", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((c, j) => {
+                const ok = colorFirstByOutcome && j === 1 && /ok|success|activated/i.test(c);
+                const bad = colorFirstByOutcome && j === 1 && /fail|error|denied|revoked|invalid/i.test(c);
+                return <td key={j} style={{ padding: "8px 10px", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap", fontFamily: j > 0 && /^[a-f0-9]/.test(c) ? "ui-monospace, monospace" : undefined, color: ok ? C.green : bad ? C.red : C.ink2 }}>{c}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function Empty({ text }: { text: string }) {
+  return <p style={{ color: C.ink3, fontSize: 13, margin: 0 }}>{text}</p>;
 }

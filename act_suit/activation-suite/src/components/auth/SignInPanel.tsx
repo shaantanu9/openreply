@@ -69,6 +69,11 @@ export function SignInPanel() {
 
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotBusy, setForgotBusy] = useState(false);
+  // OTP password reset (per flutter-forgot-password skill): signInWithOtp →
+  // 6-digit code → verifyOtp(type:'email') → updateUser(password).
+  const [forgotStage, setForgotStage] = useState<"email" | "code">("email");
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotNewPwd, setForgotNewPwd] = useState("");
 
   useEffect(() => {
     setEnvOk(hasPublicSupabaseConfig());
@@ -178,9 +183,44 @@ export function SignInPanel() {
     setForgotBusy(true);
     try {
       const sb = getSupabaseBrowserClient();
-      const { error } = await sb.auth.resetPasswordForEmail(forgotEmail.trim());
+      // signInWithOtp generates a real 6-digit OTP regardless of PKCE flow
+      // (resetPasswordForEmail would store an unverifiable pkce_ token).
+      const { error } = await sb.auth.signInWithOtp({
+        email: forgotEmail.trim(),
+        options: { shouldCreateUser: false },
+      });
       if (error) throw error;
-      setAlert({ msg: "Reset link sent! Check your inbox.", type: "success" });
+      setAlert({ msg: "We emailed you a 6-digit code. Enter it below with your new password.", type: "success" });
+      setForgotStage("code");
+    } catch (err) {
+      setAlert({ msg: parseError(err), type: "error" });
+    } finally {
+      setForgotBusy(false);
+    }
+  }
+
+  async function handleForgotReset(e: React.FormEvent) {
+    e.preventDefault();
+    const code = forgotCode.trim();
+    if (!/^\d{6}$/.test(code)) {
+      setAlert({ msg: "Enter the 6-digit code from your email.", type: "error" });
+      return;
+    }
+    if (forgotNewPwd.length < 8) {
+      setAlert({ msg: "New password must be at least 8 characters.", type: "error" });
+      return;
+    }
+    setForgotBusy(true);
+    try {
+      const sb = getSupabaseBrowserClient();
+      // type:'email' (NOT 'magiclink') — verifies the 6-digit OTP directly.
+      const { error: vErr } = await sb.auth.verifyOtp({ email: forgotEmail.trim(), token: code, type: "email" });
+      if (vErr) throw vErr;
+      // Now signed in → set the new password.
+      const { error: uErr } = await sb.auth.updateUser({ password: forgotNewPwd });
+      if (uErr) throw uErr;
+      setAlert({ msg: "Password updated — you're signed in.", type: "success" });
+      setTimeout(() => { router.push(postAuthDest); router.refresh(); }, 1200);
     } catch (err) {
       setAlert({ msg: parseError(err), type: "error" });
     } finally {
@@ -532,38 +572,62 @@ export function SignInPanel() {
           ) : null}
 
           {tab === "forgot" ? (
-            <form onSubmit={handleForgot} className="flex flex-col">
-              <p className="mb-6 text-[14px] leading-[1.6] text-[var(--muted)]">
-                Enter your email and we&rsquo;ll send a reset link. Check your
-                spam folder if it doesn&rsquo;t arrive within 2 minutes.
-              </p>
-              <div className="mb-5">
-                <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
-                  Email address
-                </label>
-                <input
-                  type="email"
-                  placeholder="you@company.com"
-                  value={forgotEmail}
-                  onChange={(e) => setForgotEmail(e.target.value)}
-                  className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={forgotBusy}
-                className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--dark)] px-4 py-3 text-[15px] font-medium text-white transition-all hover:-translate-y-px hover:bg-[var(--dark-mid)] disabled:pointer-events-none disabled:opacity-70"
-              >
-                {forgotBusy ? "Sending…" : "Send reset link"}
-              </button>
+            <form onSubmit={forgotStage === "email" ? handleForgot : handleForgotReset} className="flex flex-col">
+              {forgotStage === "email" ? (
+                <>
+                  <p className="mb-6 text-[14px] leading-[1.6] text-[var(--muted)]">
+                    Enter your email and we&rsquo;ll send a 6-digit code. Check your
+                    spam folder if it doesn&rsquo;t arrive within 2 minutes.
+                  </p>
+                  <div className="mb-5">
+                    <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">Email address</label>
+                    <input
+                      type="email"
+                      placeholder="you@company.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
+                    />
+                  </div>
+                  <button type="submit" disabled={forgotBusy}
+                    className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--dark)] px-4 py-3 text-[15px] font-medium text-white transition-all hover:-translate-y-px hover:bg-[var(--dark-mid)] disabled:pointer-events-none disabled:opacity-70">
+                    {forgotBusy ? "Sending…" : "Send 6-digit code"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="mb-6 text-[14px] leading-[1.6] text-[var(--muted)]">
+                    Enter the 6-digit code we sent to <strong className="text-[var(--text)]">{forgotEmail}</strong> and your new password.
+                  </p>
+                  <div className="mb-4">
+                    <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">6-digit code</label>
+                    <input
+                      type="text" inputMode="numeric" maxLength={6} placeholder="123456"
+                      value={forgotCode}
+                      onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[20px] tracking-[8px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
+                    />
+                  </div>
+                  <div className="mb-5">
+                    <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">New password</label>
+                    <input
+                      type="password" placeholder="At least 8 characters"
+                      value={forgotNewPwd}
+                      onChange={(e) => setForgotNewPwd(e.target.value)}
+                      className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
+                    />
+                  </div>
+                  <button type="submit" disabled={forgotBusy}
+                    className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--dark)] px-4 py-3 text-[15px] font-medium text-white transition-all hover:-translate-y-px hover:bg-[var(--dark-mid)] disabled:pointer-events-none disabled:opacity-70">
+                    {forgotBusy ? "Resetting…" : "Reset password"}
+                  </button>
+                  <p className="mt-3 text-center text-[12px] text-[var(--muted)]">
+                    <button type="button" onClick={() => { setForgotStage("email"); setForgotCode(""); setForgotNewPwd(""); }} className="text-[var(--orange)] hover:underline">Use a different email / resend</button>
+                  </p>
+                </>
+              )}
               <p className="mt-5 text-center text-[13px] text-[var(--muted)]">
-                <button
-                  type="button"
-                  onClick={() => switchTab("login")}
-                  className="text-[var(--orange)] hover:underline"
-                >
-                  ← Back to sign in
-                </button>
+                <button type="button" onClick={() => { setForgotStage("email"); switchTab("login"); }} className="text-[var(--orange)] hover:underline">← Back to sign in</button>
               </p>
             </form>
           ) : null}

@@ -476,6 +476,8 @@ export type AdminLicenseRow = {
   isTrial: boolean;
   expiresAt: string | null;
   trialEndsAt: string | null;
+  createdAt: string | null;
+  lastSeenAt: string | null;
 };
 
 export async function supabaseListLicenses(): Promise<AdminLicenseRow[]> {
@@ -486,10 +488,15 @@ export async function supabaseListLicenses(): Promise<AdminLicenseRow[]> {
     .order("created_at", { ascending: false })
     .limit(500);
   const rows = (lics as Array<Record<string, unknown>> | null) || [];
-  const { data: devs } = await supabase.from("license_devices").select("license_id");
+  const { data: devs } = await supabase.from("license_devices").select("license_id, last_seen_at");
   const counts = new Map<string, number>();
-  for (const d of ((devs as Array<{ license_id: string }> | null) || [])) {
+  const lastSeen = new Map<string, string>();
+  for (const d of ((devs as Array<{ license_id: string; last_seen_at: string | null }> | null) || [])) {
     counts.set(d.license_id, (counts.get(d.license_id) || 0) + 1);
+    if (d.last_seen_at) {
+      const prev = lastSeen.get(d.license_id);
+      if (!prev || d.last_seen_at > prev) lastSeen.set(d.license_id, d.last_seen_at);
+    }
   }
   return rows.map((r) => ({
     email: String(r.email || ""),
@@ -501,7 +508,92 @@ export async function supabaseListLicenses(): Promise<AdminLicenseRow[]> {
     isTrial: Boolean(r.is_trial),
     expiresAt: (r.expires_at as string) ?? null,
     trialEndsAt: (r.trial_ends_at as string) ?? null,
+    createdAt: (r.created_at as string) ?? null,
+    lastSeenAt: lastSeen.get(String(r.id)) ?? null,
   }));
+}
+
+export type AdminLicenceDetail = {
+  licence: {
+    licenseId: string;
+    email: string;
+    userId: string | null;
+    appUserId: string | null;
+    status: string;
+    planId: string;
+    livePassActive: boolean;
+    isTrial: boolean;
+    maxDevices: number;
+    expiresAt: string | null;
+    trialEndsAt: string | null;
+    createdAt: string | null;
+    activationKey: string | null;
+    activationKeyPreview: string | null;
+  };
+  devices: Array<{ signaturePreview: string; os: string; arch: string; activatedAt: string | null; lastSeenAt: string | null }>;
+  attempts: Array<{ outcome: string; errorCode: string | null; httpStatus: number | null; devicePreview: string | null; createdAt: string | null }>;
+};
+
+/** Admin: full detail for one user's latest licence — licence row, devices, recent attempts. */
+export async function supabaseGetLicenceDetailByEmail(email: string): Promise<AdminLicenceDetail | null> {
+  const supabase = getSupabaseServerClient();
+  const e = email.trim().toLowerCase();
+  const { data: lic } = await supabase
+    .from("licenses")
+    .select("id, app_user_id, user_id, email, status, plan_id, live_pass_active, is_trial, max_devices, expires_at, trial_ends_at, created_at, activation_key")
+    .eq("email", e)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<Record<string, unknown>>();
+  if (!lic) return null;
+  const licenseId = String(lic.id);
+
+  const { data: devs } = await supabase
+    .from("license_devices")
+    .select("signature_hash, os, arch, activated_at, last_seen_at")
+    .eq("license_id", licenseId)
+    .order("last_seen_at", { ascending: false });
+
+  // activation_attempts is optional (older DBs may not have it) — null on error → [].
+  const { data: atts } = await supabase
+    .from("activation_attempts")
+    .select("outcome, error_code, http_status, device_signature_hash, created_at")
+    .eq("email", e)
+    .order("created_at", { ascending: false })
+    .limit(25);
+
+  return {
+    licence: {
+      licenseId,
+      email: String(lic.email || ""),
+      userId: (lic.user_id as string) ?? null,
+      appUserId: (lic.app_user_id as string) ?? null,
+      status: String(lic.status || ""),
+      planId: String(lic.plan_id || "pro"),
+      livePassActive: Boolean(lic.live_pass_active),
+      isTrial: Boolean(lic.is_trial),
+      maxDevices: Number(lic.max_devices || 0),
+      expiresAt: (lic.expires_at as string) ?? null,
+      trialEndsAt: (lic.trial_ends_at as string) ?? null,
+      createdAt: (lic.created_at as string) ?? null,
+      activationKey: (lic.activation_key as string) ?? null,
+      activationKeyPreview: lic.activation_key ? String(lic.activation_key).slice(-4).toUpperCase() : null,
+    },
+    devices: ((devs as Array<Record<string, unknown>> | null) || []).map((d) => ({
+      signaturePreview: d.signature_hash ? String(d.signature_hash).slice(0, 12) : "",
+      os: String(d.os || "?"),
+      arch: String(d.arch || "?"),
+      activatedAt: (d.activated_at as string) ?? null,
+      lastSeenAt: (d.last_seen_at as string) ?? null,
+    })),
+    attempts: ((atts as Array<Record<string, unknown>> | null) || []).map((a) => ({
+      outcome: String(a.outcome || ""),
+      errorCode: (a.error_code as string) ?? null,
+      httpStatus: a.http_status != null ? Number(a.http_status) : null,
+      devicePreview: a.device_signature_hash ? String(a.device_signature_hash).slice(0, 12) : null,
+      createdAt: (a.created_at as string) ?? null,
+    })),
+  };
 }
 
 export async function supabaseMarkLicenceFromWebhook(input: {
@@ -520,6 +612,82 @@ export async function supabaseMarkLicenceFromWebhook(input: {
   if (Object.keys(patch).length === 0) return true;
   const { error } = await supabase.from("licenses").update(patch).eq("email", email);
   return !error;
+}
+
+/**
+ * Admin: extend trial / expiry dates (and optionally max_devices) for the
+ * latest licence on an email. Days are ADDED to max(now, current date), so an
+ * active trial is extended and an expired one is renewed from today. Setting
+ * a date also flips status back to "active".
+ */
+export async function supabaseAdminPatchLicenceByEmail(input: {
+  email: string;
+  addTrialDays?: number;
+  addExpiryDays?: number;
+  maxDevices?: number;
+}): Promise<{ ok: boolean; reason?: string; trialEndsAt?: string | null; expiresAt?: string | null }> {
+  const supabase = getSupabaseServerClient();
+  const email = input.email.trim().toLowerCase();
+  const { data: lic } = await supabase
+    .from("licenses")
+    .select("id, trial_ends_at, expires_at")
+    .eq("email", email)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; trial_ends_at: string | null; expires_at: string | null }>();
+  if (!lic) return { ok: false, reason: "no licence for email" };
+
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const patch: Record<string, unknown> = {};
+  if (typeof input.addTrialDays === "number" && input.addTrialDays !== 0) {
+    const cur = lic.trial_ends_at ? new Date(lic.trial_ends_at).getTime() : 0;
+    const base = cur > now ? cur : now;
+    patch.trial_ends_at = new Date(base + input.addTrialDays * DAY).toISOString();
+    patch.is_trial = true;
+    patch.status = "active";
+  }
+  if (typeof input.addExpiryDays === "number" && input.addExpiryDays !== 0) {
+    const cur = lic.expires_at ? new Date(lic.expires_at).getTime() : 0;
+    const base = cur > now ? cur : now;
+    patch.expires_at = new Date(base + input.addExpiryDays * DAY).toISOString();
+    patch.status = "active";
+  }
+  if (typeof input.maxDevices === "number") {
+    patch.max_devices = Math.max(1, Math.floor(input.maxDevices));
+  }
+  if (Object.keys(patch).length === 0) {
+    return { ok: true, trialEndsAt: lic.trial_ends_at, expiresAt: lic.expires_at };
+  }
+  const { error } = await supabase.from("licenses").update(patch).eq("id", lic.id);
+  if (error) return { ok: false, reason: error.message };
+  return {
+    ok: true,
+    trialEndsAt: (patch.trial_ends_at as string) ?? lic.trial_ends_at,
+    expiresAt: (patch.expires_at as string) ?? lic.expires_at,
+  };
+}
+
+/** Admin: clear ALL activated devices for an email's latest licence (frees seats). */
+export async function supabaseClearDevicesByEmail(
+  email: string,
+): Promise<{ ok: boolean; removed: number; reason?: string }> {
+  const supabase = getSupabaseServerClient();
+  const cleaned = email.trim().toLowerCase();
+  const { data: lic } = await supabase
+    .from("licenses")
+    .select("id")
+    .eq("email", cleaned)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (!lic) return { ok: false, removed: 0, reason: "no licence for email" };
+  const { error, count } = await supabase
+    .from("license_devices")
+    .delete({ count: "exact" })
+    .eq("license_id", lic.id);
+  if (error) return { ok: false, removed: 0, reason: error.message };
+  return { ok: true, removed: count || 0 };
 }
 
 /**
