@@ -9728,3 +9728,25 @@ body[data-sidebar="hidden"] .sidebar-search-wrap { display: none; }
   color: var(--accent); cursor: pointer; text-decoration: underline;
 }
 .kg-link:hover { opacity: 0.82; }
+
+/* ── Background "Reddit enriching" banner (lib/redditEnrich.js) ───────────── */
+.re-banner {
+  position: fixed; left: 16px; bottom: 16px; z-index: 200;
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(440px, 90vw);
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  font-size: var(--fs-13); color: var(--ink-2);
+}
+.re-banner .re-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+  background: #FF4500; /* Reddit orange */
+  animation: rePulse 1.4s ease-in-out infinite;
+}
+@keyframes rePulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.re-banner .re-dismiss {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: var(--ink-3); font-size: 13px; padding: 0 2px;
+}
+.re-banner .re-dismiss:hover { color: var(--ink-1); }

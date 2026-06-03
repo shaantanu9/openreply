@@ -1,5 +1,9 @@
 import { api, $, $$, esc, clearApiCache } from './api.js';
 import { confirmModal } from './lib/confirmModal.js';
+import { markRedditPending, wireRedditEnrich } from './lib/redditEnrich.js';
+
+// Two-phase collect orchestration (fast sources → background Reddit). Idempotent.
+wireRedditEnrich();
 import { refreshIcons } from './icons.js';
 import { hasLlmConfigured } from './lib/llmStatus.js';
 import { renderHome, renderTopicsList } from './screens/home.js';
@@ -1341,8 +1345,20 @@ function wireModal() {
     // One-shot collect params for collect.js (it reads + clears these on mount).
     localStorage.setItem('gapmap.collect.last_aggressive', aggressive ? 'true' : 'false');
     if (collectProf) {
-      localStorage.setItem('gapmap.collect.last_sources',     collectProf.sources || '');
-      localStorage.setItem('gapmap.collect.last_skip_reddit', collectProf.skip_reddit ? 'true' : 'false');
+      const wantsReddit = !collectProf.skip_reddit;
+      const hasExternal = !!(collectProf.sources && collectProf.sources.trim());
+      if (wantsReddit && hasExternal) {
+        // TWO-PHASE: Phase 1 runs the fast external sources with Reddit SKIPPED
+        // so the graph + AI conclusions appear in ~2-3 min. redditEnrich then
+        // kicks a background Reddit-only pass on Phase-1 collect:done, and the
+        // enrich worker folds those posts into the graph incrementally.
+        localStorage.setItem('gapmap.collect.last_sources', collectProf.sources);
+        localStorage.setItem('gapmap.collect.last_skip_reddit', 'true');
+        markRedditPending(effectiveTopic, { aggressive });
+      } else {
+        localStorage.setItem('gapmap.collect.last_sources',     collectProf.sources || '');
+        localStorage.setItem('gapmap.collect.last_skip_reddit', collectProf.skip_reddit ? 'true' : 'false');
+      }
     } else {
       // No goal profile → don't pin sources; remember the user's aggressive pref.
       localStorage.removeItem('gapmap.collect.last_sources');
