@@ -9,6 +9,7 @@
 
 import { api, esc } from '../api.js';
 import { keyGuideHtml, wireKeyGuide } from './licenceGuide.js';
+import { confirmModal } from '../lib/confirmModal.js';
 
 // localStorage keys that main.js reads to decide the activation gate.
 const LICENSE_OK_KEY = 'gapmap.license.activated';
@@ -230,9 +231,15 @@ export async function mountLicenceCard(root, alive = () => true) {
 
     const logout = card.querySelector('#lic2-logout');
     if (logout) logout.onclick = async () => {
-      // Tauri routes window.confirm() to the (async) dialog plugin — must await
-      // it, and the dialog:allow-confirm capability must be granted.
-      const ok = await confirm('Sign out of this licence on this device? The app will lock until you re-activate — your local data is kept.');
+      // In-app modal — NOT window.confirm(): Tauri routes window.confirm() to the
+      // dialog plugin's `confirm` command whose ACL is flaky across builds, which
+      // threw "dialog.confirm not allowed" and made Sign-out silently fail.
+      const ok = await confirmModal({
+        title: 'Sign out of this licence?',
+        body: 'This device will lock until you re-activate. Your local data is kept.',
+        confirmLabel: 'Sign out',
+        danger: true,
+      });
       if (!ok) return;
       logout.disabled = true;
       setStatus('Signing licence out…');

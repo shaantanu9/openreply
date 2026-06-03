@@ -3,6 +3,7 @@
 // events; backend is the `research chat` CLI command.
 
 import { api, $, esc, timeAgo } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
@@ -5489,7 +5490,7 @@ export async function renderTopic(root, { params }) {
   // "Fetch more" — explicit DEEP collect (3yr × all subs × every source). The
   // first collect is a fast 1-year scan; this is the opt-in thorough pass.
   $('#btn-fetch-more')?.addEventListener('click', async () => {
-    const ok = await confirm(
+    const ok = await confirmModal(
       'Deep fetch pulls 3 years of Reddit history across ALL discovered '
       + 'subreddits, plus every source — thorough but slow (~10-15 min).\n\n'
       + 'Your first collect was a fast 1-year scan. New posts stream into the '
@@ -5639,7 +5640,7 @@ export async function renderTopic(root, { params }) {
   // pid) paths are tried by cancel_active_job on the Rust side.
   if (cancelBtn) {
     cancelBtn.addEventListener('click', async () => {
-      if (!(await confirm(`Stop the in-flight fetch for "${topic}"? Partial results stay in the corpus — you can Rerun anytime.`))) return;
+      if (!(await confirmModal(`Stop the in-flight fetch for "${topic}"? Partial results stay in the corpus — you can Rerun anytime.`))) return;
       cancelBtn.disabled = true;
       const origText = cancelBtn.textContent;
       cancelBtn.textContent = 'Cancelling…';

@@ -9,6 +9,7 @@
 //
 // Route: #/estimate/<productId>
 import { api, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import { skelDetail } from '../lib/skeleton.js';
 import { withButtonBusy } from '../lib/busyButton.js';
 
@@ -280,7 +281,7 @@ export async function renderEstimate(root, { params }) {
         });
       });
       tr.querySelector('.pert-delete')?.addEventListener('click', async () => {
-        if (!(await confirm('Delete this task?'))) return;
+        if (!(await confirmModal('Delete this task?'))) return;
         try {
           await api.pertDelete(tid);
           await reload();

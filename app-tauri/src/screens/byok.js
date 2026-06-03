@@ -3,6 +3,7 @@
 // Lets the user pick a default provider + model — those choices flow to the chat + extractor.
 
 import { api, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 
 const LLM_PROVIDERS = [
   {
@@ -574,7 +575,7 @@ export async function openByokModal(onClose) {
       }
     };
     clearBtn.onclick = async () => {
-      if (!(await confirm(`Remove ${field.label}?`))) return;
+      if (!(await confirmModal(`Remove ${field.label}?`))) return;
       try {
         await api.byokSet(field.envKey, '');
         const fresh = await api.byokStatus();
@@ -751,7 +752,7 @@ export async function openByokModal(onClose) {
         btn.onclick = async (e) => {
           e.stopPropagation();
           const name = btn.dataset.m;
-          if (!(await confirm(`Delete model "${name}"? The disk space will be freed.`))) return;
+          if (!(await confirmModal(`Delete model "${name}"? The disk space will be freed.`))) return;
           btn.disabled = true;
           try {
             const url = currentOllamaUrl();
@@ -839,7 +840,7 @@ export async function openByokModal(onClose) {
     // Stop service — SIGTERM the ollama process.
     if (stopSvcBtn) {
       stopSvcBtn.onclick = async () => {
-        if (!(await confirm('Stop the Ollama service? Any running models will be unloaded.'))) return;
+        if (!(await confirmModal('Stop the Ollama service? Any running models will be unloaded.'))) return;
         stopSvcBtn.disabled = true;
         const orig = stopSvcBtn.innerHTML;
         stopSvcBtn.innerHTML = 'stopping…';

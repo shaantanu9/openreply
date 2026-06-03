@@ -10,6 +10,7 @@
 // card-head/card-body, btn-primary/btn-ghost-bordered, .stat-grid for
 // the outcome banner, .section-head transitions, .pill filters.
 import { api, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import { skelStats, skelGrid, skelRows } from '../lib/skeleton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -440,7 +441,7 @@ async function renderTopicTree(root, topic) {
 
   root.querySelectorAll('.ost-exp-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!(await confirm('Delete this experiment?'))) return;
+      if (!(await confirmModal('Delete this experiment?'))) return;
       try {
         await api.experimentDelete(btn.dataset.expId);
         await reload();

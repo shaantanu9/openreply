@@ -14,6 +14,7 @@
 // card-head/card-body, btn-primary/btn-ghost-bordered, .stat-grid for
 // summary metrics, .section-head transitions.
 import { api, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -376,7 +377,7 @@ async function renderTopicInterviews(root, topic) {
   }));
 
   $$('.iv-delete', root).forEach(b => b.addEventListener('click', async () => {
-    if (!(await confirm('Delete this interview?'))) return;
+    if (!(await confirmModal('Delete this interview?'))) return;
     try {
       await api.interviewDelete(b.dataset.ivId);
       await reload();

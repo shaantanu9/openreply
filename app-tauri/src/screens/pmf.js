@@ -13,6 +13,7 @@
 // + .card-body for every panel, btn-primary/btn-ghost/btn-bordered for
 // every button.
 import { api, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import { skelStats, skelRows } from '../lib/skeleton.js';
 import { withButtonBusy } from '../lib/busyButton.js';
 
@@ -251,7 +252,7 @@ async function renderTopicPmf(root, topic) {
   }, { busyLabel: 'Adding…' }));
 
   $$('.pmf-delete', root).forEach(b => b.addEventListener('click', async () => {
-    if (!(await confirm('Delete this response?'))) return;
+    if (!(await confirmModal('Delete this response?'))) return;
     try {
       await api.pmfDelete(b.dataset.rid);
       await reload();

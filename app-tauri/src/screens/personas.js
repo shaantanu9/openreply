@@ -7,6 +7,7 @@
 // Self-contained module. Remove the route registrations in main.js + the
 // nav link in index.html + this file to fully roll back.
 import { api, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import { currentRouteGen } from '../main.js';
 import { skelGrid, skelRows } from '../lib/skeleton.js';
 import { withButtonBusy } from '../lib/busyButton.js';
@@ -309,7 +310,7 @@ async function togglePersona(id, makeActive, root) {
 }
 
 async function deletePersona(id, root) {
-  if (!(await confirm('Delete this persona and ALL its memories? This cannot be undone.'))) return;
+  if (!(await confirmModal('Delete this persona and ALL its memories? This cannot be undone.'))) return;
   await api.personaDelete(id);
   await reloadList(root);
 }

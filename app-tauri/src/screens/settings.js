@@ -2,6 +2,7 @@
 // fills in each card as its sidecar call returns. No call blocks the UI.
 
 import { api, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import { LICENCE_CARD_SKELETON, mountLicenceCard } from '../components/LicenceCard.js';
 import { openByokModal } from './byok.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -1221,7 +1222,7 @@ function wireStaticButtons(root) {
     btnSync.addEventListener('click', () => runWith('re-syncing…', () => api.mcpInstall(currentClient())));
     btnDis .addEventListener('click', async () => {
       const cl = currentClient();
-      if (!(await confirm(`Disconnect Gap Map from ${clientLabels[cl] || cl}? Other MCP servers stay registered.`))) return;
+      if (!(await confirmModal(`Disconnect Gap Map from ${clientLabels[cl] || cl}? Other MCP servers stay registered.`))) return;
       runWith('disconnecting…', () => api.mcpUninstall(cl));
     });
 
@@ -1319,12 +1320,12 @@ function wireStaticButtons(root) {
   root.querySelector('#btn-open-readme')?.addEventListener('click', () => api.openUrl('https://github.com/myind-ai/gapmap'));
   root.querySelector('#btn-mcp-docs')?.addEventListener('click', () => api.openUrl('https://modelcontextprotocol.io/docs'));
   root.querySelector('#btn-clear-profile')?.addEventListener('click', async () => {
-    if (!(await confirm('Clear your local profile (name/email/role)? LLM keys stay.'))) return;
+    if (!(await confirmModal('Clear your local profile (name/email/role)? LLM keys stay.'))) return;
     Object.values(PROFILE_KEYS).forEach(k => localStorage.removeItem(k));
     renderSettings(root);
   });
   root.querySelector('#btn-clear-prefs')?.addEventListener('click', async () => {
-    if (!(await confirm('Reset every local preference? LLM keys + DB stay untouched.'))) return;
+    if (!(await confirmModal('Reset every local preference? LLM keys + DB stay untouched.'))) return;
     Object.keys(localStorage)
       .filter(k => k.startsWith('gapmap.'))
       .filter(k => !k.startsWith('gapmap.onboarding'))
@@ -1337,7 +1338,7 @@ function wireStaticButtons(root) {
   // from a wedged UI without losing data. Triggers a hard reload so
   // every module re-bootstraps with empty in-memory state.
   root.querySelector('#btn-reset-ui-state')?.addEventListener('click', async () => {
-    if (!(await confirm(
+    if (!(await confirmModal(
       'Reset all UI state? This clears onboarding progress, tab cache, ' +
       'dismissed banners, and dashboard cache. Your topics, findings, ' +
       'LLM keys, and license are kept. The app will reload.'
@@ -1359,7 +1360,7 @@ function wireStaticButtons(root) {
   // T1.3 trash card — restore / purge
   fillTrashCard(root);
   root.querySelector('#btn-trash-purge')?.addEventListener('click', async () => {
-    if (!(await confirm('Hard-delete trashed topics older than 7 days? This cannot be undone.'))) return;
+    if (!(await confirmModal('Hard-delete trashed topics older than 7 days? This cannot be undone.'))) return;
     try {
       const out = await api.purgeDeletedTopics(7);
       alert(`Purged ${out?.purged || 0} topic(s).`);
@@ -1647,7 +1648,7 @@ function fillCliSymlinkCard(root, status) {
       Run <code>${path} --help</code> in your terminal to verify.
     </div>`;
   body.querySelector('#cli-uninstall').addEventListener('click', async () => {
-    if (!(await confirm(`Remove ${status.path}? You can re-install any time.`))) return;
+    if (!(await confirmModal(`Remove ${status.path}? You can re-install any time.`))) return;
     renderBusy('Requesting admin password…');
     try {
       await api.uninstallCliSymlink();
@@ -2200,7 +2201,7 @@ function wireAdvancedPromptsCard(root, alive) {
   btnReset.addEventListener('click', async () => {
     const key = sel.value;
     if (!key) return;
-    if (!(await confirm(`Reset "${key}" to the bundled default? Your override will be deleted.`))) return;
+    if (!(await confirmModal(`Reset "${key}" to the bundled default? Your override will be deleted.`))) return;
     btnReset.disabled = true;
     status.textContent = 'resetting…';
     try {
@@ -2360,7 +2361,7 @@ async function fillWhisperCard(root, catalogueRows, ytdlpVer) {
     }
 
     if (act === 'delete') {
-      if (!(await confirm(`Delete the ${tier} model? You'll need to re-download to transcribe with it.`))) return;
+      if (!(await confirmModal(`Delete the ${tier} model? You'll need to re-download to transcribe with it.`))) return;
       btn.disabled = true;
       try {
         await api.whisperDelete(tier);

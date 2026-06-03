@@ -2,6 +2,7 @@
 // active-collect banner, BYOK prompt, fixed empty-state reflow.
 
 import { api, esc, fmtN, timeAgo } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import { avatarInitials } from './settings.js';
 import { setHTMLIfChanged } from '../lib/screenCache.js';
 import { skelGrid, skelRows, skelInline } from '../lib/skeleton.js';
@@ -872,7 +873,7 @@ async function loadActiveCollect(root) {
         cancelBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           const label = topic ? `"${topic}"` : 'the active fetch';
-          if (!(await confirm(`Stop ${label}? Partial results stay in the corpus — you can Rerun anytime.`))) return;
+          if (!(await confirmModal(`Stop ${label}? Partial results stay in the corpus — you can Rerun anytime.`))) return;
           cancelBtn.disabled = true;
           const orig = cancelBtn.textContent;
           cancelBtn.textContent = 'Cancelling…';

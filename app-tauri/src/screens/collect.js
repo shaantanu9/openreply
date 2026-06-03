@@ -16,6 +16,7 @@
 // users. Cancel still works. Cleanup on hashchange.
 
 import { api, $, esc } from '../api.js';
+import { confirmModal } from '../lib/confirmModal.js';
 import {
   COLLECT_STAGES as STAGES,
   classifyCollectLine as classifyLine,
@@ -937,7 +938,7 @@ export async function renderCollect(root, { params }) {
     setTimeout(() => { b.innerHTML = orig; window.refreshIcons?.(); }, 1400);
   };
   $('#btn-clear-log').onclick = async () => {
-    if (!(await confirm('Clear the on-screen log? (Doesn\'t cancel the collect.)'))) return;
+    if (!(await confirmModal('Clear the on-screen log? (Doesn\'t cancel the collect.)'))) return;
     log.innerHTML = '';
     lineCount = 0; errCount = 0;
     linesEl.textContent = '0'; errsEl.textContent = '0';
