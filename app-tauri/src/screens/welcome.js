@@ -502,7 +502,11 @@ async function renderStep3(root, body, info) {
   };
 
   continueBtn.onclick = async () => {
-    if (continueBtn.dataset.blocked === '1') return;
+    // NOTE: never hard-block onboarding. A failing "mandatory" health check
+    // (sidecar/db/palace — often just a cold/rebuilding sidecar) is surfaced as
+    // an informational warning in the status strip, NOT a silent block. The
+    // user always decides. (Previously `dataset.blocked==='1'` silently
+    // returned here and trapped users on this step.)
     if (continueBtn.dataset.llmWarn === '1') {
       const go = await confirm(
         'LLM provider setup is missing or failing. You can continue without AI extraction, or set up keys now.\n\nPress OK to continue without AI.\nPress Cancel to open key setup.'

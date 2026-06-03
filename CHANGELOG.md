@@ -14,6 +14,9 @@
   app; a 404/5xx/offline never does (offline grace).
 
 ### Fixed
+- **Onboarding no longer traps you on the "Connect sources" step** — a failing system
+  health check (sidecar/db/palace, often just a cold/rebuilding sidecar) used to silently
+  block Continue. It's now an informational warning; you always decide.
 - Sign-out crashed with `dialog.confirm not allowed` — added the dialog confirm/ask/message
   permissions; sign-out now awaits the async dialog.
 - Every "are you sure?" `confirm()` dialog across the app now actually waits for your
