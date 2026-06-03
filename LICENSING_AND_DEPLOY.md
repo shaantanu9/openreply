@@ -169,24 +169,26 @@ npm run tauri build                                  # + code-signing / notariza
 
 ## 8. Known follow-ups / manual TODO
 
-- [ ] 🚨 **ROTATE `ADMIN_SECRET` (CRITICAL).** Production `ADMIN_SECRET` is still the
-      default placeholder `change-me-to-a-long-random-owner-secret-0123456789` — verified
-      it authenticates on `gapmap.myind.ai/admin` and `/api/v1/admin/license`. Anyone with
-      the default can revoke/reactivate any licence. Set `openssl rand -hex 32` in the
-      Vercel `gapmap-web` Production env + redeploy. **Also verify `TOKEN_SIGNING_SECRET`,
-      `DEV_MINT_SECRET`, and `MASTER_KEY` are strong, non-placeholder values** (a weak
-      `TOKEN_SIGNING_SECRET` would let anyone forge licence tokens).
-      Admin cred + browser steps saved (gitignored) in `.admin-creds.local.md`.
-- [ ] **Delete the stray `activation-suite` Vercel project** (created by mistake on
-      2026-06-03) and disconnect its `gapmap_web` git link. `vercel remove activation-suite`.
+- [x] ✅ **DONE 2026-06-03 — rotated `ADMIN_SECRET`.** Set a strong `openssl rand -hex 32`
+      in Vercel `gapmap-web` Production + redeployed. Verified: old placeholder → `bad_secret`/403,
+      new secret → `authed:true`/200. New value saved (gitignored) in `.admin-creds.local.md`.
+- [ ] 🚨 **Verify/rotate `TOKEN_SIGNING_SECRET` (HIGH).** The **local `.env`**
+      `TOKEN_SIGNING_SECRET` is **placeholder-like** (len 53 — looks like the dev fallback
+      `dev-local-jwt-secret-change-before-release-…`). A weak value lets anyone forge licence
+      tokens. **Check the Vercel `gapmap-web` Production value.** If weak, rotation is a
+      *coordinated* change: set a strong value in Vercel **and** ship the next app release
+      built with the matching `JWT_DESKTOP_SECRET` — this invalidates all existing
+      activations (users must re-activate). `DEV_MINT_SECRET` + `MASTER_KEY` looked random.
+- [x] ✅ **DONE 2026-06-03 — removed the stray `activation-suite` Vercel project**
+      (created by mistake during the first wrong deploy).
 - [ ] **Confirm prod auto-deploy** for `gapmap-web` (which branch is production? is
       git auto-deploy on?). If off, document that releases deploy via the CLI (§4).
 - [ ] **Set `NEXT_PUBLIC_APP_DOWNLOAD_URL`** in the website env (currently empty;
       falls back to `/api/download` → GitHub latest release redirect).
 - [ ] **Ship a signed desktop release** with the matching `JWT_DESKTOP_SECRET` (§6).
-- [ ] **Delete the throwaway demo account** on Supabase: `trydemo+1780458870@gapmap-test.local`
-      (left in place for live GUI testing).
-- [ ] Remove now-unused `isValidHttpsUrl` in `welcome.js` (dead after base-input removal).
+- [x] ✅ **DONE 2026-06-03 — deleted the throwaway demo Supabase account**
+      `trydemo+1780458870@gapmap-test.local` + its licence rows.
+- [x] ✅ **DONE 2026-06-03 — removed dead `isValidHttpsUrl`** in `welcome.js` (commit `3c18536`).
 
 ---
 
