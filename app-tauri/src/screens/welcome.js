@@ -957,7 +957,6 @@ async function renderStep6Activation(root, body, info) {
           <label><span>Login email</span><input id="lic-email" type="email" placeholder="you@company.com" value="${esc(savedEmail)}" /></label>
           <label><span>Activation key</span><input id="lic-key" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" spellcheck="false" /></label>
           <label><span>Password <span style="color:var(--ink-3);font-weight:400">(optional)</span></span><input id="lic-password" type="password" placeholder="Only if your account uses one" /></label>
-          <p style="color:var(--ink-3);font-size:12px;margin:2px 0 0">Activation server: <b>${esc(initialBase)}</b> <span style="opacity:.7">(set automatically)</span></p>
         </div>
         <div class="kv-row" style="margin-top:10px"><b>Pending first topic</b><span>${esc(pendingTopic || 'Not set')}</span></div>
         <div class="kv-row"><b>Aggressive collect</b><span>${pendingAggressive ? 'on' : 'off'}</span></div>

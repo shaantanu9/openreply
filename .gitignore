@@ -87,3 +87,4 @@ _archive/
 graphify-out/
 AGENTS.md
 CLAUDE.md
+.admin-creds.local.md

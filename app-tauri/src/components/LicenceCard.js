@@ -139,7 +139,6 @@ export async function mountLicenceCard(root, alive = () => true) {
         <label><span>Account email</span><input id="lic2-email" type="email" placeholder="you@company.com" value="${esc(email)}" /></label>
         <label><span>Activation key</span><input id="lic2-key" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" spellcheck="false" /></label>
         <label><span>Password <span style="color:var(--ink-3);font-weight:400">(optional)</span></span><input id="lic2-password" type="password" placeholder="Only if your account uses one" /></label>
-        <p style="color:var(--ink-3);font-size:var(--fs-13);margin:2px 0 0">Activation server: <b>${esc(apiBase)}</b> <span style="opacity:.7">(set automatically)</span></p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px">
           <button class="btn btn-ghost btn-sm btn-bordered" id="lic2-test">Test connection</button>
           <button class="btn btn-primary btn-sm" id="lic2-activate">${activated ? 'Switch key' : 'Activate this device'}</button>
