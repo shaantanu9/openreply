@@ -7776,20 +7776,39 @@ pub async fn license_revalidate(app: AppHandle) -> Result<Value, String> {
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
     let parsed: Value = serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));
-    let valid = parsed.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
-    let revoked = parsed.get("revoked").and_then(|v| v.as_bool()).unwrap_or(false);
+    let code = status.as_u16();
+    let valid_field = parsed.get("valid").and_then(|v| v.as_bool());
+    let revoked_field = parsed.get("revoked").and_then(|v| v.as_bool());
     let reason = parsed
         .get("reason")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    // 401 (bad/expired token) OR explicit revoked OR not-valid → lock.
-    if status.as_u16() == 401 || revoked || !valid {
+    // Act ONLY on explicit server signals. Lock only when the server clearly
+    // says the token / licence is no longer good:
+    //   - HTTP 401          → server rejected the token (bad signature / expired)
+    //   - {revoked:true}    → licence cancelled / refunded / expired server-side
+    //   - HTTP 200 + {valid:false}
+    let explicit_revoked = code == 401
+        || revoked_field == Some(true)
+        || (code == 200 && valid_field == Some(false));
+    let explicit_valid = code == 200 && valid_field == Some(true);
+
+    if explicit_revoked {
         state.revoked = true;
         state.last_verified_at = Some(local_today_iso());
         save_license_state(&app, &state)?;
         return Ok(serde_json::json!({
             "ok": true, "valid": false, "revoked": true, "reason": reason
+        }));
+    }
+
+    // Inconclusive — a 404 from a stale deploy, a 5xx, a proxy error, or an
+    // unparseable body. DO NOT touch state: never lock a user out over server
+    // trouble. They keep their last known-good state until a clear answer.
+    if !explicit_valid {
+        return Ok(serde_json::json!({
+            "ok": true, "inconclusive": true, "http": code
         }));
     }
 
