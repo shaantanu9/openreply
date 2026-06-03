@@ -9710,3 +9710,9 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
 /* Hide the search when the sidebar is collapsed to icons / hidden. */
 body[data-sidebar="rail"] .sidebar-search-wrap,
 body[data-sidebar="hidden"] .sidebar-search-wrap { display: none; }
+
+/* Strip native search-field decorations (magnifier/clear) so only our custom
+   icon shows — fixes the "two search icons" in the sidebar/settings search. */
+#sidebar-search, #settings-search { appearance: none; -webkit-appearance: none; }
+#sidebar-search::-webkit-search-decoration, #sidebar-search::-webkit-search-cancel-button,
+#settings-search::-webkit-search-decoration, #settings-search::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }

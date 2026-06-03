@@ -116,7 +116,7 @@ export async function renderSettings(root) {
       <div><h2>Settings</h2><p>Profile · keys · data · preferences</p></div>
       <div class="settings-search-wrap">
         <i data-lucide="search" class="settings-search-icon"></i>
-        <input id="settings-search" type="search" placeholder="Search settings…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search settings" />
+        <input id="settings-search" type="text" placeholder="Search settings…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search settings" />
       </div>
     </div>
 
