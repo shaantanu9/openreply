@@ -1012,11 +1012,15 @@ async function renderStep6Activation(root, body, info) {
   }
 
   const statusEl = document.getElementById('lic-status');
+  // The route may have changed while this async step awaited (gate/api-base):
+  // if the step-6 markup is no longer in the document, abort wiring instead of
+  // dereferencing null elements (fixes "null is not an object" on lic-status).
+  if (!statusEl) return;
   try {
     const sig = await api.deviceSignature();
-    statusEl.textContent = `Device signature: ${sig?.device_signature?.slice(0, 16) || 'n/a'}…`;
+    if (statusEl.isConnected) statusEl.textContent = `Device signature: ${sig?.device_signature?.slice(0, 16) || 'n/a'}…`;
   } catch {
-    statusEl.textContent = 'Could not read local device signature.';
+    if (statusEl.isConnected) statusEl.textContent = 'Could not read local device signature.';
   }
 
   document.getElementById('back-6').onclick = () => renderStep(root, 5, info);
