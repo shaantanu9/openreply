@@ -501,24 +501,14 @@ async function renderStep3(root, body, info) {
     `;
   };
 
-  continueBtn.onclick = async () => {
-    // NOTE: never hard-block onboarding. A failing "mandatory" health check
-    // (sidecar/db/palace — often just a cold/rebuilding sidecar) is surfaced as
-    // an informational warning in the status strip, NOT a silent block. The
-    // user always decides. (Previously `dataset.blocked==='1'` silently
-    // returned here and trapped users on this step.)
-    if (continueBtn.dataset.llmWarn === '1') {
-      const go = await confirm(
-        'LLM provider setup is missing or failing. You can continue without AI extraction, or set up keys now.\n\nPress OK to continue without AI.\nPress Cancel to open key setup.'
-      );
-      if (!go) {
-        openByokModal(async () => {
-          const fresh = await api.cliInfo().catch(() => info);
-          renderStep3(root, body, fresh);
-        });
-        return;
-      }
-    }
+  continueBtn.onclick = () => {
+    // Onboarding is NEVER gated behind a dialog. Both the missing-LLM warning
+    // and a failing health check are shown inline on this step (with a "Manage
+    // keys" / "Add a key" button right here), so Continue always proceeds.
+    // Earlier this used window.confirm(), which Tauri routes to the dialog
+    // plugin — when that permission isn't active in a build it throws
+    // "dialog.confirm not allowed" and TRAPPED the user on this step. No dialog
+    // dependency now: continue straight through.
     renderStep(root, 4, info);
   };
 
