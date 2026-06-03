@@ -218,12 +218,15 @@ function renderStep(root, step, info) {
   });
 
   const body = document.getElementById('step-body');
+  // Steps 3/4/6 are async — never let a stray rejection surface as an
+  // "Unhandled promise rejection" in the console; log and move on.
+  const onErr = (e) => console.warn('[onboarding] step render:', e?.message || e);
   if (step === 1) renderStep1(root, body, info);
   if (step === 2) renderStep2(root, body, info);
-  if (step === 3) renderStep3(root, body, info);
-  if (step === 4) renderStep4Whisper(root, body, info);
+  if (step === 3) Promise.resolve(renderStep3(root, body, info)).catch(onErr);
+  if (step === 4) Promise.resolve(renderStep4Whisper(root, body, info)).catch(onErr);
   if (step === 5) renderStep5(root, body, info);
-  if (step === 6) renderStep6Activation(root, body, info);
+  if (step === 6) Promise.resolve(renderStep6Activation(root, body, info)).catch(onErr);
   window.refreshIcons?.();
 }
 
@@ -355,10 +358,16 @@ function renderStep2(root, body, info) {
 
 // ─── Step 3 · Connect sources ─────────────────────────────────────────────
 async function renderStep3(root, body, info) {
+  if (!body || !body.isConnected) return;
   body.innerHTML = `<div class="empty-state" style="padding:40px">Loading key status…</div>`;
 
   let byok = {};
   try { byok = await api.byokStatus(); } catch {}
+
+  // Bail if the user navigated away (or this step was re-rendered) while we
+  // awaited — otherwise the getElementById wiring below hits a detached/null
+  // element and renderStep3 rejects (unhandled promise rejection in console).
+  if (!body.isConnected) return;
 
   const providers = [
     { k: 'anthropic',  label: 'Anthropic',       chip: '#D97757' },
@@ -444,19 +453,21 @@ async function renderStep3(root, body, info) {
     </section>
   `;
 
-  document.getElementById('ob-add-key').onclick = () => {
+  const onClick = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  onClick('ob-add-key', () => {
     openByokModal(async () => {
       // Refresh this step with latest key status
       const fresh = await api.cliInfo().catch(() => info);
-      renderStep3(root, body, fresh);
+      Promise.resolve(renderStep3(root, body, fresh)).catch(() => {});
     });
-  };
-  document.getElementById('ob-anthropic').onclick = () => api.openUrl('https://console.anthropic.com/settings/keys');
-  document.getElementById('ob-ollama').onclick = () => api.openUrl('https://ollama.com/download');
-  document.getElementById('ob-reddit-apps').onclick = () => api.openUrl('https://www.reddit.com/prefs/apps');
-  document.getElementById('ob-guide').onclick = () => api.openUrl('https://github.com/myind-ai/gapmap#readme');
-  document.getElementById('back-3').onclick = () => renderStep(root, 2, info);
+  });
+  onClick('ob-anthropic', () => api.openUrl('https://console.anthropic.com/settings/keys'));
+  onClick('ob-ollama', () => api.openUrl('https://ollama.com/download'));
+  onClick('ob-reddit-apps', () => api.openUrl('https://www.reddit.com/prefs/apps'));
+  onClick('ob-guide', () => api.openUrl('https://github.com/myind-ai/gapmap#readme'));
+  onClick('back-3', () => renderStep(root, 2, info));
   const continueBtn = document.getElementById('next-3');
+  if (!continueBtn) return;
   const healthInlineStatus = document.getElementById('ob-health-inline-status');
   const llmChecksHost = document.getElementById('ob-llm-checks');
   const checkItems = [
