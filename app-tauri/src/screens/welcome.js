@@ -81,19 +81,6 @@ function setStep(n) {
   localStorage.setItem(STEP_KEY, String(n));
 }
 
-function isValidHttpsUrl(value) {
-  try {
-    const u = new URL(value);
-    if (u.protocol === 'https:') return true;
-    // Local dev: allow HTTP only for localhost / loopback.
-    if (u.protocol !== 'http:') return false;
-    const host = (u.hostname || '').toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  } catch {
-    return false;
-  }
-}
-
 function normalizeLicenseApiBase(value) {
   const v = (value || '').trim();
   if (!v) return '';
