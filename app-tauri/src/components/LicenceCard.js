@@ -8,6 +8,7 @@
 // onboarding, from Settings.
 
 import { api, esc } from '../api.js';
+import { keyGuideHtml, wireKeyGuide } from './licenceGuide.js';
 
 // localStorage keys that main.js reads to decide the activation gate.
 const LICENSE_OK_KEY = 'gapmap.license.activated';
@@ -162,10 +163,7 @@ export async function mountLicenceCard(root, alive = () => true) {
           <button class="btn btn-ghost btn-sm btn-bordered" id="lic2-test">Test connection</button>
           <button class="btn btn-primary btn-sm" id="lic2-activate">${activated ? 'Switch key' : 'Activate this device'}</button>
         </div>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">
-          <button class="btn btn-ghost btn-sm" id="lic2-getkey" style="text-decoration:underline">Get a key — sign up →</button>
-          <button class="btn btn-ghost btn-sm" id="lic2-redeem" style="text-decoration:underline">Redeem a coupon →</button>
-        </div>
+        ${keyGuideHtml(apiBase, { compact: true })}
       </div>`;
 
     card.innerHTML = `
@@ -204,10 +202,8 @@ export async function mountLicenceCard(root, alive = () => true) {
     if (portal) portal.onclick = () => api.openUrl(`${portalBase}/activate`).catch(() => {});
     const renewCta = card.querySelector('#lic-renew-cta');
     if (renewCta) renewCta.onclick = () => api.openUrl(`${portalBase}/activate`).catch(() => {});
-    const getkey = card.querySelector('#lic2-getkey');
-    if (getkey) getkey.onclick = () => api.openUrl(`${portalBase}/sign-in`).catch(() => {});
-    const redeem = card.querySelector('#lic2-redeem');
-    if (redeem) redeem.onclick = () => api.openUrl(`${portalBase}/redeem`).catch(() => {});
+    // "How to get a key" guide — replaces the old bare get-key / redeem links.
+    wireKeyGuide(card, portalBase);
 
     const switchBtn = card.querySelector('#lic2-switch');
     if (switchBtn) switchBtn.onclick = () => {

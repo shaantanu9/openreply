@@ -17,6 +17,7 @@ import { api, esc } from '../api.js';
 import { openByokModal } from './byok.js';
 import { avatarInitials } from './settings.js';
 import { runHealthCheck, renderHealthCard } from '../lib/healthCheck.js';
+import { keyGuideHtml, wireKeyGuide } from '../components/licenceGuide.js';
 
 const ONBOARDING_KEY = 'gapmap.onboarding.completed';
 const STEP_KEY       = 'gapmap.onboarding.step';
@@ -953,15 +954,7 @@ async function renderStep6Activation(root, body, info) {
         <div class="kv-row" style="margin-top:10px"><b>Pending first topic</b><span>${esc(pendingTopic || 'Not set')}</span></div>
         <div class="kv-row"><b>Aggressive collect</b><span>${pendingAggressive ? 'on' : 'off'}</span></div>
         <div id="lic-status" style="margin-top:12px;color:var(--ink-3);font-size:12px"></div>
-        ${gateEnabled ? '' : `
-        <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" id="ob-get-key" style="text-decoration:underline">
-            Don't have a key? Sign up at gapmap.myind.ai →
-          </button>
-          <button class="btn btn-ghost btn-sm" id="ob-redeem-coupon" style="text-decoration:underline">
-            Have a coupon? Redeem for a free key →
-          </button>
-        </div>`}
+        ${keyGuideHtml(initialBase, { open: gateEnabled })}
       </div>
     </section>
       <div style="display:flex;gap:10px;margin-top:24px;justify-content:space-between;width:min(100%,clamp(720px,92vw,1100px));flex-wrap:wrap;row-gap:8px">
@@ -974,11 +967,10 @@ async function renderStep6Activation(root, body, info) {
              <button class="btn btn-primary" id="skip-6">Skip — start using Gap Map →</button>`}
       </div>
     </div>`;
+  // "How to get a key" guide — wired in BOTH gate states (it lives in the
+  // step body regardless of gateEnabled now).
+  wireKeyGuide(body, initialBase);
   if (!gateEnabled) {
-    const getKey = document.getElementById('ob-get-key');
-    if (getKey) getKey.onclick = () => api.openUrl('https://gapmap.myind.ai/sign-in');
-    const redeem = document.getElementById('ob-redeem-coupon');
-    if (redeem) redeem.onclick = () => api.openUrl('https://gapmap.myind.ai/redeem');
     const skipBtn = document.getElementById('skip-6');
     if (skipBtn) skipBtn.onclick = async () => {
       markOnboardingComplete();
