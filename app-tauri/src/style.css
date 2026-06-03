@@ -9684,3 +9684,29 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
 .cite-card .cc-graph:hover { border-color: var(--orange); color: var(--orange); }
 .cite-card .cc-graph i { width: 12px; height: 12px; }
 .cite-card .cc-link { font-size: 13px; text-decoration: none; color: var(--orange); }
+
+/* ── Settings search (Apple-style live filter) ──────────────────────────── */
+.section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.settings-search-wrap { position: relative; flex: 0 0 auto; }
+.settings-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--ink-3); pointer-events: none; }
+#settings-search {
+  width: 240px; max-width: 60vw; padding: 8px 12px 8px 32px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  font-size: 13px; color: var(--ink-1); outline: none;
+}
+#settings-search:focus { border-color: var(--orange); }
+#settings-search::placeholder { color: var(--ink-3); }
+
+/* ── Sidebar search (filters nav like Apple Settings) ───────────────────── */
+.sidebar-search-wrap { position: relative; padding: 6px 12px 10px; }
+.sidebar-search-icon { position: absolute; left: 22px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--ink-3); pointer-events: none; }
+#sidebar-search {
+  width: 100%; padding: 7px 10px 7px 30px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+  font-size: 13px; color: var(--ink-1); outline: none;
+}
+#sidebar-search:focus { border-color: var(--orange); }
+#sidebar-search::placeholder { color: var(--ink-3); }
+/* Hide the search when the sidebar is collapsed to icons / hidden. */
+body[data-sidebar="rail"] .sidebar-search-wrap,
+body[data-sidebar="hidden"] .sidebar-search-wrap { display: none; }

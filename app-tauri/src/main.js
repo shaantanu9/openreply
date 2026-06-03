@@ -1771,6 +1771,7 @@ function initSidebarMinimize() {
   applySidebarState(saved);
 
   document.getElementById('sidebar-toggle')?.addEventListener('click', cycleSidebar);
+  wireSidebarSearch();
   // Reveal strip always jumps back to "full" — see the comment block at
   // the top of this section for the rationale (cycling to "rail" first
   // is a confusing UX when the user just clicked "show me the sidebar").
@@ -1783,6 +1784,34 @@ function initSidebarMinimize() {
   // listener registration site short and avoids reshuffling the existing
   // shortcut block.
   window.__cycleSidebar = cycleSidebar;
+}
+
+// Apple-style live filter over the sidebar nav. Hides non-matching links and
+// any section label whose items all hid; Esc clears.
+function wireSidebarSearch() {
+  const input = document.getElementById('sidebar-search');
+  const sidebar = document.querySelector('.sidebar');
+  if (!input || !sidebar) return;
+  const items = Array.from(sidebar.querySelectorAll('a[data-route]'));
+  const labels = Array.from(sidebar.querySelectorAll('.nav-section-label'));
+  const apply = () => {
+    const q = input.value.trim().toLowerCase();
+    items.forEach((a) => {
+      const txt = (a.textContent || '').toLowerCase();
+      a.style.display = (!q || txt.includes(q)) ? '' : 'none';
+    });
+    labels.forEach((label) => {
+      if (!q) { label.style.display = ''; return; }
+      let nav = label.nextElementSibling;
+      while (nav && !nav.classList.contains('nav')) nav = nav.nextElementSibling;
+      const visible = nav
+        ? Array.from(nav.querySelectorAll('a[data-route]')).some((a) => a.style.display !== 'none')
+        : false;
+      label.style.display = visible ? '' : 'none';
+    });
+  };
+  input.addEventListener('input', apply);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { input.value = ''; apply(); } });
 }
 
 // Kick off after DOMContentLoaded so the sidebar markup definitely exists.

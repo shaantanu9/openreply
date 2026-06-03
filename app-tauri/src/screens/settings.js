@@ -112,7 +112,13 @@ export async function renderSettings(root) {
       <div class="crumbs">Account / <strong>Settings</strong></div>
       <div class="topbar-spacer"></div>
     </header>
-    <div class="section-head"><div><h2>Settings</h2><p>Profile · keys · data · preferences</p></div></div>
+    <div class="section-head">
+      <div><h2>Settings</h2><p>Profile · keys · data · preferences</p></div>
+      <div class="settings-search-wrap">
+        <i data-lucide="search" class="settings-search-icon"></i>
+        <input id="settings-search" type="search" placeholder="Search settings…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search settings" />
+      </div>
+    </div>
 
     <div class="settings-grid" id="settings-grid">
       <!-- Section labels — full-width dividers. Card grouping is done via CSS
@@ -457,6 +463,7 @@ export async function renderSettings(root) {
   wireProfileCard(root);
   wireStaticButtons(root);
   wireAdvancedPromptsCard(root, alive);
+  wireSettingsSearch(root);
   // Licence & activation card — add/activate a key, re-check/renew, or sign out.
   mountLicenceCard(root, alive).catch(e => cardError('#card-licence', 'Licence & activation', e));
 
@@ -645,6 +652,43 @@ export async function renderSettings(root) {
 }
 
 // --- Profile card (sync) ----------------------------------------------------
+// Apple-style live filter over the settings cards. Hides non-matching cards
+// (and the section dividers) as you type; Esc clears.
+function wireSettingsSearch(root) {
+  const input = root.querySelector('#settings-search');
+  const grid = root.querySelector('#settings-grid');
+  if (!input || !grid) return;
+  const cards = Array.from(grid.querySelectorAll('.settings-card'));
+  const labels = Array.from(grid.querySelectorAll('.settings-section-label'));
+  let emptyEl = null;
+  const apply = () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) {
+      cards.forEach((c) => { c.style.display = ''; });
+      labels.forEach((l) => { l.style.display = ''; });
+      if (emptyEl) emptyEl.style.display = 'none';
+      return;
+    }
+    let any = false;
+    cards.forEach((c) => {
+      const match = (c.textContent || '').toLowerCase().includes(q);
+      c.style.display = match ? '' : 'none';
+      if (match) any = true;
+    });
+    labels.forEach((l) => { l.style.display = 'none'; }); // matches span sections
+    if (!emptyEl) {
+      emptyEl = document.createElement('div');
+      emptyEl.className = 'settings-search-empty';
+      emptyEl.style.cssText = 'grid-column:1/-1;color:var(--ink-3);padding:24px 4px;font-size:13px';
+      grid.appendChild(emptyEl);
+    }
+    emptyEl.textContent = any ? '' : `No settings match “${input.value.trim()}”.`;
+    emptyEl.style.display = any ? 'none' : '';
+  };
+  input.addEventListener('input', apply);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { input.value = ''; apply(); } });
+}
+
 function wireProfileCard(root) {
   const nameInput  = root.querySelector('#profile-name');
   const emailInput = root.querySelector('#profile-email');
