@@ -179,6 +179,8 @@ npm run tauri build                                  # + code-signing / notariza
       *coordinated* change: set a strong value in Vercel **and** ship the next app release
       built with the matching `JWT_DESKTOP_SECRET` — this invalidates all existing
       activations (users must re-activate). `DEV_MINT_SECRET` + `MASTER_KEY` looked random.
+      **Step-by-step:** see `docs/runbooks/token-signing-secret-rotation.md` (graceful
+      dual-secret rotation vs. flag-day, with the exact website + app code changes).
 - [x] ✅ **DONE 2026-06-03 — removed the stray `activation-suite` Vercel project**
       (created by mistake during the first wrong deploy).
 - [ ] **Confirm prod auto-deploy** for `gapmap-web` (which branch is production? is
