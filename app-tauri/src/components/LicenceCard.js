@@ -116,7 +116,10 @@ export async function mountLicenceCard(root, alive = () => true) {
     const activated = !!status?.activated;
     const apiBase = status?.api_base || localStorage.getItem(API_BASE_KEY) || resolvedDefaultBase;
     const email = status?.email || localStorage.getItem(EMAIL_KEY) || '';
-    const expiry = fmtDate(status?.expires_at);
+    const isTrial = !!status?.is_trial;
+    const expiryIso = isTrial ? (status?.trial_ends_at || status?.expires_at) : status?.expires_at;
+    const expiry = fmtDate(expiryIso);
+    const dleft = daysUntil(expiryIso);
     const verified = fmtDate(status?.last_verified_at);
     const sigShort = (status?.device_signature || '').slice(0, 16);
 
@@ -124,13 +127,29 @@ export async function mountLicenceCard(root, alive = () => true) {
       ? [
           email ? field('Account', email) : '',
           status?.license_id ? field('Licence', status.license_id, true) : '',
-          expiry ? field('Renews / expires', expiry) : field('Renews / expires', 'No expiry on record'),
+          expiryIso
+            ? field(isTrial ? 'Trial ends' : 'Renews / expires', expiry)
+            : field('Term', isTrial ? '—' : 'Perpetual (no expiry)'),
           verified ? field('Last checked', verified) : '',
           sigShort ? field('This device', `${sigShort}…`, true) : '',
         ].join('')
       : status?.reason
         ? `<p style="color:var(--ink-3);font-size:var(--fs-13);margin:6px 0 0">${esc(status.reason)}</p>`
         : '';
+
+    // Prominent expiry / trial banner + renew CTA (id lic-renew-cta wired below).
+    let banner = '';
+    if (activated) {
+      if (dleft != null && dleft <= 0) {
+        banner = `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(184,71,71,.1);border:1px solid rgba(184,71,71,.25);color:#B84747;font-size:var(--fs-13)">⚠️ ${isTrial ? 'Your trial ended' : 'Your licence expired'} on ${esc(expiry)}. Renew to keep using Gap Map. <button class="btn btn-sm" id="lic-renew-cta" style="margin-left:6px;background:#B84747;color:#fff">Renew →</button></div>`;
+      } else if (isTrial && dleft != null) {
+        banner = `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(224,123,60,.1);border:1px solid rgba(224,123,60,.25);color:#B5821E;font-size:var(--fs-13)">⏳ Pro trial — <strong>${dleft} day${dleft === 1 ? '' : 's'} left</strong> (ends ${esc(expiry)}). Upgrade before it ends to keep Pro. <button class="btn btn-sm" id="lic-renew-cta" style="margin-left:6px;background:#E07B3C;color:#fff">Upgrade to Pro →</button></div>`;
+      } else if (dleft != null && dleft <= 30) {
+        banner = `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(224,170,60,.1);border:1px solid rgba(224,170,60,.25);color:#B5821E;font-size:var(--fs-13)">Licence renews / expires in <strong>${dleft} days</strong> (${esc(expiry)}). <button class="btn btn-sm btn-bordered" id="lic-renew-cta" style="margin-left:6px">Manage / renew →</button></div>`;
+      } else if (!expiryIso && !isTrial) {
+        banner = `<div style="margin-top:10px;padding:8px 12px;border-radius:10px;background:rgba(45,122,62,.08);color:#2D7A3E;font-size:var(--fs-13)">✓ Perpetual licence — no renewal needed.</div>`;
+      }
+    }
 
     // Activation form — shown when not active, OR collapsed under a toggle when
     // active (so an active user can still switch to a different key).
@@ -155,6 +174,7 @@ export async function mountLicenceCard(root, alive = () => true) {
         <span style="font-size:11px;font-weight:600;color:${v.color};background:${v.bg};padding:2px 8px;border-radius:999px">${esc(v.label)}</span>
       </h4>
       ${detailRows}
+      ${banner}
       <div id="lic-status" style="margin-top:10px;color:var(--ink-3);font-size:var(--fs-13);min-height:16px"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
         ${activated ? `
@@ -182,6 +202,8 @@ export async function mountLicenceCard(root, alive = () => true) {
 
     const portal = card.querySelector('#lic2-portal');
     if (portal) portal.onclick = () => api.openUrl(`${portalBase}/activate`).catch(() => {});
+    const renewCta = card.querySelector('#lic-renew-cta');
+    if (renewCta) renewCta.onclick = () => api.openUrl(`${portalBase}/activate`).catch(() => {});
     const getkey = card.querySelector('#lic2-getkey');
     if (getkey) getkey.onclick = () => api.openUrl(`${portalBase}/sign-in`).catch(() => {});
     const redeem = card.querySelector('#lic2-redeem');

@@ -40,6 +40,15 @@ struct LicenseState {
     // never wrote this field) loading as `false`. The launch gate reads it.
     #[serde(default)]
     revoked: bool,
+    // Trial metadata, synced from the validate response so the UI can show
+    // "trial ends in N days" and the right renew CTA. Device-activate doesn't
+    // return these, so they fill in on the first periodic re-validation.
+    #[serde(default)]
+    is_trial: bool,
+    #[serde(default)]
+    trial_ends_at: Option<String>,
+    #[serde(default)]
+    plan_id: Option<String>,
 }
 
 // Filename inside data_dir that holds the activation JWT. 0600 perms on Unix.
@@ -7606,6 +7615,9 @@ pub async fn license_status(app: AppHandle) -> Result<Value, String> {
             "license_id": s.license_id,
             "device_signature": sig,
             "expires_at": s.expires_at,
+            "is_trial": s.is_trial,
+            "trial_ends_at": s.trial_ends_at,
+            "plan_id": s.plan_id,
             "last_verified_at": s.last_verified_at,
             "api_base": s.api_base
         }));
@@ -7710,6 +7722,9 @@ pub async fn license_activate(
         expires_at: parsed.expires_at.clone(),
         last_verified_at: Some(local_today_iso()),
         revoked: false,
+        is_trial: false,
+        trial_ends_at: None,
+        plan_id: None,
     };
     save_access_token(&app, &state.access_token)?;
     save_license_state(&app, &state)?;
@@ -7832,6 +7847,19 @@ pub async fn license_revalidate(app: AppHandle) -> Result<Value, String> {
             .get("expires_at")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+    }
+    // Sync trial metadata so the UI can show "trial ends in N days" + CTA.
+    if let Some(b) = parsed.get("is_trial").and_then(|v| v.as_bool()) {
+        state.is_trial = b;
+    }
+    if parsed.get("trial_ends_at").is_some() {
+        state.trial_ends_at = parsed
+            .get("trial_ends_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+    }
+    if let Some(p) = parsed.get("plan_id").and_then(|v| v.as_str()) {
+        state.plan_id = Some(p.to_string());
     }
     state.revoked = false;
     state.last_verified_at = Some(local_today_iso());
