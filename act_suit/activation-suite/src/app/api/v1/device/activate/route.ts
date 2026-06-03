@@ -52,6 +52,8 @@ export async function POST(req: Request) {
       license_id: "lic_master",
       user_id: "usr_master",
       expires_at: defaultActivationExpiryIso(),
+      is_trial: false,
+      trial_ends_at: null,
       devices_used: 1,
       max_devices: 999999,
     });
@@ -86,6 +88,8 @@ export async function POST(req: Request) {
     license_id: result.licenseId,
     user_id: result.userId,
     expires_at: result.expiresAt,
+    is_trial: result.isTrial,
+    trial_ends_at: result.trialEndsAt,
     devices_used: result.devicesUsed,
     max_devices: result.maxDevices,
   });

@@ -7650,6 +7650,12 @@ struct ActivateResponse {
     license_id: Option<String>,
     user_id: Option<String>,
     expires_at: Option<String>,
+    // Trial metadata so the desktop shows the real trial end (e.g. signup+14d)
+    // instead of the generic activation expiry. Server sends these from
+    // /v1/device/activate; license_revalidate also syncs them from /validate.
+    is_trial: Option<bool>,
+    trial_ends_at: Option<String>,
+    plan_id: Option<String>,
 }
 
 #[tauri::command]
@@ -7722,9 +7728,9 @@ pub async fn license_activate(
         expires_at: parsed.expires_at.clone(),
         last_verified_at: Some(local_today_iso()),
         revoked: false,
-        is_trial: false,
-        trial_ends_at: None,
-        plan_id: None,
+        is_trial: parsed.is_trial.unwrap_or(false),
+        trial_ends_at: parsed.trial_ends_at.clone(),
+        plan_id: parsed.plan_id.clone(),
     };
     save_access_token(&app, &state.access_token)?;
     save_license_state(&app, &state)?;
@@ -7733,7 +7739,10 @@ pub async fn license_activate(
         "activated": true,
         "license_id": license_id,
         "device_signature": sig,
-        "expires_at": parsed.expires_at
+        "expires_at": parsed.expires_at,
+        "is_trial": parsed.is_trial.unwrap_or(false),
+        "trial_ends_at": parsed.trial_ends_at,
+        "plan_id": parsed.plan_id
     }))
 }
 

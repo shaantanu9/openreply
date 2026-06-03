@@ -478,13 +478,14 @@ export type AdminLicenseRow = {
   trialEndsAt: string | null;
   createdAt: string | null;
   lastSeenAt: string | null;
+  deletedAt: string | null;
 };
 
 export async function supabaseListLicenses(): Promise<AdminLicenseRow[]> {
   const supabase = getSupabaseServerClient();
   const { data: lics } = await supabase
     .from("licenses")
-    .select("id, email, status, plan_id, max_devices, expires_at, is_trial, trial_ends_at, activation_key, created_at")
+    .select("id, email, status, plan_id, max_devices, expires_at, is_trial, trial_ends_at, activation_key, created_at, deleted_at")
     .order("created_at", { ascending: false })
     .limit(500);
   const rows = (lics as Array<Record<string, unknown>> | null) || [];
@@ -510,7 +511,30 @@ export async function supabaseListLicenses(): Promise<AdminLicenseRow[]> {
     trialEndsAt: (r.trial_ends_at as string) ?? null,
     createdAt: (r.created_at as string) ?? null,
     lastSeenAt: lastSeen.get(String(r.id)) ?? null,
+    deletedAt: (r.deleted_at as string) ?? null,
   }));
+}
+
+/**
+ * Admin user deletion. Soft delete disables + bans (recoverable via restore);
+ * hard delete permanently removes the auth user (cascades all community data)
+ * and every email-keyed activation/billing row, freeing the email for reuse.
+ * All three are transactional SECURITY DEFINER RPCs (see 20260603_user_deletion).
+ */
+export async function supabaseDeleteUser(
+  email: string,
+  mode: "soft" | "hard" | "restore",
+): Promise<{ ok: boolean; result?: Record<string, unknown>; reason?: string }> {
+  const supabase = getSupabaseServerClient();
+  const fn =
+    mode === "hard"
+      ? "admin_hard_delete_user"
+      : mode === "restore"
+        ? "admin_restore_user"
+        : "admin_soft_delete_user";
+  const { data, error } = await supabase.rpc(fn, { p_email: email.trim().toLowerCase() });
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true, result: (data as Record<string, unknown>) ?? {} };
 }
 
 export type AdminLicenceDetail = {
@@ -529,6 +553,7 @@ export type AdminLicenceDetail = {
     createdAt: string | null;
     activationKey: string | null;
     activationKeyPreview: string | null;
+    deletedAt: string | null;
   };
   devices: Array<{ signaturePreview: string; os: string; arch: string; activatedAt: string | null; lastSeenAt: string | null }>;
   attempts: Array<{ outcome: string; errorCode: string | null; httpStatus: number | null; devicePreview: string | null; createdAt: string | null }>;
@@ -540,7 +565,7 @@ export async function supabaseGetLicenceDetailByEmail(email: string): Promise<Ad
   const e = email.trim().toLowerCase();
   const { data: lic } = await supabase
     .from("licenses")
-    .select("id, app_user_id, user_id, email, status, plan_id, live_pass_active, is_trial, max_devices, expires_at, trial_ends_at, created_at, activation_key")
+    .select("id, app_user_id, user_id, email, status, plan_id, live_pass_active, is_trial, max_devices, expires_at, trial_ends_at, created_at, activation_key, deleted_at")
     .eq("email", e)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -578,6 +603,7 @@ export async function supabaseGetLicenceDetailByEmail(email: string): Promise<Ad
       createdAt: (lic.created_at as string) ?? null,
       activationKey: (lic.activation_key as string) ?? null,
       activationKeyPreview: lic.activation_key ? String(lic.activation_key).slice(-4).toUpperCase() : null,
+      deletedAt: (lic.deleted_at as string) ?? null,
     },
     devices: ((devs as Array<Record<string, unknown>> | null) || []).map((d) => ({
       signaturePreview: d.signature_hash ? String(d.signature_hash).slice(0, 12) : "",
@@ -702,7 +728,7 @@ export async function activateDeviceSupabaseByEmail(input: {
   os: string;
   arch: string;
 }): Promise<
-  | { ok: true; token: string; licenseId: string; userId: string; expiresAt: string | null; devicesUsed: number; maxDevices: number }
+  | { ok: true; token: string; licenseId: string; userId: string; expiresAt: string | null; devicesUsed: number; maxDevices: number; isTrial: boolean; trialEndsAt: string | null }
   | { ok: false; status: number; error: string }
 > {
   const supabase = getSupabaseServerClient();
@@ -779,7 +805,12 @@ export async function activateDeviceSupabaseByEmail(input: {
       token: issueActivationToken(claimsFromLicenseRow(license, signatureHash)),
       licenseId: license.id,
       userId: license.user_id,
-      expiresAt: license.expires_at || defaultActivationExpiryIso(),
+      // Trials store the date in trial_ends_at with expires_at=null; surface
+      // that as the effective expiry so the desktop shows the real trial end
+      // (not the 180-day default). Paid licences keep expires_at.
+      expiresAt: license.expires_at || license.trial_ends_at || defaultActivationExpiryIso(),
+      isTrial: Boolean(license.is_trial),
+      trialEndsAt: license.trial_ends_at ?? null,
       devicesUsed: count || 0,
       maxDevices: license.max_devices,
     };
@@ -828,7 +859,9 @@ export async function activateDeviceSupabaseByEmail(input: {
     token: issueActivationToken(claimsFromLicenseRow(license, signatureHash)),
     licenseId: license.id,
     userId: license.user_id,
-    expiresAt: license.expires_at || defaultActivationExpiryIso(),
+    expiresAt: license.expires_at || license.trial_ends_at || defaultActivationExpiryIso(),
+    isTrial: Boolean(license.is_trial),
+    trialEndsAt: license.trial_ends_at ?? null,
     devicesUsed: (count || 0) + 1,
     maxDevices: license.max_devices,
   };
@@ -842,7 +875,7 @@ export async function activateDeviceSupabase(input: {
   os: string;
   arch: string;
 }): Promise<
-  | { ok: true; token: string; licenseId: string; userId: string; expiresAt: string | null; devicesUsed: number; maxDevices: number }
+  | { ok: true; token: string; licenseId: string; userId: string; expiresAt: string | null; devicesUsed: number; maxDevices: number; isTrial: boolean; trialEndsAt: string | null }
   | { ok: false; status: number; error: string }
 > {
   const supabase = getSupabaseServerClient();
@@ -943,7 +976,12 @@ export async function activateDeviceSupabase(input: {
       token: issueActivationToken(claimsFromLicenseRow(license, signatureHash)),
       licenseId: license.id,
       userId: license.user_id,
-      expiresAt: license.expires_at || defaultActivationExpiryIso(),
+      // Trials store the date in trial_ends_at with expires_at=null; surface
+      // that as the effective expiry so the desktop shows the real trial end
+      // (not the 180-day default). Paid licences keep expires_at.
+      expiresAt: license.expires_at || license.trial_ends_at || defaultActivationExpiryIso(),
+      isTrial: Boolean(license.is_trial),
+      trialEndsAt: license.trial_ends_at ?? null,
       devicesUsed: count || 0,
       maxDevices: license.max_devices,
     };
@@ -1000,7 +1038,9 @@ export async function activateDeviceSupabase(input: {
     token: issueActivationToken(claimsFromLicenseRow(license, signatureHash)),
     licenseId: license.id,
     userId: license.user_id,
-    expiresAt: license.expires_at || defaultActivationExpiryIso(),
+    expiresAt: license.expires_at || license.trial_ends_at || defaultActivationExpiryIso(),
+    isTrial: Boolean(license.is_trial),
+    trialEndsAt: license.trial_ends_at ?? null,
     devicesUsed: (count || 0) + 1,
     maxDevices: license.max_devices,
   };

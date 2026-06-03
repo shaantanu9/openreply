@@ -157,7 +157,7 @@ export async function activateDevice(input: {
   os: string;
   arch: string;
 }): Promise<
-  | { ok: true; token: string; licenseId: string; userId: string; expiresAt: string | null; devicesUsed: number; maxDevices: number }
+  | { ok: true; token: string; licenseId: string; userId: string; expiresAt: string | null; devicesUsed: number; maxDevices: number; isTrial: boolean; trialEndsAt: string | null }
   | { ok: false; status: number; error: string }
 > {
   const store = await readStore();
@@ -191,7 +191,9 @@ export async function activateDevice(input: {
       token: issueActivationToken(claimsFromLicense(authLicense, signatureHash)),
       licenseId: authLicense.licenseId,
       userId: authLicense.userId,
-      expiresAt: authLicense.expiresAt || defaultActivationExpiryIso(),
+      expiresAt: authLicense.expiresAt || authLicense.trialEndsAt || defaultActivationExpiryIso(),
+      isTrial: Boolean(authLicense.isTrial),
+      trialEndsAt: authLicense.trialEndsAt ?? null,
       devicesUsed: authLicense.devices.length,
       maxDevices: authLicense.maxDevices,
     };
@@ -215,7 +217,9 @@ export async function activateDevice(input: {
     token: issueActivationToken(claimsFromLicense(authLicense, signatureHash)),
     licenseId: authLicense.licenseId,
     userId: authLicense.userId,
-    expiresAt: authLicense.expiresAt || defaultActivationExpiryIso(),
+    expiresAt: authLicense.expiresAt || authLicense.trialEndsAt || defaultActivationExpiryIso(),
+    isTrial: Boolean(authLicense.isTrial),
+    trialEndsAt: authLicense.trialEndsAt ?? null,
     devicesUsed: authLicense.devices.length,
     maxDevices: authLicense.maxDevices,
   };

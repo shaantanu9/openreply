@@ -5,7 +5,7 @@ import { billingEnabled, FREE_PLAN_ID, FREE_MAX_DEVICES } from "@/lib/billing";
 import { createLicenseRecord } from "@/lib/licenseService";
 import { supabaseLicenceForEmail } from "@/lib/supabaseActivationStore";
 import { findLicenseByEmail } from "@/lib/activationStore";
-import { sendLicenseKeyEmail } from "@/lib/email";
+import { sendLicenseKeyEmail, sendWelcomeEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -63,7 +63,12 @@ export async function POST(req: Request) {
         planId: FREE_PLAN_ID,
         maxDevices: FREE_MAX_DEVICES,
       });
-      const mail = await sendLicenseKeyEmail(email, created.activationKey).catch(() => ({ ok: false }));
+      const mail = await sendLicenseKeyEmail(email, created.activationKey).catch((e) => {
+        console.error("[licence/free] key email failed for", email, e);
+        return { ok: false };
+      });
+      // First free issuance → also send a welcome/tracking email (fire-and-forget).
+      void sendWelcomeEmail(email).catch((e) => console.error("[licence/free] welcome email failed for", email, e));
       return NextResponse.json({
         ok: true,
         already: false,
@@ -94,7 +99,11 @@ export async function POST(req: Request) {
       planId: FREE_PLAN_ID,
       maxDevices: FREE_MAX_DEVICES,
     });
-    const mail = await sendLicenseKeyEmail(email, created.activationKey).catch(() => ({ ok: false }));
+    const mail = await sendLicenseKeyEmail(email, created.activationKey).catch((e) => {
+      console.error("[licence/free] key email failed for", email, e);
+      return { ok: false };
+    });
+    void sendWelcomeEmail(email).catch((e) => console.error("[licence/free] welcome email failed for", email, e));
     return NextResponse.json({
       ok: true,
       already: false,
