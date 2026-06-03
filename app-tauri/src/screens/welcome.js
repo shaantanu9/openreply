@@ -918,7 +918,10 @@ async function renderStep6Activation(root, body, info) {
     const def = await api.licenseDefaultApiBase();
     envBase = normalizeLicenseApiBase(def?.api_base || '');
   } catch {}
-  const initialBase = savedBase || envBase;
+  // Resolved server wins over any stale localStorage value; the user no longer
+  // types this. envBase comes from license_default_api_base (dev env override
+  // or the baked prod constant), then any saved base, then the prod default.
+  const initialBase = envBase || savedBase || 'https://gapmap.myind.ai';
   const savedEmail = localStorage.getItem('gapmap.license.email') || '';
 
   // Read the license-gate feature flag. When OFF (default), reframe the step:
@@ -951,10 +954,10 @@ async function renderStep6Activation(root, body, info) {
           </p>
         </details>
         <div class="settings-profile-fields" style="max-width:620px;margin-top:16px">
-          <label><span>License API base URL</span><input id="lic-api-base" type="url" placeholder="https://gapmap.myind.ai" value="${esc(initialBase)}" /></label>
           <label><span>Login email</span><input id="lic-email" type="email" placeholder="you@company.com" value="${esc(savedEmail)}" /></label>
-          <label><span>Password</span><input id="lic-password" type="password" placeholder="Your account password" /></label>
-          <label><span>Activation key</span><input id="lic-key" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" /></label>
+          <label><span>Activation key</span><input id="lic-key" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" spellcheck="false" /></label>
+          <label><span>Password <span style="color:var(--ink-3);font-weight:400">(optional)</span></span><input id="lic-password" type="password" placeholder="Only if your account uses one" /></label>
+          <p style="color:var(--ink-3);font-size:12px;margin:2px 0 0">Activation server: <b>${esc(initialBase)}</b> <span style="opacity:.7">(set automatically)</span></p>
         </div>
         <div class="kv-row" style="margin-top:10px"><b>Pending first topic</b><span>${esc(pendingTopic || 'Not set')}</span></div>
         <div class="kv-row"><b>Aggressive collect</b><span>${pendingAggressive ? 'on' : 'off'}</span></div>
@@ -1018,14 +1021,7 @@ async function renderStep6Activation(root, body, info) {
 
   document.getElementById('back-6').onclick = () => renderStep(root, 5, info);
   document.getElementById('test-6').onclick = async () => {
-    const apiBaseInput = document.getElementById('lic-api-base');
-    const apiBase = normalizeLicenseApiBase(apiBaseInput.value);
-    apiBaseInput.value = apiBase;
-    if (!isValidHttpsUrl(apiBase)) {
-      statusEl.style.color = '#B84747';
-      statusEl.textContent = 'Use a valid License API URL (HTTPS recommended; localhost HTTP allowed).';
-      return;
-    }
+    const apiBase = normalizeLicenseApiBase(initialBase);   // resolved server, no input
     statusEl.style.color = 'var(--ink-3)';
     statusEl.textContent = 'Testing server reachability...';
     try {
@@ -1039,20 +1035,15 @@ async function renderStep6Activation(root, body, info) {
   };
   document.getElementById('activate-6').onclick = async () => {
     const btn = document.getElementById('activate-6');
-    const apiBaseInput = document.getElementById('lic-api-base');
-    const apiBase = normalizeLicenseApiBase(apiBaseInput.value);
-    apiBaseInput.value = apiBase;
+    const apiBase = normalizeLicenseApiBase(initialBase);   // resolved server, no input
     const email = document.getElementById('lic-email').value.trim();
-    const password = document.getElementById('lic-password').value;
+    // Password optional: the server authenticates on (email, activation key)
+    // and ignores the value, but needs a non-empty string present.
+    const password = document.getElementById('lic-password').value || 'desktop-activation';
     const activationKey = document.getElementById('lic-key').value.trim();
-    if (!apiBase || !email || !password || !activationKey) {
+    if (!email || !activationKey) {
       statusEl.style.color = '#B84747';
-      statusEl.textContent = 'Fill API base, email, password and activation key.';
-      return;
-    }
-    if (!isValidHttpsUrl(apiBase)) {
-      statusEl.style.color = '#B84747';
-      statusEl.textContent = 'License API URL must be HTTPS (localhost HTTP allowed for dev).';
+      statusEl.textContent = 'Enter your email and activation key.';
       return;
     }
     if (!isValidEmail(email)) {
