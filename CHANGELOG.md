@@ -1,5 +1,29 @@
 # Changelog
 
+## [v0.1.19 — 2026-06-03] · Licensing enforced · simpler activation · security hardening
+
+### New / Changed
+- **Licence gate ON by default** — the app now requires an activated licence. Without a
+  valid key it locks to the activation screen; your local data is never touched. (Dev
+  bypass: `GAPMAP_LICENSE_GATE_ENABLED=0`.)
+- **Simpler activation** — onboarding Step 6 and Settings → Licence now ask for just
+  **email + activation key** (password optional, server resolved automatically; the
+  "License API base URL" input is gone).
+- **Automatic licence re-validation** — renewals and revocations sync on their own
+  (boot + every 6 h) with no key re-entry. Only an explicit server revocation locks the
+  app; a 404/5xx/offline never does (offline grace).
+
+### Fixed
+- Sign-out crashed with `dialog.confirm not allowed` — added the dialog confirm/ask/message
+  permissions; sign-out now awaits the async dialog.
+- Every "are you sure?" `confirm()` dialog across the app now actually waits for your
+  answer (they were proceeding without waiting under Tauri v2).
+
+### Ops / Security (server side, `gapmap.myind.ai`)
+- Deployed the `/v1/licence/validate` alias + enriched validate response (returns
+  `expires_at`/`trial_ends_at`/`is_trial`/`plan_id`/`status`) so the app can sync renewals.
+- Rotated the production admin secret (the default placeholder was still live).
+
 ## [v0.1.18 — 2026-06-02] · Faster collect · Reddit-not-connected UX · paper research
 
 ### New
