@@ -4238,7 +4238,12 @@ export async function renderTopic(root, { params }) {
       }
     });
 
-    if (!anyReady) return;
+    // NOTE: do NOT early-return when !anyReady. That skipped the composer
+    // wiring below (Enter-to-send + Send button), so with a stale/false
+    // LLM-readiness read the textarea rendered but Enter just inserted a
+    // newline and Send did nothing — "chat not working". The composer must
+    // ALWAYS be wired; send() re-checks the provider at send time and shows a
+    // graceful "Connect AI" card if one genuinely isn't configured.
 
     // Render any prior messages for this topic.
     // ISOLATED: a throw in message rendering (bad history data, a markdown
