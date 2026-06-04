@@ -4270,6 +4270,76 @@ def cmd_research_chat(
         typer.echo("")
 
 
+def _semantic_keyword_fallback(query: str, topic, source, k: int) -> list:
+    """Fast SQLite keyword search over `posts` — the graceful fallback when the
+    semantic palace is busy (a collect holds the ChromaDB lock) or returns
+    nothing. Returns hits in the SAME shape as palace.search_posts so the Find
+    UI renders them identically (just with vector/bm25 = 0)."""
+    import re
+    try:
+        from ..core.db import get_db
+        db = get_db()
+        words = [w for w in re.findall(r"[a-z0-9]+", (query or "").lower()) if len(w) >= 3][:8]
+        if not words:
+            q = (query or "").strip().lower()
+            words = [q] if q else []
+        if not words:
+            return []
+        where = " OR ".join(
+            "(lower(p.title) LIKE ? OR lower(coalesce(p.selftext,'')) LIKE ?)" for _ in words
+        )
+        params: list = []
+        join = ""
+        if topic:
+            join = "JOIN topic_posts tp ON tp.post_id = p.id AND tp.topic = ?"
+            params.append(topic)
+        for w in words:
+            params += [f"%{w}%", f"%{w}%"]
+        src = ""
+        if source:
+            src = "AND lower(coalesce(p.source_type,'reddit')) = ?"
+            params.append(str(source).lower())
+        params.append(max(1, k) * 4)
+        sql = (
+            "SELECT p.id, p.title, coalesce(p.selftext,'') AS body, p.sub, "
+            "coalesce(p.source_type,'reddit') AS source_type, p.url, p.permalink, "
+            "p.created_utc, coalesce(p.score,0) AS engagement "
+            f"FROM posts p {join} WHERE ({where}) {src} "
+            "ORDER BY engagement DESC LIMIT ?"
+        )
+        rows = list(db.query(sql, params))
+
+        def _match_count(r) -> int:
+            hay = (str(r.get("title") or "") + " " + str(r.get("body") or "")).lower()
+            return sum(1 for w in words if w in hay)
+
+        rows.sort(key=lambda r: (_match_count(r), r.get("engagement") or 0), reverse=True)
+        out = []
+        for r in rows[:k]:
+            mc = _match_count(r)
+            title = (r.get("title") or "").strip()
+            body = (r.get("body") or "").strip()
+            text = (title + ("\n" + body if body else "")).strip()[:500]
+            url = r.get("url") or (f"https://reddit.com{r['permalink']}" if r.get("permalink") else None)
+            out.append({
+                "id": r.get("id"),
+                "score": round(min(0.6, 0.3 + 0.08 * mc), 3),
+                "vector_score": 0.0,
+                "bm25_score": 0.0,
+                "text": text,
+                "metadata": {
+                    "source_type": r.get("source_type"),
+                    "sub": r.get("sub"),
+                    "topic": topic or None,
+                    "created_utc": r.get("created_utc"),
+                    "url": url,
+                },
+            })
+        return out
+    except Exception:
+        return []
+
+
 @research_app.command("semantic-search")
 def cmd_research_semantic_search(
     query: str = typer.Option(..., "--query", "-q"),
@@ -4306,6 +4376,29 @@ def cmd_research_semantic_search(
     # cold load yet still bounds a genuinely stuck palace read.
     import threading
     timeout_s = float(os.environ.get("GAPMAP_PALACE_SEARCH_TIMEOUT") or 25.0)
+
+    # Priority signal: tell the enrich-worker to YIELD its palace writes while we
+    # read, so a live collect doesn't starve the search (same coordination chat
+    # uses). A heartbeat thread keeps the flag fresh through a cold model load so
+    # it covers the whole read, not just the first 10s. Best-effort.
+    try:
+        from ..core.coordination import mark_chat_active
+    except Exception:
+        mark_chat_active = None  # type: ignore[assignment]
+    _stop_hb = threading.Event()
+
+    def _heartbeat() -> None:
+        while not _stop_hb.is_set():
+            if mark_chat_active:
+                try:
+                    mark_chat_active()
+                except Exception:
+                    pass
+            _stop_hb.wait(4.0)
+
+    if mark_chat_active:
+        threading.Thread(target=_heartbeat, name="palace-search-hb", daemon=True).start()
+
     box: dict = {}
 
     def _run() -> None:
@@ -4320,17 +4413,39 @@ def cmd_research_semantic_search(
     t = threading.Thread(target=_run, name="palace-search", daemon=True)
     t.start()
     t.join(timeout_s)
-    if t.is_alive():
-        typer.echo(json.dumps({
-            "ok": False, "busy": True,
-            "reason": "Search index is busy (a collection is running). Try again in a moment.",
-            "results": [],
-        }))
+    _stop_hb.set()  # stop the heartbeat regardless of outcome
+
+    # Palace busy (timeout) or errored → keyword fallback so the page still
+    # returns useful results instead of "busy"/empty.
+    if t.is_alive() or "e" in box:
+        kw = _semantic_keyword_fallback(query, topic, source, k)
+        if kw:
+            typer.echo(json.dumps({
+                "ok": True, "fallback": "keyword",
+                "note": "Semantic index was busy — showing keyword matches.",
+                "results": kw,
+            }, default=str, ensure_ascii=False))
+            return
+        if t.is_alive():
+            typer.echo(json.dumps({
+                "ok": False, "busy": True,
+                "reason": "Search index is busy (a collection is running). Try again in a moment.",
+                "results": [],
+            }))
+        else:
+            typer.echo(json.dumps({"ok": False, "error": str(box["e"]), "results": []}))
         return
-    if "e" in box:
-        typer.echo(json.dumps({"ok": False, "error": str(box["e"]), "results": []}))
-        return
+
     result = box.get("v") or {"ok": True, "results": []}
+    # Semantic ran but found nothing → keyword backstop (e.g. exact-term query).
+    if result.get("ok") and not result.get("results"):
+        kw = _semantic_keyword_fallback(query, topic, source, k)
+        if kw:
+            result = {
+                "ok": True, "fallback": "keyword",
+                "note": "No semantic matches — showing keyword matches.",
+                "results": kw,
+            }
     typer.echo(json.dumps(result, default=str, ensure_ascii=False))
 
 

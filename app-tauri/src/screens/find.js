@@ -16,6 +16,7 @@ const state = {
   rows: null,
   loading: false,
   error: null,
+  note: null,
   topicsList: [],
   sourceList: [],
   modelStatus: null,
@@ -83,7 +84,10 @@ function renderResults() {
   if (!state.rows.length) {
     return `<div class="empty-state">No semantic matches. Try a different phrasing, or broaden the topic filter.</div>`;
   }
-  return `<div class="find-list">${state.rows.map(renderResult).join('')}</div>`;
+  const note = state.note
+    ? `<div class="find-note" style="margin:0 0 10px;padding:7px 12px;border-radius:8px;background:var(--orange-pale,#FBF0E7);color:var(--orange,#E07B3C);font-size:12.5px">⌕ ${esc(state.note)}</div>`
+    : '';
+  return `${note}<div class="find-list">${state.rows.map(renderResult).join('')}</div>`;
 }
 
 function renderNotReady(root, ms) {
@@ -117,6 +121,7 @@ async function runSearch(root) {
   }
   state.loading = true;
   state.error = null;
+  state.note = null;
   $('#find-body').innerHTML = renderResults();
   try {
     // Safety net: never let the page hang on "Searching…" if the backend
@@ -146,6 +151,7 @@ async function runSearch(root) {
       return;
     }
     state.rows = Array.isArray(r?.results) ? r.results : [];
+    state.note = r?.note || null;
   } catch (e) {
     state.error = e?.message || String(e);
     state.rows = [];
