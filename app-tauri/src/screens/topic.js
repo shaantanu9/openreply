@@ -377,16 +377,16 @@ async function runEnrichStreamForTopic(topic, {
         const total = counts.painpoints + counts.features + counts.workarounds + counts.complaints;
         if (lastSummary?.skipped) {
           b.className = 'map-enrich-banner warn';
-          b.innerHTML = `⚠ Enrichment skipped — ${esc(lastSummary.reason || 'no LLM configured')}`;
+          b.innerHTML = `<span class="map-enrich-msg">⚠ Enrichment skipped — ${esc(lastSummary.reason || 'no AI provider connected')}</span>`;
         } else if (lastSummary?.ok === false) {
           b.className = 'map-enrich-banner err';
-          b.innerHTML = `✗ Enrichment failed — ${esc(String(lastSummary.error || 'unknown').slice(0, 180))}
+          b.innerHTML = `<span class="map-enrich-msg">✗ Enrichment failed — ${esc(String(lastSummary.error || 'unknown').slice(0, 180))}</span>
             <button class="btn btn-ghost btn-sm btn-bordered map-banner-btn" id="banner-change-llm" type="button">Change LLM</button>`;
           document.getElementById('banner-change-llm')?.addEventListener('click', () =>
             openByokModal(() => location.reload()));
         } else if (total === 0) {
           b.className = 'map-enrich-banner warn';
-          b.innerHTML = `⚠ <code>${esc(provider || 'LLM')}</code> ran over <b>${esc(String(corpusSize))}</b> posts but extracted 0 findings.
+          b.innerHTML = `<span class="map-enrich-msg">⚠ <code>${esc(provider || 'LLM')}</code> read <b>${esc(String(corpusSize))}</b> posts but extracted 0 findings — the model returned nothing usable. Try a stronger model, or retry.</span>
             <button class="btn btn-ghost btn-sm btn-bordered map-banner-btn" id="banner-change-llm" type="button">Change LLM</button>
             <button class="btn btn-ghost btn-sm btn-bordered map-banner-btn" id="banner-retry-painpoints" type="button">Retry painpoints only</button>`;
           document.getElementById('banner-change-llm')?.addEventListener('click', () =>
@@ -402,7 +402,7 @@ async function runEnrichStreamForTopic(topic, {
           if (counts.features)    parts.push(`${counts.features} feature wishes`);
           if (counts.workarounds) parts.push(`${counts.workarounds} workarounds`);
           if (counts.complaints)  parts.push(`${counts.complaints} complaints`);
-          b.innerHTML = `✓ Extracted ${parts.join(', ')} — refreshing map…`;
+          b.innerHTML = `<span class="map-enrich-msg">✓ Extracted ${parts.join(', ')} — refreshing map…</span>`;
         }
       }
       recordEnrichResult(topic, lastSummary, lastSummary?.ok === false ? lastSummary?.error : null);
