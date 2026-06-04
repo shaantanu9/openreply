@@ -44,7 +44,7 @@ echo "$ASSETS" | sed 's/^/    - /'
 
 MISSING=()
 for pattern in "${REQUIRED_PATTERNS[@]}"; do
-  if ! echo "$ASSETS" | grep -qE "$pattern"; then
+  if ! echo "$ASSETS" | grep -qE -- "$pattern"; then
     MISSING+=("$pattern")
   fi
 done

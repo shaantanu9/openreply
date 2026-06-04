@@ -277,7 +277,7 @@ jobs:
           )
           MISSING=()
           for pat in "${REQUIRED[@]}"; do
-            echo "$ASSETS" | grep -qE "$pat" || MISSING+=("$pat")
+            echo "$ASSETS" | grep -qE -- "$pat" || MISSING+=("$pat")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "  ⏳ waiting on missing platforms:"
