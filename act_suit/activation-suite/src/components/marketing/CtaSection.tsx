@@ -3,8 +3,8 @@ import { DownloadLink } from "@/components/shell/DownloadLink";
 
 export function CtaSection() {
   return (
-    <section id="cta" className="bg-[var(--cream)] px-8 py-[100px]">
-      <div className="relative mx-auto max-w-[1200px] overflow-hidden rounded-[28px] bg-[var(--dark)] px-10 py-20 text-center text-white">
+    <section id="cta" className="bg-[var(--cream)] px-4 py-[72px] sm:px-8 sm:py-[100px]">
+      <div className="relative mx-auto max-w-[1200px] overflow-hidden rounded-[28px] bg-[var(--dark)] px-6 py-14 text-center text-white sm:px-10 sm:py-20">
         <div
           aria-hidden
           className="absolute inset-0 opacity-70"

@@ -74,20 +74,20 @@ export function RoiSection() {
               />
             </div>
           </div>
-          <div className="reveal rounded-[24px] border border-[var(--border-strong)] bg-[var(--dark)] p-8 text-white">
+          <div className="reveal rounded-[24px] border border-[var(--border-strong)] bg-[var(--dark)] p-6 text-white sm:p-8">
             <p className="text-[12px] font-medium uppercase tracking-[1px] text-[var(--orange-light)]">
               Your estimated upside
             </p>
             <div className="mt-6 grid grid-cols-2 gap-4">
               <div className="rounded-[14px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[12px] text-white/55">Monthly research hours</p>
-                <p className="mt-1 font-serif text-[30px] tracking-[-0.8px] text-white">
+                <p className="mt-1 font-serif text-[24px] tracking-[-0.8px] text-white sm:text-[30px]">
                   {roi.monthlyHours}h
                 </p>
               </div>
               <div className="rounded-[14px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[12px] text-white/55">Manual monthly cost</p>
-                <p className="mt-1 font-serif text-[30px] tracking-[-0.8px] text-white">
+                <p className="mt-1 font-serif text-[24px] tracking-[-0.8px] text-white sm:text-[30px]">
                   ${roi.baselineCost.toLocaleString()}
                 </p>
               </div>
@@ -99,7 +99,7 @@ export function RoiSection() {
               </div>
               <div className="rounded-[14px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[12px] text-white/55">Projected annual impact</p>
-                <p className="mt-1 font-serif text-[30px] tracking-[-0.8px] text-white">
+                <p className="mt-1 font-serif text-[24px] tracking-[-0.8px] text-white sm:text-[30px]">
                   ${roi.annualSavings.toLocaleString()}
                 </p>
               </div>

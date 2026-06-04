@@ -133,7 +133,7 @@ export function AppWindowMock({ titlebar, stats, card, secondCard }: Props) {
         </span>
       </div>
       <div className="bg-[var(--cream-mid)] p-4">
-        <div className="mb-3 grid grid-cols-4 gap-[7px]">
+        <div className="mb-3 grid grid-cols-2 gap-[7px] sm:grid-cols-4">
           {stats.map((s) => (
             <div
               key={s.lbl}

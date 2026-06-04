@@ -102,13 +102,13 @@ export function InviteHero() {
           </div>
         ) : (
           <>
-            <form onSubmit={submit} className="mx-auto mt-8 flex max-w-[560px] flex-wrap items-center justify-center gap-[10px]">
+            <form onSubmit={submit} className="mx-auto mt-8 flex max-w-[560px] flex-col items-stretch justify-center gap-[10px] sm:flex-row sm:items-center">
               <input
                 type="email" autoComplete="email" placeholder="you@company.com" value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="min-w-[280px] flex-1 rounded-[11px] border border-[var(--border-strong)] bg-white px-4 py-[14px] text-[15px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
+                className="w-full flex-1 rounded-[11px] border border-[var(--border-strong)] bg-white px-4 py-[14px] text-[15px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)] sm:w-auto sm:min-w-[260px]"
               />
-              <button type="submit" disabled={busy} className="btn btn-orange px-7 py-[14px] disabled:opacity-70">
+              <button type="submit" disabled={busy} className="btn btn-orange justify-center px-7 py-[14px] disabled:opacity-70">
                 {busy ? "Requesting…" : "Request invite →"}
               </button>
             </form>

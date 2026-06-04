@@ -41,6 +41,10 @@
 
 html {
   scroll-behavior: smooth;
+  /* Guard against any stray wide element causing horizontal scroll on
+     mobile. Combined with max-width:100% this keeps the page from ever
+     scrolling sideways. */
+  overflow-x: hidden;
 }
 
 body {
@@ -50,6 +54,8 @@ body {
   font-size: 16px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 a {
@@ -75,6 +81,14 @@ a {
   max-width: 840px;
   margin: 0 auto;
   padding: 0 2rem;
+}
+
+/* Tighter side padding on phones so content isn't squeezed to a sliver. */
+@media (max-width: 640px) {
+  .container-gm,
+  .container-narrow {
+    padding: 0 1.25rem;
+  }
 }
 
 /* ── BUTTONS ── */

@@ -90,7 +90,7 @@ export function DemoSection() {
                 </span>
               </div>
               {/* body */}
-              <div className="flex min-h-[340px] flex-col justify-end gap-3 p-10">
+              <div className="flex min-h-[340px] flex-col justify-end gap-3 p-6 sm:p-10">
                 <span className="text-[10.5px] font-mono uppercase tracking-[1.4px] text-[var(--orange-light)]">
                   {frame.eyebrow}
                 </span>

@@ -19,7 +19,7 @@ export function PricingSection() {
             return (
               <article
                 key={plan.code}
-                className={`pricing-card reveal relative rounded-[24px] border p-10 ${
+                className={`pricing-card reveal relative rounded-[24px] border p-6 sm:p-10 ${
                   featured
                     ? "border-transparent bg-[var(--dark)] text-white"
                     : "border-[var(--border-strong)] bg-white"

@@ -4,8 +4,8 @@ import { BRAND, FOOTER_COLUMNS } from "@/lib/constants";
 
 export function Footer() {
   return (
-    <footer className="bg-[var(--dark)] px-8 pb-12 pt-20 text-[var(--cream)]">
-      <div className="mx-auto grid max-w-[1200px] gap-10 md:grid-cols-[2fr_1fr_1fr_1fr]">
+    <footer className="bg-[var(--dark)] px-5 pb-12 pt-16 text-[var(--cream)] sm:px-8 sm:pt-20">
+      <div className="mx-auto grid max-w-[1200px] gap-8 sm:grid-cols-2 md:grid-cols-[2fr_1fr_1fr_1fr] md:gap-10">
         <div>
           <Logo tone="white" />
           <p className="mt-5 max-w-[360px] text-[14px] leading-relaxed text-white/45">

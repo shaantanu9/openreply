@@ -57,7 +57,7 @@ export function BeforeAfterSection() {
 
         <div className="mt-12 grid gap-0 overflow-hidden rounded-[28px] border border-[var(--border-strong)] bg-white md:grid-cols-2">
           {/* BEFORE */}
-          <div className="reveal flex flex-col gap-5 bg-[var(--cream-dark)] p-10">
+          <div className="reveal flex flex-col gap-5 bg-[var(--cream-dark)] p-6 sm:p-10">
             <span className="text-[11px] font-medium uppercase tracking-[1.5px] text-[var(--muted-light)]">
               {before.label}
             </span>
@@ -75,7 +75,7 @@ export function BeforeAfterSection() {
           </div>
 
           {/* AFTER */}
-          <div className="reveal relative flex flex-col gap-5 bg-white p-10 md:-ml-px md:border-l md:border-[var(--border-strong)]">
+          <div className="reveal relative flex flex-col gap-5 bg-white p-6 sm:p-10 md:-ml-px md:border-l md:border-[var(--border-strong)]">
             <span
               className="absolute right-6 top-6 inline-flex items-center gap-2 rounded-full bg-[var(--orange-pale)] px-3 py-[4px] text-[10.5px] font-medium uppercase tracking-[1.2px] text-[var(--orange)]"
             >
