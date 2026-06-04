@@ -15,11 +15,11 @@ function escText(s) { return esc(String(s ?? '')); }
 export function classifyError(err) {
   const msg = String(err?.message || err || '').toLowerCase();
   if (!msg) return { kind: 'unknown', text: 'Unknown error', hint: '' };
-  if (/no.?(llm|api).?key|llm.?key.?missing|anthropic|openai|byok|set your/.test(msg)) {
+  if (/no.?(llm|api).?key|llm.?key.?missing|no (llm|ai) provider|llm provider configured|provider configured|add a key in settings|local ollama|no provider|anthropic|openai|byok|set your/.test(msg)) {
     return {
       kind: 'no_llm_key',
-      text: 'No LLM key configured',
-      hint: 'Add an API key or enable local Ollama in Settings → API keys.',
+      text: 'No AI provider connected',
+      hint: 'Add an API key or start a local Ollama instance in Settings → API keys, then retry.',
     };
   }
   if (/rate.?limit|429|too many requests/.test(msg)) {
