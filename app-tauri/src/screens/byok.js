@@ -330,7 +330,7 @@ async function renderCuratedChips(containerEl, providerKey, activeProvider, acti
   }
 }
 
-export async function openByokModal(onClose) {
+export async function openByokModal(onClose, focusKey) {
   let status;
   try {
     status = await api.byokStatus();
@@ -360,6 +360,12 @@ export async function openByokModal(onClose) {
       </div>
 
       <div class="byok-section" data-section="llm">
+        <div class="byok-search-wrap" style="margin-bottom:12px;position:relative">
+          <input id="byok-llm-search" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Search providers…  (e.g. claude, groq, gemini, local)"
+                 style="width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:var(--fs-13);background:var(--surface);color:var(--ink-1);box-sizing:border-box" />
+          <div id="byok-search-empty" class="hidden" style="padding:10px 2px 0;color:var(--ink-3);font-size:var(--fs-13)">No providers match — try another name.</div>
+        </div>
         <div class="byok-fields">
           ${LLM_PROVIDERS.map(p => renderLlmField(p, status[p.key])).join('')}
         </div>
@@ -502,6 +508,36 @@ export async function openByokModal(onClose) {
     });
   });
 
+  // --- LLM provider search filter ---
+  const searchEl = host.querySelector('#byok-llm-search');
+  if (searchEl) {
+    const emptyEl = host.querySelector('#byok-search-empty');
+    searchEl.addEventListener('input', () => {
+      const q = searchEl.value.trim().toLowerCase();
+      let shown = 0;
+      host.querySelectorAll('.byok-section[data-section="llm"] .byok-row').forEach(row => {
+        const match = !q || (row.dataset.search || '').includes(q);
+        row.style.display = match ? '' : 'none';
+        if (match) shown++;
+      });
+      if (emptyEl) emptyEl.classList.toggle('hidden', shown > 0);
+    });
+  }
+
+  // --- Focus a specific provider when opened from a Settings card ---
+  if (focusKey) {
+    const frow = host.querySelector(`.byok-section[data-section="llm"] .byok-row[data-provider="${focusKey}"]`);
+    if (frow) {
+      setTimeout(() => {
+        frow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        frow.style.boxShadow = '0 0 0 2px var(--accent, #E07B3C)';
+        frow.style.borderRadius = '10px';
+        frow.querySelector('input')?.focus();
+        setTimeout(() => { frow.style.boxShadow = ''; }, 2200);
+      }, 80);
+    }
+  }
+
   // Close
   const close = () => {
     host.remove();
@@ -589,6 +625,35 @@ export async function openByokModal(onClose) {
       } catch (e) { setStatus(`Clear failed: ${e?.message || e}`, false); }
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBtn.click(); });
+
+    // --- Make default (LLM providers only) ---
+    const makeDefaultBtn = row.querySelector('.byok-make-default');
+    if (makeDefaultBtn && LLM_PROVIDERS.some(pp => pp.key === field.key)) {
+      makeDefaultBtn.onclick = async () => {
+        // Cloud providers must have a saved key before they can be the default.
+        if (!field.isLocal) {
+          const st = await api.byokStatus();
+          if (!st[field.key]?.set) { setStatus(`Save an ${field.label} API key first`, false); return; }
+        }
+        const model = field.defaultModel || '';
+        makeDefaultBtn.disabled = true;
+        try {
+          await api.byokSet('LLM_PROVIDER', field.key);
+          await api.byokSet('LLM_MODEL', model);
+          paintBanner(field.key, model);
+          paintAllChips(field.key, model);
+          const provSelEl = host.querySelector('#byok-provider-sel');
+          const modelInpEl = host.querySelector('#byok-model-input');
+          if (provSelEl) provSelEl.value = field.key;
+          if (modelInpEl) modelInpEl.value = model;
+          setStatus(`Default → ${field.label}${model ? ' · ' + model : ''} ✓`, true);
+        } catch (e) {
+          setStatus(`Failed: ${e?.message || e}`, false);
+        } finally {
+          makeDefaultBtn.disabled = false;
+        }
+      };
+    }
 
     // --- Test button (LLM providers only) ---
     const testBtn = row.querySelector('.byok-test');
@@ -1054,8 +1119,9 @@ function renderLlmField(p, st) {
   // For Ollama: pre-fill the saved URL OR the default placeholder value,
   // so the user can hit Save / Test immediately without typing.
   const prefill = isLocal ? (st || p.placeholder || '') : '';
+  const searchHay = `${p.label} ${p.key} ${p.help || ''}`.replace(/<[^>]+>/g, ' ').toLowerCase();
   return `
-    <div class="byok-row" data-key="${esc(p.key)}" data-provider="${esc(p.key)}">
+    <div class="byok-row" data-key="${esc(p.key)}" data-provider="${esc(p.key)}" data-search="${esc(searchHay)}">
       <div class="byok-row-head">
         <div>
           <label>${esc(p.label)}${isLocal ? ' <span style="color:var(--ink-3);font-size:var(--fs-11)">· no key needed</span>' : ''}</label>
@@ -1070,6 +1136,7 @@ function renderLlmField(p, st) {
         <button class="btn btn-primary btn-sm byok-save">Save</button>
         <button class="btn btn-ghost btn-sm btn-bordered byok-test" ${(set || isLocal) ? '' : 'disabled'}>Test</button>
         <button class="btn btn-ghost btn-sm btn-bordered byok-clear" ${set ? '' : 'disabled'}>Clear</button>
+        <button class="btn btn-ghost btn-sm btn-bordered byok-make-default" ${(set || isLocal) ? '' : 'disabled'} title="Use ${esc(p.label)} as the default provider">★ Make default</button>
       </div>
       <div class="byok-test-result" hidden></div>
       ${!isLocal ? renderCuratedChipsHtml(p.key) : ''}

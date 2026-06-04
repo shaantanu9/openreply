@@ -1419,7 +1419,7 @@ function fillLlmCard(root, byok) {
         const ready = isOllama ? (typeof st === 'string' && !!st) : !!st?.set;
         const preview = isOllama ? (st || '') : (st?.preview || '');
         return `
-          <div class="llm-chip ${ready ? 'on' : 'off'}">
+          <div class="llm-chip ${ready ? 'on' : 'off'}" role="button" tabindex="0" data-prov="${esc(k)}" title="Set up ${esc(LLM_LABELS[k])} — add key & make default">
             <span class="llm-chip-name">${esc(LLM_LABELS[k])}</span>
             <span class="llm-chip-state">${ready ? (preview ? `✓ ${esc(preview)}` : '✓ ready') : '× not set'}</span>
           </div>`;
@@ -1435,6 +1435,12 @@ function fillLlmCard(root, byok) {
     </div>`;
   card.querySelector('#btn-manage-keys').onclick = () => openByokModal(() => renderSettings(root));
   card.querySelector('#btn-reveal-env').onclick = () => { if (byok?.path) api.revealInFinder(byok.path); };
+  // Click any provider chip → open the keys modal focused on that provider.
+  card.querySelectorAll('.llm-chip[data-prov]').forEach(chip => {
+    const open = () => openByokModal(() => renderSettings(root), chip.dataset.prov);
+    chip.onclick = open;
+    chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+  });
   window.refreshIcons?.();
 }
 
