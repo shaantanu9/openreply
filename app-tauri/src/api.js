@@ -740,6 +740,10 @@ export const api = {
   },
   licenseServerCheck: (apiBase) => invoke('license_server_check', { apiBase }),
   licenseDefaultApiBase: () => invoke('license_default_api_base'),
+  // Force-update gate: compares the built version to the server's
+  // min/latest_app_version. Returns {ok, current, min, latest, download_url,
+  // update_required, update_available}. ok:false on any network failure.
+  checkAppVersion: (apiBase) => invoke('check_app_version', { apiBase }),
   licenseLogout:    () => {
     invalidate('license_status');
     return invoke('license_logout');

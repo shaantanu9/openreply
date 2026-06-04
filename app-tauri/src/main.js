@@ -1,6 +1,7 @@
 import { api, $, $$, esc, clearApiCache } from './api.js';
 import { confirmModal } from './lib/confirmModal.js';
 import { markRedditPending, wireRedditEnrich } from './lib/redditEnrich.js';
+import { wireUpdateGate } from './lib/updateGate.js';
 
 // Two-phase collect orchestration (fast sources → background Reddit). Idempotent.
 wireRedditEnrich();
@@ -535,6 +536,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   // fires persona ingest for every active persona on the new topic. Gated
   // by a localStorage flag the user can toggle on the Personas screen.
   setupPersonaAutoIngest();
+
+  // Force-update gate — non-blocking boot check (+ 6h re-check). If the server
+  // marks the installed build below MIN_APP_VERSION, it overlays a blocking
+  // "Update required" screen. Never blocks on a failed/offline check.
+  wireUpdateGate();
 
   // Resolve the license-gate flag BEFORE any guard. When OFF (default),
   // the rest of the boot path treats the user as effectively activated.

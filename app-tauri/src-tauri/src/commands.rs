@@ -7947,6 +7947,79 @@ pub async fn license_default_api_base() -> Result<Value, String> {
     }))
 }
 
+/// Dotted version compare. `version_lt("0.1.19", "0.1.20") == true`. Missing /
+/// non-numeric segments are treated as 0, so partial or `v`-prefixed strings
+/// compare sanely without a semver dep.
+fn version_lt(a: &str, b: &str) -> bool {
+    let norm = |s: &str| -> Vec<u64> {
+        s.trim().trim_start_matches('v').trim_start_matches('V')
+            // drop any pre-release/build suffix (e.g. "0.1.20-beta")
+            .split(|c| c == '-' || c == '+').next().unwrap_or("")
+            .split('.')
+            .map(|p| p.trim().parse::<u64>().unwrap_or(0))
+            .collect()
+    };
+    let (va, vb) = (norm(a), norm(b));
+    let n = va.len().max(vb.len());
+    for i in 0..n {
+        let x = va.get(i).copied().unwrap_or(0);
+        let y = vb.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x < y;
+        }
+    }
+    false
+}
+
+/// Force-update gate. Polls `{api_base}/v1/health` for `min_app_version` /
+/// `latest_app_version` / `app_download_url` and compares them to the built
+/// `CARGO_PKG_VERSION`.
+///   - `update_required` → installed version < server `min_app_version`.
+///     The frontend HARD-BLOCKS the app and shows a Download screen.
+///   - `update_available` → installed version < `latest_app_version` (soft).
+/// On ANY network/parse failure we return `ok:false` and NEVER set
+/// update_required — an unreachable server (offline / outage) must never lock
+/// a user out of a perfectly good build.
+#[tauri::command]
+pub async fn check_app_version(api_base: String) -> Result<Value, String> {
+    let current = env!("CARGO_PKG_VERSION");
+    let base = api_base.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
+        return Ok(serde_json::json!({ "ok": false, "current": current }));
+    }
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Ok(serde_json::json!({ "ok": false, "current": current })),
+    };
+    let resp = client.get(format!("{}/v1/health", base)).send().await;
+    let body: Value = match resp {
+        Ok(r) if r.status().is_success() => r.json().await.unwrap_or_else(|_| serde_json::json!({})),
+        _ => return Ok(serde_json::json!({ "ok": false, "current": current })),
+    };
+    let min = body.get("min_app_version").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    let latest = body.get("latest_app_version").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    let download_url = body
+        .get("app_download_url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_LICENSE_API_BASE)
+        .to_string();
+    let update_required = min.map(|m| version_lt(current, m)).unwrap_or(false);
+    let update_available = latest.map(|l| version_lt(current, l)).unwrap_or(false);
+    Ok(serde_json::json!({
+        "ok": true,
+        "current": current,
+        "min": min,
+        "latest": latest,
+        "download_url": download_url,
+        "update_required": update_required,
+        "update_available": update_available,
+    }))
+}
+
 #[tauri::command]
 pub async fn license_logout(app: AppHandle) -> Result<Value, String> {
     let path = license_state_path(&app)?;

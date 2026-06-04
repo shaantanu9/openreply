@@ -398,6 +398,7 @@ fn main() {
             commands::license_revalidate,
             commands::license_server_check,
             commands::license_default_api_base,
+            commands::check_app_version,
             commands::license_logout,
             commands::run_query,
             commands::start_chat,
