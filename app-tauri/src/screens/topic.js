@@ -1117,7 +1117,7 @@ export async function renderTopic(root, { params }) {
   // cached HTML file won't have (e.g. left-panel minimize, citation focus).
   // loadMap force-rebuilds any topic whose stored version is older, so the new
   // viewer self-heals on first open — no manual Rebuild needed.
-  const MAP_EXPORT_VERSION = 3;
+  const MAP_EXPORT_VERSION = 4;
   const MAP_EXPORT_VER_KEY = `gapmap.topic.mapExportVer.${topic}`;
   // This is a LOCAL app reading a LOCAL SQLite — the only thing that
   // makes a cached snapshot stale is the user explicitly running a
@@ -1420,6 +1420,14 @@ export async function renderTopic(root, { params }) {
   // category and reload the map. Bound once per topic page (see wireMapChat).
   let _sectionEnrichRunning = false;
   let _sectionEnrichBound = false;
+
+  // ── Map selection → chat context bridge ──
+  // The exported map (iframe) posts {type:'gapmap:select', selection:{…}} when
+  // the user clicks a node OR a relation edge. We stash the latest selection so
+  // the Map chat can ground its answer on "this finding / this relationship"
+  // instead of the whole topic. `null` = nothing selected (topic-wide answers).
+  let _selectedMapNode = null;
+  let _mapSelectionBound = false;
 
   // Task 9.5 — fire-and-forget render of the extraction prefs override row.
   // Best-effort: any error just hides the row (it's purely informational).
@@ -2040,6 +2048,76 @@ export async function renderTopic(root, { params }) {
     window.addEventListener('message', onMsg);
   }
 
+  // Bind the iframe→app SELECTION bridge once per topic page. The exported map
+  // posts {type:'gapmap:select', selection:{…}} on every node/edge click; we
+  // stash it as the chat's focus and reflect it in the drawer's focus chip.
+  function wireMapSelectionBridge() {
+    if (_mapSelectionBound) return;
+    _mapSelectionBound = true;
+    const onMsg = (e) => {
+      if (!contentEl || !contentEl.isConnected) { window.removeEventListener('message', onMsg); return; }
+      const d = e.data;
+      if (!d || d.type !== 'gapmap:select' || !d.selection) return;
+      _selectedMapNode = d.selection;
+      _renderMapFocusChip();
+    };
+    window.addEventListener('message', onMsg);
+  }
+
+  // Render the "Focused on: ‹label› ✕" chip in the chat drawer head so the user
+  // can see — and clear — what the chat is grounded on. No-op until the drawer
+  // exists in the DOM (it's created with the map render).
+  function _renderMapFocusChip() {
+    const host = document.getElementById('mapchat-focus');
+    if (!host) return;
+    const sel = _selectedMapNode;
+    if (!sel) { host.innerHTML = ''; host.style.display = 'none'; return; }
+    const label = sel.isEdge ? (sel.kindLabel || 'relation') : (sel.label || 'selection');
+    const rc = sel.relationCounts || {};
+    const relTotal = Object.values(rc).reduce((n, v) => n + (Number(v) || 0), 0);
+    const meta = sel.isEdge
+      ? `${esc(sel.source?.label || '?')} ↔ ${esc(sel.target?.label || '?')}`
+      : (relTotal ? `${relTotal} relation${relTotal === 1 ? '' : 's'}` : esc(sel.kind || ''));
+    host.style.display = '';
+    host.innerHTML = `<span class="mapchat-focus-chip" title="The chat will focus its answer on this selection">
+        <i data-lucide="target"></i>
+        <span class="mcf-label">${esc(label)}</span>
+        ${meta ? `<span class="mcf-meta">${meta}</span>` : ''}
+        <button type="button" class="mcf-clear" title="Clear focus — chat answers about the whole topic">&times;</button>
+      </span>`;
+    window.refreshIcons?.();
+    host.querySelector('.mcf-clear')?.addEventListener('click', () => {
+      _selectedMapNode = null;
+      _renderMapFocusChip();
+    });
+  }
+
+  // Build the context preamble injected ahead of the user's question when a
+  // map node/edge is selected. The chat LOG still shows only the typed text;
+  // this preamble is sent to start_chat so the answer (and Palace retrieval)
+  // is grounded on the selection. Empty string when nothing is selected.
+  function _selectionChatPreamble() {
+    const sel = _selectedMapNode;
+    if (!sel) return '';
+    if (sel.isEdge) {
+      return `[Map focus] The user is focused on a relationship in the gap map: `
+        + `"${sel.kindLabel || sel.kind}" connecting `
+        + `"${(sel.source && sel.source.label) || '?'}" and "${(sel.target && sel.target.label) || '?'}". `
+        + `Prioritise explaining this specific relationship and what it implies.\n\n`;
+    }
+    const parts = [];
+    parts.push(`[Map focus] The user has selected a ${sel.kind || 'finding'} on the gap map: "${sel.label || ''}".`);
+    if (sel.summary) parts.push(`Summary: ${sel.summary}`);
+    if (sel.evidence) parts.push(`Evidence: "${sel.evidence}"`);
+    const rels = Array.isArray(sel.relations) ? sel.relations.slice(0, 12) : [];
+    if (rels.length) {
+      const lines = rels.map(r => `- ${r.kindLabel || r.kind} → ${r.neighborLabel || r.id}`);
+      parts.push(`Its relations:\n${lines.join('\n')}`);
+    }
+    parts.push(`Prioritise this selected finding and its relations in your answer; still cite sources.`);
+    return parts.join('\n') + '\n\n';
+  }
+
   // Same shape as runEnrichFromMap but reloads the caller instead of the Map.
   // Used by the Evidence/Report tabs when findings are empty AND the user has
   // an LLM key — so the button says "Run extraction now" (actionable) instead
@@ -2335,7 +2413,11 @@ export async function renderTopic(root, { params }) {
         }
         finish(code === 0 || bot.err ? '' : 'Provider exited early; partial response shown.');
       });
-      await api.startChat(topic, q, 'ask', false);
+      // Selection-aware: prepend the focused node/edge context so the answer
+      // (and Palace retrieval) grounds on what the user picked. The chat log
+      // already shows only the user's typed text (pushed above).
+      const _preamble = _selectionChatPreamble();
+      await api.startChat(topic, _preamble ? (_preamble + q) : q, 'ask', false);
     } catch (e) {
       bot.err = toChatErr(e);
       finish('');
@@ -2357,6 +2439,7 @@ export async function renderTopic(root, { params }) {
       // triggers a scroll-into-view jump that reads as jank).
       _renderMapChatLog();
       _refreshMapChatLlm();
+      _renderMapFocusChip();
       requestAnimationFrame(() => drawer.classList.add('open'));
       setTimeout(() => document.getElementById('mapchat-input')?.focus({ preventScroll: true }), 340);
     };
@@ -2372,6 +2455,8 @@ export async function renderTopic(root, { params }) {
     _refreshMapChatLlm();
     // Wire the leftbar section ↻ → enrich bridge (idempotent).
     wireSectionEnrichBridge();
+    // Wire the map node/edge → chat selection bridge (idempotent).
+    wireMapSelectionBridge();
     // Top-toolbar "Ask this map" mirrors the floating pill — opens the same drawer.
     const topAsk = document.getElementById('btn-map-chat-top'); if (topAsk) topAsk.onclick = open;
     const x = document.getElementById('mapchat-close'); if (x) x.onclick = close;
@@ -2860,6 +2945,7 @@ export async function renderTopic(root, { params }) {
           <aside class="mapchat-drawer" id="mapchat-drawer">
             <div class="mapchat-head"><b><i data-lucide="message-circle"></i> Ask this map</b>
               <button class="mapchat-x" id="mapchat-close" title="Close">&times;</button></div>
+            <div class="mapchat-focus" id="mapchat-focus" style="display:none"></div>
             <div class="mapchat-log" id="mapchat-log"></div>
             <div class="mapchat-status" id="mapchat-status"></div>
             <div class="mapchat-composer">
@@ -3976,6 +4062,17 @@ export async function renderTopic(root, { params }) {
 
   async function loadChat() {
     const set = (html) => { if (contentEl.dataset.tab === 'chat') contentEl.innerHTML = html; };
+    // Deep-link from the global Chats screen (#/chats → "Start chat"): a
+    // question is queued to fire as a brand-new chat in this topic. Read +
+    // clear it up-front so a queued question can never linger and fire on a
+    // later, unrelated chat load. It is consumed once the composer is wired
+    // (see end of the input-wiring block below).
+    let queuedPrefill = '';
+    try {
+      const k = `gapmap.chat.prefill.${topic}`;
+      queuedPrefill = (localStorage.getItem(k) || '').trim();
+      if (queuedPrefill) localStorage.removeItem(k);
+    } catch {}
     // Gate 1: need an LLM key.
     let byok = {};
     try { byok = await api.byokStatus(); } catch {}
@@ -4324,6 +4421,14 @@ export async function renderTopic(root, { params }) {
         send(btn.dataset.mode, '');
       });
     });
+
+    // Consume the deep-linked question from the global Chats screen. We only
+    // reach this point when the composer is actually rendered (a topic with a
+    // corpus + a usable LLM), so it's safe to start a fresh thread and fire.
+    if (queuedPrefill && !chatStream.active) {
+      newConversation(topic);
+      send('ask', queuedPrefill);
+    }
 
     // Export conversation as markdown — one-click download of the whole thread
     // including source-aware citations the LLM produced.

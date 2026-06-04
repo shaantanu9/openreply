@@ -1001,6 +1001,49 @@ function renderSourceWiseTopInsights() {
 }
 renderSourceWiseTopInsights();
 
+// Edge kinds that count as "relations" for the host-app chat context.
+const RELATION_KINDS = ["relates_to", "co_evidenced", "potentially_solves", "could_address", "source_evidence"];
+
+// Build a compact, JSON-serialisable description of a node + the relations
+// touching it. Sent to the host app (topic.js) so the Map chat can ground its
+// answer on the currently-selected finding instead of the whole topic.
+function _selectionPayload(node) {
+  const md = node.metadata || {};
+  const groups = _neighborsOf(node.id);
+  const relations = [];
+  Object.keys(groups).forEach(kind => {
+    groups[kind].forEach(({ neighbor, dir }) => {
+      relations.push({
+        kind,
+        dir,
+        id: neighbor.id,
+        kindLabel: EDGE_LABEL[kind] || kind,
+        neighborKind: neighbor.kind,
+        neighborLabel: (neighbor.label || "").slice(0, 140),
+      });
+    });
+  });
+  const relationCounts = {};
+  RELATION_KINDS.forEach(k => { relationCounts[k] = (groups[k] || []).length; });
+  return {
+    id: node.id,
+    kind: node.kind,
+    label: node.label || "",
+    summary: md.summary || "",
+    evidence: md.evidence || "",
+    importance: md.importance ?? null,
+    frequency: md.frequency ?? null,
+    relationCounts,
+    relations: relations.slice(0, 60),
+  };
+}
+
+// Tell the host app what is selected. Wrapped in try/catch because the iframe
+// may be sandboxed without same-origin parent access in some embeddings.
+function _postSelection(payload) {
+  try { window.parent.postMessage({ type: "gapmap:select", selection: payload }, "*"); } catch (e) { /* sandboxed */ }
+}
+
 function selectNodeById(nodeId) {
   const node = nodesById[nodeId];
   if (!node) return;
@@ -1008,6 +1051,7 @@ function selectNodeById(nodeId) {
   highlightNode(node);
   zoomToNode(node);
   document.querySelectorAll(".card").forEach(c => c.classList.toggle("active", c.dataset.nodeId === nodeId));
+  _postSelection(_selectionPayload(node));
 }
 
 ["painpoints","workarounds","products","features"].forEach(key => {
@@ -1112,6 +1156,15 @@ const linkSel = g.append("g").attr("stroke","#C9BEAA")
   .attr("stroke", d => d.kind === "source_evidence" ? "#FF8C42" : "#C9BEAA")
   .attr("stroke-opacity", d => d.kind === "source_evidence" ? 0.65 : 0.45);
 
+// Transparent fat hit-area over each edge so the (thin, 1px) relation lines
+// are actually clickable. Sits ABOVE the visible links but BELOW the node
+// layer, so node clicks still win where they overlap. Clicking an edge
+// selects the relation (highlights it + both endpoints + emits selection).
+const hitSel = g.append("g").attr("stroke", "transparent").attr("stroke-width", 12)
+  .style("cursor", "pointer")
+  .selectAll("line").data(links).join("line")
+  .on("click", (e, d) => { e.stopPropagation(); selectEdge(d); });
+
 const nodeSel = g.append("g").selectAll("g")
   .data(Object.values(nodesById)).join("g").attr("class","node");
 nodeSel.append("circle")
@@ -1135,6 +1188,8 @@ nodeSel.call(d3.drag()
 sim.on("tick", () => {
   linkSel.attr("x1", d=>d.source.x).attr("y1", d=>d.source.y)
          .attr("x2", d=>d.target.x).attr("y2", d=>d.target.y);
+  hitSel.attr("x1", d=>d.source.x).attr("y1", d=>d.source.y)
+        .attr("x2", d=>d.target.x).attr("y2", d=>d.target.y);
   nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
 });
 
@@ -1175,6 +1230,61 @@ function highlightNode(node) {
     const sid = typeof l.source === "object" ? l.source.id : l.source;
     const tid = typeof l.target === "object" ? l.target.id : l.target;
     return sid === node.id || tid === node.id;
+  });
+}
+
+// ── edge (relation) selection ──
+// Clicking a relation edge highlights just that edge + its two endpoints,
+// shows an edge-detail panel, and emits the selection so the chat can ground
+// on "this relationship".
+function highlightEdge(d, sid, tid) {
+  nodeSel.classed("dimmed", n => n.id !== sid && n.id !== tid)
+         .classed("highlighted", n => n.id === sid || n.id === tid);
+  linkSel.classed("highlighted", l => l === d);
+}
+
+function showEdgeDetails(d, s, t) {
+  const host = document.getElementById("details");
+  if (!host) return;
+  const _selH = document.querySelector('.acc-head[data-acc="accDetails"]');
+  const _selB = document.getElementById("accDetails");
+  if (_selH && _selB) { _selH.classList.remove("collapsed"); _selB.classList.remove("collapsed"); }
+  const kindLabel = esc(EDGE_LABEL[d.kind] || d.kind);
+  const w = (d.weight != null && d.weight !== "") ? esc(String(d.weight)) : "";
+  const row = (node) => {
+    if (!node) return "";
+    const nk = esc(KIND_LABEL[node.kind] || node.kind);
+    return `<div class="neighbor-row" data-node-id="${esc(node.id)}">
+      <span class="neighbor-kind">${nk}</span>
+      <span class="neighbor-label">${esc(node.label || "(unnamed)")}</span>
+    </div>`;
+  };
+  host.innerHTML = `
+    <div class="node-detail-head"><span class="kind-pill">Relation</span></div>
+    <h3 class="node-title">${kindLabel}${w ? ` <span class="muted">· weight ${w}</span>` : ""}</h3>
+    <h3 class="node-section-title">Connects <span class="muted">2 findings</span></h3>
+    ${row(s)}${row(t)}
+    <div class="muted" style="font-size:11px;margin-top:8px">Click either finding to open it.</div>`;
+  host.querySelectorAll(".neighbor-row[data-node-id]").forEach(el => {
+    el.addEventListener("click", () => selectNodeById(el.dataset.nodeId));
+  });
+}
+
+function selectEdge(d) {
+  const sid = typeof d.source === "object" ? d.source.id : d.source;
+  const tid = typeof d.target === "object" ? d.target.id : d.target;
+  const s = nodesById[sid], t = nodesById[tid];
+  highlightEdge(d, sid, tid);
+  showEdgeDetails(d, s, t);
+  if (s) zoomToNode(s);
+  _postSelection({
+    isEdge: true,
+    kind: d.kind,
+    kindLabel: EDGE_LABEL[d.kind] || d.kind,
+    weight: d.weight ?? null,
+    label: `${EDGE_LABEL[d.kind] || d.kind}: ${(s && s.label) || "?"} ↔ ${(t && t.label) || "?"}`,
+    source: s ? { id: s.id, kind: s.kind, label: s.label || "" } : null,
+    target: t ? { id: t.id, kind: t.kind, label: t.label || "" } : null,
   });
 }
 
@@ -1221,7 +1331,7 @@ function _neighborsOf(nodeId) {
     const neighborId = sid === nodeId ? tid : sid;
     const neighbor = nodesById[neighborId];
     if (!neighbor) return;
-    const kind = l.kind || "related_to";
+    const kind = l.kind || "relates_to";
     (out[kind] ??= []).push({ neighbor, dir: sid === nodeId ? "out" : "in" });
   });
   return out;
@@ -1265,7 +1375,11 @@ function showNodeDetails(node) {
   // Neighbors grouped by edge kind — this is the "linked to" section.
   const groups = _neighborsOf(node.id);
   const groupKeys = Object.keys(groups).sort((a, b) => (groups[b].length - groups[a].length));
-  const relationKinds = ["related_to", "potentially_solves", "could_address", "source_evidence"];
+  // The dense semantic relations are stored as `relates_to` + `co_evidenced`
+  // (NOT `related_to`); listing the wrong kind here meant the Relations
+  // summary was silently empty even when the edges existed. Keep this list in
+  // sync with the SQL filter in topic.js loadMap + RELATION_KINDS below.
+  const relationKinds = ["relates_to", "co_evidenced", "potentially_solves", "could_address", "source_evidence"];
   const relationTotal = relationKinds.reduce((n, k) => n + ((groups[k] || []).length), 0);
   if (relationTotal > 0) {
     const relParts = relationKinds
