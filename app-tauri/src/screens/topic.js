@@ -4162,7 +4162,11 @@ export async function renderTopic(root, { params }) {
       if (id) { try { await api.chatConvDelete(id); } catch {} }
       newConversation(topic);
     });
-    if (anyReady) refreshConvRail(topic);
+    // Always load the saved-conversation rail — listing threads (including the
+    // ones mirrored from the map chat) is a local DB read, NOT an LLM call, so
+    // it must not be gated on anyReady. Gating it left the rail stuck on
+    // "Loading…" and hid map-view chats whenever no provider was connected.
+    refreshConvRail(topic);
     $('#btn-chat-add-key')?.addEventListener('click', () => openByokModal(() => loadChat()));
     // Soft "Enrich now" inside the no-findings hint chip. Fires
     // build+enrich in the background, replaces the hint with a status
@@ -4400,8 +4404,28 @@ export async function renderTopic(root, { params }) {
     contentEl._chatFit = fitChatHeight;
     window.addEventListener('resize', fitChatHeight);
     fitChatHeight();
-    // Re-measure on the next frame too — fonts/icons can shift the top a hair.
+    // Re-measure across the next frames + short delays: the persona banner +
+    // workspace header load ASYNC and shift the chat's top after first paint,
+    // which otherwise leaves the panel sized to a stale (too-tall/too-short)
+    // top → it doesn't fill the page. These re-measures settle it.
     requestAnimationFrame(fitChatHeight);
+    setTimeout(fitChatHeight, 120);
+    setTimeout(fitChatHeight, 400);
+    // Keep it correct on ANY later layout shift (banner dismissed, header
+    // reflow, window zoom) via a ResizeObserver that self-disconnects when the
+    // chat layout leaves the DOM.
+    try {
+      const layoutEl = contentEl.querySelector('.chat-layout');
+      if (layoutEl && 'ResizeObserver' in window) {
+        if (contentEl._chatRO) contentEl._chatRO.disconnect();
+        const ro = new ResizeObserver(() => {
+          if (!layoutEl.isConnected || contentEl.dataset.tab !== 'chat') { ro.disconnect(); return; }
+          fitChatHeight();
+        });
+        ro.observe(document.body);
+        contentEl._chatRO = ro;
+      }
+    } catch {}
   }
 
   // ── Conversation rail (ChatGPT-style saved threads) ──────────────────
