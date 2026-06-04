@@ -4293,10 +4293,44 @@ def cmd_research_semantic_search(
             "results": [],
         }))
         return
-    result = search_posts(
-        query=query, topic=topic, source_type=source,
-        k=k, rerank=not no_rerank,
-    )
+    # Bound the palace read with a wall-clock ceiling. The ChromaDB palace is
+    # NOT safe for concurrent cross-process access — while a collect runs, the
+    # enrich-worker upserts into the same store and a search read can block on
+    # its lock indefinitely, which surfaced as the Find page stuck on
+    # "Searching…" forever. On timeout we return a graceful "busy" payload so
+    # the UI clears its skeletons and tells the user to retry. Env-tunable.
+    # Generous ceiling: the warm sidecar daemon answers in ~20ms, but when it
+    # falls back to a cold one-shot subprocess (under lock contention) the ONNX
+    # model reload alone is ~12-15s — so the ceiling must clear that, else a
+    # search that WOULD succeed gets wrongly reported as "busy". 25s clears a
+    # cold load yet still bounds a genuinely stuck palace read.
+    import threading
+    timeout_s = float(os.environ.get("GAPMAP_PALACE_SEARCH_TIMEOUT") or 25.0)
+    box: dict = {}
+
+    def _run() -> None:
+        try:
+            box["v"] = search_posts(
+                query=query, topic=topic, source_type=source,
+                k=k, rerank=not no_rerank,
+            )
+        except Exception as e:  # noqa: BLE001 — any failure → graceful JSON
+            box["e"] = e
+
+    t = threading.Thread(target=_run, name="palace-search", daemon=True)
+    t.start()
+    t.join(timeout_s)
+    if t.is_alive():
+        typer.echo(json.dumps({
+            "ok": False, "busy": True,
+            "reason": "Search index is busy (a collection is running). Try again in a moment.",
+            "results": [],
+        }))
+        return
+    if "e" in box:
+        typer.echo(json.dumps({"ok": False, "error": str(box["e"]), "results": []}))
+        return
+    result = box.get("v") or {"ok": True, "results": []}
     typer.echo(json.dumps(result, default=str, ensure_ascii=False))
 
 

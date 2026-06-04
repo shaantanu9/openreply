@@ -119,16 +119,30 @@ async function runSearch(root) {
   state.error = null;
   $('#find-body').innerHTML = renderResults();
   try {
-    const r = await api.semanticSearch(state.query, {
+    // Safety net: never let the page hang on "Searching…" if the backend
+    // stalls (e.g. palace lock contention). The backend also self-bounds
+    // (GAPMAP_PALACE_SEARCH_TIMEOUT, ~8s) and returns a "busy" payload.
+    const searchP = api.semanticSearch(state.query, {
       topic: state.topic || undefined,
       source: state.source || undefined,
       k: state.k,
     });
+    const timeoutP = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Search timed out — the index may be busy during a collection. Try again in a moment.')), 30000));
+    const r = await Promise.race([searchP, timeoutP]);
     if (r?.skipped) {
       // Palace not installed / not ready after all — re-render the prompt.
       const ms = await api.palaceModelStatus().catch(() => ({ installed: false, ready: false }));
       state.modelStatus = ms;
       renderNotReady(root, ms);
+      return;
+    }
+    if (r && r.ok === false) {
+      // Graceful backend failure (busy index, transient error) — show why.
+      state.error = r.busy
+        ? (r.reason || 'Search index is busy — try again in a moment.')
+        : (r.error || 'Search failed. Try again.');
+      state.rows = [];
       return;
     }
     state.rows = Array.isArray(r?.results) ? r.results : [];
