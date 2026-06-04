@@ -9763,3 +9763,19 @@ body[data-sidebar="hidden"] .sidebar-search-wrap { display: none; }
 .mapchat-err-head i { width: 16px; height: 16px; }
 .mapchat-err-hint { margin-top: 6px; color: var(--ink-2); font-size: var(--fs-13); line-height: 1.55; }
 .mapchat-err-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Quick-extract panel refresh controls (topic.js renderQuickExtract) ──── */
+.qe-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 0 0 10px; flex-wrap: wrap;
+}
+.quick-extract-section > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  cursor: pointer; list-style: none;
+}
+.quick-extract-section > summary::-webkit-details-marker { display: none; }
+.quick-extract-section > summary .qe-sec-label::before { content: '▸ '; color: var(--ink-3); }
+.quick-extract-section[open] > summary .qe-sec-label::before { content: '▾ '; }
+.qe-section-refresh { opacity: 0; transition: opacity .12s ease; flex: 0 0 auto; }
+.quick-extract-section > summary:hover .qe-section-refresh,
+.qe-section-refresh:focus-visible { opacity: 1; }

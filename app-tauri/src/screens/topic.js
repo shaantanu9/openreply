@@ -1046,13 +1046,19 @@ function renderQuickExtract(result) {
         }).join('');
     return `
       <details class="quick-extract-section" ${list.length > 0 ? 'open' : ''}>
-        <summary>${s.label} <span class="muted">(${list.length})</span></summary>
+        <summary>
+          <span class="qe-sec-label">${s.label} <span class="muted">(${list.length})</span></span>
+          <button type="button" class="btn btn-ghost btn-xs icon-btn qe-section-refresh" data-qe-refresh="${s.key}" title="Refresh ${esc(s.label)}"><i data-lucide="refresh-cw"></i></button>
+        </summary>
         <div class="quick-extract-body">${items}</div>
       </details>
     `;
   }).join('');
   return `
-    <p class="muted" style="font-size:11px;margin:0 0 8px">Preview only — run <b>Build &amp; enrich</b> to persist these into the graph.</p>
+    <div class="qe-panel-head">
+      <span class="muted" style="font-size:11px">Preview only — run <b>Build &amp; enrich</b> to persist these into the graph.</span>
+      <button type="button" class="btn btn-ghost btn-sm btn-bordered icon-btn" id="qe-refresh-all" title="Re-run extraction for all categories"><i data-lucide="refresh-cw"></i> Refresh all</button>
+    </div>
     ${html}
   `;
 }
@@ -4884,21 +4890,42 @@ export async function renderTopic(root, { params }) {
         if (!undone) location.hash = '#/';
       } catch (e) { showToast('Delete failed', e?.message || String(e), 'err'); }
     };
-    $('#btn-quick-extract', contentEl)?.addEventListener('click', async () => {
+    // Reusable runner — used by the initial "Quick extract" button AND by the
+    // per-section + "Refresh all" refresh buttons rendered inside the panel.
+    // quickExtractGaps extracts all four categories in one pass, so every
+    // refresh re-runs the full preview; the per-section button is a convenient
+    // entry point that shows progress and repaints in place.
+    let _qeRunning = false;
+    const runQuickExtract = async (label) => {
+      if (_qeRunning) return;
+      _qeRunning = true;
       const status = $('#quick-extract-status', contentEl);
       const panel  = $('#quick-extract-panel', contentEl);
-      status.textContent = 'Extracting… 30-90 seconds.';
-      panel.hidden = true;
+      if (status) status.textContent = `${label || 'Extracting'}… 30-90 seconds.`;
       try {
         const result = await api.quickExtractGaps(topic);
-        status.textContent = '';
-        panel.hidden = false;
-        panel.innerHTML = renderQuickExtract(result);
-        window.refreshIcons?.();
+        if (status) status.textContent = '';
+        if (panel) {
+          panel.hidden = false;
+          panel.innerHTML = renderQuickExtract(result);
+          window.refreshIcons?.();
+          // Wire the refresh controls the render just produced.
+          panel.querySelector('#qe-refresh-all')?.addEventListener('click', () => runQuickExtract('Refreshing all'));
+          panel.querySelectorAll('[data-qe-refresh]').forEach((b) => {
+            b.addEventListener('click', (e) => {
+              // Don't let the click toggle the <details> it sits inside.
+              e.preventDefault(); e.stopPropagation();
+              runQuickExtract(`Refreshing ${b.getAttribute('title') || 'section'}`);
+            });
+          });
+        }
       } catch (e) {
-        status.textContent = `Error: ${e?.message || e}`;
+        if (status) status.textContent = `Error: ${e?.message || e}`;
+      } finally {
+        _qeRunning = false;
       }
-    });
+    };
+    $('#btn-quick-extract', contentEl)?.addEventListener('click', () => runQuickExtract('Extracting'));
 
     // ─── Run all analyses ────────────────────────────────────────────────
     $('#cb-autorun', contentEl)?.addEventListener('change', (e) => {
