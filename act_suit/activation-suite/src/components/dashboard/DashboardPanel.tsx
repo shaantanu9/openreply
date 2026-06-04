@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { getUserDisplayName, useSession } from "@/hooks/use-session";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { ROUTES } from "@/lib/constants";
 import {
   deactivateDeviceWeb,
@@ -31,6 +32,13 @@ function formatDate(iso: string | null): string {
   } catch {
     return iso;
   }
+}
+
+// A device is "active now" if it checked in (validate heartbeat) recently.
+function activeNow(iso: string | null): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return !isNaN(t) && Date.now() - t < 15 * 60 * 1000;
 }
 
 function prettyPlan(planId: string, livePass: boolean, isTrial: boolean): string {
@@ -72,6 +80,10 @@ export function DashboardPanel() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Beta: auto-issue the key from the invite code stored at sign-up.
+  const [betaClaim, setBetaClaim] = useState<"idle" | "working" | "done" | "error">("idle");
+  const meta = (user?.user_metadata || {}) as Record<string, unknown>;
+  const isFounding = meta.beta_founding === true || typeof meta.invite_code === "string";
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -95,6 +107,39 @@ export function DashboardPanel() {
       reload().catch(() => undefined);
     }
   }, [status, user, router, reload]);
+
+  // Once the user has a session but no licence yet, redeem the invite code
+  // they signed up with to issue their founding-member key (consumes the
+  // coupon). Runs once; safe if they already have a key.
+  useEffect(() => {
+    if (status !== "ready" || !user || loading || licence) return;
+    const code = typeof meta.invite_code === "string" ? meta.invite_code.trim() : "";
+    if (!code || betaClaim !== "idle") return;
+    setBetaClaim("working");
+    (async () => {
+      try {
+        const sb = getSupabaseBrowserClient();
+        const { data } = await sb.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) { setBetaClaim("error"); return; }
+        const res = await fetch("/api/v1/coupon/redeem", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: JSON.stringify({ coupon_code: code }),
+        }).then((x) => x.json());
+        if (res?.ok || res?.error === "already_has_license") {
+          setBetaClaim("done");
+          if (res?.ok) setBanner({ kind: "success", msg: "🎉 Welcome aboard, founding member — your Pro key is ready below. Download Gap Map and activate it." });
+          await reload();
+        } else {
+          setBetaClaim("error");
+          setBanner({ kind: "info", msg: `We couldn't auto-issue your key (${res?.error || "error"}). You can redeem it on the Redeem page.` });
+        }
+      } catch {
+        setBetaClaim("error");
+      }
+    })();
+  }, [status, user, loading, licence, betaClaim, meta.invite_code, reload]);
 
   async function handleStartTrial() {
     setActing("trial");
@@ -165,14 +210,23 @@ export function DashboardPanel() {
       <main className="mx-auto max-w-[960px] px-8 py-14">
         <div className="mb-10 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="font-serif text-[36px] font-normal leading-tight tracking-[-1px] text-[var(--dark)]">
-              <em className="italic text-[var(--orange)]">Dashboard</em>
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="font-serif text-[36px] font-normal leading-tight tracking-[-1px] text-[var(--dark)]">
+                <em className="italic text-[var(--orange)]">Dashboard</em>
+              </h1>
+              {isFounding ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[rgba(224,123,60,0.35)] bg-[var(--orange-pale)] px-[10px] py-[3px] text-[11px] font-semibold uppercase tracking-[0.6px] text-[var(--orange)]">
+                  ★ Founding beta member
+                </span>
+              ) : null}
+            </div>
             <p className="mt-2 max-w-[480px] text-[15px] font-light text-[var(--muted)]">
               Signed in as <strong className="font-medium text-[var(--dark)]">{name}</strong>.
               {licence
                 ? " Your activation key, devices, and billing live here."
-                : " Pick a path below to get your Gap Map activation key."}
+                : betaClaim === "working"
+                  ? " Setting up your founding membership…"
+                  : " Pick a path below to get your Gap Map activation key."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -198,9 +252,11 @@ export function DashboardPanel() {
         ) : null}
 
         {/* ── Top: either KEY-CARD (has licence) or GET-KEY-PATHS (no licence) ── */}
-        {loading ? (
+        {loading || (betaClaim === "working" && !licence) ? (
           <section className="mb-8 rounded-[24px] border border-[var(--border-strong)] bg-white p-7 text-center text-[14px] text-[var(--muted)]">
-            Loading your licence…
+            {betaClaim === "working" && !licence
+              ? "✨ Issuing your founding-member key…"
+              : "Loading your licence…"}
           </section>
         ) : licence ? (
           /* ─── Has licence → KEY CARD ─── */
@@ -411,8 +467,11 @@ export function DashboardPanel() {
                     className="flex items-center justify-between rounded-[10px] border border-[var(--border)] bg-[var(--cream-mid)] px-[14px] py-3"
                   >
                     <div>
-                      <div className="text-[13px] font-medium text-[var(--dark)]">
+                      <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--dark)]">
                         {d.os || "unknown"} · {d.arch || "unknown"}
+                        {activeNow(d.lastSeenAt) ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#E7F3EA] px-2 py-[1px] text-[10.5px] font-semibold text-[#2d7a3e]">🟢 Active now</span>
+                        ) : null}
                       </div>
                       <div className="text-[11px] text-[var(--muted-light)]">
                         Activated {formatDate(d.activatedAt)} · last seen {formatDate(d.lastSeenAt)} · fingerprint{" "}

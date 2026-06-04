@@ -85,3 +85,27 @@ Download for Mac: https://gapmap.myind.ai/download
 Explore live gap maps: https://gapmap.myind.ai/explore`;
   return send(to, "Welcome to Gap Map", html, text);
 }
+
+/** Beta invite — sent when the operator invites someone off the waitlist. */
+export async function sendBetaInviteEmail(to: string, code: string, name?: string): Promise<SendResult> {
+  const hi = name && name.trim() ? `${name.trim()}, ` : "";
+  const signUp = `https://gapmap.myind.ai/sign-in`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F6F3EE;-webkit-font-smoothing:antialiased">
+<span style="display:none;max-height:0;overflow:hidden;opacity:0">You're off the waitlist — your Gap Map beta invite is inside</span>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F6F3EE"><tr><td align="center" style="padding:34px 16px">
+ <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+  <tr><td style="padding:2px 6px 20px"><table role="presentation" cellpadding="0" cellspacing="0"><tr>
+   <td style="vertical-align:middle"><div style="width:32px;height:32px;border-radius:9px;background:#FF8C42;text-align:center;font-family:Arial,sans-serif;font-weight:800;font-size:17px;line-height:32px;color:#fff">G</div></td>
+   <td style="vertical-align:middle;padding-left:11px;font-family:Georgia,serif;font-weight:700;font-size:18px;color:#1A1614">Gap&nbsp;Map</td></tr></table></td></tr>
+  <tr><td style="background:#fff;border:1px solid #ECE6DC;border-radius:18px;padding:32px 30px;box-shadow:0 8px 28px rgba(26,22,20,0.05)"><div style="font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#FF8C42;margin:0 0 8px">You&rsquo;re off the waitlist</div><h1 style="font-family:Georgia,serif;font-size:23px;line-height:1.22;color:#1A1614;margin:0 0 10px;font-weight:600">${hi}you&rsquo;re <span style="font-family:Georgia,serif;font-style:italic;color:#FF8C42">invited</span> to the beta</h1><p style="font-family:Arial,sans-serif;font-size:14.5px;line-height:1.65;color:#4A4339;margin:0 0 12px">We saved you a founding-member spot. Use this single-use invite code when you create your account &mdash; it unlocks Pro, free, for the beta.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0"><tr><td align="center" style="background:#FFF4EA;border:1px solid #FFE0C2;border-radius:14px;padding:18px"><div style="font-family:ui-monospace,Menlo,monospace;font-size:24px;font-weight:800;letter-spacing:4px;color:#9a4a12">${code}</div></td></tr></table><table role="presentation" width=100% cellpadding="0" cellspacing="0" style="margin:12px 0 4px"><tr><td style="border-radius:11px;background:#FF8C42;width:100%;text-align:center;"><a href="${signUp}" style="display:inline-block;padding:13px 30px;font-family:Arial,sans-serif;font-size:15px;font-weight:700;color:#fff;text-decoration:none;border-radius:11px">Claim my founding spot &rarr;</a></td></tr></table><p style="font-family:Arial,sans-serif;font-size:12.5px;line-height:1.55;color:#8A8278;margin:10px 0 0">This invite is tied to <b>${to}</b> and works once. Seats are limited &mdash; claim it before it&rsquo;s gone.</p></td></tr>
+  <tr><td style="padding:16px 12px 0;font-family:Arial,sans-serif;font-size:12px;line-height:1.7;color:#8A8278;text-align:center">Gap&nbsp;Map · research intelligence for product teams<br><span style="color:#b8b0a6">Local-first · BYOK · your data stays on your machine</span></td></tr>
+ </table></td></tr></table></body></html>`;
+  const text = `${hi}you're invited to the Gap Map beta.
+
+Your single-use invite code: ${code}
+
+Create your account and enter the code: ${signUp}
+Tied to ${to}. Seats are limited.`;
+  return send(to, "You're in — your Gap Map beta invite 🎉", html, text);
+}

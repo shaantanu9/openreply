@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { CouponsSection } from "@/components/admin/CouponsSection";
+import { WaitlistSection } from "@/components/admin/WaitlistSection";
+import { AdminModal, type ModalCfg } from "@/components/admin/AdminModal";
+
+type Subject = {
+  email: string; status: string; planId: string; isTrial: boolean;
+  maxDevices: number; devicesUsed: number; expiresAt: string | null;
+  trialEndsAt: string | null; createdAt: string | null; deletedAt: string | null;
+};
 
 type LicenseRow = {
   email: string;
@@ -14,6 +23,7 @@ type LicenseRow = {
   trialEndsAt: string | null;
   createdAt: string | null;
   lastSeenAt: string | null;
+  deletedAt: string | null;
 };
 
 type Detail = {
@@ -22,6 +32,7 @@ type Detail = {
     status: string; planId: string; livePassActive: boolean; isTrial: boolean;
     maxDevices: number; expiresAt: string | null; trialEndsAt: string | null;
     createdAt: string | null; activationKey: string | null; activationKeyPreview: string | null;
+    deletedAt: string | null;
   };
   devices: Array<{ signaturePreview: string; os: string; arch: string; activatedAt: string | null; lastSeenAt: string | null }>;
   attempts: Array<{ outcome: string; errorCode: string | null; httpStatus: number | null; devicePreview: string | null; createdAt: string | null }>;
@@ -47,6 +58,13 @@ function daysLeft(iso: string | null): number | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
   return isNaN(t) ? null : Math.ceil((t - Date.now()) / 86_400_000);
+}
+// A device is "active" if it checked in (validate heartbeat) within this window.
+const ONLINE_MS = 15 * 60 * 1000;
+function isActive(iso: string | null): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return !isNaN(t) && Date.now() - t < ONLINE_MS;
 }
 function relative(iso: string | null): string {
   if (!iso) return "never";
@@ -81,9 +99,11 @@ export default function AdminPage() {
   const [masterOn, setMasterOn] = useState(false);
   const [q, setQ] = useState("");
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [view, setView] = useState<"users" | "coupons" | "waitlist">("users");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [modal, setModal] = useState<ModalCfg>(null);
 
   const loadLicenses = useCallback(async () => {
     const r = await fetch("/api/v1/admin/licenses").then((x) => x.json()).catch(() => ({}));
@@ -123,12 +143,107 @@ export default function AdminPage() {
     loadLicenses();
     if (selected === email) openUser(email);
   }
-  function ask(email: string, action: "extend_trial" | "extend_expiry" | "set_max_devices", label: string, def: string) {
-    const v = window.prompt(label, def);
-    if (v == null) return;
-    const n = parseInt(v, 10);
-    if (!n) return;
-    post(email, action, action === "set_max_devices" ? { max_devices: n } : { days: n });
+  // Destructive user actions hit /api/v1/admin/user (soft/hard delete, restore).
+  async function postUser(email: string, action: "soft_delete" | "restore" | "hard_delete", confirm?: string) {
+    setBusy(email + action); setNote(null); setMenuFor(null);
+    const r = await fetch("/api/v1/admin/user", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, email, confirm }) }).then((x) => x.json()).catch(() => ({}));
+    setBusy(null);
+    const verb = action === "hard_delete" ? "permanently deleted" : action === "restore" ? "restored" : "soft-deleted";
+    setNote({ msg: r.ok ? `${email}: ${verb} ✓${action === "hard_delete" ? " — email is free to reuse" : ""}` : `${email}: ${r.error || r.message || "failed"}`, ok: !!r.ok });
+    if (action === "hard_delete" && r.ok) { setSelected(null); setDetail(null); }
+    else if (selected === email) openUser(email);
+    loadLicenses();
+  }
+  async function pwdAction(email: string, body: Record<string, unknown>, okMsg: string) {
+    setBusy(email + String(body.action)); setNote(null); setMenuFor(null);
+    const r = await fetch("/api/v1/admin/user", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, ...body }) }).then((x) => x.json()).catch(() => ({}));
+    setBusy(null);
+    setNote({ msg: r.ok ? `${email}: ${okMsg} ✓` : `${email}: ${r.error || r.message || "failed"}`, ok: !!r.ok });
+    if (selected === email) openUser(email);
+  }
+
+  // ── Modal openers (replace window.confirm / prompt; show current state) ──
+  function openModal(cfg: ModalCfg) { setMenuFor(null); setNote(null); setModal(cfg); }
+  const subjOf = (r: LicenseRow): Subject => ({
+    email: r.email, status: r.status, planId: r.planId, isTrial: r.isTrial,
+    maxDevices: r.maxDevices, devicesUsed: r.devicesUsed, expiresAt: r.expiresAt,
+    trialEndsAt: r.trialEndsAt, createdAt: r.createdAt, deletedAt: r.deletedAt,
+  });
+  const planText = (s: Subject) => (s.isTrial ? "Pro — trial" : s.planId);
+  const expText = (iso: string | null) => { const dl = daysLeft(iso); return iso ? `${fmtDate(iso)}${dl != null ? (dl <= 0 ? " (expired)" : ` (${dl}d left)`) : ""}` : "—"; };
+  const stateRows = (s: Subject): { label: string; value: ReactNode }[] => [
+    { label: "User", value: s.email },
+    { label: "Status", value: s.deletedAt ? "soft-deleted" : s.status },
+    { label: "Plan", value: planText(s) },
+    { label: "Devices", value: `${s.devicesUsed} / ${s.maxDevices}` },
+    { label: "Joined", value: fmtDate(s.createdAt) },
+  ];
+
+  function openExtendTrial(s: Subject) {
+    openModal({ title: "Extend trial", tone: "primary",
+      context: [{ label: "User", value: s.email }, { label: "Plan", value: planText(s) }, { label: "Trial ends", value: expText(s.trialEndsAt) }],
+      body: "Adds days to the trial. If it already ended, it renews from today.",
+      input: { kind: "number", label: "Days to add", default: "14", placeholder: "14" },
+      confirmText: "Extend trial", onConfirm: (v) => { const n = parseInt(v, 10); if (n) post(s.email, "extend_trial", { days: n }); } });
+  }
+  function openExtendExpiry(s: Subject) {
+    openModal({ title: "Extend paid expiry", tone: "primary",
+      context: [{ label: "User", value: s.email }, { label: "Plan", value: planText(s) }, { label: "Paid expiry", value: expText(s.expiresAt) }],
+      body: "Adds days to the paid licence expiry (renews from today if already expired).",
+      input: { kind: "number", label: "Days to add", default: "365", placeholder: "365" },
+      confirmText: "Extend expiry", onConfirm: (v) => { const n = parseInt(v, 10); if (n) post(s.email, "extend_expiry", { days: n }); } });
+  }
+  function openSetSeats(s: Subject) {
+    openModal({ title: "Set device seats", tone: "primary",
+      context: [{ label: "User", value: s.email }, { label: "Current limit", value: String(s.maxDevices) }, { label: "In use", value: `${s.devicesUsed} device(s)` }],
+      body: "Changes how many devices this licence can activate at once.",
+      input: { kind: "number", label: "New device-seat limit", default: String(s.maxDevices || 1), placeholder: "2" },
+      confirmText: "Update seats", onConfirm: (v) => { const n = parseInt(v, 10); if (n) post(s.email, "set_max_devices", { max_devices: n }); } });
+  }
+  function openResetDevices(s: Subject) {
+    openModal({ title: "Reset devices", tone: "danger",
+      context: [{ label: "User", value: s.email }, { label: "Active devices", value: `${s.devicesUsed} / ${s.maxDevices}` }],
+      body: "Clears ALL activated devices, freeing every seat. The user must re-activate Gap Map on each device.",
+      confirmText: "Reset devices", onConfirm: () => post(s.email, "reset_devices") });
+  }
+  function openDisable(s: Subject) {
+    openModal({ title: "Disable licence (revoke)", tone: "danger",
+      context: stateRows(s),
+      body: "Revokes the licence — the desktop app locks on its next validate. Reversible: re-enable anytime.",
+      confirmText: "Disable licence", onConfirm: () => post(s.email, "revoke") });
+  }
+  function openExpire(s: Subject) {
+    openModal({ title: "Expire now", tone: "danger",
+      context: [{ label: "User", value: s.email }, { label: "Plan", value: planText(s) }, { label: "Current expiry", value: expText(s.isTrial ? s.trialEndsAt : s.expiresAt) }],
+      body: "Sets the licence to expired as of now — the desktop app locks on its next check.",
+      confirmText: "Expire now", onConfirm: () => post(s.email, "expire") });
+  }
+  function openSoftDelete(s: Subject) {
+    openModal({ title: "Soft delete", tone: "danger",
+      context: stateRows(s),
+      body: "Disables the licence, frees device seats, and blocks website login. All data is kept — you can Restore later. Does NOT free the email for re-signup.",
+      confirmText: "Soft delete", onConfirm: () => postUser(s.email, "soft_delete") });
+  }
+  function openHardDelete(s: Subject) {
+    openModal({ title: "Delete permanently", tone: "danger",
+      context: stateRows(s),
+      body: "Erases the account, licence, devices, workspaces, and ALL data — and frees the email so it can sign up + activate again. This cannot be undone.",
+      input: { kind: "text", label: "Type the email to confirm", placeholder: s.email },
+      requireMatch: s.email, confirmText: "Delete permanently",
+      onConfirm: (v) => postUser(s.email, "hard_delete", v.trim()) });
+  }
+  function openSendReset(s: Subject) {
+    openModal({ title: "Send password-reset email", tone: "primary",
+      context: [{ label: "User", value: s.email }, { label: "Status", value: s.deletedAt ? "soft-deleted" : s.status }],
+      body: "Emails a 6-digit reset code. The user enters it on the Forgot-password screen to set a new password.",
+      confirmText: "Send reset email", onConfirm: () => pwdAction(s.email, { action: "send_reset" }, "reset code emailed") });
+  }
+  function openSetPassword(s: Subject) {
+    openModal({ title: "Set password", tone: "primary",
+      context: [{ label: "User", value: s.email }, { label: "Status", value: s.deletedAt ? "soft-deleted" : s.status }],
+      body: "Sets a new password immediately. Share it with the user — they can change it later from Forgot password.",
+      input: { kind: "password", label: "New password", placeholder: "••••••••", hint: "Minimum 8 characters", minLen: 8 },
+      confirmText: "Set password", onConfirm: (v) => pwdAction(s.email, { action: "set_password", new_password: v }, "password updated") });
   }
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text).catch(() => {});
@@ -174,6 +289,11 @@ export default function AdminPage() {
   // ── Detail view ──────────────────────────────────────────────────────────
   if (selected) {
     const d = detail?.licence;
+    const dSubj: Subject | null = d ? {
+      email: d.email, status: d.status, planId: d.planId, isTrial: d.isTrial,
+      maxDevices: d.maxDevices, devicesUsed: detail?.devices.length ?? 0,
+      expiresAt: d.expiresAt, trialEndsAt: d.trialEndsAt, createdAt: d.createdAt, deletedAt: d.deletedAt,
+    } : null;
     const dateIso = d ? (d.isTrial ? d.trialEndsAt : d.expiresAt) : null;
     const dl = daysLeft(dateIso);
     const actBtn = (label: string, fn: () => void, kind: "primary" | "danger" | "ghost" = "ghost") => (
@@ -199,19 +319,31 @@ export default function AdminPage() {
                 {statusPill(d.status)} {planPill(d.planId, d.isTrial)}
                 {d.livePassActive ? <Pill text="Live Pass" fg={C.green} bg={C.greenBg} /> : null}
               </div>
-              <p style={{ color: C.ink3, fontSize: 13, margin: "0 0 18px" }}>Joined {fmtDate(d.createdAt)} · {detail!.devices.length} device(s)</p>
+              <p style={{ color: C.ink3, fontSize: 13, margin: "0 0 18px" }}>
+                Joined {fmtDate(d.createdAt)} · {detail!.devices.length} / {d.maxDevices} device(s)
+                {(() => { const on = detail!.devices.filter((dv) => isActive(dv.lastSeenAt)).length; return on > 0 ? <> · <span style={{ color: C.green, fontWeight: 700 }}>🟢 {on} active now</span></> : null; })()}
+              </p>
 
               {/* Actions */}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}>
                 {d.status === "active"
-                  ? actBtn("Disable (revoke)", () => post(d.email, "revoke"), "danger")
+                  ? actBtn("Disable (revoke)", () => openDisable(dSubj!), "danger")
                   : actBtn("Enable (reactivate)", () => post(d.email, "reactivate"), "primary")}
-                {actBtn("Extend trial…", () => ask(d.email, "extend_trial", `Extend TRIAL for ${d.email} by how many days?`, "14"))}
-                {actBtn("Extend paid expiry…", () => ask(d.email, "extend_expiry", `Extend PAID expiry for ${d.email} by how many days?`, "365"))}
-                {actBtn("Set device seats…", () => ask(d.email, "set_max_devices", `Device-seat limit for ${d.email}?`, String(d.maxDevices || 1)))}
-                {actBtn("Reset devices", () => { if (window.confirm(`Clear ALL devices for ${d.email}? (frees seats)`)) post(d.email, "reset_devices"); })}
-                {actBtn("Expire now", () => { if (window.confirm(`Expire ${d.email}'s licence now?`)) post(d.email, "expire"); }, "danger")}
+                {actBtn("Extend trial…", () => openExtendTrial(dSubj!))}
+                {actBtn("Extend paid expiry…", () => openExtendExpiry(dSubj!))}
+                {actBtn("Set device seats…", () => openSetSeats(dSubj!))}
+                {actBtn("Reset devices", () => openResetDevices(dSubj!))}
+                {actBtn("Expire now", () => openExpire(dSubj!), "danger")}
+                <span style={{ width: 1, alignSelf: "stretch", background: C.line, margin: "0 2px" }} />
+                {actBtn("Send reset email", () => openSendReset(dSubj!))}
+                {actBtn("Set password…", () => openSetPassword(dSubj!))}
+                <span style={{ width: 1, alignSelf: "stretch", background: C.line, margin: "0 2px" }} />
+                {d.deletedAt
+                  ? actBtn("♻ Restore user", () => postUser(d.email, "restore"), "primary")
+                  : actBtn("Soft delete", () => openSoftDelete(dSubj!), "danger")}
+                {actBtn("🗑 Delete permanently", () => openHardDelete(dSubj!), "danger")}
               </div>
+              {d.deletedAt ? <div style={{ fontSize: 12.5, marginTop: -14, marginBottom: 18, color: C.amber }}>⚠ Soft-deleted {fmtDate(d.deletedAt)} — login blocked & licence disabled. Use Restore to re-enable, or Delete permanently to free the email.</div> : null}
 
               {/* Licence facts */}
               <Section title="Licence">
@@ -233,7 +365,7 @@ export default function AdminPage() {
               <Section title={`Activated devices (${detail!.devices.length})`}>
                 {detail!.devices.length === 0 ? <Empty text="No devices activated." /> : (
                   <MiniTable head={["Device", "Fingerprint", "Activated", "Last seen"]} rows={detail!.devices.map((dv) => [
-                    `${dv.os} · ${dv.arch}`, `${dv.signaturePreview}…`, fmtDateTime(dv.activatedAt), relative(dv.lastSeenAt),
+                    `${dv.os} · ${dv.arch}`, `${dv.signaturePreview}…`, fmtDateTime(dv.activatedAt), `${isActive(dv.lastSeenAt) ? "🟢 " : ""}${relative(dv.lastSeenAt)}`,
                   ])} />
                 )}
               </Section>
@@ -253,6 +385,7 @@ export default function AdminPage() {
             </>
           )}
         </div>
+        <AdminModal cfg={modal} busy={!!busy} onClose={() => setModal(null)} />
       </main>
     );
   }
@@ -286,6 +419,18 @@ export default function AdminPage() {
           </div>
         </header>
 
+        <div style={{ display: "flex", gap: 4, marginBottom: 18, borderBottom: `1px solid ${C.line}` }}>
+          {([["users", "Users"], ["coupons", "Coupons / codes"], ["waitlist", "Waitlist"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => { setView(k); setSelected(null); }} style={{
+              padding: "9px 16px", border: "none", background: "none", cursor: "pointer",
+              fontSize: 13.5, fontWeight: 700, color: view === k ? C.ink : C.ink3,
+              borderBottom: `2px solid ${view === k ? C.orange : "transparent"}`, marginBottom: -1,
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {view === "coupons" ? <CouponsSection /> : view === "waitlist" ? <WaitlistSection /> : (
+        <>
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {statCard("Total users", stats.total, C.ink)}
           {statCard("Active", stats.active, C.green)}
@@ -318,7 +463,8 @@ export default function AdminPage() {
                   return (
                     <tr key={r.email + (r.activationKeyPreview || "")} style={{ background: idx % 2 ? "#fcfbf9" : C.panel }}>
                       <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}` }}>
-                        <button onClick={() => openUser(r.email)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", fontWeight: 600, color: C.blue, fontSize: 13 }}>{r.email}</button>
+                        <button onClick={() => openUser(r.email)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", fontWeight: 600, color: r.deletedAt ? C.ink3 : C.blue, fontSize: 13, textDecoration: r.deletedAt ? "line-through" : "none" }}>{r.email}</button>
+                        {r.deletedAt ? <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: C.amber, background: C.amberBg, padding: "1px 6px", borderRadius: 6 }}>SOFT-DELETED</span> : null}
                         <div style={{ color: C.ink3, fontSize: 11.5, marginTop: 1 }}>joined {fmtDate(r.createdAt)}</div>
                       </td>
                       <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap" }}>{planPill(r.planId, r.isTrial)}</td>
@@ -327,7 +473,7 @@ export default function AdminPage() {
                       <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, color: expFg, whiteSpace: "nowrap" }}>
                         {dateIso ? <>{fmtDate(dateIso)} <span style={{ color: C.ink3 }}>· {dl != null && dl <= 0 ? "expired" : `${dl}d`}</span></> : <span style={{ color: C.ink3 }}>perpetual</span>}
                       </td>
-                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, color: C.ink2, whiteSpace: "nowrap" }}>{relative(r.lastSeenAt)}</td>
+                      <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, color: isActive(r.lastSeenAt) ? C.green : C.ink2, whiteSpace: "nowrap", fontWeight: isActive(r.lastSeenAt) ? 700 : 400 }}>{isActive(r.lastSeenAt) ? "🟢 active" : relative(r.lastSeenAt)}</td>
                       <td style={{ padding: "11px 14px", borderBottom: `1px solid ${C.line}`, fontFamily: "ui-monospace, monospace", color: C.ink3 }}>…{r.activationKeyPreview || "????"}</td>
                       <td style={{ padding: "8px 14px", borderBottom: `1px solid ${C.line}`, position: "relative", textAlign: "right" }}>
                         <button onClick={() => setMenuFor(open ? null : r.email)} disabled={!!busy && busy.startsWith(r.email)}
@@ -339,13 +485,21 @@ export default function AdminPage() {
                               {mItem("View details →", () => openUser(r.email))}
                               <div style={{ height: 1, background: C.line, margin: "5px 0" }} />
                               {r.status === "active"
-                                ? mItem("Disable (revoke)", () => post(r.email, "revoke"), true)
+                                ? mItem("Disable (revoke)", () => openDisable(subjOf(r)), true)
                                 : mItem("Enable (reactivate)", () => post(r.email, "reactivate"))}
-                              {mItem("Extend trial…", () => ask(r.email, "extend_trial", `Extend TRIAL for ${r.email} by how many days?`, "14"))}
-                              {mItem("Extend paid expiry…", () => ask(r.email, "extend_expiry", `Extend PAID expiry for ${r.email} by how many days?`, "365"))}
-                              {mItem("Set device seats…", () => ask(r.email, "set_max_devices", `Device-seat limit for ${r.email}?`, String(r.maxDevices || 1)))}
-                              {mItem("Reset devices", () => { if (window.confirm(`Clear ALL devices for ${r.email}? (frees seats)`)) post(r.email, "reset_devices"); })}
-                              {mItem("Expire now", () => { if (window.confirm(`Expire ${r.email}'s licence now?`)) post(r.email, "expire"); }, true)}
+                              {mItem("Extend trial…", () => openExtendTrial(subjOf(r)))}
+                              {mItem("Extend paid expiry…", () => openExtendExpiry(subjOf(r)))}
+                              {mItem("Set device seats…", () => openSetSeats(subjOf(r)))}
+                              {mItem("Reset devices", () => openResetDevices(subjOf(r)))}
+                              {mItem("Expire now", () => openExpire(subjOf(r)), true)}
+                              <div style={{ height: 1, background: C.line, margin: "5px 0" }} />
+                              {mItem("Send reset email", () => openSendReset(subjOf(r)))}
+                              {mItem("Set password…", () => openSetPassword(subjOf(r)))}
+                              <div style={{ height: 1, background: C.line, margin: "5px 0" }} />
+                              {r.deletedAt
+                                ? mItem("♻ Restore user", () => postUser(r.email, "restore"))
+                                : mItem("Soft delete", () => openSoftDelete(subjOf(r)), true)}
+                              {mItem("🗑 Delete permanently", () => openHardDelete(subjOf(r)), true)}
                             </div>
                           </>
                         ) : null}
@@ -357,7 +511,10 @@ export default function AdminPage() {
             </table>
           </div>
         </div>
+        </>
+        )}
       </div>
+      <AdminModal cfg={modal} busy={!!busy} onClose={() => setModal(null)} />
     </main>
   );
 }

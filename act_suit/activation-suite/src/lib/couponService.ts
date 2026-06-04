@@ -159,6 +159,15 @@ export async function redeemCouponSupabase(input: {
     redeemed_by_user_id: input.userId || null,
   });
 
+  // Close the waitlist loop: if this code (or email) was on the waitlist,
+  // mark it converted so the admin funnel reads pending → invited → converted.
+  try {
+    await supabase.from("waitlist").update({ status: "converted" }).eq("invite_code", code).neq("status", "converted");
+    await supabase.from("waitlist").update({ status: "converted" }).eq("email", email).neq("status", "converted");
+  } catch {
+    /* non-fatal — conversion tracking only */
+  }
+
   return {
     ok: true,
     activationKey: rawKey,

@@ -59,13 +59,32 @@ export function SignInPanel() {
   const [showLoginPwd, setShowLoginPwd] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
 
-  const [first, setFirst] = useState("");
-  const [last, setLast] = useState("");
+  const [fullName, setFullName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [role, setRole] = useState<Role>("product");
   const [regPwd, setRegPwd] = useState("");
+  const [regPwd2, setRegPwd2] = useState("");
   const [showRegPwd, setShowRegPwd] = useState(false);
   const [regBusy, setRegBusy] = useState(false);
+
+  // Invite-only beta gate. The code is validated (non-consuming) before the
+  // account is created; it's then consumed at key issuance (see dashboard
+  // auto-redeem). This is what makes the beta feel exclusive.
+  const [inviteCode, setInviteCode] = useState("");
+  const [invite, setInvite] = useState<{
+    status: "idle" | "checking" | "valid" | "invalid";
+    reason?: string;
+    seatsLeft?: number | null;
+    seatsTotal?: number | null;
+    seatsClaimed?: number;
+  }>({ status: "idle" });
+
+  // Waitlist fallback for visitors without an invite code.
+  const [showWaitlist, setShowWaitlist] = useState(false);
+  const [wlEmail, setWlEmail] = useState("");
+  const [wlReason, setWlReason] = useState("");
+  const [wlBusy, setWlBusy] = useState(false);
+  const [wlDone, setWlDone] = useState(false);
 
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotBusy, setForgotBusy] = useState(false);
@@ -78,6 +97,38 @@ export function SignInPanel() {
   useEffect(() => {
     setEnvOk(hasPublicSupabaseConfig());
   }, []);
+
+  // Debounced, non-consuming invite-code validation as the user types.
+  useEffect(() => {
+    const code = inviteCode.trim().toUpperCase();
+    if (!code) {
+      setInvite({ status: "idle" });
+      return;
+    }
+    setInvite((s) => ({ ...s, status: "checking" }));
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch("/api/v1/coupon/validate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ coupon_code: code }),
+        }).then((x) => x.json());
+        if (r?.ok && r.valid) {
+          setInvite({
+            status: "valid",
+            seatsLeft: r.seats_left ?? null,
+            seatsTotal: r.seats_total ?? null,
+            seatsClaimed: r.seats_claimed ?? 0,
+          });
+        } else {
+          setInvite({ status: "invalid", reason: r?.reason || "not_found" });
+        }
+      } catch {
+        setInvite({ status: "invalid", reason: "network" });
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [inviteCode]);
 
   function switchTab(next: Tab) {
     setTab(next);
@@ -134,7 +185,13 @@ export function SignInPanel() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
-    if (!first || !regEmail || !regPwd) {
+    const code = inviteCode.trim().toUpperCase();
+    if (!code || invite.status !== "valid") {
+      setAlert({ msg: "Enter a valid beta invite code to claim your founding spot.", type: "error" });
+      return;
+    }
+    const name = fullName.trim();
+    if (!name || !regEmail || !regPwd) {
       setAlert({ msg: "Please fill in all required fields.", type: "error" });
       return;
     }
@@ -142,25 +199,34 @@ export function SignInPanel() {
       setAlert({ msg: "Password must be at least 8 characters.", type: "error" });
       return;
     }
+    if (regPwd !== regPwd2) {
+      setAlert({ msg: "Passwords don't match.", type: "error" });
+      return;
+    }
     setRegBusy(true);
     try {
       const sb = getSupabaseBrowserClient();
+      const parts = name.split(/\s+/);
       const { error } = await sb.auth.signUp({
         email: regEmail.trim(),
         password: regPwd,
         options: {
           data: {
-            first_name: first.trim(),
-            last_name: last.trim(),
-            full_name: [first, last].map((s) => s.trim()).filter(Boolean).join(" "),
+            first_name: parts[0] || name,
+            last_name: parts.slice(1).join(" "),
+            full_name: name,
             role,
+            // Stored so the dashboard can auto-issue the key (consume the
+            // coupon) once the user has a session. Marks them as founding beta.
+            invite_code: code,
+            beta_founding: true,
           },
         },
       });
       if (error) throw error;
       setAlert({
         msg:
-          "Account created. Next step: activate your key (or start trial) on the Activate page.",
+          "🎉 You're in! Account created — confirm your email if asked, then we'll hand you your activation key.",
         type: "success",
       });
       setTimeout(() => {
@@ -171,6 +237,30 @@ export function SignInPanel() {
       setAlert({ msg: parseError(err), type: "error" });
     } finally {
       setRegBusy(false);
+    }
+  }
+
+  async function handleWaitlist(e: React.FormEvent) {
+    e.preventDefault();
+    const email = (wlEmail || regEmail).trim();
+    if (!email) {
+      setAlert({ msg: "Enter your email to join the waitlist.", type: "error" });
+      return;
+    }
+    setWlBusy(true);
+    setAlert(null);
+    try {
+      const res = await fetch("/api/v1/waitlist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, name: fullName.trim(), role, reason: wlReason.trim() }),
+      }).then((x) => x.json());
+      if (!res?.ok) throw new Error(res?.error || "Couldn't join the waitlist.");
+      setWlDone(true);
+    } catch (err) {
+      setAlert({ msg: parseError(err), type: "error" });
+    } finally {
+      setWlBusy(false);
     }
   }
 
@@ -267,8 +357,8 @@ export function SignInPanel() {
           {[
             ["BYOK", "your AI key, your inference costs"],
             ["Local-first", "SQLite on your machine, not our cloud"],
-            ["Perpetual licence", "own the version you buy"],
-            ["14-day Pro trial", "no credit card needed"],
+            ["Founding access", "keep your spot after beta"],
+            ["Free in beta", "no card · invite-only"],
           ].map(([strong, rest]) => (
             <div key={strong} className="flex items-center gap-3">
               <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-[var(--orange)]" />
@@ -286,10 +376,6 @@ export function SignInPanel() {
           <p className="mb-5 text-center text-[13px] leading-[1.5] text-[var(--muted)]">
             <Link href={ROUTES.home} className="font-medium text-[var(--orange)]">
               Home
-            </Link>
-            <span className="mx-[10px] opacity-35">·</span>
-            <Link href={ROUTES.activate} className="font-medium text-[var(--orange)]">
-              Activate
             </Link>
             <span className="mx-[10px] opacity-35">·</span>
             <Link href={ROUTES.activationHelp} className="font-medium text-[var(--orange)]">
@@ -435,44 +521,143 @@ export function SignInPanel() {
             </form>
           ) : null}
 
-          {tab === "register" ? (
-            <form onSubmit={handleRegister} className="flex flex-col">
-              <div className="mb-6 flex items-center gap-3 rounded-[10px] border border-[rgba(224,123,60,0.2)] bg-[var(--orange-pale)] px-[14px] py-3">
-                <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--orange)]" />
-                <p className="text-[13px] leading-[1.4] text-[var(--text)]">
-                  <strong className="font-medium text-[var(--orange)]">
-                    14-day Pro trial included
-                  </strong>{" "}
-                  — no credit card. Downgrade to Free anytime.
+          {tab === "register" && showWaitlist ? (
+            wlDone ? (
+              <div className="flex flex-col items-center py-6 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--orange-pale)] text-[26px]">🎟️</div>
+                <h3 className="text-[20px] font-semibold text-[var(--dark)]">You&rsquo;re on the list</h3>
+                <p className="mt-2 max-w-[340px] text-[13.5px] leading-[1.6] text-[var(--muted)]">
+                  Seats open in waves. When yours is ready we&rsquo;ll email <strong className="text-[var(--dark)]">{(wlEmail || regEmail).trim()}</strong> a
+                  founding-member invite code. Keep an eye on your inbox.
                 </p>
+                <button type="button" onClick={() => { setShowWaitlist(false); setWlDone(false); }} className="mt-6 text-[13px] text-[var(--orange)] hover:underline">
+                  ← Back to sign-up
+                </button>
               </div>
-              <div className="mb-4 grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
-                    First name
-                  </label>
-                  <input
-                    type="text"
-                    autoComplete="given-name"
-                    placeholder="Rahul"
-                    value={first}
-                    onChange={(e) => setFirst(e.target.value)}
-                    className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
-                  />
+            ) : (
+              <form onSubmit={handleWaitlist} className="flex flex-col">
+                <div className="mb-5">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-[var(--orange)]">Request access</span>
+                  </div>
+                  <h3 className="font-serif text-[22px] text-[var(--dark)]">Join the beta waitlist</h3>
+                  <p className="mt-2 text-[13px] leading-[1.6] text-[var(--muted)]">
+                    The beta is invite-only. Drop your email and we&rsquo;ll send you a founding-member
+                    code as seats open — first in line, first invited.
+                  </p>
                 </div>
-                <div>
-                  <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
-                    Last name
-                  </label>
-                  <input
-                    type="text"
-                    autoComplete="family-name"
-                    placeholder="Sharma"
-                    value={last}
-                    onChange={(e) => setLast(e.target.value)}
-                    className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
-                  />
+                <div className="mb-4">
+                  <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">Email address</label>
+                  <input type="email" autoComplete="email" placeholder="you@company.com" value={wlEmail || regEmail}
+                    onChange={(e) => setWlEmail(e.target.value)}
+                    className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]" />
                 </div>
+                <div className="mb-5">
+                  <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">What do you want to use Gap Map for? <span className="text-[var(--muted-light)]">(optional)</span></label>
+                  <textarea rows={3} placeholder="e.g. finding gaps in the note-taking market…" value={wlReason}
+                    onChange={(e) => setWlReason(e.target.value)}
+                    className="w-full resize-none rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]" />
+                </div>
+                <button type="submit" disabled={wlBusy}
+                  className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--orange)] px-4 py-3 text-[15px] font-medium text-white transition-all hover:-translate-y-px hover:bg-[var(--orange-hover)] disabled:pointer-events-none disabled:opacity-70">
+                  {wlBusy ? "Joining…" : "Request my invite →"}
+                </button>
+                <button type="button" onClick={() => setShowWaitlist(false)} className="mt-5 text-center text-[13px] text-[var(--muted)] hover:text-[var(--orange)]">
+                  Have a code? <span className="text-[var(--orange)]">Back to sign-up</span>
+                </button>
+              </form>
+            )
+          ) : null}
+
+          {tab === "register" && !showWaitlist ? (
+            <form onSubmit={handleRegister} className="flex flex-col">
+              {/* ── Invite-only beta gate ── */}
+              <div className="mb-5 overflow-hidden rounded-[14px] border border-[var(--border-strong)] bg-gradient-to-br from-[var(--orange-pale)] to-white">
+                <div className="flex items-center gap-2 border-b border-[rgba(224,123,60,0.18)] px-[14px] py-[10px]">
+                  <span className="text-[13px]">🔒</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-[var(--orange)]">
+                    Invite-only beta
+                  </span>
+                  {invite.status === "valid" && invite.seatsLeft != null ? (
+                    <span className="ml-auto rounded-full bg-white px-2 py-[2px] text-[11px] font-semibold text-[var(--orange)] shadow-sm">
+                      {invite.seatsLeft} of {invite.seatsTotal} seats left
+                    </span>
+                  ) : (
+                    <span className="ml-auto text-[11px] text-[var(--muted)]">limited seats</span>
+                  )}
+                </div>
+                <div className="px-[14px] py-3">
+                  <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
+                    Beta invite code
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      autoCapitalize="characters"
+                      placeholder="GAPMAP-BETA-2026"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                      className={`w-full rounded-[10px] border bg-white px-[14px] py-[11px] pr-24 font-mono text-[14px] tracking-[2px] text-[var(--text)] outline-none transition-shadow focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)] ${
+                        invite.status === "valid"
+                          ? "border-emerald-400 focus:border-emerald-500"
+                          : invite.status === "invalid"
+                            ? "border-rose-300 focus:border-rose-400"
+                            : "border-[var(--border-strong)] focus:border-[var(--orange)]"
+                      }`}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-medium">
+                      {invite.status === "checking" ? (
+                        <span className="text-[var(--muted-light)]">Checking…</span>
+                      ) : invite.status === "valid" ? (
+                        <span className="text-emerald-600">✓ Verified</span>
+                      ) : invite.status === "invalid" ? (
+                        <span className="text-rose-500">✕ Invalid</span>
+                      ) : null}
+                    </span>
+                  </div>
+                  {invite.status === "valid" ? (
+                    <p className="mt-2 text-[12.5px] font-medium leading-[1.5] text-emerald-700">
+                      🎉 You&rsquo;re in — welcome, founding member. Your Pro key is reserved and
+                      we&rsquo;ll hand it to you the moment your account is ready.
+                    </p>
+                  ) : invite.status === "invalid" ? (
+                    <p className="mt-2 text-[12.5px] leading-[1.5] text-rose-600">
+                      {invite.reason === "exhausted"
+                        ? "All seats for this code are claimed — that cohort is full."
+                        : invite.reason === "expired"
+                          ? "This invite has expired."
+                          : invite.reason === "disabled"
+                            ? "This invite has been turned off."
+                            : invite.reason === "network"
+                              ? "Couldn't check that code — try again."
+                              : "We don't recognise that invite code. Check it and try again."}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[12.5px] leading-[1.5] text-[var(--muted)]">
+                      Beta is invite-only. Enter your code to claim a founding spot —
+                      includes Pro, free, while the beta runs.
+                    </p>
+                  )}
+                </div>
+              </div>
+              {invite.status !== "valid" ? (
+                <button type="button" onClick={() => { setShowWaitlist(true); setAlert(null); }}
+                  className="mb-5 -mt-1 self-start text-[12.5px] text-[var(--muted)] hover:text-[var(--orange)]">
+                  No invite code? <span className="font-medium text-[var(--orange)] underline">Join the waitlist →</span>
+                </button>
+              ) : null}
+              <div className="mb-4">
+                <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
+                  Full name
+                </label>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  placeholder="Rahul Sharma"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]"
+                />
               </div>
               <div className="mb-4">
                 <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
@@ -551,12 +736,36 @@ export function SignInPanel() {
                   Min. 8 characters.
                 </p>
               </div>
+              <div className="mb-5">
+                <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
+                  Confirm password
+                </label>
+                <input
+                  type={showRegPwd ? "text" : "password"}
+                  autoComplete="new-password"
+                  placeholder="Re-enter your password"
+                  value={regPwd2}
+                  onChange={(e) => setRegPwd2(e.target.value)}
+                  className={`w-full rounded-[10px] border bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)] ${
+                    regPwd2 && regPwd !== regPwd2
+                      ? "border-rose-300 focus:border-rose-400"
+                      : "border-[var(--border-strong)] focus:border-[var(--orange)]"
+                  }`}
+                />
+                {regPwd2 && regPwd !== regPwd2 ? (
+                  <p className="mt-[5px] text-[12px] text-rose-600">Passwords don&rsquo;t match.</p>
+                ) : null}
+              </div>
               <button
                 type="submit"
-                disabled={regBusy}
-                className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--orange)] px-4 py-3 text-[15px] font-medium text-white transition-all hover:-translate-y-px hover:bg-[var(--orange-hover)] disabled:pointer-events-none disabled:opacity-70"
+                disabled={regBusy || invite.status !== "valid" || (!!regPwd2 && regPwd !== regPwd2)}
+                className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--orange)] px-4 py-3 text-[15px] font-medium text-white transition-all hover:-translate-y-px hover:bg-[var(--orange-hover)] disabled:pointer-events-none disabled:opacity-60"
               >
-                {regBusy ? "Creating account…" : "Create account & start trial"}
+                {regBusy
+                  ? "Claiming your spot…"
+                  : invite.status === "valid"
+                    ? "Claim my founding spot →"
+                    : "Enter your invite code to continue"}
               </button>
               <p className="mt-5 text-center text-[13px] text-[var(--muted)]">
                 Already have an account?{" "}

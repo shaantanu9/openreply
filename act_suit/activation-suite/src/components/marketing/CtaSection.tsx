@@ -32,13 +32,13 @@ export function CtaSection() {
               href="/sign-in"
               className="btn btn-lg border border-white/20 bg-white/[0.06] text-white hover:bg-white/10"
             >
-              Start free account →
+              Get early access — free in beta →
             </a>
             <a
               href="/pricing"
               className="btn btn-lg border border-white/20 bg-white/[0.06] text-white hover:bg-white/10"
             >
-              View Pro plans →
+              Why it&rsquo;s free in beta →
             </a>
           </div>
           <p className="mt-5 text-[12.5px] text-white/45">

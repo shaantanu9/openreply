@@ -34,8 +34,8 @@ export function FeaturesGrid() {
             </p>
             <div className="flex flex-wrap gap-3">
               <DownloadLink className="btn btn-orange">Download for Mac</DownloadLink>
-              <a href="/sign-in" className="btn btn-ghost">
-                Start free account →
+              <a href="/#request-invite" className="btn btn-ghost">
+                Request your invite →
               </a>
             </div>
           </div>

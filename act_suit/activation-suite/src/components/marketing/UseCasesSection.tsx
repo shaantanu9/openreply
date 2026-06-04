@@ -46,8 +46,8 @@ export function UseCasesSection() {
         </div>
         <div className="mt-10 flex flex-wrap items-center gap-3">
           <DownloadLink className="btn btn-orange">Download for Mac</DownloadLink>
-          <a href="/sign-in" className="btn btn-ghost">
-            Start free account →
+          <a href="/#request-invite" className="btn btn-ghost">
+            Unlock your market&rsquo;s gaps →
           </a>
         </div>
       </div>

@@ -110,10 +110,10 @@ export function RoiSection() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a href="/sign-in" className="btn btn-orange">
-                Start free account
+                Join the founding beta →
               </a>
               <a href="/pricing" className="btn border border-white/20 bg-white/[0.06] text-white hover:bg-white/10">
-                Compare plans →
+                See what&rsquo;s included →
               </a>
             </div>
           </div>

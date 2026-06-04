@@ -5,6 +5,7 @@ import { featuresFor, type PlanId } from "@/lib/features";
 import { hasSupabaseConfig } from "@/lib/supabaseClient";
 import {
   supabaseDeviceExists,
+  supabaseTouchDevice,
   supabaseGetLicenseById,
   supabaseIssueTokenForRow,
 } from "@/lib/supabaseActivationStore";
@@ -100,6 +101,9 @@ export async function POST(req: Request) {
       if (!stillAttached) {
         return NextResponse.json({ valid: false, revoked: true }, { status: 200 });
       }
+      // Heartbeat — this device just checked in; record it so admin/dashboard
+      // can show "online now / last active". Best-effort; never blocks validate.
+      await supabaseTouchDevice(row.id, fingerprint);
 
       const latestPlan: PlanId = (row.plan_id as PlanId) || "pro";
       const trialEndsSec = row.trial_ends_at

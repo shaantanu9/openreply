@@ -260,6 +260,9 @@ export function HeroSlider() {
                   <p className="mb-8 max-w-[440px] text-[17px] font-light leading-[1.7] text-[var(--muted)]">
                     {slide.sub}
                   </p>
+                  <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-[rgba(224,123,60,0.3)] bg-[var(--orange-pale)] px-3 py-[5px] text-[12px] font-semibold uppercase tracking-[0.8px] text-[var(--orange)]">
+                    🔒 Invite-only beta · limited founding seats
+                  </span>
                   <div className="flex flex-wrap items-center gap-3">
                     <DownloadLink
                       className={`btn btn-lg !text-white [&_*]:!text-white ${ctaVariants[slide.primaryCta.variant]}`}
@@ -268,11 +271,11 @@ export function HeroSlider() {
                       {slide.primaryCta.label}
                     </DownloadLink>
                     <a href="/sign-in" className="btn btn-ghost btn-lg">
-                      Start free account →
+                      Claim your founding invite →
                     </a>
                   </div>
                   <p className="mt-3 text-[12.5px] text-[var(--muted-light)]">
-                    {"ctaNote" in slide ? slide.ctaNote : "No card needed · activation in 2 mins"}
+                    {"ctaNote" in slide ? slide.ctaNote : "Free during beta · no card · or join the waitlist in 10s"}
                   </p>
                   {"microProof" in slide ? (
                     <div className="mt-4 flex flex-wrap items-center gap-2">

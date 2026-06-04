@@ -28,13 +28,14 @@ export default function PricingPage() {
               Free while in beta.
             </h1>
             <p className="mt-4 text-[17px] leading-[1.7] text-[var(--muted)]">
-              Gap Map is completely free right now — create an account, grab your
-              license key, and activate the desktop app. Bring your own AI key,
-              and your data stays local on your machine.
+              Gap Map is <strong>free during the invite-only beta</strong> — claim an
+              invite, grab your license key, and activate the desktop app. Bring your
+              own AI key, and your data stays local on your machine. No card, ever,
+              while you&rsquo;re in beta.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link href="/sign-in" className="btn-sm orange">
-                Create a free account →
+                Claim your free beta invite →
               </Link>
               <Link href="/download" className="btn-sm">
                 Download for Mac

@@ -1,5 +1,6 @@
 import { SiteShell } from "@/components/shell/SiteShell";
 import { UrgencyBanner } from "@/components/marketing/UrgencyBanner";
+import { InviteHero } from "@/components/marketing/InviteHero";
 import { HeroSlider } from "@/components/marketing/HeroSlider";
 import { TrustLogoBar } from "@/components/marketing/TrustLogoBar";
 import { MetricsStrip } from "@/components/marketing/MetricsStrip";
@@ -18,6 +19,7 @@ import { RiskReversalSection } from "@/components/marketing/RiskReversalSection"
 import { SecurityTrustSection } from "@/components/marketing/SecurityTrustSection";
 import { FaqAccordion } from "@/components/marketing/FaqAccordion";
 import { FinalPromiseSection } from "@/components/marketing/FinalPromiseSection";
+import { RequestInviteSection } from "@/components/marketing/RequestInviteSection";
 import { CtaSection } from "@/components/marketing/CtaSection";
 import { StickyDownloadBar } from "@/components/marketing/StickyDownloadBar";
 
@@ -43,6 +45,9 @@ export default function MarketingHome() {
     <>
       <UrgencyBanner />
       <SiteShell>
+        {/* ── Invite capture (full-screen, top of page) ── */}
+        <InviteHero />
+
         {/* ── ATTENTION ── */}
         <HeroSlider />
         <TrustLogoBar />
@@ -74,6 +79,7 @@ export default function MarketingHome() {
 
         {/* ── CLOSE ── */}
         <FinalPromiseSection />
+        <RequestInviteSection />
         <CtaSection />
       </SiteShell>
       <StickyDownloadBar />

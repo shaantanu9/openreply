@@ -79,10 +79,10 @@ export function NavBar({ variant = "marketing" }: Props) {
         <div className="flex items-center gap-[10px]">
           <UserMenu />
           <Link href={ROUTES.signIn} className="btn btn-ghost hidden sm:inline-flex">
-            Start free account
+            Get beta access
           </Link>
           <Link href={ROUTES.pricing} className="btn btn-ghost hidden sm:inline-flex">
-            View plans
+            Pricing
           </Link>
           <DownloadLink className="btn btn-primary">Download for Mac</DownloadLink>
         </div>

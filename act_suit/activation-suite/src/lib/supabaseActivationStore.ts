@@ -185,6 +185,24 @@ export async function supabaseDeviceExists(
   return (count || 0) > 0;
 }
 
+/** Heartbeat — bump a device's last_seen_at on every validate so "online /
+ *  last active" reflects real usage, not just the last activation. Non-fatal. */
+export async function supabaseTouchDevice(
+  licenseId: string,
+  signatureHash: string,
+): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  try {
+    await supabase
+      .from("license_devices")
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq("license_id", licenseId)
+      .eq("signature_hash", signatureHash);
+  } catch {
+    /* heartbeat is best-effort */
+  }
+}
+
 export async function supabaseRemoveDevice(
   licenseId: string,
   signatureHash: string,
@@ -513,6 +531,49 @@ export async function supabaseListLicenses(): Promise<AdminLicenseRow[]> {
     lastSeenAt: lastSeen.get(String(r.id)) ?? null,
     deletedAt: (r.deleted_at as string) ?? null,
   }));
+}
+
+/** Admin: find the auth.users id for an email (via service-role RPC). */
+export async function supabaseAdminFindAuthUserId(email: string): Promise<string | null> {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("admin_get_auth_user_id", { p_email: email.trim().toLowerCase() });
+  if (error) return null;
+  return (data as string) || null;
+}
+
+/** Admin: set a user's password directly (no email round-trip). */
+export async function supabaseAdminSetPassword(
+  email: string,
+  newPassword: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!newPassword || newPassword.length < 8) return { ok: false, reason: "weak_password" };
+  const id = await supabaseAdminFindAuthUserId(email);
+  if (!id) return { ok: false, reason: "no_auth_user" };
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase.auth.admin.updateUserById(id, { password: newPassword });
+  if (error) return { ok: false, reason: error.message };
+  return { ok: true };
+}
+
+/** Admin: trigger the password-reset email (the same OTP code the app's
+ *  Forgot-password screen uses — verifyOtp type:'email'). */
+export async function supabaseAdminSendPasswordReset(
+  email: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  const url = process.env.SUPABASE_URL;
+  const anon = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) return { ok: false, reason: "supabase_unconfigured" };
+  try {
+    const res = await fetch(`${url}/auth/v1/otp`, {
+      method: "POST",
+      headers: { apikey: anon, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim().toLowerCase(), create_user: false }),
+    });
+    if (!res.ok) return { ok: false, reason: `gotrue_${res.status}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : "send_failed" };
+  }
 }
 
 /**
