@@ -9750,3 +9750,16 @@ body[data-sidebar="hidden"] .sidebar-search-wrap { display: none; }
   color: var(--ink-3); font-size: 13px; padding: 0 2px;
 }
 .re-banner .re-dismiss:hover { color: var(--ink-1); }
+
+/* ── Graceful map-chat error card (topic.js _mapChatBotHtml) ─────────────── */
+.mapchat-err {
+  border: 1px solid rgba(224,123,60,.35); background: rgba(224,123,60,.08);
+  border-radius: 10px; padding: 12px 14px;
+}
+.mapchat-err-head {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; color: #B5651E; font-size: var(--fs-14);
+}
+.mapchat-err-head i { width: 16px; height: 16px; }
+.mapchat-err-hint { margin-top: 6px; color: var(--ink-2); font-size: var(--fs-13); line-height: 1.55; }
+.mapchat-err-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }

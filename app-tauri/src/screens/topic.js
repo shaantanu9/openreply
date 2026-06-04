@@ -7,6 +7,7 @@ import { confirmModal } from '../lib/confirmModal.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
+import { classifyError } from '../lib/tabEmpty.js';
 import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
 import { loadPapers } from './papers.js';
@@ -573,7 +574,10 @@ async function runEnrichStreamForTopic(topic, {
         }, 180000);
       }
     } catch (err) {
-      setStatus(`✗ Failed to start: ${err?.message || err}`);
+      const m = String(err?.message || err || '').toLowerCase();
+      setStatus(/llm|api.?key|provider|byok/.test(m)
+        ? "Couldn't start — connect an AI provider (LLM pill above), then retry."
+        : "Couldn't start — please retry in a moment.");
       lastSummary = { ok: false, error: err?.message || String(err) };
       try { unlistenProgress?.(); } catch {}
       try { unlistenDone?.(); } catch {}
@@ -2071,6 +2075,20 @@ export async function renderTopic(root, { params }) {
 
   // ── Map-view chat: render, send (streaming), wire ─────────────────────
   function _mapChatBotHtml(m) {
+    // Graceful error bubble — replaces the old raw "✗ Error: …" text. For a
+    // missing/!working LLM we show a friendly card + a "Connect AI" button that
+    // opens the provider picker; other errors get a Retry.
+    if (m.err) {
+      const e = m.err;
+      const action = e.kind === 'no_llm_key'
+        ? `<button type="button" class="btn btn-primary btn-sm icon-btn mapchat-connect-llm"><i data-lucide="key"></i> Connect AI</button>`
+        : `<button type="button" class="btn btn-ghost btn-sm btn-bordered icon-btn mapchat-retry"><i data-lucide="rotate-cw"></i> Retry</button>`;
+      return `<div class="mapchat-err">
+          <div class="mapchat-err-head"><i data-lucide="alert-triangle"></i> ${esc(e.title)}</div>
+          ${e.hint ? `<div class="mapchat-err-hint">${esc(e.hint)}</div>` : ''}
+          <div class="mapchat-err-actions">${action}</div>
+        </div>`;
+    }
     const text = m.text || '';
     if (!text.trim() && _mapChatStream.active) {
       return '<span class="mapchat-typing"><i></i><i></i><i></i></span>';
@@ -2132,6 +2150,20 @@ export async function renderTopic(root, { params }) {
       : `<div class="mapchat-msg bot">${_mapChatBotHtml(m)}</div>`).join('');
     log.scrollTop = log.scrollHeight;
     window.refreshIcons?.();
+    // Wire the graceful-error actions (at most one error bubble — the last).
+    log.querySelector('.mapchat-connect-llm')?.addEventListener('click', () => {
+      // Re-render on close so the LLM pill + chat reflect the newly-added key.
+      openByokModal(() => { try { window.dispatchEvent(new CustomEvent('gapmap:llm-changed')); } catch {} });
+    });
+    log.querySelector('.mapchat-retry')?.addEventListener('click', () => {
+      // Drop the error bubble + its prompt, restore the question, and resend.
+      const lastUser = [..._mapChatLog].reverse().find(m => m.role === 'user');
+      while (_mapChatLog.length && _mapChatLog[_mapChatLog.length - 1].role !== 'user') _mapChatLog.pop();
+      if (_mapChatLog.length) _mapChatLog.pop();
+      _renderMapChatLog();
+      const inp = document.getElementById('mapchat-input');
+      if (inp && lastUser) { inp.value = lastUser.text; _mapChatSend(); }
+    });
   }
   function _setMapChatBusy(busy, msg) {
     const s = document.getElementById('mapchat-status');
@@ -2167,6 +2199,30 @@ export async function renderTopic(root, { params }) {
     const bot = { role: 'assistant', text: '', ts: Date.now() };
     _mapChatLog.push(bot);
     _renderMapChatLog();
+    // Map a raw error → a friendly chat-error card ({kind,title,hint}).
+    const toChatErr = (raw) => {
+      const info = classifyError(raw);
+      const titles = {
+        no_llm_key: 'No AI provider connected',
+        rate_limit: 'AI provider is rate-limited',
+        timeout: 'The AI request timed out',
+        credits: 'AI provider is out of credits',
+        db: 'Topic data not ready yet',
+      };
+      return { kind: info.kind, title: titles[info.kind] || "Couldn't get a response", hint: info.hint || '' };
+    };
+    // Graceful guard: if no AI provider is connected, don't fire a request that
+    // will just fail with a raw error — show a "Connect AI" card right away.
+    let _llmOk = true;
+    try { _llmOk = await hasLlmConfigured(); } catch { _llmOk = true; /* flaky check → still try */ }
+    if (!_llmOk) {
+      bot.err = toChatErr('no llm key');
+      _mapChatStream.active = false;
+      _setMapChatBusy(false);
+      _renderMapChatLog();
+      _persistMapChat();
+      return;
+    }
     _setMapChatBusy(true);
     _mapChatStream.active = true;
     let done = false;
@@ -2186,21 +2242,25 @@ export async function renderTopic(root, { params }) {
         if (ev.event === 'token' || ev.event === 'text') {
           if (typeof ev.text === 'string') { bot.text += ev.text; _renderMapChatLog(); }
         } else if (ev.event === 'error') {
-          bot.text += `\n\n✗ Error: ${ev.error || 'unknown'}`;
-          finish('Error — see message above.');
+          if (!bot.text.trim()) bot.err = toChatErr(ev.error || '');
+          else bot.text += `\n\n— ${toChatErr(ev.error || '').title}.`;
+          finish('');
         }
       });
       _mapChatStream.unsubD = await api.onChatDone(payload => {
         const code = (payload && typeof payload === 'object' && 'code' in payload) ? Number(payload.code) : 0;
-        if (code !== 0 && !bot.text.trim()) {
-          bot.text = `✗ Provider exited with code ${code}. Check your LLM key/model in Settings.`;
+        const cls = (payload && typeof payload === 'object') ? payload.error_class : null;
+        if (code !== 0 && !bot.text.trim() && !bot.err) {
+          bot.err = cls === 'llm_key'
+            ? toChatErr('no llm key')
+            : { kind: 'provider_exit', title: 'The AI provider stopped early', hint: 'It exited before finishing. Retry, or switch provider / model in Settings.' };
         }
-        finish(code === 0 ? '' : 'Provider exited early; partial response shown.');
+        finish(code === 0 || bot.err ? '' : 'Provider exited early; partial response shown.');
       });
       await api.startChat(topic, q, 'ask', false);
     } catch (e) {
-      bot.text = `✗ Failed to start chat: ${e?.message || e}`;
-      finish('Failed to start. Check your LLM key/provider in Settings.');
+      bot.err = toChatErr(e);
+      finish('');
     }
   }
   // Idempotent — uses .onclick (replaces, never stacks) so the shared
@@ -4445,6 +4505,20 @@ export async function renderTopic(root, { params }) {
     </div>`;
   }
 
+  // Raw error → friendly, actionable chat copy (rendered as the bubble markdown).
+  // Points at the LLM pill in this panel instead of dumping a stack / exit code.
+  function friendlyChatError(raw) {
+    const info = classifyError(raw);
+    const map = {
+      no_llm_key: '⚠️ **No AI provider connected.** Click the **LLM** pill at the top of this panel to add an API key or turn on local Ollama, then resend your message.',
+      rate_limit: '⏳ **The AI provider is rate-limited.** Wait a minute and resend, or switch provider via the LLM pill above.',
+      timeout: '⌛ **The AI request timed out.** Resend — most go through on the second try.',
+      credits: '💳 **The AI provider is out of credits.** Top up that account, or switch provider via the LLM pill above.',
+      db: 'ℹ️ **This topic has no data yet.** Collect some posts first, then ask again.',
+    };
+    return map[info.kind] || `⚠️ **Couldn't get a response.** Resend, or switch provider via the LLM pill above.`;
+  }
+
   async function send(mode, question) {
     const agent = document.getElementById('chat-agent')?.checked || false;
     const hist = loadChatHistory(topic);
@@ -4459,6 +4533,19 @@ export async function renderTopic(root, { params }) {
     // Persist (mints the conversation id on first message) then surface it in
     // the rail. Await so the rail query sees the freshly-written row.
     persistActiveConv(topic).then(() => refreshConvRail(topic));
+
+    // Graceful guard — if no AI provider is connected, show a friendly,
+    // actionable message in the assistant bubble instead of firing a request
+    // that returns a raw error.
+    let _llmOk = true;
+    try { _llmOk = await hasLlmConfigured(); } catch { _llmOk = true; /* flaky → still try */ }
+    if (!_llmOk) {
+      const a = (chatHistory.get(topic) || []).slice(-1)[0];
+      if (a && a.role === 'assistant') a.text = friendlyChatError('no llm key');
+      renderMessages();
+      persistActiveConv(topic).then(() => refreshConvRail(topic));
+      return;
+    }
 
     // UI state
     const sendBtn = $('#btn-chat-send');
@@ -4528,9 +4615,11 @@ export async function renderTopic(root, { params }) {
       const last = h[h.length - 1];
       const hasContent = !!(last && last.role === 'assistant' && (last.text || '').trim());
       if (code !== 0 && !hasContent) {
-        if (last && last.role === 'assistant') last.text = `✗ Provider exited with code ${code}. Check the LLM key/model in Settings.`;
+        if (last && last.role === 'assistant') {
+          last.text = friendlyChatError(payload?.error_class === 'llm_key' ? 'no llm key' : `provider exited ${code}`);
+        }
         renderMessages();
-        finishStream('✗ Provider error — see message above.');
+        finishStream('');
       } else {
         finishStream(code === 0 ? 'Done — response ready.' : '⚠ Provider exited early; partial response shown.');
       }
@@ -4544,9 +4633,9 @@ export async function renderTopic(root, { params }) {
     } catch (e) {
       const h = chatHistory.get(topic) || [];
       const last = h[h.length - 1];
-      if (last && last.role === 'assistant') last.text = `✗ Failed to start chat: ${e?.message || e}`;
+      if (last && last.role === 'assistant') last.text = friendlyChatError(e);
       renderMessages();
-      finishStream('Failed to start. Check keys/provider and retry.');
+      finishStream('');
     }
   }
 
@@ -4595,15 +4684,18 @@ export async function renderTopic(root, { params }) {
       // moment later — the `chatStream.active` guard in finishStream
       // (set false here) makes that done a no-op.
       const st = contentEl.querySelector('#chat-status-text');
-      if (st) st.textContent = '✗ Error while generating response.';
-      last.text = (last.text || '') + `\n\n✗ Error: ${ev.error || 'unknown'}`;
+      if (st) st.textContent = '';
+      const friendly = friendlyChatError(ev.error || '');
+      last.text = (last.text || '').trim()
+        ? `${last.text}\n\n${friendly}`
+        : friendly;
       renderMessages();
       try { chatStream.unlistenProgress?.(); } catch {}
       try { chatStream.unlistenDone?.(); } catch {}
       chatStream.unlistenProgress = null;
       chatStream.unlistenDone = null;
       chatStream.active = false;
-      setBusyUi(false, '✗ Error — see message above.');
+      setBusyUi(false, '');
     }
   }
 
