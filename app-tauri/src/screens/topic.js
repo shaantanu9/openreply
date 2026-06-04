@@ -1406,6 +1406,15 @@ export async function renderTopic(root, { params }) {
   let _mapChatLog = [];                                    // [{role,text,ts}]
   let _mapChatStream = { active: false, unsubP: null, unsubD: null };
   let _mapChatConvId = null;                               // shared DB conversation id
+  // null = unknown. Gates the empty-chat "Connect AI" prompt: the map chat is
+  // ALWAYS shown (it's a feature), but when no provider is connected the empty
+  // state invites the user to connect instead of "ask anything".
+  let _mapLlmReady = null;
+  const _refreshMapChatLlm = () => {
+    hasLlmConfigured()
+      .then((r) => { _mapLlmReady = !!r; if (!_mapChatLog.length) _renderMapChatLog(); })
+      .catch(() => {});
+  };
 
   // Task 9.5 — fire-and-forget render of the extraction prefs override row.
   // Best-effort: any error just hides the row (it's purely informational).
@@ -2148,7 +2157,19 @@ export async function renderTopic(root, { params }) {
     const log = document.getElementById('mapchat-log');
     if (!log) return;
     if (!_mapChatLog.length) {
-      log.innerHTML = `<div class="mapchat-empty">Ask anything about <b>${esc(topic)}</b> — answers are grounded on this topic's data and cite their sources.</div>`;
+      if (_mapLlmReady === false) {
+        log.innerHTML = `<div class="mapchat-err">
+            <div class="mapchat-err-head"><i data-lucide="alert-triangle"></i> No AI provider connected</div>
+            <div class="mapchat-err-hint">Add an API key or start a local Ollama instance to chat with this map — your data stays on this machine.</div>
+            <div class="mapchat-err-actions"><button type="button" class="btn btn-primary btn-sm icon-btn mapchat-connect-llm"><i data-lucide="key"></i> Connect AI</button></div>
+          </div>`;
+        window.refreshIcons?.();
+        log.querySelector('.mapchat-connect-llm')?.addEventListener('click', () => {
+          openByokModal(() => { try { window.dispatchEvent(new CustomEvent('gapmap:llm-changed')); } catch {} });
+        });
+      } else {
+        log.innerHTML = `<div class="mapchat-empty">Ask anything about <b>${esc(topic)}</b> — answers are grounded on this topic's data and cite their sources.</div>`;
+      }
       return;
     }
     log.innerHTML = _mapChatLog.map(m => m.role === 'user'
@@ -2277,9 +2298,17 @@ export async function renderTopic(root, { params }) {
     const pill = document.getElementById('btn-map-chat');
     // Non-modal sidebar: opening does NOT add a click-catching scrim, so the
     // graph stays fully interactive and clicking it never closes the chat.
-    const open = () => { drawer.classList.add('open'); if (pill) pill.style.display = 'none'; document.getElementById('mapchat-input')?.focus(); };
+    const open = () => { drawer.classList.add('open'); if (pill) pill.style.display = 'none'; _refreshMapChatLlm(); document.getElementById('mapchat-input')?.focus(); };
     const close = () => { drawer.classList.remove('open'); if (pill) pill.style.display = ''; };
     if (pill) pill.onclick = open;
+    // Re-check after the user connects a provider so the empty-state prompt
+    // flips from "Connect AI" back to "Ask anything".
+    if (!drawer.dataset.llmListener) {
+      drawer.dataset.llmListener = '1';
+      window.addEventListener('gapmap:llm-changed', () => _refreshMapChatLlm());
+    }
+    // Kick an initial check so the prompt is correct even before first open.
+    _refreshMapChatLlm();
     // Top-toolbar "Ask this map" mirrors the floating pill — opens the same drawer.
     const topAsk = document.getElementById('btn-map-chat-top'); if (topAsk) topAsk.onclick = open;
     const x = document.getElementById('mapchat-close'); if (x) x.onclick = close;
