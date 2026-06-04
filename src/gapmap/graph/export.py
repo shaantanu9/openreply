@@ -401,6 +401,14 @@ _HTML_TEMPLATE = """<!doctype html>
   }
   aside.left h2 span { font-weight: 500; font-size: 11px; }
   aside h2:first-child { margin-top:0; }
+  /* Per-section "re-run extraction" button (posts gapmap:enrich to host app). */
+  .sec-refresh {
+    margin-left: auto; border: none; background: none; cursor: pointer;
+    color: var(--muted); font-size: 13px; line-height: 1; padding: 2px 4px;
+    border-radius: 6px; flex: 0 0 auto;
+  }
+  .sec-refresh:hover { color: var(--v-ink); background: rgba(0,0,0,.05); }
+  .sec-refresh[disabled] { opacity: .55; cursor: default; }
 
   .card { background:var(--bg); border:1px solid var(--border); border-radius:5px;
     padding:8px 10px; margin-bottom:6px; cursor:pointer; transition:border-color .15s; }
@@ -626,19 +634,19 @@ _HTML_TEMPLATE = """<!doctype html>
       </div>
 
       <div class="legend" id="legend"></div>
-      <h2>Top insights by source</h2>
+      <h2>Top insights by source <button class="sec-refresh" data-cat="all" title="Re-run extraction for all categories">↻</button></h2>
       <div id="sourceTopInsights" class="source-groups"></div>
 
-      <h2>🔥 Painpoints <span id="ppCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <h2>🔥 Painpoints <span id="ppCount" style="color:var(--muted);font-weight:400"></span> <button class="sec-refresh" data-cat="painpoints" title="Re-run painpoint extraction">↻</button></h2>
       <div id="painpoints"></div>
 
-      <h2>🛠 DIY workarounds <span style="color:var(--muted);font-weight:400">· gap signal</span></h2>
+      <h2>🛠 DIY workarounds <span style="color:var(--muted);font-weight:400">· gap signal</span> <button class="sec-refresh" data-cat="workarounds" title="Re-run DIY-workaround extraction">↻</button></h2>
       <div id="workarounds"></div>
 
-      <h2>😡 Products complained about</h2>
+      <h2>😡 Products complained about <button class="sec-refresh" data-cat="complaints" title="Re-run product-complaint extraction">↻</button></h2>
       <div id="products"></div>
 
-      <h2>💡 Feature wishes</h2>
+      <h2>💡 Feature wishes <button class="sec-refresh" data-cat="features" title="Re-run feature-wish extraction">↻</button></h2>
       <div id="features"></div>
     </div>
 
@@ -1610,6 +1618,31 @@ window.addEventListener("message", (e) => {
   const d = e.data;
   if (!d || d.type !== "gapmap:focus") return;
   try { focusByCitation(d); } catch (err) { /* non-fatal */ }
+});
+
+// ── per-section "Re-run extraction" → ask the host app to enrich ───────────
+// The leftbar section ↻ buttons post {type:'gapmap:enrich', category} to the
+// parent app (topic.js), which runs the LLM extractor for that category and
+// re-exports the map. Button shows a brief "…" until the host acks done.
+document.addEventListener("click", (e) => {
+  const btn = e.target && e.target.closest && e.target.closest(".sec-refresh");
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  const cat = btn.getAttribute("data-cat") || "all";
+  btn.disabled = true;
+  if (!btn.dataset.orig) btn.dataset.orig = btn.textContent;
+  btn.textContent = "…";
+  try { window.parent.postMessage({ type: "gapmap:enrich", category: cat }, "*"); } catch (err) { /* sandboxed */ }
+  // Safety: clear after 2 min even if no ack (host may have navigated away).
+  setTimeout(() => { if (btn.dataset.orig) btn.textContent = btn.dataset.orig; btn.disabled = false; }, 120000);
+});
+window.addEventListener("message", (e) => {
+  const d = e.data;
+  if (!d || d.type !== "gapmap:enrich:done") return;
+  document.querySelectorAll(".sec-refresh[disabled]").forEach((b) => {
+    if (b.dataset.orig) b.textContent = b.dataset.orig;
+    b.disabled = false;
+  });
 });
 </script>
 </body>

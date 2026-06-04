@@ -1117,7 +1117,7 @@ export async function renderTopic(root, { params }) {
   // cached HTML file won't have (e.g. left-panel minimize, citation focus).
   // loadMap force-rebuilds any topic whose stored version is older, so the new
   // viewer self-heals on first open — no manual Rebuild needed.
-  const MAP_EXPORT_VERSION = 2;
+  const MAP_EXPORT_VERSION = 3;
   const MAP_EXPORT_VER_KEY = `gapmap.topic.mapExportVer.${topic}`;
   // This is a LOCAL app reading a LOCAL SQLite — the only thing that
   // makes a cached snapshot stale is the user explicitly running a
@@ -1415,6 +1415,11 @@ export async function renderTopic(root, { params }) {
       .then((r) => { _mapLlmReady = !!r; if (!_mapChatLog.length) _renderMapChatLog(); })
       .catch(() => {});
   };
+  // Leftbar per-section "↻ re-run extraction" bridge: the exported map (iframe)
+  // posts {type:'gapmap:enrich', category}; we run the LLM extractor for that
+  // category and reload the map. Bound once per topic page (see wireMapChat).
+  let _sectionEnrichRunning = false;
+  let _sectionEnrichBound = false;
 
   // Task 9.5 — fire-and-forget render of the extraction prefs override row.
   // Best-effort: any error just hides the row (it's purely informational).
@@ -1983,6 +1988,58 @@ export async function renderTopic(root, { params }) {
     }
   }
 
+  // Handle a leftbar section ↻ request from the map iframe: enrich one category
+  // (or all) then reload the map. Acks the iframe so its button clears.
+  async function handleSectionEnrich(category) {
+    const ack = () => {
+      try {
+        contentEl.querySelector('iframe.viewer-frame')
+          ?.contentWindow?.postMessage({ type: 'gapmap:enrich:done' }, '*');
+      } catch {}
+    };
+    if (_sectionEnrichRunning) { ack(); return; }
+    const only = ({ all: null, painpoints: 'painpoints', workarounds: 'workarounds',
+      complaints: 'complaints', features: 'features' })[category];
+    if (only === undefined) { ack(); return; }
+    const ready = await hasLlmConfigured().catch(() => false);
+    if (!ready) {
+      showToast('No AI provider', 'Connect an AI provider in Settings → API keys to extract insights.', 'warn');
+      ack();
+      return;
+    }
+    _sectionEnrichRunning = true;
+    try {
+      await runEnrichStreamForTopic(topic, {
+        manual: true,
+        only,
+        fillMissingAfter: false,
+        onComplete: async (summary) => {
+          recordEnrichResult(topic, summary || {}, summary?.ok === false ? (summary?.error || 'unknown') : null);
+          if (contentEl.dataset.tab === 'map') loadMap(true);  // re-export + reload iframe
+        },
+      });
+    } catch (err) {
+      showToast('Enrichment issue', `Enrichment errored: ${err?.message || err}`, 'warn');
+    } finally {
+      _sectionEnrichRunning = false;
+      ack();
+    }
+  }
+  // Bind the iframe→app enrich bridge once per topic page. Self-removes when the
+  // topic page leaves the DOM (navigation), so we never act on a stale topic.
+  function wireSectionEnrichBridge() {
+    if (_sectionEnrichBound) return;
+    _sectionEnrichBound = true;
+    const onMsg = (e) => {
+      if (!contentEl || !contentEl.isConnected) { window.removeEventListener('message', onMsg); return; }
+      const d = e.data;
+      if (!d || d.type !== 'gapmap:enrich') return;
+      if (contentEl.dataset.tab !== 'map') return;
+      handleSectionEnrich(d.category);
+    };
+    window.addEventListener('message', onMsg);
+  }
+
   // Same shape as runEnrichFromMap but reloads the caller instead of the Map.
   // Used by the Evidence/Report tabs when findings are empty AND the user has
   // an LLM key — so the button says "Run extraction now" (actionable) instead
@@ -2309,6 +2366,8 @@ export async function renderTopic(root, { params }) {
     }
     // Kick an initial check so the prompt is correct even before first open.
     _refreshMapChatLlm();
+    // Wire the leftbar section ↻ → enrich bridge (idempotent).
+    wireSectionEnrichBridge();
     // Top-toolbar "Ask this map" mirrors the floating pill — opens the same drawer.
     const topAsk = document.getElementById('btn-map-chat-top'); if (topAsk) topAsk.onclick = open;
     const x = document.getElementById('mapchat-close'); if (x) x.onclick = close;
