@@ -1,22 +1,18 @@
 import { NextResponse } from "next/server";
+import { getVersionGate } from "@/lib/appConfig";
 
 export const runtime = "nodejs";
 
 // Health + version gate. The desktop app polls this on boot (and periodically)
-// to decide whether it must force the user to update. All three fields are
-// env-driven so a release can be made mandatory by flipping a Vercel env var —
-// no code redeploy needed:
-//   MIN_APP_VERSION    — installs BELOW this are force-updated (hard gate)
-//   LATEST_APP_VERSION — newest available; shown as a soft "update available"
-//   APP_DOWNLOAD_URL   — where the update screen sends the user
+// to decide whether it must force the user to update. The gate is DB-driven:
+// the operator flips `app_config.force_update` (+ min_app_version) in Supabase
+// to force an update with no redeploy. Env vars are the fallback when the
+// table is missing/unreachable. See src/lib/appConfig.ts.
+//   force_update        — when true, installs below min_app_version are gated
+//   min_app_version     — hard-gate threshold (null unless force_update is on)
+//   latest_app_version  — soft "update available" pointer (non-blocking)
+//   app_download_url    — where the update screen sends the user
 export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    min_app_version: process.env.MIN_APP_VERSION || null,
-    latest_app_version: process.env.LATEST_APP_VERSION || null,
-    app_download_url:
-      process.env.APP_DOWNLOAD_URL ||
-      process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL ||
-      "https://gapmap.myind.ai/download",
-  });
+  const gate = await getVersionGate();
+  return NextResponse.json({ ok: true, ...gate });
 }

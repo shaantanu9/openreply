@@ -16,6 +16,7 @@ import { NextResponse } from "next/server";
 import { verifySupabaseBearer } from "@/lib/supabaseAuthServer";
 import { redeemCouponSupabase } from "@/lib/couponService";
 import { hasSupabaseConfig } from "@/lib/supabaseClient";
+import { sendLicenseKeyEmail, sendWelcomeEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -90,6 +91,30 @@ export async function POST(req: Request) {
     );
   }
 
+  // A successful redeem just minted a brand-new key for this user — email it
+  // to them (the full key is only ever shown once in the UI). This is the beta
+  // founding-member path: the dashboard auto-redeems the signup invite code,
+  // so this is where "your key" + "welcome" emails are sent. Mirrors the
+  // /api/v1/licence/free behaviour. Email failures never block the response.
+  const email = authUser.email;
+  // Name comes from the signup metadata (full_name / first_name) for a
+  // personalised greeting; falls back to no greeting when absent.
+  const meta = (authUser.user_metadata || {}) as Record<string, unknown>;
+  const name = String(meta.full_name || meta.first_name || meta.name || "").trim();
+  const mail = await sendLicenseKeyEmail(email, result.activationKey, {
+    planId: result.planId,
+    isTrial: result.isTrial,
+    expiresAt: result.expiresAt,
+    name,
+  }).catch((e) => {
+    console.error("[coupon/redeem] key email failed for", email, e);
+    return { ok: false };
+  });
+  // First key issuance → also send a welcome email (fire-and-forget).
+  void sendWelcomeEmail(email, name).catch((e) =>
+    console.error("[coupon/redeem] welcome email failed for", email, e),
+  );
+
   return NextResponse.json({
     ok: true,
     activation_key: result.activationKey,
@@ -97,8 +122,11 @@ export async function POST(req: Request) {
     plan_id: result.planId,
     expires_at: result.expiresAt,
     is_trial: result.isTrial,
-    message: result.isTrial
-      ? `Trial activated. Your key expires ${result.expiresAt}.`
-      : `Coupon redeemed. Use this key in Gap Map to activate.`,
+    emailed: !!mail?.ok,
+    message:
+      (result.isTrial
+        ? `Trial activated. Your key expires ${result.expiresAt}.`
+        : `Coupon redeemed. Use this key in Gap Map to activate.`) +
+      (mail?.ok ? " We also emailed it to you." : ""),
   });
 }

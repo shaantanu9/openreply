@@ -39,6 +39,9 @@ export async function POST(req: Request) {
   }
   const email = (user.email || "").trim().toLowerCase();
   if (!email) return NextResponse.json({ ok: false, error: "session has no email" }, { status: 401 });
+  // Personalised greeting from signup metadata (full_name / first_name).
+  const meta = (user.user_metadata || {}) as Record<string, unknown>;
+  const name = String(meta.full_name || meta.first_name || meta.name || "").trim();
 
   try {
     if (hasSupabaseConfig()) {
@@ -63,12 +66,16 @@ export async function POST(req: Request) {
         planId: FREE_PLAN_ID,
         maxDevices: FREE_MAX_DEVICES,
       });
-      const mail = await sendLicenseKeyEmail(email, created.activationKey).catch((e) => {
+      const mail = await sendLicenseKeyEmail(email, created.activationKey, {
+        planId: FREE_PLAN_ID,
+        maxDevices: created.maxDevices,
+        name,
+      }).catch((e) => {
         console.error("[licence/free] key email failed for", email, e);
         return { ok: false };
       });
       // First free issuance → also send a welcome/tracking email (fire-and-forget).
-      void sendWelcomeEmail(email).catch((e) => console.error("[licence/free] welcome email failed for", email, e));
+      void sendWelcomeEmail(email, name).catch((e) => console.error("[licence/free] welcome email failed for", email, e));
       return NextResponse.json({
         ok: true,
         already: false,
