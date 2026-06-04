@@ -125,6 +125,20 @@ export async function mountLicenceCard(root, alive = () => true) {
     const verified = fmtDate(status?.last_verified_at);
     const sigShort = (status?.device_signature || '').slice(0, 16);
 
+    // Beta / founding-member treatment — make trial (beta) users feel the
+    // privilege: a celebratory card with their beta access + expiry, full Pro
+    // unlocked. Shown for an active (non-expired) trial licence.
+    const showBeta = activated && isTrial && (dleft == null || dleft > 0);
+    const betaCard = showBeta ? `
+      <div class="lic-beta-card">
+        <div class="lic-beta-badge">✦ Founding Beta Member</div>
+        <p class="lic-beta-msg">You're one of our founding beta members — thank you. You have <strong>full Pro features unlocked</strong> during the beta, and your feedback directly shapes Gap Map.</p>
+        <div class="lic-beta-meta">
+          <span class="lic-beta-chip">Beta access${dleft != null ? ` · ${dleft} day${dleft === 1 ? '' : 's'} left` : ''}</span>
+          ${expiryIso ? `<span class="lic-beta-until">until ${esc(expiry)}</span>` : ''}
+        </div>
+      </div>` : '';
+
     const detailRows = activated
       ? [
           email ? field('Account', email) : '',
@@ -144,7 +158,7 @@ export async function mountLicenceCard(root, alive = () => true) {
     if (activated) {
       if (dleft != null && dleft <= 0) {
         banner = `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(184,71,71,.1);border:1px solid rgba(184,71,71,.25);color:#B84747;font-size:var(--fs-13)">⚠️ ${isTrial ? 'Your trial ended' : 'Your licence expired'} on ${esc(expiry)}. Renew to keep using Gap Map. <button class="btn btn-sm" id="lic-renew-cta" style="margin-left:6px;background:#B84747;color:#fff">Renew →</button></div>`;
-      } else if (isTrial && dleft != null) {
+      } else if (isTrial && dleft != null && !showBeta) {
         banner = `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(224,123,60,.1);border:1px solid rgba(224,123,60,.25);color:#B5821E;font-size:var(--fs-13)">⏳ Pro trial — <strong>${dleft} day${dleft === 1 ? '' : 's'} left</strong> (ends ${esc(expiry)}). Upgrade before it ends to keep Pro. <button class="btn btn-sm" id="lic-renew-cta" style="margin-left:6px;background:#E07B3C;color:#fff">Upgrade to Pro →</button></div>`;
       } else if (dleft != null && dleft <= 30) {
         banner = `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(224,170,60,.1);border:1px solid rgba(224,170,60,.25);color:#B5821E;font-size:var(--fs-13)">Licence renews / expires in <strong>${dleft} days</strong> (${esc(expiry)}). <button class="btn btn-sm btn-bordered" id="lic-renew-cta" style="margin-left:6px">Manage / renew →</button></div>`;
@@ -170,8 +184,9 @@ export async function mountLicenceCard(root, alive = () => true) {
     card.innerHTML = `
       <h4 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         Licence &amp; activation
-        <span style="font-size:11px;font-weight:600;color:${v.color};background:${v.bg};padding:2px 8px;border-radius:999px">${esc(v.label)}</span>
+        <span style="font-size:11px;font-weight:600;color:${v.color};background:${v.bg};padding:2px 8px;border-radius:999px">${esc(showBeta ? 'Beta' : v.label)}</span>
       </h4>
+      ${betaCard}
       ${detailRows}
       ${banner}
       <div id="lic-status" style="margin-top:10px;color:var(--ink-3);font-size:var(--fs-13);min-height:16px"></div>

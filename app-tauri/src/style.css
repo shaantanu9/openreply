@@ -1927,7 +1927,10 @@ select.topics-field {
   display: flex; flex-direction: column; gap: 2px;
   padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--surface); min-width: 0;
+  cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
 }
+.llm-chip:hover { border-color: var(--ink-2); box-shadow: 0 2px 10px rgba(0,0,0,.07); transform: translateY(-1px); }
+.llm-chip:focus-visible { outline: 2px solid #E07B3C; outline-offset: 2px; }
 .llm-chip.on  { background: var(--mint-soft); border-color: #C9E5D2; }
 .llm-chip.on .llm-chip-state { color: #2E7D5B; font-weight: 600; }
 .llm-chip.off .llm-chip-state { color: var(--ink-3); }
@@ -9779,3 +9782,22 @@ body[data-sidebar="hidden"] .sidebar-search-wrap { display: none; }
 .qe-section-refresh { opacity: 0; transition: opacity .12s ease; flex: 0 0 auto; }
 .quick-extract-section > summary:hover .qe-section-refresh,
 .qe-section-refresh:focus-visible { opacity: 1; }
+
+/* ── Founding Beta Member card (LicenceCard.js) ─────────────────────────── */
+.lic-beta-card {
+  margin: 12px 0; padding: 14px 16px; border-radius: 14px;
+  background: linear-gradient(135deg, rgba(224,170,60,.16), rgba(224,123,60,.10));
+  border: 1px solid rgba(224,170,60,.45);
+  box-shadow: 0 1px 0 rgba(255,255,255,.4) inset;
+}
+.lic-beta-badge {
+  display: inline-block; font-weight: 700; font-size: var(--fs-13);
+  color: #8A5A12; letter-spacing: .2px;
+}
+.lic-beta-msg { margin: 8px 0 10px; color: var(--ink-2); font-size: var(--fs-13); line-height: 1.6; }
+.lic-beta-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lic-beta-chip {
+  font-weight: 700; font-size: var(--fs-12); color: #fff;
+  background: #C8881E; padding: 3px 10px; border-radius: 999px;
+}
+.lic-beta-until { color: var(--ink-3); font-size: var(--fs-12); }
