@@ -2295,18 +2295,12 @@ export async function renderTopic(root, { params }) {
       };
       return { kind: info.kind, title: titles[info.kind] || "Couldn't get a response", hint: info.hint || '' };
     };
-    // Graceful guard: if no AI provider is connected, don't fire a request that
-    // will just fail with a raw error — show a "Connect AI" card right away.
-    let _llmOk = true;
-    try { _llmOk = await hasLlmConfigured(); } catch { _llmOk = true; /* flaky check → still try */ }
-    if (!_llmOk) {
-      bot.err = toChatErr('no llm key');
-      _mapChatStream.active = false;
-      _setMapChatBusy(false);
-      _renderMapChatLog();
-      _persistMapChat();
-      return;
-    }
+    // NOTE: we intentionally do NOT pre-block on hasLlmConfigured() here. That
+    // readiness check reads byok_status, which can report false even when a
+    // working provider (e.g. nvidia via NVIDIA_API_KEY) IS configured — and
+    // pre-blocking then killed the chat entirely ("not working"). Always fire
+    // the request; the backend is the source of truth, and the chat:done /
+    // error path below renders a graceful Connect-AI card if it truly has none.
     _setMapChatBusy(true);
     _mapChatStream.active = true;
     let done = false;
@@ -4667,18 +4661,10 @@ export async function renderTopic(root, { params }) {
     // the rail. Await so the rail query sees the freshly-written row.
     persistActiveConv(topic).then(() => refreshConvRail(topic));
 
-    // Graceful guard — if no AI provider is connected, show a friendly,
-    // actionable message in the assistant bubble instead of firing a request
-    // that returns a raw error.
-    let _llmOk = true;
-    try { _llmOk = await hasLlmConfigured(); } catch { _llmOk = true; /* flaky → still try */ }
-    if (!_llmOk) {
-      const a = (chatHistory.get(topic) || []).slice(-1)[0];
-      if (a && a.role === 'assistant') a.text = friendlyChatError('no llm key');
-      renderMessages();
-      persistActiveConv(topic).then(() => refreshConvRail(topic));
-      return;
-    }
+    // NOTE: no pre-block on hasLlmConfigured() — byok_status can report false
+    // even when a working provider (nvidia) is set, and pre-blocking killed the
+    // chat ("not working"). The backend is the source of truth; the chat:done /
+    // error path renders friendlyChatError() if a provider truly isn't configured.
 
     // UI state
     const sendBtn = $('#btn-chat-send');
