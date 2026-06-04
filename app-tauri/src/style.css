@@ -9609,7 +9609,8 @@ body[data-sidebar="rail"][data-onboarding="incomplete"] #nav-workspace::after {
   background: var(--surface); border-left: 1px solid var(--line);
   border-radius: 0 var(--radius) var(--radius) 0;
   box-shadow: -12px 0 40px rgba(26,22,20,.16);
-  transform: translateX(104%); transition: transform .3s cubic-bezier(.2,.8,.2,1);
+  transform: translateX(104%); transition: transform .32s cubic-bezier(.22,.61,.36,1);
+  will-change: transform; backface-visibility: hidden;
   display: flex; flex-direction: column; overflow: hidden;
 }
 .mapchat-drawer.open { transform: none; }

@@ -2355,7 +2355,17 @@ export async function renderTopic(root, { params }) {
     const pill = document.getElementById('btn-map-chat');
     // Non-modal sidebar: opening does NOT add a click-catching scrim, so the
     // graph stays fully interactive and clicking it never closes the chat.
-    const open = () => { drawer.classList.add('open'); if (pill) pill.style.display = 'none'; _refreshMapChatLlm(); document.getElementById('mapchat-input')?.focus(); };
+    const open = () => {
+      if (pill) pill.style.display = 'none';
+      // Lay out the chat content + resolve LLM state BEFORE the slide so the
+      // panel doesn't reflow mid-animation. Animate the transform on the next
+      // frame, and focus only AFTER it settles (focusing during the slide
+      // triggers a scroll-into-view jump that reads as jank).
+      _renderMapChatLog();
+      _refreshMapChatLlm();
+      requestAnimationFrame(() => drawer.classList.add('open'));
+      setTimeout(() => document.getElementById('mapchat-input')?.focus({ preventScroll: true }), 340);
+    };
     const close = () => { drawer.classList.remove('open'); if (pill) pill.style.display = ''; };
     if (pill) pill.onclick = open;
     // Re-check after the user connects a provider so the empty-state prompt
