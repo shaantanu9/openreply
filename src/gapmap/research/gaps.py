@@ -10,6 +10,7 @@ rather than crashing so Claude can salvage it downstream.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ..analyze.providers.base import get_provider
@@ -20,15 +21,52 @@ from .prompts import load_extractor
 
 def _parse_json(raw: str) -> list[dict] | dict:
     cleaned = raw.strip()
-    for fence in ("```json", "```"):
-        if cleaned.startswith(fence):
-            cleaned = cleaned[len(fence):].lstrip()
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3].rstrip()
+    # 1. Strip markdown fences anywhere — including a ```json block that follows
+    #    a preamble line ("Here are the findings:\n```json [...] ```"). Weaker
+    #    models (small Ollama, some cloud) ignore "no fences / no preamble" in
+    #    the prompt, and a strict json.loads on the raw text then silently
+    #    yields 0 findings (the bug behind "feature list / DIY not working").
+    if "```" in cleaned:
+        m = re.search(r"```(?:json)?\s*(.+?)```", cleaned, re.DOTALL | re.IGNORECASE)
+        if m:
+            cleaned = m.group(1).strip()
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        return {"_raw": raw, "_parse_error": True}
+        pass
+    # 2. Tolerant fallback: pull the first BALANCED JSON array (or object) out of
+    #    the text even when the model wrapped it in prose. Scans for the first
+    #    '[' / '{' and matches its close bracket (string-aware) so trailing
+    #    commentary doesn't break the parse.
+    for opener, closer in (("[", "]"), ("{", "}")):
+        start = cleaned.find(opener)
+        if start < 0:
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(cleaned)):
+            c = cleaned[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+                continue
+            if c == '"':
+                in_str = True
+            elif c == opener:
+                depth += 1
+            elif c == closer:
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(cleaned[start:i + 1])
+                    except json.JSONDecodeError:
+                        break
+    return {"_raw": raw, "_parse_error": True}
 
 
 # Widest per-excerpt window for academic rows whose abstract was replaced
