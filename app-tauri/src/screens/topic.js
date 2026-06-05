@@ -4253,6 +4253,7 @@ export async function renderTopic(root, { params }) {
                 </label>
                 <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-fetch-papers" title="Search arXiv · PubMed · OpenAlex · Semantic Scholar · Crossref · Scholar for new papers on this topic and add them to the corpus. Works in Ask mode too."><i data-lucide="book-plus"></i> Fetch papers</button>
                 <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-keys"><i data-lucide="key-round"></i> Keys</button>
+                <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-doctor" title="Diagnose why chat works (or not) for this topic — corpus, semantic index, provider"><i data-lucide="stethoscope"></i> Diagnose</button>
                 <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-export" title="Download the conversation as markdown"><i data-lucide="download"></i> Export</button>
                 <button class="btn btn-ghost btn-sm btn-bordered" id="btn-chat-clear" title="Delete the current chat and start fresh">Clear</button>
               </div>
@@ -4267,6 +4268,47 @@ export async function renderTopic(root, { params }) {
     // Header actions always available
     $('#btn-chat-keys')?.addEventListener('click', () => openByokModal(() => loadChat()));
     $('#btn-chat-new')?.addEventListener('click', () => newConversation(topic));
+    // "Diagnose" — run `chat doctor` for this topic and show exactly why chat
+    // works (or doesn't): corpus / semantic index / topic-name match / provider,
+    // each with a fix. Renders a dismissible panel below the chat header.
+    $('#btn-chat-doctor')?.addEventListener('click', async () => {
+      const btn = $('#btn-chat-doctor');
+      const orig = btn ? btn.innerHTML : '';
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader"></i> Diagnosing…'; window.refreshIcons?.(); }
+      try {
+        const rep = await api.chatDoctor(topic);
+        const wrap = contentEl.querySelector('.chat-wrap');
+        const head = contentEl.querySelector('.chat-head');
+        if (wrap && head) {
+          wrap.querySelector('#chat-doctor-panel')?.remove();
+          const ready = rep?.verdict === 'ready';
+          const rows = (rep?.checks || []).map((c) => `
+            <div style="display:flex;gap:8px;align-items:baseline;padding:2px 0;font-size:12.5px">
+              <span style="color:${c.ok ? 'var(--green,#1D9E75)' : 'var(--red,#C0392B)'};font-weight:700">${c.ok ? '✓' : '✗'}</span>
+              <span style="min-width:120px;color:var(--ink-2)">${esc(c.name)}</span>
+              <span>${esc(c.detail || '')}</span>
+            </div>${c.fix ? `<div style="margin:0 0 4px 130px;font-size:12px;color:var(--ink-3)">↳ ${esc(c.fix)}</div>` : ''}`).join('');
+          const panel = document.createElement('div');
+          panel.id = 'chat-doctor-panel';
+          panel.className = `map-enrich-banner ${ready ? 'ok' : 'warn'}`;
+          panel.style.cssText = 'margin:8px 0;display:block';
+          panel.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <b>Chat diagnosis — ${esc(rep?.verdict || '')}</b>
+              <button class="btn btn-ghost btn-sm btn-bordered" id="chat-doctor-close">Dismiss</button>
+            </div>
+            ${rows}
+            ${rep?.summary ? `<div style="margin-top:6px"><b>${esc(rep.summary)}</b></div>` : ''}`;
+          head.parentNode.insertBefore(panel, head.nextSibling);
+          window.refreshIcons?.();
+          panel.querySelector('#chat-doctor-close')?.addEventListener('click', () => panel.remove());
+        }
+      } catch (e) {
+        showToast('Diagnose failed', e?.message || String(e), 'err');
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; window.refreshIcons?.(); }
+      }
+    });
     $('#btn-chat-clear')?.addEventListener('click', async () => {
       // "Clear" deletes the current thread (others stay saved) and starts fresh.
       const id = chatActiveConv.get(topic);

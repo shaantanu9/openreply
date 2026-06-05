@@ -1470,6 +1470,15 @@ pub async fn persona_view(app: AppHandle, topic: String, persona: String) -> Res
         .await.map_err(err_to_string)
 }
 
+/// Diagnose chat readiness for a topic — corpus, palace index, topic-name match,
+/// findings, and provider — returning the structured `chat doctor` report so the
+/// UI can show exactly why chat works (or doesn't) for this topic.
+#[tauri::command]
+pub async fn chat_doctor(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "chat-doctor", "--topic", &topic, "--json"])
+        .await.map_err(err_to_string)
+}
+
 // ─── Phase 5-10 bundle — cross-topic, export, matrix, research linking ─
 
 #[tauri::command]
