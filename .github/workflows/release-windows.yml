@@ -114,14 +114,15 @@ jobs:
           python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; d['bundle']['resources']=[r for r in d['bundle'].get('resources',[]) if 'gapmap-cli-onedir' not in r]; p.write_text(json.dumps(d, indent=2))"
 
       # ---------- JWT ----------
-      - name: Set JWT_DESKTOP_SECRET fallback if not provided
+      - name: Require JWT_DESKTOP_SECRET (hard-fail; never random)
         shell: bash
         run: |
+          # A random secret would silently brick activation (InvalidSignature).
           if [ -z "${{ secrets.JWT_DESKTOP_SECRET }}" ]; then
-            echo "JWT_DESKTOP_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
-          else
-            echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> $GITHUB_ENV
+            echo "::error::JWT_DESKTOP_SECRET repo secret is NOT set — refusing to build (would brick activation). Run: gh secret set JWT_DESKTOP_SECRET"
+            exit 1
           fi
+          echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> "$GITHUB_ENV"
 
       # ---------- Node + Rust toolchains ----------
       - name: Setup Node.js

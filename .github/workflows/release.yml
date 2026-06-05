@@ -167,14 +167,17 @@ jobs:
       # If the repo secret isn't set (e.g. open-source forks, unsigned builds),
       # generate a random one so the release build doesn't panic. The license-
       # activation flow won't work without a real stable secret — see LAUNCH.md.
-      - name: Set JWT_DESKTOP_SECRET fallback if not provided
+      - name: Require JWT_DESKTOP_SECRET (hard-fail; never random)
         shell: bash
         run: |
+          # A random secret would silently brick activation (InvalidSignature).
+          # The DMG MUST be built with the same secret the licence server signs
+          # with. Fail loudly if it is not configured.
           if [ -z "${{ secrets.JWT_DESKTOP_SECRET }}" ]; then
-            echo "JWT_DESKTOP_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
-          else
-            echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> $GITHUB_ENV
+            echo "::error::JWT_DESKTOP_SECRET repo secret is NOT set — refusing to build (would brick activation). Run: gh secret set JWT_DESKTOP_SECRET"
+            exit 1
           fi
+          echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> "$GITHUB_ENV"
 
       # Materialize the App Store Connect API key (.p8) from the inlined
       # secret content. We can't store a file path in a secret, only the

@@ -1,8 +1,22 @@
+import { createHash } from "crypto";
 import jwt, { type Secret, type SignOptions, type VerifyOptions } from "jsonwebtoken";
 import { Features, freeFeatures, featuresFor } from "@/lib/features";
 
 export const JWT_ISSUER = "gapmap-activation-suite";
 export const JWT_AUDIENCE = "gapmap-desktop";
+
+/**
+ * Irreversible fingerprint of the active signing secret — the first 12 hex of
+ * sha256(TOKEN_SIGNING_SECRET). Safe to expose (cannot be reversed to the
+ * secret; the secret is 256-bit random). The release pipeline compares this
+ * against sha256(JWT_DESKTOP_SECRET)[:12] BEFORE building the DMG so a
+ * signing-secret drift can never ship again. Returns "unset" if no secret.
+ */
+export function tokenSecretFingerprint(): string {
+  const secret = process.env.TOKEN_SIGNING_SECRET;
+  if (!secret) return "unset";
+  return createHash("sha256").update(secret).digest("hex").slice(0, 12);
+}
 
 export type ActivationTokenClaims = {
   sub: string;

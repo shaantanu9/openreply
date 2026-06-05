@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getVersionGate } from "@/lib/appConfig";
+import { tokenSecretFingerprint } from "@/lib/token";
 
 export const runtime = "nodejs";
 
@@ -14,5 +15,7 @@ export const runtime = "nodejs";
 //   app_download_url    — where the update screen sends the user
 export async function GET() {
   const gate = await getVersionGate();
-  return NextResponse.json({ ok: true, ...gate });
+  // signing_fp = irreversible fingerprint of TOKEN_SIGNING_SECRET; the release
+  // pipeline verifies it matches the DMG's JWT_DESKTOP_SECRET before building.
+  return NextResponse.json({ ok: true, signing_fp: tokenSecretFingerprint(), ...gate });
 }

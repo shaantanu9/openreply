@@ -33,17 +33,23 @@ Any mismatch = every user gets `invalid signature` on activation.
 
 ### 1. Decide on the production secret
 
-Either:
-- **Use the existing `.env.publish` value** (recommended — you've already
-  shipped DMGs with this):
-  ```
-  JWT_DESKTOP_SECRET=5c42acb94177a10f351084bbd1e0e321816b4924db543a2883b7a601895d964f
-  ```
-- **OR generate a fresh one** (only do this if you want to rotate; it
-  invalidates every previously-issued activation token):
-  ```
-  openssl rand -hex 32
-  ```
+> ⚠️ **NEVER commit the real secret to this repo (or any tracked file).** It
+> lives ONLY in gitignored `.env.publish` / `.env`, the Vercel project env, and
+> the GitHub Actions secret. (A prior version of this doc pasted the live value
+> here — it was rotated out on 2026-06-05. Don't reintroduce it.)
+
+Generate one strong 256-bit secret and use the SAME value everywhere:
+```
+openssl rand -hex 32
+```
+Then put it in `.env.publish` (gitignored) as:
+```
+JWT_DESKTOP_SECRET=<paste-the-generated-value>
+```
+This same value must equal Vercel prod `TOKEN_SIGNING_SECRET` and the GitHub
+Actions `JWT_DESKTOP_SECRET` secret. If you rotate it, you MUST rebuild + ship a
+new DMG (the old baked secret stops verifying) — and the release pipeline's
+pre-build guard will refuse to build until server and DMG secrets match.
 
 ### 2. Set Vercel env var
 
