@@ -6,6 +6,11 @@ import { api, $, esc, timeAgo } from '../api.js';
 import { confirmModal } from '../lib/confirmModal.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
+import {
+  chatHistory, chatActiveConv, chatConvTitleOverride, chatHydrated, pendingNewConv,
+  CHAT_HISTORY_KEY, CHAT_ACTIVE_KEY, loadChatHistory, genConvId, deriveConvTitle,
+  getActiveConvId, persistActiveConv, saveChatHistory, hydrateChat,
+} from './chat/chatState.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { classifyError } from '../lib/tabEmpty.js';
 import { loadSolutions } from './solutions.js';
@@ -37,24 +42,7 @@ async function withTimeout(promise, ms, label = 'request') {
 }
 
 // Per-topic chat history so switching tabs doesn't wipe the conversation.
-// key = topic string, value = [{ role: 'user'|'assistant', mode, text }]
-// This is the IN-MEMORY buffer for the *currently open* conversation. It is
-// hydrated from (and persisted to) SQLite per-conversation via the native
-// chat_conv_* commands — ChatGPT-style saved threads, durable across restarts.
-const chatHistory = new Map();
-// topic -> active conversation id (the thread currently shown in the buffer).
-const chatActiveConv = new Map();
-// convId -> manual title override (set via rename; wins over the auto-title).
-const chatConvTitleOverride = new Map();
-// Topics whose DB hydration (+ legacy localStorage migration) already ran this
-// session, so re-opening the Chat tab keeps the selected thread instead of
-// reloading the most-recent one.
-const chatHydrated = new Set();
-// Topics with a freshly-started "New chat" that hasn't been persisted yet
-// (no message sent). The rail shows an active "New chat" placeholder row for
-// these so clicking + New gives immediate visual feedback; cleared the moment
-// the first message lands (which mints + saves the real conversation).
-const pendingNewConv = new Set();
+// Chat state (chatHistory/chatActiveConv/... ) moved to ./chat/chatState.js
 
 // ─── Per-topic stats cache (instant first-paint) ───────────────────────────
 // Persists the last `topicStats()` result to localStorage keyed by topic so
@@ -591,116 +579,8 @@ async function runEnrichStreamForTopic(topic, {
 
 // Legacy single-thread localStorage key (pre-2026-05-31). Read once during
 // migration into a real DB conversation, then removed.
-const CHAT_HISTORY_KEY = (topic) => `gapmap.chat.${topic}`;
-// Remembers which conversation was last open per topic, so re-opening the
-// app restores the same thread instead of the most-recent one.
-const CHAT_ACTIVE_KEY = (topic) => `gapmap.chat.active.${topic}`;
-
-function loadChatHistory(topic) {
-  // In-memory buffer only — DB hydration happens in hydrateChat() before any
-  // render. Callers (send/renderMessages) read this synchronously.
-  if (!chatHistory.has(topic)) chatHistory.set(topic, []);
-  return chatHistory.get(topic);
-}
-
-function genConvId() {
-  return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function deriveConvTitle(topic) {
-  const id = chatActiveConv.get(topic);
-  if (id && chatConvTitleOverride.has(id)) return chatConvTitleOverride.get(id);
-  const msgs = chatHistory.get(topic) || [];
-  const firstUser = msgs.find(m => m.role === 'user' && (m.text || '').trim());
-  const t = (firstUser?.text || '').trim().replace(/\s+/g, ' ');
-  if (!t) return 'New chat';
-  return t.length > 48 ? `${t.slice(0, 47)}…` : t;
-}
-
-function getActiveConvId(topic, { create = false } = {}) {
-  let id = chatActiveConv.get(topic);
-  if (!id && create) {
-    id = genConvId();
-    chatActiveConv.set(topic, id);
-    try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), id); } catch {}
-  }
-  return id || null;
-}
-
-// Durable persist of the active conversation to SQLite. Fire-and-forget —
-// callers don't await. A conversation id is minted lazily on the first
-// message so empty threads never clutter the saved list.
-function persistActiveConv(topic) {
-  const msgs = chatHistory.get(topic) || [];
-  if (!msgs.length && !chatActiveConv.get(topic)) return Promise.resolve();
-  const id = getActiveConvId(topic, { create: msgs.length > 0 });
-  if (!id) return Promise.resolve();
-  const title = deriveConvTitle(topic);
-  return api.chatConvSave(id, topic, title, JSON.stringify(msgs)).catch(() => {});
-}
-
-function saveChatHistory(topic) {
-  // Fire-and-forget durable write of the active conversation.
-  void persistActiveConv(topic);
-}
-
-// One-time per session: migrate any legacy localStorage thread into a DB
-// conversation, then pick the active conversation (stored → most-recent →
-// fresh) and load its messages into the in-memory buffer.
-async function hydrateChat(topic) {
-  // Deep-link from the global Chats screen — force-open a specific thread even
-  // if this topic was already hydrated this session. Honoured before the guard.
-  let forceOpen = null;
-  try { forceOpen = localStorage.getItem(`gapmap.chat.open.${topic}`); } catch {}
-  if (forceOpen) {
-    try { localStorage.removeItem(`gapmap.chat.open.${topic}`); } catch {}
-    chatHydrated.add(topic);
-    chatActiveConv.set(topic, forceOpen);
-    try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), forceOpen); } catch {}
-    const conv = await api.chatConvGet(forceOpen).catch(() => null);
-    chatHistory.set(topic, (conv && Array.isArray(conv.messages)) ? conv.messages : []);
-    return;
-  }
-
-  if (chatHydrated.has(topic)) return;
-  chatHydrated.add(topic);
-
-  // 1. Migrate the old single-thread localStorage blob (once).
-  try {
-    const legacyRaw = localStorage.getItem(CHAT_HISTORY_KEY(topic));
-    if (legacyRaw) {
-      let legacy = [];
-      try { legacy = JSON.parse(legacyRaw) || []; } catch { legacy = []; }
-      if (Array.isArray(legacy) && legacy.length) {
-        const existing = await api.chatConvList(topic).catch(() => []);
-        if (!existing || !existing.length) {
-          const id = genConvId();
-          const firstUser = legacy.find(m => m.role === 'user' && (m.text || '').trim());
-          const title = firstUser ? `${(firstUser.text || '').trim().slice(0, 47)}` : 'Imported chat';
-          await api.chatConvSave(id, topic, title || 'Imported chat', JSON.stringify(legacy)).catch(() => {});
-        }
-      }
-      localStorage.removeItem(CHAT_HISTORY_KEY(topic));
-    }
-  } catch {}
-
-  // 2. Resolve the active conversation.
-  let activeId = null;
-  try { activeId = localStorage.getItem(CHAT_ACTIVE_KEY(topic)); } catch {}
-  const list = await api.chatConvList(topic).catch(() => []);
-  const ids = new Set((list || []).map(c => c.id));
-  if (!activeId || !ids.has(activeId)) {
-    activeId = (list && list[0]) ? list[0].id : null;
-  }
-  if (activeId) {
-    chatActiveConv.set(topic, activeId);
-    try { localStorage.setItem(CHAT_ACTIVE_KEY(topic), activeId); } catch {}
-    const conv = await api.chatConvGet(activeId).catch(() => null);
-    chatHistory.set(topic, (conv && Array.isArray(conv.messages)) ? conv.messages : []);
-  } else if (!chatHistory.has(topic)) {
-    chatHistory.set(topic, []);
-  }
-}
+// Chat-state helpers (loadChatHistory/saveChatHistory/hydrateChat/genConvId/
+// deriveConvTitle/getActiveConvId/persistActiveConv) moved to ./chat/chatState.js
 
 // ─── Toast helper (replaces alert() for non-blocking feedback) ───────────
 function ensureToastStack() {
