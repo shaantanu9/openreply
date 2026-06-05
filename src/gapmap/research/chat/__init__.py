@@ -63,6 +63,12 @@ from .retrieval_context import (  # noqa: E402
     _topic_context,
 )
 
+# `chat doctor` — one-call topic readiness probe (corpus / palace / provider).
+from .doctor import (  # noqa: E402
+    diagnose as chat_doctor,
+    format_report as format_doctor_report,
+)
+
 
 MODE_PROMPTS: dict[str, str] = {
     "ask": (
