@@ -95,21 +95,16 @@ export function NavBar({ variant = "marketing" }: Props) {
               {link.label}
             </Link>
           ))}
-          {isSignedIn ? (
-            <Link
-              href={ROUTES.dashboard}
-              className="text-[14px] text-[var(--muted)] transition-colors hover:text-[var(--dark)]"
-            >
-              Dashboard
-            </Link>
-          ) : (
+          {/* Dashboard lives once, as the right-side button (below). Only the
+              signed-out "Sign in" text link belongs in the primary nav. */}
+          {!isSignedIn ? (
             <Link
               href={ROUTES.signIn}
               className="text-[14px] text-[var(--muted)] transition-colors hover:text-[var(--dark)]"
             >
               Sign in
             </Link>
-          )}
+          ) : null}
         </div>
 
         {/* Right-side actions */}
@@ -124,9 +119,8 @@ export function NavBar({ variant = "marketing" }: Props) {
               Get beta access
             </Link>
           )}
-          <Link href={ROUTES.pricing} className="btn btn-ghost hidden lg:inline-flex">
-            Pricing
-          </Link>
+          {/* Pricing already lives in the primary nav (NAV_LINKS) for everyone —
+              no duplicate button here. */}
           <DownloadLink className="btn btn-primary whitespace-nowrap">
             <span className="sm:hidden">Download</span>
             <span className="hidden sm:inline">Download for Mac</span>
