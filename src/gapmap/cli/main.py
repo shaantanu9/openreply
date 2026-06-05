@@ -4242,6 +4242,24 @@ def cmd_research_report(
         console.print(md)
 
 
+@research_app.command("chat-doctor")
+def cmd_research_chat_doctor(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(False, "--json", help="Emit the report as JSON"),
+) -> None:
+    """Diagnose chat readiness for a topic: corpus, palace index, topic-name
+    match, findings, and provider — and the exact fix for whatever is wrong."""
+    from ..research.chat import chat_doctor, format_doctor_report
+
+    rep = chat_doctor(topic, provider=provider)
+    if as_json:
+        typer.echo(json.dumps(rep, ensure_ascii=False))
+    else:
+        typer.echo(format_doctor_report(rep))
+    raise typer.Exit(code=0 if rep.get("ok") else 2)
+
+
 @research_app.command("chat")
 def cmd_research_chat(
     topic: str = typer.Option(..., "--topic", "-t"),

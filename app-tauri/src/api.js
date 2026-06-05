@@ -872,6 +872,8 @@ export const api = {
   },
   listExperiments: (topic) => cachedInvoke('list_experiments', { topic }, 30000, SWR_BUILD_OUTPUT_MS),
   personaView: (topic, persona) => invoke('persona_view', { topic, persona }),
+  // chat doctor — structured "why does chat work (or not) for this topic" report.
+  chatDoctor: (topic) => invoke('chat_doctor', { topic }),
 
   // Phase-3 Hypothesis Tracking — tracked bets for user-validated research
   // findings. `cardJson` is the JSON-stringified hypothesis card from the

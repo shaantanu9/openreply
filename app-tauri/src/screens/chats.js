@@ -5,26 +5,31 @@
 //
 // Route: #/chats
 //
-// Clicking a conversation deep-links into its topic's Chat tab with that
-// exact thread opened. The handoff uses three storage keys the topic screen
-// already honours:
-//   sessionStorage gapmap.topic.tab.<topic> = 'chat'   → land on the Chat tab
-//   localStorage   gapmap.chat.active.<topic> = <id>   → remember the thread
-//   localStorage   gapmap.chat.open.<topic>   = <id>   → force-open even if the
-//                                                        topic was already
-//                                                        hydrated this session
-//
-// Starting a NEW chat reuses the same deep-link, plus one more key:
-//   localStorage   gapmap.chat.prefill.<topic> = <question>
-// The topic Chat tab reads it once, starts a fresh thread, and auto-sends —
-// so all the streaming/listener infrastructure lives in exactly one place.
+// Clicking a conversation (or "Start chat") opens the chat INLINE on this screen
+// by mounting the SAME reusable chatPanel the topic Chat tab uses — no navigation
+// to the topic page. The right thread is opened via the panel's deep-link keys:
+//   localStorage gapmap.chat.active/open.<topic> = <id>       → open that thread
+//   localStorage gapmap.chat.prefill.<topic>     = <question> → new thread + auto-send
+// All streaming/listener/render logic lives in exactly one place (chatPanel.js).
 //
 // Topic selection is single for now (the chat engine grounds answers in one
 // topic's research); the picker is built so multi-select can be layered on
 // later without reshaping this screen.
 import { api, esc } from '../api.js';
+import { mountChatPanel } from './chat/chatPanel.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+// Minimal toast for the inline chat panel (same .toast-stack styling as topic.js).
+function showToast(title, detail = '', kind = 'err', ms = 5000) {
+  let stack = document.querySelector('.toast-stack');
+  if (!stack) { stack = document.createElement('div'); stack.className = 'toast-stack'; document.body.appendChild(stack); }
+  const el = document.createElement('div');
+  el.className = `toast toast-${kind}`;
+  el.innerHTML = `<div class="toast-title">${esc(title)}</div>${detail ? `<div class="toast-detail">${esc(detail)}</div>` : ''}`;
+  stack.appendChild(el);
+  setTimeout(() => { try { el.remove(); } catch {} }, ms);
+}
 
 function timeAgoMs(ms) {
   const n = Number(ms);
@@ -65,7 +70,7 @@ export async function renderChats(root) {
             <i data-lucide="send-horizontal"></i> Start chat
           </button>
         </div>
-        <div class="chats-new-hint muted">The chat opens in the topic's Chat tab and answers from that topic's research.</div>
+        <div class="chats-new-hint muted">The chat opens right here and answers from that topic's research.</div>
       </div>
     </div>
 
@@ -85,15 +90,50 @@ export async function renderChats(root) {
   const goBtn = $('#chats-new-go', root);
   const qInput = $('#chats-new-q', root);
 
+  // Open the chat INLINE in this screen (reuses the exact topic-chat component)
+  // instead of navigating to the topic's Chat tab.
+  async function openChatInline(topic, convId) {
+    if (!alive()) return;
+    if (convId) {
+      // Deep-link mechanism the panel's hydrateChat honours: force-open this thread.
+      try {
+        localStorage.setItem(`gapmap.chat.active.${topic}`, convId);
+        localStorage.setItem(`gapmap.chat.open.${topic}`, convId);
+      } catch {}
+    }
+    root.innerHTML = `
+      <header class="topbar">
+        <div class="crumbs">
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="chats-back"><i data-lucide="arrow-left"></i> All chats</button>
+          / <strong>${esc(topic)}</strong>
+        </div>
+        <div class="topbar-spacer"></div>
+        <span class="muted" style="font-size:12px">Grounded on this topic's research</span>
+      </header>
+      <div id="chats-inline-mount" class="chats-inline-mount"></div>`;
+    window.refreshIcons?.();
+    $('#chats-back', root)?.addEventListener('click', () => renderChats(root));
+    const mount = $('#chats-inline-mount', root);
+    try {
+      await mountChatPanel(mount, {
+        topic,
+        isActive: () => mount.isConnected,
+        deps: { showToast, recordEnrichResult: () => {} },
+      });
+    } catch (e) {
+      if (mount) mount.innerHTML =
+        `<div class="empty-big"><h3>Couldn't open chat</h3><p>${esc(e?.message || e)}</p></div>`;
+    }
+  }
+
   const startNewChat = () => {
     const topic = topicSel?.value || '';
     const q = (qInput?.value || '').trim();
     if (!topic || !q) { qInput?.focus(); return; }
-    try {
-      sessionStorage.setItem(`gapmap.topic.tab.${topic}`, 'chat');
-      localStorage.setItem(`gapmap.chat.prefill.${topic}`, q);
-    } catch {}
-    location.hash = `#/topic/${encodeURIComponent(topic)}`;
+    // Prefill is consumed by the panel's loadChat — it starts a fresh thread and
+    // auto-sends, so the streaming/listener logic lives in exactly one place.
+    try { localStorage.setItem(`gapmap.chat.prefill.${topic}`, q); } catch {}
+    openChatInline(topic, null);
   };
 
   const syncGoState = () => {
@@ -143,14 +183,7 @@ export async function renderChats(root) {
   const mount = $('#chats-mount', root);
   const search = $('#chats-search', root);
 
-  const openConv = (topic, id) => {
-    try {
-      sessionStorage.setItem(`gapmap.topic.tab.${topic}`, 'chat');
-      localStorage.setItem(`gapmap.chat.active.${topic}`, id);
-      localStorage.setItem(`gapmap.chat.open.${topic}`, id);
-    } catch {}
-    location.hash = `#/topic/${encodeURIComponent(topic)}`;
-  };
+  const openConv = (topic, id) => openChatInline(topic, id);
 
   const render = (filter = '') => {
     const f = filter.trim().toLowerCase();

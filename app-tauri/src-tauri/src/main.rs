@@ -417,6 +417,7 @@ fn main() {
             commands::run_gap_discovery,
             commands::list_experiments,
             commands::persona_view,
+            commands::chat_doctor,
             commands::hypothesis_create,
             commands::hypothesis_update_status,
             commands::hypothesis_list,
