@@ -690,6 +690,8 @@ const ALL_SOURCES = [
   { id: 'rss_marketing',   label: 'RSS: Marketing / growth (15 feeds)', group: 'rss', defaultOn: false },
   { id: 'rss_persuasion',  label: 'RSS: Persuasion / behavioral', group: 'rss', defaultOn: false },
   { id: 'rss_swipe',       label: 'RSS: Ad swipe files',      group: 'rss', defaultOn: false },
+  { id: 'rss_listings',    label: 'RSS: Software listings (G2, etc.)', group: 'rss', defaultOn: true },
+  { id: 'rss_user',        label: 'RSS: My custom feeds',     group: 'rss', defaultOn: true },
 ];
 
 const GROUP_LABELS = {
@@ -838,21 +840,30 @@ async function openSourcePickerModal(topic) {
   // flag, and persists them to localStorage. Both "Run" and "Save without
   // fetching" feed off this so the on-disk state is identical and the
   // next collect (whether fired now or later) picks up the same prefs.
-  function _persistPickerSelection() {
+  // `oneShot` = true only for the "Run" button. The one-shot collect keys
+  // (last_sources / last_skip_reddit / last_aggressive) are a HANDOFF that the
+  // very next collect.js mount reads-then-deletes. "Save (don't fetch yet)" must
+  // NOT write them — otherwise a saved sources-only / reddit-unchecked selection
+  // leaks into the NEXT collect fired by any other trigger (Fetch more, a fresh
+  // collect, even a different topic) and silently skips Reddit. Save only writes
+  // the durable per-topic preference.
+  function _persistPickerSelection(oneShot) {
     const checkedIds = Array.from(host.querySelectorAll('input[data-src]:checked'))
       .map(cb => cb.dataset.src);
     const includeReddit = checkedIds.includes('reddit');
     const externalSources = checkedIds.filter(s => s !== 'reddit');
     const aggressive = host.querySelector('#src-pick-aggressive').checked;
     if (checkedIds.length === 0) return null;
-    localStorage.setItem('gapmap.collect.last_aggressive', String(aggressive));
-    localStorage.setItem(
-      'gapmap.collect.last_sources',
-      externalSources.length > 0 ? externalSources.join(',') : '',
-    );
-    localStorage.setItem('gapmap.collect.last_skip_reddit', String(!includeReddit));
-    // Per-topic source preference — survives picker close and is what a
-    // future collect should default to (instead of ALL_SOURCES.defaultOn).
+    if (oneShot) {
+      localStorage.setItem('gapmap.collect.last_aggressive', String(aggressive));
+      localStorage.setItem(
+        'gapmap.collect.last_sources',
+        externalSources.length > 0 ? externalSources.join(',') : '',
+      );
+      localStorage.setItem('gapmap.collect.last_skip_reddit', String(!includeReddit));
+    }
+    // Per-topic source preference — durable; what a future picker open defaults
+    // to (instead of ALL_SOURCES.defaultOn). Always written.
     localStorage.setItem(
       `gapmap.topic.sources.${topic}`,
       JSON.stringify({ checked: checkedIds, aggressive, ts: Date.now() }),
@@ -861,7 +872,7 @@ async function openSourcePickerModal(topic) {
   }
 
   host.querySelector('#src-pick-save').onclick = () => {
-    const sel = _persistPickerSelection();
+    const sel = _persistPickerSelection(false);  // durable pref only, no fetch
     if (!sel) {
       alert('Pick at least one source.');
       return;
@@ -876,23 +887,24 @@ async function openSourcePickerModal(topic) {
   };
 
   host.querySelector('#src-pick-go').onclick = async () => {
-    const sel = _persistPickerSelection();
+    // Reddit is the highest-signal source — make "run without Reddit" an
+    // explicit, confirmed choice rather than a silent skip (the bug this fixes).
+    const redditChecked = !!host.querySelector('input[data-src="reddit"]:checked');
+    if (!redditChecked) {
+      const proceed = await confirmModal(
+        'Reddit is unchecked — this collect will NOT fetch any Reddit posts, '
+        + 'only the other selected sources.\n\nRun without Reddit?'
+      );
+      if (!proceed) return;  // keep the picker open so they can re-check Reddit
+    }
+    const sel = _persistPickerSelection(true);  // Run → write one-shot handoff keys
     if (!sel) {
       alert('Pick at least one source.');
       return;
     }
-    const { checkedIds: checked, includeReddit, externalSources, aggressive } = sel;
-
-    // _persistPickerSelection already wrote the localStorage keys
-    // collect.js reads on mount (last_sources, last_skip_reddit,
-    // last_aggressive). Navigate to the live progress screen — collect.js
-    // will pick up those values and fire startCollect with the correct
-    // args. Without the explicit stash, collect.js's 2-arg startCollect
-    // call would fire FIRST and ignore the source filter entirely (root
-    // cause: bug 2026-04-20 where selecting only playstore still searched
-    // Reddit).
-    void includeReddit; void externalSources; void aggressive; void checked;
-    // Close immediately so the modal never lingers over the collect screen.
+    // _persistPickerSelection wrote the one-shot keys collect.js reads on mount
+    // (last_sources / last_skip_reddit / last_aggressive). Navigate to the live
+    // progress screen; collect.js fires startCollect with those args.
     close();
     location.hash = `#/collect/${encodeURIComponent(topic)}`;
   };
@@ -4792,6 +4804,11 @@ export async function renderTopic(root, { params }) {
     if (!ok) return;
     localStorage.setItem('gapmap.collect.last_aggressive', 'true');
     localStorage.setItem('gapmap.collect.last_deep', 'true');
+    // Deep fetch = EVERY source incl. Reddit. Explicitly clear any stale
+    // one-shot picker state (a prior sources-only/reddit-unchecked selection)
+    // so Reddit is never silently skipped here.
+    localStorage.setItem('gapmap.collect.last_skip_reddit', 'false');
+    localStorage.setItem('gapmap.collect.last_sources', '');
     location.hash = `#/collect/${encodeURIComponent(topic)}`;
   });
 
