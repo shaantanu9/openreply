@@ -22,7 +22,7 @@
 
 import crypto from "node:crypto";
 import { getSupabaseServerClient } from "@/lib/supabaseClient";
-import { mintActivationKey } from "@/lib/activationStore";
+import { mintActivationKey, normalizeActivationKey } from "@/lib/activationStore";
 import type { PlanId } from "@/lib/features";
 
 function hashSecret(input: string): string {
@@ -116,7 +116,10 @@ export async function redeemCouponSupabase(input: {
 
   // Mint a fresh activation key + insert licence row.
   const rawKey = mintActivationKey();
-  const activationKeyHash = hashSecret(rawKey);
+  // Hash the NORMALIZED key (dashes stripped, uppercased) — the activate
+  // endpoint looks up by sha256(normalizeActivationKey(key)). Hashing the raw
+  // dashed key here makes every minted key un-activatable (401 invalid key).
+  const activationKeyHash = hashSecret(normalizeActivationKey(rawKey));
   // No traditional password — coupons go through the Supabase Bearer flow.
   // Random unguessable password_hash matches the trial-creation pattern in
   // supabaseActivationStore.ts (see supabaseCreateTrialForEmail).

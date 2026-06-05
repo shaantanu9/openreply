@@ -112,7 +112,7 @@ export async function createLicenseSupabase(input: {
   const supabase = getSupabaseServerClient();
   const email = input.email.trim().toLowerCase();
   const activationKey = normalizeActivationKey(input.activationKey || "");
-  const nextKey = activationKey || mintActivationKey();
+  const nextKey = activationKey || normalizeActivationKey(mintActivationKey());
   const passwordHash = hashSecret(input.password);
   const activationKeyHash = hashSecret(nextKey);
   const planId: PlanId = input.planId || "pro";
@@ -360,7 +360,8 @@ export async function supabaseCreateTrialForEmail(input: {
 
   const rawKey = mintActivationKey();
   const trialEnds = new Date(Date.now() + days * 86_400 * 1000);
-  const activationKeyHash = hashSecret(rawKey);
+  // Hash the NORMALIZED key — activate looks up sha256(normalizeActivationKey(key)).
+  const activationKeyHash = hashSecret(normalizeActivationKey(rawKey));
   // Random unguessable password_hash — trial users don't authenticate via the
   // legacy email+password+key flow (they use Bearer auth). Using a random
   // 256-bit value prevents anyone who learns the email from bypassing
@@ -459,7 +460,8 @@ export async function supabaseUpsertLicenceFromWebhook(input: {
     password: null,
     activation_key: rawKey,
     password_hash: unusablePasswordHash,
-    activation_key_hash: hashSecret(rawKey),
+    // Hash the NORMALIZED key — activate looks up sha256(normalizeActivationKey(key)).
+    activation_key_hash: hashSecret(normalizeActivationKey(rawKey)),
     status: "active",
     max_devices: input.maxDevices,
     expires_at: input.expiresAt,
