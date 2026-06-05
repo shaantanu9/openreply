@@ -18,8 +18,8 @@ import os
 import threading
 from collections.abc import Iterator
 
-from ..core.config import load_config
-from ..core.db import get_db
+from ...core.config import load_config
+from ...core.db import get_db
 
 # --- provider registry -----------------------------------------------------
 
@@ -85,44 +85,13 @@ def _default_model(provider: str) -> str:
 
 # --- topic context --------------------------------------------------------
 
-# How long chat will wait on the ChromaDB palace before giving up and
-# falling back to engagement-ranked SQL retrieval. The palace store is NOT
-# safe for concurrent cross-process access: while a collect runs, the
-# long-lived `enrich-worker --serve` process upserts embeddings into the
-# SAME `palace/chroma.sqlite3` + HNSW index, and a chat's inline read
-# (`stats()` / `search_posts()`) can then block on the writer's lock for the
-# whole duration of the collect — which surfaces as "chat hangs while a
-# collection is going". Bounding the read converts that indefinite hang into
-# a short, graceful degrade. Env-tunable for slow disks. Default 3 s — a warm
-# semantic query returns in <1 s, so 3 s only trips under real contention.
-_PALACE_CHAT_TIMEOUT = float(os.environ.get("GAPMAP_PALACE_CHAT_TIMEOUT") or 3.0)
-
-
-def _call_with_timeout(fn, timeout_s: float):
-    """Run a blocking palace/ChromaDB call under a wall-clock ceiling.
-
-    Returns (True, result) if `fn` finished in time, else (False, None) on
-    timeout OR any exception. On timeout the worker thread is left running as
-    a daemon — it can't be force-killed, but it's harmless: it just finishes
-    its ChromaDB read once the writer releases the store, then exits. We never
-    block waiting for it (that's the whole point), so we do NOT use a
-    ThreadPoolExecutor `with`-block here — its __exit__ calls
-    shutdown(wait=True), which would re-introduce the very hang we're killing.
-    """
-    box: dict = {}
-
-    def _run():
-        try:
-            box["v"] = fn()
-        except Exception as e:  # noqa: BLE001 — any failure → SQL fallback
-            box["e"] = e
-
-    t = threading.Thread(target=_run, name="palace-chat-lookup", daemon=True)
-    t.start()
-    t.join(timeout_s)
-    if t.is_alive() or "e" in box:
-        return False, None
-    return True, box.get("v")
+# Palace timeout wrapper extracted to chat/timeout.py (unit-tested in isolation).
+from .timeout import (  # noqa: E402
+    PALACE_CHAT_TIMEOUT,
+    _PALACE_CHAT_TIMEOUT,
+    _call_with_timeout,
+    call_with_timeout,
+)
 
 
 def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], str]:
@@ -144,7 +113,7 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
     if os.environ.get("GAPMAP_DISABLE_PALACE", "").strip().lower() in ("1","true","yes","on"):
         return [], ""
     try:
-        from ..retrieval import palace
+        from ...retrieval import palace
     except Exception:
         return [], ""
     if not palace.is_available() or not palace.is_model_ready():
@@ -165,7 +134,7 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
     # Heartbeat so the enrich-worker yields its ChromaDB writes while we read
     # (see core.coordination + enrich_worker's chat-backoff). Best-effort.
     try:
-        from ..core.coordination import mark_chat_active
+        from ...core.coordination import mark_chat_active
         mark_chat_active()
     except Exception:
         pass
@@ -208,52 +177,14 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
     return posts, label
 
 
-# Map a natural-language question to a source FAMILY so the chat can answer
-# "what do the research papers say", "what does the news say", "what do users
-# reply", "what do app reviews complain about" — scoped to just those sources.
-# (label, source_type values in DB, trigger keywords/phrases)
-_SOURCE_FAMILIES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
-    ("research papers",
-     ("arxiv", "openalex", "pubmed", "crossref", "scholar", "semantic_scholar"),
-     ("paper", "papers", "research", "researcher", "academic", "academia", "study",
-      "studies", "literature", "scholar", "arxiv", "pubmed", "journal", "journals",
-      "citation", "citations", "peer-review", "peer reviewed", "scientific", "science says")),
-    ("news",
-     ("gnews", "rss", "google_news", "news"),
-     ("news", "article", "articles", "press", "media", "headline", "headlines",
-      "journalist", "reporter", "reporting", "coverage", "blog post", "blogs")),
-    ("app store reviews",
-     ("playstore", "appstore", "trustpilot", "producthunt", "oc_producthunt_today", "alternativeto"),
-     ("app store", "play store", "appstore", "playstore", "app review", "app reviews",
-      "store review", "store reviews", "review", "reviews", "rating", "ratings",
-      "trustpilot", "app complain", "app complaint", "app complaints", "reviewer", "reviewers")),
-    ("developer sources",
-     ("hn", "stackoverflow", "github", "github_issue", "devto"),
-     ("github", "stack overflow", "stackoverflow", "hacker news", "hackernews",
-      "developer", "developers", "issue tracker", "repo", "repos", "repository")),
-    ("video",
-     ("youtube", "youtube_transcript", "youtube_description"),
-     ("youtube", "video", "videos", "creator", "creators", "vlog", "channel")),
-    ("community discussion",
-     ("reddit", "lemmy", "mastodon", "bluesky", "oc_bluesky", "discourse"),
-     ("reddit", "redditor", "redditors", "subreddit", "user", "users", "people",
-      "reply", "replies", "community", "forum", "forums", "commenter", "commenters",
-      "discussion", "mastodon", "lemmy", "bluesky")),
-]
-
-
-def _detect_source_intent(question: str) -> tuple[str, tuple[str, ...]] | None:
-    """Return (label, source_types) if the question targets a source family,
-    else None. Scored by keyword hits; ties broken by family order above."""
-    q = f" {(question or '').lower()} "
-    best = None
-    best_score = 0
-    for label, sources, kws in _SOURCE_FAMILIES:
-        score = sum(1 for k in kws if k in q)
-        if score > best_score:
-            best_score = score
-            best = (label, sources)
-    return best if best_score > 0 else None
+# Source-family intent detection extracted to chat/source_intent.py
+# (pure keyword matching, unit-tested in isolation).
+from .source_intent import (  # noqa: E402
+    SOURCE_FAMILIES,
+    _SOURCE_FAMILIES,
+    _detect_source_intent,
+    detect_source_intent,
+)
 
 
 def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None,
@@ -450,7 +381,7 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
             parts.append("")
 
     if posts:
-        from .corpus_format import _format_row
+        from ..corpus_format import _format_row
         parts.append(evidence_heading)
         parts.append("Cite these sources inline as [1], [2], etc. when you reference them.")
         parts.append("")
@@ -463,7 +394,7 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
         # `research paper-fulltext --topic <T>` ahead of time (or the
         # desktop app does it lazily) to populate the cache.
         try:
-            from .paper_fulltext import get_full_text
+            from ..paper_fulltext import get_full_text
             paper_text_cache: dict[str, str] = {}
             for p in posts:
                 if (p.get("source") or "") not in ("arxiv", "openalex", "semantic_scholar", "scholar"):
@@ -675,7 +606,7 @@ def _stream_openai_compatible(
     client = OpenAI(api_key=api_key, base_url=base)
     extra_headers = {}
     if provider == "openrouter":
-        from ..core.identity import GITHUB_URL
+        from ...core.identity import GITHUB_URL
         extra_headers["HTTP-Referer"] = GITHUB_URL
         extra_headers["X-Title"] = "Gap Map"
 
@@ -1020,7 +951,7 @@ def _exec_tool(name: str, args: dict) -> dict:
             # retrieval extras aren't installed (the tool just returns a
             # skip-stub in that case — see palace.search_posts).
             try:
-                from ..retrieval.palace import (
+                from ...retrieval.palace import (
                     is_available, is_model_ready, search_posts,
                 )
             except ImportError:
@@ -1041,7 +972,7 @@ def _exec_tool(name: str, args: dict) -> dict:
             source = args.get("source") or None
             limit = min(int(args.get("limit") or 10), 30)
             try:
-                from ..core.coordination import mark_chat_active
+                from ...core.coordination import mark_chat_active
                 mark_chat_active()
             except Exception:
                 pass
@@ -1077,7 +1008,7 @@ def _exec_tool(name: str, args: dict) -> dict:
             topic = (args.get("topic") or "").strip()
             if not topic:
                 return {"error": "topic is required"}
-            from .paper_pipeline import run_paper_research
+            from ..paper_pipeline import run_paper_research
             res = _run_bounded(
                 run_paper_research,
                 150.0,
@@ -1118,7 +1049,7 @@ def _exec_tool(name: str, args: dict) -> dict:
             topic = (args.get("topic") or "").strip()
             if not topic:
                 return {"error": "topic is required"}
-            from .collect import collect
+            from ..collect import collect
             srcs = args.get("sources")
             if not isinstance(srcs, list) or not srcs:
                 srcs = ["hn", "stackoverflow", "devto", "gnews"]
@@ -1364,7 +1295,7 @@ def chat_meta(topic: str, provider: str | None = None) -> dict:
     # to engagement-ranked SQL.
     palace_status: dict = {"available": False, "model_ready": False, "indexed_for_topic": 0}
     try:
-        from ..retrieval import palace
+        from ...retrieval import palace
         palace_status["available"] = palace.is_available()
         palace_status["model_ready"] = palace_status["available"] and palace.is_model_ready()
         if palace_status["model_ready"]:
