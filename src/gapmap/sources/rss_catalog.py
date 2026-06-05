@@ -43,8 +43,24 @@ CATALOG: dict[str, list[tuple[str, str]]] = {
     # Products / new launches
     "products": [
         ("Product Hunt", "https://www.producthunt.com/feed"),
-        ("Indie Hackers", "https://www.indiehackers.com/feed.xml"),
-        ("Betalist", "https://betalist.com/feed"),
+        # Indie Hackers (feed.xml) and BetaList (/feed) went dead — 0 entries /
+        # 404 as of 2026-06-05. Removed. Launch/listing signal now lives in the
+        # `listings` category below.
+    ],
+    # Software listing / review / directory sites — verified live 2026-06-05.
+    # NOTE: G2 / Capterra / GetApp / TrustRadius / AlternativeTo *review* pages
+    # are Cloudflare-walled (HTTP 403) and not fetchable without a paid API or a
+    # headless browser. These are their public RSS feeds (software category
+    # guides, SaaS news, launches, project news) which DO come through. The RSS
+    # adapter's topic-keyword filter scopes them to the user's market, so e.g.
+    # G2's "5 Best Project Management Software" surfaces only on relevant topics.
+    "listings": [
+        ("G2", "https://learn.g2.com/rss.xml"),
+        ("SaaSworthy", "https://www.saasworthy.com/blog/feed"),
+        ("Product Hunt", "https://www.producthunt.com/feed"),
+        ("Show HN", "https://hnrss.org/show"),
+        ("SourceForge", "https://sourceforge.net/blog/feed/"),
+        ("Slashdot", "https://rss.slashdot.org/Slashdot/slashdotMain"),
     ],
     # Engineering blogs
     "engineering": [
@@ -135,6 +151,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "startup": "Startup / founder",
     "tech_news": "Tech news",
     "products": "Products / launches",
+    "listings": "Software listings / reviews",
     "engineering": "Engineering blogs",
     "ml": "ML / AI research",
     "design": "Design / UX",
@@ -153,6 +170,7 @@ DEFAULT_CATEGORIES: list[str] = [
     "startup",
     "tech_news",
     "products",
+    "listings",
     "ml",
     "science",
 ]

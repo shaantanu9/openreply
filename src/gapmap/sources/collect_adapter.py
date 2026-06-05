@@ -859,6 +859,7 @@ SOURCES: dict[str, Any] = {
     "rss_startup": _rss_category_runner("startup"),
     "rss_tech_news": _rss_category_runner("tech_news"),
     "rss_products": _rss_category_runner("products"),
+    "rss_listings": _rss_category_runner("listings"),
     "rss_engineering": _rss_category_runner("engineering"),
     "rss_ml": _rss_category_runner("ml"),
     "rss_design": _rss_category_runner("design"),

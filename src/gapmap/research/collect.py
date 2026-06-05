@@ -363,6 +363,7 @@ def collect(
                 "trustpilot",     # Customer reviews (non-app-store web)
                 "producthunt",    # Product Hunt launches + early-adopter reactions
                 "rss_products",   # Product launch/news RSS bundle
+                "rss_listings",   # Software listing/review sites (G2, SourceForge, Show HN, SaaSworthy)
                 "rss_tech_news",  # Tech news RSS bundle
                 "arxiv",          # arXiv preprints
                 "openalex",       # OpenAlex academic catalogue
