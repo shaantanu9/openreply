@@ -5,19 +5,12 @@
 //
 // Route: #/chats
 //
-// Clicking a conversation deep-links into its topic's Chat tab with that
-// exact thread opened. The handoff uses three storage keys the topic screen
-// already honours:
-//   sessionStorage gapmap.topic.tab.<topic> = 'chat'   → land on the Chat tab
-//   localStorage   gapmap.chat.active.<topic> = <id>   → remember the thread
-//   localStorage   gapmap.chat.open.<topic>   = <id>   → force-open even if the
-//                                                        topic was already
-//                                                        hydrated this session
-//
-// Starting a NEW chat reuses the same deep-link, plus one more key:
-//   localStorage   gapmap.chat.prefill.<topic> = <question>
-// The topic Chat tab reads it once, starts a fresh thread, and auto-sends —
-// so all the streaming/listener infrastructure lives in exactly one place.
+// Clicking a conversation (or "Start chat") opens the chat INLINE on this screen
+// by mounting the SAME reusable chatPanel the topic Chat tab uses — no navigation
+// to the topic page. The right thread is opened via the panel's deep-link keys:
+//   localStorage gapmap.chat.active/open.<topic> = <id>       → open that thread
+//   localStorage gapmap.chat.prefill.<topic>     = <question> → new thread + auto-send
+// All streaming/listener/render logic lives in exactly one place (chatPanel.js).
 //
 // Topic selection is single for now (the chat engine grounds answers in one
 // topic's research); the picker is built so multi-select can be layered on
