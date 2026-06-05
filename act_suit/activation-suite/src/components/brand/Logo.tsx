@@ -13,10 +13,10 @@ export function Logo({ size = "md", tone = "dark", href = ROUTES.home }: Props) 
   const nameSize = size === "sm" ? 16 : 17;
 
   return (
-    <Link href={href} className="inline-flex items-center gap-2">
+    <Link href={href} className="inline-flex shrink-0 items-center gap-2">
       <LogoMark size={markSize} variant={tone === "white" ? "cream-outline" : "dark"} />
       <span
-        className="font-serif font-medium"
+        className="whitespace-nowrap font-serif font-medium"
         style={{
           fontSize: nameSize,
           color: tone === "white" ? "var(--white)" : "var(--dark)",

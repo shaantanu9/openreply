@@ -86,22 +86,35 @@ export function NavBar({ variant = "marketing" }: Props) {
               {link.label}
             </Link>
           ))}
-          {!isSignedIn ? (
+          {isSignedIn ? (
+            <Link
+              href={ROUTES.dashboard}
+              className="text-[14px] text-[var(--muted)] transition-colors hover:text-[var(--dark)]"
+            >
+              Dashboard
+            </Link>
+          ) : (
             <Link
               href={ROUTES.signIn}
               className="text-[14px] text-[var(--muted)] transition-colors hover:text-[var(--dark)]"
             >
               Sign in
             </Link>
-          ) : null}
+          )}
         </div>
 
         {/* Right-side actions */}
         <div className="flex items-center gap-2 sm:gap-[10px]">
           <UserMenu />
-          <Link href={ROUTES.signIn} className="btn btn-ghost hidden sm:inline-flex">
-            Get beta access
-          </Link>
+          {isSignedIn ? (
+            <Link href={ROUTES.dashboard} className="btn btn-ghost hidden lg:inline-flex">
+              Dashboard
+            </Link>
+          ) : (
+            <Link href={ROUTES.signIn} className="btn btn-ghost hidden lg:inline-flex">
+              Get beta access
+            </Link>
+          )}
           <Link href={ROUTES.pricing} className="btn btn-ghost hidden lg:inline-flex">
             Pricing
           </Link>
@@ -150,22 +163,32 @@ export function NavBar({ variant = "marketing" }: Props) {
                   {link.label}
                 </Link>
               ))}
-              {!isSignedIn ? (
+              {isSignedIn ? (
                 <Link
-                  href={ROUTES.signIn}
+                  href={ROUTES.dashboard}
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-[8px] px-2 py-2.5 text-[15px] text-[var(--dark)] hover:bg-[var(--cream-dark)]"
+                  className="mt-2 btn btn-ghost w-full justify-center"
                 >
-                  Sign in
+                  Go to dashboard
                 </Link>
-              ) : null}
-              <Link
-                href={ROUTES.signIn}
-                onClick={() => setMenuOpen(false)}
-                className="mt-2 btn btn-ghost w-full justify-center"
-              >
-                Get beta access
-              </Link>
+              ) : (
+                <>
+                  <Link
+                    href={ROUTES.signIn}
+                    onClick={() => setMenuOpen(false)}
+                    className="rounded-[8px] px-2 py-2.5 text-[15px] text-[var(--dark)] hover:bg-[var(--cream-dark)]"
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href={ROUTES.signIn}
+                    onClick={() => setMenuOpen(false)}
+                    className="mt-2 btn btn-ghost w-full justify-center"
+                  >
+                    Get beta access
+                  </Link>
+                </>
+              )}
             </nav>
           </div>
         </>

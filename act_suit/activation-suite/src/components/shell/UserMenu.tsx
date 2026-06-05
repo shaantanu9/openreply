@@ -74,7 +74,7 @@ export function UserMenu() {
         >
           {initials}
         </span>
-        <span className="max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px] text-[var(--muted)]">
+        <span className="hidden max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px] text-[var(--muted)] sm:inline">
           {name}
         </span>
         <span className="text-[11px] text-[var(--muted-light)]">▾</span>
