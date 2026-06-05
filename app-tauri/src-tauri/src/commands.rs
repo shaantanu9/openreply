@@ -415,6 +415,51 @@ pub async fn canonicalize_topic(app: AppHandle, topic: String) -> Result<Value, 
     .map_err(err_to_string)
 }
 
+// ── User-added custom RSS feeds (Settings → Custom RSS) ──────────────────────
+// Triangle: these + main.rs::generate_handler! + api.js feeds* must stay in sync.
+
+/// List the user's saved custom RSS feeds.
+#[tauri::command]
+pub async fn feeds_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["feeds", "list", "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Validate a candidate feed URL (scheme/SSRF guard → fetch → parse) WITHOUT saving.
+#[tauri::command]
+pub async fn feeds_validate(app: AppHandle, url: String) -> Result<Value, String> {
+    run_cli(&app, vec!["feeds", "validate", "--url", &url, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Validate then save a custom RSS feed. Rejects non-feed / blocked URLs.
+#[tauri::command]
+pub async fn feeds_add(app: AppHandle, url: String, name: Option<String>) -> Result<Value, String> {
+    let nm = name.unwrap_or_default();
+    run_cli(&app, vec!["feeds", "add", "--url", &url, "--name", &nm, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Remove a saved custom RSS feed.
+#[tauri::command]
+pub async fn feeds_remove(app: AppHandle, url: String) -> Result<Value, String> {
+    run_cli(&app, vec!["feeds", "remove", "--url", &url, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Enable or disable (pause) a saved feed.
+#[tauri::command]
+pub async fn feeds_enable(app: AppHandle, url: String, enabled: bool) -> Result<Value, String> {
+    let flag = if enabled { "--enabled" } else { "--disabled" };
+    run_cli(&app, vec!["feeds", "enable", "--url", &url, flag, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
 /// Build the CLI args vector for a topic collect. Pulled out of
 /// `start_collect` so the queue dequeue path can replay the same args
 /// shape without duplicating the assembly.

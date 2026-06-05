@@ -32,6 +32,74 @@ research_app.add_typer(graph_app, name="graph")
 ingest_app = typer.Typer(help="Ingest local files (CSV / JSON / TXT / VTT / SRT / MD / PDF) into a topic.")
 app.add_typer(ingest_app, name="ingest")
 
+feeds_app = typer.Typer(help="Manage user-added custom RSS feeds (swept on every collect).")
+app.add_typer(feeds_app, name="feeds")
+
+
+@feeds_app.command("list")
+def cmd_feeds_list(as_json: bool = typer.Option(False, "--json", hidden=True)) -> None:
+    """List the user's saved custom RSS feeds."""
+    _ = as_json
+    from ..core.db import list_user_feeds
+    console.print_json(data={"ok": True, "feeds": list_user_feeds()})
+
+
+@feeds_app.command("validate")
+def cmd_feeds_validate(
+    url: str = typer.Option(..., "--url", help="Feed URL to check."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Validate a feed URL (scheme/SSRF guard → fetch → parse) WITHOUT saving."""
+    _ = as_json
+    from ..sources.rss import validate_feed
+    console.print_json(data=validate_feed(url))
+
+
+@feeds_app.command("add")
+def cmd_feeds_add(
+    url: str = typer.Option(..., "--url", help="Feed URL to add."),
+    name: str = typer.Option("", "--name", help="Display name (defaults to feed title)."),
+    skip_validate: bool = typer.Option(False, "--skip-validate", hidden=True),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Validate then save a custom RSS feed. Rejects non-feed / blocked URLs."""
+    _ = as_json
+    from ..sources.rss import validate_feed
+    from ..core.db import add_user_feed
+    if not skip_validate:
+        v = validate_feed(url)
+        if not v.get("ok"):
+            console.print_json(data={"ok": False, "error": v.get("error"), "url": url})
+            return
+        if not name:
+            name = v.get("title") or ""
+    row = add_user_feed(url, name)
+    console.print_json(data={"ok": True, "feed": row})
+
+
+@feeds_app.command("remove")
+def cmd_feeds_remove(
+    url: str = typer.Option(..., "--url", help="Feed URL to remove."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Remove a saved custom RSS feed."""
+    _ = as_json
+    from ..core.db import remove_user_feed
+    console.print_json(data={"ok": remove_user_feed(url), "url": url})
+
+
+@feeds_app.command("enable")
+def cmd_feeds_enable(
+    url: str = typer.Option(..., "--url", help="Feed URL."),
+    enabled: bool = typer.Option(True, "--enabled/--disabled", help="Pause/resume a feed."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Enable or disable (pause) a saved feed. Paused feeds aren't swept."""
+    _ = as_json
+    from ..core.db import set_user_feed_enabled
+    console.print_json(data={"ok": set_user_feed_enabled(url, enabled),
+                             "url": url, "enabled": enabled})
+
 
 def _reload_user_env_for_daemon() -> None:
     """Refresh Settings/BYOK values for the warm dev daemon.

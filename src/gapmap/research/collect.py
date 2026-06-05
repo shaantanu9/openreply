@@ -364,6 +364,7 @@ def collect(
                 "producthunt",    # Product Hunt launches + early-adopter reactions
                 "rss_products",   # Product launch/news RSS bundle
                 "rss_listings",   # Software listing/review sites (G2, SourceForge, Show HN, SaaSworthy)
+                "rss_user",       # User-added custom RSS feeds (Settings → Custom RSS)
                 "rss_tech_news",  # Tech news RSS bundle
                 "arxiv",          # arXiv preprints
                 "openalex",       # OpenAlex academic catalogue
@@ -395,6 +396,7 @@ def collect(
             "github",        # GitHub trending — fast, free, 1 call
             "rss_tech_news", # RSS tech bundle for broad market chatter
             "rss_products",  # RSS product bundle for launch/feedback signal
+            "rss_user",      # User-added custom RSS feeds (no-op if none saved)
             "gnews",         # Google News for general-topic recall
         ]
     # `result.topic` ends up being set to the canonical after canonicalization

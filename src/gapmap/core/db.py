@@ -297,6 +297,20 @@ def init_schema(db: Database) -> None:
         db["topic_posts"].create_index(["topic"])
         db["topic_posts"].create_index(["post_id"])
 
+    # user_feeds: user-added custom RSS/Atom feed URLs. Swept on every collect
+    # via the `rss_user` source (sources/collect_adapter.run_rss_user). The
+    # desktop Settings UI manages rows through the `feeds` CLI subcommand.
+    if "user_feeds" not in db.table_names():
+        db["user_feeds"].create(
+            {
+                "url": str,
+                "name": str,
+                "enabled": int,   # 1 = swept on collect, 0 = paused
+                "added_at": str,
+            },
+            pk="url",
+        )
+
     # PDF ingest provenance: document-level artifact metadata + element-level
     # coordinates/types from opendataloader JSON. This powers "open source
     # location" UX and future graph evidence edges without overloading posts.
@@ -1447,6 +1461,63 @@ def save_mcp_analysis(
     return get_db()["mcp_analyses"].insert(row).last_pk  # type: ignore[return-value]
 
 
+# ── User-added RSS feeds ─────────────────────────────────────────────────────
+# Stored in the shared gapmap.db so the Python sidecar (collect) and the desktop
+# Settings UI (via the `feeds` CLI subcommand) agree on one source of truth.
+
+def list_user_feeds(enabled_only: bool = False) -> list[dict]:
+    """User-added RSS feeds, newest first. enabled_only → active feeds only."""
+    db = get_db()
+    if "user_feeds" not in db.table_names():
+        return []
+    where = " WHERE enabled = 1" if enabled_only else ""
+    rows = db.execute(
+        f"SELECT url, name, enabled, added_at FROM user_feeds{where} "
+        "ORDER BY added_at DESC"
+    ).fetchall()
+    return [
+        {"url": r[0], "name": r[1], "enabled": bool(r[2]), "added_at": r[3]}
+        for r in rows
+    ]
+
+
+def add_user_feed(url: str, name: str = "") -> dict:
+    """Upsert a user feed (enabled). Returns the stored row. Caller should
+    validate the URL is a real feed first (see sources.rss.validate_feed)."""
+    url = (url or "").strip()
+    if not url:
+        raise ValueError("url is required")
+    db = get_db()
+    if "user_feeds" not in db.table_names():
+        init_schema(db)  # cold DB / table added after this process's schema init
+    row = {"url": url, "name": (name or "").strip() or url,
+           "enabled": 1, "added_at": _utc_now()}
+    db["user_feeds"].upsert(row, pk="url")
+    return {**row, "enabled": True}
+
+
+def remove_user_feed(url: str) -> bool:
+    db = get_db()
+    if "user_feeds" not in db.table_names():
+        return False
+    try:
+        db["user_feeds"].delete((url or "").strip())
+        return True
+    except Exception:
+        return False
+
+
+def set_user_feed_enabled(url: str, enabled: bool) -> bool:
+    db = get_db()
+    if "user_feeds" not in db.table_names():
+        return False
+    try:
+        db["user_feeds"].update((url or "").strip(), {"enabled": 1 if enabled else 0})
+        return True
+    except Exception:
+        return False
+
+
 __all__ = [
     "get_db",
     "init_schema",
@@ -1457,4 +1528,8 @@ __all__ = [
     "upsert_users",
     "upsert_subreddit",
     "save_mcp_analysis",
+    "list_user_feeds",
+    "add_user_feed",
+    "remove_user_feed",
+    "set_user_feed_enabled",
 ]

@@ -197,6 +197,18 @@ export async function renderSettings(root) {
         <div class="skel skel-line" style="width:65%"></div>
       </div>
 
+      <!-- Custom RSS feeds — user-added feeds swept on every collect -->
+      <div class="settings-card" id="card-rss-feeds" style="grid-column:1/-1">
+        <h4><i data-lucide="rss"></i> Custom RSS feeds</h4>
+        <p style="color:var(--ink-3)">Add any RSS/Atom feed URL. It's fetched on every
+          collect (topic-filtered like other sources). Review sites that block bots
+          (G2, Capterra) can't be used — paste their public RSS feed instead.</p>
+        <div id="rss-feeds-body">
+          <div class="skel skel-line" style="width:70%;margin-top:10px"></div>
+          <div class="skel skel-line" style="width:55%"></div>
+        </div>
+      </div>
+
       <!-- Export destination — single card (duplicate removed 2026-05-26) -->
       <div class="settings-card" id="card-export-dir">
         <h4>Export destination</h4>
@@ -517,6 +529,9 @@ export async function renderSettings(root) {
   }).catch(e => {
     if (alive()) fillCliSymlinkCard(root, { error: String(e?.message || e) });
   });
+
+  // Custom RSS feeds card — self-contained loader (fetch → render → wire).
+  loadRssFeeds(root);
 
   // ─── Beta feedback card wiring ───────────────────────────────────────────
   // Three escape valves so a beta tester always has SOME way to reach us:
@@ -1460,6 +1475,81 @@ function fillRedditCard(root, byok) {
     </div>`;
   card.querySelector('#btn-reddit-apps').onclick = () => api.openUrl('https://www.reddit.com/prefs/apps');
   card.querySelector('#btn-auth-docs').onclick   = () => api.openUrl('https://github.com/myind-ai/gapmap#readme');
+}
+
+// Custom RSS feeds card: list user feeds + add (validated) / remove / pause.
+// Self-contained (re-queries DOM each call) so it survives Settings remounts.
+async function loadRssFeeds(root) {
+  const body = root.querySelector('#rss-feeds-body');
+  if (!body) return;
+
+  const setStatus = (msg, ok) => {
+    const s = root.querySelector('#rss-feed-status');
+    if (!s) return;
+    s.textContent = msg || '';
+    s.style.color = ok === false ? '#B84747' : (ok === true ? '#1A7F4B' : 'var(--ink-3)');
+  };
+
+  const reload = async () => {
+    try {
+      const r = await api.feedsList();
+      render(r?.feeds || []);
+    } catch (e) {
+      body.innerHTML = `<p style="color:#B84747">Couldn't load feeds: ${esc(String(e?.message || e))}</p>`;
+    }
+  };
+
+  const render = (feeds) => {
+    const rows = (feeds || []).map(f => `
+      <div class="byok-row" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line)">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <b>${esc(f.name || f.url)}</b>
+          <span style="color:var(--ink-3);font-size:12px"> · ${esc(f.url)}</span>
+          ${f.enabled ? '' : '<span style="color:#B07A1A;font-size:12px"> · paused</span>'}
+        </span>
+        <button class="btn btn-ghost btn-sm rss-toggle" data-url="${esc(f.url)}" data-enabled="${f.enabled ? '1' : '0'}">${f.enabled ? 'Pause' : 'Resume'}</button>
+        <button class="btn btn-ghost btn-sm rss-remove" data-url="${esc(f.url)}">Remove</button>
+      </div>`).join('');
+    body.innerHTML = `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 6px">
+        <input type="url" id="rss-feed-url" placeholder="https://example.com/feed.xml" style="flex:1;min-width:220px">
+        <input type="text" id="rss-feed-name" placeholder="Name (optional)" style="width:170px">
+        <button class="btn btn-primary btn-sm" id="rss-feed-add">Test &amp; add</button>
+      </div>
+      <div id="rss-feed-status" style="font-size:12.5px;min-height:16px;margin-bottom:4px"></div>
+      <div id="rss-feed-list">${rows || '<p style="color:var(--ink-3);font-size:13px;margin:4px 0">No custom feeds yet.</p>'}</div>`;
+    wire();
+  };
+
+  const wire = () => {
+    const addBtn = root.querySelector('#rss-feed-add');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+      const url = (root.querySelector('#rss-feed-url')?.value || '').trim();
+      const name = (root.querySelector('#rss-feed-name')?.value || '').trim();
+      if (!url) { setStatus('Enter a feed URL.', false); return; }
+      addBtn.disabled = true;
+      setStatus('Checking feed…');
+      try {
+        const res = await api.feedsAdd(url, name);
+        if (res?.ok) { setStatus(`Added ${res.feed?.name || url}.`, true); await reload(); }
+        else setStatus(res?.error || 'Could not add feed.', false);
+      } catch (e) {
+        setStatus(String(e?.message || e), false);
+      } finally {
+        addBtn.disabled = false;
+      }
+    });
+    root.querySelectorAll('.rss-remove').forEach(b => b.addEventListener('click', async () => {
+      try { await api.feedsRemove(b.dataset.url); await reload(); }
+      catch (e) { setStatus(String(e?.message || e), false); }
+    }));
+    root.querySelectorAll('.rss-toggle').forEach(b => b.addEventListener('click', async () => {
+      try { await api.feedsEnable(b.dataset.url, b.dataset.enabled !== '1'); await reload(); }
+      catch (e) { setStatus(String(e?.message || e), false); }
+    }));
+  };
+
+  await reload();
 }
 
 function fillDataCard(root, info, dataDir, dbSize) {

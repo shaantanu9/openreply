@@ -1056,6 +1056,7 @@ select.topics-field {
 #settings-grid #card-tables            { order: 34; }
 #settings-grid #card-trash             { order: 35; }
 #settings-grid #card-schedule          { order: 36; }
+#settings-grid #card-rss-feeds         { order: 37; }
 /* Integrations & tools */
 #settings-grid #card-mcp               { order: 41; }
 #settings-grid #card-about             { order: 42; }

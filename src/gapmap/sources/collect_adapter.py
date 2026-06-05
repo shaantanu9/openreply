@@ -406,6 +406,7 @@ def run_rss(
     categories: list[str] | None = None,
     urls: list[str] | None = None,
     limit_per_feed: int = 20,
+    url_names: dict[str, str] | None = None,
 ) -> int:
     """Fetch curated RSS feeds for one or more category buckets.
 
@@ -427,10 +428,12 @@ def run_rss(
     )
     total = 0
     feeds: list[tuple[str, str, str]] = feeds_for_categories(categories)
-    # Tag extra URLs as category="custom".
+    # Tag extra URLs under the "user" category, with the feed's display name as
+    # publication so rows are identifiable (sub=rss:user, source=rss:user:<name>).
+    _names = url_names or {}
     for u in urls or []:
         if u:
-            feeds.append(("custom", "custom", u))
+            feeds.append(("user", _names.get(u) or "custom", u))
     try:
         for i, (cat, publication, url) in enumerate(feeds):
             # Use the full keyword fanout (LLM-expanded canonical terms). This
@@ -456,6 +459,24 @@ def run_rss(
     except Exception as e:
         log_fetch_end(fid, rows=0, error=str(e))
         return 0
+
+
+def run_rss_user(topic_or_keywords: str | list[str]) -> int:
+    """Sweep the user's own saved RSS feeds (Settings → Custom RSS feeds).
+
+    Reads enabled rows from the `user_feeds` table and routes them through
+    run_rss as extra URLs — topic-keyword filtered like every other RSS source.
+    Uses the empty "user" sentinel category so ONLY the user's feeds are fetched
+    (no curated bundle). Returns 0 gracefully when the user has no feeds.
+    """
+    from ..core.db import list_user_feeds
+
+    feeds = [f for f in list_user_feeds(enabled_only=True) if f.get("url")]
+    if not feeds:
+        return 0
+    urls = [f["url"] for f in feeds]
+    names = {f["url"]: (f.get("name") or f["url"]) for f in feeds}
+    return run_rss(topic_or_keywords, categories=["user"], urls=urls, url_names=names)
 
 
 def run_trustpilot(
@@ -860,6 +881,7 @@ SOURCES: dict[str, Any] = {
     "rss_tech_news": _rss_category_runner("tech_news"),
     "rss_products": _rss_category_runner("products"),
     "rss_listings": _rss_category_runner("listings"),
+    "rss_user": run_rss_user,  # user-added custom feeds (Settings → Custom RSS)
     "rss_engineering": _rss_category_runner("engineering"),
     "rss_ml": _rss_category_runner("ml"),
     "rss_design": _rss_category_runner("design"),

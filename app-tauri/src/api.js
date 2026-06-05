@@ -446,6 +446,14 @@ export const api = {
   // mid-session, a stale empty hit makes the manager screen lie about
   // what's running. Always read fresh; the call is < 1ms (in-memory map).
   activeCollects:  ()        => invoke('active_collects'),
+  // Custom RSS feeds (Settings → Custom RSS). Reads/writes the shared
+  // user_feeds table via the `feeds` CLI subcommand; swept on every collect
+  // through the rss_user source.
+  feedsList:       ()             => invoke('feeds_list'),
+  feedsValidate:   (url)          => invoke('feeds_validate', { url }),
+  feedsAdd:        (url, name)    => invoke('feeds_add', { url, name }),
+  feedsRemove:     (url)          => invoke('feeds_remove', { url }),
+  feedsEnable:     (url, enabled) => invoke('feeds_enable', { url, enabled }),
   overviewStats:   ()        => cachedInvoke('overview_stats', null, 15000),
   recentActivity:  ()        => cachedInvoke('recent_activity', null, 2000),
   topicGraphSummary: (topic) => cachedInvoke('topic_graph_summary', { topic }, 15000),

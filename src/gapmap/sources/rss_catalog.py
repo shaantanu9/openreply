@@ -62,6 +62,13 @@ CATALOG: dict[str, list[tuple[str, str]]] = {
         ("SourceForge", "https://sourceforge.net/blog/feed/"),
         ("Slashdot", "https://rss.slashdot.org/Slashdot/slashdotMain"),
     ],
+    # Sentinel category for user-added feeds: intentionally EMPTY. The
+    # `rss_user` source passes categories=["user"] + the user's saved URLs to
+    # run_rss; an empty-but-present category yields zero curated feeds without
+    # tripping feeds_for_categories' "empty → DEFAULT_CATEGORIES" fallback, so
+    # only the user's own feeds are swept. Not in CATEGORY_LABELS (not a
+    # user-pickable bucket).
+    "user": [],
     # Engineering blogs
     "engineering": [
         ("Netflix Tech Blog", "https://netflixtechblog.com/feed"),
