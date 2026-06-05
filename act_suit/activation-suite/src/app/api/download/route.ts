@@ -26,12 +26,25 @@ export async function GET(req: Request) {
     ? requested
     : platformFromUserAgent(req.headers.get("user-agent"));
 
-  const release = await fetchLatestRelease();
+  let release = await fetchLatestRelease();
   if (!release) {
     return NextResponse.redirect(RELEASES_PAGE_URL, { status: 302 });
   }
 
-  const assetUrl = assetUrlForPlatform(release, platform);
-  // Fall back to that release's page if the specific asset is missing.
+  let assetUrl = assetUrlForPlatform(release, platform);
+  // Per-platform installers append to a release minutes apart as each
+  // platform's CI finishes, so the cached release snapshot can lag a
+  // just-published asset (e.g. Linux landing after the Data Cache last
+  // refreshed). Before falling back to the release page, retry ONCE uncached
+  // so a freshly uploaded installer resolves immediately instead of waiting
+  // for the revalidate window to roll over.
+  if (!assetUrl) {
+    const fresh = await fetchLatestRelease({ noStore: true });
+    if (fresh) {
+      release = fresh;
+      assetUrl = assetUrlForPlatform(fresh, platform);
+    }
+  }
+  // Fall back to that release's page if the specific asset is still missing.
   return NextResponse.redirect(assetUrl || release.pageUrl, { status: 302 });
 }

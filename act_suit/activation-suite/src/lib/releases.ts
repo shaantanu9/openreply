@@ -66,7 +66,9 @@ export type LatestRelease = {
  * Fetch (and cache) the latest published release. Returns `null` on any
  * failure so callers can degrade gracefully to the releases page.
  */
-export async function fetchLatestRelease(): Promise<LatestRelease | null> {
+export async function fetchLatestRelease(
+  opts: { noStore?: boolean } = {},
+): Promise<LatestRelease | null> {
   try {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
@@ -75,9 +77,14 @@ export async function fetchLatestRelease(): Promise<LatestRelease | null> {
     // Optional: lifts the rate limit from 60 → 5,000 req/hour. Server-only.
     const token = process.env.GITHUB_TOKEN;
     if (token) headers.Authorization = `Bearer ${token}`;
+    // Default path uses the shared Data Cache (revalidate window). Callers can
+    // force an uncached read — used as a fallback when a just-published asset
+    // hasn't propagated into the cached snapshot yet.
     const res = await fetch(LATEST_API_URL, {
       headers,
-      next: { revalidate: REVALIDATE_SECONDS },
+      ...(opts.noStore
+        ? { cache: "no-store" as const }
+        : { next: { revalidate: REVALIDATE_SECONDS } }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as GitHubRelease;
