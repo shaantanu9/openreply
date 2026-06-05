@@ -39,31 +39,40 @@ export function NavBar({ variant = "marketing" }: Props) {
   }, [menuOpen]);
 
   if (variant === "compact") {
+    const linkCls =
+      "text-[12.5px] font-medium text-[var(--muted)] hover:text-[var(--orange)]";
     return (
       <div className="sticky top-0 z-10 flex min-h-[56px] flex-wrap items-center gap-y-2 border-b border-[var(--border)] bg-[rgba(244,239,230,0.9)] px-4 backdrop-blur-md sm:px-8">
         <Logo size="sm" />
         <nav
           aria-label="Site"
-          className="ml-auto mr-3 flex flex-wrap justify-end gap-x-[18px] gap-y-2"
+          className="ml-auto mr-3 flex flex-wrap items-center justify-end gap-x-[18px] gap-y-2"
         >
-          <Link
-            href={ROUTES.home}
-            className="text-[12.5px] font-medium text-[var(--muted)] hover:text-[var(--orange)]"
-          >
+          <Link href={ROUTES.home} className={linkCls}>
             Home
           </Link>
-          <Link
-            href={ROUTES.signIn}
-            className="text-[12.5px] font-medium text-[var(--muted)] hover:text-[var(--orange)]"
-          >
-            Sign in
-          </Link>
-          <Link
-            href={ROUTES.activationHelp}
-            className="text-[12.5px] font-medium text-[var(--muted)] hover:text-[var(--orange)]"
-          >
+          {isSignedIn ? (
+            <>
+              <Link href={ROUTES.dashboard} className={linkCls}>
+                Dashboard
+              </Link>
+              <Link href={ROUTES.workspaces} className={linkCls}>
+                Workspaces
+              </Link>
+            </>
+          ) : (
+            <Link href={ROUTES.signIn} className={linkCls}>
+              Sign in
+            </Link>
+          )}
+          <Link href={ROUTES.activationHelp} className={linkCls}>
             Activation help
           </Link>
+          {/* Download is available everywhere — for signed-in users too. */}
+          <DownloadLink className="btn-sm primary whitespace-nowrap">
+            <span className="sm:hidden">Download</span>
+            <span className="hidden sm:inline">Download for Mac</span>
+          </DownloadLink>
         </nav>
         <UserMenu />
       </div>

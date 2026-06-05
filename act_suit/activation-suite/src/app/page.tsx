@@ -22,6 +22,8 @@ import { FinalPromiseSection } from "@/components/marketing/FinalPromiseSection"
 import { RequestInviteSection } from "@/components/marketing/RequestInviteSection";
 import { CtaSection } from "@/components/marketing/CtaSection";
 import { StickyDownloadBar } from "@/components/marketing/StickyDownloadBar";
+import { SignedInWelcome } from "@/components/marketing/SignedInWelcome";
+import { SignedOutOnly } from "@/components/shell/AuthGate";
 
 // The marketing home is static — cache indefinitely, rebuild at release.
 export const revalidate = 3600;
@@ -43,10 +45,19 @@ export const revalidate = 3600;
 export default function MarketingHome() {
   return (
     <>
-      <UrgencyBanner />
+      {/* Urgency banner is a conversion device — hide it once signed in. */}
+      <SignedOutOnly>
+        <UrgencyBanner />
+      </SignedOutOnly>
       <SiteShell>
-        {/* ── Invite capture (full-screen, top of page) ── */}
-        <InviteHero />
+        {/* Signed-in users get a clean app-launcher instead of the invite
+            funnel; renders nothing for logged-out visitors. */}
+        <SignedInWelcome />
+
+        {/* ── Invite capture (full-screen, top of page) — logged-out only ── */}
+        <SignedOutOnly>
+          <InviteHero />
+        </SignedOutOnly>
 
         {/* ── ATTENTION ── */}
         <HeroSlider />
@@ -77,10 +88,12 @@ export default function MarketingHome() {
         <SecurityTrustSection />
         <FaqAccordion />
 
-        {/* ── CLOSE ── */}
+        {/* ── CLOSE ── (invite + beta CTAs are logged-out only) ── */}
         <FinalPromiseSection />
-        <RequestInviteSection />
-        <CtaSection />
+        <SignedOutOnly>
+          <RequestInviteSection />
+          <CtaSection />
+        </SignedOutOnly>
       </SiteShell>
       <StickyDownloadBar />
     </>
