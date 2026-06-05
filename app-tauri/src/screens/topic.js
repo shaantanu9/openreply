@@ -397,6 +397,7 @@ async function runEnrichStreamForTopic(topic, {
             }));
         } else {
           b.className = 'map-enrich-banner ok';
+          b.removeAttribute('data-stream');  // finished → compact row, not a tall streaming column
           const parts = [];
           if (counts.painpoints)  parts.push(`${counts.painpoints} painpoints`);
           if (counts.features)    parts.push(`${counts.features} feature wishes`);
@@ -1822,6 +1823,25 @@ export async function renderTopic(root, { params }) {
       loaders[activeTab]?.();
     }
   }));
+
+  // Refresh on ANY key change anywhere in the app (BYOK modal close now always
+  // fires gapmap:llm-changed). So adding a key from Home, Settings, the Chat
+  // empty-state, or the pill all instantly un-gate the Chat/Evidence tabs here —
+  // no app restart. Self-removes once this topic page leaves the DOM.
+  const _onTopicLlmChanged = () => {
+    if (!contentEl || !contentEl.isConnected) {
+      window.removeEventListener('gapmap:llm-changed', _onTopicLlmChanged);
+      return;
+    }
+    paintLlmPill();
+    invalidateTabCache(['map', 'evidence', 'chat', 'report', 'solutions', 'concepts', 'papers']);
+    // Re-run the gated tab in view (chat/evidence). The Map tab's own listener
+    // handles its chat empty-state, so we don't reload the whole graph here.
+    if (activeTab === 'chat' || activeTab === 'evidence') {
+      loaders[activeTab]?.();
+    }
+  };
+  window.addEventListener('gapmap:llm-changed', _onTopicLlmChanged);
 
   // Preload tab data in the background — populates the api.js cache so that
   // clicking Evidence / Sources / Chat paints instantly instead of waiting
@@ -5689,8 +5709,15 @@ export async function renderTopic(root, { params }) {
     );
     const moreBtn = tabsEl.querySelector('.tab-more');
     if (moreBtn) moreBtn.classList.toggle('active', !primaryTabs.has(name));
+    // Chat ALWAYS renders fresh — never served from the DOM/HTML snapshot cache.
+    // A blank or half-rendered chat that got snapshotted (e.g. saved during a
+    // transient/no-key/0-height state) would otherwise be restored on every
+    // revisit and the loader skipped → the user sees an empty, dead Chat tab
+    // forever. Chat is cheap to rebuild (local DB reads + hydrate from SQLite),
+    // so re-render it every time. Fix for "Chat tab shows nothing for a topic".
+    const forceFresh = name === 'chat';
     // Fast path: if this tab has a clean cached DOM, restore it and skip reload.
-    if (restoreTabDom(name)) {
+    if (!forceFresh && restoreTabDom(name)) {
       if (tabGen === myGen) window.refreshIcons?.();
       return;
     }
@@ -5701,7 +5728,7 @@ export async function renderTopic(root, { params }) {
     // feel like a re-fetch even when nothing had changed — exactly what
     // the user reported. Now: skip the loader when both same-session
     // (`dirtyTabs`) and cross-nav (`_dirtyTopicTabs`) report clean.
-    const snapshot = readTabHtmlSnapshot(name);
+    const snapshot = forceFresh ? null : readTabHtmlSnapshot(name);
     const tabIsDirty = dirtyTabs.has(name) || isTabDirtyAcrossNav(topic, name);
     if (snapshot) {
       contentEl.innerHTML = tabIsDirty

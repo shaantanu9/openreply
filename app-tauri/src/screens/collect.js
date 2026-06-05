@@ -612,6 +612,7 @@ export async function renderCollect(root, { params }) {
     trustpilot: 'Trustpilot', producthunt: 'Product Hunt',
     alternativeto: 'AlternativeTo',
     rss_products: 'RSS — Products', rss_tech_news: 'RSS — Tech News',
+    rss_listings: 'RSS — Listings (G2, etc.)',
     oc_bluesky: 'Bluesky (authors)',
     oc_substack: 'Substack',
     oc_producthunt_today: 'Product Hunt — today',
@@ -687,7 +688,7 @@ export async function renderCollect(root, { params }) {
   // at a time.
   const AGGRESSIVE_SOURCES = [
     'hn', 'appstore', 'playstore', 'trustpilot', 'producthunt',
-    'rss_products', 'rss_tech_news',
+    'rss_products', 'rss_listings', 'rss_tech_news',
     'arxiv', 'openalex', 'pubmed',
     'gnews', 'devto', 'stackoverflow', 'github', 'trends',
     'youtube',

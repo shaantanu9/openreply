@@ -66,6 +66,7 @@ DEFAULT_SOURCES: list[str] = [
     "wikipedia",
     "bluesky",
     "rss_products",
+    "rss_listings",
     "rss_tech_news",
 ]
 

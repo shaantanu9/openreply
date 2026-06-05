@@ -1466,6 +1466,10 @@ select.topics-field {
    (without this, each token becomes its own flex item and stacks per-line). */
 .map-enrich-msg { flex: 1 1 220px; min-width: 0; }
 .map-enrich-banner[data-stream="1"] { flex-direction: column; align-items: stretch; gap: 6px; }
+/* In column (streaming) mode the row-mode `flex: 1 1 220px` would make the
+   message a 220px-TALL main-axis basis → a giant empty banner. Keep it
+   auto-sized so a finished "Extracted … — refreshing map" stays one compact line. */
+.map-enrich-banner[data-stream="1"] .map-enrich-msg { flex: 0 0 auto; }
 .map-enrich-banner.warn { background: var(--gold-soft); color: #6B5919; border: 1px solid var(--gold); }
 .map-enrich-banner.err  { background: var(--rose-soft); color: #7A2A34; border: 1px solid var(--rose); }
 .map-enrich-banner.info { background: #E8F0FA; color: #25487D; border: 1px solid #C5D6EE; }

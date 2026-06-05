@@ -46,6 +46,11 @@ GetApp/TrustRadius/AlternativeTo review HTML, AlternativeTo RSS. G2 official API
     so it's selectable as its own source id.
 - `src/gapmap/research/collect.py`
   - Added `rss_listings` to the aggressive-collect default source list.
+- `src/gapmap/research/idea_scan.py`
+  - Added `rss_listings` to the idea-scan source list (parity with rss_products).
+- `app-tauri/src/screens/collect.js` (desktop UI — kept in sync with Python SOURCES)
+  - Added `rss_listings: 'RSS — Listings (G2, etc.)'` to the source-chip label map.
+  - Added `rss_listings` to `AGGRESSIVE_SOURCES` so its progress chip seeds on collect.
 
 ## How it scopes to a topic
 
