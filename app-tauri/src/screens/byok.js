@@ -543,6 +543,10 @@ export async function openByokModal(onClose, focusKey) {
     host.remove();
     document.removeEventListener('keydown', keyHandler);
     onClose?.();
+    // Broadcast app-wide so EVERY screen (home key-prompt, topic Chat/Map/Evidence
+    // tabs, the LLM pill, etc.) re-reads key status and updates instantly — no app
+    // restart needed. Callers no longer need to wire this themselves.
+    try { window.dispatchEvent(new CustomEvent('gapmap:llm-changed')); } catch { /* non-fatal */ }
     if (returnFocusTo && typeof returnFocusTo.focus === 'function') {
       returnFocusTo.focus();
     }

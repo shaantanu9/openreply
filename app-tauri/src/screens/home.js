@@ -7,6 +7,7 @@ import { avatarInitials } from './settings.js';
 import { setHTMLIfChanged } from '../lib/screenCache.js';
 import { skelGrid, skelRows, skelInline } from '../lib/skeleton.js';
 import { openMergeModal } from './mergeModal.js';
+import { openByokModal } from './byok.js';
 
 function normalizeTopicLabel(value) {
   const s = String(value ?? '');
@@ -1175,7 +1176,15 @@ async function loadByokPrompt(root) {
         <button class="btn btn-primary btn-sm" id="byok-prompt-btn">Add key</button>
       </div>`;
     slot.querySelector('#byok-prompt-btn').addEventListener('click', () => {
+      // Land on Settings AND open the add-key modal directly. Previously this
+      // only set the hash, dumping the user on Settings with no key flow open —
+      // they had to hunt for "Manage keys". The modal attaches to document.body,
+      // so it sits on top of the freshly-rendered Settings screen.
       location.hash = '#/settings';
+      openByokModal(() => {
+        try { window.dispatchEvent(new CustomEvent('gapmap:llm-changed')); } catch {}
+        if (root.isConnected) loadByokPrompt(root);
+      });
     });
   } catch {
     slot.innerHTML = '';

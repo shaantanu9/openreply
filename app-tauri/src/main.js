@@ -910,6 +910,18 @@ window.addEventListener('DOMContentLoaded', async () => {
   // of the 5s db-mtime poller — the user experiences this as "the app keeps
   // refreshing." Sidebar counters still update immediately on every event
   // (cheap, no DOM remount); only the full screen remount is debounced.
+  // LLM key added / removed / default changed anywhere (the BYOK modal now
+  // always fires `gapmap:llm-changed` on close). Re-render the current top-level
+  // screen so its "Add a key" empty-states flip to the unlocked UI instantly —
+  // no app restart. Topic/Settings/Welcome are in NO_REMOUNT_ROUTES and refresh
+  // themselves (topic via its per-tab listener, settings via its own re-render).
+  window.addEventListener('gapmap:llm-changed', () => {
+    try { clearApiCache?.(); } catch {}
+    refreshNavCounts();
+    if (shouldSkipRemount()) return;
+    route();
+  });
+
   let _dbChangedTimer = null;
   let _dbChangedPokedWorker = false;
   window.addEventListener('gapmap:db-changed', () => {
