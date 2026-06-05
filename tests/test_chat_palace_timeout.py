@@ -34,7 +34,9 @@ def test_blocking_palace_falls_back_fast(monkeypatch):
         search_impl=_blocking,
         stats_impl=lambda: {"by_topic": {"topic": 5}},
     )
-    monkeypatch.setattr(chat, "_PALACE_CHAT_TIMEOUT", 0.5)
+    # _semantic_evidence now lives in chat/retrieval_context.py and reads the
+    # timeout from that module's namespace — patch it where it's used.
+    monkeypatch.setattr(chat.retrieval_context, "_PALACE_CHAT_TIMEOUT", 0.5)
 
     t0 = time.time()
     posts, label = chat._semantic_evidence("topic", "any question", 8)
@@ -52,7 +54,7 @@ def test_fast_palace_not_penalized(monkeypatch):
         search_impl=lambda **_kw: {"ok": True, "results": []},
         stats_impl=lambda: {"by_topic": {"topic": 5}},
     )
-    monkeypatch.setattr(chat, "_PALACE_CHAT_TIMEOUT", 3.0)
+    monkeypatch.setattr(chat.retrieval_context, "_PALACE_CHAT_TIMEOUT", 3.0)
 
     t0 = time.time()
     posts, label = chat._semantic_evidence("topic", "any question", 8)
