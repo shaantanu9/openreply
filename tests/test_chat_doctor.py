@@ -58,12 +58,15 @@ def test_corpus_but_not_indexed_in_palace(monkeypatch):
     assert "reindex" in idx["fix"].lower()
 
 
-def test_topic_name_variant_mismatch_detected(monkeypatch):
+def test_topic_name_variant_is_auto_resolved(monkeypatch):
+    # palace indexed under "Machine Learning"; UI queries "machine learning".
+    # Chat now auto-resolves the variant, so the indexed check passes and notes it.
     _patch_palace(monkeypatch, by_topic={"Machine Learning": 30})
     rep = doctor.diagnose("machine learning", db=FakeDB(posts=30, posts_text=30))
-    nm = _check(rep, "palace_name_match")
-    assert nm is not None and nm["ok"] is False
-    assert "Machine Learning" in nm["detail"]
+    idx = _check(rep, "palace_indexed")
+    assert idx is not None and idx["ok"] is True
+    assert "Machine Learning" in idx["detail"] and "auto-resolved" in idx["detail"]
+    assert _check(rep, "palace_name_match") is None  # no longer a failure
 
 
 def test_all_good_is_ready(monkeypatch):

@@ -80,24 +80,21 @@ def diagnose(topic: str, provider: str | None = None, *, db: Any = None) -> dict
                  hard=False)
         by_topic: dict = {}
         if ready:
+            from .retrieval_context import resolve_indexed_topic
             st = palace.stats() or {}
             by_topic = (st.get("by_topic") or {}) if isinstance(st, dict) else {}
-            indexed = int(by_topic.get(topic, 0) or 0)
             total = int(st.get("count", 0) or 0) if isinstance(st, dict) else 0
-            _add(report, "palace_indexed", indexed > 0 or n_posts == 0,
-                 f"{indexed} posts indexed for this topic (palace total {total})",
+            # Chat now auto-resolves case/whitespace topic-name variants, so the
+            # effective indexed count is for whatever key actually matched.
+            eff = resolve_indexed_topic(by_topic, topic)
+            indexed = int(by_topic.get(eff, 0) or 0) if eff else 0
+            note = f"{indexed} posts indexed for this topic (palace total {total})"
+            if eff and eff != topic:
+                note += f" — matched under name variant {eff!r} (auto-resolved)"
+            _add(report, "palace_indexed", indexed > 0 or n_posts == 0, note,
                  fix="Posts exist but aren't embedded — run `research palace reindex`."
                      if indexed == 0 and n_posts > 0 else None,
                  hard=False)
-            # name-variant mismatch — the classic "works for one topic, not another"
-            if indexed == 0 and by_topic:
-                key = (topic or "").strip().lower()
-                variants = [t for t in by_topic if t != topic and t.strip().lower() == key]
-                if variants:
-                    _add(report, "palace_name_match", False,
-                         f"topic indexed under a different name variant: {variants!r}",
-                         fix=f"Chat queries topic={topic!r} but palace stores {variants!r}; "
-                             f"canonicalize the topic name or re-index.")
     except Exception as e:  # noqa: BLE001
         _add(report, "palace_available", False, f"palace probe failed: {e}", hard=False)
 

@@ -24,6 +24,26 @@ from .source_intent import _detect_source_intent
 from .timeout import _PALACE_CHAT_TIMEOUT, _call_with_timeout
 
 
+def resolve_indexed_topic(by_topic: dict, topic: str) -> str | None:
+    """Resolve the exact key palace indexed this topic under.
+
+    Returns the matching key — exact preferred, else a case/whitespace-insensitive
+    variant that actually has docs — or None if the topic truly isn't indexed.
+    This fixes "chat works for one topic but not another": the UI may pass
+    "Machine Learning" while palace stored "machine learning", and an exact-match
+    gate would wrongly skip semantic retrieval and silently degrade to SQL.
+    """
+    if not topic or not isinstance(by_topic, dict):
+        return topic or None
+    if int(by_topic.get(topic, 0) or 0) > 0:
+        return topic
+    key = topic.strip().lower()
+    for t, n in by_topic.items():
+        if int(n or 0) > 0 and str(t).strip().lower() == key:
+            return t
+    return None
+
+
 def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], str]:
     """Use Palace (ChromaDB + BM25) to retrieve posts most semantically
     relevant to the user's question.
@@ -70,14 +90,20 @@ def _semantic_evidence(topic: str, question: str, k: int) -> tuple[list[dict], s
         pass
 
     def _lookup():
+        eff_topic = topic
         try:
             st = palace.stats() or {}
             by_topic = (st.get("by_topic") or {}) if isinstance(st, dict) else {}
-            if topic and isinstance(by_topic, dict) and int(by_topic.get(topic, 0) or 0) == 0:
-                return {"_skip": True}
+            if topic and isinstance(by_topic, dict):
+                # Tolerate case/whitespace topic-name drift so we query palace
+                # under the name it was actually indexed under, instead of
+                # silently skipping semantic retrieval.
+                eff_topic = resolve_indexed_topic(by_topic, topic)
+                if eff_topic is None:
+                    return {"_skip": True}
         except Exception:
-            pass
-        return palace.search_posts(query=question, topic=topic, k=k, rerank=True)
+            eff_topic = topic
+        return palace.search_posts(query=question, topic=eff_topic, k=k, rerank=True)
 
     ok, res = _call_with_timeout(_lookup, _PALACE_CHAT_TIMEOUT)
     if not ok:
