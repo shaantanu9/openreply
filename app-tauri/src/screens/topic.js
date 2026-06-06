@@ -19,6 +19,12 @@ import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
 import { loadPapers } from './papers.js';
 import { loadPrioritize } from './prioritize.js';
+import { loadMarket } from './market.js';
+import { loadPorter } from './porter.js';
+import { loadSwot } from './swot.js';
+import { loadLeanCanvas } from './lean_canvas.js';
+import { loadValueProp } from './value_prop.js';
+import { loadNorthStar } from './north_star.js';
 import { mountIntentLadder } from './intent_ladder.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
@@ -1269,6 +1275,12 @@ export async function renderTopic(root, { params }) {
       <button type="button" class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence<span class="tab-freshness" id="tab-fresh-evidence"></span></button>
       <button type="button" class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions<span class="tab-freshness" id="tab-fresh-solutions"></span></button>
       <button type="button" class="tab" data-tab="prioritize"><i data-lucide="list-ordered"></i> Prioritize<span class="tab-freshness" id="tab-fresh-prioritize"></span></button>
+      <button type="button" class="tab" data-tab="market"><i data-lucide="trending-up"></i> Market<span class="tab-freshness" id="tab-fresh-market"></span></button>
+      <button type="button" class="tab" data-tab="porter"><i data-lucide="swords"></i> Five Forces<span class="tab-freshness" id="tab-fresh-porter"></span></button>
+      <button type="button" class="tab" data-tab="swot"><i data-lucide="layout-grid"></i> SWOT<span class="tab-freshness" id="tab-fresh-swot"></span></button>
+      <button type="button" class="tab" data-tab="lean"><i data-lucide="layout-dashboard"></i> Lean Canvas<span class="tab-freshness" id="tab-fresh-lean"></span></button>
+      <button type="button" class="tab" data-tab="valueprop"><i data-lucide="gem"></i> Value Prop<span class="tab-freshness" id="tab-fresh-valueprop"></span></button>
+      <button type="button" class="tab" data-tab="northstar"><i data-lucide="star"></i> North Star<span class="tab-freshness" id="tab-fresh-northstar"></span></button>
       <button type="button" class="tab" data-tab="bets"><i data-lucide="target"></i> Bets<span class="tab-freshness" id="tab-fresh-bets"></span></button>
       <button type="button" class="tab" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts<span class="tab-freshness" id="tab-fresh-concepts"></span></button>
       <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
@@ -4607,6 +4619,12 @@ export async function renderTopic(root, { params }) {
     search: loadSearch,
     solutions: () => loadSolutions(contentEl, topic),
     prioritize: () => loadPrioritize(contentEl, topic),
+    market: () => loadMarket(contentEl, topic),
+    porter: () => loadPorter(contentEl, topic),
+    swot: () => loadSwot(contentEl, topic),
+    lean: () => loadLeanCanvas(contentEl, topic),
+    valueprop: () => loadValueProp(contentEl, topic),
+    northstar: () => loadNorthStar(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
     papers:   () => loadPapers(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),

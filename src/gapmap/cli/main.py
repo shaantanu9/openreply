@@ -2781,6 +2781,89 @@ def cmd_research_prioritize(
     _emit(prioritize_topic(topic=topic, limit=limit), as_json)
 
 
+# ── Pre-build strategy frameworks ────────────────────────────────────────────
+# Each command reads the cached artifact by default; --compute runs the LLM
+# synthesis (grounded in the topic's evidence) and persists it. Read is pure
+# and never raises; compute degrades gracefully when no LLM key is configured.
+
+@research_app.command("market-sizing")
+def cmd_research_market_sizing(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """TAM/SAM/SOM market sizing (+ market-value anchor). --compute to (re)build."""
+    from ..research.market_sizing import market_sizing_get, market_sizing_compute
+    _emit(market_sizing_compute(topic=topic, provider=provider) if compute
+          else market_sizing_get(topic=topic), as_json)
+
+
+@research_app.command("porter")
+def cmd_research_porter(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Porter's Five Forces — market structural attractiveness. --compute to build."""
+    from ..research.porter import porter_get, porter_compute
+    _emit(porter_compute(topic=topic, provider=provider) if compute
+          else porter_get(topic=topic), as_json)
+
+
+@research_app.command("swot")
+def cmd_research_swot(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """SWOT synthesised from the gap map + competitors. --compute to build."""
+    from ..research.swot import swot_get, swot_compute
+    _emit(swot_compute(topic=topic, provider=provider) if compute
+          else swot_get(topic=topic), as_json)
+
+
+@research_app.command("lean-canvas")
+def cmd_research_lean_canvas(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Lean Canvas (9 blocks) seeded from painpoints/competitors. --compute to build."""
+    from ..research.lean_canvas import lean_canvas_get, lean_canvas_compute
+    _emit(lean_canvas_compute(topic=topic, provider=provider) if compute
+          else lean_canvas_get(topic=topic), as_json)
+
+
+@research_app.command("value-prop")
+def cmd_research_value_prop(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Value Proposition Canvas — customer profile ↔ value map fit. --compute to build."""
+    from ..research.value_prop import value_prop_get, value_prop_compute
+    _emit(value_prop_compute(topic=topic, provider=provider) if compute
+          else value_prop_get(topic=topic), as_json)
+
+
+@research_app.command("north-star")
+def cmd_research_north_star(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """North-Star metric + input metrics for the chosen opportunity. --compute to build."""
+    from ..research.north_star import north_star_get, north_star_compute
+    _emit(north_star_compute(topic=topic, provider=provider) if compute
+          else north_star_get(topic=topic), as_json)
+
+
 @research_app.command("iterate-start")
 def cmd_research_iterate_start(
     topic: str = typer.Option(..., "--topic", "-t"),

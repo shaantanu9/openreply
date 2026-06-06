@@ -503,6 +503,20 @@ export const api = {
   prioritizeGet:   (topic) => cachedInvoke('prioritize_get', { topic }, 30000),
   prioritizeScore: (topic) => { invalidate('prioritize_get'); return invoke('prioritize_score', { topic }); },
 
+  // Pre-build strategy frameworks — each: get (cached read) + compute (LLM build).
+  marketGet:        (topic) => cachedInvoke('market_get', { topic }, 30000),
+  marketCompute:    (topic) => { invalidate('market_get'); return invoke('market_compute', { topic }); },
+  porterGet:        (topic) => cachedInvoke('porter_forces_get', { topic }, 30000),
+  porterCompute:    (topic) => { invalidate('porter_forces_get'); return invoke('porter_forces_compute', { topic }); },
+  swotGet:          (topic) => cachedInvoke('swot_get', { topic }, 30000),
+  swotCompute:      (topic) => { invalidate('swot_get'); return invoke('swot_compute', { topic }); },
+  leanCanvasGet:    (topic) => cachedInvoke('lean_canvas_get', { topic }, 30000),
+  leanCanvasCompute:(topic) => { invalidate('lean_canvas_get'); return invoke('lean_canvas_compute', { topic }); },
+  valuePropGet:     (topic) => cachedInvoke('value_prop_get', { topic }, 30000),
+  valuePropCompute: (topic) => { invalidate('value_prop_get'); return invoke('value_prop_compute', { topic }); },
+  northStarGet:     (topic) => cachedInvoke('north_star_get', { topic }, 30000),
+  northStarCompute: (topic) => { invalidate('north_star_get'); return invoke('north_star_compute', { topic }); },
+
   // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
   scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),
   scheduleInstall:   (intervalHours) => invoke('schedule_install', { intervalHours }),

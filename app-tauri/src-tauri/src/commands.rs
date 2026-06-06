@@ -4354,6 +4354,91 @@ pub async fn prioritize_score(app: AppHandle, topic: String) -> Result<Value, St
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+// ── Pre-build strategy frameworks ───────────────────────────────────────────
+// Each pair is read-only `_get` (cheap, cached on the JS side) + `_compute`
+// (LLM synthesis grounded in the topic's evidence, persisted to
+// strategy_artifacts). Compute degrades gracefully when no LLM key is set.
+
+/// TAM/SAM/SOM market sizing (+ market value) — read cached artifact.
+#[tauri::command]
+pub async fn market_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "market-sizing", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// TAM/SAM/SOM market sizing — run the LLM synthesis and persist.
+#[tauri::command]
+pub async fn market_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "market-sizing", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Porter's Five Forces (topic-level, evidence-grounded) — read cached artifact.
+/// Named `porter_forces_*` to avoid clashing with the product-level
+/// `porter_get`/`porter_set` commands above.
+#[tauri::command]
+pub async fn porter_forces_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "porter", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// Porter's Five Forces — run the LLM synthesis and persist.
+#[tauri::command]
+pub async fn porter_forces_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "porter", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// SWOT — read cached artifact.
+#[tauri::command]
+pub async fn swot_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "swot", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// SWOT — run the LLM synthesis and persist.
+#[tauri::command]
+pub async fn swot_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "swot", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Lean Canvas — read cached artifact.
+#[tauri::command]
+pub async fn lean_canvas_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "lean-canvas", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// Lean Canvas — run the LLM synthesis and persist.
+#[tauri::command]
+pub async fn lean_canvas_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "lean-canvas", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Value Proposition Canvas — read cached artifact.
+#[tauri::command]
+pub async fn value_prop_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "value-prop", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// Value Proposition Canvas — run the LLM synthesis and persist.
+#[tauri::command]
+pub async fn value_prop_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "value-prop", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// North-Star metric — read cached artifact.
+#[tauri::command]
+pub async fn north_star_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "north-star", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// North-Star metric — run the LLM synthesis and persist.
+#[tauri::command]
+pub async fn north_star_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "north-star", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 /// Read all paper-analysis rows for a topic (one SELECT, no LLM).
 #[tauri::command]
 pub async fn paper_analyses_get(
