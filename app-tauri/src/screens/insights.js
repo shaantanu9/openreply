@@ -555,6 +555,23 @@ function renderFull(report, contentEl, topic) {
         </div>
       ` : ''}
 
+      <!-- Consensus (deliberation tiers). Collapsible; runs api.deliberate on open. -->
+      <details class="insights-consensus" id="consensus-section">
+        <summary class="insights-consensus-summary">
+          <i data-lucide="scale"></i> Consensus
+          <span class="muted">— 5-persona debate + audience clusters tier each finding</span>
+        </summary>
+        <div class="insights-consensus-body-wrap" style="margin-top:10px">
+          <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-consensus-run"
+            title="Cross-check each finding against the persona debate and audience clusters.">
+            <i data-lucide="refresh-cw"></i> Run consensus check
+          </button>
+          <div id="consensus-body" style="margin-top:12px">
+            <p class="muted" style="font-size:var(--fs-13)">Open this section (or click “Run consensus check”) to tier each finding as Confirmed / Contested / Emerging / Single-source.</p>
+          </div>
+        </div>
+      </details>
+
       <!-- Phase-9 feature × competitor matrix. Populated async by loadCompetitorMatrix() -->
       <div id="competitor-matrix-slot"></div>
       </div><!-- /.insights-main -->
@@ -579,6 +596,211 @@ function renderFull(report, contentEl, topic) {
       </aside>
     </div>
   `;
+}
+
+// ─── Consensus (deliberation tiers) ──────────────────────────────────
+// Cross-checks each synthesized finding against the 5-persona debate +
+// audience clusters and groups it into a consensus TIER. Backed by
+// api.deliberate (deliberate.py). Default pass is heuristic (noLlm:true)
+// so it needs no LLM key; a "Deeper check" button re-runs with the LLM.
+//
+// Result shape (deliberate.py):
+//   { tiers: { confirmed:[item], probable:[…], minority:[…], discarded:[…] },
+//     counts, personas_used, provider, generated_at }
+//   each item carries .consensus = { tier, score 0..1, votes:{confirm,…},
+//   rationales:{confirm:[{by,why}], dispute:[{by,why}]} } plus title/kind.
+const CONSENSUS_TIER_META = {
+  confirmed:     { cls: 'confirmed', label: 'Confirmed' },
+  contested:     { cls: 'contested', label: 'Contested' },
+  probable:      { cls: 'confirmed', label: 'Probable' },
+  emerging:      { cls: 'emerging',  label: 'Emerging' },
+  minority:      { cls: 'emerging',  label: 'Minority' },
+  single_source: { cls: 'muted',     label: 'Single source' },
+  discarded:     { cls: 'muted',     label: 'Discarded' },
+};
+// Color per tier class — inline so this section needs no new CSS file.
+const CONSENSUS_TIER_COLOR = {
+  confirmed: '#1F9D55',  // green
+  contested: '#D9822B',  // amber/red
+  emerging:  '#2B6CB0',  // blue
+  muted:     '#8A8478',  // muted
+};
+const _kindEmoji = (k) => ({ painpoint: '🔥', feature_wish: '💡', workaround: '🛠' }[k] || '•');
+
+function _consensusTierMeta(tierKey) {
+  const meta = CONSENSUS_TIER_META[tierKey];
+  if (meta) return meta;
+  // Unknown tier key — render it readably with a muted chip rather than dropping it.
+  const label = String(tierKey || 'other').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return { cls: 'muted', label };
+}
+
+// Flatten the {confirm:[{by,why}], dispute:[{by,why}]} rationales object —
+// OR a plain string rationale — into an escaped, readable line.
+function _consensusRationaleHtml(consensus) {
+  const r = consensus && consensus.rationales;
+  if (typeof consensus?.rationale === 'string' && consensus.rationale.trim()) {
+    return `<p class="consensus-rationale">${esc(consensus.rationale.trim())}</p>`;
+  }
+  if (!r || typeof r !== 'object') return '';
+  const lines = [];
+  (Array.isArray(r.confirm) ? r.confirm : []).slice(0, 3).forEach((x) => {
+    const why = (x && x.why) || '';
+    if (why) lines.push(`<li><span class="consensus-vote-by confirm">${esc((x && x.by) || 'persona')}</span> ${esc(why)}</li>`);
+  });
+  (Array.isArray(r.dispute) ? r.dispute : []).slice(0, 3).forEach((x) => {
+    const why = (x && x.why) || '';
+    if (why) lines.push(`<li><span class="consensus-vote-by dispute">${esc((x && x.by) || 'persona')}</span> ${esc(why)}</li>`);
+  });
+  if (!lines.length) return '';
+  return `<ul class="consensus-rationale-list">${lines.join('')}</ul>`;
+}
+
+function renderConsensusItem(item) {
+  const c = (item && item.consensus) || {};
+  const score = typeof c.score === 'number' ? c.score : 0;
+  const pct = Math.max(0, Math.min(100, Math.round(score * 100)));
+  const votes = c.votes || {};
+  const confirm = Number(votes.confirm || 0);
+  const dispute = Number(votes.dispute || 0);
+  const aud = Number(votes.audience_endorsements || 0);
+  const totalVotes = confirm + dispute + Number(votes.abstain || 0);
+  const meta = _consensusTierMeta(c.tier);
+  const barColor = CONSENSUS_TIER_COLOR[meta.cls] || CONSENSUS_TIER_COLOR.muted;
+  const voteBits = [];
+  if (totalVotes > 0) voteBits.push(`${confirm}✓ / ${dispute}✗ / ${totalVotes} votes`);
+  else voteBits.push('heuristic');
+  if (aud > 0) voteBits.push(`${aud} audience`);
+  return `
+    <div class="consensus-item">
+      <div class="consensus-item-head">
+        <span class="consensus-item-kind">${_kindEmoji(item && item.kind)}</span>
+        <span class="consensus-item-title">${esc((item && item.title) || '(untitled)')}</span>
+        <span class="consensus-item-score" title="Composite consensus score 0–1">score ${score.toFixed(2)}</span>
+      </div>
+      <div class="consensus-score-bar" title="${pct}% consensus" aria-hidden="true"
+        style="height:6px;border-radius:4px;background:rgba(0,0,0,0.08);overflow:hidden;margin:4px 0">
+        <div style="width:${pct}%;height:100%;background:${barColor}"></div>
+      </div>
+      <div class="consensus-item-meta muted" style="font-size:var(--fs-11)">${esc(voteBits.join(' · '))}</div>
+      ${_consensusRationaleHtml(c)}
+    </div>
+  `;
+}
+
+function renderConsensusTierGroup(tierKey, items) {
+  const meta = _consensusTierMeta(tierKey);
+  const color = CONSENSUS_TIER_COLOR[meta.cls] || CONSENSUS_TIER_COLOR.muted;
+  const list = (Array.isArray(items) ? items : []);
+  return `
+    <div class="consensus-tier-group" data-tier="${esc(tierKey)}">
+      <div class="consensus-tier-head">
+        <span class="insight-chip consensus-tier-chip"
+          style="background:${color}1A;color:${color};border:1px solid ${color}55">
+          ${esc(meta.label)}
+        </span>
+        <span class="muted consensus-tier-count">${list.length} finding${list.length === 1 ? '' : 's'}</span>
+      </div>
+      ${list.length
+        ? list.map(renderConsensusItem).join('')
+        : '<p class="muted" style="margin:4px 0 0;font-size:var(--fs-13)">None in this tier.</p>'}
+    </div>
+  `;
+}
+
+function renderConsensusResult(result) {
+  if (!result || !result.ok) {
+    return `<p class="muted">${esc((result && result.error) || 'Consensus check returned no result.')}</p>`;
+  }
+  const tiers = (result.tiers && typeof result.tiers === 'object') ? result.tiers : {};
+  // Stable, meaningful ordering when present; then any extra/unknown keys.
+  const ORDER = ['confirmed', 'probable', 'contested', 'emerging', 'minority', 'single_source', 'discarded'];
+  const keys = Object.keys(tiers);
+  keys.sort((a, b) => {
+    const ia = ORDER.indexOf(a); const ib = ORDER.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  const groups = keys
+    .filter((k) => Array.isArray(tiers[k]))
+    .map((k) => renderConsensusTierGroup(k, tiers[k]))
+    .join('');
+  const total = keys.reduce((n, k) => n + (Array.isArray(tiers[k]) ? tiers[k].length : 0), 0);
+  if (!total) {
+    return `<p class="muted">No findings to deliberate yet. Generate insights first, then run the consensus check.</p>`;
+  }
+  const provider = result.provider
+    ? `<span class="muted" style="font-size:var(--fs-11)">provider: <code>${esc(result.provider)}</code></span>`
+    : '<span class="muted" style="font-size:var(--fs-11)">heuristic pass (no LLM)</span>';
+  const personas = Array.isArray(result.personas_used) && result.personas_used.length
+    ? `<span class="muted" style="font-size:var(--fs-11)">· ${esc(result.personas_used.length)} persona(s)</span>`
+    : '';
+  return `
+    <div class="consensus-result">
+      <div class="consensus-result-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        ${provider}
+        ${personas}
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-consensus-deep"
+          title="Re-run the 5-persona debate with the LLM for a deeper, citation-grounded consensus.">
+          <i data-lucide="brain"></i> Deeper check (LLM)
+        </button>
+      </div>
+      ${groups}
+    </div>
+  `;
+}
+
+async function runConsensusCheck(contentEl, topic, { noLlm = true } = {}) {
+  // Sub-tab liveness guard — same gate the matrix loader uses.
+  const alive = () => contentEl.dataset.tab === 'insights' && contentEl.isConnected;
+  const body = contentEl.querySelector('#consensus-body');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="consensus-loading muted" style="display:flex;align-items:center;gap:8px;padding:8px 0">
+      <i data-lucide="loader-2" class="spin"></i>
+      <span>${noLlm ? 'Running heuristic consensus check…' : 'Running LLM deliberation (5 personas)…'}</span>
+    </div>`;
+  window.refreshIcons?.();
+  let result;
+  try {
+    result = await api.deliberate(topic, { noLlm });
+  } catch (e) {
+    if (!alive()) return;
+    body.innerHTML = `
+      <p class="muted">Consensus check failed: ${esc(e?.message || String(e))}</p>
+      <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-consensus-retry">
+        <i data-lucide="refresh-cw"></i> Retry
+      </button>`;
+    body.querySelector('#btn-consensus-retry')?.addEventListener('click', () => runConsensusCheck(contentEl, topic, { noLlm: true }));
+    window.refreshIcons?.();
+    return;
+  }
+  if (!alive()) return;
+  body.innerHTML = renderConsensusResult(result);
+  body.querySelector('#btn-consensus-deep')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    runConsensusCheck(contentEl, topic, { noLlm: false });
+  });
+  window.refreshIcons?.();
+}
+
+function wireConsensusSection(contentEl, topic) {
+  const section = contentEl.querySelector('#consensus-section');
+  if (!section) return;
+  const runBtn = contentEl.querySelector('#btn-consensus-run');
+  runBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    runConsensusCheck(contentEl, topic, { noLlm: true });
+  });
+  // Lazy auto-run on first open of the collapsible, so we don't fire the
+  // deliberation call until the user actually expands the section.
+  let autoRan = false;
+  section.addEventListener('toggle', () => {
+    if (section.open && !autoRan) {
+      autoRan = true;
+      runConsensusCheck(contentEl, topic, { noLlm: true });
+    }
+  });
 }
 
 // ─── Phase 9 — Competitor matrix (feature × competitor table) ─────────
@@ -1114,6 +1336,9 @@ function wireCards(contentEl, topic, report) {
 
   // Phase-8 — chat sidebar wiring.
   wireChatSidebar(contentEl, topic);
+
+  // Consensus (deliberation tiers) — collapsible; lazy-runs api.deliberate.
+  wireConsensusSection(contentEl, topic);
 
   // Phase-7 — Export dropdown. Click toggles menu; item copies to clipboard.
   const exportBtn = contentEl.querySelector('#btn-insights-export');

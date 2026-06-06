@@ -106,6 +106,172 @@ function renderSolutionCard(sol, topic) {
   `;
 }
 
+// Collect every scored intervention across all opportunities into a flat
+// list with its parent painpoint context, for the Impact × Effort matrix.
+function collectScoredInterventions(tree) {
+  const out = [];
+  for (const opp of (tree.opportunities || [])) {
+    for (const sol of (opp.solutions || [])) {
+      const r = sol.rice;
+      if (!r) continue;
+      const impact = Number(r.impact);
+      const effort = Number(r.effort);
+      if (!Number.isFinite(impact) || !Number.isFinite(effort)) continue;
+      out.push({
+        label: sol.label || '',
+        painpoint: opp.label || '',
+        impact,
+        effort,
+        score: (typeof r.score === 'number') ? r.score : 0,
+        reach: r.reach,
+        confidence: r.confidence,
+      });
+    }
+  }
+  return out;
+}
+
+// Normalise a value into 0..1 within [min,max]; centred when the range is
+// degenerate (all dots identical) so they don't all collapse into a corner.
+function normRange(v, min, max) {
+  if (!(max > min)) return 0.5;
+  const n = (v - min) / (max - min);
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
+
+function renderImpactEffortMatrix(tree) {
+  const items = collectScoredInterventions(tree);
+
+  if (!items.length) {
+    return `
+    <div class="card ost-matrix-card" style="margin-top:18px">
+      <div class="card-head">
+        <div>
+          <h3>Impact × Effort</h3>
+          <p>2×2 prioritisation — plot interventions by RICE impact &amp; effort</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="muted" style="font-size:12.5px;line-height:1.6;margin:0 0 12px">
+          No interventions have RICE scores yet, so there's nothing to plot.
+          Compute deterministic RICE for every intervention to fill the matrix.
+        </p>
+        <button class="btn btn-primary btn-sm icon-btn" id="ost-matrix-rice" title="Compute deterministic RICE for every intervention">
+          <i data-lucide="trending-up"></i> Compute RICE
+        </button>
+      </div>
+    </div>`;
+  }
+
+  const impacts = items.map(i => i.impact);
+  const efforts = items.map(i => i.effort);
+  const iMin = Math.min(...impacts), iMax = Math.max(...impacts);
+  const eMin = Math.min(...efforts), eMax = Math.max(...efforts);
+
+  const dots = items.map(it => {
+    const xN = normRange(it.effort, eMin, eMax);   // 0=low effort, 1=high effort
+    const yN = normRange(it.impact, iMin, iMax);   // 0=low impact, 1=high impact
+    // Inset 6%..94% so dots near the edge stay inside the plot frame.
+    const left = (6 + xN * 88).toFixed(2);
+    const bottom = (6 + yN * 88).toFixed(2);
+    const highImpact = it.impact >= (iMin + iMax) / 2;
+    const lowEffort = it.effort <= (eMin + eMax) / 2;
+    const quick = highImpact && lowEffort;
+    let quadrant;
+    if (highImpact && lowEffort) quadrant = 'Quick win';
+    else if (highImpact && !lowEffort) quadrant = 'Big bet';
+    else if (!highImpact && lowEffort) quadrant = 'Fill-in';
+    else quadrant = 'Money pit / avoid';
+    const title = `${it.label}\nRICE ${it.score.toFixed(1)} · impact=${it.impact} · effort=${it.effort}` +
+      (it.reach != null ? ` · reach=${it.reach}` : '') +
+      (it.confidence != null ? ` · confidence=${it.confidence}%` : '') +
+      `\nQuadrant: ${quadrant}\nAddresses: ${it.painpoint}`;
+    return `<div class="ost-me-dot${quick ? ' ost-me-dot-quick' : ''}"
+      style="left:${left}%;bottom:${bottom}%"
+      title="${esc(title)}">
+      <span class="ost-me-dot-label">${esc(it.label)}</span>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="card ost-matrix-card" style="margin-top:18px">
+      <div class="card-head">
+        <div>
+          <h3>Impact × Effort</h3>
+          <p>${items.length} scored intervention${items.length === 1 ? '' : 's'} · X = effort (low→high), Y = impact (low→high)</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="ost-me-wrap">
+          <div class="ost-me-yaxis">Impact →</div>
+          <div class="ost-me-plot" id="ost-me-plot">
+            <div class="ost-me-quad ost-me-q-tl">Quick wins<br><small>high impact / low effort</small></div>
+            <div class="ost-me-quad ost-me-q-tr">Big bets<br><small>high impact / high effort</small></div>
+            <div class="ost-me-quad ost-me-q-bl">Fill-ins<br><small>low impact / low effort</small></div>
+            <div class="ost-me-quad ost-me-q-br">Money pit / avoid<br><small>low impact / high effort</small></div>
+            <div class="ost-me-axis-v"></div>
+            <div class="ost-me-axis-h"></div>
+            ${dots}
+          </div>
+        </div>
+        <div class="ost-me-xaxis">Effort →</div>
+        <p class="muted" style="font-size:11.5px;line-height:1.55;margin:10px 0 0">
+          Each dot is a scored intervention placed by its RICE <b>impact</b> (vertical)
+          and <b>effort</b> (horizontal), normalised across the tree. Hover a dot for
+          its RICE score and the painpoint it addresses. Start top-left.
+        </p>
+      </div>
+    </div>
+    <style>
+      .ost-me-wrap { display:flex; align-items:stretch; gap:8px; }
+      .ost-me-yaxis {
+        writing-mode:vertical-rl; transform:rotate(180deg);
+        font-size:11px; font-weight:600; color:var(--muted,#6b7280);
+        display:flex; align-items:center; justify-content:center;
+        letter-spacing:.04em; padding:2px 0;
+      }
+      .ost-me-plot {
+        position:relative; flex:1; min-width:0; height:340px;
+        border:1px solid var(--border,#e5e7eb); border-radius:10px;
+        background:var(--surface-2,#fafafa); overflow:hidden;
+      }
+      .ost-me-quad {
+        position:absolute; width:50%; height:50%;
+        box-sizing:border-box; padding:8px 10px;
+        font-size:11px; font-weight:600; color:var(--muted,#9ca3af);
+        line-height:1.3; pointer-events:none; user-select:none;
+      }
+      .ost-me-quad small { font-weight:500; font-size:9.5px; opacity:.8; }
+      .ost-me-q-tl { top:0; left:0; background:rgba(34,197,94,.10); color:#15803d; }
+      .ost-me-q-tr { top:0; right:0; text-align:right; }
+      .ost-me-q-bl { bottom:0; left:0; }
+      .ost-me-q-br { bottom:0; right:0; text-align:right; }
+      .ost-me-axis-v { position:absolute; top:0; bottom:0; left:50%; width:1px; background:var(--border,#e5e7eb); }
+      .ost-me-axis-h { position:absolute; left:0; right:0; top:50%; height:1px; background:var(--border,#e5e7eb); }
+      .ost-me-dot {
+        position:absolute; transform:translate(-50%, 50%);
+        width:11px; height:11px; border-radius:50%;
+        background:#6366f1; border:2px solid #fff;
+        box-shadow:0 1px 3px rgba(0,0,0,.25); cursor:default; z-index:2;
+      }
+      .ost-me-dot-quick { background:#16a34a; }
+      .ost-me-dot:hover { z-index:5; }
+      .ost-me-dot-label {
+        position:absolute; left:14px; top:50%; transform:translateY(-50%);
+        font-size:10px; white-space:nowrap; color:var(--fg,#374151);
+        background:rgba(255,255,255,.82); padding:0 3px; border-radius:3px;
+        max-width:120px; overflow:hidden; text-overflow:ellipsis;
+        pointer-events:none;
+      }
+      .ost-me-dot:hover .ost-me-dot-label { z-index:6; background:#fff; max-width:240px; }
+      .ost-me-xaxis {
+        text-align:center; font-size:11px; font-weight:600;
+        color:var(--muted,#6b7280); letter-spacing:.04em; margin-top:6px;
+        padding-left:18px;
+      }
+    </style>`;
+}
+
 function renderOpportunityCard(opp, topic) {
   const sols = (opp.solutions || []).map(s => renderSolutionCard(s, topic)).join('');
   const empty = !sols ? '<li class="ost-solution ost-empty">No interventions yet. Run the Solutions pipeline (or Gap Discovery) on this topic to populate this branch.</li>' : '';
@@ -233,6 +399,8 @@ function renderTreeShell(topic, tree) {
         </p>
       </div>
     </div>
+
+    ${renderImpactEffortMatrix(tree)}
 
     <div class="section-head" style="margin-top:18px">
       <div>
@@ -419,6 +587,20 @@ async function renderTopicTree(root, topic) {
     } catch (e) {
       alert(`RICE failed: ${e?.message || e}`);
       btn.disabled = false; btn.textContent = 'Re-run RICE';
+    }
+  });
+  // Empty-state matrix CTA — reuses the same RICE compute path.
+  $('#ost-matrix-rice', root)?.addEventListener('click', async () => {
+    const btn = $('#ost-matrix-rice', root);
+    btn.disabled = true; btn.textContent = 'Computing…';
+    try {
+      await api.runRiceScore(topic, 3, false);
+      await reload();
+    } catch (e) {
+      alert(`RICE failed: ${e?.message || e}`);
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="trending-up"></i> Compute RICE';
+      window.refreshIcons?.();
     }
   });
   $('#ost-rerun-moscow', root)?.addEventListener('click', async () => {

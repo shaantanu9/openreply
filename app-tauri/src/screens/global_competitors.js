@@ -11,11 +11,31 @@ import { api, esc } from '../api.js';
 import { skelGrid } from '../lib/skeleton.js';
 import { withButtonBusy } from '../lib/busyButton.js';
 
-function renderCard(c) {
+// `maxTopics` is the largest topic-span across the whole returned set —
+// used to draw a relative "cross-topic reach" bar. Passed in by the caller
+// so every card shares the same scale. All values shown are derived only
+// from fields that actually exist on the response (canonical_name, aliases,
+// topics, total_mentions); nothing is invented.
+function renderCard(c, maxTopics) {
   const topics = Array.isArray(c.topics) ? c.topics : [];
   const aliases = Array.isArray(c.aliases) ? c.aliases : [];
+  const mentions = Number.isFinite(c.total_mentions) ? c.total_mentions : 0;
   const extraAliases = aliases.length > 3 ? aliases.length - 3 : 0;
   const aliasPreview = aliases.slice(0, 3).map(esc).join(', ');
+
+  // Cross-topic reach: this competitor's topic-span relative to the widest
+  // competitor in the set. A real, dataset-grounded score (not invented) —
+  // 100% = appears across as many distinct topics as the most cross-cutting
+  // competitor returned.
+  const denom = maxTopics > 0 ? maxTopics : 1;
+  const reachPct = Math.max(0, Math.min(100, Math.round((topics.length / denom) * 100)));
+
+  // Mentions-per-topic: average occurrences per topic, derived from the two
+  // real counts. Higher = the product is discussed repeatedly within each
+  // topic it appears in, not just name-dropped once.
+  const perTopic = topics.length > 0 ? (mentions / topics.length) : 0;
+  const perTopicStr = perTopic >= 10 ? String(Math.round(perTopic)) : perTopic.toFixed(1);
+
   return `
     <details class="gc-card">
       <summary>
@@ -26,7 +46,7 @@ function renderCard(c) {
               ${topics.length} topic${topics.length === 1 ? '' : 's'}
             </span>
             <span class="gc-chip" title="Total product-node rows in graph_nodes">
-              ${c.total_mentions || 0} mention${c.total_mentions === 1 ? '' : 's'}
+              ${mentions} mention${mentions === 1 ? '' : 's'}
             </span>
             <span class="gc-chip" title="De-duplicated alias labels in this cluster">
               ${aliases.length} alias${aliases.length === 1 ? '' : 'es'}
@@ -36,19 +56,32 @@ function renderCard(c) {
         ${aliasPreview
           ? `<div class="gc-alias-preview muted">aka ${aliasPreview}${extraAliases ? ` +${extraAliases} more` : ''}</div>`
           : ''}
+        <div class="gc-score" title="Cross-topic reach — this competitor's topic span vs. the most cross-cutting competitor in this set"
+             style="display:flex;align-items:center;gap:8px;margin:8px 0 0 22px;">
+          <div style="flex:1;height:5px;border-radius:999px;background:var(--surface-2);overflow:hidden;">
+            <div style="height:100%;width:${reachPct}%;border-radius:999px;background:var(--ink-2);"></div>
+          </div>
+          <span style="font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap;">
+            ${reachPct}% reach · ~${esc(perTopicStr)}/topic
+          </span>
+        </div>
       </summary>
       <div class="gc-body">
         <div class="gc-section">
-          <b>Mentioned in topics</b>
-          <ul class="gc-topic-list">
-            ${topics.map(t =>
-              `<li><a href="#/topic/${encodeURIComponent(t)}">${esc(t)}</a></li>`
-            ).join('') || '<li class="muted">—</li>'}
-          </ul>
+          <b>Mentioned in ${topics.length} topic${topics.length === 1 ? '' : 's'}</b>
+          ${topics.length
+            ? `<div class="gc-topic-chips" style="display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow-y:auto;">
+                ${topics.map(t =>
+                  `<a class="gc-chip" href="#/topic/${encodeURIComponent(t)}"
+                      style="text-decoration:none;"
+                      title="Open topic: ${esc(t)}">${esc(t)}</a>`
+                ).join('')}
+              </div>`
+            : '<p class="muted" style="margin:0;font-size:12.5px;">—</p>'}
         </div>
         ${aliases.length > 1 ? `
           <div class="gc-section">
-            <b>All aliases</b>
+            <b>${aliases.length} aliases · ${mentions} mention${mentions === 1 ? '' : 's'}</b>
             <ul class="gc-alias-list">
               ${aliases.map(a => `<li><code>${esc(a)}</code></li>`).join('')}
             </ul>
@@ -123,6 +156,10 @@ export async function renderGlobalCompetitors(main) {
         `;
         return;
       }
+      // Widest topic-span in this set — shared denominator for the per-card
+      // "cross-topic reach" bar so all bars use one honest scale.
+      const maxTopics = comps.reduce(
+        (m, c) => Math.max(m, Array.isArray(c.topics) ? c.topics.length : 0), 0);
       contentEl.innerHTML = `
         <div class="gc-summary muted">
           ${comps.length} unified competitor${comps.length === 1 ? '' : 's'}
@@ -130,7 +167,7 @@ export async function renderGlobalCompetitors(main) {
           Clustered by MiniLM embedding cosine ≥ ${resp.threshold?.toFixed?.(2) || threshold.toFixed(2)}.
         </div>
         <div class="gc-grid">
-          ${comps.map(renderCard).join('')}
+          ${comps.map(c => renderCard(c, maxTopics)).join('')}
         </div>
       `;
     } catch (e) {
