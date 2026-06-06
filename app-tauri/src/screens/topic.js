@@ -663,6 +663,7 @@ const ALL_SOURCES = [
   { id: 'devto',         label: 'Dev.to',          group: 'social',  defaultOn: true },
   { id: 'stackoverflow', label: 'Stack Overflow',  group: 'social',  defaultOn: true },
   { id: 'stackexchange', label: 'Stack Exchange (8 communities)', group: 'social', defaultOn: true },
+  { id: 'youtube',       label: 'YouTube (comments + transcripts, yt-dlp)', group: 'social', defaultOn: true },
   { id: 'github',        label: 'GitHub trending', group: 'dev',     defaultOn: true },
   { id: 'github_issues', label: 'GitHub issues',   group: 'dev',     defaultOn: true },
   { id: 'arxiv',         label: 'arXiv',           group: 'science', defaultOn: true },
@@ -680,6 +681,7 @@ const ALL_SOURCES = [
   { id: 'playstore',     label: 'Play Store',      group: 'apps',    defaultOn: true },
   { id: 'trustpilot',    label: 'Trustpilot',      group: 'apps',    defaultOn: true },
   { id: 'producthunt',   label: 'Product Hunt',    group: 'apps',    defaultOn: true },
+  { id: 'steam',         label: 'Steam reviews (games/software)', group: 'apps', defaultOn: false },
   // Curated RSS feed bundles. Each category fans out to ~5-10 feeds, filtered
   // by topic-keyword match in title/summary so unrelated posts are dropped.
   // Keep two RSS bundles on by default so "other sources" aren't silently

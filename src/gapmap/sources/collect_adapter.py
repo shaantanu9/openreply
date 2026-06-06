@@ -600,6 +600,11 @@ def run_dblp(topic_or_keywords: str | list[str], limit: int = 30) -> int:
     return _run_simple_list(topic_or_keywords, "dblp", fetch_dblp, limit)
 
 
+def run_steam(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .steam import fetch_steam
+    return _run_simple_list(topic_or_keywords, "steam", fetch_steam, limit)
+
+
 def run_bluesky(topic_or_keywords: str | list[str], limit: int = 30) -> int:
     from .bluesky import fetch_bluesky
     return _run_simple_list(topic_or_keywords, "bluesky", fetch_bluesky, limit)
@@ -907,6 +912,7 @@ SOURCES: dict[str, Any] = {
     "trustpilot":    run_trustpilot,
     "producthunt":   run_producthunt,
     "alternativeto": run_alternativeto,
+    "steam":         run_steam,
     # RSS bundle — one entry per category so the UI picker can offer
     # granular opt-in. All delegate to run_rss under the hood.
     # Discourse forums — caller must pass instance in kwargs (config-dependent).
