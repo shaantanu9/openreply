@@ -36,7 +36,15 @@ async function fetchSentimentData(topic) {
   return (rows || []).map(r => {
     let meta = {};
     try { meta = JSON.parse(r.metadata_json || '{}'); } catch {}
-    return { label: r.label, ...meta };
+    // NOTE on shape: the SQL `label` column is the human-readable SOURCE name
+    // ("Reddit", "App Store reviews", "Google News"). The metadata blob ALSO
+    // carries a `label` field — but that one is the SENTIMENT word
+    // ("positive"/"neutral"/"negative"/"mixed"). The spread below intentionally
+    // lets meta.label win (renderCard's tone lookup depends on s.label being the
+    // sentiment word). We preserve the readable source name separately as
+    // `source_name` so the comparison chart can label bars with "App Store
+    // reviews" instead of the raw slug "appstore".
+    return { source_name: r.label, label: r.label, ...meta };
   });
 }
 
@@ -66,7 +74,7 @@ function renderCard(s) {
   return `
     <div class="sent-card ${tone.class}">
       <div class="sent-card-head">
-        <div class="sent-card-title">${esc(s.label || s.source || '?')}</div>
+        <div class="sent-card-title">${esc(s.source_name || s.source || s.label || '?')}</div>
         <div class="sent-card-meta">
           <span class="sent-tone">${esc(tone.label)}</span>
           ${conf}
@@ -155,7 +163,10 @@ function renderSourceChart(sources) {
   `;
 
   const bars = rows.map(({ s, sc }) => {
-    const name = esc(s.label && s.source ? s.source : (s.source || s.label || '?'));
+    // Prefer the human-readable source name ("App Store reviews"); fall back to
+    // the slug, then to the sentiment label, then "?". `source_name` is set by
+    // fetchSentimentData; the others guard against partial/legacy rows.
+    const name = esc(s.source_name || s.source || s.label || '?');
     const tone = SENTIMENT_TONE[sc.label] || SENTIMENT_TONE.neutral;
     const posts = (s.n_posts || 0).toLocaleString();
     return `
