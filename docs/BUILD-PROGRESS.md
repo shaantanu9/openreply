@@ -98,9 +98,13 @@ Build-verified: CLI returns JSON, vite 1800 modules, cargo 0 errors. FEATURES.md
   Map/Graph faceted filtering, Personas polish, Bets/Tasks/Activity UI (all functional).
 
 ### State (2026-06-06, end of session)
-- **FEATURES.md: 196 · 193 ✅ · 3 🟡.** Every analysis module + strategy framework works
-  end-to-end (proven on real data) and is exposed via MCP (161 tools). The only 🟡 are 3
-  cosmetic Tauri screens. Tag still uncut (per instruction).
+- **FEATURES.md: 196 · 196 ✅ · 0 🟡 — every feature complete.** Cat-15 finished:
+  Personas enrichment + Bets polish + **Map clickable-legend faceted filtering**
+  (MAP_EXPORT_VERSION 4→5 so cached maps auto-rebuild). Tasks/Activity confirmed
+  functional (intentionally minimal admin screens).
+- Every analysis module + strategy framework works end-to-end (proven on real data),
+  is exposed via MCP (161 tools), and has a Tauri screen. Tag still uncut (per instruction).
+- Remaining backlog is P2 only: MCP tools for the 4 new collect-only sources; persona tests.
 
 ---
 
