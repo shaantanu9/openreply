@@ -2864,6 +2864,30 @@ def cmd_research_north_star(
           else north_star_get(topic=topic), as_json)
 
 
+@research_app.command("root-cause")
+def cmd_research_root_cause(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """5-Whys root-cause analysis of the topic's top painpoints. --compute to build."""
+    from ..research.root_cause import root_cause_get, root_cause_compute
+    _emit(root_cause_compute(topic=topic, provider=provider) if compute
+          else root_cause_get(topic=topic), as_json)
+
+
+@research_app.command("tactics")
+def cmd_research_tactics(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    k: int = typer.Option(5, "--k"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Tactics matched to the topic's painpoints from the tactic library (read-only)."""
+    from ..research.tactic_library import tactics_for_topic
+    _emit(tactics_for_topic(topic=topic, k=k), as_json)
+
+
 @research_app.command("iterate-start")
 def cmd_research_iterate_start(
     topic: str = typer.Option(..., "--topic", "-t"),

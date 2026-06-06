@@ -81,6 +81,107 @@ function renderCard(s) {
   `;
 }
 
+// ── "Sentiment by source" comparison chart ────────────────────────────────
+// The persisted rows carry a single sentiment *label* per source (positive /
+// negative / neutral / mixed) plus an optional textual `confidence`. There is
+// NO positive/neutral/negative count split in the payload, so per the brief we
+// render a single-value horizontal bar per source: width = a derived numeric
+// score, color = the source's dominant sentiment. Sorted most-positive →
+// most-negative so the comparison reads at a glance. Pure inline-styled HTML
+// bars — no external chart lib, no CSS-file changes.
+
+// Hex colors mirror the .sent-card.sent-* border/badge colors in style.css so
+// the chart matches the existing cards visually. var(--…) tokens resolve at
+// render time inside inline styles.
+const SENT_BAR_COLOR = {
+  positive: '#2E7D5B',
+  negative: '#B84747',
+  neutral:  'var(--ink-3)',
+  mixed:    'var(--orange)',
+};
+
+// Map a textual confidence (high / medium / low) to a 0..1 weight used to
+// scale the bar so a "high confidence positive" reads stronger than a "low
+// confidence positive". Unknown / missing confidence falls back to medium.
+const CONF_WEIGHT = { high: 1, medium: 0.66, low: 0.4 };
+
+function confWeight(confidence) {
+  const w = CONF_WEIGHT[String(confidence || '').toLowerCase()];
+  return typeof w === 'number' ? w : CONF_WEIGHT.medium;
+}
+
+// Derive a signed score in [-1, 1] (negative … positive) plus a 0..100 bar
+// width. Positive/negative push the bar toward their end scaled by confidence;
+// neutral/mixed sit near the middle. The width is the magnitude so a confident
+// extreme source draws a longer bar than a wishy-washy one.
+function sentimentScore(s) {
+  const label = (s.label || s.source || '').toLowerCase();
+  const w = confWeight(s.confidence);
+  let signed;
+  switch (label) {
+    case 'positive': signed = w; break;
+    case 'negative': signed = -w; break;
+    case 'mixed':    signed = 0; break;
+    case 'neutral':  signed = 0; break;
+    default:         signed = 0;
+  }
+  // Bar width: confident extremes ~ full; neutral/mixed get a modest stub so
+  // the source is still visible in the comparison rather than a zero-width bar.
+  const isNeutralish = label === 'neutral' || label === 'mixed';
+  const widthPct = isNeutralish ? 22 : Math.round(20 + Math.abs(signed) * 80);
+  const color = SENT_BAR_COLOR[label] || SENT_BAR_COLOR.neutral;
+  return { signed, widthPct, color, label };
+}
+
+function renderSourceChart(sources) {
+  if (!sources || sources.length < 2) return '';
+  // Sort most-positive → most-negative (ties broken by post volume desc so the
+  // bigger community shows first within a tone band).
+  const rows = sources
+    .map(s => ({ s, sc: sentimentScore(s) }))
+    .sort((a, b) => (b.sc.signed - a.sc.signed) || ((b.s.n_posts || 0) - (a.s.n_posts || 0)));
+
+  const legendItem = (color, text) => `
+    <span class="sent-chart-legend-item" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2)">
+      <span class="sent-chart-swatch" style="width:10px;height:10px;border-radius:3px;background:${color};display:inline-block"></span>${esc(text)}
+    </span>`;
+  const legend = `
+    <div class="sent-chart-legend" style="display:flex;flex-wrap:wrap;gap:12px">
+      ${legendItem(SENT_BAR_COLOR.positive, 'positive')}
+      ${legendItem(SENT_BAR_COLOR.neutral, 'neutral')}
+      ${legendItem(SENT_BAR_COLOR.mixed, 'mixed')}
+      ${legendItem(SENT_BAR_COLOR.negative, 'negative')}
+    </div>
+  `;
+
+  const bars = rows.map(({ s, sc }) => {
+    const name = esc(s.label && s.source ? s.source : (s.source || s.label || '?'));
+    const tone = SENTIMENT_TONE[sc.label] || SENTIMENT_TONE.neutral;
+    const posts = (s.n_posts || 0).toLocaleString();
+    return `
+      <div class="sent-chart-row" title="${esc(tone.label)} — ${posts} posts" style="display:flex;align-items:center;gap:10px">
+        <div class="sent-chart-name" style="flex:0 0 auto;width:120px;font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
+        <div class="sent-chart-track" style="flex:1;background:var(--surface-2,#f2f0ec);border-radius:999px;height:14px;overflow:hidden;min-width:0">
+          <div class="sent-chart-bar" style="width:${sc.widthPct}%;height:100%;background:${sc.color};border-radius:999px;transition:width .35s ease"></div>
+        </div>
+        <div class="sent-chart-val muted" style="flex:0 0 auto;font-size:11px;min-width:64px;text-align:right">${esc(tone.label)}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <section class="sent-chart" style="margin-bottom:16px;padding:14px;border:1px solid var(--line,#e6e2dc);border-radius:10px;background:var(--surface,#fff)">
+      <div class="sent-chart-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+        <h3 class="sent-chart-title" style="margin:0;font-size:13px;font-weight:700;color:var(--ink)">Sentiment by source</h3>
+        ${legend}
+      </div>
+      <div class="sent-chart-bars" style="display:flex;flex-direction:column;gap:8px">
+        ${bars}
+      </div>
+    </section>
+  `;
+}
+
 function renderEmptyCta(topic) {
   return `
     <div class="empty-state">
@@ -395,6 +496,7 @@ export async function loadSentiment(contentEl, topic) {
         <span class="muted">Aggregated from ${sources.length} source${sources.length === 1 ? '' : 's'} · click Re-run to refresh</span>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun-sent"><i data-lucide="refresh-cw"></i> Re-run</button>
       </div>
+      ${renderSourceChart(sources)}
       <div class="sent-grid">${sources.map(renderCard).join('')}</div>
     </div>
   `;

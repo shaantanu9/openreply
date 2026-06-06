@@ -4439,6 +4439,26 @@ pub async fn north_star_compute(app: AppHandle, topic: String) -> Result<Value, 
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+/// 5-Whys root-cause analysis of the topic's top painpoints — read cached artifact.
+#[tauri::command]
+pub async fn root_cause_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "root-cause", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// 5-Whys root-cause analysis — run the LLM synthesis and persist.
+#[tauri::command]
+pub async fn root_cause_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "root-cause", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Tactics matched to the topic's painpoints from the tactic library (read-only).
+#[tauri::command]
+pub async fn tactics_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "tactics", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 /// Read all paper-analysis rows for a topic (one SELECT, no LLM).
 #[tauri::command]
 pub async fn paper_analyses_get(

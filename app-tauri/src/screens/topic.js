@@ -25,6 +25,9 @@ import { loadSwot } from './swot.js';
 import { loadLeanCanvas } from './lean_canvas.js';
 import { loadValueProp } from './value_prop.js';
 import { loadNorthStar } from './north_star.js';
+import { loadRootCause } from './root_cause.js';
+import { loadTactics } from './tactics.js';
+import { loadHypotheses } from './hypotheses.js';
 import { mountIntentLadder } from './intent_ladder.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
@@ -1281,6 +1284,9 @@ export async function renderTopic(root, { params }) {
       <button type="button" class="tab" data-tab="lean"><i data-lucide="layout-dashboard"></i> Lean Canvas<span class="tab-freshness" id="tab-fresh-lean"></span></button>
       <button type="button" class="tab" data-tab="valueprop"><i data-lucide="gem"></i> Value Prop<span class="tab-freshness" id="tab-fresh-valueprop"></span></button>
       <button type="button" class="tab" data-tab="northstar"><i data-lucide="star"></i> North Star<span class="tab-freshness" id="tab-fresh-northstar"></span></button>
+      <button type="button" class="tab" data-tab="rootcause"><i data-lucide="git-fork"></i> Root Cause<span class="tab-freshness" id="tab-fresh-rootcause"></span></button>
+      <button type="button" class="tab" data-tab="tactics"><i data-lucide="wrench"></i> Tactics<span class="tab-freshness" id="tab-fresh-tactics"></span></button>
+      <button type="button" class="tab" data-tab="hypotheses"><i data-lucide="clipboard-check"></i> Hypotheses<span class="tab-freshness" id="tab-fresh-hypotheses"></span></button>
       <button type="button" class="tab" data-tab="bets"><i data-lucide="target"></i> Bets<span class="tab-freshness" id="tab-fresh-bets"></span></button>
       <button type="button" class="tab" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts<span class="tab-freshness" id="tab-fresh-concepts"></span></button>
       <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
@@ -4625,6 +4631,9 @@ export async function renderTopic(root, { params }) {
     lean: () => loadLeanCanvas(contentEl, topic),
     valueprop: () => loadValueProp(contentEl, topic),
     northstar: () => loadNorthStar(contentEl, topic),
+    rootcause: () => loadRootCause(contentEl, topic),
+    tactics: () => loadTactics(contentEl, topic),
+    hypotheses: () => loadHypotheses(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
     papers:   () => loadPapers(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),

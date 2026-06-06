@@ -251,4 +251,112 @@ def find_matching_tactics(text: str, k: int = 5) -> list[dict[str, Any]]:
     return [it[1] for it in scored[: max(1, int(k or 5))]]
 
 
-__all__ = ["ensure_schema", "seed_from_json", "find_matching_tactics"]
+def _library_size() -> int:
+    """Best-effort count of rows in the tactics table. Never raises."""
+    try:
+        db = sqlite3.connect(_db_path())
+        try:
+            row = db.execute("SELECT COUNT(*) FROM tactic_library").fetchone()
+        finally:
+            db.close()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+def _painpoint_labels(topic: str, limit: int = 25) -> list[str]:
+    """Read distinct painpoint labels for a topic from graph_nodes.
+
+    Mirrors strategy_common._nodes_by_kinds but reads via core.db.get_db so it
+    stays consistent with the rest of the research layer. Never raises.
+    """
+    try:
+        from ..core.db import get_db
+        db = get_db()
+        if "graph_nodes" not in db.table_names():
+            return []
+        rows = list(db.query(
+            """
+            SELECT label FROM graph_nodes
+            WHERE topic = :t AND kind = 'painpoint'
+              AND label IS NOT NULL AND label != ''
+            ORDER BY created_at DESC LIMIT :n
+            """,
+            {"t": topic, "n": limit},
+        ))
+    except Exception:
+        return []
+    seen: list[str] = []
+    for r in rows:
+        lbl = (r.get("label") or "").strip()
+        if lbl and lbl not in seen:
+            seen.append(lbl)
+    return seen
+
+
+def tactics_for_topic(topic: str, k: int = 5) -> dict[str, Any]:
+    """Match each of a topic's painpoints to persuasion tactics.
+
+    Pure read after a best-effort seed: ensures the schema, seeds the library
+    from JSON if it looks empty, reads the topic's painpoint labels, and for
+    each painpoint returns its top-k matched tactics. Never raises — on any
+    failure it returns an empty painpoints list.
+
+    Shape::
+
+        {
+          "topic": str,
+          "painpoints": [
+            {"painpoint": str, "tactics": [{...tactic fields...}]},
+            ...
+          ],
+          "tactic_count": int,   # distinct tactics across all painpoints
+          "library_size": int,   # rows in the tactic_library table
+        }
+    """
+    try:
+        ensure_schema()
+    except Exception:
+        return {"topic": topic, "painpoints": [], "tactic_count": 0, "library_size": 0}
+
+    # Seed the library on first use (best-effort — swallow any errors).
+    if _library_size() <= 0:
+        try:
+            seed_from_json()
+        except Exception:
+            pass
+
+    library_size = _library_size()
+
+    painpoints_out: list[dict[str, Any]] = []
+    distinct: set[str] = set()
+    try:
+        labels = _painpoint_labels(topic)
+        for label in labels:
+            try:
+                tactics = find_matching_tactics(label, k)
+            except Exception:
+                tactics = []
+            if not tactics:
+                continue
+            for t in tactics:
+                slug = str((t or {}).get("slug") or (t or {}).get("name") or "")
+                if slug:
+                    distinct.add(slug)
+            painpoints_out.append({"painpoint": label, "tactics": tactics})
+    except Exception:
+        painpoints_out = []
+        distinct = set()
+
+    return {
+        "topic": topic,
+        "painpoints": painpoints_out,
+        "tactic_count": len(distinct),
+        "library_size": library_size,
+    }
+
+
+__all__ = [
+    "ensure_schema", "seed_from_json", "find_matching_tactics",
+    "tactics_for_topic",
+]

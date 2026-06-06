@@ -516,6 +516,9 @@ export const api = {
   valuePropCompute: (topic) => { invalidate('value_prop_get'); return invoke('value_prop_compute', { topic }); },
   northStarGet:     (topic) => cachedInvoke('north_star_get', { topic }, 30000),
   northStarCompute: (topic) => { invalidate('north_star_get'); return invoke('north_star_compute', { topic }); },
+  rootCauseGet:     (topic) => cachedInvoke('root_cause_get', { topic }, 30000),
+  rootCauseCompute: (topic) => { invalidate('root_cause_get'); return invoke('root_cause_compute', { topic }); },
+  tacticsGet:       (topic) => cachedInvoke('tactics_get', { topic }, 30000),
 
   // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
   scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),
