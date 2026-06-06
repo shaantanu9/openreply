@@ -16,12 +16,22 @@ from .config import load_config
 def get_reddit() -> praw.Reddit:
     cfg = load_config()
     cfg.require_reddit()
-    return praw.Reddit(
+    kwargs = dict(
         client_id=cfg.reddit_client_id,
         client_secret=cfg.reddit_client_secret,
-        refresh_token=cfg.reddit_refresh_token,
         user_agent=cfg.reddit_user_agent,
     )
+    if cfg.reddit_refresh_token:
+        # Full user-scoped OAuth (can act as the user).
+        kwargs["refresh_token"] = cfg.reddit_refresh_token
+        return praw.Reddit(**kwargs)
+    # No refresh token → application-only / read-only OAuth. Reddit's 2026 free
+    # tier: 100 req/min, full JSON data, no browser login. Perfect for search +
+    # collection (we never act as a user). Set read_only explicitly so PRAW uses
+    # the client_credentials grant instead of attempting a user flow.
+    reddit = praw.Reddit(**kwargs)
+    reddit.read_only = True
+    return reddit
 
 
 def get_reddit_unauthed() -> praw.Reddit:

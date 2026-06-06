@@ -166,6 +166,7 @@ class Config:
 
     @property
     def has_oauth(self) -> bool:
+        """Full user-OAuth: id + secret + refresh token (user-scoped actions)."""
         return bool(
             self.reddit_client_id
             and self.reddit_client_secret
@@ -173,23 +174,35 @@ class Config:
         )
 
     @property
-    def mode(self) -> str:
-        """'auth' (OAuth via PRAW) or 'public' (no-auth JSON endpoints).
+    def has_reddit_app(self) -> bool:
+        """App credentials present (id + secret). Enough for READ-ONLY OAuth
+        (application-only / client_credentials grant) — Reddit's 2026 free tier:
+        100 req/min, full JSON data, NO browser login and NO refresh token.
+        A refresh token (has_oauth) upgrades this to full user-scoped auth."""
+        return bool(self.reddit_client_id and self.reddit_client_secret)
 
+    @property
+    def mode(self) -> str:
+        """'auth' (OAuth via PRAW — read-only or full) or 'public' (RSS).
+
+        Reddit 403-blocks all non-OAuth `.json` as of 2025, so 'public' uses
+        RSS feeds. Having app credentials (id + secret) is enough for 'auth'
+        (read-only); a refresh token additionally enables user actions.
         Forced via GAPMAP_MODE if set; otherwise auto-selected.
         """
         forced = os.getenv("GAPMAP_MODE", "").strip().lower()
         if forced in ("auth", "public"):
             return forced
-        return "auth" if self.has_oauth else "public"
+        return "auth" if self.has_reddit_app else "public"
 
     def require_reddit(self) -> None:
+        # Read-only OAuth needs only id + secret; refresh token is optional
+        # (it upgrades to full user-scoped auth). RSS public mode needs nothing.
         missing = [
             name
             for name, val in {
                 "REDDIT_CLIENT_ID": self.reddit_client_id,
                 "REDDIT_CLIENT_SECRET": self.reddit_client_secret,
-                "REDDIT_REFRESH_TOKEN": self.reddit_refresh_token,
             }.items()
             if not val
         ]
@@ -197,7 +210,9 @@ class Config:
             raise RuntimeError(
                 "Missing Reddit credentials: "
                 + ", ".join(missing)
-                + "\nRun `gapmap auth login` to do OAuth setup."
+                + "\nCreate a free Reddit app at https://www.reddit.com/prefs/apps "
+                "('script' type) and set REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET "
+                "(read-only). For user actions, also run `gapmap auth login`."
             )
 
 
