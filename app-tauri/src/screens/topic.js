@@ -671,6 +671,8 @@ const ALL_SOURCES = [
   { id: 'scholar',       label: 'Scholar',         group: 'science', defaultOn: false },
   { id: 'crossref',      label: 'Crossref',        group: 'science', defaultOn: false },
   { id: 'semantic_scholar', label: 'Semantic Scholar', group: 'science', defaultOn: false },
+  { id: 'europepmc',     label: 'Europe PMC (bio + preprints)', group: 'science', defaultOn: true },
+  { id: 'dblp',          label: 'DBLP (computer science)',      group: 'science', defaultOn: false },
   { id: 'wikipedia',     label: 'Wikipedia',       group: 'science', defaultOn: false },
   { id: 'gnews',         label: 'Google News',     group: 'web',     defaultOn: true },
   { id: 'trends',        label: 'Google Trends',   group: 'web',     defaultOn: true },

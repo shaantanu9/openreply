@@ -590,6 +590,16 @@ def run_semantic_scholar(topic_or_keywords: str | list[str], limit: int = 30) ->
     return _run_simple_list(topic_or_keywords, "semantic_scholar", fetch_semantic_scholar, limit)
 
 
+def run_europepmc(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .europepmc import fetch_europepmc
+    return _run_simple_list(topic_or_keywords, "europepmc", fetch_europepmc, limit)
+
+
+def run_dblp(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .dblp import fetch_dblp
+    return _run_simple_list(topic_or_keywords, "dblp", fetch_dblp, limit)
+
+
 def run_bluesky(topic_or_keywords: str | list[str], limit: int = 30) -> int:
     from .bluesky import fetch_bluesky
     return _run_simple_list(topic_or_keywords, "bluesky", fetch_bluesky, limit)
@@ -904,6 +914,8 @@ SOURCES: dict[str, Any] = {
     # Paper sources added in 2026-04-21 paper-research toolkit
     "crossref":         run_crossref,
     "semantic_scholar": run_semantic_scholar,
+    "europepmc":        run_europepmc,
+    "dblp":             run_dblp,
     "wikipedia":        run_wikipedia,
     "bluesky":          run_bluesky,
     # opencli-backed adapters (require @jackwener/opencli built locally;
