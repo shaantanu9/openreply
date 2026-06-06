@@ -3006,6 +3006,119 @@ def gapmap_export_docx_from_markdown(
     )
 
 
+# ─── PERT estimation (three-point) ──────────────────────────────────────────
+# Wraps research/pert.py so headless agents can build + roll up a PERT
+# estimate. E = (O + 4M + P) / 6, SD = (P - O) / 6; rollup applies a
+# McConnell overhead multiplier across a tier's tasks.
+
+@mcp.tool()
+def gapmap_pert_list(product_id: str, tier: str = "") -> list[dict]:
+    """List PERT estimation tasks for a product (optionally filtered by tier).
+
+    Args:
+        product_id: the product slug the tasks belong to.
+        tier: '' (all) | 'mvp' | 'standard' | 'full'.
+    Returns each task decorated with its expected days (E) and std-dev.
+    """
+    from ..research.pert import list_tasks
+    return list_tasks(product_id=product_id, tier=tier)
+
+
+@mcp.tool()
+def gapmap_pert_add_task(
+    product_id: str,
+    label: str,
+    optimistic: float = 0,
+    most_likely: float = 0,
+    pessimistic: float = 0,
+    role: str = "eng",
+    tier: str = "mvp",
+    notes: str = "",
+) -> dict:
+    """Add (or upsert) a three-point PERT task.
+
+    Args:
+        product_id: owning product slug.
+        label: task name.
+        optimistic / most_likely / pessimistic: estimates in days.
+        role: eng | design | qa | pm.
+        tier: mvp | standard | full.
+    Returns {ok, task} with the computed expected value + std-dev.
+    """
+    from ..research.pert import add_task
+    return add_task(
+        product_id=product_id, label=label,
+        optimistic=optimistic, most_likely=most_likely, pessimistic=pessimistic,
+        role=role, tier=tier, notes=notes,
+    )
+
+
+@mcp.tool()
+def gapmap_pert_rollup(product_id: str, multiplier: float = 1.75) -> dict:
+    """Roll up a product's PERT tasks into a total estimate with confidence band.
+
+    Args:
+        product_id: owning product slug.
+        multiplier: McConnell overhead multiplier applied to raw expected days
+            (default 1.75 — accounts for meetings, integration, rework).
+    Returns total expected days, the 1-sigma confidence band, and per-tier
+    + per-role breakdowns.
+    """
+    from ..research.pert import rollup
+    return rollup(product_id=product_id, multiplier=multiplier)
+
+
+# ─── Idea scan (fast 2-word discovery) ──────────────────────────────────────
+# Wraps research/idea_scan.py — a fast fan-out across enabled sources that
+# halts at a corpus threshold, then clusters. start is potentially long, so
+# it runs under the timeout guard with the jobs-queue fallback recommendation.
+
+@mcp.tool()
+def gapmap_idea_scan_start(
+    seed: str,
+    sources: list[str] | None = None,
+    halt_threshold: int = 200,
+    max_seconds: int = 90,
+) -> dict:
+    """Start a fast idea scan from a short seed (e.g. 'sleep tracking').
+
+    Fans out across enabled sources, halts once ~halt_threshold items are
+    collected, then clusters into candidate opportunity themes.
+
+    Args:
+        seed: the 2-3 word idea seed.
+        sources: optional explicit source list; None = enabled defaults.
+        halt_threshold: stop fetching once this many items are collected.
+        max_seconds: soft wall-clock cap for the synchronous fetch phase.
+    Returns the scan row (id, status, total_items, clusters). On timeout,
+    returns a structured dict recommending gapmap_jobs_submit.
+    """
+    from ..research.idea_scan import start_scan
+    return _run_with_timeout(
+        start_scan,
+        timeout=float(max_seconds) + 15.0,
+        async_hint="gapmap_idea_scan_start",
+        kwargs={
+            "seed": seed, "sources": sources,
+            "halt_threshold": halt_threshold, "max_seconds": max_seconds,
+        },
+    )
+
+
+@mcp.tool()
+def gapmap_idea_scan_get(scan_id: str) -> dict:
+    """Get one idea scan by id (status, source counts, clusters)."""
+    from ..research.idea_scan import get_scan
+    return get_scan(scan_id)
+
+
+@mcp.tool()
+def gapmap_idea_scan_list(limit: int = 50) -> list[dict]:
+    """List recent idea scans, newest first."""
+    from ..research.idea_scan import list_scans
+    return list_scans(limit=limit)
+
+
 # ─── Production guards — prevents the "18 zombie MCP servers" bug ───
 # Shipping lessons from 2026-04-21 — a user session accumulated 18
 # `gapmap mcp serve` processes over 2 days (Claude Code / Cursor
