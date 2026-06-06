@@ -1,7 +1,16 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-05-17 by Claude · **Build state:** pre-launch · branch `multi-source` @ `5f0650e` · desktop sidecar binary stale (Apr 21 — needs rebuild)
-> Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` before editing to keep file:line citations fresh.
+> **Updated:** 2026-06-06 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below · branch `multi-source`
+> Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
+
+> ### 🗓️ 2026-06 session changes (what moved)
+> - **Reddit** — anon `.json` is 403-blocked in 2026; added **RSS** (free, no-auth) + **read-only OAuth** (client_id+secret → full JSON, 100/min) + 3-yr PullPush history. ✅
+> - **New sources** — **Stack Exchange network ×8**, **Europe PMC**, **DBLP**, **Steam reviews**, **Bluesky** (app-password fix). Lemmy + GitHub Issues now default-on. ✅
+> - **Paper full-text** — auto-prefetch (download+extract PDF, no LLM) of top-15 papers after collect → chat grounds on intro+conclusions, not just abstracts. ✅
+> - **Prioritize tab** (NEW) — ranked opportunity list (RICE + Kano + MoSCoW + painpoint). Closes the cat-14 🟡 for RICE/Kano/MoSCoW. ✅
+> - **Activation** — key-hash + secret rotation hardened; auth-delete cleanup trigger (delete→recreate→activate verified end-to-end). ✅
+> - **Docs** — `CHANGES-2026-06.md`, `docs/USER-FEEDBACK-SOURCES.md`.
+> - **Still 🟡 (completion punch-list):** see categories 14 & 15 + the Known-gaps rollup.
 
 Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-source product/market research. The same Python core (`src/gapmap/`) powers all three surfaces: the MCP server exposes 147 tools to Claude Code, the Typer CLI exposes the equivalent command tree, and the Tauri desktop app drives the CLI as a sidecar.
 
@@ -16,23 +25,23 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 
 | Category | Total | ✅ | 🟡 | 🚧 | ❌ |
 |---|---|---|---|---|---|
-| 1. Data fetching — source adapters | 33 | 33 | 0 | 0 | 0 |
+| 1. Data fetching — source adapters | 37 | 37 | 0 | 0 | 0 |
 | 2. Discovery & collection | 6 | 6 | 0 | 0 | 0 |
 | 3. Corpus management | 11 | 11 | 0 | 0 | 0 |
 | 4. Synthesis & gap finding | 7 | 7 | 0 | 0 | 0 |
 | 5. Knowledge graph | 11 | 11 | 0 | 0 | 0 |
 | 6. Semantic search & memory palace | 7 | 7 | 0 | 0 | 0 |
 | 7. Persona agents | 9 | 9 | 0 | 0 | 0 |
-| 8. Paper research pipeline | 24 | 24 | 0 | 0 | 0 |
+| 8. Paper research pipeline | 25 | 25 | 0 | 0 | 0 |
 | 9. Product tracking | 9 | 9 | 0 | 0 | 0 |
 | 10. Audience & competitors | 3 | 3 | 0 | 0 | 0 |
 | 11. Export & documentation | 8 | 8 | 0 | 0 | 0 |
 | 12. MCP server & jobs queue | 6 | 6 | 0 | 0 | 0 |
 | 13. CLI | 1 | 1 | 0 | 0 | 0 |
-| 14. Advanced analysis modules | 18 | 4 | 14 | 0 | 0 |
-| 15. Tauri desktop app | 24 | 13 | 11 | 0 | 0 |
+| 14. Advanced analysis modules | 18 | 7 | 11 | 0 | 0 |
+| 15. Tauri desktop app | 25 | 14 | 11 | 0 | 0 |
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **182** | **157** | **25** | **0** | **0** |
+| **Total** | **190** | **168** | **22** | **0** | **0** |
 
 The MCP surface (categories 1–13, 16) is feature-complete. The 🟡 entries are concentrated in (14) advanced analysis modules that have a working Python core but are CLI/Tauri-only with no MCP tool, and (15) Tauri screens whose data pipeline works but whose visualisation is unfinished.
 
@@ -69,6 +78,8 @@ The MCP surface (categories 1–13, 16) is feature-complete. The 🟡 entries ar
 | OpenAlex | `gapmap_fetch_openalex:819` | `sources/openalex.py:65` | `openalex` |
 | Crossref | `gapmap_fetch_crossref:883` | `sources/crossref.py:103` | `crossref` |
 | Direct DOI lookup | `gapmap_fetch_by_doi:902` | `sources/crossref.py:143` | `crossref` |
+| Europe PMC (bio + preprints) ✅ NEW | (collect only) | `sources/europepmc.py` | `europepmc` |
+| DBLP (computer science) ✅ NEW | (collect only) | `sources/dblp.py` | `dblp` |
 
 ### 1.3 Developer tools & code
 | Feature | MCP tool `server.py` | Adapter | `source_type` |
@@ -76,6 +87,7 @@ The MCP surface (categories 1–13, 16) is feature-complete. The 🟡 entries ar
 | GitHub repos | `gapmap_fetch_github_repos:1685` | `sources/github_trending.py:55` | `github` |
 | GitHub issues | `gapmap_fetch_github_issues:1693` | `sources/github_issues.py:56` | `github_issues` |
 | Stack Overflow | `gapmap_fetch_stackoverflow:785` | `sources/stackoverflow.py:49` | `stackoverflow` |
+| Stack Exchange network ×8 ✅ NEW | (collect only) | `collect_adapter.run_stackexchange` (reuses `stackoverflow.py` per-site) | `stackexchange` |
 | Dev.to | `gapmap_fetch_devto:1578` | `sources/devto.py:41` | `devto` |
 | Package stats (npm/PyPI) | `gapmap_fetch_package_stats:1712` | `sources/npmstats.py:18` · `sources/pypistats.py:12` | `npm` / `pypi` |
 
@@ -86,7 +98,8 @@ The MCP surface (categories 1–13, 16) is feature-complete. The 🟡 entries ar
 | Google Play reviews | `gapmap_fetch_playstore:760` | `sources/playstore.py:76` | `playstore` |
 | Trustpilot reviews | `gapmap_fetch_trustpilot:1642` | `sources/trustpilot.py:180` | `trustpilot` |
 | Product Hunt | `gapmap_fetch_producthunt:1634` | `sources/producthunt.py:53` | `producthunt` |
-| AlternativeTo | `gapmap_fetch_alternativeto:1650` | `sources/alternativeto.py:48` | `alternativeto` |
+| AlternativeTo 🟡 | `gapmap_fetch_alternativeto:1650` | `sources/alternativeto.py:48` | `alternativeto` |
+| Steam reviews ✅ NEW | (collect only) | `sources/steam.py` | `steam` |
 
 ### 1.5 News, trends & reference
 | Feature | MCP tool `server.py` | Adapter | `source_type` |
@@ -459,10 +472,10 @@ These modules have a working Python core but **no MCP tool** — they are reache
 | Module | Purpose | Implementation | Status | Gap |
 |---|---|---|---|---|
 | Idea scan | Multi-topic adjacency sweep + synthesis | `research/idea_scan.py:254` (`start_scan`) | 🟡 | no MCP tool; Tauri-driven |
-| OST | Opportunity-Solution Tree, experiment cards | `research/ost.py:102` (`build_tree`) | 🟡 | visualisation incomplete (cat. 15) |
-| Kano | Kano feature classification | `research/kano.py:110` (`categorize_topic`) | 🟡 | no MCP tool |
-| MoSCoW | MoSCoW prioritisation | `research/moscow.py:102` | 🟡 | no MCP tool |
-| RICE | RICE scoring of topics | `research/rice.py:93` (`score_topic`) | 🟡 | no MCP tool |
+| OST | Opportunity-Solution Tree, experiment cards | `research/ost.py:102` (`build_tree`) | 🟡 | tree viz incomplete; experiments work |
+| **Kano** | Kano feature classification | `research/kano.py` · **Prioritize tab** | ✅ NEW | surfaced in Prioritize tab (`prioritize.js`); no MCP tool |
+| **MoSCoW** | MoSCoW prioritisation | `research/moscow.py` · **Prioritize tab** | ✅ NEW | surfaced in Prioritize tab; no MCP tool |
+| **RICE** | RICE scoring of opportunities | `research/rice.py` · `research/prioritize.py` · **Prioritize tab** | ✅ NEW | ranked opportunity list w/ Kano+MoSCoW chips; no MCP tool |
 | PMF | Product-market-fit survey scoring | `research/pmf.py:109` (`score`) | 🟡 | no MCP tool |
 | Pricing | Van Westendorp / NPS / MaxDiff | `research/pricing.py:86/230/306` | 🟡 | no MCP tool |
 | PRD generator | LLM PRD draft | `research/prd.py:59` (`generate`) | 🟡 | no MCP tool |
@@ -556,13 +569,21 @@ Recorded feedback is fed back into synthesis prompts via `research/feedback.py:7
 | Severity | Gap | Location |
 |---|---|---|
 | ✅ resolved | Sidecar binary staleness — the binary is no longer committed (gitignored); `release.yml` rebuilds it fresh per release, local dev rebuilds via `pyinstaller gapmap-cli.spec` | `app-tauri/src-tauri/binaries/` |
-| **deferred** | Developer ID cert + notarization — v0.1.0 ships as an unsigned beta by decision | `docs/manual-todo/future-scope-signing-and-secrets.md` |
-| **deferred** | `JWT_DESKTOP_SECRET` not in GitHub Secrets — unsigned beta uses the `release.yml` random fallback | `docs/manual-todo/future-scope-signing-and-secrets.md` |
+| ✅ resolved | Developer ID cert + notarization — v0.1.21 ships **signed + notarized** via CI | `.github/workflows/release-mac.yml` |
+| ✅ resolved | `JWT_DESKTOP_SECRET` now in GitHub Secrets (fp `6713fd9ce909`); CI **drift-guard** refuses to build on mismatch, no random fallback | `.github/workflows/release-mac.yml` |
 | **deferred** | Auto-update not configured (users manually download `.dmg`) | `docs/manual-todo/future-scope-signing-and-secrets.md` |
-| **P1** | 14 advanced analysis modules are 🟡 — core works, no MCP tool / unfinished Tauri screen | category 14 |
-| **P1** | 11 Tauri screens 🟡 — data pipeline works, visualisation unfinished | category 15 |
+| **P1 — completion punch-list** | 11 advanced analysis modules still 🟡 (was 14; RICE/Kano/MoSCoW done via Prioritize tab): **OST** (tree viz), **PMF**, **Pricing** (Van Westendorp/MaxDiff), **PRD generator**, **Empathy map**, **Why** (root-cause), **Sentiment-by-source**, **Intents**, **Tactic library**, **Hypothesis tracker**, **Iterate**, **Interviews**, **PERT** — core works, UI/MCP unfinished | category 14 |
+| **P1** | ~10 Tauri screens 🟡 — data pipeline works, visualisation unfinished (was 11; Prioritize done) | category 15 |
+| **P1** | New collect-only sources (Stack Exchange, Europe PMC, DBLP, Steam) have **no MCP tool** yet — Claude Code can't drive them headlessly | category 1 |
 | **P2** | No automated test coverage for the `persona/` module | `tests/` |
 | **P2** | Deliberation tiers not rendered in the Tauri *Insights* screen | category 15 |
+| **P2** | Bluesky / AlternativeTo 🟡 — Bluesky needs app-password; AlternativeTo Cloudflare-gated | category 1 |
+
+### 🛠️ Completion roadmap (next, to drive each 🟡 → ✅)
+- **Phase B — Validate:** finish PMF + Pricing (Van Westendorp) screens + add TAM/SAM/SOM market sizing.
+- **Phase C — Understand users:** Empathy map + Interviews + Intent-ladder + Why screens.
+- **Phase D — Spec & experiment:** PRD generator + Hypothesis tracker + Iterate screens.
+- **Cross-cutting:** expose the cat-14 modules + new sources as MCP tools; finish OST tree viz; add persona tests.
 
 ---
 
