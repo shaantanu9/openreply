@@ -1,17 +1,26 @@
-"""Public-JSON fallback client — no OAuth, no client_id, no approval required.
+"""Public no-auth Reddit client — RSS edition.
 
-Hits https://www.reddit.com/<path>.json directly. Limits vs the authed API:
-  - ~60 req/min per IP (vs 100/min OAuth)
-  - No private subs, no modmail, no streaming
-  - User pages only expose public listings
+Reddit 403-blocks the unauthenticated `.json` API as of 2025 (every
+`www.reddit.com/*.json` request returns 403 regardless of User-Agent), but it
+STILL serves the public **RSS** feeds (`/*.rss`) without auth or an app key.
+So the free, no-OAuth path fetches RSS and parses it with `feedparser`.
 
-Returned row dicts match the shape produced by `fetch._shape` so the rest of
-the pipeline (SQLite upserts, exporters, MCP tools) doesn't care which mode
-was used.
+What RSS gives us (vs the old .json):
+  - ✅ title, author, permalink, created time, self-text body, subreddit
+  - ❌ score / upvote_ratio / num_comments (not in RSS → returned as None)
+  - ⚠️  ~25 items per search feed, up to ~100 per listing (no deep pagination)
+
+Returned row dicts match the shape produced by `fetch._shape` / the old client
+so the rest of the pipeline (SQLite upserts, exporters, MCP tools) is unchanged.
+For score-aware / deep collection, connect Reddit OAuth (`gapmap auth login`)
+which flips `config.mode` to "auth" and uses PRAW instead of this module.
 """
 from __future__ import annotations
 
+import calendar
+import html
 import random
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -23,9 +32,8 @@ from .config import load_config
 _BASE = "https://www.reddit.com"
 _TIMEOUT = 20.0
 
-# Rotating real-browser UAs — Reddit's bot filter 403s bare/repeated UAs.
-# Strategy borrowed from the `yars` project (datavorous/yars) which is the
-# best-known no-auth Reddit scraper still working in 2026.
+# Rotating real-browser UAs — Reddit's bot filter 403s bare/repeated UAs even
+# on RSS. A real-browser UA per request is what keeps the no-auth path alive.
 _BROWSER_UAS = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -35,23 +43,21 @@ _BROWSER_UAS = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:125.0) Gecko/20100101 Firefox/125.0",
 )
 
+_TAG_RE = re.compile(r"<[^>]+>")
+_PID_RE = re.compile(r"/comments/([a-z0-9]+)/", re.I)
+_SUB_RE = re.compile(r"/r/([^/]+)/", re.I)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _headers() -> dict[str, str]:
-    """Return headers that Reddit's 2026 bot filter accepts.
-
-    If the user set REDDIT_USER_AGENT to a descriptive value (contains a space
-    or parens), we honour it. Otherwise we pick a random real-browser UA per
-    request — this is what every still-working no-auth scraper does.
-    """
     cfg_ua = load_config().reddit_user_agent or ""
     ua = cfg_ua if (" " in cfg_ua and "/" in cfg_ua) else random.choice(_BROWSER_UAS)
     return {
         "User-Agent": ua,
-        "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
+        "Accept": "application/atom+xml,application/xml,text/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Sec-Fetch-Dest": "document",
@@ -63,7 +69,14 @@ def _headers() -> dict[str, str]:
     }
 
 
-def _get(path: str, params: dict[str, Any] | None = None) -> Any:
+def _get_rss(path: str, params: dict[str, Any] | None = None):
+    """Fetch a Reddit `.rss` feed and return the parsed feedparser object.
+
+    We fetch the bytes ourselves (with browser headers) and hand the text to
+    feedparser — feedparser's own fetcher uses a UA Reddit blocks.
+    """
+    import feedparser
+
     url = f"{_BASE}{path}"
     backoff = 1.5
     last_err: Exception | None = None
@@ -71,116 +84,105 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
         try:
             r = httpx.get(url, params=params, headers=_headers(), timeout=_TIMEOUT, follow_redirects=True)
             if r.status_code == 429:
-                # polite backoff per Reddit's Retry-After
-                wait = float(r.headers.get("Retry-After", "2"))
-                time.sleep(min(wait, 30))
+                time.sleep(min(float(r.headers.get("Retry-After", "2")), 30))
                 continue
             r.raise_for_status()
-            return r.json()
+            return feedparser.parse(r.text)
         except httpx.HTTPError as e:
             last_err = e
             time.sleep(backoff**attempt)
-    raise RuntimeError(f"public fetch failed: {url} — {last_err}")
+    raise RuntimeError(f"public RSS fetch failed: {url} — {last_err}")
 
 
-# ── shape converters ─────────────────────────────────────────────────────────
+# ── entry → row converters ───────────────────────────────────────────────────
 
-def _post_row(d: dict[str, Any]) -> dict[str, Any]:
+def _strip_html(s: str | None) -> str:
+    if not s:
+        return ""
+    return html.unescape(_TAG_RE.sub(" ", s)).strip()
+
+
+def _author(e: Any, fallback: str = "[deleted]") -> str:
+    a = (getattr(e, "author", "") or "").strip().lstrip("/")
+    if a.lower().startswith("u/"):
+        a = a[2:]
+    return a or fallback
+
+
+def _created_utc(e: Any) -> float | None:
+    tp = getattr(e, "updated_parsed", None) or getattr(e, "published_parsed", None)
+    return float(calendar.timegm(tp)) if tp else None
+
+
+def _body(e: Any) -> str:
+    content = getattr(e, "content", None)
+    if content:
+        return _strip_html(content[0].get("value", ""))
+    return _strip_html(getattr(e, "summary", "") or "")
+
+
+def _entry_link(e: Any) -> str:
+    return getattr(e, "link", "") or ""
+
+
+def _post_id(e: Any, link: str) -> str | None:
+    eid = getattr(e, "id", "") or ""
+    if "_" in eid:  # Reddit fullname e.g. "t3_1lttke6"
+        return eid.split("_")[-1]
+    m = _PID_RE.search(link)
+    return m.group(1) if m else None
+
+
+def _sub(e: Any, link: str) -> str | None:
+    tags = getattr(e, "tags", None) or []
+    if tags and tags[0].get("term"):
+        return str(tags[0]["term"]).lower()
+    m = _SUB_RE.search(link)
+    return m.group(1).lower() if m else None
+
+
+def _is_post_entry(e: Any) -> bool:
+    """RSS search feeds mix in subreddit/user suggestions — keep only real posts."""
+    return "/comments/" in _entry_link(e)
+
+
+def _post_row(e: Any) -> dict[str, Any]:
+    link = _entry_link(e)
     return {
-        "id": d.get("id"),
-        "sub": (d.get("subreddit") or "").lower() or None,
+        "id": _post_id(e, link),
+        "sub": _sub(e, link),
         "source_type": "reddit",
-        "author": d.get("author") or "[deleted]",
-        "title": d.get("title"),
-        "selftext": d.get("selftext") or "",
-        "url": d.get("url"),
-        "score": d.get("score"),
-        "upvote_ratio": d.get("upvote_ratio"),
-        "num_comments": d.get("num_comments"),
-        "created_utc": d.get("created_utc"),
-        "is_self": int(bool(d.get("is_self"))),
-        "over_18": int(bool(d.get("over_18"))),
-        "flair": d.get("link_flair_text"),
-        "permalink": f"{_BASE}{d['permalink']}" if d.get("permalink") else None,
+        "author": _author(e),
+        "title": getattr(e, "title", None),
+        "selftext": _body(e),
+        "url": link,
+        "score": None,          # not exposed by RSS
+        "upvote_ratio": None,
+        "num_comments": None,
+        "created_utc": _created_utc(e),
+        "is_self": 1,
+        "over_18": 0,
+        "flair": None,
+        "permalink": link,
         "fetched_at": _now(),
     }
 
 
-def _comment_row(d: dict[str, Any], post_id: str, depth: int) -> dict[str, Any]:
+def _comment_row(e: Any, post_id: str | None) -> dict[str, Any]:
     return {
-        "id": d.get("id"),
+        "id": _post_id(e, _entry_link(e)),
         "post_id": post_id,
-        "parent_id": d.get("parent_id"),
-        "author": d.get("author") or "[deleted]",
-        "body": d.get("body") or "",
-        "score": d.get("score"),
-        "created_utc": d.get("created_utc"),
-        "depth": depth,
+        "parent_id": None,      # RSS comment feeds are flat (no tree)
+        "author": _author(e),
+        "body": _body(e),
+        "score": None,
+        "created_utc": _created_utc(e),
+        "depth": 0,
         "fetched_at": _now(),
     }
 
 
-# ── endpoints ────────────────────────────────────────────────────────────────
-
-def public_get_posts(
-    sub: str,
-    sort: str = "hot",
-    limit: int = 50,
-    time_filter: str = "day",
-) -> list[dict]:
-    # Reddit caps limit at 100 per page — paginate via `after` for more.
-    out: list[dict] = []
-    after: str | None = None
-    remaining = limit
-    while remaining > 0:
-        page_size = min(100, remaining)
-        params: dict[str, Any] = {"limit": page_size, "raw_json": 1}
-        if sort in ("top", "controversial"):
-            params["t"] = time_filter
-        if after:
-            params["after"] = after
-        j = _get(f"/r/{sub}/{sort}.json", params=params)
-        children = j.get("data", {}).get("children", [])
-        if not children:
-            break
-        for c in children:
-            if c.get("kind") == "t3":
-                out.append(_post_row(c["data"]))
-        after = j.get("data", {}).get("after")
-        remaining -= len(children)
-        if not after:
-            break
-    return out[:limit]
-
-
-def public_get_comments(post_id: str, depth: int | None = None) -> tuple[dict | None, list[dict]]:
-    """Returns (post_row | None, comments_rows). Public endpoint returns both."""
-    j = _get(f"/comments/{post_id}.json", params={"raw_json": 1, "limit": 500})
-    if not isinstance(j, list) or len(j) < 2:
-        return None, []
-
-    post = None
-    post_children = j[0].get("data", {}).get("children", [])
-    if post_children and post_children[0].get("kind") == "t3":
-        post = _post_row(post_children[0]["data"])
-
-    rows: list[dict] = []
-
-    def _walk(listing: dict, cur_depth: int) -> None:
-        if depth is not None and cur_depth > depth:
-            return
-        for c in listing.get("data", {}).get("children", []):
-            if c.get("kind") != "t1":
-                continue  # skip `more` stubs — the public API doesn't let us expand them
-            d = c["data"]
-            rows.append(_comment_row(d, post_id=post_id, depth=cur_depth))
-            replies = d.get("replies")
-            if isinstance(replies, dict):
-                _walk(replies, cur_depth + 1)
-
-    _walk(j[1], 0)
-    return post, rows
-
+# ── endpoints (RSS) ──────────────────────────────────────────────────────────
 
 def public_search(
     query: str,
@@ -189,94 +191,69 @@ def public_search(
     time_filter: str = "all",
     limit: int = 50,
 ) -> list[dict]:
-    path = f"/r/{sub}/search.json" if sub else "/search.json"
-    params: dict[str, Any] = {
-        "q": query,
-        "sort": sort,
-        "t": time_filter,
-        "limit": min(100, limit),
-        "raw_json": 1,
-    }
+    path = f"/r/{sub}/search.rss" if sub else "/search.rss"
+    params: dict[str, Any] = {"q": query, "sort": sort, "t": time_filter, "limit": min(100, limit)}
     if sub:
-        params["restrict_sr"] = "on"
-    j = _get(path, params=params)
-    children = j.get("data", {}).get("children", [])
-    return [_post_row(c["data"]) for c in children if c.get("kind") == "t3"][:limit]
+        params["restrict_sr"] = "1"
+    feed = _get_rss(path, params=params)
+    rows = [_post_row(e) for e in feed.entries if _is_post_entry(e)]
+    return rows[:limit]
+
+
+def public_get_posts(
+    sub: str,
+    sort: str = "hot",
+    limit: int = 50,
+    time_filter: str = "day",
+) -> list[dict]:
+    sort = sort if sort in ("hot", "new", "top", "rising", "controversial") else "hot"
+    params: dict[str, Any] = {"limit": min(100, limit)}
+    if sort in ("top", "controversial"):
+        params["t"] = time_filter
+    feed = _get_rss(f"/r/{sub}/{sort}/.rss", params=params)
+    rows = [_post_row(e) for e in feed.entries if _is_post_entry(e)]
+    return rows[:limit]
+
+
+def public_get_comments(post_id: str, depth: int | None = None) -> tuple[dict | None, list[dict]]:
+    """Returns (post_row | None, comment_rows). RSS gives a flat comment list
+    with no tree and no scores; the OP row isn't separable, so post is None."""
+    feed = _get_rss(f"/comments/{post_id}/.rss", params={"limit": 500})
+    rows = [_comment_row(e, post_id) for e in feed.entries]
+    return None, rows
+
+
+def public_search_subreddits(query: str, limit: int = 25) -> list[str]:  # convenience
+    """Subreddit names matching a query (from the all-Reddit search suggestions)."""
+    feed = _get_rss("/search.rss", params={"q": query, "type": "sr", "limit": min(100, limit)})
+    subs: list[str] = []
+    for e in feed.entries:
+        m = _SUB_RE.search(_entry_link(e))
+        if m and "/comments/" not in _entry_link(e):
+            subs.append(m.group(1).lower())
+    return list(dict.fromkeys(subs))[:limit]
 
 
 def public_get_sub_comments(sub: str, limit: int = 100) -> list[dict]:
-    """Firehose of a sub's most recent comments — pain quotes live here, not OPs.
-
-    Uses /r/<sub>/comments.json. No comment tree, just a flat recent-first list.
-    Shape matches `_comment_row`; post_id is extracted from `link_id` (t3_ prefix stripped).
-    """
+    """Recent comments across a subreddit (pain quotes live here, not OPs)."""
+    feed = _get_rss(f"/r/{sub}/comments/.rss", params={"limit": min(100, limit)})
     out: list[dict] = []
-    after: str | None = None
-    remaining = limit
-    while remaining > 0:
-        page = min(100, remaining)
-        params: dict[str, Any] = {"limit": page, "raw_json": 1}
-        if after:
-            params["after"] = after
-        j = _get(f"/r/{sub}/comments.json", params=params)
-        children = j.get("data", {}).get("children", [])
-        if not children:
-            break
-        for c in children:
-            if c.get("kind") != "t1":
-                continue
-            d = c["data"]
-            link_id = d.get("link_id") or ""
-            post_id = link_id[3:] if link_id.startswith("t3_") else link_id
-            out.append(
-                {
-                    "id": d.get("id"),
-                    "post_id": post_id,
-                    "parent_id": d.get("parent_id"),
-                    "author": d.get("author") or "[deleted]",
-                    "body": d.get("body") or "",
-                    "score": d.get("score"),
-                    "created_utc": d.get("created_utc"),
-                    "depth": 0,
-                    "fetched_at": _now(),
-                }
-            )
-        after = j.get("data", {}).get("after")
-        remaining -= len(children)
-        if not after:
-            break
+    for e in feed.entries:
+        m = _PID_RE.search(_entry_link(e))
+        out.append(_comment_row(e, m.group(1) if m else None))
     return out[:limit]
 
 
 def public_get_user(name: str, kind: str = "both", limit: int = 100) -> dict:
-    out: dict = {"user": None, "posts": [], "comments": []}
-
-    # Profile (may 404 for deleted / banned users)
-    try:
-        prof = _get(f"/user/{name}/about.json", params={"raw_json": 1}).get("data", {})
-        out["user"] = {
-            "name": prof.get("name") or name,
-            "link_karma": prof.get("link_karma"),
-            "comment_karma": prof.get("comment_karma"),
-            "created_utc": prof.get("created_utc"),
-            "is_mod": int(bool(prof.get("is_mod"))),
-            "fetched_at": _now(),
-        }
-    except Exception:
-        out["user"] = {"name": name, "fetched_at": _now()}
-
+    out: dict = {"user": {"name": name, "fetched_at": _now()}, "posts": [], "comments": []}
     if kind in ("posts", "both"):
-        j = _get(f"/user/{name}/submitted.json", params={"limit": min(100, limit), "raw_json": 1})
-        for c in j.get("data", {}).get("children", []):
-            if c.get("kind") == "t3":
-                out["posts"].append(_post_row(c["data"]))
-
+        feed = _get_rss(f"/user/{name}/submitted/.rss", params={"limit": min(100, limit)})
+        out["posts"] = [_post_row(e) for e in feed.entries if _is_post_entry(e)][:limit]
     if kind in ("comments", "both"):
-        j = _get(f"/user/{name}/comments.json", params={"limit": min(100, limit), "raw_json": 1})
-        for c in j.get("data", {}).get("children", []):
-            if c.get("kind") == "t1":
-                out["comments"].append(
-                    _comment_row(c["data"], post_id=(c["data"].get("link_id") or "").replace("t3_", ""), depth=0)
-                )
-
+        feed = _get_rss(f"/user/{name}/comments/.rss", params={"limit": min(100, limit)})
+        rows: list[dict] = []
+        for e in feed.entries:
+            m = _PID_RE.search(_entry_link(e))
+            rows.append(_comment_row(e, m.group(1) if m else None))
+        out["comments"] = rows[:limit]
     return out
