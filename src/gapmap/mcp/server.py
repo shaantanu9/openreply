@@ -1446,6 +1446,54 @@ def gapmap_experiment_plan_generate(topic: str, provider: str | None = None) -> 
 
 
 @mcp.tool()
+def gapmap_paper_knowledge_build(
+    topic: str, scope: str = "all", force: bool = False,
+) -> dict:
+    """Run the full paper-knowledge pipeline for a topic — the headless one-shot.
+
+    Downloads + extracts paper full text, sections + chunks it, detects
+    cross-paper gaps, and synthesises insights — the prerequisite for
+    gapmap_connections / outline / draft. scope ∈ {all, top50, top25, abstracts}
+    ('abstracts' skips full-text download — cheapest). Runs under the timeout
+    guard with a jobs-queue fallback for large corpora.
+    """
+    from ..research.paper_workflow import build_paper_knowledge
+    return _run_with_timeout(
+        build_paper_knowledge, timeout=120.0,
+        async_hint="gapmap_paper_knowledge_build",
+        kwargs={"topic": topic, "scope": scope, "force": force},
+    )
+
+
+@mcp.tool()
+def gapmap_paper_gaps(topic: str, compute: bool = False, force: bool = False) -> dict:
+    """Cross-paper gaps for a topic: understudied intersections, contradictions,
+    under-replicated methods. compute=False reads persisted gaps; compute=True
+    runs the LLM detection pass (needs paper full text — run
+    gapmap_paper_knowledge_build first). Feeds gapmap_connections.
+    """
+    if compute:
+        from ..research.paper_gaps import detect_gaps
+        return _run_with_timeout(
+            detect_gaps, timeout=90.0, async_hint="gapmap_paper_gaps",
+            kwargs={"topic": topic, "force": force})
+    from ..research.paper_gaps import list_gaps
+    return list_gaps(topic)
+
+
+@mcp.tool()
+def gapmap_paper_relations_build(topic: str | None = None, force: bool = False) -> dict:
+    """Materialise paper↔paper edges (relates_to / cites / shared_finding /
+    same_author) into the graph. Run before gapmap_connections so the
+    shared-but-uncited signal has data to work with.
+    """
+    from ..research.paper_relations import build as _build
+    return _run_with_timeout(
+        _build, timeout=90.0, async_hint="gapmap_paper_relations_build",
+        kwargs={"topic": topic, "force": force})
+
+
+@mcp.tool()
 def gapmap_paper_export_with_citations(
     topic: str,
     provider: str | None = None,
