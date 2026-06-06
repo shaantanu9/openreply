@@ -4311,6 +4311,23 @@ pub async fn analyze_papers_bulk(
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+/// Cheap background prefetch: download + extract full PDF TEXT (no LLM) for a
+/// topic's top-N papers, so chat grounds on real paper content (intro +
+/// conclusions) instead of just the abstract. Fired automatically after a
+/// collect; the heavier `analyze_papers_bulk` (LLM crux) stays manual.
+#[tauri::command]
+pub async fn paper_fulltext_bulk(
+    app: AppHandle,
+    topic: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let lim = limit.unwrap_or(15).to_string();
+    let argv: Vec<&str> = vec![
+        "research", "paper-fulltext", "--topic", &topic, "--limit", &lim, "--json",
+    ];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 /// Read all paper-analysis rows for a topic (one SELECT, no LLM).
 #[tauri::command]
 pub async fn paper_analyses_get(

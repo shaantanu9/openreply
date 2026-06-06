@@ -477,6 +477,7 @@ fn main() {
             commands::diff_findings,
             commands::analyze_paper,
             commands::analyze_papers_bulk,
+            commands::paper_fulltext_bulk,
             commands::paper_analyses_get,
             commands::schedule_install,
             commands::schedule_uninstall,

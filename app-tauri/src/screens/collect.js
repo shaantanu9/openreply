@@ -159,6 +159,15 @@ async function bindGlobalCollectListeners() {
           _collectLogs.delete(t);
           _collectStart.delete(t);
         }
+        // On a successful collect, kick a BACKGROUND full-text prefetch (no
+        // LLM) for the topic's top papers so chat grounds on real paper
+        // content (intro + conclusions), not just abstracts. Fire-and-forget:
+        // the Rust command runs to completion even though we don't await it,
+        // so the collect UI is never blocked. The manual "Analyze all" button
+        // (LLM crux) stays available and also persists to the DB.
+        if (next === 'done') {
+          try { api.paperFulltextBulk(t, 15).catch(() => {}); } catch {}
+        }
       }
       _activeTopic = null;
       window.dispatchEvent(new CustomEvent('gapmap:collect-done-global', {
