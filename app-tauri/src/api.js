@@ -499,6 +499,9 @@ export const api = {
   // papers so chat grounds on real content. Fired in the background post-collect.
   paperFulltextBulk: (topic, limit = 15) => invoke('paper_fulltext_bulk', { topic, limit }),
   paperAnalysesGet:  (topic) => cachedInvoke('paper_analyses_get', { topic }, 30000, SWR_BUILD_OUTPUT_MS),
+  // Prioritize tab — ranked opportunity list (RICE + Kano + MoSCoW).
+  prioritizeGet:   (topic) => cachedInvoke('prioritize_get', { topic }, 30000),
+  prioritizeScore: (topic) => { invalidate('prioritize_get'); return invoke('prioritize_score', { topic }); },
 
   // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
   scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),

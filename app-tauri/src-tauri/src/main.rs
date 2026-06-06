@@ -478,6 +478,8 @@ fn main() {
             commands::analyze_paper,
             commands::analyze_papers_bulk,
             commands::paper_fulltext_bulk,
+            commands::prioritize_get,
+            commands::prioritize_score,
             commands::paper_analyses_get,
             commands::schedule_install,
             commands::schedule_uninstall,

@@ -4328,6 +4328,32 @@ pub async fn paper_fulltext_bulk(
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+/// Ranked opportunity list (read-only): interventions by RICE + Kano + MoSCoW
+/// tags + the painpoint each addresses. Powers the Prioritize tab.
+#[tauri::command]
+pub async fn prioritize_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "prioritize", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Score every intervention: RICE (deterministic) + Kano + MoSCoW (LLM), each
+/// persisting to graph_nodes.metadata_json. Returns the freshly-ranked list.
+/// The two LLM scorers are best-effort (a missing LLM key skips them, RICE
+/// still ranks).
+#[tauri::command]
+pub async fn prioritize_score(app: AppHandle, topic: String) -> Result<Value, String> {
+    for cmd in [
+        ["research", "rice-score"],
+        ["research", "kano-categorize"],
+        ["research", "moscow-categorize"],
+    ] {
+        let argv: Vec<&str> = vec![cmd[0], cmd[1], "--topic", &topic, "--json"];
+        let _ = run_cli(&app, argv).await; // best-effort per scorer
+    }
+    let argv: Vec<&str> = vec!["research", "prioritize", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 /// Read all paper-analysis rows for a topic (one SELECT, no LLM).
 #[tauri::command]
 pub async fn paper_analyses_get(

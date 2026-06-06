@@ -18,6 +18,7 @@ import { renderMarkdown, inlineMd } from '../lib/markdown.js';
 import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
 import { loadPapers } from './papers.js';
+import { loadPrioritize } from './prioritize.js';
 import { mountIntentLadder } from './intent_ladder.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
@@ -1267,6 +1268,7 @@ export async function renderTopic(root, { params }) {
       <button type="button" class="tab" data-tab="posts"><i data-lucide="list"></i> Posts<span class="tab-freshness" id="tab-fresh-posts"></span></button>
       <button type="button" class="tab" data-tab="evidence"><i data-lucide="search"></i> Evidence<span class="tab-freshness" id="tab-fresh-evidence"></span></button>
       <button type="button" class="tab" data-tab="solutions"><i data-lucide="flask-conical"></i> Solutions<span class="tab-freshness" id="tab-fresh-solutions"></span></button>
+      <button type="button" class="tab" data-tab="prioritize"><i data-lucide="list-ordered"></i> Prioritize<span class="tab-freshness" id="tab-fresh-prioritize"></span></button>
       <button type="button" class="tab" data-tab="bets"><i data-lucide="target"></i> Bets<span class="tab-freshness" id="tab-fresh-bets"></span></button>
       <button type="button" class="tab" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts<span class="tab-freshness" id="tab-fresh-concepts"></span></button>
       <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
@@ -4604,6 +4606,7 @@ export async function renderTopic(root, { params }) {
     }, actions: loadActions,
     search: loadSearch,
     solutions: () => loadSolutions(contentEl, topic),
+    prioritize: () => loadPrioritize(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
     papers:   () => loadPapers(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
