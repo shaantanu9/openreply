@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-06 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below — **every feature now ✅ (196/196, 0 🟡)**: the 6 pre-build strategy frameworks (cat 17), all cat-14 analysis modules, and all cat-15 screens (incl. Map faceted filtering) · branch `multi-source`
+> **Updated:** 2026-06-06 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below — **204 features · 203 ✅ · 1 🟡** — incl. the new **Research & paper-writing assistant** (cat 18: Connect-the-Dots novel-connection engine + the full ingest→connect→write→cite flow, in-app & headless via MCP). Only 🟡 = the planned student Reading surface (R4) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -14,7 +14,7 @@
 > - **Cat-14 fully closed** — Why root-cause, Sentiment charts, Tactics, Hypothesis-tracker screen shipped; PERT + idea-scan exposed as MCP tools. ✅
 > - **All cat-15 screens done** — consensus tiers, OST 2×2 matrix, Global-Competitors detail, Personas enrichment, Bets polish, and Map clickable-legend faceted filtering all shipped. **0 🟡 remain (196/196 ✅).**
 
-Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-source product/market research. The same Python core (`src/gapmap/`) powers all three surfaces: the MCP server exposes 161 tools to Claude Code (incl. PERT, idea-scan, and the 6 strategy frameworks + root-cause + tactics, added 2026-06), the Typer CLI exposes the equivalent command tree, and the Tauri desktop app drives the CLI as a sidecar.
+Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-source product/market research. The same Python core (`src/gapmap/`) powers all three surfaces: the MCP server exposes 165 tools to Claude Code (incl. PERT, idea-scan, the 6 strategy frameworks + root-cause + tactics, and the research-writing chain: connections / paper-knowledge-build / paper-gaps / paper-relations + outline/draft/export, added 2026-06), the Typer CLI exposes the equivalent command tree, and the Tauri desktop app drives the CLI as a sidecar.
 
 ## Legend
 - ✅ **Complete** — works end-to-end, no known half-done parts
@@ -44,7 +44,8 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 15. Tauri desktop app | 25 | 25 | 0 | 0 | 0 |
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
 | 17. Pre-build strategy frameworks | 6 | 6 | 0 | 0 | 0 |
-| **Total** | **196** | **196** | **0** | **0** | **0** |
+| 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
+| **Total** | **204** | **203** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -581,8 +582,33 @@ Rust commands: `market_get/_compute`, `porter_forces_get/_compute` (renamed to a
 product-level `porter_get`), `swot_*`, `lean_canvas_*`, `value_prop_*`, `north_star_*`
 (`commands.rs`, registered in `main.rs`). api.js: `marketGet/marketCompute`, `porterGet/…`,
 etc. Build-verified: python CLI returns JSON · vite 1797 modules · cargo 0 errors.
-**Known gaps:** no MCP tools yet (headless Claude Code can't drive them); each compute is
-a single LLM pass (no multi-round refinement). P2.
+**Known gaps:** none — all 6 now have MCP tools (`gapmap_market_sizing/porter/swot/lean_canvas/value_prop/north_star`). P2 only: each compute is a single LLM pass (no multi-round refinement).
+
+---
+
+## 18. Research & paper-writing assistant 🟡
+
+Turns Gap Map into a tool for researchers / paper-writers / PDF-reading students:
+ingest literature → **find novel cross-paper connections** → analyse → write
+(outline → draft → cited export). ~80% reused the existing academic engine; see
+`docs/RESEARCH-WRITER-PLAN.md`. The whole flow is driveable in-app **and**
+headlessly via MCP.
+
+| Feature | Status | Surface | Implementation |
+|---|---|---|---|
+| **Connect the Dots** — novel cross-paper connections ranked by novelty | ✅ NEW | **Connect Dots** tab · CLI `research connections` · MCP `gapmap_connections` | `research/connections.py` (intersections + contradictions + method-repl + shared-but-uncited; persists `strategy_artifacts` kind `connections`) |
+| Paper full-text RAG (download/extract/section/chunk + grounded chat) | ✅ | Papers/Chat tabs · MCP `gapmap_paper_fulltext*` | `research/paper_fulltext.py`, `paper_sections.py`, `paper_chunks.py`, `chat/retrieval_context.py` |
+| Cross-paper gaps (intersections / contradictions / method-replication) | ✅ | CLI `research paper-gaps` · MCP `gapmap_paper_gaps` | `research/paper_gaps.py` |
+| Paper↔paper relations (cites / relates_to / shared_finding / same_author) | ✅ | Paper map · CLI · MCP `gapmap_paper_relations_build` | `research/paper_relations.py` |
+| Build paper knowledge (one-shot pipeline) | ✅ | Papers tab "Build knowledge base" · MCP `gapmap_paper_knowledge_build` | `research/paper_workflow.py` |
+| Paper outline + IMRaD draft generation | ✅ | Papers tab "Generate paper draft" · MCP `gapmap_paper_outline/draft_generate` | `research/paper_pipeline.py` |
+| Citations export (BibTeX / RIS / APA / Markdown) | ✅ | Papers tab export buttons · CLI `papers-export` · api `papersExport` | `research/paper_export.py` (`to_bibtex/to_ris/to_apa/to_markdown`) |
+| Student "drop PDF → cited Q&A" lightweight surface | 🟡 | — | planned (R4); chat + RAG + PDF ingest exist, needs a topic-optional entry screen |
+
+Headless chain: `gapmap_paper_knowledge_build` → `gapmap_paper_relations_build` →
+`gapmap_connections` → `gapmap_paper_outline_generate` → `gapmap_paper_draft_generate`
+→ `papers_export`. **Known gaps:** R4 student Reading surface (🟡); P2: MLA + LaTeX
+`.tex`+`.bib` export, community-bridge connection detection.
 
 ---
 

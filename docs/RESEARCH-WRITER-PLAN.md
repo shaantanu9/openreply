@@ -148,16 +148,32 @@ Persisted to `strategy_artifacts` (kind `connections`) so it caches + is MCP-rea
 | **Reading** surface (student) | Screen | drop PDF → cited Q&A (lightweight, topic-optional) |
 | MCP: `gapmap_connections`, `gapmap_citations`, `gapmap_paper_outline/draft` | MCP | drive headlessly |
 
-## 7. Phased roadmap
+## 7. Phased roadmap + STATUS
 
-- **Phase R1 — Connections (the differentiator):** `connections.py` novelty engine
-  + Connections tab + MCP. Highest value, mostly assembles existing signals.
-- **Phase R2 — Citations:** `citations.py` (BibTeX/RIS/APA/MLA) + reference manager
-  UI + LaTeX export. P0 for writers.
-- **Phase R3 — Write workspace:** unify outline→draft→references→export into one
-  Write tab; wire the existing `paper_outline_generate`/`paper_draft_generate`.
-- **Phase R4 — Student Reading surface:** drop-PDF → cited Q&A, topic-optional.
-- **Phase R5 — Polish:** plain-language summaries, glossary, draft quality, dedup.
+- **Phase R1 — Connections (the differentiator): ✅ DONE (2026-06-06).**
+  `research/connections.py` novelty engine + **Connect Dots** tab + CLI
+  (`research connections`) + Rust + api + MCP (`gapmap_connections`). Proven on a
+  real topic: 6 ranked connections (understudied intersections, contradictions,
+  method-replications), persisted + read back.
+- **Phase R2 — Citations: ✅ ALREADY EXISTED.** `paper_export.py` has
+  `to_bibtex/to_ris/to_apa/to_markdown` + `export_topic`; CLI `papers-export`;
+  Rust `papers_export`; api `papersExport`; Papers tab has BibTeX/RIS/APA/Markdown
+  export buttons. Proven: real `@article{…}`, RIS (Zotero), APA all generate.
+  *(Remaining nice-to-have: MLA + LaTeX `.tex`+`.bib` export — P2.)*
+- **Phase R3 — Write workspace: ✅ ALREADY EXISTED.** Papers tab has "Build
+  knowledge base" + "Generate paper draft" (modal w/ copy); outline + draft wired
+  via `paper_outline_generate`/`paper_draft_generate` (Rust+api+**MCP**).
+- **Headless chain: ✅ COMPLETED (2026-06-07).** Added `gapmap_paper_knowledge_build`,
+  `gapmap_paper_gaps`, `gapmap_paper_relations_build` so Claude Code drives the
+  WHOLE flow: build_knowledge → relations_build → connections → outline → draft →
+  papers_export.
+- **Phase R4 — Student Reading surface: ⬜ NEXT.** drop-PDF → cited Q&A,
+  topic-optional. Chat + paper RAG + PDF ingest all exist; needs a lightweight
+  entry-point screen that doesn't require building a topic first.
+- **Phase R5 — Polish: ⬜.** plain-language summaries, glossary, MLA/LaTeX, dedup.
+
+**Net:** the researcher + writer flow is functional end-to-end *today* (in-app and
+headless). The main remaining new build is the student Reading surface (R4).
 
 ## 8. Build invariants (same as the rest of the app)
 - Each new module mirrors `prioritize.py`/`strategy_common.py` (pure-read get +
