@@ -94,6 +94,18 @@ def _get_rss(path: str, params: dict[str, Any] | None = None):
     raise RuntimeError(f"public RSS fetch failed: {url} — {last_err}")
 
 
+def _get(path: str, params: dict[str, Any] | None = None) -> Any:
+    """Legacy JSON GET — kept for back-compat callers (e.g. discover.py's
+    `/subreddits/search.json`). Reddit now 403-blocks unauthenticated `.json`,
+    so this typically raises; every caller wraps it in try/except and degrades
+    (discover falls back to LLM keyword expansion). Raise (don't swallow) so
+    those fallbacks trigger."""
+    url = f"{_BASE}{path}"
+    r = httpx.get(url, params=params, headers=_headers(), timeout=_TIMEOUT, follow_redirects=True)
+    r.raise_for_status()
+    return r.json()
+
+
 # ── entry → row converters ───────────────────────────────────────────────────
 
 def _strip_html(s: str | None) -> str:
