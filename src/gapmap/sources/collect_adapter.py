@@ -160,6 +160,44 @@ def run_stackoverflow(topic_or_keywords: str | list[str], limit: int = 30, tag: 
     return total
 
 
+# Stack Exchange NETWORK — many high-signal Q&A communities via the same free,
+# no-auth API as Stack Overflow. Each site is its own pain/feature-request
+# corpus (IT, sysadmin, software design, UX, product recommendations, etc.).
+# One source toggle → ~8 communities. Per-site failures are isolated.
+_STACKEXCHANGE_SITES = (
+    "superuser", "serverfault", "softwareengineering", "ux",
+    "webmasters", "softwarerecs", "devops", "security",
+)
+
+
+def run_stackexchange(
+    topic_or_keywords: str | list[str], limit: int = 15, sites: tuple[str, ...] | None = None
+) -> int:
+    from .stackoverflow import fetch_stackoverflow
+
+    site_list = sites or _STACKEXCHANGE_SITES
+    kws, stopic = _as_keywords(topic_or_keywords)
+    fid = log_fetch_start(
+        "source:stackexchange", {"keywords": kws, "sites": list(site_list), "limit": limit}
+    )
+    total = 0
+    try:
+        for kw in kws:
+            for site in site_list:
+                try:
+                    rows = fetch_stackoverflow(query=kw, site=site, sort="relevance", limit=limit)
+                    for r in rows:
+                        r["source_type"] = "stackexchange"  # group all SE sites under one source
+                    total += _persist(stopic, rows, source_tag=f"stackexchange:{site}:{kw}")
+                except Exception:
+                    continue  # one site down never kills the rest
+                time.sleep(0.4)  # be gentle on the shared SE quota
+        log_fetch_end(fid, rows=total)
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+    return total
+
+
 def run_trends(
     topic_or_keywords: str | list[str],
     keywords: list[str] | None = None,
@@ -840,6 +878,7 @@ SOURCES: dict[str, Any] = {
     "playstore": run_playstore,
     "scholar": run_scholar,
     "stackoverflow": run_stackoverflow,
+    "stackexchange": run_stackexchange,
     "trends": run_trends,
     "arxiv": run_arxiv,
     "openalex": run_openalex,

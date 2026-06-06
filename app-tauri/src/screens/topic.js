@@ -661,6 +661,7 @@ const ALL_SOURCES = [
   { id: 'mastodon',      label: 'Mastodon',        group: 'social',  defaultOn: false },
   { id: 'devto',         label: 'Dev.to',          group: 'social',  defaultOn: true },
   { id: 'stackoverflow', label: 'Stack Overflow',  group: 'social',  defaultOn: true },
+  { id: 'stackexchange', label: 'Stack Exchange (8 communities)', group: 'social', defaultOn: true },
   { id: 'github',        label: 'GitHub trending', group: 'dev',     defaultOn: true },
   { id: 'github_issues', label: 'GitHub issues',   group: 'dev',     defaultOn: true },
   { id: 'arxiv',         label: 'arXiv',           group: 'science', defaultOn: true },
