@@ -353,7 +353,9 @@ def _topic_context(topic: str, limit_posts: int = 8, question: str | None = None
             from ..paper_fulltext import get_full_text
             paper_text_cache: dict[str, str] = {}
             for p in posts:
-                if (p.get("source") or "") not in ("arxiv", "openalex", "semantic_scholar", "scholar"):
+                if (p.get("source") or "") not in (
+                    "arxiv", "openalex", "semantic_scholar", "scholar", "pubmed", "europepmc"
+                ):
                     continue
                 # cache_only=True: NEVER download here. A topic with N uncached
                 # papers would otherwise block chat for N×5-15s synchronously
