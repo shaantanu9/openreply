@@ -41,12 +41,12 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 12. MCP server & jobs queue | 6 | 6 | 0 | 0 | 0 |
 | 13. CLI | 1 | 1 | 0 | 0 | 0 |
 | 14. Advanced analysis modules | 18 | 18 | 0 | 0 | 0 |
-| 15. Tauri desktop app | 25 | 19 | 6 | 0 | 0 |
+| 15. Tauri desktop app | 25 | 22 | 3 | 0 | 0 |
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
 | 17. Pre-build strategy frameworks | 6 | 6 | 0 | 0 | 0 |
-| **Total** | **196** | **190** | **6** | **0** | **0** |
+| **Total** | **196** | **193** | **3** | **0** | **0** |
 
-The MCP surface (categories 1–13, 16) is feature-complete, and category 14 (advanced analysis) + 17 (strategy frameworks) are now fully surfaced. The remaining 6 🟡 are all in (15) Tauri screens whose data pipeline works but whose visualisation/polish is unfinished (Graph filtering, Insights deliberation tiers, Personas polish, Global-Competitors detail, OST 2×2 matrix, Bets/Tasks/Activity UI). No half-done analysis modules remain — every function works end-to-end.
+The MCP surface (categories 1–13, 16) is feature-complete, and category 14 (advanced analysis) + 17 (strategy frameworks) are now fully surfaced. Only **3 🟡** remain — all in (15) Tauri screens with cosmetic/polish gaps (not breakage): Map/Graph faceted filtering, Personas UI polish, Bets/Tasks/Activity UI. No half-done analysis modules remain — every function works end-to-end.
 
 ---
 
@@ -500,7 +500,7 @@ Every module now has its surfacing complete — a Tauri screen and/or an MCP too
 
 ---
 
-## 15. Tauri desktop app 🟡 (19/25 — 6 viz/polish gaps)
+## 15. Tauri desktop app 🟡 (22/25 — 3 cosmetic gaps)
 
 **Location:** `app-tauri/` — a Tauri 2 shell that drives the Python CLI as a sidecar (`run_cli` / `run_cli_streaming`). Screens live under `app-tauri/src/screens/`. See the `tauri-python-sidecar-app` skill for the architecture.
 
@@ -525,10 +525,10 @@ Every module now has its surfacing complete — a Tauri screen and/or an MCP too
 | Screen | Works | Gap |
 |---|---|---|
 | Graph | basic node view | faceted/advanced filtering unfinished |
-| Insights | synthesis findings render | deliberation tiers not wired in |
+| Insights ✅ | synthesis + consensus deliberation tiers | done (collapsible Consensus section: tiers + scores + rationales) |
 | Personas (audience) | clustering + heatmap | UI polish |
-| Global Competitors | core unification | UI detail |
-| OST | tree + orphan/unlinked + severity ✅ | 2×2 matrix visualisation still 🟡 |
+| Global Competitors ✅ | core unification + enriched cards | done (topic chips + cross-topic reach bar + mentions/topic) |
+| OST ✅ | tree + orphan/unlinked + severity + Impact×Effort 2×2 matrix | done (RICE-scored interventions plotted in quadrants) |
 | Intent Ladder ✅ | classification + ladder + states | done (cosmetic polish only) |
 | Sentiment by Source ✅ | per-source comparison charts added | done |
 | Tactics ✅ | matches seeded tactics to painpoints | done (corpus LLM-extraction of new tactics is a P2 enhancement) |
@@ -536,7 +536,7 @@ Every module now has its surfacing complete — a Tauri screen and/or an MCP too
 | Empathy (jobs) ✅ | JTBD grid + persona switcher | done |
 | Iterate ✅ / Bets / Tasks / Activity | Iterate done; Bets/Tasks/Activity basic | Bets/Tasks/Activity UI still 🟡 |
 
-**Known gaps:** P1 — 6 partial screens remain (data pipeline works, visualisation unfinished — not breakage): Graph faceted filtering, Insights deliberation tiers, Personas UI polish, Global-Competitors detail, OST 2×2 matrix, Bets/Tasks/Activity UI. The sidecar binary is no longer committed (gitignored); `release.yml` rebuilds it fresh per release. Video ingest (`whisper`/`ytdlp` CLI sub-apps, `sources/video.py:125`) is 🔒 behind the `video` pyproject extra.
+**Known gaps:** P2 cosmetic — only 3 screens remain functional-but-basic (no breakage): Map/Graph faceted filtering, Personas UI polish, Bets/Tasks/Activity UI. The sidecar binary is no longer committed (gitignored); `release.yml` rebuilds it fresh per release. Video ingest (`whisper`/`ytdlp` CLI sub-apps, `sources/video.py:125`) is 🔒 behind the `video` pyproject extra.
 
 ---
 

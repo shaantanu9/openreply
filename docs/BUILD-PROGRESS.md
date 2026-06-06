@@ -93,8 +93,14 @@ Build-verified: CLI returns JSON, vite 1800 modules, cargo 0 errors. FEATURES.md
   + PERT + idea-scan. Headless Claude Code now drives the whole funnel. MCP tool count 161.
 - P2 still open: a few legacy cat-14 Tauri-only modules without their own MCP tool;
   new collect-only sources (stackexchange/europepmc/dblp/steam) lack MCP tools; persona-module tests.
-- 🚧 cat-15 viz screens — Insights deliberation tiers + OST Impact×Effort matrix + Global-Competitors
-  detail in flight (workflow); Personas / Bets-Tasks-Activity remain functional-but-basic (P2 cosmetic).
+- ✅ cat-15 viz — Insights consensus/deliberation tiers + OST Impact×Effort 2×2 matrix +
+  Global-Competitors enriched cards DONE. cat-15 now 22/25. Only 3 cosmetic 🟡 left:
+  Map/Graph faceted filtering, Personas polish, Bets/Tasks/Activity UI (all functional).
+
+### State (2026-06-06, end of session)
+- **FEATURES.md: 196 · 193 ✅ · 3 🟡.** Every analysis module + strategy framework works
+  end-to-end (proven on real data) and is exposed via MCP (161 tools). The only 🟡 are 3
+  cosmetic Tauri screens. Tag still uncut (per instruction).
 
 ---
 
