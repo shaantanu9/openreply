@@ -2768,6 +2768,19 @@ def cmd_research_moscow_categorize(
     _emit(categorize_topic(topic=topic, provider=resolved), as_json)
 
 
+@research_app.command("prioritize")
+def cmd_research_prioritize(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    limit: int = typer.Option(200, "--limit", "-n"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Ranked opportunity list — interventions by RICE, with Kano + MoSCoW tags
+    and the painpoint each addresses. Read-only (run rice-score / kano-categorize
+    / moscow-categorize first to populate the scores)."""
+    from ..research.prioritize import prioritize_topic
+    _emit(prioritize_topic(topic=topic, limit=limit), as_json)
+
+
 @research_app.command("iterate-start")
 def cmd_research_iterate_start(
     topic: str = typer.Option(..., "--topic", "-t"),
