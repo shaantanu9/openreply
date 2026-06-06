@@ -87,11 +87,14 @@ Build-verified: CLI returns JSON, vite 1800 modules, cargo 0 errors. FEATURES.md
   Insights deliberation tiers, Personas polish, Global-Competitors detail, OST 2×2 matrix,
   Bets/Tasks/Activity UI.
 
-### Cross-cutting (still open, P2)
-- Expose remaining cat-14 + the 6 cat-17 frameworks + new collect-only sources
-  (stackexchange/europepmc/dblp/steam) as **MCP tools** so Claude Code drives the whole funnel headlessly.
-- Add persona-module tests.
-- The 6 cat-15 viz/polish screens.
+### Cross-cutting
+- ✅ **MCP exposure DONE** for the 6 cat-17 strategy frameworks + root-cause + tactics
+  (`gapmap_market_sizing/porter/swot/lean_canvas/value_prop/north_star/root_cause/tactics`)
+  + PERT + idea-scan. Headless Claude Code now drives the whole funnel. MCP tool count 161.
+- P2 still open: a few legacy cat-14 Tauri-only modules without their own MCP tool;
+  new collect-only sources (stackexchange/europepmc/dblp/steam) lack MCP tools; persona-module tests.
+- 🚧 cat-15 viz screens — Insights deliberation tiers + OST Impact×Effort matrix + Global-Competitors
+  detail in flight (workflow); Personas / Bets-Tasks-Activity remain functional-but-basic (P2 cosmetic).
 
 ---
 

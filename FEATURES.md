@@ -14,7 +14,7 @@
 > - **Cat-14 fully closed** — Why root-cause, Sentiment charts, Tactics, Hypothesis-tracker screen shipped; PERT + idea-scan exposed as MCP tools. ✅
 > - **Still 🟡:** only 6 cat-15 Tauri screens (viz/polish, not breakage) — see the Known-gaps rollup.
 
-Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-source product/market research. The same Python core (`src/gapmap/`) powers all three surfaces: the MCP server exposes 153 tools to Claude Code (incl. PERT + idea-scan, added 2026-06), the Typer CLI exposes the equivalent command tree, and the Tauri desktop app drives the CLI as a sidecar.
+Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-source product/market research. The same Python core (`src/gapmap/`) powers all three surfaces: the MCP server exposes 161 tools to Claude Code (incl. PERT, idea-scan, and the 6 strategy frameworks + root-cause + tactics, added 2026-06), the Typer CLI exposes the equivalent command tree, and the Tauri desktop app drives the CLI as a sidecar.
 
 ## Legend
 - ✅ **Complete** — works end-to-end, no known half-done parts
@@ -496,7 +496,7 @@ Every module now has its surfacing complete — a Tauri screen and/or an MCP too
 | Coverage / saturation | Corpus coverage metrics | `research/coverage.py:47` · `research/saturation.py:25` | ✅ | wired into clean-corpus |
 | Cross-topic opportunities | Top opportunities across topics | `research/cross_topic.py:47` | ✅ | wired into competitors |
 
-**Known gaps:** none half-done. P2 only — several modules are Tauri-only (no MCP tool): Why root-cause, Tactic library, OST, Kano/MoSCoW/RICE, PMF, Pricing, PRD, Empathy, Intents, Iterate, Interviews. Exposing the cat-14 + cat-17 modules as MCP tools (so headless Claude Code drives the whole funnel) is the remaining cross-cutting task.
+**Known gaps:** none half-done. **MCP exposure DONE** for Why root-cause + Tactics (and all 6 cat-17 strategy frameworks) — headless Claude Code now drives the whole funnel via `gapmap_market_sizing / porter / swot / lean_canvas / value_prop / north_star / root_cause / tactics` + `gapmap_pert_* / idea_scan_*`. P2 only: a few legacy Tauri-only modules (OST, Kano/MoSCoW/RICE, PMF, Pricing, PRD, Empathy, Intents, Iterate, Interviews) still lack their own MCP tool — most are reachable via the synthesis/pipeline tools.
 
 ---
 
