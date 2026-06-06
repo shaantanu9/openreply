@@ -50,19 +50,27 @@
 
 ## 🚧 In progress / next (do NOT cut v0.1.22 yet — user: "dont cut the tag")
 
-### Phase E/F/G — NEW strategy frameworks (current workflow)
-Pattern: workflow drafts each new Python core (`research/<name>.py`) + screen
-(`screens/<name>.js`) as isolated files; **I wire shared parts centrally**
-(CLI `cli/main.py`, Rust `commands.rs` + `main.rs`, `api.js`, `topic.js` tab).
+### Phase E/F/G — NEW strategy frameworks ✅ SHIPPED (2026-06-06)
+Built via workflow (isolated cores+screens) + central wiring. Foundation:
+`research/strategy_common.py` (topic-keyed `strategy_artifacts` store + LLM-JSON
++ evidence bundler). Build-verified: python CLI returns JSON, vite 1797 modules,
+cargo 0 errors. Each: `research <name> [--compute]` CLI, Rust `<name>_get/_compute`
+(Porter → `porter_forces_*` to avoid the product-level `porter_get`), api.js
+get/compute, topic.js tab + loader.
 
-| Framework | Core module | Screen | Status |
-|---|---|---|---|
-| **TAM/SAM/SOM** market sizing (+ market value/cap) — P0 | `research/market_sizing.py` | `screens/market.js` | 🚧 building |
-| **Porter's Five Forces** | `research/porter.py` | `screens/porter.js` | 🚧 building |
-| **SWOT** (auto-synth from gaps + competitors) | `research/swot.py` | `screens/swot.js` | 🚧 building |
-| **Lean Canvas** (9 blocks, seeded from painpoints) | `research/lean_canvas.py` | `screens/lean_canvas.js` | 🚧 building |
-| **Value Proposition Canvas** | `research/value_prop.py` | `screens/value_prop.js` | 🚧 building |
-| **North-Star metric** | `research/north_star.py` | `screens/north_star.js` | 🚧 building |
+| Framework | Core module | Screen | Tab | Status |
+|---|---|---|---|---|
+| **TAM/SAM/SOM** market sizing (+ market value) — P0 | `research/market_sizing.py` | `screens/market.js` | Market | ✅ |
+| **Porter's Five Forces** | `research/porter.py` | `screens/porter.js` | Five Forces | ✅ |
+| **SWOT** (auto-synth from gaps + competitors) | `research/swot.py` | `screens/swot.js` | SWOT | ✅ |
+| **Lean Canvas** (9 blocks, seeded from painpoints) | `research/lean_canvas.py` | `screens/lean_canvas.js` | Lean Canvas | ✅ |
+| **Value Proposition Canvas** | `research/value_prop.py` | `screens/value_prop.js` | Value Prop | ✅ |
+| **North-Star metric** | `research/north_star.py` | `screens/north_star.js` | North Star | ✅ |
+
+> UX note: each tab loads the cached artifact instantly; the first time it shows
+> a "Generate" button that runs the LLM synthesis (~30–60s) grounded in the
+> topic's collected evidence, then renders + caches. Needs an LLM key + a built
+> gap map (collect + extract) for the topic first.
 
 ### Remaining 🟡 to finish (6)
 - Why (root-cause / 5-whys) — **no UI**; needs own CLI+api+Rust+screen (`why.js` is the page-explainer)

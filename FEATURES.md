@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-06 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below · branch `multi-source`
+> **Updated:** 2026-06-06 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below — incl. the **6 new pre-build strategy frameworks** (cat 17: market sizing, Porter, SWOT, Lean Canvas, Value-Prop, North-Star) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -41,7 +41,8 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 14. Advanced analysis modules | 18 | 12 | 6 | 0 | 0 |
 | 15. Tauri desktop app | 25 | 14 | 11 | 0 | 0 |
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **190** | **173** | **17** | **0** | **0** |
+| 17. Pre-build strategy frameworks | 6 | 6 | 0 | 0 | 0 |
+| **Total** | **196** | **179** | **17** | **0** | **0** |
 
 The MCP surface (categories 1–13, 16) is feature-complete. The 🟡 entries are concentrated in (14) advanced analysis modules that have a working Python core but are CLI/Tauri-only with no MCP tool, and (15) Tauri screens whose data pipeline works but whose visualisation is unfinished.
 
@@ -554,6 +555,35 @@ Recorded feedback is fed back into synthesis prompts via `research/feedback.py:7
 
 ---
 
+## 17. Pre-build strategy frameworks ✅
+
+The full "before you build" PM toolkit — assess the market, the strategy, and the
+business model, all grounded in the topic's collected evidence (painpoints,
+feature-wishes, complaints, competitors, corpus mix). Each framework is a topic-level
+artifact: cheap cached read (`<name>_get`) + on-demand LLM synthesis (`<name>_compute`,
+~30–60s) persisted to `strategy_artifacts`. Shared base: `research/strategy_common.py`
+(store + `run_llm_json` + `topic_context`/`context_brief` evidence bundler). Tabs live
+on the topic page between **Prioritize** and **Bets**. Needs an LLM key + a built gap
+map for the topic.
+
+| Feature | Status | CLI | Core (`research/`) | Screen / Tab | Data |
+|---|---|---|---|---|---|
+| TAM/SAM/SOM market sizing (+ market value) | ✅ | `research market-sizing [--compute]` | `market_sizing.py` (`market_sizing_get/_compute`) | `market.js` → **Market** | `strategy_artifacts` (kind `market_sizing`) |
+| Porter's Five Forces | ✅ | `research porter [--compute]` | `porter.py` (`porter_get/_compute`) | `porter.js` → **Five Forces** | kind `porter` |
+| SWOT | ✅ | `research swot [--compute]` | `swot.py` (`swot_get/_compute`) | `swot.js` → **SWOT** | kind `swot` |
+| Lean Canvas (9 blocks) | ✅ | `research lean-canvas [--compute]` | `lean_canvas.py` (`lean_canvas_get/_compute`) | `lean_canvas.js` → **Lean Canvas** | kind `lean_canvas` |
+| Value Proposition Canvas | ✅ | `research value-prop [--compute]` | `value_prop.py` (`value_prop_get/_compute`) | `value_prop.js` → **Value Prop** | kind `value_prop` |
+| North-Star metric | ✅ | `research north-star [--compute]` | `north_star.py` (`north_star_get/_compute`) | `north_star.js` → **North Star** | kind `north_star` |
+
+Rust commands: `market_get/_compute`, `porter_forces_get/_compute` (renamed to avoid the
+product-level `porter_get`), `swot_*`, `lean_canvas_*`, `value_prop_*`, `north_star_*`
+(`commands.rs`, registered in `main.rs`). api.js: `marketGet/marketCompute`, `porterGet/…`,
+etc. Build-verified: python CLI returns JSON · vite 1797 modules · cargo 0 errors.
+**Known gaps:** no MCP tools yet (headless Claude Code can't drive them); each compute is
+a single LLM pass (no multi-round refinement). P2.
+
+---
+
 ## Data persistence summary
 
 **SQLite (`core/db.py`)** — `posts`, `comments`, `users`, `subreddits`, `topic_posts`, `topic_prefs`, `topic_insights`, `mcp_analyses`, `graph_nodes`, `graph_edges`, `personas`, `persona_memories`, `persona_conclusions`, `persona_edges`, `paper_full_texts`, `paper_sections`, `paper_chunks`, `paper_analyses`, `paper_references`, `finding_research_links`, `products`, `product_signals`, `sweeps`, `hypothesis_tests`, `audience_personas`, `launch_briefs`, `jobs`, `feedback`, `saved_views`, `prompt_overrides`.
@@ -573,9 +603,9 @@ Recorded feedback is fed back into synthesis prompts via `research/feedback.py:7
 | ✅ resolved | `JWT_DESKTOP_SECRET` now in GitHub Secrets (fp `6713fd9ce909`); CI **drift-guard** refuses to build on mismatch, no random fallback | `.github/workflows/release-mac.yml` |
 | **deferred** | Auto-update not configured (users manually download `.dmg`) | `docs/manual-todo/future-scope-signing-and-secrets.md` |
 | **P1 — completion punch-list** | **6 advanced modules still 🟡** (was 14): **Why (root-cause)** — no UI; `why.js` is the page-explainer, needs its own CLI+api+Rust+screen · **Sentiment-by-source** — charts · **Tactic library** — extraction · **Hypothesis tracker** — no dedicated screen · **PERT** — no MCP · **Idea scan** — no MCP. *(Done this session: RICE/Kano/MoSCoW via Prioritize; OST/PMF/Pricing/PRD/Empathy/Intents/Iterate/Interviews via the screen-completion workflow.)* | category 14 |
-| **P1** | **NEW frameworks to build** (product-strategy coverage, see `docs/PRODUCT-DISCOVERY-COVERAGE.md`): TAM/SAM/SOM market sizing (+market value), Porter's Five Forces, SWOT, Lean Canvas, Value-Proposition Canvas, North-Star metric | new |
+| ✅ resolved | **NEW strategy frameworks** (product-strategy coverage): TAM/SAM/SOM market sizing (+market value), Porter, SWOT, Lean Canvas, Value-Prop, North-Star — **all shipped** end-to-end (cat 17). | category 17 |
 | **P1** | A few Tauri screens still 🟡 — visualisation unfinished | category 15 |
-| **P1** | New collect-only sources (Stack Exchange, Europe PMC, DBLP, Steam) have **no MCP tool** yet — Claude Code can't drive them headlessly | category 1 |
+| **P1** | New collect-only sources (Stack Exchange, Europe PMC, DBLP, Steam) + the **6 cat-17 strategy frameworks** have **no MCP tool** yet — Claude Code can't drive them headlessly | categories 1, 17 |
 | **P2** | No automated test coverage for the `persona/` module | `tests/` |
 | **P2** | Deliberation tiers not rendered in the Tauri *Insights* screen | category 15 |
 | **P2** | Bluesky / AlternativeTo 🟡 — Bluesky needs app-password; AlternativeTo Cloudflare-gated | category 1 |
