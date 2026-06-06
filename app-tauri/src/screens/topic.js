@@ -1031,7 +1031,7 @@ export async function renderTopic(root, { params }) {
   // cached HTML file won't have (e.g. left-panel minimize, citation focus).
   // loadMap force-rebuilds any topic whose stored version is older, so the new
   // viewer self-heals on first open — no manual Rebuild needed.
-  const MAP_EXPORT_VERSION = 4;
+  const MAP_EXPORT_VERSION = 5;
   const MAP_EXPORT_VER_KEY = `gapmap.topic.mapExportVer.${topic}`;
   // This is a LOCAL app reading a LOCAL SQLite — the only thing that
   // makes a cached snapshot stale is the user explicitly running a

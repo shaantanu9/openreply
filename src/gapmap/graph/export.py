@@ -478,6 +478,9 @@ _HTML_TEMPLATE = """<!doctype html>
   .legend { display:flex; flex-wrap:wrap; gap:8px; font-size:10px; color:var(--muted);
     padding:6px 8px; background:var(--bg); border-radius:4px; border:1px solid var(--border);
     margin-bottom:10px; }
+  .legend-item { cursor:pointer; user-select:none; padding:1px 3px; border-radius:3px; }
+  .legend-item:hover { background:var(--border); }
+  .legend-item.legend-off { opacity:.38; text-decoration:line-through; }
   .swatch { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:3px;
     vertical-align:middle; }
   .source-groups { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
@@ -731,7 +734,17 @@ const legendEl = document.getElementById("legend");
 ["painpoint","workaround","product","feature_wish","subreddit","post","user","era","topic"].forEach(k => {
   if (!(meta.nodes_by_kind||{})[k]) return;
   const span = document.createElement("span");
+  // Each legend swatch is a clickable toggle — click to hide/show that kind
+  // of node (and its incident edges). Faceted filtering of a dense graph.
+  span.className = "legend-item";
+  span.dataset.kind = k;
+  span.title = "Click to show / hide " + (KIND_LABEL[k] || k) + " nodes";
   span.innerHTML = `<span class="swatch" style="background:${KIND_COLORS[k]}"></span>${KIND_LABEL[k]}`;
+  span.addEventListener("click", () => {
+    if (hiddenKinds.has(k)) { hiddenKinds.delete(k); span.classList.remove("legend-off"); }
+    else { hiddenKinds.add(k); span.classList.add("legend-off"); }
+    applyVisibility();
+  });
   legendEl.appendChild(span);
 });
 
@@ -1086,9 +1099,23 @@ const nodesById = Object.fromEntries(DATA.nodes.map(n => [n.id, {...n}]));
 const links = DATA.links.map(l => ({...l}));
 
 const showUsers = {current: false};
+// Kinds toggled off via the (clickable) legend — faceted filtering.
+const hiddenKinds = new Set();
 function shouldShow(node) {
   if (!showUsers.current && node.kind === "user") return false;
+  if (hiddenKinds.has(node.kind)) return false;
   return true;
+}
+// Single source of truth for node+link visibility. Safe to call only after
+// nodeSel/linkSel are initialised (every caller — legend clicks, the showUsers
+// handler, the initial apply — runs after the full script body executes).
+function applyVisibility() {
+  nodeSel.style("display", d => shouldShow(d) ? null : "none");
+  linkSel.style("display", l => {
+    const s = typeof l.source === "object" ? l.source : nodesById[l.source];
+    const t = typeof l.target === "object" ? l.target : nodesById[l.target];
+    return (shouldShow(s) && shouldShow(t)) ? null : "none";
+  });
 }
 
 function radiusOf(d) {
@@ -1196,20 +1223,10 @@ sim.on("tick", () => {
 // ── user visibility toggle ──
 document.getElementById("showUsers").addEventListener("change", e => {
   showUsers.current = e.target.checked;
-  nodeSel.style("display", d => shouldShow(d) ? null : "none");
-  linkSel.style("display", l => {
-    const s = typeof l.source === "object" ? l.source : nodesById[l.source];
-    const t = typeof l.target === "object" ? l.target : nodesById[l.target];
-    return (shouldShow(s) && shouldShow(t)) ? null : "none";
-  });
+  applyVisibility();
 });
 // Apply initial visibility
-nodeSel.style("display", d => shouldShow(d) ? null : "none");
-linkSel.style("display", l => {
-  const s = typeof l.source === "object" ? l.source : nodesById[l.source];
-  const t = typeof l.target === "object" ? l.target : nodesById[l.target];
-  return (shouldShow(s) && shouldShow(t)) ? null : "none";
-});
+applyVisibility();
 
 // ── highlighting ──
 function neighborIds(nodeId) {
