@@ -149,6 +149,22 @@ const REDDIT_FIELDS = [
     help: 'Bumps PubMed (NCBI E-utilities) rate limit from 3 req/s → 10 req/s. Free, self-serve at <a href="https://www.ncbi.nlm.nih.gov/account/settings/" target="_blank">NCBI account settings</a>.',
     prefix: '',
   },
+  {
+    key: 'bsky_handle',
+    envKey: 'BSKY_HANDLE',
+    label: 'Bluesky handle (optional)',
+    placeholder: 'you.bsky.social',
+    help: 'Unlocks the Bluesky source (its anonymous search is now 403-blocked). Pair with a Bluesky <b>app password</b> — free + instant, no approval: bsky.app → <b>Settings → App Passwords</b>.',
+    prefix: '',
+  },
+  {
+    key: 'bsky_app_password',
+    envKey: 'BSKY_APP_PASSWORD',
+    label: 'Bluesky app password (optional)',
+    placeholder: 'xxxx-xxxx-xxxx-xxxx',
+    help: 'An <b>app password</b> (not your main password) from bsky.app → Settings → App Passwords. Pairs with the handle above.',
+    prefix: '',
+  },
 ];
 
 // Curated "known-good" model lists for cloud providers. Click a chip to set

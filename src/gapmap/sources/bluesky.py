@@ -1,20 +1,43 @@
-"""Bluesky public search via AT Protocol.
+"""Bluesky search via AT Protocol.
 
-⚠ As of mid-2026 the `public.api.bsky.app` endpoint returns 403 for
-anonymous clients — Bluesky tightened rate limits and effectively requires
-an app-password session. This adapter degrades to empty gracefully. To
-enable, set BSKY_HANDLE + BSKY_APP_PASSWORD env vars (future work).
+The anonymous `public.api.bsky.app` endpoint returns 403 as of mid-2026, but an
+**app password** restores full search — it's free + instant (bsky.app →
+Settings → App Passwords; no approval, unlike Reddit). Set BSKY_HANDLE +
+BSKY_APP_PASSWORD (e.g. via Settings → BYOK) and this authenticates a session
+and queries the authenticated searchPosts endpoint. Without creds it degrades
+to empty gracefully.
 
 https://docs.bsky.app/docs/api/app-bsky-feed-search-posts
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 _BASE = "https://public.api.bsky.app/xrpc"
+_AUTH_BASE = "https://bsky.social/xrpc"
+
+
+def _session() -> str | None:
+    """Create an AT-proto session from BSKY_HANDLE + BSKY_APP_PASSWORD.
+    Returns the accessJwt, or None if creds are absent / login fails."""
+    handle = (os.getenv("BSKY_HANDLE") or "").strip()
+    pw = (os.getenv("BSKY_APP_PASSWORD") or "").strip()
+    if not handle or not pw:
+        return None
+    try:
+        r = httpx.post(
+            f"{_AUTH_BASE}/com.atproto.server.createSession",
+            json={"identifier": handle, "password": pw},
+            timeout=20,
+        )
+        r.raise_for_status()
+        return (r.json() or {}).get("accessJwt")
+    except httpx.HTTPError:
+        return None
 
 
 def _now_iso() -> str:
@@ -55,6 +78,10 @@ def _row(p: dict[str, Any]) -> dict[str, Any]:
 
 
 def fetch_bluesky(query: str, limit: int = 50) -> list[dict]:
+    jwt = _session()
+    if not jwt:
+        return []  # no app password → anonymous search is 403-blocked
+    headers = {"Authorization": f"Bearer {jwt}"}
     collected: list[dict] = []
     cursor: str | None = None
     while len(collected) < limit:
@@ -62,7 +89,10 @@ def fetch_bluesky(query: str, limit: int = 50) -> list[dict]:
         if cursor:
             params["cursor"] = cursor
         try:
-            r = httpx.get(f"{_BASE}/app.bsky.feed.searchPosts", params=params, timeout=20)
+            r = httpx.get(
+                f"{_AUTH_BASE}/app.bsky.feed.searchPosts",
+                params=params, headers=headers, timeout=20,
+            )
             r.raise_for_status()
         except httpx.HTTPError:
             break

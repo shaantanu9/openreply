@@ -659,6 +659,7 @@ const ALL_SOURCES = [
   { id: 'hn',            label: 'Hacker News',     group: 'social',  defaultOn: true },
   { id: 'lemmy',         label: 'Lemmy',           group: 'social',  defaultOn: true },
   { id: 'mastodon',      label: 'Mastodon',        group: 'social',  defaultOn: false },
+  { id: 'bluesky',       label: 'Bluesky (needs app password)', group: 'social', defaultOn: false },
   { id: 'devto',         label: 'Dev.to',          group: 'social',  defaultOn: true },
   { id: 'stackoverflow', label: 'Stack Overflow',  group: 'social',  defaultOn: true },
   { id: 'stackexchange', label: 'Stack Exchange (8 communities)', group: 'social', defaultOn: true },

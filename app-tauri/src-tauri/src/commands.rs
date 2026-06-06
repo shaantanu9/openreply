@@ -5691,6 +5691,8 @@ pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Va
         "SEMANTIC_SCHOLAR_API_KEY",
         "S2_API_KEY",
         "NCBI_API_KEY",
+        "BSKY_HANDLE",
+        "BSKY_APP_PASSWORD",
     ];
     if !ALLOWED.contains(&name.as_str()) {
         return Err(format!("key '{}' is not allowed", name));
