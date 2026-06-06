@@ -38,10 +38,10 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 11. Export & documentation | 8 | 8 | 0 | 0 | 0 |
 | 12. MCP server & jobs queue | 6 | 6 | 0 | 0 | 0 |
 | 13. CLI | 1 | 1 | 0 | 0 | 0 |
-| 14. Advanced analysis modules | 18 | 7 | 11 | 0 | 0 |
+| 14. Advanced analysis modules | 18 | 12 | 6 | 0 | 0 |
 | 15. Tauri desktop app | 25 | 14 | 11 | 0 | 0 |
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **190** | **168** | **22** | **0** | **0** |
+| **Total** | **190** | **173** | **17** | **0** | **0** |
 
 The MCP surface (categories 1–13, 16) is feature-complete. The 🟡 entries are concentrated in (14) advanced analysis modules that have a working Python core but are CLI/Tauri-only with no MCP tool, and (15) Tauri screens whose data pipeline works but whose visualisation is unfinished.
 
@@ -472,21 +472,21 @@ These modules have a working Python core but **no MCP tool** — they are reache
 | Module | Purpose | Implementation | Status | Gap |
 |---|---|---|---|---|
 | Idea scan | Multi-topic adjacency sweep + synthesis | `research/idea_scan.py:254` (`start_scan`) | 🟡 | no MCP tool; Tauri-driven |
-| OST | Opportunity-Solution Tree, experiment cards | `research/ost.py:102` (`build_tree`) | 🟡 | tree viz incomplete; experiments work |
+| **OST** | Opportunity-Solution Tree, experiment cards | `research/ost.py` · `ost.js` | ✅ NEW | tree + orphan/unlinked experiments + severity rendered; no MCP tool |
 | **Kano** | Kano feature classification | `research/kano.py` · **Prioritize tab** | ✅ NEW | surfaced in Prioritize tab (`prioritize.js`); no MCP tool |
 | **MoSCoW** | MoSCoW prioritisation | `research/moscow.py` · **Prioritize tab** | ✅ NEW | surfaced in Prioritize tab; no MCP tool |
 | **RICE** | RICE scoring of opportunities | `research/rice.py` · `research/prioritize.py` · **Prioritize tab** | ✅ NEW | ranked opportunity list w/ Kano+MoSCoW chips; no MCP tool |
-| PMF | Product-market-fit survey scoring | `research/pmf.py:109` (`score`) | 🟡 | no MCP tool |
-| Pricing | Van Westendorp / NPS / MaxDiff | `research/pricing.py:86/230/306` | 🟡 | no MCP tool |
-| PRD generator | LLM PRD draft | `research/prd.py:59` (`generate`) | 🟡 | no MCP tool |
-| Empathy map | Jobs-to-be-done extraction | `research/empathy.py:140` (`build_empathy_map`) | 🟡 | extraction works; UI incomplete |
-| Why (root-cause) | Causal cascade on painpoints | `research/why.py:40` (`extract_why_for_painpoint`) | 🟡 | early stage |
+| **PMF** | Product-market-fit survey scoring | `research/pmf.py` · `pmf.js` | ✅ NEW | screen completed (n_scored denominator + persona buckets + responses); no MCP tool |
+| **Pricing** | Van Westendorp / NPS / MaxDiff | `research/pricing.py` · `pricing.js` | ✅ NEW | screen completed (VW acceptable-range + per-instrument response tables); no MCP tool |
+| **PRD generator** | LLM PRD draft | `research/prd.py` · `prd.js` | ✅ NEW | screen completed (sparse-state guidance + Copy/Download in all states); no MCP tool |
+| **Empathy map** | Jobs-to-be-done extraction | `research/empathy.py` · `empathy.js` | ✅ NEW | screen completed (JTBD grid + persona switcher + XSS fix); no MCP tool |
+| Why (root-cause) | Causal cascade on painpoints | `research/why.py:40` (`extract_why_for_painpoint`) | 🟡 | **no UI** — `why.js` is the page-explainer, NOT this; needs CLI+api+Rust+screen |
 | Sentiment by source | Per-source sentiment distribution | `research/sentiment_by_source.py:114` | 🟡 | charts incomplete (cat. 15) |
-| Intents | Awareness→decision intent ladder | `research/intents.py:131` (`get_topic_intent`) | 🟡 | UI polish needed |
+| **Intents** | Awareness→decision intent ladder | `research/intents.py` · `intent_ladder.js` | ✅ NEW | screen completed (ladder + states + active-guard); no MCP tool |
 | Tactic library | Curated tactics extracted from corpus | `research/tactic_library.py:170` | 🟡 | extraction incomplete |
-| Hypothesis tracker | A/B hypothesis lifecycle | `research/hypothesis_tracker.py:45` | 🟡 | schema works; UI incomplete |
-| Iterate | Config-iteration experiment runs | `research/iterate.py:219` (`start_run`) | 🟡 | UI incomplete |
-| Interviews | User-interview store + summarise | `research/interviews.py:46` | 🟡 | UI incomplete |
+| Hypothesis tracker | A/B hypothesis lifecycle | `research/hypothesis_tracker.py:45` | 🟡 | schema works; no dedicated screen (Bets is adjacent) |
+| **Iterate** | Config-iteration experiment runs | `research/iterate.py` · `iterate.js` | ✅ NEW | screen completed (runs feed + empty-state + guard); no MCP tool |
+| **Interviews** | User-interview store + summarise | `research/interviews.py` · `interviews.js` | ✅ NEW | screen completed (store + deterministic summary + guard); LLM digest + MCP still open |
 | PERT | Task rollup / critical path | `research/pert.py:138` (`rollup`) | 🟡 | no MCP tool |
 | Solutions / science | Solution synthesis per painpoint | `research/solutions.py:81` · `research/science.py:44` | ✅ | wired into pipeline |
 | Concept extraction | Concept map per topic | `research/concept.py:258` | ✅ | wired into graph |
@@ -572,18 +572,21 @@ Recorded feedback is fed back into synthesis prompts via `research/feedback.py:7
 | ✅ resolved | Developer ID cert + notarization — v0.1.21 ships **signed + notarized** via CI | `.github/workflows/release-mac.yml` |
 | ✅ resolved | `JWT_DESKTOP_SECRET` now in GitHub Secrets (fp `6713fd9ce909`); CI **drift-guard** refuses to build on mismatch, no random fallback | `.github/workflows/release-mac.yml` |
 | **deferred** | Auto-update not configured (users manually download `.dmg`) | `docs/manual-todo/future-scope-signing-and-secrets.md` |
-| **P1 — completion punch-list** | 11 advanced analysis modules still 🟡 (was 14; RICE/Kano/MoSCoW done via Prioritize tab): **OST** (tree viz), **PMF**, **Pricing** (Van Westendorp/MaxDiff), **PRD generator**, **Empathy map**, **Why** (root-cause), **Sentiment-by-source**, **Intents**, **Tactic library**, **Hypothesis tracker**, **Iterate**, **Interviews**, **PERT** — core works, UI/MCP unfinished | category 14 |
-| **P1** | ~10 Tauri screens 🟡 — data pipeline works, visualisation unfinished (was 11; Prioritize done) | category 15 |
+| **P1 — completion punch-list** | **6 advanced modules still 🟡** (was 14): **Why (root-cause)** — no UI; `why.js` is the page-explainer, needs its own CLI+api+Rust+screen · **Sentiment-by-source** — charts · **Tactic library** — extraction · **Hypothesis tracker** — no dedicated screen · **PERT** — no MCP · **Idea scan** — no MCP. *(Done this session: RICE/Kano/MoSCoW via Prioritize; OST/PMF/Pricing/PRD/Empathy/Intents/Iterate/Interviews via the screen-completion workflow.)* | category 14 |
+| **P1** | **NEW frameworks to build** (product-strategy coverage, see `docs/PRODUCT-DISCOVERY-COVERAGE.md`): TAM/SAM/SOM market sizing (+market value), Porter's Five Forces, SWOT, Lean Canvas, Value-Proposition Canvas, North-Star metric | new |
+| **P1** | A few Tauri screens still 🟡 — visualisation unfinished | category 15 |
 | **P1** | New collect-only sources (Stack Exchange, Europe PMC, DBLP, Steam) have **no MCP tool** yet — Claude Code can't drive them headlessly | category 1 |
 | **P2** | No automated test coverage for the `persona/` module | `tests/` |
 | **P2** | Deliberation tiers not rendered in the Tauri *Insights* screen | category 15 |
 | **P2** | Bluesky / AlternativeTo 🟡 — Bluesky needs app-password; AlternativeTo Cloudflare-gated | category 1 |
 
 ### 🛠️ Completion roadmap (next, to drive each 🟡 → ✅)
-- **Phase B — Validate:** finish PMF + Pricing (Van Westendorp) screens + add TAM/SAM/SOM market sizing.
-- **Phase C — Understand users:** Empathy map + Interviews + Intent-ladder + Why screens.
-- **Phase D — Spec & experiment:** PRD generator + Hypothesis tracker + Iterate screens.
-- **Cross-cutting:** expose the cat-14 modules + new sources as MCP tools; finish OST tree viz; add persona tests.
+- ✅ **Done this session:** Prioritize tab (RICE/Kano/MoSCoW) + screen-completion workflow (OST, PMF, Pricing, PRD, Empathy, Intents, Iterate, Interviews).
+- **Phase E — Market (NEW, P0):** TAM/SAM/SOM market sizing + market value/cap — the headline missing framework. See `docs/PRODUCT-DISCOVERY-COVERAGE.md`.
+- **Phase F — Strategy (NEW):** Porter's Five Forces + SWOT (auto-synthesised from the gap map + competitors); surface Blue-Ocean.
+- **Phase G — Business framing (NEW):** Lean Canvas + Value-Proposition Canvas + North-Star metric.
+- **Finish remaining 🟡:** Why (root-cause) screen, Sentiment-by-source charts, Tactic library, Hypothesis-tracker screen, PERT.
+- **Cross-cutting:** expose cat-14 modules + new sources as MCP tools so Claude Code drives the whole funnel headlessly; add persona tests.
 
 ---
 
