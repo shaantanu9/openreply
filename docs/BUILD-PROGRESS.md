@@ -72,18 +72,26 @@ get/compute, topic.js tab + loader.
 > topic's collected evidence, then renders + caches. Needs an LLM key + a built
 > gap map (collect + extract) for the topic first.
 
-### Remaining 🟡 to finish (6)
-- Why (root-cause / 5-whys) — **no UI**; needs own CLI+api+Rust+screen (`why.js` is the page-explainer)
-- Sentiment-by-source charts
-- Tactic library (extraction)
-- Hypothesis tracker — dedicated screen
-- PERT — MCP exposure
-- Idea scan — MCP exposure
+### Remaining 🟡 to finish — ✅ ALL DONE (2026-06-06)
+- ✅ Why (root-cause / 5-whys) — new `research/root_cause.py` + `root_cause.js` + CLI/Rust/api/**Root Cause** tab
+- ✅ Sentiment-by-source charts — per-source comparison charts added to `sentiment.js`
+- ✅ Tactic library — `tactics_for_topic()` + `tactics.js` + CLI/Rust/api/**Tactics** tab
+- ✅ Hypothesis tracker — dedicated `hypotheses.js` screen (status pills + update/delete) on existing Rust+api
+- ✅ PERT — MCP tools `gapmap_pert_list/add_task/rollup`
+- ✅ Idea scan — MCP tools `gapmap_idea_scan_start/get/list`
+Build-verified: CLI returns JSON, vite 1800 modules, cargo 0 errors. FEATURES.md cat-14 → 18/18 ✅.
 
-### Cross-cutting
-- Expose cat-14 modules + new collect-only sources (stackexchange/europepmc/dblp/steam)
-  as **MCP tools** so Claude Code drives the whole funnel headlessly.
+### State (2026-06-06)
+- **FEATURES.md: 196 · 190 ✅ · 6 🟡.** Cat-14 (advanced analysis) + cat-17 (strategy) fully done.
+- Only 🟡 left = 6 cat-15 Tauri screens (viz/polish, not breakage): Graph faceted filtering,
+  Insights deliberation tiers, Personas polish, Global-Competitors detail, OST 2×2 matrix,
+  Bets/Tasks/Activity UI.
+
+### Cross-cutting (still open, P2)
+- Expose remaining cat-14 + the 6 cat-17 frameworks + new collect-only sources
+  (stackexchange/europepmc/dblp/steam) as **MCP tools** so Claude Code drives the whole funnel headlessly.
 - Add persona-module tests.
+- The 6 cat-15 viz/polish screens.
 
 ---
 
