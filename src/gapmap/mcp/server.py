@@ -3119,6 +3119,80 @@ def gapmap_idea_scan_list(limit: int = 50) -> list[dict]:
     return list_scans(limit=limit)
 
 
+# ─── Pre-build strategy frameworks (read cached / compute via LLM) ──────────
+# Lets headless Claude Code drive the full discovery funnel: assess the market,
+# the strategy, and the business model — each grounded in the topic's collected
+# evidence. `compute=False` reads the cached artifact (instant); `compute=True`
+# runs the LLM synthesis under the timeout guard (needs an LLM key + a built
+# gap map for the topic). All persist to strategy_artifacts so the desktop
+# tabs and these tools share one source of truth.
+
+def _strategy_tool(get_fn, compute_fn, topic: str, compute: bool, hint: str):
+    if compute:
+        return _run_with_timeout(
+            compute_fn, timeout=90.0, async_hint=hint, kwargs={"topic": topic})
+    return get_fn(topic)
+
+
+@mcp.tool()
+def gapmap_market_sizing(topic: str, compute: bool = False) -> dict:
+    """TAM/SAM/SOM market sizing (+ market value) for a topic.
+
+    compute=False reads the cached artifact; compute=True (re)builds it via LLM.
+    """
+    from ..research.market_sizing import market_sizing_get, market_sizing_compute
+    return _strategy_tool(market_sizing_get, market_sizing_compute, topic, compute, "gapmap_market_sizing")
+
+
+@mcp.tool()
+def gapmap_porter(topic: str, compute: bool = False) -> dict:
+    """Porter's Five Forces (market structural attractiveness) for a topic."""
+    from ..research.porter import porter_get, porter_compute
+    return _strategy_tool(porter_get, porter_compute, topic, compute, "gapmap_porter")
+
+
+@mcp.tool()
+def gapmap_swot(topic: str, compute: bool = False) -> dict:
+    """SWOT synthesised from the gap map + competitors for a topic."""
+    from ..research.swot import swot_get, swot_compute
+    return _strategy_tool(swot_get, swot_compute, topic, compute, "gapmap_swot")
+
+
+@mcp.tool()
+def gapmap_lean_canvas(topic: str, compute: bool = False) -> dict:
+    """Lean Canvas (9 blocks) seeded from the topic's painpoints/competitors."""
+    from ..research.lean_canvas import lean_canvas_get, lean_canvas_compute
+    return _strategy_tool(lean_canvas_get, lean_canvas_compute, topic, compute, "gapmap_lean_canvas")
+
+
+@mcp.tool()
+def gapmap_value_prop(topic: str, compute: bool = False) -> dict:
+    """Value Proposition Canvas (customer profile ↔ value map) for a topic."""
+    from ..research.value_prop import value_prop_get, value_prop_compute
+    return _strategy_tool(value_prop_get, value_prop_compute, topic, compute, "gapmap_value_prop")
+
+
+@mcp.tool()
+def gapmap_north_star(topic: str, compute: bool = False) -> dict:
+    """North-Star metric + input metrics for the topic's chosen opportunity."""
+    from ..research.north_star import north_star_get, north_star_compute
+    return _strategy_tool(north_star_get, north_star_compute, topic, compute, "gapmap_north_star")
+
+
+@mcp.tool()
+def gapmap_root_cause(topic: str, compute: bool = False) -> dict:
+    """5-Whys root-cause analysis of the topic's top painpoints."""
+    from ..research.root_cause import root_cause_get, root_cause_compute
+    return _strategy_tool(root_cause_get, root_cause_compute, topic, compute, "gapmap_root_cause")
+
+
+@mcp.tool()
+def gapmap_tactics(topic: str, k: int = 5) -> dict:
+    """Tactics from the curated library matched to the topic's painpoints (read-only)."""
+    from ..research.tactic_library import tactics_for_topic
+    return tactics_for_topic(topic=topic, k=k)
+
+
 # ─── Production guards — prevents the "18 zombie MCP servers" bug ───
 # Shipping lessons from 2026-04-21 — a user session accumulated 18
 # `gapmap mcp serve` processes over 2 days (Claude Code / Cursor
