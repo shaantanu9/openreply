@@ -2,7 +2,7 @@ from gapmap.research.sources import ACADEMIC_SOURCES, is_academic_source
 
 def test_academic_set_exact():
     assert ACADEMIC_SOURCES == frozenset(
-        {"arxiv", "pubmed", "openalex", "scholar", "semantic_scholar", "crossref"}
+        {"arxiv", "pubmed", "openalex", "scholar", "semantic_scholar", "crossref", "europepmc"}
     )
 
 def test_is_academic_source():

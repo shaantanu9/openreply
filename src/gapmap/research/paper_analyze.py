@@ -24,7 +24,7 @@ from ..core.db import get_db
 # All academic source_types. Must match research/sources.py::is_academic_source
 # and paper_relations._ACADEMIC — earlier this tuple omitted semantic_scholar
 # and crossref, so papers from those sources were silently never summarized.
-_ACADEMIC_SOURCES = ("arxiv", "openalex", "pubmed", "scholar", "semantic_scholar", "crossref")
+_ACADEMIC_SOURCES = ("arxiv", "openalex", "pubmed", "scholar", "semantic_scholar", "crossref", "europepmc")
 
 _SYSTEM_PROMPT = (
     "You read academic papers and help a builder decide if the paper is "

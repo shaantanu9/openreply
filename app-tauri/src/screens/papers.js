@@ -16,11 +16,13 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const SOURCE_LABELS = {
   arxiv: 'arXiv', pubmed: 'PubMed', openalex: 'OpenAlex',
   semantic_scholar: 'Sem.Scholar', crossref: 'Crossref', scholar: 'Scholar',
+  europepmc: 'Europe PMC', dblp: 'DBLP',
 };
 
 const SOURCE_COLOURS = {
   arxiv: '#B084CC', pubmed: '#C87070', openalex: '#5B8DB8',
   semantic_scholar: '#FF8C42', crossref: '#7BA88C', scholar: '#D4A574',
+  europepmc: '#6AA9A0', dblp: '#8C8CD8',
 };
 
 function escape(s) {

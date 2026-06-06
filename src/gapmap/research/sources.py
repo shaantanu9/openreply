@@ -5,7 +5,7 @@ the set hardcoded in intents.py:194 — keep them in sync."""
 from __future__ import annotations
 
 ACADEMIC_SOURCES = frozenset(
-    {"arxiv", "pubmed", "openalex", "scholar", "semantic_scholar", "crossref"}
+    {"arxiv", "pubmed", "openalex", "scholar", "semantic_scholar", "crossref", "europepmc"}
 )
 
 def is_academic_source(source_type: str | None) -> bool:

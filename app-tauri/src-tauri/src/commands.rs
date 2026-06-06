@@ -5349,7 +5349,7 @@ pub async fn papers_list_native(
                   ON ft.post_id = p.id AND ft.status = 'ok' \
             WHERE tp.topic = :topic \
               AND COALESCE(p.source_type, 'reddit') \
-                  IN ('arxiv', 'pubmed', 'openalex', 'scholar', 'semantic_scholar', 'crossref') \
+                  IN ('arxiv', 'pubmed', 'openalex', 'scholar', 'semantic_scholar', 'crossref', 'europepmc', 'dblp') \
             ORDER BY COALESCE(p.score, 0) DESC, p.created_utc DESC \
             LIMIT :limit";
         match crate::db::query_db(&db_path, sql, Some(&p)) {

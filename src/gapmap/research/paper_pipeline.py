@@ -56,7 +56,7 @@ def run_paper_research(
 
     q = query or topic
     wanted_sources = sources or [
-        "arxiv", "pubmed", "openalex", "semantic_scholar", "crossref", "scholar",
+        "arxiv", "pubmed", "openalex", "semantic_scholar", "crossref", "scholar", "europepmc",
     ]
 
     runners = {

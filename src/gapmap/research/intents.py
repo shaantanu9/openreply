@@ -220,7 +220,7 @@ def completion_state(topic: str) -> dict[str, bool]:
     for whatever intent the topic has — one query trip, no per-step round.
     """
     db = get_db()
-    _ACADEMIC = "('arxiv','pubmed','openalex','scholar','semantic_scholar','crossref')"
+    _ACADEMIC = "('arxiv','pubmed','openalex','scholar','semantic_scholar','crossref','europepmc')"
 
     state: dict[str, bool] = {}
 

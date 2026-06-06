@@ -129,7 +129,7 @@ def _select_corpus(topic: str, min_score: int = 0) -> list[dict[str, Any]]:
     """
     db = get_db()
     selected: list[dict[str, Any]] = []
-    academic = {"arxiv", "openalex", "pubmed", "scholar"}
+    academic = {"arxiv", "openalex", "pubmed", "scholar", "semantic_scholar", "crossref", "europepmc"}
 
     # Get the distinct source types present for this topic first — avoids
     # running N SQL queries for sources we don't have data from.

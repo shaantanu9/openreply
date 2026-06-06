@@ -980,7 +980,7 @@ def corpus_temporal_split(
 # These are the rows for which corpus_for(prefer_fulltext=True) substitutes
 # the cached full-text slice in place of the ≤500-char abstract excerpt.
 _ACADEMIC_SOURCES = frozenset(
-    {"arxiv", "openalex", "crossref", "pubmed", "semantic_scholar", "scholar"}
+    {"arxiv", "openalex", "crossref", "pubmed", "semantic_scholar", "scholar", "europepmc"}
 )
 
 # Caps for the prefer_fulltext path. We keep total prompt tokens sane by

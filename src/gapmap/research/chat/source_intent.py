@@ -13,7 +13,7 @@ from __future__ import annotations
 # (label, source_type values in DB, trigger keywords/phrases)
 SOURCE_FAMILIES: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
     ("research papers",
-     ("arxiv", "openalex", "pubmed", "crossref", "scholar", "semantic_scholar"),
+     ("arxiv", "openalex", "pubmed", "crossref", "scholar", "semantic_scholar", "europepmc", "dblp"),
      ("paper", "papers", "research", "researcher", "academic", "academia", "study",
       "studies", "literature", "scholar", "arxiv", "pubmed", "journal", "journals",
       "citation", "citations", "peer-review", "peer reviewed", "scientific", "science says")),

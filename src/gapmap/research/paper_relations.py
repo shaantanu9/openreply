@@ -12,7 +12,7 @@ _TOPN = int(os.getenv("PAPER_RELATES_TOPN") or 8)
 
 # Academic source_types treated as "papers" for the map node query (mirrors
 # research/sources.py::is_academic_source, inlined here for the SQL IN clause).
-_ACADEMIC = ("arxiv", "pubmed", "openalex", "scholar", "semantic_scholar", "crossref")
+_ACADEMIC = ("arxiv", "pubmed", "openalex", "scholar", "semantic_scholar", "crossref", "europepmc")
 
 def _academic_paper_ids(topic: str | None) -> list[str]:
     db = get_db()
