@@ -114,7 +114,7 @@ const REDDIT_FIELDS = [
     envKey: 'REDDIT_CLIENT_ID',
     label: 'Reddit client ID',
     placeholder: '14-char id',
-    help: 'Bumps Reddit rate limit from 60/min (public) → 100/min. Create at <a href="https://www.reddit.com/prefs/apps" target="_blank">reddit.com/prefs/apps</a> (script type).',
+    help: 'Without a key, Reddit uses public RSS (works, but no scores/comment-counts, ~25 results/feed). Add a key for <b>full JSON</b> — scores, comments, deep search — at 100 req/min. Create a free app at <a href="https://www.reddit.com/prefs/apps" target="_blank">reddit.com/prefs/apps</a> (web app or script; redirect URI <code>http://localhost:8080</code>). The client ID is the bold string under the app name. No browser login needed.',
     prefix: '',
   },
   {
@@ -122,7 +122,7 @@ const REDDIT_FIELDS = [
     envKey: 'REDDIT_CLIENT_SECRET',
     label: 'Reddit client secret',
     placeholder: '27-char secret',
-    help: 'Pairs with the client ID.',
+    help: 'The value labelled “secret” in your Reddit app. Pairs with the client ID — together they enable read-only OAuth (no refresh token / browser login).',
     prefix: '',
   },
   {
