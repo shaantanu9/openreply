@@ -57,7 +57,9 @@ const QUAD_META = {
 function quadrant(kind, items) {
   const m = QUAD_META[kind];
   const list = (items || []).map(i => `<li>${esc(i)}</li>`).join('');
-  const empty = !items?.length ? `<li class="muted">_(none yet)_</li>` : '';
+  const empty = !items?.length
+    ? `<li class="muted" style="font-style:italic">none yet${kind === 'thinks' ? ' — needs an LLM' : ''}</li>`
+    : '';
   return `
     <div class="card empathy-quadrant q-${kind}">
       <div class="card-head" style="padding:12px 16px">
@@ -116,6 +118,8 @@ function renderEmpathyShell(topic, persona, map, state) {
       </div>
     </div>
 
+    <div id="empathy-persona-strip"></div>
+
     <section class="empathy-grid">
       ${quadrant('says',   map?.says)}
       ${quadrant('thinks', map?.thinks)}
@@ -132,7 +136,9 @@ function renderEmpathyShell(topic, persona, map, state) {
       </div>
       <div class="card-body">
         <p style="font-size:13.5px;line-height:1.7;margin:0">
-          ${(map?.gap_notes || '<span class="muted">No gap note yet — click Build to mine the corpus and fill all five sections.</span>')}
+          ${map?.gap_notes
+            ? esc(map.gap_notes)
+            : '<span class="muted">No gap note yet — click Build to mine the corpus and fill all five sections.</span>'}
         </p>
       </div>
     </div>
@@ -203,6 +209,26 @@ async function renderTopicEmpathy(root, topic) {
 
   root.innerHTML = renderEmpathyShell(topic, persona, map, state);
   window.refreshIcons?.();
+
+  // Other personas already built for this topic — a quick switcher so a user
+  // who built "primary" and "power-user" can hop between them. Best-effort:
+  // if empathy_list errors or only this persona exists, the strip stays empty.
+  (async () => {
+    let maps = [];
+    try { maps = await api.empathyList(topic); } catch { maps = []; }
+    if (!alive()) return;
+    const strip = $('#empathy-persona-strip', root);
+    if (!strip) return;
+    const others = (maps || []).filter(m => (m?.persona || '') !== persona);
+    if (!others.length) return;
+    strip.innerHTML = `
+      <div class="row" style="align-items:center;gap:8px;margin:0 0 12px;flex-wrap:wrap">
+        <span class="muted" style="font-size:12px">Other personas:</span>
+        ${others.map(m => `<a class="btn btn-ghost-bordered btn-sm"
+            href="#/empathy/${encodeURIComponent(topic)}?persona=${encodeURIComponent(m.persona || 'primary')}">${esc(m.persona || 'primary')}</a>`).join('')}
+      </div>`;
+    window.refreshIcons?.();
+  })();
 
   $('#empathy-build', root)?.addEventListener('click', async () => {
     // routeGen guard — JS analog of Flutter context.mounted
@@ -292,14 +318,57 @@ async function renderPicker(root) {
                  style="padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;width:200px;background:var(--surface);color:var(--ink)"/>
           <button class="btn btn-primary btn-sm" id="empathy-go">Open →</button>
         </div>
+        <div id="empathy-existing" style="margin-top:16px"></div>
       </div>
     </div>
   `;
+  const go = (t, p) => {
+    if (t) location.hash = `#/empathy/${encodeURIComponent(t)}?persona=${encodeURIComponent(p || 'primary')}`;
+  };
   $('#empathy-go', mount)?.addEventListener('click', () => {
     const t = $('#empathy-topic-pick', mount).value;
     const p = ($('#empathy-persona-pick', mount).value || 'primary').trim() || 'primary';
-    if (t) location.hash = `#/empathy/${encodeURIComponent(t)}?persona=${encodeURIComponent(p)}`;
+    go(t, p);
   });
+
+  // Already-built maps for the selected topic — gives the user a one-click
+  // way back into a persona they built earlier (and proof the table is
+  // populated). Refreshes whenever the topic dropdown changes.
+  const existing = $('#empathy-existing', mount);
+  const sel = $('#empathy-topic-pick', mount);
+  async function paintExisting() {
+    if (!alive() || !existing) return;
+    const t = sel?.value;
+    if (!t) { existing.innerHTML = ''; return; }
+    existing.innerHTML = `<p class="muted" style="font-size:12px;margin:0">Loading existing maps…</p>`;
+    let maps = [];
+    try { maps = await api.empathyList(t); } catch { maps = []; }
+    if (!alive() || sel?.value !== t) return;
+    if (!maps?.length) {
+      existing.innerHTML = `<p class="muted" style="font-size:12px;margin:0">No maps built yet for <b>${esc(t)}</b> — pick a persona and click Open to mine the corpus.</p>`;
+      return;
+    }
+    existing.innerHTML = `
+      <p class="muted" style="font-size:12px;margin:0 0 8px">Already built for <b>${esc(t)}</b>:</p>
+      <table class="data-table" style="width:100%">
+        <thead><tr><th>Persona</th><th>Gap insight</th><th style="text-align:right">Updated</th><th></th></tr></thead>
+        <tbody>${maps.map(m => {
+          const when = m.updated_at ? new Date(m.updated_at).toLocaleDateString() : '—';
+          const gap = m.gap_notes ? esc(String(m.gap_notes).slice(0, 90)) + (m.gap_notes.length > 90 ? '…' : '') : '<span class="muted">—</span>';
+          return `<tr>
+            <td><strong>${esc(m.persona || 'primary')}</strong></td>
+            <td class="muted">${gap}</td>
+            <td style="text-align:right" class="muted">${esc(when)}</td>
+            <td style="text-align:right"><button class="btn btn-ghost-bordered btn-sm empathy-open-existing" data-persona="${esc(m.persona || 'primary')}">Open →</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+    existing.querySelectorAll('.empathy-open-existing').forEach(btn => {
+      btn.addEventListener('click', () => go(sel.value, btn.dataset.persona));
+    });
+  }
+  sel?.addEventListener('change', paintExisting);
+  paintExisting();
 }
 
 export async function renderEmpathy(root) {

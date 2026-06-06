@@ -52,6 +52,12 @@ function scoreStats(score) {
   const trendCls = score.threshold_met ? 'trend-up' : 'trend-down';
   const trendLabel = score.threshold_met ? '✓ ≥40%' : '⚠ <40%';
   const total = score.n_total || 0;
+  // n_scored = denominator for the 40% calc — total minus "don't use" (Ellis
+  // measures only users who experienced the core value). Surfacing it keeps
+  // the percentage honest: "don't use" responses are excluded, not counted.
+  const scored = score.n_scored != null ? score.n_scored : total;
+  const veryN = counts.very_disappointed || 0;
+  const dontUse = counts.dont_use || 0;
   return `
     <section class="stat-grid">
       <div class="stat-card">
@@ -60,14 +66,14 @@ function scoreStats(score) {
           <div class="stat-trend ${trendCls}">${trendLabel}</div>
         </div>
         <div class="stat-num">${pct.toFixed(1)}%</div>
-        <div class="stat-label">"very disappointed"</div>
+        <div class="stat-label">"very disappointed" (${veryN} of ${scored} scored)</div>
       </div>
       <div class="stat-card">
         <div class="stat-head">
           <div class="stat-icon sky"><i data-lucide="users"></i></div>
         </div>
         <div class="stat-num">${total}</div>
-        <div class="stat-label">Total responses</div>
+        <div class="stat-label">Total responses · ${scored} scored${dontUse ? ` · ${dontUse} no longer use` : ''}</div>
       </div>
       <div class="stat-card">
         <div class="stat-head">
@@ -89,14 +95,19 @@ function scoreStats(score) {
 
 function personaPanel(score) {
   if (!score || !(score.personas || []).length) return '';
-  const rows = (score.personas || []).slice(0, 8).map(p => `
-    <div class="pmf-persona-row">
+  const rows = (score.personas || []).slice(0, 8).map(p => {
+    const c = p.counts || {};
+    const breakdown = `very=${c.very_disappointed || 0}, somewhat=${c.somewhat_disappointed || 0}, `
+      + `not=${c.not_disappointed || 0}, don't use=${c.dont_use || 0}`;
+    const pct = Number(p.pct_very_disappointed || 0);
+    return `
+    <div class="pmf-persona-row" title="${esc(breakdown)}">
       <strong>${esc(p.persona)}</strong>
-      <span class="pmf-persona-pct">${p.pct_very_disappointed.toFixed(1)}%</span>
-      <span class="muted">n=${p.n}</span>
+      <span class="pmf-persona-pct">${pct.toFixed(1)}%</span>
+      <span class="muted">n=${p.n} scored</span>
       ${p.threshold_met ? '<span class="pmf-met">✓</span>' : '<span class="pmf-unmet">×</span>'}
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
   return `
     <div class="card">
       <div class="card-head">
@@ -116,6 +127,7 @@ function responseRow(r) {
       <div class="pmf-row-head">
         <span class="pmf-bucket pmf-${esc(r.disappointment)}">${esc(DISAPPOINT_LABEL[r.disappointment] || r.disappointment)}</span>
         <span class="muted">${esc(r.persona || 'no persona')}</span>
+        ${r.respondent ? `<span class="muted">· ${esc(r.respondent)}</span>` : ''}
         <span class="muted">${esc((r.responded_at || '').slice(0, 10))}</span>
       </div>
       ${r.must_have_alternative ? `<div><b>Alternative:</b> ${esc(r.must_have_alternative)}</div>` : ''}

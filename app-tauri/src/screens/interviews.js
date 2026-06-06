@@ -330,16 +330,24 @@ function showInterviewModal({ topic, existing, onSave }) {
 const FU_CYCLE = ['none', 'pending', 'done'];
 
 async function renderTopicInterviews(root, topic) {
+  // routeGen guard — JS analog of Flutter context.mounted. If the user
+  // navigates away while interviewList/interviewSummary are in flight, an
+  // async resolution must NOT clobber whatever screen is now mounted.
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
+
   root.innerHTML = `<div class="empty-state">Loading interviews…</div>`;
 
-  const reload = () => renderTopicInterviews(root, topic);
+  const reload = () => { if (alive()) renderTopicInterviews(root, topic); };
   let listResp, sumResp;
   try {
     [listResp, sumResp] = await Promise.all([
       api.interviewList(topic),
       api.interviewSummary(topic),
     ]);
+    if (!alive()) return;
   } catch (e) {
+    if (!alive()) return;
     root.innerHTML = `<div class="empty-big"><h3>Couldn't load interviews</h3><p>${esc(e?.message || e)}</p></div>`;
     return;
   }
@@ -388,17 +396,22 @@ async function renderTopicInterviews(root, topic) {
 }
 
 async function renderPicker(root) {
+  // routeGen guard — JS analog of Flutter context.mounted.
+  const myGen = root.dataset.routeGen;
+  const alive = () => root.dataset.routeGen === myGen && root.isConnected;
+
   root.innerHTML = `
     <header class="topbar">
       <div class="crumbs">Workspace / <strong>Customer Discovery Interviews</strong></div>
       <div class="topbar-spacer"></div>
       <span class="muted" style="font-size:12px">Mom Test, Fitzpatrick 2013</span>
     </header>
-    <div id="iv-pick-mount"><div class="empty-state">loading…</div></div>
+    <div id="iv-pick-mount"><div class="empty-state">Loading topics…</div></div>
   `;
 
   let topics = [];
-  try { topics = await api.listTopics(); } catch (e) {
+  try { topics = await api.listTopics(); if (!alive()) return; } catch (e) {
+    if (!alive()) return;
     $('#iv-pick-mount', root).innerHTML =
       `<div class="empty-big"><h3>Couldn't list topics</h3><p>${esc(e?.message || e)}</p></div>`;
     return;

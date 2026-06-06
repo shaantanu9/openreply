@@ -24,6 +24,107 @@ function topicFromHash() {
   return m ? decodeURIComponent(m[1]) : '';
 }
 
+// ── Response history (shared across the three instruments) ──────────────
+// Each instrument has an "add response" form but, until now, no way to see
+// or remove the responses already collected. surveyList(topic,'',kind) and
+// surveyDelete(id) already exist in api.js — wire them up so the dataset is
+// inspectable and editable, not write-only.
+const fmtWhen = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? esc(iso) : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+// Render the per-instrument summary cell from the response's parsed `data`.
+function responseSummary(kind, data) {
+  const d = data || {};
+  if (kind === 'vw') {
+    const part = (label, v) => v != null ? `${label} ${Number(v).toFixed(2)}` : null;
+    return [
+      part('cheap', d.too_cheap),
+      part('bargain', d.bargain),
+      part('acc', d.expensive_but_acceptable),
+      part('exp', d.too_expensive),
+    ].filter(Boolean).join(' · ') || '—';
+  }
+  if (kind === 'nps') {
+    const score = d.score != null ? d.score : '—';
+    const reason = d.reason ? ` — ${esc(d.reason)}` : '';
+    return `<strong>${score}/10</strong>${reason}`;
+  }
+  if (kind === 'maxdiff') {
+    const best = d.best ? `▲ ${esc(d.best)}` : '';
+    const worst = d.worst ? `▼ ${esc(d.worst)}` : '';
+    const set = d.set_id ? `<span class="muted">[${esc(d.set_id)}]</span> ` : '';
+    return `${set}${best}${best && worst ? ' · ' : ''}${worst}` || '—';
+  }
+  return '—';
+}
+
+// Mount a collapsible "recent responses" table into `mountEl`. `reload` is the
+// caller's re-render so deletes refresh the aggregate stats too.
+async function mountResponses(mountEl, topic, kind, reload) {
+  if (!mountEl) return;
+  mountEl.innerHTML = `<div class="empty-state" style="padding:16px">Loading responses…</div>`;
+  let rows = [];
+  try {
+    rows = await api.surveyList(topic, '', kind);
+  } catch (e) {
+    mountEl.innerHTML = `<div class="empty-state" style="padding:16px">Couldn't load responses — ${esc(e?.message || e)}</div>`;
+    return;
+  }
+  rows = Array.isArray(rows) ? rows : [];
+  if (!rows.length) {
+    mountEl.innerHTML = `<div class="empty-state" style="padding:16px">No responses recorded yet — add one above and it'll appear here.</div>`;
+    return;
+  }
+  const body = rows.map(r => `
+    <tr>
+      <td class="muted" style="white-space:nowrap">${fmtWhen(r.responded_at || r.created_at)}</td>
+      <td>${responseSummary(kind, r.data)}</td>
+      <td class="muted">${r.persona ? esc(r.persona) : '—'}</td>
+      <td class="muted">${r.respondent ? esc(r.respondent) : '—'}</td>
+      <td style="text-align:right">
+        <button class="btn btn-ghost btn-sm prc-del" data-id="${esc(r.id)}" title="Delete this response">
+          <i data-lucide="trash-2"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+  mountEl.innerHTML = `
+    <table class="data-table" style="width:100%">
+      <thead><tr><th>When</th><th>Response</th><th>Persona</th><th>Respondent</th><th></th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+  window.refreshIcons?.();
+  $$('.prc-del', mountEl).forEach(b => b.addEventListener('click', (e) => withButtonBusy(e.currentTarget, async () => {
+    const id = b.dataset.id;
+    if (!id) return;
+    if (!confirm('Delete this response? This cannot be undone.')) return;
+    try {
+      await api.surveyDelete(id);
+      await reload();
+    } catch (err) { alert(`Delete failed: ${err?.message || err}`); }
+  }, { busyLabel: '' })));
+}
+
+function responsesCard(kind) {
+  return `
+    <div class="card" style="margin-top:14px">
+      <div class="card-head">
+        <div>
+          <h3>Recent responses</h3>
+          <p>Every recorded response for this instrument — delete any to re-aggregate</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div data-responses="${kind}"></div>
+      </div>
+    </div>
+  `;
+}
+
 // ── Van Westendorp ─────────────────────────────────────────────────────
 function vwStats(agg) {
   if (!agg || (agg.n || 0) === 0) {
@@ -40,6 +141,29 @@ function vwStats(agg) {
     `;
   }
   const f = (v) => (v == null) ? '—' : Number(v).toFixed(2);
+  const acceptable = (agg.pmc != null && agg.pme != null)
+    ? `${f(agg.pmc)} – ${f(agg.pme)}` : '—';
+  // The Python aggregate also returns per-question medians + sample counts —
+  // surface them so the user can sanity-check the four price curves the
+  // OPP/IPP/PMC/PME were derived from.
+  const med = agg.median || {};
+  const samp = agg.samples || {};
+  const QLABELS = {
+    too_cheap: 'Too cheap',
+    bargain: 'Bargain',
+    expensive_but_acceptable: 'Expensive (acceptable)',
+    too_expensive: 'Too expensive',
+  };
+  const medRows = Object.keys(QLABELS).map(k => `
+    <tr>
+      <td>${esc(QLABELS[k])}</td>
+      <td style="text-align:right">${med[k] != null ? Number(med[k]).toFixed(2) : '—'}</td>
+      <td style="text-align:right" class="muted">${samp[k] != null ? samp[k] : 0}</td>
+    </tr>
+  `).join('');
+  const lowSample = (agg.n || 0) < 30
+    ? `<p class="muted" style="font-size:12.5px;margin:0 0 12px">⚠ Only ${agg.n} response(s) — Van Westendorp wants ≥30 for stable price points. Treat the values below as directional.</p>`
+    : '';
   return `
     <section class="stat-grid">
       <div class="stat-card">
@@ -63,6 +187,22 @@ function vwStats(agg) {
         <div class="stat-label">PME — upper bound</div>
       </div>
     </section>
+    <div class="card" style="margin-top:14px">
+      <div class="card-head">
+        <div>
+          <h3>Acceptable price range</h3>
+          <p>PMC → PME · median response per price question</p>
+        </div>
+        <strong style="font-size:18px">${acceptable}</strong>
+      </div>
+      <div class="card-body">
+        ${lowSample}
+        <table class="data-table" style="width:100%">
+          <thead><tr><th>Price question</th><th style="text-align:right">Median</th><th style="text-align:right">Responses</th></tr></thead>
+          <tbody>${medRows}</tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 
@@ -261,14 +401,17 @@ function renderShell(topic, vwAgg, nps, md) {
     <div class="pricing-pane" data-pane="vw">
       ${vwStats(vwAgg)}
       ${vwForm()}
+      ${responsesCard('vw')}
     </div>
     <div class="pricing-pane" data-pane="nps" hidden>
       ${npsStats(nps)}
       ${npsForm()}
+      ${responsesCard('nps')}
     </div>
     <div class="pricing-pane" data-pane="maxdiff" hidden>
       ${maxDiffPanel(md)}
       ${maxDiffForm()}
+      ${responsesCard('maxdiff')}
     </div>
   `;
 }
@@ -291,6 +434,13 @@ async function renderTopicPricing(root, topic) {
 
   root.innerHTML = renderShell(topic, vwAgg, nps, md);
   window.refreshIcons?.();
+
+  // Populate each instrument's response-history table (async, non-blocking —
+  // the stats/forms are already painted). Deletes call `reload` which
+  // re-renders the whole screen, so aggregates stay in sync.
+  mountResponses($('[data-responses="vw"]', root), topic, 'vw', reload);
+  mountResponses($('[data-responses="nps"]', root), topic, 'nps', reload);
+  mountResponses($('[data-responses="maxdiff"]', root), topic, 'maxdiff', reload);
 
   $$('.pricing-tabs .pill', root).forEach(t => t.addEventListener('click', () => {
     const k = t.dataset.pt;

@@ -117,6 +117,49 @@ export async function renderPrd(root, { params }) {
 
   const wrap = $('.prd-wrap', root);
 
+  // Holds the most recent PRD markdown so the always-visible topbar Copy /
+  // Download buttons work in every state (including the "mostly empty" guard,
+  // where the body shows guidance rather than the document). '' until the
+  // first successful build.
+  let currentMd = '';
+
+  // Wire the topbar Copy / Download once. They no-op with a hint until a PRD
+  // has been built, then act on `currentMd`.
+  $('#prd-copy', root).onclick = async () => {
+    if (!currentMd) { return; }
+    try {
+      await navigator.clipboard.writeText(currentMd);
+      if (!alive()) return;
+      const btn = $('#prd-copy', root);
+      btn.innerHTML = '<i data-lucide="check"></i> Copied';
+      window.refreshIcons?.();
+      setTimeout(() => {
+        if (!alive()) return;
+        btn.innerHTML = '<i data-lucide="clipboard"></i> Copy markdown';
+        window.refreshIcons?.();
+      }, 1500);
+    } catch (e) {
+      alert(`Copy failed: ${e?.message || e}`);
+    }
+  };
+
+  $('#prd-download', root).onclick = () => {
+    if (!currentMd) { return; }
+    try {
+      const blob = new Blob([currentMd], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `prd-${id}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`Download failed: ${e?.message || e}`);
+    }
+  };
+
   const build = async () => {
     // Full-bleed alive loader while the blocking PRD build runs (5+ s — the
     // sidecar aggregates every artefact then the LLM drafts the markdown).
@@ -141,6 +184,52 @@ export async function renderPrd(root, { params }) {
     }
     stop({ snapToComplete: true });
     const md = result.markdown || '';
+    currentMd = md;  // topbar Copy / Download act on this in every state
+
+    // The Python generator returns ok:true even when every discovery artefact
+    // is missing — it just emits "(not yet captured)" / "(not set)" placeholders.
+    // Detect that "skeleton" case and show actionable guidance instead of a near-
+    // empty document the user can't act on. Heuristic: a populated PRD has real
+    // section bodies; a skeleton is mostly headers + placeholder parentheticals.
+    const placeholderHits = (md.match(/_\((?:not yet captured|not set|no [^)]+yet|none|set the OST|run the Solutions)[^)]*\)_/gi) || []).length;
+    const looksEmpty = !md.trim()
+      || (md.length < 600 && placeholderHits >= 1)
+      || placeholderHits >= 6;
+    if (looksEmpty) {
+      wrap.innerHTML = `
+        <div class="empty-big">
+          <h3>This PRD is mostly empty</h3>
+          <p>A PRD is aggregated from the discovery artefacts attached to this
+          product. Right now most of them haven't been captured yet, so there's
+          little to draft.</p>
+          <p class="muted" style="font-size:12.5px;line-height:1.55;max-width:520px">
+            To fill it out, work through the discovery surfaces for this product:
+          </p>
+          <ul class="empty-steps" style="text-align:left;max-width:520px;margin:8px auto 16px;
+              font-size:12.5px;line-height:1.6;color:var(--muted)">
+            <li>Set the desired <b>outcome</b> &amp; <b>JTBD</b> on the OST screen</li>
+            <li>Run the <b>Solutions</b> pipeline to generate opportunities</li>
+            <li>Score them in <b>Prioritize</b> (RICE / Kano / MoSCoW)</li>
+            <li>Capture <b>Four Risks</b>, <b>TAM/SAM/SOM</b>, positioning &amp; pricing</li>
+          </ul>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            <a class="btn btn-primary btn-sm" href="#/product/${esc(encodeURIComponent(id))}">Open product →</a>
+            <button class="btn btn-sm icon-btn" id="prd-show-anyway"><i data-lucide="file-text"></i> Show partial PRD</button>
+          </div>
+        </div>`;
+      window.refreshIcons?.();
+      $('#prd-show-anyway', wrap)?.addEventListener('click', () => renderResult(md));
+      return;
+    }
+
+    renderResult(md);
+  };
+
+  // Renders the populated (or user-forced-partial) PRD: meta card, preview/raw
+  // tabs, and wires copy / download / tab-switch. Kept separate so the
+  // "mostly empty" guard can fall through to it on demand.
+  const renderResult = (md) => {
+    if (!alive()) return;
     wrap.innerHTML = `
       <section class="prd-meta card">
         <div><strong>Generated PRD</strong> · ${md.length.toLocaleString()} chars</div>
@@ -170,34 +259,6 @@ export async function renderPrd(root, { params }) {
       wrap.querySelectorAll('.prd-tab').forEach(x => x.classList.toggle('is-active', x === t));
       wrap.querySelectorAll('.prd-pane').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
     }));
-
-    $('#prd-copy', root).onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(md);
-        if (!alive()) return;
-        const btn = $('#prd-copy', root);
-        btn.innerHTML = '<i data-lucide="check"></i> Copied';
-        window.refreshIcons?.();
-        setTimeout(() => {
-          btn.innerHTML = '<i data-lucide="clipboard"></i> Copy markdown';
-          window.refreshIcons?.();
-        }, 1500);
-      } catch (e) {
-        alert(`Copy failed: ${e?.message || e}`);
-      }
-    };
-
-    $('#prd-download', root).onclick = () => {
-      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `prd-${id}.md`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    };
   };
 
   $('#prd-refresh', root).onclick = build;

@@ -378,6 +378,7 @@ async function renderPicker(root) {
     $('#iter-pick', root).innerHTML = `<div class="empty-big"><h3>Couldn't load</h3><p>${esc(e?.message || e)}</p></div>`;
     return;
   }
+  const hasTopics = (topics || []).length > 0;
   const opts = (topics || []).map(t => `<option value="${esc(t.topic)}">${esc(t.topic)} · ${t.posts || 0} posts</option>`).join('');
   const recent = (runs?.runs || []).slice(0, 8).map(r => `
     <tr>
@@ -389,7 +390,8 @@ async function renderPicker(root) {
     </tr>
   `).join('') || '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--ink-3)">No runs across any topic yet.</td></tr>';
 
-  $('#iter-pick', root).innerHTML = `
+  const pickerCard = hasTopics
+    ? `
     <div class="card" style="margin-bottom:14px">
       <div class="card-head">
         <div>
@@ -403,7 +405,20 @@ async function renderPicker(root) {
           <button class="btn btn-primary btn-sm" id="iter-go">Open →</button>
         </div>
       </div>
-    </div>
+    </div>`
+    : `
+    <div class="empty-big" style="margin-bottom:14px">
+      <h3>Nothing to iterate on yet</h3>
+      <p>Autoresearch tunes the synthesize &amp; audience pipelines for an
+      existing topic. Collect a topic first, then come back here to run an
+      improvement loop and apply the winning config.</p>
+      <button class="btn btn-primary btn-sm icon-btn" id="iter-collect">
+        <i data-lucide="plus"></i> Start a topic
+      </button>
+    </div>`;
+
+  $('#iter-pick', root).innerHTML = `
+    ${pickerCard}
     <div class="section-head"><div><h2>Recent runs across all topics</h2><p>Latest 8</p></div></div>
     <div class="card">
       <div class="card-body" style="padding:0">
@@ -422,9 +437,14 @@ async function renderPicker(root) {
       </div>
     </div>
   `;
+  window.refreshIcons?.();
   $('#iter-go', root)?.addEventListener('click', () => {
-    const t = $('#iter-topic', root).value;
+    const t = $('#iter-topic', root)?.value;
     if (t) location.hash = `#/iterate/${encodeURIComponent(t)}`;
+  });
+  $('#iter-collect', root)?.addEventListener('click', () => {
+    if (typeof window.gapmapOpenNewTopic === 'function') window.gapmapOpenNewTopic();
+    else location.hash = '#/home';
   });
 }
 

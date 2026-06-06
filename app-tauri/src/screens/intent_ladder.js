@@ -97,14 +97,60 @@ export async function mountIntentLadder(hostEl, topic, opts = {}) {
     hostEl.appendChild(t);
     setTimeout(() => t.remove(), 2500);
   };
+  const reloadLadder = () => mountIntentLadder(hostEl, topic, opts);
+
+  // Active-guard: stamp this host with a per-render token + the topic it is
+  // rendering. A slower in-flight call (e.g. user navigated to another topic
+  // mid-fetch, or two reloadLadder()s overlapped) must NOT overwrite a host
+  // that has since been claimed by a newer render. Every paint below checks
+  // `alive()` before touching `hostEl.innerHTML`.
+  const renderToken = (Number(hostEl.dataset.ladderToken) || 0) + 1;
+  hostEl.dataset.ladderToken = String(renderToken);
+  hostEl.dataset.ladderTopic = topic;
+  const alive = () =>
+    hostEl.dataset.ladderToken === String(renderToken)
+    && hostEl.dataset.ladderTopic === topic;
+
+  // Loading state — paint a skeleton immediately so the card never flashes
+  // blank while topic_intent_get spawns the sidecar (cold start can be 1-2s).
+  hostEl.innerHTML = `
+    <section class="intent-ladder intent-ladder-loading" aria-busy="true">
+      <header class="intent-ladder-head">
+        <div class="intent-ladder-title">
+          <span class="intent-ladder-badge is-loading">
+            <i data-lucide="loader-2" class="intent-spin"></i> Loading deliverable…
+          </span>
+        </div>
+      </header>
+      ${skelGrid(2, { lines: 2 })}
+    </section>
+  `;
+  window.refreshIcons?.();
 
   let intentPayload = null;
   try {
     intentPayload = await api.topicIntentGet(topic);
   } catch (e) {
-    hostEl.innerHTML = `<div class="intent-ladder-error">Couldn't load deliverable ladder: ${escape(e?.message || e)}</div>`;
+    if (!alive()) return;
+    hostEl.innerHTML = `
+      <section class="intent-ladder intent-ladder-errored">
+        <div class="intent-ladder-error">
+          <i data-lucide="alert-triangle"></i>
+          <div>
+            <b>Couldn't load the deliverable ladder.</b>
+            <p>${escape(e?.message || e)}</p>
+          </div>
+          <button class="btn btn-sm intent-ladder-retry">
+            <i data-lucide="rotate-cw"></i> Retry
+          </button>
+        </div>
+      </section>`;
+    window.refreshIcons?.();
+    hostEl.querySelector('.intent-ladder-retry')
+      ?.addEventListener('click', () => reloadLadder());
     return;
   }
+  if (!alive()) return;
 
   const preset = intentPayload?.preset || {};
   const completion = intentPayload?.completion || {};
@@ -126,6 +172,39 @@ export async function mountIntentLadder(hostEl, topic, opts = {}) {
 
   const currentKey = intentPayload?.intent || 'product-new';
   const currentLabel = preset.label || currentKey;
+
+  // Empty ladder — the preset has no steps (shouldn't happen for the five
+  // built-in intents, but defend against a malformed / future preset so the
+  // card degrades gracefully instead of rendering an empty <ol>). Still offer
+  // the intent swap + coverage so the card stays useful.
+  if (ladder.length === 0) {
+    hostEl.innerHTML = `
+      <section class="intent-ladder">
+        <header class="intent-ladder-head">
+          <div class="intent-ladder-title">
+            <span class="intent-ladder-badge" id="intent-swap-btn" title="Change what you want from this research">
+              <i data-lucide="${escape(preset.icon || 'target')}"></i>
+              ${escape(currentLabel)}
+              <i data-lucide="chevron-down" class="intent-swap-caret"></i>
+            </span>
+            ${deliverable ? `<span class="intent-ladder-deliverable">→ ${escape(deliverable)}</span>` : ''}
+          </div>
+        </header>
+        <div class="intent-ladder-empty">
+          <i data-lucide="list-checks"></i>
+          <p>No deliverable steps for this goal yet. Pick a different research goal,
+          or <button class="btn btn-sm intent-empty-collect">run a collect</button>
+          to start populating this topic.</p>
+        </div>
+        <div class="intent-coverage" id="intent-coverage-host">${skelGrid(2, { lines: 2 })}</div>
+      </section>`;
+    window.refreshIcons?.();
+    mountCoverage(hostEl.querySelector('#intent-coverage-host'), topic);
+    hostEl.querySelector('.intent-empty-collect')
+      ?.addEventListener('click', () => window.gapmapOpenNewTopic?.(topic));
+    wireIntentSwap(hostEl, topic, currentKey, opts, reloadLadder, doneToast);
+    return;
+  }
 
   hostEl.innerHTML = `
     <section class="intent-ladder">
@@ -155,8 +234,6 @@ export async function mountIntentLadder(hostEl, topic, opts = {}) {
   // instantly and coverage fills in when the SQL returns.
   mountCoverage(hostEl.querySelector('#intent-coverage-host'), topic);
 
-  const reloadLadder = () => mountIntentLadder(hostEl, topic, opts);
-
   // Wire step buttons
   hostEl.querySelectorAll('.intent-step-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -169,6 +246,12 @@ export async function mountIntentLadder(hostEl, topic, opts = {}) {
   });
 
   // Intent swap popup
+  wireIntentSwap(hostEl, topic, currentKey, opts, reloadLadder, doneToast);
+}
+
+// Shared wiring for the "change research goal" badge — used by both the
+// normal ladder render and the empty-ladder fallback above.
+function wireIntentSwap(hostEl, topic, currentKey, opts, reloadLadder, doneToast) {
   $('#intent-swap-btn', hostEl)?.addEventListener('click', async () => {
     const allIntents = await api.listIntents().catch(() => []);
     showIntentSwap(hostEl, topic, currentKey, allIntents, async (newKey) => {

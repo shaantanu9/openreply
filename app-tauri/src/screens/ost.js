@@ -108,17 +108,33 @@ function renderSolutionCard(sol, topic) {
 
 function renderOpportunityCard(opp, topic) {
   const sols = (opp.solutions || []).map(s => renderSolutionCard(s, topic)).join('');
-  const empty = !sols ? '<li class="ost-solution ost-empty">No interventions yet. Run the Solutions pipeline on this topic to populate this branch.</li>' : '';
+  const empty = !sols ? '<li class="ost-solution ost-empty">No interventions yet. Run the Solutions pipeline (or Gap Discovery) on this topic to populate this branch.</li>' : '';
   const emoChips = (opp.emotions || []).slice(0, 4)
     .map(e => `<span class="ost-emotion">${esc(e)}</span>`).join('');
+  const mentions = Number(opp.mention_count) || 0;
+  const sev = (opp.severity || '').toString().trim();
+
+  // Experiments attached to this painpoint but to no specific intervention
+  // (orphans). They'd otherwise vanish from the tree entirely, so surface
+  // them under the opportunity with the same cycle/delete controls.
+  const orphans = (opp.orphan_experiments || []).map(renderExperimentCard).join('');
+  const orphanBlock = orphans ? `
+    <div class="ost-solutions-bar" style="margin-top:10px">
+      <div class="ost-sol-title">Painpoint-level experiments (no solution attached)</div>
+    </div>
+    <ul class="ost-experiments">${orphans}</ul>` : '';
+
   return `
     <article class="card ost-opportunity" data-pp-id="${esc(opp.id)}">
       <div class="card-head">
-        <div>
+        <div class="ost-opp-head">
           <h3>${esc(opp.label)}</h3>
-          <p>${opp.mention_count || 0} mentions${emoChips ? '' : ''}</p>
+          <div class="ost-opp-meta">
+            <span class="ost-opp-mentions">${mentions} mention${mentions === 1 ? '' : 's'}</span>
+            ${sev ? `<span class="ost-emotion" style="background:#fee2e2;color:#991b1b" title="Severity / anxiety signal">${esc(sev)}</span>` : ''}
+            ${emoChips}
+          </div>
         </div>
-        ${emoChips ? `<div class="ost-opp-meta">${emoChips}</div>` : ''}
       </div>
       <div class="card-body" style="padding:14px 18px">
         ${opp.jtbd_statement ? `<p class="ost-jtbd"><b>JTBD:</b> <em>${esc(opp.jtbd_statement)}</em></p>` : ''}
@@ -127,6 +143,7 @@ function renderOpportunityCard(opp, topic) {
           <div class="ost-sol-title">Solutions (sorted by RICE)</div>
         </div>
         <ul class="ost-solutions">${sols}${empty}</ul>
+        ${orphanBlock}
       </div>
     </article>
   `;
@@ -225,6 +242,25 @@ function renderTreeShell(topic, tree) {
     </div>
 
     <div class="ost-tree" id="ost-tree">${opps}${empty}</div>
+
+    ${(tree.orphan_experiments || []).length ? `
+    <div class="card ost-opportunity" style="margin-top:14px">
+      <div class="card-head">
+        <div class="ost-opp-head">
+          <h3>Unlinked experiments</h3>
+          <div class="ost-opp-meta">
+            <span class="ost-opp-mentions">${tree.orphan_experiments.length}</span>
+          </div>
+        </div>
+      </div>
+      <div class="card-body" style="padding:14px 18px">
+        <p class="muted" style="font-size:12px;margin:0 0 8px;line-height:1.5">
+          These experiments aren't attached to any painpoint or solution in the
+          current tree — they may belong to nodes that were merged or removed.
+        </p>
+        <ul class="ost-experiments">${tree.orphan_experiments.map(renderExperimentCard).join('')}</ul>
+      </div>
+    </div>` : ''}
 
     <div class="card" style="margin-top:18px">
       <div class="card-head">
