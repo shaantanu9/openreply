@@ -495,6 +495,8 @@ fn main() {
             commands::root_cause_get,
             commands::root_cause_compute,
             commands::tactics_get,
+            commands::connections_get,
+            commands::connections_compute,
             commands::paper_analyses_get,
             commands::schedule_install,
             commands::schedule_uninstall,

@@ -4459,6 +4459,19 @@ pub async fn tactics_get(app: AppHandle, topic: String) -> Result<Value, String>
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+/// Connect the dots — novel cross-paper connections (read cached artifact).
+#[tauri::command]
+pub async fn connections_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "connections", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// Connect the dots — (re)build novel cross-paper connections via the engine.
+#[tauri::command]
+pub async fn connections_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "connections", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 /// Read all paper-analysis rows for a topic (one SELECT, no LLM).
 #[tauri::command]
 pub async fn paper_analyses_get(

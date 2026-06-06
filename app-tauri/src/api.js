@@ -519,6 +519,8 @@ export const api = {
   rootCauseGet:     (topic) => cachedInvoke('root_cause_get', { topic }, 30000),
   rootCauseCompute: (topic) => { invalidate('root_cause_get'); return invoke('root_cause_compute', { topic }); },
   tacticsGet:       (topic) => cachedInvoke('tactics_get', { topic }, 30000),
+  connectionsGet:     (topic) => cachedInvoke('connections_get', { topic }, 30000),
+  connectionsCompute: (topic) => { invalidate('connections_get'); return invoke('connections_compute', { topic }); },
 
   // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
   scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),

@@ -2888,6 +2888,21 @@ def cmd_research_tactics(
     _emit(tactics_for_topic(topic=topic, k=k), as_json)
 
 
+@research_app.command("connections")
+def cmd_research_connections(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    no_enrich: bool = typer.Option(False, "--no-enrich", help="Skip the LLM why-new pass."),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Connect the dots — novel cross-paper connections ranked by novelty.
+    --compute (re)builds from paper-gaps + shared-but-uncited findings."""
+    from ..research.connections import connections_get, connections_compute
+    _emit(connections_compute(topic=topic, provider=provider, enrich=not no_enrich) if compute
+          else connections_get(topic=topic), as_json)
+
+
 @research_app.command("iterate-start")
 def cmd_research_iterate_start(
     topic: str = typer.Option(..., "--topic", "-t"),

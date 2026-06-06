@@ -3193,6 +3193,24 @@ def gapmap_tactics(topic: str, k: int = 5) -> dict:
     return tactics_for_topic(topic=topic, k=k)
 
 
+@mcp.tool()
+def gapmap_connections(topic: str, compute: bool = False) -> dict:
+    """Connect the dots — novel cross-paper connections the literature hasn't made.
+
+    Surfaces understudied intersections, contradictions, under-replicated methods,
+    and shared-but-uncited parallel findings across a topic's academic papers,
+    ranked by a novelty score. compute=False reads the cached artifact;
+    compute=True (re)builds from paper-gaps + the paper relation graph (runs an
+    LLM 'why is this new' pass under the timeout guard).
+    """
+    from ..research.connections import connections_get, connections_compute
+    if compute:
+        return _run_with_timeout(
+            connections_compute, timeout=90.0,
+            async_hint="gapmap_connections", kwargs={"topic": topic})
+    return connections_get(topic)
+
+
 # ─── Production guards — prevents the "18 zombie MCP servers" bug ───
 # Shipping lessons from 2026-04-21 — a user session accumulated 18
 # `gapmap mcp serve` processes over 2 days (Claude Code / Cursor
