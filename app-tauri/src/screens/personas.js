@@ -256,36 +256,102 @@ async function reloadList(root) {
         });
       });
     });
+    // Lazy-load the latest-lesson preview per card AFTER the grid is painted,
+    // so the grid never blocks on N memory fetches. Only fetch for personas
+    // that actually have memories (skip the rest — no point, no invented data),
+    // and cap concurrency so a big roster doesn't fan out unbounded requests.
+    loadLatestLessons(grid, rows);
   } catch (e) {
     grid.innerHTML = `<div class="muted" style="padding:18px">error: ${esc(String(e?.message || e))}</div>`;
   }
 }
 
+// Fetch each persona's single most-recent (highest-importance among the few
+// newest) distilled lesson and slot a one-line preview into its card. Runs in
+// the background after render with a small concurrency cap so it never stalls
+// the grid. Pulls ONLY real fields from api.personaMemories — if a persona has
+// no memories or the call fails, its preview row stays hidden (no invented data).
+async function loadLatestLessons(grid, rows) {
+  if (!grid || !rows || !rows.length) return;
+  const targets = rows.filter(p => {
+    const n = p.stats && p.stats.memories;
+    return n == null || n > 0; // skip personas known to have 0 memories
+  });
+  const CAP = 4;
+  let cursor = 0;
+  async function worker() {
+    while (cursor < targets.length) {
+      const p = targets[cursor++];
+      // Bail if this card was replaced by a newer reloadList pass.
+      if (!grid.querySelector(`[data-latest-for="${p.id}"]`)) continue;
+      let mem = null;
+      try {
+        const r = unwrap(await api.personaMemories(p.id, { limit: 5 }));
+        const mems = (r && r.memories) || [];
+        if (mems.length) {
+          // Prefer the highest-importance among the newest few; fall back to
+          // the first (the API already returns newest-first).
+          mem = mems.reduce((best, m) =>
+            (m.importance ?? 0) > (best.importance ?? 0) ? m : best, mems[0]);
+        }
+      } catch { /* leave hidden on error — never fabricate */ }
+      const live = grid.querySelector(`[data-latest-for="${p.id}"]`);
+      if (!live) continue;
+      const lesson = mem && (mem.lesson || mem.excerpt);
+      if (!lesson) continue;
+      const accent = safeHexColor(p.color);
+      const text = String(lesson).replace(/\s+/g, ' ').trim();
+      const clipped = text.length > 140 ? text.slice(0, 140).trimEnd() + '…' : text;
+      live.innerHTML = `
+        <div class="persona-card-latest-inner" style="border-left:2px solid ${accent};padding-left:9px">
+          <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;color:${accent}">latest lesson</div>
+          <div style="font-size:12px;line-height:1.4;color:var(--ink-2)">${esc(clipped)}</div>
+        </div>`;
+      live.style.display = 'block';
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CAP, targets.length) }, worker));
+  refreshIcons();
+}
+
 function personaCard(p) {
   const s = p.stats || { memories: 0, edges: 0, topics_seen: 0, last_memory_at: null };
-  const color = p.color || '#7c3aed';
+  const color = safeHexColor(p.color);
   const isActive = p.active ? '1' : '0';
+  // Only surface counts that are actually present on the row — never invent.
+  const hasMem  = s.memories != null;
+  const hasCon  = s.conclusions != null;
+  const hasTop  = s.topics_seen != null;
+  const hasEdge = s.edges != null;
+  const chips = [
+    hasMem  ? `<span class="persona-count-chip" style="--persona-accent:${color}"><strong>${s.memories}</strong> ${s.memories === 1 ? 'memory' : 'memories'}</span>` : '',
+    hasCon  ? `<span class="persona-count-chip" style="--persona-accent:${color}"><strong>${s.conclusions}</strong> ${s.conclusions === 1 ? 'conclusion' : 'conclusions'}</span>` : '',
+    hasTop  ? `<span class="persona-count-chip" style="--persona-accent:${color}"><strong>${s.topics_seen}</strong> topics</span>` : '',
+    hasEdge ? `<span class="persona-count-chip" style="--persona-accent:${color}"><strong>${s.edges}</strong> edges</span>` : '',
+  ].filter(Boolean).join('');
   return `
     <div class="card persona-card" data-persona-id="${p.id}" data-active="${isActive}"
-         style="border-left:4px solid ${esc(color)};cursor:pointer;display:flex;flex-direction:column">
+         style="border-left:4px solid ${color};cursor:pointer;display:flex;flex-direction:column">
       <div class="card-head" style="padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:0">
-        <div style="width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:${esc(color)}22;color:${esc(color)};flex-shrink:0">
+        <div style="width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:${color}22;color:${color};flex-shrink:0">
           <i data-lucide="${esc(p.icon || 'sparkles')}" style="width:18px;height:18px"></i>
         </div>
         <div style="flex:1;min-width:0">
-          <h3 style="margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em">${esc(p.name)}</h3>
-          <p class="muted" style="margin:2px 0 0;font-size:11.5px">lens: <span style="color:${esc(color)};font-weight:600">${esc(p.lens)}</span> · ${p.active ? 'active' : 'paused'}</p>
+          <div style="display:flex;align-items:center;gap:8px;min-width:0">
+            <h3 style="margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</h3>
+            <span class="persona-status-chip ${p.active ? 'is-active' : ''}" style="flex-shrink:0">${p.active ? 'active' : 'paused'}</span>
+          </div>
+          <p class="muted" style="margin:2px 0 0;font-size:11.5px">lens: <span style="color:${color};font-weight:600">${esc(p.lens)}</span></p>
         </div>
         <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--ink-3);flex-shrink:0" aria-hidden="true"></i>
       </div>
       <div class="card-body" style="padding:6px 16px 14px;flex:1;display:flex;flex-direction:column">
         <p style="margin:0 0 12px;font-size:13px;line-height:1.45;color:var(--ink-2)">${esc(p.goal)}</p>
-        <div class="persona-stats muted" style="display:flex;gap:16px;font-size:12px">
-          <span><strong style="color:var(--ink-1)">${s.memories}</strong> memories</span>
-          <span><strong style="color:var(--ink-1)">${s.topics_seen}</strong> topics</span>
-          <span><strong style="color:var(--ink-1)">${s.edges}</strong> edges</span>
+        <div class="persona-stats muted" style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">
+          ${chips}
         </div>
         <p class="muted" style="margin:6px 0 0;font-size:11px">last memory: ${fmtTime(s.last_memory_at)}</p>
+        <div class="persona-card-latest" data-latest-for="${p.id}" style="margin:10px 0 0;display:none"></div>
         <div style="display:flex;gap:6px;margin-top:auto;padding-top:14px;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" data-act="open">
             <i data-lucide="folder-open" style="width:12px;height:12px"></i>

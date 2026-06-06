@@ -22,13 +22,58 @@ const STATE_META = {
 
 const STATE_ORDER = ['running', 'validated', 'invalidated', 'paused', 'draft', 'archived'];
 
+// Statuses shown in the top summary strip (lifecycle order). Archived is
+// intentionally omitted from the strip — it's not an "active" outcome.
+const SUMMARY_STATES = ['draft', 'running', 'validated', 'invalidated', 'paused'];
+
 function fmtDate(iso) {
   if (!iso) return '';
   try { return new Date(iso).toLocaleDateString(); } catch { return ''; }
 }
 
+// Defensively parse the hypothesis card. Prefer an already-parsed `row.card`,
+// then fall back to a raw `row.card_json` string. Never throw on bad JSON.
+function parseCard(row) {
+  if (row && row.card && typeof row.card === 'object') return row.card;
+  const raw = row && row.card_json;
+  if (raw && typeof raw === 'object') return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+  return {};
+}
+
+// Compact statement of the bet, parsed defensively from the card.
+function betStatement(card) {
+  if (card.we_believe || card.experiences) {
+    const parts = [];
+    if (card.we_believe) parts.push(`We believe ${card.we_believe}`);
+    if (card.experiences) parts.push(`experiences ${card.experiences}`);
+    return parts.join(', ');
+  }
+  return card.finding_title || card.statement || '(untitled bet)';
+}
+
+// Top-of-screen counts-per-status strip. Colored chips reuse STATE_META colors.
+function renderSummaryStrip(groups) {
+  const chips = SUMMARY_STATES.map(s => {
+    const meta = STATE_META[s];
+    const count = (groups[s] || []).length;
+    const dim = count === 0 ? ' bet-summary-chip-empty' : '';
+    return `
+      <span class="bet-summary-chip${dim}"
+            style="background:${meta.color}22;color:${meta.color};border-color:${meta.color}55"
+            title="${esc(count)} ${esc(meta.label)}">
+        <span>${meta.icon}</span>
+        <b>${esc(count)}</b>
+        <span>${esc(meta.label)}</span>
+      </span>`;
+  }).join('');
+  return `<div class="bet-summary-strip">${chips}</div>`;
+}
+
 function renderBetCard(row) {
-  const card = row.card || {};
+  const card = parseCard(row);
   const meta = STATE_META[row.status] || STATE_META.draft;
   const falsifiers = (card.falsifiers || []).map(f => `<li>${esc(f)}</li>`).join('');
   const nextActions = meta.next.map(s => {
@@ -47,6 +92,12 @@ function renderBetCard(row) {
     ? `<div class="bet-notes"><b>Journal:</b><pre>${esc(row.resolution_notes)}</pre></div>`
     : '';
 
+  // One-line resolution-notes preview shown in the card header area when present.
+  const notesPreviewText = (row.resolution_notes || '').replace(/\s+/g, ' ').trim();
+  const notesPreview = notesPreviewText
+    ? `<div class="bet-notes-preview muted" title="${esc(notesPreviewText)}">💬 ${esc(notesPreviewText.slice(0, 120))}${notesPreviewText.length > 120 ? '…' : ''}</div>`
+    : '';
+
   const cheapest = card.cheapest_test
     ? `<div class="bet-test"><b>Cheapest test:</b> ${esc(card.cheapest_test)}
          <span class="muted">· ${card.time_box_days || 14}d · $${card.budget_usd || 100}</span></div>`
@@ -59,10 +110,11 @@ function renderBetCard(row) {
           ${meta.icon} ${esc(meta.label)}
         </div>
         <div class="bet-title">
-          ${esc(card.finding_title || card.experiences || '(untitled bet)')}
+          ${esc(betStatement(card))}
         </div>
       </div>
       <div class="bet-meta">${esc(dates)}</div>
+      ${notesPreview}
 
       <div class="bet-body">
         <div class="bet-row"><b>WE BELIEVE</b><span>${esc(card.we_believe || '')}</span></div>
@@ -120,8 +172,11 @@ export async function loadBets(contentEl, topic) {
       set(`
         <div class="empty-big">
           <h3>No tracked bets yet</h3>
-          <p>Promote any hypothesis card from the <b>Insights</b> tab to track it here. Each bet has a state machine (draft → running → validated / invalidated) and a journal for notes.</p>
-          <p class="muted" style="font-size:12px;margin-top:10px">This is your weekly-ritual surface — come back to update states as you run real-world tests.</p>
+          <p>Bets are promoted from your <b>Insights</b> tab. When a hypothesis card looks worth testing in the real world, hit <b>“Save as bet”</b> on it — it lands here as a <b>draft</b> you can move through the state machine (draft → running → validated / invalidated / paused) and journal against.</p>
+          <p class="muted" style="font-size:12px;margin-top:10px">This is your weekly-ritual surface — come back to update states and add notes as you run real-world tests.</p>
+          <div style="margin-top:16px">
+            <a class="btn" href="#/topic/${esc(encodeURIComponent(topic || ''))}" data-insights="1">→ Go to Insights and save a bet</a>
+          </div>
         </div>
       `);
       return;
@@ -132,11 +187,9 @@ export async function loadBets(contentEl, topic) {
     set(`
       <div class="bets-tab">
         <div class="bets-toolbar">
+          ${renderSummaryStrip(groups)}
           <div class="bets-summary muted">
-            ${rows.length} bet${rows.length === 1 ? '' : 's'} ·
-            ${groups.running.length} running ·
-            ${groups.validated.length} validated ·
-            ${groups.invalidated.length} invalidated
+            ${esc(rows.length)} bet${rows.length === 1 ? '' : 's'} tracked
           </div>
         </div>
         ${STATE_ORDER.map(s => renderGroup(s, groups[s])).join('')}
