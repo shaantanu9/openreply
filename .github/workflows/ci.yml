@@ -38,19 +38,19 @@ jobs:
         with:
           lfs: false
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        env:
-          # Self-hosted-runner fix: actions/setup-python's prebuilt macOS Python
-          # install script hardcodes /Users/runner/hostedtoolcache (the
-          # GitHub-hosted runner's username). On a self-hosted Mac that path
-          # isn't writable → "mkdir: /Users/runner: Permission denied". Redirect
-          # the tool cache to THIS runner's writable _work/_tool dir. The
-          # `runner` context is only valid at step level (NOT workflow/job env).
-          AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+      # Self-hosted-runner note: we deliberately do NOT use actions/setup-python.
+      # Its prebuilt macOS Python is hardcoded to install at
+      # /Users/runner/hostedtoolcache (the GitHub-hosted runner's username) and
+      # fails on a real Mac with "mkdir: /Users/runner: Permission denied"
+      # (AGENT_TOOLSDIRECTORY is ignored on macOS). The runner Mac already has
+      # Python 3.11 via Homebrew, so build a venv from it and put it on PATH for
+      # the rest of the job. pyproject requires-python is >=3.11.
+      - name: Set up Python 3.11 (Homebrew — self-hosted)
+        run: |
+          PY="$(command -v python3.11 || echo /opt/homebrew/bin/python3.11)"
+          "$PY" -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv/bin/python" --version
 
       - name: Install project (editable, all extras)
         run: |
@@ -82,6 +82,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: false
+
+      # Self-hosted-runner fix: the job shell is non-login (bash --noprofile
+      # --norc), so the Mac's ~/.cargo/bin isn't on PATH. Without this,
+      # dtolnay/rust-toolchain can't find the already-installed rustup and tries
+      # to re-run rustup-init, which fails amending the root-owned ~/.tcshrc
+      # ("could not amend shell profile ... Permission denied"). Surfacing the
+      # existing rustup makes the toolchain action a no-op.
+      - name: Put pre-installed rustup/cargo on PATH (self-hosted)
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
