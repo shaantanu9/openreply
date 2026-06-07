@@ -4182,6 +4182,15 @@ def cmd_research_paper_read(
     typer.echo(json.dumps(paper_reading.read_view(post_id), default=str))
 
 
+@research_app.command("flow-status")
+def cmd_research_flow_status(
+    topic: str = typer.Option(..., "--topic", "-t"),
+) -> None:
+    """Per-project research-flow progress (gather→read→synthesize→write)."""
+    from ..research.flow_status import flow_status
+    typer.echo(json.dumps(flow_status(topic), default=str))
+
+
 @research_app.command("library")
 def cmd_research_library(
     collection: Optional[str] = typer.Option(None, "--collection"),

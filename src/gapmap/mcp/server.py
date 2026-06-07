@@ -1252,6 +1252,15 @@ def gapmap_paper_notes(topic: str) -> dict:
 
 
 @mcp.tool()
+def gapmap_flow_status(topic: str) -> dict:
+    """Per-project research-flow progress (gather→read→synthesize→write):
+    papers, fulltext, chunked, analyzed, lit_matrix, read/reading/to_read,
+    has_draft, and normalized stage fractions."""
+    from ..research.flow_status import flow_status
+    return flow_status(topic)
+
+
+@mcp.tool()
 def gapmap_paper_library(collection_id: str | None = None, status: str | None = None,
                          q: str | None = None, limit: int = 300) -> dict:
     """Cross-project paper library — every academic paper with its reading status

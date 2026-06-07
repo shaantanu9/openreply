@@ -1031,6 +1031,8 @@ export const api = {
   litMatrixBuild: (topic, { limit = null, force = false } = {}) =>
     invoke('lit_matrix_build', { topic, limit, force }),
   litMatrixExport: (topic) => invoke('lit_matrix_export', { topic }),
+  // Per-project research-flow progress (gather→read→synthesize→write).
+  flowStatus: (topic) => invoke('flow_status', { topic }),
   // Cross-project library + collections.
   paperLibrary: ({ collection = null, status = null, q = null, limit = 300 } = {}) =>
     invoke('paper_library', { collection, status, q, limit }),

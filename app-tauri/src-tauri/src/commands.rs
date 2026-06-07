@@ -1945,6 +1945,13 @@ pub async fn lit_matrix_export(app: AppHandle, topic: String) -> Result<Value, S
         .await.map_err(err_to_string)
 }
 
+/// Per-project research-flow progress (gather→read→synthesize→write).
+#[tauri::command]
+pub async fn flow_status(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "flow-status", "--topic", &topic])
+        .await.map_err(err_to_string)
+}
+
 /// Cross-project paper library — papers with reading status + collections.
 #[tauri::command]
 pub async fn paper_library(

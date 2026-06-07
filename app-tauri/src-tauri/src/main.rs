@@ -449,6 +449,7 @@ fn main() {
             commands::lit_matrix_get,
             commands::lit_matrix_build,
             commands::lit_matrix_export,
+            commands::flow_status,
             commands::paper_library,
             commands::paper_collections,
             commands::paper_knowledge_build,

@@ -47,15 +47,48 @@ function projectCard(t) {
   const quick = (href, icon, label) =>
     `<a href="${href}" title="${esc(label)}" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;text-decoration:none;color:var(--accent,#5B8DB8);border:1px solid var(--line);border-radius:7px;padding:3px 8px"><i data-lucide="${icon}" style="width:12px;height:12px"></i> ${esc(label)}</a>`;
   return `
-    <div class="rh-project" style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface,#fff)">
+    <div class="rh-project" data-topic="${esc(name)}" style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface,#fff)">
       <a href="#/topic/${te}" style="text-decoration:none;color:inherit;font-weight:650;font-size:14px;display:flex;align-items:center;gap:6px"><i data-lucide="folder-open" style="color:var(--accent,#5B8DB8)"></i> ${esc(name)}</a>
       ${chipHtml ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${chipHtml}</div>` : '<div class="muted" style="font-size:11.5px;margin-top:8px">Open to gather papers</div>'}
+      <div class="rh-flow" style="margin-top:9px"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         ${quick(`#/topic/${te}`, 'book-open', 'Read')}
         ${quick(`#/lit-matrix/${te}`, 'table', 'Matrix')}
         ${quick(`#/write/${te}`, 'pen-line', 'Write')}
       </div>
     </div>`;
+}
+
+// A compact 4-segment flow bar (Gather→Read→Synthesize→Write) for a project.
+const FLOW_STAGES = [
+  ['gather', 'Gather', '#5B8DB8'], ['read', 'Read', '#1F5C99'],
+  ['synthesize', 'Synthesize', '#7A4FA3'], ['write', 'Write', '#1A7A4F'],
+];
+function flowBarHtml(stages) {
+  const segs = FLOW_STAGES.map(([key, label, color]) => {
+    const frac = Math.max(0, Math.min(1, Number(stages?.[key] || 0)));
+    const pct = Math.round(frac * 100);
+    return `<div title="${label}: ${pct}%" style="flex:1;height:5px;border-radius:3px;background:var(--line,#eee);overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:${color}"></div></div>`;
+  }).join('');
+  return `<div style="display:flex;gap:3px">${segs}</div>`;
+}
+
+// Fill each visible project card's flow bar. Sequential (one sidecar call at a
+// time) and bounded to the first 14 cards so a big workspace doesn't spawn a
+// flood of sidecar processes. Best-effort — a failed lookup just leaves the
+// card without a bar.
+async function fillFlowBars(slot, topics) {
+  const cards = Array.from(slot.querySelectorAll('.rh-project')).slice(0, 14);
+  for (const card of cards) {
+    const topic = card.dataset.topic;
+    const host = card.querySelector('.rh-flow');
+    if (!topic || !host) continue;
+    try {
+      const fs = await api.flowStatus(topic);
+      if (fs?.ok) host.innerHTML = flowBarHtml(fs.stages);
+    } catch { /* skip this card */ }
+  }
 }
 
 export async function renderResearchHome(main) {
@@ -137,6 +170,8 @@ export async function renderResearchHome(main) {
       slot.innerHTML = `<div class="muted" style="font-size:12.5px">No ${esc(L.topics)} yet — start your first research above.</div>`;
     } else {
       slot.innerHTML = topics.map(projectCard).join('');
+      window.refreshIcons?.();
+      fillFlowBars(slot, topics);
     }
   } catch (e) {
     const msg = (e?.message || e || '').toString();

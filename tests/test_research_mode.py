@@ -142,3 +142,23 @@ def test_lit_matrix_empty_read_and_export(db) -> None:
     assert got["ok"] and got["count"] == 0 and got["fields"] == lm.FIELDS
     csv = lm.export_csv(TOPIC)
     assert csv["ok"] and csv["csv"].splitlines()[0] == "title,method,dataset,sample,findings,limitations,metric"
+
+
+# ─── flow_status ─────────────────────────────────────────────────────────────
+def test_flow_status_shape_and_progress(db) -> None:
+    from gapmap.research.flow_status import flow_status
+    from gapmap.research import paper_reading as pr
+    fs = flow_status(TOPIC)
+    assert fs["ok"] and fs["papers"] == 3
+    assert fs["stages"]["gather"] == 1.0
+    assert fs["stages"]["read"] == 0.0 and fs["to_read"] == 3
+    # marking one read moves the read stage off zero
+    pr.set_status("arxiv_0", "read")
+    fs2 = flow_status(TOPIC)
+    assert fs2["read"] == 1 and fs2["stages"]["read"] > 0 and fs2["to_read"] == 2
+
+
+def test_flow_status_empty_topic(db) -> None:
+    from gapmap.research.flow_status import flow_status
+    fs = flow_status("nonexistent topic")
+    assert fs["ok"] and fs["papers"] == 0 and fs["stages"]["gather"] == 0.0
