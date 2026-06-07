@@ -43,11 +43,19 @@ function projectCard(t) {
   else if (posts != null) chips.push(`${posts} items`);
   if (t.pains != null) chips.push(`${t.pains} painpoints`);
   const chipHtml = chips.map(c => `<span class="muted" style="font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px">${esc(c)}</span>`).join(' ');
+  const te = encodeURIComponent(name);
+  const quick = (href, icon, label) =>
+    `<a href="${href}" title="${esc(label)}" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;text-decoration:none;color:var(--accent,#5B8DB8);border:1px solid var(--line);border-radius:7px;padding:3px 8px"><i data-lucide="${icon}" style="width:12px;height:12px"></i> ${esc(label)}</a>`;
   return `
-    <a href="#/topic/${encodeURIComponent(name)}" class="rh-project" style="display:block;text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface,#fff)">
-      <div style="font-weight:650;font-size:14px;display:flex;align-items:center;gap:6px"><i data-lucide="folder-open" style="color:var(--accent,#5B8DB8)"></i> ${esc(name)}</div>
+    <div class="rh-project" style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface,#fff)">
+      <a href="#/topic/${te}" style="text-decoration:none;color:inherit;font-weight:650;font-size:14px;display:flex;align-items:center;gap:6px"><i data-lucide="folder-open" style="color:var(--accent,#5B8DB8)"></i> ${esc(name)}</a>
       ${chipHtml ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${chipHtml}</div>` : '<div class="muted" style="font-size:11.5px;margin-top:8px">Open to gather papers</div>'}
-    </a>`;
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+        ${quick(`#/topic/${te}`, 'book-open', 'Read')}
+        ${quick(`#/lit-matrix/${te}`, 'table', 'Matrix')}
+        ${quick(`#/write/${te}`, 'pen-line', 'Write')}
+      </div>
+    </div>`;
 }
 
 export async function renderResearchHome(main) {
