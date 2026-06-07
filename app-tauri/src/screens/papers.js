@@ -309,6 +309,8 @@ function renderList(topic, posts) {
       <div class="papers-toolbar">
         <div class="muted">${posts.length} papers for <b>${escape(topic)}</b></div>
         <div class="papers-actions">
+          <a class="btn btn-sm btn-bordered" href="#/lit-matrix/${encodeURIComponent(topic)}" title="Literature-review matrix — compare method/findings/limitations across papers"><i data-lucide="table"></i> Lit matrix</a>
+          <a class="btn btn-sm btn-bordered" href="#/write/${encodeURIComponent(topic)}" title="Write — outline, draft, and export citations"><i data-lucide="pen-line"></i> Write</a>
           <button class="btn btn-sm btn-bordered" id="btn-paper-map" title="Relationship map of these papers"><i data-lucide="git-fork"></i> View map</button>
           <button class="btn btn-sm btn-bordered" id="btn-export-bibtex"><i data-lucide="file-text"></i> BibTeX</button>
           <button class="btn btn-sm btn-bordered" id="btn-export-ris"><i data-lucide="file-down"></i> RIS (Zotero)</button>
