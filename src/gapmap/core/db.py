@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, TypeVar
 
 from sqlite_utils import Database
 
@@ -19,6 +21,54 @@ from .config import load_config
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# ── Transient-lock retry ───────────────────────────────────────────────────
+# SQLite (even in WAL mode) permits exactly ONE writer at a time. When the
+# collect pipeline fans external-source fetches out across a thread pool, every
+# worker writes to the same `gapmap.db` (fetch-audit row → posts → topic_posts).
+# Writers serialize on a filesystem lock; `PRAGMA busy_timeout` (set in get_db)
+# makes a single statement wait that long before giving up. This helper adds a
+# second, application-level safety net: when a writer is held past the
+# busy_timeout — common when a SECOND process (MCP server / Tauri sidecar /
+# enrich worker) is also attached, or under a wide worker pool — we back off
+# and retry instead of surfacing "database is locked" to the caller (which, in
+# the source adapters, was killing the whole source's collection for that run).
+_T = TypeVar("_T")
+
+_DB_RETRY_ATTEMPTS = max(1, int(os.getenv("GAPMAP_DB_RETRY_ATTEMPTS", "5") or "5"))
+_DB_RETRY_BASE_SLEEP = 0.2  # seconds; exponential, capped per-sleep below
+_DB_RETRY_MAX_SLEEP = 2.0
+
+
+def _is_locked_err(e: BaseException) -> bool:
+    """True for the transient, retryable SQLite contention errors."""
+    if isinstance(e, sqlite3.OperationalError):
+        msg = str(e).lower()
+        return "locked" in msg or "busy" in msg or "disk i/o error" in msg
+    # sqlite-utils / other layers occasionally re-wrap the OperationalError;
+    # fall back to a message sniff so we don't miss a genuine lock.
+    msg = str(e).lower()
+    return "database is locked" in msg or "database table is locked" in msg
+
+
+def _retry_on_locked(fn: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
+    """Run a DB write, retrying with exponential backoff on transient locks.
+
+    Re-raises any non-lock error immediately, and re-raises the lock error
+    itself once attempts are exhausted (so a genuinely stuck DB still surfaces
+    a real, debuggable error rather than silently dropping the write).
+    """
+    last: BaseException | None = None
+    for attempt in range(_DB_RETRY_ATTEMPTS):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 — re-raised below unless retryable
+            if not _is_locked_err(e) or attempt == _DB_RETRY_ATTEMPTS - 1:
+                raise
+            last = e
+            time.sleep(min(_DB_RETRY_BASE_SLEEP * (2 ** attempt), _DB_RETRY_MAX_SLEEP))
+    raise last  # pragma: no cover — loop always returns or raises above
 
 
 # Per-thread Database instance. sqlite3 connections are NOT safe to share
@@ -111,7 +161,14 @@ def get_db() -> Database:
         # collisions). Set per-connection so the very first call in each
         # thread flips the pragma.
         db.conn.execute("PRAGMA journal_mode=WAL")
-        db.conn.execute("PRAGMA busy_timeout=5000")
+        # Bumped 5000 → 15000 (2026-06-07): under the widened external-source
+        # worker pool (and when an MCP server / sidecar is also attached), a
+        # writer can hold the lock past 5s, and source adapters surfaced
+        # "database is locked" — collecting 0 rows for that source. 15s absorbs
+        # the realistic worst case; `_retry_on_locked` is the second net beyond
+        # it. Env-tunable so a deploy can raise it without a rebuild.
+        _busy_ms = max(1000, int(os.getenv("GAPMAP_DB_BUSY_TIMEOUT_MS", "15000") or "15000"))
+        db.conn.execute(f"PRAGMA busy_timeout={_busy_ms}")
         _tls.db = db
     with _schema_lock:
         if not _schema_inited:
@@ -1345,25 +1402,51 @@ def _ensure_experiments_pk_compat(db: Database) -> None:
 # ── Fetch audit log ──────────────────────────────────────────────────────────
 
 def log_fetch_start(kind: str, params: dict[str, Any]) -> int:
+    """Open a fetch-audit row. Returns the row id, or -1 if the (non-critical)
+    audit write could not complete.
+
+    This is bookkeeping ONLY — it MUST NOT be able to kill a real data fetch.
+    In the source adapters this call sits before the try/except that guards the
+    fetch+persist loop, so a propagating "database is locked" here used to abort
+    the entire source (0 rows collected). We retry on transient locks and, if
+    they truly persist, swallow the error and return -1 so the caller proceeds
+    to actually fetch + persist data. `log_fetch_end(-1, …)` is a no-op.
+    """
     db = get_db()
-    row = db["fetches"].insert(
-        {
-            "kind": kind,
-            "params_json": json.dumps(params, default=str),
-            "started_at": _utc_now(),
-            "ended_at": None,
-            "rows": 0,
-            "error": None,
-        }
-    )
-    return row.last_pk  # type: ignore[no-any-return]
+
+    def _insert() -> int:
+        row = db["fetches"].insert(
+            {
+                "kind": kind,
+                "params_json": json.dumps(params, default=str),
+                "started_at": _utc_now(),
+                "ended_at": None,
+                "rows": 0,
+                "error": None,
+            }
+        )
+        return row.last_pk  # type: ignore[no-any-return]
+
+    try:
+        return _retry_on_locked(_insert)
+    except Exception:
+        return -1
 
 
 def log_fetch_end(fetch_id: int, rows: int, error: str | None = None) -> None:
+    # -1 sentinel means log_fetch_start could not open the audit row; nothing
+    # to update. Audit bookkeeping never raises to the caller.
+    if fetch_id is None or fetch_id < 0:
+        return
     db = get_db()
-    db["fetches"].update(
-        fetch_id, {"ended_at": _utc_now(), "rows": rows, "error": error}
-    )
+    try:
+        _retry_on_locked(
+            db["fetches"].update,
+            fetch_id,
+            {"ended_at": _utc_now(), "rows": rows, "error": error},
+        )
+    except Exception:
+        pass
 
 
 # ── Upserts ──────────────────────────────────────────────────────────────────
@@ -1372,7 +1455,7 @@ def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
     rows = list(rows)
     if not rows:
         return 0
-    get_db()["posts"].upsert_all(rows, pk="id")
+    _retry_on_locked(get_db()["posts"].upsert_all, rows, pk="id")
     # Keep the semantic-search palace in sync, best-effort. Strict gates:
     #   1. GAPMAP_SKIP_PALACE=1 → always skip (CI / tests / minimal deploys)
     #   2. retrieval extras missing → skip silently
@@ -1409,7 +1492,7 @@ def upsert_comments(rows: Iterable[dict[str, Any]]) -> int:
     rows = list(rows)
     if not rows:
         return 0
-    get_db()["comments"].upsert_all(rows, pk="id")
+    _retry_on_locked(get_db()["comments"].upsert_all, rows, pk="id")
     return len(rows)
 
 
