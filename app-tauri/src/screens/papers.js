@@ -184,6 +184,87 @@ function renderKnowledgePanel(topic) {
   `;
 }
 
+// Canonical sections offered as quick filters for grounding/search scope.
+const ASK_SECTIONS = ['methods', 'results', 'discussion', 'limitations', 'conclusion'];
+
+// "Ask / Search the papers" panel — cited Q&A over paper full-text chunks
+// (Ask, via paperAsk → LLM grounded on section-aware chunks) plus raw
+// passage retrieval (Search, via paperChunkSearch). Lives under the knowledge
+// panel so the user can interrogate the corpus the moment papers are ingested.
+function renderAskPanel(topic) {
+  const chips = ASK_SECTIONS.map(s =>
+    `<button type="button" class="ask-sec-chip" data-sec="${s}" style="font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:inherit;cursor:pointer">${escape(s)}</button>`
+  ).join('');
+  return `
+    <div class="ask-panel" id="ask-panel" style="background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:6px;font-weight:650;font-size:14px">
+        <i data-lucide="messages-square"></i> Ask the papers
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:2px">
+        Cited answers grounded in the papers' full text — Methods, Results, Discussion. Build paper knowledge first so there's text to read.
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <div class="ask-mode" style="display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+          <button type="button" class="ask-mode-btn" data-mode="ask" style="padding:6px 12px;border:0;background:var(--accent,#5B8DB8);color:#fff;cursor:pointer;font-size:12px">Ask</button>
+          <button type="button" class="ask-mode-btn" data-mode="search" style="padding:6px 12px;border:0;background:transparent;color:inherit;cursor:pointer;font-size:12px">Search</button>
+        </div>
+        <input id="ask-input" type="text" placeholder="e.g. What methods measured theta power, and what did they find?"
+          style="flex:1 1 320px;min-width:0;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:inherit;font-size:13px" />
+        <button class="btn btn-primary btn-sm" id="ask-go" type="button"><i data-lucide="send"></i> <span id="ask-go-label">Ask</span></button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <span class="muted" style="font-size:11px">Scope to sections:</span>${chips}
+      </div>
+      <div id="ask-result" style="margin-top:12px"></div>
+    </div>
+  `;
+}
+
+// Render a cited Q&A answer: the answer body (with [N] markers kept) + a
+// citations list naming paper, author/year, and the sections cited.
+function renderAskAnswer(res) {
+  if (!res || res.ok === false) {
+    return `<div class="muted" style="font-size:12.5px;white-space:pre-wrap">${escape(res?.answer || res?.reason || 'No answer.')}</div>`;
+  }
+  const body = escape(res.answer || '').replace(/\n/g, '<br>');
+  const cites = (res.citations || []).map(c => {
+    const byline = [c.author, c.year ? `(${c.year})` : ''].filter(Boolean).join(' ');
+    const secs = (c.sections || []).map(s => `§${escape(s)}`).join(', ');
+    const title = c.url
+      ? `<a href="${escape(c.url)}" target="_blank" rel="noopener">${escape(c.title || 'Untitled')}</a>`
+      : escape(c.title || 'Untitled');
+    return `<li style="font-size:12px;margin-bottom:3px"><b>[${c.n}]</b> ${title}${byline ? ` — ${escape(byline)}` : ''}${secs ? ` — <span class="muted">${secs}</span>` : ''}</li>`;
+  }).join('');
+  const usage = res.used_chunks ? `<span class="muted" style="font-size:11px;margin-left:auto">grounded on ${res.used_chunks} passages</span>` : '';
+  return `
+    <div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface)">
+      <div style="font-size:13px;line-height:1.55">${body}</div>
+      ${cites ? `<div style="display:flex;align-items:center;gap:6px;margin-top:10px"><div style="font-weight:600;font-size:11.5px">Sources</div>${usage}</div><ol style="margin:6px 0 0;padding-left:20px">${cites}</ol>` : `<div style="margin-top:8px">${usage}</div>`}
+    </div>`;
+}
+
+// Render raw chunk-search hits (Search mode): section badge + score + snippet.
+function renderSearchHits(res) {
+  if (!res || !res.ok) {
+    return `<div class="muted" style="font-size:12.5px">${escape(res?.reason || res?.error || 'Search unavailable.')}</div>`;
+  }
+  const hits = res.results || [];
+  if (!hits.length) {
+    return `<div class="muted" style="font-size:12.5px">No matching passages. Build paper knowledge (full text → chunks) first, or broaden the query.</div>`;
+  }
+  return hits.map(h => {
+    const snip = escape((h.text || '').slice(0, 280)).replace(/\n/g, ' ');
+    return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;background:var(--surface)">
+      <div style="display:flex;align-items:center;gap:8px;font-size:11px">
+        <span class="src-badge" style="background:#5B8DB8">§${escape(h.section || 'body')}</span>
+        <span class="muted">${escape(h.post_id || '')}</span>
+        <span class="muted" style="margin-left:auto">score ${(h.score ?? 0).toFixed ? h.score.toFixed(3) : h.score}</span>
+      </div>
+      <div style="font-size:12.5px;margin-top:5px">${snip}…</div>
+    </div>`;
+  }).join('');
+}
+
 function gapKindMeta(kind) {
   return ({
     understudied_intersection: ['Understudied intersection', '#FF8C42'],
@@ -223,6 +304,7 @@ function renderList(topic, posts) {
     <div class="papers-tab">
       ${renderSearchHeader(topic)}
       ${renderKnowledgePanel(topic)}
+      ${renderAskPanel(topic)}
       <div class="papers-toolbar">
         <div class="muted">${posts.length} papers for <b>${escape(topic)}</b></div>
         <div class="papers-actions">
@@ -285,6 +367,73 @@ function showExportModal(topic, fmt, text, count) {
 // (renderSearchHeader is the only place that creates it), and we
 // always look it up fresh inside contentEl, so stale handlers from a
 // previous render don't accumulate.
+// Wire the "Ask / Search the papers" panel: mode toggle, section chips, and
+// the submit button → paperAsk (cited Q&A) or paperChunkSearch (passages).
+function wirePaperAsk(contentEl, topic) {
+  const panel = $('#ask-panel', contentEl);
+  if (!panel) return;
+  const input    = $('#ask-input', panel);
+  const go       = $('#ask-go', panel);
+  const goLabel  = $('#ask-go-label', panel);
+  const result   = $('#ask-result', panel);
+  if (!input || !go || !result) return;
+
+  let mode = 'ask';
+  const selectedSections = new Set();
+
+  panel.querySelectorAll('.ask-mode-btn').forEach(b => {
+    b.onclick = () => {
+      mode = b.dataset.mode;
+      panel.querySelectorAll('.ask-mode-btn').forEach(x => {
+        const active = x.dataset.mode === mode;
+        x.style.background = active ? 'var(--accent,#5B8DB8)' : 'transparent';
+        x.style.color = active ? '#fff' : 'inherit';
+      });
+      if (goLabel) goLabel.textContent = mode === 'ask' ? 'Ask' : 'Search';
+      input.placeholder = mode === 'ask'
+        ? 'e.g. What methods measured theta power, and what did they find?'
+        : 'e.g. theta power meditation training';
+    };
+  });
+
+  panel.querySelectorAll('.ask-sec-chip').forEach(chip => {
+    chip.onclick = () => {
+      const s = chip.dataset.sec;
+      if (selectedSections.has(s)) { selectedSections.delete(s); chip.style.background = 'var(--surface)'; chip.style.color = 'inherit'; }
+      else { selectedSections.add(s); chip.style.background = 'var(--accent,#5B8DB8)'; chip.style.color = '#fff'; }
+    };
+  });
+
+  const run = async () => {
+    const q = (input.value || '').trim();
+    if (!q) { input.focus(); return; }
+    const sections = selectedSections.size ? [...selectedSections].join(',') : null;
+    const orig = go.innerHTML;
+    go.disabled = true;
+    go.innerHTML = '<i data-lucide="loader-2"></i> ' + (mode === 'ask' ? 'reading…' : 'searching…');
+    result.innerHTML = `<div class="muted" style="font-size:12.5px">${mode === 'ask' ? 'Reading the papers and assembling a cited answer…' : 'Searching paper passages…'}</div>`;
+    window.refreshIcons?.();
+    try {
+      if (mode === 'ask') {
+        const res = await api.paperAsk(q, { topic, sections });
+        result.innerHTML = renderAskAnswer(res);
+      } else {
+        const res = await api.paperChunkSearch(q, { topic, sections, k: 12 });
+        result.innerHTML = renderSearchHits(res);
+      }
+    } catch (e) {
+      result.innerHTML = `<div class="muted" style="font-size:12.5px;color:#B84747">${escape(e?.message || String(e))}</div>`;
+    } finally {
+      go.disabled = false;
+      go.innerHTML = orig;
+      window.refreshIcons?.();
+    }
+  };
+
+  go.onclick = run;
+  input.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); run(); } };
+}
+
 function wireSearchButton(contentEl, topic) {
   const btn    = $('#papers-search-btn', contentEl);
   const input  = $('#papers-search-q', contentEl);
@@ -499,6 +648,7 @@ export async function loadPapers(contentEl, topic) {
     }
     wireSearchButton(contentEl, topic);
     wirePaperKnowledge(contentEl, topic);
+    wirePaperAsk(contentEl, topic);
     paintedFromCache = true;
   } else {
     set(skelRows(8));
@@ -535,6 +685,7 @@ export async function loadPapers(contentEl, topic) {
   // doesn't end up with a stale handler after an SWR refresh.
   wireSearchButton(contentEl, topic);
   wirePaperKnowledge(contentEl, topic);
+  wirePaperAsk(contentEl, topic);
 
   const doExport = async (fmt) => {
     try {

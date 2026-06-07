@@ -15,6 +15,7 @@ import { renderCollects } from './screens/collects.js';
 import { renderSettings } from './screens/settings.js';
 import { renderIngest } from './screens/ingest.js';
 import { renderIngestVideo } from './screens/ingest_video.js';
+import { renderResearchWorkspace } from './screens/research_workspace.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
 import { renderActivity } from './screens/activity.js';
@@ -270,6 +271,7 @@ const routes = [
   // ("Activate this device"); the licence UI itself lives in Settings, so
   // render Settings and scroll/expand the licence card into focus.
   { match: /^\/activate\/?$/,       render: renderActivate },
+  { match: /^\/research\/?$/,       render: renderResearchWorkspace },
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },

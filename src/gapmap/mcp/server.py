@@ -1162,6 +1162,36 @@ def gapmap_paper_search_papers(
 
 
 @mcp.tool()
+def gapmap_paper_ask(
+    question: str,
+    topic: str | None = None,
+    sections: list[str] | None = None,
+    post_id: str | None = None,
+    k: int = 10,
+    provider: str | None = None,
+) -> dict:
+    """Cited Q&A over the full text of the papers (not just abstracts).
+
+    Retrieves the most relevant section-aware paper chunks, grounds an LLM on
+    them, and returns an answer with deterministic numbered citations that name
+    the paper AND the section a claim came from. Answers honestly when the
+    papers don't cover the question instead of inventing facts.
+
+    Scope with `topic` (a topic's papers), `post_id` (one paper), or `sections`
+    (e.g. ['methods','results']). Build paper knowledge first (fetch full text +
+    chunk) so there are chunks to ground on.
+
+    Returns: {ok, answer, citations: [{n, post_id, title, author, year, url,
+    sections}], used_chunks, provider, model, sources_markdown}.
+    """
+    from ..research.paper_chat import paper_qa
+    return paper_qa(
+        topic or "", question, provider=provider, k=k,
+        section_filter=sections, post_id=post_id,
+    )
+
+
+@mcp.tool()
 def gapmap_paper_chunk_topic(
     topic: str | None = None,
     force: bool = False,
@@ -3257,6 +3287,25 @@ def gapmap_connections(topic: str, compute: bool = False) -> dict:
             connections_compute, timeout=90.0,
             async_hint="gapmap_connections", kwargs={"topic": topic})
     return connections_get(topic)
+
+
+@mcp.tool()
+def gapmap_research_conclusions(topic: str, compute: bool = False) -> dict:
+    """Real research conclusions — evidence-grounded synthesis for a topic's
+    literature: thesis, key findings, novel contributions (the links found),
+    defensible conclusions, open questions, and a suggested research direction.
+
+    compute=False reads the cached synthesis; compute=True runs the LLM pass over
+    the papers + connections + gaps (run gapmap_paper_knowledge_build +
+    gapmap_connections first for the richest result). The PhD-student payoff.
+    """
+    from ..research.research_synthesis import (
+        research_conclusions_get, research_conclusions_compute)
+    if compute:
+        return _run_with_timeout(
+            research_conclusions_compute, timeout=120.0,
+            async_hint="gapmap_research_conclusions", kwargs={"topic": topic})
+    return research_conclusions_get(topic)
 
 
 # ─── Production guards — prevents the "18 zombie MCP servers" bug ───

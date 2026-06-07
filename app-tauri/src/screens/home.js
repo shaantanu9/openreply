@@ -393,6 +393,9 @@ export async function renderHome(root) {
         <p id="topics-subtitle">Active research projects</p>
       </div>
       <div class="filter-bar" style="display:flex;gap:8px">
+        <a href="#/research" class="btn btn-primary btn-sm icon-btn" title="One-shot research engine: type a topic → gather the literature → find connections → real conclusions">
+          <i data-lucide="flask-conical"></i> Research a topic
+        </a>
         <a href="#/ingest-video" class="btn btn-ghost btn-sm btn-bordered icon-btn" title="Paste any YouTube / Vimeo / podcast URL — audio stays local, Whisper transcribes on-device">
           <i data-lucide="video"></i> Ingest video
         </a>

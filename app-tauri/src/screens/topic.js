@@ -29,6 +29,7 @@ import { loadRootCause } from './root_cause.js';
 import { loadTactics } from './tactics.js';
 import { loadHypotheses } from './hypotheses.js';
 import { loadConnections } from './connections.js';
+import { loadConclusions } from './conclusions.js';
 import { mountIntentLadder } from './intent_ladder.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
@@ -1293,6 +1294,7 @@ export async function renderTopic(root, { params }) {
       <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
       <button type="button" class="tab" data-tab="papers"><i data-lucide="book-marked"></i> Papers<span class="tab-freshness" id="tab-fresh-papers"></span></button>
       <button type="button" class="tab" data-tab="connections"><i data-lucide="git-merge"></i> Connect Dots<span class="tab-freshness" id="tab-fresh-connections"></span></button>
+      <button type="button" class="tab" data-tab="conclusions"><i data-lucide="graduation-cap"></i> Conclusions<span class="tab-freshness" id="tab-fresh-conclusions"></span></button>
       <button type="button" class="tab" data-tab="ai_analyses"><i data-lucide="sparkles"></i> AI Analyses<span class="tab-freshness" id="tab-fresh-ai"></span></button>
       <button type="button" class="tab" data-tab="search"><i data-lucide="search-code"></i> Search<span class="tab-freshness" id="tab-fresh-search"></span></button>
       <button type="button" class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
@@ -4637,6 +4639,7 @@ export async function renderTopic(root, { params }) {
     tactics: () => loadTactics(contentEl, topic),
     hypotheses: () => loadHypotheses(contentEl, topic),
     connections: () => loadConnections(contentEl, topic),
+    conclusions: () => loadConclusions(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
     papers:   () => loadPapers(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),

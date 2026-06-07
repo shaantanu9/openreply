@@ -1794,6 +1794,58 @@ pub async fn paper_gaps_list(app: AppHandle, topic: String) -> Result<Value, Str
         .await.map_err(err_to_string)
 }
 
+/// Semantic + BM25 search over paper full-text chunks (section-aware). Powers
+/// the "Search papers" surface. `sections` is an optional comma list
+/// (methods,results,limitations,…); `rollup=true` returns one row per paper.
+#[tauri::command]
+pub async fn paper_chunk_search(
+    app: AppHandle,
+    query: String,
+    topic: Option<String>,
+    sections: Option<String>,
+    k: Option<u32>,
+    rollup: Option<bool>,
+) -> Result<Value, String> {
+    let kv = k.unwrap_or(12).to_string();
+    let t  = topic.unwrap_or_default();
+    let sec = sections.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "paper-chunk-search", &query, "--k", &kv, "--json",
+    ];
+    if !t.is_empty()   { args.push("--topic");    args.push(t.as_str()); }
+    if !sec.is_empty() { args.push("--sections"); args.push(sec.as_str()); }
+    if rollup.unwrap_or(false) { args.push("--papers"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Cited Q&A over the papers' full text. Grounds an LLM on section-aware paper
+/// chunks and returns {ok, answer, citations:[{n,title,author,year,url,sections}],
+/// used_chunks, sources_markdown}. Scope with `topic`, `post_id`, or `sections`.
+#[tauri::command]
+pub async fn paper_ask(
+    app: AppHandle,
+    question: String,
+    topic: Option<String>,
+    sections: Option<String>,
+    post_id: Option<String>,
+    k: Option<u32>,
+    provider: Option<String>,
+) -> Result<Value, String> {
+    let kv  = k.unwrap_or(10).to_string();
+    let t   = topic.unwrap_or_default();
+    let sec = sections.unwrap_or_default();
+    let pid = post_id.unwrap_or_default();
+    let p   = provider.unwrap_or_default();
+    let mut args: Vec<&str> = vec![
+        "research", "paper-ask", &question, "--k", &kv, "--no-stream", "--json",
+    ];
+    if !t.is_empty()   { args.push("--topic");    args.push(t.as_str()); }
+    if !sec.is_empty() { args.push("--sections"); args.push(sec.as_str()); }
+    if !pid.is_empty() { args.push("--post-id");  args.push(pid.as_str()); }
+    if !p.is_empty()   { args.push("--provider"); args.push(p.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Streaming "build the paper knowledge base" workflow. Fires
 /// `paper:knowledge:progress` events (NDJSON lifecycle lines:
 /// workflow:start, stage:start, stage:progress, stage:done, workflow:done)
@@ -4469,6 +4521,19 @@ pub async fn connections_get(app: AppHandle, topic: String) -> Result<Value, Str
 #[tauri::command]
 pub async fn connections_compute(app: AppHandle, topic: String) -> Result<Value, String> {
     let argv: Vec<&str> = vec!["research", "connections", "--topic", &topic, "--compute", "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Research conclusions — evidence-grounded synthesis (read cached artifact).
+#[tauri::command]
+pub async fn research_conclusions_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "conclusions", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+/// Research conclusions — run the LLM synthesis over papers + connections + gaps.
+#[tauri::command]
+pub async fn research_conclusions_compute(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "conclusions", "--topic", &topic, "--compute", "--json"];
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 

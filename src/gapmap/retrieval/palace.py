@@ -852,6 +852,24 @@ def upsert_paper_chunks(chunks: Iterable[dict], *, post_id: str | None = None,
             "backend": backend}
 
 
+def _paper_post_ids_for_topic(topic: str) -> list[str]:
+    """Resolve a topic to the post_ids of its papers (source of truth =
+    ``topic_posts``). Used to filter paper-chunk search by topic membership
+    instead of a stamped chunk metadata field. Best-effort: returns [] on any
+    DB error so the caller can fall back. Capped so an enormous topic doesn't
+    blow ChromaDB's ``$in`` clause."""
+    try:
+        from ..core.db import get_db
+        db = get_db()
+        rows = list(db.query(
+            "SELECT DISTINCT post_id FROM topic_posts WHERE topic = ? LIMIT 5000",
+            [topic],
+        ))
+        return [r["post_id"] for r in rows if r.get("post_id")]
+    except Exception:
+        return []
+
+
 def search_paper_chunks(
     query: str,
     *,
@@ -883,7 +901,18 @@ def search_paper_chunks(
     where: dict[str, Any] = {}
     clauses: list[dict] = []
     if topic:
-        clauses.append({"topic": topic})
+        # Topic membership lives in `topic_posts` (the source of truth), NOT on
+        # the chunk metadata: a paper can belong to several topics, and the
+        # ingest/auto-index path embeds chunks WITHOUT a `topic` field. So
+        # filtering on a stamped `{"topic": ...}` field silently matched zero
+        # chunks. Resolve topic → its paper post_ids and filter on those.
+        # Falls back to the legacy stamped-topic clause if the topic resolves
+        # to no posts (keeps older stamped chunks reachable). (2026-06-07)
+        topic_pids = _paper_post_ids_for_topic(topic)
+        if topic_pids:
+            clauses.append({"post_id": {"$in": topic_pids}})
+        else:
+            clauses.append({"topic": topic})
     if post_id:
         clauses.append({"post_id": post_id})
     if section_filter:

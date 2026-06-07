@@ -292,7 +292,71 @@ def _fetch_caption_text(url: str) -> str:
     return _vtt_to_text(body)
 
 
-def _video_meta_via_ytdlp(video_id: str, video_title: str) -> list[dict] | None:
+def _whisper_transcript_rows(video_id: str, video_title: str) -> list[dict]:
+    """Last-resort transcript for *caption-less* videos: download audio +
+    faster-whisper, on-device. Returns ``youtube_transcript``-shaped rows, or
+    ``[]`` on any soft failure (no Whisper model installed, no ffmpeg, or a
+    download/transcribe error).
+
+    Slow — it downloads audio and runs Whisper locally — so it is only invoked
+    when (a) the video exposes no yt-dlp caption track AND (b) the caller still
+    has Whisper budget left (the per-collect cap is enforced in
+    :func:`gapmap.sources.collect_adapter.run_youtube`, aggressive-only). We
+    re-chunk the Whisper transcript with the same 1400-char splitter used for
+    captions so the two transcript paths produce uniform evidence rows.
+    """
+    # Cheap guard first: no model installed → skip without touching the network.
+    try:
+        from ..transcribe import list_installed
+        if not list_installed():
+            return []
+    except Exception:
+        return []
+    try:
+        from .video import fetch_video
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        vrows = fetch_video(url, model="auto")
+    except Exception:
+        # FileNotFoundError (model gone), ffmpeg missing, download/transcribe
+        # failure — all soft misses. Caller keeps description + comments.
+        return []
+    full = " ".join((r.get("selftext") or "") for r in (vrows or [])).strip()
+    if not full:
+        return []
+    first = vrows[0] if vrows else {}
+    author = first.get("author") or "[channel]"
+    try:
+        created = float(first.get("created_utc") or 0.0)
+    except (TypeError, ValueError):
+        created = 0.0
+    title = (video_title or first.get("title") or "")[:160]
+    chunks = _chunk_transcript(full)
+    rows: list[dict] = []
+    for i, chunk in enumerate(chunks):
+        rows.append({
+            "id": f"yt_{video_id}_wx{i:02d}",
+            "sub": f"youtube:{video_id}",
+            "source_type": "youtube_transcript",
+            "author": author,
+            "title": f"{title} · transcript (whisper) {i + 1}/{len(chunks)}"[:200],
+            "selftext": chunk[:2000],
+            "url": f"https://youtu.be/{video_id}",
+            "score": 0,
+            "upvote_ratio": None,
+            "num_comments": 0,
+            "created_utc": created,
+            "is_self": 1,
+            "over_18": 0,
+            "flair": None,
+            "permalink": f"https://youtu.be/{video_id}",
+            "fetched_at": _now_iso(),
+        })
+    return rows
+
+
+def _video_meta_via_ytdlp(
+    video_id: str, video_title: str, allow_whisper: bool = False,
+) -> list[dict] | None:
     """Fetch video description + transcript (manual subs > auto-captions) as
     posts-shaped rows. Returns ``None`` if yt-dlp is unavailable; returns
     ``[]`` if the video has neither a description nor any caption track.
@@ -300,6 +364,10 @@ def _video_meta_via_ytdlp(video_id: str, video_title: str) -> list[dict] | None:
     The row shape mirrors :func:`_comments_via_ytdlp` so :func:`_persist`
     needs no changes. Each row gets a distinct ``source_type`` so downstream
     consumers (insights, persona-graph) can tell them apart from comments.
+
+    When ``allow_whisper`` is set and the video exposes *no* caption track, we
+    fall back to a local Whisper transcription so the speaker's words still
+    enter the corpus (see :func:`_whisper_transcript_rows`).
     """
     try:
         import yt_dlp
@@ -356,6 +424,7 @@ def _video_meta_via_ytdlp(video_id: str, video_title: str) -> list[dict] | None:
         _pick_caption_url(info.get("subtitles") or {}, _TRANSCRIPT_LANG_PRIORITY)
         or _pick_caption_url(info.get("automatic_captions") or {}, _TRANSCRIPT_LANG_PRIORITY)
     )
+    got_transcript = False
     if cap_url:
         transcript = _fetch_caption_text(cap_url)
         if transcript:
@@ -379,6 +448,12 @@ def _video_meta_via_ytdlp(video_id: str, video_title: str) -> list[dict] | None:
                     "permalink": f"https://youtu.be/{video_id}",
                     "fetched_at": _now_iso(),
                 })
+            got_transcript = True
+
+    # No caption track (or empty captions) — fall back to local Whisper so the
+    # spoken content still lands in the corpus. Gated + capped by the caller.
+    if not got_transcript and allow_whisper:
+        rows.extend(_whisper_transcript_rows(video_id, title))
     return rows
 
 
@@ -491,7 +566,9 @@ def fetch_youtube_comments(video_id: str, video_title: str = "", limit: int = 10
     return _comments_via_api(video_id, video_title, limit)
 
 
-def fetch_youtube_video_meta(video_id: str, video_title: str = "") -> list[dict]:
+def fetch_youtube_video_meta(
+    video_id: str, video_title: str = "", allow_whisper: bool = False,
+) -> list[dict]:
     """Fetch description + transcript chunks for a video as posts rows.
 
     yt-dlp only — the YouTube Data API v3 caption endpoint requires OAuth +
@@ -499,8 +576,13 @@ def fetch_youtube_video_meta(video_id: str, video_title: str = "") -> list[dict]
     Returns an empty list if yt-dlp is missing or the video has neither a
     description nor any caption track. Callers should treat absence as a
     soft miss (still ingest the comments) rather than an error.
+
+    ``allow_whisper`` — when the video has no caption track, download audio and
+    transcribe locally with faster-whisper. Slow; the per-collect budget is
+    enforced by the caller (aggressive collects only). Whisper rows carry a
+    ``yt_<id>_wxNN`` id so the caller can detect when budget was actually spent.
     """
     if not _ytdlp_ready():
         return []
-    rows = _video_meta_via_ytdlp(video_id, video_title)
+    rows = _video_meta_via_ytdlp(video_id, video_title, allow_whisper=allow_whisper)
     return rows or []

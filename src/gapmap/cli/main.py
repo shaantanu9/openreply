@@ -2903,6 +2903,22 @@ def cmd_research_connections(
           else connections_get(topic=topic), as_json)
 
 
+@research_app.command("conclusions")
+def cmd_research_conclusions(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    compute: bool = typer.Option(False, "--compute"),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Real research conclusions — evidence-grounded synthesis (thesis, findings,
+    novel contributions, conclusions, open questions, suggested direction).
+    --compute runs the LLM synthesis over papers + connections + gaps."""
+    from ..research.research_synthesis import (
+        research_conclusions_get, research_conclusions_compute)
+    _emit(research_conclusions_compute(topic=topic, provider=provider) if compute
+          else research_conclusions_get(topic=topic), as_json)
+
+
 @research_app.command("iterate-start")
 def cmd_research_iterate_start(
     topic: str = typer.Option(..., "--topic", "-t"),
@@ -4051,6 +4067,46 @@ def cmd_research_paper_chunk_search(
                 f"[{hit['section']:<12}] score={hit['score']:.3f} "
                 f"{hit['post_id']}#{hit['ord']}  {snippet}…"
             )
+
+
+@research_app.command("paper-ask")
+def cmd_research_paper_ask(
+    question: str = typer.Argument(..., help="Your question about the papers."),
+    topic: Optional[str] = typer.Option(None, "--topic", "-t",
+                                         help="Scope to one topic's papers."),
+    sections: Optional[str] = typer.Option(
+        None, "--sections", help="Comma list to scope grounding: methods,results,…"),
+    post_id: Optional[str] = typer.Option(None, "--post-id",
+                                          help="Scope to a single paper."),
+    k: int = typer.Option(10, "--k", help="How many paper chunks to ground on."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    stream: bool = typer.Option(True, "--stream/--no-stream"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Cited Q&A over paper full-text chunks (Methods/Results/Discussion).
+
+    Grounds the answer on the actual body of the papers indexed in the palace
+    and appends a deterministic, numbered Sources block. Answers honestly
+    ("the papers don't cover that") rather than inventing facts.
+    """
+    from ..research.paper_chat import paper_qa, paper_qa_stream
+    sec_list = [s.strip() for s in sections.split(",")] if sections else None
+    if as_json:
+        r = paper_qa(topic or "", question, provider=provider, k=k,
+                     section_filter=sec_list, post_id=post_id)
+        typer.echo(json.dumps(r, default=str, indent=2))
+        return
+    if stream:
+        for tok in paper_qa_stream(topic or "", question, provider=provider, k=k,
+                                   section_filter=sec_list, post_id=post_id):
+            typer.echo(tok, nl=False)
+        typer.echo("")
+    else:
+        r = paper_qa(topic or "", question, provider=provider, k=k,
+                     section_filter=sec_list, post_id=post_id)
+        console.print(r.get("answer", ""))
+        if r.get("sources_markdown"):
+            console.print(r["sources_markdown"])
 
 
 @research_app.command("paper-references")

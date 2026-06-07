@@ -41,7 +41,20 @@ _SLEEP = 2.0
 # Max concurrent workers for the "extra sources" stage. Each worker hits a
 # different provider (HN / arXiv / GitHub / …), so this is parallelism across
 # independent hosts — not hammering any single one.
-_PARALLEL_SOURCES = 6
+# External-source pool width. These are I/O-bound network adapters (each hits a
+# distinct host), so threads are cheap and more width means slow providers
+# (Play Store review pagination, Google News) don't starve the fast ones out of
+# the shared time budget. Env-tunable. Was 6 — too narrow for the ~18-source
+# aggressive sweep, where 2-3 slow adapters pinned half the pool and the rest
+# blew the timeout returning 0. (2026-06-07)
+def _env_int_safe(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(os.getenv(name) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+_PARALLEL_SOURCES = _env_int_safe("GAPMAP_PARALLEL_SOURCES", 10, minimum=1)
 
 
 # --- Reddit search fan-out controls (env-tunable) -------------------------
@@ -637,6 +650,12 @@ def collect(
     # 1. Discover if not provided (skip if skip_reddit and no subs given)
     if skip_reddit and not subs:
         # No need to discover subs if we're not fetching from Reddit at all.
+        # Normalize the local `subs` to [] too — the historical block (step 4)
+        # is gated only on `include_historical`, NOT `skip_reddit`, so leaving
+        # `subs` as None here makes `subs[:_hist_max]` raise
+        # "'NoneType' object is not subscriptable". Empty subs → historical
+        # loop is a correct no-op (nothing discovered to backfill).
+        subs = []
         result.subs = []
         _log("skip_reddit=true → skipping Reddit discovery + fetch")
     elif subs is None:
@@ -706,6 +725,22 @@ def collect(
     # them concurrently turns a ~5-minute sequential collect into ~2-3 min
     # and — importantly — gives the user visible progress on ALL sources
     # from the start, instead of staring at reddit-only logs for minutes.
+    # Pre-warm the shared embedding model ONCE on the main thread before any
+    # parallel pool (external sources + Reddit search) starts. Every persisted
+    # batch runs through the relevance gate, which embeds via this model. If we
+    # don't warm it first, the 6 external workers each trigger a simultaneous
+    # cold ONNX load on their first persist — that stampede (now also guarded by
+    # a lock in embedder.py) used to turn a ~5 s cold start into 60-90 s of
+    # thrash, blow the pool timeout, and make every source return 0 posts.
+    # Best-effort: a missing/broken embedder must not abort collect.
+    try:
+        from ..retrieval.embedder import get_embedding_function
+        _t_warm = time.monotonic()
+        if get_embedding_function() is not None:
+            _log(f"embedder warmed in {time.monotonic() - _t_warm:.1f}s")
+    except Exception as _e:
+        _log(f"  ! embedder warm skipped: {type(_e).__name__}: {_e}")
+
     ext_pool: ThreadPoolExecutor | None = None
     ext_futures: dict = {}
     ext_valid: list[str] = []
@@ -729,7 +764,14 @@ def collect(
                 # list of keywords (fanout). TypeError fallback keeps compat
                 # with any adapter that hasn't been updated yet.
                 try:
-                    out = fn(search_keywords)
+                    # YouTube gets a Whisper fallback for caption-less videos,
+                    # but only on aggressive/rerun collects (it downloads audio
+                    # + transcribes locally — too slow for a quick sweep). The
+                    # per-collect video cap lives in run_youtube (default 3).
+                    if src == "youtube":
+                        out = fn(search_keywords, whisper_fallback=aggressive)
+                    else:
+                        out = fn(search_keywords)
                 except TypeError:
                     out = fn(search_keywords[0] if search_keywords else search_topic)
                 return (src, out, None, time.monotonic() - t0)
@@ -845,7 +887,7 @@ def collect(
             # on collect time; the top 5 cover the bulk of relevant historical
             # signal. Tunable via HISTORICAL_MAX_SUBS. (2026-06-02)
             _hist_max = int(os.getenv("HISTORICAL_MAX_SUBS") or (999 if deep else 5))
-            for sub in subs[:_hist_max]:
+            for sub in (subs or [])[:_hist_max]:
                 try:
                     _log(f"historical r/{sub} last {historical_days}d pre-cutoff, limit={historical_limit_per_sub}")
                     hrows = fetch_historical(
@@ -876,7 +918,17 @@ def collect(
             # pytrends, pubmed) can otherwise hang the entire collect for many
             # minutes. We process whatever finishes within the budget and mark
             # the rest as timed-out — see GAPMAP_SOURCE_TIMEOUT_SEC above.
-            _src_timeout = _env_float("GAPMAP_SOURCE_TIMEOUT_SEC", 90.0, minimum=5.0)
+            #
+            # This is a TOTAL wall-clock budget for the WHOLE pool (it's the
+            # `as_completed(..., timeout=...)` argument), not per-source. At 90 s
+            # the ~18-source aggressive sweep killed the valuable consumer
+            # adapters (HN, App Store, Google News) mid-flight — they need
+            # 40-130 s each and queue behind slower ones — so the collect tagged
+            # 0 posts. Raised to 240 s so the real sources finish; only the
+            # genuinely pathological providers (Play Store deep review
+            # pagination) fall off the tail as acceptable partial results.
+            # (2026-06-07)
+            _src_timeout = _env_float("GAPMAP_SOURCE_TIMEOUT_SEC", 240.0, minimum=5.0)
             pending = set(ext_futures.keys())
             try:
                 for fut in as_completed(ext_futures, timeout=_src_timeout):

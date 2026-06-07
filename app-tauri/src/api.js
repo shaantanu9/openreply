@@ -521,6 +521,8 @@ export const api = {
   tacticsGet:       (topic) => cachedInvoke('tactics_get', { topic }, 30000),
   connectionsGet:     (topic) => cachedInvoke('connections_get', { topic }, 30000),
   connectionsCompute: (topic) => { invalidate('connections_get'); return invoke('connections_compute', { topic }); },
+  conclusionsGet:     (topic) => cachedInvoke('research_conclusions_get', { topic }, 30000),
+  conclusionsCompute: (topic) => { invalidate('research_conclusions_get'); return invoke('research_conclusions_compute', { topic }); },
 
   // ----- scheduled runs (launchd on macOS, stub elsewhere) -----
   scheduleStatus:    ()              => cachedInvoke('schedule_status', null, 10000),
@@ -1001,6 +1003,14 @@ export const api = {
   // Read persisted research gaps (understudied / contradiction / temporal /
   // method-replication) with evidence titles resolved.
   paperGapsList: (topic) => invoke('paper_gaps_list', { topic }),
+
+  // Semantic search over paper full-text chunks. sections = comma string
+  // (e.g. 'methods,results'); rollup=true → one row per paper.
+  paperChunkSearch: (query, { topic = null, sections = null, k = 12, rollup = false } = {}) =>
+    invoke('paper_chunk_search', { query, topic, sections, k, rollup }),
+  // Cited Q&A over papers' full text. Returns {ok, answer, citations[], sources_markdown}.
+  paperAsk: (question, { topic = null, sections = null, postId = null, k = 10, provider = null } = {}) =>
+    invoke('paper_ask', { question, topic, sections, postId, k, provider }),
 
   // Warm the LLM on app launch so the first collect's canonicalize isn't a
   // 30-60s cold start. Fire-and-forget; fail-soft.

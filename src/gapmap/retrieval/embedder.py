@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,14 @@ _MULTILINGUAL_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 # similar for the multilingual variant. Keyed by mode so switching env vars
 # mid-process (tests, chained CLI invocations) still works.
 _EF_CACHE: dict[str, Any] = {}
+
+# Serialises the cold model load. Without this, a parallel fan-out (e.g. the
+# external-source pool in research.collect runs 6 workers) has every thread
+# see an empty cache at once and each load its own ONNX/sentence-transformers
+# model simultaneously — N× the memory + CPU contention turns a ~5 s cold
+# start into 60-90 s of thrash, which then blows the per-pool timeout and
+# every source returns 0. One loader, the rest wait on the warm cache.
+_EF_LOCK = threading.Lock()
 
 
 def _resolve_mode() -> str:
@@ -122,26 +131,33 @@ def get_embedding_function():
     if cached is not None:
         return cached
 
-    if mode == "mlx":
-        try:
-            from .embedder_mlx import get_mlx_embedding_function
-            fn = get_mlx_embedding_function()
-            if fn is None:
-                logger.warning(
-                    "embedder: MLX backend requested but unavailable — "
-                    "falling back to default ONNX MiniLM. Install with "
-                    "`uv pip install mlx mlx_embeddings` on Apple Silicon."
-                )
+    # Double-checked locking: only one thread pays the cold-load cost; any
+    # other thread that raced in waits here and then returns the warm cache.
+    with _EF_LOCK:
+        cached = _EF_CACHE.get(mode)
+        if cached is not None:
+            return cached
+
+        if mode == "mlx":
+            try:
+                from .embedder_mlx import get_mlx_embedding_function
+                fn = get_mlx_embedding_function()
+                if fn is None:
+                    logger.warning(
+                        "embedder: MLX backend requested but unavailable — "
+                        "falling back to default ONNX MiniLM. Install with "
+                        "`uv pip install mlx mlx_embeddings` on Apple Silicon."
+                    )
+                    fn = _default_ef()
+            except Exception as e:
+                logger.warning("embedder: MLX init failed (%s) — falling back to ONNX.", e)
                 fn = _default_ef()
-        except Exception as e:
-            logger.warning("embedder: MLX init failed (%s) — falling back to ONNX.", e)
+        elif mode == "multilingual":
+            fn = _multilingual_ef()
+        else:
             fn = _default_ef()
-    elif mode == "multilingual":
-        fn = _multilingual_ef()
-    else:
-        fn = _default_ef()
-    _EF_CACHE[mode] = fn
-    return fn
+        _EF_CACHE[mode] = fn
+        return fn
 
 
 def active_backend() -> str:

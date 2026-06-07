@@ -96,7 +96,12 @@ def run_appstore(topic_or_keywords: str | list[str], apps: int = 5, pages_per_ap
     return total
 
 
-def run_playstore(topic_or_keywords: str | list[str], apps: int = 5, reviews_per_app: int = 100) -> int:
+# reviews_per_app trimmed 100 → 50 (2026-06-07): the google-play scraper
+# paginates reviews slowly (~1.4 s/review observed), so 5 apps × 100 reviews ran
+# ~11 min and pinned an external-pool worker far past the pool budget, starving
+# faster sources. 50/app still yields a solid review corpus per app while
+# keeping the adapter inside a sane time envelope. Tunable upward for a deep run.
+def run_playstore(topic_or_keywords: str | list[str], apps: int = 5, reviews_per_app: int = 50) -> int:
     from .playstore import fetch_playstore_reviews, search_playstore_apps
 
     kws, stopic = _as_keywords(topic_or_keywords)
@@ -388,21 +393,30 @@ def run_youtube(
     topic_or_keywords: str | list[str],
     videos: int = 10,
     comments_per_video: int = 100,
+    whisper_fallback: bool = False,
+    whisper_cap: int = 3,
 ) -> int:
     """Search YouTube + pull top-voted comments per video.
 
     Backed by yt-dlp (free, no API key, no quota). Falls back to YouTube
     Data API v3 if yt-dlp is unavailable AND ``YOUTUBE_API_KEY`` is set;
     otherwise logs an empty result.
+
+    ``whisper_fallback`` — when a found video has no caption track, transcribe
+    its audio locally with faster-whisper. Slow, so it is capped at
+    ``whisper_cap`` videos per collect (across all keywords) and is only
+    enabled for aggressive / rerun collects (wired in research/collect.py).
     """
     from .youtube import fetch_youtube_comments, fetch_youtube_video_meta, search_youtube_videos
 
     kws, stopic = _as_keywords(topic_or_keywords)
     fid = log_fetch_start(
         "source:youtube",
-        {"keywords": kws, "videos": videos, "comments_per_video": comments_per_video},
+        {"keywords": kws, "videos": videos, "comments_per_video": comments_per_video,
+         "whisper_fallback": whisper_fallback, "whisper_cap": whisper_cap},
     )
     total = 0
+    whisper_used = 0
     seen_video_ids: set = set()
     try:
         for i, kw in enumerate(kws):
@@ -425,7 +439,14 @@ def run_youtube(
                     vid, video_title=title, limit=comments_per_video,
                 )
                 comment_rows = [r for r in comment_rows if "_error" not in r]
-                meta_rows = fetch_youtube_video_meta(vid, video_title=title)
+                # Whisper fallback (caption-less videos only) is budget-capped
+                # across the whole collect — pass allow only while budget left.
+                allow_whisper = whisper_fallback and whisper_used < whisper_cap
+                meta_rows = fetch_youtube_video_meta(
+                    vid, video_title=title, allow_whisper=allow_whisper,
+                )
+                if allow_whisper and any("_wx" in (r.get("id") or "") for r in meta_rows):
+                    whisper_used += 1
                 rows = comment_rows + meta_rows
                 if not rows:
                     continue
