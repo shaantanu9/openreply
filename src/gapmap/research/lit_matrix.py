@@ -157,9 +157,26 @@ def build_row(topic: str, post_id: str, *, force: bool = False) -> dict[str, Any
 
 
 def build(topic: str, *, limit: int | None = None, force: bool = False, progress=None) -> dict[str, Any]:
-    """Build the matrix for a topic's papers. Returns {ok, built, cached, errored, total}."""
+    """Build the matrix for a topic's papers (highest-cited first).
+
+    PROGRESSIVE by default: only papers that don't yet have a row are processed,
+    capped at ``limit`` — so a click on a 273-paper topic builds the next batch
+    instead of running hundreds of LLM calls and appearing to hang. Re-running
+    picks up where it left off. ``force=True`` re-extracts the top ``limit``.
+
+    Returns ``{ok, built, cached, errored, total, total_topic, remaining}``.
+    """
     _ensure_table()
-    papers = _papers_for_topic(topic, limit=limit)
+    db = get_db()
+    all_papers = _papers_for_topic(topic)            # all academic papers, score-desc
+    total_topic = len(all_papers)
+    if force:
+        papers = all_papers[: int(limit)] if limit else all_papers
+    else:
+        have = {r["post_id"] for r in db.query(
+            "SELECT post_id FROM lit_matrix WHERE topic = ?", [topic])}
+        todo = [p for p in all_papers if p["id"] not in have]
+        papers = todo[: int(limit)] if limit else todo
     total = len(papers)
     built = cached = errored = 0
 
@@ -169,9 +186,11 @@ def build(topic: str, *, limit: int | None = None, force: bool = False, progress
             except Exception: pass
 
     if total == 0:
+        reason = ("no academic papers for this topic" if total_topic == 0
+                  else "all papers already in the matrix")
         return {"ok": True, "built": 0, "cached": 0, "errored": 0, "total": 0,
-                "reason": "no academic papers for this topic"}
-    _log(f"building lit-matrix for {total} papers…")
+                "total_topic": total_topic, "remaining": 0, "reason": reason}
+    _log(f"building lit-matrix for {total} of {total_topic} papers…")
     for i, p in enumerate(papers, 1):
         _log(f"[{i}/{total}] {p['id']}")
         r = build_row(topic, p["id"], force=force)
@@ -184,7 +203,10 @@ def build(topic: str, *, limit: int | None = None, force: bool = False, progress
             if "no LLM" in str(r.get("reason", "")).lower() or "api_key" in str(r.get("reason", "")).lower():
                 _log("bailing: no LLM configured")
                 break
-    return {"ok": True, "built": built, "cached": cached, "errored": errored, "total": total}
+    remaining = max(0, total_topic - len(list(db.query(
+        "SELECT post_id FROM lit_matrix WHERE topic = ?", [topic]))))
+    return {"ok": True, "built": built, "cached": cached, "errored": errored,
+            "total": total, "total_topic": total_topic, "remaining": remaining}
 
 
 def get(topic: str) -> dict[str, Any]:

@@ -106,13 +106,20 @@ export async function renderLitMatrix(main, { params } = {}) {
     const btn = e.currentTarget;
     const orig = btn.innerHTML;
     btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2"></i> building…';
-    statusEl.textContent = 'Extracting matrix rows from papers (LLM)… this can take a minute.';
+    statusEl.textContent = 'Extracting matrix rows from papers (LLM)… building the next batch (up to 25).';
     window.refreshIcons?.();
     try {
-      const r = await api.litMatrixBuild(topic, {});
-      statusEl.textContent = r?.ok
-        ? `Done — ${r.built} new, ${r.cached} cached${r.errored ? `, ${r.errored} errored` : ''} of ${r.total}.`
-        : `Build failed: ${r?.reason || r?.error || 'unknown'}`;
+      // Bounded per click so a big topic doesn't fire hundreds of LLM calls;
+      // the backend is progressive (only papers without a row), so clicking
+      // again builds the next batch.
+      const r = await api.litMatrixBuild(topic, { limit: 25 });
+      if (r?.ok) {
+        const rem = r.remaining ?? 0;
+        statusEl.textContent = `Built ${r.built} new${r.errored ? `, ${r.errored} skipped` : ''}.`
+          + (rem > 0 ? ` ${rem} more papers remain — click Build again to continue.` : ' Matrix complete for this project.');
+      } else {
+        statusEl.textContent = `Build failed: ${r?.reason || r?.error || 'unknown'}`;
+      }
       await load();
     } catch (err) {
       statusEl.textContent = `Build failed: ${err?.message || err}`;
