@@ -197,7 +197,7 @@ while private. Check that `ci.yml` and `release-mac.yml` still say
 | CI suddenly billing again | a job got reverted to `ubuntu-latest`/`macos-latest` | grep workflows for hosted runners; restore `[self-hosted, macOS]` |
 | Linux/Windows release didn't fire on tag | by design — auto-trigger removed | run them manually (see release procedure) |
 | `release-promote` failed during a private build | it runs on hosted ubuntu | only relevant during a release; it runs fine inside the public window |
-| Python job: `mkdir: /Users/runner: Permission denied` | `actions/setup-python`'s prebuilt macOS Python hardcodes the hosted-runner path `/Users/runner/hostedtoolcache` | set `AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}` in the workflow `env:` (already done in `ci.yml`). Do the same for any new self-hosted job that uses `actions/setup-python`. `release-mac.yml` avoids this by using uv-managed standalone Python. |
+| Python job: `mkdir: /Users/runner: Permission denied` | `actions/setup-python`'s prebuilt macOS Python hardcodes the hosted-runner path `/Users/runner/hostedtoolcache` | set `AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}` as **step-level `env:`** on the `setup-python` step (already done in `ci.yml`). NOTE: the `runner` context is ONLY valid at step level — putting it in workflow-level or job-level `env:` makes the whole run fail with **zero jobs** (a workflow validation error). `release-mac.yml` avoids the issue entirely by using uv-managed standalone Python. |
 
 ---
 
