@@ -84,6 +84,8 @@ export async function renderResearchHome(main) {
       <div style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8A8178);margin-bottom:8px">The flow</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;margin-bottom:22px">${stageStrip()}</div>
 
+      <div id="rh-reading" style="margin-bottom:18px"></div>
+
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-weight:650;font-size:14px">Your ${esc(L.topics)}</div>
         <a href="#/topics" class="muted" style="font-size:12px;text-decoration:none">View all →</a>
@@ -103,6 +105,28 @@ export async function renderResearchHome(main) {
   main.querySelector('#rh-go')?.addEventListener('click', go);
   main.querySelector('#rh-new')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   window.refreshIcons?.();
+
+  // "Continue reading" — papers currently in progress (status=reading) across
+  // all projects, so the cockpit resumes where you left off. Best-effort.
+  (async () => {
+    const host = main.querySelector('#rh-reading');
+    if (!host) return;
+    try {
+      const r = await api.paperLibrary({ status: 'reading', limit: 6 });
+      const papers = (r && r.papers) || [];
+      if (!papers.length) return;  // nothing in progress → keep the cockpit clean
+      const cards = papers.map(p => `
+        <a href="#/reader/${encodeURIComponent(p.post_id)}" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--surface,#fff)">
+          <i data-lucide="book-open" style="color:#1F5C99;width:15px;height:15px"></i>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${esc(p.title || 'Untitled')}</span>
+          <span class="muted" style="font-size:11px">${esc(p.source_type || '')}</span>
+        </a>`).join('');
+      host.innerHTML = `
+        <div style="font-weight:650;font-size:14px;display:flex;align-items:center;gap:6px;margin-bottom:8px"><i data-lucide="book-marked"></i> Continue reading</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">${cards}</div>`;
+      window.refreshIcons?.();
+    } catch { /* library unavailable — skip the section */ }
+  })();
 
   // Load projects (topics) defensively.
   const slot = main.querySelector('#rh-projects');
