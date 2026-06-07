@@ -39,6 +39,19 @@ from .wikipedia import fetch_wikipedia_pageviews, fetch_wikipedia_summary
 from .discourse import fetch_discourse
 from .youtube import fetch_youtube_comments, search_youtube_videos
 from .producthunt import fetch_producthunt
+# miroclaw-derived external sources (pure-httpx, posts-row output).
+# Web/news: gdelt, duckduckgo, tavily(key). Macro/numeric rendered as
+# text-summary posts: worldbank, fred(key), bis, yfinance, openmeteo,
+# acled(key). See docs/specs/SOURCE_ADDITION_PLAYBOOK.md.
+from .gdelt import fetch_gdelt
+from .duckduckgo import fetch_duckduckgo
+from .tavily import fetch_tavily
+from .worldbank import fetch_worldbank
+from .fred import fetch_fred
+from .bis import fetch_bis
+from .yfinance_src import fetch_yfinance
+from .openmeteo import fetch_openmeteo
+from .acled import fetch_acled
 
 __all__ = [
     "fetch_hn", "fetch_appstore_reviews", "search_appstore_apps",
@@ -52,4 +65,8 @@ __all__ = [
     "fetch_wikipedia_pageviews", "fetch_wikipedia_summary",
     "fetch_discourse", "fetch_youtube_comments", "search_youtube_videos",
     "fetch_producthunt",
+    # miroclaw-derived sources
+    "fetch_gdelt", "fetch_duckduckgo", "fetch_tavily",
+    "fetch_worldbank", "fetch_fred", "fetch_bis",
+    "fetch_yfinance", "fetch_openmeteo", "fetch_acled",
 ]

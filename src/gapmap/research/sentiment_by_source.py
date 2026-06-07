@@ -45,6 +45,16 @@ SOURCE_LABELS = {
     "rss_marketing": "Marketing / growth (15 feeds)",
     "rss_persuasion": "Persuasion / behavioral",
     "rss_swipe": "Ad swipe files",
+    # miroclaw-derived sources
+    "duckduckgo": "DuckDuckGo web",
+    "gdelt": "GDELT news",
+    "tavily": "Tavily web",
+    "worldbank": "World Bank (macro)",
+    "fred": "FRED (US macro)",
+    "bis": "BIS (policy rates)",
+    "yfinance": "Yahoo Finance",
+    "openmeteo": "Open-Meteo (weather)",
+    "acled": "ACLED (events)",
 }
 
 

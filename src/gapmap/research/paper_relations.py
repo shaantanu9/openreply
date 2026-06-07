@@ -31,12 +31,25 @@ def _upsert_edge(db, src: str, dst: str, kind: str, topic: str | None, weight: f
          "weight": float(weight), "metadata_json": json.dumps(meta)},
         pk=("src", "dst", "kind"))
 
+# Placeholder / non-author strings that must NEVER be used as a same-author
+# key — otherwise every paper with a missing author (e.g. 169 papers all
+# stamped "[unknown]") gets linked to every other, producing a 14k-edge
+# hairball that swamps the map.
+_AUTHOR_PLACEHOLDERS = {
+    "[unknown]", "unknown", "[deleted]", "deleted", "anonymous", "anon",
+    "n/a", "na", "none", "null", "et al", "et al.", "author", "authors",
+}
+
+
 def _norm_author(a: str | None) -> str:
     """First author lowercased — cheap key for same-author edges. Ignores
-    initials / very short tokens to avoid spurious links."""
+    initials / very short tokens and placeholder strings to avoid spurious
+    links."""
     if not a:
         return ""
     first = str(a).split(",")[0].split(";")[0].split(" and ")[0].strip().lower()
+    if first in _AUTHOR_PLACEHOLDERS:
+        return ""
     return first if len(first) >= 4 else ""
 
 
@@ -70,7 +83,13 @@ def build(topic: str | None = None, *, kinds: list[str] | None = None,
         from ..retrieval import palace
         if palace.is_available():
             for pid in ids:
-                nb = palace.paper_neighbors(pid, k=_TOPN, topic=topic)
+                # NB: query neighbors WITHOUT the topic filter. Each chunk stores
+                # a single `topic` (whatever was active at chunk-time), so a paper
+                # tagged to several topics is embedded under only one. Filtering
+                # neighbors by `topic` here drops every paper chunked under a
+                # different topic and collapses relates_to to ~0. The `dst in ids`
+                # guard below already scopes the result to this topic's papers.
+                nb = palace.paper_neighbors(pid, k=_TOPN, topic=None)
                 for r in nb.get("results", []):
                     dst = r["post_id"]
                     if dst in ids:
@@ -147,10 +166,17 @@ def get_paper_map(topic: str, *, max_papers: int = 200,
             f"""
             SELECT p.id, p.title, p.author, p.source_type, p.created_utc,
                    coalesce(p.score,0) AS cites,
-                   (SELECT 1 FROM paper_full_texts f WHERE f.post_id = p.id LIMIT 1) AS has_ft
+                   (SELECT 1 FROM paper_full_texts f WHERE f.post_id = p.id LIMIT 1) AS has_ft,
+                   (SELECT 1 FROM paper_chunks c WHERE c.post_id = p.id LIMIT 1) AS has_chunks
             FROM topic_posts tp JOIN posts p ON p.id = tp.post_id
             WHERE tp.topic = ? AND coalesce(p.source_type,'') IN ({placeholders})
-            ORDER BY cites DESC LIMIT ?
+            -- Node priority: chunked papers FIRST, then full-text, then by
+            -- citation. Only chunked/embedded papers carry semantic
+            -- (relates_to) edges, so ranking by citation count alone buried
+            -- every recent, low-cited-but-embedded paper below the LIMIT and
+            -- the map showed disconnected, relation-less nodes. has_chunks DESC
+            -- guarantees the connected papers make the cut.
+            ORDER BY has_chunks DESC, has_ft DESC, cites DESC LIMIT ?
             """,
             [topic, *_ACADEMIC, max_papers],
         ))

@@ -5446,6 +5446,15 @@ html.dark .delete-confirm-modal .dc-match-text {
 .insight-src-badge[data-source="stackoverflow"] { background: #FEE8D6; }
 .insight-src-badge[data-source="github"]        { background: #E8E8E8; }
 .insight-src-badge[data-source="gnews"]         { background: #E1EEFC; }
+.insight-src-badge[data-source="duckduckgo"]    { background: #FDE8D2; }
+.insight-src-badge[data-source="gdelt"]         { background: #E1EEFC; }
+.insight-src-badge[data-source="tavily"]        { background: #E7ECFB; }
+.insight-src-badge[data-source="worldbank"]     { background: #E4F0FA; }
+.insight-src-badge[data-source="fred"]          { background: #E4F0FA; }
+.insight-src-badge[data-source="bis"]           { background: #EFE7FB; }
+.insight-src-badge[data-source="yfinance"]      { background: #E1F2EA; }
+.insight-src-badge[data-source="openmeteo"]     { background: #DDF1F6; }
+.insight-src-badge[data-source="acled"]         { background: #FBE3E6; }
 
 /* Competitor cards */
 .competitor-card {

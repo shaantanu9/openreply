@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-06 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below — **204 features · 203 ✅ · 1 🟡** — incl. the new **Research & paper-writing assistant** (cat 18: Connect-the-Dots novel-connection engine + the full ingest→connect→write→cite flow, in-app & headless via MCP). Only 🟡 = the planned student Reading surface (R4) · branch `multi-source`
+> **Updated:** 2026-06-07 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below — **219 features · 218 ✅ · 1 🟡** — incl. the new **Gap intelligence & monitoring** suite (cat 20: pain scores · people-to-reach · trend velocity · alerts · evidence verdicts · digest · GummySearch import — the competitive features from `docs/COMPETITIVE_ANALYSIS.md`) and the **Research Mode** workspace (cat 19). Only 🟡 = the planned student Reading surface (R4) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -45,7 +45,9 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
 | 17. Pre-build strategy frameworks | 6 | 6 | 0 | 0 | 0 |
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
-| **Total** | **204** | **203** | **1** | **0** | **0** |
+| 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
+| 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
+| **Total** | **219** | **218** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -644,9 +646,45 @@ in-app UI not yet smoke-tested in a running build (backend + CLI verified).
 
 ---
 
+## 20. Gap intelligence & monitoring ✅ NEW
+
+Seven competitive features added 2026-06-07 to match/beat the Reddit-research
+and idea-validation tools (GummySearch, PainOnSocial, WorthBuild, Consensus,
+Exploding Topics, IdeaBrowser) — see `docs/COMPETITIVE_ANALYSIS.md` and the
+build sequence in `docs/IMPLEMENTATION_FLOW.md`. Each is wired across all four
+surfaces (Python core → CLI → MCP → Tauri) with unit tests (33 total, all
+passing); `cargo check` + `node --check` clean. Verified on the real
+"calari tracking app" corpus.
+
+| Feature | Status | Surface | Implementation |
+|---|---|---|---|
+| **Pain score (0-100)** — rank each gap by frequency × intensity × recency | ✅ | `#/pain-scores/<topic>` (Gap-intel bar) · CLI `research gap-pain-scores` · MCP `gapmap_gap_pain_scores` · Tauri | `research/pain_scoring.py` (`gap_scores` table), `screens/pain_scores.js`, `tests/test_pain_scoring.py` |
+| **People to reach** — real authors + permalinks per gap, persona-tagged, CSV | ✅ | `#/people/<topic>` · CLI `research gap-audience` · MCP `gapmap_gap_audience` · Tauri | `research/gap_audience.py` (`gap_evidence_users` table), `screens/gap_audience.js`, `tests/test_gap_audience.py` |
+| **Trend velocity** — rising/falling/new per gap + topic (recent vs prior window) | ✅ | Trend column on Pain board · CLI `research gap-velocity` · MCP `gapmap_gap_velocity` · Tauri | `research/trend_velocity.py`, `tests/test_trend_velocity.py` |
+| **Saved alerts / monitoring** — fire on spike / new / score-threshold, event feed | ✅ | `#/alerts/<topic>` · CLI `research gap-alerts` · MCP `gapmap_gap_alerts` · Tauri | `research/gap_alerts.py` (`gap_alerts`, `gap_alert_events` tables), `screens/gap_alerts.js`, `tests/test_gap_alerts.py` |
+| **Evidence-weighted answers** — supported/contradicted/mixed verdict + counts + source breakdown | ✅ | `#/verdict/<topic>` · CLI `research gap-verdict` · MCP `gapmap_gap_verdict` · Tauri | `research/evidence_verdicts.py` (`evidence_verdicts` table), `screens/gap_verdict.js`, `tests/test_evidence_verdicts.py` |
+| **Idea digest** — daily/weekly markdown brief (top gaps + rising + people + alerts) | ✅ | `#/digest/<topic>` · CLI `research gap-digest` · MCP `gapmap_gap_digest` · Tauri | `research/gap_digest.py`, `screens/gap_digest.js`, `tests/test_gap_digest.py` |
+| **GummySearch import + presets** — import audiences (JSON/CSV) + 8 curated bundles | ✅ | `#/audiences` · CLI `research import-gummysearch` / `audiences` · MCP `gapmap_import_gummysearch` / `gapmap_audiences` · Tauri | `sources/gummysearch_import.py` (`audiences` table), `screens/audiences.js`, `tests/test_gummysearch_import.py` |
+
+**Entry points:** all six per-topic tools surface in the **"Gap intel" toolkit
+bar** above the topic tabs (`screens/topic.js::gapToolkitBar`); audiences is also
+reachable globally at `#/audiences`.
+
+**Flow:** build pain scores → people-to-reach + velocity layer on top → save
+alerts to monitor movement → ask evidence verdicts on claims → roll it all into
+a digest. GummySearch import seeds the corpus for new/migrating users.
+
+**Known gaps (P2):** alert checks need an external scheduler for unattended runs
+(launchd/cron recipes in `docs/manual-todo/gap-alerts-scheduling.md`; in-app
+jobs-queue wiring is future scope); per-gap velocity matches by title keywords
+(best-effort, since gaps are LLM-named); new screens are route-reachable +
+toolkit-linked but not yet smoke-tested in a running desktop build.
+
+---
+
 ## Data persistence summary
 
-**SQLite (`core/db.py`)** — `posts`, `comments`, `users`, `subreddits`, `topic_posts`, `topic_prefs`, `topic_insights`, `mcp_analyses`, `graph_nodes`, `graph_edges`, `personas`, `persona_memories`, `persona_conclusions`, `persona_edges`, `paper_full_texts`, `paper_sections`, `paper_chunks`, `paper_analyses`, `paper_references`, `finding_research_links`, `products`, `product_signals`, `sweeps`, `hypothesis_tests`, `audience_personas`, `launch_briefs`, `jobs`, `feedback`, `saved_views`, `prompt_overrides`. **Research Mode (2026-06-07):** `paper_reading_status`, `paper_highlights`, `lit_matrix`, `paper_collections`, `paper_collection_items`.
+**SQLite (`core/db.py`)** — `posts`, `comments`, `users`, `subreddits`, `topic_posts`, `topic_prefs`, `topic_insights`, `mcp_analyses`, `graph_nodes`, `graph_edges`, `personas`, `persona_memories`, `persona_conclusions`, `persona_edges`, `paper_full_texts`, `paper_sections`, `paper_chunks`, `paper_analyses`, `paper_references`, `finding_research_links`, `products`, `product_signals`, `sweeps`, `hypothesis_tests`, `audience_personas`, `launch_briefs`, `jobs`, `feedback`, `saved_views`, `prompt_overrides`. **Research Mode (2026-06-07):** `paper_reading_status`, `paper_highlights`, `lit_matrix`, `paper_collections`, `paper_collection_items`. **Gap intelligence (2026-06-07):** `gap_scores`, `gap_evidence_users`, `gap_alerts`, `gap_alert_events`, `evidence_verdicts`, `audiences`.
 
 **Vector index (Mempalace / ChromaDB, ONNX MiniLM)** — `posts` collection (semantic search) and `paper_chunks` collection (RAG over paper sections). Cache at `~/.cache/mempalace/`.
 

@@ -1959,6 +1959,162 @@ pub async fn lit_matrix_export(app: AppHandle, topic: String) -> Result<Value, S
         .await.map_err(err_to_string)
 }
 
+/// Read cached 0-100 pain scores per gap for a topic (LLM-free).
+#[tauri::command]
+pub async fn gap_pain_scores(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "gap-pain-scores", "--topic", &topic])
+        .await.map_err(err_to_string)
+}
+
+/// (Re)compute pain scores for a topic via the painpoint extractor (LLM).
+#[tauri::command]
+pub async fn gap_pain_scores_build(
+    app: AppHandle, topic: String, limit: Option<u32>, force: Option<bool>,
+) -> Result<Value, String> {
+    let lim = limit.map(|n| n.to_string()).unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "gap-pain-scores", "--topic", &topic, "--build"];
+    if !lim.is_empty() { args.push("--limit"); args.push(lim.as_str()); }
+    if force.unwrap_or(false) { args.push("--force"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Roll up the real people behind each scored gap (needs pain scores first).
+#[tauri::command]
+pub async fn gap_audience_build(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "gap-audience", "--topic", &topic, "--build"])
+        .await.map_err(err_to_string)
+}
+
+/// Read the topic-wide outreach list (or one gap's people via gap_id).
+#[tauri::command]
+pub async fn gap_audience(
+    app: AppHandle, topic: String, gap_id: Option<String>, limit: Option<u32>,
+) -> Result<Value, String> {
+    let lim = limit.unwrap_or(50).to_string();
+    let gid = gap_id.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "gap-audience", "--topic", &topic, "--limit", &lim];
+    if !gid.is_empty() { args.push("--gap-id"); args.push(gid.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Trend velocity per gap (rising/falling/new) for a topic.
+#[tauri::command]
+pub async fn gap_velocity(
+    app: AppHandle, topic: String, window: Option<u32>,
+) -> Result<Value, String> {
+    let w = window.unwrap_or(7).to_string();
+    run_cli(&app, vec!["research", "gap-velocity", "--topic", &topic, "--window", &w])
+        .await.map_err(err_to_string)
+}
+
+/// Overall posting velocity for a topic (recent vs prior window).
+#[tauri::command]
+pub async fn topic_velocity(
+    app: AppHandle, topic: String, window: Option<u32>,
+) -> Result<Value, String> {
+    let w = window.unwrap_or(7).to_string();
+    run_cli(&app, vec!["research", "gap-velocity", "--topic", &topic, "--window", &w, "--topic-level"])
+        .await.map_err(err_to_string)
+}
+
+/// List saved gap alerts (optionally for one topic).
+#[tauri::command]
+pub async fn gap_alerts_list(app: AppHandle, topic: Option<String>) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "gap-alerts", "--action", "list"];
+    if !t.is_empty() { args.push("--topic"); args.push(t.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Create a saved gap alert (alert_type: spike|new|score_threshold).
+#[tauri::command]
+pub async fn gap_alert_create(
+    app: AppHandle, topic: String, alert_type: String, gap_id: Option<String>,
+    threshold: Option<f64>, window: Option<u32>,
+) -> Result<Value, String> {
+    let w = window.unwrap_or(7).to_string();
+    let gid = gap_id.unwrap_or_default();
+    let thr = threshold.map(|x| x.to_string()).unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "gap-alerts", "--action", "create",
+        "--topic", &topic, "--type", &alert_type, "--window", &w];
+    if !gid.is_empty() { args.push("--gap-id"); args.push(gid.as_str()); }
+    if !thr.is_empty() { args.push("--threshold"); args.push(thr.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Delete a saved gap alert by id.
+#[tauri::command]
+pub async fn gap_alert_delete(app: AppHandle, alert_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "gap-alerts", "--action", "delete", "--alert-id", &alert_id])
+        .await.map_err(err_to_string)
+}
+
+/// Evaluate all enabled alerts now; records + returns any that fired.
+#[tauri::command]
+pub async fn gap_alerts_check(app: AppHandle, topic: Option<String>) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "gap-alerts", "--action", "check"];
+    if !t.is_empty() { args.push("--topic"); args.push(t.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// List fired alert events (optionally for one topic).
+#[tauri::command]
+pub async fn gap_alert_events(app: AppHandle, topic: Option<String>) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "gap-alerts", "--action", "events"];
+    if !t.is_empty() { args.push("--topic"); args.push(t.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Evidence-weighted verdict on a claim (LLM); empty claim lists cached.
+#[tauri::command]
+pub async fn gap_verdict(
+    app: AppHandle, topic: String, claim: Option<String>, limit: Option<u32>,
+) -> Result<Value, String> {
+    let c = claim.unwrap_or_default();
+    let lim = limit.unwrap_or(30).to_string();
+    let mut args: Vec<&str> = vec!["research", "gap-verdict", "--topic", &topic, "--limit", &lim];
+    if !c.is_empty() { args.push("--claim"); args.push(c.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Assemble a scheduled digest (top gaps, rising, people, alerts) for a topic.
+#[tauri::command]
+pub async fn gap_digest(
+    app: AppHandle, topic: String, period: Option<String>,
+) -> Result<Value, String> {
+    let p = period.unwrap_or_else(|| "daily".to_string());
+    run_cli(&app, vec!["research", "gap-digest", "--topic", &topic, "--period", &p])
+        .await.map_err(err_to_string)
+}
+
+/// Import a GummySearch export (JSON/CSV) of saved subreddits/audiences.
+#[tauri::command]
+pub async fn import_gummysearch(app: AppHandle, path: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "import-gummysearch", "--path", &path])
+        .await.map_err(err_to_string)
+}
+
+/// List saved audiences.
+#[tauri::command]
+pub async fn audiences_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "audiences"]).await.map_err(err_to_string)
+}
+
+/// List curated discovery preset bundles.
+#[tauri::command]
+pub async fn audience_presets(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "audiences", "--presets"]).await.map_err(err_to_string)
+}
+
+/// Save a curated preset bundle as an audience.
+#[tauri::command]
+pub async fn audience_add_preset(app: AppHandle, preset: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "audiences", "--add-preset", &preset])
+        .await.map_err(err_to_string)
+}
+
 /// Per-project research-flow progress (gather→read→synthesize→write).
 #[tauri::command]
 pub async fn flow_status(app: AppHandle, topic: String) -> Result<Value, String> {

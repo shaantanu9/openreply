@@ -29,6 +29,9 @@ def _source_label(source_type: str | None) -> str:
         "rss_marketing": "Marketing / growth (15 feeds)",
         "rss_persuasion": "Persuasion / behavioral",
         "rss_swipe": "Ad swipe files",
+        "duckduckgo": "DuckDuckGo", "gdelt": "GDELT News", "tavily": "Tavily",
+        "worldbank": "World Bank", "fred": "FRED", "bis": "BIS",
+        "yfinance": "Yahoo Finance", "openmeteo": "Open-Meteo", "acled": "ACLED",
     }.get(source_type or "reddit", source_type or "Reddit")
 
 

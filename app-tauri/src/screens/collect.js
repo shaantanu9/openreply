@@ -626,6 +626,10 @@ export async function renderCollect(root, { params }) {
     oc_bluesky: 'Bluesky (authors)',
     oc_substack: 'Substack',
     oc_producthunt_today: 'Product Hunt — today',
+    // miroclaw-derived sources (see collect_adapter.SOURCES).
+    duckduckgo: 'DuckDuckGo', gdelt: 'GDELT News', tavily: 'Tavily',
+    worldbank: 'World Bank', fred: 'FRED', bis: 'BIS',
+    yfinance: 'Yahoo Finance', openmeteo: 'Open-Meteo', acled: 'ACLED',
   };
   const sourceState = new Map();      // src → { status, count, error, elapsed }
   const sourcesGrid  = $('#sources-grid');
@@ -701,7 +705,7 @@ export async function renderCollect(root, { params }) {
     'rss_products', 'rss_listings', 'rss_user', 'rss_tech_news',
     'arxiv', 'openalex', 'pubmed',
     'gnews', 'devto', 'stackoverflow', 'github', 'trends',
-    'youtube',
+    'youtube', 'duckduckgo', 'gdelt',
   ];
 
   function maybeUpdateSourceGrid(text) {

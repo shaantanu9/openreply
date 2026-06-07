@@ -29,6 +29,9 @@ function sourceLabel(s) {
     pubmed: 'PubMed', gnews: 'News', devto: 'Dev.to',
     stackoverflow: 'Stack Overflow', github: 'GitHub', github_issue: 'GitHub Issue',
     scholar: 'Scholar', trends: 'Trends', local_file: 'Local',
+    duckduckgo: 'DuckDuckGo', gdelt: 'GDELT News', tavily: 'Tavily',
+    worldbank: 'World Bank', fred: 'FRED', bis: 'BIS',
+    yfinance: 'Yahoo Finance', openmeteo: 'Open-Meteo', acled: 'ACLED',
   };
   return map[s] || s || 'unknown';
 }

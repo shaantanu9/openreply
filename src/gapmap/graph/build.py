@@ -333,6 +333,9 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
             "rss_marketing": "Marketing / growth (15 feeds)",
             "rss_persuasion": "Persuasion / behavioral",
             "rss_swipe": "Ad swipe files",
+            "duckduckgo": "DuckDuckGo", "gdelt": "GDELT News", "tavily": "Tavily",
+            "worldbank": "World Bank", "fred": "FRED", "bis": "BIS",
+            "yfinance": "Yahoo Finance", "openmeteo": "Open-Meteo", "acled": "ACLED",
         }.get(src, src.upper())
         source_node = _upsert_node(
             db,
@@ -366,6 +369,9 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
                 "playstore": "🤖",
                 "scholar": "📚",
                 "stackoverflow": "SO",
+                "duckduckgo": "🦆", "gdelt": "📰", "tavily": "🔎",
+                "worldbank": "🏦", "fred": "📈", "bis": "🏛️",
+                "yfinance": "💹", "openmeteo": "🌦️", "acled": "⚠️",
             }.get(source_type, source_type.upper())
             container_label = f"{pretty_prefix} {sub}" if ":" in sub else pretty_prefix
 

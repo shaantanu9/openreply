@@ -1314,8 +1314,10 @@ def cmd_research_collect(
             "Comma-separated free sources. Options: hn, appstore, playstore, "
             "arxiv, openalex, pubmed, gnews, devto, stackoverflow, github, "
             "trends, scholar, github_issues, lemmy, mastodon, rss_marketing, "
-            "rss_persuasion, rss_swipe. Omit → aggressive uses the safe "
-            "11-source default."
+            "rss_persuasion, rss_swipe, gdelt, duckduckgo, worldbank, bis, "
+            "yfinance, openmeteo, tavily (needs TAVILY_API_KEY), fred (needs "
+            "FRED_API_KEY), acled (needs ACLED_EMAIL+PASSWORD). Omit → "
+            "aggressive uses the safe 11-source default."
         ),
     ),
     aggressive: bool = typer.Option(
@@ -4253,6 +4255,154 @@ def cmd_research_lit_matrix(
         typer.echo(json.dumps(lit_matrix.export_csv(topic), default=str))
     else:
         typer.echo(json.dumps(lit_matrix.get(topic), default=str))
+
+
+@research_app.command("gap-pain-scores")
+def cmd_research_gap_pain_scores(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    build: bool = typer.Option(False, "--build", help="(Re)compute scores via the painpoint extractor (LLM)."),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n", help="Corpus limit for the extractor."),
+    force: bool = typer.Option(False, "--force"),
+    csv: bool = typer.Option(False, "--csv", help="Return scores as CSV text."),
+) -> None:
+    """0-100 pain score per gap (frequency × intensity × recency). --build
+    (re)computes from the corpus; default reads the cached scores."""
+    from ..research import pain_scoring
+    if build:
+        r = pain_scoring.score_gaps(
+            topic, corpus_limit=(limit or 120), force=force,
+            progress=lambda m: console.print(f"[dim]• {m}[/dim]"))
+        typer.echo(json.dumps(r, default=str))
+    elif csv:
+        typer.echo(json.dumps(pain_scoring.export_csv(topic), default=str))
+    else:
+        typer.echo(json.dumps(pain_scoring.get(topic), default=str))
+
+
+@research_app.command("gap-audience")
+def cmd_research_gap_audience(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    gap_id: Optional[str] = typer.Option(None, "--gap-id", help="People for one gap; omit for the topic-wide list."),
+    build: bool = typer.Option(False, "--build", help="Roll up evidence authors from scored gaps."),
+    limit: int = typer.Option(50, "--limit", "-n"),
+    csv: bool = typer.Option(False, "--csv", help="Topic-wide outreach list as CSV text."),
+) -> None:
+    """Real people to reach for each gap — authors + permalinks from the gap's
+    evidence posts. --build rolls up (needs pain scores first); default reads."""
+    from ..research import gap_audience
+    if build:
+        typer.echo(json.dumps(gap_audience.build(topic), default=str))
+    elif csv:
+        typer.echo(json.dumps(gap_audience.export_csv(topic, limit=limit), default=str))
+    elif gap_id:
+        typer.echo(json.dumps(gap_audience.get_gap_users(topic, gap_id, limit=limit), default=str))
+    else:
+        typer.echo(json.dumps(gap_audience.get_topic_reachout(topic, limit=limit), default=str))
+
+
+@research_app.command("gap-velocity")
+def cmd_research_gap_velocity(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    gap_id: Optional[str] = typer.Option(None, "--gap-id", help="One gap; omit for all scored gaps."),
+    window: int = typer.Option(7, "--window", "-w", help="Window size in days (recent vs prior)."),
+    topic_level: bool = typer.Option(False, "--topic-level", help="Overall topic velocity instead of per-gap."),
+) -> None:
+    """Trend velocity — recent vs prior posting rate (rising/falling/new). Per
+    gap by default (needs pain scores); --topic-level for the whole topic."""
+    from ..research import trend_velocity
+    if topic_level:
+        typer.echo(json.dumps(trend_velocity.compute_topic_velocity(topic, window_days=window), default=str))
+    else:
+        typer.echo(json.dumps(trend_velocity.compute_gap_velocity(topic, gap_id=gap_id, window_days=window), default=str))
+
+
+@research_app.command("gap-alerts")
+def cmd_research_gap_alerts(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    action: str = typer.Option("list", "--action", "-a", help="list|create|update|delete|check|events"),
+    alert_type: str = typer.Option("spike", "--type", help="spike|new|score_threshold (create)."),
+    gap_id: Optional[str] = typer.Option(None, "--gap-id", help="Watch one gap; omit for whole topic."),
+    threshold: Optional[float] = typer.Option(None, "--threshold", help="Override default threshold."),
+    window: int = typer.Option(7, "--window", "-w"),
+    alert_id: Optional[str] = typer.Option(None, "--alert-id", help="For update/delete."),
+    enabled: Optional[bool] = typer.Option(None, "--enabled/--disabled", help="For update."),
+) -> None:
+    """Saved monitoring — fire when a gap spikes, goes new, or crosses a pain
+    threshold. Actions: list|create|update|delete|check|events."""
+    from ..research import gap_alerts
+    if action == "create":
+        if not topic:
+            typer.echo(json.dumps({"ok": False, "error": "--topic required"})); return
+        typer.echo(json.dumps(gap_alerts.create_alert(
+            topic, alert_type, gap_id=gap_id, threshold=threshold, window_days=window), default=str))
+    elif action == "update":
+        typer.echo(json.dumps(gap_alerts.update_alert(alert_id, enabled=enabled, threshold=threshold), default=str))
+    elif action == "delete":
+        typer.echo(json.dumps(gap_alerts.delete_alert(alert_id), default=str))
+    elif action == "check":
+        typer.echo(json.dumps(gap_alerts.check_alerts(topic), default=str))
+    elif action == "events":
+        typer.echo(json.dumps(gap_alerts.list_events(topic), default=str))
+    else:
+        typer.echo(json.dumps(gap_alerts.list_alerts(topic), default=str))
+
+
+@research_app.command("gap-verdict")
+def cmd_research_gap_verdict(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    claim: Optional[str] = typer.Option(None, "--claim", "-c", help="The claim to adjudicate."),
+    limit: int = typer.Option(30, "--limit", "-n"),
+) -> None:
+    """Evidence-weighted answer — supported/contradicted/mixed verdict on a claim
+    with supporting vs contradicting source counts. Omit --claim to list cached."""
+    from ..research import evidence_verdicts
+    if claim:
+        typer.echo(json.dumps(evidence_verdicts.answer(topic, claim, limit=limit), default=str))
+    else:
+        typer.echo(json.dumps(evidence_verdicts.get(topic), default=str))
+
+
+@research_app.command("gap-digest")
+def cmd_research_gap_digest(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    period: str = typer.Option("daily", "--period", "-p", help="daily|weekly"),
+    out: Optional[str] = typer.Option(None, "--out", "-o", help="Write markdown to a file."),
+) -> None:
+    """A scheduled brief — top gaps, rising/new, people to reach, fired alerts —
+    assembled into one markdown digest. Pure composition, no LLM."""
+    from ..research import gap_digest
+    r = gap_digest.build_digest(topic, period=period)
+    if out and r.get("markdown"):
+        from pathlib import Path as _P
+        _P(out).write_text(r["markdown"], encoding="utf-8")
+        typer.echo(json.dumps({"ok": True, "topic": topic, "written": out}, default=str))
+    else:
+        typer.echo(json.dumps(r, default=str))
+
+
+@research_app.command("import-gummysearch")
+def cmd_research_import_gummysearch(
+    path: str = typer.Option(..., "--path", "-f", help="GummySearch export file (JSON or CSV)."),
+) -> None:
+    """Import a GummySearch export (saved subreddits/audiences) so you can keep
+    your curated audiences after GummySearch shuts down (Nov 2026)."""
+    from ..sources import gummysearch_import
+    typer.echo(json.dumps(gummysearch_import.import_file(path), default=str))
+
+
+@research_app.command("audiences")
+def cmd_research_audiences(
+    presets: bool = typer.Option(False, "--presets", help="List curated preset bundles instead."),
+    add_preset: Optional[str] = typer.Option(None, "--add-preset", help="Save a preset bundle as an audience."),
+) -> None:
+    """List imported/saved audiences, browse curated presets, or add a preset."""
+    from ..sources import gummysearch_import
+    if add_preset:
+        typer.echo(json.dumps(gummysearch_import.import_preset(add_preset), default=str))
+    elif presets:
+        typer.echo(json.dumps(gummysearch_import.presets(), default=str))
+    else:
+        typer.echo(json.dumps(gummysearch_import.list_audiences(), default=str))
 
 
 @research_app.command("paper-references")

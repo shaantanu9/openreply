@@ -36,6 +36,28 @@ function researchStageBar(topic) {
   ).join('');
   return `<div class="research-stage-bar" style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:9px 0 12px">${items}</div>`;
 }
+
+// Gap-intelligence toolkit — quick links to the per-topic gap tools (pain
+// scores, people to reach, alerts, evidence verdicts, digest) plus the global
+// audiences/import screen. Pure anchors — CSP-safe.
+function gapToolkitBar(topic) {
+  const t = encodeURIComponent(topic);
+  const tools = [
+    ['Pain scores', 'flame', `#/pain-scores/${t}`],
+    ['People', 'users', `#/people/${t}`],
+    ['Alerts', 'bell', `#/alerts/${t}`],
+    ['Verdict', 'scale', `#/verdict/${t}`],
+    ['Digest', 'newspaper', `#/digest/${t}`],
+    ['Audiences', 'users-round', '#/audiences'],
+  ];
+  const items = tools.map(([label, icon, href]) =>
+    `<a href="${href}" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:inherit;font-size:12px;background:var(--surface)">
+       <i data-lucide="${icon}" style="width:13px;height:13px"></i> ${label}
+     </a>`
+  ).join('');
+  return `<div class="gap-toolkit-bar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 0 12px">
+    <span style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8A8178);margin-right:2px">Gap intel</span>${items}</div>`;
+}
 import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
 import { loadPapers } from './papers.js';
@@ -710,6 +732,9 @@ const ALL_SOURCES = [
   { id: 'wikipedia',     label: 'Wikipedia',       group: 'science', defaultOn: false },
   { id: 'gnews',         label: 'Google News',     group: 'web',     defaultOn: true },
   { id: 'trends',        label: 'Google Trends',   group: 'web',     defaultOn: true },
+  { id: 'duckduckgo',    label: 'DuckDuckGo (web search)', group: 'web', defaultOn: true },
+  { id: 'gdelt',         label: 'GDELT (global news/events — slower)', group: 'web', defaultOn: false },
+  { id: 'tavily',        label: 'Tavily (web search — needs TAVILY_API_KEY)', group: 'web', defaultOn: false },
   { id: 'appstore',      label: 'App Store',       group: 'apps',    defaultOn: true },
   { id: 'playstore',     label: 'Play Store',      group: 'apps',    defaultOn: true },
   { id: 'trustpilot',    label: 'Trustpilot',      group: 'apps',    defaultOn: true },
@@ -734,6 +759,14 @@ const ALL_SOURCES = [
   { id: 'rss_swipe',       label: 'RSS: Ad swipe files',      group: 'rss', defaultOn: false },
   { id: 'rss_listings',    label: 'RSS: Software listings (G2, etc.)', group: 'rss', defaultOn: true },
   { id: 'rss_user',        label: 'RSS: My custom feeds',     group: 'rss', defaultOn: true },
+  // Macro / economic / market data (off-domain for most topics — opt-in;
+  // rows render as text summaries and are relevance-gated per topic).
+  { id: 'worldbank',     label: 'World Bank (macro indicators)', group: 'macro', defaultOn: false },
+  { id: 'fred',          label: 'FRED (US macro — needs FRED_API_KEY)', group: 'macro', defaultOn: false },
+  { id: 'bis',           label: 'BIS (central-bank policy rates)', group: 'macro', defaultOn: false },
+  { id: 'yfinance',      label: 'Yahoo Finance (markets/commodities)', group: 'macro', defaultOn: false },
+  { id: 'openmeteo',     label: 'Open-Meteo (weather)',     group: 'macro', defaultOn: false },
+  { id: 'acled',         label: 'ACLED (conflict/protest events — needs ACLED creds)', group: 'macro', defaultOn: false },
 ];
 
 const GROUP_LABELS = {
@@ -743,6 +776,7 @@ const GROUP_LABELS = {
   web:     'Web / news / trends',
   apps:    'App stores',
   rss:     'RSS feeds (curated)',
+  macro:   'Macro / economic / market data',
 };
 
 // Per-topic cache for the source-picker modal. Re-opening the modal for
@@ -1290,6 +1324,7 @@ export async function renderTopic(root, { params }) {
          name-based so DOM order is purely UX. Don't shuffle without a
          user-research reason. -->
     ${researchStageBar(topic)}
+    ${gapToolkitBar(topic)}
     <div class="tabs" id="topic-tabs">
       <button type="button" class="tab active" data-tab="home"><i data-lucide="house"></i> Home<span class="tab-freshness" id="tab-fresh-insights"></span></button>
       <button type="button" class="tab" data-tab="map"><i data-lucide="network"></i> Map<span class="tab-freshness" id="tab-fresh-map"></span></button>
@@ -2671,6 +2706,9 @@ export async function renderTopic(root, { params }) {
             lemmy: 'Lemmy', mastodon: 'Mastodon', youtube: 'YouTube',
             trustpilot: 'Trustpilot', producthunt: 'Product Hunt',
             alternativeto: 'AlternativeTo', reddit: 'Reddit',
+            duckduckgo: 'DuckDuckGo', gdelt: 'GDELT News', tavily: 'Tavily',
+            worldbank: 'World Bank', fred: 'FRED', bis: 'BIS',
+            yfinance: 'Yahoo Finance', openmeteo: 'Open-Meteo', acled: 'ACLED',
           };
           const tipLines = srcList.map(r =>
             `${sourceLabel[r.source] || r.source}: ${r.posts} post${r.posts === 1 ? '' : 's'}`

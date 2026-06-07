@@ -19,6 +19,12 @@ import { renderResearchWorkspace } from './screens/research_workspace.js';
 import { renderResearchHome } from './screens/research_home.js';
 import { renderReader } from './screens/reader.js';
 import { renderLitMatrix } from './screens/lit_matrix.js';
+import { renderPainScores } from './screens/pain_scores.js';
+import { renderGapAudience } from './screens/gap_audience.js';
+import { renderGapAlerts } from './screens/gap_alerts.js';
+import { renderGapVerdict } from './screens/gap_verdict.js';
+import { renderGapDigest } from './screens/gap_digest.js';
+import { renderAudiences } from './screens/audiences.js';
 import { renderWrite } from './screens/write.js';
 import { renderLibrary } from './screens/library.js';
 import { applyAppModeToDocument, getAppMode } from './labels.js';
@@ -281,6 +287,12 @@ const routes = [
   { match: /^\/research-home\/?$/,  render: renderResearchHome },
   { match: /^\/reader\/([^/?]+).*$/, render: renderReader },
   { match: /^\/lit-matrix\/([^/?]+).*$/, render: renderLitMatrix },
+  { match: /^\/pain-scores\/([^/?]+).*$/, render: renderPainScores },
+  { match: /^\/people\/([^/?]+).*$/, render: renderGapAudience },
+  { match: /^\/alerts\/([^/?]+).*$/, render: renderGapAlerts },
+  { match: /^\/verdict\/([^/?]+).*$/, render: renderGapVerdict },
+  { match: /^\/digest\/([^/?]+).*$/, render: renderGapDigest },
+  { match: /^\/audiences\/?$/, render: renderAudiences },
   { match: /^\/write\/([^/?]+).*$/, render: renderWrite },
   { match: /^\/library\/?$/, render: renderLibrary },
   { match: /^\/ingest\/?$/,         render: renderIngest },

@@ -341,6 +341,15 @@ const SOURCE_TYPE_LABELS = {
   producthunt: 'Product Hunt',
   alternativeto: 'AlternativeTo',
   ingest: 'Ingest',
+  duckduckgo: 'DuckDuckGo',
+  gdelt: 'GDELT News',
+  tavily: 'Tavily',
+  worldbank: 'World Bank',
+  fred: 'FRED',
+  bis: 'BIS',
+  yfinance: 'Yahoo Finance',
+  openmeteo: 'Open-Meteo',
+  acled: 'ACLED',
 };
 
 function labelForSourceType(raw) {

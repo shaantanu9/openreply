@@ -907,6 +907,55 @@ def _rss_category_runner(cat: str):
     return _run
 
 
+# ── miroclaw-derived external sources ────────────────────────────────
+# Web/news map cleanly to posts rows; macro/numeric sources render each
+# datum as a text-summary post. All pure-httpx, never raise. Key-gated
+# ones (tavily/fred/acled) return 0 rows cleanly when the env var is unset.
+def run_gdelt(topic_or_keywords: str | list[str], limit: int = 50) -> int:
+    from .gdelt import fetch_gdelt
+    return _run_simple_list(topic_or_keywords, "gdelt", fetch_gdelt, limit)
+
+
+def run_duckduckgo(topic_or_keywords: str | list[str], limit: int = 25) -> int:
+    from .duckduckgo import fetch_duckduckgo
+    return _run_simple_list(topic_or_keywords, "duckduckgo", fetch_duckduckgo, limit)
+
+
+def run_tavily(topic_or_keywords: str | list[str], limit: int = 15) -> int:
+    from .tavily import fetch_tavily
+    return _run_simple_list(topic_or_keywords, "tavily", fetch_tavily, limit)
+
+
+def run_worldbank(topic_or_keywords: str | list[str], limit: int = 7) -> int:
+    from .worldbank import fetch_worldbank
+    return _run_simple_list(topic_or_keywords, "worldbank", fetch_worldbank, limit)
+
+
+def run_fred(topic_or_keywords: str | list[str], limit: int = 6) -> int:
+    from .fred import fetch_fred
+    return _run_simple_list(topic_or_keywords, "fred", fetch_fred, limit)
+
+
+def run_bis(topic_or_keywords: str | list[str], limit: int = 6) -> int:
+    from .bis import fetch_bis
+    return _run_simple_list(topic_or_keywords, "bis", fetch_bis, limit)
+
+
+def run_yfinance(topic_or_keywords: str | list[str], limit: int = 6) -> int:
+    from .yfinance_src import fetch_yfinance
+    return _run_simple_list(topic_or_keywords, "yfinance", fetch_yfinance, limit)
+
+
+def run_openmeteo(topic_or_keywords: str | list[str], limit: int = 5) -> int:
+    from .openmeteo import fetch_openmeteo
+    return _run_simple_list(topic_or_keywords, "openmeteo", fetch_openmeteo, limit)
+
+
+def run_acled(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .acled import fetch_acled
+    return _run_simple_list(topic_or_keywords, "acled", fetch_acled, limit)
+
+
 # Dispatch map for the collect orchestrator
 SOURCES: dict[str, Any] = {
     "hn": run_hn,
@@ -969,4 +1018,14 @@ SOURCES: dict[str, Any] = {
     "rss_marketing": _rss_category_runner("marketing"),
     "rss_persuasion": _rss_category_runner("persuasion"),
     "rss_swipe": _rss_category_runner("swipe"),
+    # miroclaw-derived external sources (pure-httpx, posts-row output).
+    "gdelt":       run_gdelt,
+    "duckduckgo":  run_duckduckgo,
+    "tavily":      run_tavily,        # needs TAVILY_API_KEY
+    "worldbank":   run_worldbank,
+    "fred":        run_fred,          # needs FRED_API_KEY
+    "bis":         run_bis,
+    "yfinance":    run_yfinance,
+    "openmeteo":   run_openmeteo,
+    "acled":       run_acled,         # needs ACLED_EMAIL + ACLED_PASSWORD
 }

@@ -1299,6 +1299,129 @@ def gapmap_lit_matrix(topic: str, build: bool = False, limit: int | None = None,
 
 
 @mcp.tool()
+def gapmap_gap_pain_scores(topic: str, build: bool = False,
+                           limit: int | None = None, force: bool = False) -> dict:
+    """0-100 pain score per gap for a topic — frequency × intensity × recency.
+
+    Ranks painpoints so users know what to build first (PainOnSocial-style).
+    build=True (re)computes scores from the corpus via the painpoint extractor
+    (LLM); default reads the cached scores (LLM-free). Returns
+    {ok, scored, top_score, rows} (build) or {ok, count, rows} (read)."""
+    from ..research import pain_scoring
+    if build:
+        return pain_scoring.score_gaps(topic, corpus_limit=(limit or 120), force=force)
+    return pain_scoring.get(topic)
+
+
+@mcp.tool()
+def gapmap_gap_audience(topic: str, gap_id: str | None = None,
+                        build: bool = False, limit: int = 50) -> dict:
+    """Real people to reach for a topic's gaps — authors + permalinks pulled
+    from each gap's evidence posts, enriched with engagement + persona.
+
+    build=True rolls up the evidence authors from the scored gaps (run
+    gapmap_gap_pain_scores build first). Without build: pass gap_id for one
+    gap's people, or omit it for the deduped topic-wide outreach list."""
+    from ..research import gap_audience
+    if build:
+        return gap_audience.build(topic)
+    if gap_id:
+        return gap_audience.get_gap_users(topic, gap_id, limit=limit)
+    return gap_audience.get_topic_reachout(topic, limit=limit)
+
+
+@mcp.tool()
+def gapmap_import_gummysearch(path: str) -> dict:
+    """Import a GummySearch export (JSON or CSV of saved subreddits/audiences)
+    so users keep their curated audiences after GummySearch shuts down (Nov
+    2026). Returns {ok, imported, audiences}."""
+    from ..sources import gummysearch_import
+    return gummysearch_import.import_file(path)
+
+
+@mcp.tool()
+def gapmap_audiences(action: str = "list", preset: str | None = None) -> dict:
+    """Saved audiences (subreddit collections) + curated discovery presets.
+
+    action: list (imported/saved audiences) | presets (curated bundles) |
+    add_preset (save a preset bundle as an audience — needs `preset`)."""
+    from ..sources import gummysearch_import
+    if action == "presets":
+        return gummysearch_import.presets()
+    if action == "add_preset":
+        return gummysearch_import.import_preset(preset or "")
+    return gummysearch_import.list_audiences()
+
+
+@mcp.tool()
+def gapmap_gap_digest(topic: str, period: str = "daily") -> dict:
+    """A scheduled brief for a topic (IdeaBrowser-style) — composes top pain
+    scores, rising/new gaps, the people to reach, and fired alerts into one
+    markdown digest. period: daily|weekly. Pure assembly, no LLM. Returns
+    {ok, markdown, sections}."""
+    from ..research import gap_digest
+    return gap_digest.build_digest(topic, period=period)
+
+
+@mcp.tool()
+def gapmap_gap_verdict(topic: str, claim: str | None = None, limit: int = 30) -> dict:
+    """Evidence-weighted answer on a claim (Consensus-style) — retrieves
+    matching posts, classifies each as support/contradict/neutral, and returns a
+    verdict (supported|contradicted|mixed|insufficient) with counts, confidence,
+    and a per-source breakdown (what users say vs what papers say).
+
+    Pass a claim to adjudicate (LLM); omit it to list the topic's cached verdicts."""
+    from ..research import evidence_verdicts
+    if claim:
+        return evidence_verdicts.answer(topic, claim, limit=limit)
+    return evidence_verdicts.get(topic)
+
+
+@mcp.tool()
+def gapmap_gap_alerts(action: str = "list", topic: str | None = None,
+                      alert_type: str = "spike", gap_id: str | None = None,
+                      threshold: float | None = None, window_days: int = 7,
+                      alert_id: str | None = None,
+                      enabled: bool | None = None) -> dict:
+    """Saved monitoring for gaps — notify when a gap spikes, goes new, or
+    crosses a pain-score threshold.
+
+    action one of: list | create | update | delete | check | events.
+    create needs topic + alert_type (spike|new|score_threshold); update/delete
+    need alert_id; check evaluates all enabled alerts and records fired events."""
+    from ..research import gap_alerts
+    if action == "create":
+        if not topic:
+            return {"ok": False, "error": "topic required for create"}
+        return gap_alerts.create_alert(topic, alert_type, gap_id=gap_id,
+                                       threshold=threshold, window_days=window_days)
+    if action == "update":
+        return gap_alerts.update_alert(alert_id, enabled=enabled, threshold=threshold)
+    if action == "delete":
+        return gap_alerts.delete_alert(alert_id)
+    if action == "check":
+        return gap_alerts.check_alerts(topic)
+    if action == "events":
+        return gap_alerts.list_events(topic)
+    return gap_alerts.list_alerts(topic)
+
+
+@mcp.tool()
+def gapmap_gap_velocity(topic: str, gap_id: str | None = None,
+                        window_days: int = 7, topic_level: bool = False) -> dict:
+    """Trend velocity for a topic's gaps — recent vs prior posting rate, so you
+    see which gaps are rising/new vs fading (Exploding-Topics style).
+
+    Per gap by default (matches the gap title's keywords against the topic's
+    posts; needs pain scores built). topic_level=True returns the whole topic's
+    posting velocity instead. No LLM."""
+    from ..research import trend_velocity
+    if topic_level:
+        return trend_velocity.compute_topic_velocity(topic, window_days=window_days)
+    return trend_velocity.compute_gap_velocity(topic, gap_id=gap_id, window_days=window_days)
+
+
+@mcp.tool()
 def gapmap_paper_chunk_topic(
     topic: str | None = None,
     force: bool = False,
@@ -1757,6 +1880,85 @@ def gapmap_fetch_gnews(query: str, limit: int = 30, country: str = "US") -> list
     from ..sources.gnews import fetch_gnews
 
     return fetch_gnews(query=query, limit=limit, country=country)
+
+
+# ── miroclaw-derived external sources ────────────────────────────────
+@mcp.tool()
+def gapmap_fetch_gdelt(query: str, limit: int = 50, country: str | None = None) -> list[dict]:
+    """GDELT global news/events — structured, date-range-capable, keyless.
+
+    `country` is an optional FIPS code (e.g. 'IN', 'US') to scope coverage.
+    """
+    from ..sources.gdelt import fetch_gdelt
+
+    return fetch_gdelt(query=query, limit=limit, country=country)
+
+
+@mcp.tool()
+def gapmap_fetch_duckduckgo(query: str, limit: int = 25) -> list[dict]:
+    """DuckDuckGo web search — general web context, keyless (best-effort)."""
+    from ..sources.duckduckgo import fetch_duckduckgo
+
+    return fetch_duckduckgo(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_tavily(query: str, limit: int = 15) -> list[dict]:
+    """Tavily web search — LLM-grade results. Needs TAVILY_API_KEY (free)."""
+    from ..sources.tavily import fetch_tavily
+
+    return fetch_tavily(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_worldbank(query: str, limit: int = 7, country: str | None = None) -> list[dict]:
+    """World Bank macro indicators (GDP, CPI, …) as text-summary rows. Keyless.
+
+    `country` is an ISO code (e.g. 'USA', 'IND'); inferred from `query` if omitted.
+    """
+    from ..sources.worldbank import fetch_worldbank
+
+    return fetch_worldbank(query=query, limit=limit, country=country)
+
+
+@mcp.tool()
+def gapmap_fetch_fred(query: str, limit: int = 6) -> list[dict]:
+    """FRED US macro series as text-summary rows. Needs FRED_API_KEY (free)."""
+    from ..sources.fred import fetch_fred
+
+    return fetch_fred(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_bis(query: str, limit: int = 6) -> list[dict]:
+    """BIS central-bank policy rates as text-summary rows. Keyless."""
+    from ..sources.bis import fetch_bis
+
+    return fetch_bis(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_yfinance(query: str, limit: int = 6) -> list[dict]:
+    """Yahoo Finance quotes (index/stock/commodity) as text-summary rows. Keyless."""
+    from ..sources.yfinance_src import fetch_yfinance
+
+    return fetch_yfinance(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_openmeteo(query: str, limit: int = 5) -> list[dict]:
+    """Open-Meteo weather (current + 1940+ archive) as text-summary rows. Keyless."""
+    from ..sources.openmeteo import fetch_openmeteo
+
+    return fetch_openmeteo(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_acled(query: str, limit: int = 30, country: str | None = None) -> list[dict]:
+    """ACLED conflict/protest events. Needs ACLED_EMAIL + ACLED_PASSWORD (free)."""
+    from ..sources.acled import fetch_acled
+
+    return fetch_acled(query=query, limit=limit, country=country)
 
 
 @mcp.tool()

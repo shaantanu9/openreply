@@ -60,6 +60,18 @@ _SOURCE_FORMATTERS = {
     "ingest":        lambda r: f"[ingest:{_ingest_name(r)}] Local file",
     "wikipedia":     lambda r: f"[wiki:{r['id']}] Wikipedia",
     "discourse":     lambda r: f"[discourse:{r['id']}] Forum",
+    # miroclaw-derived sources. Web/news read like articles; macro/numeric
+    # rows are pre-rendered text summaries, labelled so the LLM treats them
+    # as data points, not user opinions.
+    "duckduckgo":    lambda r: f"[ddg:{r['id']}] Web result — {(r.get('sub') or '?')}",
+    "gdelt":         lambda r: f"[gdelt:{r['id']}] News — {(r.get('sub') or '?')}",
+    "tavily":        lambda r: f"[tavily:{r['id']}] Web result — {(r.get('sub') or '?')}",
+    "worldbank":     lambda r: f"[worldbank:{r['id']}] World Bank macro indicator (data)",
+    "fred":          lambda r: f"[fred:{r['id']}] FRED US macro series (data)",
+    "bis":           lambda r: f"[bis:{r['id']}] BIS policy-rate data",
+    "yfinance":      lambda r: f"[yfinance:{r['id']}] Market quote (data)",
+    "openmeteo":     lambda r: f"[openmeteo:{r['id']}] Weather summary (data)",
+    "acled":         lambda r: f"[acled:{r['id']}] Conflict/protest event (data)",
     # ── YouTube: three distinct content kinds, each labelled so the LLM
     # knows what it's reading (user reaction vs speaker-authored). The
     # ``sub`` column carries the channel name for all three. Without

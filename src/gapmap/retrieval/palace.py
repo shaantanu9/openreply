@@ -1074,15 +1074,26 @@ def paper_neighbors(post_id: str, *, k: int = 8, topic: str | None = None) -> di
         return {"ok": True, "results": [], "count": 0, "reason": "paper not embedded"}
     import numpy as np
     mean_vec = np.mean(vecs, axis=0).tolist()
-    where = {"topic": topic} if topic else None
+    # Topic scoping by post_id membership, NOT a stamped {"topic": ...} field:
+    # a paper belongs to several topics but its chunks are embedded under only
+    # one (whatever was active at chunk-time), so a stamped-topic filter
+    # silently matched zero chunks and returned no neighbors. Resolve topic →
+    # its paper post_ids and filter on those — mirrors search_paper_chunks.
+    where = None
+    if topic:
+        topic_pids = _paper_post_ids_for_topic(topic)
+        if topic_pids:
+            where = {"post_id": {"$in": topic_pids}}
+        else:
+            where = {"topic": topic}  # legacy fallback (keeps stamped chunks reachable)
     # Empty-filter guard: chromadb's Rust backend SEGFAULTS (uncatchable — it
     # kills the whole Python sidecar) when query() is handed a `where` filter
-    # that matches zero documents. Mirror the guard used in search_paper_chunks.
-    # No-op when where is None (the crash is specific to zero-match filters,
-    # not to the no-filter path).
+    # that matches zero documents. count(where=) is unsupported on this
+    # chromadb, so probe membership with a cheap get(..., limit=1) instead.
     if where is not None:
         try:
-            if coll.count(where=where) == 0:
+            probe = coll.get(where=where, limit=1)
+            if not (probe.get("ids") or []):
                 return {"ok": True, "results": [], "count": 0,
                         "skipped_reason": "no_indexed_chunks_for_filter"}
         except Exception:

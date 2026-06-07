@@ -390,7 +390,16 @@ def collect(
                 "github",         # GitHub trending repos
                 "trends",         # Google Trends series (returns series, not posts)
                 "youtube",        # YouTube video comments via yt-dlp (no API key)
+                "duckduckgo",     # General web search (fast) — also in quick default
+                "gdelt",          # Structured global news/events — SLOW (~10-30s,
+                                  # throttle-prone) so aggressive-only; fails-fast
+                                  # to [] and runs in its own thread so it can't
+                                  # pin the pool.
                 # Opt-in via explicit --sources flag (not in aggressive default):
+                #   worldbank/fred/bis/yfinance/openmeteo/acled — macro/numeric,
+                #     off-domain for most topics (relevance-gated out); add per
+                #     finance/market topic via --sources or the topic router.
+                #   tavily — needs TAVILY_API_KEY (web search, opt-in)
                 #   alternativeto  — Cloudflare blocks unauth clients (known flaky)
                 #   lemmy/mastodon — need explicit instance URLs
                 #   github_issues  — rate-limited without GITHUB_TOKEN
@@ -413,6 +422,7 @@ def collect(
             "rss_products",  # RSS product bundle for launch/feedback signal
             "rss_user",      # User-added custom RSS feeds (no-op if none saved)
             "gnews",         # Google News for general-topic recall
+            "duckduckgo",    # General web search — fast (~1.3s), free, 1 call
         ]
     # `result.topic` ends up being set to the canonical after canonicalization
     # below. Populate with original here; we update after _canonicalize_topic

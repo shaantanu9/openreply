@@ -1033,6 +1033,38 @@ export const api = {
   litMatrixBuild: (topic, { limit = null, force = false } = {}) =>
     invoke('lit_matrix_build', { topic, limit, force }),
   litMatrixExport: (topic) => invoke('lit_matrix_export', { topic }),
+  // 0-100 pain score per gap (frequency × intensity × recency).
+  gapPainScores: (topic) => cachedInvoke('gap_pain_scores', { topic }, 30000),
+  gapPainScoresBuild: (topic, { limit = null, force = false } = {}) =>
+    invoke('gap_pain_scores_build', { topic, limit, force }),
+  // Real people to reach for each gap (authors + permalinks from evidence posts).
+  gapAudience: (topic, { gapId = null, limit = 50 } = {}) =>
+    cachedInvoke('gap_audience', { topic, gapId, limit }, 30000),
+  gapAudienceBuild: (topic) => invoke('gap_audience_build', { topic }),
+  // Trend velocity (rising/falling/new) per gap and for the whole topic.
+  gapVelocity: (topic, { window = 7 } = {}) =>
+    cachedInvoke('gap_velocity', { topic, window }, 30000),
+  topicVelocity: (topic, { window = 7 } = {}) =>
+    cachedInvoke('topic_velocity', { topic, window }, 30000),
+  // Saved gap alerts / monitoring.
+  gapAlertsList: (topic = null) => invoke('gap_alerts_list', { topic }),
+  gapAlertCreate: (topic, alertType, { gapId = null, threshold = null, window = 7 } = {}) =>
+    invoke('gap_alert_create', { topic, alertType, gapId, threshold, window }),
+  gapAlertDelete: (alertId) => invoke('gap_alert_delete', { alertId }),
+  gapAlertsCheck: (topic = null) => invoke('gap_alerts_check', { topic }),
+  gapAlertEvents: (topic = null) => invoke('gap_alert_events', { topic }),
+  // Evidence-weighted verdict on a claim (supported/contradicted/mixed).
+  gapVerdict: (topic, { claim = null, limit = 30 } = {}) =>
+    invoke('gap_verdict', { topic, claim, limit }),
+  gapVerdictList: (topic) => cachedInvoke('gap_verdict', { topic, claim: null, limit: 30 }, 30000),
+  // Scheduled brief — top gaps, rising, people, alerts as one markdown digest.
+  gapDigest: (topic, { period = 'daily' } = {}) =>
+    cachedInvoke('gap_digest', { topic, period }, 30000),
+  // GummySearch import + curated discovery presets.
+  importGummysearch: (path) => invoke('import_gummysearch', { path }),
+  audiencesList: () => invoke('audiences_list', {}),
+  audiencePresets: () => invoke('audience_presets', {}),
+  audienceAddPreset: (preset) => invoke('audience_add_preset', { preset }),
   // Per-project research-flow progress (gather→read→synthesize→write).
   flowStatus: (topic) => invoke('flow_status', { topic }),
   // Cross-project library + collections.

@@ -177,6 +177,10 @@ const SOURCE_LABELS = {
   devto: 'Dev.to', stackoverflow: 'Stack Overflow', github: 'GitHub',
   github_issue: 'GitHub Issues', lemmy: 'Lemmy', mastodon: 'Mastodon',
   youtube: 'YouTube', discourse: 'Discourse', local_file: 'Local file',
+  trustpilot: 'Trustpilot', producthunt: 'Product Hunt',
+  duckduckgo: 'DuckDuckGo', gdelt: 'GDELT News', tavily: 'Tavily',
+  worldbank: 'World Bank', fred: 'FRED', bis: 'BIS',
+  yfinance: 'Yahoo Finance', openmeteo: 'Open-Meteo', acled: 'ACLED',
 };
 
 function renderToolbar(topic, sourcesInTopic = []) {

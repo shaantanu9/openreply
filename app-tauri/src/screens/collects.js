@@ -161,9 +161,9 @@ export async function renderCollects(root) {
             spellcheck="false"
             required
           />
-          <label class="cm-start-toggle" title="Aggressive: 15-source full sweep. Off: 8-source quick mode.">
+          <label class="cm-start-toggle" title="Aggressive: 17-source full sweep (adds GDELT news + web search). Off: 9-source quick mode.">
             <input id="cm-start-aggressive" type="checkbox" checked />
-            <span>Full 15-source sweep</span>
+            <span>Full 17-source sweep</span>
           </label>
           <button type="submit" class="btn btn-primary cm-start-btn">Start collect →</button>
         </form>
