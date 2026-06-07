@@ -25,9 +25,11 @@ on:
       tag:
         description: 'Tag to build Linux artifacts for (e.g. v0.1.4)'
         required: true
-  push:
-    tags:
-      - 'v*'
+  # NOTE: auto-trigger on `push: tags v*` intentionally removed.
+  # Linux runs on GitHub-hosted runners (billed). To build a Linux release,
+  # make the repo public first, then manually run this workflow (Actions tab
+  # or `gh workflow run release-linux.yml -f tag=vX.Y.Z`). Make private again
+  # once the run completes.
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'

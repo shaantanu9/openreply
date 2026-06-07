@@ -31,7 +31,7 @@ env:
 jobs:
   python-check:
     name: Python — install + parse + tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS]
     steps:
       - name: Checkout (no LFS — sidecar binary not needed for CI)
         uses: actions/checkout@v4
@@ -68,7 +68,7 @@ jobs:
 
   rust-check:
     name: Rust — cargo check
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS]
     steps:
       - name: Checkout (no LFS)
         uses: actions/checkout@v4
@@ -109,7 +109,7 @@ jobs:
 
   js-check:
     name: JS — install + syntax
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS]
     steps:
       - name: Checkout (no LFS)
         uses: actions/checkout@v4

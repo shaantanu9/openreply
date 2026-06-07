@@ -47,7 +47,7 @@ jobs:
           - target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
 
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS]
     env:
       HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' && 'yes' || 'no' }}
       TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
