@@ -123,6 +123,14 @@ def library(collection_id: str | None = None, status: str | None = None,
     reading status and collection membership. Filter by collection, reading
     status, and/or a title substring."""
     _ensure_tables()
+    # The library LEFT JOINs paper_reading_status — ensure it exists even if the
+    # user opens the Library before ever setting a reading status (else the join
+    # raises "no such table"). Idempotent; reuses the canonical schema.
+    try:
+        from .paper_reading import _ensure_tables as _ensure_reading
+        _ensure_reading()
+    except Exception:
+        pass
     db = get_db()
     placeholders = ",".join("?" for _ in _ACADEMIC)
     clauses = [f"coalesce(p.source_type,'reddit') IN ({placeholders})"]
