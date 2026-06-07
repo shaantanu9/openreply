@@ -1858,6 +1858,20 @@ pub async fn paper_reading_status(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+/// All reading statuses (post_id → status) for a topic's papers — for showing
+/// read/reading badges in a papers list.
+#[tauri::command]
+pub async fn paper_reading_list(
+    app: AppHandle, topic: Option<String>, status: Option<String>,
+) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let s = status.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "reading-list"];
+    if !t.is_empty() { args.push("--topic");  args.push(t.as_str()); }
+    if !s.is_empty() { args.push("--status"); args.push(s.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// The to-read queue for a topic's papers (or globally), or status counts.
 #[tauri::command]
 pub async fn paper_reading_queue(

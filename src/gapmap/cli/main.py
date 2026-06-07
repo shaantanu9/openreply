@@ -4134,6 +4134,17 @@ def cmd_research_reading_queue(
     typer.echo(json.dumps(r, default=str))
 
 
+@research_app.command("reading-list")
+def cmd_research_reading_list(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    status: Optional[str] = typer.Option(None, "--status"),
+) -> None:
+    """All reading statuses (post_id → status) for a topic's papers — for
+    showing read/reading badges in a papers list."""
+    from ..research import paper_reading
+    typer.echo(json.dumps(paper_reading.list_status(topic, status), default=str))
+
+
 @research_app.command("paper-highlight")
 def cmd_research_paper_highlight(
     action: str = typer.Argument(..., help="add | list | update | delete"),

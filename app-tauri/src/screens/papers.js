@@ -437,6 +437,30 @@ function wirePaperAsk(contentEl, topic) {
   input.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); run(); } };
 }
 
+// Read-only reading-status dots in the papers list. Fetches the topic's
+// statuses once and prepends a small coloured dot to each read/reading paper's
+// title cell (to_read = no dot, keeps the list clean). Pure DOM annotation —
+// no table re-render. Best-effort; a failed fetch leaves the list unchanged.
+async function annotateReadingStatus(contentEl, topic) {
+  let items = [];
+  try {
+    const r = await api.paperReadingList(topic);
+    items = (r && r.items) || [];
+  } catch { return; }
+  const COLORS = { reading: '#1F5C99', read: '#1A7A4F' };
+  for (const it of items) {
+    const color = COLORS[it.status];
+    if (!color) continue;  // skip to_read
+    const row = contentEl.querySelector(`tr[data-post-id="${CSS.escape(it.post_id)}"] .paper-title`);
+    if (!row || row.querySelector('.paper-read-dot')) continue;
+    const dot = document.createElement('span');
+    dot.className = 'paper-read-dot';
+    dot.title = it.status === 'read' ? 'Read' : 'Reading';
+    dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle`;
+    row.prepend(dot);
+  }
+}
+
 function wireSearchButton(contentEl, topic) {
   const btn    = $('#papers-search-btn', contentEl);
   const input  = $('#papers-search-q', contentEl);
@@ -652,6 +676,7 @@ export async function loadPapers(contentEl, topic) {
     wireSearchButton(contentEl, topic);
     wirePaperKnowledge(contentEl, topic);
     wirePaperAsk(contentEl, topic);
+    annotateReadingStatus(contentEl, topic);
     paintedFromCache = true;
   } else {
     set(skelRows(8));
@@ -689,6 +714,7 @@ export async function loadPapers(contentEl, topic) {
   wireSearchButton(contentEl, topic);
   wirePaperKnowledge(contentEl, topic);
   wirePaperAsk(contentEl, topic);
+  annotateReadingStatus(contentEl, topic);
 
   const doExport = async (fmt) => {
     try {

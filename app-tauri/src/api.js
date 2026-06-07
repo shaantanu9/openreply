@@ -1014,6 +1014,8 @@ export const api = {
 
   // Reading status (to_read|reading|read). Omit status to read; pass to set.
   paperReadingStatus: (postId, status = null) => invoke('paper_reading_status', { postId, status }),
+  // All reading statuses for a topic — {items:[{post_id,status,title}]}.
+  paperReadingList: (topic = null, status = null) => invoke('paper_reading_list', { topic, status }),
   paperReadingQueue: ({ topic = null, limit = 50, counts = false } = {}) =>
     invoke('paper_reading_queue', { topic, limit, counts }),
   // Highlights + notes. action ∈ add|list|update|delete.

@@ -442,6 +442,7 @@ fn main() {
             commands::paper_chunk_search,
             commands::paper_ask,
             commands::paper_reading_status,
+            commands::paper_reading_list,
             commands::paper_reading_queue,
             commands::paper_highlight,
             commands::paper_notes,
