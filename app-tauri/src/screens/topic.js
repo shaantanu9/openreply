@@ -15,6 +15,27 @@ import { mountChatPanel } from './chat/chatPanel.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { classifyError } from '../lib/tabEmpty.js';
 import { renderMarkdown, inlineMd } from '../lib/markdown.js';
+import { isResearch } from '../labels.js';
+
+// Research-mode stage spine (Gather → Read → Synthesize → Write) shown above the
+// tabs. Pure anchor links — CSP-safe, no event wiring, hidden in product mode.
+function researchStageBar(topic) {
+  if (!isResearch()) return '';
+  const t = encodeURIComponent(topic);
+  const stages = [
+    ['1', 'Gather', 'download', '#/research'],
+    ['2', 'Read', 'book-open', '#/library'],
+    ['3', 'Synthesize', 'git-merge', `#/lit-matrix/${t}`],
+    ['4', 'Write', 'pen-line', `#/write/${t}`],
+  ];
+  const items = stages.map(([n, label, icon, href], i) =>
+    `<a href="${href}" style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:inherit;font-size:12.5px;background:var(--surface)">
+       <span style="display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;border-radius:50%;background:var(--accent,#5B8DB8);color:#fff;font-size:10px">${n}</span>
+       <i data-lucide="${icon}" style="width:14px;height:14px"></i> ${label}
+     </a>${i < stages.length - 1 ? '<span style="color:var(--muted,#8A8178);align-self:center">→</span>' : ''}`
+  ).join('');
+  return `<div class="research-stage-bar" style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:9px 0 12px">${items}</div>`;
+}
 import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
 import { loadPapers } from './papers.js';
@@ -1268,6 +1289,7 @@ export async function renderTopic(root, { params }) {
          Reordering rationale lives here intentionally — switchTab is
          name-based so DOM order is purely UX. Don't shuffle without a
          user-research reason. -->
+    ${researchStageBar(topic)}
     <div class="tabs" id="topic-tabs">
       <button type="button" class="tab active" data-tab="home"><i data-lucide="house"></i> Home<span class="tab-freshness" id="tab-fresh-insights"></span></button>
       <button type="button" class="tab" data-tab="map"><i data-lucide="network"></i> Map<span class="tab-freshness" id="tab-fresh-map"></span></button>

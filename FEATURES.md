@@ -607,14 +607,46 @@ headlessly via MCP.
 
 Headless chain: `gapmap_paper_knowledge_build` → `gapmap_paper_relations_build` →
 `gapmap_connections` → `gapmap_paper_outline_generate` → `gapmap_paper_draft_generate`
-→ `papers_export`. **Known gaps:** R4 student Reading surface (🟡); P2: MLA + LaTeX
-`.tex`+`.bib` export, community-bridge connection detection.
+→ `papers_export`. **Known gaps:** P2: MLA + LaTeX `.tex`+`.bib` export,
+community-bridge connection detection.
+
+---
+
+## 19. Research Mode — researcher / PhD workspace ✅ NEW
+
+A Settings-selected **App Mode** (`product` | `research`) reconfigures Gap Map
+into a guided literature workspace: **Gather → Read → Synthesize → Write**, with
+"Topic" relabelled "Project". Built 2026-06-07 in 5 additive phases on top of
+release v0.1.22 (commits 730c721 · d136f07 · 97d4605 · 20f8b16 · 2af119f ·
+b2d4a01). Frontend mode flag (localStorage) — no backend rebuild. Verified
+backend end-to-end on a real corpus; cargo + node checks clean each phase.
+
+| Feature | Status | Surface | Implementation |
+|---|---|---|---|
+| **App Mode** (product/research) + Research Home + mode-aware nav + stage-bar | ✅ | Settings card · `#/research-home` · sidebar (`data-nav-mode`) · stage-bar above topic tabs | `labels.js`, `screens/research_home.js`, `main.js`, `index.html`, `screens/topic.js` |
+| **Reading status** (to_read/reading/read) + to-read queue + counts | ✅ | Reader pills · CLI `research paper-reading-status`/`reading-queue` · MCP `gapmap_paper_reading_*` · Tauri | `research/paper_reading.py` |
+| **Highlights + notes** (select→highlight, colour, note, delete) | ✅ | Reader margin · CLI `research paper-highlight` · MCP `gapmap_paper_highlight` · Tauri | `research/paper_reading.py` (`paper_highlights` table) |
+| **Paper Reader** — full text by section, re-marked highlights, status, per-paper cited Q&A | ✅ | `#/reader/<post_id>` · "Read & annotate" from Papers tab | `screens/reader.js`, `paper_reading.read_view`, CLI `research paper-read` |
+| **Literature-review matrix** (method·dataset·sample·findings·limitations·metric, sortable/filterable/CSV) | ✅ | `#/lit-matrix/<topic>` · CLI `research lit-matrix` · MCP `gapmap_lit_matrix` · Tauri | `research/lit_matrix.py` (`lit_matrix` table), `screens/lit_matrix.js` |
+| **Write surface** (outline → draft → 4-format citation export, one screen) | ✅ | `#/write/<topic>` · Papers-tab "Write" link | `screens/write.js` (reuses `paper_pipeline.py` + `paper_export.py`) |
+| **Library + collections** (cross-project papers, named collections, status filters, search) | ✅ | `#/library` · sidebar entry · CLI `research library`/`collections` · MCP `gapmap_paper_library`/`gapmap_paper_collections` · Tauri | `research/paper_library.py` (`paper_collections`, `paper_collection_items` tables), `screens/library.js` |
+| **Cited paper Q&A** (grounded on full-text chunks, section-level citations, honest refusal) | ✅ | "Ask the papers" (Papers tab) · Reader · CLI `research paper-ask` · MCP `gapmap_paper_ask` · Tauri | `research/paper_chat.py` |
+
+**Daily PhD loop:** Settings → Research mode → Research Home → start a project
+(academic gather) → open a paper in the **Reader** (read · highlight · note ·
+mark status · ask) → **Lit-matrix** + connect-the-dots + gaps + ask-the-papers →
+**Write** (outline → draft → export) → **Library** across projects.
+
+**Known gaps (P2):** Reader highlight anchoring is by quoted-text match (re-marks
+first occurrence) rather than exact DOM range; lit-matrix build is sequential
+(no parallel fan-out); Library "add to collection" is per-paper (no multi-select);
+in-app UI not yet smoke-tested in a running build (backend + CLI verified).
 
 ---
 
 ## Data persistence summary
 
-**SQLite (`core/db.py`)** — `posts`, `comments`, `users`, `subreddits`, `topic_posts`, `topic_prefs`, `topic_insights`, `mcp_analyses`, `graph_nodes`, `graph_edges`, `personas`, `persona_memories`, `persona_conclusions`, `persona_edges`, `paper_full_texts`, `paper_sections`, `paper_chunks`, `paper_analyses`, `paper_references`, `finding_research_links`, `products`, `product_signals`, `sweeps`, `hypothesis_tests`, `audience_personas`, `launch_briefs`, `jobs`, `feedback`, `saved_views`, `prompt_overrides`.
+**SQLite (`core/db.py`)** — `posts`, `comments`, `users`, `subreddits`, `topic_posts`, `topic_prefs`, `topic_insights`, `mcp_analyses`, `graph_nodes`, `graph_edges`, `personas`, `persona_memories`, `persona_conclusions`, `persona_edges`, `paper_full_texts`, `paper_sections`, `paper_chunks`, `paper_analyses`, `paper_references`, `finding_research_links`, `products`, `product_signals`, `sweeps`, `hypothesis_tests`, `audience_personas`, `launch_briefs`, `jobs`, `feedback`, `saved_views`, `prompt_overrides`. **Research Mode (2026-06-07):** `paper_reading_status`, `paper_highlights`, `lit_matrix`, `paper_collections`, `paper_collection_items`.
 
 **Vector index (Mempalace / ChromaDB, ONNX MiniLM)** — `posts` collection (semantic search) and `paper_chunks` collection (RAG over paper sections). Cache at `~/.cache/mempalace/`.
 
