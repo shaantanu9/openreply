@@ -1919,6 +1919,32 @@ pub async fn paper_read(app: AppHandle, post_id: String) -> Result<Value, String
         .await.map_err(err_to_string)
 }
 
+/// Read the cached literature-review matrix for a topic.
+#[tauri::command]
+pub async fn lit_matrix_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "lit-matrix", "--topic", &topic])
+        .await.map_err(err_to_string)
+}
+
+/// Build (extract) the literature-review matrix for a topic's papers (LLM).
+#[tauri::command]
+pub async fn lit_matrix_build(
+    app: AppHandle, topic: String, limit: Option<u32>, force: Option<bool>,
+) -> Result<Value, String> {
+    let lim = limit.map(|n| n.to_string()).unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "lit-matrix", "--topic", &topic, "--build"];
+    if !lim.is_empty() { args.push("--limit"); args.push(lim.as_str()); }
+    if force.unwrap_or(false) { args.push("--force"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Export the literature-review matrix as CSV text.
+#[tauri::command]
+pub async fn lit_matrix_export(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "lit-matrix", "--topic", &topic, "--csv"])
+        .await.map_err(err_to_string)
+}
+
 /// Streaming "build the paper knowledge base" workflow. Fires
 /// `paper:knowledge:progress` events (NDJSON lifecycle lines:
 /// workflow:start, stage:start, stage:progress, stage:done, workflow:done)

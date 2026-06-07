@@ -4182,6 +4182,27 @@ def cmd_research_paper_read(
     typer.echo(json.dumps(paper_reading.read_view(post_id), default=str))
 
 
+@research_app.command("lit-matrix")
+def cmd_research_lit_matrix(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    build: bool = typer.Option(False, "--build", help="Extract rows for papers that don't have one yet."),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n"),
+    force: bool = typer.Option(False, "--force"),
+    csv: bool = typer.Option(False, "--csv", help="Return the matrix as CSV text."),
+) -> None:
+    """Literature-review matrix (method · dataset · sample · findings ·
+    limitations · metric) for a topic's papers. --build extracts; default reads."""
+    from ..research import lit_matrix
+    if build:
+        r = lit_matrix.build(topic, limit=limit, force=force,
+                             progress=lambda m: console.print(f"[dim]• {m}[/dim]"))
+        typer.echo(json.dumps(r, default=str))
+    elif csv:
+        typer.echo(json.dumps(lit_matrix.export_csv(topic), default=str))
+    else:
+        typer.echo(json.dumps(lit_matrix.get(topic), default=str))
+
+
 @research_app.command("paper-references")
 def cmd_research_paper_references(
     post_id: Optional[str] = typer.Option(None, "--post-id"),

@@ -1252,6 +1252,21 @@ def gapmap_paper_notes(topic: str) -> dict:
 
 
 @mcp.tool()
+def gapmap_lit_matrix(topic: str, build: bool = False, limit: int | None = None,
+                      force: bool = False) -> dict:
+    """Literature-review matrix for a topic's papers — one structured row per
+    paper (method, dataset, sample, findings, limitations, metric).
+
+    build=True extracts rows (LLM) for papers that don't have one yet; default
+    reads the cached matrix. Returns {ok, count, fields, rows} (read) or
+    {ok, built, cached, errored, total} (build)."""
+    from ..research import lit_matrix
+    if build:
+        return lit_matrix.build(topic, limit=limit, force=force)
+    return lit_matrix.get(topic)
+
+
+@mcp.tool()
 def gapmap_paper_chunk_topic(
     topic: str | None = None,
     force: bool = False,

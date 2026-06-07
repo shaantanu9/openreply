@@ -1026,6 +1026,11 @@ export const api = {
   paperNotes: (topic) => invoke('paper_notes', { topic }),
   // Composite Reader payload: {title, sections:[{name,text}], status, highlights}.
   paperRead: (postId) => invoke('paper_read', { postId }),
+  // Literature-review matrix (method·dataset·sample·findings·limitations·metric).
+  litMatrixGet: (topic) => invoke('lit_matrix_get', { topic }),
+  litMatrixBuild: (topic, { limit = null, force = false } = {}) =>
+    invoke('lit_matrix_build', { topic, limit, force }),
+  litMatrixExport: (topic) => invoke('lit_matrix_export', { topic }),
 
   // Warm the LLM on app launch so the first collect's canonicalize isn't a
   // 30-60s cold start. Fire-and-forget; fail-soft.
