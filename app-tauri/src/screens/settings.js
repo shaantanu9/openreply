@@ -2,6 +2,7 @@
 // fills in each card as its sidecar call returns. No call blocks the UI.
 
 import { api, esc } from '../api.js';
+import { getAppMode, setAppMode } from '../labels.js';
 import { confirmModal } from '../lib/confirmModal.js';
 import { LICENCE_CARD_SKELETON, mountLicenceCard } from '../components/LicenceCard.js';
 import { openByokModal } from './byok.js';
@@ -165,6 +166,20 @@ export async function renderSettings(root) {
             <span class="settings-profile-status" id="profile-status"></span>
           </div>
         </div>
+      </div>
+
+      <!-- APP MODE — product vs research workspace -->
+      <div class="settings-card" id="card-app-mode" style="order:12">
+        <h4>App mode</h4>
+        <p style="color:var(--ink-3)">Tailor Gap Map to how you work. <b>Research</b> turns it into a literature workspace — gather → read → synthesize → write — and relabels Topics as Projects.</p>
+        <label>
+          <span>Use Gap Map for</span>
+          <select id="app-mode-select">
+            <option value="product">Product gaps — monitor your product &amp; competitors</option>
+            <option value="research">Academic research — papers, reading &amp; writing</option>
+          </select>
+        </label>
+        <span class="settings-profile-status" id="app-mode-status" style="margin-top:8px;display:inline-block"></span>
       </div>
 
       <!-- LICENCE & ACTIVATION (skeleton → filled by mountLicenceCard) -->
@@ -723,6 +738,25 @@ function wireProfileCard(root) {
     window.dispatchEvent(new CustomEvent('gapmap:profile-updated'));
     setTimeout(() => { statusEl.textContent = ''; }, 2000);
   });
+
+  // App mode — Product gaps vs Academic research. setAppMode persists to
+  // localStorage, stamps <html data-app-mode>, and fires 'appmodechange' so the
+  // nav re-syncs (Research front door appears/disappears) without a reload.
+  const appModeSelect = root.querySelector('#app-mode-select');
+  const appModeStatus = root.querySelector('#app-mode-status');
+  if (appModeSelect) {
+    appModeSelect.value = getAppMode();
+    appModeSelect.addEventListener('change', () => {
+      const mode = setAppMode(appModeSelect.value);
+      if (appModeStatus) {
+        appModeStatus.textContent = mode === 'research'
+          ? '✓ Research mode on — find “Research” in the sidebar'
+          : '✓ Product mode on';
+        appModeStatus.style.color = '#2E7D5B';
+        setTimeout(() => { if (appModeStatus) appModeStatus.textContent = ''; }, 3000);
+      }
+    });
+  }
 }
 
 // --- Static buttons (sync) --------------------------------------------------

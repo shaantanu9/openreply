@@ -16,6 +16,8 @@ import { renderSettings } from './screens/settings.js';
 import { renderIngest } from './screens/ingest.js';
 import { renderIngestVideo } from './screens/ingest_video.js';
 import { renderResearchWorkspace } from './screens/research_workspace.js';
+import { renderResearchHome } from './screens/research_home.js';
+import { applyAppModeToDocument, getAppMode } from './labels.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
 import { renderActivity } from './screens/activity.js';
@@ -272,6 +274,7 @@ const routes = [
   // render Settings and scroll/expand the licence card into focus.
   { match: /^\/activate\/?$/,       render: renderActivate },
   { match: /^\/research\/?$/,       render: renderResearchWorkspace },
+  { match: /^\/research-home\/?$/,  render: renderResearchHome },
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },
@@ -491,8 +494,24 @@ window.addEventListener('hashchange', route);
     if (localStorage.getItem('gapmap.pref.dense_cards') === 'true') {
       document.documentElement.classList.add('dense-cards');
     }
+    applyAppModeToDocument();   // <html data-app-mode="product|research">
   } catch {}
 })();
+
+// App-mode nav visibility. Nav items tagged `data-nav-mode="research"` (or
+// "product") only show in that mode; untagged items show in both. Research
+// Mode also reveals the Research-home front door. Re-runs on boot and whenever
+// the mode changes from Settings.
+function syncNavToAppMode() {
+  try {
+    const mode = getAppMode();
+    document.querySelectorAll('[data-nav-mode]').forEach((el) => {
+      el.style.display = (el.dataset.navMode === mode) ? '' : 'none';
+    });
+  } catch {}
+}
+syncNavToAppMode();
+window.addEventListener('appmodechange', syncNavToAppMode);
 
 // Activation state heal: license_state.json (written by the Rust
 // `license_activate` command) is the source of truth on disk, but the

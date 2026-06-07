@@ -88,6 +88,12 @@ export async function renderResearchWorkspace(main) {
   const stepperEl = main.querySelector('#rw-stepper');
   const resultEl = main.querySelector('#rw-result');
 
+  // Prefill the question if we arrived here via Research Home's "Begin".
+  try {
+    const seed = sessionStorage.getItem('gapmap.research.seed');
+    if (seed && topicInput) { topicInput.value = seed; sessionStorage.removeItem('gapmap.research.seed'); }
+  } catch { /* sessionStorage unavailable */ }
+
   const state = {};
   STEPS.forEach((s) => { state[s.id] = 'pending'; });
 
