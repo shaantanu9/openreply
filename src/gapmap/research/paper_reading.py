@@ -246,8 +246,66 @@ def topic_notes(topic: str) -> dict[str, Any]:
     return {"ok": True, "count": len(rows), "notes": rows}
 
 
+# ─── Composite reader view ──────────────────────────────────────────────────
+def read_view(post_id: str, *, max_section_chars: int = 20000) -> dict[str, Any]:
+    """Everything the Reader UI needs for one paper, in a single call:
+    title/authors/url, reading status, highlights, and the full text split into
+    canonical sections. Falls back to a single 'body' section when the paper
+    wasn't section-parsed, and to the abstract when no full text was cached."""
+    if not post_id:
+        return {"ok": False, "error": "post_id required"}
+    db = get_db()
+    prow = list(db.query(
+        "SELECT id, title, author, url, created_utc, coalesce(source_type,'') AS source_type,"
+        " coalesce(selftext,'') AS abstract FROM posts WHERE id = ?",
+        [post_id],
+    ))
+    if not prow:
+        return {"ok": False, "error": f"no paper {post_id}"}
+    meta = prow[0]
+
+    sections: list[dict] = []
+    try:
+        from .paper_fulltext import get_full_text
+        from .paper_sections import get_sections, get_section_text
+        ft = get_full_text(post_id, cache_only=True)
+        if ft.get("ok") and ft.get("text"):
+            secs = get_sections(post_id) or []
+            if secs:
+                for s in secs:
+                    txt = ""
+                    try:
+                        txt = get_section_text(post_id, s["name"]) or ""
+                    except Exception:
+                        txt = ""
+                    if not txt:
+                        txt = (ft["text"][s.get("char_start", 0):s.get("char_end", 0)] or "")
+                    sections.append({"name": s["name"], "text": txt[:max_section_chars]})
+            else:
+                sections.append({"name": "body", "text": ft["text"][:max_section_chars]})
+    except Exception:
+        sections = []
+
+    tier = "full_text" if sections else "abstract"
+    if not sections:
+        sections = [{"name": "abstract", "text": meta["abstract"] or "(no full text cached — fetch it from the Papers tab)"}]
+
+    return {
+        "ok": True,
+        "post_id": post_id,
+        "title": meta["title"] or "Untitled",
+        "author": meta["author"] or "",
+        "url": meta["url"] or "",
+        "source_type": meta["source_type"],
+        "tier": tier,
+        "status": get_status(post_id)["status"],
+        "highlights": list_highlights(post_id)["highlights"],
+        "sections": sections,
+    }
+
+
 __all__ = [
     "set_status", "get_status", "list_status", "reading_queue", "status_counts",
     "add_highlight", "list_highlights", "update_highlight", "delete_highlight",
-    "topic_notes", "VALID_STATUS",
+    "topic_notes", "read_view", "VALID_STATUS",
 ]

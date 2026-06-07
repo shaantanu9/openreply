@@ -1024,6 +1024,8 @@ export const api = {
     quote: opts.quote ?? null, note: opts.note ?? null, color: opts.color ?? null,
   }),
   paperNotes: (topic) => invoke('paper_notes', { topic }),
+  // Composite Reader payload: {title, sections:[{name,text}], status, highlights}.
+  paperRead: (postId) => invoke('paper_read', { postId }),
 
   // Warm the LLM on app launch so the first collect's canonicalize isn't a
   // 30-60s cold start. Fire-and-forget; fail-soft.

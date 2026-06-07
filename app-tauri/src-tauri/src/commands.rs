@@ -1911,6 +1911,14 @@ pub async fn paper_notes(app: AppHandle, topic: String) -> Result<Value, String>
         .await.map_err(err_to_string)
 }
 
+/// Composite Reader payload for one paper: title, sections (full text),
+/// reading status, and highlights — everything the Reader screen needs.
+#[tauri::command]
+pub async fn paper_read(app: AppHandle, post_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "paper-read", "--post-id", &post_id])
+        .await.map_err(err_to_string)
+}
+
 /// Streaming "build the paper knowledge base" workflow. Fires
 /// `paper:knowledge:progress` events (NDJSON lifecycle lines:
 /// workflow:start, stage:start, stage:progress, stage:done, workflow:done)

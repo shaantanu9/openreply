@@ -17,6 +17,7 @@ import { renderIngest } from './screens/ingest.js';
 import { renderIngestVideo } from './screens/ingest_video.js';
 import { renderResearchWorkspace } from './screens/research_workspace.js';
 import { renderResearchHome } from './screens/research_home.js';
+import { renderReader } from './screens/reader.js';
 import { applyAppModeToDocument, getAppMode } from './labels.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
@@ -275,6 +276,7 @@ const routes = [
   { match: /^\/activate\/?$/,       render: renderActivate },
   { match: /^\/research\/?$/,       render: renderResearchWorkspace },
   { match: /^\/research-home\/?$/,  render: renderResearchHome },
+  { match: /^\/reader\/([^/?]+).*$/, render: renderReader },
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },

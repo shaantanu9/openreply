@@ -127,6 +127,7 @@ function renderRow(p) {
       <td class="paper-title">
         <a href="${escape(landingUrl || '#')}" target="_blank" rel="noopener">${title}</a>
         <div class="paper-authors">${authors}</div>
+        <a href="#/reader/${encodeURIComponent(p.id)}" class="paper-read-link" style="font-size:11.5px;text-decoration:none;color:var(--accent,#5B8DB8);display:inline-flex;align-items:center;gap:3px;margin-top:2px"><i data-lucide="book-open" style="width:12px;height:12px"></i> Read &amp; annotate</a>
       </td>
       <td class="num">${escape(year)}</td>
       <td class="num">${cites}</td>

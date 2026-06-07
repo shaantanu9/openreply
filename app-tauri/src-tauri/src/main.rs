@@ -445,6 +445,7 @@ fn main() {
             commands::paper_reading_queue,
             commands::paper_highlight,
             commands::paper_notes,
+            commands::paper_read,
             commands::paper_knowledge_build,
             commands::warm_llm,
             commands::competitor_matrix,

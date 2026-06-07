@@ -4172,6 +4172,16 @@ def cmd_research_paper_notes(
     typer.echo(json.dumps(paper_reading.topic_notes(topic), default=str))
 
 
+@research_app.command("paper-read")
+def cmd_research_paper_read(
+    post_id: str = typer.Option(..., "--post-id"),
+) -> None:
+    """Composite Reader payload for one paper: title, sections (full text),
+    reading status, and highlights — everything the Reader UI needs."""
+    from ..research import paper_reading
+    typer.echo(json.dumps(paper_reading.read_view(post_id), default=str))
+
+
 @research_app.command("paper-references")
 def cmd_research_paper_references(
     post_id: Optional[str] = typer.Option(None, "--post-id"),
