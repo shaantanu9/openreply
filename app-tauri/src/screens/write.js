@@ -31,8 +31,8 @@ function renderOutlineValue(outline) {
 
 const COPY = (id) => `<button class="btn btn-sm btn-bordered" data-copy="${id}" type="button"><i data-lucide="clipboard"></i> Copy</button>`;
 
-export async function renderWrite(main, topicRaw) {
-  const topic = decodeURIComponent(topicRaw || '');
+export async function renderWrite(main, { params } = {}) {
+  const topic = decodeURIComponent((params && params[0]) || '');
   main.innerHTML = `
     <div class="screen" style="max-width:920px;margin:0 auto;padding:16px 20px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">

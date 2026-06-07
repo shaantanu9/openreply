@@ -10,8 +10,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
 ));
 const FIELDS = ['method', 'dataset', 'sample', 'findings', 'limitations', 'metric'];
 
-export async function renderLitMatrix(main, topicRaw) {
-  const topic = decodeURIComponent(topicRaw || '');
+export async function renderLitMatrix(main, { params } = {}) {
+  const topic = decodeURIComponent((params && params[0]) || '');
   let sortKey = 'title';
   let sortDir = 1;
   let filter = '';

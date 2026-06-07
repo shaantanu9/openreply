@@ -60,8 +60,8 @@ function highlightRow(h) {
     </div>`;
 }
 
-export async function renderReader(main, postId) {
-  const pid = decodeURIComponent(postId || '');
+export async function renderReader(main, { params } = {}) {
+  const pid = decodeURIComponent((params && params[0]) || '');
   main.innerHTML = `<div class="screen" style="padding:20px"><div class="muted">Loading paper…</div></div>`;
 
   let data;
