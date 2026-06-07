@@ -1031,6 +1031,11 @@ export const api = {
   litMatrixBuild: (topic, { limit = null, force = false } = {}) =>
     invoke('lit_matrix_build', { topic, limit, force }),
   litMatrixExport: (topic) => invoke('lit_matrix_export', { topic }),
+  // Cross-project library + collections.
+  paperLibrary: ({ collection = null, status = null, q = null, limit = 300 } = {}) =>
+    invoke('paper_library', { collection, status, q, limit }),
+  paperCollections: (action = 'list', { name = null, collectionId = null, postId = null } = {}) =>
+    invoke('paper_collections', { action, name, collectionId, postId }),
 
   // Warm the LLM on app launch so the first collect's canonicalize isn't a
   // 30-60s cold start. Fire-and-forget; fail-soft.

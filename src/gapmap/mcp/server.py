@@ -1252,6 +1252,29 @@ def gapmap_paper_notes(topic: str) -> dict:
 
 
 @mcp.tool()
+def gapmap_paper_library(collection_id: str | None = None, status: str | None = None,
+                         q: str | None = None, limit: int = 300) -> dict:
+    """Cross-project paper library — every academic paper with its reading status
+    and collection membership. Filter by collection_id, status, or q (title)."""
+    from ..research import paper_library
+    return paper_library.library(collection_id, status, q, limit)
+
+
+@mcp.tool()
+def gapmap_paper_collections(action: str = "list", name: str | None = None,
+                             collection_id: str | None = None, post_id: str | None = None) -> dict:
+    """Manage paper collections. action ∈ list|create|rename|delete|add|remove."""
+    from ..research import paper_library as pl
+    if action == "list":     return pl.list_collections()
+    if action == "create":   return pl.create_collection(name or "")
+    if action == "rename":   return pl.rename_collection(collection_id or "", name or "")
+    if action == "delete":   return pl.delete_collection(collection_id or "")
+    if action == "add":      return pl.add_to_collection(collection_id or "", post_id or "")
+    if action == "remove":   return pl.remove_from_collection(collection_id or "", post_id or "")
+    return {"ok": False, "error": "unknown action"}
+
+
+@mcp.tool()
 def gapmap_lit_matrix(topic: str, build: bool = False, limit: int | None = None,
                       force: bool = False) -> dict:
     """Literature-review matrix for a topic's papers — one structured row per

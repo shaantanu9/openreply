@@ -1945,6 +1945,39 @@ pub async fn lit_matrix_export(app: AppHandle, topic: String) -> Result<Value, S
         .await.map_err(err_to_string)
 }
 
+/// Cross-project paper library — papers with reading status + collections.
+#[tauri::command]
+pub async fn paper_library(
+    app: AppHandle, collection: Option<String>, status: Option<String>,
+    q: Option<String>, limit: Option<u32>,
+) -> Result<Value, String> {
+    let col = collection.unwrap_or_default();
+    let st = status.unwrap_or_default();
+    let query = q.unwrap_or_default();
+    let lim = limit.unwrap_or(300).to_string();
+    let mut args: Vec<&str> = vec!["research", "library", "--limit", &lim];
+    if !col.is_empty()   { args.push("--collection"); args.push(col.as_str()); }
+    if !st.is_empty()    { args.push("--status");     args.push(st.as_str()); }
+    if !query.is_empty() { args.push("--q");          args.push(query.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Manage paper collections: list | create | rename | delete | add | remove.
+#[tauri::command]
+pub async fn paper_collections(
+    app: AppHandle, action: String, name: Option<String>,
+    collection_id: Option<String>, post_id: Option<String>,
+) -> Result<Value, String> {
+    let nm = name.unwrap_or_default();
+    let cid = collection_id.unwrap_or_default();
+    let pid = post_id.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "collections", &action];
+    if !nm.is_empty()  { args.push("--name");    args.push(nm.as_str()); }
+    if !cid.is_empty() { args.push("--id");      args.push(cid.as_str()); }
+    if !pid.is_empty() { args.push("--post-id"); args.push(pid.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
 /// Streaming "build the paper knowledge base" workflow. Fires
 /// `paper:knowledge:progress` events (NDJSON lifecycle lines:
 /// workflow:start, stage:start, stage:progress, stage:done, workflow:done)

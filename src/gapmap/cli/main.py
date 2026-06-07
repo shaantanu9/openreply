@@ -4182,6 +4182,38 @@ def cmd_research_paper_read(
     typer.echo(json.dumps(paper_reading.read_view(post_id), default=str))
 
 
+@research_app.command("library")
+def cmd_research_library(
+    collection: Optional[str] = typer.Option(None, "--collection"),
+    status: Optional[str] = typer.Option(None, "--status"),
+    q: Optional[str] = typer.Option(None, "--q"),
+    limit: int = typer.Option(300, "--limit", "-n"),
+) -> None:
+    """Cross-project paper library: every academic paper with reading status +
+    collection membership. Filter by --collection, --status, --q (title)."""
+    from ..research import paper_library
+    typer.echo(json.dumps(paper_library.library(collection, status, q, limit), default=str))
+
+
+@research_app.command("collections")
+def cmd_research_collections(
+    action: str = typer.Argument("list", help="list | create | rename | delete | add | remove"),
+    name: Optional[str] = typer.Option(None, "--name"),
+    collection_id: Optional[str] = typer.Option(None, "--id"),
+    post_id: Optional[str] = typer.Option(None, "--post-id"),
+) -> None:
+    """Manage paper collections: list | create | rename | delete | add | remove."""
+    from ..research import paper_library as pl
+    if action == "list":      r = pl.list_collections()
+    elif action == "create":  r = pl.create_collection(name or "")
+    elif action == "rename":  r = pl.rename_collection(collection_id or "", name or "")
+    elif action == "delete":  r = pl.delete_collection(collection_id or "")
+    elif action == "add":     r = pl.add_to_collection(collection_id or "", post_id or "")
+    elif action == "remove":  r = pl.remove_from_collection(collection_id or "", post_id or "")
+    else:                     r = {"ok": False, "error": "unknown action"}
+    typer.echo(json.dumps(r, default=str))
+
+
 @research_app.command("lit-matrix")
 def cmd_research_lit_matrix(
     topic: str = typer.Option(..., "--topic", "-t"),

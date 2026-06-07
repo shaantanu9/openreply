@@ -20,6 +20,7 @@ import { renderResearchHome } from './screens/research_home.js';
 import { renderReader } from './screens/reader.js';
 import { renderLitMatrix } from './screens/lit_matrix.js';
 import { renderWrite } from './screens/write.js';
+import { renderLibrary } from './screens/library.js';
 import { applyAppModeToDocument, getAppMode } from './labels.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
@@ -281,6 +282,7 @@ const routes = [
   { match: /^\/reader\/([^/?]+).*$/, render: renderReader },
   { match: /^\/lit-matrix\/([^/?]+).*$/, render: renderLitMatrix },
   { match: /^\/write\/([^/?]+).*$/, render: renderWrite },
+  { match: /^\/library\/?$/, render: renderLibrary },
   { match: /^\/ingest\/?$/,         render: renderIngest },
   { match: /^\/ingest-video(?:\?.*)?\/?$/, render: renderIngestVideo },
   { match: /^\/reports\/?$/,        render: renderReports },
