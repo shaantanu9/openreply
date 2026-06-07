@@ -1846,6 +1846,71 @@ pub async fn paper_ask(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+/// Get or set a paper's reading status (to_read | reading | read).
+/// Pass `status` to set; omit to read the current value.
+#[tauri::command]
+pub async fn paper_reading_status(
+    app: AppHandle, post_id: String, status: Option<String>,
+) -> Result<Value, String> {
+    let s = status.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "paper-reading-status", "--post-id", &post_id];
+    if !s.is_empty() { args.push("--set"); args.push(s.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// The to-read queue for a topic's papers (or globally), or status counts.
+#[tauri::command]
+pub async fn paper_reading_queue(
+    app: AppHandle, topic: Option<String>, limit: Option<u32>, counts: Option<bool>,
+) -> Result<Value, String> {
+    let t = topic.unwrap_or_default();
+    let lim = limit.unwrap_or(50).to_string();
+    let mut args: Vec<&str> = vec!["research", "reading-queue", "--limit", &lim];
+    if !t.is_empty() { args.push("--topic"); args.push(t.as_str()); }
+    if counts.unwrap_or(false) { args.push("--counts"); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Highlights + notes on a paper: action ∈ add | list | update | delete.
+#[tauri::command]
+pub async fn paper_highlight(
+    app: AppHandle,
+    action: String,
+    post_id: Option<String>,
+    highlight_id: Option<String>,
+    section: Option<String>,
+    char_start: Option<i64>,
+    char_end: Option<i64>,
+    quote: Option<String>,
+    note: Option<String>,
+    color: Option<String>,
+) -> Result<Value, String> {
+    let pid = post_id.unwrap_or_default();
+    let hid = highlight_id.unwrap_or_default();
+    let sec = section.unwrap_or_default();
+    let cs = char_start.unwrap_or(0).to_string();
+    let ce = char_end.unwrap_or(0).to_string();
+    let q  = quote.unwrap_or_default();
+    let n  = note.unwrap_or_default();
+    let c  = color.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["research", "paper-highlight", &action];
+    if !pid.is_empty() { args.push("--post-id"); args.push(pid.as_str()); }
+    if !hid.is_empty() { args.push("--id");      args.push(hid.as_str()); }
+    if !sec.is_empty() { args.push("--section"); args.push(sec.as_str()); }
+    if action == "add" { args.push("--start"); args.push(cs.as_str()); args.push("--end"); args.push(ce.as_str()); }
+    if !q.is_empty()   { args.push("--quote");   args.push(q.as_str()); }
+    if !n.is_empty()   { args.push("--note");    args.push(n.as_str()); }
+    if !c.is_empty()   { args.push("--color");   args.push(c.as_str()); }
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Every highlight + note across a topic's papers — the project notebook.
+#[tauri::command]
+pub async fn paper_notes(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "paper-notes", "--topic", &topic])
+        .await.map_err(err_to_string)
+}
+
 /// Streaming "build the paper knowledge base" workflow. Fires
 /// `paper:knowledge:progress` events (NDJSON lifecycle lines:
 /// workflow:start, stage:start, stage:progress, stage:done, workflow:done)

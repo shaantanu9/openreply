@@ -1012,6 +1012,19 @@ export const api = {
   paperAsk: (question, { topic = null, sections = null, postId = null, k = 10, provider = null } = {}) =>
     invoke('paper_ask', { question, topic, sections, postId, k, provider }),
 
+  // Reading status (to_read|reading|read). Omit status to read; pass to set.
+  paperReadingStatus: (postId, status = null) => invoke('paper_reading_status', { postId, status }),
+  paperReadingQueue: ({ topic = null, limit = 50, counts = false } = {}) =>
+    invoke('paper_reading_queue', { topic, limit, counts }),
+  // Highlights + notes. action ∈ add|list|update|delete.
+  paperHighlight: (action, opts = {}) => invoke('paper_highlight', {
+    action,
+    postId: opts.postId ?? null, highlightId: opts.highlightId ?? null,
+    section: opts.section ?? null, charStart: opts.charStart ?? null, charEnd: opts.charEnd ?? null,
+    quote: opts.quote ?? null, note: opts.note ?? null, color: opts.color ?? null,
+  }),
+  paperNotes: (topic) => invoke('paper_notes', { topic }),
+
   // Warm the LLM on app launch so the first collect's canonicalize isn't a
   // 30-60s cold start. Fire-and-forget; fail-soft.
   warmLlm: () => invoke('warm_llm'),

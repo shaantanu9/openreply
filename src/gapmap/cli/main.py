@@ -4109,6 +4109,69 @@ def cmd_research_paper_ask(
             console.print(r["sources_markdown"])
 
 
+@research_app.command("paper-reading-status")
+def cmd_research_paper_reading_status(
+    post_id: str = typer.Option(..., "--post-id"),
+    set_status: Optional[str] = typer.Option(None, "--set", help="to_read|reading|read; omit to read current"),
+) -> None:
+    """Get or set a paper's reading status (to_read | reading | read)."""
+    from ..research import paper_reading
+    r = (paper_reading.set_status(post_id, set_status) if set_status
+         else paper_reading.get_status(post_id))
+    typer.echo(json.dumps(r, default=str))
+
+
+@research_app.command("reading-queue")
+def cmd_research_reading_queue(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    limit: int = typer.Option(50, "--limit", "-n"),
+    counts: bool = typer.Option(False, "--counts", help="Return {to_read,reading,read} counts instead of the list."),
+) -> None:
+    """The to-read queue for a topic (or globally), or status counts."""
+    from ..research import paper_reading
+    r = (paper_reading.status_counts(topic) if counts
+         else paper_reading.reading_queue(topic, limit=limit))
+    typer.echo(json.dumps(r, default=str))
+
+
+@research_app.command("paper-highlight")
+def cmd_research_paper_highlight(
+    action: str = typer.Argument(..., help="add | list | update | delete"),
+    post_id: Optional[str] = typer.Option(None, "--post-id"),
+    highlight_id: Optional[str] = typer.Option(None, "--id"),
+    section: str = typer.Option("", "--section"),
+    char_start: int = typer.Option(0, "--start"),
+    char_end: int = typer.Option(0, "--end"),
+    quote: str = typer.Option("", "--quote"),
+    note: Optional[str] = typer.Option(None, "--note"),
+    color: Optional[str] = typer.Option(None, "--color"),
+) -> None:
+    """Highlights + notes on a paper: add | list | update | delete."""
+    from ..research import paper_reading
+    if action == "add":
+        r = paper_reading.add_highlight(
+            post_id or "", section=section, char_start=char_start, char_end=char_end,
+            quote=quote, note=note or "", color=color or "yellow")
+    elif action == "list":
+        r = paper_reading.list_highlights(post_id or "")
+    elif action == "update":
+        r = paper_reading.update_highlight(highlight_id or "", note=note, color=color)
+    elif action == "delete":
+        r = paper_reading.delete_highlight(highlight_id or "")
+    else:
+        r = {"ok": False, "error": "action must be add|list|update|delete"}
+    typer.echo(json.dumps(r, default=str))
+
+
+@research_app.command("paper-notes")
+def cmd_research_paper_notes(
+    topic: str = typer.Option(..., "--topic", "-t"),
+) -> None:
+    """Every highlight + note across a topic's papers — the project notebook."""
+    from ..research import paper_reading
+    typer.echo(json.dumps(paper_reading.topic_notes(topic), default=str))
+
+
 @research_app.command("paper-references")
 def cmd_research_paper_references(
     post_id: Optional[str] = typer.Option(None, "--post-id"),

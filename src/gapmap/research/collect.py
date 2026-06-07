@@ -27,7 +27,7 @@ from typing import Any
 def _ts_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-from ..core.db import get_db
+from ..core.db import get_db, _retry_on_locked
 from ..core.pullpush_client import CUTOFF_UTC
 from ..fetch.historical import fetch_historical
 from ..fetch.posts import fetch_posts
@@ -280,8 +280,9 @@ def _tag_posts(topic: str, post_ids: list[str], source: str) -> int:
         for pid in post_ids
         if pid
     ]
-    # Ignore-on-conflict so rerunning a topic doesn't error
-    db["topic_posts"].insert_all(rows, pk=("topic", "post_id"), ignore=True)
+    # Ignore-on-conflict so rerunning a topic doesn't error. Retry on transient
+    # lock — under the parallel source fan-out several workers tag posts at once.
+    _retry_on_locked(db["topic_posts"].insert_all, rows, pk=("topic", "post_id"), ignore=True)
 
     # Enqueue for async extraction by the long-lived worker. Idempotent via
     # composite PK (topic, post_id, kind) — rerunning collect doesn't create
@@ -289,7 +290,8 @@ def _tag_posts(topic: str, post_ids: list[str], source: str) -> int:
     # and extracts findings into graph_nodes incrementally. See
     # docs/superpowers/plans/2026-04-21-incremental-enrichment.md Task 2.
     try:
-        db["extraction_queue"].insert_all(
+        _retry_on_locked(
+            db["extraction_queue"].insert_all,
             [
                 {
                     "topic": topic,

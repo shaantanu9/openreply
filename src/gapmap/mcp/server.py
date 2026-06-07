@@ -1192,6 +1192,66 @@ def gapmap_paper_ask(
 
 
 @mcp.tool()
+def gapmap_paper_reading_status(post_id: str, status: str | None = None) -> dict:
+    """Get or set a paper's reading status. status ∈ to_read|reading|read.
+    Omit `status` to read the current value (defaults to 'to_read')."""
+    from ..research import paper_reading
+    if status:
+        return paper_reading.set_status(post_id, status)
+    return paper_reading.get_status(post_id)
+
+
+@mcp.tool()
+def gapmap_paper_reading_queue(topic: str | None = None, limit: int = 50,
+                               counts: bool = False) -> dict:
+    """The to-read queue for a topic's papers (or globally). Pass counts=True for
+    {to_read, reading, read} totals instead of the list."""
+    from ..research import paper_reading
+    if counts:
+        return paper_reading.status_counts(topic)
+    return paper_reading.reading_queue(topic, limit=limit)
+
+
+@mcp.tool()
+def gapmap_paper_highlight(
+    action: str,
+    post_id: str | None = None,
+    highlight_id: str | None = None,
+    section: str = "",
+    char_start: int = 0,
+    char_end: int = 0,
+    quote: str = "",
+    note: str | None = None,
+    color: str | None = None,
+) -> dict:
+    """Highlights + notes on a paper. action ∈ add|list|update|delete.
+    - add:    needs post_id (+ section/char_start/char_end/quote/note/color)
+    - list:   needs post_id
+    - update: needs highlight_id (+ note and/or color)
+    - delete: needs highlight_id
+    """
+    from ..research import paper_reading
+    if action == "add":
+        return paper_reading.add_highlight(
+            post_id or "", section=section, char_start=char_start,
+            char_end=char_end, quote=quote, note=note or "", color=color or "yellow")
+    if action == "list":
+        return paper_reading.list_highlights(post_id or "")
+    if action == "update":
+        return paper_reading.update_highlight(highlight_id or "", note=note, color=color)
+    if action == "delete":
+        return paper_reading.delete_highlight(highlight_id or "")
+    return {"ok": False, "error": "action must be add|list|update|delete"}
+
+
+@mcp.tool()
+def gapmap_paper_notes(topic: str) -> dict:
+    """Every highlight + note across a topic's papers — the project notebook."""
+    from ..research import paper_reading
+    return paper_reading.topic_notes(topic)
+
+
+@mcp.tool()
 def gapmap_paper_chunk_topic(
     topic: str | None = None,
     force: bool = False,
