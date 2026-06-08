@@ -13,6 +13,7 @@ import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { postLink } from '../lib/postLink.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 import { skelDetail } from '../lib/skeleton.js';
+import { withTimeout, LLM_TAB_TIMEOUT_MS } from '../lib/withTimeout.js';
 import { withButtonBusy } from '../lib/busyButton.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1029,7 +1030,7 @@ async function runSynth(contentEl, topic) {
   // writes a topic_runs row, which populates the Dashboard weekly card.
   let runResult;
   try {
-    runResult = await api.monitorRunTopic(topic, true);  // skip_collect=true for speed
+    runResult = await withTimeout(api.monitorRunTopic(topic, true), LLM_TAB_TIMEOUT_MS, 'Insights synthesis');  // skip_collect=true for speed
   } catch (e) {
     stop();
     if (contentEl.dataset.tab !== 'insights') return;

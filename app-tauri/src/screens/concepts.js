@@ -10,6 +10,7 @@ import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { renderAnalyzingState } from '../lib/analyzingLoader.js';
 import { skelGrid } from '../lib/skeleton.js';
+import { withTimeout, LLM_TAB_TIMEOUT_MS } from '../lib/withTimeout.js';
 
 // Domain stages for the Concept Agent's single blocking LLM call (no
 // incremental persist — the whole 3-5 concept payload lands at once, so this
@@ -182,7 +183,7 @@ export async function loadConcepts(contentEl, topic) {
         runKey: conceptsRunKey(topic),
       });
       try {
-        const result = await api.runConcepts(topic);
+        const result = await withTimeout(api.runConcepts(topic), LLM_TAB_TIMEOUT_MS, 'Concept Agent');
         stop({ snapToComplete: true });
         if (contentEl.dataset.tab !== 'concepts') return;
         if (result?.reason && !result.concepts?.length) {

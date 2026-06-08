@@ -490,20 +490,42 @@ export async function renderHome(root) {
   // the banner reflects real readiness rather than the slowest slot.
   api.overviewStats().then(hideWarmup).catch(hideWarmup);
 
-  // Background refresh — fires all queries in parallel and rewrites slots
-  // when fresher data arrives. Per-call failures are per-slot, never kill
-  // the whole dashboard.
+  // Background refresh — fires queries in parallel and rewrites slots when
+  // fresher data arrives. Per-call failures are per-slot, never kill the whole
+  // dashboard.
+  //
+  // Above the fold: hero + stats + topic grid + collect status + BYOK nudge.
+  // These fire immediately so the dashboard the user actually looks at first
+  // paints fast.
   loadHeroAndStats(root);
   loadMomentum(root);
   loadActivity(root);
   loadTopicGrid(root);
   loadActiveCollect(root);
   loadByokPrompt(root);
-  loadPalaceNudge(root);
-  loadProductsCard(root);
-  loadWeeklyDeltas(root);
-  loadBetsSummary(root);
-  loadTopOpportunities(root);
+
+  // Below the fold: weekly deltas, bets, opportunities, products, palace nudge.
+  // Deferred until the page has painted and the first sidecar burst has
+  // settled. Firing all ~13 calls at once made them contend on the single
+  // sidecar-daemon mutex; the losers time out on the lock (3-4s) and fall back
+  // to cold one-shot Python spawns, starving the above-the-fold cards. Letting
+  // the idle callback run them after first paint keeps the hero responsive and
+  // lets the daemon serve them warm.
+  const belowFoldRouteGen = root.dataset.routeGen;
+  const loadBelowFold = () => {
+    // Skip if the user already navigated away before idle fired.
+    if (!root.isConnected || root.dataset.routeGen !== belowFoldRouteGen) return;
+    loadPalaceNudge(root);
+    loadProductsCard(root);
+    loadWeeklyDeltas(root);
+    loadBetsSummary(root);
+    loadTopOpportunities(root);
+  };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(loadBelowFold, { timeout: 2500 });
+  } else {
+    setTimeout(loadBelowFold, 600);
+  }
 
   // Live-refresh hooks:
   //   1. `gapmap:db-changed` fires when api.js's mtime poller detects an

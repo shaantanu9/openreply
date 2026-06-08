@@ -163,16 +163,21 @@ export async function tabCount(tabId, topic) {
   return COUNT_SAFE(spec.countSql, topic);
 }
 
-// Auto-run setting — users can globally disable "open an empty tab → kick
-// the pipeline" behaviour from Settings. Defaults to true (most users want
-// things to just work). Localstorage key mirrors the other app prefs.
+// Auto-run setting — users can globally enable "open an empty tab → kick
+// the pipeline" behaviour from the topic Actions tab.
+// Defaults to FALSE (changed 2026-06-08): auto-firing a 30-90s blocking LLM
+// job on every topic open made every tab "keep loading" and surfaced the
+// "Ideating product concepts" loader before the user asked for it. Now a
+// topic opens instantly to its cached/existing data (or an empty CTA) and the
+// LLM pipelines run only when the user clicks Run. Opt back in via the
+// "Auto-run pipelines when a tab is opened" toggle in the topic Actions tab.
 const AUTORUN_KEY = 'gapmap.tabs.autoRunOnOpen';
 export function isAutoRunEnabled() {
   try {
     const v = localStorage.getItem(AUTORUN_KEY);
-    if (v === null) return true;
+    if (v === null) return false;
     return v === '1' || v === 'true';
-  } catch { return true; }
+  } catch { return false; }
 }
 export function setAutoRunEnabled(v) {
   try { localStorage.setItem(AUTORUN_KEY, v ? '1' : '0'); } catch {}
