@@ -1438,6 +1438,61 @@ def gapmap_paper_chunk_topic(
 
 
 @mcp.tool()
+def gapmap_paper_chunk_abstracts(
+    topic: str | None = None,
+    force: bool = False,
+    limit: int | None = None,
+) -> dict:
+    """Abstract-fallback embedding: embed the title+abstract of every paper
+    that has NO open-access full text as a single chunk, so the WHOLE corpus
+    becomes chat-able (`gapmap_paper_ask`) and relatable (paper map /
+    `relates_to` edges) — not just the few papers with full text (90%+ are
+    paywalled). Topic-scoped when `topic` is given, else the whole library.
+    Local-CPU, idempotent, skips papers that already have full-text chunks.
+
+    Returns: {ok, topic, total, embedded, skipped, errors}.
+    """
+    from ..research.paper_chunks import chunk_abstracts_all
+    return chunk_abstracts_all(topic=topic, embed=True, limit=limit, force=force)
+
+
+@mcp.tool()
+def gapmap_paper_enrich_abstracts(
+    topic: str | None = None,
+    limit: int | None = None,
+    chunk: bool = True,
+) -> dict:
+    """Backfill missing abstracts for title-only papers (PubMed search carries
+    no abstract; some OpenAlex/Crossref/Scholar rows are metadata-only), then
+    embed them so they become chat-able + relatable. Fetches each paper's
+    abstract from its source with an OpenAlex-by-DOI fallback, writes it to
+    posts.selftext, and (chunk=True) chunk-embeds the newly-enriched papers.
+    Network-bound. Omit `topic` for the whole library.
+
+    Returns: {ok, topic, total, enriched, no_abstract, chunked, errors}.
+    """
+    from ..research.paper_abstract_enrich import enrich_topic_abstracts
+    return enrich_topic_abstracts(topic=topic, limit=limit, chunk=chunk)
+
+
+@mcp.tool()
+def gapmap_paper_citations(
+    topic: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    """Build paper→paper `cites` edges from the Semantic Scholar references API:
+    fetch each paper's reference list and match references to in-corpus papers by
+    exact DOI / arXiv / PMID, then materialize `paper_cites` edges for the paper
+    map. NOTE: S2's unauthenticated rate limit is small — set S2_API_KEY for runs
+    over a few dozen papers and pass `limit` (most-cited papers first).
+
+    Returns: {ok, topic, papers, fetched, links, edges, errors}.
+    """
+    from ..research.paper_citations import build_citations
+    return build_citations(topic=topic, limit=limit)
+
+
+@mcp.tool()
 def gapmap_paper_extract_refs(post_id: str, force: bool = False) -> dict:
     """Extract the references / bibliography section from a paper's
     cached full-text PDF into structured rows (DOI / arxiv id / title /

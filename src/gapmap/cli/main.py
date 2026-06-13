@@ -3989,6 +3989,12 @@ def cmd_research_paper_chunk(
     limit: Optional[int] = typer.Option(None, "--limit", "-n"),
     force: bool = typer.Option(False, "--force"),
     no_embed: bool = typer.Option(False, "--no-embed", help="Skip Mempalace upsert."),
+    abstracts: bool = typer.Option(
+        False, "--abstracts",
+        help="Abstract fallback: embed the title+abstract of every paper that "
+             "has no open-access full text, so the WHOLE corpus is chat-able + "
+             "relatable (not just the few with full text). Bulk mode only.",
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Chunk paper full-text into embedding windows + push to Mempalace.
@@ -3997,8 +4003,24 @@ def cmd_research_paper_chunk(
     every paper with a cached full text. Without --no-embed, new chunks
     are upserted into Mempalace's `paper_chunks` collection so semantic
     search by section works immediately.
+
+    With --abstracts (bulk only), instead embeds each paper's abstract as a
+    single chunk for every paper lacking full text — the cheap way to make the
+    entire library answerable + related (90%+ of papers are paywalled).
     """
-    from ..research.paper_chunks import chunk_paper, chunk_topic
+    from ..research.paper_chunks import chunk_paper, chunk_topic, chunk_abstracts_all
+    if abstracts:
+        r = chunk_abstracts_all(topic=topic, embed=not no_embed,
+                                limit=limit, force=force)
+        if as_json:
+            typer.echo(json.dumps(r, default=str, indent=2))
+            return
+        console.print(
+            f"[green]abstract chunk[/green] · topic={r.get('topic') or 'ALL'} · "
+            f"total={r['total']} · embedded={r['embedded']} · "
+            f"skipped={r['skipped']} · errors={r['errors']}"
+        )
+        return
     if post_id:
         r = chunk_paper(post_id, force=force, embed=not no_embed)
     else:
@@ -4022,6 +4044,62 @@ def cmd_research_paper_chunk(
             f"total={r['total']} · chunked={r['chunked']} · "
             f"embedded_total={r['embedded_total']} · errors={r['errors']}"
         )
+
+
+@research_app.command("paper-enrich-abstracts")
+def cmd_research_paper_enrich_abstracts(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n"),
+    no_chunk: bool = typer.Option(False, "--no-chunk", help="Don't embed after enrich."),
+    spacing: float = typer.Option(0.15, "--spacing", help="Seconds between fetches."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Backfill missing abstracts for title-only papers, then embed them.
+
+    Many papers (esp. PubMed) arrive with no abstract, so they can't be chatted
+    with or related. This fetches each one's abstract from its source (with an
+    OpenAlex-by-DOI fallback) and writes it to posts.selftext, then chunk-embeds
+    the newly-enriched papers. Network-bound. Omit --topic for the whole library.
+    """
+    from ..research.paper_abstract_enrich import enrich_topic_abstracts
+    r = enrich_topic_abstracts(topic=topic, limit=limit, chunk=not no_chunk,
+                               spacing=spacing)
+    if as_json:
+        typer.echo(json.dumps(r, default=str, indent=2))
+        return
+    console.print(
+        f"[green]enrich abstracts[/green] · topic={r.get('topic') or 'ALL'} · "
+        f"total={r['total']} · enriched={r['enriched']} · chunked={r['chunked']} · "
+        f"no_abstract={r['no_abstract']} · errors={r['errors']}"
+    )
+
+
+@research_app.command("paper-citations")
+def cmd_research_paper_citations(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n",
+        help="Max source papers to query (most-cited first)."),
+    spacing: float = typer.Option(1.1, "--spacing",
+        help="Seconds between S2 calls. Set S2_API_KEY for sizeable runs."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Build paper→paper `cites` edges from the Semantic Scholar references API.
+
+    For each paper, fetches its reference list and matches references to
+    in-corpus papers by exact DOI / arXiv / PMID, then materializes `paper_cites`
+    edges (shown on the paper map). NOTE: S2's unauthenticated rate limit is
+    tiny — set S2_API_KEY for any run over a few dozen papers, and use --limit.
+    """
+    from ..research.paper_citations import build_citations
+    r = build_citations(topic=topic, limit=limit, spacing=spacing)
+    if as_json:
+        typer.echo(json.dumps(r, default=str, indent=2))
+        return
+    console.print(
+        f"[green]citations[/green] · topic={r.get('topic') or 'ALL'} · "
+        f"papers={r.get('papers')} · fetched={r.get('fetched')} · "
+        f"links={r.get('links')} · edges={r.get('edges')} · errors={r.get('errors')}"
+    )
 
 
 @research_app.command("paper-chunk-search")

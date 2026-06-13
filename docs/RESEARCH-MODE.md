@@ -41,6 +41,19 @@ Feature catalog: `FEATURES.md` §19.
 6. **Library** (`#/library`) — every academic paper across projects, with named
    collections, reading-status filters, and title search.
 
+## Corpus coverage — abstract fallback
+
+Only ~10% of academic papers have open-access **full text**; the rest are
+paywalled. To keep paper chat and the relations map from being starved, every
+paper that has a title+abstract but no full text is embedded as a single
+`abstract` chunk into the same `paper_chunks` palace collection. This makes the
+**whole** library chat-able (`paper-ask`) and relatable (paper map / `relates_to`
+edges), not just the papers with full text. It runs automatically inside
+`build-paper-knowledge` (the "Embedding papers" stage) and the paper pipeline;
+backfill an existing corpus with `paper-chunk --abstracts` (add `--topic` to
+scope, omit for the whole library). Full-text chunks are always preferred — a
+paper is abstract-chunked only when it has no full-text chunks.
+
 ## Data (additive tables)
 
 `paper_reading_status`, `paper_highlights`, `lit_matrix`, `paper_collections`,
@@ -53,7 +66,8 @@ Every surface is scriptable. CLI (`gapmap research …`):
 
 | Command | Purpose |
 |---|---|
-| `paper-ask "<q>" --topic …` | cited Q&A over paper full text |
+| `paper-ask "<q>" --topic …` | cited Q&A over paper full text + abstracts |
+| `paper-chunk --abstracts [--topic …]` | abstract-fallback embedding (whole corpus) |
 | `paper-chunk-search "<q>" --topic …` | passage retrieval (section-filterable) |
 | `paper-read --post-id …` | composite Reader payload |
 | `paper-reading-status --post-id … [--set read]` | get/set reading status |
