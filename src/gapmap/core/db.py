@@ -17,6 +17,7 @@ from typing import Any, Callable, Iterable, TypeVar
 from sqlite_utils import Database
 
 from .config import load_config
+from .runctx import current_run_id
 
 
 def _utc_now() -> str:
@@ -1471,6 +1472,47 @@ def log_fetch_end(fetch_id: int, rows: int, error: str | None = None) -> None:
         pass
 
 
+def record_check(*, topic: str, gate: str, operation: str, passed: bool,
+                 run_id: str | None = None, provider: str = "", model: str = "",
+                 invariant: str = "", exit_code: int = 0, detail: str = "") -> int:
+    """Record one quality gate. Best-effort — returns row id or -1. NEVER raises."""
+    try:
+        db = get_db()
+
+        def _ins() -> int:
+            return db["checks_ledger"].insert({
+                "topic": topic, "run_id": run_id if run_id is not None else current_run_id(),
+                "gate": gate, "operation": operation, "provider": provider, "model": model,
+                "invariant": invariant, "passed": 1 if passed else 0, "exit_code": exit_code,
+                "detail": (detail or "")[:2000], "ts": _utc_now(),
+            }).last_pk
+
+        return _retry_on_locked(_ins)
+    except Exception:
+        return -1
+
+
+def record_lineage(*, topic: str, artifact_id: str, artifact_kind: str,
+                   produced_by: str | None = None, from_post_ids: list[str] | None = None,
+                   decision: str = "", provider: str = "", model: str = "") -> int:
+    """Link an artifact to the sources/run that produced it. Best-effort, -1 on failure, never raises."""
+    try:
+        db = get_db()
+
+        def _ins() -> int:
+            return db["lineage"].insert({
+                "topic": topic, "artifact_id": artifact_id, "artifact_kind": artifact_kind,
+                "produced_by": produced_by if produced_by is not None else current_run_id(),
+                "from_post_ids": json.dumps(from_post_ids or [], default=str),
+                "decision": (decision or "")[:1000], "provider": provider, "model": model,
+                "ts": _utc_now(),
+            }).last_pk
+
+        return _retry_on_locked(_ins)
+    except Exception:
+        return -1
+
+
 # ── Upserts ──────────────────────────────────────────────────────────────────
 
 def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
@@ -1628,6 +1670,8 @@ __all__ = [
     "init_schema",
     "log_fetch_start",
     "log_fetch_end",
+    "record_check",
+    "record_lineage",
     "upsert_posts",
     "upsert_comments",
     "upsert_users",
