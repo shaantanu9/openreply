@@ -397,6 +397,27 @@ def gapmap_lineage_get(artifact_id: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool()
+def gapmap_traceability(artifact_id: str) -> list[dict[str, Any]]:
+    """Return the source posts that produced a specific artifact (gap → sources).
+
+    Joins ``lineage.from_post_ids`` (a JSON array) with the ``posts`` table to
+    surface the human-readable posts that fed the given graph node or finding.
+    Useful for understanding *why* a painpoint or feature-wish was surfaced and
+    for linking findings back to original community discussions.
+
+    Args:
+        artifact_id: the graph_nodes.id (or other artifact key) to trace.
+
+    Returns:
+        List of post dicts (id, title, url, permalink, source_type, author,
+        score). Returns ``[]`` when the artifact has no lineage row or its
+        source posts have been pruned.
+    """
+    from ..research.traceability import traceability_for_artifact
+    return traceability_for_artifact(artifact_id)
+
+
+@mcp.tool()
 def gapmap_describe_schema(table: str | None = None) -> dict[str, Any]:
     """Return live SQLite schema — either every table, or one table.
 
@@ -2049,6 +2070,98 @@ def gapmap_fetch_acled(query: str, limit: int = 30, country: str | None = None) 
     from ..sources.acled import fetch_acled
 
     return fetch_acled(query=query, limit=limit, country=country)
+
+
+# ── Social + prediction-market + extra academic sources ──────────────────────
+# Ad-hoc per-source fetch tools (preview without persisting). The same sources
+# are also collectable in bulk via gapmap_collect (SOURCES dispatch). Keep these
+# in sync with sources/collect_adapter.py:SOURCES.
+@mcp.tool()
+def gapmap_fetch_polymarket(query: str, limit: int = 20) -> list[dict]:
+    """Polymarket prediction-market questions + odds as text-summary rows. Keyless."""
+    from ..sources.polymarket import fetch_polymarket
+
+    return fetch_polymarket(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_truthsocial(query: str, limit: int = 30) -> list[dict]:
+    """Truth Social posts. Needs TRUTHSOCIAL_TOKEN."""
+    from ..sources.truthsocial import fetch_truthsocial
+
+    return fetch_truthsocial(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_digg(query: str, limit: int = 20) -> list[dict]:
+    """Digg posts. Needs the digg-pp-cli binary on PATH."""
+    from ..sources.digg import fetch_digg
+
+    return fetch_digg(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_tiktok(query: str, limit: int = 20) -> list[dict]:
+    """TikTok videos/captions. Needs SCRAPECREATORS_API_KEY."""
+    from ..sources.tiktok import fetch_tiktok
+
+    return fetch_tiktok(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_instagram(query: str, limit: int = 20) -> list[dict]:
+    """Instagram posts/captions. Needs SCRAPECREATORS_API_KEY."""
+    from ..sources.instagram import fetch_instagram
+
+    return fetch_instagram(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_threads(query: str, limit: int = 20) -> list[dict]:
+    """Threads posts. Needs SCRAPECREATORS_API_KEY."""
+    from ..sources.threads import fetch_threads
+
+    return fetch_threads(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_pinterest(query: str, limit: int = 20) -> list[dict]:
+    """Pinterest pins. Needs SCRAPECREATORS_API_KEY."""
+    from ..sources.pinterest import fetch_pinterest
+
+    return fetch_pinterest(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_x(query: str, limit: int = 20) -> list[dict]:
+    """X / Twitter posts. Needs AUTH_TOKEN+CT0 (cookies) | XAI_API_KEY | XQUIK_API_KEY."""
+    from ..sources.x_twitter import fetch_x
+
+    return fetch_x(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_steam(query: str, limit: int = 30) -> list[dict]:
+    """Steam reviews / community signal. Keyless."""
+    from ..sources.steam import fetch_steam
+
+    return fetch_steam(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_dblp(query: str, limit: int = 30) -> list[dict]:
+    """DBLP computer-science bibliography. Keyless. Academic source."""
+    from ..sources.dblp import fetch_dblp
+
+    return fetch_dblp(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_europepmc(query: str, limit: int = 30) -> list[dict]:
+    """Europe PMC — biomedical literature (PubMed mirror w/ extra abstracts). Keyless."""
+    from ..sources.europepmc import fetch_europepmc
+
+    return fetch_europepmc(query=query, limit=limit)
 
 
 @mcp.tool()
