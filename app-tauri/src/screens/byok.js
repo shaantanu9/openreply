@@ -165,6 +165,42 @@ const REDDIT_FIELDS = [
     help: 'An <b>app password</b> (not your main password) from bsky.app → Settings → App Passwords. Pairs with the handle above.',
     prefix: '',
   },
+  {
+    key: 'scrapecreators_api_key', envKey: 'SCRAPECREATORS_API_KEY',
+    label: 'ScrapeCreators API key (optional)', placeholder: 'sc-…',
+    help: 'Unlocks TikTok, Instagram, Threads &amp; Pinterest. 100 free credits then pay-as-you-go at <a href="https://scrapecreators.com" target="_blank">scrapecreators.com</a>. Sources skip silently if empty.',
+    prefix: '',
+  },
+  {
+    key: 'truthsocial_token', envKey: 'TRUTHSOCIAL_TOKEN',
+    label: 'Truth Social token (optional)', placeholder: 'bearer token',
+    help: 'Bearer token from truthsocial.com browser dev tools (Network tab). Unlocks the Truth Social source.',
+    prefix: '',
+  },
+  {
+    key: 'x_auth_token', envKey: 'AUTH_TOKEN',
+    label: 'X auth_token cookie (optional)', placeholder: 'auth_token cookie',
+    help: 'From x.com cookies (auth_token). Pair with ct0 below. Or just stay logged into x.com in your browser and the app reads it automatically.',
+    prefix: '',
+  },
+  {
+    key: 'x_ct0', envKey: 'CT0',
+    label: 'X ct0 cookie (optional)', placeholder: 'ct0 cookie',
+    help: 'The ct0 cookie from x.com. Pairs with auth_token above.',
+    prefix: '',
+  },
+  {
+    key: 'xai_api_key', envKey: 'XAI_API_KEY',
+    label: 'xAI API key (optional, for X)', placeholder: 'xai-…',
+    help: 'Live X search via xAI. Get a key at <a href="https://x.ai" target="_blank">x.ai</a>. Used as an X backend if browser cookies are absent.',
+    prefix: '',
+  },
+  {
+    key: 'xquik_api_key', envKey: 'XQUIK_API_KEY',
+    label: 'Xquik API key (optional, for X)', placeholder: 'xquik key',
+    help: 'X search with full engagement metrics via <a href="https://xquik.com" target="_blank">xquik.com</a>. Used as an X backend.',
+    prefix: '',
+  },
 ];
 
 // Curated "known-good" model lists for cloud providers. Click a chip to set
