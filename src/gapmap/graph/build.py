@@ -62,7 +62,7 @@ def _flush_batch(db) -> None:
     if _BATCH.nodes:
         db.conn.executemany(
             "INSERT OR REPLACE INTO graph_nodes "
-            "(id, topic, kind, label, metadata_json, ts) VALUES (?, ?, ?, ?, ?, ?)",
+            "(id, topic, kind, label, metadata_json, ts, provenance) VALUES (?, ?, ?, ?, ?, ?, ?)",
             _BATCH.nodes,
         )
     if _BATCH.edges:
@@ -80,6 +80,7 @@ def _upsert_node(
     key: str,
     label: str,
     metadata: dict | None = None,
+    provenance: str = "",
 ) -> str:
     from datetime import datetime, timezone
     node_id = make_node_id(topic, kind, key)
@@ -95,6 +96,7 @@ def _upsert_node(
             node_id, topic, kind, label,
             json.dumps(metadata or {}, default=str, ensure_ascii=False),
             ts,
+            provenance,
         ))
         return node_id
 
@@ -102,14 +104,19 @@ def _upsert_node(
     # Preserve existing ts on update — a re-extracted finding keeps its
     # original creation timestamp so it doesn't flicker as "new" on re-run.
     try:
-        existing = list(db.query("SELECT ts FROM graph_nodes WHERE id = ?", [node_id]))
+        existing = list(db.query("SELECT ts, provenance FROM graph_nodes WHERE id = ?", [node_id]))
         ts = (existing[0].get("ts") if existing else "") \
              or datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # Preserve existing provenance if caller passes empty string — only
+        # overwrite when a non-empty provenance tag is explicitly supplied.
+        existing_provenance = (existing[0].get("provenance") or "") if existing else ""
+        effective_provenance = provenance if provenance else existing_provenance
     except Exception:
-        # Schema without ts column (pre-migration) or other DB hiccup —
+        # Schema without ts/provenance column (pre-migration) or other DB hiccup —
         # fall back to a fresh timestamp; lazy migration in init_schema
         # will add the column on next startup.
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        effective_provenance = provenance
     db["graph_nodes"].upsert(
         {
             "id": node_id,
@@ -118,6 +125,7 @@ def _upsert_node(
             "label": label,
             "metadata_json": json.dumps(metadata or {}, default=str, ensure_ascii=False),
             "ts": ts,
+            "provenance": effective_provenance,
         },
         pk="id",
     )
