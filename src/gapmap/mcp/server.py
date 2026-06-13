@@ -362,6 +362,41 @@ def gapmap_query_db(sql: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool()
+def gapmap_checks_list(topic: str, limit: int = 200) -> list[dict[str, Any]]:
+    """Return recent quality-gate entries from checks_ledger for a topic.
+
+    Each row records one gate evaluation (e.g. gate='llm_call',
+    operation='enrich') with pass/fail, provider, model, and a detail
+    snippet. Useful for auditing why enrichment succeeded or was skipped.
+
+    Args:
+        topic: topic tag to filter by.
+        limit: max rows to return (default 200, newest first).
+    """
+    return list(get_db().query(
+        "SELECT * FROM checks_ledger WHERE topic = :topic ORDER BY id DESC LIMIT :limit",
+        {"topic": topic, "limit": limit},
+    ))
+
+
+@mcp.tool()
+def gapmap_lineage_get(artifact_id: str) -> list[dict[str, Any]]:
+    """Return lineage rows for an artifact — which posts and run produced it.
+
+    Each row links one graph-node or derived artifact back to the post_ids
+    and run_id that generated it. Use this to verify provenance or to
+    re-trace which corpus rows fed a specific finding.
+
+    Args:
+        artifact_id: the graph_nodes.id (or other artifact key) to look up.
+    """
+    return list(get_db().query(
+        "SELECT * FROM lineage WHERE artifact_id = :artifact_id ORDER BY id DESC",
+        {"artifact_id": artifact_id},
+    ))
+
+
+@mcp.tool()
 def gapmap_describe_schema(table: str | None = None) -> dict[str, Any]:
     """Return live SQLite schema — either every table, or one table.
 
