@@ -9911,3 +9911,95 @@ body[data-update-gate="blocked"] .sidebar { filter: grayscale(.4) opacity(.5); p
 }
 .update-soft-x { background: none; border: none; cursor: pointer; color: var(--ink-3); font-size: 13px; padding: 0 2px; }
 .update-soft-x:hover { color: var(--ink-1); }
+
+/* ── In-app tour / coachmarks (lib/tour.js) ─────────────────────────── */
+#tour-root { position: fixed; inset: 0; z-index: 9000; }
+.tour-backdrop { position: fixed; inset: 0; background: rgba(15,18,25,.45); }
+.tour-spot {
+  position: fixed; z-index: 9001; border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(15,18,25,.55), 0 0 0 2px var(--accent, #E8552A);
+  transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease;
+}
+.tour-bubble {
+  position: fixed; z-index: 9002; width: 340px; max-width: calc(100vw - 24px);
+  padding: 16px 18px; border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.28);
+}
+.tour-bubble-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.tour-step-num { font-size: 12px; color: var(--ink-3); font-weight: 600; }
+.tour-skip { background: none; border: none; cursor: pointer; color: var(--ink-3); font-size: 12px; }
+.tour-skip:hover { color: var(--ink-1); text-decoration: underline; }
+.tour-title { margin: 2px 0 6px; font-size: 16px; }
+.tour-body { margin: 0 0 12px; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.tour-dots { display: flex; gap: 6px; margin-bottom: 12px; }
+.tour-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line, #d8d8d8); }
+.tour-dot.on { background: var(--accent, #E8552A); }
+.tour-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot { transition: none; }
+}
+
+/* ── "Next step" guidance rail (lib/nextStep.js) ────────────────────── */
+.nextstep-rail {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 16px; padding: 12px 16px; border-radius: 12px;
+  background: var(--accent-soft, #FFF1EC); border: 1px solid var(--accent, #E8552A);
+}
+.nextstep-icon { font-size: 18px; line-height: 1; }
+.nextstep-text { flex: 1; min-width: 0; }
+.nextstep-text b { display: block; font-size: 13px; }
+.nextstep-text span { font-size: 12px; color: var(--ink-2); }
+.nextstep-rail .btn { white-space: nowrap; }
+.nextstep-x { background: none; border: none; cursor: pointer; color: var(--ink-3); font-size: 14px; padding: 0 2px; }
+.nextstep-x:hover { color: var(--ink-1); }
+
+/* ── Inline help popover (lib/helpPopover.js) ───────────────────────── */
+.help-pop {
+  position: absolute; z-index: 9100; width: 300px; max-width: calc(100vw - 24px);
+  padding: 14px 16px; border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.24);
+}
+.help-pop h4 { margin: 0 0 6px; font-size: 14px; }
+.help-pop p { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+.help-pop-actions { display: flex; flex-direction: column; gap: 6px; }
+.help-pop-actions .btn { justify-content: flex-start; }
+.help-pop-do { margin: 0 0 10px; }
+.help-pop-do b { display: block; font-size: 12px; color: var(--ink-1); margin-bottom: 4px; }
+.help-pop-do ol { margin: 0; padding-left: 18px; }
+.help-pop-do li { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; margin-bottom: 2px; }
+
+/* Plain-language block on the full /why page */
+.why-simple { font-size: 16px; line-height: 1.5; color: var(--ink-1); margin: 0 0 14px; }
+.why-do { margin: 0 0 18px; padding: 14px 16px; border-radius: 12px; background: var(--accent-soft, #FFF1EC); }
+.why-do b { display: block; margin-bottom: 6px; }
+.why-do ol { margin: 0; padding-left: 20px; }
+.why-do li { font-size: 14px; line-height: 1.6; margin-bottom: 4px; }
+
+/* ── Help hub (screens/help.js) ─────────────────────────────────────── */
+.help-hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+.help-hub-card { padding: 16px; border-radius: 12px; }
+.help-hub-card h3 { margin: 0 0 6px; font-size: 15px; }
+.help-hub-card p { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); }
+.help-hub-list { list-style: none; padding: 0; margin: 0; }
+.help-hub-list li { padding: 4px 0; border-bottom: 1px solid var(--line, #eee); font-size: 13px; }
+.help-hub-list li:last-child { border-bottom: none; }
+
+/* ── Simple Mode (lib/simpleMode.js) ────────────────────────────────── */
+/* In Simple Mode, advanced nav items + their section labels hide until the
+   user expands "Advanced tools". In Full Mode everything shows. */
+body.simple-mode:not(.adv-open) aside [data-tier="advanced"] { display: none !important; }
+.nav-advanced-toggle {
+  display: none;
+  width: 100%; align-items: center; gap: 10px;
+  margin: 6px 0; padding: 8px 12px;
+  background: none; border: 1px dashed var(--line, #d8d8d8); border-radius: 8px;
+  color: var(--ink-2); font-size: 13px; cursor: pointer; text-align: left;
+}
+.nav-advanced-toggle:hover { color: var(--ink-1); border-color: var(--ink-3); }
+.nav-advanced-toggle .nav-ic { display: inline-flex; }
+body.simple-mode .nav-advanced-toggle { display: flex; }
+.simple-mode-toggle { cursor: pointer; }
+.simple-mode-toggle .smt-label { font-size: 13px; }
+/* In rail (minimized) sidebar, the advanced toggle text collapses like nav. */
+body[data-sidebar="rail"] .nav-advanced-toggle { justify-content: center; }
+body[data-sidebar="rail"] .nav-adv-label { display: none; }

@@ -29,6 +29,8 @@ export function isOnboardingComplete() {
 export function markOnboardingComplete() {
   localStorage.setItem(ONBOARDING_KEY, 'true');
   localStorage.removeItem(STEP_KEY);
+  // Queue the first-run product tour to auto-start on the next home render.
+  try { localStorage.setItem('gapmap.tour.getting_started.pending', 'true'); } catch { /* ignore */ }
 }
 
 const EXAMPLES = [

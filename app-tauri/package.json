@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "bash scripts/dev.sh",
-    "test": "node --test src/api.test.mjs src/lib/collectFormat.test.mjs src/lib/postLink.test.mjs src/screens/settings.avatar.test.mjs src/screens/welcome.onboarding.test.mjs src/screens/sentiment.progress.test.mjs src/lib/analyzingLoader.progress.test.mjs src/components/PageShell.test.mjs src/components/LoadingSkeleton.test.mjs src/components/ErrorCard.test.mjs src/components/EmptyState.test.mjs",
+    "test": "node --test src/api.test.mjs src/lib/collectFormat.test.mjs src/lib/postLink.test.mjs src/lib/tour.test.mjs src/screens/settings.avatar.test.mjs src/screens/welcome.onboarding.test.mjs src/screens/sentiment.progress.test.mjs src/lib/analyzingLoader.progress.test.mjs src/components/PageShell.test.mjs src/components/LoadingSkeleton.test.mjs src/components/ErrorCard.test.mjs src/components/EmptyState.test.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture"
   },
   "dependencies": {

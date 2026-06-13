@@ -63,6 +63,14 @@ function renderFrameworks(items) {
   </div>`;
 }
 
+function renderDo(steps) {
+  if (!Array.isArray(steps) || !steps.length) return '';
+  return `<div class="why-do">
+    <b>What to do here</b>
+    <ol>${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+  </div>`;
+}
+
 function renderMeta(e) {
   const bits = [];
   const rel = relTime(e.updated_at);
@@ -87,7 +95,8 @@ function renderExplanation(e) {
     <div class="why-wrap">
       <section class="why-intro card">
         <h2>${esc(e.title)}</h2>
-        <p class="muted why-tagline">Why this page exists, what science backs it, and how it touches your data — in plain English. We owe you that much before you trust the output.</p>
+        ${e.simple ? `<p class="why-simple">${esc(e.simple)}</p>` : ''}
+        ${renderDo(e.do)}
         ${renderMeta(e)}
       </section>
 

@@ -30,6 +30,9 @@ import { renderLibrary } from './screens/library.js';
 import { applyAppModeToDocument, getAppMode } from './labels.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
+import { maybeStartFirstRunTour } from './lib/tours.js';
+import { mountNextStepRail } from './lib/nextStep.js';
+import { initSimpleMode } from './lib/simpleMode.js';
 import { renderActivity } from './screens/activity.js';
 import { renderDatabase } from './screens/database.js';
 import { renderScience } from './screens/science.js';
@@ -42,6 +45,8 @@ import { renderProductsList, renderProductDashboard, renderProductSetup } from '
 // (Design Thinking, Lean Startup, Stage-Gate, Kano, JTBD, ...) on top of the
 // existing screens, so users see WHERE in the cycle they are.
 import { renderPlaybook } from './screens/playbook.js';
+import { renderHelp } from './screens/help.js';
+import { initHelpPopover } from './lib/helpPopover.js';
 // Task Manager — single-screen view of every running/queued/recent
 // operation (collects, MCP jobs, extraction queue, sweeps, streams) +
 // LLM token usage. Auto-refreshes every 2 s.
@@ -78,6 +83,7 @@ function explainerSlugForHash(hash) {
   if (h.startsWith('/database'))      return 'database';
   if (h.startsWith('/science'))       return 'science';
   if (h.startsWith('/playbook'))      return 'playbook';
+  if (h.startsWith('/help'))          return 'Help';
   if (h.startsWith('/ost'))           return 'ost';
   if (h.startsWith('/empathy'))       return 'empathy';
   if (h.startsWith('/interviews'))    return 'interviews';
@@ -317,6 +323,8 @@ const routes = [
   { match: /^\/competitors\/?$/,            render: renderGlobalCompetitors },
   // Lifecycle pivot — Playbook screen: 10-phase product-development lifecycle.
   { match: /^\/playbook\/?$/,               render: renderPlaybook },
+  // Help & Tutorials hub — tours, explainers, product flow, tips.
+  { match: /^\/help\/?$/,                   render: renderHelp },
   // Task Manager — Windows Task Manager analog for runtime state.
   { match: /^\/tasks\/?$/,                  render: renderTasks },
   // Page-explainer: trust-building "why this page" view per screen.
@@ -487,6 +495,16 @@ async function route() {
         mountAudienceNudge(main, hash).catch((e) =>
           console.warn('[gapmap] audience nudge skipped:', e),
         );
+        // Guided next-step rail — mounts on home + topic screens, shows the
+        // single best next action for the user's current corpus state.
+        mountNextStepRail(main, hash).catch((e) =>
+          console.warn('[gapmap] next-step rail skipped:', e),
+        );
+        // First-run product tour — only on a home screen (where its target
+        // elements exist); fires once after onboarding, then never again.
+        if (hash === '' || hash === '/' || hash.startsWith('/research-home')) {
+          maybeStartFirstRunTour();
+        }
         refreshIcons();
       }
       // After render succeeds, update tab title + restore scroll for this tab.
@@ -568,6 +586,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   // (The Python sidecar can take 5–10s to spin up the first time.)
   wireModal();
   wireKeyboard();
+  // Inline help popover on every page's eye-icon (delegated; install once).
+  initHelpPopover();
+  // Simple Mode — collapse the sidebar to core essentials (default on) so
+  // new/non-technical users aren't overwhelmed by the full tool list.
+  initSimpleMode();
   // Sticky status bar showing running collect + queued collects on every screen.
   mountCollectStatusBar().catch((e) =>
     console.warn('[main] collect-status-bar mount failed:', e),
