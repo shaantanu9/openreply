@@ -319,6 +319,7 @@ def _upsert_semantic_body(
         title = pp.get("painpoint") or pp.get("title") or ""
         if not title:
             continue
+        _pp_prov = "llm_fallback" if pp.get("_fallback") else "llm"
         node = _upsert_node(
             db, topic, "painpoint", _slug(title), title,
             metadata={
@@ -333,6 +334,7 @@ def _upsert_semantic_body(
                     pp, ("painpoint", "title", "evidence", "summary")
                 ),
             },
+            provenance=_pp_prov,
         )
         _upsert_edge(db, topic, topic_node, node, "has_painpoint")
         summary["painpoints_added"] += 1
@@ -340,11 +342,21 @@ def _upsert_semantic_body(
             db, topic, node, pp.get("example_post_ids") or pp.get("example_ids") or [],
             "evidenced_by",
         )
+        try:
+            from ..core.db import record_lineage
+            record_lineage(
+                topic=topic, artifact_id=node, artifact_kind="painpoint",
+                from_post_ids=list(pp.get("example_post_ids") or pp.get("example_ids") or []),
+                decision="llm_extraction",
+            )
+        except Exception:
+            pass
 
     for fw in feature_wishes or []:
         title = fw.get("feature") or fw.get("title") or ""
         if not title:
             continue
+        _fw_prov = "llm_fallback" if fw.get("_fallback") else "llm"
         node = _upsert_node(
             db, topic, "feature_wish", _slug(title), title,
             metadata={
@@ -355,18 +367,29 @@ def _upsert_semantic_body(
                     fw, ("feature", "title", "user_quote")
                 ),
             },
+            provenance=_fw_prov,
         )
         _upsert_edge(db, topic, topic_node, node, "has_feature_wish")
         summary["feature_wishes_added"] += 1
         summary["evidence_edges"] += _link_evidence(
             db, topic, node, fw.get("example_post_ids") or [], "wished_in",
         )
+        try:
+            from ..core.db import record_lineage
+            record_lineage(
+                topic=topic, artifact_id=node, artifact_kind="feature_wish",
+                from_post_ids=list(fw.get("example_post_ids") or []),
+                decision="llm_extraction",
+            )
+        except Exception:
+            pass
 
     for pc in product_complaints or []:
         prod = pc.get("product")
         complaint = pc.get("complaint")
         if not prod:
             continue
+        _pc_prov = "llm_fallback" if pc.get("_fallback") else "llm"
         prod_node = _upsert_node(
             db, topic, "product", _slug(prod), prod,
             metadata={
@@ -376,9 +399,19 @@ def _upsert_semantic_body(
                     pc, ("product", "complaint", "title")
                 ),
             },
+            provenance=_pc_prov,
         )
         _upsert_edge(db, topic, topic_node, prod_node, "has_product")
         summary["products_added"] += 1
+        try:
+            from ..core.db import record_lineage
+            record_lineage(
+                topic=topic, artifact_id=prod_node, artifact_kind="product",
+                from_post_ids=list(pc.get("example_post_ids") or []),
+                decision="llm_extraction",
+            )
+        except Exception:
+            pass
         # Complaint edges need a complaint/painpoint anchor. Use a synthetic
         # painpoint keyed by product+issue so repeated complaints aggregate.
         if complaint:
@@ -393,6 +426,7 @@ def _upsert_semantic_body(
                         pc, ("product", "complaint", "title")
                     ),
                 },
+                provenance=_pc_prov,
             )
             _upsert_edge(db, topic, topic_node, pp_node, "has_painpoint")
             _upsert_edge(db, topic, pp_node, prod_node, "about_product")
@@ -400,11 +434,21 @@ def _upsert_semantic_body(
             summary["evidence_edges"] += _link_evidence(
                 db, topic, pp_node, pc.get("example_post_ids") or [], "evidenced_by",
             )
+            try:
+                from ..core.db import record_lineage
+                record_lineage(
+                    topic=topic, artifact_id=pp_node, artifact_kind="painpoint",
+                    from_post_ids=list(pc.get("example_post_ids") or []),
+                    decision="llm_extraction",
+                )
+            except Exception:
+                pass
 
     for wa in diy_workarounds or []:
         desc = wa.get("workaround") or ""
         if not desc:
             continue
+        _wa_prov = "llm_fallback" if wa.get("_fallback") else "llm"
         wa_node = _upsert_node(
             db, topic, "workaround", _slug(desc), desc,
             metadata={
@@ -416,12 +460,22 @@ def _upsert_semantic_body(
                     wa, ("workaround", "title", "user_quote", "gap")
                 ),
             },
+            provenance=_wa_prov,
         )
         _upsert_edge(db, topic, topic_node, wa_node, "has_workaround")
         summary["workarounds_added"] += 1
         summary["evidence_edges"] += _link_evidence(
             db, topic, wa_node, wa.get("example_post_ids") or [], "built_in",
         )
+        try:
+            from ..core.db import record_lineage
+            record_lineage(
+                topic=topic, artifact_id=wa_node, artifact_kind="workaround",
+                from_post_ids=list(wa.get("example_post_ids") or []),
+                decision="llm_extraction",
+            )
+        except Exception:
+            pass
         # If the workaround names a gap, try to link it back to a same-named painpoint
         gap = wa.get("gap")
         if gap:
