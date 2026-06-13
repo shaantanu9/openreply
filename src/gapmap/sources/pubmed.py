@@ -32,6 +32,32 @@ def _get(path: str, params: dict[str, Any]) -> str | None:
         return None
 
 
+def fetch_abstract(pmid: str) -> str | None:
+    """Fetch ONE PubMed record's abstract by PMID via efetch (esummary, used by
+    search, carries no abstract). Joins labelled ``<AbstractText>`` sections.
+    Returns None on miss / no abstract. Used by abstract-enrichment to backfill
+    papers that arrived title-only."""
+    pmid = (pmid or "").strip()
+    if not pmid:
+        return None
+    time.sleep(0.34)  # NCBI <3 req/sec etiquette
+    xml = _get("/efetch.fcgi", {"db": "pubmed", "id": pmid, "rettype": "abstract", "retmode": "xml"})
+    if not xml:
+        return None
+    parts: list[str] = []
+    for m in re.findall(r"<AbstractText[^>]*>(.*?)</AbstractText>", xml, re.DOTALL):
+        # Optional structured label (e.g. Label="METHODS") is on the tag; the
+        # body may still carry stray inline tags — strip them.
+        txt = re.sub(r"<[^>]+>", "", m).strip()
+        if txt:
+            parts.append(txt)
+    abstract = " ".join(parts).strip()
+    # Unescape the few entities NCBI emits; keep it dependency-free.
+    for a, b in (("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&"), ("&quot;", '"'), ("&#x2009;", " ")):
+        abstract = abstract.replace(a, b)
+    return abstract[:2000] or None
+
+
 def _parse_summary(xml: str) -> list[dict]:
     rows: list[dict] = []
     docs = re.findall(r"<DocSum>(.*?)</DocSum>", xml, re.DOTALL)

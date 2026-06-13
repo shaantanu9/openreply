@@ -62,6 +62,49 @@ def _reconstruct_abstract(inverted: dict[str, list[int]]) -> str:
     return " ".join(w for _, w in positions)
 
 
+def fetch_work_abstract(work_id: str) -> str | None:
+    """Fetch ONE OpenAlex work by id and return its reconstructed abstract.
+    ``work_id`` may be a bare ``W…`` id or a full openalex.org URL. Returns
+    None on miss / no abstract. Used by abstract-enrichment to backfill papers
+    that arrived without a `selftext`."""
+    from ._http import polite_get
+    wid = (work_id or "").strip().rsplit("/", 1)[-1]
+    if not wid:
+        return None
+    try:
+        r = polite_get(f"{_BASE}/works/{wid}", params={"mailto": "gapmap@example.invalid"})
+        if r.status_code != 200:
+            return None
+        w = r.json() or {}
+    except (httpx.HTTPError, ValueError):
+        return None
+    idx = w.get("abstract_inverted_index")
+    if not idx:
+        return None
+    return _reconstruct_abstract(idx)[:2000] or None
+
+
+def fetch_work_abstract_by_doi(doi: str) -> str | None:
+    """Same as ``fetch_work_abstract`` but keyed by DOI — OpenAlex has the best
+    abstract coverage of the academic sources, so this is the cross-source
+    fallback for Crossref/Scholar papers that carry a DOI but no abstract."""
+    from ._http import polite_get
+    d = (doi or "").strip().replace("https://doi.org/", "").replace("http://doi.org/", "")
+    if not d:
+        return None
+    try:
+        r = polite_get(f"{_BASE}/works/doi:{d}", params={"mailto": "gapmap@example.invalid"})
+        if r.status_code != 200:
+            return None
+        w = r.json() or {}
+    except (httpx.HTTPError, ValueError):
+        return None
+    idx = w.get("abstract_inverted_index")
+    if not idx:
+        return None
+    return _reconstruct_abstract(idx)[:2000] or None
+
+
 def fetch_openalex(query: str, limit: int = 30, year_from: int | None = None) -> list[dict]:
     # OpenAlex's "polite pool" gives requests that include a mailto contact
     # higher rate-limit priority (10 req/sec vs 5 req/sec anonymous). Free —

@@ -16,6 +16,7 @@ API docs: https://api.semanticscholar.org/api-docs/graph
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -204,3 +205,75 @@ def fetch_references(paper_id: str, limit: int = 30) -> list[dict]:
         except Exception:  # noqa: BLE001
             continue
     return rows
+
+
+def fetch_reference_ids(paper_id: str, limit: int = 100) -> list[dict] | None:
+    """Reference list of `paper_id` as lightweight id rows (NOT post-shaped):
+    ``[{paperId, doi, arxiv, pmid, title, year}, …]``. Accepts an S2 paperId,
+    DOI, arXiv, or PMID id. Returns None on hard error (so callers can tell
+    "no references" from "fetch failed"). Used to build paper→paper `cites`
+    edges by matching these external ids against the in-corpus papers."""
+    headers = {"User-Agent": "gapmap/0.1"}
+    if os.environ.get("S2_API_KEY"):
+        headers["x-api-key"] = os.environ["S2_API_KEY"]
+    pid = paper_id[3:] if paper_id.startswith("s2_") else paper_id
+    params = {"limit": min(1000, max(1, limit)),
+              "fields": "citedPaper.externalIds,citedPaper.title,citedPaper.year,citedPaper.paperId"}
+    # S2's unauthenticated quota is tiny — honour Retry-After on 429 with a
+    # capped single retry (set S2_API_KEY for any sizeable run).
+    data = None
+    for _attempt in range(2):
+        try:
+            r = httpx.get(f"{_BASE}/paper/{pid}/references",
+                          params=params, headers=headers, timeout=30.0)
+            if r.status_code == 429:
+                wait = 0.0
+                try:
+                    wait = float(r.headers.get("Retry-After") or 0)
+                except ValueError:
+                    wait = 0.0
+                time.sleep(min(max(wait, 2.0), 15.0))
+                continue
+            r.raise_for_status()
+            data = r.json() or {}
+            break
+        except (httpx.HTTPError, ValueError):
+            return None
+    if data is None:
+        return None
+    out: list[dict] = []
+    for entry in (data.get("data") or []):
+        cp = entry.get("citedPaper") or {}
+        ext = (cp.get("externalIds") or {}) or {}
+        out.append({
+            "paperId": cp.get("paperId") or "",
+            "doi": (ext.get("DOI") or "").lower(),
+            "arxiv": ext.get("ArXiv") or "",
+            "pmid": str(ext.get("PubMed") or ""),
+            "title": cp.get("title") or "",
+            "year": cp.get("year") or 0,
+        })
+    return out
+
+
+def fetch_abstract(paper_id: str) -> str | None:
+    """Fetch ONE S2 paper's abstract (or TLDR fallback) by id. Accepts an S2
+    paperId, DOI, or arXiv id. Returns None on miss / no abstract. Used by
+    abstract-enrichment to backfill title-only papers."""
+    headers = {"User-Agent": "gapmap/0.1"}
+    if os.environ.get("S2_API_KEY"):
+        headers["x-api-key"] = os.environ["S2_API_KEY"]
+    pid = paper_id[3:] if paper_id.startswith("s2_") else paper_id
+    try:
+        r = httpx.get(
+            f"{_BASE}/paper/{pid}",
+            params={"fields": "abstract,tldr"},
+            headers=headers,
+            timeout=30.0,
+        )
+        r.raise_for_status()
+        data = r.json() or {}
+    except (httpx.HTTPError, ValueError):
+        return None
+    body = (data.get("abstract") or "") or (((data.get("tldr") or {}) or {}).get("text") or "")
+    return (body.strip()[:2000] or None) if body else None
