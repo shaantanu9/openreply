@@ -52,6 +52,14 @@ from .bis import fetch_bis
 from .yfinance_src import fetch_yfinance
 from .openmeteo import fetch_openmeteo
 from .acled import fetch_acled
+from .polymarket import fetch_polymarket
+from .truthsocial import fetch_truthsocial
+from .digg import fetch_digg
+from .tiktok import fetch_tiktok
+from .instagram import fetch_instagram
+from .threads import fetch_threads
+from .pinterest import fetch_pinterest
+from .x_twitter import fetch_x
 
 __all__ = [
     "fetch_hn", "fetch_appstore_reviews", "search_appstore_apps",
@@ -69,4 +77,7 @@ __all__ = [
     "fetch_gdelt", "fetch_duckduckgo", "fetch_tavily",
     "fetch_worldbank", "fetch_fred", "fetch_bis",
     "fetch_yfinance", "fetch_openmeteo", "fetch_acled",
+    "fetch_polymarket", "fetch_truthsocial", "fetch_digg",
+    "fetch_tiktok", "fetch_instagram", "fetch_threads",
+    "fetch_pinterest", "fetch_x",
 ]

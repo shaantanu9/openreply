@@ -956,6 +956,47 @@ def run_acled(topic_or_keywords: str | list[str], limit: int = 30) -> int:
     return _run_simple_list(topic_or_keywords, "acled", fetch_acled, limit)
 
 
+# ── last30days Phase-1: social + prediction-market sources ───────────────────
+def run_polymarket(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    from .polymarket import fetch_polymarket
+    return _run_simple_list(topic_or_keywords, "polymarket", fetch_polymarket, limit)
+
+
+def run_truthsocial(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .truthsocial import fetch_truthsocial
+    return _run_simple_list(topic_or_keywords, "truthsocial", fetch_truthsocial, limit)
+
+
+def run_digg(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    from .digg import fetch_digg
+    return _run_simple_list(topic_or_keywords, "digg", fetch_digg, limit)
+
+
+def run_tiktok(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    from .tiktok import fetch_tiktok
+    return _run_simple_list(topic_or_keywords, "tiktok", fetch_tiktok, limit)
+
+
+def run_instagram(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    from .instagram import fetch_instagram
+    return _run_simple_list(topic_or_keywords, "instagram", fetch_instagram, limit)
+
+
+def run_threads(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    from .threads import fetch_threads
+    return _run_simple_list(topic_or_keywords, "threads", fetch_threads, limit)
+
+
+def run_pinterest(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    from .pinterest import fetch_pinterest
+    return _run_simple_list(topic_or_keywords, "pinterest", fetch_pinterest, limit)
+
+
+def run_x(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    from .x_twitter import fetch_x
+    return _run_simple_list(topic_or_keywords, "x", fetch_x, limit)
+
+
 # Dispatch map for the collect orchestrator
 SOURCES: dict[str, Any] = {
     "hn": run_hn,
@@ -1028,4 +1069,13 @@ SOURCES: dict[str, Any] = {
     "yfinance":    run_yfinance,
     "openmeteo":   run_openmeteo,
     "acled":       run_acled,         # needs ACLED_EMAIL + ACLED_PASSWORD
+    # last30days Phase-1 social + prediction-market sources.
+    "polymarket":  run_polymarket,    # free, no key
+    "digg":        run_digg,          # free, needs digg-pp-cli on PATH
+    "truthsocial": run_truthsocial,   # TRUTHSOCIAL_TOKEN
+    "tiktok":      run_tiktok,        # SCRAPECREATORS_API_KEY
+    "instagram":   run_instagram,     # SCRAPECREATORS_API_KEY
+    "threads":     run_threads,       # SCRAPECREATORS_API_KEY
+    "pinterest":   run_pinterest,     # SCRAPECREATORS_API_KEY
+    "x":           run_x,             # AUTH_TOKEN/CT0 | XAI_API_KEY | XQUIK_API_KEY
 }
