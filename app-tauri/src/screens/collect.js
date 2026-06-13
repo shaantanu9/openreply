@@ -630,6 +630,9 @@ export async function renderCollect(root, { params }) {
     duckduckgo: 'DuckDuckGo', gdelt: 'GDELT News', tavily: 'Tavily',
     worldbank: 'World Bank', fred: 'FRED', bis: 'BIS',
     yfinance: 'Yahoo Finance', openmeteo: 'Open-Meteo', acled: 'ACLED',
+    polymarket: 'Polymarket', x: 'X / Twitter', tiktok: 'TikTok',
+    instagram: 'Instagram', threads: 'Threads', pinterest: 'Pinterest',
+    truthsocial: 'Truth Social', digg: 'Digg',
   };
   const sourceState = new Map();      // src → { status, count, error, elapsed }
   const sourcesGrid  = $('#sources-grid');
@@ -1026,6 +1029,9 @@ export async function renderCollect(root, { params }) {
     github_issues: 'GitHub Issues', appstore: 'App Store', playstore: 'Play Store',
     trustpilot: 'Trustpilot', producthunt: 'Product Hunt', gnews: 'Google News',
     trends: 'Google Trends', lemmy: 'Lemmy', mastodon: 'Mastodon',
+    polymarket: 'Polymarket', x: 'X / Twitter', tiktok: 'TikTok',
+    instagram: 'Instagram', threads: 'Threads', pinterest: 'Pinterest',
+    truthsocial: 'Truth Social', digg: 'Digg',
   };
   const humanizeSources = (s) => s.split(',').map(x => SRC_LABELS[x.trim()] || x.trim()).join(', ');
   let filterSummary;
