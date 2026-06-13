@@ -8202,6 +8202,20 @@ pub async fn device_signature(app: AppHandle) -> Result<Value, String> {
 #[tauri::command]
 pub async fn license_status(app: AppHandle) -> Result<Value, String> {
     let sig = build_device_signature(&app)?;
+    // ALWAYS validate against the live licence server first, on every check —
+    // not just on the 6 h background timer. `license_revalidate` POSTs to
+    // `{api_base}/v1/licence/validate` and persists the live verdict before we
+    // read state below: a renewal refreshes the token/expiry and clears
+    // `revoked` (auto-unlock), a server-side cancellation/refund/expiry sets
+    // `revoked = true` (auto-lock on this very check). When the server is
+    // unreachable (offline / outage / blip) it leaves the cached state
+    // untouched, so a legitimate paid user is never locked out for being on a
+    // plane or during a server hiccup (offline grace). Best-effort: ignore its
+    // Result here — we read the freshly-synced state via
+    // `compute_activation_reason` immediately after. Never-activated / no-token
+    // machines early-return inside revalidate before any network call, so this
+    // adds no latency to the first-run path.
+    let _ = license_revalidate(app.clone()).await;
     let reason = compute_activation_reason(&app)?;
     let state = load_license_state(&app)?;
     let activated = reason.is_none();
