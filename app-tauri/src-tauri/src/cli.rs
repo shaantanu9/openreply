@@ -1122,6 +1122,7 @@ async fn run_dev_python_streaming(
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             if line.trim().is_empty() { continue; }
+            let line = scrub_secrets(&line);
             {
                 let mut r = recent_a.lock().unwrap();
                 if r.len() == 40 { r.pop_front(); }
@@ -1138,6 +1139,7 @@ async fn run_dev_python_streaming(
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             if line.trim().is_empty() { continue; }
+            let line = scrub_secrets(&line);
             {
                 let mut r = recent_b.lock().unwrap();
                 if r.len() == 40 { r.pop_front(); }
@@ -1251,9 +1253,10 @@ pub async fn run_cli_streaming(
                     if let Ok(s) = String::from_utf8(bytes) {
                         for line in s.lines() {
                             if line.trim().is_empty() { continue; }
+                            let line = scrub_secrets(line);
                             if recent_lines.len() == 40 { recent_lines.pop_front(); }
-                            recent_lines.push_back(line.to_string());
-                            let _ = app_clone.emit(progress_event, line.to_string());
+                            recent_lines.push_back(line.clone());
+                            let _ = app_clone.emit(progress_event, line);
                         }
                     }
                 }
@@ -1492,7 +1495,7 @@ pub async fn run_cli_chat_streaming(
                     if let Ok(s) = String::from_utf8(bytes) {
                         for line in s.lines() {
                             if !line.trim().is_empty() {
-                                let _ = app_clone.emit(progress_event, line.to_string());
+                                let _ = app_clone.emit(progress_event, scrub_secrets(line));
                             }
                         }
                     }
@@ -1640,9 +1643,10 @@ pub async fn run_cli_stream_streaming(
                     if let Ok(s) = String::from_utf8(bytes) {
                         for line in s.lines() {
                             if line.trim().is_empty() { continue; }
+                            let line = scrub_secrets(line);
                             if recent_lines.len() == 40 { recent_lines.pop_front(); }
-                            recent_lines.push_back(line.to_string());
-                            let _ = app_clone.emit(progress_event, line.to_string());
+                            recent_lines.push_back(line.clone());
+                            let _ = app_clone.emit(progress_event, line);
                         }
                     }
                 }
@@ -1729,7 +1733,7 @@ pub async fn run_cli_enrich_streaming(
                     if let Ok(s) = String::from_utf8(bytes) {
                         for line in s.lines() {
                             if line.trim().is_empty() { continue; }
-                            let _ = app_clone.emit(progress_event, line.to_string());
+                            let _ = app_clone.emit(progress_event, scrub_secrets(line));
                         }
                     }
                 }
@@ -1752,9 +1756,144 @@ pub async fn run_cli_enrich_streaming(
     Ok(())
 }
 
+/// Redact obvious secret/API-key patterns from a sidecar output line before it
+/// is emitted to the frontend or retained in a buffer. Mirrors core/scrub.py.
+///
+/// No `regex` dep — uses a conservative manual scan:
+///   1. Split on whitespace; any token starting with a known secret prefix
+///      and long enough (≥16 chars) is replaced with `***REDACTED***`.
+///   2. Key=value pairs whose name ends in api_key/apikey/token/secret/
+///      password, or is exactly auth_token/ct0, have their value redacted.
+///   3. `Authorization: Bearer <token>` (case-insensitive) has the token
+///      replaced.
+/// Normal log prose is returned unchanged.
+fn scrub_secrets(line: &str) -> String {
+    const REDACT: &str = "***REDACTED***";
+    // Known secret token prefixes — any whitespace-delimited token that
+    // starts with one of these AND is ≥16 chars total is a secret.
+    const PREFIXES: &[&str] = &[
+        "sk-ant-", "sk-or-", "sk-proj-", "sk-",
+        "gsk_", "xai-", "AIza", "nvapi-",
+        "ghp_", "gho_", "ghs_",
+    ];
+    // Name suffixes that signal a key=value secret (checked case-insensitively).
+    const KEY_SUFFIXES: &[&str] = &["api_key", "apikey", "api-key", "token", "secret", "password"];
+    // Exact names (case-insensitive) that also signal key=value secrets.
+    const KEY_EXACT: &[&str] = &["auth_token", "ct0"];
+
+    // Fast path — skip allocation if no plausible secret marker present.
+    let lower = line.to_ascii_lowercase();
+    let has_prefix = PREFIXES.iter().any(|p| lower.contains(&p.to_ascii_lowercase()));
+    let has_kv = lower.contains('=') || lower.contains(':');
+    if !has_prefix && !has_kv {
+        return line.to_string();
+    }
+
+    // Work token-by-token, rebuilding the string while preserving whitespace
+    // structure (split_whitespace loses it, so we walk char positions).
+    let mut out = String::with_capacity(line.len());
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut i = 0usize;
+
+    while i < len {
+        // Collect leading whitespace verbatim.
+        let ws_start = i;
+        while i < len && (bytes[i] == b' ' || bytes[i] == b'\t') {
+            i += 1;
+        }
+        out.push_str(&line[ws_start..i]);
+
+        if i >= len { break; }
+
+        // Collect the next non-whitespace token.
+        let tok_start = i;
+        while i < len && bytes[i] != b' ' && bytes[i] != b'\t' {
+            i += 1;
+        }
+        let tok = &line[tok_start..i];
+
+        // --- 1. Bare secret token (known prefix + length threshold) ----------
+        let tok_lower = tok.to_ascii_lowercase();
+        let matched_prefix = PREFIXES.iter().any(|p| {
+            let pl = p.to_ascii_lowercase();
+            tok_lower.starts_with(&pl) && tok.len() >= 16
+        });
+        if matched_prefix {
+            out.push_str(REDACT);
+            continue;
+        }
+
+        // --- 2. Authorization: Bearer <token> --------------------------------
+        // Detect the two-token sequence "bearer" followed by a long value.
+        // We check if *this* token is "bearer" (possibly with trailing colon)
+        // and the secret is the NEXT token; OR if this token is the secret
+        // that follows a "bearer" we already emitted.  Simpler: scan for the
+        // "bearer " pattern in the original line and replace inline.
+        // (Handled via a post-pass below to keep this loop simple.)
+
+        // --- 3. key=value / key: value ---------------------------------------
+        // Token contains '=' or ':' — check if LHS looks like a secret name.
+        if let Some(eq_pos) = tok.find(|c| c == '=' || c == ':') {
+            let name = &tok[..eq_pos];
+            let sep  = &tok[eq_pos..eq_pos+1];
+            let val  = &tok[eq_pos+1..];
+            let name_lower = name.to_ascii_lowercase();
+            // Strip leading non-alpha (e.g. a semicolon prefix from cookie strings)
+            let name_trimmed = name_lower.trim_start_matches(|c: char| !c.is_alphanumeric());
+            let is_secret_name =
+                KEY_SUFFIXES.iter().any(|s| name_trimmed.ends_with(s))
+                || KEY_EXACT.iter().any(|e| name_trimmed == *e);
+            // Also redact when the VALUE itself starts with a known secret
+            // prefix (e.g. `key=gsk_...`, `x=sk-ant-...`) regardless of name.
+            let val_lower = val.to_ascii_lowercase();
+            let val_has_secret_prefix = PREFIXES.iter().any(|p| {
+                let pl = p.to_ascii_lowercase();
+                val_lower.starts_with(&pl) && val.len() >= 16
+            });
+            if (is_secret_name && val.len() >= 8) || val_has_secret_prefix {
+                out.push_str(name);
+                out.push_str(sep);
+                out.push_str(REDACT);
+                continue;
+            }
+        }
+
+        // Not a secret — emit verbatim.
+        out.push_str(tok);
+    }
+
+    // Post-pass: handle `Authorization: Bearer <token>` spanning two tokens.
+    // The loop above already handles `bearer=xxx` (single-token kv form).
+    // This catches the HTTP-header form: "Authorization: Bearer LONGTOKENHERE"
+    // where the token is a separate whitespace-delimited word.
+    let out_lower = out.to_ascii_lowercase();
+    if out_lower.contains("bearer ") {
+        let mut result = String::with_capacity(out.len());
+        let mut remaining = out.as_str();
+        while let Some(pos) = remaining.to_ascii_lowercase().find("bearer ") {
+            result.push_str(&remaining[..pos + "bearer ".len()]);
+            let after = &remaining[pos + "bearer ".len()..];
+            // Find the next whitespace-delimited token that is the credential.
+            let token_end = after.find(|c: char| c.is_whitespace()).unwrap_or(after.len());
+            let cred = &after[..token_end];
+            if cred.len() >= 12 {
+                result.push_str(REDACT);
+            } else {
+                result.push_str(cred);
+            }
+            remaining = &after[token_end..];
+        }
+        result.push_str(remaining);
+        return result;
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::classify_collect_error;
+    use super::{classify_collect_error, scrub_secrets};
     use std::collections::VecDeque;
 
     fn tail(lines: &[&str]) -> VecDeque<String> {
@@ -1835,5 +1974,66 @@ mod tests {
     fn classify_reddit_ratelimit_one_word() {
         let q = tail(&["we got ratelimited by reddit"]);
         assert_eq!(classify_collect_error(1, &q).0, "reddit_rate_limit");
+    }
+
+    // ── scrub_secrets ────────────────────────────────────────────────────────
+
+    mod scrub_tests {
+        use super::scrub_secrets;
+
+        #[test]
+        fn redacts_keys() {
+            assert!(!scrub_secrets("err sk-ant-abcdef0123456789abcdef here").contains("abcdef0123456789"));
+            assert!(scrub_secrets("err sk-ant-abcdef0123456789abcdef").contains("REDACTED"));
+            assert_eq!(scrub_secrets("Collected 42 posts from r/python"), "Collected 42 posts from r/python");
+        }
+
+        #[test]
+        fn redacts_all_sk_variants() {
+            for key in &[
+                "sk-ant-abc123DEF456ghi789jkl",
+                "sk-or-v1-abcdef0123456789abcdef",
+                "sk-proj-abcdef0123456789abcdef",
+                "sk-abcdef0123456789abcdef",
+            ] {
+                let out = scrub_secrets(&format!("error: key {} failed", key));
+                assert!(!out.contains(key), "should have redacted {key}");
+                assert!(out.contains("REDACTED"), "missing REDACTED for {key}");
+            }
+        }
+
+        #[test]
+        fn redacts_other_prefixes() {
+            for key in &[
+                "gsk_ABCD1234efgh5678IJKL9012",
+                "xai-abcdef0123456789ABCDEF",
+                "AIzaSyA1b2C3d4E5f6G7h8I9j0K",
+                "nvapi-abc123DEF456ghi789jkl",
+                "ghp_abcdefghijklmnopqrstuvwxyz0123",
+            ] {
+                let out = scrub_secrets(&format!("key={} present", key));
+                assert!(!out.contains(key), "should have redacted {key}");
+            }
+        }
+
+        #[test]
+        fn redacts_bearer_token() {
+            let out = scrub_secrets("Authorization: Bearer tok_abc123xyz789longenough");
+            assert!(!out.contains("tok_abc123xyz789longenough"));
+            assert!(out.contains("REDACTED"));
+        }
+
+        #[test]
+        fn redacts_key_value_pairs() {
+            let out = scrub_secrets("ANTHROPIC_API_KEY=supersecretval123456");
+            assert!(!out.contains("supersecretval123456"));
+            assert!(out.contains("REDACTED"));
+        }
+
+        #[test]
+        fn leaves_normal_text_alone() {
+            let s = "Collected 42 posts from r/python about note taking apps";
+            assert_eq!(scrub_secrets(s), s);
+        }
     }
 }
