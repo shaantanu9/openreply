@@ -441,6 +441,7 @@ def init_schema(db: Database) -> None:
                                         # preserved on update (see _upsert_node)
                 "evidence_post_id": str,  # incremental-enrichment — the post
                                           # that triggered this finding (Task 4)
+                "provenance": str,      # source/run provenance tag
             },
             pk="id",
         )
@@ -466,6 +467,8 @@ def init_schema(db: Database) -> None:
                 db["graph_nodes"].create_index(["evidence_post_id"], if_not_exists=True)
             except Exception:
                 pass
+        if "provenance" not in _cols:
+            db.executescript("ALTER TABLE graph_nodes ADD COLUMN provenance TEXT DEFAULT ''")
 
     if "graph_edges" not in db.table_names():
         db["graph_edges"].create(
@@ -483,6 +486,25 @@ def init_schema(db: Database) -> None:
         db["graph_edges"].create_index(["src"])
         db["graph_edges"].create_index(["dst"])
         db["graph_edges"].create_index(["kind"])
+
+    if "checks_ledger" not in db.table_names():
+        db["checks_ledger"].create({
+            "id": int, "topic": str, "run_id": str, "gate": str, "operation": str,
+            "provider": str, "model": str, "invariant": str, "passed": int,
+            "exit_code": int, "detail": str, "ts": str,
+        }, pk="id")
+        db["checks_ledger"].create_index(["topic"])
+        db["checks_ledger"].create_index(["run_id"])
+        db["checks_ledger"].create_index(["topic", "gate"])
+    if "lineage" not in db.table_names():
+        db["lineage"].create({
+            "id": int, "topic": str, "artifact_id": str, "artifact_kind": str,
+            "produced_by": str, "from_post_ids": str, "decision": str,
+            "provider": str, "model": str, "ts": str,
+        }, pk="id")
+        db["lineage"].create_index(["artifact_id"])
+        db["lineage"].create_index(["topic"])
+        db["lineage"].create_index(["produced_by"])
 
     if "paper_gaps" not in db.table_names():
         db["paper_gaps"].create({
