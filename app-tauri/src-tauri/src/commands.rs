@@ -6199,6 +6199,12 @@ pub async fn byok_status(_app: AppHandle) -> Result<Value, String> {
         "youtube_api_key":          mask(&["YOUTUBE_API_KEY"]),
         "semantic_scholar_api_key": mask(&["SEMANTIC_SCHOLAR_API_KEY", "S2_API_KEY"]),
         "ncbi_api_key":             mask(&["NCBI_API_KEY"]),
+        "scrapecreators_api_key":   mask(&["SCRAPECREATORS_API_KEY"]),
+        "truthsocial_token":        mask(&["TRUTHSOCIAL_TOKEN"]),
+        "x_auth_token":             mask(&["AUTH_TOKEN"]),
+        "x_ct0":                    mask(&["CT0"]),
+        "xai_api_key":              mask(&["XAI_API_KEY"]),
+        "xquik_api_key":            mask(&["XQUIK_API_KEY"]),
         "llm_provider": raw(&["LLM_PROVIDER"]),
         "llm_model":    raw(&["LLM_MODEL"]),
     }))
@@ -6228,6 +6234,12 @@ pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Va
         "NCBI_API_KEY",
         "BSKY_HANDLE",
         "BSKY_APP_PASSWORD",
+        "SCRAPECREATORS_API_KEY",
+        "TRUTHSOCIAL_TOKEN",
+        "AUTH_TOKEN",
+        "CT0",
+        "XAI_API_KEY",
+        "XQUIK_API_KEY",
     ];
     if !ALLOWED.contains(&name.as_str()) {
         return Err(format!("key '{}' is not allowed", name));
