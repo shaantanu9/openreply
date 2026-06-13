@@ -43,6 +43,7 @@ _SCOPE_LIMITS = {"all": None, "top50": 50, "top25": 25, "abstracts": None}
 # Ordered stage list with display labels.
 _STAGES = [
     ("fulltext", "Downloading full text"),
+    ("embed", "Embedding papers for chat & relations"),
     ("summarize", "Summarizing papers"),
     ("relations", "Building paper relations"),
     ("gaps", "Detecting patterns & gaps"),
@@ -127,6 +128,22 @@ def build_paper_knowledge(
                        "msg": f"{i}/{tot} {status}"})
             return fetch_bulk(topic=topic, limit=limit, progress=_p)
         run_stage("fulltext", "Downloading full text", _fulltext)
+
+    # ── 1b. embed (abstract fallback) ───────────────────────────────────
+    # Full text exists for <10% of papers (rest are paywalled). Embed the
+    # abstract of every other paper as a single chunk so the WHOLE corpus is
+    # chat-able (paper_qa) and relatable (paper_neighbors). Local-CPU +
+    # idempotent; skips papers that already have full-text chunks. Runs before
+    # `relations` so the semantic edge build sees every paper's vector.
+    def _embed():
+        from .paper_chunks import chunk_abstracts_all
+
+        def _p(msg):
+            _safe(progress_cb, "stage:progress",
+                  {"stage": "embed", "msg": str(msg)[:160]})
+        _p("embedding abstracts for papers without full text…")
+        return chunk_abstracts_all(topic, embed=True, limit=limit, force=force)
+    run_stage("embed", "Embedding papers for chat & relations", _embed)
 
     # ── 2. summaries ────────────────────────────────────────────────────
     def _summarize():

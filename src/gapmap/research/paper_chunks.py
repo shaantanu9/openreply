@@ -268,6 +268,161 @@ def get_chunks(post_id: str, *, section: str | None = None) -> list[dict]:
     ))
 
 
+# ─── Abstract-level fallback ─────────────────────────────────────────────────
+# Only ~38 of 10k papers have open-access full text; the other 90%+ are paywalled
+# (`not_oa`). But ~6k have a usable title+abstract. Embedding that abstract as a
+# single `section="abstract"` chunk into the SAME `paper_chunks` collection makes
+# every such paper retrievable by `search_paper_chunks` (→ paper chat) and gives
+# `paper_neighbors` a vector to mean-pool (→ relates_to edges) — turning a 38-paper
+# corpus into a ~6k-paper one with zero network calls. Full-text chunks are always
+# preferred; we only abstract-chunk papers that have no full-text chunks yet.
+
+def _load_abstract(post_id: str) -> str | None:
+    """Title + abstract (selftext) for a paper, as one grounding blob. Returns
+    None when there's not enough text to be worth embedding."""
+    db = get_db()
+    rows = list(db.query(
+        "SELECT coalesce(title,'') AS title, coalesce(selftext,'') AS body "
+        "FROM posts WHERE id = ?",
+        [post_id],
+    ))
+    if not rows:
+        return None
+    title = (rows[0]["title"] or "").strip()
+    body = (rows[0]["body"] or "").strip()
+    text = (f"{title}\n\n{body}" if title and body else (title or body)).strip()
+    return text if len(text) >= MIN_CHUNK_CHARS else None
+
+
+def chunk_paper_abstract(
+    post_id: str, *, force: bool = False, embed: bool = True,
+) -> dict[str, Any]:
+    """Embed a paper's abstract as a single ``section="abstract"`` chunk.
+
+    Idempotent (stable id + hash). No-op when the paper already has full-text
+    chunks (those are richer) unless ``force``. Returns
+    ``{ok, post_id, embedded, skipped?}``.
+    """
+    if embed:
+        from .sources import is_academic_source
+        _src = list(get_db().query(
+            "SELECT coalesce(source_type,'reddit') AS s FROM posts WHERE id = ?",
+            [post_id],
+        ))
+        if _src and not is_academic_source(_src[0]["s"]):
+            return {"ok": True, "post_id": post_id, "embedded": 0,
+                    "skipped": "non_academic_source"}
+
+    _ensure_table()
+    db = get_db()
+
+    # Prefer full text — skip abstract-chunking papers that already have real
+    # full-text chunks (any non-abstract section).
+    if not force:
+        has_ft = list(db.query(
+            "SELECT 1 FROM paper_chunks WHERE post_id = ? AND section != 'abstract' LIMIT 1",
+            [post_id],
+        ))
+        if has_ft:
+            return {"ok": True, "post_id": post_id, "embedded": 0,
+                    "skipped": "has_fulltext_chunks"}
+
+    text = _load_abstract(post_id)
+    if not text:
+        return {"ok": True, "post_id": post_id, "embedded": 0,
+                "skipped": "no_abstract"}
+
+    cid = f"{post_id}#sec=abstract#ord=0"
+    h = _hash(text)
+    existing = list(db.query(
+        "SELECT hash, coalesce(embedded_at,'') AS embedded_at "
+        "FROM paper_chunks WHERE id = ?", [cid],
+    ))
+    # Skip ONLY when the row is unchanged AND actually embedded into the palace.
+    # A row whose hash matches but whose embedded_at is empty was stranded by a
+    # failed/interrupted embed on a prior run — fall through to re-embed it,
+    # otherwise it stays in the table forever but is never retrievable.
+    if (existing and existing[0]["hash"] == h
+            and existing[0]["embedded_at"] and not force):
+        return {"ok": True, "post_id": post_id, "embedded": 0,
+                "skipped": "unchanged"}
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    chunk = {
+        "id": cid, "post_id": post_id, "section": "abstract", "ord": 0,
+        "char_start": 0, "char_end": len(text), "text": text,
+        "char_count": len(text), "hash": h,
+    }
+    db["paper_chunks"].upsert_all(
+        [{**chunk, "created_at": now, "embedded_at": "", "embed_backend": ""}],
+        pk="id", alter=True,
+    )
+
+    embedded = 0
+    if embed:
+        from ..retrieval import palace
+        # One retry — the ONNX embedder + ChromaDB occasionally fail a single
+        # upsert under sustained sequential load in a bulk run, stranding the
+        # row (in the table, not in the palace). A cheap retry catches most of
+        # those; whatever still fails is healed on the next run (the skip check
+        # requires embedded_at to be set).
+        for _attempt in range(2):
+            try:
+                res = palace.upsert_paper_chunks([chunk], post_id=post_id)
+                if res.get("ok") and res.get("upserted"):
+                    embedded = res["upserted"]
+                    db.execute(
+                        "UPDATE paper_chunks SET embedded_at = ?, embed_backend = ? WHERE id = ?",
+                        [now, res.get("backend", ""), cid],
+                    )
+                    break
+            except Exception:
+                pass  # rows persisted; retry / future re-run handles the embed
+
+    return {"ok": True, "post_id": post_id, "embedded": embedded}
+
+
+def chunk_abstracts_all(
+    topic: str | None = None,
+    *,
+    embed: bool = True,
+    limit: int | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Abstract-chunk every academic paper (optionally topic-scoped) that has an
+    abstract but no full-text chunks. Local-CPU + idempotent. Returns aggregate
+    counts."""
+    db = get_db()
+    _academic = ("arxiv", "pubmed", "openalex", "scholar",
+                 "semantic_scholar", "crossref", "europepmc")
+    ph = ",".join("?" for _ in _academic)
+    sql = (
+        f"SELECT p.id FROM posts p "
+        f"WHERE coalesce(p.source_type,'') IN ({ph}) "
+        f"AND length(coalesce(p.selftext,'') || coalesce(p.title,'')) >= ? "
+    )
+    params: list[Any] = [*_academic, MIN_CHUNK_CHARS]
+    if topic:
+        sql += " AND p.id IN (SELECT post_id FROM topic_posts WHERE topic = ?) "
+        params.append(topic)
+    if limit:
+        sql += " LIMIT ?"
+        params.append(int(limit))
+    targets = list(db.query(sql, params))
+    out = {"ok": True, "topic": topic, "total": len(targets),
+           "embedded": 0, "skipped": 0, "errors": 0}
+    for t in targets:
+        try:
+            r = chunk_paper_abstract(t["id"], force=force, embed=embed)
+            if r.get("embedded"):
+                out["embedded"] += 1
+            else:
+                out["skipped"] += 1
+        except Exception:
+            out["errors"] += 1
+    return out
+
+
 def chunk_topic(
     topic: str | None = None,
     *,
@@ -311,6 +466,8 @@ __all__ = [
     "OVERLAP_CHARS",
     "MIN_CHUNK_CHARS",
     "chunk_paper",
+    "chunk_paper_abstract",
+    "chunk_abstracts_all",
     "get_chunks",
     "chunk_topic",
 ]

@@ -147,6 +147,21 @@ def run_paper_research(
             except Exception as e:
                 errors[f"chunk_{post_id}"] = str(e)[:200]
 
+    # 3c. ABSTRACT FALLBACK — most papers are paywalled (no OA full text), so
+    # full-text chunking only ever covers the top few. Embed the abstract of
+    # every OTHER paper in this topic as a single chunk so the whole corpus is
+    # chat-able (paper_qa) and relatable (paper_neighbors → relates_to edges),
+    # not just the handful with full text. Idempotent + local-CPU; skips papers
+    # that already have full-text chunks.
+    abstracts_chunked = 0
+    if embed_available:
+        try:
+            from .paper_chunks import chunk_abstracts_all
+            ab = chunk_abstracts_all(topic, embed=True)
+            abstracts_chunked = ab.get("embedded", 0)
+        except Exception as e:
+            errors["abstract_chunk"] = str(e)[:200]
+
     # 4. ANALYZE — run LLM analysis for each paper that has content
     from .paper_analyze import analyze_paper
     analyses_out = []
@@ -181,6 +196,7 @@ def run_paper_research(
         "fulltext_fetched": fulltext_fetched,
         "fulltext_ok": fulltext_ok,
         "papers_chunked": papers_chunked,
+        "abstracts_chunked": abstracts_chunked,
         "analyzed": analyzed,
         "analyses": analyses_out,
         "errors": errors,
