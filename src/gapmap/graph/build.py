@@ -276,7 +276,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
     when calling alongside other writes (e.g. dense relation pass)."""
 
     # Root: the topic itself
-    topic_node = _upsert_node(db, topic, "topic", topic, topic)
+    topic_node = _upsert_node(db, topic, "topic", topic, topic, provenance="structural")
 
     # Collect all posts tagged under this topic
     posts = list(
@@ -320,7 +320,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
 
     # Era nodes (pre/post 2025)
     for era in ("pre_2025", "post_2025"):
-        _upsert_node(db, topic, "era", era, era)
+        _upsert_node(db, topic, "era", era, era, provenance="structural")
         seen_eras.add(era)
         node_counts["era"] += 1
 
@@ -352,6 +352,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
             src,
             source_label,
             metadata={"source_type": src, "is_canonical_source": True},
+            provenance="structural",
         )
         _upsert_edge(db, topic, topic_node, source_node, "contains")
         edge_counts["contains"] += 1
@@ -387,6 +388,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
             sub_node = _upsert_node(
                 db, topic, container_kind, sub, container_label,
                 metadata={"source_type": source_type},
+                provenance="structural",
             )
             _upsert_edge(db, topic, topic_node, sub_node, "contains")
             edge_counts["contains"] += 1
@@ -408,6 +410,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
                 "sub": sub,
                 "era": _era_label(p.get("created_utc")),
             },
+            provenance="structural",
         )
         post_id_map[p["id"]] = post_node
         _upsert_edge(db, topic, sub_node, post_node, "contains")
@@ -422,7 +425,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
 
         author = p.get("author") or "[deleted]"
         if author and author != "[deleted]" and author not in seen_users:
-            _upsert_node(db, topic, "user", author, f"u/{author}")
+            _upsert_node(db, topic, "user", author, f"u/{author}", provenance="structural")
             seen_users.add(author)
             node_counts["user"] += 1
         if author and author != "[deleted]":
@@ -466,6 +469,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
                     "post_id": c.get("post_id"),
                     "era": _era_label(c.get("created_utc")),
                 },
+                provenance="structural",
             )
             _upsert_edge(db, topic, pid, c_node, "has_comment")
             edge_counts["has_comment"] += 1
@@ -475,7 +479,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
             author = c.get("author") or "[deleted]"
             if author and author != "[deleted]":
                 if author not in seen_users:
-                    _upsert_node(db, topic, "user", author, f"u/{author}")
+                    _upsert_node(db, topic, "user", author, f"u/{author}", provenance="structural")
                     seen_users.add(author)
                     node_counts["user"] += 1
                 user_node = make_node_id(topic, "user", author)
@@ -510,6 +514,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
                 "parser_mode": d.get("parser_mode"),
                 "artifact_dir": d.get("artifact_dir"),
             },
+            provenance="structural",
         )
         node_counts["document"] += 1
         _upsert_edge(db, topic, topic_node, doc_node, "contains")
@@ -547,6 +552,7 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
                 "bbox_json": e.get("bbox_json"),
                 "permalink": None,
             },
+            provenance="structural",
         )
         node_counts["document_element"] += 1
         doc_node = make_node_id(topic, "document", str(e.get("document_id")))
@@ -581,6 +587,18 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
                 total_edges += rel_summary.get("edges_written", 0)
     except Exception:
         pass  # relations layer is best-effort; never block structural build
+
+    try:
+        from ..core.db import record_check
+        record_check(
+            topic=topic,
+            gate="build_complete",
+            operation="graph_build",
+            passed=True,
+            detail=f"nodes={total_nodes} edges={total_edges}",
+        )
+    except Exception:
+        pass
 
     return {
         "topic": topic,
