@@ -515,9 +515,30 @@ def _drain_batch(db) -> int:  # noqa: ANN001 — sqlite-utils Database has no pu
         for r in rows:
             grouped.setdefault(r["topic"], []).append(r["post_id"])
 
+        from ..core.db import record_check
+        from ..core.runctx import current_run_id, new_run_id, set_run_id
+
+        # Set a run_id for this drain batch if none is set yet so that
+        # all checks_ledger rows for this invocation share one run_id.
+        if not current_run_id():
+            set_run_id(new_run_id())
+
         processed_ids: list[tuple[str, str]] = []
         for topic, pids in grouped.items():
-            _sem.enrich_from_llm_for_posts(topic=topic, post_ids=pids)
+            _res = _sem.enrich_from_llm_for_posts(topic=topic, post_ids=pids)
+            try:
+                _ok = bool(_res) and not (
+                    isinstance(_res, dict) and _res.get("skipped")
+                )
+                record_check(
+                    topic=topic,
+                    gate="llm_call",
+                    operation="enrich",
+                    passed=_ok,
+                    detail=str(_res)[:300] if isinstance(_res, dict) else "",
+                )
+            except Exception:
+                pass
             for pid in pids:
                 processed_ids.append((topic, pid))
 
