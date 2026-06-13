@@ -35,6 +35,7 @@ import { mountNextStepRail } from './lib/nextStep.js';
 import { initSimpleMode } from './lib/simpleMode.js';
 import { renderActivity } from './screens/activity.js';
 import { renderDatabase } from './screens/database.js';
+import { renderProvenance } from './screens/provenance.js';
 import { renderScience } from './screens/science.js';
 import { renderSearch } from './screens/search.js';
 import { renderPaperMap } from './screens/paperMap.js';
@@ -307,6 +308,8 @@ const routes = [
   { match: /^\/chats\/?$/,          render: renderChats },
   { match: /^\/activity\/?$/,       render: renderActivity },
   { match: /^\/database\/?$/,       render: renderDatabase },
+  { match: /^\/provenance\/?$/,     render: renderProvenance },
+  { match: /^\/provenance\/([^/?]+).*$/, render: renderProvenance },
   { match: /^\/science\/?$/,        render: renderScience },
   { match: /^\/search\/?$/,         render: renderSearch },
   // Paper Map — relationship graph of a topic's academic papers.

@@ -153,6 +153,12 @@ function renderFindingCard(f) {
     : '';
   const triangChip = triangulationChip(f.triangulation_strength);
 
+  // Provenance badge — shows how this node/finding was produced
+  // (e.g. 'llm', 'llm_fallback', 'structural', 'template').
+  const provBadge = f.provenance
+    ? `<span class="prov-badge prov-${esc(f.provenance)}">${esc(f.provenance)}</span>`
+    : '';
+
   // AG-C T2.4 — 👎 feedback button. Verdict + optional note flow back
   // into the next synthesize prompt as a negative-examples block so the
   // LLM stops re-surfacing things the user already rejected.
@@ -192,6 +198,7 @@ function renderFindingCard(f) {
         ${ciChip}
         ${counterChip}
         ${researchChip}
+        ${provBadge}
         ${renderCitationChips(f.evidence_post_ids)}
       </div>
 

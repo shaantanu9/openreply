@@ -10003,3 +10003,24 @@ body.simple-mode .nav-advanced-toggle { display: flex; }
 /* In rail (minimized) sidebar, the advanced toggle text collapses like nav. */
 body[data-sidebar="rail"] .nav-advanced-toggle { justify-content: center; }
 body[data-sidebar="rail"] .nav-adv-label { display: none; }
+
+/* ── Provenance badges (Task 9 — graph_nodes.provenance) ─────────────── */
+.prov-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  margin-left: 6px;
+}
+.prov-llm          { color: var(--ink-2); }
+.prov-llm_fallback { color: #b8860b; }
+.prov-structural   { color: #3a6ea5; }
+.prov-template     { color: var(--ink-3); }
+
+/* ── Provenance screen table wrappers ──────────────────────────────────── */
+.prov-section-head { margin: 18px 0 8px; font-size: 14px; font-weight: 600; color: var(--ink-1); }
+.prov-table-wrap   { overflow-x: auto; margin-bottom: 24px; }
+.prov-table        { width: 100%; border-collapse: collapse; font-size: 13px; }
+.prov-table th     { text-align: left; padding: 6px 10px; border-bottom: 2px solid var(--line); color: var(--ink-2); font-weight: 600; }
+.prov-table td     { padding: 5px 10px; border-bottom: 1px solid var(--line); color: var(--ink-1); vertical-align: top; word-break: break-word; }
+.prov-table tr:last-child td { border-bottom: none; }
