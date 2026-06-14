@@ -1524,6 +1524,30 @@ pub async fn chat_doctor(app: AppHandle, topic: String) -> Result<Value, String>
         .await.map_err(err_to_string)
 }
 
+/// 2A clarified-brief — get/set/suggest the per-topic research brief
+/// (goal/constraints/success/audience) that scopes the synthesis prompt.
+#[tauri::command]
+pub async fn brief_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "brief", "get", "--topic", &topic])
+        .await.map_err(err_to_string)
+}
+#[tauri::command]
+pub async fn brief_set(
+    app: AppHandle, topic: String,
+    goal: String, constraints: String, success: String, audience: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec![
+        "research", "brief", "set", "--topic", &topic,
+        "--goal", &goal, "--constraints", &constraints,
+        "--success", &success, "--audience", &audience, "--json",
+    ]).await.map_err(err_to_string)
+}
+#[tauri::command]
+pub async fn brief_suggest(app: AppHandle, topic: String) -> Result<Value, String> {
+    run_cli(&app, vec!["research", "brief", "suggest", "--topic", &topic, "--json"])
+        .await.map_err(err_to_string)
+}
+
 // ─── Phase 5-10 bundle — cross-topic, export, matrix, research linking ─
 
 #[tauri::command]
