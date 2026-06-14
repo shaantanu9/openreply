@@ -6406,5 +6406,16 @@ def cmd_brief_get(
     typer.echo(json.dumps({"ok": True, "topic": topic, "brief": b}))
 
 
+@brief_app.command("suggest")
+def cmd_brief_suggest(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Suggest 2-3 clarifying questions for a topic (LLM, best-effort, never raises)."""
+    from ..research.brief import suggest_clarifications
+    out = suggest_clarifications(topic)
+    typer.echo(json.dumps({"ok": True, "topic": topic, **out}))
+
+
 if __name__ == "__main__":
     app()
