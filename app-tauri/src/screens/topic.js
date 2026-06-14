@@ -12,6 +12,8 @@ import {
   getActiveConvId, persistActiveConv, saveChatHistory, hydrateChat,
 } from './chat/chatState.js';
 import { mountChatPanel } from './chat/chatPanel.js';
+import { mountDebatePanel } from './debatePanel.js';
+import { mountFleetPanel } from './fleetFlow.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { classifyError } from '../lib/tabEmpty.js';
 import { renderMarkdown, inlineMd } from '../lib/markdown.js';
@@ -73,6 +75,7 @@ import { loadTactics } from './tactics.js';
 import { loadHypotheses } from './hypotheses.js';
 import { loadConnections } from './connections.js';
 import { loadConclusions } from './conclusions.js';
+import { loadAgents } from './agentsTab.js';
 import { mountIntentLadder } from './intent_ladder.js';
 import { loadTrends } from './trends.js';
 import { loadPosts, setPostsFilter } from './posts.js';
@@ -1353,6 +1356,7 @@ export async function renderTopic(root, { params }) {
       <button type="button" class="tab" data-tab="papers"><i data-lucide="book-marked"></i> Papers<span class="tab-freshness" id="tab-fresh-papers"></span></button>
       <button type="button" class="tab" data-tab="connections"><i data-lucide="git-merge"></i> Connect Dots<span class="tab-freshness" id="tab-fresh-connections"></span></button>
       <button type="button" class="tab" data-tab="conclusions"><i data-lucide="graduation-cap"></i> Conclusions<span class="tab-freshness" id="tab-fresh-conclusions"></span></button>
+      <button type="button" class="tab" data-tab="agents"><i data-lucide="users"></i> Agents<span class="tab-freshness" id="tab-fresh-agents"></span></button>
       <button type="button" class="tab" data-tab="ai_analyses"><i data-lucide="sparkles"></i> AI Analyses<span class="tab-freshness" id="tab-fresh-ai"></span></button>
       <button type="button" class="tab" data-tab="search"><i data-lucide="search-code"></i> Search<span class="tab-freshness" id="tab-fresh-search"></span></button>
       <button type="button" class="tab" data-tab="actions"><i data-lucide="zap"></i> Actions</button>
@@ -2537,6 +2541,10 @@ export async function renderTopic(root, { params }) {
     });
     $('#btn-map-add-key')?.addEventListener('click', () => openByokModal(() => loadMap()));
     $('#btn-map-rebuild-stale')?.addEventListener('click', () => loadMap(true));
+    // FSD Fleet — wire the Debate button + render any persisted verdicts.
+    // Self-contained module; never throws into the map render path.
+    try { mountDebatePanel(topic, { toast: showToast }); } catch (e) { console.warn('debate panel mount', e); }
+    try { mountFleetPanel(topic, { toast: showToast }); } catch (e) { console.warn('fleet panel mount', e); }
   }
 
   async function loadMap(force = false) {
@@ -2932,12 +2940,17 @@ export async function renderTopic(root, { params }) {
             ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich-all" title="Enrich every topic with ≥50 posts and 0 findings"><i data-lucide="layers"></i> Enrich all</button>` : ''}
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-mode" title="Toggle graph density (skeleton/full)">Mode: ${mapMode === 'full' ? 'Full' : 'Skeleton'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-fleet" title="Run the orchestrated Fleet flow — decision gate → route → clarify → ground → debate → synthesize"><i data-lucide="satellite"></i> Run Fleet</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-debate" title="Run the 5-persona Fleet debate — tiers each finding Confirmed/Probable/Minority/Discarded and stamps trust badges"><i data-lucide="scale"></i> Debate</button>
+            <button class="btn btn-warn btn-sm btn-bordered" id="debate-stale-chip" title="Findings changed since the last debate — click to re-run" style="display:none">debate stale · re-run</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
             ${localStorage.getItem('gapmap.flags.reveal') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>` : ''}
             ${localStorage.getItem('gapmap.flags.openExt') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Reveal HTML</button>` : ''}
           </div>
         </div>
         ${enrichBanner}
+        <div class="fleet-host" id="fleet-host" style="display:none"></div>
+        <div class="debate-host" id="debate-host" style="display:none"></div>
         <div class="mapchat-host">
           <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>
           <!-- floating bottom-center summon pill (matches v2-focus-canvas prototype) -->
@@ -4701,6 +4714,7 @@ export async function renderTopic(root, { params }) {
     hypotheses: () => loadHypotheses(contentEl, topic),
     connections: () => loadConnections(contentEl, topic),
     conclusions: () => loadConclusions(contentEl, topic),
+    agents: () => loadAgents(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
     papers:   () => loadPapers(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),

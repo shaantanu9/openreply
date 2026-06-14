@@ -10031,3 +10031,141 @@ body[data-sidebar="rail"] .nav-adv-label { display: none; }
 .clarify-field textarea { width: 100%; min-height: 48px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-1); font-size: 13px; resize: vertical; }
 #clarify-hints ul { margin: 6px 0; padding-left: 18px; }
 #clarify-hints li { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+
+/* ── FSD Fleet — debate panel + trust badges (Topic Map) ─────────────── */
+#debate-stale-chip {
+  color: #92400e;
+  background: rgba(202,138,4,0.14);
+  border-color: color-mix(in srgb, #92400e 30%, var(--line));
+}
+.debate-host { margin: 8px 0 4px; }
+.debate-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card, var(--surface));
+  padding: 10px 12px;
+}
+.debate-panel-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 13px; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.debate-agents { display: flex; gap: 5px; flex-wrap: wrap; }
+.debate-agent {
+  font-size: 10.5px; color: var(--ink-3);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px;
+}
+.debate-stale { font-size: 11px; color: #92400e; font-weight: 600; margin-left: auto; }
+.debate-tier { margin: 8px 0; }
+.debate-tier-head {
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.03em; color: var(--ink-2); margin-bottom: 4px;
+}
+.debate-tier-n { color: var(--ink-3); font-weight: 600; }
+.debate-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.debate-row { padding: 5px 0; border-bottom: 1px dashed color-mix(in srgb, var(--line) 60%, transparent); }
+.debate-row:last-child { border-bottom: none; }
+.debate-row-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.debate-title { font-size: 13px; color: var(--ink-1); }
+.debate-dissent { margin: 3px 0 0 4px; display: flex; flex-direction: column; gap: 2px; }
+.debate-dissent span { font-size: 11.5px; color: var(--ink-2); }
+.debate-dissent em { color: var(--ink-3); font-style: italic; }
+.debate-empty { font-size: 12px; color: var(--ink-3); }
+
+/* Trust badge — reusable on map + finding cards */
+.trust-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600; line-height: 1.5;
+  border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+  border: 1px solid var(--line);
+}
+.trust-badge .tb-dissent { color: #B5581A; font-weight: 700; }
+.trust-badge.tier-confirmed { background: rgba(4,120,87,0.14);  color: #047857; border-color: color-mix(in srgb, #047857 28%, var(--line)); }
+.trust-badge.tier-probable  { background: rgba(37,99,235,0.13); color: #1d4ed8; border-color: color-mix(in srgb, #1d4ed8 28%, var(--line)); }
+.trust-badge.tier-minority  { background: rgba(202,138,4,0.16); color: #92400e; border-color: color-mix(in srgb, #92400e 28%, var(--line)); }
+.trust-badge.tier-discarded { background: color-mix(in srgb, var(--ink-3) 14%, transparent); color: var(--ink-3); }
+i.spin { animation: spin 0.8s linear infinite; }
+
+/* ── FSD Fleet — Agent Memory overlay (Agents tab) ──────────────────── */
+.agents-head { margin-bottom: 6px; }
+.agents-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.agent-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--card, var(--surface)); }
+.agent-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-size: 14px; }
+.agent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.agent-dot.on { background: #1A7A4F; }
+.agent-dot.off { background: var(--ink-3); }
+.agent-lens { font-size: 10.5px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.agent-count { font-size: 11px; color: var(--ink-3); }
+.agent-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-2); margin: 10px 0 4px; }
+.agent-mem-list, .agent-conc-list, .agent-rej-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.agent-mem { padding-bottom: 6px; border-bottom: 1px dashed color-mix(in srgb, var(--line) 60%, transparent); }
+.agent-mem:last-child { border-bottom: none; }
+.agent-mem-top { display: flex; align-items: center; gap: 8px; }
+.agent-lesson { font-size: 13px; color: var(--ink-1); }
+.agent-imp { width: 34px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--ink-3) 22%, transparent); flex-shrink: 0; overflow: hidden; }
+.agent-imp-fill { display: block; height: 100%; background: #1F5C99; }
+.agent-excerpt { font-size: 12px; color: var(--ink-2); margin: 3px 0 0 42px; font-style: italic; }
+.agent-mem-meta { margin: 3px 0 0 42px; }
+.agent-cite { font-size: 10.5px; font-family: ui-monospace, monospace; color: var(--ink-3); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
+.agent-conc { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; color: var(--ink-1); }
+.agent-conf { color: #fff; font-size: 10.5px; font-weight: 700; border-radius: 5px; padding: 0 5px; flex-shrink: 0; }
+.agent-rej { font-size: 12px; color: var(--ink-2); }
+.agent-rej em { color: var(--ink-3); }
+.agent-empty { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ── FSD Fleet — debate replay / audit timeline (Phase 3) ───────────── */
+.debate-audit { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.debate-audit-head { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--ink-3); margin-bottom: 8px; }
+.debate-audit-head code { font-family: ui-monospace, monospace; color: var(--ink-2); }
+.debate-round { margin: 8px 0; }
+.debate-round-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-2); margin-bottom: 4px; }
+.debate-turn-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.debate-turn { font-size: 12.5px; display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.debate-turn-target { color: var(--ink-2); }
+.debate-turn-why { flex-basis: 100%; font-size: 12px; color: var(--ink-3); margin-left: 4px; font-style: italic; }
+.debate-vote { font-size: 10px; font-weight: 700; border-radius: 5px; padding: 0 6px; color: #fff; flex-shrink: 0; }
+.debate-vote.vote-confirm { background: #1A7A4F; }
+.debate-vote.vote-dispute { background: #B84747; }
+.debate-vote.vote-abstain { background: var(--ink-3); }
+.debate-replay.on { background: color-mix(in srgb, var(--ink-3) 14%, transparent); }
+
+/* ── FSD Fleet — debate token budget chip (Phase 3) ─────────────────── */
+.debate-budget { font-weight: 700; border-radius: 5px; padding: 0 6px; color: #fff; }
+.debate-budget.lvl-ok { background: #1A7A4F; }
+.debate-budget.lvl-warning { background: #C47A14; }
+.debate-budget.lvl-critical { background: #B5581A; }
+.debate-budget.lvl-exceeded { background: #B84747; }
+
+/* ── FSD Fleet — flow orchestration panel + timeline (Phase 4) ──────── */
+.fleet-host { margin: 8px 0 4px; }
+.fleet-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--card, var(--surface)); padding: 10px 12px; }
+.fleet-panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.fleet-mode { font-size: 11px; color: var(--ink-3); }
+.fleet-reasons { margin: 0 0 10px; padding-left: 18px; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+.fleet-routes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+.fleet-route { border: 1px solid var(--line); border-radius: 9px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.fleet-route-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.fleet-rec { font-size: 10px; font-weight: 700; color: #fff; background: #1A7A4F; border-radius: 5px; padding: 0 6px; }
+.fleet-risk { font-size: 10.5px; border-radius: 5px; padding: 0 6px; }
+.fleet-risk.risk-low { background: rgba(4,120,87,0.14); color: #047857; }
+.fleet-risk.risk-med { background: rgba(202,138,4,0.16); color: #92400e; }
+.fleet-risk.risk-high { background: rgba(184,71,71,0.16); color: #B84747; }
+.fleet-cost { font-size: 10.5px; color: var(--ink-3); margin-left: auto; }
+.fleet-route-blurb { font-size: 12px; color: var(--ink-2); }
+.fleet-route-stages { font-size: 11px; color: var(--ink-3); font-family: ui-monospace, monospace; }
+.fleet-route .btn { align-self: flex-start; margin-top: 2px; }
+.fleet-route-chip { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--ink-2); }
+.fleet-status { font-size: 11px; font-weight: 700; border-radius: 5px; padding: 0 7px; color: #fff; }
+.fleet-status.fleet-ok { background: #1A7A4F; }
+.fleet-status.fleet-run { background: #1F5C99; }
+.fleet-status.fleet-err { background: #B84747; }
+.fleet-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fleet-stage { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.fleet-stage-ic { width: 16px; text-align: center; font-weight: 700; flex-shrink: 0; }
+.fleet-stage-label { font-weight: 600; color: var(--ink-1); min-width: 96px; }
+.fleet-stage-detail { color: var(--ink-2); }
+.fleet-stage.st-ok .fleet-stage-ic, .fleet-stage.st-reused .fleet-stage-ic { color: #1A7A4F; }
+.fleet-stage.st-attention .fleet-stage-ic { color: #C47A14; }
+.fleet-stage.st-error .fleet-stage-ic { color: #B84747; }
+.fleet-stage.st-skipped .fleet-stage-ic, .fleet-stage.st-pending .fleet-stage-ic { color: var(--ink-3); }
+.fleet-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid color-mix(in srgb, var(--ink-3) 30%, transparent); border-top-color: #1F5C99; border-radius: 50%; animation: spin 0.8s linear infinite; }

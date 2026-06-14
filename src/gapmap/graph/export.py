@@ -215,13 +215,30 @@ def export_graph_json(topic: str, mode: str = "skeleton", max_post_nodes: int = 
                     keep_ids.add(nid)
 
     nodes_out = []
+    # FSD Fleet — debated nodes carry a tier glyph on-canvas and surface their
+    # verdict to the node-detail panel via metadata (render cache columns set
+    # by run_topic_debate → set_node_debate_cache).
+    _tier_glyph = {"confirmed": "✓", "probable": "≈", "minority": "!", "discarded": "✕"}
     for nid in keep_ids:
         if nid not in all_nodes:
             continue
         p = all_nodes[nid]
+        label = p["label"]
+        d_tier = (p.get("debate_tier") or "").strip()
+        d_score = p.get("consensus_score")
+        meta = dict(p.get("metadata", {}) or {})
+        if d_tier:
+            meta["debate_tier"] = d_tier
+            if d_score is not None:
+                meta["consensus_score"] = d_score
+            glyph = _tier_glyph.get(d_tier)
+            if glyph:
+                label = f"{glyph} {label}"
         nodes_out.append({
-            "id": p["id"], "kind": p["kind"], "label": p["label"],
-            "metadata": p.get("metadata", {}),
+            "id": p["id"], "kind": p["kind"], "label": label,
+            "metadata": meta,
+            "debate_tier": d_tier or None,
+            "consensus_score": d_score if d_tier else None,
         })
 
     # Surface link metadata to the viewer so it can style edges by
