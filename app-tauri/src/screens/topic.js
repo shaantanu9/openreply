@@ -12,6 +12,7 @@ import {
   getActiveConvId, persistActiveConv, saveChatHistory, hydrateChat,
 } from './chat/chatState.js';
 import { mountChatPanel } from './chat/chatPanel.js';
+import { mountDebatePanel } from './debatePanel.js';
 import { hasLlmConfigured } from '../lib/llmStatus.js';
 import { classifyError } from '../lib/tabEmpty.js';
 import { renderMarkdown, inlineMd } from '../lib/markdown.js';
@@ -2537,6 +2538,9 @@ export async function renderTopic(root, { params }) {
     });
     $('#btn-map-add-key')?.addEventListener('click', () => openByokModal(() => loadMap()));
     $('#btn-map-rebuild-stale')?.addEventListener('click', () => loadMap(true));
+    // FSD Fleet — wire the Debate button + render any persisted verdicts.
+    // Self-contained module; never throws into the map render path.
+    try { mountDebatePanel(topic, { toast: showToast }); } catch (e) { console.warn('debate panel mount', e); }
   }
 
   async function loadMap(force = false) {
@@ -2932,12 +2936,15 @@ export async function renderTopic(root, { params }) {
             ${anyReady ? `<button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-enrich-all" title="Enrich every topic with ≥50 posts and 0 findings"><i data-lucide="layers"></i> Enrich all</button>` : ''}
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-mode" title="Toggle graph density (skeleton/full)">Mode: ${mapMode === 'full' ? 'Full' : 'Skeleton'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
+            <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-debate" title="Run the 5-persona Fleet debate — tiers each finding Confirmed/Probable/Minority/Discarded and stamps trust badges"><i data-lucide="scale"></i> Debate</button>
+            <button class="btn btn-warn btn-sm btn-bordered" id="debate-stale-chip" title="Findings changed since the last debate — click to re-run" style="display:none">debate stale · re-run</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
             ${localStorage.getItem('gapmap.flags.reveal') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>` : ''}
             ${localStorage.getItem('gapmap.flags.openExt') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-open-ext">Reveal HTML</button>` : ''}
           </div>
         </div>
         ${enrichBanner}
+        <div class="debate-host" id="debate-host" style="display:none"></div>
         <div class="mapchat-host">
           <iframe class="viewer-frame" src="${fileUrl}?t=${Date.now()}" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>
           <!-- floating bottom-center summon pill (matches v2-focus-canvas prototype) -->
