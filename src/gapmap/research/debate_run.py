@@ -160,7 +160,30 @@ def run_topic_debate(
             counts[tier] = counts.get(tier, 0) + 1
             n_verdicts += 1
 
-    db.finish_debate_run(run_id, status="done")
+    # Phase 3 — enrich the raw transcript with the finding each vote targets,
+    # so the replay timeline reads "Skeptic disputed <finding>" not just "i=2".
+    raw_transcript = result.get("transcripts") or []
+    audit_transcript = []
+    for t in raw_transcript:
+        idx = t.get("i")
+        target = ""
+        if isinstance(idx, int) and 0 <= idx < len(findings):
+            target = _finding_key(findings[idx])
+        audit_transcript.append({
+            "round": t.get("round"),
+            "persona": t.get("persona"),
+            "vote": t.get("vote"),
+            "rationale": t.get("rationale"),
+            "target": target,
+        })
+    audit_counts = dict(counts)
+    audit_counts["n_findings"] = len(findings)
+    # No token usage is surfaced by the engine yet, so record an LLM-call proxy
+    # (personas × rounds) for the cost column until real accounting lands.
+    audit_counts["llm_calls"] = len(result.get("personas_used") or []) * int(result.get("rounds") or 0)
+
+    db.finish_debate_run(run_id, status="done",
+                         transcript=audit_transcript, counts=audit_counts)
 
     return {
         "ok": True,
@@ -201,4 +224,10 @@ def get_debate_verdicts(topic: str) -> dict[str, Any]:
     return out
 
 
-__all__ = ["run_topic_debate", "get_debate_verdicts"]
+def get_debate_audit(topic: str) -> dict[str, Any]:
+    """Phase 3 — replay/audit payload for the topic's latest debate (run header,
+    per-round per-persona transcript, tier counts, provenance gate counts)."""
+    return db.debate_audit_for_topic(topic)
+
+
+__all__ = ["run_topic_debate", "get_debate_verdicts", "get_debate_audit"]

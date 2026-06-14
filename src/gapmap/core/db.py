@@ -530,9 +530,20 @@ def init_schema(db: Database) -> None:
             "id": int, "topic": str, "run_id": str, "rounds": int,
             "personas_used_json": str, "status": str, "cost_tokens": int,
             "provider": str, "model": str, "started_at": str, "finished_at": str,
+            "transcript_json": str,   # Phase 3 — per-round per-persona timeline
+            "counts_json": str,       # Phase 3 — tier counts + llm_calls proxy
         }, pk="id")
         db["debate_runs"].create_index(["topic"])
         db["debate_runs"].create_index(["run_id"])
+    else:
+        # Phase 3 lazy migration — audit/replay timeline columns.
+        _dr_cols = {c.name for c in db["debate_runs"].columns}
+        if "transcript_json" not in _dr_cols:
+            try:
+                db.executescript("ALTER TABLE debate_runs ADD COLUMN transcript_json TEXT DEFAULT ''")
+                db.executescript("ALTER TABLE debate_runs ADD COLUMN counts_json TEXT DEFAULT ''")
+            except Exception:
+                pass
     if "debate_verdicts" not in db.table_names():
         db["debate_verdicts"].create({
             "id": int, "topic": str,
@@ -1588,21 +1599,76 @@ def record_debate_run(*, topic: str, run_id: str, rounds: int,
 
 
 def finish_debate_run(run_id: str, *, status: str = "done",
-                      cost_tokens: int = 0) -> None:
-    """Close a debate_runs row by run_id. Best-effort, never raises."""
+                      cost_tokens: int = 0,
+                      transcript: list | None = None,
+                      counts: dict | None = None) -> None:
+    """Close a debate_runs row by run_id, persisting the audit transcript +
+    tier counts for the Phase 3 replay timeline. Best-effort, never raises."""
     try:
         db = get_db()
+        t_json = json.dumps(transcript or [], default=str)
+        c_json = json.dumps(counts or {}, default=str)
 
         def _upd() -> None:
             db.execute(
-                "UPDATE debate_runs SET status = ?, cost_tokens = ?, finished_at = ? "
-                "WHERE run_id = ?",
-                [status, int(cost_tokens or 0), _utc_now(), run_id],
+                "UPDATE debate_runs SET status = ?, cost_tokens = ?, finished_at = ?, "
+                "transcript_json = ?, counts_json = ? WHERE run_id = ?",
+                [status, int(cost_tokens or 0), _utc_now(), t_json, c_json, run_id],
             )
+            db.conn.commit()  # raw execute() does not auto-commit; persist cross-process
 
         _retry_on_locked(_upd)
     except Exception:
         pass
+
+
+def debate_audit_for_topic(topic: str) -> dict:
+    """Phase 3 — replay/audit payload for a topic's latest debate: run header,
+    per-round per-persona transcript, tier counts, and provenance gate counts
+    from checks_ledger + lineage. Never raises."""
+    out = {"ok": True, "topic": topic, "run": None, "transcript": [],
+           "counts": {}, "checks": 0, "lineage": 0}
+    try:
+        db = get_db()
+        if "debate_runs" not in db.table_names():
+            return out
+        runs = list(db.query(
+            "SELECT * FROM debate_runs WHERE topic = ? ORDER BY id DESC LIMIT 1",
+            [topic],
+        ))
+        if not runs:
+            return out
+        run = runs[0]
+        try:
+            transcript = json.loads(run.get("transcript_json") or "[]")
+        except Exception:
+            transcript = []
+        try:
+            counts = json.loads(run.get("counts_json") or "{}")
+        except Exception:
+            counts = {}
+        out["run"] = {
+            "run_id": run.get("run_id"), "rounds": run.get("rounds"),
+            "status": run.get("status"), "provider": run.get("provider"),
+            "model": run.get("model"), "started_at": run.get("started_at"),
+            "finished_at": run.get("finished_at"), "cost_tokens": run.get("cost_tokens"),
+        }
+        out["transcript"] = transcript
+        out["counts"] = counts
+        rid = run.get("run_id")
+        if "checks_ledger" in db.table_names():
+            r = list(db.query(
+                "SELECT COUNT(*) c FROM checks_ledger WHERE topic = ? AND run_id = ?",
+                [topic, rid]))
+            out["checks"] = (r[0]["c"] if r else 0)
+        if "lineage" in db.table_names():
+            r = list(db.query(
+                "SELECT COUNT(*) c FROM lineage WHERE topic = ? AND artifact_kind = 'debate_verdict'",
+                [topic]))
+            out["lineage"] = (r[0]["c"] if r else 0)
+        return out
+    except Exception:
+        return out
 
 
 def record_debate_verdict(*, topic: str, target_kind: str, target_id: str,
@@ -1638,7 +1704,12 @@ def clear_debate_verdicts(topic: str) -> None:
         db = get_db()
         if "debate_verdicts" not in db.table_names():
             return
-        _retry_on_locked(lambda: db["debate_verdicts"].delete_where("topic = ?", [topic]))
+
+        def _del() -> None:
+            db.execute("DELETE FROM debate_verdicts WHERE topic = ?", [topic])
+            db.conn.commit()
+
+        _retry_on_locked(_del)
     except Exception:
         pass
 
@@ -1657,6 +1728,7 @@ def set_node_debate_cache(topic: str, node_id: str, *, tier: str,
                 "debated_at = ? WHERE id = ? AND topic = ?",
                 [tier, float(score or 0.0), _utc_now(), node_id, topic],
             )
+            db.conn.commit()  # raw execute() does not auto-commit; persist cross-process
 
         _retry_on_locked(_upd)
     except Exception:
@@ -1883,6 +1955,7 @@ __all__ = [
     "clear_debate_verdicts",
     "set_node_debate_cache",
     "debate_verdicts_for_topic",
+    "debate_audit_for_topic",
     "upsert_posts",
     "upsert_comments",
     "upsert_users",

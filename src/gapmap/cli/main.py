@@ -4838,6 +4838,26 @@ def cmd_research_debate_verdicts(
     )
 
 
+@research_app.command("debate-audit")
+def cmd_research_debate_audit(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Emit machine-readable result for the Rust wrapper."),
+) -> None:
+    """FSD Fleet — replay/audit timeline for a topic's latest debate."""
+    from ..research.debate_run import get_debate_audit
+
+    result = get_debate_audit(topic)
+    if as_json:
+        _emit(result, True)
+        return
+    run = result.get("run") or {}
+    console.print(
+        f"run {run.get('run_id', '—')} · {len(result.get('transcript', []))} turns · "
+        f"{result.get('checks', 0)} checks · {result.get('lineage', 0)} lineage rows"
+    )
+
+
 @research_app.command("findings")
 def cmd_research_findings(
     topic: str = typer.Option(..., "--topic", "-t"),

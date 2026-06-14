@@ -128,6 +128,22 @@ def test_staleness_flips_when_findings_change(db):
     assert get_debate_verdicts(topic)["stale"] is True
 
 
+def test_audit_payload_after_debate(db):
+    from gapmap.research.debate_run import run_topic_debate, get_debate_audit
+    topic, findings = _seed_topic(db)
+    out = run_topic_debate(topic, rounds=1)
+
+    audit = get_debate_audit(topic)
+    assert audit["ok"] is True
+    assert audit["run"] is not None
+    assert audit["run"]["run_id"] == out["run_id"]
+    assert audit["run"]["status"] == "done"
+    # Heuristic path emits no LLM transcript, but counts + provenance gates persist.
+    assert audit["counts"]["n_findings"] == len(findings)
+    assert audit["checks"] == len(findings)        # one debate_consensus gate per finding
+    assert audit["lineage"] == len(findings)        # one debate_verdict lineage row per finding
+
+
 def test_redebate_replaces_prior_verdicts(db):
     from gapmap.research.debate_run import run_topic_debate
     topic, findings = _seed_topic(db)
