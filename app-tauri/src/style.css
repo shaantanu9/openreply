@@ -10085,3 +10085,30 @@ body[data-sidebar="rail"] .nav-adv-label { display: none; }
 .trust-badge.tier-minority  { background: rgba(202,138,4,0.16); color: #92400e; border-color: color-mix(in srgb, #92400e 28%, var(--line)); }
 .trust-badge.tier-discarded { background: color-mix(in srgb, var(--ink-3) 14%, transparent); color: var(--ink-3); }
 i.spin { animation: spin 0.8s linear infinite; }
+
+/* ── FSD Fleet — Agent Memory overlay (Agents tab) ──────────────────── */
+.agents-head { margin-bottom: 6px; }
+.agents-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.agent-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--card, var(--surface)); }
+.agent-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-size: 14px; }
+.agent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.agent-dot.on { background: #1A7A4F; }
+.agent-dot.off { background: var(--ink-3); }
+.agent-lens { font-size: 10.5px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.agent-count { font-size: 11px; color: var(--ink-3); }
+.agent-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-2); margin: 10px 0 4px; }
+.agent-mem-list, .agent-conc-list, .agent-rej-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.agent-mem { padding-bottom: 6px; border-bottom: 1px dashed color-mix(in srgb, var(--line) 60%, transparent); }
+.agent-mem:last-child { border-bottom: none; }
+.agent-mem-top { display: flex; align-items: center; gap: 8px; }
+.agent-lesson { font-size: 13px; color: var(--ink-1); }
+.agent-imp { width: 34px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--ink-3) 22%, transparent); flex-shrink: 0; overflow: hidden; }
+.agent-imp-fill { display: block; height: 100%; background: #1F5C99; }
+.agent-excerpt { font-size: 12px; color: var(--ink-2); margin: 3px 0 0 42px; font-style: italic; }
+.agent-mem-meta { margin: 3px 0 0 42px; }
+.agent-cite { font-size: 10.5px; font-family: ui-monospace, monospace; color: var(--ink-3); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
+.agent-conc { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; color: var(--ink-1); }
+.agent-conf { color: #fff; font-size: 10.5px; font-weight: 700; border-radius: 5px; padding: 0 5px; flex-shrink: 0; }
+.agent-rej { font-size: 12px; color: var(--ink-2); }
+.agent-rej em { color: var(--ink-3); }
+.agent-empty { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
