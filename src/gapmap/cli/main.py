@@ -4882,9 +4882,28 @@ def cmd_research_fleet_run(
     route: Optional[str] = typer.Option(None, "--route", help="quick | standard | deep (default: gate pick)"),
     rounds: int = typer.Option(1, "--rounds"),
     as_json: bool = typer.Option(False, "--json", hidden=True),
+    stream: bool = typer.Option(False, "--stream", hidden=True,
+                                help="Emit sentinel-tagged NDJSON per stage for the Rust streaming wrapper."),
 ) -> None:
     """FSD Fleet — run the orchestrated flow (clarify → ground → debate → synthesize)."""
     from ..research.fleet_flow import run_fleet_flow
+
+    if stream:
+        # NDJSON to stdout: one {__fleet, event:"stage"} line per stage as it
+        # completes, then a final {__fleet, event:"done", result}. The Rust
+        # wrapper forwards every line; the frontend filters on __fleet.
+        import sys as _sys
+
+        def _cb(s: dict) -> None:
+            _sys.stdout.write(json.dumps({"__fleet": True, "event": "stage", **s},
+                                         ensure_ascii=False, default=str) + "\n")
+            _sys.stdout.flush()
+
+        result = run_fleet_flow(topic, route=route, rounds=rounds, on_stage=_cb)
+        _sys.stdout.write(json.dumps({"__fleet": True, "event": "done", "result": result},
+                                     ensure_ascii=False, default=str) + "\n")
+        _sys.stdout.flush()
+        return
 
     result = run_fleet_flow(topic, route=route, rounds=rounds)
     if as_json:
