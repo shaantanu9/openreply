@@ -368,6 +368,16 @@ def synthesize_insights(
         source_count=len(sources_present),
     )
 
+    # Clarified-brief preamble — scope synthesis to the user's stated goal.
+    # Best-effort: a missing brief or any error here never blocks synthesis.
+    try:
+        from .brief import brief_preamble as _brief_preamble
+        _pre = _brief_preamble(topic)
+        if _pre:
+            user_prompt = _pre + "\n\n" + user_prompt
+    except Exception:
+        pass
+
     # AG-C T2.4 — inject user feedback as a negative-examples block so
     # the LLM doesn't re-surface findings the user already flagged as
     # wrong / off-topic / spam. Best-effort: failures here never block
@@ -936,6 +946,17 @@ def synthesize_insights_chunked(
     from ..analyze.providers.base import get_provider
     prov = get_provider(provider)
 
+    # Clarified-brief preamble for chunked path — prepended to system prompt
+    # so every chunk is scoped to the user's stated goal. Best-effort.
+    _chunk_system = _CHUNK_PROMPT_SYSTEM
+    try:
+        from .brief import brief_preamble as _brief_preamble
+        _pre = _brief_preamble(topic)
+        if _pre:
+            _chunk_system = _pre + "\n\n" + _CHUNK_PROMPT_SYSTEM
+    except Exception:
+        pass
+
     sources_present = sorted({r.get("source_type") or "reddit" for r in rows})
 
     # Stable lock so logs don't interleave mid-word when workers write back
@@ -974,12 +995,12 @@ def synthesize_insights_chunked(
                         f"[chunk {idx + 1} attempt {attempt}] "
                         f"rows={len(current_rows)} ex={current_excerpt} "
                         f"max_tokens={current_max_tokens} "
-                        f"prompt_chars={len(user) + len(_CHUNK_PROMPT_SYSTEM)}"
+                        f"prompt_chars={len(user) + len(_chunk_system)}"
                     )
             try:
                 raw = prov.complete(
                     prompt=user,
-                    system=_CHUNK_PROMPT_SYSTEM,
+                    system=_chunk_system,
                     max_tokens=current_max_tokens,
                     temperature=0.2,
                 )
