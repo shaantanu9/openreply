@@ -628,6 +628,12 @@ def init_schema(db: Database) -> None:
             # 'product-new' so old topics behave identically to pre-migration.
             if "intent" not in cols:
                 db.executescript("ALTER TABLE topic_prefs ADD COLUMN intent TEXT DEFAULT 'product-new'")
+            # Clarified-brief columns (2026-06-14). Four nullable text fields
+            # scoping synthesis to the user's stated goal/constraints/success/audience.
+            cols = {c.name for c in db["topic_prefs"].columns}  # re-read after prior ALTERs
+            for _bc in ("brief_goal", "brief_constraints", "brief_success", "brief_audience"):
+                if _bc not in cols:
+                    db.executescript(f"ALTER TABLE topic_prefs ADD COLUMN {_bc} TEXT DEFAULT ''")
     except Exception:
         pass
 
