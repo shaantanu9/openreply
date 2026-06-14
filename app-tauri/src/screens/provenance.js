@@ -47,7 +47,10 @@ export async function renderProvenance(root, topic) {
     </div>
 
     <div style="padding:0 20px 32px">
-      <div class="prov-section-head">Quality gates (checks_ledger)</div>
+      <div class="prov-section-head">Recent runs</div>
+      <div id="prov-runs">${skelRows(4)}</div>
+
+      <div class="prov-section-head" style="margin-top:24px">Quality gates (checks_ledger)</div>
       <div id="prov-checks">${skelRows(4)}</div>
 
       <div class="prov-section-head" style="margin-top:24px">Artifact lineage (lineage)</div>
@@ -56,17 +59,23 @@ export async function renderProvenance(root, topic) {
   `;
 
   if (!topic) {
-    root.querySelector('#prov-checks').innerHTML =
+    root.querySelector('#prov-runs').innerHTML =
       '<p class="muted" style="padding:8px 0">No topic selected. Open a topic first, then navigate here.</p>';
+    root.querySelector('#prov-checks').innerHTML = '';
     root.querySelector('#prov-lineage').innerHTML = '';
     return;
   }
 
-  // Fetch checks and lineage in parallel.
+  // Fetch runs, checks and lineage in parallel.
+  let runs = [];
   let checks = [];
   let lineage = [];
   try {
-    [checks, lineage] = await Promise.all([
+    [runs, checks, lineage] = await Promise.all([
+      api.runQuery(
+        `SELECT run_id, max(topic) AS topic, count(*) AS n_checks, sum(passed) AS n_passed, max(ts) AS last_ts FROM checks_ledger WHERE run_id IS NOT NULL AND run_id != '' GROUP BY run_id ORDER BY last_ts DESC LIMIT 50`,
+        topic,
+      ),
       api.runQuery(
         `SELECT * FROM checks_ledger WHERE topic = '${topic.replace(/'/g, "''")}' ORDER BY id DESC LIMIT 200`,
       ),
@@ -76,13 +85,23 @@ export async function renderProvenance(root, topic) {
     ]);
   } catch (e) {
     if (!alive()) return;
-    root.querySelector('#prov-checks').innerHTML =
+    root.querySelector('#prov-runs').innerHTML =
       `<p class="muted">Error loading provenance: ${esc(e?.message || String(e))}</p>`;
+    root.querySelector('#prov-checks').innerHTML = '';
     root.querySelector('#prov-lineage').innerHTML = '';
     return;
   }
 
   if (!alive()) return;
+
+  // Render runs table with abbreviated run_id (first 8 chars).
+  const runsDisplay = runs.map((r) => ({
+    run_id: r.run_id ? String(r.run_id).slice(0, 8) : '',
+    topic: r.topic,
+    checks: `${r.n_passed}/${r.n_checks}`,
+    last_ts: r.last_ts,
+  }));
+  root.querySelector('#prov-runs').innerHTML = renderTable(runsDisplay);
   root.querySelector('#prov-checks').innerHTML = renderTable(checks);
   root.querySelector('#prov-lineage').innerHTML = renderTable(lineage);
 }
