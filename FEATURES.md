@@ -31,7 +31,7 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 2. Discovery & collection | 6 | 6 | 0 | 0 | 0 |
 | 3. Corpus management | 11 | 11 | 0 | 0 | 0 |
 | 4. Synthesis & gap finding | 7 | 7 | 0 | 0 | 0 |
-| 5. Knowledge graph | 11 | 11 | 0 | 0 | 0 |
+| 5. Knowledge graph | 12 | 12 | 0 | 0 | 0 |
 | 6. Semantic search & memory palace | 7 | 7 | 0 | 0 | 0 |
 | 7. Persona agents | 9 | 9 | 0 | 0 | 0 |
 | 8. Paper research pipeline | 25 | 25 | 0 | 0 | 0 |
@@ -47,7 +47,7 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
 | 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
 | 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **219** | **218** | **1** | **0** | **0** |
+| **Total** | **220** | **219** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -244,9 +244,10 @@ A broader "scan many adjacent topics at once" engine exists (`research/idea_scan
 | Betweenness bridges | ✅ | `gapmap_graph_bridges:1958` | structural bridge nodes | computed |
 | Structural summary | ✅ | `gapmap_graph_structural_summary:1966` | density / components metrics | diagnostic |
 | Build relations (semantic edges) | ✅ | `gapmap_graph_build_relations:2872` | ChromaDB MiniLM post-pass — `relates_to` / `potentially_solves` / `could_address` / `co_evidenced` edges, no LLM cost | `graph_edges` |
+| FSD Fleet debate on the Map | ✅ | (CLI `research debate` / `debate-verdicts`) | 5-persona debate (`deliberate()`) tiers each finding Confirmed/Probable/Minority/Discarded; verdicts + lineage + checks persisted; trust badges on the Map panel + node glyphs (`research/debate_run.py`) | `debate_verdicts`, `debate_runs`, `graph_nodes.debate_*` |
 
-**Implementation:** all graph tools wrap `src/gapmap/research/graph.py`. The dense-relations post-pass is the `dense-graph-relations` skill, battle-tested 2026-04-21.
-**Known gaps:** none on the MCP/CLI side. The Tauri *Graph* screen has only basic node viewing — faceted/advanced filtering is unfinished (category 15).
+**Implementation:** all graph tools wrap `src/gapmap/research/graph.py`. The dense-relations post-pass is the `dense-graph-relations` skill, battle-tested 2026-04-21. The Fleet debate wraps `src/gapmap/research/deliberate.py` via `research/debate_run.py`; the Tauri Map surface is `app-tauri/src/screens/debatePanel.js` (Debate button + panel + `renderTrustBadge`) wired into `screens/topic.js`, with node glyphs in `graph/export.py:217`. Spec: `docs/specs/FLEET_AGENTS_TOPIC_MAP.md`.
+**Known gaps:** none on the MCP/CLI side. The Tauri *Graph* screen has only basic node viewing — faceted/advanced filtering is unfinished (category 15). FSD Fleet Phase 2 (Agent Memory overlay tab) and Phase 3 (audit/replay timeline + cost governance panel) are designed but not built — P2, tracked in the spec.
 
 ---
 
