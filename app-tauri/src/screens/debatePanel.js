@@ -101,12 +101,19 @@ function _renderAudit(audit) {
   const transcript = (audit && audit.transcript) || [];
   const counts = (audit && audit.counts) || {};
   if (!run) return '<div class="agent-empty">No debate run recorded yet.</div>';
+  const cost = (run.cost_tokens != null ? run.cost_tokens : (counts.cost_tokens_est || 0));
+  const b = audit.budget || {};
+  const budgetChip = (b.level && b.level !== 'none')
+    ? `<span class="debate-budget lvl-${esc(b.level)}" title="token budget ${b.budget}">budget ${Math.round((b.pct || 0) * 100)}% · ${esc(b.level)}</span>`
+    : '';
   const header = `<div class="debate-audit-head">`
     + `<span>run <code>${esc(String(run.run_id || '').slice(0, 8))}</code></span>`
     + `<span>· ${run.rounds || 0} ${run.rounds === 1 ? 'round' : 'rounds'}</span>`
     + `<span>· ${esc(run.provider || 'heuristic')}</span>`
     + `<span>· ${counts.llm_calls || 0} LLM calls</span>`
-    + `<span>· ${audit.checks || 0} checks · ${audit.lineage || 0} lineage</span></div>`;
+    + `<span>· ~${cost.toLocaleString()} tok (est)</span>`
+    + `<span>· ${audit.checks || 0} checks · ${audit.lineage || 0} lineage</span>`
+    + `${budgetChip}</div>`;
   if (!transcript.length) {
     return header + `<div class="agent-empty">No per-turn transcript for this run `
       + `(heuristic debate — no LLM votes to replay). Verdicts above are evidence-tiered.</div>`;
@@ -185,7 +192,9 @@ async function _runDebate(topic, host, btn, toast) {
     } else {
       const c = (res && res.counts) || {};
       const tag = res && res.provenance === 'llm_fallback' ? ' (heuristic — no LLM key)' : '';
-      toast('Debate complete', `${(res && res.n_verdicts) || 0} findings tiered · ${c.confirmed || 0} confirmed${tag}`, 'ok', 3200);
+      const cost = (res && res.cost_tokens) ? ` · ~${res.cost_tokens.toLocaleString()} tok` : '';
+      const over = (res && res.budget && res.budget.level === 'exceeded') ? ' · ⚠ over budget' : '';
+      toast('Debate complete', `${(res && res.n_verdicts) || 0} findings tiered · ${c.confirmed || 0} confirmed${cost}${over}${tag}`, 'ok', 3200);
     }
     await _refresh(topic, host);
     window.refreshIcons?.();

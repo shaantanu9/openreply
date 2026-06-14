@@ -10128,3 +10128,10 @@ i.spin { animation: spin 0.8s linear infinite; }
 .debate-vote.vote-dispute { background: #B84747; }
 .debate-vote.vote-abstain { background: var(--ink-3); }
 .debate-replay.on { background: color-mix(in srgb, var(--ink-3) 14%, transparent); }
+
+/* ── FSD Fleet — debate token budget chip (Phase 3) ─────────────────── */
+.debate-budget { font-weight: 700; border-radius: 5px; padding: 0 6px; color: #fff; }
+.debate-budget.lvl-ok { background: #1A7A4F; }
+.debate-budget.lvl-warning { background: #C47A14; }
+.debate-budget.lvl-critical { background: #B5581A; }
+.debate-budget.lvl-exceeded { background: #B84747; }
