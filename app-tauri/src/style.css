@@ -10024,3 +10024,10 @@ body[data-sidebar="rail"] .nav-adv-label { display: none; }
 .prov-table th     { text-align: left; padding: 6px 10px; border-bottom: 2px solid var(--line); color: var(--ink-2); font-weight: 600; }
 .prov-table td     { padding: 5px 10px; border-bottom: 1px solid var(--line); color: var(--ink-1); vertical-align: top; word-break: break-word; }
 .prov-table tr:last-child td { border-bottom: none; }
+
+/* ── Clarify research modal fields ─────────────────────────────────────── */
+.clarify-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.clarify-field label { font-size: 13px; color: var(--ink-1); }
+.clarify-field textarea { width: 100%; min-height: 48px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-1); font-size: 13px; resize: vertical; }
+#clarify-hints ul { margin: 6px 0; padding-left: 18px; }
+#clarify-hints li { font-size: 12px; color: var(--ink-2); line-height: 1.5; }

@@ -1286,6 +1286,7 @@ export async function renderTopic(root, { params }) {
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-rerun" title="Rerun collect — pick sources"><i data-lucide="rotate-cw"></i> Rerun</button>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-fetch-more" title="Fetch more — deep 3-year history across ALL subreddits + every source. Thorough but slow (~10-15 min). The first collect was a fast 1-year scan."><i data-lucide="history"></i> Fetch more</button>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-compare-topic" title="Compare this topic's insights with another topic side-by-side"><i data-lucide="git-compare"></i> Compare</button>
+        <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-clarify-research" title="View or edit the clarified research brief (goal, constraints, success criteria, audience)">🧭 Clarify research</button>
         <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-delete" title="Delete topic (soft-delete, 7-day undo)" style="color:#B84747"><i data-lucide="trash-2"></i></button>
       </div>
       <div class="topic-header-row-2">
@@ -4957,6 +4958,11 @@ export async function renderTopic(root, { params }) {
     });
   };
 
+  // ── Clarify research modal ─────────────────────────────────────────────────
+  // Opens a form to view/edit the clarified research brief (goal, constraints,
+  // success criteria, audience) + a "Suggest questions" helper.
+  $('#btn-clarify-research')?.addEventListener('click', () => openClarifyModal(topic));
+
   // Scheduled-refresh toggle per topic. Reads the current flag from
   // topic_prefs and wires the checkbox to flip it via the Rust command.
   (async () => {
@@ -5319,5 +5325,101 @@ function _openExtractionOverridePopover(host, topic, data) {
       const root = host.closest('#main-content, [data-view], body') || document.body;
       await _renderExtractionOverrideRow(root, topic);
     } catch (e) { alert(`Save failed: ${e?.message || e}`); }
+  });
+}
+
+// ── Clarify research modal ─────────────────────────────────────────────────
+// Opens a form to view/edit the clarified research brief (goal, constraints,
+// success criteria, audience). Also exposes a "Suggest questions" helper that
+// calls briefSuggest and renders the returned questions as a checklist hint.
+async function openClarifyModal(topic) {
+  const res = await api.briefGet(topic).catch(() => null);
+  const b = (res && res.brief) || {};
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.hidden = false;
+  backdrop.innerHTML = `
+    <div class="modal" style="max-width:520px;max-height:85vh;overflow:auto">
+      <h3 style="margin-top:0">🧭 Clarify research</h3>
+      <p class="muted" style="margin-top:0">Define what you're actually trying to learn so Gap Map can surface more relevant evidence.</p>
+
+      <div class="clarify-field">
+        <label for="clarify-goal"><b>Goal</b> <span class="muted">— What question are you trying to answer?</span></label>
+        <textarea id="clarify-goal" rows="2" placeholder="e.g. Understand why people abandon budgeting apps after 2 weeks">${esc(b.goal || '')}</textarea>
+      </div>
+      <div class="clarify-field">
+        <label for="clarify-constraints"><b>Constraints</b> <span class="muted">— What's out of scope or off-limits?</span></label>
+        <textarea id="clarify-constraints" rows="2" placeholder="e.g. B2B use cases, enterprise tools, anything older than 2021">${esc(b.constraints || '')}</textarea>
+      </div>
+      <div class="clarify-field">
+        <label for="clarify-success"><b>Success criteria</b> <span class="muted">— How will you know you're done?</span></label>
+        <textarea id="clarify-success" rows="2" placeholder="e.g. 3 validated pain points with quotes + a ranked list of workarounds">${esc(b.success || '')}</textarea>
+      </div>
+      <div class="clarify-field">
+        <label for="clarify-audience"><b>Audience</b> <span class="muted">— Who are you researching / writing for?</span></label>
+        <textarea id="clarify-audience" rows="2" placeholder="e.g. Solo founders building a personal finance app for millennials">${esc(b.audience || '')}</textarea>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <button class="btn btn-ghost btn-sm btn-bordered" id="clarify-suggest">💡 Suggest questions</button>
+      </div>
+      <div id="clarify-hints"></div>
+
+      <div class="modal-actions" style="justify-content:flex-end;margin-top:16px;display:flex;gap:8px">
+        <button class="btn btn-ghost btn-bordered" id="clarify-cancel">Cancel</button>
+        <button class="btn btn-primary" id="clarify-save">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  window.refreshIcons?.();
+
+  const close = () => backdrop.remove();
+  backdrop.querySelector('#clarify-cancel').onclick = close;
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', function onEsc(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
+  });
+
+  backdrop.querySelector('#clarify-suggest').addEventListener('click', async () => {
+    const btn = backdrop.querySelector('#clarify-suggest');
+    const hintsEl = backdrop.querySelector('#clarify-hints');
+    btn.disabled = true;
+    btn.textContent = '💡 Loading…';
+    try {
+      const s = await api.briefSuggest(topic).catch(() => ({}));
+      if (s.skipped) {
+        hintsEl.innerHTML = `<p class="muted" style="font-size:12px;margin:4px 0">Add an LLM key in Settings to get suggestions.</p>`;
+      } else if (Array.isArray(s.questions) && s.questions.length > 0) {
+        hintsEl.innerHTML = `<ul>${s.questions.map(q => `<li>${esc(q)}</li>`).join('')}</ul>`;
+      } else {
+        hintsEl.innerHTML = `<p class="muted" style="font-size:12px;margin:4px 0">No suggestions returned — try filling in the fields first.</p>`;
+      }
+    } catch (err) {
+      hintsEl.innerHTML = `<p class="muted" style="font-size:12px;margin:4px 0">Error: ${esc(err?.message || String(err))}</p>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💡 Suggest questions';
+    }
+  });
+
+  backdrop.querySelector('#clarify-save').addEventListener('click', async () => {
+    const saveBtn = backdrop.querySelector('#clarify-save');
+    const goal        = backdrop.querySelector('#clarify-goal').value.trim();
+    const constraints = backdrop.querySelector('#clarify-constraints').value.trim();
+    const success     = backdrop.querySelector('#clarify-success').value.trim();
+    const audience    = backdrop.querySelector('#clarify-audience').value.trim();
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    try {
+      await api.briefSet(topic, goal, constraints, success, audience);
+      close();
+      window.dispatchEvent(new CustomEvent('gapmap:changed', { detail: { kind: 'topics' } }));
+    } catch (err) {
+      alert(`Save failed: ${err?.message || err}`);
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
   });
 }
