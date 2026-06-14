@@ -1,0 +1,204 @@
+"""FSD Fleet — topic debate orchestrator (Phase 1).
+
+Wraps the pure 5-persona engine in `deliberate.py` with persistence so the
+Topic Map can trigger a debate, render trust badges, and survive reloads.
+
+Flow:
+  1. Load the topic's cached findings (`topic_insights.report_json`).
+  2. Hash them (staleness key) and open a `debate_runs` row.
+  3. Run `deliberate()` over the findings — its heuristic path covers the
+     no-LLM case, so this never hard-fails.
+  4. Write one `debate_verdicts` row per finding (canonical), refresh the
+     denormalized `graph_nodes` debate cache for any matching node, and
+     record lineage + a checks-ledger gate per verdict.
+  5. Close the run and return a summary for the UI.
+
+Public API:
+  run_topic_debate(topic, rounds, provider) -> summary dict
+  get_debate_verdicts(topic) -> {verdicts, runs_latest, stale, findings_hash}
+"""
+from __future__ import annotations
+
+import hashlib
+import uuid
+from typing import Any
+
+from ..core import db
+
+VALID_TIERS = {"confirmed", "probable", "minority", "discarded"}
+
+
+def _finding_key(item: dict[str, Any]) -> str:
+    """Stable title-key used to match a finding across runs and to graph nodes."""
+    return (item.get("title") or item.get("label") or "").strip()
+
+
+def _findings_hash(findings: list[dict[str, Any]]) -> str:
+    """Stable hash over finding title-keys — flips when the finding set changes."""
+    keys = sorted(_finding_key(f).lower() for f in findings if _finding_key(f))
+    h = hashlib.sha256("␟".join(keys).encode("utf-8")).hexdigest()
+    return h[:16]
+
+
+def _node_label_map(topic: str) -> dict[str, str]:
+    """{normalized label -> graph_nodes.id} for this topic. Empty on any error."""
+    try:
+        d = db.get_db()
+        if "graph_nodes" not in d.table_names():
+            return {}
+        out: dict[str, str] = {}
+        for r in d.query(
+            "SELECT id, label FROM graph_nodes WHERE topic = ?", [topic]
+        ):
+            lbl = (r.get("label") or "").strip().lower()
+            if lbl and lbl not in out:
+                out[lbl] = r.get("id")
+        return out
+    except Exception:
+        return {}
+
+
+def _consensus_of(item: dict[str, Any]) -> dict[str, Any]:
+    return item.get("consensus") or {}
+
+
+def run_topic_debate(
+    topic: str,
+    *,
+    rounds: int = 1,
+    provider: str | None = None,
+) -> dict[str, Any]:
+    """Run + persist a debate over a topic's cached findings.
+
+    Returns a summary dict. When no findings are cached, returns
+    `{ok: False, reason: 'needs_synthesis'}` instead of raising — the UI
+    prompts the user to synthesize first.
+    """
+    from .insights import load_insights
+
+    report = load_insights(topic)
+    findings = (report or {}).get("findings") if isinstance(report, dict) else None
+    if not findings or not isinstance(findings, list):
+        return {"ok": False, "reason": "needs_synthesis", "topic": topic}
+
+    findings_hash = _findings_hash(findings)
+    run_id = uuid.uuid4().hex
+    model = ""
+    try:
+        import os
+        model = os.getenv("LLM_MODEL") or ""
+    except Exception:
+        pass
+
+    db.record_debate_run(
+        topic=topic, run_id=run_id, rounds=rounds, status="running",
+        provider=provider or "", model=model,
+    )
+
+    # ── Run the pure engine (never raises; heuristic fallback on no LLM) ──
+    try:
+        from .deliberate import deliberate
+        result = deliberate(
+            findings, topic=topic, rounds=rounds,
+            provider=provider, use_llm=True, persist_log=True,
+        )
+    except Exception as e:
+        db.finish_debate_run(run_id, status="error")
+        return {"ok": False, "reason": "deliberate_failed",
+                "topic": topic, "error": str(e)[:200]}
+
+    node_map = _node_label_map(topic)
+    db.clear_debate_verdicts(topic)
+
+    counts = {"confirmed": 0, "probable": 0, "minority": 0, "discarded": 0}
+    n_verdicts = 0
+    used_fallback = False
+
+    for tier_key, tier_items in (result.get("tiers") or {}).items():
+        if tier_key not in VALID_TIERS:
+            continue
+        for item in tier_items:
+            cons = _consensus_of(item)
+            tier = cons.get("tier") or tier_key
+            if tier not in VALID_TIERS:
+                tier = tier_key
+            score = float(cons.get("score") or 0.0)
+            fallback = bool(cons.get("fallback"))
+            used_fallback = used_fallback or fallback
+            provenance = "llm_fallback" if fallback else "debated"
+            dissent = (cons.get("rationales") or {}).get("dispute") or []
+            posts = item.get("supporting_post_ids") or []
+            key = _finding_key(item)
+            if not key:
+                continue
+
+            db.record_debate_verdict(
+                topic=topic, target_kind="finding", target_id=key,
+                tier=tier, consensus_score=score, dissent=dissent,
+                evidence_post_ids=posts, findings_hash=findings_hash,
+                run_id=run_id, provenance=provenance,
+                provider=result.get("provider") or "", model=model,
+            )
+            db.record_lineage(
+                topic=topic, artifact_id=key, artifact_kind="debate_verdict",
+                produced_by="deliberate", from_post_ids=posts, decision=tier,
+                provider=result.get("provider") or "", model=model,
+            )
+            db.record_check(
+                topic=topic, run_id=run_id, gate="debate_consensus",
+                operation="deliberate",
+                invariant="tier in {confirmed,probable,minority,discarded}",
+                passed=tier in VALID_TIERS, provider=result.get("provider") or "",
+                model=model, detail=f"{key[:80]} -> {tier} ({score:.2f})",
+            )
+
+            # Refresh the denormalized render cache for any matching node.
+            node_id = node_map.get(key.lower())
+            if node_id:
+                db.set_node_debate_cache(topic, node_id, tier=tier, score=score)
+
+            counts[tier] = counts.get(tier, 0) + 1
+            n_verdicts += 1
+
+    db.finish_debate_run(run_id, status="done")
+
+    return {
+        "ok": True,
+        "topic": topic,
+        "run_id": run_id,
+        "findings_hash": findings_hash,
+        "n_input": result.get("n_input", len(findings)),
+        "n_verdicts": n_verdicts,
+        "rounds": result.get("rounds"),
+        "counts": counts,
+        "personas_used": result.get("personas_used") or [],
+        "audience_grounded": result.get("audience_grounded", False),
+        "persona_grounded": result.get("persona_grounded", False),
+        "provider": result.get("provider") or "",
+        "provenance": "llm_fallback" if used_fallback else "debated",
+        "stale": False,
+    }
+
+
+def get_debate_verdicts(topic: str) -> dict[str, Any]:
+    """Read persisted verdicts for the Map, flagging staleness against the
+    current findings. Never raises."""
+    from .insights import load_insights
+
+    current_hash = ""
+    try:
+        report = load_insights(topic)
+        findings = (report or {}).get("findings") if isinstance(report, dict) else None
+        if findings and isinstance(findings, list):
+            current_hash = _findings_hash(findings)
+    except Exception:
+        current_hash = ""
+
+    out = db.debate_verdicts_for_topic(topic, current_hash=current_hash)
+    out["current_findings_hash"] = current_hash
+    out["ok"] = True
+    out["topic"] = topic
+    return out
+
+
+__all__ = ["run_topic_debate", "get_debate_verdicts"]

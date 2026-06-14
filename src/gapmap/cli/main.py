@@ -4787,6 +4787,57 @@ def cmd_research_report_pro(
         pass
 
 
+@research_app.command("debate")
+def cmd_research_debate(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    rounds: int = typer.Option(1, "--rounds", help="1-3 debate rounds (LLM mode)."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Emit machine-readable result for the Rust wrapper."),
+) -> None:
+    """FSD Fleet — run the 5-persona debate over a topic's cached findings.
+
+    Tiers each finding Confirmed/Probable/Minority/Discarded, writes verdicts +
+    lineage + checks, and refreshes the graph_nodes debate render cache. When no
+    findings are cached, returns {ok:false, reason:'needs_synthesis'}.
+    """
+    from ..research.debate_run import run_topic_debate
+
+    result = run_topic_debate(topic, rounds=rounds, provider=provider)
+    if as_json:
+        _emit(result, True)
+        return
+    if not result.get("ok"):
+        console.print(f"[yellow]{result.get('reason')}[/yellow] — synthesize findings first.")
+        return
+    c = result.get("counts", {})
+    console.print(
+        f"[green]debate done[/green] · {result['n_verdicts']} verdicts · "
+        f"confirmed={c.get('confirmed',0)} probable={c.get('probable',0)} "
+        f"minority={c.get('minority',0)} discarded={c.get('discarded',0)} "
+        f"({result.get('provenance')})"
+    )
+
+
+@research_app.command("debate-verdicts")
+def cmd_research_debate_verdicts(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Emit machine-readable result for the Rust wrapper."),
+) -> None:
+    """FSD Fleet — read persisted debate verdicts for a topic (with staleness)."""
+    from ..research.debate_run import get_debate_verdicts
+
+    result = get_debate_verdicts(topic)
+    if as_json:
+        _emit(result, True)
+        return
+    console.print(
+        f"{len(result.get('verdicts', []))} verdicts · "
+        f"stale={result.get('stale')}"
+    )
+
+
 @research_app.command("findings")
 def cmd_research_findings(
     topic: str = typer.Option(..., "--topic", "-t"),

@@ -443,6 +443,9 @@ def init_schema(db: Database) -> None:
                 "evidence_post_id": str,  # incremental-enrichment — the post
                                           # that triggered this finding (Task 4)
                 "provenance": str,      # source/run provenance tag
+                "debate_tier": str,     # FSD Fleet Phase 1 — render cache
+                "consensus_score": float,  # 0..1 from last debate
+                "debated_at": str,      # ISO UTC of last debate stamp
             },
             pk="id",
         )
@@ -470,6 +473,14 @@ def init_schema(db: Database) -> None:
                 pass
         if "provenance" not in _cols:
             db.executescript("ALTER TABLE graph_nodes ADD COLUMN provenance TEXT DEFAULT ''")
+        # FSD Fleet Phase 1 — denormalized debate render cache.
+        if "debate_tier" not in _cols:
+            try:
+                db.executescript("ALTER TABLE graph_nodes ADD COLUMN debate_tier TEXT DEFAULT ''")
+                db.executescript("ALTER TABLE graph_nodes ADD COLUMN consensus_score REAL DEFAULT 0")
+                db.executescript("ALTER TABLE graph_nodes ADD COLUMN debated_at TEXT DEFAULT ''")
+            except Exception:
+                pass
 
     if "graph_edges" not in db.table_names():
         db["graph_edges"].create(
@@ -506,6 +517,39 @@ def init_schema(db: Database) -> None:
         db["lineage"].create_index(["artifact_id"])
         db["lineage"].create_index(["topic"])
         db["lineage"].create_index(["produced_by"])
+
+    # FSD Fleet — Phase 1. One row per debate run over a topic's findings,
+    # plus one verdict row per (finding|node) tiered by the 5-persona
+    # deliberation. `debate_runs` is the lightweight audit record (Phase 3
+    # expands it into the cost/replay panel); `debate_verdicts` is the
+    # canonical source of truth for trust badges. The denormalized
+    # graph_nodes.debate_* columns (added in the graph_nodes block above)
+    # are a render cache so map-node badges paint without a join.
+    if "debate_runs" not in db.table_names():
+        db["debate_runs"].create({
+            "id": int, "topic": str, "run_id": str, "rounds": int,
+            "personas_used_json": str, "status": str, "cost_tokens": int,
+            "provider": str, "model": str, "started_at": str, "finished_at": str,
+        }, pk="id")
+        db["debate_runs"].create_index(["topic"])
+        db["debate_runs"].create_index(["run_id"])
+    if "debate_verdicts" not in db.table_names():
+        db["debate_verdicts"].create({
+            "id": int, "topic": str,
+            "target_kind": str,            # 'finding' | 'node'
+            "target_id": str,              # finding title-key or graph_nodes.id
+            "tier": str,                   # confirmed|probable|minority|discarded
+            "consensus_score": float,      # 0..1
+            "dissent_json": str,           # [{persona, why}] of DISPUTE voters
+            "evidence_post_ids_json": str, # supporting post ids
+            "transcript_ref": str,         # debate_runs.run_id
+            "findings_hash": str,          # staleness key
+            "provenance": str,             # 'debated' | 'llm_fallback'
+            "run_id": str, "provider": str, "model": str,
+            "created_at": str,             # ISO UTC
+        }, pk="id")
+        db["debate_verdicts"].create_index(["topic", "target_id"])
+        db["debate_verdicts"].create_index(["topic", "run_id"])
 
     if "paper_gaps" not in db.table_names():
         db["paper_gaps"].create({
@@ -1519,6 +1563,161 @@ def record_lineage(*, topic: str, artifact_id: str, artifact_kind: str,
         return -1
 
 
+# ── FSD Fleet — debate persistence ───────────────────────────────────────────
+
+def record_debate_run(*, topic: str, run_id: str, rounds: int,
+                      personas_used: list[str] | None = None,
+                      status: str = "running", cost_tokens: int = 0,
+                      provider: str = "", model: str = "") -> int:
+    """Open a debate_runs row. Best-effort — returns row id or -1, never raises."""
+    try:
+        db = get_db()
+
+        def _ins() -> int:
+            return db["debate_runs"].insert({
+                "topic": topic, "run_id": run_id, "rounds": int(rounds or 0),
+                "personas_used_json": json.dumps(personas_used or [], default=str),
+                "status": status, "cost_tokens": int(cost_tokens or 0),
+                "provider": provider, "model": model,
+                "started_at": _utc_now(), "finished_at": "",
+            }).last_pk
+
+        return _retry_on_locked(_ins)
+    except Exception:
+        return -1
+
+
+def finish_debate_run(run_id: str, *, status: str = "done",
+                      cost_tokens: int = 0) -> None:
+    """Close a debate_runs row by run_id. Best-effort, never raises."""
+    try:
+        db = get_db()
+
+        def _upd() -> None:
+            db.execute(
+                "UPDATE debate_runs SET status = ?, cost_tokens = ?, finished_at = ? "
+                "WHERE run_id = ?",
+                [status, int(cost_tokens or 0), _utc_now(), run_id],
+            )
+
+        _retry_on_locked(_upd)
+    except Exception:
+        pass
+
+
+def record_debate_verdict(*, topic: str, target_kind: str, target_id: str,
+                          tier: str, consensus_score: float,
+                          dissent: list[dict] | None = None,
+                          evidence_post_ids: list[str] | None = None,
+                          findings_hash: str = "", run_id: str = "",
+                          provenance: str = "debated", provider: str = "",
+                          model: str = "") -> int:
+    """Insert one debate verdict. Best-effort — returns row id or -1, never raises."""
+    try:
+        db = get_db()
+
+        def _ins() -> int:
+            return db["debate_verdicts"].insert({
+                "topic": topic, "target_kind": target_kind, "target_id": target_id,
+                "tier": tier, "consensus_score": float(consensus_score or 0.0),
+                "dissent_json": json.dumps(dissent or [], default=str),
+                "evidence_post_ids_json": json.dumps(evidence_post_ids or [], default=str),
+                "transcript_ref": run_id, "findings_hash": findings_hash,
+                "provenance": provenance, "run_id": run_id,
+                "provider": provider, "model": model, "created_at": _utc_now(),
+            }).last_pk
+
+        return _retry_on_locked(_ins)
+    except Exception:
+        return -1
+
+
+def clear_debate_verdicts(topic: str) -> None:
+    """Delete prior verdicts for a topic before a fresh debate. Never raises."""
+    try:
+        db = get_db()
+        if "debate_verdicts" not in db.table_names():
+            return
+        _retry_on_locked(lambda: db["debate_verdicts"].delete_where("topic = ?", [topic]))
+    except Exception:
+        pass
+
+
+def set_node_debate_cache(topic: str, node_id: str, *, tier: str,
+                          score: float) -> None:
+    """Refresh the denormalized debate columns on a graph_nodes row. Never raises."""
+    try:
+        db = get_db()
+        if "graph_nodes" not in db.table_names():
+            return
+
+        def _upd() -> None:
+            db.execute(
+                "UPDATE graph_nodes SET debate_tier = ?, consensus_score = ?, "
+                "debated_at = ? WHERE id = ? AND topic = ?",
+                [tier, float(score or 0.0), _utc_now(), node_id, topic],
+            )
+
+        _retry_on_locked(_upd)
+    except Exception:
+        pass
+
+
+def debate_verdicts_for_topic(topic: str, *, current_hash: str = "") -> dict:
+    """Read all verdicts for a topic plus the latest run summary.
+
+    Returns `{verdicts, runs_latest, stale, findings_hash}`. `stale` is True
+    when `current_hash` is provided and differs from the stored verdict hash
+    (i.e. the findings changed since the last debate). Never raises."""
+    out = {"verdicts": [], "runs_latest": None, "stale": False, "findings_hash": ""}
+    try:
+        db = get_db()
+        if "debate_verdicts" not in db.table_names():
+            return out
+        rows = list(db.query(
+            "SELECT * FROM debate_verdicts WHERE topic = ? ORDER BY consensus_score DESC",
+            [topic],
+        ))
+        verdicts: list[dict] = []
+        stored_hash = ""
+        for r in rows:
+            stored_hash = r.get("findings_hash") or stored_hash
+            try:
+                dissent = json.loads(r.get("dissent_json") or "[]")
+            except Exception:
+                dissent = []
+            try:
+                posts = json.loads(r.get("evidence_post_ids_json") or "[]")
+            except Exception:
+                posts = []
+            verdicts.append({
+                "target_kind": r.get("target_kind"),
+                "target_id": r.get("target_id"),
+                "tier": r.get("tier"),
+                "consensus_score": r.get("consensus_score"),
+                "dissent": dissent,
+                "evidence_post_ids": posts,
+                "evidence_count": len(posts),
+                "provenance": r.get("provenance"),
+                "run_id": r.get("run_id"),
+                "created_at": r.get("created_at"),
+            })
+        out["verdicts"] = verdicts
+        out["findings_hash"] = stored_hash
+        if current_hash and stored_hash:
+            out["stale"] = (current_hash != stored_hash)
+        if "debate_runs" in db.table_names():
+            runs = list(db.query(
+                "SELECT * FROM debate_runs WHERE topic = ? ORDER BY id DESC LIMIT 1",
+                [topic],
+            ))
+            if runs:
+                out["runs_latest"] = runs[0]
+        return out
+    except Exception:
+        return out
+
+
 # ── Upserts ──────────────────────────────────────────────────────────────────
 
 def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
@@ -1678,6 +1877,12 @@ __all__ = [
     "log_fetch_end",
     "record_check",
     "record_lineage",
+    "record_debate_run",
+    "finish_debate_run",
+    "record_debate_verdict",
+    "clear_debate_verdicts",
+    "set_node_debate_cache",
+    "debate_verdicts_for_topic",
     "upsert_posts",
     "upsert_comments",
     "upsert_users",
