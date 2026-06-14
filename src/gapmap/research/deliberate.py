@@ -343,6 +343,7 @@ def _persona_vote(
     audience: list[dict[str, Any]],
     provider_name: str,
     prov_obj,
+    persona_conclusions: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]] | None:
     """Run one persona over the full item list. Returns a list of
     {i, vote, rationale} or None on failure."""
@@ -545,7 +546,8 @@ def deliberate(
         rounds = max(1, min(3, int(rounds or 1)))
         for r in range(rounds):
             for persona in PERSONAS:
-                pv = _persona_vote(persona, items, topic, audience, prov_name, prov_obj)
+                pv = _persona_vote(persona, items, topic, audience, prov_name, prov_obj,
+                                   persona_conclusions)
                 if pv is None:
                     continue
                 if persona["key"] == "devils_advocate":
