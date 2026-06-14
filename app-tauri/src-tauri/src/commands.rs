@@ -4769,6 +4769,36 @@ pub async fn debate_audit(app: AppHandle, topic: String) -> Result<Value, String
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+// ── FSD Fleet — orchestrated flow ───────────────────────────────────────────
+
+/// Decision gate + route options (quick/standard/deep) for the confirmation gate.
+#[tauri::command]
+pub async fn fleet_plan(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "fleet-plan", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Run the orchestrated fleet flow (clarify → ground → debate → synthesize) and
+/// return the per-stage timeline. `route` is quick|standard|deep (None → gate pick).
+#[tauri::command]
+pub async fn fleet_run(app: AppHandle, topic: String, route: Option<String>, rounds: Option<i64>) -> Result<Value, String> {
+    let rounds_s = rounds.unwrap_or(1).to_string();
+    let mut argv: Vec<&str> = vec!["research", "fleet-run", "--topic", &topic, "--rounds", &rounds_s];
+    if let Some(r) = route.as_deref() {
+        argv.push("--route");
+        argv.push(r);
+    }
+    argv.push("--json");
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Latest fleet flow run for a topic (cached read for the flow timeline).
+#[tauri::command]
+pub async fn fleet_status(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "fleet-status", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 // ── Pre-build strategy frameworks ───────────────────────────────────────────
 // Each pair is read-only `_get` (cheap, cached on the JS side) + `_compute`
 // (LLM synthesis grounded in the topic's evidence, persisted to

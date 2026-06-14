@@ -510,6 +510,13 @@ export const api = {
   debateVerdicts:  (topic) => cachedInvoke('debate_verdicts', { topic }, 30000),
   debateAudit:     (topic) => cachedInvoke('debate_audit', { topic }, 30000),
 
+  // FSD Fleet — orchestrated flow. fleetPlan = decision gate + route options;
+  // fleetRun = run the staged flow (can be slow: synthesize + debate);
+  // fleetStatus = cached read of the latest flow timeline.
+  fleetPlan:       (topic) => invoke('fleet_plan', { topic }),
+  fleetRun:        (topic, route = null, rounds = 1) => { invalidate('fleet_status'); invalidate('debate_verdicts'); invalidate('debate_audit'); return invokeWithTimeout('fleet_run', { topic, route, rounds }, 600000); },
+  fleetStatus:     (topic) => cachedInvoke('fleet_status', { topic }, 30000),
+
   // Pre-build strategy frameworks — each: get (cached read) + compute (LLM build).
   marketGet:        (topic) => cachedInvoke('market_get', { topic }, 30000),
   marketCompute:    (topic) => { invalidate('market_get'); return invoke('market_compute', { topic }); },
