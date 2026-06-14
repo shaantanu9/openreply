@@ -29,6 +29,9 @@ research_app = typer.Typer(help="Topic/app gap-finding: discover → collect →
 graph_app = typer.Typer(help="Knowledge graph: build / enrich / query / export.")
 research_app.add_typer(graph_app, name="graph")
 
+brief_app = typer.Typer(help="Clarified-brief: set/get per-topic research scope.")
+research_app.add_typer(brief_app, name="brief")
+
 ingest_app = typer.Typer(help="Ingest local files (CSV / JSON / TXT / VTT / SRT / MD / PDF) into a topic.")
 app.add_typer(ingest_app, name="ingest")
 
@@ -6370,6 +6373,37 @@ def cmd_daemon() -> None:
 # persona_cmds.py file + the src/gapmap/persona/ package.
 from .persona_cmds import persona_app
 app.add_typer(persona_app, name="persona")
+
+
+# ── Clarified-brief subcommands (2026-06-14) ─────────────────────────────────
+
+@brief_app.command("set")
+def cmd_brief_set(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name."),
+    goal: str = typer.Option("", "--goal", help="Research goal (what you want to find out)."),
+    constraints: str = typer.Option("", "--constraints", help="Budget / time / scope constraints."),
+    success: str = typer.Option("", "--success", help="Success criteria (what a good output looks like)."),
+    audience: str = typer.Option("", "--audience", help="Target audience for the analysis."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Set the clarified research brief for a topic."""
+    from ..research.brief import set_brief, get_brief
+    set_brief(topic, goal=goal, constraints=constraints, success=success, audience=audience)
+    out = {"ok": True, "topic": topic, "brief": get_brief(topic)}
+    if as_json:
+        typer.echo(json.dumps(out))
+    else:
+        typer.echo(f"Brief saved for topic '{topic}'.")
+
+
+@brief_app.command("get")
+def cmd_brief_get(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name."),
+) -> None:
+    """Get the current clarified research brief for a topic (JSON)."""
+    from ..research.brief import get_brief
+    b = get_brief(topic)
+    typer.echo(json.dumps({"ok": True, "topic": topic, "brief": b}))
 
 
 if __name__ == "__main__":

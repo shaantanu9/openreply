@@ -397,6 +397,46 @@ def gapmap_lineage_get(artifact_id: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool()
+def gapmap_brief_get(topic: str) -> dict:
+    """Return the clarified research brief for a topic.
+
+    Returns a dict with keys: goal, constraints, success, audience.
+    All values are empty strings when no brief has been set.
+
+    Args:
+        topic: topic name to retrieve the brief for.
+    """
+    from ..research.brief import get_brief
+    b = get_brief(topic)
+    return {"ok": True, "topic": topic, "brief": b}
+
+
+@mcp.tool()
+def gapmap_brief_set(
+    topic: str,
+    goal: str = "",
+    constraints: str = "",
+    success: str = "",
+    audience: str = "",
+) -> dict:
+    """Set (upsert) the clarified research brief for a topic.
+
+    The brief is prepended to synthesis prompts so LLM output is scoped to
+    the user's stated goal, constraints, success criteria, and audience.
+
+    Args:
+        topic:       topic name.
+        goal:        what the researcher wants to find out.
+        constraints: budget / time / scope constraints.
+        success:     what a good output looks like.
+        audience:    target audience for the analysis.
+    """
+    from ..research.brief import set_brief, get_brief
+    set_brief(topic, goal=goal, constraints=constraints, success=success, audience=audience)
+    return {"ok": True, "topic": topic, "brief": get_brief(topic)}
+
+
+@mcp.tool()
 def gapmap_traceability(artifact_id: str) -> list[dict[str, Any]]:
     """Return the source posts that produced a specific artifact (gap → sources).
 
