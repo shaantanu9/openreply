@@ -516,6 +516,7 @@ fn main() {
             commands::prioritize_score,
             commands::debate_topic,
             commands::debate_verdicts,
+            commands::debate_audit,
             commands::market_get,
             commands::market_compute,
             commands::porter_forces_get,

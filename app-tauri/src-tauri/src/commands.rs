@@ -4761,6 +4761,14 @@ pub async fn debate_verdicts(app: AppHandle, topic: String) -> Result<Value, Str
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+/// Phase 3 — replay/audit timeline for a topic's latest debate (run header,
+/// per-round per-persona transcript, tier counts, provenance gate counts).
+#[tauri::command]
+pub async fn debate_audit(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "debate-audit", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 // ── Pre-build strategy frameworks ───────────────────────────────────────────
 // Each pair is read-only `_get` (cheap, cached on the JS side) + `_compute`
 // (LLM synthesis grounded in the topic's evidence, persisted to

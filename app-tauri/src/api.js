@@ -506,8 +506,9 @@ export const api = {
   // FSD Fleet — 5-persona debate on the Topic Map. `debateTopic` runs + persists
   // the debate (invalidates the cached verdicts); `debateVerdicts` is the cheap
   // cached read that drives the trust badges.
-  debateTopic:     (topic, rounds = 1) => { invalidate('debate_verdicts'); return invoke('debate_topic', { topic, rounds }); },
+  debateTopic:     (topic, rounds = 1) => { invalidate('debate_verdicts'); invalidate('debate_audit'); return invoke('debate_topic', { topic, rounds }); },
   debateVerdicts:  (topic) => cachedInvoke('debate_verdicts', { topic }, 30000),
+  debateAudit:     (topic) => cachedInvoke('debate_audit', { topic }, 30000),
 
   // Pre-build strategy frameworks — each: get (cached read) + compute (LLM build).
   marketGet:        (topic) => cachedInvoke('market_get', { topic }, 30000),
