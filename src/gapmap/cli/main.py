@@ -6417,5 +6417,16 @@ def cmd_brief_suggest(
     typer.echo(json.dumps({"ok": True, "topic": topic, **out}))
 
 
+@research_app.command("graph-invariants")
+def cmd_graph_invariants(
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic name."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Run structural invariant checks on a topic's knowledge graph."""
+    import json as _json
+    from ..graph.invariants import check_graph_invariants
+    typer.echo(_json.dumps(check_graph_invariants(topic)))
+
+
 if __name__ == "__main__":
     app()

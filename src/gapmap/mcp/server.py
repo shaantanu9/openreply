@@ -2776,6 +2776,25 @@ def gapmap_launch_brief_get(topic: str) -> dict:
 
 
 @mcp.tool()
+def gapmap_graph_invariants(topic: str) -> dict:
+    """Run structural invariant checks on a topic's knowledge graph.
+
+    Checks four invariants — required_fields, root_present, acyclic,
+    no_orphans — and records every result to the checks_ledger so the
+    Provenance & Audit panel can surface them.
+
+    Args:
+        topic: the topic slug whose graph_nodes/graph_edges to inspect.
+
+    Returns:
+        ``{"ok": bool, "checks": [{"invariant": str, "passed": bool,
+        "detail": str}, ...]}``.  Always returns a dict, never raises.
+    """
+    from ..graph.invariants import check_graph_invariants
+    return check_graph_invariants(topic)
+
+
+@mcp.tool()
 def gapmap_diagnostics() -> dict:
     """Single-call health probe across every subsystem the other MCP
     tools depend on. Use FIRST when a tool fails — the response tells
