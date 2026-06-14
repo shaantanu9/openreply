@@ -1537,6 +1537,26 @@ def cmd_related_topics(
     _emit(related_topics(topic=topic, limit=limit), as_json)
 
 
+@research_app.command("runs")
+def cmd_research_runs(
+    topic: str = typer.Option("", "--topic", "-t", help="Filter by topic (optional)."),
+    as_json: bool = typer.Option(True, "--json", hidden=True),
+) -> None:
+    """List provenance runs recorded in checks_ledger, grouped by run_id."""
+    from ..research.replay import list_runs
+    typer.echo(json.dumps(list_runs(topic or None)))
+
+
+@research_app.command("run-get")
+def cmd_research_run_get(
+    run_id: str = typer.Option(..., "--run-id", "-r", help="Run ID to inspect."),
+    as_json: bool = typer.Option(True, "--json", hidden=True),
+) -> None:
+    """Show all checks and lineage entries for a specific run_id."""
+    from ..research.replay import get_run
+    typer.echo(json.dumps(get_run(run_id)))
+
+
 @research_app.command("export-brief")
 def cmd_export_brief(
     topic: str = typer.Option(..., "--topic", "-t"),

@@ -458,6 +458,41 @@ def gapmap_traceability(artifact_id: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool()
+def gapmap_runs_list(topic: str = "") -> list[dict[str, Any]]:
+    """List provenance runs recorded in checks_ledger, grouped by run_id.
+
+    Returns up to 50 runs ordered by most-recent first. Each entry has:
+    run_id, topic, n_checks, n_passed, last_ts.
+
+    Args:
+        topic: optional topic filter (empty string = all topics).
+
+    Returns:
+        List of run summary dicts. Returns ``[]`` on any error.
+    """
+    from ..research.replay import list_runs
+    return list_runs(topic or None)
+
+
+@mcp.tool()
+def gapmap_run_get(run_id: str) -> dict[str, Any]:
+    """Return all checks and lineage entries for a specific run_id.
+
+    Useful for auditing what a particular pipeline run validated and what
+    artifacts it produced, without re-executing anything.
+
+    Args:
+        run_id: the run identifier (from checks_ledger / lineage.produced_by).
+
+    Returns:
+        Dict with keys ``run_id``, ``checks`` (list), ``lineage`` (list).
+        Never raises — returns empty lists on error.
+    """
+    from ..research.replay import get_run
+    return get_run(run_id)
+
+
+@mcp.tool()
 def gapmap_describe_schema(table: str | None = None) -> dict[str, Any]:
     """Return live SQLite schema — either every table, or one table.
 
