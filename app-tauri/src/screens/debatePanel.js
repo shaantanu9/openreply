@@ -76,6 +76,57 @@ async function _refresh(topic, host) {
   }
   host.style.display = '';
   host.innerHTML = _renderPanel(verdicts, stale);
+  _wireReplay(topic, host);
+}
+
+const VOTE_CLS = { CONFIRM: 'vote-confirm', DISPUTE: 'vote-dispute', ABSTAIN: 'vote-abstain' };
+
+function _wireReplay(topic, host) {
+  const btn = host.querySelector('#debate-replay-btn');
+  const slot = host.querySelector('#debate-audit');
+  if (!btn || !slot) return;
+  btn.addEventListener('click', async () => {
+    if (slot.style.display !== 'none') { slot.style.display = 'none'; btn.classList.remove('on'); return; }
+    btn.classList.add('on');
+    slot.style.display = '';
+    slot.innerHTML = '<div class="agent-empty">Loading replay…</div>';
+    let audit = null;
+    try { audit = await api.debateAudit(topic); } catch { audit = null; }
+    slot.innerHTML = _renderAudit(audit);
+  });
+}
+
+function _renderAudit(audit) {
+  const run = (audit && audit.run) || null;
+  const transcript = (audit && audit.transcript) || [];
+  const counts = (audit && audit.counts) || {};
+  if (!run) return '<div class="agent-empty">No debate run recorded yet.</div>';
+  const header = `<div class="debate-audit-head">`
+    + `<span>run <code>${esc(String(run.run_id || '').slice(0, 8))}</code></span>`
+    + `<span>· ${run.rounds || 0} ${run.rounds === 1 ? 'round' : 'rounds'}</span>`
+    + `<span>· ${esc(run.provider || 'heuristic')}</span>`
+    + `<span>· ${counts.llm_calls || 0} LLM calls</span>`
+    + `<span>· ${audit.checks || 0} checks · ${audit.lineage || 0} lineage</span></div>`;
+  if (!transcript.length) {
+    return header + `<div class="agent-empty">No per-turn transcript for this run `
+      + `(heuristic debate — no LLM votes to replay). Verdicts above are evidence-tiered.</div>`;
+  }
+  // Group by round.
+  const byRound = {};
+  for (const t of transcript) (byRound[t.round || 1] = byRound[t.round || 1] || []).push(t);
+  const rounds = Object.keys(byRound).sort((a, b) => a - b).map((r) => {
+    const turns = byRound[r].map((t) => {
+      const cls = VOTE_CLS[(t.vote || '').toUpperCase()] || 'vote-abstain';
+      return `<li class="debate-turn">`
+        + `<span class="debate-vote ${cls}">${esc(t.vote || '')}</span>`
+        + `<b>${esc(t.persona || '')}</b>`
+        + `<span class="debate-turn-target">${esc(t.target || '')}</span>`
+        + `${t.rationale ? `<div class="debate-turn-why">${esc(t.rationale)}</div>` : ''}</li>`;
+    }).join('');
+    return `<div class="debate-round"><div class="debate-round-head">Round ${esc(r)}</div>`
+      + `<ul class="debate-turn-list">${turns}</ul></div>`;
+  }).join('');
+  return header + rounds;
 }
 
 function _updateStaleChip(stale, count) {
@@ -110,8 +161,10 @@ function _renderPanel(verdicts, stale) {
   return `<div class="debate-panel">`
     + `<div class="debate-panel-head"><b>⚖️ Fleet debate</b>`
     + `<span class="debate-agents">${agents}</span>`
-    + `${stale ? '<span class="debate-stale">findings changed — re-run</span>' : ''}</div>`
-    + `${sections || '<div class="debate-empty">No verdicts.</div>'}</div>`;
+    + `${stale ? '<span class="debate-stale">findings changed — re-run</span>' : ''}`
+    + `<button class="btn btn-xs btn-bordered debate-replay" id="debate-replay-btn" title="Replay the per-round, per-persona debate timeline" style="margin-left:auto">↺ Replay</button></div>`
+    + `${sections || '<div class="debate-empty">No verdicts.</div>'}`
+    + `<div class="debate-audit" id="debate-audit" style="display:none"></div></div>`;
 }
 
 async function _runDebate(topic, host, btn, toast) {
