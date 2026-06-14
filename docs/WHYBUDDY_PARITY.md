@@ -31,7 +31,7 @@
 | WhyBuddy feature | Status | Notes |
 |---|---|---|
 | 3D office scene (Three.js) | ⛔ | Product/demo layer; not applicable to a research tool. |
-| Task cockpit / streaming stage progress | 🟡 | Fleet flow has a per-stage timeline + `on_stage` hook; **true live token-streaming not yet wired** (settles from result). |
+| Task cockpit / streaming stage progress | ✅ | Fleet flow streams stages live (`fleet-run --stream` → `fleet:progress`/`fleet:done`; timeline flips running→final per stage). |
 | Replay / audit timeline | ✅ | Debate ↺ Replay (`debate_audit`); per-round per-persona transcript + checks/lineage. |
 | Cost dashboard / budget alerts | ✅ (estimate) | Per-debate token estimate + `GAPMAP_DEBATE_TOKEN_BUDGET` alert levels. Real provider usage not surfaced (char estimate). |
 
@@ -88,7 +88,7 @@
 ## Rollup
 
 - **Agent / debate / memory / flow core (§2.2, §2.7, the relevant slice of §2.3/2.6):** ✅ **Done** — debate, agent memory, badges, replay/audit, cost governance, decision gate, multi-route, orchestrated Fleet flow. Merged in PR #1.
-- **Genuinely portable, not yet built (🟡):** true live token-streaming of the Fleet flow (highest value); formal takeover/approval gates; autopilot L1–L5 model; NL multi-mission command; dynamic role generation. These are *optional refinements* — pick by value.
+- **Genuinely portable, not yet built (🟡):** formal takeover/approval gates; autopilot L1–L5 model; NL multi-mission command; dynamic role generation. These are *optional refinements* — pick by value. (Live Fleet-flow streaming: ✅ done.)
 - **Out of scope by design (⛔):** SPEC-tree/spec-doc generation, 3D Three.js scene, Docker code-executor, scene-command/UE5, A2A/swarm/reputation/marketplace, Feishu, web-AIGC node library. Porting these = building a different product.
 
 ## How to use this file
