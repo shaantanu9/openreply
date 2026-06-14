@@ -20,12 +20,35 @@ Public API:
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from typing import Any
 
 from ..core import db
 
 VALID_TIERS = {"confirmed", "probable", "minority", "discarded"}
+
+
+def _budget_status(cost_tokens: int) -> dict[str, Any]:
+    """Token-budget governance. `GAPMAP_DEBATE_TOKEN_BUDGET` (per-debate, tokens)
+    sets the ceiling; returns an alert level the UI can color. level='none'
+    when no budget is configured. Costs are estimates (see deliberate.py)."""
+    try:
+        budget = int(os.getenv("GAPMAP_DEBATE_TOKEN_BUDGET", "0") or "0")
+    except Exception:
+        budget = 0
+    if budget <= 0:
+        return {"budget": 0, "cost_tokens": int(cost_tokens or 0), "pct": 0.0, "level": "none"}
+    pct = round((cost_tokens or 0) / budget, 3)
+    if pct >= 1.0:
+        level = "exceeded"
+    elif pct >= 0.9:
+        level = "critical"
+    elif pct >= 0.75:
+        level = "warning"
+    else:
+        level = "ok"
+    return {"budget": budget, "cost_tokens": int(cost_tokens or 0), "pct": pct, "level": level}
 
 
 def _finding_key(item: dict[str, Any]) -> str:
@@ -176,16 +199,18 @@ def run_topic_debate(
             "rationale": t.get("rationale"),
             "target": target,
         })
+    cost_tokens = int(result.get("cost_tokens_est") or 0)
     audit_counts = dict(counts)
     audit_counts["n_findings"] = len(findings)
-    # No token usage is surfaced by the engine yet, so record an LLM-call proxy
-    # (personas × rounds) for the cost column until real accounting lands.
     audit_counts["llm_calls"] = len(result.get("personas_used") or []) * int(result.get("rounds") or 0)
+    audit_counts["cost_tokens_est"] = cost_tokens
 
-    db.finish_debate_run(run_id, status="done",
+    db.finish_debate_run(run_id, status="done", cost_tokens=cost_tokens,
                          transcript=audit_transcript, counts=audit_counts)
 
     return {
+        "cost_tokens": cost_tokens,
+        "budget": _budget_status(cost_tokens),
         "ok": True,
         "topic": topic,
         "run_id": run_id,
@@ -226,8 +251,12 @@ def get_debate_verdicts(topic: str) -> dict[str, Any]:
 
 def get_debate_audit(topic: str) -> dict[str, Any]:
     """Phase 3 — replay/audit payload for the topic's latest debate (run header,
-    per-round per-persona transcript, tier counts, provenance gate counts)."""
-    return db.debate_audit_for_topic(topic)
+    per-round per-persona transcript, tier counts, provenance gate counts) plus
+    token-budget status."""
+    out = db.debate_audit_for_topic(topic)
+    run = out.get("run") or {}
+    out["budget"] = _budget_status(int(run.get("cost_tokens") or 0))
+    return out
 
 
 __all__ = ["run_topic_debate", "get_debate_verdicts", "get_debate_audit"]

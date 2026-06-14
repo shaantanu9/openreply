@@ -144,6 +144,57 @@ def test_audit_payload_after_debate(db):
     assert audit["lineage"] == len(findings)        # one debate_verdict lineage row per finding
 
 
+def test_budget_status_levels():
+    from gapmap.research.debate_run import _budget_status
+    import os
+    os.environ.pop("GAPMAP_DEBATE_TOKEN_BUDGET", None)
+    assert _budget_status(5000)["level"] == "none"      # no budget configured
+    os.environ["GAPMAP_DEBATE_TOKEN_BUDGET"] = "1000"
+    try:
+        assert _budget_status(100)["level"] == "ok"
+        assert _budget_status(800)["level"] == "warning"
+        assert _budget_status(950)["level"] == "critical"
+        assert _budget_status(1200)["level"] == "exceeded"
+        assert _budget_status(1200)["pct"] == 1.2
+    finally:
+        os.environ.pop("GAPMAP_DEBATE_TOKEN_BUDGET", None)
+
+
+def test_cost_and_transcript_with_fake_provider(db, monkeypatch):
+    # Inject a fake LLM provider so the real persona-vote path runs (also guards
+    # the persona_conclusions fix) and produces a token estimate + transcript.
+    import gapmap.analyze.providers.base as prov_base
+
+    class _FakeProv:
+        def complete(self, *, prompt, system, max_tokens=1800, temperature=0.4):
+            # Vote CONFIRM on indices 0..9; the parser drops out-of-range ones.
+            return "[" + ",".join(
+                f'{{"i":{i},"vote":"CONFIRM","rationale":"looks solid"}}' for i in range(10)
+            ) + "]"
+
+    monkeypatch.setattr(prov_base, "resolve_provider", lambda *_a, **_k: "fake")
+    monkeypatch.setattr(prov_base, "get_provider", lambda *_a, **_k: _FakeProv())
+
+    from gapmap.research.debate_run import run_topic_debate, get_debate_audit
+    topic, findings = _seed_topic(db)
+    out = run_topic_debate(topic, rounds=1)
+
+    assert out["ok"] is True
+    assert out["provenance"] == "debated"          # LLM path, not fallback
+    assert out["cost_tokens"] > 0                    # estimated tokens accumulated
+    assert out["budget"]["level"] == "none"          # no budget env set
+
+    audit = get_debate_audit(topic)
+    assert audit["run"]["cost_tokens"] > 0
+    assert len(audit["transcript"]) > 0              # per-persona votes recorded
+    assert audit["transcript"][0]["persona"] in {
+        "synthesizer", "skeptic", "quantifier", "risk_officer", "devils_advocate"}
+
+    # With a tiny budget, the same cost trips 'exceeded'.
+    monkeypatch.setenv("GAPMAP_DEBATE_TOKEN_BUDGET", "1")
+    assert get_debate_audit(topic)["budget"]["level"] == "exceeded"
+
+
 def test_redebate_replaces_prior_verdicts(db):
     from gapmap.research.debate_run import run_topic_debate
     topic, findings = _seed_topic(db)

@@ -344,9 +344,11 @@ def _persona_vote(
     provider_name: str,
     prov_obj,
     persona_conclusions: list[dict[str, Any]] | None = None,
+    cost_acc: list[int] | None = None,
 ) -> list[dict[str, Any]] | None:
     """Run one persona over the full item list. Returns a list of
-    {i, vote, rationale} or None on failure."""
+    {i, vote, rationale} or None on failure. When `cost_acc` (a 1-element
+    list) is passed, accumulates an estimated token count for the call."""
     sys_prompt = _build_persona_prompt(persona, topic)
     user_prompt = _format_findings_for_review(items, audience, persona_conclusions)
     try:
@@ -356,6 +358,12 @@ def _persona_vote(
         )
     except Exception:
         return None
+    # No provider surfaces real usage through complete(), so estimate from
+    # characters (~4 chars/token) — honest, self-contained, good enough for
+    # budget governance. Includes prompt + system + response.
+    if cost_acc is not None:
+        chars = len(sys_prompt) + len(user_prompt) + len(raw or "")
+        cost_acc[0] += (chars + 3) // 4
     cleaned = (raw or "").strip()
     for fence in ("```json", "```"):
         if cleaned.startswith(fence):
@@ -542,12 +550,13 @@ def deliberate(
         except Exception:
             prov_obj = None
 
+    cost_acc = [0]  # estimated tokens accumulated across all persona calls
     if prov_obj is not None:
         rounds = max(1, min(3, int(rounds or 1)))
         for r in range(rounds):
             for persona in PERSONAS:
                 pv = _persona_vote(persona, items, topic, audience, prov_name, prov_obj,
-                                   persona_conclusions)
+                                   persona_conclusions, cost_acc)
                 if pv is None:
                     continue
                 if persona["key"] == "devils_advocate":
@@ -624,6 +633,7 @@ def deliberate(
         "counts": {k: len(v) for k, v in tiers.items()},
         "transcripts": transcripts,
         "provider": prov_name or "",
+        "cost_tokens_est": cost_acc[0],
         "generated_at": now_iso,
     }
 
