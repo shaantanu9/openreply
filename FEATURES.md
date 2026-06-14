@@ -247,7 +247,7 @@ A broader "scan many adjacent topics at once" engine exists (`research/idea_scan
 | FSD Fleet debate on the Map | ✅ | (CLI `research debate` / `debate-verdicts`) | 5-persona debate (`deliberate()`) tiers each finding Confirmed/Probable/Minority/Discarded; verdicts + lineage + checks persisted; trust badges on the Map panel + node glyphs (`research/debate_run.py`) | `debate_verdicts`, `debate_runs`, `graph_nodes.debate_*` |
 
 **Implementation:** all graph tools wrap `src/gapmap/research/graph.py`. The dense-relations post-pass is the `dense-graph-relations` skill, battle-tested 2026-04-21. The Fleet debate wraps `src/gapmap/research/deliberate.py` via `research/debate_run.py`; the Tauri Map surface is `app-tauri/src/screens/debatePanel.js` (Debate button + panel + `renderTrustBadge`) wired into `screens/topic.js`, with node glyphs in `graph/export.py:217`. Spec: `docs/specs/FLEET_AGENTS_TOPIC_MAP.md`.
-**Known gaps:** none on the MCP/CLI side. The Tauri *Graph* screen has only basic node viewing — faceted/advanced filtering is unfinished (category 15). FSD Fleet Phase 2 (Agent Memory overlay tab) and Phase 3 (audit/replay timeline + cost governance panel) are designed but not built — P2, tracked in the spec.
+**Known gaps:** none on the MCP/CLI side. The Tauri *Graph* screen has only basic node viewing — faceted/advanced filtering is unfinished (category 15). FSD Fleet Phase 1 (debate + badges), Phase 2 (Agent Memory tab), and Phase 3a (debate replay/audit timeline — `research debate-audit`, ↺ Replay in the debate panel) are shipped. Phase 3 remainder — real token-cost governance, streaming agent reasoning, and the clarify→fleet→synthesize orchestration — is designed but not built (P2, tracked in `docs/specs/FLEET_AGENTS_TOPIC_MAP.md`).
 
 ---
 
