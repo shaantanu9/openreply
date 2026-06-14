@@ -516,6 +516,13 @@ export const api = {
   fleetPlan:       (topic) => invoke('fleet_plan', { topic }),
   fleetRun:        (topic, route = null, rounds = 1) => { invalidate('fleet_status'); invalidate('debate_verdicts'); invalidate('debate_audit'); return invokeWithTimeout('fleet_run', { topic, route, rounds }, 600000); },
   fleetStatus:     (topic) => cachedInvoke('fleet_status', { topic }, 30000),
+  // Streaming flow — stages arrive live via 'fleet:progress' (sentinel-tagged
+  // NDJSON, possibly interleaved with sidecar log lines — filter on __fleet);
+  // 'fleet:done' fires on exit. fleetRunStream resolves once the process is
+  // spawned, not when it finishes.
+  fleetRunStream:  (topic, route = null, rounds = 1) => { invalidate('fleet_status'); invalidate('debate_verdicts'); invalidate('debate_audit'); return invoke('fleet_run_stream', { topic, route, rounds }); },
+  onFleetProgress: (cb) => listen('fleet:progress', e => cb(e.payload)),
+  onFleetDone:     (cb) => listen('fleet:done',     e => cb(e.payload)),
 
   // Pre-build strategy frameworks — each: get (cached read) + compute (LLM build).
   marketGet:        (topic) => cachedInvoke('market_get', { topic }, 30000),

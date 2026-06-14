@@ -4799,6 +4799,20 @@ pub async fn fleet_status(app: AppHandle, topic: String) -> Result<Value, String
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+/// Streaming variant — runs the fleet flow and forwards NDJSON stage lines as
+/// `fleet:progress` events (frontend filters on `__fleet`); `fleet:done` fires
+/// on exit. Reuses run_cli_streaming (shares the collect mutual-exclusion guard).
+#[tauri::command]
+pub async fn fleet_run_stream(app: AppHandle, topic: String, route: Option<String>, rounds: Option<i64>) -> Result<(), String> {
+    let rounds_s = rounds.unwrap_or(1).to_string();
+    let mut argv: Vec<&str> = vec!["research", "fleet-run", "--topic", &topic, "--rounds", &rounds_s, "--stream"];
+    if let Some(r) = route.as_deref() {
+        argv.push("--route");
+        argv.push(r);
+    }
+    run_cli_streaming(&app, argv, "fleet:progress", "fleet:done").await.map_err(err_to_string)
+}
+
 // ── Pre-build strategy frameworks ───────────────────────────────────────────
 // Each pair is read-only `_get` (cheap, cached on the JS side) + `_compute`
 // (LLM synthesis grounded in the topic's evidence, persisted to

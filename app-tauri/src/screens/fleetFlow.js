@@ -67,28 +67,66 @@ async function _openPlanner(topic, host, btn, toast) {
   });
 }
 
+function _parseLine(line) {
+  if (line && typeof line === 'object') return line;  // dev streaming path emits parsed objects
+  if (typeof line !== 'string') return null;
+  try { return JSON.parse(line); } catch { return null; }  // ignore interleaved log lines
+}
+
 async function _run(topic, route, host, btn, toast, plan) {
   if (_busy) return;
   _busy = true;
-  // Optimistic pending timeline from the chosen route's stage list.
   const chosen = (plan.routes || []).find((r) => r.key === route) || { stages: [], label: route };
-  const pending = chosen.stages.map((name) => ({ name, label: _label(name), status: 'running', detail: '' }));
-  host.innerHTML = _renderTimeline({ route, route_label: chosen.label, mode: plan.mode,
-    status: 'running', stages: pending });
+  // Live pending timeline; stages flip running → final as 'fleet:progress' arrives.
+  const stageState = chosen.stages.map((name) => ({ name, label: _label(name), status: 'pending', detail: '' }));
+  const render = () => { host.innerHTML = _renderTimeline({ route, route_label: chosen.label, mode: plan.mode, status: 'running', stages: stageState }); };
+  if (stageState[0]) stageState[0].status = 'running';
+  render();
   if (btn) { btn.disabled = true; btn.classList.add('on'); }
-  try {
-    const res = await api.fleetRun(topic, route, 1);
-    host.innerHTML = _renderTimeline({ ...res, route_label: res.route_label || chosen.label });
-    const ok = res && res.ok;
-    toast(ok ? 'Fleet flow complete' : 'Fleet flow stopped',
-      `${esc(res.route_label || route)} · ${(res.stages || []).filter((s) => s.status === 'ok' || s.status === 'reused').length}/${(res.stages || []).length} stages · ~${(res.cost_tokens || 0).toLocaleString()} tok`,
-      ok ? 'ok' : 'err', 3600);
-  } catch (e) {
-    host.innerHTML = `<div class="agent-empty">Fleet run failed: ${esc(e?.message || e)}</div>`;
-    toast('Fleet flow failed', String(e?.message || e), 'err', 3600);
-  } finally {
+
+  let unP = null, unD = null, done = false;
+  const cleanup = () => { try { unP && unP(); } catch {} try { unD && unD(); } catch {} };
+  const finish = (result) => {
+    if (done) return;
+    done = true;
+    cleanup();
     _busy = false;
     if (btn) { btn.disabled = false; btn.classList.remove('on'); }
+    if (result) host.innerHTML = _renderTimeline({ ...result, route_label: result.route_label || chosen.label });
+    const ok = result && (result.ok !== false) && result.status !== 'error';
+    toast(ok ? 'Fleet flow complete' : 'Fleet flow stopped',
+      `${esc(result?.route_label || chosen.label)} · ~${(result?.cost_tokens || 0).toLocaleString()} tok`,
+      ok ? 'ok' : 'err', 3600);
+  };
+
+  try {
+    unP = await api.onFleetProgress((line) => {
+      const obj = _parseLine(line);
+      if (!obj || !obj.__fleet) return;          // skip interleaved sidecar log lines
+      if (obj.event === 'stage') {
+        const i = stageState.findIndex((s) => s.name === obj.name);
+        if (i >= 0) stageState[i] = { name: obj.name, label: obj.label || _label(obj.name), status: obj.status, detail: obj.detail || '' };
+        const nxt = stageState.find((s) => s.status === 'pending');
+        if (nxt) nxt.status = 'running';
+        render();
+      } else if (obj.event === 'done') {
+        finish(obj.result);
+      }
+    });
+    unD = await api.onFleetDone(() => {
+      // Process exited; if the result line never arrived, settle from fleet-status.
+      if (done) return;
+      api.fleetStatus(topic)
+        .then((st) => finish(st && st.run ? { ...st.run, ok: st.run.status !== 'error' } : null))
+        .catch(() => finish(null));
+    });
+    await api.fleetRunStream(topic, route, 1);    // resolves once spawned; events drive the rest
+  } catch (e) {
+    cleanup();
+    _busy = false;
+    if (btn) { btn.disabled = false; btn.classList.remove('on'); }
+    host.innerHTML = `<div class="agent-empty">Fleet run failed: ${esc(e?.message || e)}</div>`;
+    toast('Fleet flow failed', String(e?.message || e), 'err', 3600);
   }
 }
 

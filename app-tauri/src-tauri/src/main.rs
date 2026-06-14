@@ -520,6 +520,7 @@ fn main() {
             commands::fleet_plan,
             commands::fleet_run,
             commands::fleet_status,
+            commands::fleet_run_stream,
             commands::market_get,
             commands::market_compute,
             commands::porter_forces_get,
