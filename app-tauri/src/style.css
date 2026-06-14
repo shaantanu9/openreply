@@ -10135,3 +10135,37 @@ i.spin { animation: spin 0.8s linear infinite; }
 .debate-budget.lvl-warning { background: #C47A14; }
 .debate-budget.lvl-critical { background: #B5581A; }
 .debate-budget.lvl-exceeded { background: #B84747; }
+
+/* ── FSD Fleet — flow orchestration panel + timeline (Phase 4) ──────── */
+.fleet-host { margin: 8px 0 4px; }
+.fleet-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--card, var(--surface)); padding: 10px 12px; }
+.fleet-panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.fleet-mode { font-size: 11px; color: var(--ink-3); }
+.fleet-reasons { margin: 0 0 10px; padding-left: 18px; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+.fleet-routes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+.fleet-route { border: 1px solid var(--line); border-radius: 9px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.fleet-route-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.fleet-rec { font-size: 10px; font-weight: 700; color: #fff; background: #1A7A4F; border-radius: 5px; padding: 0 6px; }
+.fleet-risk { font-size: 10.5px; border-radius: 5px; padding: 0 6px; }
+.fleet-risk.risk-low { background: rgba(4,120,87,0.14); color: #047857; }
+.fleet-risk.risk-med { background: rgba(202,138,4,0.16); color: #92400e; }
+.fleet-risk.risk-high { background: rgba(184,71,71,0.16); color: #B84747; }
+.fleet-cost { font-size: 10.5px; color: var(--ink-3); margin-left: auto; }
+.fleet-route-blurb { font-size: 12px; color: var(--ink-2); }
+.fleet-route-stages { font-size: 11px; color: var(--ink-3); font-family: ui-monospace, monospace; }
+.fleet-route .btn { align-self: flex-start; margin-top: 2px; }
+.fleet-route-chip { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--ink-2); }
+.fleet-status { font-size: 11px; font-weight: 700; border-radius: 5px; padding: 0 7px; color: #fff; }
+.fleet-status.fleet-ok { background: #1A7A4F; }
+.fleet-status.fleet-run { background: #1F5C99; }
+.fleet-status.fleet-err { background: #B84747; }
+.fleet-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fleet-stage { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.fleet-stage-ic { width: 16px; text-align: center; font-weight: 700; flex-shrink: 0; }
+.fleet-stage-label { font-weight: 600; color: var(--ink-1); min-width: 96px; }
+.fleet-stage-detail { color: var(--ink-2); }
+.fleet-stage.st-ok .fleet-stage-ic, .fleet-stage.st-reused .fleet-stage-ic { color: #1A7A4F; }
+.fleet-stage.st-attention .fleet-stage-ic { color: #C47A14; }
+.fleet-stage.st-error .fleet-stage-ic { color: #B84747; }
+.fleet-stage.st-skipped .fleet-stage-ic, .fleet-stage.st-pending .fleet-stage-ic { color: var(--ink-3); }
+.fleet-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid color-mix(in srgb, var(--ink-3) 30%, transparent); border-top-color: #1F5C99; border-radius: 50%; animation: spin 0.8s linear infinite; }
