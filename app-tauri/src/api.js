@@ -901,6 +901,11 @@ export const api = {
   personaView: (topic, persona) => invoke('persona_view', { topic, persona }),
   // chat doctor — structured "why does chat work (or not) for this topic" report.
   chatDoctor: (topic) => invoke('chat_doctor', { topic }),
+  // 2A clarified-brief — scope research to goal/constraints/success/audience.
+  briefGet: (topic) => invoke('brief_get', { topic }),
+  briefSet: (topic, goal, constraints, success, audience) =>
+    invoke('brief_set', { topic, goal, constraints, success, audience }),
+  briefSuggest: (topic) => invoke('brief_suggest', { topic }),
 
   // Phase-3 Hypothesis Tracking — tracked bets for user-validated research
   // findings. `cardJson` is the JSON-stringified hypothesis card from the
