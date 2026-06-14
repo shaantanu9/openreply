@@ -4858,6 +4858,60 @@ def cmd_research_debate_audit(
     )
 
 
+@research_app.command("fleet-plan")
+def cmd_research_fleet_plan(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """FSD Fleet — decision gate + route options (quick/standard/deep)."""
+    from ..research.fleet_flow import plan_routes
+
+    result = plan_routes(topic)
+    if as_json:
+        _emit(result, True)
+        return
+    console.print(f"mode={result['mode']} · recommended={result['recommended']}")
+    for r in result["routes"]:
+        star = " ★" if r["recommended"] else ""
+        console.print(f"  {r['key']:<9} {r['label']:<12} risk={r['risk']:<6} ~{r['est_cost_tokens']} tok{star}")
+
+
+@research_app.command("fleet-run")
+def cmd_research_fleet_run(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    route: Optional[str] = typer.Option(None, "--route", help="quick | standard | deep (default: gate pick)"),
+    rounds: int = typer.Option(1, "--rounds"),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """FSD Fleet — run the orchestrated flow (clarify → ground → debate → synthesize)."""
+    from ..research.fleet_flow import run_fleet_flow
+
+    result = run_fleet_flow(topic, route=route, rounds=rounds)
+    if as_json:
+        _emit(result, True)
+        return
+    console.print(f"[{'green' if result['ok'] else 'red'}]flow {result['status']}[/] "
+                  f"· route={result['route']} · ~{result['cost_tokens']} tok")
+    for s in result["stages"]:
+        console.print(f"  [{s['status']}] {s['label']}: {s['detail']}")
+
+
+@research_app.command("fleet-status")
+def cmd_research_fleet_status(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """FSD Fleet — latest flow run for a topic."""
+    from ..research.fleet_flow import get_fleet_status
+
+    result = get_fleet_status(topic)
+    if as_json:
+        _emit(result, True)
+        return
+    run = result.get("run")
+    console.print(f"{run['route']} · {run['status']}" if run else "(no fleet run yet)")
+
+
 @research_app.command("findings")
 def cmd_research_findings(
     topic: str = typer.Option(..., "--topic", "-t"),

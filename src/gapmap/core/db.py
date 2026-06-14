@@ -562,6 +562,18 @@ def init_schema(db: Database) -> None:
         db["debate_verdicts"].create_index(["topic", "target_id"])
         db["debate_verdicts"].create_index(["topic", "run_id"])
 
+    # FSD Fleet — Phase 4. One row per orchestrated "fleet flow" run over a
+    # topic (decision-gate → route → clarify → ground → debate → synthesize).
+    # `stages_json` is the per-stage timeline the UI renders.
+    if "fleet_runs" not in db.table_names():
+        db["fleet_runs"].create({
+            "id": int, "topic": str, "run_id": str, "route": str, "mode": str,
+            "status": str, "stages_json": str, "signals_json": str,
+            "cost_tokens": int, "started_at": str, "finished_at": str,
+        }, pk="id")
+        db["fleet_runs"].create_index(["topic"])
+        db["fleet_runs"].create_index(["run_id"])
+
     if "paper_gaps" not in db.table_names():
         db["paper_gaps"].create({
             "id": str, "topic": str, "kind": str, "title": str,
@@ -1790,6 +1802,78 @@ def debate_verdicts_for_topic(topic: str, *, current_hash: str = "") -> dict:
         return out
 
 
+# ── FSD Fleet — flow-run persistence ─────────────────────────────────────────
+
+def record_fleet_run(*, topic: str, run_id: str, route: str, mode: str,
+                     signals: dict | None = None) -> int:
+    """Open a fleet_runs row (status 'running'). Returns row id or -1, never raises."""
+    try:
+        db = get_db()
+
+        def _ins() -> int:
+            return db["fleet_runs"].insert({
+                "topic": topic, "run_id": run_id, "route": route, "mode": mode,
+                "status": "running", "stages_json": "[]",
+                "signals_json": json.dumps(signals or {}, default=str),
+                "cost_tokens": 0, "started_at": _utc_now(), "finished_at": "",
+            }).last_pk
+
+        return _retry_on_locked(_ins)
+    except Exception:
+        return -1
+
+
+def finish_fleet_run(run_id: str, *, status: str = "done",
+                     stages: list | None = None, cost_tokens: int = 0) -> None:
+    """Close a fleet_runs row with its stage timeline + cost. Never raises."""
+    try:
+        db = get_db()
+        s_json = json.dumps(stages or [], default=str)
+
+        def _upd() -> None:
+            db.execute(
+                "UPDATE fleet_runs SET status = ?, stages_json = ?, cost_tokens = ?, "
+                "finished_at = ? WHERE run_id = ?",
+                [status, s_json, int(cost_tokens or 0), _utc_now(), run_id],
+            )
+            db.conn.commit()  # raw execute() does not auto-commit
+
+        _retry_on_locked(_upd)
+    except Exception:
+        pass
+
+
+def fleet_status_for_topic(topic: str) -> dict:
+    """Latest fleet run for a topic, parsed. `{run: None}` when none. Never raises."""
+    out = {"ok": True, "topic": topic, "run": None}
+    try:
+        db = get_db()
+        if "fleet_runs" not in db.table_names():
+            return out
+        rows = list(db.query(
+            "SELECT * FROM fleet_runs WHERE topic = ? ORDER BY id DESC LIMIT 1", [topic]))
+        if not rows:
+            return out
+        r = rows[0]
+        try:
+            stages = json.loads(r.get("stages_json") or "[]")
+        except Exception:
+            stages = []
+        try:
+            signals = json.loads(r.get("signals_json") or "{}")
+        except Exception:
+            signals = {}
+        out["run"] = {
+            "run_id": r.get("run_id"), "route": r.get("route"), "mode": r.get("mode"),
+            "status": r.get("status"), "stages": stages, "signals": signals,
+            "cost_tokens": r.get("cost_tokens"),
+            "started_at": r.get("started_at"), "finished_at": r.get("finished_at"),
+        }
+        return out
+    except Exception:
+        return out
+
+
 # ── Upserts ──────────────────────────────────────────────────────────────────
 
 def upsert_posts(rows: Iterable[dict[str, Any]]) -> int:
@@ -1956,6 +2040,9 @@ __all__ = [
     "set_node_debate_cache",
     "debate_verdicts_for_topic",
     "debate_audit_for_topic",
+    "record_fleet_run",
+    "finish_fleet_run",
+    "fleet_status_for_topic",
     "upsert_posts",
     "upsert_comments",
     "upsert_users",
