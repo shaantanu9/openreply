@@ -151,15 +151,21 @@ def _stage_ground(topic: str, ctx: dict) -> tuple[str, str, int]:
     ingest_all_personas is a generator — drain it so ingestion actually runs."""
     try:
         from ..persona.ingest import ingest_all_personas
-        added = 0
+        added = 0          # new memories ('memory' events)
+        agents = 0         # personas that finished ('done' events)
         events = 0
         for ev in ingest_all_personas(topic=topic):
             events += 1
-            if isinstance(ev, dict):
-                added += int(ev.get("added") or 0)
+            if not isinstance(ev, dict):
+                continue
+            kind = ev.get("event")
+            if kind == "memory":
+                added += 1            # one 'memory' event per new lesson
+            elif kind == "done":
+                agents += 1           # one 'done' event per persona
         if events == 0:
             return "skipped", "No active agents to ground (create personas first).", 0
-        return "ok", f"Agents grounded on this topic (+{added} memories).", 0
+        return "ok", f"{agents} agent(s) grounded on this topic (+{added} memories).", 0
     except Exception as e:
         return "skipped", f"Grounding skipped ({str(e)[:80]}).", 0
 
