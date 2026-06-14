@@ -33,7 +33,7 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 4. Synthesis & gap finding | 7 | 7 | 0 | 0 | 0 |
 | 5. Knowledge graph | 12 | 12 | 0 | 0 | 0 |
 | 6. Semantic search & memory palace | 7 | 7 | 0 | 0 | 0 |
-| 7. Persona agents | 9 | 9 | 0 | 0 | 0 |
+| 7. Persona agents | 10 | 10 | 0 | 0 | 0 |
 | 8. Paper research pipeline | 25 | 25 | 0 | 0 | 0 |
 | 9. Product tracking | 9 | 9 | 0 | 0 | 0 |
 | 10. Audience & competitors | 3 | 3 | 0 | 0 | 0 |
@@ -47,7 +47,7 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
 | 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
 | 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **220** | **219** | **1** | **0** | **0** |
+| **Total** | **221** | **220** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -290,6 +290,12 @@ The MCP tools live in a dedicated **sub-server** — `src/gapmap/mcp/tools/perso
 **Entry:** `gapmap_persona_memories` · CLI `persona memories`
 **Implementation:** `persona_tools.py:145` · `persona/store.py:146` (`list_memories`)
 **Data:** reads `persona_memories`.
+
+### Topic Agents overlay (UI) ✅
+**Entry:** topic view → **Agents** tab (`screens/topic.js` tab `agents`).
+**Flow:** lists personas, pulls each one's topic-scoped memories in parallel, then conclusions + rejections for agents that learned the topic; shows lessons (cited to posts, with importance bar), distilled beliefs (confidence), and cross-agent divergences. "Learn this topic" teaches an agent the topic's posts via `personaIngest`.
+**Implementation:** `app-tauri/src/screens/agentsTab.js` (`loadAgents`) · reuses `api.personaList` / `personaMemories({topic})` / `personaConclusions` / `personaRejections` / `personaIngest`. FSD Fleet Phase 2; spec `docs/specs/FLEET_AGENTS_TOPIC_MAP.md`.
+**Data:** reads `personas`, `persona_memories`, `persona_conclusions`, `persona_rejections`.
 
 ### Persona chat ✅
 **Entry:** `gapmap_persona_chat` · CLI `persona chat`
