@@ -600,6 +600,12 @@ def _build_structural_body(topic: str, db) -> dict[str, Any]:
     except Exception:
         pass
 
+    try:
+        from .invariants import check_graph_invariants
+        check_graph_invariants(topic)
+    except Exception:
+        pass
+
     return {
         "topic": topic,
         "total_nodes": total_nodes,
