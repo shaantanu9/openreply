@@ -503,6 +503,12 @@ export const api = {
   prioritizeGet:   (topic) => cachedInvoke('prioritize_get', { topic }, 30000),
   prioritizeScore: (topic) => { invalidate('prioritize_get'); return invoke('prioritize_score', { topic }); },
 
+  // FSD Fleet — 5-persona debate on the Topic Map. `debateTopic` runs + persists
+  // the debate (invalidates the cached verdicts); `debateVerdicts` is the cheap
+  // cached read that drives the trust badges.
+  debateTopic:     (topic, rounds = 1) => { invalidate('debate_verdicts'); return invoke('debate_topic', { topic, rounds }); },
+  debateVerdicts:  (topic) => cachedInvoke('debate_verdicts', { topic }, 30000),
+
   // Pre-build strategy frameworks — each: get (cached read) + compute (LLM build).
   marketGet:        (topic) => cachedInvoke('market_get', { topic }, 30000),
   marketCompute:    (topic) => { invalidate('market_get'); return invoke('market_compute', { topic }); },

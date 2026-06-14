@@ -4739,6 +4739,28 @@ pub async fn prioritize_score(app: AppHandle, topic: String) -> Result<Value, St
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
+// ── FSD Fleet — debate on the Topic Map ─────────────────────────────────────
+
+/// Run the 5-persona debate over a topic's cached findings, persist verdicts +
+/// lineage + node render-cache, and return the run summary. Falls back to the
+/// heuristic debate when no LLM key is configured.
+#[tauri::command]
+pub async fn debate_topic(app: AppHandle, topic: String, rounds: Option<i64>) -> Result<Value, String> {
+    let rounds_s = rounds.unwrap_or(1).to_string();
+    let argv: Vec<&str> = vec![
+        "research", "debate", "--topic", &topic, "--rounds", &rounds_s, "--json",
+    ];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Read persisted debate verdicts for a topic (with staleness flag). Cheap,
+/// cached on the JS side — drives the trust badges on the Map + finding cards.
+#[tauri::command]
+pub async fn debate_verdicts(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "debate-verdicts", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
 // ── Pre-build strategy frameworks ───────────────────────────────────────────
 // Each pair is read-only `_get` (cheap, cached on the JS side) + `_compute`
 // (LLM synthesis grounded in the topic's evidence, persisted to

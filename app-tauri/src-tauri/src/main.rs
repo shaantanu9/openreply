@@ -514,6 +514,8 @@ fn main() {
             commands::paper_fulltext_bulk,
             commands::prioritize_get,
             commands::prioritize_score,
+            commands::debate_topic,
+            commands::debate_verdicts,
             commands::market_get,
             commands::market_compute,
             commands::porter_forces_get,
