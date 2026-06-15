@@ -454,6 +454,13 @@ export const api = {
   feedsAdd:        (url, name)    => invoke('feeds_add', { url, name }),
   feedsRemove:     (url)          => invoke('feeds_remove', { url }),
   feedsEnable:     (url, enabled) => invoke('feeds_enable', { url, enabled }),
+  // Reach Connections — per-source cookie/key credentials. Triangle:
+  // commands.rs creds_* + main.rs generate_handler! + these must stay in sync.
+  credsList:          ()               => invoke('creds_list'),
+  credsImportBrowser: (source, browser) => invoke('creds_import_browser', { source, browser }),
+  credsSaveManual:    (source, value)  => invoke('creds_save_manual', { source, value }),
+  credsVerify:        (source)         => invoke('creds_verify', { source }),
+  credsDelete:        (source)         => invoke('creds_delete', { source }),
   overviewStats:   ()        => cachedInvoke('overview_stats', null, 15000),
   recentActivity:  ()        => cachedInvoke('recent_activity', null, 2000),
   topicGraphSummary: (topic) => cachedInvoke('topic_graph_summary', { topic }, 15000),
@@ -506,7 +513,7 @@ export const api = {
   // FSD Fleet — 5-persona debate on the Topic Map. `debateTopic` runs + persists
   // the debate (invalidates the cached verdicts); `debateVerdicts` is the cheap
   // cached read that drives the trust badges.
-  debateTopic:     (topic, rounds = 1) => { invalidate('debate_verdicts'); invalidate('debate_audit'); return invoke('debate_topic', { topic, rounds }); },
+  debateTopic:     (topic, rounds = 1, dynamicRoles = false) => { invalidate('debate_verdicts'); invalidate('debate_audit'); return invokeWithTimeout('debate_topic', { topic, rounds, dynamicRoles }, 300000); },
   debateVerdicts:  (topic) => cachedInvoke('debate_verdicts', { topic }, 30000),
   debateAudit:     (topic) => cachedInvoke('debate_audit', { topic }, 30000),
 
@@ -514,15 +521,29 @@ export const api = {
   // fleetRun = run the staged flow (can be slow: synthesize + debate);
   // fleetStatus = cached read of the latest flow timeline.
   fleetPlan:       (topic) => invoke('fleet_plan', { topic }),
-  fleetRun:        (topic, route = null, rounds = 1) => { invalidate('fleet_status'); invalidate('debate_verdicts'); invalidate('debate_audit'); return invokeWithTimeout('fleet_run', { topic, route, rounds }, 600000); },
+  fleetRun:        (topic, route = null, rounds = 1, level = 'L3', approved = false) => { invalidate('fleet_status'); invalidate('debate_verdicts'); invalidate('debate_audit'); return invokeWithTimeout('fleet_run', { topic, route, rounds, level, approved }, 600000); },
   fleetStatus:     (topic) => cachedInvoke('fleet_status', { topic }, 30000),
+  // NL Command Center — decompose a directive into per-topic missions (plan-only
+  // unless execute=true). execute can be slow (a flow per topic), so a long timeout.
+  fleetCommand:    (directive, execute = false, level = 'L3') => invokeWithTimeout('fleet_command', { directive, execute, level }, execute ? 900000 : 120000),
   // Streaming flow — stages arrive live via 'fleet:progress' (sentinel-tagged
   // NDJSON, possibly interleaved with sidecar log lines — filter on __fleet);
   // 'fleet:done' fires on exit. fleetRunStream resolves once the process is
   // spawned, not when it finishes.
-  fleetRunStream:  (topic, route = null, rounds = 1) => { invalidate('fleet_status'); invalidate('debate_verdicts'); invalidate('debate_audit'); return invoke('fleet_run_stream', { topic, route, rounds }); },
+  fleetRunStream:  (topic, route = null, rounds = 1, level = 'L3', approved = false) => { invalidate('fleet_status'); invalidate('debate_verdicts'); invalidate('debate_audit'); return invoke('fleet_run_stream', { topic, route, rounds, level, approved }); },
   onFleetProgress: (cb) => listen('fleet:progress', e => cb(e.payload)),
   onFleetDone:     (cb) => listen('fleet:done',     e => cb(e.payload)),
+
+  // Academic Mode — research → synthesize → peer_review → finalize → cited brief.
+  // academicBriefRun = blocking run; academicBriefRunStream = live stages via
+  // 'academic:progress' (sentinel-tagged __academic); 'academic:done' on exit.
+  // academicBriefGet = cached read of the latest stored brief.
+  academicBriefRun:    (topic, opts = {}) => { invalidate('academic_brief_get'); return invokeWithTimeout('academic_brief_run', { topic, query: opts.query ?? null, level: opts.level ?? 'L3', approved: opts.approved ?? false, rounds: opts.rounds ?? 1, dynamicRoles: opts.dynamicRoles ?? true, style: opts.style ?? 'IMRaD', format: opts.format ?? 'markdown' }, 900000); },
+  academicBriefRunStream: (topic, opts = {}) => { invalidate('academic_brief_get'); return invoke('academic_brief_run_stream', { topic, query: opts.query ?? null, level: opts.level ?? 'L3', approved: opts.approved ?? false, rounds: opts.rounds ?? 1, dynamicRoles: opts.dynamicRoles ?? true, style: opts.style ?? 'IMRaD', format: opts.format ?? 'markdown' }); },
+  academicBriefGet:    (topic) => cachedInvoke('academic_brief_get', { topic }, 30000),
+  academicPassportGet: (topic) => cachedInvoke('academic_passport_get', { topic }, 30000),
+  onAcademicProgress:  (cb) => listen('academic:progress', e => cb(e.payload)),
+  onAcademicDone:      (cb) => listen('academic:done',     e => cb(e.payload)),
 
   // Pre-build strategy frameworks — each: get (cached read) + compute (LLM build).
   marketGet:        (topic) => cachedInvoke('market_get', { topic }, 30000),

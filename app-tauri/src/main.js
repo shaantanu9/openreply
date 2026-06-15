@@ -35,6 +35,7 @@ import { mountNextStepRail } from './lib/nextStep.js';
 import { initSimpleMode } from './lib/simpleMode.js';
 import { renderActivity } from './screens/activity.js';
 import { renderDatabase } from './screens/database.js';
+import { renderReachConnections } from './screens/reachConnections.js';
 import { renderProvenance } from './screens/provenance.js';
 import { renderScience } from './screens/science.js';
 import { renderSearch } from './screens/search.js';
@@ -82,6 +83,7 @@ function explainerSlugForHash(hash) {
   if (h.startsWith('/find'))          return 'find';
   if (h.startsWith('/watch'))         return 'watch';
   if (h.startsWith('/database'))      return 'database';
+  if (h.startsWith('/connections'))   return 'connections';
   if (h.startsWith('/science'))       return 'science';
   if (h.startsWith('/playbook'))      return 'playbook';
   if (h.startsWith('/help'))          return 'Help';
@@ -308,6 +310,7 @@ const routes = [
   { match: /^\/chats\/?$/,          render: renderChats },
   { match: /^\/activity\/?$/,       render: renderActivity },
   { match: /^\/database\/?$/,       render: renderDatabase },
+  { match: /^\/connections\/?$/,    render: renderReachConnections },
   { match: /^\/provenance\/?$/,     render: renderProvenance },
   { match: /^\/provenance\/([^/?]+).*$/, render: renderProvenance },
   { match: /^\/science\/?$/,        render: renderScience },
