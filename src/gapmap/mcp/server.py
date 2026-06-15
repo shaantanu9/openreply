@@ -1607,7 +1607,7 @@ def gapmap_paper_enrich_abstracts(
 
 
 @mcp.tool()
-def gapmap_paper_citations(
+def gapmap_paper_citation_graph(
     topic: str | None = None,
     limit: int | None = None,
 ) -> dict:
@@ -1912,6 +1912,71 @@ def gapmap_paper_knowledge_build(
 
 
 @mcp.tool()
+def gapmap_academic_brief(
+    topic: str,
+    query: str | None = None,
+    provider: str | None = None,
+    level: str = "L3",
+    approved: bool = False,
+    rounds: int = 1,
+    dynamic_roles: bool = True,
+    style: str = "IMRaD",
+    export_format: str = "markdown",
+) -> dict:
+    """Academic Mode — turn a topic into a grounded, cited research brief.
+
+    Runs research → synthesize → [grounding gate] → peer_review (multi-reviewer
+    panel: EIC + methodology + domain + perspective + devil's-advocate, scored
+    0–100 → editorial decision) → finalize → [integrity gate: 7-mode AI-failure
+    checklist] → [citation-existence gate: DOI verification]. Hard-blocks finalize
+    if fewer than 2 academic papers are grounded (returns gate='coverage'); a
+    blocking integrity finding sets gate='integrity'/gate_status='blocked'. Every
+    stage appends a hash-chained Material Passport entry for provenance.
+
+    Governance: level ∈ {L1 suggest, L2 gated, L3 auto}; L2 pauses for approval
+    (re-call with approved=True). Citations are restricted to academic papers
+    actually committed to the corpus — no fabricated references. Returns include
+    peer_review (decision/reviewers), integrity (verdict/findings), citations_check,
+    and passport (length/verified/head_hash). Runs under the timeout guard with a
+    jobs-queue fallback for slow corpora.
+    """
+    from ..research.academic_mode import run_academic_brief
+    return _run_with_timeout(
+        run_academic_brief, timeout=120.0,
+        async_hint="gapmap_academic_brief",
+        kwargs={
+            "topic": topic, "query": query, "provider": provider, "level": level,
+            "approved": approved, "rounds": rounds, "dynamic_roles": dynamic_roles,
+            "style": style, "export_format": export_format,
+        },
+    )
+
+
+@mcp.tool()
+def gapmap_academic_brief_get(topic: str) -> dict:
+    """Read the latest stored Academic Mode research brief for a topic.
+
+    Returns {ok, topic, level, gate_status, grounded_count, markdown, citations,
+    limitations, stages, generated_at} or {ok: False} when none exists yet.
+    """
+    from ..research.academic_mode import get_academic_brief
+    return get_academic_brief(topic)
+
+
+@mcp.tool()
+def gapmap_academic_passport(topic: str | None = None, run_id: str | None = None) -> dict:
+    """Read the append-only, hash-chained Material Passport for an Academic Mode run.
+
+    Pass run_id for a specific run, or topic for that topic's latest run. Returns
+    {ok, run_id, entries:[{seq, stage, payload, prev_hash, entry_hash, ts}],
+    verified} — verified=True means the SHA-256 chain recomputes intact (no
+    tampering / no dropped stage). Use this to audit provenance or resume.
+    """
+    from ..research.academic_passport import get_passport
+    return get_passport(topic=topic, run_id=run_id)
+
+
+@mcp.tool()
 def gapmap_paper_gaps(topic: str, compute: bool = False, force: bool = False) -> dict:
     """Cross-paper gaps for a topic: understudied intersections, contradictions,
     under-replicated methods. compute=False reads persisted gaps; compute=True
@@ -2213,6 +2278,98 @@ def gapmap_fetch_x(query: str, limit: int = 20) -> list[dict]:
     from ..sources.x_twitter import fetch_x
 
     return fetch_x(query=query, limit=limit)
+
+
+# ── Agent Reach ports (2026-06-16) ───────────────────────────────────
+@mcp.tool()
+def gapmap_fetch_v2ex(query: str, limit: int = 50) -> list[dict]:
+    """V2EX (Chinese dev/tech community) hot topics, filtered by query. Keyless."""
+    from ..sources.v2ex import fetch_v2ex
+
+    return fetch_v2ex(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_bilibili(query: str, limit: int = 50) -> list[dict]:
+    """Bilibili (China's largest video community) search. Keyless (optional BILIBILI_PROXY)."""
+    from ..sources.bilibili import fetch_bilibili
+
+    return fetch_bilibili(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_xueqiu(query: str, limit: int = 50) -> list[dict]:
+    """Xueqiu (雪球, Chinese investor social network) status search. Cookie-warm, keyless."""
+    from ..sources.xueqiu import fetch_xueqiu
+
+    return fetch_xueqiu(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_xiaohongshu(query: str, limit: int = 30) -> list[dict]:
+    """Xiaohongshu (小红书 / RED) note search. Needs a connected cookie (Reach Connections)."""
+    from ..sources.xiaohongshu import fetch_xiaohongshu
+
+    return fetch_xiaohongshu(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_exa(query: str, limit: int = 30) -> list[dict]:
+    """Exa neural web search. Needs EXA_API_KEY (free tier) or a connected Exa key."""
+    from ..sources.exa_search import fetch_exa_search
+
+    return fetch_exa_search(query=query, limit=limit)
+
+
+@mcp.tool()
+def gapmap_fetch_reddit_free(query: str, limit: int = 50, sub: str | None = None) -> list[dict]:
+    """Reddit search via the free cookie/proxy path (RSS fallback). Full score/comments
+    when a reddit_session cookie is connected; otherwise titles/bodies via RSS."""
+    from ..sources.reddit_free import fetch_reddit_free
+
+    return fetch_reddit_free(query=query, sub=sub, limit=limit)
+
+
+@mcp.tool()
+def gapmap_read_web(url: str) -> list[dict]:
+    """Read any URL → clean markdown via Jina Reader (one post row). Keyless."""
+    from ..sources.web_reader import fetch_web_reader
+
+    return fetch_web_reader(url)
+
+
+@mcp.tool()
+def gapmap_read_linkedin(url: str) -> list[dict]:
+    """Read a public LinkedIn URL (profile/company/post) via Jina → one post row."""
+    from ..sources.linkedin import fetch_linkedin
+
+    return fetch_linkedin(url)
+
+
+@mcp.tool()
+def gapmap_read_xiaoyuzhou(url: str) -> list[dict]:
+    """Read a Xiaoyuzhou (小宇宙) podcast episode URL → title + show notes (one row)."""
+    from ..sources.xiaoyuzhou import fetch_xiaoyuzhou
+
+    return fetch_xiaoyuzhou(url)
+
+
+@mcp.tool()
+def gapmap_creds_list() -> list[dict]:
+    """Status of every cookie/key-gated source for the Reach Connections UI.
+    Returns [{source, connected, username, kind, last_verified_at, login_url}]."""
+    from ..research.reach_connections import list_connections
+
+    return list_connections()
+
+
+@mcp.tool()
+def gapmap_creds_verify(source: str) -> dict:
+    """Re-test a connected source's credential by issuing a live fetch.
+    Returns {source, connected, message, username}."""
+    from ..research.reach_connections import verify_connection
+
+    return verify_connection(source)
 
 
 @mcp.tool()
