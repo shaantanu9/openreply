@@ -60,6 +60,19 @@ from .instagram import fetch_instagram
 from .threads import fetch_threads
 from .pinterest import fetch_pinterest
 from .x_twitter import fetch_x
+# Agent Reach ports (2026-06-16): Chinese platforms (v2ex, bilibili, xueqiu,
+# xiaohongshu, xiaoyuzhou), generic web/LinkedIn readers (Jina), Exa neural
+# search, and the free Reddit cookie/proxy source. Cookie/key-gated ones degrade
+# to [] without a connected credential (see core/credentials.py).
+from .v2ex import fetch_v2ex
+from .web_reader import fetch_web_reader
+from .bilibili import fetch_bilibili
+from .xiaoyuzhou import fetch_xiaoyuzhou
+from .exa_search import fetch_exa_search
+from .xueqiu import fetch_xueqiu
+from .xiaohongshu import fetch_xiaohongshu
+from .linkedin import fetch_linkedin
+from .reddit_free import fetch_reddit_free
 
 __all__ = [
     "fetch_hn", "fetch_appstore_reviews", "search_appstore_apps",
@@ -80,4 +93,8 @@ __all__ = [
     "fetch_polymarket", "fetch_truthsocial", "fetch_digg",
     "fetch_tiktok", "fetch_instagram", "fetch_threads",
     "fetch_pinterest", "fetch_x",
+    # Agent Reach ports
+    "fetch_v2ex", "fetch_web_reader", "fetch_bilibili", "fetch_xiaoyuzhou",
+    "fetch_exa_search", "fetch_xueqiu", "fetch_xiaohongshu", "fetch_linkedin",
+    "fetch_reddit_free",
 ]

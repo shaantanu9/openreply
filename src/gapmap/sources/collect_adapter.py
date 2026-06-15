@@ -997,6 +997,56 @@ def run_x(topic_or_keywords: str | list[str], limit: int = 20) -> int:
     return _run_simple_list(topic_or_keywords, "x", fetch_x, limit)
 
 
+# ── Agent Reach ports (2026-06-16) ───────────────────────────────────────────
+# Keyword-searchable platforms use the shared _run_simple_list helper. The
+# URL-readers (web_reader, linkedin, xiaoyuzhou) accept a URL as the "keyword"
+# and no-op (return 0) on plain keywords — they're primarily MCP/CLI tools.
+
+def run_v2ex(topic_or_keywords: str | list[str], limit: int = 50) -> int:
+    from .v2ex import fetch_v2ex
+    return _run_simple_list(topic_or_keywords, "v2ex", fetch_v2ex, limit)
+
+
+def run_bilibili(topic_or_keywords: str | list[str], limit: int = 50) -> int:
+    from .bilibili import fetch_bilibili
+    return _run_simple_list(topic_or_keywords, "bilibili", fetch_bilibili, limit)
+
+
+def run_xueqiu(topic_or_keywords: str | list[str], limit: int = 50) -> int:
+    from .xueqiu import fetch_xueqiu
+    return _run_simple_list(topic_or_keywords, "xueqiu", fetch_xueqiu, limit)
+
+
+def run_exa(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .exa_search import fetch_exa_search
+    return _run_simple_list(topic_or_keywords, "exa", fetch_exa_search, limit)
+
+
+def run_xiaohongshu(topic_or_keywords: str | list[str], limit: int = 30) -> int:
+    from .xiaohongshu import fetch_xiaohongshu
+    return _run_simple_list(topic_or_keywords, "xiaohongshu", fetch_xiaohongshu, limit)
+
+
+def run_reddit_free(topic_or_keywords: str | list[str], limit: int = 50) -> int:
+    from .reddit_free import fetch_reddit_free
+    return _run_simple_list(topic_or_keywords, "reddit_free", fetch_reddit_free, limit)
+
+
+def run_web_reader(topic_or_keywords: str | list[str], limit: int = 1) -> int:
+    from .web_reader import fetch_web_reader
+    return _run_simple_list(topic_or_keywords, "web", fetch_web_reader, limit)
+
+
+def run_linkedin(topic_or_keywords: str | list[str], limit: int = 1) -> int:
+    from .linkedin import fetch_linkedin
+    return _run_simple_list(topic_or_keywords, "linkedin", fetch_linkedin, limit)
+
+
+def run_xiaoyuzhou(topic_or_keywords: str | list[str], limit: int = 1) -> int:
+    from .xiaoyuzhou import fetch_xiaoyuzhou
+    return _run_simple_list(topic_or_keywords, "xiaoyuzhou", fetch_xiaoyuzhou, limit)
+
+
 # Dispatch map for the collect orchestrator
 SOURCES: dict[str, Any] = {
     "hn": run_hn,
@@ -1078,4 +1128,14 @@ SOURCES: dict[str, Any] = {
     "threads":     run_threads,       # SCRAPECREATORS_API_KEY
     "pinterest":   run_pinterest,     # SCRAPECREATORS_API_KEY
     "x":           run_x,             # AUTH_TOKEN/CT0 | XAI_API_KEY | XQUIK_API_KEY
+    # Agent Reach ports (2026-06-16). Chinese platforms + free overlaps.
+    "v2ex":        run_v2ex,          # free, public API
+    "bilibili":    run_bilibili,      # free (optional BILIBILI_PROXY)
+    "xueqiu":      run_xueqiu,        # free (cookie-warm; optional stored token)
+    "exa":         run_exa,           # EXA_API_KEY (free tier)
+    "xiaohongshu": run_xiaohongshu,   # needs connected cookie (Reach Connections)
+    "reddit_free": run_reddit_free,   # cookie/proxy JSON, RSS fallback
+    "web":         run_web_reader,    # URL reader (Jina) — pass a URL as topic
+    "linkedin":    run_linkedin,      # public LinkedIn URL reader (Jina)
+    "xiaoyuzhou":  run_xiaoyuzhou,    # podcast episode metadata — pass a URL
 }

@@ -43,7 +43,7 @@ YT_FAMILY = frozenset({"youtube", "youtube_description", "youtube_transcript"})
 
 # Kept here for parity with app-tauri/src/lib/postLink.js REDDIT_FAMILY.
 # Update both sides together when a new reddit-like source is added.
-REDDIT_FAMILY = frozenset({"reddit", "lemmy"})
+REDDIT_FAMILY = frozenset({"reddit", "lemmy", "reddit_free"})
 
 
 def normalize_source_type(st: str | None) -> str:
