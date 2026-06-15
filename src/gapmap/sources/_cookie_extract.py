@@ -545,3 +545,121 @@ def x_auth_from_browsers() -> Optional[dict]:
     if pair.get("auth_token") and pair.get("ct0"):
         return {"auth_token": pair["auth_token"], "ct0": pair["ct0"]}
     return None
+
+
+# ---------------------------------------------------------------------------
+# Generic multi-platform extraction (Reach Connections "Import from browser")
+# ---------------------------------------------------------------------------
+
+#: source id -> (domains, cookie_names). The low-level readers above are already
+#: domain/name parametrised; this registry just maps each gated source to the
+#: session cookies that prove a logged-in browser session.
+COOKIE_REGISTRY: Dict[str, tuple] = {
+    "reddit": (["reddit.com"], ["reddit_session"]),
+    "twitter": (["x.com", "twitter.com"], ["auth_token", "ct0"]),
+    "xiaohongshu": (["xiaohongshu.com"], ["web_session", "a1", "webId"]),
+    "linkedin": (["linkedin.com"], ["li_at", "JSESSIONID"]),
+    "xueqiu": (["xueqiu.com"], ["xq_a_token", "u"]),
+    "bilibili": (["bilibili.com"], ["SESSDATA", "bili_jct"]),
+}
+
+
+def _firefox_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
+    try:
+        profiles_dir = _get_firefox_profiles_dir()
+        if profiles_dir is None:
+            return None
+        profile_path = _find_default_profile(profiles_dir)
+        if profile_path is None:
+            return None
+        db_path = profile_path / "cookies.sqlite"
+        for domain in domains:
+            result = _query_firefox_cookies_db(db_path, domain, names)
+            if result:
+                return result
+    except Exception as exc:
+        logger.debug("Firefox generic extraction error: %s", exc)
+    return None
+
+
+def _chrome_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
+    try:
+        if platform.system() != "Darwin":
+            return None
+        for domain in domains:
+            result = _extract_chromium_cookies(
+                _CHROME_COOKIES_DB, "Chrome Safe Storage", domain, names
+            )
+            if result:
+                return result
+    except Exception as exc:
+        logger.debug("Chrome generic extraction error: %s", exc)
+    return None
+
+
+def _brave_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
+    try:
+        if platform.system() != "Darwin":
+            return None
+        db_path = _find_brave_cookies_db()
+        if db_path is None:
+            return None
+        for domain in domains:
+            result = _extract_chromium_cookies(db_path, "Brave Safe Storage", domain, names)
+            if result:
+                return result
+    except Exception as exc:
+        logger.debug("Brave generic extraction error: %s", exc)
+    return None
+
+
+def _safari_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
+    try:
+        if sys.platform != "darwin":
+            return None
+        cookie_path = next((p for p in _SAFARI_COOKIE_PATHS if p.exists()), None)
+        if cookie_path is None:
+            return None
+        raw = cookie_path.read_bytes()
+        for domain in domains:
+            result = _parse_safari_binary_cookies(raw, domain, names)
+            if result:
+                return result
+    except Exception as exc:
+        logger.debug("Safari generic extraction error: %s", exc)
+    return None
+
+
+_BROWSER_READERS = {
+    "chrome": _chrome_cookies,
+    "brave": _brave_cookies,
+    "firefox": _firefox_cookies,
+    "safari": _safari_cookies,
+}
+
+
+def extract_cookies(source: str, browser: str | None = None) -> Dict[str, str]:
+    """Best-effort extract of *source*'s session cookies from local browsers.
+
+    Returns a flat {name: value} dict, or {} on any failure (unknown source,
+    locked DB, missing browser, no login). NEVER raises — the UI falls back to
+    manual paste when this returns {}. Pass `browser` to restrict to one of
+    chrome/brave/firefox/safari.
+    """
+    spec = COOKIE_REGISTRY.get(source)
+    if not spec:
+        return {}
+    domains, names = spec
+    readers = (
+        [_BROWSER_READERS[browser]]
+        if browser in _BROWSER_READERS
+        else list(_BROWSER_READERS.values())
+    )
+    for reader in readers:
+        try:
+            result = reader(domains, names)
+            if result:
+                return dict(result)
+        except Exception as exc:
+            logger.debug("Reader %s failed for %s: %s", reader.__name__, source, exc)
+    return {}

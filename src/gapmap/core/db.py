@@ -253,6 +253,21 @@ def init_schema(db: Database) -> None:
         )
         db["trend_series"].create_index(["topic", "keyword"])
 
+    if "source_credentials" not in db.table_names():
+        # Per-source auth (cookies / api keys) for the Reach Connections flow.
+        # One row per source; cookie_json is a JSON map of cookie name->value.
+        db["source_credentials"].create(
+            {
+                "source": str,            # "reddit", "xueqiu", "xiaohongshu", ...
+                "cookie_json": str,       # JSON {name: value}
+                "username": str,
+                "kind": str,              # "cookie" | "api_key"
+                "saved_at": str,
+                "last_verified_at": str,
+            },
+            pk="source",
+        )
+
     if "comments" not in db.table_names():
         db["comments"].create(
             {
@@ -517,6 +532,34 @@ def init_schema(db: Database) -> None:
         db["lineage"].create_index(["artifact_id"])
         db["lineage"].create_index(["topic"])
         db["lineage"].create_index(["produced_by"])
+
+    # Academic Mode — one row per finalized research brief (research →
+    # synthesize → peer_review → finalize). Keyed by run_id; the UI reads the
+    # latest by generated_at.
+    if "academic_briefs" not in db.table_names():
+        db["academic_briefs"].create({
+            "run_id": str, "topic": str, "level": str, "gate_status": str,
+            "grounded_count": int, "stages_json": str, "markdown": str,
+            "fmt": str, "export_path": str, "limitations": str,
+            "citations_json": str, "generated_at": str,
+            # Multi-agent upgrade — panel decision + integrity verdict + verified count.
+            "review_decision": str, "integrity_verdict": str, "citations_verified": int,
+        }, pk="run_id")
+        db["academic_briefs"].create_index(["topic"])
+        db["academic_briefs"].create_index(["generated_at"])
+    else:
+        # Lazy migration for installs created before the multi-agent columns.
+        _ab_cols = {c.name for c in db["academic_briefs"].columns}
+        for _col, _sql_type, _default in (("review_decision", "TEXT", "''"),
+                                          ("integrity_verdict", "TEXT", "''"),
+                                          ("citations_verified", "INTEGER", "0")):
+            if _col not in _ab_cols:
+                try:
+                    db.executescript(
+                        f"ALTER TABLE academic_briefs ADD COLUMN {_col} {_sql_type} DEFAULT {_default}"
+                    )
+                except Exception:
+                    pass
 
     # FSD Fleet — Phase 1. One row per debate run over a topic's findings,
     # plus one verdict row per (finding|node) tiered by the 5-persona
@@ -1586,6 +1629,62 @@ def record_lineage(*, topic: str, artifact_id: str, artifact_kind: str,
         return -1
 
 
+# ── Academic Mode — research-brief persistence ───────────────────────────────
+
+def record_academic_brief(*, topic: str, run_id: str, level: str,
+                          gate_status: str, grounded_count: int,
+                          stages: list[dict] | None = None, markdown: str = "",
+                          fmt: str = "markdown", export_path: str | None = None,
+                          limitations: str = "", citations: list[str] | None = None,
+                          generated_at: str = "", review_decision: str = "",
+                          integrity_verdict: str = "", citations_verified: int = 0) -> int:
+    """Upsert one finalized academic brief. Best-effort, -1 on failure, never raises."""
+    try:
+        db = get_db()
+
+        def _ins() -> int:
+            return db["academic_briefs"].upsert({
+                "run_id": run_id, "topic": topic, "level": level,
+                "gate_status": gate_status, "grounded_count": int(grounded_count or 0),
+                "stages_json": json.dumps(stages or [], default=str),
+                "markdown": markdown or "", "fmt": fmt or "markdown",
+                "export_path": export_path or "", "limitations": limitations or "",
+                "citations_json": json.dumps(citations or [], default=str),
+                "generated_at": generated_at or _utc_now(),
+                "review_decision": review_decision or "",
+                "integrity_verdict": integrity_verdict or "",
+                "citations_verified": int(citations_verified or 0),
+            }, pk="run_id").last_pk
+
+        return _retry_on_locked(_ins)
+    except Exception:
+        return -1
+
+
+def get_academic_brief(topic: str) -> dict:
+    """Return the latest academic brief for ``topic`` (UI reader). Hydrates the
+    JSON columns. Returns {ok: False} when none exists."""
+    try:
+        db = get_db()
+        rows = list(db.query(
+            "SELECT * FROM academic_briefs WHERE topic = ? "
+            "ORDER BY generated_at DESC LIMIT 1",
+            [topic],
+        ))
+        if not rows:
+            return {"ok": False, "topic": topic, "reason": "no_brief"}
+        row = rows[0]
+        for col, key in (("stages_json", "stages"), ("citations_json", "citations")):
+            try:
+                row[key] = json.loads(row.pop(col) or ("[]"))
+            except Exception:
+                row[key] = []
+        row["ok"] = True
+        return row
+    except Exception as e:
+        return {"ok": False, "topic": topic, "reason": str(e)[:200]}
+
+
 # ── FSD Fleet — debate persistence ───────────────────────────────────────────
 
 def record_debate_run(*, topic: str, run_id: str, rounds: int,
@@ -2033,6 +2132,8 @@ __all__ = [
     "log_fetch_end",
     "record_check",
     "record_lineage",
+    "record_academic_brief",
+    "get_academic_brief",
     "record_debate_run",
     "finish_debate_run",
     "record_debate_verdict",
