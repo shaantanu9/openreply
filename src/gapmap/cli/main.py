@@ -4792,6 +4792,8 @@ def cmd_research_debate(
     topic: str = typer.Option(..., "--topic", "-t"),
     rounds: int = typer.Option(1, "--rounds", help="1-3 debate rounds (LLM mode)."),
     provider: Optional[str] = typer.Option(None, "--provider"),
+    dynamic_roles: bool = typer.Option(False, "--dynamic-roles",
+                                       help="LLM-generate a custom debate panel for this topic."),
     as_json: bool = typer.Option(False, "--json", hidden=True,
                                  help="Emit machine-readable result for the Rust wrapper."),
 ) -> None:
@@ -4803,7 +4805,7 @@ def cmd_research_debate(
     """
     from ..research.debate_run import run_topic_debate
 
-    result = run_topic_debate(topic, rounds=rounds, provider=provider)
+    result = run_topic_debate(topic, rounds=rounds, provider=provider, dynamic_roles=dynamic_roles)
     if as_json:
         _emit(result, True)
         return
@@ -4817,6 +4819,141 @@ def cmd_research_debate(
         f"minority={c.get('minority',0)} discarded={c.get('discarded',0)} "
         f"({result.get('provenance')})"
     )
+
+
+@research_app.command("academic")
+def cmd_research_academic(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    query: Optional[str] = typer.Option(None, "--query", "-q",
+                                        help="Search query (defaults to topic)."),
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    level: str = typer.Option("L3", "--level",
+                              help="Autopilot: L1 suggest | L2 gated | L3 auto."),
+    approved: bool = typer.Option(False, "--approved",
+                                  help="L2: approve and run peer_review + finalize."),
+    rounds: int = typer.Option(1, "--rounds", help="1-3 peer-review rounds."),
+    dynamic_roles: bool = typer.Option(True, "--dynamic-roles/--no-dynamic-roles",
+                                       help="LLM-generate a custom peer-review panel."),
+    style: str = typer.Option("IMRaD", "--style", help="Brief style (default IMRaD)."),
+    fmt: str = typer.Option("markdown", "--format",
+                            help="Export preference: markdown | docx | pdf."),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Emit machine-readable result for the Rust wrapper."),
+    stream: bool = typer.Option(False, "--stream", hidden=True,
+                                help="Emit sentinel-tagged NDJSON per stage for the Rust streaming wrapper."),
+) -> None:
+    """Academic Mode — research → synthesize → peer_review → finalize.
+
+    Produces a grounded, cited research brief. Hard-blocks finalize if fewer
+    than 2 academic papers are grounded. L2 pauses for approval before the
+    expensive peer_review + finalize stages.
+    """
+    from ..research.academic_mode import run_academic_brief
+
+    if stream:
+        # NDJSON to stdout: one {__academic, event:"stage"} line per stage, then
+        # a final {__academic, event:"done", result}. The Rust wrapper forwards
+        # every line; the frontend filters on __academic.
+        import sys as _sys
+
+        def _cb(stage: str, payload: dict) -> None:
+            _sys.stdout.write(json.dumps({"__academic": True, "event": "stage",
+                                          "stage": stage, **payload},
+                                         ensure_ascii=False, default=str) + "\n")
+            _sys.stdout.flush()
+
+        result = run_academic_brief(
+            topic, query=query, provider=provider, level=level, approved=approved,
+            rounds=rounds, dynamic_roles=dynamic_roles, style=style,
+            export_format=fmt, on_stage=_cb,
+        )
+        _sys.stdout.write(json.dumps({"__academic": True, "event": "done", "result": result},
+                                     ensure_ascii=False, default=str) + "\n")
+        _sys.stdout.flush()
+        return
+
+    result = run_academic_brief(
+        topic, query=query, provider=provider, level=level, approved=approved,
+        rounds=rounds, dynamic_roles=dynamic_roles, style=style, export_format=fmt,
+    )
+    if as_json:
+        _emit(result, True)
+        return
+    if not result.get("ok") and result.get("gate") == "coverage":
+        console.print(f"[yellow]grounding gate:[/yellow] {result.get('reason')}")
+        return
+    if result.get("awaiting_approval"):
+        console.print(f"[cyan]L2 paused[/cyan] · grounded={result.get('grounded_count')} · "
+                      f"re-run with --approved to finish.")
+        return
+    if result.get("stage") == "synthesize" and result.get("level") == "L1":
+        console.print(f"[cyan]L1 (suggest)[/cyan] · {result.get('reason')}")
+        return
+    brief = result.get("brief") or {}
+    pr = result.get("peer_review") or {}
+    integ = result.get("integrity") or {}
+    cc = result.get("citations_check") or {}
+    pp = result.get("passport") or {}
+    status_color = "green" if result.get("ok") else "yellow"
+    console.print(
+        f"[{status_color}]academic brief {result.get('gate_status', 'done')}[/{status_color}] · "
+        f"grounded={result.get('grounded_count')} · "
+        f"{len(brief.get('citations', []))} citations · "
+        f"{len(brief.get('markdown', ''))} chars"
+    )
+    console.print(
+        f"  panel: decision=[b]{pr.get('decision', '?')}[/b] mean={pr.get('mean_score', '?')} "
+        f"dissent={pr.get('dissent_count', 0)} · "
+        f"integrity=[b]{integ.get('verdict', '?')}[/b]"
+        f"{' [red](BLOCKED)[/red]' if integ.get('blocking') else ''} · "
+        f"citations verified={cc.get('verified', 0)}/{cc.get('verified', 0) + cc.get('missing', 0) + cc.get('unresolvable', 0)} "
+        f"missing={cc.get('missing', 0)} · "
+        f"passport={pp.get('length', 0)} entries{' ✓' if pp.get('verified') else ''}"
+    )
+
+
+@research_app.command("academic-get")
+def cmd_research_academic_get(
+    topic: str = typer.Option(..., "--topic", "-t"),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Read the latest stored academic brief for a topic."""
+    from ..research.academic_mode import get_academic_brief
+
+    result = get_academic_brief(topic)
+    if as_json:
+        _emit(result, True)
+        return
+    if not result.get("ok"):
+        console.print(f"[yellow]no academic brief yet for '{topic}'.[/yellow]")
+        return
+    console.print(f"[green]brief[/green] · grounded={result.get('grounded_count')} · "
+                  f"generated_at={result.get('generated_at')}")
+
+
+@research_app.command("academic-passport")
+def cmd_research_academic_passport(
+    topic: Optional[str] = typer.Option(None, "--topic", "-t"),
+    run_id: Optional[str] = typer.Option(None, "--run-id"),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Read the hash-chained Material Passport for an academic run (provenance)."""
+    from ..research.academic_passport import get_passport
+
+    result = get_passport(topic=topic, run_id=run_id)
+    if as_json:
+        _emit(result, True)
+        return
+    if not result.get("ok"):
+        console.print(f"[yellow]no passport found.[/yellow]")
+        return
+    console.print(
+        f"[green]passport[/green] · run={result.get('run_id')} · "
+        f"{len(result.get('entries', []))} entries · "
+        f"chain {'✓ verified' if result.get('verified') else '✗ BROKEN'}"
+    )
+    for e in result.get("entries", []):
+        console.print(f"  [{e.get('seq')}] {e.get('stage'):<12} {e.get('entry_hash', '')[:12]}")
 
 
 @research_app.command("debate-verdicts")
@@ -4881,6 +5018,8 @@ def cmd_research_fleet_run(
     topic: str = typer.Option(..., "--topic", "-t"),
     route: Optional[str] = typer.Option(None, "--route", help="quick | standard | deep (default: gate pick)"),
     rounds: int = typer.Option(1, "--rounds"),
+    level: str = typer.Option("L3", "--level", help="Autopilot: L1 suggest | L2 gated | L3 auto"),
+    approved: bool = typer.Option(False, "--approved", help="L2: approve and run the remaining (gated) stages"),
     as_json: bool = typer.Option(False, "--json", hidden=True),
     stream: bool = typer.Option(False, "--stream", hidden=True,
                                 help="Emit sentinel-tagged NDJSON per stage for the Rust streaming wrapper."),
@@ -4899,13 +5038,14 @@ def cmd_research_fleet_run(
                                          ensure_ascii=False, default=str) + "\n")
             _sys.stdout.flush()
 
-        result = run_fleet_flow(topic, route=route, rounds=rounds, on_stage=_cb)
+        result = run_fleet_flow(topic, route=route, rounds=rounds, level=level,
+                                approved=approved, on_stage=_cb)
         _sys.stdout.write(json.dumps({"__fleet": True, "event": "done", "result": result},
                                      ensure_ascii=False, default=str) + "\n")
         _sys.stdout.flush()
         return
 
-    result = run_fleet_flow(topic, route=route, rounds=rounds)
+    result = run_fleet_flow(topic, route=route, rounds=rounds, level=level, approved=approved)
     if as_json:
         _emit(result, True)
         return
@@ -4929,6 +5069,25 @@ def cmd_research_fleet_status(
         return
     run = result.get("run")
     console.print(f"{run['route']} · {run['status']}" if run else "(no fleet run yet)")
+
+
+@research_app.command("fleet-command")
+def cmd_research_fleet_command(
+    directive: str = typer.Option(..., "--directive", "-d", help="Strategic NL directive, e.g. 'research note apps and task managers'"),
+    execute: bool = typer.Option(False, "--execute", help="Run a fleet flow per topic (default: plan only)."),
+    level: str = typer.Option("L3", "--level", help="Autopilot level when --execute (L1|L2|L3)."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """FSD Fleet — NL Command Center: decompose a directive into per-topic missions."""
+    from ..research.fleet_flow import fleet_command
+
+    result = fleet_command(directive, execute=execute, level=level)
+    if as_json:
+        _emit(result, True)
+        return
+    console.print(f"intent: {result['intent']} · {result['n_missions']} mission(s) · executed={result['executed']}")
+    for m in result["missions"]:
+        console.print(f"  - {m['topic']}")
 
 
 @research_app.command("findings")
@@ -6240,6 +6399,63 @@ app.add_typer(ytdlp_app, name="ytdlp")
 # two lines (see cli/persona_cmds.py module docstring).
 from .persona_cmds import persona_app  # noqa: E402
 app.add_typer(persona_app, name="persona")
+
+# ── reach connections (per-source cookie/key credentials) ────────────────────
+# Backs the in-app Reach Connections flow; also usable from the CLI. All
+# subcommands emit JSON so the Tauri sidecar can parse them directly.
+creds_app = typer.Typer(help="Per-source cookie/key credentials (Reddit, Xueqiu, XHS, Exa, …).")
+app.add_typer(creds_app, name="creds")
+
+
+@creds_app.command("list")
+def cmd_creds_list(as_json: bool = typer.Option(True, "--json")) -> None:
+    """Status of every cookie/key-gated source."""
+    from ..research.reach_connections import list_connections
+    _emit(list_connections(), as_json, table_title="Reach Connections")
+
+
+@creds_app.command("import")
+def cmd_creds_import(
+    source: str = typer.Option(..., "--source", "-s"),
+    browser: Optional[str] = typer.Option(None, "--browser", "-b",
+                                          help="chrome|brave|firefox|safari"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Extract a source's session cookie from the local browser, store + verify."""
+    from ..research.reach_connections import import_browser
+    _emit([import_browser(source, browser)], as_json, table_title=f"import {source}")
+
+
+@creds_app.command("save")
+def cmd_creds_save(
+    source: str = typer.Option(..., "--source", "-s"),
+    value: str = typer.Option(..., "--value", "-v",
+                              help="'name=value; ...' cookie string, JSON map, or API key"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Store a manually-pasted cookie/key for a source, then verify."""
+    from ..research.reach_connections import save_manual
+    _emit([save_manual(source, value)], as_json, table_title=f"save {source}")
+
+
+@creds_app.command("verify")
+def cmd_creds_verify(
+    source: str = typer.Option(..., "--source", "-s"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Live-test a source's stored credential."""
+    from ..research.reach_connections import verify_connection
+    _emit([verify_connection(source)], as_json, table_title=f"verify {source}")
+
+
+@creds_app.command("delete")
+def cmd_creds_delete(
+    source: str = typer.Option(..., "--source", "-s"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Disconnect a source (delete its stored credential)."""
+    from ..research.reach_connections import delete_connection
+    _emit([delete_connection(source)], as_json, table_title=f"delete {source}")
 
 
 @ingest_app.command("video")
