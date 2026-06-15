@@ -460,6 +460,64 @@ pub async fn feeds_enable(app: AppHandle, url: String, enabled: bool) -> Result<
         .map_err(err_to_string)
 }
 
+// ── Reach Connections (per-source cookie/key credentials) ────────────────────
+// Triangle: these + main.rs::generate_handler! + api.js creds* must stay in sync.
+// import/save/delete are local-machine credential ops — exposed via IPC + CLI
+// but NOT as MCP tools (so remote agents can't write credentials).
+
+/// Status of every cookie/key-gated source (Reddit, Xueqiu, XHS, Exa, …).
+#[tauri::command]
+pub async fn creds_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["creds", "list", "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Extract a source's session cookie from the local browser, store + verify.
+#[tauri::command]
+pub async fn creds_import_browser(
+    app: AppHandle,
+    source: String,
+    browser: Option<String>,
+) -> Result<Value, String> {
+    let mut args = vec!["creds", "import", "--source", &source];
+    let b = browser.unwrap_or_default();
+    if !b.is_empty() {
+        args.push("--browser");
+        args.push(&b);
+    }
+    args.push("--json");
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// Store a manually-pasted cookie string / API key for a source, then verify.
+#[tauri::command]
+pub async fn creds_save_manual(
+    app: AppHandle,
+    source: String,
+    value: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec!["creds", "save", "--source", &source, "--value", &value, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Live-test a source's stored credential.
+#[tauri::command]
+pub async fn creds_verify(app: AppHandle, source: String) -> Result<Value, String> {
+    run_cli(&app, vec!["creds", "verify", "--source", &source, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Disconnect a source (delete its stored credential).
+#[tauri::command]
+pub async fn creds_delete(app: AppHandle, source: String) -> Result<Value, String> {
+    run_cli(&app, vec!["creds", "delete", "--source", &source, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
 /// Build the CLI args vector for a topic collect. Pulled out of
 /// `start_collect` so the queue dequeue path can replay the same args
 /// shape without duplicating the assembly.
@@ -4745,11 +4803,14 @@ pub async fn prioritize_score(app: AppHandle, topic: String) -> Result<Value, St
 /// lineage + node render-cache, and return the run summary. Falls back to the
 /// heuristic debate when no LLM key is configured.
 #[tauri::command]
-pub async fn debate_topic(app: AppHandle, topic: String, rounds: Option<i64>) -> Result<Value, String> {
+pub async fn debate_topic(app: AppHandle, topic: String, rounds: Option<i64>, dynamic_roles: Option<bool>) -> Result<Value, String> {
     let rounds_s = rounds.unwrap_or(1).to_string();
-    let argv: Vec<&str> = vec![
+    let mut argv: Vec<&str> = vec![
         "research", "debate", "--topic", &topic, "--rounds", &rounds_s, "--json",
     ];
+    if dynamic_roles.unwrap_or(false) {
+        argv.push("--dynamic-roles");
+    }
     run_cli(&app, argv).await.map_err(err_to_string)
 }
 
@@ -4781,12 +4842,29 @@ pub async fn fleet_plan(app: AppHandle, topic: String) -> Result<Value, String> 
 /// Run the orchestrated fleet flow (clarify → ground → debate → synthesize) and
 /// return the per-stage timeline. `route` is quick|standard|deep (None → gate pick).
 #[tauri::command]
-pub async fn fleet_run(app: AppHandle, topic: String, route: Option<String>, rounds: Option<i64>) -> Result<Value, String> {
+pub async fn fleet_run(app: AppHandle, topic: String, route: Option<String>, rounds: Option<i64>, level: Option<String>, approved: Option<bool>) -> Result<Value, String> {
     let rounds_s = rounds.unwrap_or(1).to_string();
-    let mut argv: Vec<&str> = vec!["research", "fleet-run", "--topic", &topic, "--rounds", &rounds_s];
+    let level_s = level.unwrap_or_else(|| "L3".to_string());
+    let mut argv: Vec<&str> = vec!["research", "fleet-run", "--topic", &topic, "--rounds", &rounds_s, "--level", &level_s];
     if let Some(r) = route.as_deref() {
         argv.push("--route");
         argv.push(r);
+    }
+    if approved.unwrap_or(false) {
+        argv.push("--approved");
+    }
+    argv.push("--json");
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// NL Command Center — decompose a strategic directive into per-topic missions
+/// (plan-only by default; `execute` runs a flow per topic at `level`).
+#[tauri::command]
+pub async fn fleet_command(app: AppHandle, directive: String, execute: Option<bool>, level: Option<String>) -> Result<Value, String> {
+    let level_s = level.unwrap_or_else(|| "L3".to_string());
+    let mut argv: Vec<&str> = vec!["research", "fleet-command", "--directive", &directive, "--level", &level_s];
+    if execute.unwrap_or(false) {
+        argv.push("--execute");
     }
     argv.push("--json");
     run_cli(&app, argv).await.map_err(err_to_string)
@@ -4803,14 +4881,95 @@ pub async fn fleet_status(app: AppHandle, topic: String) -> Result<Value, String
 /// `fleet:progress` events (frontend filters on `__fleet`); `fleet:done` fires
 /// on exit. Reuses run_cli_streaming (shares the collect mutual-exclusion guard).
 #[tauri::command]
-pub async fn fleet_run_stream(app: AppHandle, topic: String, route: Option<String>, rounds: Option<i64>) -> Result<(), String> {
+pub async fn fleet_run_stream(app: AppHandle, topic: String, route: Option<String>, rounds: Option<i64>, level: Option<String>, approved: Option<bool>) -> Result<(), String> {
     let rounds_s = rounds.unwrap_or(1).to_string();
-    let mut argv: Vec<&str> = vec!["research", "fleet-run", "--topic", &topic, "--rounds", &rounds_s, "--stream"];
+    let level_s = level.unwrap_or_else(|| "L3".to_string());
+    let mut argv: Vec<&str> = vec!["research", "fleet-run", "--topic", &topic, "--rounds", &rounds_s, "--level", &level_s, "--stream"];
     if let Some(r) = route.as_deref() {
         argv.push("--route");
         argv.push(r);
     }
+    if approved.unwrap_or(false) {
+        argv.push("--approved");
+    }
     run_cli_streaming(&app, argv, "fleet:progress", "fleet:done").await.map_err(err_to_string)
+}
+
+// ── Academic Mode ────────────────────────────────────────────────────────────
+
+/// Run Academic Mode (research → synthesize → peer_review → finalize) and return
+/// the final result dict. Hard-blocks finalize when <2 academic papers grounded.
+/// `level` is L1|L2|L3; pass `approved=true` to resume an L2 pause.
+#[tauri::command]
+pub async fn academic_brief_run(
+    app: AppHandle, topic: String, query: Option<String>,
+    level: Option<String>, approved: Option<bool>, rounds: Option<i64>,
+    dynamic_roles: Option<bool>, style: Option<String>, format: Option<String>,
+) -> Result<Value, String> {
+    let level_s = level.unwrap_or_else(|| "L3".to_string());
+    let rounds_s = rounds.unwrap_or(1).to_string();
+    let style_s = style.unwrap_or_else(|| "IMRaD".to_string());
+    let fmt_s = format.unwrap_or_else(|| "markdown".to_string());
+    let mut argv: Vec<&str> = vec![
+        "research", "academic", "--topic", &topic, "--level", &level_s,
+        "--rounds", &rounds_s, "--style", &style_s, "--format", &fmt_s,
+    ];
+    if let Some(q) = query.as_deref() {
+        argv.push("--query");
+        argv.push(q);
+    }
+    if approved.unwrap_or(false) {
+        argv.push("--approved");
+    }
+    if !dynamic_roles.unwrap_or(true) {
+        argv.push("--no-dynamic-roles");
+    }
+    argv.push("--json");
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Streaming variant — forwards NDJSON stage lines as `academic:progress`
+/// events (frontend filters on `__academic`); `academic:done` fires on exit.
+#[tauri::command]
+pub async fn academic_brief_run_stream(
+    app: AppHandle, topic: String, query: Option<String>,
+    level: Option<String>, approved: Option<bool>, rounds: Option<i64>,
+    dynamic_roles: Option<bool>, style: Option<String>, format: Option<String>,
+) -> Result<(), String> {
+    let level_s = level.unwrap_or_else(|| "L3".to_string());
+    let rounds_s = rounds.unwrap_or(1).to_string();
+    let style_s = style.unwrap_or_else(|| "IMRaD".to_string());
+    let fmt_s = format.unwrap_or_else(|| "markdown".to_string());
+    let mut argv: Vec<&str> = vec![
+        "research", "academic", "--topic", &topic, "--level", &level_s,
+        "--rounds", &rounds_s, "--style", &style_s, "--format", &fmt_s, "--stream",
+    ];
+    if let Some(q) = query.as_deref() {
+        argv.push("--query");
+        argv.push(q);
+    }
+    if approved.unwrap_or(false) {
+        argv.push("--approved");
+    }
+    if !dynamic_roles.unwrap_or(true) {
+        argv.push("--no-dynamic-roles");
+    }
+    run_cli_streaming(&app, argv, "academic:progress", "academic:done").await.map_err(err_to_string)
+}
+
+/// Latest stored academic brief for a topic (read for the brief view).
+#[tauri::command]
+pub async fn academic_brief_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "academic-get", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
+}
+
+/// Hash-chained Material Passport for a topic's latest academic run (provenance
+/// view). Returns {ok, run_id, entries:[{seq, stage, payload, entry_hash}], verified}.
+#[tauri::command]
+pub async fn academic_passport_get(app: AppHandle, topic: String) -> Result<Value, String> {
+    let argv: Vec<&str> = vec!["research", "academic-passport", "--topic", &topic, "--json"];
+    run_cli(&app, argv).await.map_err(err_to_string)
 }
 
 // ── Pre-build strategy frameworks ───────────────────────────────────────────
