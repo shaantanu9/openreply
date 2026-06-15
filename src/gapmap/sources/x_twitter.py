@@ -394,7 +394,20 @@ def fetch_x(query: str, limit: int = 20) -> list[dict]:
     backends are unavailable / unconfigured.
     """
     if not os.getenv("AUTH_TOKEN"):
-        pair = ce.x_auth_from_browsers()
+        # Prefer a credential stored via Reach Connections (browser-login →
+        # import), then fall back to live browser-cookie extraction.
+        pair = None
+        try:
+            from ..core import credentials as _creds
+
+            cred = _creds.get_credential("twitter")
+            if cred and cred["cookies"].get("auth_token") and cred["cookies"].get("ct0"):
+                pair = {"auth_token": cred["cookies"]["auth_token"],
+                        "ct0": cred["cookies"]["ct0"]}
+        except Exception:
+            pair = None
+        if pair is None:
+            pair = ce.x_auth_from_browsers()
         if pair:
             os.environ.setdefault("AUTH_TOKEN", pair["auth_token"])
             os.environ.setdefault("CT0", pair["ct0"])
