@@ -33,17 +33,20 @@ def search_reddit(
     limit: int = 50,
     save: bool = True,
 ) -> list[dict]:
+    from . import _reddit_tiers as rt
+
     mode = load_config().mode
     fetch_id = log_fetch_start(
         "search",
         {"query": query, "sub": sub, "sort": sort, "time_filter": time_filter, "limit": limit, "mode": mode},
     )
     try:
-        rows = (
-            _search_auth(query, sub, sort, time_filter, limit)
-            if mode == "auth"
-            else _search_public(query, sub, sort, time_filter, limit)
-        )
+        tiers = []
+        if mode == "auth":
+            tiers.append(("praw", lambda: _search_auth(query, sub, sort, time_filter, limit)))
+        tiers.append(("cookie", lambda: rt.cookie_search(query, sub, sort, time_filter, limit)))
+        tiers.append(("rss", lambda: _search_public(query, sub, sort, time_filter, limit)))
+        rows, tier = rt.run_cascade(tiers)
         if save:
             upsert_posts(rows)
         log_fetch_end(fetch_id, rows=len(rows))

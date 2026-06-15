@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import calendar
 import html
+import os
 import random
 import re
 import time
@@ -31,6 +32,13 @@ from .config import load_config
 
 _BASE = "https://www.reddit.com"
 _TIMEOUT = 20.0
+
+
+def _proxy() -> str | None:
+    """Optional proxy for Reddit, to route around server-IP 403/blocks.
+    Set REDDIT_PROXY (or config.reddit_proxy) to e.g. http://user:pass@host:port."""
+    cfg_proxy = getattr(load_config(), "reddit_proxy", None)
+    return cfg_proxy or os.environ.get("REDDIT_PROXY") or None
 
 # Rotating real-browser UAs — Reddit's bot filter 403s bare/repeated UAs even
 # on RSS. A real-browser UA per request is what keeps the no-auth path alive.
@@ -82,7 +90,8 @@ def _get_rss(path: str, params: dict[str, Any] | None = None):
     last_err: Exception | None = None
     for attempt in range(4):
         try:
-            r = httpx.get(url, params=params, headers=_headers(), timeout=_TIMEOUT, follow_redirects=True)
+            with httpx.Client(proxy=_proxy(), timeout=_TIMEOUT, follow_redirects=True) as _c:
+                r = _c.get(url, params=params, headers=_headers())
             if r.status_code == 429:
                 time.sleep(min(float(r.headers.get("Retry-After", "2")), 30))
                 continue
@@ -101,7 +110,8 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
     (discover falls back to LLM keyword expansion). Raise (don't swallow) so
     those fallbacks trigger."""
     url = f"{_BASE}{path}"
-    r = httpx.get(url, params=params, headers=_headers(), timeout=_TIMEOUT, follow_redirects=True)
+    with httpx.Client(proxy=_proxy(), timeout=_TIMEOUT, follow_redirects=True) as _c:
+        r = _c.get(url, params=params, headers=_headers())
     r.raise_for_status()
     return r.json()
 

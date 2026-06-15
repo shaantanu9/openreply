@@ -41,18 +41,26 @@ def fetch_posts(
     time_filter: TimeFilter = "day",
     save: bool = True,
 ) -> list[dict]:
-    """Fetch posts from r/<sub>. Returns list of plain dicts; persists if save=True."""
+    """Fetch posts from r/<sub> via the tiered cascade (praw → cookie → rss).
+
+    Auto-selects the best working tier so connected users get full-fidelity rows
+    (score/comments) and no one hits a hard 403. Returns plain dicts; persists
+    if save=True.
+    """
+    from . import _reddit_tiers as rt
+
     mode = load_config().mode
     fetch_id = log_fetch_start(
         "posts",
         {"sub": sub, "sort": sort, "limit": limit, "time_filter": time_filter, "mode": mode},
     )
     try:
-        rows = (
-            _fetch_auth(sub, sort, limit, time_filter)
-            if mode == "auth"
-            else _fetch_public(sub, sort, limit, time_filter)
-        )
+        tiers = []
+        if mode == "auth":
+            tiers.append(("praw", lambda: _fetch_auth(sub, sort, limit, time_filter)))
+        tiers.append(("cookie", lambda: rt.cookie_posts(sub, sort, limit, time_filter)))
+        tiers.append(("rss", lambda: _fetch_public(sub, sort, limit, time_filter)))
+        rows, tier = rt.run_cascade(tiers)
         if save:
             upsert_posts(rows)
         log_fetch_end(fetch_id, rows=len(rows))
