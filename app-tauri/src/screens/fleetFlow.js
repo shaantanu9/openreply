@@ -57,13 +57,41 @@ async function _openPlanner(topic, host, btn, toast) {
   }).join('');
   host.innerHTML = `<div class="fleet-panel">
       <div class="fleet-panel-head"><b>🛰 Run Fleet</b>
-        <span class="fleet-mode">decision: <b>${esc(plan.mode)}</b></span></div>
+        <span class="fleet-mode">decision: <b>${esc(plan.mode)}</b></span>
+        <label class="fleet-gated-lbl" title="L2 autopilot — pause for approval before expensive stages (ground / debate)">
+          <input type="checkbox" id="fleet-gated"> gated</label></div>
       <ul class="fleet-reasons">${reasons}</ul>
       <div class="fleet-routes">${cards}</div>
+      <div class="fleet-command">
+        <input type="text" id="fleet-cmd-input" placeholder="Or tell the fleet: research X and Y…">
+        <button class="btn btn-xs btn-bordered" id="fleet-cmd-btn">Decompose</button>
+        <div class="fleet-cmd-out" id="fleet-cmd-out"></div>
+      </div>
     </div>`;
   window.refreshIcons?.();
+  const gated = () => !!host.querySelector('#fleet-gated')?.checked;
   host.querySelectorAll('.fleet-run-btn').forEach((b) => {
-    b.addEventListener('click', () => _run(topic, b.dataset.route, host, btn, toast, plan));
+    b.addEventListener('click', () => _run(topic, b.dataset.route, host, btn, toast, plan, gated() ? 'L2' : 'L3', false));
+  });
+  // NL Command Center — decompose a directive into per-topic missions (plan only).
+  const cmdBtn = host.querySelector('#fleet-cmd-btn');
+  cmdBtn?.addEventListener('click', async () => {
+    const dir = (host.querySelector('#fleet-cmd-input')?.value || '').trim();
+    const out = host.querySelector('#fleet-cmd-out');
+    if (!dir || !out) return;
+    out.innerHTML = '<span class="agent-empty">Decomposing…</span>';
+    cmdBtn.disabled = true;
+    try {
+      const res = await api.fleetCommand(dir, false);
+      const items = (res.missions || []).map((m) => {
+        const rec = (m.plan && m.plan.recommended) || '';
+        return `<li><b>${esc(m.topic)}</b>${rec ? ` <span class="fleet-mode">→ ${esc(rec)}</span>` : ''}</li>`;
+      }).join('');
+      out.innerHTML = `<div class="fleet-cmd-intent">${esc(res.intent || '')}</div>`
+        + `<ul class="fleet-cmd-list">${items || '<li>(no topics)</li>'}</ul>`;
+    } catch (e) {
+      out.innerHTML = `<span class="agent-empty">Failed: ${esc(e?.message || e)}</span>`;
+    } finally { cmdBtn.disabled = false; }
   });
 }
 
@@ -73,7 +101,7 @@ function _parseLine(line) {
   try { return JSON.parse(line); } catch { return null; }  // ignore interleaved log lines
 }
 
-async function _run(topic, route, host, btn, toast, plan) {
+async function _run(topic, route, host, btn, toast, plan, level = 'L3', approved = false) {
   if (_busy) return;
   _busy = true;
   const chosen = (plan.routes || []).find((r) => r.key === route) || { stages: [], label: route };
@@ -93,6 +121,22 @@ async function _run(topic, route, host, btn, toast, plan) {
     _busy = false;
     if (btn) { btn.disabled = false; btn.classList.remove('on'); }
     if (result) host.innerHTML = _renderTimeline({ ...result, route_label: result.route_label || chosen.label });
+    // L2 takeover gate — paused before an expensive stage; offer approval.
+    if (result && result.status === 'waiting_approval') {
+      const panel = host.querySelector('.fleet-panel');
+      if (panel) {
+        const div = document.createElement('div');
+        div.className = 'fleet-approve';
+        div.innerHTML = `<span>⏸ Paused before <b>${esc(result.next_stage_label || result.next_stage || '')}</b>`
+          + ` · ~${(result.est_remaining_tokens || 0).toLocaleString()} tok remaining.</span>`
+          + `<button class="btn btn-xs btn-primary" id="fleet-approve-btn">Approve &amp; run remaining</button>`;
+        panel.appendChild(div);
+        panel.querySelector('#fleet-approve-btn')?.addEventListener('click',
+          () => _run(topic, route, host, btn, toast, plan, 'L2', true));
+      }
+      toast('Fleet paused', `Gated before ${esc(result.next_stage_label || result.next_stage || '')} — approve to continue.`, 'info', 3600);
+      return;
+    }
     const ok = result && (result.ok !== false) && result.status !== 'error';
     toast(ok ? 'Fleet flow complete' : 'Fleet flow stopped',
       `${esc(result?.route_label || chosen.label)} · ~${(result?.cost_tokens || 0).toLocaleString()} tok`,
@@ -120,7 +164,7 @@ async function _run(topic, route, host, btn, toast, plan) {
         .then((st) => finish(st && st.run ? { ...st.run, ok: st.run.status !== 'error' } : null))
         .catch(() => finish(null));
     });
-    await api.fleetRunStream(topic, route, 1);    // resolves once spawned; events drive the rest
+    await api.fleetRunStream(topic, route, 1, level, approved);  // resolves once spawned; events drive the rest
   } catch (e) {
     cleanup();
     _busy = false;

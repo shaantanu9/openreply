@@ -195,6 +195,47 @@ def test_cost_and_transcript_with_fake_provider(db, monkeypatch):
     assert get_debate_audit(topic)["budget"]["level"] == "exceeded"
 
 
+def test_dynamic_roles_fallback_offline(db):
+    # Offline (no provider): generate_debate_roles falls back to the fixed panel,
+    # and a dynamic-roles debate still completes via the heuristic path.
+    from gapmap.research.deliberate import generate_debate_roles, PERSONAS
+    roles = generate_debate_roles("anything", n=5)
+    assert roles == PERSONAS                       # fallback when no LLM
+    from gapmap.research.debate_run import run_topic_debate
+    topic, findings = _seed_topic(db)
+    out = run_topic_debate(topic, rounds=1, dynamic_roles=True)
+    assert out["ok"] is True
+    assert out["n_verdicts"] == len(findings)
+
+
+def test_dynamic_roles_used_when_provided(db, monkeypatch):
+    # With a fake provider, generate_debate_roles returns a custom panel and
+    # deliberate runs over it (persona keys come from the generated roles).
+    import gapmap.analyze.providers.base as prov_base
+
+    class _Roles:
+        def complete(self, *, prompt, system, max_tokens=900, temperature=0.5):
+            if "review panel" in system:        # role-generation call
+                return ('[{"key":"economist","name":"Economist","bias":"cost-obsessed","focus":"unit economics"},'
+                        '{"key":"ux","name":"UX Lead","bias":"user-first","focus":"friction"},'
+                        '{"key":"contra","name":"Contrarian","bias":"challenges majority","focus":"groupthink"}]')
+            return '[{"i":0,"vote":"CONFIRM","rationale":"ok"},{"i":1,"vote":"DISPUTE","rationale":"no"},{"i":2,"vote":"ABSTAIN","rationale":"meh"}]'
+
+    monkeypatch.setattr(prov_base, "resolve_provider", lambda *a, **k: "fake")
+    monkeypatch.setattr(prov_base, "get_provider", lambda *a, **k: _Roles())
+
+    from gapmap.research.deliberate import generate_debate_roles
+    roles = generate_debate_roles("note apps", n=3)
+    assert {r["key"] for r in roles} == {"economist", "ux", "contra"}
+
+    from gapmap.research.debate_run import run_topic_debate, get_debate_audit
+    topic, _ = _seed_topic(db)
+    out = run_topic_debate(topic, rounds=1, dynamic_roles=True)
+    assert out["ok"] is True
+    personas = set(out["personas_used"])
+    assert personas and personas <= {"economist", "ux", "contra"}
+
+
 def test_redebate_replaces_prior_verdicts(db):
     from gapmap.research.debate_run import run_topic_debate
     topic, findings = _seed_topic(db)

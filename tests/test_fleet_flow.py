@@ -97,3 +97,48 @@ def test_default_route_follows_gate(db):
     out = run_fleet_flow(topic)               # no route → gate says complex → deep
     assert out["route"] == "deep"
     assert out["stages"][0]["name"] == "clarify_check"
+
+
+def test_autopilot_l1_suggest_runs_nothing(db):
+    from gapmap.research.fleet_flow import run_fleet_flow
+    topic = _seed(db)
+    out = run_fleet_flow(topic, level="L1")
+    assert out["status"] == "suggested"
+    assert out["stages"] == []                # L1 executes nothing
+    assert out["plan"]["routes"]              # but returns the plan
+
+
+def test_autopilot_l2_gates_before_expensive_stage(db):
+    from gapmap.research.fleet_flow import run_fleet_flow
+    topic = _seed(db)
+    out = run_fleet_flow(topic, route="standard", level="L2")
+    assert out["status"] == "waiting_approval"
+    assert out["next_stage"] == "debate"      # standard: clarify+synthesize ran, paused before debate
+    done = [s["name"] for s in out["stages"]]
+    assert "clarify_check" in done and "synthesize" in done and "debate" not in done
+    assert "debate" in out["pending_stages"]
+
+    # Approving runs the full route (done stages reuse cheaply).
+    approved = run_fleet_flow(topic, route="standard", level="L2", approved=True)
+    assert approved["status"] == "done"
+    assert [s["name"] for s in approved["stages"]] == ["clarify_check", "synthesize", "debate", "audit"]
+
+
+def test_autopilot_l2_deep_gates_before_ground(db):
+    from gapmap.research.fleet_flow import run_fleet_flow
+    topic = _seed(db)
+    out = run_fleet_flow(topic, route="deep", level="L2")
+    assert out["status"] == "waiting_approval"
+    assert out["next_stage"] == "ground"      # deep: gated before ground
+
+
+def test_fleet_command_decomposes_directive(db):
+    from gapmap.research.fleet_flow import fleet_command
+    _seed(db)
+    # offline → heuristic split on 'and'
+    out = fleet_command("note taking apps and task managers", execute=False)
+    assert out["ok"] is True
+    topics = [m["topic"] for m in out["missions"]]
+    assert len(topics) == 2
+    assert all("plan" in m for m in out["missions"])   # planned, not executed
+    assert out["executed"] is False

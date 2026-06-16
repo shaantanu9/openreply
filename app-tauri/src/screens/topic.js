@@ -63,6 +63,7 @@ function gapToolkitBar(topic) {
 import { loadSolutions } from './solutions.js';
 import { loadConcepts } from './concepts.js';
 import { loadPapers } from './papers.js';
+import { loadAcademic } from './academic.js';
 import { loadPrioritize } from './prioritize.js';
 import { loadMarket } from './market.js';
 import { loadPorter } from './porter.js';
@@ -1354,6 +1355,7 @@ export async function renderTopic(root, { params }) {
       <button type="button" class="tab" data-tab="concepts"><i data-lucide="lightbulb"></i> Concepts<span class="tab-freshness" id="tab-fresh-concepts"></span></button>
       <button type="button" class="tab" data-tab="research"><i data-lucide="book-open"></i> Research<span class="tab-freshness" id="tab-fresh-research"></span></button>
       <button type="button" class="tab" data-tab="papers"><i data-lucide="book-marked"></i> Papers<span class="tab-freshness" id="tab-fresh-papers"></span></button>
+      <button type="button" class="tab" data-tab="academic"><i data-lucide="graduation-cap"></i> Academic<span class="tab-freshness" id="tab-fresh-academic"></span></button>
       <button type="button" class="tab" data-tab="connections"><i data-lucide="git-merge"></i> Connect Dots<span class="tab-freshness" id="tab-fresh-connections"></span></button>
       <button type="button" class="tab" data-tab="conclusions"><i data-lucide="graduation-cap"></i> Conclusions<span class="tab-freshness" id="tab-fresh-conclusions"></span></button>
       <button type="button" class="tab" data-tab="agents"><i data-lucide="users"></i> Agents<span class="tab-freshness" id="tab-fresh-agents"></span></button>
@@ -2942,6 +2944,7 @@ export async function renderTopic(root, { params }) {
             <button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-auto" title="Toggle automatic incremental map refresh">Auto: ${mapAutoUpdate ? 'On' : 'Off'}</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-fleet" title="Run the orchestrated Fleet flow — decision gate → route → clarify → ground → debate → synthesize"><i data-lucide="satellite"></i> Run Fleet</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-debate" title="Run the 5-persona Fleet debate — tiers each finding Confirmed/Probable/Minority/Discarded and stamps trust badges"><i data-lucide="scale"></i> Debate</button>
+            <label class="map-debate-roles" title="LLM-generate a custom debate panel tailored to this topic instead of the fixed 5 personas"><input type="checkbox" id="debate-dynamic-roles"> custom panel</label>
             <button class="btn btn-warn btn-sm btn-bordered" id="debate-stale-chip" title="Findings changed since the last debate — click to re-run" style="display:none">debate stale · re-run</button>
             <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-map-rebuild"><i data-lucide="rotate-cw"></i> Rebuild</button>
             ${localStorage.getItem('gapmap.flags.reveal') === 'true' ? `<button class="btn btn-ghost btn-sm btn-bordered" id="btn-map-reveal">Reveal</button>` : ''}
@@ -4717,6 +4720,7 @@ export async function renderTopic(root, { params }) {
     agents: () => loadAgents(contentEl, topic),
     concepts: () => loadConcepts(contentEl, topic),
     papers:   () => loadPapers(contentEl, topic),
+    academic: () => loadAcademic(contentEl, topic),
     trends: () => loadTrends(contentEl, topic),
     posts: () => loadPosts(contentEl, topic),
     sentiment: () => loadSentiment(contentEl, topic),

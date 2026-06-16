@@ -225,15 +225,40 @@ _STAGE_LABEL = {
 }
 
 
+# Autopilot levels (WhyBuddy L1–L5, scoped to our domain):
+#   L1 = suggest only (plan, run nothing)
+#   L2 = gated   (run the cheap prefix, then pause for approval before the first
+#                 expensive LLM-fanout stage)
+#   L3 = auto    (run everything)
+AUTOPILOT_LEVELS = {"L1", "L2", "L3"}
+GATED_STAGES = {"ground", "debate"}   # the expensive stages an L2 gate pauses before
+
+
 def run_fleet_flow(topic: str, *, route: str | None = None,
-                   rounds: int = 1, on_stage=None) -> dict[str, Any]:
-    """Run a fleet flow over `topic`. `route` ∈ quick|standard|deep (None →
-    the decision-gate recommendation). `on_stage(stage_dict)` is called after
-    each stage for streaming. Returns the flow result with the stage timeline."""
+                   rounds: int = 1, level: str = "L3", approved: bool = False,
+                   on_stage=None) -> dict[str, Any]:
+    """Run a fleet flow over `topic`.
+
+    `route` ∈ quick|standard|deep (None → decision-gate recommendation).
+    `level` ∈ L1|L2|L3 (autopilot): L1 returns the plan and runs nothing; L2
+    runs the cheap prefix then pauses (`status='waiting_approval'`) before the
+    first expensive stage unless `approved=True`; L3 runs everything.
+    `on_stage(stage)` is called per stage for streaming. Returns the flow
+    result with the stage timeline."""
+    level = level if level in AUTOPILOT_LEVELS else "L3"
     gate = decision_gate(topic)
     if not route or route not in ROUTES:
         route = "deep" if gate["mode"] == "complex" else "standard"
     spec = ROUTES[route]
+
+    # L1 — suggest only: return the plan, execute nothing.
+    if level == "L1":
+        plan = plan_routes(topic)
+        return {"ok": True, "topic": topic, "level": "L1", "status": "suggested",
+                "route": route, "route_label": spec["label"], "mode": gate["mode"],
+                "stages": [], "cost_tokens": 0, "plan": plan,
+                "recommended": plan["recommended"]}
+
     run_id = uuid.uuid4().hex
     db.record_fleet_run(topic=topic, run_id=run_id, route=route,
                         mode=gate["mode"], signals=gate["signals"])
@@ -242,7 +267,22 @@ def run_fleet_flow(topic: str, *, route: str | None = None,
     stages: list[dict[str, Any]] = []
     total_cost = 0
     overall = "done"
-    for name in spec["stages"]:
+    for idx, name in enumerate(spec["stages"]):
+        # L2 takeover gate — pause before the first expensive stage.
+        if level == "L2" and not approved and name in GATED_STAGES:
+            pending = list(spec["stages"][idx:])
+            est = sum(_STAGE_EST.get(n, 0) for n in pending)
+            db.finish_fleet_run(run_id, status="waiting_approval",
+                                stages=stages, cost_tokens=total_cost)
+            return {
+                "ok": True, "topic": topic, "run_id": run_id, "level": "L2",
+                "status": "waiting_approval", "route": route,
+                "route_label": spec["label"], "mode": gate["mode"],
+                "stages": stages, "cost_tokens": total_cost,
+                "next_stage": name, "next_stage_label": _STAGE_LABEL.get(name, name),
+                "pending_stages": pending, "est_remaining_tokens": est,
+                "findings": ctx.get("findings", 0),
+            }
         runner = _STAGE_RUNNERS.get(name)
         if runner is None:
             continue
@@ -267,6 +307,7 @@ def run_fleet_flow(topic: str, *, route: str | None = None,
     return {
         "ok": overall != "error", "topic": topic, "run_id": run_id,
         "route": route, "route_label": spec["label"], "mode": gate["mode"],
+        "level": level, "approved": approved,
         "status": overall, "stages": stages, "cost_tokens": total_cost,
         "findings": ctx.get("findings", 0),
     }
@@ -277,4 +318,67 @@ def get_fleet_status(topic: str) -> dict[str, Any]:
     return db.fleet_status_for_topic(topic)
 
 
-__all__ = ["decision_gate", "plan_routes", "run_fleet_flow", "get_fleet_status"]
+# ── NL Command Center — strategic directive → per-topic missions ──────────────
+
+def _parse_directive(directive: str, provider: str | None = None) -> dict[str, Any]:
+    """Parse a strategic NL directive into `{intent, topics:[...]}`. Uses the LLM
+    when available; falls back to a heuristic split. Always returns ≥1 topic."""
+    import re
+    directive = (directive or "").strip()
+    if not directive:
+        return {"intent": "", "topics": []}
+    try:
+        import json as _json
+        from ..analyze.providers.base import resolve_provider, get_provider
+        prov = get_provider(resolve_provider(provider))
+        raw = prov.complete(
+            prompt=f'Directive: "{directive}". Extract the research topics.',
+            system=('Extract the distinct research topics from a strategic directive. '
+                    'Output ONLY JSON: {"intent":"<one line>","topics":["t1","t2"]} — '
+                    '1 to 6 short topic strings, no prose, no fences.'),
+            max_tokens=400, temperature=0.2,
+        )
+        cleaned = (raw or "").strip()
+        for fence in ("```json", "```"):
+            if cleaned.startswith(fence):
+                cleaned = cleaned[len(fence):].lstrip()
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].rstrip()
+        if not cleaned.startswith("{"):
+            i, j = cleaned.find("{"), cleaned.rfind("}")
+            if i >= 0 and j > i:
+                cleaned = cleaned[i:j + 1]
+        obj = _json.loads(cleaned)
+        topics = [str(t).strip() for t in (obj.get("topics") or []) if str(t).strip()][:6]
+        if topics:
+            return {"intent": str(obj.get("intent") or "")[:200], "topics": topics}
+    except Exception:
+        pass
+    # Heuristic fallback — split on conjunctions / list separators.
+    parts = [p.strip(" .") for p in re.split(r"\band\b|[,;]|\bvs\.?\b", directive, flags=re.I)]
+    topics = [p for p in parts if len(p) > 2][:6]
+    return {"intent": directive[:200], "topics": topics or [directive[:60]]}
+
+
+def fleet_command(directive: str, *, execute: bool = False, level: str = "L3",
+                  provider: str | None = None) -> dict[str, Any]:
+    """WhyBuddy NL Command Center, scoped to us: decompose a strategic directive
+    into per-topic fleet missions. `execute=False` (default) returns the plan per
+    topic only (cheap — one LLM parse); `execute=True` runs a fleet flow per
+    topic at the given autopilot level."""
+    parsed = _parse_directive(directive, provider=provider)
+    missions: list[dict[str, Any]] = []
+    for t in parsed["topics"]:
+        m: dict[str, Any] = {"topic": t}
+        if execute:
+            m["result"] = run_fleet_flow(t, level=level)
+        else:
+            m["plan"] = plan_routes(t)
+        missions.append(m)
+    return {"ok": True, "directive": directive, "intent": parsed["intent"],
+            "executed": execute, "level": level, "n_missions": len(missions),
+            "missions": missions}
+
+
+__all__ = ["decision_gate", "plan_routes", "run_fleet_flow", "get_fleet_status",
+           "fleet_command"]

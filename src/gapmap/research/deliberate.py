@@ -108,6 +108,66 @@ PERSONAS = [
 PERSONA_KEYS = [p["key"] for p in PERSONAS]
 
 
+# ── Dynamic role generation (WhyBuddy "dynamic organization") ─────────────────
+
+_ROLES_SYSTEM = (
+    "You design a review panel. Given a research topic, propose {n} DISTINCT "
+    "reviewer roles that would best stress-test findings on it. Each role needs "
+    "a sharp, non-overlapping bias. ALWAYS include one contrarian role that must "
+    "challenge the majority.\n"
+    "Output ONLY a JSON array, no prose:\n"
+    '[{{"key":"snake_case_id","name":"Short Name","bias":"one-sentence bias",'
+    '"focus":"comma-separated concerns"}}]'
+)
+
+
+def generate_debate_roles(topic: str, *, n: int = 5,
+                          provider: str | None = None) -> list[dict[str, str]]:
+    """LLM-generate a custom debate panel for `topic`. Falls back to the fixed
+    PERSONAS when no LLM is available or the response is unusable. Always
+    returns a usable, non-empty role list."""
+    n = max(3, min(7, int(n or 5)))
+    try:
+        from ..analyze.providers.base import resolve_provider, get_provider
+        prov = get_provider(resolve_provider(provider))
+        raw = prov.complete(
+            prompt=f'Topic: "{topic}". Propose the {n}-role review panel.',
+            system=_ROLES_SYSTEM.format(n=n), max_tokens=900, temperature=0.5,
+        )
+    except Exception:
+        return PERSONAS
+    cleaned = (raw or "").strip()
+    for fence in ("```json", "```"):
+        if cleaned.startswith(fence):
+            cleaned = cleaned[len(fence):].lstrip()
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3].rstrip()
+    if not cleaned.startswith("["):
+        i, j = cleaned.find("["), cleaned.rfind("]")
+        if i >= 0 and j > i:
+            cleaned = cleaned[i:j + 1]
+    try:
+        parsed = json.loads(cleaned)
+    except Exception:
+        return PERSONAS
+    roles: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for r in parsed if isinstance(parsed, list) else []:
+        if not isinstance(r, dict):
+            continue
+        key = re.sub(r"\W+", "_", str(r.get("key") or r.get("name") or "")).strip("_").lower()
+        name = str(r.get("name") or key).strip()
+        if not key or key in seen or not name:
+            continue
+        seen.add(key)
+        roles.append({
+            "key": key, "name": name,
+            "bias": str(r.get("bias") or "")[:240],
+            "focus": str(r.get("focus") or "")[:240],
+        })
+    return roles if len(roles) >= 3 else PERSONAS
+
+
 # ── Audience-cluster vote helpers ─────────────────────────────────────
 
 def _persona_conclusions_for_topic(db, topic: str) -> list[dict[str, Any]]:
@@ -489,6 +549,7 @@ def deliberate(
     provider: str | None = None,
     use_llm: bool = True,
     persist_log: bool = True,
+    roles: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Run the 5-persona debate over `items`. Returns the canonical
     output schema. Always succeeds — LLM failures fall back to a
@@ -550,11 +611,12 @@ def deliberate(
         except Exception:
             prov_obj = None
 
+    panel = roles if (roles and len(roles) >= 3) else PERSONAS  # dynamic or fixed
     cost_acc = [0]  # estimated tokens accumulated across all persona calls
     if prov_obj is not None:
         rounds = max(1, min(3, int(rounds or 1)))
         for r in range(rounds):
-            for persona in PERSONAS:
+            for persona in panel:
                 pv = _persona_vote(persona, items, topic, audience, prov_name, prov_obj,
                                    persona_conclusions, cost_acc)
                 if pv is None:

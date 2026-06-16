@@ -184,7 +184,8 @@ async function _runDebate(topic, host, btn, toast) {
     window.refreshIcons?.();
   }
   try {
-    const res = await api.debateTopic(topic, 1);
+    const dynamicRoles = !!document.getElementById('debate-dynamic-roles')?.checked;
+    const res = await api.debateTopic(topic, 1, dynamicRoles);
     if (res && res.ok === false && res.reason === 'needs_synthesis') {
       toast('Debate', 'Synthesize findings first, then run the debate.', 'info', 3200);
     } else if (res && res.ok === false) {

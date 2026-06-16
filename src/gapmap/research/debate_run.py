@@ -90,6 +90,7 @@ def run_topic_debate(
     *,
     rounds: int = 1,
     provider: str | None = None,
+    dynamic_roles: bool = False,
 ) -> dict[str, Any]:
     """Run + persist a debate over a topic's cached findings.
 
@@ -120,10 +121,11 @@ def run_topic_debate(
 
     # ── Run the pure engine (never raises; heuristic fallback on no LLM) ──
     try:
-        from .deliberate import deliberate
+        from .deliberate import deliberate, generate_debate_roles
+        roles = generate_debate_roles(topic, provider=provider) if dynamic_roles else None
         result = deliberate(
             findings, topic=topic, rounds=rounds,
-            provider=provider, use_llm=True, persist_log=True,
+            provider=provider, use_llm=True, persist_log=True, roles=roles,
         )
     except Exception as e:
         db.finish_debate_run(run_id, status="error")

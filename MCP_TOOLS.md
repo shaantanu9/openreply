@@ -163,6 +163,9 @@ Papers that cite `paper_id` via Semantic Scholar. Accepts S2 id, DOI, or arXiv i
 ### `gapmap_paper_references`
 Reference list of `paper_id` — papers this one cites. Key args: `paper_id`, `limit`. Returns: list of paper rows.
 
+### `gapmap_paper_citation_graph`
+Topic-wide builder: fetch each in-corpus paper's references via Semantic Scholar, match them to other corpus papers by DOI / arXiv / PMID, and materialize `paper_cites` edges for the paper map. Set `S2_API_KEY` for runs over a few dozen papers. Key args: `topic`, `limit` (most-cited first). Returns: `{ok, topic, papers, fetched, links, edges, errors}`.
+
 ### `gapmap_paper_extract_refs`
 Extract references from local PDF cache into structured rows. Key args: `post_id`, `force`. Returns: `{ok, n_refs, by_status, extractor}`.
 
