@@ -69,18 +69,26 @@ function cardHtml(c) {
   </div>`;
 }
 
+// Full-screen entry (sidebar route). Renders an intro then the connection cards.
 export async function renderReachConnections(contentEl) {
-  contentEl.innerHTML = '<div class="empty-state">Loading connections…</div>';
+  return mountReachConnections(contentEl, { intro: true });
+}
+
+// Reusable mount — used by the dedicated screen AND the Settings card.
+// `intro` toggles the page-level heading/blurb.
+export async function mountReachConnections(host, { intro = false } = {}) {
+  host.innerHTML = '<div class="empty-state">Loading connections…</div>';
   let conns = [];
   try {
     conns = await api.credsList();
   } catch (e) {
-    contentEl.innerHTML = `<div class="empty-big"><h3>Couldn't load connections</h3>
+    host.innerHTML = `<div class="empty-big"><h3>Couldn't load connections</h3>
       <p>${esc(e?.message || e)}</p></div>`;
     return;
   }
 
-  contentEl.innerHTML = `
+  const contentEl = host;
+  const introHtml = intro ? `
     <div style="margin-bottom:12px">
       <h2 style="margin:0 0 4px">Reach Connections</h2>
       <p class="muted" style="font-size:13px;margin:0">
@@ -88,8 +96,8 @@ export async function renderReachConnections(contentEl) {
         <b>Open login in browser</b>, sign in, then <b>Import from browser</b> —
         your session cookie is captured locally and used for collection. Nothing
         leaves your machine.</p>
-    </div>
-    <div id="reach-cards">${conns.map(cardHtml).join('')}</div>`;
+    </div>` : '';
+  host.innerHTML = `${introHtml}<div id="reach-cards">${conns.map(cardHtml).join('')}</div>`;
   window.refreshIcons?.();
 
   const setResult = (card, msg, ok) => {

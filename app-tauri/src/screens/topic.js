@@ -771,6 +771,13 @@ const ALL_SOURCES = [
   { id: 'yfinance',      label: 'Yahoo Finance (markets/commodities)', group: 'macro', defaultOn: false },
   { id: 'openmeteo',     label: 'Open-Meteo (weather)',     group: 'macro', defaultOn: false },
   { id: 'acled',         label: 'ACLED (conflict/protest events — needs ACLED creds)', group: 'macro', defaultOn: false },
+  // Agent Reach ports — Chinese platforms + neural web search. Most need a
+  // login or key; connect them in the Connections screen first. Off by default.
+  { id: 'v2ex',          label: 'V2EX (Chinese dev forum)',          group: 'reach', defaultOn: false },
+  { id: 'bilibili',      label: 'Bilibili (video search)',           group: 'reach', defaultOn: false },
+  { id: 'xueqiu',        label: 'Xueqiu 雪球 (investor posts)',       group: 'reach', defaultOn: false },
+  { id: 'xiaohongshu',   label: 'Xiaohongshu 小红书 (needs login)',   group: 'reach', defaultOn: false },
+  { id: 'exa',           label: 'Exa (neural web search — needs key)', group: 'reach', defaultOn: false },
 ];
 
 const GROUP_LABELS = {
@@ -781,6 +788,7 @@ const GROUP_LABELS = {
   apps:    'App stores',
   rss:     'RSS feeds (curated)',
   macro:   'Macro / economic / market data',
+  reach:   'Reach — Chinese platforms & web (log in via Connections)',
 };
 
 // Per-topic cache for the source-picker modal. Re-opening the modal for

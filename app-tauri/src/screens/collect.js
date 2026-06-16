@@ -633,6 +633,11 @@ export async function renderCollect(root, { params }) {
     polymarket: 'Polymarket', x: 'X / Twitter', tiktok: 'TikTok',
     instagram: 'Instagram', threads: 'Threads', pinterest: 'Pinterest',
     truthsocial: 'Truth Social', digg: 'Digg',
+    // Agent Reach ports
+    v2ex: 'V2EX', bilibili: 'Bilibili', xueqiu: 'Xueqiu 雪球',
+    xiaohongshu: 'Xiaohongshu 小红书', exa: 'Exa Search',
+    reddit_free: 'Reddit (free)', web: 'Web reader', linkedin: 'LinkedIn',
+    xiaoyuzhou: 'Xiaoyuzhou 小宇宙',
   };
   const sourceState = new Map();      // src → { status, count, error, elapsed }
   const sourcesGrid  = $('#sources-grid');
@@ -1032,6 +1037,9 @@ export async function renderCollect(root, { params }) {
     polymarket: 'Polymarket', x: 'X / Twitter', tiktok: 'TikTok',
     instagram: 'Instagram', threads: 'Threads', pinterest: 'Pinterest',
     truthsocial: 'Truth Social', digg: 'Digg',
+    v2ex: 'V2EX', bilibili: 'Bilibili', xueqiu: 'Xueqiu', xiaohongshu: 'Xiaohongshu',
+    exa: 'Exa', reddit_free: 'Reddit (free)', web: 'Web reader', linkedin: 'LinkedIn',
+    xiaoyuzhou: 'Xiaoyuzhou',
   };
   const humanizeSources = (s) => s.split(',').map(x => SRC_LABELS[x.trim()] || x.trim()).join(', ');
   let filterSummary;

@@ -6,6 +6,7 @@ import { getAppMode, setAppMode } from '../labels.js';
 import { confirmModal } from '../lib/confirmModal.js';
 import { LICENCE_CARD_SKELETON, mountLicenceCard } from '../components/LicenceCard.js';
 import { openByokModal } from './byok.js';
+import { mountReachConnections } from './reachConnections.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readScreenCache, writeScreenCache } from '../lib/screenCache.js';
 import { skelRows } from '../lib/skeleton.js';
@@ -219,6 +220,19 @@ export async function renderSettings(root) {
           collect (topic-filtered like other sources). Review sites that block bots
           (G2, Capterra) can't be used — paste their public RSS feed instead.</p>
         <div id="rss-feeds-body">
+          <div class="skel skel-line" style="width:70%;margin-top:10px"></div>
+          <div class="skel skel-line" style="width:55%"></div>
+        </div>
+      </div>
+
+      <!-- Reach Connections — per-source cookie/key logins (Reddit, XHS, Xueqiu, Exa…) -->
+      <div class="settings-card" id="card-reach-connections" style="grid-column:1/-1;order:40">
+        <h4><i data-lucide="plug"></i> Reach Connections</h4>
+        <p style="color:var(--ink-3)">Log into Reddit, Xiaohongshu, Xueqiu, LinkedIn, X,
+          Bilibili, or add an Exa key to unlock those sources. Open the login in your
+          browser, then import the session cookie — it's stored locally and never leaves
+          your machine. Full screen: <a href="#/connections">Connections</a>.</p>
+        <div id="reach-connections-body">
           <div class="skel skel-line" style="width:70%;margin-top:10px"></div>
           <div class="skel skel-line" style="width:55%"></div>
         </div>
@@ -547,6 +561,10 @@ export async function renderSettings(root) {
 
   // Custom RSS feeds card — self-contained loader (fetch → render → wire).
   loadRssFeeds(root);
+
+  // Reach Connections card — reuses the dedicated screen's mount (compact, no intro).
+  const reachBody = root.querySelector('#reach-connections-body');
+  if (reachBody) mountReachConnections(reachBody).catch(() => {});
 
   // ─── Beta feedback card wiring ───────────────────────────────────────────
   // Three escape valves so a beta tester always has SOME way to reach us:
