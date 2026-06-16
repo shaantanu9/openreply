@@ -23,15 +23,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _jina_read(url: str) -> str | None:
-    """Return clean markdown for *url* via Jina Reader, or None on failure."""
+def _jina_read(url: str, cookie: str | None = None) -> str | None:
+    """Return clean markdown for *url* via Jina Reader, or None on failure.
+    `cookie` (a 'k=v; k2=v2' string) is forwarded to the target site via Jina's
+    `x-set-cookie` header — used to read login-gated pages (e.g. LinkedIn li_at)."""
     url = (url or "").strip()
     if not url:
         return None
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    headers = {"Accept": "text/plain"}
+    if cookie:
+        headers["x-set-cookie"] = cookie
     try:
-        r = polite_get(f"{_JINA}{url}", headers={"Accept": "text/plain"})
+        r = polite_get(f"{_JINA}{url}", headers=headers)
         r.raise_for_status()
         return r.text
     except Exception:
