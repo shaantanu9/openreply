@@ -205,15 +205,13 @@ export async function mountChatPanel(container, {
 
           <div class="chat-input-row">
             <div class="chat-composer">
-              <textarea id="chat-input" rows="2" placeholder='Ask about user pain, trends, gaps, evidence, or "what should we build next?"'></textarea>
-              <div class="chat-composer-foot">
-                <span class="chat-composer-hint">Enter to send · Shift+Enter for newline</span>
-                <div class="chat-composer-actions">
-                  <button class="btn btn-primary btn-sm icon-btn" id="btn-chat-send"><i data-lucide="send-horizontal"></i> Send</button>
-                  <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-cancel" hidden><i data-lucide="square"></i> Stop</button>
-                </div>
+              <textarea id="chat-input" rows="1" placeholder='Ask about user pain, trends, gaps, evidence, or "what should we build next?"'></textarea>
+              <div class="chat-composer-actions">
+                <button class="btn btn-ghost btn-sm btn-bordered icon-btn" id="btn-chat-cancel" hidden><i data-lucide="square"></i> Stop</button>
+                <button class="btn btn-primary btn-sm icon-btn" id="btn-chat-send"><i data-lucide="send-horizontal"></i> Send</button>
               </div>
             </div>
+            <span class="chat-composer-hint">Enter to send · Shift+Enter for newline</span>
           </div>`;
     }
 
@@ -430,10 +428,10 @@ export async function mountChatPanel(container, {
     };
     sendBtn.onclick = sendFromInput;
 
-    // Auto-grow textarea — resize as the user types, max 180px (CSS-enforced).
+    // Auto-grow textarea — starts at one line, grows as you type (max 200px).
     const autoGrow = () => {
       input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+      input.style.height = Math.min(input.scrollHeight, 200) + 'px';
     };
     input.addEventListener('input', autoGrow);
     autoGrow();

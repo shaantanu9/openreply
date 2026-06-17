@@ -1799,42 +1799,32 @@ select.topics-field {
 .chat-msg-body.markdown-view pre code { background: transparent; padding: 0; }
 
 .chat-input-row {
-  display: flex; gap: 8px; align-items: stretch;
+  display: flex; flex-direction: column; gap: 6px;
   padding: 12px 18px; border-top: 1px solid var(--line);
   background: var(--surface-alt);
 }
+/* The visible rounded box — a single horizontal row: 1-line textarea on the
+   left, Send/Stop INSIDE on the right. The textarea auto-grows as you type. */
 .chat-composer {
   width: 100%;
-  border: none;            /* outer border removed — the textarea keeps its own */
-  background: transparent;
-  border-radius: 12px;
-  padding: 8px 10px 8px;
+  display: flex; align-items: flex-end; gap: 8px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); padding: 6px 8px;
 }
+.chat-composer:focus-within { border-color: var(--ink-3); background: #fff; }
 .chat-input-row textarea {
-  flex: 1; width: 100%; padding: 8px 10px; border-radius: 10px;
-  border: 1px solid var(--line); background: var(--surface-alt);
-  font-family: inherit; font-size: 13.5px; resize: none;
-  line-height: 1.5; min-height: 48px;
+  flex: 1; box-sizing: border-box;
+  padding: 7px 6px;
+  border: none; background: transparent;
+  font-family: inherit; font-size: 14px; resize: none;
+  line-height: 1.45; min-height: 22px;   /* one line */
 }
-.chat-input-row textarea:focus {
-  outline: none; border-color: var(--ink-3); background: white;
+.chat-input-row textarea:focus { outline: none; }
+.chat-composer-actions {
+  display: inline-flex; align-items: center; gap: 8px;
+  flex-shrink: 0; padding-bottom: 1px;
 }
-.chat-composer-foot {
-  margin-top: 8px;
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-}
-.chat-composer-hint { font-size: 11px; color: var(--ink-3); }
-.chat-composer-actions { display: inline-flex; align-items: center; gap: 8px; }
-
-@media (max-width: 900px) {
-  .chat-composer-foot {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .chat-composer-actions {
-    justify-content: flex-end;
-  }
-}
+.chat-composer-hint { font-size: 11px; color: var(--ink-3); padding: 0 4px; }
 
 /* --- Sources tab (topic detail) --- */
 .sources-list { display: flex; flex-direction: column; gap: 14px; padding: 4px 20px 20px; }
@@ -2621,6 +2611,8 @@ select.topics-field {
 }
 
 /* --- Keyboard shortcuts help panel --- */
+.shortcuts-tour-cta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.shortcuts-tour-note { font-size: 11.5px; color: var(--ink-3); }
 .shortcuts-list { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 18px; }
 .shortcut-row {
   display: flex; align-items: center; gap: 10px;
@@ -4229,7 +4221,7 @@ kbd {
 
 /* Auto-grow textarea — JS sets the height dynamically */
 #chat-input {
-  resize: none; min-height: 44px; max-height: 180px;
+  resize: none; min-height: 22px; max-height: 200px;
   overflow-y: auto; line-height: 1.45;
 }
 
