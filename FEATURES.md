@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-07 by Claude · **Build state:** v0.1.21 shipped (signed+notarized → `myind-ai/gapmap`); v0.1.22 pending to ship the 2026-06 work below — **219 features · 218 ✅ · 1 🟡** — incl. the new **Gap intelligence & monitoring** suite (cat 20: pain scores · people-to-reach · trend velocity · alerts · evidence verdicts · digest · GummySearch import — the competitive features from `docs/COMPETITIVE_ANALYSIS.md`) and the **Research Mode** workspace (cat 19). Only 🟡 = the planned student Reading surface (R4) · branch `multi-source`
+> **Updated:** 2026-06-18 by Claude · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -55,7 +55,7 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 
 ## 1. Data fetching — source adapters ✅
 
-**Status:** ✅ · 33 source adapters, all complete
+**Status:** ✅ · 42 source adapters (9 added in v0.1.23 — §1.7), all complete
 **Entry points:** `reddit_fetch_*` MCP tools · `gapmap fetch *` · Tauri *Collect* screen source selector
 **User flow:** caller supplies a keyword/query (+ optional source-specific params) → adapter calls the upstream API → results normalise to the canonical `posts` schema → rows persist to SQLite tagged with a `source_type`.
 **Data:** every adapter writes to the `posts` table with a distinct `source_type`; Reddit comment fetches also write `comments`.
@@ -121,6 +121,44 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 |---|---|---|---|
 | CSV/JSON/TXT/MD/PDF/VTT/SRT ingest | `gapmap_ingest_csv:2749` · CLI `ingest file` | `sources/local_file.py:543` · `research/ingest.py:87` | user-supplied |
 | Folder walker (recursive ingest) | CLI `ingest folder` | `cli/main.py` (`ingest_app`) · `sources/local_file.py:568` | user-supplied |
+
+### 1.7 International platforms + Reach Connections ✅ NEW (v0.1.23)
+Ported from Agent Reach (MIT). Login/key-gated sources unlock via the in-app
+**Reach Connections** flow (open platform login in the browser → import the
+session cookie → verify → use). Credentials live in `source_credentials`
+(local SQLite); nothing leaves the machine.
+
+| Feature | MCP tool | Adapter | `source_type` |
+|---|---|---|---|
+| V2EX (Chinese dev forum) | `gapmap_fetch_v2ex` | `sources/v2ex.py` | `v2ex` |
+| Bilibili (video search) | `gapmap_fetch_bilibili` | `sources/bilibili.py` | `bilibili` |
+| Xueqiu 雪球 (investor posts) | `gapmap_fetch_xueqiu` | `sources/xueqiu.py` | `xueqiu` |
+| Xiaohongshu 小红书 🟡 (cookie, best-effort) | `gapmap_fetch_xiaohongshu` | `sources/xiaohongshu.py` | `xiaohongshu` |
+| Exa neural web search | `gapmap_fetch_exa` | `sources/exa_search.py` (EXA_API_KEY) | `exa` |
+| Reddit free (cookie/proxy + RSS fallback) | `gapmap_fetch_reddit_free` | `sources/reddit_free.py` | `reddit_free` |
+| Web reader (any URL → markdown) | `gapmap_read_web` | `sources/web_reader.py` (Jina) | `web` |
+| LinkedIn URL reader 🟡 (Jina; deep needs MCP) | `gapmap_read_linkedin` | `sources/linkedin.py` | `linkedin` |
+| Xiaoyuzhou 小宇宙 🟡 (episode metadata) | `gapmap_read_xiaoyuzhou` | `sources/xiaoyuzhou.py` | `xiaoyuzhou` |
+
+**Reach Connections (credential flow):** Tauri *Connections* screen
+(`app-tauri/src/screens/reachConnections.js`) + a Settings card · backend
+`research/reach_connections.py` (list/verify/import_browser/save_manual/delete) ·
+store `core/credentials.py` + `source_credentials` table (`core/db.py`) ·
+multi-platform browser cookie extraction `sources/_cookie_extract.py`
+(`COOKIE_REGISTRY`) · MCP `gapmap_creds_list`/`gapmap_creds_verify` · CLI
+`gapmap creds list|import|save|verify|delete` · Tauri IPC `creds_*`
+(`src-tauri/src/commands.rs` + `main.rs`). All gated sources degrade to `[]`
++ a hint when no credential is connected.
+
+**Reddit cascade (fix):** the first-class Reddit fetch is now tiered —
+PRAW → cookie → proxy → RSS (`fetch/_reddit_tiers.py`, `fetch/posts.py`,
+`fetch/search.py`); full score/comments when a `reddit_session` cookie is
+connected, never a hard 403. Optional `REDDIT_PROXY` in `core/public_client.py`.
+
+**Known gaps (1.7):** Xiaohongshu signed-header brittleness; LinkedIn deep
+profile/company search needs the upstream linkedin-scraper MCP; Xiaoyuzhou
+audio→text transcription deferred (would reuse the Whisper pipeline) — all P2,
+each degrades to `[]` cleanly.
 
 **Known gaps:** none. Two transcript paths: (1) yt-dlp captions for any topic-collected video; (2) Whisper fallback for *caption-less* videos in the bulk YouTube source — `_whisper_transcript_rows` in `sources/youtube.py`, capped at 3 videos/collect and aggressive/rerun-only (`research/collect.py` `_run_source`). Manual paste-a-URL ingest (`sources/video.py:125`) is gated behind the `video` pyproject extra (yt-dlp / faster-whisper) — see category 15.
 
