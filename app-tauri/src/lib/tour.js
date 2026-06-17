@@ -36,6 +36,9 @@ export function isTourDone(id) {
   try { return localStorage.getItem(_doneKey(id)) === 'true'; }
   catch { return false; }
 }
+// True while any tour is on screen — used by the per-page auto-run coordinator
+// to avoid stacking a second tour on top of a running one.
+export function isTourActive() { return _active !== null; }
 function _markDone(id) {
   try { localStorage.setItem(_doneKey(id), 'true'); } catch { /* ignore */ }
 }

@@ -9,7 +9,7 @@
 // Install once at boot: initHelpPopover() (called from main.js).
 
 import { api, esc } from '../api.js';
-import { hasMiniTour, startMiniTour } from './tours.js';
+import { runPageTour, currentPageKey } from './pageTours.js';
 
 let _openEl = null;
 
@@ -62,9 +62,9 @@ async function _open(btn, slug) {
         steps.map((s) => `<li>${esc(s)}</li>`).join('')
       }</ol></div>`
     : '';
-  const tourBtn = hasMiniTour(slug)
-    ? `<button class="btn btn-primary btn-sm" id="help-pop-tour"><i data-lucide="compass"></i> Show me around</button>`
-    : '';
+  // Always offer the tour — runPageTour falls back to this page's explanation
+  // when there's no hand-authored tour, so every page can be walked through.
+  const tourBtn = `<button class="btn btn-primary btn-sm" id="help-pop-tour"><i data-lucide="compass"></i> Show me around</button>`;
   pop.innerHTML = `
     <h4>${title}</h4>
     <p>${simple}</p>
@@ -79,7 +79,9 @@ async function _open(btn, slug) {
 
   pop.querySelector('#help-pop-tour')?.addEventListener('click', () => {
     _close();
-    startMiniTour(slug);
+    // Prefer the live page key (resolves a topic's active tab); fall back to
+    // the eye button's slug.
+    runPageTour(currentPageKey() || slug, { force: true });
   });
   // Links close the popover (navigation handles the rest).
   pop.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => _close()));

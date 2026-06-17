@@ -4,6 +4,7 @@
 
 import { api, $, esc, timeAgo } from '../api.js';
 import { confirmModal } from '../lib/confirmModal.js';
+import { maybeAutoRunPageTour } from '../lib/pageTours.js';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openByokModal } from './byok.js';
 import {
@@ -4782,6 +4783,10 @@ export async function renderTopic(root, { params }) {
     );
     const moreBtn = tabsEl.querySelector('.tab-more');
     if (moreBtn) moreBtn.classList.toggle('active', !primaryTabs.has(name));
+    // Per-page first-open tutorial for this tab (best-effort, once per tab).
+    // Fires here — after activeTab + .active are set — so it runs regardless
+    // of which render path (cache fast-path / snapshot / fresh load) follows.
+    maybeAutoRunPageTour(`tab:${name}`).catch(() => {});
     // Chat ALWAYS renders fresh — never served from the DOM/HTML snapshot cache.
     // A blank or half-rendered chat that got snapshotted (e.g. saved during a
     // transient/no-key/0-height state) would otherwise be restored on every

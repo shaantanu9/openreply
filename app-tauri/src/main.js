@@ -31,6 +31,7 @@ import { applyAppModeToDocument, getAppMode } from './labels.js';
 import { renderReports } from './screens/reports.js';
 import { renderWelcome, isOnboardingComplete } from './screens/welcome.js';
 import { maybeStartFirstRunTour } from './lib/tours.js';
+import { maybeAutoRunPageTour, runPageTour, currentPageKey } from './lib/pageTours.js';
 import { mountNextStepRail } from './lib/nextStep.js';
 import { initSimpleMode } from './lib/simpleMode.js';
 import { renderActivity } from './screens/activity.js';
@@ -510,6 +511,12 @@ async function route() {
         // elements exist); fires once after onboarding, then never again.
         if (hash === '' || hash === '/' || hash.startsWith('/research-home')) {
           maybeStartFirstRunTour();
+        }
+        // Per-page first-open tutorial. Top-level routes only here — topic
+        // tabs are driven by topic.js::switchTab (one tour per tab). Best-
+        // effort, fires once per page (tracked in localStorage).
+        if (!hash.startsWith('/topic/')) {
+          maybeAutoRunPageTour().catch(() => {});
         }
         refreshIcons();
       }
@@ -1763,6 +1770,11 @@ function openShortcutsHelp() {
     <div class="modal" style="max-width:460px">
       <h3>Keyboard shortcuts</h3>
       <p class="modal-sub">The basics — more coming soon.</p>
+      <div class="shortcuts-tour-cta">
+        <button class="btn btn-primary btn-sm" id="shortcuts-tour"><i data-lucide="compass"></i> 🎓 Tour this page</button>
+        <button class="btn btn-ghost btn-bordered btn-sm" id="shortcuts-tour-gs">Replay getting-started</button>
+        <span class="shortcuts-tour-note" id="shortcuts-tour-note"></span>
+      </div>
       <div class="shortcuts-list">
         <div class="shortcut-row"><kbd>⌘ N</kbd> <span>New topic</span></div>
         <div class="shortcut-row"><kbd>⌘ ⇧ V</kbd> <span>Paste video URL to ingest</span></div>
@@ -1779,7 +1791,7 @@ function openShortcutsHelp() {
         <div class="shortcut-row"><kbd>⌘ ,</kbd> <span>Open Settings</span></div>
         <div class="shortcut-row"><kbd>⌘ /</kbd> <span>Toggle chat sidebar on Insights</span></div>
         <div class="shortcut-row"><kbd>J</kbd> / <kbd>K</kbd> <span>Next / previous hypothesis card</span></div>
-        <div class="shortcut-row"><kbd>?</kbd> <span>Open this panel</span></div>
+        <div class="shortcut-row"><kbd>?</kbd> <span>Open this panel — incl. “Tour this page”</span></div>
         <div class="shortcut-row"><kbd>Esc</kbd> <span>Close any open dialog</span></div>
         <div class="shortcut-row"><kbd>Enter</kbd> <span>Submit the focused form</span></div>
         <div class="shortcut-row"><kbd>Tab</kbd> / <kbd>⇧ Tab</kbd> <span>Cycle focus within a modal</span></div>
@@ -1800,6 +1812,21 @@ function openShortcutsHelp() {
   document.addEventListener('keydown', escHandler);
   host.addEventListener('click', e => { if (e.target === host) close(); });
   host.querySelector('#shortcuts-close').onclick = close;
+  // Tour-this-page: closes the panel, then runs the current page's tutorial.
+  host.querySelector('#shortcuts-tour').onclick = async () => {
+    const key = currentPageKey();
+    close();
+    const ok = await runPageTour(key, { force: true });
+    if (!ok) {
+      // Re-open a tiny inline note (panel was closed) — fall back to a console hint.
+      console.info('[tour] no tour available for', key || '(unknown page)');
+    }
+  };
+  host.querySelector('#shortcuts-tour-gs').onclick = () => {
+    close();
+    import('./lib/tours.js').then(({ replayGettingStarted }) => replayGettingStarted());
+  };
+  if (window.lucide?.createIcons) { try { window.lucide.createIcons(); } catch { /* ignore */ } }
   setTimeout(() => host.querySelector('#shortcuts-close')?.focus(), 10);
 }
 

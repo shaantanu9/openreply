@@ -365,8 +365,13 @@ export async function renderSettings(root) {
       <div class="settings-card" id="card-onboarding">
         <h4>Onboarding &amp; help</h4>
         <p>Re-run the welcome wizard or open the docs.</p>
+        <label class="settings-toggle">
+          <input type="checkbox" id="pref-auto-tours" ${localStorage.getItem('gapmap.pref.auto_tours') === 'false' ? '' : 'checked'} />
+          <span><b>Auto-show page tours</b><small>The first time you open a page, run a short guided tour. Press <kbd>?</kbd> anytime for “Tour this page”.</small></span>
+        </label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-reset-onboarding">Reset onboarding</button>
+          <button class="btn btn-ghost btn-sm btn-bordered" id="btn-reset-tours">Reset page tours</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-website">gapmap.myind.ai →</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-science">Methodology →</button>
           <button class="btn btn-ghost btn-sm btn-bordered" id="btn-open-readme">GitHub readme</button>
@@ -1377,6 +1382,15 @@ function wireStaticButtons(root) {
     const on = e.target.checked;
     localStorage.setItem('gapmap.pref.dense_cards', on ? 'true' : 'false');
     document.documentElement.classList.toggle('dense-cards', on);
+  });
+  root.querySelector('#pref-auto-tours')?.addEventListener('change', e => {
+    localStorage.setItem('gapmap.pref.auto_tours', e.target.checked ? 'true' : 'false');
+  });
+  root.querySelector('#btn-reset-tours')?.addEventListener('click', async (e) => {
+    const { resetAllPageTours } = await import('../lib/pageTours.js');
+    const n = resetAllPageTours();
+    const btn = e.currentTarget;
+    if (btn) { const t = btn.textContent; btn.textContent = `Reset ${n} tour${n === 1 ? '' : 's'} ✓`; setTimeout(() => { btn.textContent = t; }, 1800); }
   });
   root.querySelector('#btn-reset-onboarding')?.addEventListener('click', () => {
     try { localStorage.removeItem('gapmap.onboarding.completed'); } catch {}
