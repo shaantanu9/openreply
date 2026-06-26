@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/src/style.css" />
+<link rel="stylesheet" href="/src/openreply.css" />
 </head>
 <body>
 <div class="app">
@@ -37,6 +38,18 @@
 
     <div class="nav-section-label">Workspace</div>
     <nav class="nav" id="nav-workspace">
+      <a href="#/agents" data-route="/agents" class="active" title="Agents — your brand/niche personas">
+        <span class="nav-ic"><i data-lucide="bot"></i></span>
+        <span>Agents</span>
+      </a>
+      <a href="#/opportunities" data-route="/opportunities" title="Opportunities — conversations worth replying to">
+        <span class="nav-ic"><i data-lucide="target"></i></span>
+        <span>Opportunities</span>
+      </a>
+      <a href="#/compose" data-route="/compose" title="Compose — generate posts, threads, scripts, articles">
+        <span class="nav-ic"><i data-lucide="pen-square"></i></span>
+        <span>Compose</span>
+      </a>
       <a href="#/research-home" data-route="/research-home" data-nav-mode="research" style="display:none" title="Research Home — your academic research workspace: gather → read → synthesize → write">
         <span class="nav-ic"><i data-lucide="graduation-cap"></i></span>
         <span>Research</span>
@@ -45,7 +58,7 @@
         <span class="nav-ic"><i data-lucide="library"></i></span>
         <span>Library</span>
       </a>
-      <a href="#/" data-route="/" class="active">
+      <a href="#/dashboard" data-route="/dashboard" title="Legacy research dashboard">
         <span class="nav-ic"><i data-lucide="layout-dashboard"></i></span>
         <span>Dashboard</span>
         <span class="nav-count" id="nav-dash-count">—</span>

@@ -352,6 +352,19 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::cli_info,
+            // OpenReply
+            commands::reply_platforms,
+            commands::agent_list,
+            commands::agent_get,
+            commands::agent_create,
+            commands::agent_use,
+            commands::agent_knowledge,
+            commands::agent_refresh,
+            commands::reply_find,
+            commands::reply_list,
+            commands::reply_draft,
+            commands::content_generate,
+            commands::content_list,
             commands::list_topics,
             commands::active_collects,
             commands::overview_stats,

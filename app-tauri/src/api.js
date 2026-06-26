@@ -441,6 +441,19 @@ export const api = {
   //   - get_findings / run_query: post-collect (invalidated on collect:done) → 10s
   //   - list_exports: changes only after export button click (invalidated there) → 30s
   cliInfo:         ()        => cachedInvoke('cli_info',       null, 30000),
+  // ── OpenReply: Agents, opportunities, content ──
+  replyPlatforms:  ()        => cachedInvoke('reply_platforms', null, 300000),
+  agentList:       ()        => invoke('agent_list'),
+  agentGet:        (id)      => invoke('agent_get', { id: id || null }),
+  agentCreate:     (p)       => invoke('agent_create', p),
+  agentUse:        (id)      => invoke('agent_use', { id }),
+  agentKnowledge:  (id)      => invoke('agent_knowledge', { id: id || null }),
+  agentRefresh:    (id, deep) => invoke('agent_refresh', { id: id || null, deep: !!deep }),
+  replyFind:       (platforms, limit, noScore) => invoke('reply_find', { platforms: platforms || null, limit: limit || 15, noScore: !!noScore }),
+  replyOpps:       (status, minScore, limit) => invoke('reply_list', { status: status || null, minScore: minScore || 0, limit: limit || 30 }),
+  replyDraft:      (opportunity) => invoke('reply_draft', { opportunity }),
+  contentGenerate: (kind, platform, angle) => invoke('content_generate', { kind, platform: platform || null, angle: angle || '' }),
+  contentList:     (kind, status, limit) => invoke('content_list', { kind: kind || null, status: status || null, limit: limit || 30 }),
   listTopics:      ()        => cachedInvoke('list_topics',    null, 30000),
   // No cache — when a collect just started or the Rust process restarted
   // mid-session, a stale empty hit makes the manager screen lie about

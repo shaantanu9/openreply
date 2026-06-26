@@ -8,6 +8,9 @@ wireRedditEnrich();
 import { refreshIcons } from './icons.js';
 import { hasLlmConfigured } from './lib/llmStatus.js';
 import { renderHome, renderTopicsList } from './screens/home.js';
+import { renderAgents } from './screens/agents.js';
+import { renderOpportunities } from './screens/opportunities.js';
+import { renderCompose } from './screens/compose.js';
 import { renderTopic } from './screens/topic.js';
 import { renderCollect } from './screens/collect.js';
 // Central "Collects Manager" — running + queue + this-session history.
@@ -280,7 +283,13 @@ import { renderPersonas, renderPersona, renderAgentsDashboard, setupPersonaAutoI
 })();
 
 const routes = [
-  { match: /^\/?$/,                 render: renderHome },
+  // OpenReply — Agents is the landing screen.
+  { match: /^\/?$/,                 render: renderAgents },
+  { match: /^\/agents\/?$/,         render: renderAgents },
+  { match: /^\/opportunities\/?$/,  render: renderOpportunities },
+  { match: /^\/compose\/?$/,        render: renderCompose },
+  // Legacy research dashboard, still reachable.
+  { match: /^\/dashboard\/?$/,      render: renderHome },
   { match: /^\/welcome\/?$/,        render: renderWelcome },
   { match: /^\/topics\/?$/,         render: renderTopicsList },
   { match: /^\/topic\/([^/]+)$/,    render: renderTopic },

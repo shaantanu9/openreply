@@ -262,6 +262,135 @@ pub async fn cli_info(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["info"]).await.map_err(err_to_string)
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// OpenReply — Agents (personas), opportunities, and content generation.
+// Thin bridges to `gapmap agent|reply|content …`. Heavy work stays in Python.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// `gapmap reply platforms` — the pickable platform catalog.
+#[tauri::command]
+pub async fn reply_platforms(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "platforms", "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap agent list` — all agents (active flagged).
+#[tauri::command]
+pub async fn agent_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["agent", "list", "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap agent get` — the active agent (or a given id).
+#[tauri::command]
+pub async fn agent_get(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "get".to_string(), "--json".to_string()];
+    if let Some(i) = id {
+        if !i.is_empty() { args.push("--id".into()); args.push(i); }
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent create …`.
+#[tauri::command]
+pub async fn agent_create(
+    app: AppHandle,
+    name: String,
+    niche: Option<String>,
+    persona: Option<String>,
+    tone: Option<String>,
+    audience: Option<String>,
+    keywords: Option<String>,
+    platforms: Option<String>,
+) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "create".to_string(), "--name".to_string(), name];
+    let mut push = |flag: &str, v: Option<String>| {
+        if let Some(s) = v { if !s.is_empty() { args.push(flag.to_string()); args.push(s); } }
+    };
+    push("--niche", niche);
+    push("--persona", persona);
+    push("--tone", tone);
+    push("--audience", audience);
+    push("--keywords", keywords);
+    push("--platforms", platforms);
+    args.push("--json".to_string());
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent use <id>` — switch active agent.
+#[tauri::command]
+pub async fn agent_use(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["agent", "use", &id, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap agent knowledge` — corpus/graph/findings counts.
+#[tauri::command]
+pub async fn agent_knowledge(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "knowledge".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent refresh` — re-fetch latest niche knowledge (can be slow).
+#[tauri::command]
+pub async fn agent_refresh(app: AppHandle, id: Option<String>, deep: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "refresh".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if deep.unwrap_or(false) { args.push("--deep".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap reply find …` — scan + score opportunities.
+#[tauri::command]
+pub async fn reply_find(app: AppHandle, platforms: Option<String>, limit: Option<u32>, no_score: Option<bool>) -> Result<Value, String> {
+    let lim = limit.unwrap_or(15).to_string();
+    let mut args = vec!["reply".to_string(), "find".to_string(), "--limit".to_string(), lim, "--json".to_string()];
+    if let Some(p) = platforms { if !p.is_empty() { args.push("--platforms".into()); args.push(p); } }
+    if no_score.unwrap_or(false) { args.push("--no-score".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap reply list …` — stored opportunities.
+#[tauri::command]
+pub async fn reply_list(app: AppHandle, status: Option<String>, min_score: Option<f64>, limit: Option<u32>) -> Result<Value, String> {
+    let lim = limit.unwrap_or(30).to_string();
+    let ms = min_score.unwrap_or(0.0).to_string();
+    let mut args = vec!["reply".to_string(), "list".to_string(), "--limit".to_string(), lim, "--min-score".to_string(), ms, "--json".to_string()];
+    if let Some(s) = status { if !s.is_empty() { args.push("--status".into()); args.push(s); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap reply draft -o <id>` — generate an on-brand reply draft.
+#[tauri::command]
+pub async fn reply_draft(app: AppHandle, opportunity: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "draft", "-o", &opportunity, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap content generate <kind> …`.
+#[tauri::command]
+pub async fn content_generate(app: AppHandle, kind: String, platform: Option<String>, angle: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["content".to_string(), "generate".to_string(), kind, "--json".to_string()];
+    if let Some(p) = platform { if !p.is_empty() { args.push("--platform".into()); args.push(p); } }
+    if let Some(a) = angle { if !a.is_empty() { args.push("--angle".into()); args.push(a); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap content list …` — generated drafts.
+#[tauri::command]
+pub async fn content_list(app: AppHandle, kind: Option<String>, status: Option<String>, limit: Option<u32>) -> Result<Value, String> {
+    let lim = limit.unwrap_or(30).to_string();
+    let mut args = vec!["content".to_string(), "list".to_string(), "--limit".to_string(), lim, "--json".to_string()];
+    if let Some(k) = kind { if !k.is_empty() { args.push("--kind".into()); args.push(k); } }
+    if let Some(s) = status { if !s.is_empty() { args.push("--status".into()); args.push(s); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// Per-topic inventory for the home screen.
 ///
 /// Historically this SQL joined `topic_posts` and showed only topics that had
