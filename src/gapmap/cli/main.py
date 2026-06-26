@@ -295,6 +295,10 @@ app.add_typer(mcp_app, name="mcp")
 app.add_typer(auth_app, name="auth")
 app.add_typer(research_app, name="research")
 
+# OpenReply — social marketing reply co-pilot (find → score → draft).
+from .reply_cmds import reply_app  # noqa: E402
+app.add_typer(reply_app, name="reply")
+
 console = Console()
 
 
