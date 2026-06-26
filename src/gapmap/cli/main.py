@@ -299,6 +299,11 @@ app.add_typer(research_app, name="research")
 from .reply_cmds import reply_app  # noqa: E402
 app.add_typer(reply_app, name="reply")
 
+# OpenReply Agents (personas) + content generation.
+from .agent_cmds import agent_app, content_app  # noqa: E402
+app.add_typer(agent_app, name="agent")
+app.add_typer(content_app, name="content")
+
 console = Console()
 
 

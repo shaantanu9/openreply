@@ -1,27 +1,32 @@
-"""Brand / persona profile — the identity and voice OpenReply writes in.
+"""Brand profile — now a thin view over the *active Agent*.
 
-Single-brand for now (id="default"); the schema already supports multiple rows
-keyed by id, so multi-brand is a later, additive change.
+Kept for backward compatibility with the reply engine (`opportunity.py`,
+`generate.py`), which speaks in "brand" shape. The active agent IS the brand:
+`get_brand()` projects the agent into the brand shape the engine expects, and
+`set_brand()` updates (or creates) the active agent.
 """
 from __future__ import annotations
 
-import json
-import time
+from . import agent as _agent
 
-from .schema import init_reply_schema
 
-_BRAND_ID = "default"
+def _to_brand(a: dict | None) -> dict | None:
+    if not a:
+        return None
+    return {
+        "id": a["id"],
+        "name": a["name"],
+        "url": a.get("url", ""),
+        "description": a.get("brand") or a.get("niche") or "",
+        "keywords": a.get("keywords", []),
+        "persona": a.get("persona", ""),
+        "tone": a.get("tone", "helpful, concise, non-salesy"),
+        "platforms": a.get("platforms", ["reddit_free"]),
+    }
 
 
 def get_brand() -> dict | None:
-    db = init_reply_schema()
-    try:
-        row = dict(db["reply_brands"].get(_BRAND_ID))
-    except Exception:
-        return None
-    row["keywords"] = json.loads(row.get("keywords_json") or "[]")
-    row["platforms"] = json.loads(row.get("platforms_json") or "[]")
-    return row
+    return _to_brand(_agent.get_active_agent())
 
 
 def set_brand(
@@ -34,27 +39,26 @@ def set_brand(
     tone: str | None = None,
     platforms: list[str] | None = None,
 ) -> dict:
-    """Upsert the brand profile, merging with any existing values."""
-    db = init_reply_schema()
-    cur = get_brand() or {}
-    now = int(time.time())
-
-    def pick(new, key, default=""):
-        return new if new is not None else cur.get(key, default)
-
-    rec = {
-        "id": _BRAND_ID,
-        "name": pick(name, "name"),
-        "url": pick(url, "url"),
-        "description": pick(description, "description"),
-        "keywords_json": json.dumps(keywords if keywords is not None else cur.get("keywords", [])),
-        "persona": pick(persona, "persona"),
-        "tone": pick(tone, "tone", "helpful, concise, non-salesy"),
-        "platforms_json": json.dumps(
-            platforms if platforms is not None else cur.get("platforms", ["reddit_free"])
-        ),
-        "created_at": cur.get("created_at", now),
-        "updated_at": now,
-    }
-    db["reply_brands"].upsert(rec, pk="id")
-    return get_brand()
+    active = _agent.get_active_agent()
+    if not active:
+        return _to_brand(
+            _agent.create_agent(
+                name=name or "Default Agent",
+                niche=description or "",
+                persona=persona or "",
+                tone=tone or "helpful, concise, non-salesy",
+                keywords=keywords,
+                platforms=platforms,
+            )
+        )
+    return _to_brand(
+        _agent.update_agent(
+            active["id"],
+            name=name,
+            niche=description,
+            persona=persona,
+            tone=tone,
+            keywords=keywords,
+            platforms=platforms,
+        )
+    )

@@ -8,6 +8,18 @@ authentic, value-first reply in your brand voice. You review and post manually
 This package is purely the engine; the CLI lives in `gapmap.cli.reply_cmds`
 (`gapmap reply ...`) and reuses the existing fetch, credentials, and DB layers.
 """
-from . import brand, generate, opportunity, platforms, rules, schema  # noqa: F401
+from . import (  # noqa: F401
+    agent,
+    brand,
+    content,
+    generate,
+    opportunity,
+    platforms,
+    rules,
+    schema,
+)
 
-__all__ = ["brand", "generate", "opportunity", "platforms", "rules", "schema"]
+__all__ = [
+    "agent", "brand", "content", "generate",
+    "opportunity", "platforms", "rules", "schema",
+]

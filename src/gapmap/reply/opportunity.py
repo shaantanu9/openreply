@@ -184,8 +184,10 @@ def find_opportunities(
 
 def list_opportunities(status: str | None = None, limit: int = 50, min_score: float = 0.0) -> list[dict]:
     db = init_reply_schema()
+    from .agent import active_id
+
     where = "brand_id = ? AND score >= ?"
-    args: list = ["default", min_score]
+    args: list = [active_id() or "default", min_score]
     if status:
         where += " AND status = ?"
         args.append(status)
