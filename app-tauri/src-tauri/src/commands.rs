@@ -540,6 +540,25 @@ pub async fn reply_post_due(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "post-due", "--json"]).await.map_err(err_to_string)
 }
 
+/// `gapmap reply growth-plan` — generate + save a growth plan from the agent's
+/// goal/product/niche.
+#[tauri::command]
+pub async fn reply_growth_plan(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "growth-plan".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap reply growth-get` — the last-saved growth plan for the agent.
+#[tauri::command]
+pub async fn reply_growth_get(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "growth-get".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap content generate <kind> …`.
 /// `context_id` / `context_text` feed the follow-up kinds (the prior draft, or
 /// the thread + reply to answer); ignored by the other kinds.
