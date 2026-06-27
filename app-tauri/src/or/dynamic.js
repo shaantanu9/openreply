@@ -127,42 +127,102 @@ export async function renderOverview(view) {
   try { a = await api.agentGet(); } catch (e) {}
   if (!a) { document.getElementById("ov").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
   try { k = await api.agentKnowledge(); } catch (e) {}
-  const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
-  // Fresh agent (no knowledge yet) → guide the user to the first action.
+
   const fresh = !(k && ((k.posts || 0) > 0 || k.last_refresh_at));
   const freshBanner = fresh
-    ? `<div class="mb-5 rounded-lg bg-reddit/10 px-4 py-3 text-sm text-reddit"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> <b>New agent — no knowledge yet.</b> Click <b>↻ Refresh + learn</b> to fetch posts for your topic and distill them into the agent's brain. Then try <b>Find opportunities</b>.</div>`
+    ? `<div class="mb-5 rounded-lg bg-reddit/10 px-4 py-3 text-sm text-reddit"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> <b>New agent — no knowledge yet.</b> Click <b>Refresh + learn</b> to fetch posts for your niche and build the agent's brain, then <b>Find opportunities</b>.</div>`
     : "";
+
+  const kpi = (l, v, href, icon) => `<a href="${href}" class="${card} group block transition hover:border-reddit/50">
+      <div class="flex items-center justify-between"><div class="text-sm text-zinc-500">${l}</div><i data-lucide="${icon}" class="h-4 w-4 text-zinc-300 group-hover:text-reddit"></i></div>
+      <div class="mt-1 text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></a>`;
+  const tile = (href, icon, title, desc) => `<a href="${href}" class="${card} group flex items-start gap-3 transition hover:border-reddit/50 hover:shadow-sm">
+      <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-reddit/10 text-reddit"><i data-lucide="${icon}" class="h-4 w-4"></i></span>
+      <div class="min-w-0"><div class="font-semibold text-zinc-900 dark:text-white">${title}</div>
+        <div class="text-xs text-zinc-500 dark:text-zinc-400">${desc}</div></div></a>`;
+
   document.getElementById("ov").outerHTML =
-    head(esc(a.name), `${esc(a.niche || "")} · watching ${(a.platforms || []).join(", ")}`,
-      `<button id="ov-refresh" class="${btn}">↻ Refresh + learn</button><button id="ov-learn" class="${btn}"><i data-lucide="brain-circuit" class="inline-block h-4 w-4 align-[-2px]"></i> Learn</button><a href="#/opportunities" class="${btnP}">Find opportunities</a>`) +
+    head(esc(a.name), `${esc(a.niche || "—")} · watching ${(a.platforms || []).join(", ") || "no sources yet"}`,
+      `<button id="ov-refresh" class="${btn}"><i data-lucide="refresh-cw" class="inline-block h-4 w-4 align-[-2px]"></i> Refresh + learn</button>
+       <a href="#/opportunities" class="${btnP}"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</a>`) +
     freshBanner +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-       ${kpi("Posts collected", (k && k.posts) || 0)}
-       ${kpi("Map nodes", (k && k.graph_nodes) || 0)}
-       ${kpi("Angles", (k && k.findings) || 0)}
-       ${kpi("Last refresh", k && k.last_refresh_at ? new Date(k.last_refresh_at * 1000).toLocaleDateString() : "never")}
+       ${kpi("Posts collected", (k && k.posts) || 0, "#/knowledge", "database")}
+       ${kpi("Brain nodes", (k && k.graph_nodes) || 0, "#/knowledge", "brain")}
+       <div id="ov-kpi-opps">${kpi("New opportunities", "…", "#/opportunities", "target")}</div>
+       <div id="ov-kpi-drafts">${kpi("Drafts", "…", "#/inbox", "file-pen")}</div>
+     </div>` +
+    `<h3 class="mb-3 mt-7 text-sm font-bold uppercase tracking-wider text-zinc-400">Workspace</h3>
+     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+       ${tile("#/opportunities", "target", "Opportunities", "Find conversations to reply to")}
+       ${tile("#/inbox", "inbox", "Inbox", "Draft & manage saved replies")}
+       ${tile("#/compose", "pen-line", "Compose", "Posts, threads, scripts, articles")}
+       ${tile("#/queue", "calendar-clock", "Queue", "Schedule replies & posts")}
      </div>
-     <div class="mt-5 grid gap-4 lg:grid-cols-2">
+     <h3 class="mb-3 mt-7 text-sm font-bold uppercase tracking-wider text-zinc-400">Intelligence</h3>
+     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+       ${tile("#/knowledge", "brain", "Knowledge & Brain", "Niche graph + teach from a video")}
+       ${tile("#/keywords", "key-round", "Keywords", "What the agent scans for")}
+       ${tile("#/subreddit", "shield-check", "Subreddit Intel", "Rules, stats & posting safety")}
+       ${tile("#/learning", "brain-circuit", "Learning", "Memories & beliefs it learned")}
+       ${tile("#/analytics", "bar-chart-3", "Analytics", "KPIs, trends & drivers")}
+       ${tile("#/geo", "sparkles", "AI Visibility", "Are you cited in AI answers?")}
+     </div>
+     <h3 class="mb-3 mt-7 text-sm font-bold uppercase tracking-wider text-zinc-400">Account</h3>
+     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+       ${tile("#/connections", "plug", "Connections", "Connect Reddit, X & sources")}
+       ${tile("#/settings", "settings", "Settings", "AI provider, feeds & data")}
+       ${tile("#/pricing", "gem", "Plans", "Upgrade & billing")}
+     </div>` +
+    `<div class="mt-7 grid gap-4 lg:grid-cols-2">
+       <div class="${card}"><div class="mb-2 flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Top opportunities</b><a href="#/opportunities" class="text-xs font-semibold text-reddit">View all →</a></div>
+         <div id="ov-opps" class="space-y-2 text-sm text-zinc-500">Loading…</div></div>
+       <div class="${card}"><div class="mb-2 flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Recent drafts</b><a href="#/compose" class="text-xs font-semibold text-reddit">Compose →</a></div>
+         <div id="ov-drafts" class="space-y-2 text-sm text-zinc-500">Loading…</div></div>
+     </div>` +
+    `<div class="mt-5 grid gap-4 lg:grid-cols-2">
        <div class="${card}"><b class="text-zinc-900 dark:text-white">Voice</b><p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">${esc(a.persona || "—")}</p><p class="mt-1 text-sm text-zinc-500">Tone: ${esc(a.tone || "")}</p></div>
-       <div class="${card}"><b class="text-zinc-900 dark:text-white">Next steps</b>
-         <div class="mt-2 flex flex-col gap-2 text-sm">
-           <a href="#/opportunities" class="text-reddit">→ Find conversations to reply to</a>
-           <a href="#/compose" class="text-reddit">→ Generate a post / thread / article</a>
-           <a href="#/connections" class="text-reddit">→ Connect accounts</a></div></div>
-     </div>
-     <div id="ov-personas" class="${card} mt-5"><div class="text-sm text-zinc-500">Loading personas…</div></div>`;
+       <div id="ov-personas" class="${card}"><div class="text-sm text-zinc-500">Loading personas…</div></div>
+     </div>`;
+
   document.getElementById("ov-refresh").onclick = async (e) => {
-    e.target.textContent = "Refreshing + learning…"; e.target.disabled = true;
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Refreshing + learning…";
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
-    catch (err) { toast("Refresh failed"); e.target.textContent = "↻ Refresh + learn"; e.target.disabled = false; }
+    catch (err) { toast("Refresh failed"); b.disabled = false; b.innerHTML = html; icons(); }
   };
-  document.getElementById("ov-learn").onclick = async (e) => {
-    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Learning…";
-    try { const r = await api.agentLearn(null, 30); toast(r?.message || "Learned."); }
-    catch (err) { toast("Learn failed"); }
-    b.disabled = false; b.innerHTML = html; icons();
-  };
+
+  // Live counts + snippets (best-effort; never block the page).
+  (async () => {
+    try {
+      const r = await api.replyList("new", 0, 3, { sort: "score" });
+      const opps = r?.opportunities || [];
+      const cnt = (r && r.total != null) ? r.total : opps.length;
+      const box = document.getElementById("ov-kpi-opps");
+      if (box) box.innerHTML = kpi("New opportunities", cnt, "#/opportunities", "target");
+      const ol = document.getElementById("ov-opps");
+      if (ol) ol.innerHTML = opps.length
+        ? opps.map((o) => `<a href="#/opportunities" class="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-3 py-2 hover:border-reddit/40">
+            <div class="flex items-center gap-2"><span class="rounded ${platformBadge(o.platform)} px-1.5 py-0.5 text-[11px] font-bold">${esc(o.platform || "")}</span><span class="text-xs font-extrabold ${scoreCls(o.score || 0)}">${Math.round((o.score || 0) * 100)}</span></div>
+            <div class="mt-1 truncate text-zinc-700 dark:text-zinc-300">${esc(o.title || "(no title)")}</div></a>`).join("")
+        : `<div class="text-zinc-400">No new opportunities yet — <a href="#/opportunities" class="text-reddit">find some →</a></div>`;
+      icons();
+    } catch (e) {}
+  })();
+  (async () => {
+    try {
+      const r = await api.contentList(null, null, 3);
+      const drafts = r?.content || [];
+      const box = document.getElementById("ov-kpi-drafts");
+      if (box) box.innerHTML = kpi("Drafts", drafts.length, "#/inbox", "file-pen");
+      const dl = document.getElementById("ov-drafts");
+      if (dl) dl.innerHTML = drafts.length
+        ? drafts.map((d) => `<a href="#/compose" class="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-3 py-2 hover:border-reddit/40">
+            <div class="text-[11px] font-bold uppercase text-zinc-400">${esc(d.kind || "draft")}</div>
+            <div class="truncate text-zinc-700 dark:text-zinc-300">${esc(d.title || d.body || "")}</div></a>`).join("")
+        : `<div class="text-zinc-400">No drafts yet — <a href="#/compose" class="text-reddit">compose one →</a></div>`;
+      icons();
+    } catch (e) {}
+  })();
 
   // Knowledge personas — link single-lens learning personas so their beliefs +
   // memories + graph get blended into this agent's replies/content.
@@ -172,18 +232,18 @@ export async function renderOverview(view) {
     let all = [], linked = [];
     try { all = (await api.personaList())?.personas || []; } catch (e) {}
     try { linked = (await api.agentPersonas(a.id))?.personas || []; } catch (e) {}
-    const linkedIds = new Set(linked.map(p => p.persona_id));
-    const avail = all.filter(p => !linkedIds.has(p.id));
+    const linkedIds = new Set(linked.map((p) => p.persona_id));
+    const avail = all.filter((p) => !linkedIds.has(p.id));
     const linkedHtml = linked.length
-      ? linked.map(p => `<div class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-sm">
+      ? linked.map((p) => `<div class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-sm">
            <span class="text-zinc-700 dark:text-zinc-300"><b>${esc(p.name)}</b><span class="text-zinc-400"> · ${esc(p.lens || "—")} · ×${Number(p.weight ?? 1).toFixed(1)}</span></span>
            <button data-unlink="${p.persona_id}" class="text-xs font-semibold text-rose-500 hover:text-rose-700">Unlink</button></div>`).join("")
-      : `<div class="text-sm text-zinc-400">No personas linked yet — link one below to blend its learned knowledge into replies.</div>`;
+      : `<div class="text-sm text-zinc-400">No personas linked — link one below to blend its learned knowledge into replies.</div>`;
     const picker = avail.length
       ? `<div class="mt-3 flex flex-wrap items-end gap-2">
            <label class="text-sm"><span class="text-zinc-500">Persona</span>
              <select id="ov-plink" class="mt-1 block rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">
-               ${avail.map(p => `<option value="${p.id}">${esc(p.name)} · ${esc(p.lens || "")}</option>`).join("")}</select></label>
+               ${avail.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(p.lens || "")}</option>`).join("")}</select></label>
            <label class="text-sm"><span class="text-zinc-500">Weight</span>
              <input id="ov-pweight" type="number" step="0.5" min="0" value="1.0" class="mt-1 block w-24 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></label>
            <button id="ov-plink-btn" class="${btnP}">Link persona</button></div>`
@@ -192,7 +252,7 @@ export async function renderOverview(view) {
     box.innerHTML = `<b class="text-zinc-900 dark:text-white">Knowledge personas</b>
       <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Their beliefs, memories &amp; graph get blended into this agent's replies &amp; content.</p>
       <div class="space-y-2">${linkedHtml}</div>${picker}`;
-    box.querySelectorAll("[data-unlink]").forEach(b => b.onclick = async () => {
+    box.querySelectorAll("[data-unlink]").forEach((b) => b.onclick = async () => {
       try { await api.agentUnlinkPersona(parseInt(b.getAttribute("data-unlink")), a.id); toast("Persona unlinked"); loadPersonas(); }
       catch (e) { toast("Unlink failed"); }
     });
