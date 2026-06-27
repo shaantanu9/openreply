@@ -3098,7 +3098,49 @@ export async function renderLibrary(view) {
   load(true);
 }
 
+// ── Growth plan (turn the agent's purpose into a strategy) ──────────────────
+export async function renderGrowth(view) {
+  view.className = "w-full max-w-4xl flex-1 px-8 py-7";
+  let a = null; try { a = await api.agentGet(); } catch (e) {}
+  view.innerHTML = head("Growth plan",
+    `A Reddit-first strategy for <b>${esc(a?.name || "—")}</b>, built from its goal &amp; product.`,
+    `<button id="gp-gen" class="${btnP}">⚡ Generate plan</button>`) +
+    `<div id="gp-body" class="space-y-4"></div>`;
+  const body = view.querySelector("#gp-body");
+  const li = (arr) => (arr || []).map((x) => `<li>${esc(typeof x === "string" ? x : (x.text || JSON.stringify(x)))}</li>`).join("");
+  function render(plan) {
+    if (!plan) {
+      body.innerHTML = `<div class="${card} text-zinc-500">No plan yet. Give this agent a <b>Goal</b> + <b>Product</b> (create or edit the agent), then click <b>Generate plan</b>.</div>`;
+      return;
+    }
+    const comm = (plan.target_communities || []).map((c) =>
+      `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2"><b class="text-zinc-900 dark:text-white">${esc(c.sub ? "r/" + c.sub : "")}</b><div class="text-sm text-zinc-500">${esc(c.why || "")}</div></div>`).join("");
+    const sect = (t, inner) => inner ? `<div class="${card}"><div class="mb-1 text-sm font-semibold text-zinc-900 dark:text-white">${t}</div>${inner}</div>` : "";
+    body.innerHTML =
+      (plan.summary ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Strategy</div><p class="mt-1 text-zinc-600 dark:text-zinc-300">${esc(plan.summary)}</p></div>` : "") +
+      sect("Target communities", comm ? `<div class="grid gap-2 sm:grid-cols-2">${comm}</div>` : "") +
+      sect("Messaging angles", plan.angles?.length ? `<ul class="ml-4 list-disc space-y-1 text-zinc-600 dark:text-zinc-300">${li(plan.angles)}</ul>` : "") +
+      (plan.cadence ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Cadence</div><p class="mt-1 text-zinc-600 dark:text-zinc-300">${esc(plan.cadence)}</p></div>` : "") +
+      sect("KPIs", plan.kpis?.length ? `<ul class="ml-4 list-disc space-y-1 text-zinc-600 dark:text-zinc-300">${li(plan.kpis)}</ul>` : "") +
+      sect("First steps", plan.first_steps?.length ? `<ol class="ml-4 list-decimal space-y-1 text-zinc-600 dark:text-zinc-300">${li(plan.first_steps)}</ol>` : "");
+    icons();
+  }
+  async function load() {
+    body.innerHTML = `<div class="${card} text-zinc-500">Loading…</div>`;
+    try { const r = await api.replyGrowthGet(); render(r?.plan); }
+    catch (e) { body.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+  view.querySelector("#gp-gen").onclick = async () => {
+    const b = view.querySelector("#gp-gen"); const t = b.textContent; b.textContent = "Generating… (~10s)"; b.disabled = true;
+    try { const r = await api.replyGrowthPlan(); if (r?.error) toast(r.error); else { toast("Growth plan generated"); render(r.plan); } }
+    catch (e) { toast("Failed: " + e); }
+    b.textContent = t; b.disabled = false;
+  };
+  load();
+}
+
 export const DYN = {
+  growth: renderGrowth,
   library: renderLibrary,
   pricing: renderPricing,
   activate: renderActivate,
