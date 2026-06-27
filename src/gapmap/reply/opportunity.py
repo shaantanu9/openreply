@@ -194,6 +194,33 @@ def find_opportunities(
     }
 
 
+# Lifecycle states an opportunity can move through. `new` → freshly found;
+# `saved` → user bookmarked it (shows in Inbox); `drafted` → a reply was
+# generated (set by generate_reply); `posted` → user replied/posted manually;
+# `skipped` → user dismissed it (hidden from the default view).
+OPPORTUNITY_STATUSES = ("new", "saved", "drafted", "posted", "skipped")
+
+
+def set_status(opportunity_id: str, status: str) -> dict:
+    """Move an opportunity to a new lifecycle status. Returns the updated row,
+    or an {"error": …} dict on a bad id / status. Never raises."""
+    status = (status or "").strip().lower()
+    if status not in OPPORTUNITY_STATUSES:
+        return {"error": f"invalid status '{status}'. "
+                f"Use one of: {', '.join(OPPORTUNITY_STATUSES)}"}
+    db = init_reply_schema()
+    try:
+        db["reply_opportunities"].update(opportunity_id, {"status": status})
+    except Exception as e:
+        return {"error": f"no opportunity '{opportunity_id}': {e}"}
+    try:
+        row = dict(db["reply_opportunities"].get(opportunity_id))
+    except Exception:
+        row = {"id": opportunity_id, "status": status}
+    return {"ok": True, "id": opportunity_id, "status": status,
+            "opportunity": row}
+
+
 def list_opportunities(status: str | None = None, limit: int = 50, min_score: float = 0.0) -> list[dict]:
     db = init_reply_schema()
     from .agent import active_id

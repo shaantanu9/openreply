@@ -370,6 +370,15 @@ pub async fn reply_draft(app: AppHandle, opportunity: String) -> Result<Value, S
     run_cli(&app, vec!["reply", "draft", "-o", &opportunity, "--json"]).await.map_err(err_to_string)
 }
 
+/// `gapmap reply set-status -o <id> --status <s>` — move an opportunity through
+/// its lifecycle (save / dismiss / mark replied).
+#[tauri::command]
+pub async fn reply_set_status(app: AppHandle, opportunity: String, status: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "set-status", "-o", &opportunity, "--status", &status, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
 /// `gapmap content generate <kind> …`.
 /// `context_id` / `context_text` feed the follow-up kinds (the prior draft, or
 /// the thread + reply to answer); ignored by the other kinds.

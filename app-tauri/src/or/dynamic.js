@@ -141,30 +141,102 @@ export async function renderOverview(view) {
 }
 
 // ── Opportunities ─────────────────────────────────────────────────────────
+// Shared platform colour + lifecycle status helpers (used by Opportunities +
+// Inbox). Social platforms get their own tint now that social fetch is wired.
+function platformBadge(pf) {
+  pf = (pf || "").toLowerCase();
+  if (pf.includes("reddit")) return "bg-reddit/15 text-reddit";
+  if (pf === "hn") return "bg-amber-500/15 text-amber-500";
+  if (pf === "x" || pf === "twitter") return "bg-zinc-900/10 text-zinc-900 dark:bg-white/15 dark:text-white";
+  if (pf === "tiktok") return "bg-pink-500/15 text-pink-500";
+  if (pf === "instagram") return "bg-fuchsia-500/15 text-fuchsia-500";
+  if (pf === "threads") return "bg-zinc-500/15 text-zinc-500";
+  if (pf === "youtube") return "bg-red-500/15 text-red-500";
+  if (pf === "bluesky") return "bg-sky-500/15 text-sky-500";
+  if (pf === "mastodon") return "bg-purple-500/15 text-purple-500";
+  if (pf === "pinterest") return "bg-rose-500/15 text-rose-500";
+  if (pf === "truthsocial") return "bg-red-600/15 text-red-600";
+  return "bg-brand/15 text-brand";
+}
+const OPP_STATUS_META = {
+  new: ["new", "bg-zinc-500/15 text-zinc-400"],
+  saved: ["saved", "bg-sky-500/15 text-sky-500"],
+  drafted: ["drafted", "bg-amber-500/15 text-amber-500"],
+  posted: ["replied", "bg-emerald-500/15 text-emerald-500"],
+  skipped: ["dismissed", "bg-rose-500/15 text-rose-500"],
+};
+function statusPill(st) {
+  const [label, cls] = OPP_STATUS_META[st] || OPP_STATUS_META.new;
+  return `<span class="rounded ${cls} px-2 py-0.5 text-xs font-bold">${label}</span>`;
+}
+const OPP_FILTERS = [
+  ["active", "Active"], ["new", "New"], ["saved", "Saved"],
+  ["drafted", "Drafted"], ["posted", "Replied"], ["skipped", "Dismissed"],
+];
+const _opChip = (on) => `op-chip rounded-full px-3 py-1.5 text-xs font-semibold ${on
+  ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700 text-zinc-500"}`;
+
 export async function renderOpportunities(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   let a = null; try { a = await api.agentGet(); } catch (e) {}
   const pfs = (a?.platforms || ["reddit_free"]).join(", ");
+  let filter = "active";
   view.innerHTML = head("Opportunities",
     `Conversations worth replying to for <b>${esc(a?.name || "—")}</b>.`,
     `<button id="op-find" class="${btnP}">⚡ Find opportunities</button>`) +
-    `<div class="mb-5 flex flex-wrap items-end gap-4 ${card} text-sm">
+    `<div class="mb-4 flex flex-wrap items-end gap-4 ${card} text-sm">
        <label class="text-zinc-500">Platforms<input id="op-pf" value="${esc(pfs)}" class="mt-1 block w-64 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
        <label class="text-zinc-500">Per platform<input id="op-lim" type="number" value="15" class="mt-1 block w-20 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
-       <button id="op-saved" class="${btn}">Show saved</button>
        <span id="op-status" class="ml-auto text-zinc-400"></span></div>
+     <div id="op-filters" class="mb-4 flex flex-wrap gap-2">${OPP_FILTERS.map(([v, l]) =>
+       `<button data-filter="${v}" class="${_opChip(v === "active")}">${l}</button>`).join("")}</div>
      <div id="op-list" class="space-y-3"></div>`;
 
   const list = document.getElementById("op-list");
   const status = document.getElementById("op-status");
+
+  const emptyMsg = (f) => f === "active"
+    ? "No active opportunities. Click “Find opportunities”."
+    : `No ${OPP_STATUS_META[f]?.[0] || f} opportunities yet.`;
   const draw = (opps) => {
     list.innerHTML = opps.length ? opps.map(oppCard).join("")
-      : `<div class="${card} text-zinc-500">No opportunities yet. Click “Find opportunities”.</div>`;
-    list.querySelectorAll("[data-draft]").forEach(b => b.onclick = () => doDraft(b));
+      : `<div class="${card} text-zinc-500">${emptyMsg(filter)}</div>`;
+    list.querySelectorAll("[data-act]").forEach(b => b.onclick = () => oppAction(b));
     icons();
   };
-  async function doDraft(b) {
-    const id = b.getAttribute("data-draft");
+
+  async function load(f) {
+    filter = f;
+    view.querySelectorAll("[data-filter]").forEach(c =>
+      c.className = _opChip(c.getAttribute("data-filter") === f));
+    status.textContent = "Loading…";
+    try {
+      const statusArg = f === "active" ? null : f;
+      const r = await api.replyList(statusArg, 0, 100);
+      let opps = r?.opportunities || [];
+      if (f === "active") opps = opps.filter(o => (o.status || "new") !== "skipped");
+      status.textContent = opps.length ? `${opps.length} shown` : "";
+      draw(opps);
+    } catch (e) { status.textContent = "Failed: " + e; draw([]); }
+  }
+
+  async function oppAction(b) {
+    const act = b.getAttribute("data-act");
+    const id = b.getAttribute("data-act-id");
+    if (act === "draft") return doDraft(b, id);
+    // lifecycle: save / dismiss / replied → set status, then reload current filter
+    const target = { save: "saved", dismiss: "skipped", replied: "posted", unsave: "new" }[act];
+    if (!target) return;
+    b.disabled = true;
+    try {
+      const r = (await api.replySetStatus(id, target));
+      if (r?.error) { toast(r.error); b.disabled = false; return; }
+      toast(act === "dismiss" ? "Dismissed" : act === "replied" ? "Marked replied" : act === "save" ? "Saved to Inbox" : "Updated");
+      load(filter);
+    } catch (e) { toast("Failed: " + e); b.disabled = false; }
+  }
+
+  async function doDraft(b, id) {
     const slot = list.querySelector(`[data-slot="${CSS.escape(id)}"]`);
     b.disabled = true; b.textContent = "Drafting…";
     try {
@@ -173,11 +245,17 @@ export async function renderOpportunities(view) {
       else {
         const flag = d.compliant ? "" : `<div class="mt-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">⚠ ${esc(d.compliance_notes || "check rules")}</div>`;
         slot.innerHTML = `${flag}<textarea rows="5" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(d.text || "")}</textarea>
-          <div class="mt-1 text-xs text-zinc-400">Review, edit, then post manually.</div>`;
+          <div class="mt-1 flex items-center justify-between text-xs text-zinc-400"><span>Review, edit, then post manually.</span>
+            <button data-act="replied" data-act-id="${esc(id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 font-semibold text-emerald-500">✓ Mark replied</button></div>`;
+        slot.querySelector("[data-act]").onclick = (ev) => oppAction(ev.currentTarget);
       }
     } catch (e) { slot.innerHTML = `<div class="mt-2 text-sm text-rose-500">${esc(e)}</div>`; }
     b.disabled = false; b.textContent = "Re-draft";
   }
+
+  view.querySelectorAll("[data-filter]").forEach(c =>
+    c.onclick = () => load(c.getAttribute("data-filter")));
+
   document.getElementById("op-find").onclick = async () => {
     const pf = document.getElementById("op-pf").value.trim();
     const lim = parseInt(document.getElementById("op-lim").value, 10) || 15;
@@ -187,31 +265,37 @@ export async function renderOpportunities(view) {
       const r = await api.replyFind(pf, lim, false);
       if (r?.error) { status.textContent = r.error; draw([]); return; }
       status.textContent = `Found ${r?.found ?? 0}.`;
-      draw(r?.opportunities || []);
+      load("active");
     } catch (e) { status.textContent = "Failed: " + e; draw([]); }
   };
-  document.getElementById("op-saved").onclick = showSaved;
-  async function showSaved() {
-    status.textContent = "Loading saved…";
-    try { const r = await api.replyList(null, 0, 50); status.textContent = ""; draw(r?.opportunities || []); }
-    catch (e) { status.textContent = "Failed: " + e; }
-  }
-  showSaved();
+  load("active");
+}
+function oppActionBtns(o) {
+  const id = esc(o.id);
+  const st = o.status || "new";
+  const btnc = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
+  let out = "";
+  if (st !== "saved") out += `<button data-act="save" data-act-id="${id}" class="${btnc} text-sky-500">☆ Save</button>`;
+  else out += `<button data-act="unsave" data-act-id="${id}" class="${btnc} text-zinc-500">★ Saved</button>`;
+  out += `<button data-act="draft" data-act-id="${id}" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">${st === "drafted" ? "Re-draft" : "Draft reply"}</button>`;
+  if (st !== "posted") out += `<button data-act="replied" data-act-id="${id}" class="${btnc} text-emerald-500">✓ Replied</button>`;
+  if (st !== "skipped") out += `<button data-act="dismiss" data-act-id="${id}" class="${btnc} text-rose-500">✕ Dismiss</button>`;
+  return out;
 }
 function oppCard(o) {
   const s = Math.round((o.score || 0) * 100);
   const pf = o.platform || "";
-  const badge = pf.includes("reddit") ? "bg-reddit/15 text-reddit" : pf === "hn" ? "bg-amber-500/15 text-amber-500" : "bg-brand/15 text-brand";
   return `<div class="${card}">
     <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2"><span class="rounded ${badge} px-2 py-0.5 text-xs font-bold">${esc(pf)}</span>
-        ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}</div>
+      <div class="flex items-center gap-2"><span class="rounded ${platformBadge(pf)} px-2 py-0.5 text-xs font-bold">${esc(pf)}</span>
+        ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}
+        ${statusPill(o.status || "new")}</div>
       <span class="text-2xl font-extrabold ${scoreCls(o.score || 0)}" title="rel ${o.relevance} · intent ${o.intent} · fit ${o.fit} · eng ${o.engagement} · fresh ${o.freshness}">${s}</span></div>
     <div class="mt-1.5 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
     ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}
-    <div class="mt-3 flex gap-2">
+    <div class="mt-3 flex flex-wrap gap-2">
       ${o.url ? `<a href="${esc(o.url)}" target="_blank" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open post ↗</a>` : ""}
-      <button data-draft="${esc(o.id)}" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Draft reply</button></div>
+      ${oppActionBtns(o)}</div>
     <div data-slot="${esc(o.id)}"></div></div>`;
 }
 
@@ -762,45 +846,51 @@ export async function renderKnowledge(view) {
 }
 
 // ── Inbox (saved opportunities as a mentions feed) ──────────────────────────
+// Reuses the Opportunities card + lifecycle so Save/Draft/Replied/Dismiss behave
+// identically. The Inbox is the `status=saved` view (what you bookmarked to act on).
 export async function renderInbox(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   let a = null; try { a = await api.agentGet(); } catch (e) {}
   view.innerHTML = head("Inbox", `Saved mentions for <b>${esc(a?.name || "—")}</b>, highest score first.`,
     `<a href="#/opportunities" class="${btnP}">⚡ Find more</a>`) + `<div id="ib-list" class="space-y-3">Loading…</div>`;
   const list = document.getElementById("ib-list");
-  try {
-    const r = await api.replyList(null, 0, 50);
-    const opps = r?.opportunities || [];
-    list.innerHTML = opps.length ? opps.map(inboxRow).join("")
-      : `<div class="${card} text-zinc-500">No saved mentions yet. <a class="text-reddit underline" href="#/opportunities">Find opportunities →</a></div>`;
-    list.querySelectorAll("[data-draft]").forEach(b => b.onclick = () => inboxDraft(b, list));
-    icons();
-  } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+
+  async function load() {
+    try {
+      const r = await api.replyList("saved", 0, 50);
+      const opps = r?.opportunities || [];
+      list.innerHTML = opps.length ? opps.map(oppCard).join("")
+        : `<div class="${card} text-zinc-500">No saved mentions yet. Open <a class="text-reddit underline" href="#/opportunities">Opportunities</a> and hit ☆ Save on the ones worth replying to.</div>`;
+      list.querySelectorAll("[data-act]").forEach(b => b.onclick = () => inboxAction(b, list, load));
+      icons();
+    } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+  load();
 }
-function inboxRow(o) {
-  const s = Math.round((o.score || 0) * 100);
-  const pf = o.platform || "";
-  const badge = pf.includes("reddit") ? "bg-reddit/15 text-reddit" : pf === "hn" ? "bg-amber-500/15 text-amber-500" : "bg-brand/15 text-brand";
-  return `<div class="${card}"><div class="flex items-start justify-between gap-4"><div class="min-w-0">
-      <div class="flex items-center gap-2"><span class="rounded ${badge} px-2 py-0.5 text-xs font-bold">${esc(pf)}</span>
-        ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}
-        <span class="rounded bg-zinc-500/15 px-2 py-0.5 text-xs font-bold text-zinc-400">${esc(o.status || "new")}</span></div>
-      <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "")}</div>
-      ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}</div>
-    <div class="flex shrink-0 flex-col items-end gap-1.5"><span class="text-xl font-extrabold ${scoreCls(o.score || 0)}">${s}</span>
-      <button data-draft="${esc(o.id)}" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Draft reply</button></div></div>
-    <div data-slot="${esc(o.id)}"></div></div>`;
-}
-async function inboxDraft(b, list) {
-  const id = b.getAttribute("data-draft");
-  const slot = list.querySelector(`[data-slot="${CSS.escape(id)}"]`);
-  b.disabled = true; b.textContent = "Drafting…";
+// Shared lifecycle handler for any list of oppCards (Inbox). `reload` re-renders
+// the list so a dismissed/unsaved card drops out and status pills stay accurate.
+async function inboxAction(b, list, reload) {
+  const act = b.getAttribute("data-act");
+  const id = b.getAttribute("data-act-id");
+  if (act === "draft") {
+    const slot = list.querySelector(`[data-slot="${CSS.escape(id)}"]`);
+    b.disabled = true; b.textContent = "Drafting…";
+    try {
+      const d = await api.replyDraft(id);
+      slot.innerHTML = d?.error ? `<div class="mt-2 text-sm text-rose-500">${esc(d.error)}</div>`
+        : `${d.compliant ? "" : `<div class="mt-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">⚠ ${esc(d.compliance_notes || "check rules")}</div>`}<textarea rows="5" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(d.text || "")}</textarea>`;
+    } catch (e) { slot.innerHTML = `<div class="mt-2 text-sm text-rose-500">${esc(e)}</div>`; }
+    b.disabled = false; b.textContent = "Re-draft"; return;
+  }
+  const target = { save: "saved", unsave: "new", dismiss: "skipped", replied: "posted" }[act];
+  if (!target) return;
+  b.disabled = true;
   try {
-    const d = await api.replyDraft(id);
-    slot.innerHTML = d?.error ? `<div class="mt-2 text-sm text-rose-500">${esc(d.error)}</div>`
-      : `${d.compliant ? "" : `<div class="mt-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">⚠ ${esc(d.compliance_notes || "check rules")}</div>`}<textarea rows="5" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(d.text || "")}</textarea>`;
-  } catch (e) { slot.innerHTML = `<div class="mt-2 text-sm text-rose-500">${esc(e)}</div>`; }
-  b.disabled = false; b.textContent = "Re-draft";
+    const r = await api.replySetStatus(id, target);
+    if (r?.error) { toast(r.error); b.disabled = false; return; }
+    toast(act === "dismiss" ? "Dismissed" : act === "replied" ? "Marked replied" : "Updated");
+    reload();
+  } catch (e) { toast("Failed: " + e); b.disabled = false; }
 }
 
 // ── Analytics (derived from saved opportunities + content) ──────────────────
@@ -815,13 +905,18 @@ export async function renderAnalytics(view) {
   const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
   const rows = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
     `<div class="flex items-center justify-between text-sm"><span>${esc(k)}</span><span class="text-zinc-500">${v}</span></div>`).join("") || `<div class="text-sm text-zinc-500">none</div>`;
+  // Lifecycle funnel: found → saved → drafted → replied (dismissed is shown
+  // separately so the funnel isn't muddied by hidden ones).
   document.getElementById("an").outerHTML =
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-       ${kpi("Opportunities", opps.length)}${kpi("Drafted", byStatus(opps, "drafted"))}
-       ${kpi("Content items", content.length)}${kpi("Content drafts", byStatus(content, "draft"))}</div>
+       ${kpi("Opportunities", opps.length)}${kpi("Saved", byStatus(opps, "saved"))}
+       ${kpi("Drafted", byStatus(opps, "drafted"))}${kpi("Replied", byStatus(opps, "posted"))}</div>
+     <div class="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+       ${kpi("Dismissed", byStatus(opps, "skipped"))}${kpi("Content items", content.length)}
+       ${kpi("Content drafts", byStatus(content, "draft"))}${kpi("Posted content", byStatus(content, "posted"))}</div>
      <div class="mt-5 grid gap-4 lg:grid-cols-2">
        <div class="${card}"><b class="text-zinc-900 dark:text-white">Opportunities by platform</b><div class="mt-3 space-y-2">${rows(group(opps, "platform"))}</div></div>
-       <div class="${card}"><b class="text-zinc-900 dark:text-white">Content by type</b><div class="mt-3 space-y-2">${rows(group(content, "kind"))}</div></div></div>`;
+       <div class="${card}"><b class="text-zinc-900 dark:text-white">Opportunities by status</b><div class="mt-3 space-y-2">${rows(group(opps, "status"))}</div></div></div>`;
   icons();
 }
 

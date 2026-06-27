@@ -54,9 +54,27 @@ both pages to live data through the existing Rust command triangle.
 - `app-tauri/src/or/dynamic.js` — added `renderConnections` + `renderSettings`
   and registered both in `DYN`.
 
-## Follow-up
+## Follow-up extensions (same session)
 
-- **Prod sidecar rebuild required:** dev mode (`.venv/bin/python`) picks up the
-  restored `reach_connections.py` immediately, but the bundled PyInstaller
-  sidecar must be rebuilt + re-codesigned before a DMG release (Phase 9 of the
-  `tauri-python-sidecar-app` skill) so `creds` works in production.
+The restored backend was extended further:
+
+- **New credential kind `login_pair`** (Bluesky: handle + app password) alongside
+  cookie / api_key / public. Frontend renders a two-field connect modal and sends
+  the pair as `handle:app_password` (positional) to `save_manual`.
+- **More sources** wired into the Connections catalogue: ScrapeCreators (one key
+  unlocks TikTok/Instagram/Threads/Pinterest), Truth Social, and keyless YouTube.
+  Each connection carries `unlocks` (collection sources it feeds) + an optional
+  `note`, both surfaced on the card.
+- **"Use in collection" toggle** — `toggle_connection()` + `set_enabled`/`is_enabled`
+  in `core/credentials.py`, exposed end-to-end via a new command triangle:
+  CLI `creds toggle --source X --enabled/--disabled` → Rust `creds_toggle` (registered
+  in `main.rs`) → `api.credsToggle` → the per-card pill in `renderConnections`.
+
+## Production sidecar
+
+The bundled PyInstaller **onedir** sidecar was rebuilt + ad-hoc re-codesigned
+(launcher + 398 nested Mach-O) so `creds` works in production. Verified against
+the bundled engine: `creds list` includes the new sources + Bluesky as
+`login_pair`, and `creds toggle` returns "will be used in collection". Note: a
+DMG **release** still re-signs with Developer ID + notarizes via
+`scripts/publish-mac.sh` (this rebuild was the dev/ad-hoc pass).

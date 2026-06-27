@@ -104,6 +104,16 @@ def draft_cmd(
     _out(result, json_)
 
 
+@reply_app.command("set-status")
+def set_status_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Opportunity id (from `reply list`)"),
+    status: str = typer.Option(..., "--status", help="new | saved | drafted | posted | skipped"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Move an opportunity through its lifecycle (save / dismiss / mark replied)."""
+    _out(_opp.set_status(opportunity, status), json_)
+
+
 @reply_app.command("rules")
 def rules_cmd(
     sub: str = typer.Option(..., "--sub", help="Subreddit name (no r/)"),

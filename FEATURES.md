@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-27 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
+> **Updated:** 2026-06-27 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · §21 Opportunity lifecycle (save/draft/replied/dismiss + filter chips + social badges; Inbox=saved; Analytics funnel) · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -846,9 +846,28 @@ Refresh (`licenseRevalidate`) · Deactivate (`licenseLogout` → `#/activate`).
 > Reddit/HN reply opportunities AND generates publishable content from its live
 > niche knowledge. This category covers the **content composer** specifically
 > (the Compose + Queue screens and the `content_*` command triangle). Adjacent
-> OpenReply screens (Agents, Opportunities, Connections, Keywords, Subreddit
-> Intelligence, GEO, Alerts, Activation) are wired in `or/dynamic.js` but not yet
-> individually catalogued here.
+> OpenReply screens (Agents, Connections, Keywords, Subreddit Intelligence, GEO,
+> Alerts, Activation) are wired in `or/dynamic.js` but not yet individually
+> catalogued here. **Opportunities** is catalogued below.
+
+### Opportunity discovery + lifecycle ✅ NEW (2026-06-27)
+**Status:** ✅ Complete
+**Entry points:** Tauri *Opportunities* + *Inbox* screens · CLI `gapmap reply find` /
+`reply list` / `reply draft` / `reply set-status` · Rust `reply_find`/`reply_list`/
+`reply_draft`/`reply_set_status`.
+**User flow:** Find opportunities → engine scans the agent's platforms (Reddit live +
+any connected social via `_try_adapter`) → engagement-weighted RRF scoring →
+ranked cards. Each card moves through a lifecycle: **☆ Save** (→ Inbox) · **Draft reply**
+(LLM, on-brand, Reddit-rule compliance) · **✓ Replied** · **✕ Dismiss** (hidden from
+Active). Filter chips: Active / New / Saved / Drafted / Replied / Dismissed.
+**Implementation:** `reply/opportunity.py` (`find_opportunities`, `set_status`,
+`list_opportunities` + `OPPORTUNITY_STATUSES`) · `reply/generate.py` (draft → flips
+`drafted`) · `reply/rank.py` (RRF) · `cli/reply_cmds.py` · `src-tauri/src/commands.rs`
+(+`main.rs` register) · `or/dynamic.js` (`renderOpportunities` lifecycle+filters+badges,
+`renderInbox` saved-only, `renderAnalytics` funnel KPIs; shared `platformBadge`/`statusPill`).
+**Data:** `reply_opportunities` (status ∈ new/saved/drafted/posted/skipped) + `reply_drafts`.
+**Known gaps:** posting is manual (no auto-post by design); social opportunities surface
+only what's already been collected/connected (see §1.8 social fetch).
 
 ### Content generation — 7 structured kinds ✅ NEW
 **Status:** ✅ Complete — verified end-to-end (real LLM output for every kind)

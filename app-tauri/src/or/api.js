@@ -29,6 +29,7 @@ export const api = {
   replyList: (status, minScore, limit) =>
     call("reply_list", { status: status || null, minScore: minScore || 0, limit: limit || 30 }),
   replyDraft: (opportunity) => call("reply_draft", { opportunity }),
+  replySetStatus: (opportunity, status) => call("reply_set_status", { opportunity, status }),
   // alerts + AI-visibility (GEO)
   alertsList: () => call("alerts_list"),
   alertsAdd: (rule, channel, intentMin, scoreMin) =>

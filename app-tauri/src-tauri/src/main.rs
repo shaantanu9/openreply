@@ -363,6 +363,7 @@ fn main() {
             commands::reply_find,
             commands::reply_list,
             commands::reply_draft,
+            commands::reply_set_status,
             commands::content_generate,
             commands::content_list,
             commands::content_update,
