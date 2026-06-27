@@ -205,9 +205,24 @@ One variable (`--reddit`) retunes the whole accent.
   canonicalization, ~58 source adapters on one contract, `source_credentials` store.
 - **LLM:** 8-provider BYOK chain with auto-resolution.
 - **New OpenReply engine** (`src/gapmap/reply/`): `agent`, `brand`, `opportunity`,
-  `generate`, `content`, `rules`, `platforms`. CLI: `gapmap reply|agent|content` (all `--json`).
+  `generate`, `content`, `rules`, `platforms`, **`rank`**. CLI: `gapmap reply|agent|content` (all `--json`).
 
-Full detail: `TAURI_AND_FETCH_ARCHITECTURE.md`.
+**Ranking — engagement-weighted RRF** (`reply/rank.py`, adapted from last30days):
+each opportunity's LLM base score (relevance/intent/fit) is fused with a per-platform
+**RRF** term, a **freshness** decay, and a log-scaled **engagement** signal into a single
+`final` score: `0.55·base + 0.20·rrf + 0.15·engagement + 0.10·freshness`. Persisted to
+`reply_opportunities` (+ `engagement`/`freshness`/`rrf` columns) and used to sort the Inbox
+/ Opportunities. Verified live (Reddit) + deterministic unit test.
+
+**Backend cleanup (2026-06-27):** the gapmap Python was trimmed to the OpenReply keep-set.
+Removed **96 research modules** (papers, academic mode, product mode, and the consultancy
+frameworks: SWOT/lean-canvas/PMF/pricing/launch/OST/empathy/interviews/deliberate/…).
+**Kept:** `research/{collect, discover, gaps, prompts, prompt_store, quality_gate,
+relevance, topic_resolver, corpus_format}` + all of `core/`, `fetch/`, `sources/`,
+`analyze/providers`, `graph/`, `reply/`. Verified: `gapmap.cli.main` + `gapmap.mcp.server`
++ `reply/agent/content/discover/info` all import and run clean.
+
+Full detail: `TAURI_AND_FETCH_ARCHITECTURE.md` · removal map: `OPENREPLY_RESHAPE.md`.
 
 ---
 

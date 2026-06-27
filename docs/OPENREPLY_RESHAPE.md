@@ -19,8 +19,18 @@
 - ✅ **Nav trimmed:** 15 off-mission sidebar items hidden (`display:none`) in
   `app-tauri/index.html` — Products, Competitors, Ingest-Video, Reports, Provenance,
   Science, Playbook, OST, Empathy, Interviews, PMF, Pricing, Launch, Improve, Iterate.
-- ⏭️ **Next:** build OpenReply screens (Agents, Opportunities, Compose, Queue), then
-  Phase 3 deletions.
+- ✅ **UI port (done 2026-06-27):** OpenReply Tailwind+Lucide UI ported into the Tauri app;
+  old research frontend (`src/screens`, `lib`, `components`, `style.css`) removed.
+- ✅ **Backend cleanup (done 2026-06-27):** removed **96 research Python modules**
+  (papers/academic/product/consultancy) — `research/` trimmed from 106 → 10 files
+  (keep-set: collect, discover, gaps, prompts, prompt_store, quality_gate, relevance,
+  topic_resolver, corpus_format, __init__). `graph/semantic.py` tactic import guarded.
+  Verified: cli.main + mcp.server + reply/agent/content/discover/info all clean.
+- ✅ **Engagement-weighted RRF ranking** added (`reply/rank.py`).
+- ⏭️ **Deferred (lower priority / more coupled):** prune off-mission **source adapters**
+  (academic/econ: arxiv/pubmed/openalex/worldbank/fred/gdelt/…) from `sources/` +
+  `collect_adapter.SOURCES` + their MCP fetch tools; prune the now-inert research **CLI
+  command stubs** from `cli/main.py` (their lazy imports already fail gracefully).
 
 ---
 
