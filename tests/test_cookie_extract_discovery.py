@@ -59,6 +59,50 @@ def test_extract_reads_unencrypted_cookie(tmp_path):
     assert got == {"reddit_session": "SESSION_XYZ"}
 
 
+def _make_v10(value: str, key: bytes, db_version: int = 24) -> bytes:
+    """Encrypt a value the way Chrome does (AES-128-CBC, v10) for a round-trip test."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    iv = bytes.fromhex(ce._CHROME_IV_HEX)
+    body = value.encode()
+    if db_version >= 24:
+        body = b"\x00" * 32 + body  # Chrome 130+ prepends SHA-256(domain)
+    pad = 16 - (len(body) % 16)
+    body += bytes([pad]) * pad
+    enc = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+    return b"v10" + enc.update(body) + enc.finalize()
+
+
+def test_v10_in_process_decrypt_roundtrip():
+    # Proves the in-process AES path actually recovers the value (no openssl shell-out).
+    key = ce._derive_aes_key(b"some-keychain-secret")
+    blob = _make_v10("SESSION_SECRET_42", key, db_version=24)
+    assert ce._decrypt_v10_value(blob, key, 24) == "SESSION_SECRET_42"
+    # Legacy (db < 24): no SHA prefix to strip.
+    blob2 = _make_v10("legacy", key, db_version=20)
+    assert ce._decrypt_v10_value(blob2, key, 20) == "legacy"
+
+
+def test_extract_decrypts_v10_cookie(tmp_path):
+    # Full path: encrypted_value in the DB + key via monkeypatched Keychain.
+    import sqlite3
+    key = ce._derive_aes_key(b"kc-secret")
+    db = tmp_path / "Default" / "Network" / "Cookies"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB)")
+    conn.execute("CREATE TABLE meta (key TEXT, value TEXT)")
+    conn.execute("INSERT INTO meta VALUES ('version','24')")
+    conn.execute("INSERT INTO cookies VALUES (?,?,?,?)",
+                 [".x.com", "auth_token", "", _make_v10("AUTH_TOK", key, 24)])
+    conn.commit(); conn.close()
+
+    import unittest.mock as mock
+    with mock.patch.object(ce, "_get_chromium_encryption_key", return_value=b"kc-secret"):
+        got = ce._extract_chromium_cookies(db, "Chrome Safe Storage", "x.com", ["auth_token"])
+    assert got == {"auth_token": "AUTH_TOK"}
+
+
 def test_family_extract_picks_correct_profile(tmp_path, monkeypatch):
     base = tmp_path / "Chrome"
     # only Profile 1 has the linkedin cookies — proves we don't stop at Default

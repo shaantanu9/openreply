@@ -257,16 +257,14 @@ def import_browser(source: str, browser: str | None = None) -> dict:
         present = _ce.browsers_present()
         label = GATED[source]["label"]
         login = GATED[source].get("login_url", "")
-        where = ", ".join(present) if present else "no supported browser"
+        reason = _ce.diagnose_last()           # precise cause from the last attempt
         cookie_list = ", ".join(need) or "the session cookie"
         return {
             "source": source, "connected": False,
-            "need": need, "browsers": present, "login_url": login,
+            "need": need, "browsers": present, "login_url": login, "reason": reason,
             "message": (
-                f"No {label} session cookies found (checked {where}). "
-                f"Make sure you're logged into {label} in that browser, then retry. "
-                f"If it still fails (e.g. macOS blocked Keychain access), paste "
-                f"{cookie_list} manually via the Cookie-Editor browser extension → Export."
+                f"Couldn't auto-import {label} cookies — {reason}. "
+                f"Paste {cookie_list} manually via the Cookie-Editor browser extension → Export."
             ),
         }
     _creds.set_credential(source, cookies, kind="cookie")

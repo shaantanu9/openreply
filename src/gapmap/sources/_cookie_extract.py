@@ -183,6 +183,36 @@ _CHROME_KEY_LENGTH = 16
 _CHROME_IV_HEX = "20" * 16  # 16 space characters
 
 
+# Per-extraction diagnosis — reset by extract_cookies(), read by diagnose_last()
+# so the UI can say *why* an import returned nothing (Keychain blocked vs not
+# logged in vs unsupported v20 app-bound encryption) instead of a blank result.
+_DIAG: Dict[str, object] = {}
+
+
+def _diag_reset() -> None:
+    _DIAG.clear()
+    _DIAG.update({"dbs": 0, "rows": 0, "keychain_ok": None, "v10": 0, "v20": 0,
+                  "decrypted": 0, "unknown_prefix": False, "decrypt_failed": 0})
+
+
+def diagnose_last() -> str:
+    """One-line human reason for the most recent extract_cookies() result."""
+    d = _DIAG
+    if not d.get("dbs"):
+        return "no browser cookie store found on disk"
+    if not d.get("rows"):
+        return "browser found, but you're not logged into this site in it"
+    if d.get("v20") and not d.get("decrypted"):
+        return ("cookies use Chrome app-bound (v20) encryption, which can't be read "
+                "externally — paste them manually")
+    if d.get("keychain_ok") is False:
+        return ("macOS blocked Keychain access to the browser's cookie key — allow "
+                "it when prompted, or paste cookies manually")
+    if d.get("decrypt_failed") and not d.get("decrypted"):
+        return "found the cookies but couldn't decrypt them — paste them manually"
+    return "no matching session cookies found"
+
+
 def _get_chromium_encryption_key(service_name: str) -> Optional[bytes]:
     try:
         result = subprocess.run(
@@ -192,10 +222,18 @@ def _get_chromium_encryption_key(service_name: str) -> Optional[bytes]:
             timeout=10,
         )
         if result.returncode != 0:
+            _DIAG["keychain_ok"] = False
+            logger.info("Keychain access denied/no key for %s: %s",
+                        service_name, (result.stderr or "").strip())
             return None
         passphrase = result.stdout.strip()
-        return passphrase.encode("utf-8") if passphrase else None
+        if not passphrase:
+            _DIAG["keychain_ok"] = False
+            return None
+        _DIAG["keychain_ok"] = True
+        return passphrase.encode("utf-8")
     except Exception as exc:
+        _DIAG["keychain_ok"] = False
         logger.debug("Keychain access failed for %s: %s", service_name, exc)
         return None
 
@@ -217,34 +255,81 @@ def _remove_pkcs7_padding(data: bytes) -> Optional[bytes]:
     return data[:-pad_len]
 
 
+def _aes_cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> Optional[bytes]:
+    """AES-128-CBC, in-process via `cryptography` (robust); falls back to the
+    system `openssl` CLI only if the lib is unavailable. Avoids the LibreSSL
+    `openssl enc` quirks that made decryption silently fail in the bundled app."""
+    if not ciphertext or len(ciphertext) % 16:
+        return None
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        dec = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+        return dec.update(ciphertext) + dec.finalize()
+    except Exception:
+        try:
+            r = subprocess.run(
+                ["openssl", "enc", "-aes-128-cbc", "-d", "-K", key.hex(),
+                 "-iv", iv.hex(), "-nopad"],
+                input=ciphertext, capture_output=True, timeout=5,
+            )
+            return r.stdout if r.returncode == 0 and r.stdout else None
+        except Exception:
+            return None
+
+
+def _strip_meta(decrypted: bytes, db_version: int) -> str:
+    # Chrome 130+ (db version >= 24) prepends a 32-byte SHA-256(domain) to the value.
+    if db_version >= 24 and len(decrypted) > 32:
+        decrypted = decrypted[32:]
+    return decrypted.decode("utf-8", errors="replace")
+
+
 def _decrypt_v10_value(encrypted_value: bytes, aes_key: bytes, db_version: int) -> Optional[str]:
     ciphertext = encrypted_value[3:]  # strip 'v10' prefix
-    if not ciphertext:
+    raw = _aes_cbc_decrypt(aes_key, bytes.fromhex(_CHROME_IV_HEX), ciphertext)
+    if raw is None:
         return None
-    hex_key = aes_key.hex()
+    decrypted = _remove_pkcs7_padding(raw)
+    if decrypted is None:
+        decrypted = raw  # some builds emit unpadded values
+    return _strip_meta(decrypted, db_version)
+
+
+def _read_app_bound_key(base: Path) -> Optional[bytes]:
+    """Best-effort recover the 32-byte AES-256 key for v20 app-bound cookies from
+    `<base>/Local State` → os_crypt.app_bound_encrypted_key. On macOS the wrapped
+    key is not publicly recoverable, so this returns None unless a raw 32-byte key
+    is directly present — the diagnosis then steers the user to manual paste."""
+    ls = base / "Local State"
+    if not ls.is_file():
+        return None
     try:
-        result = subprocess.run(
-            [
-                "openssl", "enc", "-aes-128-cbc", "-d",
-                "-K", hex_key,
-                "-iv", _CHROME_IV_HEX,
-                "-nopad",
-            ],
-            input=ciphertext,
-            capture_output=True,
-            timeout=5,
-        )
-        if result.returncode != 0:
+        import base64
+        import json as _json
+        data = _json.loads(ls.read_text(encoding="utf-8"))
+        b64 = (data.get("os_crypt") or {}).get("app_bound_encrypted_key")
+        if not b64:
             return None
-        decrypted = _remove_pkcs7_padding(result.stdout)
-        if decrypted is None:
-            return None
-        # Chrome 130+ (db version >= 24): strip 32-byte SHA-256 prefix
-        if db_version >= 24 and len(decrypted) > 32:
-            decrypted = decrypted[32:]
-        return decrypted.decode("utf-8", errors="replace")
-    except Exception as exc:
-        logger.debug("openssl decryption error: %s", exc)
+        raw = base64.b64decode(b64)
+        if raw[:4] in (b"APPB", b"DPAPI"):
+            raw = raw[4:]
+        return raw if len(raw) == 32 else None
+    except Exception:
+        return None
+
+
+def _decrypt_v20_value(encrypted_value: bytes, app_bound_key: Optional[bytes],
+                       db_version: int) -> Optional[str]:
+    """AES-256-GCM: b'v20' | 12-byte nonce | ciphertext | 16-byte tag."""
+    if not app_bound_key:
+        return None
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        blob = encrypted_value[3:]
+        nonce, ct_and_tag = blob[:12], blob[12:]
+        plaintext = AESGCM(app_bound_key).decrypt(nonce, ct_and_tag, None)
+        return _strip_meta(plaintext, db_version)
+    except Exception:
         return None
 
 
@@ -264,11 +349,16 @@ def _extract_chromium_cookies(
     keychain_service: str,
     domain: str,
     cookie_names: List[str],
+    base: Optional[Path] = None,
 ) -> Optional[Dict[str, str]]:
     if not db_path.exists():
         return None
-    passphrase = _get_chromium_encryption_key(keychain_service)
-    aes_key = _derive_aes_key(passphrase) if passphrase else None
+    _DIAG["dbs"] = int(_DIAG.get("dbs", 0)) + 1
+    # Lazy crypto material — only fetched once a row actually needs decrypting,
+    # to avoid an unnecessary Keychain prompt for browsers lacking the cookie.
+    aes_key = None
+    app_bound_key = None
+    key_fetched = False
 
     tmp_fd = None
     tmp_path = None
@@ -302,18 +392,40 @@ def _extract_chromium_cookies(
         )
         params = [f"%{domain}"] + list(cookie_names)
         cursor.execute(query, params)
+        rows = cursor.fetchall()
+        _DIAG["rows"] = int(_DIAG.get("rows", 0)) + len(rows)
 
         results: Dict[str, str] = {}
-        for name, value, encrypted_value in cursor.fetchall():
+        for name, value, encrypted_value in rows:
             if value:
                 results[name] = value
                 continue
-            if encrypted_value and encrypted_value[:3] == b"v10":
-                if aes_key is None:
-                    continue
-                decrypted = _decrypt_v10_value(encrypted_value, aes_key, db_version)
-                if decrypted:
-                    results[name] = decrypted
+            prefix = encrypted_value[:3] if encrypted_value else b""
+            if not key_fetched:  # lazy: fetch keys only when first needed
+                pw = _get_chromium_encryption_key(keychain_service)
+                aes_key = _derive_aes_key(pw) if pw else None
+                app_bound_key = _read_app_bound_key(base) if base else None
+                key_fetched = True
+            if prefix == b"v10":
+                _DIAG["v10"] = int(_DIAG.get("v10", 0)) + 1
+                dec = _decrypt_v10_value(encrypted_value, aes_key, db_version) if aes_key else None
+                if dec:
+                    results[name] = dec
+                    _DIAG["decrypted"] = int(_DIAG.get("decrypted", 0)) + 1
+                else:
+                    _DIAG["decrypt_failed"] = int(_DIAG.get("decrypt_failed", 0)) + 1
+            elif prefix == b"v20":
+                _DIAG["v20"] = int(_DIAG.get("v20", 0)) + 1
+                dec = _decrypt_v20_value(encrypted_value, app_bound_key, db_version)
+                if dec:
+                    results[name] = dec
+                    _DIAG["decrypted"] = int(_DIAG.get("decrypted", 0)) + 1
+                else:
+                    _DIAG["decrypt_failed"] = int(_DIAG.get("decrypt_failed", 0)) + 1
+            elif encrypted_value:
+                _DIAG["unknown_prefix"] = True
+                logger.warning("Unknown cookie encryption prefix %r for %s (%s)",
+                               prefix, name, keychain_service)
         conn.close()
         return results if results else None
     except Exception as exc:
@@ -333,27 +445,36 @@ _CHROMIUM_BROWSERS: Dict[str, tuple] = {
     "chrome": (_HOME / "Google" / "Chrome", "Chrome Safe Storage"),
     "brave": (_HOME / "BraveSoftware" / "Brave-Browser", "Brave Safe Storage"),
     "edge": (_HOME / "Microsoft Edge", "Microsoft Edge Safe Storage"),
+    "vivaldi": (_HOME / "Vivaldi", "Vivaldi Safe Storage"),
+    "opera": (_HOME / "com.operasoftware.Opera", "Opera Safe Storage"),
+    "arc": (_HOME / "Arc" / "User Data", "Arc Safe Storage"),
+    "chromium": (_HOME / "Chromium", "Chromium Safe Storage"),
 }
+
+
+def _profile_dirs(base: Path) -> List[Path]:
+    """Profile dirs to scan: Default, the base itself (Opera's flat layout), then
+    every `Profile N` newest-first (mtime, so Profile 10 doesn't lose to Profile 2)."""
+    dirs = [base / "Default", base]
+    try:
+        profs = [c for c in base.iterdir() if c.is_dir() and c.name.startswith("Profile ")]
+        dirs += sorted(profs, key=lambda p: p.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
+    return dirs
 
 
 def _chromium_cookie_dbs(base: Path) -> List[Path]:
     """Every cookie DB across a Chromium install's profiles. Chrome 86+ moved the
     store to `<Profile>/Network/Cookies`; older builds used `<Profile>/Cookies`.
-    Scans Default + every `Profile N` so multi-profile users are covered."""
+    Covers Default + every `Profile N` + Opera's flat base layout."""
     out: List[Path] = []
     if not base.is_dir():
         return out
-    try:
-        profiles = ["Default"] + sorted(
-            c.name for c in base.iterdir()
-            if c.is_dir() and c.name.startswith("Profile ")
-        )
-    except OSError:
-        profiles = ["Default"]
     seen: set = set()
-    for prof in profiles:
+    for prof in _profile_dirs(base):
         for sub in ("Network/Cookies", "Cookies"):  # modern first, then legacy
-            p = base / prof / sub
+            p = prof / sub
             if p.exists() and p not in seen:
                 seen.add(p)
                 out.append(p)
@@ -372,7 +493,7 @@ def _chromium_family_cookies(
     base, keyservice = spec
     for db in _chromium_cookie_dbs(base):
         for domain in domains:
-            result = _extract_chromium_cookies(db, keyservice, domain, names)
+            result = _extract_chromium_cookies(db, keyservice, domain, names, base=base)
             if result:
                 return result
     return None
@@ -561,7 +682,7 @@ def x_auth_from_browsers() -> Optional[dict]:
 #: domain/name parametrised; this registry just maps each gated source to the
 #: session cookies that prove a logged-in browser session.
 COOKIE_REGISTRY: Dict[str, tuple] = {
-    "reddit": (["reddit.com"], ["reddit_session"]),
+    "reddit": (["reddit.com"], ["reddit_session", "token_v2"]),
     "twitter": (["x.com", "twitter.com"], ["auth_token", "ct0"]),
     "xiaohongshu": (["xiaohongshu.com"], ["web_session", "a1", "webId"]),
     "linkedin": (["linkedin.com"], ["li_at", "JSESSIONID"]),
@@ -634,22 +755,27 @@ def extract_cookies(source: str, browser: str | None = None) -> Dict[str, str]:
     manual paste when this returns {}. Pass `browser` to restrict to one of
     chrome/brave/firefox/safari.
     """
+    _diag_reset()
     spec = COOKIE_REGISTRY.get(source)
     if not spec:
         return {}
     domains, names = spec
-    readers = (
-        [_BROWSER_READERS[browser]]
-        if browser in _BROWSER_READERS
-        else list(_BROWSER_READERS.values())
-    )
+    # Every Chromium-family browser (chrome/brave/edge/vivaldi/opera/arc/chromium)
+    # plus Firefox + Safari. `browser` restricts to one.
+    all_readers: Dict[str, object] = {
+        b: (lambda d, n, _b=b: _chromium_family_cookies(_b, d, n))
+        for b in _CHROMIUM_BROWSERS
+    }
+    all_readers["firefox"] = _firefox_cookies
+    all_readers["safari"] = _safari_cookies
+    readers = [all_readers[browser]] if browser in all_readers else list(all_readers.values())
     for reader in readers:
         try:
             result = reader(domains, names)
             if result:
                 return dict(result)
         except Exception as exc:
-            logger.debug("Reader %s failed for %s: %s", reader.__name__, source, exc)
+            logger.debug("Reader failed for %s: %s", source, exc)
     return {}
 
 

@@ -54,7 +54,7 @@ def test_import_browser_no_cookies(_db, monkeypatch):
     # The message guides the user to the manual-paste fallback and names the cookie.
     assert "manually" in res["message"].lower()
     assert "reddit_session" in res["message"]
-    assert res["need"] == ["reddit_session"]
+    assert res["need"] == ["reddit_session", "token_v2"]
 
 
 def test_import_browser_success(_db, monkeypatch):
