@@ -30,12 +30,19 @@ def init_reply_schema(db: Database | None = None) -> Database:
                 "id": str, "brand_id": str, "platform": str, "post_id": str,
                 "title": str, "body": str, "url": str, "author": str, "sub": str,
                 "score": float, "relevance": float, "intent": float, "fit": float,
+                "engagement": float, "freshness": float, "rrf": float,
                 "reason": str, "status": str, "found_at": int,
             },
             pk="id",
         )
         db["reply_opportunities"].create_index(["brand_id", "status"])
         db["reply_opportunities"].create_index(["score"])
+    else:
+        # forward-compat: add the engagement-RRF score columns to older tables
+        existing = {c.name for c in db["reply_opportunities"].columns}
+        for col in ("engagement", "freshness", "rrf"):
+            if col not in existing:
+                db["reply_opportunities"].add_column(col, float)
 
     if "reply_drafts" not in names:
         db["reply_drafts"].create(

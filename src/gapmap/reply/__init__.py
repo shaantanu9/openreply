@@ -15,11 +15,12 @@ from . import (  # noqa: F401
     generate,
     opportunity,
     platforms,
+    rank,
     rules,
     schema,
 )
 
 __all__ = [
     "agent", "brand", "content", "generate",
-    "opportunity", "platforms", "rules", "schema",
+    "opportunity", "platforms", "rank", "rules", "schema",
 ]

@@ -17,6 +17,7 @@ import hashlib
 import time
 
 from ..analyze.providers.base import get_provider
+from . import rank as _rank
 from .brand import get_brand
 from .schema import init_reply_schema
 from .util import loads_json
@@ -146,6 +147,7 @@ def find_opportunities(
     platforms = platforms or brand.get("platforms") or ["reddit_free"]
 
     db = init_reply_schema()
+    now = int(time.time())
     found: list[dict] = []
     for pf in platforms:
         if progress:
@@ -168,14 +170,24 @@ def find_opportunities(
                 "body": (post.get("selftext") or post.get("body") or "")[:2000],
                 "url": post.get("url") or post.get("permalink") or "",
                 "author": post.get("author") or "", "sub": post.get("sub") or "",
-                "score": sc["score"], "relevance": sc["relevance"],
-                "intent": sc["intent"], "fit": sc["fit"], "reason": sc["reason"],
-                "status": "new", "found_at": int(time.time()),
+                "relevance": sc["relevance"], "intent": sc["intent"], "fit": sc["fit"],
+                "reason": sc["reason"], "status": "new", "found_at": now,
+                # ranking inputs (consumed by rank.fuse_and_rank, then dropped)
+                "base": sc["score"],
+                "eng": _rank.engagement_score(post),
+                "fresh": _rank.freshness(post, now),
             }
-            db["reply_opportunities"].upsert(rec, pk="id")
             found.append(rec)
 
-    found.sort(key=lambda r: r["score"], reverse=True)
+    # Engagement-weighted RRF fusion across the picked platforms.
+    _rank.fuse_and_rank(found)
+    for rec in found:
+        rec["engagement"] = rec.pop("eng")
+        rec["freshness"] = rec.pop("fresh")
+        rec["score"] = rec.pop("final")  # `score` = fused final (kept for back-compat/sort)
+        rec.pop("base", None)
+        db["reply_opportunities"].upsert(rec, pk="id")
+
     return {
         "brand": brand["name"], "platforms": platforms,
         "found": len(found), "opportunities": found[:50],
