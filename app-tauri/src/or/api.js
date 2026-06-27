@@ -36,9 +36,21 @@ export const api = {
   replyPlatforms: () => call("reply_platforms"),
   replyFind: (platforms, limit, noScore) =>
     call("reply_find", { platforms: platforms || null, limit: limit || 15, noScore: !!noScore }),
-  replyList: (status, minScore, limit) =>
-    call("reply_list", { status: status || null, minScore: minScore || 0, limit: limit || 30 }),
+  replyList: (status, minScore, limit, opts) =>
+    call("reply_list", {
+      status: status || null, minScore: minScore || 0, limit: limit || 30,
+      query: (opts && opts.query) || null,
+      sort: (opts && opts.sort) || "score",
+      offset: (opts && opts.offset) || 0,
+    }),
   replyDraft: (opportunity) => call("reply_draft", { opportunity }),
+  // workspace: edit/save (versioned), approve, queue, snooze, draft history
+  replySaveDraft: (opportunity, text) => call("reply_save_draft", { opportunity, text }),
+  replyDrafts: (opportunity) => call("reply_drafts", { opportunity }),
+  replyApprove: (opportunity) => call("reply_approve", { opportunity }),
+  replyQueue: (opportunity, scheduledAt) =>
+    call("reply_queue", { opportunity, scheduledAt: scheduledAt || null }),
+  replySnooze: (opportunity, hours) => call("reply_snooze", { opportunity, hours: hours || 24 }),
   // subreddit intelligence
   redditAccountStatus: () => call("reddit_account_status"),
   subDiscover: (limit) => call("sub_discover", { limit: limit || 8 }),

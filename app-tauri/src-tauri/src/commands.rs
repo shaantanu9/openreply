@@ -372,13 +372,29 @@ pub async fn reply_find(app: AppHandle, platforms: Option<String>, limit: Option
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap reply list …` — stored opportunities.
+/// `gapmap reply list …` — stored opportunities with search/sort/pagination.
 #[tauri::command]
-pub async fn reply_list(app: AppHandle, status: Option<String>, min_score: Option<f64>, limit: Option<u32>) -> Result<Value, String> {
+pub async fn reply_list(
+    app: AppHandle,
+    status: Option<String>,
+    min_score: Option<f64>,
+    limit: Option<u32>,
+    query: Option<String>,
+    sort: Option<String>,
+    offset: Option<u32>,
+) -> Result<Value, String> {
     let lim = limit.unwrap_or(30).to_string();
     let ms = min_score.unwrap_or(0.0).to_string();
-    let mut args = vec!["reply".to_string(), "list".to_string(), "--limit".to_string(), lim, "--min-score".to_string(), ms, "--json".to_string()];
+    let off = offset.unwrap_or(0).to_string();
+    let srt = sort.unwrap_or_else(|| "score".to_string());
+    let mut args = vec![
+        "reply".to_string(), "list".to_string(),
+        "--limit".to_string(), lim, "--min-score".to_string(), ms,
+        "--offset".to_string(), off, "--sort".to_string(), srt,
+        "--json".to_string(),
+    ];
     if let Some(s) = status { if !s.is_empty() { args.push("--status".into()); args.push(s); } }
+    if let Some(q) = query { if !q.is_empty() { args.push("--query".into()); args.push(q); } }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }
@@ -394,6 +410,45 @@ pub async fn reply_draft(app: AppHandle, opportunity: String) -> Result<Value, S
 #[tauri::command]
 pub async fn reply_set_status(app: AppHandle, opportunity: String, status: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "set-status", "-o", &opportunity, "--status", &status, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// `gapmap reply save-draft -o <id> --text <t>` — persist a user-edited reply
+/// as a new versioned draft (+ compliance re-check).
+#[tauri::command]
+pub async fn reply_save_draft(app: AppHandle, opportunity: String, text: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "save-draft", "-o", &opportunity, "--text", &text, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// `gapmap reply drafts -o <id>` — all draft versions (history), newest first.
+#[tauri::command]
+pub async fn reply_drafts(app: AppHandle, opportunity: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "drafts", "-o", &opportunity, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap reply approve -o <id>` — approve the current draft (→ ready).
+#[tauri::command]
+pub async fn reply_approve(app: AppHandle, opportunity: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "approve", "-o", &opportunity, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap reply queue -o <id> [--at <epoch>]` — queue an approved reply.
+#[tauri::command]
+pub async fn reply_queue(app: AppHandle, opportunity: String, scheduled_at: Option<i64>) -> Result<Value, String> {
+    let at = scheduled_at.unwrap_or(0).to_string();
+    run_cli(&app, vec!["reply", "queue", "-o", &opportunity, "--at", &at, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// `gapmap reply snooze -o <id> --hours <n>` — defer; auto-resurfaces.
+#[tauri::command]
+pub async fn reply_snooze(app: AppHandle, opportunity: String, hours: Option<f64>) -> Result<Value, String> {
+    let h = hours.unwrap_or(24.0).to_string();
+    run_cli(&app, vec!["reply", "snooze", "-o", &opportunity, "--hours", &h, "--json"])
         .await
         .map_err(err_to_string)
 }
