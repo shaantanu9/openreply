@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-27 by Claude · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
+> **Updated:** 2026-06-27 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -47,7 +47,8 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
 | 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
 | 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **222** | **221** | **1** | **0** | **0** |
+| 21. OpenReply — content engine | 3 | 3 | 0 | 0 | 0 |
+| **Total** | **225** | **224** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -835,6 +836,69 @@ creation are deferred to first use (existing `#/onboarding` agent flow).
 Refresh (`licenseRevalidate`) · Deactivate (`licenseLogout` → `#/activate`).
 **Implementation:** `or/dynamic.js` `buildLicenseCard`, wired full-width into
 `renderSettings` alongside the existing LLM/BYOK, appearance, feeds, data cards.
+
+---
+
+## 21. OpenReply — content engine ✅ NEW
+
+> OpenReply is the social engagement layer built on the same Python core: an
+> **Agent** (brand/niche persona with linked-persona knowledge blend) finds
+> Reddit/HN reply opportunities AND generates publishable content from its live
+> niche knowledge. This category covers the **content composer** specifically
+> (the Compose + Queue screens and the `content_*` command triangle). Adjacent
+> OpenReply screens (Agents, Opportunities, Connections, Keywords, Subreddit
+> Intelligence, GEO, Alerts, Activation) are wired in `or/dynamic.js` but not yet
+> individually catalogued here.
+
+### Content generation — 7 structured kinds ✅ NEW
+**Status:** ✅ Complete — verified end-to-end (real LLM output for every kind)
+**Entry points:** Tauri *Compose* screen · CLI `gapmap content generate <kind>` · Rust `content_generate`
+**User flow:** pick a kind → (Follow-up: choose Reply/Sequence sub-mode + give
+context) → optional platform + angle → Generate → the engine blends the agent's
+voice + linked-persona knowledge + topic corpus → a structured draft persists to
+`content_items` and renders editable → Save / Schedule.
+**Kinds & structure:**
+- `post` · `thread` — single post / 5–8 numbered parts
+- `article` — `# Title` · 2-sent intro · 3 `## sections` · `**Takeaway:**` (600–900w)
+- `script` — Short (Reels/Shorts): HOOK + 3 BEATS + CTA (~120 spoken words)
+- `youtube` — Long-form: HOOK · INTRO · 3–5 SEGMENTS w/ `[VISUAL: …]` cues · CTA · OUTRO
+- `followup_reply` — answers a pasted conversation's latest reply
+- `followup_post` — sequence/part-2 that builds on a prior draft (linked via `parent_id`)
+**Implementation:** `reply/content.py` — `_KIND_SPECS:21` · `generate_content:131`
+· `_load_original:122` · `_PLATFORM_HINTS:71` (per-platform length/format) ·
+dynamic `max_tokens` per kind. CLI `cli/agent_cmds.py` `gen_cmd:160`
+(`--context-id`/`--context-text`). Rust `commands.rs` `content_generate:377`.
+Frontend `or/api.js` `contentGenerate:42` → `or/dynamic.js` `renderCompose:228`
+(kind buttons `KINDS:221`, follow-up Reply/Sequence panel, loading state).
+**Data:** `content_items` SQLite (id, agent_id, kind, platform, parent_id, title,
+body, status, scheduled_at, posted_at, angle, timestamps).
+**Known gaps:** generation needs an active agent + configured LLM provider (BYOK/
+Ollama); empty corpus falls back to a "run agent refresh" prompt rather than
+blocking (P2). Non-Tauri prototype renders statically (calls return null).
+
+### Edit / save / schedule drafts ✅ NEW
+**Status:** ✅ Complete
+**User flow:** any generated or recent-draft card is an editable textarea →
+**Save draft** persists the edited body · **Schedule** flips status →
+`scheduled` with an epoch `scheduled_at`. Status badges colour by state.
+**Implementation:** `reply/content.py` `update_content:213` (body/status/
+scheduled_at, validates status ∈ draft|scheduled|posted, stamps `posted_at`).
+CLI `content_update_cmd:187`. Rust `content_update:396` (registered in
+`main.rs` handler). Frontend `or/api.js` `contentUpdate:50` → delegated
+Save/Schedule handler + `contentCard:346` in `or/dynamic.js`.
+**Data:** mutates `content_items` in place; `parent_id` column added to existing
+DBs via a guarded `add_column` migration in `_ensure` (`content.py:104`).
+**Known gaps:** scheduling sets state only — there is no auto-publish yet
+(publishing stays manual by design; outbound adapters are a later milestone).
+
+### Queue — drafts & scheduled list ✅
+**Status:** ✅ Complete
+**User flow:** Queue screen lists all `content_items` (type · body preview ·
+platform · status); "+ New content" → Compose.
+**Implementation:** `or/dynamic.js` `renderQueue:829` → `api.contentList`
+(`api.js:48`) → CLI `content_list_cmd:204` → `content.list_content`.
+**Known gaps:** read-only table (edits happen on the Compose cards); no inline
+status change from Queue yet (P2).
 
 ---
 
