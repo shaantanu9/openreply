@@ -883,9 +883,24 @@ skipped/snoozed; + `snooze_until`/`scheduled_at`/`posted_at`/`updated_at`) ·
 **Known gaps:** Social opportunities surface only what's been collected/connected
 (see §1.8 social fetch).
 
-### Scheduled poster + reminder ✅ NEW (2026-06-27)
+### Scheduled auto-flow (find → learn → post → GEO) ✅ NEW (2026-06-27)
+**Status:** ✅ Complete (auto-find + learn + reminder/best-effort-post + GEO refresh)
+**Entry points:** Settings → **Automation** (Off/Daily/Weekly — one control wires the
+launchd schedule AND the agent cadence) · launchd `schedule.rs` → `research schedule-tick`.
+**Per-tick flow:** ① **auto-find** new opportunities on the agent's `refresh_cadence`
+(`reply/opportunity.find_if_due` — off/manual skip, daily ~20h, weekly ~6.5d, throttled
+via `last_refresh_at`) → ② **learn** → ③ **post due** queued replies (poster, below) →
+④ **refresh AI-visibility** (`reply/geo.check_all_if_due`, throttled ~daily). All
+best-effort; `opps_found`/`replies_due`/`geo_checked` in the tick result.
+**Implementation:** `reply/opportunity.find_if_due` + `_CADENCE_HOURS` · `reply/geo.
+check_all_if_due` + `due_for_scheduled_check` · `cli/main.py schedule-tick` ·
+`or/dynamic.js buildAutomationCard` (drives `agentUpdate({cadence})` + last-scan status).
+**Cost-safe:** auto-find/GEO are opt-in (default cadence `off`) and throttled, so a fast
+launchd interval never re-runs more than the cadence allows.
+
+#### Scheduled poster + reminder ✅
 **Status:** ✅ Complete (reminder + best-effort auto-post hook)
-**Entry points:** the existing launchd scheduler (`schedule.rs` → `research
+**Entry points:** the launchd scheduler (`schedule.rs` → `research
 schedule-tick`) · CLI `gapmap reply post-due [--notify]` · Rust `reply_post_due` ·
 Inbox on-open + "Due now" badge.
 **Flow:** a queued reply (status `queued` + `scheduled_at`) becomes due → the poster
