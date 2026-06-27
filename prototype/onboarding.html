@@ -1,0 +1,78 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Create agent — OpenReply</title><link rel="stylesheet" href="proto.css">
+<style>
+.wiz{max-width:680px;margin:0 auto;padding:40px 24px}
+.wiz h1{font-size:1.6rem;margin:0 0 4px}
+.step-card{display:none}.step-card.on{display:block}
+.wiz-foot{display:flex;justify-content:space-between;margin-top:20px}
+.ex{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ex .card{cursor:pointer} .ex .card:hover{border-color:var(--accent)}
+</style></head><body>
+<div class="wiz">
+  <a class="muted" href="index.html">← Back</a>
+  <h1>Create an agent</h1>
+  <p class="sub">An agent = a brand/niche persona with its own knowledge, voice &amp; platforms.</p>
+  <div class="steps" id="bars">
+    <div class="step on"></div><div class="step"></div><div class="step"></div><div class="step"></div><div class="step"></div>
+  </div>
+
+  <div class="card step-card on" data-s="0">
+    <h3>1 · Identity</h3>
+    <label class="fld">Agent / brand name<input value="" placeholder="Acme Notes"></label>
+    <label class="fld">Website (optional, for context)<input placeholder="https://acme.so"></label>
+    <label class="fld">Niche — what you do / who you help<input placeholder="AI note-taking for students"></label>
+  </div>
+
+  <div class="card step-card" data-s="1">
+    <h3>2 · Voice</h3>
+    <label class="fld">Persona / background (the voice)<textarea placeholder="Ex-teacher, founder of Acme. Friendly, practical, never pushy."></textarea></label>
+    <label class="fld">Tone<input value="helpful, concise, non-salesy"></label>
+    <label class="fld">Audience<input placeholder="CS students, self-learners, note-takers"></label>
+  </div>
+
+  <div class="card step-card" data-s="2">
+    <h3>3 · Sources &amp; keywords</h3>
+    <label class="fld">Keywords to track (comma-separated)<input placeholder="note taking app, obsidian alternative, study notes"></label>
+    <div class="muted" style="margin-bottom:8px">Platforms to watch</div>
+    <div class="checkgrid">
+      <label><input type="checkbox" checked> Reddit</label>
+      <label><input type="checkbox"> X / Twitter</label>
+      <label><input type="checkbox"> LinkedIn</label>
+      <label><input type="checkbox" checked> Hacker News</label>
+      <label><input type="checkbox"> Stack Overflow</label>
+      <label><input type="checkbox"> Dev.to</label>
+      <label><input type="checkbox"> Product Hunt</label>
+      <label><input type="checkbox"> Google News</label>
+      <label><input type="checkbox"> Bluesky</label>
+    </div>
+  </div>
+
+  <div class="card step-card" data-s="3">
+    <h3>4 · Connect accounts <span class="muted" style="font-weight:400">(optional)</span></h3>
+    <p class="muted">Log in to platforms to unlock authenticated reach &amp; (later) one-click posting. You can skip and do this anytime.</p>
+    <div class="row"><a class="btn" href="connections.html">Connect Reddit</a><a class="btn" href="connections.html">Connect X</a><a class="btn" href="connections.html">Connect LinkedIn</a></div>
+  </div>
+
+  <div class="card step-card" data-s="4">
+    <h3>5 · AI key (BYOK)</h3>
+    <p class="muted">OpenReply runs on your own model key — nothing is sent to us. Or point at a local Ollama.</p>
+    <label class="fld">Provider<select><option>Anthropic (Claude)</option><option>OpenAI</option><option>OpenRouter</option><option>Groq</option><option>Local Ollama</option></select></label>
+    <label class="fld">API key<input type="password" placeholder="sk-…"></label>
+    <div class="note">After this, the agent runs its first knowledge fetch (~1–2 min) and you're ready.</div>
+  </div>
+
+  <div class="wiz-foot">
+    <button class="btn ghost" id="back" onclick="go(-1)">← Back</button>
+    <button class="btn primary" id="next" onclick="go(1)">Next →</button>
+  </div>
+</div>
+<script>
+let s=0;const cards=[...document.querySelectorAll('.step-card')];const bars=[...document.querySelectorAll('#bars .step')];
+function render(){cards.forEach((c,i)=>c.classList.toggle('on',i===s));bars.forEach((b,i)=>b.classList.toggle('on',i<=s));
+  document.getElementById('back').style.visibility=s===0?'hidden':'visible';
+  document.getElementById('next').textContent=s===cards.length-1?'Create agent ✓':'Next →';}
+function go(d){if(s===cards.length-1&&d>0){location.href='agent.html';return;}s=Math.max(0,Math.min(cards.length-1,s+d));render();}
+render();
+</script>
+</body></html>

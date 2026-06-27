@@ -1,0 +1,94 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Opportunities — OpenReply</title><link rel="stylesheet" href="proto.css">
+<style>.opp .draft{display:none;margin-top:12px}.opp.open .draft{display:block}</style></head><body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">◆</span> OpenReply</div>
+    <div class="agent-switch"><div class="agent-switch-label">Active agent</div>
+      <select><option>Acme Notes</option><option>DevTools Co</option></select></div>
+    <nav class="nav">
+      <a href="agents.html">▦ Agents</a>
+      <div class="nav-sec">Acme Notes</div>
+      <a href="agent.html">◷ Overview</a>
+      <a class="active" href="opportunities.html">◎ Opportunities</a>
+      <a href="compose.html">✎ Compose</a>
+      <a href="queue.html">▤ Queue</a>
+      <a href="knowledge.html">⬡ Knowledge</a>
+      <div class="nav-sec">Account</div>
+      <a href="connections.html">⚯ Connections</a>
+      <a href="settings.html">⚙ Settings</a>
+    </nav>
+    <div class="side-foot">Prototype · <a href="index.html">landing</a></div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><h1>Opportunities</h1><p class="sub">Conversations worth replying to for <b>Acme Notes</b>.</p></div>
+      <div class="top-actions"><button class="btn primary" onclick="document.getElementById('scan').textContent='Scanning reddit, hn, dev.to… ✓ 12 found'">⚡ Find opportunities</button></div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="row">
+        <label class="fld" style="margin:0">Platforms<input value="reddit, hn, devto" style="width:240px"></label>
+        <label class="fld" style="margin:0">Per platform<input type="number" value="15" style="width:80px"></label>
+        <label class="fld" style="margin:0">Min score<input type="number" value="50" style="width:80px"></label>
+        <span id="scan" class="muted" style="margin-left:auto">Showing saved opportunities</span>
+      </div>
+    </div>
+
+    <div class="grid" style="gap:12px">
+      <!-- opp 1 -->
+      <div class="card opp" id="o1">
+        <div class="spread">
+          <div class="row"><span class="badge">reddit</span> <span class="muted">r/GetStudying</span></div>
+          <span class="score hi" title="relevance 92 · intent 90 · fit 80">88</span>
+        </div>
+        <div style="font-weight:600;margin:6px 0">Best app to organize messy lecture notes?</div>
+        <div class="muted">High intent — author is actively asking for a recommendation; Acme solves exactly this.</div>
+        <div class="row" style="margin-top:12px">
+          <a class="btn sm ghost" href="#">Open post ↗</a>
+          <button class="btn sm primary" onclick="document.getElementById('o1').classList.toggle('open')">Draft reply</button>
+        </div>
+        <div class="draft">
+          <span class="badge green">✓ complies with r/GetStudying rules</span>
+          <textarea class="fld" style="width:100%;margin-top:8px" rows="5">For messy lecture notes, the trick is auto-tagging so you don't file things manually. I take notes in plain markdown, then let an app surface links between them by topic — way less upkeep than folders. (Full disclosure: I build Acme Notes, which does this for students, but the markdown + auto-link idea works in any tool.)</textarea>
+          <div class="row"><button class="btn sm primary">Copy</button><button class="btn sm">Mark posted</button><button class="btn sm ghost">Re-draft</button></div>
+        </div>
+      </div>
+      <!-- opp 2 -->
+      <div class="card opp" id="o2">
+        <div class="spread">
+          <div class="row"><span class="badge">reddit</span> <span class="muted">r/productivity</span></div>
+          <span class="score hi">81</span>
+        </div>
+        <div style="font-weight:600;margin:6px 0">Looking for an Obsidian alternative that's less work</div>
+        <div class="muted">Comparison/intent post — good fit to share a genuinely simpler workflow.</div>
+        <div class="row" style="margin-top:12px">
+          <a class="btn sm ghost" href="#">Open post ↗</a>
+          <button class="btn sm primary" onclick="document.getElementById('o2').classList.toggle('open')">Draft reply</button>
+        </div>
+        <div class="draft"><span class="badge amber">⚠ r/productivity: no direct links in top-level comments</span>
+          <textarea class="fld" style="width:100%;margin-top:8px" rows="4">Obsidian is powerful but the setup tax is real. If you want less work, look for something that auto-links notes instead of making you wire them up. Happy to share the exact setup I use if helpful.</textarea>
+          <div class="row"><button class="btn sm primary">Copy</button><button class="btn sm">Mark posted</button><button class="btn sm ghost">Re-draft</button></div>
+        </div>
+      </div>
+      <!-- opp 3 -->
+      <div class="card opp" id="o3">
+        <div class="spread">
+          <div class="row"><span class="badge">hn</span></div>
+          <span class="score mid">64</span>
+        </div>
+        <div style="font-weight:600;margin:6px 0">Show HN: my plain-text note-taking workflow</div>
+        <div class="muted">Medium fit — discussion thread; reply with value, no pitch.</div>
+        <div class="row" style="margin-top:12px">
+          <a class="btn sm ghost" href="#">Open post ↗</a>
+          <button class="btn sm primary" onclick="document.getElementById('o3').classList.toggle('open')">Draft reply</button>
+        </div>
+        <div class="draft"><textarea class="fld" style="width:100%;margin-top:8px" rows="3">Nice setup. The piece most people miss is recall — plain text scales for capture but search/linking is where it breaks down. Curious how you handle cross-note discovery?</textarea>
+          <div class="row"><button class="btn sm primary">Copy</button><button class="btn sm">Mark posted</button></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body></html>

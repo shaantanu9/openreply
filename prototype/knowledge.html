@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Knowledge — OpenReply</title><link rel="stylesheet" href="proto.css">
+<style>.map{height:300px;border:1px solid var(--line);border-radius:12px;background:
+ radial-gradient(circle at 30% 40%,rgba(109,94,252,.25),transparent 40%),
+ radial-gradient(circle at 70% 60%,rgba(255,106,61,.18),transparent 40%),var(--panel2);
+ display:flex;align-items:center;justify-content:center;color:var(--muted);position:relative;overflow:hidden}
+.node{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:.8rem}</style></head><body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="logo">◆</span> OpenReply</div>
+    <div class="agent-switch"><div class="agent-switch-label">Active agent</div>
+      <select><option>Acme Notes</option><option>DevTools Co</option></select></div>
+    <nav class="nav">
+      <a href="agents.html">▦ Agents</a>
+      <div class="nav-sec">Acme Notes</div>
+      <a href="agent.html">◷ Overview</a>
+      <a href="opportunities.html">◎ Opportunities</a>
+      <a href="compose.html">✎ Compose</a>
+      <a href="queue.html">▤ Queue</a>
+      <a class="active" href="knowledge.html">⬡ Knowledge</a>
+      <div class="nav-sec">Account</div>
+      <a href="connections.html">⚯ Connections</a>
+      <a href="settings.html">⚙ Settings</a>
+    </nav>
+    <div class="side-foot">Prototype · <a href="index.html">landing</a></div>
+  </aside>
+  <main class="main">
+    <div class="top"><div><h1>Knowledge</h1><p class="sub">What's happening in your niche — refreshed automatically.</p></div>
+      <div class="top-actions"><span class="chip">last refresh: 2h ago</span><button class="btn primary">↻ Refresh now</button></div></div>
+
+    <div class="grid cols-3" style="margin-bottom:18px">
+      <div class="card"><div class="muted">Posts collected</div><div class="kpi">5,842</div></div>
+      <div class="card"><div class="muted">Map nodes</div><div class="kpi">142</div></div>
+      <div class="card"><div class="muted">Angles found</div><div class="kpi">23</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="spread" style="margin-bottom:12px"><b>Knowledge map</b><span class="muted">brands · pains · features · competitors</span></div>
+      <div class="map">
+        <span class="node" style="top:30%;left:24%">manual tagging</span>
+        <span class="node" style="top:55%;left:40%;border-color:var(--accent)">Obsidian</span>
+        <span class="node" style="top:38%;left:62%">auto-linking</span>
+        <span class="node" style="top:68%;left:66%">students</span>
+        <span class="node" style="top:22%;left:50%">sync issues</span>
+        interactive force-graph (live in app)
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card"><b>Refresh cadence &amp; sources</b>
+        <label class="fld" style="margin-top:12px">Refresh<select><option>Daily</option><option>Weekly</option><option>Off</option></select></label>
+        <div class="row"><span class="chip">Reddit ✓</span><span class="chip">Hacker News ✓</span><span class="chip">Dev.to ✓</span><a class="chip" href="settings.html">+ add</a></div>
+      </div>
+      <div class="card"><b>Top angles → write about</b>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+          <div class="spread"><span>People hate manual tagging</span><a class="btn sm" href="compose.html">Write</a></div>
+          <div class="spread"><span>Obsidian sync too fiddly</span><a class="btn sm" href="compose.html">Write</a></div>
+          <div class="spread"><span>Auto-link to lecture slides</span><a class="btn sm" href="compose.html">Write</a></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body></html>

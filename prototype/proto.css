@@ -1,0 +1,70 @@
+/* OpenReply — clickable HTML prototype. Static design only (no backend).
+   Goal: lock the UX + flow. Theme it later to match the app. */
+:root{
+  --bg:#0f1115; --panel:#161922; --panel2:#1c2030; --line:#262b3a;
+  --txt:#e7e9ee; --muted:#9aa3b2; --accent:#6d5efc; --accent2:#ff6a3d;
+  --green:#27c08a; --amber:#f3b13b; --red:#ef5b6b; --radius:14px;
+}
+*{box-sizing:border-box} html,body{margin:0}
+body{background:var(--bg);color:var(--txt);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;}
+a{color:inherit;text-decoration:none}
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+
+/* sidebar */
+.side{background:var(--panel);border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:14px;position:sticky;top:0;height:100vh}
+.brand{font-weight:800;font-size:1.15rem;display:flex;align-items:center;gap:8px}
+.brand .logo{color:var(--accent2)}
+.agent-switch{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+.agent-switch-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.agent-switch select{width:100%;background:transparent;border:0;color:var(--txt);font-size:.95rem;font-weight:600}
+.nav{display:flex;flex-direction:column;gap:2px;overflow:auto}
+.nav a{padding:9px 11px;border-radius:9px;color:var(--muted);font-weight:500;display:flex;gap:9px;align-items:center}
+.nav a:hover{background:var(--panel2);color:var(--txt)}
+.nav a.active{background:rgba(109,94,252,.16);color:#fff}
+.nav-sec{font-size:.68rem;color:#5d6677;text-transform:uppercase;letter-spacing:.06em;margin:12px 4px 2px}
+.side-foot{margin-top:auto;font-size:.75rem;color:#5d6677}
+
+/* main */
+.main{padding:26px 30px 80px;max-width:1180px}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+.top h1{margin:0 0 4px;font-size:1.7rem}
+.sub{color:var(--muted);margin:0}
+.top-actions{display:flex;gap:10px;flex-wrap:wrap}
+
+/* primitives */
+.btn{display:inline-flex;align-items:center;gap:7px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-size:.92rem;font-weight:600;cursor:pointer}
+.btn:hover{border-color:#3a4256}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:6px 10px;font-size:.82rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.grid{display:grid;gap:16px}
+.grid.cols-2{grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+.grid.cols-3{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.muted{color:var(--muted)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:.78rem;color:var(--muted)}
+.badge{border-radius:6px;padding:2px 8px;font-size:.74rem;font-weight:700}
+.badge.green{background:rgba(39,192,138,.15);color:var(--green)}
+.badge.amber{background:rgba(243,177,59,.15);color:var(--amber)}
+.badge.red{background:rgba(239,91,107,.15);color:var(--red)}
+.badge.violet{background:rgba(109,94,252,.18);color:#b9b0ff}
+.score{font-weight:800;font-size:1.25rem;color:var(--accent)}
+.score.hi{color:var(--green)} .score.mid{color:var(--amber)}
+label.fld{display:flex;flex-direction:column;gap:5px;font-size:.82rem;color:var(--muted);margin-bottom:12px}
+.fld input,.fld textarea,.fld select{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;color:var(--txt);font:inherit}
+.fld textarea{resize:vertical;min-height:90px}
+.divider{height:1px;background:var(--line);margin:18px 0}
+.kpi{font-size:1.9rem;font-weight:800}
+.pill-tabs{display:flex;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:5px;width:fit-content;margin-bottom:18px}
+.pill-tabs a{padding:7px 14px;border-radius:8px;color:var(--muted);font-weight:600;font-size:.9rem}
+.pill-tabs a.active{background:var(--accent);color:#fff}
+.empty{border:1px dashed var(--line);border-radius:12px;padding:34px;text-align:center;color:var(--muted)}
+.steps{display:flex;gap:8px;margin-bottom:24px}
+.steps .step{flex:1;height:4px;border-radius:999px;background:var(--line)}
+.steps .step.on{background:var(--accent)}
+.checkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.checkgrid label{display:flex;gap:8px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px;font-size:.88rem;cursor:pointer}
+.note{background:rgba(109,94,252,.08);border:1px solid rgba(109,94,252,.3);border-radius:10px;padding:12px 14px;font-size:.88rem;color:#c5bdff}
