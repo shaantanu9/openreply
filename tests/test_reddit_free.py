@@ -31,14 +31,16 @@ def test_reddit_free_falls_back_to_rss_without_cookie(monkeypatch):
     monkeypatch.setattr(reddit_free._creds, "cookie_header", lambda *a, **k: "")
     called = {}
 
-    def fake_rss(q, sub=None, limit=50):
+    def fake_rss(q, sub=None, sort="new", limit=50):
         called["q"] = q
+        called["sort"] = sort
         return [{"id": "r1", "sub": "python", "source_type": "reddit",
                  "title": "t", "permalink": "/r/python/comments/r1/t/"}]
 
     monkeypatch.setattr(reddit_free, "public_search", fake_rss)
     rows = fetch_reddit_free("async")
     assert called["q"] == "async"
+    assert called["sort"] == "new"   # recency-biased by default for outreach
     assert rows[0]["source_type"] == "reddit_free"   # retagged
 
 
@@ -50,7 +52,7 @@ def test_reddit_free_cookie_error_falls_back(monkeypatch):
 
     monkeypatch.setattr(reddit_free, "_authed_search", boom)
     monkeypatch.setattr(reddit_free, "public_search",
-                        lambda q, sub=None, limit=50: [{"id": "x", "source_type": "reddit"}])
+                        lambda q, sub=None, sort="new", limit=50: [{"id": "x", "source_type": "reddit"}])
     rows = fetch_reddit_free("async")
     assert rows and rows[0]["source_type"] == "reddit_free"
 

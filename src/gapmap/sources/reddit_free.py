@@ -28,10 +28,10 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _authed_search(query: str, sub: str | None, limit: int, cookie: str) -> dict:
+def _authed_search(query: str, sub: str | None, limit: int, cookie: str, sort: str = "new") -> dict:
     """Authenticated search.json via the stored cookie (+ proxy). Raises on error."""
     path = f"/r/{sub}/search.json" if sub else "/search.json"
-    params = {"q": query, "limit": min(100, limit), "raw_json": 1}
+    params = {"q": query, "limit": min(100, limit), "raw_json": 1, "sort": sort}
     if sub:
         params["restrict_sr"] = "1"
     headers = {"User-Agent": _UA, "Cookie": cookie, "Accept": "application/json"}
@@ -64,8 +64,13 @@ def _row(d: dict) -> dict:
     }
 
 
-def fetch_reddit_free(query: str, sub: str | None = None, limit: int = 50, **_) -> list[dict]:
+def fetch_reddit_free(query: str, sub: str | None = None, limit: int = 50,
+                      sort: str = "new", **_) -> list[dict]:
     """Search Reddit for *query* → posts rows. Cookie JSON if connected, else RSS.
+
+    `sort` controls recency vs relevance ("new" | "relevance" | "hot" | "top" |
+    "comments"); defaults to "new" so outreach surfaces fresh, still-replyable
+    threads (older threads score 0 on freshness and are effectively dead leads).
     Never raises."""
     q = (query or "").strip()
     if not q:
@@ -73,7 +78,7 @@ def fetch_reddit_free(query: str, sub: str | None = None, limit: int = 50, **_) 
     cookie = _creds.cookie_header("reddit")
     if cookie:
         try:
-            data = _authed_search(q, sub, limit, cookie)
+            data = _authed_search(q, sub, limit, cookie, sort=sort)
             children = ((data or {}).get("data") or {}).get("children") or []
             rows = [_row(c["data"]) for c in children if isinstance(c, dict) and c.get("data")]
             if rows:
@@ -82,7 +87,7 @@ def fetch_reddit_free(query: str, sub: str | None = None, limit: int = 50, **_) 
             pass  # fall through to RSS
     # RSS fallback — retag provenance as reddit_free.
     try:
-        rss = public_search(q, sub=sub, limit=limit)
+        rss = public_search(q, sub=sub, sort=sort, limit=limit)
     except Exception:
         return []
     for r in rss:

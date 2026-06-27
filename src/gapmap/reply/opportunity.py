@@ -38,12 +38,23 @@ def _oid(brand_id: str, platform: str, post_id: str) -> str:
 def _fetch_reddit(keywords: list[str], limit: int) -> list[dict]:
     from ..sources.reddit_free import fetch_reddit_free
 
+    # Blend recency + relevance: "new" surfaces fresh, still-replyable threads
+    # (so freshness actually contributes to ranking), then "relevance" fills with
+    # the strongest topical matches. Dedup by id so the two passes don't double up.
     rows: list[dict] = []
-    for kw in keywords:
-        try:
-            rows += fetch_reddit_free(kw, limit=limit)
-        except Exception:
-            pass
+    seen: set[str] = set()
+    for sort in ("new", "relevance"):
+        for kw in keywords:
+            try:
+                for r in fetch_reddit_free(kw, limit=limit, sort=sort):
+                    rid = str(r.get("id") or r.get("url") or "")
+                    if rid and rid in seen:
+                        continue
+                    if rid:
+                        seen.add(rid)
+                    rows.append(r)
+            except Exception:
+                pass
     return rows
 
 
