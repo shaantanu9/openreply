@@ -13,22 +13,45 @@ function currentKey() {
   return h || "agents";
 }
 
+// Screens that own the whole window (no sidebar): the activation gate and the
+// post-activation onboarding wizard.
+const FULL_SCREENS = new Set(["activate", "welcome"]);
+
+// Hard license gate. Resolves the route the user is actually allowed to see.
+// Fails CLOSED — any error checking the licence forces the activation screen.
+// In a plain browser (no Tauri) there is no gate, so the static prototype still
+// renders for design work.
+async function gateCheck(reqKey) {
+  if (!api.isTauri()) return reqKey;
+  let gate = null;
+  try { gate = await api.licenseGateStatus(); } catch (e) {}
+  if (gate && gate.enabled === false) return reqKey; // gate disabled via env
+  let st = null;
+  try { st = await api.licenseStatus(); } catch (e) {}
+  if (!st || !st.activated) return "activate";
+  if (!localStorage.getItem("or-onboarded")) return "welcome";
+  if (reqKey === "activate" || reqKey === "welcome") return "agents";
+  return reqKey;
+}
+
 async function render() {
   const reqKey = currentKey();
-  const useDyn = api.isTauri() && DYN[reqKey];
-  const key = useDyn ? reqKey : (VIEWS[reqKey] ? reqKey : "agents");
+  const key = await gateCheck(reqKey);
+  const full = FULL_SCREENS.has(key);
+  const useDyn = api.isTauri() && DYN[key];
+  const effKey = useDyn ? key : (VIEWS[key] ? key : "agents");
   const view = document.getElementById("main-content");
 
   if (useDyn) {
-    mountShell(key, false);
+    mountShell(effKey, full);
     view.innerHTML = `<div class="text-zinc-500">Loading…</div>`;
     try { await DYN[key](view); } catch (e) { console.error("[dyn]", key, e); view.innerHTML = `<div class="m-8 rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${String(e)}</div>`; }
   } else {
-    const v = VIEWS[key];
+    const v = VIEWS[effKey];
     view.className = v.main || "w-full max-w-6xl flex-1 px-8 py-7";
     view.innerHTML = v.html;
-    mountShell(key, !!v.full);
-    try { if (v.init) v.init(); } catch (e) { console.error("[view init]", key, e); }
+    mountShell(effKey, full || !!v.full);
+    try { if (v.init) v.init(); } catch (e) { console.error("[view init]", effKey, e); }
   }
   drawIcons();
   window.scrollTo(0, 0);

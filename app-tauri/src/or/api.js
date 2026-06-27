@@ -29,11 +29,31 @@ export const api = {
   replyList: (status, minScore, limit) =>
     call("reply_list", { status: status || null, minScore: minScore || 0, limit: limit || 30 }),
   replyDraft: (opportunity) => call("reply_draft", { opportunity }),
+  // alerts + AI-visibility (GEO)
+  alertsList: () => call("alerts_list"),
+  alertsAdd: (rule, channel, intentMin, scoreMin) =>
+    call("alerts_add", { rule, channel: channel || "email", intentMin: intentMin || "any", scoreMin: scoreMin || 0 }),
+  alertsDelete: (id) => call("alerts_delete", { id }),
+  geoList: () => call("geo_list"),
+  geoAdd: (query, surface) => call("geo_add", { query, surface: surface || "ChatGPT" }),
+  geoSet: (id, status) => call("geo_set", { id, status }),
+  geoDelete: (id) => call("geo_delete", { id }),
   // content
-  contentGenerate: (kind, platform, angle) =>
-    call("content_generate", { kind, platform: platform || null, angle: angle || "" }),
+  contentGenerate: (kind, platform, angle, ctx) =>
+    call("content_generate", {
+      kind, platform: platform || null, angle: angle || "",
+      contextId: (ctx && ctx.contextId) || null,
+      contextText: (ctx && ctx.contextText) || "",
+    }),
   contentList: (kind, status, limit) =>
     call("content_list", { kind: kind || null, status: status || null, limit: limit || 30 }),
+  contentUpdate: (id, fields) =>
+    call("content_update", {
+      id,
+      body: fields && fields.body != null ? fields.body : null,
+      status: (fields && fields.status) || null,
+      scheduledAt: fields && fields.scheduledAt != null ? fields.scheduledAt : null,
+    }),
   // ── Connections (Reach credentials) — creds_* return a JSON array; the
   // single-result ops return a 1-element array, so callers take [0]. ──
   credsList: () => call("creds_list"),
@@ -42,6 +62,17 @@ export const api = {
   credsSaveManual: (source, value) => call("creds_save_manual", { source, value }),
   credsVerify: (source) => call("creds_verify", { source }),
   credsDelete: (source) => call("creds_delete", { source }),
+  credsToggle: (source, enabled) => call("creds_toggle", { source, enabled }),
+  // ── License / activation (Gap Map backend — commands.rs) ──
+  // Hard gate: the app blocks on #/activate until license_status.activated.
+  licenseGateStatus: () => call("license_gate_status"),
+  licenseStatus: () => call("license_status"),
+  licenseDefaultApiBase: () => call("license_default_api_base"),
+  licenseServerCheck: (apiBase) => call("license_server_check", { apiBase }),
+  licenseActivate: (apiBase, email, password, activationKey, onboarding = null) =>
+    call("license_activate", { apiBase, email, password, activationKey, onboarding }),
+  licenseRevalidate: () => call("license_revalidate"),
+  licenseLogout: () => call("license_logout"),
   // ── Settings: BYOK / LLM provider ──
   byokStatus: () => call("byok_status"),
   byokSet: (name, value) => call("byok_set", { name, value }),

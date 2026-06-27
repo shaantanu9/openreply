@@ -371,11 +371,39 @@ pub async fn reply_draft(app: AppHandle, opportunity: String) -> Result<Value, S
 }
 
 /// `gapmap content generate <kind> …`.
+/// `context_id` / `context_text` feed the follow-up kinds (the prior draft, or
+/// the thread + reply to answer); ignored by the other kinds.
 #[tauri::command]
-pub async fn content_generate(app: AppHandle, kind: String, platform: Option<String>, angle: Option<String>) -> Result<Value, String> {
+pub async fn content_generate(
+    app: AppHandle,
+    kind: String,
+    platform: Option<String>,
+    angle: Option<String>,
+    context_id: Option<String>,
+    context_text: Option<String>,
+) -> Result<Value, String> {
     let mut args = vec!["content".to_string(), "generate".to_string(), kind, "--json".to_string()];
     if let Some(p) = platform { if !p.is_empty() { args.push("--platform".into()); args.push(p); } }
     if let Some(a) = angle { if !a.is_empty() { args.push("--angle".into()); args.push(a); } }
+    if let Some(c) = context_id { if !c.is_empty() { args.push("--context-id".into()); args.push(c); } }
+    if let Some(t) = context_text { if !t.is_empty() { args.push("--context-text".into()); args.push(t); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap content update <id> …` — edit / save / schedule a draft.
+#[tauri::command]
+pub async fn content_update(
+    app: AppHandle,
+    id: String,
+    body: Option<String>,
+    status: Option<String>,
+    scheduled_at: Option<i64>,
+) -> Result<Value, String> {
+    let mut args = vec!["content".to_string(), "update".to_string(), id, "--json".to_string()];
+    if let Some(b) = body { args.push("--body".into()); args.push(b); }
+    if let Some(s) = status { if !s.is_empty() { args.push("--status".into()); args.push(s); } }
+    if let Some(t) = scheduled_at { args.push("--scheduled-at".into()); args.push(t.to_string()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }
@@ -429,6 +457,48 @@ pub async fn reply_rules(app: AppHandle, sub: String, refresh: Option<bool>) -> 
     if refresh.unwrap_or(false) { args.push("--refresh".into()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────────
+#[tauri::command]
+pub async fn alerts_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "alert-list", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn alerts_add(app: AppHandle, rule: String, channel: Option<String>, intent_min: Option<String>, score_min: Option<f64>) -> Result<Value, String> {
+    let ch = channel.unwrap_or_else(|| "email".into());
+    let im = intent_min.unwrap_or_else(|| "any".into());
+    let sm = score_min.unwrap_or(0.0).to_string();
+    let args = vec!["reply", "alert-add", "--rule", &rule, "--channel", &ch, "--intent-min", &im, "--score-min", &sm, "--json"];
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn alerts_delete(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "alert-delete", &id, "--json"]).await.map_err(err_to_string)
+}
+
+// ── AI Visibility (GEO) ─────────────────────────────────────────────────────
+#[tauri::command]
+pub async fn geo_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "geo-list", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn geo_add(app: AppHandle, query: String, surface: Option<String>) -> Result<Value, String> {
+    let sf = surface.unwrap_or_else(|| "ChatGPT".into());
+    run_cli(&app, vec!["reply", "geo-add", "--query", &query, "--surface", &sf, "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn geo_set(app: AppHandle, id: String, status: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "geo-set", &id, "--status", &status, "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn geo_delete(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "geo-delete", &id, "--json"]).await.map_err(err_to_string)
 }
 
 /// Per-topic inventory for the home screen.
@@ -683,6 +753,15 @@ pub async fn creds_verify(app: AppHandle, source: String) -> Result<Value, Strin
 #[tauri::command]
 pub async fn creds_delete(app: AppHandle, source: String) -> Result<Value, String> {
     run_cli(&app, vec!["creds", "delete", "--source", &source, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// Set whether a connected source is used in collection runs.
+#[tauri::command]
+pub async fn creds_toggle(app: AppHandle, source: String, enabled: bool) -> Result<Value, String> {
+    let flag = if enabled { "--enabled" } else { "--disabled" };
+    run_cli(&app, vec!["creds", "toggle", "--source", &source, flag, "--json"])
         .await
         .map_err(err_to_string)
 }
