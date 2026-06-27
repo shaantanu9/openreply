@@ -20,7 +20,14 @@ from typing import Any, Iterable
 from ..core.db import get_db
 from ..research.gaps import find_gaps
 from ..research.relevance import filter_findings
-from ..research.tactic_library import find_matching_tactics, seed_from_json
+try:  # tactic suggestions removed in the OpenReply reshape — degrade to no-ops
+    from ..research.tactic_library import find_matching_tactics, seed_from_json
+except Exception:  # pragma: no cover
+    def find_matching_tactics(*_a, **_k):  # type: ignore
+        return []
+
+    def seed_from_json(*_a, **_k):  # type: ignore
+        return None
 from .build import _BATCH, _upsert_edge, _upsert_node
 from .schema import ensure_graph_schema, make_node_id
 
