@@ -119,6 +119,18 @@ def _query_firefox_cookies_db(
     try:
         tmp_fd, tmp_path = tempfile.mkstemp(suffix=".sqlite")
         shutil.copy2(str(db_path), tmp_path)
+        # Also copy the WAL/SHM sidecars: a RUNNING browser keeps freshly-written
+        # cookies (e.g. a login from this session) in `<db>-wal`, not yet merged
+        # into the main file. Without these, a logged-in user's session cookie can
+        # be invisible → 0 rows → false "not logged in". Same base name so SQLite
+        # auto-applies the WAL on open.
+        for _ext in ("-wal", "-shm"):
+            _side = Path(str(db_path) + _ext)
+            if _side.exists():
+                try:
+                    shutil.copy2(str(_side), tmp_path + _ext)
+                except Exception:
+                    pass
 
         conn = sqlite3.connect(tmp_path)
         try:
@@ -145,6 +157,8 @@ def _query_firefox_cookies_db(
         if tmp_path:
             try:
                 Path(tmp_path).unlink(missing_ok=True)
+                for _e in ("-wal", "-shm"):
+                    Path(tmp_path + _e).unlink(missing_ok=True)
             except OSError:
                 pass
         if tmp_fd is not None:
@@ -201,7 +215,8 @@ def diagnose_last() -> str:
     if not d.get("dbs"):
         return "no browser cookie store found on disk"
     if not d.get("rows"):
-        return "browser found, but you're not logged into this site in it"
+        return ("browser found, but no saved login cookie for this site — log in, "
+                "then FULLY quit & reopen the browser and retry (Safari isn't supported)")
     if d.get("v20") and not d.get("decrypted"):
         return ("cookies use Chrome app-bound (v20) encryption, which can't be read "
                 "externally — paste them manually")
@@ -365,11 +380,25 @@ def _extract_chromium_cookies(
     try:
         tmp_fd, tmp_path = tempfile.mkstemp(suffix=".sqlite")
         shutil.copy2(str(db_path), tmp_path)
+        # Also copy the WAL/SHM sidecars: a RUNNING browser keeps freshly-written
+        # cookies (e.g. a login from this session) in `<db>-wal`, not yet merged
+        # into the main file. Without these, a logged-in user's session cookie can
+        # be invisible → 0 rows → false "not logged in". Same base name so SQLite
+        # auto-applies the WAL on open.
+        for _ext in ("-wal", "-shm"):
+            _side = Path(str(db_path) + _ext)
+            if _side.exists():
+                try:
+                    shutil.copy2(str(_side), tmp_path + _ext)
+                except Exception:
+                    pass
     except Exception as exc:
         logger.debug("Failed to copy %s cookies db: %s", keychain_service, exc)
         if tmp_path:
             try:
                 Path(tmp_path).unlink(missing_ok=True)
+                for _e in ("-wal", "-shm"):
+                    Path(tmp_path + _e).unlink(missing_ok=True)
             except Exception:
                 pass
         return None
@@ -434,6 +463,8 @@ def _extract_chromium_cookies(
     finally:
         try:
             Path(tmp_path).unlink(missing_ok=True)
+            for _e in ("-wal", "-shm"):
+                Path(tmp_path + _e).unlink(missing_ok=True)
         except Exception:
             pass
 
