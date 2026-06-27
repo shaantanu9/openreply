@@ -120,7 +120,7 @@ def create_agent(
         "id": aid, "name": name, "brand": brand or name, "niche": niche,
         "persona": persona, "tone": tone, "audience": audience, "topic": aid,
         "keywords_json": json.dumps(keywords or []),
-        "platforms_json": json.dumps(platforms or ["reddit_free"]),
+        "platforms_json": json.dumps(platforms or ["reddit_free"]),        "platforms_json": json.dumps(platforms or ["reddit_free", "hn", "lemmy", "mastodon", "devto", "stackoverflow", "producthunt"]),
         "accounts_json": json.dumps(accounts or []),
         "refresh_cadence": refresh_cadence, "last_refresh_at": 0,
         "created_at": now, "updated_at": now,

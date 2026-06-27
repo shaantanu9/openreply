@@ -26,6 +26,7 @@ export async function renderAgents(view) {
 
   let platforms = [];
   try { platforms = (await api.replyPlatforms())?.platforms || []; } catch (e) {}
+  const OR_DEFAULT_PICK = new Set(["reddit_free", "hn", "lemmy", "mastodon", "devto", "stackoverflow", "producthunt"]);
 
   document.getElementById("ag-new").onclick = () => {
     const f = document.getElementById("ag-form");
@@ -42,7 +43,7 @@ export async function renderAgents(view) {
         <div class="mt-3 text-sm text-zinc-500">Platforms</div>
         <div class="mt-1 grid grid-cols-3 gap-2 text-sm">${platforms.filter(p => p.can_reply).map(p =>
           `<label class="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1.5">
-             <input type="checkbox" value="${esc(p.key)}" ${p.key === "reddit_free" ? "checked" : ""}> ${esc(p.label)}</label>`).join("")}</div>
+             <input type="checkbox" value="${esc(p.key)}" ${OR_DEFAULT_PICK.has(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("")}</div>
         <button id="ag-create" class="mt-4 ${btnP}">Create agent</button> <span id="ag-msg" class="text-sm text-zinc-500"></span>`;
       document.getElementById("ag-create").onclick = createAgent;
     }

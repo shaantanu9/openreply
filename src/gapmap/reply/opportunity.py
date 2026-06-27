@@ -20,6 +20,7 @@ from ..analyze.providers.base import get_provider
 from . import rank as _rank
 from .brand import get_brand
 from .schema import init_reply_schema
+from .platforms import all_keys, can_reply
 from .util import loads_json
 
 _SCORE_SYS = "You score social posts as outreach opportunities for a brand. Output ONLY JSON."
@@ -166,6 +167,46 @@ def _score(brand: dict, post: dict, provider: str | None = None) -> dict:
 
 
 # ---- public API ----------------------------------------------------------
+# ---- multi-source scan scope ---------------------------------------------
+
+def _connected_engage() -> list[str]:
+    """Reply-capable sources the user connected via Reach Connections, so
+    connecting X / Instagram / LinkedIn / etc. makes the agent scan them too."""
+    try:
+        from ..research.reach_connections import connected_collection_sources
+        return [s for s in connected_collection_sources() if can_reply(s)]
+    except Exception:
+        return []
+
+
+def _corpus_engage() -> list[str]:
+    """Reply-capable sources that already have posts in the corpus — so discovery
+    scans everything we've collected, not just the explicitly picked platforms."""
+    db = init_reply_schema()
+    out: list[str] = []
+    for k in (p for p in all_keys() if can_reply(p)):
+        try:
+            if db.execute("SELECT 1 FROM posts WHERE source_type LIKE ? LIMIT 1",
+                          [f"{k}%"]).fetchone():
+                out.append(k)
+        except Exception:
+            pass
+    return out
+
+
+def _scan_platforms(picked: list[str] | None) -> list[str]:
+    """The set of platforms to actually scan: what the user picked, PLUS any
+    reply-capable sources they've connected, PLUS any already in the corpus.
+    Reddit is always included as the baseline. Deduped, order-preserving — so an
+    agent replies across all available social media, not only its picked list."""
+    out: list[str] = []
+    for p in (list(picked or []) + ["reddit_free"] + _connected_engage() + _corpus_engage()):
+        if p and p not in out:
+            out.append(p)
+    return out
+
+
+# ---- public API ----------------------------------------------------------
 
 def find_opportunities(
     *,
@@ -182,7 +223,7 @@ def find_opportunities(
     keywords = [k for k in (brand.get("keywords") or [brand.get("name", "")]) if k]
     if not keywords:
         return {"error": "brand has no keywords. Run: gapmap reply brand-set --keywords a,b,c"}
-    platforms = platforms or brand.get("platforms") or ["reddit_free"]
+    platforms = _scan_platforms(platforms or brand.get("platforms"))
 
     db = init_reply_schema()
     now = int(time.time())

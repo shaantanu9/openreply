@@ -50,3 +50,27 @@ def reply_platforms() -> list[dict]:
 
 def all_keys() -> list[str]:
     return [p["key"] for p in PLATFORMS]
+
+
+def can_reply(key: str) -> bool:
+    """True if `key` is an engage (reply) platform."""
+    p = _BY_KEY.get(key)
+    return bool(p and p.get("can_reply"))
+
+
+def engage_keys() -> list[str]:
+    """Keys you can actually reply on."""
+    return [p["key"] for p in PLATFORMS if p["can_reply"]]
+
+
+def discovery_keys() -> list[str]:
+    """Discovery-only keys (news / web / trends)."""
+    return [p["key"] for p in PLATFORMS if not p["can_reply"]]
+
+
+# A sensible multi-source default for new agents: free, reply-capable, no-auth
+# communities so an agent scans broadly from day one. Reddit needs a cookie for
+# live data but degrades gracefully to RSS.
+DEFAULT_AGENT_PLATFORMS = [
+    "reddit_free", "hn", "lemmy", "mastodon", "devto", "stackoverflow", "producthunt",
+]

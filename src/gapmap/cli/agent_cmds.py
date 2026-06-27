@@ -38,7 +38,7 @@ def create_cmd(
     tone: str = typer.Option("helpful, concise, non-salesy"),
     audience: str = typer.Option("", help="Who you're talking to"),
     keywords: str = typer.Option("", help="Comma-separated topics to track"),
-    platforms: str = typer.Option("reddit_free", help="Comma-separated source keys"),
+    platforms: str = typer.Option("", help="Comma-separated source keys (blank = sensible multi-source default)"),
     cadence: str = typer.Option("off", help="Knowledge refresh: off | daily | weekly"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
