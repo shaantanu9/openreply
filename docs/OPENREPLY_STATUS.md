@@ -4,7 +4,7 @@
 > the engine functions, the API surface (Rust commands + JS wrappers), DB changes/tables,
 > and a prioritized worklist. Update after each change. Companion to `OPENREPLY_MASTER.md`.
 >
-> **Updated:** 2026-06-27 · Legend: ✅ live/wired · 🟡 partial · 🟦 static prototype · ❌ missing
+> **Updated:** 2026-06-27 · **15/15 screens wired** · Legend: ✅ live/wired · 🟡 partial · 🟦 static prototype · ❌ missing
 
 ---
 
@@ -23,9 +23,9 @@
 | Subreddit Intel | `#/subreddit` | ✅ live | `reply_rules` (Reddit `about/rules.json`) |
 | Knowledge | `#/knowledge` | ✅ live | `agent_knowledge` (+ graph) (planned) |
 | Analytics | `#/analytics` | ✅ live | derive from `reply_list`+`content_list` (planned) |
-| AI Visibility (GEO) | `#/geo` | 🟦 static | new backend (later) |
+| AI Visibility (GEO) | `#/geo` | ✅ live | `geo_list/add/set/delete` (geo_queries) |
 | Queue | `#/queue` | ✅ live | `content_list` by status (planned) |
-| Alerts | `#/alerts` | 🟦 static | new alert-rules store (later) |
+| Alerts | `#/alerts` | ✅ live | `alerts_list/add/delete` (reply_alerts) |
 | Onboarding wizard | `#/onboarding` | ✅ live | `agent_create` on finish |
 
 ---
