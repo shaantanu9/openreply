@@ -218,6 +218,9 @@ def list_connections() -> list[dict]:
             "enabled": _creds.is_enabled(source, default=True),
             "unlocks": meta.get("unlocks", [source]),
             "note": meta.get("note", ""),
+            # Exact session-cookie names to paste (cookie sources) — drives the
+            # "Paste auth_token, ct0" hint in the manual-paste modal.
+            "need": _ce.required_cookies(source) if kind == "cookie" else [],
             "label_a": meta.get("label_a", ""),
             "label_b": meta.get("label_b", ""),
             "field_a": meta.get("field_a", ""),
