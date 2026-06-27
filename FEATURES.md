@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-18 by Claude · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
+> **Updated:** 2026-06-27 by Claude · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -159,6 +159,33 @@ connected, never a hard 403. Optional `REDDIT_PROXY` in `core/public_client.py`.
 profile/company search needs the upstream linkedin-scraper MCP; Xiaoyuzhou
 audio→text transcription deferred (would reuse the Whisper pipeline) — all P2,
 each degrades to `[]` cleanly.
+
+### 1.8 Social fetch — end-to-end (Connect = enabled) ✅ NEW (2026-06-27)
+Every social adapter now fetches **from the app**, not just from an explicit CLI
+`--sources` flag. Connect a platform in the Connections screen → verify → it's
+auto-pulled into collection runs; mute any source with the per-card **"Used in
+collection"** toggle. Reference: `docs/SOCIAL_FETCH.md`.
+
+| Platform | Mechanism | Credential (kind) | `source_type` | State |
+|---|---|---|---|---|
+| X / Twitter | bird/cookie → xAI → xquik | `twitter` (cookie) / `XAI`/`XQUIK` key | `x` | ✅ |
+| TikTok · Instagram · Threads · Pinterest | ScrapeCreators REST | `scrapecreators` (api_key) — one key, 4 platforms | `tiktok`/`instagram`/`threads`/`pinterest` | ✅ (needs key) |
+| YouTube | yt-dlp search→comments+transcript | none | `youtube` | ✅ |
+| Bluesky | AT Protocol authed search | `bluesky` (login_pair: handle+app-password) | `bluesky` | ✅ |
+| Mastodon | public hashtag search | none | `mastodon` | ✅ |
+| TruthSocial | Mastodon-compatible API | `truthsocial` (api_key/token) | `truthsocial` | ✅ |
+
+**Implementation:** adapters read `core/credentials.py` first then env
+(`sources/_scrapecreators.py`, `truthsocial.py`, `bluesky.py`) ·
+`source_credentials.enabled` flag (`core/db.py` migration) + `is_enabled`/`set_enabled` ·
+catalogue + `login_pair` kind + `toggle_connection` + `connected_collection_sources`
+(`research/reach_connections.py`) · default-sweep injection (`research/collect.py`) ·
+`gapmap creds toggle` (`cli/main.py`) · `creds_toggle` IPC (`src-tauri/src/commands.rs`,
+`main.rs`) · UI cards/toggle/pills (`app-tauri/src/or/dynamic.js::renderConnections`).
+
+**Known gaps (1.8):** ScrapeCreators uses one shared key → the four platforms toggle
+together (per-platform sub-toggles are P2). LinkedIn stays URL-only (not topic-search).
+`source_credentials` is local-trust (OS-keychain hardening is future scope).
 
 **Known gaps:** none. Two transcript paths: (1) yt-dlp captions for any topic-collected video; (2) Whisper fallback for *caption-less* videos in the bulk YouTube source — `_whisper_transcript_rows` in `sources/youtube.py`, capped at 3 videos/collect and aggressive/rerun-only (`research/collect.py` `_run_source`). Manual paste-a-URL ingest (`sources/video.py:125`) is gated behind the `video` pyproject extra (yt-dlp / faster-whisper) — see category 15.
 
@@ -769,6 +796,45 @@ toolkit-linked but not yet smoke-tested in a running desktop build.
 - **Phase G — Business framing (NEW):** Lean Canvas + Value-Proposition Canvas + North-Star metric.
 - ✅ **Remaining cat-14 🟡 — DONE:** Why root-cause, Sentiment-by-source charts, Tactic library, Hypothesis-tracker screen, PERT + Idea-scan MCP.
 - **Cross-cutting:** expose cat-14 modules + new sources as MCP tools so Claude Code drives the whole funnel headlessly; add persona tests.
+
+---
+
+## OpenReply UI — License activation, onboarding & settings ✅
+
+> Added 2026-06-27. The OpenReply SPA (`app-tauri/src/or/*`) reuses Gap Map's
+> existing license backend verbatim; only the frontend gate + screens are new.
+
+### License activation gate ✅
+**Status:** ✅ Complete
+**Entry points:** App launch (forced) · Settings › Licence › Deactivate returns here
+**User flow:** launch → router `gateCheck()` calls `licenseGateStatus()` +
+`licenseStatus()` → if gate enabled and not activated → blocking full-screen
+activation form → enter email/password/key → `licenseServerCheck` →
+`licenseActivate` (`POST {api_base}/v1/device/activate`) → on success → `#/welcome`.
+**Implementation:** `app-tauri/src/main.js` `gateCheck()` + `FULL_SCREENS`;
+`app-tauri/src/or/dynamic.js` `renderActivate` / `fmtKey` / `humanLicenseError`;
+`app-tauri/src/or/api.js` license wrappers; backend `src-tauri/src/commands.rs`
+`license_gate_status` / `license_activate` / `license_status` (registered
+`main.rs` L429–435, L709). Activation server: `act_suit/activation-suite/`.
+**Data:** JWT in `data_dir/license_token` (0600) + `data_dir/license_state.json`
+(Rust). localStorage `or-onboarded`, `or-user-name` (UX only). Gate default ON;
+bypass with `GAPMAP_LICENSE_GATE_ENABLED=0` for dev.
+**Known gaps:** none known. Browser (no Tauri) skips the gate by design.
+
+### Post-activation onboarding ✅
+**Status:** ✅ Complete
+**User flow:** activated but `!or-onboarded` → `#/welcome` → step 1 profile
+(name; email prefilled from license) → step 2 AI provider + BYOK key (reuses
+`byokStatus`/`byokSet`/`testLlm`) → Finish sets `or-onboarded` → `#/agents`.
+**Implementation:** `or/dynamic.js` `renderWelcome`. Reddit auth + first-agent
+creation are deferred to first use (existing `#/onboarding` agent flow).
+
+### Settings › Licence panel ✅
+**Status:** ✅ Complete
+**User flow:** Settings → Licence card shows email/plan/id/expiry+days-left/trial;
+Refresh (`licenseRevalidate`) · Deactivate (`licenseLogout` → `#/activate`).
+**Implementation:** `or/dynamic.js` `buildLicenseCard`, wired full-width into
+`renderSettings` alongside the existing LLM/BYOK, appearance, feeds, data cards.
 
 ---
 
