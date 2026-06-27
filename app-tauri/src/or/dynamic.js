@@ -619,7 +619,8 @@ function connToggle(c) {
 export async function renderConnections(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("Connections",
-    "Log in to platforms to unlock authenticated reach. Read-only &amp; account-safe — we never post for you or need your password.") +
+    "Log in to platforms to unlock authenticated reach. Read-only &amp; account-safe — we never post for you or need your password.",
+    `<button id="cn-test-all" class="${btnP}">⚡ Test all</button>`) +
     `<p class="mb-5 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit"><i data-lucide="lock" class="inline-block h-4 w-4 align-[-2px]"></i> Credentials are stored locally on this machine only. Connect a platform and it's automatically pulled into your collection runs — toggle "Used in collection" to opt out. Public sources (Hacker News, Dev.to, Mastodon, YouTube) need no login.</p>
      <div id="cn-grid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><div class="text-zinc-500">Loading connections…</div></div>`;
 
@@ -766,6 +767,33 @@ export async function renderConnections(view) {
       });
     }
   }
+
+  // Test-all: run the real per-source verify for every reachable source
+  // (public sources + connected credentials), updating each card live.
+  async function testAll() {
+    const btnEl = document.getElementById("cn-test-all");
+    const rows = (await api.credsList()) || [];
+    const targets = rows.filter(c => c.kind === "public" || c.connected);
+    if (!targets.length) { toast("Nothing to test yet — connect a platform first."); return; }
+    btnEl.disabled = true; const orig = btnEl.textContent;
+    let ok = 0, fail = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const src = targets[i].source;
+      btnEl.textContent = `Testing ${i + 1}/${targets.length}…`;
+      setMsg(src, "Checking…");
+      try {
+        const r = (await api.credsVerify(src))?.[0] || {};
+        setMsg(src, r.message || (r.connected ? "OK" : "Failed"), !!r.connected);
+        r.connected ? ok++ : fail++;
+      } catch (e) { setMsg(src, String(e)); fail++; }
+    }
+    btnEl.textContent = orig; btnEl.disabled = false;
+    toast(`Tested ${targets.length}: ${ok} reachable, ${fail} failed`);
+    load();
+  }
+
+  const testAllBtn = document.getElementById("cn-test-all");
+  if (testAllBtn) testAllBtn.onclick = testAll;
   load();
 }
 
