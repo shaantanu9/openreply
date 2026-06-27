@@ -1,6 +1,6 @@
 # Gap Map (gapmap) — Features & Flows
 
-> **Updated:** 2026-06-27 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · §21 Opportunity lifecycle (save/draft/replied/dismiss + filter chips + social badges; Inbox=saved; Analytics funnel) · §21 Self-learning loop (auto ingest→memories→beliefs after fetch/schedule/manual + save/dismiss feedback + Learning screen) · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
+> **Updated:** 2026-06-27 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · §21 Opportunity lifecycle (save/draft/replied/dismiss + filter chips + social badges; Inbox=saved; Analytics funnel) · §21 Self-learning loop (auto ingest→memories→beliefs after fetch/schedule/manual + save/dismiss feedback + Learning screen) · journey/flow audit (command triangle 100% wired, no onboarding blockers) + completed Queue (edit/status/delete), Agents edit/delete, live Pricing, onboarding clarity · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/gapmap`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -880,9 +880,37 @@ shared `platformBadge`/`statusPill`/`skeleton`/`debounce`).
 **Data:** `reply_opportunities` (status ∈ new/saved/drafted/ready/queued/posted/
 skipped/snoozed; + `snooze_until`/`scheduled_at`/`posted_at`/`updated_at`) ·
 `reply_drafts` (+ `version`/`source`/`updated_at` — full draft history).
-**Known gaps:** Queue auto-post is wired as status only — the scheduled poster/
-reminder transport is pending (manual Copy+Open works today). Social opportunities
-surface only what's been collected/connected (see §1.8 social fetch).
+**Known gaps:** Social opportunities surface only what's been collected/connected
+(see §1.8 social fetch).
+
+### Scheduled poster + reminder ✅ NEW (2026-06-27)
+**Status:** ✅ Complete (reminder + best-effort auto-post hook)
+**Entry points:** the existing launchd scheduler (`schedule.rs` → `research
+schedule-tick`) · CLI `gapmap reply post-due [--notify]` · Rust `reply_post_due` ·
+Inbox on-open + "Due now" badge.
+**Flow:** a queued reply (status `queued` + `scheduled_at`) becomes due → the poster
+(`reply/poster.py process_due`) tries `_autopost` (Reddit write hook — no-op while the
+client is read-only) and otherwise surfaces a **reminder**: a native macOS notification
+when run headless via launchd, plus a **"Due now"** badge in the Inbox Ready tab. The
+Inbox also calls `reply post-due` on open so due items are processed in-app.
+**Implementation:** `reply/poster.py` (`process_due`, `due_opportunities`, `_autopost`,
+`_notify`) · `cli/reply_cmds.py` (`post-due`) · `cli/main.py` (wired into
+`schedule-tick`, `replies_due` in result) · `commands.rs`/`main.rs` (`reply_post_due`) ·
+`or/api.js` (`replyPostDue`) · `or/dynamic.js renderInbox` ("Due now" + on-open process).
+**Known gaps:** auto-post is a hook only — Reddit/social *write* APIs aren't wired
+(read-only clients). With a write-enabled Reddit account (OAuth refresh token),
+`_autopost`'s Reddit branch is where `submission.reply` goes. Notifications are macOS-only.
+
+### Connections (Reach credentials) — list + live test ✅ (2026-06-27: Test-all)
+**Status:** ✅ Complete
+**Entry points:** Connections screen · CLI `gapmap` creds_* · Rust `creds_*`.
+**Flow:** sources from the `GATED` registry (`research/reach_connections.py`); each card
+shows connected/error state, **last-verified** time, and **"unlocks"** chips. Per-source
+**Verify** and a header **Test all** run the genuine `verify_connection` (a live fetch
+per source). Connect via browser-cookie import, paste cookie, API key, or login-pair.
+**Implementation:** `research/reach_connections.py` (`list_connections`, `verify_connection`,
+`_live_check`) · `core/credentials.py` · `commands.rs` creds_* · `or/dynamic.js
+renderConnections` (`testAll`).
 
 ### Self-learning loop — autonomous evolution ✅ NEW (2026-06-27)
 **Status:** ✅ Complete (wiring + feedback + UI; LLM-distillation paths inherited from
