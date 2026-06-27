@@ -217,7 +217,13 @@ Full detail: `TAURI_AND_FETCH_ARCHITECTURE.md`.
   verified end-to-end (real Reddit posts via RSS fallback; real LLM drafts/content).
 - **Desktop UI (wired, compiles, runs):** 12 Rust command bridges + `api.js` wrappers;
   `agents`/`opportunities`/`compose` screens; `#/` → Agents; 15 off-mission nav items hidden.
-- **Prototype:** 15-page clickable HTML, Reddit theme, dark/light, shared injected sidebar.
+- **Prototype:** 17-page clickable HTML on **Tailwind CSS** + **Lucide icons**, Reddit
+  theme, dark/light, shared injected sidebar. Working interactions: agent switcher,
+  Track-a-query modal, reusable toast/modal, global button feedback. QA: all internal
+  links resolve, every page wired, no emoji left, JS syntax-clean; verified rendering in
+  a real browser (landing, agents, geo dark+light, inbox, opportunities, compose).
+  *Note (gotcha): crawl4ai's DOM snapshot doesn't capture client-rendered `<svg>`/late
+  CDN icons — verify client-rendered UI with real-browser screenshots, not the crawl.*
 - **Research:** crawl4ai installed; 15 competitor sources captured; `COMPETITOR_LANDSCAPE.md`.
 - **Branch `open-reply`** pushed: reply engine → agent model → nav trim → reshape plan →
   UI screens+bridge → prototype → Reddit-theme prototype → learnings → crawl4ai research.

@@ -1,15 +1,19 @@
 # OpenReply — clickable HTML prototype
 
 Static, no-backend prototype to lock the **UX + flow** before changing the real app.
-Reddit-inspired palette (orangered `#FF4500`) with **dark + light** themes. Pure HTML +
-one CSS file + a tiny shared `app.js` (injects the sidebar + handles the theme toggle).
+Built with **Tailwind CSS** (Play CDN — zero build) + **Lucide icons**, Reddit-inspired
+palette (orangered `#FF4500`), and **dark + light** themes. A tiny shared `app.js`
+injects the sidebar, loads Lucide, handles the theme toggle, and provides the agent
+switcher + reusable toast/modal helpers.
 
 ## Run
 ```bash
 open prototype/index.html      # or double-click it
 ```
-Everything is navigable by links/buttons — no server, no build. Toggle **dark/light**
-from the bottom of the sidebar (or the 🌓 button on the landing page); choice persists.
+No server, no build. Toggle **dark/light** from the bottom of the sidebar; choice
+persists. Working interactions: the **Active agent** switcher (persists / "+ New agent"
+→ onboarding), **+ Track a query** (opens a modal, adds a row), and every other button
+gives feedback via a toast. Hard-refresh (Cmd+Shift+R) any open tab after pulling.
 
 ## Pages
 ```
