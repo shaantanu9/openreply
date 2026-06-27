@@ -296,6 +296,9 @@ pub async fn agent_create(
     app: AppHandle,
     name: String,
     niche: Option<String>,
+    website: Option<String>,
+    goal: Option<String>,
+    product: Option<String>,
     persona: Option<String>,
     tone: Option<String>,
     audience: Option<String>,
@@ -307,6 +310,9 @@ pub async fn agent_create(
         if let Some(s) = v { if !s.is_empty() { args.push(flag.to_string()); args.push(s); } }
     };
     push("--niche", niche);
+    push("--website", website);
+    push("--goal", goal);
+    push("--product", product);
     push("--persona", persona);
     push("--tone", tone);
     push("--audience", audience);
@@ -363,13 +369,24 @@ pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Va
 
 /// `gapmap agent corpus` — browse the agent's collected multi-source corpus.
 #[tauri::command]
-pub async fn agent_corpus(app: AppHandle, id: Option<String>, source: Option<String>, query: Option<String>, limit: Option<u32>, offset: Option<u32>) -> Result<Value, String> {
+pub async fn agent_corpus(app: AppHandle, id: Option<String>, source: Option<String>, query: Option<String>, relevance: Option<String>, limit: Option<u32>, offset: Option<u32>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "corpus".to_string(), "--json".to_string()];
     if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
     if let Some(s) = source { if !s.is_empty() { args.push("--source".into()); args.push(s); } }
     if let Some(q) = query { if !q.is_empty() { args.push("--query".into()); args.push(q); } }
+    if let Some(rv) = relevance { if !rv.is_empty() { args.push("--relevance".into()); args.push(rv); } }
     if let Some(l) = limit { args.push("--limit".into()); args.push(l.to_string()); }
     if let Some(o) = offset { args.push("--offset".into()); args.push(o.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent corpus-check` — LLM relevance check on fetched corpus posts.
+#[tauri::command]
+pub async fn agent_corpus_check(app: AppHandle, id: Option<String>, limit: Option<u32>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "corpus-check".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(l) = limit { args.push("--limit".into()); args.push(l.to_string()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }
@@ -389,6 +406,25 @@ pub async fn agent_build_graph(app: AppHandle, id: Option<String>, deep: Option<
 pub async fn agent_graph(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "graph".to_string(), "--json".to_string()];
     if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent brain` — unified brain (structural graph + persona memories + beliefs).
+#[tauri::command]
+pub async fn agent_brain(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "brain".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent brain-relink` — (re)build the cross-links that merge persona brains.
+#[tauri::command]
+pub async fn agent_brain_relink(app: AppHandle, id: Option<String>, semantic: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "brain-relink".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if semantic == Some(false) { args.push("--no-semantic".into()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }
@@ -565,6 +601,51 @@ pub async fn content_list(app: AppHandle, kind: Option<String>, status: Option<S
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap publish status` — which platforms have publish credentials stored.
+#[tauri::command]
+pub async fn publish_status(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["publish", "status", "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap publish set-creds …` — store X (Twitter) OAuth 1.0a write credentials.
+#[tauri::command]
+pub async fn publish_set_x_creds(
+    app: AppHandle,
+    api_key: String,
+    api_secret: String,
+    access_token: String,
+    access_secret: String,
+) -> Result<Value, String> {
+    run_cli(
+        &app,
+        vec![
+            "publish", "set-creds",
+            "--api-key", &api_key, "--api-secret", &api_secret,
+            "--access-token", &access_token, "--access-secret", &access_secret,
+            "--json",
+        ],
+    )
+    .await
+    .map_err(err_to_string)
+}
+
+/// `gapmap publish x --content-id <id> [--dry-run]` — post a draft to X as a
+/// tweet/thread. `dry_run` previews the split tweets without posting.
+#[tauri::command]
+pub async fn content_publish_x(
+    app: AppHandle,
+    content_id: String,
+    dry_run: Option<bool>,
+) -> Result<Value, String> {
+    let mut args = vec![
+        "publish".to_string(), "x".to_string(),
+        "--content-id".to_string(), content_id, "--json".to_string(),
+    ];
+    if dry_run.unwrap_or(false) { args.push("--dry-run".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap agent update …` — edit the active (or given) agent's voice/keywords/platforms.
 #[tauri::command]
 pub async fn agent_update(
@@ -572,6 +653,9 @@ pub async fn agent_update(
     id: Option<String>,
     name: Option<String>,
     niche: Option<String>,
+    website: Option<String>,
+    goal: Option<String>,
+    product: Option<String>,
     persona: Option<String>,
     tone: Option<String>,
     audience: Option<String>,
@@ -586,6 +670,9 @@ pub async fn agent_update(
     push("--id", id);
     push("--name", name);
     push("--niche", niche);
+    push("--website", website);
+    push("--goal", goal);
+    push("--product", product);
     push("--persona", persona);
     push("--tone", tone);
     push("--audience", audience);
@@ -1017,6 +1104,17 @@ pub async fn creds_toggle(app: AppHandle, source: String, enabled: bool) -> Resu
     run_cli(&app, vec!["creds", "toggle", "--source", &source, flag, "--json"])
         .await
         .map_err(err_to_string)
+}
+
+/// Live-fetch a sample of content from a source (titles + links) to confirm it works.
+#[tauri::command]
+pub async fn creds_preview(app: AppHandle, source: String, query: Option<String>, limit: Option<u32>) -> Result<Value, String> {
+    let lim = limit.unwrap_or(6).to_string();
+    let mut args = vec!["creds".to_string(), "preview".to_string(),
+                        "--source".to_string(), source, "--limit".to_string(), lim, "--json".to_string()];
+    if let Some(q) = query { if !q.is_empty() { args.push("--query".into()); args.push(q); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
 }
 
 /// Build the CLI args vector for a topic collect. Pulled out of
@@ -6980,6 +7078,7 @@ pub async fn byok_set(_app: AppHandle, name: String, value: String) -> Result<Va
         "MISTRAL_API_KEY",
         "GOOGLE_API_KEY",
         "NVIDIA_API_KEY",
+        "PERPLEXITY_API_KEY",
         "OLLAMA_BASE_URL",
         "LLM_PROVIDER",
         "LLM_MODEL",
