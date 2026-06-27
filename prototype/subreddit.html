@@ -1,42 +1,49 @@
-<!doctype html><html lang="en" data-theme="dark"><head>
+<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Subreddit Intelligence — OpenReply</title>
-<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
-<link rel="stylesheet" href="proto.css"></head><body>
-<div class="app">
-  <aside class="side" id="side"></aside>
-  <main class="main">
-    <div class="top"><div><h1>Subreddit Intelligence</h1><p class="sub">Know before you post — rules, strictness, timing &amp; your account eligibility. Posts that don't get removed.</p></div></div>
+<script>try{if((localStorage.getItem('or-theme')||'dark')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
+<div class="flex min-h-screen">
+  <aside id="side"></aside>
+  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+    <div class="mb-5"><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Subreddit Intelligence</h1>
+      <p class="text-zinc-500 dark:text-zinc-400">Know before you post — rules, strictness, timing &amp; your account eligibility. Posts that don't get removed.</p></div>
 
-    <div class="grid cols-3" style="margin-bottom:18px">
-      <div class="card"><div class="muted">Account status</div><div class="kpi">Healthy</div><div class="badge green">u/acme_dev · 3.2k karma · no flags</div></div>
-      <div class="card"><div class="muted">Subs you're eligible to post in</div><div class="kpi">7 / 9</div></div>
-      <div class="card"><div class="muted">Removal risk (last 30d)</div><div class="kpi">0</div><div class="badge green">0 removals · 0 bans</div></div>
+    <div class="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><div class="text-sm text-zinc-500">Account status</div><div class="text-2xl font-extrabold text-zinc-900 dark:text-white">Healthy</div><span class="mt-1 inline-block rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">u/acme_dev · 3.2k karma · no flags</span></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><div class="text-sm text-zinc-500">Eligible to post in</div><div class="text-2xl font-extrabold text-zinc-900 dark:text-white">7 / 9</div></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><div class="text-sm text-zinc-500">Removals (30d)</div><div class="text-2xl font-extrabold text-zinc-900 dark:text-white">0</div><span class="mt-1 inline-block rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">0 removals · 0 bans</span></div>
     </div>
 
-    <div class="card">
-      <table class="tbl">
-        <tr><th>Subreddit</th><th>Self-promo</th><th>Min karma / age</th><th>Best time</th><th>Strictness</th><th>You can post</th></tr>
-        <tr><td>r/GetStudying</td><td><span class="badge amber">9:1 rule</span></td><td>50 / 7d</td><td>Tue–Thu AM</td><td><span class="badge green">low</span></td><td><span class="badge green">eligible</span></td></tr>
-        <tr><td>r/productivity</td><td><span class="badge red">no links in top-level</span></td><td>100 / 30d</td><td>Weekday AM</td><td><span class="badge amber">medium</span></td><td><span class="badge green">eligible</span></td></tr>
-        <tr><td>r/ObsidianMD</td><td><span class="badge amber">disclose affiliation</span></td><td>20 / 3d</td><td>Anytime</td><td><span class="badge green">low</span></td><td><span class="badge green">eligible</span></td></tr>
-        <tr><td>r/Notion</td><td><span class="badge red">no promo, ever</span></td><td>200 / 60d</td><td>—</td><td><span class="badge red">high</span></td><td><span class="badge red">not eligible</span></td></tr>
-      </table>
+    <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <table class="w-full text-sm"><thead><tr class="text-left text-xs uppercase tracking-wide text-zinc-400">
+        <th class="px-4 py-3">Subreddit</th><th class="px-4 py-3">Self-promo</th><th class="px-4 py-3">Min karma / age</th><th class="px-4 py-3">Best time</th><th class="px-4 py-3">Strictness</th><th class="px-4 py-3">You can post</th></tr></thead>
+        <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800/70">
+          <tr><td class="px-4 py-3">r/GetStudying</td><td class="px-4 py-3"><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">9:1 rule</span></td><td class="px-4 py-3">50 / 7d</td><td class="px-4 py-3">Tue–Thu AM</td><td class="px-4 py-3"><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">low</span></td><td class="px-4 py-3"><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">eligible</span></td></tr>
+          <tr><td class="px-4 py-3">r/productivity</td><td class="px-4 py-3"><span class="rounded bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-500">no top-level links</span></td><td class="px-4 py-3">100 / 30d</td><td class="px-4 py-3">Weekday AM</td><td class="px-4 py-3"><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">medium</span></td><td class="px-4 py-3"><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">eligible</span></td></tr>
+          <tr><td class="px-4 py-3">r/ObsidianMD</td><td class="px-4 py-3"><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">disclose affiliation</span></td><td class="px-4 py-3">20 / 3d</td><td class="px-4 py-3">Anytime</td><td class="px-4 py-3"><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">low</span></td><td class="px-4 py-3"><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">eligible</span></td></tr>
+          <tr><td class="px-4 py-3">r/Notion</td><td class="px-4 py-3"><span class="rounded bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-500">no promo, ever</span></td><td class="px-4 py-3">200 / 60d</td><td class="px-4 py-3">—</td><td class="px-4 py-3"><span class="rounded bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-500">high</span></td><td class="px-4 py-3"><span class="rounded bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-500">not eligible</span></td></tr>
+        </tbody></table>
     </div>
 
-    <div class="grid cols-2" style="margin-top:18px">
-      <div class="card"><b>r/GetStudying — rules (auto-fetched)</b>
-        <div class="col" style="gap:8px;margin-top:10px">
-          <div class="spread"><span>1 · No spam or self-promotion (9:1)</span><span class="badge amber">applies to you</span></div>
-          <div class="spread"><span>2 · Be helpful &amp; on-topic</span><span class="badge green">ok</span></div>
-          <div class="spread"><span>3 · No surveys without mod approval</span><span class="badge green">ok</span></div>
+    <div class="mt-5 grid gap-4 lg:grid-cols-2">
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+        <b class="text-zinc-900 dark:text-white">r/GetStudying — rules (auto-fetched)</b>
+        <div class="mt-3 space-y-2 text-sm">
+          <div class="flex items-center justify-between"><span>1 · No spam or self-promotion (9:1)</span><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">applies</span></div>
+          <div class="flex items-center justify-between"><span>2 · Be helpful &amp; on-topic</span><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">ok</span></div>
+          <div class="flex items-center justify-between"><span>3 · No surveys without mod approval</span><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">ok</span></div>
         </div>
-        <div class="note" style="margin-top:12px">✓ Your last draft was checked against these rules and passed. Compliance runs on every reply.</div>
+        <p class="mt-3 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit">✓ Your last draft passed these rules. Compliance runs on every reply.</p>
       </div>
-      <div class="card"><b>How OpenReply keeps you safe</b>
-        <ul style="color:var(--muted);line-height:1.9;margin:10px 0 0;padding-left:18px">
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+        <b class="text-zinc-900 dark:text-white">How OpenReply keeps you safe</b>
+        <ul class="mt-2 list-disc space-y-1.5 pl-5 text-sm text-zinc-500 dark:text-zinc-400">
           <li>Reads each sub's <b>about/rules.json</b> before drafting.</li>
-          <li>LLM <b>compliance check</b> flags self-promo / link / low-effort risks.</li>
+          <li>LLM <b>compliance check</b> flags self-promo / link / low-effort risk.</li>
           <li>Tracks <b>karma, account age &amp; posting limits</b> per sub.</li>
           <li><b>Never posts for you</b> — read-only; you paste &amp; post manually.</li>
         </ul>
@@ -44,4 +51,5 @@
     </div>
   </main>
 </div>
-<script src="app.js"></script></body></html>
+<script src="app.js"></script>
+</body></html>

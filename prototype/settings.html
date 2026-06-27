@@ -1,40 +1,44 @@
-<!doctype html><html lang="en" data-theme="dark"><head>
+<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Settings — OpenReply</title>
-<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
-<link rel="stylesheet" href="proto.css"></head><body>
-<div class="app">
-  <aside class="side" id="side"></aside>
-  <main class="main">
-    <div class="top"><div><h1>Settings</h1><p class="sub">Voice defaults, AI key, alerts, and app preferences.</p></div></div>
-    <div class="grid cols-2">
-      <div class="card"><b>AI provider (BYOK)</b>
-        <p class="muted" style="margin:6px 0 12px">Runs on your own key. Nothing sent to us.</p>
-        <label class="fld">Provider<select><option>Anthropic (Claude)</option><option>OpenAI</option><option>OpenRouter</option><option>Groq</option><option>Local Ollama</option></select></label>
-        <label class="fld">API key<input type="password" value="sk-ant-************"></label>
-        <button class="btn sm primary">Save</button></div>
-      <div class="card"><b>Appearance</b>
-        <p class="muted" style="margin:6px 0 12px">Theme follows the toggle in the sidebar.</p>
-        <label class="fld">Default theme<select><option>Match system</option><option>Dark</option><option>Light</option></select></label>
-        <label class="fld">Accent<select><option>Reddit orange</option><option>Blue</option></select></label></div>
-      <div class="card"><b>Agent voice defaults</b>
-        <label class="fld" style="margin-top:8px">Default tone<input value="helpful, concise, non-salesy"></label>
-        <label class="fld">Disclosure style<select><option>Disclose affiliation naturally</option><option>No self-promo ever</option><option>Pitch only when asked</option></select></label>
-        <label class="fld">Reply length<select><option>Match platform norms</option><option>Always short</option></select></label></div>
-      <div class="card"><b>Alerts</b>
-        <p class="muted" style="margin:6px 0 12px">Where new high-intent mentions are pushed.</p>
-        <label class="fld">Slack webhook<input placeholder="https://hooks.slack.com/…"></label>
-        <label class="fld">Email digest<select><option>Real-time (high intent)</option><option>Daily digest</option><option>Off</option></select></label>
-        <a class="btn sm" href="alerts.html">Open alert rules →</a></div>
-      <div class="card"><b>Knowledge refresh</b>
-        <label class="fld" style="margin-top:8px">Cadence<select><option>Daily</option><option>Weekly</option><option>Manual only</option></select></label>
-        <label class="fld">Sweep depth<select><option>Light (fast)</option><option>Deep (thorough)</option></select></label></div>
-      <div class="card"><b>Data &amp; account</b>
-        <p class="muted" style="margin:6px 0 12px">Local SQLite · ~180 MB</p>
-        <div class="row"><button class="btn sm">Export data</button><button class="btn sm">Custom RSS feeds</button></div>
-        <div class="divider"></div>
-        <button class="btn sm" style="color:var(--red);border-color:var(--red)">Delete agent…</button></div>
+<script>try{if((localStorage.getItem('or-theme')||'dark')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
+<div class="flex min-h-screen">
+  <aside id="side"></aside>
+  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+    <div class="mb-5"><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Settings</h1><p class="text-zinc-500 dark:text-zinc-400">Voice defaults, AI key, alerts, and app preferences.</p></div>
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><b class="text-zinc-900 dark:text-white">AI provider (BYOK)</b>
+        <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Runs on your own key. Nothing sent to us.</p>
+        <label class="block mb-3 text-sm text-zinc-500">Provider<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Anthropic (Claude)</option><option>OpenAI</option><option>OpenRouter</option><option>Local Ollama</option></select></label>
+        <label class="block mb-3 text-sm text-zinc-500">API key<input type="password" value="sk-ant-************" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+        <button class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save</button></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><b class="text-zinc-900 dark:text-white">Appearance</b>
+        <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Theme follows the toggle in the sidebar.</p>
+        <label class="block mb-3 text-sm text-zinc-500">Default theme<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Match system</option><option>Dark</option><option>Light</option></select></label>
+        <label class="block text-sm text-zinc-500">Accent<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Reddit orange</option><option>Blue</option></select></label></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><b class="text-zinc-900 dark:text-white">Agent voice defaults</b>
+        <label class="block mb-3 mt-2 text-sm text-zinc-500">Default tone<input value="helpful, concise, non-salesy" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+        <label class="block mb-3 text-sm text-zinc-500">Disclosure style<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Disclose affiliation naturally</option><option>No self-promo ever</option><option>Pitch only when asked</option></select></label>
+        <label class="block text-sm text-zinc-500">Reply length<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Match platform norms</option><option>Always short</option></select></label></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><b class="text-zinc-900 dark:text-white">Alerts</b>
+        <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Where new high-intent mentions are pushed.</p>
+        <label class="block mb-3 text-sm text-zinc-500">Slack webhook<input placeholder="https://hooks.slack.com/…" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+        <label class="block mb-3 text-sm text-zinc-500">Email digest<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Real-time (high intent)</option><option>Daily digest</option><option>Off</option></select></label>
+        <a href="alerts.html" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Open alert rules →</a></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><b class="text-zinc-900 dark:text-white">Knowledge refresh</b>
+        <label class="block mb-3 mt-2 text-sm text-zinc-500">Cadence<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Daily</option><option>Weekly</option><option>Manual only</option></select></label>
+        <label class="block text-sm text-zinc-500">Sweep depth<select class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Light (fast)</option><option>Deep (thorough)</option></select></label></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><b class="text-zinc-900 dark:text-white">Data &amp; account</b>
+        <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Local SQLite · ~180 MB</p>
+        <div class="flex gap-2"><button class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Export data</button><button class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Custom RSS feeds</button></div>
+        <div class="my-4 border-t border-zinc-200 dark:border-zinc-800"></div>
+        <button class="rounded-full border border-rose-500 px-3 py-1.5 text-xs font-semibold text-rose-500">Delete agent…</button></div>
     </div>
   </main>
 </div>
-<script src="app.js"></script></body></html>
+<script src="app.js"></script>
+</body></html>

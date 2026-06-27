@@ -1,54 +1,58 @@
-<!doctype html><html lang="en" data-theme="dark"><head>
+<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Opportunities — OpenReply</title>
-<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
-<link rel="stylesheet" href="proto.css">
-<style>.opp .draft{display:none;margin-top:12px}.opp.open .draft{display:block}</style></head><body>
-<div class="app">
-  <aside class="side" id="side"></aside>
-  <main class="main">
-    <div class="top">
-      <div><h1>Opportunities</h1><p class="sub">Conversations worth replying to for <b>Acme Notes</b>.</p></div>
-      <div class="top-actions"><button class="btn primary" onclick="document.getElementById('scan').textContent='Scanning reddit, hn, dev.to… ✓ 12 found'">⚡ Find opportunities</button></div>
+<script>try{if((localStorage.getItem('or-theme')||'dark')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
+<div class="flex min-h-screen">
+  <aside id="side"></aside>
+  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+    <div class="mb-5 flex items-start justify-between gap-4">
+      <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Opportunities</h1>
+        <p class="text-zinc-500 dark:text-zinc-400">Conversations worth replying to for <b>Acme Notes</b>.</p></div>
+      <button onclick="document.getElementById('scan').textContent='Scanning reddit, hn, dev.to… ✓ 12 found'" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi">⚡ Find opportunities</button>
     </div>
-    <div class="card" style="margin-bottom:18px"><div class="row">
-      <label class="fld" style="margin:0">Platforms<input value="reddit, hn, devto" style="width:240px"></label>
-      <label class="fld" style="margin:0">Per platform<input type="number" value="15" style="width:80px"></label>
-      <label class="fld" style="margin:0">Min score<input type="number" value="50" style="width:80px"></label>
-      <span id="scan" class="muted" style="margin-left:auto">Showing saved opportunities</span></div></div>
 
-    <div class="grid" style="gap:12px">
-      <div class="card opp" id="o1">
-        <div class="spread"><div class="row"><span class="badge reddit">reddit</span> <span class="muted">r/GetStudying</span></div>
-          <span class="score hi" title="relevance 92 · intent 90 · fit 80">88</span></div>
-        <div style="font-weight:600;margin:6px 0">Best app to organize messy lecture notes?</div>
-        <div class="muted">High intent — author is actively asking for a recommendation; Acme solves exactly this.</div>
-        <div class="row" style="margin-top:12px"><a class="btn sm ghost" href="#">Open post ↗</a>
-          <button class="btn sm primary" onclick="document.getElementById('o1').classList.toggle('open')">Draft reply</button></div>
-        <div class="draft"><span class="badge green">✓ complies with r/GetStudying rules</span>
-          <textarea class="fld" style="width:100%;margin-top:8px" rows="5">For messy lecture notes, the trick is auto-tagging so you don't file things manually. I take notes in plain markdown, then let an app surface links between them by topic — way less upkeep than folders. (Full disclosure: I build Acme Notes, which does this for students, but the markdown + auto-link idea works in any tool.)</textarea>
-          <div class="row"><button class="btn sm primary">Copy</button><a class="btn sm" href="queue.html">Schedule</a><button class="btn sm">Mark posted</button><button class="btn sm ghost">Re-draft</button></div></div>
-      </div>
-      <div class="card opp" id="o2">
-        <div class="spread"><div class="row"><span class="badge reddit">reddit</span> <span class="muted">r/productivity</span></div><span class="score hi">81</span></div>
-        <div style="font-weight:600;margin:6px 0">Looking for an Obsidian alternative that's less work</div>
-        <div class="muted">Comparison/intent post — good fit to share a genuinely simpler workflow.</div>
-        <div class="row" style="margin-top:12px"><a class="btn sm ghost" href="#">Open post ↗</a>
-          <button class="btn sm primary" onclick="document.getElementById('o2').classList.toggle('open')">Draft reply</button></div>
-        <div class="draft"><span class="badge amber">⚠ r/productivity: no direct links in top-level comments</span>
-          <textarea class="fld" style="width:100%;margin-top:8px" rows="4">Obsidian is powerful but the setup tax is real. If you want less work, look for something that auto-links notes instead of making you wire them up. Happy to share the exact setup I use if helpful.</textarea>
-          <div class="row"><button class="btn sm primary">Copy</button><button class="btn sm">Mark posted</button><button class="btn sm ghost">Re-draft</button></div></div>
-      </div>
-      <div class="card opp" id="o3">
-        <div class="spread"><div class="row"><span class="badge amber">hn</span></div><span class="score mid">64</span></div>
-        <div style="font-weight:600;margin:6px 0">Show HN: my plain-text note-taking workflow</div>
-        <div class="muted">Medium fit — discussion thread; reply with value, no pitch.</div>
-        <div class="row" style="margin-top:12px"><a class="btn sm ghost" href="#">Open post ↗</a>
-          <button class="btn sm primary" onclick="document.getElementById('o3').classList.toggle('open')">Draft reply</button></div>
-        <div class="draft"><textarea class="fld" style="width:100%;margin-top:8px" rows="3">Nice setup. The piece most people miss is recall — plain text scales for capture but search/linking is where it breaks down. Curious how you handle cross-note discovery?</textarea>
-          <div class="row"><button class="btn sm primary">Copy</button><button class="btn sm">Mark posted</button></div></div>
-      </div>
+    <div class="mb-5 flex flex-wrap items-end gap-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 text-sm">
+      <label class="text-zinc-500 dark:text-zinc-400">Platforms<input value="reddit, hn, devto" class="mt-1 block w-56 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+      <label class="text-zinc-500 dark:text-zinc-400">Per platform<input type="number" value="15" class="mt-1 block w-20 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+      <label class="text-zinc-500 dark:text-zinc-400">Min score<input type="number" value="50" class="mt-1 block w-20 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+      <span id="scan" class="ml-auto text-zinc-400">Showing saved opportunities</span>
+    </div>
+
+    <div class="space-y-3" id="list">
+      <!-- card template repeated -->
     </div>
   </main>
 </div>
-<script src="app.js"></script></body></html>
+<script src="app.js"></script>
+<script>
+const OPPS=[
+ {pf:'reddit',sub:'r/GetStudying',cls:'text-emerald-500',score:88,title:'Best app to organize messy lecture notes?',why:'High intent — author is actively asking for a recommendation; Acme solves exactly this.',rule:{t:'✓ complies with r/GetStudying rules',c:'bg-emerald-500/15 text-emerald-500'},draft:"For messy lecture notes, the trick is auto-tagging so you don't file things manually. I take notes in plain markdown, then let an app surface links between them by topic — way less upkeep than folders. (Full disclosure: I build Acme Notes, which does this for students, but the markdown + auto-link idea works in any tool.)"},
+ {pf:'reddit',sub:'r/productivity',cls:'text-emerald-500',score:81,title:"Looking for an Obsidian alternative that's less work",why:'Comparison/intent post — good fit to share a genuinely simpler workflow.',rule:{t:'⚠ r/productivity: no links in top-level comments',c:'bg-amber-500/15 text-amber-500'},draft:'Obsidian is powerful but the setup tax is real. If you want less work, look for something that auto-links notes instead of making you wire them up. Happy to share the exact setup I use if helpful.'},
+ {pf:'hn',sub:'',cls:'text-amber-500',score:64,title:'Show HN: my plain-text note-taking workflow',why:'Medium fit — discussion thread; reply with value, no pitch.',rule:null,draft:'Nice setup. The piece most people miss is recall — plain text scales for capture but search/linking is where it breaks down. Curious how you handle cross-note discovery?'},
+];
+const badge=p=>p==='hn'?'bg-amber-500/15 text-amber-500':'bg-reddit/15 text-reddit';
+document.getElementById('list').innerHTML=OPPS.map((o,i)=>`
+ <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+   <div class="flex items-center justify-between">
+     <div class="flex items-center gap-2"><span class="rounded ${badge(o.pf)} px-2 py-0.5 text-xs font-bold">${o.pf}</span>${o.sub?`<span class="text-sm text-zinc-500">${o.sub}</span>`:''}</div>
+     <span class="text-2xl font-extrabold ${o.cls}">${o.score}</span></div>
+   <div class="mt-1.5 font-semibold text-zinc-900 dark:text-white">${o.title}</div>
+   <div class="text-sm text-zinc-500 dark:text-zinc-400">${o.why}</div>
+   <div class="mt-3 flex gap-2">
+     <a href="#" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open post ↗</a>
+     <button onclick="document.getElementById('d${i}').classList.toggle('hidden')" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white hover:bg-reddit-hi">Draft reply</button></div>
+   <div id="d${i}" class="hidden mt-3">
+     ${o.rule?`<span class="inline-block rounded ${o.rule.c} px-2 py-0.5 text-xs font-bold">${o.rule.t}</span>`:''}
+     <textarea rows="5" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${o.draft}</textarea>
+     <div class="mt-2 flex gap-2">
+       <button class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Copy</button>
+       <a href="queue.html" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule</a>
+       <button class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Mark posted</button></div>
+   </div>
+ </div>`).join('');
+</script>
+</body></html>

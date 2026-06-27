@@ -1,21 +1,36 @@
-<!doctype html><html lang="en" data-theme="dark"><head>
+<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Connections — OpenReply</title>
-<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
-<link rel="stylesheet" href="proto.css"></head><body>
-<div class="app">
-  <aside class="side" id="side"></aside>
-  <main class="main">
-    <div class="top"><div><h1>Connections</h1><p class="sub">Log in to platforms to unlock authenticated reach &amp; (later) one-click posting.</p></div></div>
-    <div class="note" style="margin-bottom:18px">Read-only sources (News, RSS, web search) need no login. Logins unlock richer data and posting.</div>
-    <div class="grid cols-3">
-      <div class="card"><div class="spread"><b>Reddit</b><span class="badge green">connected</span></div><p class="muted" style="margin:8px 0 12px">u/acme_dev · verified 2d ago</p><button class="btn sm">Reconnect</button></div>
-      <div class="card"><div class="spread"><b>X / Twitter</b><span class="badge red">not connected</span></div><p class="muted" style="margin:8px 0 12px">Cookie login</p><button class="btn sm primary">Connect</button></div>
-      <div class="card"><div class="spread"><b>LinkedIn</b><span class="badge red">not connected</span></div><p class="muted" style="margin:8px 0 12px">Cookie login</p><button class="btn sm primary">Connect</button></div>
-      <div class="card"><div class="spread"><b>Hacker News</b><span class="badge green">no auth needed</span></div><p class="muted" style="margin:8px 0 12px">Public</p><button class="btn sm" disabled>Ready</button></div>
-      <div class="card"><div class="spread"><b>Bluesky</b><span class="badge red">not connected</span></div><p class="muted" style="margin:8px 0 12px">API key</p><button class="btn sm primary">Add key</button></div>
-      <div class="card"><div class="spread"><b>Mastodon</b><span class="badge amber">optional</span></div><p class="muted" style="margin:8px 0 12px">Instance URL</p><button class="btn sm">Configure</button></div>
-    </div>
+<script>try{if((localStorage.getItem('or-theme')||'dark')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
+<div class="flex min-h-screen">
+  <aside id="side"></aside>
+  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+    <div class="mb-5"><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Connections</h1>
+      <p class="text-zinc-500 dark:text-zinc-400">Log in to platforms to unlock authenticated reach &amp; (later) one-click posting.</p></div>
+    <p class="mb-5 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit">🔒 Read-only &amp; account-safe — we never post for you or need your password. News/RSS/web sources need no login.</p>
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" id="conn"></div>
   </main>
 </div>
-<script src="app.js"></script></body></html>
+<script src="app.js"></script>
+<script>
+const C=[
+ ['Reddit','u/acme_dev · verified 2d ago',['connected','emerald'],'Reconnect',false],
+ ['X / Twitter','Cookie login',['not connected','rose'],'Connect',true],
+ ['LinkedIn','Cookie login',['not connected','rose'],'Connect',true],
+ ['Hacker News','Public',['no auth needed','emerald'],'Ready',false],
+ ['Bluesky','API key',['not connected','rose'],'Add key',true],
+ ['Mastodon','Instance URL',['optional','amber'],'Configure',false],
+];
+const tg={emerald:'bg-emerald-500/15 text-emerald-500',rose:'bg-rose-500/15 text-rose-500',amber:'bg-amber-500/15 text-amber-500'};
+document.getElementById('conn').innerHTML=C.map(([n,d,[t,c],btn,pri])=>`
+ <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+   <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">${n}</b><span class="rounded ${tg[c]} px-2 py-0.5 text-xs font-bold">${t}</span></div>
+   <p class="mb-3 mt-2 text-sm text-zinc-500 dark:text-zinc-400">${d}</p>
+   <button class="rounded-full ${pri?'bg-reddit text-white hover:bg-reddit-hi':'border border-zinc-200 dark:border-zinc-700'} px-3 py-1.5 text-xs font-semibold">${btn}</button>
+ </div>`).join('');
+</script>
+</body></html>

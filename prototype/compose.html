@@ -1,45 +1,56 @@
-<!doctype html><html lang="en" data-theme="dark"><head>
+<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Compose — OpenReply</title>
-<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
-<link rel="stylesheet" href="proto.css">
-<style>.kinds a{flex:1;text-align:center}.kinds a.active{background:var(--reddit);color:#fff;border-color:var(--reddit)}
-.out{display:none}.out.on{display:block}</style></head><body>
-<div class="app">
-  <aside class="side" id="side"></aside>
-  <main class="main">
-    <div class="top"><div><h1>Compose</h1><p class="sub">Generate content for <b>Acme Notes</b> from its live niche knowledge.</p></div></div>
-    <div class="card" style="margin-bottom:18px">
-      <div class="row kinds" style="margin-bottom:14px">
-        <a class="btn active" href="#" onclick="pick(this);return false">Post</a>
-        <a class="btn" href="#" onclick="pick(this);return false">Thread</a>
-        <a class="btn" href="#" onclick="pick(this);return false">Video script</a>
-        <a class="btn" href="#" onclick="pick(this);return false">Article</a></div>
-      <div class="row">
-        <label class="fld" style="margin:0">Platform<select style="width:180px"><option>X / Twitter</option><option>LinkedIn</option><option>Reddit</option></select></label>
-        <label class="fld" style="flex:1;margin:0">Angle (optional)<input placeholder="leave blank to auto-pick the strongest angle"></label>
-        <button class="btn primary" style="align-self:flex-end" onclick="document.getElementById('out').classList.add('on')">✨ Generate</button></div>
-      <div class="note" style="margin-top:12px">Suggested from knowledge: <b>“People hate manual tagging of notes”</b> · <b>“Obsidian sync is fiddly for students”</b></div>
+<script>try{if((localStorage.getItem('or-theme')||'dark')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
+<div class="flex min-h-screen">
+  <aside id="side"></aside>
+  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+    <div class="mb-5"><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Compose</h1>
+      <p class="text-zinc-500 dark:text-zinc-400">Generate content for <b>Acme Notes</b> from its live niche knowledge.</p></div>
+
+    <div class="mb-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+      <div class="mb-4 flex gap-2" id="kinds">
+        <button class="kind rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white">Post</button>
+        <button class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Thread</button>
+        <button class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Video script</button>
+        <button class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Article</button>
+      </div>
+      <div class="flex flex-wrap items-end gap-4 text-sm">
+        <label class="text-zinc-500 dark:text-zinc-400">Platform<select class="mt-1 block w-44 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>X / Twitter</option><option>LinkedIn</option><option>Reddit</option></select></label>
+        <label class="flex-1 text-zinc-500 dark:text-zinc-400">Angle (optional)<input placeholder="leave blank to auto-pick the strongest angle" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+        <button onclick="document.getElementById('out').classList.remove('hidden')" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi">✨ Generate</button>
+      </div>
+      <p class="mt-3 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit">Suggested from knowledge: <b>"People hate manual tagging of notes"</b> · <b>"Obsidian sync is fiddly for students"</b></p>
     </div>
-    <div class="card out" id="out" style="margin-bottom:18px">
-      <div class="spread"><b>Draft · Post · X</b><span class="badge green">on-brand</span></div>
-      <textarea class="fld" style="width:100%;margin-top:10px" rows="6">Manual note tagging is where note apps go to die.
+
+    <div id="out" class="hidden mb-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+      <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Draft · Post · X</b><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">on-brand · never AI slop</span></div>
+      <textarea rows="6" class="mt-3 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">Manual note tagging is where note apps go to die.
 
 Students don't quit because they lack folders — they quit because filing is work.
 
 The fix: capture in plain text, let the app auto-link by topic. Zero upkeep, full recall.
 
 That's the whole bet behind how we built Acme Notes.</textarea>
-      <div class="row"><button class="btn sm primary">Save draft</button><a class="btn sm" href="queue.html">Schedule →</a><button class="btn sm ghost">Regenerate</button></div>
+      <div class="mt-2 flex gap-2"><button class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save draft</button><a href="queue.html" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule →</a><button class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500">Regenerate</button></div>
     </div>
-    <h3 style="margin:24px 0 12px;color:var(--txt-strong)">Recent drafts</h3>
-    <div class="grid cols-2">
-      <div class="card"><div class="spread"><span class="badge violet">thread</span><span class="badge green">scheduled</span></div><p style="margin:10px 0 0">1/ The 3 reasons students abandon note apps (and the fix)…</p></div>
-      <div class="card"><div class="spread"><span class="badge violet">article</span><span class="badge amber">draft</span></div><p style="margin:10px 0 0">Why folders fail for lecture notes — and what replaces them</p></div>
-      <div class="card"><div class="spread"><span class="badge violet">script</span><span class="badge amber">draft</span></div><p style="margin:10px 0 0">[Hook] Your notes app is making you do its job…</p></div>
+
+    <h3 class="mb-3 mt-6 font-semibold text-zinc-900 dark:text-white">Recent drafts</h3>
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"><div class="flex justify-between"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">thread</span><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">scheduled</span></div><p class="mt-2 text-sm">1/ The 3 reasons students abandon note apps (and the fix)…</p></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"><div class="flex justify-between"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">article</span><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">draft</span></div><p class="mt-2 text-sm">Why folders fail for lecture notes — and what replaces them</p></div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"><div class="flex justify-between"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">script</span><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">draft</span></div><p class="mt-2 text-sm">[Hook] Your notes app is making you do its job…</p></div>
     </div>
   </main>
 </div>
 <script src="app.js"></script>
-<script>function pick(el){[...el.parentNode.children].forEach(a=>a.classList.remove('active'));el.classList.add('active');}</script>
+<script>
+document.getElementById('kinds').addEventListener('click',e=>{const b=e.target.closest('.kind');if(!b)return;
+ [...document.querySelectorAll('.kind')].forEach(k=>k.className='kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold');
+ b.className='kind rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white';});
+</script>
 </body></html>
