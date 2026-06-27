@@ -8,16 +8,20 @@
       ['agent.html', '◷', 'Overview'],
       ['inbox.html', '✉', 'Inbox', '9'],
       ['opportunities.html', '◎', 'Opportunities', '12'],
-      ['keywords.html', '🔑', 'Keywords'],
       ['compose.html', '✎', 'Compose'],
       ['queue.html', '▤', 'Queue'],
+    ]},
+    { sec: 'Intelligence', items: [
+      ['keywords.html', '🔑', 'Keywords'],
+      ['subreddit.html', '🛡', 'Subreddit Intel'],
       ['knowledge.html', '⬡', 'Knowledge'],
       ['analytics.html', '▥', 'Analytics'],
+      ['geo.html', '✦', 'AI Visibility'],
     ]},
     { sec: 'Account', items: [
       ['connections.html', '⚯', 'Connections'],
       ['settings.html', '⚙', 'Settings'],
-      ['pricing.html', '✦', 'Plans'],
+      ['pricing.html', '◆', 'Plans'],
     ]},
   ];
 

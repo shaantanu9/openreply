@@ -1,0 +1,47 @@
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Subreddit Intelligence — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="top"><div><h1>Subreddit Intelligence</h1><p class="sub">Know before you post — rules, strictness, timing &amp; your account eligibility. Posts that don't get removed.</p></div></div>
+
+    <div class="grid cols-3" style="margin-bottom:18px">
+      <div class="card"><div class="muted">Account status</div><div class="kpi">Healthy</div><div class="badge green">u/acme_dev · 3.2k karma · no flags</div></div>
+      <div class="card"><div class="muted">Subs you're eligible to post in</div><div class="kpi">7 / 9</div></div>
+      <div class="card"><div class="muted">Removal risk (last 30d)</div><div class="kpi">0</div><div class="badge green">0 removals · 0 bans</div></div>
+    </div>
+
+    <div class="card">
+      <table class="tbl">
+        <tr><th>Subreddit</th><th>Self-promo</th><th>Min karma / age</th><th>Best time</th><th>Strictness</th><th>You can post</th></tr>
+        <tr><td>r/GetStudying</td><td><span class="badge amber">9:1 rule</span></td><td>50 / 7d</td><td>Tue–Thu AM</td><td><span class="badge green">low</span></td><td><span class="badge green">eligible</span></td></tr>
+        <tr><td>r/productivity</td><td><span class="badge red">no links in top-level</span></td><td>100 / 30d</td><td>Weekday AM</td><td><span class="badge amber">medium</span></td><td><span class="badge green">eligible</span></td></tr>
+        <tr><td>r/ObsidianMD</td><td><span class="badge amber">disclose affiliation</span></td><td>20 / 3d</td><td>Anytime</td><td><span class="badge green">low</span></td><td><span class="badge green">eligible</span></td></tr>
+        <tr><td>r/Notion</td><td><span class="badge red">no promo, ever</span></td><td>200 / 60d</td><td>—</td><td><span class="badge red">high</span></td><td><span class="badge red">not eligible</span></td></tr>
+      </table>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:18px">
+      <div class="card"><b>r/GetStudying — rules (auto-fetched)</b>
+        <div class="col" style="gap:8px;margin-top:10px">
+          <div class="spread"><span>1 · No spam or self-promotion (9:1)</span><span class="badge amber">applies to you</span></div>
+          <div class="spread"><span>2 · Be helpful &amp; on-topic</span><span class="badge green">ok</span></div>
+          <div class="spread"><span>3 · No surveys without mod approval</span><span class="badge green">ok</span></div>
+        </div>
+        <div class="note" style="margin-top:12px">✓ Your last draft was checked against these rules and passed. Compliance runs on every reply.</div>
+      </div>
+      <div class="card"><b>How OpenReply keeps you safe</b>
+        <ul style="color:var(--muted);line-height:1.9;margin:10px 0 0;padding-left:18px">
+          <li>Reads each sub's <b>about/rules.json</b> before drafting.</li>
+          <li>LLM <b>compliance check</b> flags self-promo / link / low-effort risks.</li>
+          <li>Tracks <b>karma, account age &amp; posting limits</b> per sub.</li>
+          <li><b>Never posts for you</b> — read-only; you paste &amp; post manually.</li>
+        </ul>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app.js"></script></body></html>

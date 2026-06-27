@@ -144,21 +144,20 @@ index.html ─ landing
   └─► onboarding.html ─ 5-step Create-Agent wizard
         └─► agent.html ─ Overview (daily goal · momentum · account safety · angles · top opps)
 
-App shell (shared sidebar + dark/light toggle; nav defined once in prototype/app.js):
-  agents.html ......... persona dashboard (create / switch / open)
-  agent.html .......... active-agent overview
-  inbox.html .......... live mentions feed — intent/sentiment filters, real-time alerts
-  opportunities.html .. find → score (relevance×intent×fit) → Draft reply (+ compliance)
-  keywords.html ....... tracked keywords + subreddits, AI-suggest, negative keywords
-  compose.html ........ generate post / thread / script / article
-  queue.html .......... drafts · scheduled · posted
-  knowledge.html ...... niche knowledge map + refresh cadence + angles
-  analytics.html ...... replies/leads KPIs · momentum · by-platform · top subs · best content
-  alerts.html ......... alert rules (Slack/email, intent/score thresholds)
-  connections.html .... per-platform login (read-only safe)
-  settings.html ....... BYOK · appearance · voice · alerts · refresh · data
-  pricing.html ........ Free/self-host · Solo $49 · Business $199 · Team $799 + lifetime
+App shell (shared sidebar + dark/light toggle; nav grouped, defined once in prototype/app.js):
+  Agents:        agents.html (persona dashboard)
+  Per-agent:     agent.html (overview) · inbox.html (live mentions) ·
+                 opportunities.html (find→score→draft+compliance) · compose.html · queue.html
+  Intelligence:  keywords.html · subreddit.html (Subreddit Intelligence: rules/strictness/
+                 timing/eligibility) · knowledge.html · analytics.html ·
+                 geo.html (AI Visibility / GEO — brand citations in Google/LLM answers)
+  Account:       connections.html (read-only, account-safe) · settings.html ·
+                 pricing.html (open-source/BYOK-no-caps + competitor comparison) · alerts.html
 ```
+The landing, the proven 5-step onboarding (Brand Analysis → Your Persona → Smart Discovery
+→ Start Engaging → BYOK/Build Habits), feature names (Opportunity Finder, Authentic Response
+Assistant, Ban-Proof, Subreddit Intelligence, Brand Context Engine), and Plans all encode the
+competitor findings from `docs/research/COMPETITOR_LANDSCAPE.md`.
 
 Mapping to the real app + keep/hide/delete is in `OPENREPLY_RESHAPE.md`. Today in the
 real Tauri app: `agents`, `opportunities`, `compose` screens are wired (command triangle

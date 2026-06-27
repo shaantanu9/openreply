@@ -9,27 +9,41 @@
 <div class="app">
   <aside class="side" id="side"></aside>
   <main class="main">
-    <div class="top"><div><h1>Plans</h1><p class="sub">Open-source &amp; self-host free. Or a hosted plan — BYOK, so AI usage is on your own key.</p></div>
+    <div class="top"><div><h1>Plans</h1><p class="sub">Open-source &amp; self-host free. Hosted plans add convenience — never caps.</p></div>
       <div class="top-actions"><span class="chip on">Monthly</span><span class="chip">Lifetime</span></div></div>
 
+    <div class="note" style="margin-bottom:18px">🔑 <b>Every tier is bring-your-own-key.</b> Model cost runs on your Anthropic/OpenAI/Ollama key — so unlike ReplyDaddy/ReplyGuy/Reppit we put <b>no caps on scans, replies, or generated posts</b>. You pay your model, not us.</div>
+
     <div class="grid cols-4">
-      <div class="card plan"><b>Free / Self-host</b><div class="price">$0</div>
-        <ul><li>1 agent</li><li>5 subreddits · 10 keywords</li><li>Unlimited replies (BYOK)</li><li>Manual posting</li><li>Community support</li></ul>
-        <a class="btn" href="agents.html">Current plan</a></div>
+      <div class="card plan feat"><div class="spread"><b>Free / Self-host</b><span class="badge reddit">open-source</span></div><div class="price">$0</div>
+        <ul><li><b>Unlimited</b> agents, keywords, subs</li><li><b>No scan / reply / post caps</b></li><li>All platforms · MCP / CLI / API</li><li>Manual posting (review gate)</li><li>Community support</li></ul>
+        <a class="btn primary" href="agents.html">Start free</a></div>
 
-      <div class="card plan feat"><div class="spread"><b>Solo</b><span class="badge reddit">popular</span></div><div class="price">$49<span class="muted" style="font-size:.9rem">/mo</span></div>
-        <ul><li>3 agents</li><li>Unlimited keywords &amp; subs</li><li>Real-time inbox alerts</li><li>Analytics</li><li>Email support</li></ul>
-        <button class="btn primary">Upgrade</button></div>
-
-      <div class="card plan"><b>Business</b><div class="price">$199<span class="muted" style="font-size:.9rem">/mo</span></div>
-        <ul><li>10 agents</li><li>Slack/email alerts</li><li>Scheduling &amp; queue</li><li>2 seats</li><li>Priority support</li></ul>
+      <div class="card plan"><div class="spread"><b>Solo (hosted)</b><span class="badge violet">convenience</span></div><div class="price">$19<span class="muted" style="font-size:.9rem">/mo</span></div>
+        <ul><li>Managed cloud (no setup)</li><li>Real-time inbox alerts</li><li>Analytics + AI Visibility</li><li>1 seat</li><li>Email support</li></ul>
         <button class="btn">Upgrade</button></div>
 
-      <div class="card plan"><b>Team</b><div class="price">$799<span class="muted" style="font-size:.9rem">/mo</span></div>
-        <ul><li>Unlimited agents</li><li>Approval workflow</li><li>Roles &amp; seats</li><li>Audit log</li><li>Dedicated support</li></ul>
+      <div class="card plan"><b>Business (hosted)</b><div class="price">$99<span class="muted" style="font-size:.9rem">/mo</span></div>
+        <ul><li>Slack/email alerts</li><li>Scheduling &amp; queue</li><li>3 seats · approval workflow</li><li>Priority support</li></ul>
+        <button class="btn">Upgrade</button></div>
+
+      <div class="card plan"><b>Team / Agency</b><div class="price">$299<span class="muted" style="font-size:.9rem">/mo</span></div>
+        <ul><li>Unlimited seats &amp; agents</li><li>Roles · audit log</li><li>SSO · SLA</li><li>Dedicated support</li></ul>
         <button class="btn">Contact</button></div>
     </div>
-    <div class="note" style="margin-top:18px">Every tier is <b>bring-your-own-key</b> — model costs run on your Anthropic/OpenAI/Ollama key, never ours.</div>
+
+    <div class="card" style="margin-top:18px">
+      <b>How we compare</b>
+      <table class="tbl" style="margin-top:10px">
+        <tr><th></th><th>OpenReply</th><th>ReplyDaddy</th><th>ReplyGuy / Reppit</th></tr>
+        <tr><td>Open-source / self-host</td><td><span class="badge green">✓</span></td><td>✗</td><td>✗</td></tr>
+        <tr><td>BYOK, no caps</td><td><span class="badge green">✓</span></td><td>BYOK on lifetime only; capped scans/posts</td><td>✗ (credits)</td></tr>
+        <tr><td>Multi-platform reply</td><td><span class="badge green">✓ 9+</span></td><td>Reddit only</td><td>Reddit only</td></tr>
+        <tr><td>Subreddit intel + ban-safety</td><td><span class="badge green">✓</span></td><td>✓</td><td>partial</td></tr>
+        <tr><td>AI Visibility (GEO)</td><td><span class="badge green">✓</span></td><td>✗</td><td>✗</td></tr>
+        <tr><td>Entry price</td><td><b>$0</b></td><td>$49/mo</td><td>$19–$30/mo</td></tr>
+      </table>
+    </div>
   </main>
 </div>
 <script src="app.js"></script></body></html>

@@ -24,13 +24,21 @@ App (shared sidebar, theme toggle):
   keywords.html ..... tracked keywords + subreddits, AI-suggest, negative keywords  ★ new
   compose.html ...... generate post / thread / script / article
   queue.html ........ drafts · scheduled · posted
+  keywords.html ..... tracked keywords + subreddits, AI-suggest, negative keywords
+  subreddit.html .... Subreddit Intelligence — rules, strictness, timing, account eligibility  ★ new
   knowledge.html .... niche knowledge map + refresh cadence + angles
-  analytics.html .... replies/leads KPIs · momentum · by-platform · top subs · best content  ★ new
-  alerts.html ....... alert rules (Slack/email, intent/score thresholds)  ★ new
-  connections.html .. per-platform login
+  analytics.html .... replies/leads KPIs · momentum · by-platform · top subs · best content
+  geo.html .......... AI Visibility (GEO) — brand citations in Google/LLM answers  ★ new
+  alerts.html ....... alert rules (Slack/email, intent/score thresholds)
+  connections.html .. per-platform login (read-only, account-safe)
   settings.html ..... BYOK · appearance · voice · alerts · refresh · data
-  pricing.html ...... Free/self-host · Solo $49 · Business $199 · Team $799 + lifetime  ★ new
+  pricing.html ...... open-source/BYOK-no-caps positioning + competitor comparison
 ```
+
+Nav is grouped: **Agents** · per-agent (Overview/Inbox/Opportunities/Compose/Queue) ·
+**Intelligence** (Keywords/Subreddit Intel/Knowledge/Analytics/AI Visibility) · **Account**.
+Landing, onboarding (proven 5-step flow), and Plans encode the competitor findings from
+`docs/research/COMPETITOR_LANDSCAPE.md`.
 
 ## What changed in this pass (learned from ReplyDaddy + alternatives)
 - **Reddit palette + dark/light** theme system (CSS vars, persisted toggle).
