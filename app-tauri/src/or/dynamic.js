@@ -867,11 +867,20 @@ export async function renderConnections(view) {
     }
     if (act === "cookie" || act === "key") {
       const isKey = act === "key";
+      const c = (await api.credsList() || []).find(x => x.source === src) || {};
+      const need = c.need || [];
+      const needHint = need.length
+        ? `<div class="mb-2 rounded-lg bg-zinc-100 px-3 py-2 text-xs dark:bg-zinc-800">Copy ${need.length > 1 ? "these cookies" : "this cookie"}: ${need.map(n => `<code class="font-bold text-zinc-900 dark:text-white">${esc(n)}</code>`).join(", ")}</div>`
+        : "";
+      const loginLink = c.login_url
+        ? `<a href="${esc(c.login_url)}" target="_blank" class="text-reddit underline">open ${esc(label)} login ↗</a>`
+        : "the site";
+      const placeholder = need.length ? need.map(n => n + "=…").join("; ") : "session=…; csrf=…";
       window.orModal({
         title: (isKey ? "Add API key for " : "Paste cookie for ") + label,
         body: isKey
           ? `<p class="mb-2 text-sm text-zinc-500 dark:text-zinc-400">Paste your API key. Stored locally only.</p>${_connInput("cn-val", "key…", "password")}`
-          : `<p class="mb-2 text-sm text-zinc-500 dark:text-zinc-400">Paste the session cookie string (<code>name=value; name2=value2</code>) or a JSON map. Use a Cookie-Editor extension to copy it.</p><textarea id="cn-val" rows="4" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm" placeholder="session=…; csrf=…"></textarea>`,
+          : `${needHint}<p class="mb-2 text-sm text-zinc-500 dark:text-zinc-400">1) Log into ${loginLink}. 2) In the <b>Cookie-Editor</b> extension → <b>Export</b> (or copy the named cookies). 3) Paste below as <code>name=value; name2=value2</code> or a JSON map.</p><textarea id="cn-val" rows="4" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm" placeholder="${esc(placeholder)}"></textarea>`,
         okText: "Save & verify",
         onOk: async (ov) => {
           const val = (ov.querySelector("#cn-val")?.value || "").trim();
@@ -1068,26 +1077,40 @@ function buildAppearanceCard(el) {
 // "cadence" that did nothing). Off / Daily (24h) / Weekly (168h).
 async function buildAutomationCard(el) {
   el.innerHTML = `<b class="text-zinc-900 dark:text-white">Automation</b>
-    <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Run collect + learn automatically on a schedule, even when the app is closed (macOS launchd).</p>
-    <label class="block mb-2 text-sm text-zinc-500">Auto refresh + learn
+    <p class="mb-2 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Keep this agent working on a schedule, even when the app is closed (macOS). Each run:</p>
+    <ul class="mb-3 ml-4 list-disc space-y-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+      <li>scans for <b>new opportunities</b> (on this cadence)</li>
+      <li><b>learns</b> from the fetched posts</li>
+      <li><b>posts due</b> queued replies — or reminds you</li>
+      <li>refreshes <b>AI-visibility</b> citation checks (~daily)</li></ul>
+    <label class="block mb-2 text-sm text-zinc-500">Auto cadence
       <select id="st-sched" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
         <option value="0">Off (manual only)</option><option value="24">Daily</option><option value="168">Weekly</option></select></label>
-    <span id="st-sched-msg" class="text-xs text-zinc-400">Checking…</span>`;
-  const selEl = el.querySelector("#st-sched"), msg = el.querySelector("#st-sched-msg");
+    <span id="st-sched-msg" class="text-xs text-zinc-400">Checking…</span>
+    <div id="st-sched-last" class="mt-1 text-xs text-zinc-400"></div>`;
+  const selEl = el.querySelector("#st-sched"), msg = el.querySelector("#st-sched-msg"),
+        lastEl = el.querySelector("#st-sched-last");
+  const ago = (ts) => { if (!ts) return "never"; const s = Math.floor(Date.now() / 1000) - ts; return s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
+  async function showLast() {
+    try { const a = await api.agentGet(); if (a && lastEl) lastEl.textContent = `Last auto-scan: ${ago(a.last_refresh_at)}`; } catch (e) {}
+  }
   try {
     const s = (await api.scheduleStatus()) || {};
     if (s.installed && s.interval_hours) selEl.value = String(s.interval_hours >= 168 ? 168 : 24);
     msg.textContent = s.installed ? `On · every ${s.interval_hours || 24}h${s.loaded === false ? " (reselect to reload)" : ""}` : "Off";
   } catch (e) { msg.textContent = "Scheduling unavailable on this platform."; selEl.disabled = true; }
+  showLast();
   selEl.onchange = async () => {
     const h = parseInt(selEl.value, 10);
+    const cad = h >= 168 ? "weekly" : h > 0 ? "daily" : "off";
     msg.textContent = "Applying…"; selEl.disabled = true;
     try {
       const r = h > 0 ? await api.scheduleInstall(h) : await api.scheduleUninstall();
+      try { await api.agentUpdate({ cadence: cad }); } catch (e) {}  // drives reply.find_if_due
       if (r && r.error) { msg.textContent = "Failed: " + r.error; }
-      else msg.textContent = h > 0 ? `On · every ${h}h ✓` : "Off ✓";
+      else msg.textContent = h > 0 ? `On · every ${h}h ✓ — auto-scan ${cad}` : "Off ✓";
     } catch (e) { msg.textContent = "Failed: " + e; }
-    selEl.disabled = false;
+    selEl.disabled = false; showLast();
   };
 }
 
@@ -2097,6 +2120,7 @@ export async function renderGeo(view) {
     "Reddit is the #1 cited source in AI answers. Track queries, then Check to see if your brand is cited.",
     `<div class="flex gap-2"><button id="geo-checkall" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Check all</button><button id="geo-new" class="${btnP}">+ Track a query</button></div>`) +
     `<div id="geo-kpi" class="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4"></div>
+     <div id="geo-trend" class="mb-5"></div>
      <div id="geo-engine" class="mb-5"></div>
      <div id="geo-form" class="hidden mb-5 ${card}"></div><div id="geo-list" class="space-y-3">Loading…</div>`;
 
@@ -2160,6 +2184,14 @@ export async function renderGeo(view) {
       document.getElementById("geo-kpi").innerHTML =
         kpi("Tracked queries", r?.total || 0) + kpi("Cited", r?.cited || 0) +
         kpi("Share of voice", (r?.share_of_voice || 0) + "%") + kpi("Citation rate", (r?.citation_rate || 0) + "%");
+      // Citation-rate-over-time — aggregated across all queries' check history.
+      const trendEl = document.getElementById("geo-trend");
+      const tr = r?.trend;
+      if (trendEl) {
+        trendEl.innerHTML = (tr && tr.labels && tr.labels.length >= 2)
+          ? `<div class="${card}"><div class="mb-2 text-sm font-semibold text-zinc-900 dark:text-white">Citation rate over time</div>${sparkChart({ labels: tr.labels, streams: { "Citation rate %": tr.rates } }, ["#10b981"])}</div>`
+          : "";
+      }
       const list = document.getElementById("geo-list");
       list.innerHTML = qs.length ? qs.map((q) => {
         let comps = [], cites = [];
@@ -2711,6 +2743,7 @@ export const DYN = {
   settings: renderSettings,
   knowledge: renderKnowledge,
   learning: renderLearning,
+  brain: renderBrain,
   inbox: renderInbox,
   analytics: renderAnalytics,
   queue: renderQueue,

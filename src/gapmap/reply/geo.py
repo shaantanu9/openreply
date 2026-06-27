@@ -142,6 +142,36 @@ def list_queries(agent_id: str | None = None) -> dict:
         "queries": rows, "total": len(rows), "cited": cited, "citation_rate": rate,
         "share_of_voice": sov,
         "top_competitors": [{"name": k, "count": v} for k, v in top_rivals],
+        "trend": _citation_trend(db, aid),
+    }
+
+
+def _citation_trend(db, aid: str, days: int = 30) -> dict:
+    """Daily citation rate (cited / total checks per UTC day) over the window,
+    aggregated across all of the agent's tracked queries — for the GEO chart."""
+    from datetime import datetime, timezone
+    cutoff = int(time.time()) - days * 86400
+    buckets: dict[str, list[int]] = {}  # "YYYY-MM-DD" → [cited, total]
+    try:
+        rows = db["geo_checks"].rows_where(
+            "agent_id = ? AND checked_at >= ?", [aid, cutoff], order_by="checked_at asc")
+    except Exception:
+        rows = []
+    for r in rows:
+        d = dict(r)
+        ts = int(d.get("checked_at") or 0)
+        if ts <= 0:
+            continue
+        day = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        b = buckets.setdefault(day, [0, 0])
+        b[1] += 1
+        if d.get("status") == "cited":
+            b[0] += 1
+    labels = sorted(buckets)
+    return {
+        "labels": labels,
+        "rates": [round(100 * buckets[k][0] / buckets[k][1]) if buckets[k][1] else 0 for k in labels],
+        "totals": [buckets[k][1] for k in labels],
     }
 
 
