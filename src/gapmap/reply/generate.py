@@ -31,6 +31,36 @@ def _length_hint(platform: str) -> str:
     return f"Keep it under {lim} characters." if lim else "Write 2-5 sentences."
 
 
+def _rules_guidance(platform: str, sub: str) -> str:
+    """Read the subreddit's rules BEFORE writing and turn them into explicit
+    instructions the model must follow — so the reply is compliant *by
+    construction* (and self-promotes only as much as the sub allows), not just
+    checked afterwards. Reddit only; fail-soft to a conservative default."""
+    if platform not in ("reddit", "reddit_free") or not sub:
+        return ""
+    try:
+        from .rules import fetch_sub_rules
+        rules = (fetch_sub_rules(sub).get("rules") or [])
+    except Exception:
+        rules = []
+    if not rules:
+        return (
+            f"\nr/{sub}: live rules unavailable (connect Reddit for them). Be "
+            "conservative — give genuine, specific help and do NOT self-promote "
+            "or paste links.\n"
+        )
+    rules_txt = "\n".join(f"- {r['name']}: {r['desc']}" for r in rules if r.get("name"))
+    return (
+        f"\nSUBREDDIT RULES for r/{sub} — follow these exactly (a violation can get "
+        f"the account banned):\n{rules_txt}\n"
+        "Promotion: mention the brand/product ONLY if it is genuinely the single "
+        "best answer to their problem AND these rules allow it. If the rules forbid "
+        "self-promotion or links, do NOT name the product or paste a link — just "
+        "give honest, specific help (that itself earns trust). When you do mention "
+        "it, disclose the affiliation naturally in your own words.\n"
+    )
+
+
 def _platform_compliance(platform: str, text: str) -> dict:
     """Brand-safety / platform-rule check for non-Reddit platforms (Reddit uses
     the subreddit-rule check). Flags over-length, hashtags, and bare links."""
@@ -110,15 +140,34 @@ def generate_reply(opportunity_id: str, provider: str | None = None, tone: str |
     rq = f"{opp.get('title') or ''}\n{opp.get('body') or ''}".strip()
     knowledge = build_knowledge_context(agent_id, rq, corpus_topic=agent.get("topic"), corpus_limit=4)
 
+    # Read the subreddit's rules first so the draft is written to comply with them
+    # (and promotes the product only as much as the sub allows).
+    rules_block = _rules_guidance(platform, opp.get("sub") or "")
+
+    # The agent's purpose — its growth goal + what it offers. Replies are written
+    # to advance the goal by being genuinely helpful first (never salesy).
+    product = (agent.get("product") or brand.get("description") or "").strip()
+    goal = (agent.get("goal") or "").strip()
+    goal_block = (
+        f"Your growth goal (advance it WITHOUT being salesy — earn trust first, "
+        f"mention the product only when it's honestly the best answer): {goal}\n"
+        if goal else ""
+    )
+
     prompt = (
         f"You are replying as: {brand.get('name')} — "
         f"{brand.get('persona') or brand.get('description')}\n"
+        f"What {brand.get('name')} offers (the product you may promote when relevant): "
+        f"{product or '—'}\n"
+        f"{goal_block}"
         f"Tone: {tone or brand.get('tone')}\n"
-        f"Platform: {platform}. {_length_hint(platform)}\n\n"
+        f"Platform: {platform}. {_length_hint(platform)}\n"
+        f"{rules_block}\n"
         f"Your knowledge (reply from this — beliefs first, then memories, then corpus):\n"
         f"{knowledge}\n\n"
         f'The post you are replying to:\n"""{opp.get("title")}\n{opp.get("body")}"""\n\n'
-        "Write ONE reply that genuinely helps. Lead with concrete value. Be specific."
+        "Write ONE reply that genuinely helps. Lead with concrete value. Be specific. "
+        "Follow the subreddit rules above exactly."
     )
     text = get_provider(provider).complete(prompt, system=_SYS, max_tokens=400, temperature=0.6).strip()
     return _persist_draft(db, opp, brand.get("id", "default"), text, "generated", provider)

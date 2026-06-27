@@ -671,11 +671,27 @@ def collect(
                            else getattr(_cfg, "reddit_client_id", None))
         except Exception:
             _reddit_cid = None
+        # The native Reddit stages (PRAW discovery + top-of-month/year + historical)
+        # need Reddit API keys. A browser-cookie connection can't drive them
+        # (Reddit 403s cookie search too) — but the `reddit_free` source in the
+        # external fan-out still pulls Reddit via cookie→RSS, so Reddit content
+        # DOES flow either way. Be honest about which path is active instead of a
+        # blanket "Reddit skipped".
         if not _reddit_cid:
-            _log("⚠ Reddit is NOT connected — skipping Reddit (it now blocks "
-                 "unauthenticated access, 403). Add your Reddit API credentials "
-                 "in Settings → Reddit to include Reddit posts. Fetching all "
-                 "other sources (HN, arXiv, App Store, news, …) normally.")
+            try:
+                from ..core import credentials as _creds_chk
+                _reddit_cookie = _creds_chk.has_credential("reddit")
+            except Exception:
+                _reddit_cookie = False
+            if _reddit_cookie:
+                _log("Reddit: no API keys — using your login cookie via reddit_free "
+                     "(best-effort; Reddit may fall back to public RSS without "
+                     "scores/comments). Add Reddit API keys in Settings → Reddit for "
+                     "full discovery, scores & history.")
+            else:
+                _log("Reddit: no API keys or login — pulling public RSS via reddit_free "
+                     "(limited: no scores/comments/historical). Add Reddit API keys in "
+                     "Settings → Reddit, or connect Reddit, for richer results.")
             result.errors.append("reddit_not_connected")
             skip_reddit = True
 

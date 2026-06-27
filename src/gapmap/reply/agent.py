@@ -27,6 +27,7 @@ def _ensure(db):
             {
                 "id": str, "name": str, "brand": str, "niche": str,
                 "persona": str, "tone": str, "audience": str, "topic": str,
+                "website": str, "goal": str, "product": str,
                 "keywords_json": str, "platforms_json": str, "accounts_json": str,
                 "refresh_cadence": str, "last_refresh_at": int,
                 "last_learn_at": int,
@@ -36,11 +37,27 @@ def _ensure(db):
         )
     else:
         # Migration: stamp of the last autonomous-learning pass (ingest+synthesize).
-        if "last_learn_at" not in {c.name for c in db["agents"].columns}:
+        cols = {c.name for c in db["agents"].columns}
+        if "last_learn_at" not in cols:
             try:
                 db["agents"].add_column("last_learn_at", int)
             except Exception:
                 pass
+        # Migration: brand website/domain — used to detect citations in AI answers (GEO).
+        if "website" not in cols:
+            try:
+                db["agents"].add_column("website", str)
+            except Exception:
+                pass
+        # Migration: purpose — `goal` (WHY this agent exists / what to grow) and
+        # `product` (what you offer). Both feed the draft prompt + growth plan so
+        # the agent reasons from its purpose, not just generic helpfulness.
+        for _pc in ("goal", "product"):
+            if _pc not in cols:
+                try:
+                    db["agents"].add_column(_pc, str)
+                except Exception:
+                    pass
     if "reply_state" not in names:
         db["reply_state"].create({"key": str, "value": str}, pk="key")
     if "agent_personas" not in names:
@@ -102,6 +119,9 @@ def create_agent(
     name: str,
     brand: str = "",
     niche: str = "",
+    website: str = "",
+    goal: str = "",
+    product: str = "",
     persona: str = "",
     tone: str = "helpful, concise, non-salesy",
     audience: str = "",
@@ -118,9 +138,10 @@ def create_agent(
     now = int(time.time())
     rec = {
         "id": aid, "name": name, "brand": brand or name, "niche": niche,
+        "website": website, "goal": goal, "product": product,
         "persona": persona, "tone": tone, "audience": audience, "topic": aid,
         "keywords_json": json.dumps(keywords or []),
-        "platforms_json": json.dumps(platforms or ["reddit_free"]),        "platforms_json": json.dumps(platforms or ["reddit_free", "hn", "lemmy", "mastodon", "devto", "stackoverflow", "producthunt"]),
+        "platforms_json": json.dumps(platforms or ["reddit_free", "hn", "lemmy", "mastodon", "devto", "stackoverflow", "producthunt"]),
         "accounts_json": json.dumps(accounts or []),
         "refresh_cadence": refresh_cadence, "last_refresh_at": 0,
         "created_at": now, "updated_at": now,
@@ -136,7 +157,7 @@ def update_agent(aid: str, **fields) -> dict | None:
     if not _row(db, aid):
         return None
     patch: dict = {}
-    for k in ("name", "brand", "niche", "persona", "tone", "audience", "refresh_cadence"):
+    for k in ("name", "brand", "niche", "website", "goal", "product", "persona", "tone", "audience", "refresh_cadence"):
         if k in fields and fields[k] is not None:
             patch[k] = fields[k]
     for k in ("keywords", "platforms", "accounts"):

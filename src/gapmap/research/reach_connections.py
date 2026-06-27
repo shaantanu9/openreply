@@ -76,6 +76,29 @@ GATED: dict[str, dict] = {
                 "note": "Keyless via yt-dlp — no login needed."},
 }
 
+# Plain-language "what connecting this gets you" — shown on each Connections card
+# so the value is obvious. Honest about limits (Reddit cookie is best-effort).
+USES: dict[str, str] = {
+    "reddit": ("Pulls Reddit threads into your corpus & opportunities. Cookie login "
+               "is best-effort — Reddit often blocks it and falls back to public RSS "
+               "(no scores/comments). For full search, scores, comments & history, add "
+               "Reddit API keys in Settings → Reddit."),
+    "twitter": "Search X/Twitter for reply opportunities and post tweets & threads from Compose.",
+    "linkedin": "Read a specific LinkedIn profile/company post by URL (no keyword search).",
+    "xiaohongshu": "Fetch Xiaohongshu (小红书) posts into your corpus.",
+    "xueqiu": "Fetch Xueqiu (雪球) fintech posts into your corpus.",
+    "bilibili": "Fetch Bilibili videos/posts into your corpus.",
+    "exa_search": "Higher-quality web & news search for discovery.",
+    "scrapecreators": "Unlocks TikTok, Instagram, Threads & Pinterest fetching with one key.",
+    "truthsocial": "Fetch Truth Social posts into your corpus.",
+    "bluesky": "Search Bluesky and pull posts into your corpus + opportunities.",
+    "hackernews": "Always on — pulls Hacker News discussions into your corpus.",
+    "devto": "Always on — pulls Dev.to articles into your corpus.",
+    "mastodon": "Always on — pulls Mastodon posts into your corpus.",
+    "youtube": "Always on — pulls YouTube transcripts & comments (yt-dlp).",
+}
+
+
 # Connection source-name → collection source-names it feeds. Used to auto-include
 # connected+enabled social sources in a collect run. A connection without an
 # `unlocks` entry maps to itself.
@@ -217,6 +240,7 @@ def list_connections() -> list[dict]:
             # on too (free) but can be muted.
             "enabled": _creds.is_enabled(source, default=True),
             "unlocks": meta.get("unlocks", [source]),
+            "uses": USES.get(source, ""),
             "note": meta.get("note", ""),
             # Exact session-cookie names to paste (cookie sources) — drives the
             # "Paste auth_token, ct0" hint in the manual-paste modal.

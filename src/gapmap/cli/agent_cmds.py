@@ -34,6 +34,9 @@ def create_cmd(
     name: str = typer.Option(..., help="Agent / persona name"),
     brand: str = typer.Option("", help="Brand or product (defaults to name)"),
     niche: str = typer.Option("", help="The niche / space this agent operates in"),
+    website: str = typer.Option("", help="Brand website/domain (for AI-visibility citation detection)"),
+    goal: str = typer.Option("", help="Why this agent exists / what to grow (drives drafts + growth plan)"),
+    product: str = typer.Option("", help="What you offer — the value the agent can genuinely recommend"),
     persona: str = typer.Option("", help="Background / expertise = the voice"),
     tone: str = typer.Option("helpful, concise, non-salesy"),
     audience: str = typer.Option("", help="Who you're talking to"),
@@ -44,7 +47,8 @@ def create_cmd(
 ):
     """Create a new agent (becomes the active agent)."""
     a = _agent.create_agent(
-        name=name, brand=brand, niche=niche, persona=persona, tone=tone,
+        name=name, brand=brand, niche=niche, website=website, goal=goal, product=product,
+        persona=persona, tone=tone,
         audience=audience, keywords=_csv(keywords) or None,
         platforms=_csv(platforms) or None, refresh_cadence=cadence,
     )
@@ -77,6 +81,7 @@ def use_cmd(id: str = typer.Argument(..., help="Agent id to make active"), json_
 def update_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),
     name: str = typer.Option(None), niche: str = typer.Option(None),
+    website: str = typer.Option(None), goal: str = typer.Option(None), product: str = typer.Option(None),
     persona: str = typer.Option(None), tone: str = typer.Option(None),
     audience: str = typer.Option(None), keywords: str = typer.Option(None),
     platforms: str = typer.Option(None), cadence: str = typer.Option(None),
@@ -85,7 +90,8 @@ def update_cmd(
     """Update fields on an agent."""
     aid = id or _agent.active_id()
     a = _agent.update_agent(
-        aid, name=name, niche=niche, persona=persona, tone=tone, audience=audience,
+        aid, name=name, niche=niche, website=website, goal=goal, product=product,
+        persona=persona, tone=tone, audience=audience,
         keywords=_csv(keywords) if keywords is not None else None,
         platforms=_csv(platforms) if platforms is not None else None,
         refresh_cadence=cadence,
@@ -131,13 +137,27 @@ def corpus_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),
     source: str = typer.Option("", help="Filter to one source (hn, gnews, reddit_free, ...)"),
     query: str = typer.Option("", help="Text search over title/body"),
+    relevance: str = typer.Option("", help="Filter by relevance: on | off | unchecked"),
     limit: int = typer.Option(60),
     offset: int = typer.Option(0),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Browse the agent's collected multi-source corpus (read & learn from all sources)."""
     from ..reply.library import list_corpus
-    _out(list_corpus(id, source=source or None, query=query or None, limit=limit, offset=offset), json_)
+    _out(list_corpus(id, source=source or None, query=query or None,
+                     relevance=relevance or None, limit=limit, offset=offset), json_)
+
+
+@agent_app.command("corpus-check")
+def corpus_check_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    limit: int = typer.Option(60, help="Max not-yet-checked posts to classify this pass"),
+    provider: str = typer.Option(None),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """LLM relevance check on fetched corpus posts → tag on-topic / off-topic."""
+    from ..reply.relevance import check_relevance
+    _out(check_relevance(id, limit=limit, provider=provider), json_)
 
 
 @agent_app.command("build-graph")
@@ -158,6 +178,25 @@ def graph_cmd(id: str = typer.Option(None), json_: bool = typer.Option(True, "--
     """Knowledge-graph overview for the agent: counts by kind, hubs, connections."""
     from ..reply.brain import graph_overview
     _out(graph_overview(id), json_)
+
+
+@agent_app.command("brain")
+def brain_cmd(id: str = typer.Option(None), json_: bool = typer.Option(True, "--json/--no-json")):
+    """Unified brain: structural graph + persona memories + beliefs merged into one
+    graph + tree (for the Brain visualization)."""
+    from ..reply.brain_unified import unified_brain
+    _out(unified_brain(id), json_)
+
+
+@agent_app.command("brain-relink")
+def brain_relink_cmd(
+    id: str = typer.Option(None),
+    no_semantic: bool = typer.Option(False, "--no-semantic", help="Skip embedding cross-links (exact only)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """(Re)build the cross-links that merge persona brains into the structural graph."""
+    from ..reply.brain_unified import relink
+    _out(relink(id, semantic=not no_semantic), json_)
 
 
 @agent_app.command("teach-video")
@@ -277,3 +316,12 @@ def content_list_cmd(
 ):
     """List generated content drafts."""
     _out({"content": _content.list_content(agent_id=agent_id, kind=kind, status=status, limit=limit)}, json_)
+
+
+@content_app.command("delete")
+def content_delete_cmd(
+    content_id: str = typer.Argument(..., help="content_items id to delete"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Delete a content draft."""
+    _out(_content.delete_content(content_id), json_)
