@@ -15,6 +15,7 @@ const NAV = [
     ['keywords', 'key-round', 'Keywords'],
     ['subreddit', 'shield-check', 'Subreddit Intel'],
     ['knowledge', 'brain', 'Knowledge'],
+    ['library', 'library', 'Library'],
     ['analytics', 'bar-chart-3', 'Analytics'],
     ['geo', 'sparkles', 'AI Visibility'],
   ]},

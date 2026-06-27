@@ -465,7 +465,7 @@ _SORTS = {
 }
 
 
-def _list_where(status: str | None, min_score: float, query: str | None):
+def _list_where(status: str | None, min_score: float, query: str | None, platform: str | None = None):
     from .agent import active_id
 
     where = "brand_id = ? AND score >= ?"
@@ -476,6 +476,9 @@ def _list_where(status: str | None, min_score: float, query: str | None):
     else:
         # default view hides snoozed (deferred) opportunities
         where += " AND status != 'snoozed'"
+    if platform:
+        where += " AND platform = ?"
+        args.append(platform)
     where += _search_clause(query, args)
     return where, args
 
@@ -487,10 +490,11 @@ def list_opportunities(
     query: str | None = None,
     sort: str = "score",
     offset: int = 0,
+    platform: str | None = None,
 ) -> list[dict]:
     db = init_reply_schema()
     _resurface_snoozed(db, _active_brand_id(), int(time.time()))
-    where, args = _list_where(status, min_score, query)
+    where, args = _list_where(status, min_score, query, platform)
     order_by = _SORTS.get((sort or "score").lower(), _SORTS["score"])
     return [dict(r) for r in db["reply_opportunities"].rows_where(
         where, args, order_by=order_by, limit=limit, offset=max(0, offset))]

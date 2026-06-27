@@ -96,6 +96,7 @@ export const api = {
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
   agentLearn: (id, limit) => call("agent_learn", { id: id || null, limit: limit || 30 }),
   agentLearnStatus: (id) => call("agent_learn_status", { id: id || null }),
+  agentCorpus: (source, query, limit, offset) => call("agent_corpus", { id: null, source: source || null, query: query || null, limit: limit || 60, offset: offset || 0 }),
   agentBuildGraph: (deep, id) => call("agent_build_graph", { id: id || null, deep: !!deep }),
   agentGraph: (id) => call("agent_graph", { id: id || null }),
   agentTeachVideo: (url, id, comments) => call("agent_teach_video", { url, id: id || null, comments: comments || 100 }),
@@ -120,6 +121,7 @@ export const api = {
       query: (opts && opts.query) || null,
       sort: (opts && opts.sort) || "score",
       offset: (opts && opts.offset) || 0,
+      platform: (opts && opts.platform) || null,
     }),
   replyDraft: (opportunity) => call("reply_draft", { opportunity }),
   // workspace: edit/save (versioned), approve, queue, snooze, draft history

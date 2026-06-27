@@ -126,6 +126,20 @@ def learn_status_cmd(id: str = typer.Option(None), json_: bool = typer.Option(Tr
     _out(learning_summary(id), json_)
 
 
+@agent_app.command("corpus")
+def corpus_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    source: str = typer.Option("", help="Filter to one source (hn, gnews, reddit_free, ...)"),
+    query: str = typer.Option("", help="Text search over title/body"),
+    limit: int = typer.Option(60),
+    offset: int = typer.Option(0),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Browse the agent's collected multi-source corpus (read & learn from all sources)."""
+    from ..reply.library import list_corpus
+    _out(list_corpus(id, source=source or None, query=query or None, limit=limit, offset=offset), json_)
+
+
 @agent_app.command("build-graph")
 def build_graph_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),

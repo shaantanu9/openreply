@@ -280,11 +280,12 @@ def refresh_agent(aid: str | None = None, light: bool = True, progress=None,
     keywords = a["keywords"] or [a["name"]]
     try:
         from ..research.collect import collect
+        from .library import corpus_sources
 
         res = collect(
             topic=a["topic"],
             subs=None,
-            sources=a["platforms"],
+            sources=corpus_sources(a),
             aggressive=not light,
             skip_extraction=True,
             progress=progress,

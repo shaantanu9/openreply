@@ -87,13 +87,14 @@ def list_cmd(
     query: str = typer.Option("", help="Text search over title/body/author/sub"),
     sort: str = typer.Option("score", help="score | recent | engagement"),
     offset: int = typer.Option(0, help="Pagination offset"),
+    platform: str = typer.Option("", help="Filter by source/platform (e.g. reddit_free, hn, x)"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """List stored opportunities with search, sort, and pagination."""
     q = query or None
     items = _opp.list_opportunities(
         status=status, limit=limit, min_score=min_score,
-        query=q, sort=sort, offset=offset,
+        query=q, sort=sort, offset=offset, platform=platform or None,
     )
     total = _opp.count_opportunities(status=status, min_score=min_score, query=q)
     _out({"opportunities": items, "total": total, "offset": offset, "limit": limit}, json_)

@@ -361,6 +361,19 @@ pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Va
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent corpus` — browse the agent's collected multi-source corpus.
+#[tauri::command]
+pub async fn agent_corpus(app: AppHandle, id: Option<String>, source: Option<String>, query: Option<String>, limit: Option<u32>, offset: Option<u32>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "corpus".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(s) = source { if !s.is_empty() { args.push("--source".into()); args.push(s); } }
+    if let Some(q) = query { if !q.is_empty() { args.push("--query".into()); args.push(q); } }
+    if let Some(l) = limit { args.push("--limit".into()); args.push(l.to_string()); }
+    if let Some(o) = offset { args.push("--offset".into()); args.push(o.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap agent build-graph` — build the agent's knowledge graph (brain).
 #[tauri::command]
 pub async fn agent_build_graph(app: AppHandle, id: Option<String>, deep: Option<bool>) -> Result<Value, String> {
@@ -411,6 +424,7 @@ pub async fn reply_list(
     query: Option<String>,
     sort: Option<String>,
     offset: Option<u32>,
+    platform: Option<String>,
 ) -> Result<Value, String> {
     let lim = limit.unwrap_or(30).to_string();
     let ms = min_score.unwrap_or(0.0).to_string();
@@ -424,6 +438,7 @@ pub async fn reply_list(
     ];
     if let Some(s) = status { if !s.is_empty() { args.push("--status".into()); args.push(s); } }
     if let Some(q) = query { if !q.is_empty() { args.push("--query".into()); args.push(q); } }
+    if let Some(pf) = platform { if !pf.is_empty() { args.push("--platform".into()); args.push(pf); } }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }

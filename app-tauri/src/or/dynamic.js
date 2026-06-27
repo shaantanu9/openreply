@@ -344,8 +344,9 @@ const debounce = (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); 
 export async function renderOpportunities(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   let a = null; try { a = await api.agentGet(); } catch (e) {}
+  let _allPfs = []; try { _allPfs = ((await api.replyPlatforms())?.platforms || []).filter((p) => p.can_reply); } catch (e) {}
   const pfs = (a?.platforms || ["reddit_free"]).join(", ");
-  const S = { filter: "new", query: "", sort: "score", minScore: 0, offset: 0, items: [], total: 0, sel: new Set() };
+  const S = { filter: "new", query: "", sort: "score", minScore: 0, source: "", offset: 0, items: [], total: 0, sel: new Set() };
 
   view.innerHTML = head("Opportunities",
     `Discover conversations worth replying to for <b>${esc(a?.name || "—")}</b> — Save the good ones to your Inbox.`,
@@ -358,6 +359,7 @@ export async function renderOpportunities(view) {
        <input id="op-q" placeholder="Search title, author, sub…" class="${inputCls} w-60">
        <select id="op-sort" class="${inputCls}">${REPLY_SORTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
        <select id="op-min" class="${inputCls}">${MIN_SCORES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+       <select id="op-src" class="${inputCls}"><option value="">All sources</option>${_allPfs.map((p) => `<option value="${esc(p.key)}">${esc(p.label)}</option>`).join("")}</select>
        <div id="op-filters" class="ml-auto flex flex-wrap gap-2">${OPP_FILTERS.map(([v, l]) =>
          `<button data-filter="${v}" class="${_chip(v === "new")}">${l}</button>`).join("")}</div>
      </div>
@@ -432,7 +434,7 @@ export async function renderOpportunities(view) {
     statusEl.textContent = "Loading…";
     try {
       const r = await api.replyList(S.filter || null, S.minScore, PAGE,
-        { query: S.query, sort: S.sort, offset: S.offset });
+        { query: S.query, sort: S.sort, offset: S.offset, platform: S.source });
       const batch = r?.opportunities || [];
       S.total = r?.total ?? batch.length;
       S.items = reset ? batch : S.items.concat(batch);
@@ -493,6 +495,7 @@ export async function renderOpportunities(view) {
   view.querySelector("#op-q").oninput = debounce((e) => { S.query = e.target.value.trim(); load(true); });
   view.querySelector("#op-sort").onchange = (e) => { S.sort = e.target.value; load(true); };
   view.querySelector("#op-min").onchange = (e) => { S.minScore = parseFloat(e.target.value) || 0; load(true); };
+  view.querySelector("#op-src").onchange = (e) => { S.source = e.target.value; load(true); };
   bulkBar.querySelectorAll("[data-bulk]").forEach(b => b.onclick = () => {
     const k = b.getAttribute("data-bulk");
     if (k === "clear") { S.sel.clear(); list.querySelectorAll("[data-sel]").forEach(cb => cb.checked = false); syncBulk(); }
@@ -2731,7 +2734,57 @@ export async function renderPricing(view) {
   icons();
 }
 
+export async function renderLibrary(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  let a = null; try { a = await api.agentGet(); } catch (e) {}
+  if (!a) { view.innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
+  const S = { source: "", query: "", limit: 60 };
+  view.innerHTML = head("Library",
+    `Everything <b>${esc(a.name)}</b> has collected about its niche — from every source. Read it, learn from it, turn it into posts.`,
+    `<button id="lib-refresh" class="${btn}"><i data-lucide="refresh-cw" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch latest</button>`) +
+    `<div class="mb-3 flex flex-wrap items-center gap-2"><input id="lib-q" placeholder="Search collected content…" class="${inputCls} w-64"></div>
+     <div id="lib-srcs" class="mb-3 flex flex-wrap gap-2"></div>
+     <div id="lib-list" class="space-y-3">Loading…</div>
+     <div id="lib-more" class="mt-4 hidden text-center"><button class="${btn}">Load more</button></div>`;
+  const list = view.querySelector("#lib-list");
+  const srcsBox = view.querySelector("#lib-srcs");
+  async function load(reset = true) {
+    if (reset) { S.limit = 60; list.innerHTML = skeleton(); }
+    try {
+      const r = await api.agentCorpus(S.source || null, S.query || null, S.limit, 0);
+      if (!r || r.error) { list.innerHTML = `<div class="${card} text-rose-500">${esc((r && r.error) || "Couldn't load")}</div>`; return; }
+      const total = r.total_all || 0;
+      const chips = [["", "All", total]].concat((r.sources || []).map((s) => [s.source, s.source, s.count]));
+      srcsBox.innerHTML = chips.map(([k, label, c]) => `<button data-src="${esc(k)}" class="${_chip(k === S.source)}">${esc(label)}${c != null ? ` · ${c}` : ""}</button>`).join("");
+      srcsBox.querySelectorAll("[data-src]").forEach((b) => b.onclick = () => { S.source = b.getAttribute("data-src"); load(true); });
+      const items = r.items || [];
+      list.innerHTML = items.length ? items.map((it) => `<div class="${card}">
+        <div class="flex flex-wrap items-center gap-2"><span class="rounded ${platformBadge(it.source)} px-1.5 py-0.5 text-[11px] font-bold">${esc(it.source || "")}</span>
+          ${it.sub ? `<span class="text-xs text-zinc-500">${esc(it.sub)}</span>` : ""}
+          ${it.created_utc ? `<span class="text-xs text-zinc-400">${_ago(it.created_utc)}</span>` : ""}
+          ${it.score ? `<span class="text-xs text-zinc-400">↑${it.score}</span>` : ""}</div>
+        <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(it.title || "(untitled)")}</div>
+        ${it.snippet ? `<div class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">${esc(it.snippet)}</div>` : ""}
+        <div class="mt-2 flex flex-wrap gap-3 text-xs">
+          ${it.url ? `<a href="${esc(it.url)}" target="_blank" class="font-semibold text-reddit">Open ↗</a>` : ""}
+          <a href="#/compose" class="font-semibold text-zinc-500 hover:text-reddit">Use in Compose →</a></div></div>`).join("")
+        : `<div class="${card} text-zinc-500">${(S.query || S.source) ? "No matching content." : "Nothing collected yet — click <b>Fetch latest</b> (or Refresh + learn on Overview)."}</div>`;
+      view.querySelector("#lib-more").classList.toggle("hidden", items.length < S.limit);
+      icons();
+    } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+  view.querySelector("#lib-q").oninput = debounce((e) => { S.query = e.target.value.trim(); load(true); });
+  view.querySelector("#lib-more").querySelector("button").onclick = () => { S.limit += 60; load(true); };
+  view.querySelector("#lib-refresh").onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Fetching… (a minute)";
+    try { await api.agentRefresh(null, false); toast("Fetched latest"); } catch (err) { toast("Fetch failed"); }
+    b.disabled = false; b.innerHTML = html; icons(); load(true);
+  };
+  load(true);
+}
+
 export const DYN = {
+  library: renderLibrary,
   pricing: renderPricing,
   activate: renderActivate,
   welcome: renderWelcome,
