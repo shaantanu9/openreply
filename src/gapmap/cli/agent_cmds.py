@@ -126,6 +126,20 @@ def learn_status_cmd(id: str = typer.Option(None), json_: bool = typer.Option(Tr
     _out(learning_summary(id), json_)
 
 
+@agent_app.command("teach-video")
+def teach_video_cmd(
+    url: str = typer.Argument(..., help="YouTube/Instagram/video URL (or 11-char YT id)"),
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    comments: int = typer.Option(100, "--comments", "-c", help="Top comments to fetch (YouTube only)"),
+    provider: str = typer.Option(None, help="Pin an LLM provider (else auto-resolved)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Teach the agent from ONE video: yt-dlp captions/transcript -> memories + beliefs."""
+    from ..reply.learn import teach_for_agent
+    _out(teach_for_agent(id, url=url, comments_limit=comments,
+                         provider=provider, progress=lambda m: typer.echo(m, err=True)), json_)
+
+
 @agent_app.command("refresh")
 def refresh_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),

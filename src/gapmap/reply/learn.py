@@ -136,6 +136,95 @@ def learn_for_agent(
     }
 
 
+def teach_for_agent(
+    agent_id: str | None = None,
+    *,
+    url: str,
+    comments_limit: int = 100,
+    synthesize: bool = True,
+    provider: str | None = None,
+    progress=None,
+) -> dict:
+    """Teach an agent from ONE video — the explicit, user-curated learning path.
+
+    Resolves (or auto-provisions) the agent's learning persona, then feeds it the
+    video via :func:`persona.teach.teach_from_video`:
+
+        YouTube  -> yt-dlp auto-captions (subtitles) + transcript + top comments
+        other    -> yt-dlp audio -> faster-whisper transcript
+
+    The transcript rows flow through the SAME ingest pipeline `learn_for_agent`
+    uses (memories -> embed_and_link -> ChromaDB), and any new memories are
+    synthesized into beliefs — so what the agent learns from the video blends
+    straight into its replies & content. Never raises.
+    """
+    a = _agent.get_agent(agent_id)
+    if not a:
+        return {"error": "no such agent"}
+    if not (url or "").strip():
+        return {"error": "a video URL is required"}
+
+    pid = ensure_learning_persona(a)
+    if not pid:
+        return {"agent": a["name"], "error": "no learning persona could be provisioned"}
+
+    from ..persona.teach import teach_from_video
+
+    fetched = {"rows": 0, "comments": 0, "transcript": 0, "description": 0}
+    teach_errors: list[str] = []
+    done: dict = {}
+    video_id = None
+    try:
+        for ev in teach_from_video(pid, url, comments_limit=comments_limit, provider=provider):
+            kind = ev.get("event")
+            if kind == "teach:start":
+                video_id = ev.get("video_id")
+                if progress:
+                    progress(f"fetching video {video_id or url}\u2026")
+            elif kind == "teach:fetched":
+                fetched = {k: int(ev.get(k, 0) or 0) for k in fetched}
+                if progress:
+                    progress(f"fetched {fetched['rows']} rows ({fetched['transcript']} transcript chunks); learning\u2026")
+            elif kind in ("teach:error", "error"):
+                teach_errors.append(str(ev.get("error") or "")[:200])
+            elif kind == "done":
+                done = ev
+    except Exception as e:
+        return {"agent": a["name"], "video": video_id or url,
+                "error": f"teach failed: {e}", "errors": teach_errors}
+
+    kept = int(done.get("kept", 0) or 0)
+    beliefs = 0
+    if synthesize and kept > 0:
+        from ..persona.conclude import synthesize_conclusions
+        if progress:
+            progress("synthesizing beliefs\u2026")
+        syn = _drain(synthesize_conclusions(pid, provider=provider, refresh=True))
+        beliefs = int(syn.get("written", 0) or 0) + int(syn.get("refreshed", 0) or 0)
+
+    try:
+        from .schema import init_reply_schema
+        init_reply_schema()["agents"].update(a["id"], {"last_learn_at": int(time.time())})
+    except Exception:
+        pass
+
+    if kept:
+        msg = f"Learned {kept} lesson(s) from the video; {beliefs} belief(s) updated."
+    elif fetched["rows"]:
+        msg = "Fetched the video but found nothing new to learn (already known)."
+    elif teach_errors:
+        msg = "Couldn't learn from this video — " + teach_errors[0]
+    else:
+        msg = "No transcript/captions available for this video."
+
+    return {
+        "agent": a["name"], "persona_id": pid,
+        "video": video_id or url, "fetched": fetched,
+        "learned": kept, "beliefs": beliefs,
+        "errors": teach_errors, "message": msg,
+    }
+
+
 def learning_summary(agent_id: str | None = None) -> dict:
     """Snapshot of what an agent has learned — counts + recent lessons/beliefs —
     for the Learning UI. Never raises."""
