@@ -185,6 +185,27 @@ def post_due_cmd(
     _out(_poster.process_due(notify=notify), json_)
 
 
+@reply_app.command("growth-plan")
+def growth_plan_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    provider: str = typer.Option(None),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Generate + save a Reddit-first growth plan from the agent's goal/product."""
+    from ..reply import growth as _growth
+    _out(_growth.generate_growth_plan(agent_id=id, provider=provider), json_)
+
+
+@reply_app.command("growth-get")
+def growth_get_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Show the last-saved growth plan for the agent."""
+    from ..reply import growth as _growth
+    _out(_growth.get_growth_plan(agent_id=id), json_)
+
+
 @reply_app.command("rules")
 def rules_cmd(
     sub: str = typer.Option(..., "--sub", help="Subreddit name (no r/)"),

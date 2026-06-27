@@ -14,7 +14,7 @@ const TAURI = typeof window !== "undefined" &&
 // First-ever (cold-cache) load still awaits the backend — the screen skeleton
 // covers that one-time gap.
 const SWR_READS = new Set([
-  "agent_list", "agent_get", "agent_knowledge", "agent_personas",
+  "agent_list", "agent_get", "agent_knowledge", "agent_personas", "agent_brain", "agent_graph",
   "reply_platforms", "reply_list", "reply_drafts", "content_list",
   "persona_agent_list", "sub_list", "geo_list", "geo_history", "analytics_summary",
   "alerts_list", "feeds_list",
@@ -96,9 +96,12 @@ export const api = {
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
   agentLearn: (id, limit) => call("agent_learn", { id: id || null, limit: limit || 30 }),
   agentLearnStatus: (id) => call("agent_learn_status", { id: id || null }),
-  agentCorpus: (source, query, limit, offset) => call("agent_corpus", { id: null, source: source || null, query: query || null, limit: limit || 60, offset: offset || 0 }),
+  agentCorpus: (source, query, limit, offset, relevance) => call("agent_corpus", { id: null, source: source || null, query: query || null, relevance: relevance || null, limit: limit || 60, offset: offset || 0 }),
+  agentCorpusCheck: (limit) => call("agent_corpus_check", { id: null, limit: limit || 60 }),
   agentBuildGraph: (deep, id) => call("agent_build_graph", { id: id || null, deep: !!deep }),
   agentGraph: (id) => call("agent_graph", { id: id || null }),
+  agentBrain: (id) => call("agent_brain", { id: id || null }),
+  agentBrainRelink: (id, semantic) => call("agent_brain_relink", { id: id || null, semantic: semantic !== false }),
   agentTeachVideo: (url, id, comments) => call("agent_teach_video", { url, id: id || null, comments: comments || 100 }),
   agentUpdate: (p) => call("agent_update", p),
   agentDelete: (id) => call("agent_delete", { id }),
@@ -125,13 +128,19 @@ export const api = {
     }),
   replyDraft: (opportunity) => call("reply_draft", { opportunity }),
   // workspace: edit/save (versioned), approve, queue, snooze, draft history
-  replySaveDraft: (opportunity, text) => call("reply_save_draft", { opportunity, text }),
+  replySaveDraft: (opportunity, text) => {
+    const p = call("reply_save_draft", { opportunity, text });
+    p.then(() => { try { window.dispatchEvent(new CustomEvent("or-inbox-changed")); } catch (e) {} }).catch(() => {});
+    return p;
+  },
   replyDrafts: (opportunity) => call("reply_drafts", { opportunity }),
   replyApprove: (opportunity) => call("reply_approve", { opportunity }),
   replyQueue: (opportunity, scheduledAt) =>
     call("reply_queue", { opportunity, scheduledAt: scheduledAt || null }),
   replySnooze: (opportunity, hours) => call("reply_snooze", { opportunity, hours: hours || 24 }),
   replyPostDue: () => call("reply_post_due"),
+  replyGrowthPlan: (id) => call("reply_growth_plan", { id: id || null }),
+  replyGrowthGet: (id) => call("reply_growth_get", { id: id || null }),
   // subreddit intelligence
   redditAccountStatus: () => call("reddit_account_status"),
   subDiscover: (limit) => call("sub_discover", { limit: limit || 8 }),
@@ -139,7 +148,11 @@ export const api = {
   subIntel: (sub, refresh) => call("sub_intel", { sub, refresh: !!refresh }),
   subTrack: (sub, off) => call("sub_track", { sub, off: !!off }),
   subCheck: (sub, text) => call("sub_check", { sub, text }),
-  replySetStatus: (opportunity, status) => call("reply_set_status", { opportunity, status }),
+  replySetStatus: (opportunity, status) => {
+    const p = call("reply_set_status", { opportunity, status });
+    p.then(() => { try { window.dispatchEvent(new CustomEvent("or-inbox-changed")); } catch (e) {} }).catch(() => {});
+    return p;
+  },
   // alerts + AI-visibility (GEO)
   alertsList: () => call("alerts_list"),
   alertsAdd: (rule, channel, intentMin, scoreMin) =>
@@ -171,6 +184,11 @@ export const api = {
       status: (fields && fields.status) || null,
       scheduledAt: fields && fields.scheduledAt != null ? fields.scheduledAt : null,
     }),
+  // ── Publish to social (X/Twitter) — credential-gated; dryRun previews tweets ──
+  publishStatus: () => call("publish_status"),
+  publishSetXCreds: (apiKey, apiSecret, accessToken, accessSecret) =>
+    call("publish_set_x_creds", { apiKey, apiSecret, accessToken, accessSecret }),
+  contentPublishX: (id, dryRun) => call("content_publish_x", { contentId: id, dryRun: !!dryRun }),
   // ── Connections (Reach credentials) — creds_* return a JSON array; the
   // single-result ops return a 1-element array, so callers take [0]. ──
   credsList: () => call("creds_list"),
@@ -180,6 +198,7 @@ export const api = {
   credsVerify: (source) => call("creds_verify", { source }),
   credsDelete: (source) => call("creds_delete", { source }),
   credsToggle: (source, enabled) => call("creds_toggle", { source, enabled }),
+  credsPreview: (source, query, limit) => call("creds_preview", { source, query: query || null, limit: limit || 6 }),
   // ── License / activation (Gap Map backend — commands.rs) ──
   // Hard gate: the app blocks on #/activate until license_status.activated.
   licenseGateStatus: () => call("license_gate_status"),
@@ -227,8 +246,15 @@ export const api = {
   // ── Settings: power tools (CLI symlink, export folder) ──
   installCli: () => call("install_cli_symlink"),
   uninstallCli: () => call("uninstall_cli_symlink"),
+  cliSymlinkStatus: () => call("cli_symlink_status"),
   exportPrefsGet: () => call("export_prefs_get"),
   exportPrefsSet: (exportDir) => call("export_prefs_set", { exportDir: exportDir || null }),
+  // ── Settings: about / version + semantic-memory (palace) engine ──
+  cliInfo: () => call("cli_info"),
+  checkAppVersion: () => call("check_app_version"),
+  palaceModelStatus: () => call("palace_model_status"),
+  palaceStats: () => call("palace_stats"),
+  palaceReindex: () => call("palace_reindex"),
 };
 
 export function esc(s) {
