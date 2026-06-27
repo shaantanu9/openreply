@@ -16,6 +16,7 @@ from ..reply import generate as _gen
 from ..reply import geo as _geo
 from ..reply import opportunity as _opp
 from ..reply import rules as _rules
+from ..reply import subreddit as _sub
 from ..reply.platforms import PLATFORMS
 
 reply_app = typer.Typer(
@@ -182,3 +183,53 @@ def geo_set_cmd(
 def geo_delete_cmd(id: str = typer.Argument(...), json_: bool = typer.Option(True, "--json/--no-json")):
     """Delete a GEO query."""
     _out({"deleted": _geo.delete_query(id), "id": id}, json_)
+
+
+# ---- Subreddit Intelligence -----------------------------------------------
+
+@reply_app.command("account-status")
+def account_status_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """Connected Reddit account status (for posting safety)."""
+    _out(_sub.account_status(), json_)
+
+
+@reply_app.command("sub-discover")
+def sub_discover_cmd(limit: int = typer.Option(8), json_: bool = typer.Option(True, "--json/--no-json")):
+    """Discover relevant subreddits for the active agent."""
+    _out(_sub.discover_for_agent(limit=limit), json_)
+
+
+@reply_app.command("sub-list")
+def sub_list_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """List the agent's discovered + tracked subreddits."""
+    _out(_sub.list_tracked(), json_)
+
+
+@reply_app.command("sub-intel")
+def sub_intel_cmd(
+    sub: str = typer.Option(..., "--sub", help="Subreddit name (no r/)"),
+    refresh: bool = typer.Option(False, help="Bypass rules cache"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Full intel for a subreddit: stats, rules, self-promo policy, strictness, best time."""
+    _out(_sub.intel(sub, refresh=refresh), json_)
+
+
+@reply_app.command("sub-track")
+def sub_track_cmd(
+    sub: str = typer.Option(..., "--sub"),
+    off: bool = typer.Option(False, "--off", help="Untrack instead of track"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Track (or --off untrack) a subreddit for the active agent."""
+    _out(_sub.track(sub, on=not off), json_)
+
+
+@reply_app.command("sub-check")
+def sub_check_cmd(
+    sub: str = typer.Option(..., "--sub"),
+    text: str = typer.Option(..., "--text", help="Draft to check against the sub's rules"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Check a draft against a subreddit's rules (ban-proof)."""
+    _out(_sub.check_draft(sub, text), json_)

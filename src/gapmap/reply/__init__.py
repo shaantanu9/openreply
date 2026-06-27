@@ -20,9 +20,10 @@ from . import (  # noqa: F401
     rank,
     rules,
     schema,
+    subreddit,
 )
 
 __all__ = [
     "agent", "alerts", "brand", "content", "generate", "geo",
-    "opportunity", "platforms", "rank", "rules", "schema",
+    "opportunity", "platforms", "rank", "rules", "schema", "subreddit",
 ]

@@ -459,6 +459,50 @@ pub async fn agent_update(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent personas` — list personas linked to this agent (with blend weights).
+#[tauri::command]
+pub async fn agent_personas(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "personas".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--agent".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent link-persona <pid> [--agent id] [--weight w]` — blend a persona's
+/// knowledge (memories + graph + beliefs) into this agent's replies/content.
+#[tauri::command]
+pub async fn agent_link_persona(
+    app: AppHandle,
+    persona_id: i64,
+    agent_id: Option<String>,
+    weight: Option<f64>,
+) -> Result<Value, String> {
+    let pid = persona_id.to_string();
+    let mut args = vec![
+        "agent".to_string(), "link-persona".to_string(), pid, "--json".to_string(),
+    ];
+    if let Some(a) = agent_id { if !a.is_empty() { args.push("--agent".into()); args.push(a); } }
+    if let Some(w) = weight { args.push("--weight".into()); args.push(w.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent unlink-persona <pid> [--agent id]` — remove a persona link.
+#[tauri::command]
+pub async fn agent_unlink_persona(
+    app: AppHandle,
+    persona_id: i64,
+    agent_id: Option<String>,
+) -> Result<Value, String> {
+    let pid = persona_id.to_string();
+    let mut args = vec![
+        "agent".to_string(), "unlink-persona".to_string(), pid, "--json".to_string(),
+    ];
+    if let Some(a) = agent_id { if !a.is_empty() { args.push("--agent".into()); args.push(a); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap reply rules --sub <sub>` — fetch + cache a subreddit's rules (Subreddit Intel).
 #[tauri::command]
 pub async fn reply_rules(app: AppHandle, sub: String, refresh: Option<bool>) -> Result<Value, String> {
@@ -508,6 +552,69 @@ pub async fn geo_set(app: AppHandle, id: String, status: String) -> Result<Value
 #[tauri::command]
 pub async fn geo_delete(app: AppHandle, id: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "geo-delete", &id, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap reply geo-check <id>` — automated visibility check via the BYOK provider.
+#[tauri::command]
+pub async fn geo_check(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "geo-check", &id, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap reply geo-check-all` — re-check every tracked query.
+#[tauri::command]
+pub async fn geo_check_all(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "geo-check-all", "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap reply geo-history <id>` — past checks for one query (trend).
+#[tauri::command]
+pub async fn geo_history(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "geo-history", &id, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap reply analytics [--days N]` — aggregated analytics for the active agent.
+#[tauri::command]
+pub async fn analytics_summary(app: AppHandle, days: Option<u32>) -> Result<Value, String> {
+    let d = days.unwrap_or(30).to_string();
+    run_cli(&app, vec!["reply", "analytics", "--days", &d, "--json"]).await.map_err(err_to_string)
+}
+
+// ── Subreddit Intelligence ──────────────────────────────────────────────────
+#[tauri::command]
+pub async fn reddit_account_status(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "account-status", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn sub_discover(app: AppHandle, limit: Option<u32>) -> Result<Value, String> {
+    let lim = limit.unwrap_or(8).to_string();
+    run_cli(&app, vec!["reply", "sub-discover", "--limit", &lim, "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn sub_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "sub-list", "--json"]).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn sub_intel(app: AppHandle, sub: String, refresh: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "sub-intel".to_string(), "--sub".to_string(), sub, "--json".to_string()];
+    if refresh.unwrap_or(false) { args.push("--refresh".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn sub_track(app: AppHandle, sub: String, off: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "sub-track".to_string(), "--sub".to_string(), sub, "--json".to_string()];
+    if off.unwrap_or(false) { args.push("--off".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn sub_check(app: AppHandle, sub: String, text: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "sub-check", "--sub", &sub, "--text", &text, "--json"]).await.map_err(err_to_string)
 }
 
 /// Per-topic inventory for the home screen.

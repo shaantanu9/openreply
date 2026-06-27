@@ -131,12 +131,56 @@ export async function renderOverview(view) {
            <a href="#/opportunities" class="text-reddit">→ Find conversations to reply to</a>
            <a href="#/compose" class="text-reddit">→ Generate a post / thread / article</a>
            <a href="#/connections" class="text-reddit">→ Connect accounts</a></div></div>
-     </div>`;
+     </div>
+     <div id="ov-personas" class="${card} mt-5"><div class="text-sm text-zinc-500">Loading personas…</div></div>`;
   document.getElementById("ov-refresh").onclick = async (e) => {
     e.target.textContent = "Refreshing…"; e.target.disabled = true;
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed"); renderOverview(view); }
     catch (err) { toast("Refresh failed"); e.target.textContent = "↻ Refresh knowledge"; e.target.disabled = false; }
   };
+
+  // Knowledge personas — link single-lens learning personas so their beliefs +
+  // memories + graph get blended into this agent's replies/content.
+  async function loadPersonas() {
+    const box = document.getElementById("ov-personas");
+    if (!box) return;
+    let all = [], linked = [];
+    try { all = (await api.personaList())?.personas || []; } catch (e) {}
+    try { linked = (await api.agentPersonas(a.id))?.personas || []; } catch (e) {}
+    const linkedIds = new Set(linked.map(p => p.persona_id));
+    const avail = all.filter(p => !linkedIds.has(p.id));
+    const linkedHtml = linked.length
+      ? linked.map(p => `<div class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-sm">
+           <span class="text-zinc-700 dark:text-zinc-300"><b>${esc(p.name)}</b><span class="text-zinc-400"> · ${esc(p.lens || "—")} · ×${Number(p.weight ?? 1).toFixed(1)}</span></span>
+           <button data-unlink="${p.persona_id}" class="text-xs font-semibold text-rose-500 hover:text-rose-700">Unlink</button></div>`).join("")
+      : `<div class="text-sm text-zinc-400">No personas linked yet — link one below to blend its learned knowledge into replies.</div>`;
+    const picker = avail.length
+      ? `<div class="mt-3 flex flex-wrap items-end gap-2">
+           <label class="text-sm"><span class="text-zinc-500">Persona</span>
+             <select id="ov-plink" class="mt-1 block rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">
+               ${avail.map(p => `<option value="${p.id}">${esc(p.name)} · ${esc(p.lens || "")}</option>`).join("")}</select></label>
+           <label class="text-sm"><span class="text-zinc-500">Weight</span>
+             <input id="ov-pweight" type="number" step="0.5" min="0" value="1.0" class="mt-1 block w-24 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></label>
+           <button id="ov-plink-btn" class="${btnP}">Link persona</button></div>`
+      : (all.length ? `<div class="mt-3 text-sm text-zinc-400">All personas are linked.</div>`
+                    : `<div class="mt-3 text-sm text-zinc-400">No learning personas yet — create one in the Personas tab to teach this agent.</div>`);
+    box.innerHTML = `<b class="text-zinc-900 dark:text-white">Knowledge personas</b>
+      <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Their beliefs, memories &amp; graph get blended into this agent's replies &amp; content.</p>
+      <div class="space-y-2">${linkedHtml}</div>${picker}`;
+    box.querySelectorAll("[data-unlink]").forEach(b => b.onclick = async () => {
+      try { await api.agentUnlinkPersona(parseInt(b.getAttribute("data-unlink")), a.id); toast("Persona unlinked"); loadPersonas(); }
+      catch (e) { toast("Unlink failed"); }
+    });
+    const lb = document.getElementById("ov-plink-btn");
+    if (lb) lb.onclick = async () => {
+      const pid = parseInt(document.getElementById("ov-plink").value);
+      const w = parseFloat(document.getElementById("ov-pweight").value) || 1.0;
+      lb.disabled = true;
+      try { await api.agentLinkPersona(pid, a.id, w); toast("Persona linked"); loadPersonas(); }
+      catch (e) { toast("Link failed"); lb.disabled = false; }
+    };
+  }
+  loadPersonas();
   icons();
 }
 
@@ -723,8 +767,7 @@ async function buildLlmCard(el) {
 }
 
 function buildAppearanceCard(el) {
-  const theme = localStorage.getItem("or-theme") || "system";
-  const accent = localStorage.getItem("or-accent") || "reddit";
+  const theme = localStorage.getItem("or-theme") || "dark";
   const cadence = localStorage.getItem("or-refresh-cadence") || "daily";
   const o = (val, cur, label) => `<option value="${val}"${val === cur ? " selected" : ""}>${label}</option>`;
   el.innerHTML = `
@@ -1338,6 +1381,92 @@ export async function buildLicenseCard(el) {
   };
 }
 
+// ── Subreddit Intelligence (full) ───────────────────────────────────────────
+export async function renderSubredditFull(view) {
+  const sbtn = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  view.innerHTML = head("Subreddit Intelligence",
+    "Know the rules before you post — discover subs, see stats, rules, strictness & account safety.",
+    `<button id="sr-disc" class="${btnP}">✨ Discover subs</button>`) +
+    `<div id="sr-acct" class="mb-5"></div>
+     <div class="mb-5 ${card}"><div class="flex flex-wrap items-end gap-3">
+       <label class="flex-1 text-sm text-zinc-500">Check a subreddit<input id="sr-q" placeholder="GetStudying" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+       <button id="sr-go" class="${btnP}">Get intel</button></div></div>
+     <div id="sr-detail"></div>
+     <h3 class="mb-2 mt-2 font-semibold text-zinc-900 dark:text-white">Your subreddits</h3>
+     <div id="sr-list" class="space-y-2">Loading…</div>`;
+
+  try {
+    const a = await api.redditAccountStatus();
+    document.getElementById("sr-acct").innerHTML =
+      `<div class="${card} flex items-center justify-between gap-4"><div><b class="text-zinc-900 dark:text-white">Account safety</b>
+        <div class="text-sm text-zinc-500">${a && a.connected ? ("Reddit connected" + (a.username ? (" · u/" + esc(a.username)) : "")) : "Reddit not connected — connect on Connections for live rules & stats"}</div></div>
+        <span class="rounded ${a && a.connected ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"} px-2 py-0.5 text-xs font-bold">${a && a.connected ? "connected" : "connect for live data"}</span></div>`;
+  } catch (e) {}
+
+  document.getElementById("sr-disc").onclick = async (e) => {
+    e.target.textContent = "Discovering…"; e.target.disabled = true;
+    try { const r = await api.subDiscover(8); toast(r && r.error ? r.error : "Discovered subs"); } catch (err) { toast("Discover failed"); }
+    e.target.textContent = "✨ Discover subs"; e.target.disabled = false; loadList();
+  };
+  document.getElementById("sr-go").onclick = runIntel;
+  document.getElementById("sr-q").addEventListener("keydown", (e) => { if (e.key === "Enter") runIntel(); });
+
+  async function runIntel() {
+    const sub = document.getElementById("sr-q").value.trim().replace(/^r\//, "");
+    if (!sub) return;
+    const d = document.getElementById("sr-detail");
+    d.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Fetching r/${esc(sub)} intel…</div>`;
+    try {
+      const i = await api.subIntel(sub, false);
+      if (i?.error) { d.innerHTML = `<div class="${card} text-rose-500">${esc(i.error)}</div>`; return; }
+      const rules = i.rules || [];
+      const pill = (l, v) => `<div><div class="text-xs uppercase tracking-wide text-zinc-400">${l}</div><div class="font-semibold text-zinc-900 dark:text-white">${v}</div></div>`;
+      d.innerHTML = `<div class="${card}">
+        <div class="flex items-center justify-between gap-4"><div><b class="text-zinc-900 dark:text-white">r/${esc(i.sub)}</b>
+          <div class="text-sm text-zinc-500">${esc(i.description || "") || "—"}</div></div>
+          <button id="sr-track" class="${btn}">${i.tracked ? "✓ Tracked" : "Track"}</button></div>
+        <div class="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          ${pill("Members", (i.subscribers || 0).toLocaleString())}${pill("Self-promo", esc(i.self_promo || "—"))}
+          ${pill("Strictness", esc(i.strictness || "—"))}${pill("Best time", esc(i.best_time || "—"))}</div>
+        <div class="mt-4"><b class="text-zinc-900 dark:text-white">Rules</b>
+          <div class="mt-2 space-y-1.5 text-sm">${rules.length ? rules.map((x) => `<div>• <b class="text-zinc-900 dark:text-white">${esc(x.name || "")}</b>${x.desc ? ` — <span class="text-zinc-500">${esc(x.desc)}</span>` : ""}</div>`).join("") : `<div class="text-zinc-500">No rules returned — connect Reddit (Connections) for live rules.</div>`}</div></div>
+        <div class="mt-4"><b class="text-zinc-900 dark:text-white">Check a draft against r/${esc(i.sub)}</b>
+          <textarea id="sr-draft" rows="3" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm" placeholder="Paste your reply to check…"></textarea>
+          <div class="mt-2"><button id="sr-check" class="${btnP}">Check compliance</button> <span id="sr-cres" class="text-sm"></span></div></div></div>`;
+      document.getElementById("sr-track").onclick = async () => {
+        const on = !i.tracked; await api.subTrack(sub, !on); i.tracked = on;
+        document.getElementById("sr-track").textContent = on ? "✓ Tracked" : "Track"; toast(on ? "Tracked" : "Untracked"); loadList();
+      };
+      document.getElementById("sr-check").onclick = async () => {
+        const t = document.getElementById("sr-draft").value.trim();
+        const res = document.getElementById("sr-cres");
+        if (!t) { res.textContent = "enter a draft"; return; }
+        res.textContent = "Checking…";
+        try { const c = await api.subCheck(sub, t); res.innerHTML = c.compliant ? `<span class="text-emerald-500">✓ compliant</span>` : `<span class="text-amber-500">⚠ ${esc(c.notes || "check rules")}</span>`; }
+        catch (e) { res.textContent = "failed"; }
+      };
+      icons();
+    } catch (e) { d.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+
+  async function loadList() {
+    const list = document.getElementById("sr-list");
+    try {
+      const r = await api.subList();
+      const subs = r?.subreddits || [];
+      list.innerHTML = subs.length ? subs.map((s) => `<div class="${card} flex items-center justify-between gap-3">
+        <div><b class="text-zinc-900 dark:text-white">r/${esc(s.sub)}</b> ${s.tracked ? '<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">tracked</span>' : ""}
+          <div class="text-sm text-zinc-500">${s.subscribers ? Number(s.subscribers).toLocaleString() + " members · " : ""}${s.self_promo ? esc(s.self_promo) + " · " : ""}fit ${Math.round((s.fit || 0) * 100) / 100}</div></div>
+        <button data-intel="${esc(s.sub)}" class="${sbtn}">Intel</button></div>`).join("")
+        : `<div class="${card} text-zinc-500">No subs yet — click "✨ Discover subs" (needs Reddit connected for results).</div>`;
+      list.querySelectorAll("[data-intel]").forEach((b) => b.onclick = () => { document.getElementById("sr-q").value = b.getAttribute("data-intel"); runIntel(); });
+      icons();
+    } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+  loadList();
+}
+
 export const DYN = {
   activate: renderActivate,
   welcome: renderWelcome,
@@ -1352,7 +1481,7 @@ export const DYN = {
   analytics: renderAnalytics,
   queue: renderQueue,
   keywords: renderKeywords,
-  subreddit: renderSubreddit,
+  subreddit: renderSubredditFull,
   onboarding: renderOnboarding,
   alerts: renderAlerts,
   geo: renderGeo,

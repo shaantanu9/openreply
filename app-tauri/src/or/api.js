@@ -21,6 +21,14 @@ export const api = {
   agentRefresh: (id, deep) => call("agent_refresh", { id: id || null, deep: !!deep }),
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
   agentUpdate: (p) => call("agent_update", p),
+  // agent ↔ persona links (blend a persona's knowledge into this agent's replies)
+  agentPersonas: (id) => call("agent_personas", { id: id || null }),
+  agentLinkPersona: (personaId, agentId, weight) =>
+    call("agent_link_persona", { personaId, agentId: agentId || null, weight: weight ?? null }),
+  agentUnlinkPersona: (personaId, agentId) =>
+    call("agent_unlink_persona", { personaId, agentId: agentId || null }),
+  // learning personas (single-lens knowledge agents) — used to populate the link picker
+  personaList: () => call("persona_agent_list"),
   replyRules: (sub, refresh) => call("reply_rules", { sub, refresh: !!refresh }),
   // reply / opportunities
   replyPlatforms: () => call("reply_platforms"),
@@ -29,6 +37,13 @@ export const api = {
   replyList: (status, minScore, limit) =>
     call("reply_list", { status: status || null, minScore: minScore || 0, limit: limit || 30 }),
   replyDraft: (opportunity) => call("reply_draft", { opportunity }),
+  // subreddit intelligence
+  redditAccountStatus: () => call("reddit_account_status"),
+  subDiscover: (limit) => call("sub_discover", { limit: limit || 8 }),
+  subList: () => call("sub_list"),
+  subIntel: (sub, refresh) => call("sub_intel", { sub, refresh: !!refresh }),
+  subTrack: (sub, off) => call("sub_track", { sub, off: !!off }),
+  subCheck: (sub, text) => call("sub_check", { sub, text }),
   replySetStatus: (opportunity, status) => call("reply_set_status", { opportunity, status }),
   // alerts + AI-visibility (GEO)
   alertsList: () => call("alerts_list"),
