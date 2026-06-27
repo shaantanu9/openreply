@@ -6,13 +6,83 @@ import { invoke } from "@tauri-apps/api/core";
 const TAURI = typeof window !== "undefined" &&
   !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
 
+// ── Stale-while-revalidate read cache ───────────────────────────────────────
+// SQLite itself is sub-millisecond, but every command shells out to the Python
+// sidecar (cold spawn ≈ seconds). To make navigation feel instant we return the
+// last-known result from localStorage immediately and refresh in the background.
+// Writes invalidate the affected read families so the next read is authoritative.
+// First-ever (cold-cache) load still awaits the backend — the screen skeleton
+// covers that one-time gap.
+const SWR_READS = new Set([
+  "agent_list", "agent_get", "agent_knowledge", "agent_personas",
+  "reply_platforms", "reply_list", "reply_drafts", "content_list",
+  "persona_agent_list", "sub_list", "geo_list", "alerts_list", "feeds_list",
+  "byok_status", "license_gate_status", "license_status", "license_default_api_base",
+  "reddit_account_status", "app_data_dir", "agent_learn_status",
+]);
+const SWR_PREFIX = "or-swr:";
+const _mem = new Map();
+
+const _key = (cmd, args) => SWR_PREFIX + cmd + ":" + JSON.stringify(args || {});
+function _readCache(k) {
+  if (_mem.has(k)) return _mem.get(k);
+  try { const r = localStorage.getItem(k); if (r != null) { const v = JSON.parse(r); _mem.set(k, v); return v; } } catch (e) {}
+  return undefined;
+}
+function _writeCache(k, v) {
+  _mem.set(k, v);
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+}
+function _clearAll() {
+  _mem.clear();
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(SWR_PREFIX)) localStorage.removeItem(k);
+    }
+  } catch (e) {}
+}
+function _invalidate(fams) {
+  const hit = (k) => fams.has(k.slice(SWR_PREFIX.length).split("_")[0]);
+  for (const k of [..._mem.keys()]) if (hit(k)) _mem.delete(k);
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(SWR_PREFIX) && hit(k)) localStorage.removeItem(k);
+    }
+  } catch (e) {}
+}
+// A write to `cmd` dirties its own family plus any whose results derive from it.
+function _invalidateForWrite(cmd) {
+  if (cmd.includes("reset") || cmd === "license_logout") return _clearAll();
+  const fam = cmd.split("_")[0];
+  const fams = new Set([fam]);
+  // reply/content lifecycle changes opportunities, drafts AND agent knowledge counts.
+  if (fam === "reply" || fam === "content") { fams.add("reply"); fams.add("content"); fams.add("agent"); }
+  // agent/persona writes (create/use/update/link) re-scope reply + content too.
+  if (fam === "agent" || fam === "persona") { fams.add("agent"); fams.add("persona"); fams.add("reply"); fams.add("content"); }
+  _invalidate(fams);
+}
+
 async function call(cmd, args) {
   if (!TAURI) return null;
-  return await invoke(cmd, args || {});
+  if (SWR_READS.has(cmd)) {
+    const k = _key(cmd, args);
+    const cached = _readCache(k);
+    const fresh = invoke(cmd, args || {})
+      .then((v) => { _writeCache(k, v); return v; })
+      .catch((e) => { if (cached === undefined) throw e; return cached; });
+    if (cached !== undefined) { fresh.catch(() => {}); return cached; } // instant + bg refresh
+    return await fresh;                                                  // cold cache: await real data
+  }
+  const res = await invoke(cmd, args || {});
+  _invalidateForWrite(cmd);
+  return res;
 }
 
 export const api = {
   isTauri: () => TAURI,
+  clearCache: _clearAll,   // drop SWR caches (Settings reset / force refresh)
   // agents
   agentList: () => call("agent_list"),
   agentGet: (id) => call("agent_get", { id: id || null }),
@@ -23,6 +93,7 @@ export const api = {
   agentLearn: (id, limit) => call("agent_learn", { id: id || null, limit: limit || 30 }),
   agentLearnStatus: (id) => call("agent_learn_status", { id: id || null }),
   agentUpdate: (p) => call("agent_update", p),
+  agentDelete: (id) => call("agent_delete", { id }),
   // agent ↔ persona links (blend a persona's knowledge into this agent's replies)
   agentPersonas: (id) => call("agent_personas", { id: id || null }),
   agentLinkPersona: (personaId, agentId, weight) =>
@@ -82,6 +153,7 @@ export const api = {
     }),
   contentList: (kind, status, limit) =>
     call("content_list", { kind: kind || null, status: status || null, limit: limit || 30 }),
+  contentDelete: (id) => call("content_delete", { id }),
   contentUpdate: (id, fields) =>
     call("content_update", {
       id,

@@ -7,6 +7,7 @@ import { VIEWS } from "./or/views.js";
 import { mountShell, drawIcons } from "./or/shell.js";
 import { api } from "./or/api.js";
 import { DYN } from "./or/dynamic.js";
+import { skeletonFor } from "./or/skeleton.js";
 
 function currentKey() {
   const h = (location.hash || "").replace(/^#\/?/, "").split(/[?#]/)[0];
@@ -23,11 +24,12 @@ const FULL_SCREENS = new Set(["activate", "welcome"]);
 // renders for design work.
 async function gateCheck(reqKey) {
   if (!api.isTauri()) return reqKey;
-  let gate = null;
-  try { gate = await api.licenseGateStatus(); } catch (e) {}
+  // Fetch both gate signals in parallel (SWR-cached → instant after first load).
+  const [gate, st] = await Promise.all([
+    api.licenseGateStatus().catch(() => null),
+    api.licenseStatus().catch(() => null),
+  ]);
   if (gate && gate.enabled === false) return reqKey; // gate disabled via env
-  let st = null;
-  try { st = await api.licenseStatus(); } catch (e) {}
   if (!st || !st.activated) return "activate";
   if (!localStorage.getItem("or-onboarded")) return "welcome";
   if (reqKey === "activate" || reqKey === "welcome") return "agents";
@@ -44,7 +46,7 @@ async function render() {
 
   if (useDyn) {
     mountShell(effKey, full);
-    view.innerHTML = `<div class="text-zinc-500">Loading…</div>`;
+    view.innerHTML = skeletonFor(key);
     try { await DYN[key](view); } catch (e) { console.error("[dyn]", key, e); view.innerHTML = `<div class="m-8 rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${String(e)}</div>`; }
   } else {
     const v = VIEWS[effKey];
@@ -57,6 +59,21 @@ async function render() {
   window.scrollTo(0, 0);
 }
 
+// Warm the SWR cache for the screens the user is most likely to open next, so
+// even their first visit is instant. Fires in the background after the landing
+// screen paints; the sidecar daemon serializes these while the user reads.
+function prewarm() {
+  if (!api.isTauri()) return;
+  setTimeout(() => {
+    Promise.allSettled([
+      api.agentGet(), api.agentKnowledge(),
+      api.replyList("saved", 0, 30), api.replyList(null, 0, 100),
+      api.contentList(), api.byokStatus(),
+    ]);
+  }, 400);
+}
+
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", render);
 if (document.readyState !== "loading") render();
+prewarm();
