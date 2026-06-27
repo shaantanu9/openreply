@@ -1261,11 +1261,21 @@ def cmd_schedule_tick(
         except Exception as e:
             errored.append({"topic": topic, "error": str(e)})
 
+    # Process any queued replies whose schedule is due (auto-post where possible,
+    # else fire a desktop reminder). Best-effort — never breaks the tick.
+    replies_due = None
+    try:
+        from ..reply import poster as _poster
+        replies_due = _poster.process_due(notify=True)
+    except Exception as e:
+        replies_due = {"error": str(e)}
+
     result = {
         "ran_at": now.isoformat(timespec="seconds"),
         "ran": ran, "skipped": skipped, "errored": errored,
         "learned": learned,
         "n_scheduled": len(scheduled),
+        "replies_due": replies_due,
     }
     _emit(result, as_json, table_title="schedule-tick")
 

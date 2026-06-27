@@ -820,13 +820,19 @@ export async function renderSettings(view) {
      <div id="set-grid" class="grid gap-4 lg:grid-cols-2">
        <div id="st-license" data-skw="licence license plan plans subscription key activate upgrade" class="${card} lg:col-span-2"><div class="text-zinc-500">Loading licence…</div></div>
        <div id="st-llm" data-skw="ai provider llm api key model anthropic openai gemini ollama byok draft" class="${card}"><div class="text-zinc-500">Loading provider…</div></div>
-       <div id="st-appear" data-skw="appearance theme dark light mode refresh cadence display" class="${card}"></div>
+       <div id="st-appear" data-skw="appearance theme dark light mode display" class="${card}"></div>
+       <div id="st-auto" data-skw="automation schedule auto refresh learn cadence daily weekly launchd cron background" class="${card}"><div class="text-zinc-500">Loading automation…</div></div>
+       <div id="st-mcp" data-skw="mcp connect claude code cursor windsurf desktop integration tools agent client" class="${card}"><div class="text-zinc-500">Loading MCP…</div></div>
+       <div id="st-usage" data-skw="usage limits token cap spend cost budget today" class="${card}"><div class="text-zinc-500">Loading usage…</div></div>
        <div id="st-feeds" data-skw="feeds rss custom sources news add url" class="${card}"><div class="text-zinc-500">Loading feeds…</div></div>
        <div id="st-data" data-skw="data export reset delete local database backup storage wipe" class="${card}"><div class="text-zinc-500">Loading data…</div></div>
      </div>`;
   buildLicenseCard(document.getElementById("st-license"));
   buildLlmCard(document.getElementById("st-llm"));
   buildAppearanceCard(document.getElementById("st-appear"));
+  buildAutomationCard(document.getElementById("st-auto"));
+  buildMcpCard(document.getElementById("st-mcp"));
+  buildUsageCard(document.getElementById("st-usage"));
   buildFeedsCard(document.getElementById("st-feeds"));
   buildDataCard(document.getElementById("st-data"));
   const setSearch = document.getElementById("set-search");
@@ -916,27 +922,118 @@ async function buildLlmCard(el) {
 
 function buildAppearanceCard(el) {
   const theme = localStorage.getItem("or-theme") || "dark";
-  const cadence = localStorage.getItem("or-refresh-cadence") || "daily";
   const o = (val, cur, label) => `<option value="${val}"${val === cur ? " selected" : ""}>${label}</option>`;
   el.innerHTML = `
-    <b class="text-zinc-900 dark:text-white">Appearance &amp; refresh</b>
+    <b class="text-zinc-900 dark:text-white">Appearance</b>
     <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Theme also has a quick toggle in the sidebar.</p>
     <label class="block mb-3 text-sm text-zinc-500">Default theme<select id="st-theme" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
       ${o("system", theme, "Match system")}${o("dark", theme, "Dark")}${o("light", theme, "Light")}</select></label>
-    <label class="block mb-3 text-sm text-zinc-500">Knowledge refresh<select id="st-cadence" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
-      ${o("daily", cadence, "Daily")}${o("weekly", cadence, "Weekly")}${o("manual", cadence, "Manual only")}</select></label>
     <span id="st-appear-msg" class="text-xs text-zinc-400"></span>`;
   const apply = () => {
     const t = el.querySelector("#st-theme").value;
     localStorage.setItem("or-theme", t);
-    localStorage.setItem("or-refresh-cadence", el.querySelector("#st-cadence").value);
     const dark = t === "dark" || (t === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
     document.documentElement.classList.toggle("dark", dark);
     el.querySelector("#st-appear-msg").textContent = "Saved ✓";
     if (window.refreshIcons) window.refreshIcons();
   };
   el.querySelector("#st-theme").onchange = apply;
-  el.querySelector("#st-cadence").onchange = apply;
+}
+
+// Automation — REAL launchd auto collect+learn (replaces the old localStorage-only
+// "cadence" that did nothing). Off / Daily (24h) / Weekly (168h).
+async function buildAutomationCard(el) {
+  el.innerHTML = `<b class="text-zinc-900 dark:text-white">Automation</b>
+    <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Run collect + learn automatically on a schedule, even when the app is closed (macOS launchd).</p>
+    <label class="block mb-2 text-sm text-zinc-500">Auto refresh + learn
+      <select id="st-sched" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
+        <option value="0">Off (manual only)</option><option value="24">Daily</option><option value="168">Weekly</option></select></label>
+    <span id="st-sched-msg" class="text-xs text-zinc-400">Checking…</span>`;
+  const selEl = el.querySelector("#st-sched"), msg = el.querySelector("#st-sched-msg");
+  try {
+    const s = (await api.scheduleStatus()) || {};
+    if (s.installed && s.interval_hours) selEl.value = String(s.interval_hours >= 168 ? 168 : 24);
+    msg.textContent = s.installed ? `On · every ${s.interval_hours || 24}h${s.loaded === false ? " (reselect to reload)" : ""}` : "Off";
+  } catch (e) { msg.textContent = "Scheduling unavailable on this platform."; selEl.disabled = true; }
+  selEl.onchange = async () => {
+    const h = parseInt(selEl.value, 10);
+    msg.textContent = "Applying…"; selEl.disabled = true;
+    try {
+      const r = h > 0 ? await api.scheduleInstall(h) : await api.scheduleUninstall();
+      if (r && r.error) { msg.textContent = "Failed: " + r.error; }
+      else msg.textContent = h > 0 ? `On · every ${h}h ✓` : "Off ✓";
+    } catch (e) { msg.textContent = "Failed: " + e; }
+    selEl.disabled = false;
+  };
+}
+
+// Connect to apps (MCP) — register the app's MCP server with Claude Code / Cursor / etc.
+async function buildMcpCard(el) {
+  el.innerHTML = `<b class="text-zinc-900 dark:text-white">Connect to apps (MCP)</b>
+    <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Use this agent's data + tools from Claude Code, Claude Desktop, Cursor or Windsurf — they read/write this app's database.</p>
+    <div class="flex flex-wrap items-end gap-2">
+      <label class="text-sm text-zinc-500">Client<select id="st-mcp-client" class="mt-1 block w-48 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>Loading…</option></select></label>
+      <span id="st-mcp-badge" class="rounded bg-zinc-500/15 px-2 py-0.5 text-xs font-bold text-zinc-400">…</span></div>
+    <div class="mt-3 flex flex-wrap gap-2" id="st-mcp-actions"></div>
+    <div id="st-mcp-msg" class="mt-2 text-xs text-zinc-400"></div>`;
+  const sel = el.querySelector("#st-mcp-client"), badge = el.querySelector("#st-mcp-badge"),
+        actions = el.querySelector("#st-mcp-actions"), msg = el.querySelector("#st-mcp-msg");
+  let clients = [];
+  try { clients = (await api.mcpClients())?.clients || []; } catch (e) { el.querySelector("b").insertAdjacentHTML("afterend", `<p class="text-sm text-rose-500 mt-1">MCP unavailable: ${esc(e)}</p>`); return; }
+  if (!clients.length) clients = ["claude-code", "claude-desktop", "cursor", "windsurf"].map(id => ({ id, label: id }));
+  sel.innerHTML = clients.map(c => `<option value="${esc(c.id || c)}">${esc(c.label || c.id || c)}</option>`).join("");
+
+  async function refresh() {
+    badge.textContent = "checking…"; badge.className = "rounded bg-zinc-500/15 px-2 py-0.5 text-xs font-bold text-zinc-400";
+    actions.innerHTML = "";
+    let st = {};
+    try { st = (await api.mcpStatus(sel.value)) || {}; } catch (e) { msg.textContent = String(e); return; }
+    const connected = !!st.connected, aligned = st.db_aligned !== false;
+    badge.textContent = connected ? (aligned ? "connected" : "connected · DB mismatch") : "not connected";
+    badge.className = `rounded px-2 py-0.5 text-xs font-bold ${connected && aligned ? "bg-emerald-500/15 text-emerald-500" : connected ? "bg-amber-500/15 text-amber-500" : "bg-zinc-500/15 text-zinc-400"}`;
+    const bd = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
+    actions.innerHTML = (connected
+      ? `<button data-mcp="resync" class="${bd}">Re-sync paths</button><button data-mcp="disconnect" class="${bd} text-rose-500">Disconnect</button>`
+      : `<button data-mcp="connect" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Connect</button>`)
+      + `<button data-mcp="copy" class="${bd}">Copy config</button>`;
+    if (st.reason && !connected) msg.textContent = st.reason; else if (!connected) msg.textContent = "";
+    actions.querySelectorAll("[data-mcp]").forEach(b => b.onclick = () => mcpAction(b.getAttribute("data-mcp")));
+  }
+  async function mcpAction(act) {
+    msg.textContent = act === "copy" ? "Copying…" : "Working… (restart the client after)";
+    try {
+      if (act === "connect" || act === "resync") { const r = await api.mcpInstall(sel.value); msg.textContent = r?.error ? ("Failed: " + r.error) : "Done — restart " + sel.value; }
+      else if (act === "disconnect") { await api.mcpUninstall(sel.value); msg.textContent = "Disconnected — restart " + sel.value; }
+      else if (act === "copy") { const snip = await api.mcpConfigSnippet(sel.value); const txt = typeof snip === "string" ? snip : JSON.stringify(snip?.snippet || snip, null, 2); await navigator.clipboard.writeText(txt); msg.textContent = "Config copied"; }
+      if (act !== "copy") refresh();
+    } catch (e) { msg.textContent = "Failed: " + e; }
+  }
+  sel.onchange = refresh;
+  refresh();
+}
+
+// Usage & limits — daily token cap + today's spend (cost guardrail).
+async function buildUsageCard(el) {
+  let prefs = {}, spend = {};
+  try { prefs = (await api.extractionPrefsGet(null)) || {}; } catch (e) {}
+  try { spend = (await api.todayTokenSpend()) || {}; } catch (e) {}
+  const cap = Number(prefs.daily_token_cap || prefs.global?.daily_token_cap || 0) || 0;
+  const used = Number(spend.tokens || spend.today_tokens || 0) || 0;
+  const cost = spend.cost_usd != null ? `$${Number(spend.cost_usd).toFixed(3)}` : "";
+  el.innerHTML = `<b class="text-zinc-900 dark:text-white">Usage &amp; limits</b>
+    <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Today’s LLM token spend and an optional daily cap (0 = no cap). Runs on your own key.</p>
+    <div class="mb-3 flex items-center justify-between rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 text-sm">
+      <span class="text-zinc-500">Today</span><b class="text-zinc-900 dark:text-white">${used.toLocaleString()} tokens${cost ? " · " + cost : ""}</b></div>
+    <label class="block mb-2 text-sm text-zinc-500">Daily token cap
+      <input id="st-cap" type="number" min="0" value="${cap}" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+    <div class="flex gap-2"><button id="st-cap-save" class="${btnP}">Save cap</button></div>
+    <span id="st-cap-msg" class="mt-2 inline-block text-xs text-zinc-400"></span>`;
+  el.querySelector("#st-cap-save").onclick = async () => {
+    const v = parseInt(el.querySelector("#st-cap").value, 10) || 0;
+    const m = el.querySelector("#st-cap-msg"); m.textContent = "Saving…";
+    try { const r = await api.extractionPrefsSet("global", { daily_token_cap: v }); m.textContent = r?.error ? ("Failed: " + r.error) : "Saved ✓"; }
+    catch (e) { m.textContent = "Failed: " + e; }
+  };
 }
 
 async function buildFeedsCard(el) {
@@ -1027,11 +1124,39 @@ export async function renderKnowledge(view) {
        ${kpi("Angles / findings", (k && k.findings) || 0)}</div>
      <div class="mt-5 ${card}"><b class="text-zinc-900 dark:text-white">Sources watched</b>
        <div class="mt-2 flex flex-wrap gap-1.5">${(a.platforms || []).map(p => `<span class="${chip}">${esc(p)}</span>`).join("")}</div>
-       <p class="mt-3 text-sm text-zinc-500">Last refresh: ${k && k.last_refresh_at ? new Date(k.last_refresh_at * 1000).toLocaleString() : "never"}</p></div>`;
+       <p class="mt-3 text-sm text-zinc-500">Last refresh: ${k && k.last_refresh_at ? new Date(k.last_refresh_at * 1000).toLocaleString() : "never"}</p></div>
+     <div class="mt-5 ${card}">
+       <b class="text-zinc-900 dark:text-white"><i data-lucide="youtube" class="inline-block h-4 w-4 align-[-3px] text-red-500"></i> Teach from a video</b>
+       <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Paste a YouTube link — the agent pulls the subtitles/transcript and learns from it. Lessons blend into its replies &amp; content.</p>
+       <div class="flex flex-wrap items-end gap-3">
+         <input id="kn-vid" placeholder="https://www.youtube.com/watch?v=\u2026" class="${inputCls} min-w-0 flex-1">
+         <button id="kn-teach" class="${btnP}"><i data-lucide="graduation-cap" class="inline-block h-4 w-4 align-[-2px]"></i> Learn from video</button></div>
+       <div id="kn-teach-msg" class="mt-3 text-sm"></div></div>`;
   document.getElementById("kn-refresh").onclick = async (e) => {
     e.target.textContent = "Refreshing…"; e.target.disabled = true;
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed"); renderKnowledge(view); }
     catch (err) { toast("Refresh failed"); e.target.disabled = false; e.target.textContent = "↻ Refresh now"; }
+  };
+  const teachBtn = document.getElementById("kn-teach");
+  if (teachBtn) teachBtn.onclick = async () => {
+    const inp = document.getElementById("kn-vid");
+    const msg = document.getElementById("kn-teach-msg");
+    const url = (inp.value || "").trim();
+    if (!url) { msg.innerHTML = `<span class="text-amber-500">Paste a video URL first.</span>`; return; }
+    const html = teachBtn.innerHTML; teachBtn.disabled = true; teachBtn.textContent = "Learning\u2026";
+    msg.innerHTML = `<span class="text-zinc-500">Fetching the video\u2019s subtitles &amp; learning \u2014 this can take a minute\u2026</span>`;
+    try {
+      const r = await api.agentTeachVideo(url);
+      if (r === null) { msg.innerHTML = `<span class="text-amber-500">Run inside the app to teach.</span>`; }
+      else if (r.error) { msg.innerHTML = `<span class="text-rose-500">${esc(r.error)}</span>`; }
+      else {
+        const f = r.fetched || {};
+        msg.innerHTML = `<span class="text-emerald-500">\u2713 ${esc(r.message || "Learned.")}</span><span class="text-zinc-400"> \u00b7 ${f.transcript || 0} transcript chunks \u00b7 ${r.learned || 0} lessons \u00b7 ${r.beliefs || 0} beliefs</span>`;
+        inp.value = "";
+        toast(`Learned ${r.learned || 0} lesson(s) from the video`);
+      }
+    } catch (e) { msg.innerHTML = `<span class="text-rose-500">${esc(e)}</span>`; }
+    finally { teachBtn.disabled = false; teachBtn.innerHTML = html; icons(); }
   };
   icons();
 }
@@ -1072,8 +1197,11 @@ export async function renderInbox(view) {
 
   function cardHTML(o) {
     const s = Math.round((o.score || 0) * 100);
-    const sched = o.status === "queued" && o.scheduled_at
-      ? `<span class="text-xs text-indigo-400">· scheduled</span>` : "";
+    const dueNow = o.status === "queued" && o.scheduled_at && (o.scheduled_at * 1000) <= Date.now();
+    const sched = o.status !== "queued" ? ""
+      : dueNow
+        ? `<span class="rounded bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-500">⏰ Due now</span>`
+        : o.scheduled_at ? `<span class="text-xs text-indigo-400">· scheduled</span>` : "";
     return `<div class="${card}" data-card="${esc(o.id)}">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0"><div class="flex flex-wrap items-center gap-2">
@@ -1257,6 +1385,10 @@ export async function renderInbox(view) {
   view.querySelector("#ib-q").oninput = debounce((e) => { S.query = e.target.value.trim(); load(true); });
   view.querySelector("#ib-sort").onchange = (e) => { S.sort = e.target.value; load(true); };
   moreWrap.querySelector("button").onclick = () => { S.offset += PAGE; load(false); };
+  // On open, process any queued replies whose schedule is due (best-effort
+  // auto-post; the rest surface a "Due now" badge for manual posting). If
+  // anything posted, refresh so it moves to the Posted tab.
+  api.replyPostDue?.().then((r) => { if (r && r.posted && r.posted.length) load(true); }).catch(() => {});
   load(true);
 }
 
@@ -1951,14 +2083,16 @@ export async function renderSubredditFull(view) {
   view.innerHTML = head("Subreddit Intelligence",
     "Know the rules before you post — discover subs, see stats, rules, strictness & account safety.",
     `<button id="sr-disc" class="${btnP}">✨ Discover subs</button>`) +
-    `<div id="sr-acct" class="mb-5"></div>
+    `<div id="sr-acct" class="mb-5"><div class="${card} flex items-center justify-between gap-4"><div class="h-4 w-52 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div><div class="h-6 w-24 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800"></div></div></div>
      <div class="mb-5 ${card}"><div class="flex flex-wrap items-end gap-3">
        <label class="flex-1 text-sm text-zinc-500">Check a subreddit<input id="sr-q" placeholder="GetStudying" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
        <button id="sr-go" class="${btnP}">Get intel</button></div></div>
      <div id="sr-detail"></div>
-     <div id="sr-map" class="mb-5"></div>
-     <h3 class="mb-2 mt-2 font-semibold text-zinc-900 dark:text-white">Your subreddits</h3>
-     <div id="sr-tree" class="space-y-1">Loading…</div>`;
+     <div id="sr-map" class="mb-5">${srSkelMap()}</div>
+     <div class="mb-2 mt-2 flex flex-wrap items-center justify-between gap-2">
+       <h3 class="font-semibold text-zinc-900 dark:text-white">Your subreddits</h3>
+       <input id="sr-filter" type="search" placeholder="Filter your subs…" autocomplete="off" class="w-44 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-1.5 text-sm"></div>
+     <div id="sr-tree" class="space-y-1.5">${srSkelTree()}</div>`;
 
   try {
     const a = await api.redditAccountStatus();
@@ -1980,7 +2114,7 @@ export async function renderSubredditFull(view) {
     const sub = document.getElementById("sr-q").value.trim().replace(/^r\//, "");
     if (!sub) return;
     const d = document.getElementById("sr-detail");
-    d.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Fetching r/${esc(sub)} intel…</div>`;
+    d.innerHTML = srSkelIntel(sub);
     try {
       const i = await api.subIntel(sub, false);
       if (i?.error) { d.innerHTML = `<div class="${card} text-rose-500">${esc(i.error)}</div>`; return; }
@@ -2075,9 +2209,26 @@ export async function renderSubredditFull(view) {
     }).join("");
   }
 
+  // ── Skeleton loaders (hoisted fn declarations so the initial innerHTML can
+  //    call them before loadList runs). ──
+  function srSkelBar(w, h = "h-4") { return `<div class="${h} ${w} animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div>`; }
+  function srSkelMap() { return `<div class="${card}">${srSkelBar("w-28")}<div class="mt-4 flex h-56 items-center justify-center"><div class="h-40 w-40 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800"></div></div></div>`; }
+  function srSkelTree() { return Array.from({ length: 4 }).map(() => `<div class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2.5">${srSkelBar("w-44", "h-3.5")}<div class="flex shrink-0 gap-1.5"><div class="h-6 w-14 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800"></div><div class="h-6 w-12 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800"></div></div></div>`).join(""); }
+  function srSkelIntel(sub) { return `<div class="${card}"><div class="flex items-center justify-between gap-4">${srSkelBar("w-36", "h-5")}<div class="h-7 w-16 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800"></div></div><div class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">${Array.from({ length: 4 }).map(() => `<div>${srSkelBar("w-12", "h-2.5")}<div class="mt-1.5">${srSkelBar("w-16")}</div></div>`).join("")}</div><div class="mt-4 space-y-2">${["w-3/4", "w-2/3", "w-1/2"].map((w) => srSkelBar(w, "h-3.5")).join("")}</div><div class="mt-3 text-xs text-zinc-400">Fetching r/${esc(sub)} intel…</div></div>`; }
+
+  // Live filter over the user's subreddit tree.
+  function srFilter() {
+    const q = (document.getElementById("sr-filter")?.value || "").trim().toLowerCase();
+    const tree = document.getElementById("sr-tree"); if (!tree) return;
+    tree.querySelectorAll("details[data-sub]").forEach((d) => { d.style.display = (!q || d.getAttribute("data-sub").toLowerCase().includes(q)) ? "" : "none"; });
+    tree.querySelectorAll(":scope > details").forEach((grp) => { const any = [...grp.querySelectorAll("details[data-sub]")].some((d) => d.style.display !== "none"); grp.style.display = any ? "" : "none"; });
+  }
+
   async function loadList() {
     const tree = document.getElementById("sr-tree");
     const map = document.getElementById("sr-map");
+    if (tree) tree.innerHTML = srSkelTree();
+    if (map) map.innerHTML = srSkelMap();
     try {
       const r = await api.subList();
       const subs = r?.subreddits || [];
@@ -2115,6 +2266,8 @@ export async function renderSubredditFull(view) {
             (rules.length ? rules.map((x) => `<div>• <b class="text-zinc-700 dark:text-zinc-300">${esc(x.name || "")}</b>${x.desc ? ` — ${esc(x.desc)}` : ""}</div>`).join("") : '<div>No rules returned — connect Reddit (Connections) for live rules.</div>');
         } catch (e) { box.textContent = "Could not load rules."; box.dataset.loaded = ""; }
       }));
+      const filt = document.getElementById("sr-filter");
+      if (filt) { filt.oninput = srFilter; srFilter(); }
       icons();
     } catch (e) { tree.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
   }

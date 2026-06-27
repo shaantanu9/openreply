@@ -16,7 +16,8 @@ const TAURI = typeof window !== "undefined" &&
 const SWR_READS = new Set([
   "agent_list", "agent_get", "agent_knowledge", "agent_personas",
   "reply_platforms", "reply_list", "reply_drafts", "content_list",
-  "persona_agent_list", "sub_list", "geo_list", "alerts_list", "feeds_list",
+  "persona_agent_list", "sub_list", "geo_list", "geo_history", "analytics_summary",
+  "alerts_list", "feeds_list",
   "byok_status", "license_gate_status", "license_status", "license_default_api_base",
   "reddit_account_status", "app_data_dir", "agent_learn_status",
 ]);
@@ -61,6 +62,9 @@ function _invalidateForWrite(cmd) {
   if (fam === "reply" || fam === "content") { fams.add("reply"); fams.add("content"); fams.add("agent"); }
   // agent/persona writes (create/use/update/link) re-scope reply + content too.
   if (fam === "agent" || fam === "persona") { fams.add("agent"); fams.add("persona"); fams.add("reply"); fams.add("content"); }
+  // Analytics aggregates opportunities + content + geo citation rate, so any of
+  // those writes (incl. geo checks) must bust the analytics roll-up.
+  if (fam === "reply" || fam === "content" || fam === "geo") { fams.add("analytics"); }
   _invalidate(fams);
 }
 
@@ -92,6 +96,7 @@ export const api = {
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
   agentLearn: (id, limit) => call("agent_learn", { id: id || null, limit: limit || 30 }),
   agentLearnStatus: (id) => call("agent_learn_status", { id: id || null }),
+  agentTeachVideo: (url, id, comments) => call("agent_teach_video", { url, id: id || null, comments: comments || 100 }),
   agentUpdate: (p) => call("agent_update", p),
   agentDelete: (id) => call("agent_delete", { id }),
   // agent ↔ persona links (blend a persona's knowledge into this agent's replies)
@@ -122,6 +127,7 @@ export const api = {
   replyQueue: (opportunity, scheduledAt) =>
     call("reply_queue", { opportunity, scheduledAt: scheduledAt || null }),
   replySnooze: (opportunity, hours) => call("reply_snooze", { opportunity, hours: hours || 24 }),
+  replyPostDue: () => call("reply_post_due"),
   // subreddit intelligence
   redditAccountStatus: () => call("reddit_account_status"),
   subDiscover: (limit) => call("sub_discover", { limit: limit || 8 }),
@@ -199,6 +205,26 @@ export const api = {
   appResetPreview: () => call("app_reset_preview"),
   appHardReset: () => call("app_hard_reset"),
   appRelaunch: () => call("app_relaunch"),
+  // ── Settings: automation (real launchd auto collect+learn on an interval) ──
+  scheduleStatus: () => call("schedule_status"),
+  scheduleInstall: (intervalHours) => call("schedule_install", { intervalHours: intervalHours || 24 }),
+  scheduleUninstall: () => call("schedule_uninstall"),
+  // ── Settings: connect to MCP clients (Claude Code / Cursor / …) ──
+  mcpClients: () => call("mcp_clients"),
+  mcpStatus: (client) => call("mcp_status", { client: client || null }),
+  mcpInstall: (client) => call("mcp_install", { client: client || null }),
+  mcpUninstall: (client) => call("mcp_uninstall", { client: client || null }),
+  mcpConfigSnippet: (client) => call("mcp_config_snippet", { client: client || null }),
+  // ── Settings: usage & limits (token cap, today's spend, cost model) ──
+  extractionPrefsGet: (topic) => call("extraction_prefs_get", { topic: topic || null }),
+  extractionPrefsSet: (scope, prefs) => call("extraction_prefs_set", { scope: scope || "global", prefs: prefs || {} }),
+  todayTokenSpend: () => call("today_token_spend"),
+  costModelGet: () => call("cost_model_get"),
+  // ── Settings: power tools (CLI symlink, export folder) ──
+  installCli: () => call("install_cli_symlink"),
+  uninstallCli: () => call("uninstall_cli_symlink"),
+  exportPrefsGet: () => call("export_prefs_get"),
+  exportPrefsSet: (exportDir) => call("export_prefs_set", { exportDir: exportDir || null }),
 };
 
 export function esc(s) {

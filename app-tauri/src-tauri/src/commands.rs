@@ -361,6 +361,16 @@ pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Va
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent teach-video` — teach the agent from one video's subtitles/transcript.
+#[tauri::command]
+pub async fn agent_teach_video(app: AppHandle, url: String, id: Option<String>, comments: Option<u32>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "teach-video".to_string(), url, "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(c) = comments { args.push("--comments".into()); args.push(c.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap reply find …` — scan + score opportunities.
 #[tauri::command]
 pub async fn reply_find(app: AppHandle, platforms: Option<String>, limit: Option<u32>, no_score: Option<bool>) -> Result<Value, String> {
@@ -453,6 +463,13 @@ pub async fn reply_snooze(app: AppHandle, opportunity: String, hours: Option<f64
         .map_err(err_to_string)
 }
 
+/// `gapmap reply post-due` — process queued replies whose schedule is due
+/// (best-effort auto-post; otherwise the item stays queued for a manual post).
+#[tauri::command]
+pub async fn reply_post_due(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "post-due", "--json"]).await.map_err(err_to_string)
+}
+
 /// `gapmap content generate <kind> …`.
 /// `context_id` / `context_text` feed the follow-up kinds (the prior draft, or
 /// the thread + reply to answer); ignored by the other kinds.
@@ -489,6 +506,18 @@ pub async fn content_update(
     if let Some(t) = scheduled_at { args.push("--scheduled-at".into()); args.push(t.to_string()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap content delete <id>` — remove a content draft.
+#[tauri::command]
+pub async fn content_delete(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["content", "delete", &id, "--json"]).await.map_err(err_to_string)
+}
+
+/// `gapmap agent delete <id>` — remove an agent.
+#[tauri::command]
+pub async fn agent_delete(app: AppHandle, id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["agent", "delete", &id, "--json"]).await.map_err(err_to_string)
 }
 
 /// `gapmap content list …` — generated drafts.

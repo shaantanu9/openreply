@@ -173,6 +173,17 @@ def snooze_cmd(
     _out(_opp.snooze(opportunity, hours=hours), json_)
 
 
+@reply_app.command("post-due")
+def post_due_cmd(
+    notify: bool = typer.Option(False, "--notify", help="Fire a desktop reminder for due replies"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Process queued replies whose schedule is due — auto-post where a write
+    account exists, otherwise surface a reminder (used by the scheduler)."""
+    from ..reply import poster as _poster
+    _out(_poster.process_due(notify=notify), json_)
+
+
 @reply_app.command("rules")
 def rules_cmd(
     sub: str = typer.Option(..., "--sub", help="Subreddit name (no r/)"),
