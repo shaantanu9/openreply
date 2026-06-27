@@ -80,6 +80,9 @@ function sidebarHTML(routeKey) {
     <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/50">
       <div class="mb-1 text-[11px] uppercase tracking-wider text-zinc-400">Active agent</div>
       <select id="agentSel" class="w-full cursor-pointer bg-transparent text-sm font-bold text-zinc-900 focus:outline-none dark:text-white">${opts}</select></div>
+    <div class="relative">
+      <i data-lucide="search" class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"></i>
+      <input id="navSearch" type="search" placeholder="Search…" autocomplete="off" class="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-reddit dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-white"></div>
     <nav class="flex flex-col gap-0.5">`;
   for (const g of NAV) {
     const label = g.sec === 'AGENT' ? agent : g.sec;
@@ -142,6 +145,26 @@ export function mountShell(routeKey, full) {
     try { localStorage.setItem('or-theme', dark ? 'dark' : 'light'); } catch (e) {}
     syncKnob();
   };
+  const navSearch = document.getElementById('navSearch');
+  if (navSearch) {
+    const applyNavFilter = () => {
+      const q = navSearch.value.trim().toLowerCase();
+      side.querySelectorAll('nav a[href^="#/"]').forEach((a) => {
+        const lbl = (a.textContent || '').toLowerCase();
+        a.style.display = (!q || lbl.includes(q)) ? '' : 'none';
+      });
+      side.querySelectorAll('nav > div').forEach((div) => {
+        let n = div.nextElementSibling, any = false;
+        while (n && n.tagName === 'A') { if (n.style.display !== 'none') any = true; n = n.nextElementSibling; }
+        div.style.display = (!q || any) ? '' : 'none';
+      });
+    };
+    navSearch.oninput = applyNavFilter;
+    navSearch.onkeydown = (e) => {
+      if (e.key === 'Enter') { const f = side.querySelector('nav a[href^="#/"]:not([style*="none"])'); if (f) location.hash = f.getAttribute('href'); }
+      else if (e.key === 'Escape') { navSearch.value = ''; applyNavFilter(); }
+    };
+  }
   const sel = document.getElementById('agentSel');
   if (sel) sel.onchange = () => {
     if (sel.value === '__new') { location.hash = '#/onboarding'; return; }

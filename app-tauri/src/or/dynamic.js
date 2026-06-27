@@ -755,18 +755,35 @@ const LLM_PROVIDERS = [
 export async function renderSettings(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("Settings", "AI provider, appearance, custom feeds, and your local data.") +
-    `<div class="grid gap-4 lg:grid-cols-2">
-       <div id="st-license" class="${card} lg:col-span-2"><div class="text-zinc-500">Loading licence…</div></div>
-       <div id="st-llm" class="${card}"><div class="text-zinc-500">Loading provider…</div></div>
-       <div id="st-appear" class="${card}"></div>
-       <div id="st-feeds" class="${card}"><div class="text-zinc-500">Loading feeds…</div></div>
-       <div id="st-data" class="${card}"><div class="text-zinc-500">Loading data…</div></div>
+    `<div class="mb-4 relative max-w-md">
+       <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"></i>
+       <input id="set-search" type="search" autocomplete="off" placeholder="Search settings…" class="${inputCls} w-full pl-9">
+       <p id="set-empty" class="mt-2 hidden text-sm text-zinc-400">No settings match.</p></div>
+     <div id="set-grid" class="grid gap-4 lg:grid-cols-2">
+       <div id="st-license" data-skw="licence license plan plans subscription key activate upgrade" class="${card} lg:col-span-2"><div class="text-zinc-500">Loading licence…</div></div>
+       <div id="st-llm" data-skw="ai provider llm api key model anthropic openai gemini ollama byok draft" class="${card}"><div class="text-zinc-500">Loading provider…</div></div>
+       <div id="st-appear" data-skw="appearance theme dark light mode refresh cadence display" class="${card}"></div>
+       <div id="st-feeds" data-skw="feeds rss custom sources news add url" class="${card}"><div class="text-zinc-500">Loading feeds…</div></div>
+       <div id="st-data" data-skw="data export reset delete local database backup storage wipe" class="${card}"><div class="text-zinc-500">Loading data…</div></div>
      </div>`;
   buildLicenseCard(document.getElementById("st-license"));
   buildLlmCard(document.getElementById("st-llm"));
   buildAppearanceCard(document.getElementById("st-appear"));
   buildFeedsCard(document.getElementById("st-feeds"));
   buildDataCard(document.getElementById("st-data"));
+  const setSearch = document.getElementById("set-search");
+  if (setSearch) setSearch.oninput = () => {
+    const q = setSearch.value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll("#set-grid > div[data-skw]").forEach((d) => {
+      const kw = d.getAttribute("data-skw") + " " + (d.textContent || "").toLowerCase();
+      const ok = !q || kw.includes(q);
+      d.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    const empty = document.getElementById("set-empty");
+    if (empty) empty.classList.toggle("hidden", shown > 0);
+  };
   icons();
 }
 
