@@ -1265,6 +1265,16 @@ def cmd_schedule_tick(
         except Exception as e:
             errored.append({"topic": topic, "error": str(e)})
 
+    # Auto-find new opportunities for the active agent on its refresh cadence
+    # (off/manual → skipped). Runs before the poster so anything queued from a
+    # prior cycle is handled this tick too. Best-effort — never breaks the tick.
+    opps_found = None
+    try:
+        from ..reply import opportunity as _opp
+        opps_found = _opp.find_if_due()
+    except Exception as e:
+        opps_found = {"error": str(e)}
+
     # Process any queued replies whose schedule is due (auto-post where possible,
     # else fire a desktop reminder). Best-effort — never breaks the tick.
     replies_due = None

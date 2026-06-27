@@ -34,6 +34,27 @@ def _oid(brand_id: str, platform: str, post_id: str) -> str:
     return hashlib.sha1(f"{brand_id}|{platform}|{post_id}".encode()).hexdigest()[:16]
 
 
+def _as_epoch(v) -> int | None:
+    """Normalize a source post's created_utc to int epoch SECONDS, or None.
+
+    Sources vary: reddit gives float epoch seconds, some give milliseconds, a few
+    give ISO-8601 strings. Be tolerant so the UI always gets a usable timestamp."""
+    if v is None or v == "":
+        return None
+    try:
+        f = float(v)
+        if f > 1e12:  # milliseconds → seconds
+            f /= 1000.0
+        return int(f) if f > 0 else None
+    except (TypeError, ValueError):
+        pass
+    try:
+        from datetime import datetime
+        return int(datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp())
+    except Exception:
+        return None
+
+
 # ---- candidate discovery -------------------------------------------------
 
 def _tracked_subs() -> list[str]:
@@ -259,6 +280,9 @@ def find_opportunities(
                 "author": post.get("author") or "", "sub": post.get("sub") or "",
                 "relevance": sc["relevance"], "intent": sc["intent"], "fit": sc["fit"],
                 "reason": sc["reason"], "status": "new", "found_at": now,
+                # The source post's own publish time (epoch s) — shown in the UI
+                # so the user sees how fresh/old the conversation is upfront.
+                "created_utc": _as_epoch(post.get("created_utc")),
                 # ranking inputs (consumed by rank.fuse_and_rank, then dropped)
                 "base": sc["score"],
                 "eng": _rank.engagement_score(post),
@@ -279,6 +303,38 @@ def find_opportunities(
         "brand": brand["name"], "platforms": platforms,
         "found": len(found), "opportunities": found[:50],
     }
+
+
+# How often each cadence re-scans (hours). `off`/`manual` never auto-scan.
+_CADENCE_HOURS = {"daily": 20.0, "weekly": 24.0 * 6.5}
+
+
+def find_if_due(provider: str | None = None) -> dict:
+    """Auto-find new opportunities on the active agent's refresh cadence — the
+    core of the scheduled auto-flow. Opt-in + throttled:
+      - `refresh_cadence` of `off`/`manual` → skipped (the default; no surprise
+        token spend);
+      - `daily` re-scans at most ~once/20h, `weekly` ~once/6.5d, gated by
+        `last_refresh_at`.
+    On a run it calls `find_opportunities` and stamps `last_refresh_at`."""
+    from .agent import get_active_agent, update_agent
+    a = get_active_agent()
+    if not a:
+        return {"skipped": True, "reason": "no active agent"}
+    cadence = (a.get("refresh_cadence") or "off").lower()
+    if cadence not in _CADENCE_HOURS:
+        return {"skipped": True, "reason": f"cadence '{cadence}' (set Daily/Weekly to auto-scan)"}
+    now = int(time.time())
+    last = int(a.get("last_refresh_at") or 0)
+    if last and (now - last) < int(_CADENCE_HOURS[cadence] * 3600):
+        return {"skipped": True, "reason": "scanned recently", "cadence": cadence}
+    res = find_opportunities(provider=provider)
+    try:
+        update_agent(a["id"], last_refresh_at=now)
+    except Exception:
+        pass
+    return {"skipped": False, "cadence": cadence, "found": res.get("found", 0),
+            "error": res.get("error")}
 
 
 # Lifecycle states an opportunity can move through.
@@ -401,7 +457,10 @@ def _search_clause(query: str | None, args: list) -> str:
 
 _SORTS = {
     "score": "score desc",
-    "recent": "coalesce(updated_at, found_at) desc",
+    # "Most recent" = newest by the SOURCE POST's own publish time (created_utc),
+    # so the freshest still-replyable threads surface first. Falls back to when we
+    # found it for any row missing a publish timestamp.
+    "recent": "coalesce(created_utc, found_at) desc",
     "engagement": "coalesce(engagement, 0) desc",
 }
 
