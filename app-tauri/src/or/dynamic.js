@@ -212,141 +212,208 @@ const OPP_STATUS_META = {
   new: ["new", "bg-zinc-500/15 text-zinc-400"],
   saved: ["saved", "bg-sky-500/15 text-sky-500"],
   drafted: ["drafted", "bg-amber-500/15 text-amber-500"],
-  posted: ["replied", "bg-emerald-500/15 text-emerald-500"],
+  ready: ["ready", "bg-violet-500/15 text-violet-500"],
+  queued: ["queued", "bg-indigo-500/15 text-indigo-500"],
+  posted: ["posted", "bg-emerald-500/15 text-emerald-500"],
   skipped: ["dismissed", "bg-rose-500/15 text-rose-500"],
+  snoozed: ["snoozed", "bg-zinc-400/15 text-zinc-400"],
 };
 function statusPill(st) {
   const [label, cls] = OPP_STATUS_META[st] || OPP_STATUS_META.new;
   return `<span class="rounded ${cls} px-2 py-0.5 text-xs font-bold">${label}</span>`;
 }
+// Discovery = the triage queue: New / Snoozed / Dismissed / All. Saved items
+// move on to the Inbox workspace, so discovery stops showing them once saved.
 const OPP_FILTERS = [
-  ["active", "Active"], ["new", "New"], ["saved", "Saved"],
-  ["drafted", "Drafted"], ["posted", "Replied"], ["skipped", "Dismissed"],
+  ["new", "New"], ["snoozed", "Snoozed"], ["skipped", "Dismissed"], ["", "All"],
 ];
-const _opChip = (on) => `op-chip rounded-full px-3 py-1.5 text-xs font-semibold ${on
+const REPLY_SORTS = [["score", "Top score"], ["recent", "Most recent"], ["engagement", "Most engaged"]];
+const MIN_SCORES = [["0", "Any score"], ["0.4", "≥ 40"], ["0.6", "≥ 60"], ["0.8", "≥ 80"]];
+const SNOOZE_OPTS = [[3, "3 hours"], [24, "1 day"], [72, "3 days"], [168, "1 week"]];
+const PAGE = 25;
+const _chip = (on) => `rounded-full px-3 py-1.5 text-xs font-semibold ${on
   ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700 text-zinc-500"}`;
+const inputCls = "rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm";
+const skeleton = (n = 3) => Array.from({ length: n }, () =>
+  `<div class="${card}"><div class="h-4 w-24 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div>
+     <div class="mt-3 h-4 w-3/4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div>
+     <div class="mt-2 h-3 w-1/2 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div></div>`).join("");
+const debounce = (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
 export async function renderOpportunities(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   let a = null; try { a = await api.agentGet(); } catch (e) {}
   const pfs = (a?.platforms || ["reddit_free"]).join(", ");
-  let filter = "active";
+  const S = { filter: "new", query: "", sort: "score", minScore: 0, offset: 0, items: [], total: 0, sel: new Set() };
+
   view.innerHTML = head("Opportunities",
-    `Conversations worth replying to for <b>${esc(a?.name || "—")}</b>.`,
+    `Discover conversations worth replying to for <b>${esc(a?.name || "—")}</b> — Save the good ones to your Inbox.`,
     `<button id="op-find" class="${btnP}">⚡ Find opportunities</button>`) +
-    `<div class="mb-4 flex flex-wrap items-end gap-4 ${card} text-sm">
-       <label class="text-zinc-500">Platforms<input id="op-pf" value="${esc(pfs)}" class="mt-1 block w-64 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
-       <label class="text-zinc-500">Per platform<input id="op-lim" type="number" value="15" class="mt-1 block w-20 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+    `<div class="mb-4 flex flex-wrap items-end gap-3 ${card} text-sm">
+       <label class="text-zinc-500">Platforms<input id="op-pf" value="${esc(pfs)}" class="mt-1 block w-56 ${inputCls}"></label>
+       <label class="text-zinc-500">Per platform<input id="op-lim" type="number" value="15" class="mt-1 block w-20 ${inputCls}"></label>
        <span id="op-status" class="ml-auto text-zinc-400"></span></div>
-     <div id="op-filters" class="mb-4 flex flex-wrap gap-2">${OPP_FILTERS.map(([v, l]) =>
-       `<button data-filter="${v}" class="${_opChip(v === "active")}">${l}</button>`).join("")}</div>
-     <div id="op-list" class="space-y-3"></div>`;
+     <div class="mb-3 flex flex-wrap items-center gap-2">
+       <input id="op-q" placeholder="Search title, author, sub…" class="${inputCls} w-60">
+       <select id="op-sort" class="${inputCls}">${REPLY_SORTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+       <select id="op-min" class="${inputCls}">${MIN_SCORES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+       <div id="op-filters" class="ml-auto flex flex-wrap gap-2">${OPP_FILTERS.map(([v, l]) =>
+         `<button data-filter="${v}" class="${_chip(v === "new")}">${l}</button>`).join("")}</div>
+     </div>
+     <div id="op-bulk" class="mb-3 hidden items-center gap-2 rounded-lg border border-reddit/30 bg-reddit/5 px-3 py-2 text-sm">
+       <span id="op-bulk-n" class="font-semibold text-zinc-900 dark:text-white"></span>
+       <button data-bulk="save" class="${btn} text-sky-500">☆ Save</button>
+       <button data-bulk="skip" class="${btn} text-rose-500">✕ Skip</button>
+       <button data-bulk="clear" class="ml-auto text-xs text-zinc-400">clear</button></div>
+     <div id="op-list" class="space-y-3"></div>
+     <div id="op-more" class="mt-4 hidden text-center"><button class="${btn}">Load more</button></div>`;
 
-  const list = document.getElementById("op-list");
-  const status = document.getElementById("op-status");
+  const list = view.querySelector("#op-list");
+  const statusEl = view.querySelector("#op-status");
+  const moreWrap = view.querySelector("#op-more");
+  const bulkBar = view.querySelector("#op-bulk");
 
-  const emptyMsg = (f) => f === "active"
-    ? "No active opportunities. Click “Find opportunities”."
-    : `No ${OPP_STATUS_META[f]?.[0] || f} opportunities yet.`;
-  const draw = (opps) => {
-    list.innerHTML = opps.length ? opps.map(oppCard).join("")
-      : `<div class="${card} text-zinc-500">${emptyMsg(filter)}</div>`;
-    list.querySelectorAll("[data-act]").forEach(b => b.onclick = () => oppAction(b));
-    icons();
+  function syncBulk() {
+    bulkBar.classList.toggle("hidden", S.sel.size === 0);
+    bulkBar.classList.toggle("flex", S.sel.size > 0);
+    if (S.sel.size) view.querySelector("#op-bulk-n").textContent = `${S.sel.size} selected`;
+  }
+
+  function triageBtns(o) {
+    const id = esc(o.id), st0 = o.status || "new";
+    const c = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
+    let out = st0 === "saved"
+      ? `<a href="#/inbox" class="${c} text-sky-500">★ In Inbox →</a>`
+      : `<button data-act="save" data-id="${id}" class="${c} text-sky-500">☆ Save to Inbox</button>`;
+    out += `<span class="relative inline-block"><button data-act="snooze-menu" data-id="${id}" class="${c} text-zinc-500">⏰ Snooze</button>
+      <span data-menu="${id}" class="absolute z-10 mt-1 hidden w-28 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+        ${SNOOZE_OPTS.map(([h, l]) => `<button data-act="snooze" data-id="${id}" data-h="${h}" class="block w-full rounded px-2 py-1 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800">${l}</button>`).join("")}</span></span>`;
+    if (st0 !== "skipped") out += `<button data-act="skip" data-id="${id}" class="${c} text-rose-500">✕ Skip</button>`;
+    return out;
+  }
+
+  function cardHTML(o) {
+    const s = Math.round((o.score || 0) * 100);
+    return `<div class="${card}" data-card="${esc(o.id)}">
+      <div class="flex items-start gap-3">
+        <input type="checkbox" data-sel="${esc(o.id)}" ${S.sel.has(o.id) ? "checked" : ""} class="mt-1 h-4 w-4 accent-reddit">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2"><span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
+              ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}${statusPill(o.status || "new")}</div>
+            <span class="text-2xl font-extrabold ${scoreCls(o.score || 0)}" title="rel ${o.relevance} · intent ${o.intent} · fit ${o.fit} · eng ${o.engagement} · fresh ${o.freshness}">${s}</span></div>
+          <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
+          ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            ${o.url ? `<a href="${esc(o.url)}" target="_blank" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open ↗</a>` : ""}
+            ${triageBtns(o)}</div>
+        </div></div></div>`;
+  }
+
+  const emptyMsg = () => {
+    if (S.query) return `No opportunities match “${esc(S.query)}”.`;
+    if (S.filter === "new") return `No new opportunities. Click <b>Find opportunities</b> to scan your platforms.`;
+    return `No ${OPP_STATUS_META[S.filter]?.[0] || "matching"} opportunities.`;
   };
 
-  async function load(f) {
-    filter = f;
-    view.querySelectorAll("[data-filter]").forEach(c =>
-      c.className = _opChip(c.getAttribute("data-filter") === f));
-    status.textContent = "Loading…";
-    try {
-      const statusArg = f === "active" ? null : f;
-      const r = await api.replyList(statusArg, 0, 100);
-      let opps = r?.opportunities || [];
-      if (f === "active") opps = opps.filter(o => (o.status || "new") !== "skipped");
-      status.textContent = opps.length ? `${opps.length} shown` : "";
-      draw(opps);
-    } catch (e) { status.textContent = "Failed: " + e; draw([]); }
+  function paint() {
+    list.querySelectorAll("[data-sel]").forEach(cb => cb.onchange = () => {
+      cb.checked ? S.sel.add(cb.getAttribute("data-sel")) : S.sel.delete(cb.getAttribute("data-sel"));
+      syncBulk();
+    });
+    list.querySelectorAll("[data-act]").forEach(b => b.onclick = (e) => oppAction(b, e));
+    moreWrap.classList.toggle("hidden", S.items.length >= S.total);
+    icons();
   }
 
-  async function oppAction(b) {
-    const act = b.getAttribute("data-act");
-    const id = b.getAttribute("data-act-id");
-    if (act === "draft") return doDraft(b, id);
-    // lifecycle: save / dismiss / replied → set status, then reload current filter
-    const target = { save: "saved", dismiss: "skipped", replied: "posted", unsave: "new" }[act];
-    if (!target) return;
+  async function load(reset = true) {
+    if (reset) { S.offset = 0; S.items = []; list.innerHTML = skeleton(); }
+    statusEl.textContent = "Loading…";
+    try {
+      const r = await api.replyList(S.filter || null, S.minScore, PAGE,
+        { query: S.query, sort: S.sort, offset: S.offset });
+      const batch = r?.opportunities || [];
+      S.total = r?.total ?? batch.length;
+      S.items = reset ? batch : S.items.concat(batch);
+      statusEl.textContent = S.total ? `${S.items.length} of ${S.total}` : "";
+      list.innerHTML = S.items.length ? S.items.map(cardHTML).join("")
+        : `<div class="${card} text-zinc-500">${emptyMsg()}</div>`;
+      paint();
+    } catch (e) {
+      list.innerHTML = `<div class="${card} border-rose-500/40 text-rose-500">Couldn't load opportunities — ${esc(e)}
+        <div class="mt-2"><button id="op-retry" class="${btn}">Retry</button></div></div>`;
+      statusEl.textContent = "";
+      const rt = view.querySelector("#op-retry"); if (rt) rt.onclick = () => load(true);
+    }
+  }
+
+  async function oppAction(b, e) {
+    const act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
+    if (act === "snooze-menu") {
+      e.stopPropagation();
+      const m = list.querySelector(`[data-menu="${CSS.escape(id)}"]`);
+      list.querySelectorAll("[data-menu]").forEach(x => { if (x !== m) x.classList.add("hidden"); });
+      m.classList.toggle("hidden");
+      return;
+    }
     b.disabled = true;
     try {
-      const r = (await api.replySetStatus(id, target));
+      let r;
+      if (act === "save") r = await api.replySetStatus(id, "saved");
+      else if (act === "skip") r = await api.replySetStatus(id, "skipped");
+      else if (act === "snooze") r = await api.replySnooze(id, parseInt(b.getAttribute("data-h"), 10));
       if (r?.error) { toast(r.error); b.disabled = false; return; }
-      toast(act === "dismiss" ? "Dismissed" : act === "replied" ? "Marked replied" : act === "save" ? "Saved to Inbox" : "Updated");
-      load(filter);
-    } catch (e) { toast("Failed: " + e); b.disabled = false; }
+      toast(act === "save" ? "Saved to Inbox" : act === "skip" ? "Dismissed" : "Snoozed");
+      S.sel.delete(id); syncBulk();
+      // drop the card in place; it leaves the current filter
+      const cardEl = list.querySelector(`[data-card="${CSS.escape(id)}"]`);
+      if (cardEl && S.filter === "new") { cardEl.remove(); S.items = S.items.filter(o => o.id !== id); S.total = Math.max(0, S.total - 1); statusEl.textContent = S.total ? `${S.items.length} of ${S.total}` : ""; if (!S.items.length) load(true); }
+      else load(true);
+    } catch (e2) { toast("Failed: " + e2); b.disabled = false; }
   }
 
-  async function doDraft(b, id) {
-    const slot = list.querySelector(`[data-slot="${CSS.escape(id)}"]`);
-    b.disabled = true; b.textContent = "Drafting…";
-    try {
-      const d = await api.replyDraft(id);
-      if (d?.error) slot.innerHTML = `<div class="mt-2 text-sm text-rose-500">${esc(d.error)}</div>`;
-      else {
-        const flag = d.compliant ? "" : `<div class="mt-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">⚠ ${esc(d.compliance_notes || "check rules")}</div>`;
-        slot.innerHTML = `${flag}<textarea rows="5" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(d.text || "")}</textarea>
-          <div class="mt-1 flex items-center justify-between text-xs text-zinc-400"><span>Review, edit, then post manually.</span>
-            <button data-act="replied" data-act-id="${esc(id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 font-semibold text-emerald-500">✓ Mark replied</button></div>`;
-        slot.querySelector("[data-act]").onclick = (ev) => oppAction(ev.currentTarget);
-      }
-    } catch (e) { slot.innerHTML = `<div class="mt-2 text-sm text-rose-500">${esc(e)}</div>`; }
-    b.disabled = false; b.textContent = "Re-draft";
+  async function bulk(action) {
+    const ids = [...S.sel];
+    if (!ids.length) return;
+    statusEl.textContent = `${action === "save" ? "Saving" : "Skipping"} ${ids.length}…`;
+    for (const id of ids) {
+      try { await api.replySetStatus(id, action === "save" ? "saved" : "skipped"); } catch (e) {}
+    }
+    toast(`${action === "save" ? "Saved" : "Skipped"} ${ids.length}`);
+    S.sel.clear(); syncBulk(); load(true);
   }
 
-  view.querySelectorAll("[data-filter]").forEach(c =>
-    c.onclick = () => load(c.getAttribute("data-filter")));
+  // wiring
+  view.querySelectorAll("[data-filter]").forEach(c => c.onclick = () => {
+    S.filter = c.getAttribute("data-filter");
+    view.querySelectorAll("[data-filter]").forEach(x => x.className = _chip(x === c));
+    S.sel.clear(); syncBulk(); load(true);
+  });
+  view.querySelector("#op-q").oninput = debounce((e) => { S.query = e.target.value.trim(); load(true); });
+  view.querySelector("#op-sort").onchange = (e) => { S.sort = e.target.value; load(true); };
+  view.querySelector("#op-min").onchange = (e) => { S.minScore = parseFloat(e.target.value) || 0; load(true); };
+  bulkBar.querySelectorAll("[data-bulk]").forEach(b => b.onclick = () => {
+    const k = b.getAttribute("data-bulk");
+    if (k === "clear") { S.sel.clear(); list.querySelectorAll("[data-sel]").forEach(cb => cb.checked = false); syncBulk(); }
+    else bulk(k);
+  });
+  moreWrap.querySelector("button").onclick = () => { S.offset += PAGE; load(false); };
+  document.addEventListener("click", () => list.querySelectorAll("[data-menu]").forEach(m => m.classList.add("hidden")), { once: false });
 
   document.getElementById("op-find").onclick = async () => {
     const pf = document.getElementById("op-pf").value.trim();
     const lim = parseInt(document.getElementById("op-lim").value, 10) || 15;
-    status.textContent = "Scanning + scoring… (may take a minute)";
+    statusEl.textContent = "Scanning + scoring… (may take a minute)";
     list.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Scanning ${esc(pf)}…</div>`;
     try {
       const r = await api.replyFind(pf, lim, false);
-      if (r?.error) { status.textContent = r.error; draw([]); return; }
-      status.textContent = `Found ${r?.found ?? 0}.`;
-      load("active");
-    } catch (e) { status.textContent = "Failed: " + e; draw([]); }
+      if (r?.error) { statusEl.textContent = r.error; return; }
+      statusEl.textContent = `Found ${r?.found ?? 0}.`;
+      S.filter = "new"; view.querySelectorAll("[data-filter]").forEach(x => x.className = _chip(x.getAttribute("data-filter") === "new"));
+      load(true);
+    } catch (e) { statusEl.textContent = "Failed: " + e; }
   };
-  load("active");
-}
-function oppActionBtns(o) {
-  const id = esc(o.id);
-  const st = o.status || "new";
-  const btnc = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
-  let out = "";
-  if (st !== "saved") out += `<button data-act="save" data-act-id="${id}" class="${btnc} text-sky-500">☆ Save</button>`;
-  else out += `<button data-act="unsave" data-act-id="${id}" class="${btnc} text-zinc-500">★ Saved</button>`;
-  out += `<button data-act="draft" data-act-id="${id}" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">${st === "drafted" ? "Re-draft" : "Draft reply"}</button>`;
-  if (st !== "posted") out += `<button data-act="replied" data-act-id="${id}" class="${btnc} text-emerald-500">✓ Replied</button>`;
-  if (st !== "skipped") out += `<button data-act="dismiss" data-act-id="${id}" class="${btnc} text-rose-500">✕ Dismiss</button>`;
-  return out;
-}
-function oppCard(o) {
-  const s = Math.round((o.score || 0) * 100);
-  const pf = o.platform || "";
-  return `<div class="${card}">
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2"><span class="rounded ${platformBadge(pf)} px-2 py-0.5 text-xs font-bold">${esc(pf)}</span>
-        ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}
-        ${statusPill(o.status || "new")}</div>
-      <span class="text-2xl font-extrabold ${scoreCls(o.score || 0)}" title="rel ${o.relevance} · intent ${o.intent} · fit ${o.fit} · eng ${o.engagement} · fresh ${o.freshness}">${s}</span></div>
-    <div class="mt-1.5 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
-    ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}
-    <div class="mt-3 flex flex-wrap gap-2">
-      ${o.url ? `<a href="${esc(o.url)}" target="_blank" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open post ↗</a>` : ""}
-      ${oppActionBtns(o)}</div>
-    <div data-slot="${esc(o.id)}"></div></div>`;
+  load(true);
 }
 
 // ── Compose ───────────────────────────────────────────────────────────────
@@ -894,52 +961,228 @@ export async function renderKnowledge(view) {
   icons();
 }
 
-// ── Inbox (saved opportunities as a mentions feed) ──────────────────────────
-// Reuses the Opportunities card + lifecycle so Save/Draft/Replied/Dismiss behave
-// identically. The Inbox is the `status=saved` view (what you bookmarked to act on).
+// ── Inbox (reply workspace) ─────────────────────────────────────────────────
+// Tabs map to lifecycle stages: Saved → Drafting → Ready (+ queued) → Posted.
+// Drafts load lazily (one CLI spawn per opened card, not per visible card).
+const INBOX_TABS = [["saved", "Saved"], ["drafted", "Drafting"], ["ready", "Ready"], ["posted", "Posted"]];
+const INBOX_EMPTY = {
+  saved: "Nothing saved yet. Save opportunities from Discovery to start replying.",
+  drafted: "No drafts in progress. Open a saved item and generate a reply.",
+  ready: "Nothing approved yet. Approve a draft to move it here.",
+  posted: "No replies posted yet.",
+};
+
 export async function renderInbox(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   let a = null; try { a = await api.agentGet(); } catch (e) {}
-  view.innerHTML = head("Inbox", `Saved mentions for <b>${esc(a?.name || "—")}</b>, highest score first.`,
-    `<a href="#/opportunities" class="${btnP}">⚡ Find more</a>`) + `<div id="ib-list" class="space-y-3">Loading…</div>`;
-  const list = document.getElementById("ib-list");
+  const S = { tab: "saved", query: "", sort: "recent", offset: 0, items: [], total: 0 };
+  const bP = "rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white hover:bg-reddit-hi";
+  const bO = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
 
-  async function load() {
-    try {
-      const r = await api.replyList("saved", 0, 50);
-      const opps = r?.opportunities || [];
-      list.innerHTML = opps.length ? opps.map(oppCard).join("")
-        : `<div class="${card} text-zinc-500">No saved mentions yet. Open <a class="text-reddit underline" href="#/opportunities">Opportunities</a> and hit ☆ Save on the ones worth replying to.</div>`;
-      list.querySelectorAll("[data-act]").forEach(b => b.onclick = () => inboxAction(b, list, load));
-      icons();
-    } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  view.innerHTML = head("Inbox", `Your reply workspace for <b>${esc(a?.name || "—")}</b> — draft, approve, and post.`,
+    `<a href="#/opportunities" class="${btnP}">⚡ Find more</a>`) +
+    `<div id="ib-tabs" class="mb-3 flex flex-wrap gap-2">${INBOX_TABS.map(([v, l]) =>
+      `<button data-tab="${v}" class="${_chip(v === "saved")}">${l}</button>`).join("")}</div>
+     <div class="mb-3 flex flex-wrap items-center gap-2">
+       <input id="ib-q" placeholder="Search title, author, sub…" class="${inputCls} w-60">
+       <select id="ib-sort" class="${inputCls}">${REPLY_SORTS.map(([v, l]) =>
+         `<option value="${v}"${v === "recent" ? " selected" : ""}>${l}</option>`).join("")}</select>
+       <span id="ib-status" class="ml-auto text-xs text-zinc-400"></span></div>
+     <div id="ib-list" class="space-y-3"></div>
+     <div id="ib-more" class="mt-4 hidden text-center"><button class="${btn}">Load more</button></div>`;
+
+  const list = view.querySelector("#ib-list");
+  const statusEl = view.querySelector("#ib-status");
+  const moreWrap = view.querySelector("#ib-more");
+
+  function cardHTML(o) {
+    const s = Math.round((o.score || 0) * 100);
+    const sched = o.status === "queued" && o.scheduled_at
+      ? `<span class="text-xs text-indigo-400">· scheduled</span>` : "";
+    return `<div class="${card}" data-card="${esc(o.id)}">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0"><div class="flex flex-wrap items-center gap-2">
+            <span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
+            ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}${statusPill(o.status || "saved")}${sched}</div>
+          <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
+          ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}</div>
+        <span class="shrink-0 text-xl font-extrabold ${scoreCls(o.score || 0)}">${s}</span></div>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        ${o.url ? `<a href="${esc(o.url)}" target="_blank" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open thread ↗</a>` : ""}
+        <button data-open="${esc(o.id)}" class="${bP}">${o.status === "saved" ? "✍ Draft reply" : "✏️ Open draft"}</button>
+        ${o.status !== "posted" ? `<button data-skip="${esc(o.id)}" class="${bO} text-rose-500">✕ Skip</button>` : ""}
+      </div>
+      <div data-draft="${esc(o.id)}" class="mt-3 hidden"></div></div>`;
   }
-  load();
-}
-// Shared lifecycle handler for any list of oppCards (Inbox). `reload` re-renders
-// the list so a dismissed/unsaved card drops out and status pills stay accurate.
-async function inboxAction(b, list, reload) {
-  const act = b.getAttribute("data-act");
-  const id = b.getAttribute("data-act-id");
-  if (act === "draft") {
-    const slot = list.querySelector(`[data-slot="${CSS.escape(id)}"]`);
-    b.disabled = true; b.textContent = "Drafting…";
+
+  function actionsHTML(o) {
+    const st = o.status || "saved";
+    let out = `<button data-do="save" class="${bP}">💾 Save</button>`;
+    out += `<button data-do="regen" class="${bO}">↻ Re-generate</button>`;
+    out += `<button data-do="copy" class="${bO}">📋 Copy</button>`;
+    if (st === "saved" || st === "drafted") out += `<button data-do="approve" class="${bO} text-violet-500">✓ Approve</button>`;
+    if (st === "ready" || st === "queued") {
+      out += `<button data-do="queue" class="${bO} text-indigo-500">📅 Queue</button>`;
+      out += `<button data-do="posted" class="${bO} text-emerald-500">✓ Mark posted</button>`;
+    }
+    return out;
+  }
+
+  function renderEditor(box, id, o, drafts) {
+    const cur = drafts[0] || { text: "", compliant: 1 };
+    const comp = cur.compliant ? "" :
+      `<div class="mb-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">⚠ ${esc(cur.compliance_notes || "check platform rules")}</div>`;
+    const versions = drafts.length > 1
+      ? `<details class="mt-2 text-xs text-zinc-400"><summary class="cursor-pointer">${drafts.length} versions</summary>
+          <div class="mt-1 space-y-1">${drafts.map(d =>
+            `<button data-ver="${esc(d.id)}" class="block w-full truncate rounded px-2 py-1 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800">v${d.version || "?"} · ${esc(d.source || "")} · ${esc((d.text || "").slice(0, 70))}</button>`).join("")}</div></details>`
+      : "";
+    box.innerHTML = `${comp}
+      <textarea data-edit="${esc(id)}" rows="6" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(cur.text || "")}</textarea>
+      <div class="mt-2 flex flex-wrap items-center gap-2">${actionsHTML(o)}</div>
+      <div data-msg="${esc(id)}" class="mt-1 text-xs text-zinc-400"></div>${versions}`;
+    wireEditor(box, id, o, drafts);
+  }
+
+  function wireEditor(box, id, o, drafts) {
+    const ta = box.querySelector(`[data-edit="${CSS.escape(id)}"]`);
+    const msg = box.querySelector(`[data-msg="${CSS.escape(id)}"]`);
+    const setMsg = (t, cls = "text-zinc-400") => { if (msg) msg.innerHTML = `<span class="${cls}">${esc(t)}</span>`; };
+    box.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => {
+      const d = drafts.find(x => x.id === b.getAttribute("data-ver"));
+      if (d) { ta.value = d.text || ""; setMsg("Loaded v" + (d.version || "?") + " — Save to keep it as the latest."); }
+    });
+    box.querySelectorAll("[data-do]").forEach(b => b.onclick = async () => {
+      const act = b.getAttribute("data-do");
+      if (act === "copy") { try { await navigator.clipboard.writeText(ta.value); toast("Copied"); } catch (e) { toast("Copy failed"); } return; }
+      if (act === "queue") return queueModal(id);
+      b.disabled = true;
+      try {
+        if (act === "save") {
+          const r = await api.replySaveDraft(id, ta.value.trim());
+          if (r?.error) { setMsg(r.error, "text-rose-500"); b.disabled = false; return; }
+          toast("Draft saved"); o.status = "drafted"; return openDraft(id, o);
+        }
+        if (act === "regen") {
+          setMsg("Re-generating…"); const d = await api.replyDraft(id);
+          if (d?.error) { setMsg(d.error, "text-rose-500"); b.disabled = false; return; }
+          return openDraft(id, o);
+        }
+        if (act === "approve") {
+          if (ta.value.trim()) await api.replySaveDraft(id, ta.value.trim());
+          const r = await api.replyApprove(id);
+          if (r?.error) { setMsg(r.error, "text-rose-500"); b.disabled = false; return; }
+          toast("Approved — ready to post"); return load(true);
+        }
+        if (act === "posted") {
+          const r = await api.replySetStatus(id, "posted");
+          if (r?.error) { setMsg(r.error, "text-rose-500"); b.disabled = false; return; }
+          toast("Marked posted"); return load(true);
+        }
+      } catch (e) { setMsg(String(e), "text-rose-500"); b.disabled = false; }
+    });
+  }
+
+  function queueModal(id) {
+    window.orModal({
+      title: "Queue reply",
+      body: `<p class="mb-2 text-sm text-zinc-500 dark:text-zinc-400">Schedule when to post (leave blank to queue for the next cycle). Where posting credentials exist it posts automatically; otherwise you'll get a reminder to post manually.</p>
+        <input id="q-at" type="datetime-local" class="${inputCls} w-full">`,
+      okText: "Queue",
+      onOk: async (ov) => {
+        const v = ov.querySelector("#q-at")?.value;
+        const at = v ? Math.floor(new Date(v).getTime() / 1000) : null;
+        try {
+          const r = await api.replyQueue(id, at);
+          if (r?.error) { toast(r.error); return; }
+          toast(at ? "Scheduled" : "Queued"); load(true);
+        } catch (e) { toast("Failed: " + e); }
+      },
+    });
+  }
+
+  async function generateInto(box, id, o) {
+    box.classList.remove("hidden");
+    box.innerHTML = `<div class="text-sm text-zinc-400 animate-pulse">Generating on-brand reply…</div>`;
     try {
       const d = await api.replyDraft(id);
-      slot.innerHTML = d?.error ? `<div class="mt-2 text-sm text-rose-500">${esc(d.error)}</div>`
-        : `${d.compliant ? "" : `<div class="mt-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">⚠ ${esc(d.compliance_notes || "check rules")}</div>`}<textarea rows="5" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(d.text || "")}</textarea>`;
-    } catch (e) { slot.innerHTML = `<div class="mt-2 text-sm text-rose-500">${esc(e)}</div>`; }
-    b.disabled = false; b.textContent = "Re-draft"; return;
+      if (d?.error) { box.innerHTML = `<div class="text-sm text-rose-500">${esc(d.error)}</div>`; return; }
+      o.status = "drafted";
+      const drafts = (await api.replyDrafts(id))?.drafts || [d];
+      renderEditor(box, id, o, drafts);
+    } catch (e) { box.innerHTML = `<div class="text-sm text-rose-500">${esc(e)}</div>`; }
   }
-  const target = { save: "saved", unsave: "new", dismiss: "skipped", replied: "posted" }[act];
-  if (!target) return;
-  b.disabled = true;
-  try {
-    const r = await api.replySetStatus(id, target);
-    if (r?.error) { toast(r.error); b.disabled = false; return; }
-    toast(act === "dismiss" ? "Dismissed" : act === "replied" ? "Marked replied" : "Updated");
-    reload();
-  } catch (e) { toast("Failed: " + e); b.disabled = false; }
+
+  async function openDraft(id, o) {
+    const box = list.querySelector(`[data-draft="${CSS.escape(id)}"]`);
+    if (!box) return;
+    box.classList.remove("hidden");
+    box.innerHTML = `<div class="text-sm text-zinc-400">Loading draft…</div>`;
+    let drafts = [];
+    try { drafts = (await api.replyDrafts(id))?.drafts || []; } catch (e) {}
+    if (!drafts.length) {
+      if (o.status === "saved") return generateInto(box, id, o);
+      box.innerHTML = `<button class="${bP}" data-gen="${esc(id)}">Generate draft</button>`;
+      box.querySelector("[data-gen]").onclick = () => generateInto(box, id, o);
+      return;
+    }
+    renderEditor(box, id, o, drafts);
+  }
+
+  function paint() {
+    list.querySelectorAll("[data-open]").forEach(b => b.onclick = () => {
+      const id = b.getAttribute("data-open");
+      openDraft(id, S.items.find(x => x.id === id) || { id, status: S.tab });
+    });
+    list.querySelectorAll("[data-skip]").forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try { await api.replySetStatus(b.getAttribute("data-skip"), "skipped"); toast("Dismissed"); load(true); }
+      catch (e) { toast("Failed: " + e); b.disabled = false; }
+    });
+    moreWrap.classList.toggle("hidden", S.items.length >= S.total);
+    icons();
+  }
+
+  const emptyMsg = () => S.query ? `No items match “${esc(S.query)}”.` : (INBOX_EMPTY[S.tab] || "Nothing here.");
+
+  async function load(reset = true) {
+    if (reset) { S.offset = 0; S.items = []; list.innerHTML = skeleton(2); }
+    statusEl.textContent = "Loading…";
+    try {
+      const r = await api.replyList(S.tab, 0, PAGE, { query: S.query, sort: S.sort, offset: S.offset });
+      let items = r?.opportunities || [];
+      let total = r?.total ?? items.length;
+      // Ready tab also surfaces queued (scheduled) replies, shown first.
+      if (S.tab === "ready" && reset) {
+        try {
+          const q = await api.replyList("queued", 0, PAGE, { query: S.query, sort: S.sort, offset: 0 });
+          const qi = q?.opportunities || [];
+          items = qi.concat(items); total += (q?.total ?? qi.length);
+        } catch (e) {}
+      }
+      S.items = reset ? items : S.items.concat(items);
+      S.total = total;
+      statusEl.textContent = S.total ? `${S.items.length} of ${S.total}` : "";
+      list.innerHTML = S.items.length ? S.items.map(cardHTML).join("")
+        : `<div class="${card} text-zinc-500">${emptyMsg()}</div>`;
+      paint();
+    } catch (e) {
+      list.innerHTML = `<div class="${card} border-rose-500/40 text-rose-500">Couldn't load — ${esc(e)}
+        <div class="mt-2"><button id="ib-retry" class="${btn}">Retry</button></div></div>`;
+      statusEl.textContent = "";
+      const rt = view.querySelector("#ib-retry"); if (rt) rt.onclick = () => load(true);
+    }
+  }
+
+  view.querySelectorAll("[data-tab]").forEach(t => t.onclick = () => {
+    S.tab = t.getAttribute("data-tab");
+    view.querySelectorAll("[data-tab]").forEach(x => x.className = _chip(x === t));
+    load(true);
+  });
+  view.querySelector("#ib-q").oninput = debounce((e) => { S.query = e.target.value.trim(); load(true); });
+  view.querySelector("#ib-sort").onchange = (e) => { S.sort = e.target.value; load(true); };
+  moreWrap.querySelector("button").onclick = () => { S.offset += PAGE; load(false); };
+  load(true);
 }
 
 // ── Learning (the agent's evolving brain — memories + beliefs + feedback) ────
