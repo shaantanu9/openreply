@@ -555,6 +555,16 @@ export async function renderCompose(view) {
     const act = b.getAttribute("data-cm-act");
     try {
       let r;
+      if (act === "publish-x") {
+        if (ta) { try { await api.contentUpdate(id, { body: ta.value }); } catch (e) {} }
+        if (msg) msg.textContent = "Posting to X…";
+        r = await api.contentPublishX(id, false);
+        if (r === null) { if (msg) msg.textContent = "Run inside the app."; return; }
+        if (r?.error) { if (msg) msg.textContent = /credential/i.test(r.error) ? "No X credentials — Settings → Connect X" : r.error; return; }
+        if (msg) msg.textContent = r?.url ? `Posted ✓ (${r.parts} tweet${r.parts > 1 ? "s" : ""})` : "Posted ✓";
+        loadRecent();
+        return;
+      }
       if (act === "save") r = await api.contentUpdate(id, { body: ta ? ta.value : null });
       else if (act === "schedule") r = await api.contentUpdate(id, { status: "scheduled", scheduledAt: Math.floor(Date.now() / 1000) });
       if (r === null) { if (msg) msg.textContent = "Run inside the app."; return; }
@@ -585,6 +595,7 @@ function contentCard(c, big) {
     <div class="mt-2 flex items-center gap-2">
       <button data-cm-act="save" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save draft</button>
       <button data-cm-act="schedule" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule</button>
+      ${/^(x|twitter)$/i.test(c.platform || "") ? `<button data-cm-act="publish-x" class="rounded-full border border-zinc-900 dark:border-white px-3 py-1.5 text-xs font-semibold text-zinc-900 dark:text-white">𝕏 Publish</button>` : ""}
       <span data-cm-msg class="text-xs text-zinc-400"></span>
     </div></div>`;
 }
@@ -819,22 +830,30 @@ export async function renderSettings(view) {
        <p id="set-empty" class="mt-2 hidden text-sm text-zinc-400">No settings match.</p></div>
      <div id="set-grid" class="grid gap-4 lg:grid-cols-2">
        <div id="st-license" data-skw="licence license plan plans subscription key activate upgrade" class="${card} lg:col-span-2"><div class="text-zinc-500">Loading licence…</div></div>
+       <div id="st-profile" data-skw="profile name avatar account you identity" class="${card}"><div class="text-zinc-500">Loading profile…</div></div>
        <div id="st-llm" data-skw="ai provider llm api key model anthropic openai gemini ollama byok draft" class="${card}"><div class="text-zinc-500">Loading provider…</div></div>
        <div id="st-appear" data-skw="appearance theme dark light mode display" class="${card}"></div>
        <div id="st-auto" data-skw="automation schedule auto refresh learn cadence daily weekly launchd cron background" class="${card}"><div class="text-zinc-500">Loading automation…</div></div>
        <div id="st-mcp" data-skw="mcp connect claude code cursor windsurf desktop integration tools agent client" class="${card}"><div class="text-zinc-500">Loading MCP…</div></div>
        <div id="st-usage" data-skw="usage limits token cap spend cost budget today" class="${card}"><div class="text-zinc-500">Loading usage…</div></div>
+       <div id="st-semantic" data-skw="semantic memory embeddings palace vector graph model reindex learning" class="${card}"><div class="text-zinc-500">Loading…</div></div>
        <div id="st-feeds" data-skw="feeds rss custom sources news add url" class="${card}"><div class="text-zinc-500">Loading feeds…</div></div>
+       <div id="st-power" data-skw="cli terminal install symlink export folder power tools" class="${card}"><div class="text-zinc-500">Loading…</div></div>
        <div id="st-data" data-skw="data export reset delete local database backup storage wipe" class="${card}"><div class="text-zinc-500">Loading data…</div></div>
+       <div id="st-about" data-skw="about version support feedback email github issue logs help" class="${card}"><div class="text-zinc-500">Loading…</div></div>
      </div>`;
   buildLicenseCard(document.getElementById("st-license"));
+  buildProfileCard(document.getElementById("st-profile"));
   buildLlmCard(document.getElementById("st-llm"));
   buildAppearanceCard(document.getElementById("st-appear"));
   buildAutomationCard(document.getElementById("st-auto"));
   buildMcpCard(document.getElementById("st-mcp"));
   buildUsageCard(document.getElementById("st-usage"));
+  buildSemanticCard(document.getElementById("st-semantic"));
   buildFeedsCard(document.getElementById("st-feeds"));
+  buildPowerCard(document.getElementById("st-power"));
   buildDataCard(document.getElementById("st-data"));
+  buildAboutCard(document.getElementById("st-about"));
   const setSearch = document.getElementById("set-search");
   if (setSearch) setSearch.oninput = () => {
     const q = setSearch.value.trim().toLowerCase();
@@ -1034,6 +1053,110 @@ async function buildUsageCard(el) {
     try { const r = await api.extractionPrefsSet("global", { daily_token_cap: v }); m.textContent = r?.error ? ("Failed: " + r.error) : "Saved ✓"; }
     catch (e) { m.textContent = "Failed: " + e; }
   };
+}
+
+// Avatar helpers (ported from multi-source) — deterministic initials + colour.
+function avatarInitials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+function avatarColor(name) {
+  const palette = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#06b6d4"];
+  let h = 0; for (const c of String(name || "x")) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return palette[Math.abs(h) % palette.length];
+}
+
+// Profile — name + avatar (closes the onboarding "or-user-name collected but unused"
+// gap). Email is read-only from the licence. Stored locally.
+async function buildProfileCard(el) {
+  const name = localStorage.getItem("or-user-name") || "";
+  let email = ""; try { email = (await api.licenseStatus())?.email || ""; } catch (e) {}
+  const paint = (n) => {
+    const av = el.querySelector("#st-av");
+    if (av) { av.textContent = avatarInitials(n || "You"); av.style.background = avatarColor(n || "You"); }
+  };
+  el.innerHTML = `<b class="text-zinc-900 dark:text-white">Profile</b>
+    <div class="mt-3 flex items-center gap-3">
+      <span id="st-av" class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-extrabold text-white" style="background:${avatarColor(name || "You")}">${esc(avatarInitials(name || "You"))}</span>
+      <div class="min-w-0 flex-1">
+        <input id="st-name" value="${esc(name)}" placeholder="Your name" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">
+        ${email ? `<p class="mt-1 truncate text-xs text-zinc-400">${esc(email)}</p>` : ""}</div></div>
+    <div class="mt-3 flex gap-2"><button id="st-name-save" class="${btnP}">Save</button><span id="st-name-msg" class="self-center text-xs text-zinc-400"></span></div>`;
+  const input = el.querySelector("#st-name");
+  input.oninput = () => paint(input.value);
+  el.querySelector("#st-name-save").onclick = () => {
+    const v = input.value.trim();
+    try { localStorage.setItem("or-user-name", v); } catch (e) {}
+    el.querySelector("#st-name-msg").textContent = "Saved ✓";
+    // Reflect in the sidebar footer immediately if present.
+    const f = document.querySelector("#side [data-user-name]"); if (f) f.textContent = v || "You";
+  };
+}
+
+// Semantic memory (palace) — the embedding engine behind the learning loop's graph.
+async function buildSemanticCard(el) {
+  el.innerHTML = `<b class="text-zinc-900 dark:text-white">Semantic memory</b>
+    <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">On-device embeddings link the agent’s lessons into a knowledge graph (powers Learning + reply blending).</p>
+    <div id="st-pal-body" class="text-sm text-zinc-500">Checking…</div>
+    <div class="mt-3 flex gap-2"><button id="st-pal-reindex" class="${btn}">Re-index</button><span id="st-pal-msg" class="self-center text-xs text-zinc-400"></span></div>`;
+  const body = el.querySelector("#st-pal-body");
+  try {
+    const [ms, stx] = await Promise.all([api.palaceModelStatus().catch(() => ({})), api.palaceStats().catch(() => ({}))]);
+    const ready = ms.ready || ms.installed;
+    const n = stx.vectors || stx.count || stx.n || 0;
+    body.innerHTML = `<span class="rounded ${ready ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"} px-2 py-0.5 text-xs font-bold">${ready ? "ready" : "model not downloaded"}</span>
+      <span class="ml-2 text-zinc-500">${Number(n).toLocaleString()} embedded memories</span>`;
+  } catch (e) { body.textContent = "Semantic memory unavailable."; }
+  el.querySelector("#st-pal-reindex").onclick = async (ev) => {
+    const m = el.querySelector("#st-pal-msg"); ev.currentTarget.disabled = true; m.textContent = "Re-indexing…";
+    try { const r = await api.palaceReindex(); m.textContent = r?.error ? ("Failed: " + r.error) : "Re-indexed ✓"; }
+    catch (e) { m.textContent = "Failed: " + e; }
+    ev.currentTarget.disabled = false;
+  };
+}
+
+// Power tools — install the `gapmap` CLI + choose the export folder.
+async function buildPowerCard(el) {
+  let cli = {}, exp = {};
+  try { cli = (await api.cliSymlinkStatus()) || {}; } catch (e) {}
+  try { exp = (await api.exportPrefsGet()) || {}; } catch (e) {}
+  const installed = cli.installed || cli.linked;
+  const dir = exp.export_dir || exp.dir || "";
+  el.innerHTML = `<b class="text-zinc-900 dark:text-white">Power tools</b>
+    <div class="mt-3 flex items-center justify-between gap-3 text-sm">
+      <div><div class="text-zinc-900 dark:text-white font-semibold">Terminal CLI</div><div class="text-xs text-zinc-400">Use <code>gapmap</code> from any terminal.</div></div>
+      <button id="st-cli" class="${btn}">${installed ? "Reinstall" : "Install CLI"}</button></div>
+    <div class="mt-3 flex items-center justify-between gap-3 text-sm">
+      <div class="min-w-0"><div class="text-zinc-900 dark:text-white font-semibold">Export folder</div><div class="truncate text-xs text-zinc-400">${esc(dir || "default (app data)")}</div></div>
+      <button id="st-exp-reveal" class="${btn}">Reveal</button></div>
+    <span id="st-pw-msg" class="mt-2 inline-block text-xs text-zinc-400"></span>`;
+  const m = el.querySelector("#st-pw-msg");
+  el.querySelector("#st-cli").onclick = async () => {
+    m.textContent = "Installing…";
+    try { const r = await api.installCli(); m.textContent = r?.error ? ("Failed: " + r.error) : (r?.path ? "Installed → " + r.path : "Installed ✓"); }
+    catch (e) { m.textContent = "Failed: " + e; }
+  };
+  el.querySelector("#st-exp-reveal").onclick = async () => {
+    try { await api.revealInFinder(dir || ""); } catch (e) { m.textContent = "Couldn’t open folder"; }
+  };
+}
+
+// About & support — version, feedback email, GitHub issues, open data/logs folder.
+async function buildAboutCard(el) {
+  let ver = "";
+  try { const i = await api.checkAppVersion(); ver = i?.version || i?.current || ""; } catch (e) {}
+  if (!ver) { try { const i = await api.cliInfo(); ver = i?.version || ""; } catch (e) {} }
+  let dir = ""; try { dir = (await api.appDataDir())?.path || (await api.appDataDir()) || ""; } catch (e) {}
+  el.innerHTML = `<b class="text-zinc-900 dark:text-white">About &amp; support</b>
+    <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">OpenReply${ver ? ` · v${esc(ver)}` : ""}</p>
+    <div class="flex flex-wrap gap-2">
+      <button id="st-fb-email" class="${btn}"><i data-lucide="mail" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Email feedback</button>
+      <button id="st-fb-gh" class="${btn}"><i data-lucide="github" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Report an issue</button>
+      <button id="st-fb-logs" class="${btn}"><i data-lucide="folder" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Open data folder</button></div>`;
+  el.querySelector("#st-fb-email").onclick = () => api.openUrl(`mailto:sbombatkar@leaptodigital.com?subject=${encodeURIComponent("OpenReply feedback" + (ver ? " v" + ver : ""))}`).catch(() => toast("Couldn’t open mail"));
+  el.querySelector("#st-fb-gh").onclick = () => api.openUrl("https://github.com/myind-ai/gapmap/issues").catch(() => {});
+  el.querySelector("#st-fb-logs").onclick = () => api.revealInFinder(String(dir || "")).catch(() => toast("Couldn’t open folder"));
 }
 
 async function buildFeedsCard(el) {
@@ -1401,7 +1524,19 @@ export async function renderLearning(view) {
     `<div id="ln-body"><div class="${card} text-zinc-500">Loading…</div></div>`;
   const body = document.getElementById("ln-body");
   const kpi = (l, v, sub) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div>${sub ? `<div class="text-xs text-zinc-400 mt-0.5">${sub}</div>` : ""}</div>`;
-  const li = (t, who) => `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 text-sm"><span class="text-zinc-700 dark:text-zinc-200">${esc(t.text)}</span>${t.persona ? `<span class="ml-2 text-xs text-zinc-400">· ${esc(t.persona)}</span>` : ""}</div>`;
+  // De-duplicate insights by normalized text (defensive — the backend dedups too).
+  const dedup = (arr) => {
+    const seen = new Set();
+    return (arr || []).filter((x) => {
+      const k = String(x && x.text || "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 160);
+      if (!k || seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+  };
+  // Lesson/belief card: insight on its own line, source as a clean byline below.
+  const li = (t, icon = "book-open") => `<div class="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-800/30 px-3.5 py-2.5">
+    <p class="text-sm leading-snug text-zinc-700 dark:text-zinc-200">${esc(t.text)}</p>
+    ${t.persona ? `<div class="mt-1.5 flex items-center gap-1 text-xs text-zinc-400"><i data-lucide="${icon}" class="h-3 w-3 shrink-0"></i><span class="truncate">${esc(t.persona)}</span></div>` : ""}</div>`;
 
   async function load() {
     let s = null;
@@ -1421,9 +1556,9 @@ export async function renderLearning(view) {
        <div class="mt-2 text-xs text-zinc-400">${s.linked_personas || 0} learning persona(s) · last learned ${esc(last)}</div>
        <div class="mt-5 grid gap-4 lg:grid-cols-2">
          <div class="${card}"><b class="text-zinc-900 dark:text-white">Recent lessons</b>
-           <div class="mt-3 space-y-2">${(s.recent_lessons || []).map(li).join("") || `<div class="text-sm text-zinc-500">Nothing learned yet — hit “Learn now” after a collect.</div>`}</div></div>
+           <div class="mt-3 space-y-2">${dedup(s.recent_lessons).map((t) => li(t, "book-open")).join("") || `<div class="text-sm text-zinc-500">Nothing learned yet — hit “Learn now” after a collect.</div>`}</div></div>
          <div class="${card}"><b class="text-zinc-900 dark:text-white">Beliefs it writes from</b>
-           <div class="mt-3 space-y-2">${(s.recent_beliefs || []).map(li).join("") || `<div class="text-sm text-zinc-500">No beliefs yet — they form once enough memories accumulate.</div>`}</div></div>
+           <div class="mt-3 space-y-2">${dedup(s.recent_beliefs).map((t) => li(t, "lightbulb")).join("") || `<div class="text-sm text-zinc-500">No beliefs yet — they form once enough memories accumulate.</div>`}</div></div>
        </div>`;
     icons();
   }
@@ -1652,7 +1787,10 @@ export async function renderKeywords(view) {
          <p class="mb-2 mt-1 text-sm text-zinc-500">Comma-separated topics to scan for.</p>
          <textarea id="kw-list" rows="4" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc((a.keywords || []).join(", "))}</textarea>
          <div class="mt-3"><b class="text-zinc-900 dark:text-white">Voice</b>
-           <input id="kw-persona" value="${esc(a.persona || "")}" placeholder="persona / voice" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div></div>
+           <input id="kw-persona" value="${esc(a.persona || "")}" placeholder="persona / voice" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div>
+         <div class="mt-3"><b class="text-zinc-900 dark:text-white">Website</b>
+           <p class="mb-1 mt-0.5 text-xs text-zinc-500">Your brand domain — used to detect citations in AI Visibility.</p>
+           <input id="kw-website" value="${esc(a.website || "")}" placeholder="acme-notes.com" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div></div>
        <div class="${card}"><b class="text-zinc-900 dark:text-white">Platforms watched</b>
          <div class="mt-3 grid grid-cols-2 gap-2">${checks}</div></div></div>
      <span id="kw-msg" class="mt-3 inline-block text-sm text-zinc-500"></span>`;
@@ -1660,9 +1798,10 @@ export async function renderKeywords(view) {
     const msg = document.getElementById("kw-msg");
     const kws = document.getElementById("kw-list").value;
     const persona = document.getElementById("kw-persona").value.trim();
+    const website = document.getElementById("kw-website").value.trim();
     const pfs = [...document.querySelectorAll("#kw input[type=checkbox]:checked")].map((c) => c.value);
     msg.textContent = "Saving…";
-    try { await api.agentUpdate({ keywords: kws, persona, platforms: pfs.join(",") }); msg.textContent = "Saved ✓"; toast("Keywords saved"); }
+    try { await api.agentUpdate({ keywords: kws, persona, website, platforms: pfs.join(",") }); msg.textContent = "Saved ✓"; toast("Keywords saved"); }
     catch (e) { msg.textContent = "Failed: " + e; }
   };
   icons();
@@ -1792,13 +1931,44 @@ function _ago(ts) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+// Bare host of a URL for compact display (drops scheme/www/path).
+function _host(u) {
+  let s = String(u || "").split("//").pop().split("/")[0].split("?")[0];
+  return s.startsWith("www.") ? s.slice(4) : s;
+}
+
 export async function renderGeo(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  view.innerHTML = head("AI Visibility <span class='text-base font-normal text-zinc-400'>(GEO)</span>",
+  view.innerHTML = head("AI Visibility (GEO)",
     "Reddit is the #1 cited source in AI answers. Track queries, then Check to see if your brand is cited.",
     `<div class="flex gap-2"><button id="geo-checkall" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Check all</button><button id="geo-new" class="${btnP}">+ Track a query</button></div>`) +
     `<div id="geo-kpi" class="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4"></div>
+     <div id="geo-engine" class="mb-5"></div>
      <div id="geo-form" class="hidden mb-5 ${card}"></div><div id="geo-list" class="space-y-3">Loading…</div>`;
+
+  // Real-check engine status + connect Perplexity for live-web citations.
+  (async () => {
+    let hasKey = false;
+    try { const st = await api.byokStatus(); hasKey = !!(st && (st.PERPLEXITY_API_KEY || st.perplexity || (st.keys && st.keys.includes && st.keys.includes("PERPLEXITY_API_KEY")))); } catch (e) {}
+    const el = document.getElementById("geo-engine"); if (!el) return;
+    el.innerHTML = hasKey
+      ? `<div class="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400"><i data-lucide="globe" class="h-4 w-4"></i> Live-web checks on (Perplexity) — citations are real source URLs.</div>`
+      : `<details class="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+           <summary class="cursor-pointer font-semibold">Checks use model knowledge (no live web). Connect Perplexity for real citation tracking →</summary>
+           <div class="mt-2 flex flex-wrap items-end gap-2">
+             <input id="geo-pplx" type="password" placeholder="pplx-…" class="flex-1 rounded-lg border border-amber-300/50 bg-white/60 px-3 py-2 text-zinc-900 dark:bg-zinc-900/60 dark:text-white">
+             <button id="geo-pplx-save" class="${btnP}">Connect</button></div>
+           <p class="mt-1 text-xs opacity-80">Get a key at perplexity.ai → Settings → API. Stored locally only.</p></details>`;
+    icons();
+    const sv = document.getElementById("geo-pplx-save");
+    if (sv) sv.onclick = async () => {
+      const v = document.getElementById("geo-pplx").value.trim();
+      if (!v) return;
+      try { await api.byokSet("PERPLEXITY_API_KEY", v); toast("Perplexity connected — checks now use live web"); renderGeo(view); }
+      catch (e) { toast("Failed: " + e); }
+    };
+  })();
+
   document.getElementById("geo-new").onclick = () => {
     const f = document.getElementById("geo-form");
     f.classList.toggle("hidden");
@@ -1833,21 +2003,30 @@ export async function renderGeo(view) {
       const r = await api.geoList();
       const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
       const qs = r?.queries || [];
-      const comp = qs.filter((q) => q.status === "competitor").length;
-      document.getElementById("geo-kpi").innerHTML = kpi("Tracked queries", r?.total || 0) + kpi("Cited", r?.cited || 0) + kpi("Competitor", comp) + kpi("Citation rate", (r?.citation_rate || 0) + "%");
+      document.getElementById("geo-kpi").innerHTML =
+        kpi("Tracked queries", r?.total || 0) + kpi("Cited", r?.cited || 0) +
+        kpi("Share of voice", (r?.share_of_voice || 0) + "%") + kpi("Citation rate", (r?.citation_rate || 0) + "%");
       const list = document.getElementById("geo-list");
       list.innerHTML = qs.length ? qs.map((q) => {
-        let comps = [];
+        let comps = [], cites = [];
         try { comps = JSON.parse(q.competitors || "[]"); } catch (e) {}
-        const detail = (q.answer || comps.length) ? `<details class="mt-3 text-sm">
+        try { cites = JSON.parse(q.citations || "[]"); } catch (e) {}
+        const engBadge = q.engine === "perplexity"
+          ? `<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-500" title="Checked against live web citations">live web</span>`
+          : q.engine === "llm" ? `<span class="rounded bg-zinc-500/15 px-2 py-0.5 text-[11px] font-bold text-zinc-400" title="Model knowledge — no live web search">model only</span>` : "";
+        const srcRow = cites.length ? `<div class="mt-2"><div class="text-xs font-semibold text-zinc-500">Cited sources</div>
+          <div class="mt-1 flex flex-wrap gap-1.5">${cites.map((u) => `<a data-openurl="${esc(u)}" href="#" class="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400">${esc(_host(u))}</a>`).join("")}</div></div>` : "";
+        const detail = (q.answer || comps.length || cites.length) ? `<details class="mt-3 text-sm">
           <summary class="cursor-pointer text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">What the AI answered</summary>
           ${q.answer ? `<p class="mt-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 p-3 text-zinc-600 dark:text-zinc-300">${esc(q.answer)}</p>` : ""}
-          ${comps.length ? `<div class="mt-2 flex flex-wrap gap-1.5">${comps.map((c) => `<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">${esc(c)}</span>`).join("")}</div>` : ""}</details>` : "";
+          ${srcRow}
+          ${comps.length ? `<div class="mt-2"><div class="text-xs font-semibold text-zinc-500">Competitors named</div><div class="mt-1 flex flex-wrap gap-1.5">${comps.map((c) => `<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">${esc(c)}</span>`).join("")}</div></div>` : ""}</details>` : "";
         return `<div class="${card}">
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0"><div class="font-semibold text-zinc-900 dark:text-white">"${esc(q.query)}"</div>
               <div class="mt-1 flex flex-wrap items-center gap-2 text-sm"><span class="rounded bg-brand/15 px-2 py-0.5 text-xs font-bold text-brand">${esc(q.surface)}</span>
                 <span class="rounded ${stColor(q.status)} px-2 py-0.5 text-xs font-bold">${esc(q.status)}</span>
+                ${engBadge}
                 <span class="text-xs text-zinc-400">${esc(_ago(q.last_checked))}</span></div></div>
             <div class="flex shrink-0 gap-2"><button data-check="${esc(q.id)}" class="${btnP} px-3 py-1.5 text-xs">Check</button>
               <button data-cite="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Mark cited</button>
@@ -1867,6 +2046,7 @@ export async function renderGeo(view) {
       });
       list.querySelectorAll("[data-cite]").forEach((b) => b.onclick = async () => { await api.geoSet(b.getAttribute("data-cite"), "cited"); toast("Marked cited"); load(); });
       list.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => { await api.geoDelete(b.getAttribute("data-del")); toast("Deleted"); load(); });
+      list.querySelectorAll("[data-openurl]").forEach((a) => a.onclick = (e) => { e.preventDefault(); api.openUrl(a.getAttribute("data-openurl")); });
       icons();
     } catch (e) { document.getElementById("geo-list").innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
   }
