@@ -21,11 +21,27 @@ _BASE = "https://public.api.bsky.app/xrpc"
 _AUTH_BASE = "https://bsky.social/xrpc"
 
 
+def _creds() -> tuple[str, str]:
+    """Return (handle, app_password) from the Reach Connections store first
+    (Connections UI saves them under source "bluesky"), then env. Never raises."""
+    try:
+        from ..core.credentials import get_credential
+        cred = get_credential("bluesky")
+        if cred:
+            cookies = cred.get("cookies") or {}
+            handle = str(cookies.get("handle") or "").strip()
+            pw = str(cookies.get("app_password") or "").strip()
+            if handle and pw:
+                return handle, pw
+    except Exception:
+        pass
+    return (os.getenv("BSKY_HANDLE") or "").strip(), (os.getenv("BSKY_APP_PASSWORD") or "").strip()
+
+
 def _session() -> str | None:
-    """Create an AT-proto session from BSKY_HANDLE + BSKY_APP_PASSWORD.
+    """Create an AT-proto session from the stored handle + app-password.
     Returns the accessJwt, or None if creds are absent / login fails."""
-    handle = (os.getenv("BSKY_HANDLE") or "").strip()
-    pw = (os.getenv("BSKY_APP_PASSWORD") or "").strip()
+    handle, pw = _creds()
     if not handle or not pw:
         return None
     try:

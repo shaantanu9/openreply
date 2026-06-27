@@ -10,7 +10,9 @@ import hashlib
 import time
 
 from ..analyze.providers.base import get_provider
+from .agent import get_agent
 from .brand import get_brand
+from .knowledge import build_knowledge_context
 from .schema import init_reply_schema
 
 # Per-platform hard length ceilings (chars). Others get a soft sentence hint.
@@ -35,11 +37,20 @@ def generate_reply(opportunity_id: str, provider: str | None = None, tone: str |
     brand = get_brand() or {}
     platform = opp["platform"]
 
+    # Pull the agent's linked-persona knowledge (beliefs + memories + graph),
+    # seeded by the post we're answering, plus a few topic-corpus excerpts.
+    agent_id = brand.get("id") or "default"
+    agent = get_agent(agent_id) or {}
+    rq = f"{opp.get('title') or ''}\n{opp.get('body') or ''}".strip()
+    knowledge = build_knowledge_context(agent_id, rq, corpus_topic=agent.get("topic"), corpus_limit=4)
+
     prompt = (
         f"You are replying as: {brand.get('name')} — "
         f"{brand.get('persona') or brand.get('description')}\n"
         f"Tone: {tone or brand.get('tone')}\n"
         f"Platform: {platform}. {_length_hint(platform)}\n\n"
+        f"Your knowledge (reply from this — beliefs first, then memories, then corpus):\n"
+        f"{knowledge}\n\n"
         f'The post you are replying to:\n"""{opp.get("title")}\n{opp.get("body")}"""\n\n'
         "Write ONE reply that genuinely helps. Lead with concrete value. Be specific."
     )

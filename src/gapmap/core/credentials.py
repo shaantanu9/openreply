@@ -41,12 +41,15 @@ def get_credential(source: str) -> dict | None:
         cookies = {}
     if not isinstance(cookies, dict):
         cookies = {}
+    enabled = row.get("enabled")
     return {
         "source": source,
         "cookies": cookies,
         "username": row.get("username") or "",
         "kind": row.get("kind") or "cookie",
         "last_verified_at": row.get("last_verified_at"),
+        # NULL on legacy rows (pre-migration) → treat as enabled.
+        "enabled": 1 if enabled is None else int(enabled),
     }
 
 
@@ -61,6 +64,9 @@ def set_credential(
     (for api keys, store {"api_key": "..."} and kind="api_key")."""
     db = get_db()
     init_schema(db)
+    # Preserve any existing enabled flag on re-save (e.g. re-verify); default to
+    # enabled for a brand-new connection ("connect = enabled").
+    prev = get_credential(source)
     db["source_credentials"].upsert(
         {
             "source": source,
@@ -69,6 +75,7 @@ def set_credential(
             "kind": kind,
             "saved_at": _now(),
             "last_verified_at": _now() if verified else None,
+            "enabled": int(prev["enabled"]) if prev else 1,
         },
         pk="source",
     )
@@ -115,3 +122,39 @@ def api_key(source: str) -> str:
     if not cred:
         return ""
     return str(cred["cookies"].get("api_key") or "")
+
+
+def is_enabled(source: str, default: bool = True) -> bool:
+    """Whether *source* should be included in collection runs. Defaults to
+    *default* when the source has no stored credential row (e.g. public
+    sources the user hasn't explicitly toggled). Never raises."""
+    cred = get_credential(source)
+    if not cred:
+        return default
+    return bool(cred.get("enabled", 1))
+
+
+def set_enabled(source: str, enabled: bool) -> None:
+    """Set the use-in-collection flag for *source*. For sources without a stored
+    credential (public ones), create a marker row so the choice persists.
+    Never raises."""
+    try:
+        db = get_db()
+        init_schema(db)
+        if has_credential(source):
+            db["source_credentials"].update(source, {"enabled": 1 if enabled else 0})
+        else:
+            db["source_credentials"].upsert(
+                {
+                    "source": source,
+                    "cookie_json": "{}",
+                    "username": "",
+                    "kind": "public",
+                    "saved_at": _now(),
+                    "last_verified_at": None,
+                    "enabled": 1 if enabled else 0,
+                },
+                pk="source",
+            )
+    except Exception:
+        pass

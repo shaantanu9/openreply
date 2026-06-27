@@ -21,6 +21,15 @@ def _now_iso() -> str:
 
 
 def _token() -> str | None:
+    # Reach Connections store (Connections UI saves the pasted bearer token
+    # under source "truthsocial") wins over env. Reads never raise.
+    try:
+        from ..core.credentials import api_key as _stored_key
+        stored = _stored_key("truthsocial")
+        if stored:
+            return stored
+    except Exception:
+        pass
     return os.getenv("TRUTHSOCIAL_TOKEN") or None
 
 

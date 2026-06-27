@@ -6467,6 +6467,18 @@ def cmd_creds_delete(
     _emit([delete_connection(source)], as_json, table_title=f"delete {source}")
 
 
+@creds_app.command("toggle")
+def cmd_creds_toggle(
+    source: str = typer.Option(..., "--source", "-s"),
+    enabled: bool = typer.Option(True, "--enabled/--disabled",
+                                 help="Include this source in collection runs."),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Set whether a connected source is used in collection runs."""
+    from ..research.reach_connections import toggle_connection
+    _emit([toggle_connection(source, enabled)], as_json, table_title=f"toggle {source}")
+
+
 @ingest_app.command("video")
 def cmd_ingest_video(
     url: str = typer.Option(..., "--url", "-u"),

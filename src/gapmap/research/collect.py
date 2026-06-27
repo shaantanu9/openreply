@@ -345,6 +345,12 @@ def collect(
       historical_limit_per_sub: max historical posts per sub.
       aggressive: preset that maxes limits + enables comments + historical.
     """
+    # Whether the caller pinned an explicit source list. When they did we honor
+    # it verbatim; when they didn't, we auto-augment the default sweep with any
+    # social platforms the user connected in Reach Connections ("connect =
+    # enabled", opt out per-source via the Connections toggle).
+    _sources_explicit = bool(sources)
+
     # Aggressive preset — overrides conservative defaults
     if aggressive:
         limit_per_sub = max(limit_per_sub, 100)
@@ -424,6 +430,20 @@ def collect(
             "gnews",         # Google News for general-topic recall
             "duckduckgo",    # General web search — fast (~1.3s), free, 1 call
         ]
+
+    # Auto-include connected social platforms (X, TikTok/Instagram/Threads/
+    # Pinterest via ScrapeCreators, Bluesky, TruthSocial, YouTube, Mastodon, …).
+    # Only when the caller didn't pin an explicit list — so a deliberate
+    # `--sources x` stays exactly that. Deduped; never raises.
+    if not _sources_explicit:
+        try:
+            from .reach_connections import connected_collection_sources
+            for _soc in connected_collection_sources():
+                if _soc not in sources:
+                    sources.append(_soc)
+        except Exception:
+            pass
+
     # `result.topic` ends up being set to the canonical after canonicalization
     # below. Populate with original here; we update after _canonicalize_topic
     # resolves (handles the no-LLM-configured passthrough case cleanly).

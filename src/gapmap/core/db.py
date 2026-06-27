@@ -261,12 +261,20 @@ def init_schema(db: Database) -> None:
                 "source": str,            # "reddit", "xueqiu", "xiaohongshu", ...
                 "cookie_json": str,       # JSON {name: value}
                 "username": str,
-                "kind": str,              # "cookie" | "api_key"
+                "kind": str,              # "cookie" | "api_key" | "login_pair" | "public"
                 "saved_at": str,
                 "last_verified_at": str,
+                "enabled": int,           # 1 = include in collection runs (default)
             },
             pk="source",
         )
+    else:
+        # Migration: add `enabled` (use-in-collection toggle) to pre-existing DBs.
+        cols = {c.name for c in db["source_credentials"].columns}
+        if "enabled" not in cols:
+            db.executescript(
+                "ALTER TABLE source_credentials ADD COLUMN enabled INTEGER DEFAULT 1"
+            )
 
     if "comments" not in db.table_names():
         db["comments"].create(

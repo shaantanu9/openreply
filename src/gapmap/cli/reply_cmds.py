@@ -10,8 +10,10 @@ import json
 
 import typer
 
+from ..reply import alerts as _alerts
 from ..reply import brand as _brand
 from ..reply import generate as _gen
+from ..reply import geo as _geo
 from ..reply import opportunity as _opp
 from ..reply import rules as _rules
 from ..reply.platforms import PLATFORMS
@@ -110,3 +112,63 @@ def rules_cmd(
 ):
     """Fetch + cache a subreddit's rules (used for ban-proof compliance)."""
     _out(_rules.fetch_sub_rules(sub, refresh=refresh), json_)
+
+
+# ---- alerts ---------------------------------------------------------------
+
+@reply_app.command("alert-list")
+def alert_list_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """List alert rules for the active agent."""
+    _out({"alerts": _alerts.list_alerts()}, json_)
+
+
+@reply_app.command("alert-add")
+def alert_add_cmd(
+    rule: str = typer.Option(..., help="When to fire, e.g. 'keyword match · buying intent'"),
+    channel: str = typer.Option("email", help="email | slack | both"),
+    intent_min: str = typer.Option("any", help="any | mid | buying"),
+    score_min: float = typer.Option(0.0, help="Fire when opportunity score >= this (0-1)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Add an alert rule."""
+    _out(_alerts.add_alert(rule, channel=channel, intent_min=intent_min, score_min=score_min), json_)
+
+
+@reply_app.command("alert-delete")
+def alert_delete_cmd(id: str = typer.Argument(...), json_: bool = typer.Option(True, "--json/--no-json")):
+    """Delete an alert rule."""
+    _out({"deleted": _alerts.delete_alert(id), "id": id}, json_)
+
+
+# ---- AI visibility (GEO) --------------------------------------------------
+
+@reply_app.command("geo-list")
+def geo_list_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """List tracked GEO queries + citation rate for the active agent."""
+    _out(_geo.list_queries(), json_)
+
+
+@reply_app.command("geo-add")
+def geo_add_cmd(
+    query: str = typer.Option(..., help="Query to monitor in Google/LLM answers"),
+    surface: str = typer.Option("ChatGPT", help="ChatGPT | Perplexity | Google"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Track a GEO query."""
+    _out(_geo.add_query(query, surface=surface), json_)
+
+
+@reply_app.command("geo-set")
+def geo_set_cmd(
+    id: str = typer.Argument(...),
+    status: str = typer.Option(..., help="tracking | cited | competitor | absent"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Set a GEO query's citation status."""
+    _out({"ok": _geo.set_status(id, status), "id": id, "status": status}, json_)
+
+
+@reply_app.command("geo-delete")
+def geo_delete_cmd(id: str = typer.Argument(...), json_: bool = typer.Option(True, "--json/--no-json")):
+    """Delete a GEO query."""
+    _out({"deleted": _geo.delete_query(id), "id": id}, json_)
