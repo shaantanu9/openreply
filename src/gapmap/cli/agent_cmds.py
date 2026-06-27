@@ -14,7 +14,9 @@ from ..reply import agent as _agent
 from ..reply import content as _content
 
 agent_app = typer.Typer(help="OpenReply Agents (personas): create / list / use / refresh.")
-content_app = typer.Typer(help="OpenReply content: generate posts / threads / scripts / articles.")
+content_app = typer.Typer(
+    help="OpenReply content: posts / threads / shorts / youtube / articles / follow-ups."
+)
 
 
 def _out(obj, as_json: bool) -> None:
@@ -114,19 +116,88 @@ def refresh_cmd(
     _out(res, json_)
 
 
+# ---- persona links --------------------------------------------------------
+
+@agent_app.command("link-persona")
+def link_persona_cmd(
+    persona_id: int = typer.Argument(..., help="Persona id to link"),
+    id: str = typer.Option(None, "--agent", help="Agent id (default: active)"),
+    weight: float = typer.Option(1.0, help="Blend weight (proportional slot allocation)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Link a learning persona's knowledge (memories + graph + beliefs) into an agent's replies."""
+    aid = id or _agent.active_id()
+    if not aid:
+        _out({"error": "no agent — run `gapmap agent create`"}, json_)
+        raise typer.Exit(1)
+    _out(_agent.link_persona(aid, persona_id, weight=weight), json_)
+
+
+@agent_app.command("unlink-persona")
+def unlink_persona_cmd(
+    persona_id: int = typer.Argument(..., help="Persona id to unlink"),
+    id: str = typer.Option(None, "--agent", help="Agent id (default: active)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Remove a persona link from an agent."""
+    aid = id or _agent.active_id()
+    _out(_agent.unlink_persona(aid, persona_id), json_)
+
+
+@agent_app.command("personas")
+def personas_cmd(
+    id: str = typer.Option(None, "--agent", help="Agent id (default: active)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """List the personas linked to an agent (with blend weights)."""
+    aid = id or _agent.active_id()
+    _out({"agent_id": aid, "personas": _agent.list_linked_personas(aid or "")}, json_)
+
+
 # ---- content --------------------------------------------------------------
 
 @content_app.command("generate")
 def gen_cmd(
-    kind: str = typer.Argument(..., help="post | thread | script | article"),
+    kind: str = typer.Argument(
+        ..., help="post | thread | script | youtube | article | followup_reply | followup_post"
+    ),
     platform: str = typer.Option(None, help="Target platform (default: agent's first)"),
     angle: str = typer.Option("", help="Optional angle/hook to write toward"),
+    context_id: str = typer.Option(
+        None, "--context-id", help="followup_post: id of the prior draft to build on"
+    ),
+    context_text: str = typer.Option(
+        "", "--context-text", help="followup_reply: thread + the reply to answer (or raw original)"
+    ),
     agent_id: str = typer.Option(None, "--agent", help="Agent id (default: active)"),
     provider: str = typer.Option(None),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Generate a content draft from the agent's knowledge."""
-    _out(_content.generate_content(kind, agent_id=agent_id, platform=platform, angle=angle, provider=provider), json_)
+    _out(
+        _content.generate_content(
+            kind, agent_id=agent_id, platform=platform, angle=angle,
+            context_id=context_id, context_text=context_text, provider=provider,
+        ),
+        json_,
+    )
+
+
+@content_app.command("update")
+def content_update_cmd(
+    content_id: str = typer.Argument(..., help="content_items id to update"),
+    body: str = typer.Option(None, "--body", help="New body text"),
+    status: str = typer.Option(None, "--status", help="draft | scheduled | posted"),
+    scheduled_at: int = typer.Option(None, "--scheduled-at", help="Epoch seconds to schedule for"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Edit, save, or schedule an existing content draft."""
+    _out(
+        _content.update_content(
+            content_id, body=body, status=status, scheduled_at=scheduled_at
+        ),
+        json_,
+    )
 
 
 @content_app.command("list")

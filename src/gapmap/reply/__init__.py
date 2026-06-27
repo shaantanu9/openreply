@@ -10,9 +10,11 @@ This package is purely the engine; the CLI lives in `gapmap.cli.reply_cmds`
 """
 from . import (  # noqa: F401
     agent,
+    alerts,
     brand,
     content,
     generate,
+    geo,
     opportunity,
     platforms,
     rank,
@@ -21,6 +23,6 @@ from . import (  # noqa: F401
 )
 
 __all__ = [
-    "agent", "brand", "content", "generate",
+    "agent", "alerts", "brand", "content", "generate", "geo",
     "opportunity", "platforms", "rank", "rules", "schema",
 ]

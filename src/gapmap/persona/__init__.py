@@ -29,6 +29,7 @@ from .graph import (
     graph_payload,
     is_available as graph_is_available,
     list_edges,
+    neighbors,
 )
 from .conclude import synthesize_conclusions, list_conclusions
 from .share import share_memory, list_rejections
@@ -56,6 +57,7 @@ __all__ = [
     "graph_payload",
     "graph_is_available",
     "list_edges",
+    "neighbors",
     "synthesize_conclusions",
     "list_conclusions",
     "share_memory",

@@ -35,6 +35,18 @@ def _ensure(db):
         )
     if "reply_state" not in names:
         db["reply_state"].create({"key": str, "value": str}, pk="key")
+    if "agent_personas" not in names:
+        # Bridges a product/brand Agent to one or more learning Personas, so the
+        # reply blend can draw on each persona's own knowledge base + graph.
+        # `weight` controls proportional slot allocation across linked personas.
+        db["agent_personas"].create(
+            {
+                "agent_id": str, "persona_id": int,
+                "weight": float, "created_at": int,
+            },
+            pk=("agent_id", "persona_id"),
+        )
+        db["agent_personas"].create_index(["agent_id"])
     return db
 
 
@@ -159,6 +171,70 @@ def delete_agent(aid: str) -> bool:
         return False
     db["agents"].delete(aid)
     return True
+
+
+# ---- persona links -------------------------------------------------------
+
+def link_persona(agent_id: str, persona_id: int, *, weight: float = 1.0) -> dict:
+    """Link a learning Persona to an Agent (idempotent upsert). The agent's
+    replies will then blend that persona's memories + graph + conclusions."""
+    db = _ensure(init_reply_schema())
+    if not _row(db, agent_id):
+        return {"error": f"no agent '{agent_id}'"}
+    try:
+        from ..persona.store import get_persona
+
+        if not get_persona(int(persona_id)):
+            return {"error": f"no persona id={persona_id}"}
+    except Exception:
+        pass
+    db["agent_personas"].upsert(
+        {
+            "agent_id": agent_id, "persona_id": int(persona_id),
+            "weight": float(weight), "created_at": int(time.time()),
+        },
+        pk=("agent_id", "persona_id"),
+    )
+    return {"linked": True, "agent_id": agent_id, "persona_id": int(persona_id), "weight": float(weight)}
+
+
+def unlink_persona(agent_id: str, persona_id: int) -> dict:
+    db = _ensure(init_reply_schema())
+    try:
+        db["agent_personas"].delete((agent_id, int(persona_id)))
+        return {"unlinked": True, "agent_id": agent_id, "persona_id": int(persona_id)}
+    except Exception:
+        return {"unlinked": False, "agent_id": agent_id, "persona_id": int(persona_id)}
+
+
+def list_linked_personas(agent_id: str) -> list[dict]:
+    """Return [{persona_id, weight, name, lens}] for an agent's linked personas.
+
+    Hydrates name+lens from the personas table so the blend can tag knowledge
+    with its lens; gracefully drops links whose persona was deleted.
+    """
+    db = _ensure(init_reply_schema())
+    try:
+        rows = list(db["agent_personas"].rows_where("agent_id = ?", [agent_id], order_by="created_at asc"))
+    except Exception:
+        return []
+    if not rows:
+        return []
+    try:
+        from ..persona.store import get_persona
+    except Exception:
+        get_persona = None  # type: ignore
+    out: list[dict] = []
+    for r in rows:
+        pid = int(r["persona_id"])
+        name, lens = f"persona#{pid}", ""
+        if get_persona:
+            p = get_persona(pid)
+            if not p:
+                continue  # persona deleted — skip the dangling link
+            name, lens = p.get("name") or name, p.get("lens") or ""
+        out.append({"persona_id": pid, "weight": float(r.get("weight") or 1.0), "name": name, "lens": lens})
+    return out
 
 
 # ---- knowledge -----------------------------------------------------------

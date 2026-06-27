@@ -387,3 +387,40 @@ def gapmap_persona_rejections(
     """
     from ...persona.share import list_rejections
     return list_rejections(persona_id, direction=direction, limit=limit)
+
+
+# ── Agent ↔ Persona links (blend a persona's knowledge into replies) ──
+
+
+@persona_server.tool()
+def gapmap_agent_link_persona(
+    agent_id: str,
+    persona_id: int,
+    weight: float = 1.0,
+) -> dict:
+    """Link a learning persona to a product/brand agent.
+
+    After linking, the agent's reply + content blend draws on that persona's
+    own beliefs (conclusions), memories, and semantic graph — weighted by
+    `weight` for proportional slot allocation across multiple linked personas.
+    Returns `{linked, agent_id, persona_id, weight}` or `{error}`.
+    """
+    from ...reply.agent import link_persona
+    return link_persona(agent_id, persona_id, weight=weight)
+
+
+@persona_server.tool()
+def gapmap_agent_unlink_persona(agent_id: str, persona_id: int) -> dict:
+    """Remove a persona link from an agent. Returns `{unlinked, ...}`."""
+    from ...reply.agent import unlink_persona
+    return unlink_persona(agent_id, persona_id)
+
+
+@persona_server.tool()
+def gapmap_agent_personas(agent_id: str) -> dict:
+    """List personas linked to an agent.
+
+    Returns `{agent_id, personas: [{persona_id, weight, name, lens}]}`.
+    """
+    from ...reply.agent import list_linked_personas
+    return {"agent_id": agent_id, "personas": list_linked_personas(agent_id)}

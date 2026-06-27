@@ -244,6 +244,53 @@ def backfill_persona(persona_id: int) -> dict:
 
 # ── readers (for UI / chat) ─────────────────────────────────────────────────
 
+def neighbors(persona_id: int, memory_ids: list[int], *, limit: int = 4) -> list[dict]:
+    """1-hop graph expansion: return memories edge-linked to ``memory_ids`` but
+    not already in that seed set, strongest edge first. Used by the reply blend
+    to pull "related knowledge" around the directly-retrieved memories.
+    """
+    import json as _json
+
+    if not memory_ids:
+        return []
+    db = get_db()
+    seed = {int(m) for m in memory_ids}
+    qmarks = ",".join("?" * len(seed))
+    cur = db.execute(
+        f"SELECT from_memory_id, to_memory_id, weight FROM persona_edges "
+        f"WHERE persona_id = ? "
+        f"AND (from_memory_id IN ({qmarks}) OR to_memory_id IN ({qmarks})) "
+        f"ORDER BY weight DESC",
+        [persona_id, *seed, *seed],
+    )
+    neigh_ids: list[int] = []
+    for a, b, _w in cur.fetchall():
+        for x in (int(a), int(b)):
+            if x not in seed and x not in neigh_ids:
+                neigh_ids.append(x)
+        if len(neigh_ids) >= limit:
+            break
+    neigh_ids = neigh_ids[:limit]
+    if not neigh_ids:
+        return []
+    qm = ",".join("?" * len(neigh_ids))
+    cur = db.execute(
+        f"SELECT id, source_post_id, topic, lesson, excerpt, tags, importance, created_at "
+        f"FROM persona_memories WHERE id IN ({qm})",
+        neigh_ids,
+    )
+    cols = [c[0] for c in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    order = {mid: i for i, mid in enumerate(neigh_ids)}
+    rows.sort(key=lambda r: order.get(r["id"], 999))
+    for r in rows:
+        try:
+            r["tags"] = _json.loads(r.get("tags") or "[]")
+        except (TypeError, ValueError):
+            r["tags"] = []
+    return rows
+
+
 def list_edges(persona_id: int, *, limit: int = 500) -> list[dict]:
     db = get_db()
     cur = db.execute(
