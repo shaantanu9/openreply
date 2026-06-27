@@ -362,6 +362,8 @@ fn main() {
             commands::agent_refresh,
             commands::agent_learn,
             commands::agent_learn_status,
+            commands::agent_build_graph,
+            commands::agent_graph,
             commands::agent_teach_video,
             commands::reply_find,
             commands::reply_list,

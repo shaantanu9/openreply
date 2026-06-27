@@ -361,6 +361,25 @@ pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Va
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent build-graph` — build the agent's knowledge graph (brain).
+#[tauri::command]
+pub async fn agent_build_graph(app: AppHandle, id: Option<String>, deep: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "build-graph".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if deep.unwrap_or(false) { args.push("--deep".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent graph` — knowledge-graph overview (counts, hubs, connections).
+#[tauri::command]
+pub async fn agent_graph(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "graph".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap agent teach-video` — teach the agent from one video's subtitles/transcript.
 #[tauri::command]
 pub async fn agent_teach_video(app: AppHandle, url: String, id: Option<String>, comments: Option<u32>) -> Result<Value, String> {

@@ -119,6 +119,15 @@ def learn_for_agent(
             "ingest_error": ing.get("error"),
         })
 
+    # Build/refresh the agent's content knowledge graph so the Knowledge page
+    # reflects the brain (cheap structural pass; the LLM enrich stays on the
+    # explicit "Build brain" action). Best-effort — never breaks a learn pass.
+    try:
+        from .brain import build_brain_for_agent
+        build_brain_for_agent(a["id"], deep=False, provider=provider)
+    except Exception:
+        pass
+
     # Stamp the learn time on the agent (best-effort).
     try:
         from .schema import init_reply_schema

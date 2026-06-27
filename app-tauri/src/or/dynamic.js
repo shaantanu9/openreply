@@ -1254,7 +1254,14 @@ export async function renderKnowledge(view) {
        <div class="flex flex-wrap items-end gap-3">
          <input id="kn-vid" placeholder="https://www.youtube.com/watch?v=\u2026" class="${inputCls} min-w-0 flex-1">
          <button id="kn-teach" class="${btnP}"><i data-lucide="graduation-cap" class="inline-block h-4 w-4 align-[-2px]"></i> Learn from video</button></div>
-       <div id="kn-teach-msg" class="mt-3 text-sm"></div></div>`;
+       <div id="kn-teach-msg" class="mt-3 text-sm"></div></div>
+     <div class="mt-5 ${card}">
+       <div class="flex items-center justify-between gap-3">
+         <b class="text-zinc-900 dark:text-white"><i data-lucide="brain" class="inline-block h-4 w-4 align-[-3px] text-reddit"></i> Brain &amp; knowledge graph</b>
+         <button id="kn-build" class="${btn}"><i data-lucide="workflow" class="inline-block h-4 w-4 align-[-2px]"></i> Build brain (deep)</button></div>
+       <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">The agent's content mapped into a graph \u2014 posts, people, sources and the niche's painpoints/wishes/workarounds, connected by meaning (embeddings).</p>
+       <div id="kn-graph" class="text-sm text-zinc-500">Loading graph\u2026</div>
+       <div id="kn-build-msg" class="mt-2 text-xs"></div></div>`;
   document.getElementById("kn-refresh").onclick = async (e) => {
     e.target.textContent = "Refreshing…"; e.target.disabled = true;
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed"); renderKnowledge(view); }
@@ -1281,6 +1288,37 @@ export async function renderKnowledge(view) {
     } catch (e) { msg.innerHTML = `<span class="text-rose-500">${esc(e)}</span>`; }
     finally { teachBtn.disabled = false; teachBtn.innerHTML = html; icons(); }
   };
+  const graphBox = document.getElementById("kn-graph");
+  async function loadGraph() {
+    if (!graphBox) return;
+    try {
+      const g = await api.agentGraph();
+      if (!g || g.error) { graphBox.innerHTML = `<span class="text-zinc-400">${esc((g && g.error) || "No graph yet \u2014 click Build brain.")}</span>`; return; }
+      if (!g.total_nodes) { graphBox.innerHTML = `<span class="text-zinc-400">Empty graph \u2014 collect/learn, then Build brain.</span>`; return; }
+      const kinds = (g.by_kind || []).map((x) => `<span class="${chip}">${esc(x.kind)} \u00b7 ${x.count}</span>`).join(" ");
+      const hubs = (g.hubs || []).slice(0, 8).map((h) => `<span class="rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs">${esc(h.label)} <span class="text-zinc-400">\u00b7${h.degree}</span></span>`).join(" ");
+      const conns = (g.connections || []).slice(0, 8).map((c) => `<div class="flex flex-wrap items-center gap-1.5 text-xs"><span class="text-zinc-700 dark:text-zinc-300">${esc(c.from)}</span><span class="text-reddit">\u2192 ${esc(c.kind)} \u2192</span><span class="text-zinc-700 dark:text-zinc-300">${esc(c.to)}</span><span class="text-zinc-400">${c.weight}</span></div>`).join("");
+      graphBox.innerHTML = `<div class="mb-2 text-zinc-500">${g.total_nodes} nodes \u00b7 ${g.total_edges} connections</div>
+        <div class="mb-3 flex flex-wrap gap-1.5">${kinds}</div>
+        ${hubs ? `<div class="mb-1 font-semibold text-zinc-700 dark:text-zinc-300">Top hubs</div><div class="mb-3 flex flex-wrap gap-1.5">${hubs}</div>` : ""}
+        ${conns ? `<div class="mb-1 font-semibold text-zinc-700 dark:text-zinc-300">Connections</div><div class="space-y-1">${conns}</div>` : ""}`;
+      icons();
+    } catch (e) { graphBox.innerHTML = `<span class="text-rose-500">${esc(e)}</span>`; }
+  }
+  const buildBtn = document.getElementById("kn-build");
+  if (buildBtn) buildBtn.onclick = async () => {
+    const msg = document.getElementById("kn-build-msg");
+    const html = buildBtn.innerHTML; buildBtn.disabled = true; buildBtn.textContent = "Building brain\u2026";
+    msg.innerHTML = `<span class="text-zinc-500">Mapping content + mining insights (LLM) \u2014 this can take a minute\u2026</span>`;
+    try {
+      const r = await api.agentBuildGraph(true);
+      if (r === null) { msg.innerHTML = `<span class="text-amber-500">Run inside the app to build.</span>`; }
+      else if (r.error) { msg.innerHTML = `<span class="text-rose-500">${esc(r.error)}</span>`; }
+      else { msg.innerHTML = `<span class="text-emerald-500">\u2713 ${esc(r.message || "Brain built.")}</span>`; toast("Brain built"); loadGraph(); }
+    } catch (e) { msg.innerHTML = `<span class="text-rose-500">${esc(e)}</span>`; }
+    finally { buildBtn.disabled = false; buildBtn.innerHTML = html; icons(); }
+  };
+  loadGraph();
   icons();
 }
 

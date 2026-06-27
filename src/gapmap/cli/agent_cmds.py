@@ -126,6 +126,26 @@ def learn_status_cmd(id: str = typer.Option(None), json_: bool = typer.Option(Tr
     _out(learning_summary(id), json_)
 
 
+@agent_app.command("build-graph")
+def build_graph_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    deep: bool = typer.Option(False, "--deep", help="Also LLM-mine painpoints/wishes/workarounds (slower)"),
+    provider: str = typer.Option(None, help="Pin an LLM provider (else auto-resolved)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Build the agent's knowledge graph (brain) over its collected content + connections."""
+    from ..reply.brain import build_brain_for_agent
+    _out(build_brain_for_agent(id, deep=deep, provider=provider,
+                               progress=lambda m: typer.echo(m, err=True)), json_)
+
+
+@agent_app.command("graph")
+def graph_cmd(id: str = typer.Option(None), json_: bool = typer.Option(True, "--json/--no-json")):
+    """Knowledge-graph overview for the agent: counts by kind, hubs, connections."""
+    from ..reply.brain import graph_overview
+    _out(graph_overview(id), json_)
+
+
 @agent_app.command("teach-video")
 def teach_video_cmd(
     url: str = typer.Argument(..., help="YouTube/Instagram/video URL (or 11-char YT id)"),
