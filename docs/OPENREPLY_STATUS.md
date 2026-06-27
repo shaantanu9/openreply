@@ -19,14 +19,14 @@
 | Connections | `#/connections` | ✅ live | `creds_list/import_browser/save_manual/verify/delete` |
 | Settings | `#/settings` | ✅ live | `byok_status/set`, `test_llm`, `feeds_*`, `app_*` |
 | Inbox (mentions) | `#/inbox` | ✅ live | reuse `reply_list` (planned) |
-| Keywords | `#/keywords` | 🟦 static | `agent_get` + new `agent_update` (planned) |
-| Subreddit Intel | `#/subreddit` | 🟦 static | new `reply_rules` cmd (planned) |
+| Keywords | `#/keywords` | ✅ live | `agent_get` + `agent_update` |
+| Subreddit Intel | `#/subreddit` | ✅ live | `reply_rules` (Reddit `about/rules.json`) |
 | Knowledge | `#/knowledge` | ✅ live | `agent_knowledge` (+ graph) (planned) |
 | Analytics | `#/analytics` | ✅ live | derive from `reply_list`+`content_list` (planned) |
 | AI Visibility (GEO) | `#/geo` | 🟦 static | new backend (later) |
 | Queue | `#/queue` | ✅ live | `content_list` by status (planned) |
 | Alerts | `#/alerts` | 🟦 static | new alert-rules store (later) |
-| Onboarding wizard | `#/onboarding` | 🟦 static | `agent_create` on finish (planned) |
+| Onboarding wizard | `#/onboarding` | ✅ live | `agent_create` on finish |
 
 ---
 
