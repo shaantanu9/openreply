@@ -20,6 +20,8 @@ export const api = {
   agentUse: (id) => call("agent_use", { id }),
   agentRefresh: (id, deep) => call("agent_refresh", { id: id || null, deep: !!deep }),
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
+  agentUpdate: (p) => call("agent_update", p),
+  replyRules: (sub, refresh) => call("reply_rules", { sub, refresh: !!refresh }),
   // reply / opportunities
   replyPlatforms: () => call("reply_platforms"),
   replyFind: (platforms, limit, noScore) =>

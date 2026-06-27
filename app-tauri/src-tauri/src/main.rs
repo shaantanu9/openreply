@@ -365,6 +365,8 @@ fn main() {
             commands::reply_draft,
             commands::content_generate,
             commands::content_list,
+            commands::agent_update,
+            commands::reply_rules,
             commands::list_topics,
             commands::active_collects,
             commands::overview_stats,

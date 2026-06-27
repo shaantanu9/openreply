@@ -689,6 +689,113 @@ export async function renderQueue(view) {
   icons();
 }
 
+// ── Keywords (edit the agent's tracked keywords + platforms) ────────────────
+export async function renderKeywords(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  view.innerHTML = `<div id="kw">Loading…</div>`;
+  let a = null, platforms = [];
+  try { a = await api.agentGet(); } catch (e) {}
+  if (!a) { document.getElementById("kw").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
+  try { platforms = (await api.replyPlatforms())?.platforms || []; } catch (e) {}
+  const checks = platforms.filter((p) => p.can_reply).map((p) =>
+    `<label class="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 text-sm">
+       <input type="checkbox" value="${esc(p.key)}" ${(a.platforms || []).includes(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("");
+  document.getElementById("kw").outerHTML =
+    head("Keywords &amp; platforms", `What <b>${esc(a.name)}</b> watches.`,
+      `<button id="kw-save" class="${btnP}">Save</button>`) +
+    `<div class="grid gap-5 lg:grid-cols-2">
+       <div class="${card}"><b class="text-zinc-900 dark:text-white">Keywords</b>
+         <p class="mb-2 mt-1 text-sm text-zinc-500">Comma-separated topics to scan for.</p>
+         <textarea id="kw-list" rows="4" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc((a.keywords || []).join(", "))}</textarea>
+         <div class="mt-3"><b class="text-zinc-900 dark:text-white">Voice</b>
+           <input id="kw-persona" value="${esc(a.persona || "")}" placeholder="persona / voice" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div></div>
+       <div class="${card}"><b class="text-zinc-900 dark:text-white">Platforms watched</b>
+         <div class="mt-3 grid grid-cols-2 gap-2">${checks}</div></div></div>
+     <span id="kw-msg" class="mt-3 inline-block text-sm text-zinc-500"></span>`;
+  document.getElementById("kw-save").onclick = async () => {
+    const msg = document.getElementById("kw-msg");
+    const kws = document.getElementById("kw-list").value;
+    const persona = document.getElementById("kw-persona").value.trim();
+    const pfs = [...document.querySelectorAll("#kw input[type=checkbox]:checked")].map((c) => c.value);
+    msg.textContent = "Saving…";
+    try { await api.agentUpdate({ keywords: kws, persona, platforms: pfs.join(",") }); msg.textContent = "Saved ✓"; toast("Keywords saved"); }
+    catch (e) { msg.textContent = "Failed: " + e; }
+  };
+  icons();
+}
+
+// ── Subreddit Intelligence (fetch a sub's rules before you post) ────────────
+export async function renderSubreddit(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  let a = null; try { a = await api.agentGet(); } catch (e) {}
+  view.innerHTML = head("Subreddit Intelligence",
+    "Know the rules before you post — fetched live from Reddit.",
+    `<div class="flex gap-2"><input id="sr-input" placeholder="subreddit (e.g. GetStudying)" class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"><button id="sr-go" class="${btnP}">Check rules</button></div>`) +
+    `<div id="sr-out"><div class="${card} text-zinc-500">Enter a subreddit to see its rules &amp; self-promo policy.</div></div>`;
+  document.getElementById("sr-go").onclick = run;
+  document.getElementById("sr-input").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  async function run() {
+    const sub = document.getElementById("sr-input").value.trim().replace(/^r\//, "");
+    const out = document.getElementById("sr-out");
+    if (!sub) return;
+    out.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Fetching r/${esc(sub)} rules…</div>`;
+    try {
+      const r = await api.replyRules(sub, false);
+      if (r?.error) { out.innerHTML = `<div class="${card} text-rose-500">${esc(r.error)}</div>`; return; }
+      const rules = r?.rules || [];
+      out.innerHTML = `<div class="${card}">
+        <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">r/${esc(sub)}</b>
+          <span class="text-sm text-zinc-500">${rules.length} rules</span></div>
+        <div class="mt-3 space-y-2 text-sm">${rules.length ? rules.map((x) =>
+          `<div><div class="font-semibold text-zinc-900 dark:text-white">• ${esc(x.name || "")}</div>${x.desc ? `<div class="text-zinc-500">${esc(x.desc)}</div>` : ""}</div>`).join("")
+          : '<div class="text-zinc-500">No rules returned (private/quarantined or fetch failed).</div>'}</div>
+        <p class="mt-3 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit">OpenReply checks your reply against these before you post.</p></div>`;
+    } catch (e) { out.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+  icons();
+}
+
+// ── Onboarding (create the first agent) ─────────────────────────────────────
+export async function renderOnboarding(view) {
+  view.className = "mx-auto max-w-2xl px-6 py-10";
+  let platforms = [];
+  try { platforms = (await api.replyPlatforms())?.platforms || []; } catch (e) {}
+  const checks = platforms.filter((p) => p.can_reply).slice(0, 9).map((p) =>
+    `<label class="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 text-sm">
+       <input type="checkbox" value="${esc(p.key)}" ${p.key === "reddit_free" ? "checked" : ""}> ${esc(p.label)}</label>`).join("");
+  view.innerHTML = `
+    <a href="#/agents" class="text-sm text-zinc-500 hover:text-reddit">← Agents</a>
+    <h1 class="mt-2 text-2xl font-bold text-zinc-900 dark:text-white">Create an agent</h1>
+    <p class="text-zinc-500 dark:text-zinc-400">A brand/niche persona with its own knowledge, voice &amp; platforms.</p>
+    <div class="mt-5 ${card} space-y-3">
+      ${field("ob-name", "Name", "Acme Notes")}
+      ${field("ob-niche", "Niche", "AI note-taking for students")}
+      ${field("ob-persona", "Voice / persona", "ex-teacher, founder of Acme")}
+      ${field("ob-keywords", "Keywords (comma-sep)", "note taking app, obsidian alternative, study notes")}
+      <div><div class="text-sm text-zinc-500">Platforms to watch</div>
+        <div class="mt-1 grid grid-cols-3 gap-2">${checks}</div></div>
+      <button id="ob-create" class="${btnP}">Create agent →</button>
+      <span id="ob-msg" class="text-sm text-zinc-500"></span></div>`;
+  document.getElementById("ob-create").onclick = async () => {
+    const name = document.getElementById("ob-name").value.trim();
+    const msg = document.getElementById("ob-msg");
+    if (!name) { msg.textContent = "Name required."; return; }
+    const pfs = [...document.querySelectorAll("#main-content input[type=checkbox]:checked")].map((c) => c.value);
+    msg.textContent = "Creating…";
+    try {
+      await api.agentCreate({
+        name,
+        niche: document.getElementById("ob-niche").value.trim(),
+        persona: document.getElementById("ob-persona").value.trim(),
+        keywords: document.getElementById("ob-keywords").value.trim(),
+        platforms: pfs.join(","),
+      });
+      toast("Agent created"); location.hash = "#/agent";
+    } catch (e) { msg.textContent = "Failed: " + e; }
+  };
+  icons();
+}
+
 export const DYN = {
   agents: renderAgents,
   agent: renderOverview,
@@ -700,4 +807,7 @@ export const DYN = {
   inbox: renderInbox,
   analytics: renderAnalytics,
   queue: renderQueue,
+  keywords: renderKeywords,
+  subreddit: renderSubreddit,
+  onboarding: renderOnboarding,
 };

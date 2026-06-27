@@ -391,6 +391,46 @@ pub async fn content_list(app: AppHandle, kind: Option<String>, status: Option<S
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent update …` — edit the active (or given) agent's voice/keywords/platforms.
+#[tauri::command]
+pub async fn agent_update(
+    app: AppHandle,
+    id: Option<String>,
+    name: Option<String>,
+    niche: Option<String>,
+    persona: Option<String>,
+    tone: Option<String>,
+    audience: Option<String>,
+    keywords: Option<String>,
+    platforms: Option<String>,
+    cadence: Option<String>,
+) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "update".to_string(), "--json".to_string()];
+    let mut push = |flag: &str, v: Option<String>| {
+        if let Some(s) = v { if !s.is_empty() { args.push(flag.to_string()); args.push(s); } }
+    };
+    push("--id", id);
+    push("--name", name);
+    push("--niche", niche);
+    push("--persona", persona);
+    push("--tone", tone);
+    push("--audience", audience);
+    push("--keywords", keywords);
+    push("--platforms", platforms);
+    push("--cadence", cadence);
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap reply rules --sub <sub>` — fetch + cache a subreddit's rules (Subreddit Intel).
+#[tauri::command]
+pub async fn reply_rules(app: AppHandle, sub: String, refresh: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "rules".to_string(), "--sub".to_string(), sub, "--json".to_string()];
+    if refresh.unwrap_or(false) { args.push("--refresh".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// Per-topic inventory for the home screen.
 ///
 /// Historically this SQL joined `topic_posts` and showed only topics that had
