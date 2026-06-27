@@ -230,8 +230,10 @@ Full detail: `TAURI_AND_FETCH_ARCHITECTURE.md` · removal map: `OPENREPLY_RESHAP
 
 - **Backend (working, tested):** reply engine + Agent model + content generation; CLI
   verified end-to-end (real Reddit posts via RSS fallback; real LLM drafts/content).
-- **Desktop UI (wired, compiles, runs):** 12 Rust command bridges + `api.js` wrappers;
-  `agents`/`opportunities`/`compose` screens; `#/` → Agents; 15 off-mission nav items hidden.
+- **Desktop UI (LIVE):** the OpenReply Tailwind+Lucide UI runs in the Tauri app and the
+  core screens render **live data** from the reply_* DB via the command bridge —
+  **Agents** (list/create/switch), **Overview** (knowledge KPIs + refresh), **Opportunities**
+  (RRF find/score/draft), **Compose** (generate). Connections/Settings still on static views.
 - **Prototype:** 17-page clickable HTML on **Tailwind CSS** + **Lucide icons**, Reddit
   theme, dark/light, shared injected sidebar. Working interactions: agent switcher,
   Track-a-query modal, reusable toast/modal, global button feedback. QA: all internal
