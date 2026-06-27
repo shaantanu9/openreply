@@ -47,8 +47,8 @@ Gap Map is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-sou
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
 | 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
 | 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
-| 21. OpenReply — content engine | 3 | 3 | 0 | 0 | 0 |
-| **Total** | **225** | **224** | **1** | **0** | **0** |
+| 21. OpenReply — content, analytics & visibility | 5 | 5 | 0 | 0 | 0 |
+| **Total** | **227** | **226** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -839,7 +839,7 @@ Refresh (`licenseRevalidate`) · Deactivate (`licenseLogout` → `#/activate`).
 
 ---
 
-## 21. OpenReply — content engine ✅ NEW
+## 21. OpenReply — content, analytics & visibility ✅ NEW
 
 > OpenReply is the social engagement layer built on the same Python core: an
 > **Agent** (brand/niche persona with linked-persona knowledge blend) finds
@@ -918,6 +918,44 @@ platform · status); "+ New content" → Compose.
 (`api.js:48`) → CLI `content_list_cmd:204` → `content.list_content`.
 **Known gaps:** read-only table (edits happen on the Compose cards); no inline
 status change from Queue yet (P2).
+
+### Analytics — KPIs, trends & charts ✅ NEW
+**Status:** ✅ Complete — server-side aggregation + inline-SVG charts
+**Entry points:** Tauri *Analytics* screen · CLI `gapmap reply analytics [--days]` · Rust `analytics_summary`
+**User flow:** open Analytics → one aggregation call renders KPIs (opportunities,
+replied, content, citation rate, saved/drafted/scheduled/posted), a 30-day
+multi-series activity trend (opportunities · content · posted), content-by-type
+bars, a draft→scheduled→posted funnel, and top-subreddit + by-keyword breakdowns.
+**Implementation:** `reply/analytics.py` `analytics_summary` (KPIs · `_series`
+daily buckets · `_top` drivers · geo citation rate). CLI `reply_cmds.py`
+`analytics_cmd`. Rust `commands.rs` `analytics_summary`. Frontend `or/api.js`
+`analyticsSummary` → `or/dynamic.js` `renderAnalytics` with `sparkChart` +
+`barList` SVG helpers.
+**Data:** read-only roll-up over `reply_opportunities` (`found_at`/`sub`/
+`platform`/`status`) + `content_items` (`kind`/`status`/`created_at`/`posted_at`).
+**Known gaps:** keyword breakdown is a substring match of agent keywords against
+opportunity title/body (no per-opportunity keyword column) (P2); fixed 30-day
+window in the UI (CLI takes `--days`).
+
+### AI Visibility (GEO) — automated citation check ✅ NEW
+**Status:** ✅ Complete — automated via BYOK provider (was manual-only)
+**Entry points:** Tauri *AI Visibility* screen · CLI `gapmap reply geo-check[-all]` · Rust `geo_check`
+**User flow:** track a query (+ surface) → **Check** asks the configured BYOK
+model the query as that surface would answer, captures the answer, and classifies
+the brand as **cited** / **competitor** / **absent**; the card shows the captured
+answer + competitor chips + "checked Nm ago". **Check all** re-runs every query;
+manual "Mark cited" remains as an override.
+**Implementation:** `reply/geo.py` `check_query` (LLM call · `_parse_json` ·
+`_classify`) · `check_all` · `query_history`; `geo_checks` history table +
+`answer`/`competitors` columns (guarded migration). CLI `reply_cmds.py`
+`geo_check_cmd`/`geo_check_all_cmd`/`geo_history_cmd`. Rust `geo_check`/
+`geo_check_all`/`geo_history`. Frontend `or/api.js` `geoCheck`/`geoCheckAll` →
+`or/dynamic.js` `renderGeo`.
+**Data:** `geo_queries` (status/answer/competitors/last_checked) + `geo_checks`
+(per-check history for trend).
+**Known gaps:** the check uses the BYOK model's own answer as a proxy — not the
+live ChatGPT/Perplexity product with web browsing (P1, by design — real-surface
+APIs are a paid later milestone); no scheduled auto-recheck (manual for now, P2).
 
 ---
 

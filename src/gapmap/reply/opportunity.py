@@ -148,6 +148,12 @@ def find_opportunities(
 
     db = init_reply_schema()
     now = int(time.time())
+    # Feedback: never resurface a post the user already dismissed.
+    try:
+        from .feedback import dismissed_post_ids
+        _dismissed = dismissed_post_ids(brand["id"])
+    except Exception:
+        _dismissed = set()
     found: list[dict] = []
     for pf in platforms:
         if progress:
@@ -159,6 +165,8 @@ def find_opportunities(
         for post in cands:
             pid = str(post.get("id") or post.get("url") or "")
             if not pid:
+                continue
+            if pid in _dismissed:
                 continue
             sc = _score(brand, post, provider) if score else {
                 "score": 0.0, "relevance": 0.0, "intent": 0.0, "fit": 0.0, "reason": ""
@@ -194,11 +202,35 @@ def find_opportunities(
     }
 
 
-# Lifecycle states an opportunity can move through. `new` → freshly found;
-# `saved` → user bookmarked it (shows in Inbox); `drafted` → a reply was
-# generated (set by generate_reply); `posted` → user replied/posted manually;
-# `skipped` → user dismissed it (hidden from the default view).
-OPPORTUNITY_STATUSES = ("new", "saved", "drafted", "posted", "skipped")
+# Lifecycle states an opportunity can move through.
+#   new      → freshly found (discovery feed)
+#   saved    → user bookmarked it (enters the Inbox workspace)
+#   drafted  → a reply draft exists (generate/save_draft)
+#   ready    → draft approved, awaiting post/queue
+#   queued   → scheduled for posting (has scheduled_at)
+#   posted   → replied/posted (manual mark or auto)
+#   skipped  → dismissed (hidden from default views)
+#   snoozed  → deferred until snooze_until, then auto-resurfaced to `new`
+OPPORTUNITY_STATUSES = (
+    "new", "saved", "drafted", "ready", "queued", "posted", "skipped", "snoozed",
+)
+# Statuses that constitute the Inbox workspace (vs the discovery feed).
+INBOX_STATUSES = ("saved", "drafted", "ready", "queued", "posted")
+
+
+def _resurface_snoozed(db, brand_id: str, now: int) -> None:
+    """Flip snoozed opportunities whose snooze window has elapsed back to `new`
+    so they reappear in discovery. Best-effort; never raises."""
+    try:
+        db.execute(
+            "UPDATE reply_opportunities SET status='new', snooze_until=NULL, "
+            "updated_at=? WHERE brand_id=? AND status='snoozed' "
+            "AND snooze_until IS NOT NULL AND snooze_until <= ?",
+            [now, brand_id, now],
+        )
+        db.conn.commit()
+    except Exception:
+        pass
 
 
 def set_status(opportunity_id: str, status: str) -> dict:
@@ -209,10 +241,23 @@ def set_status(opportunity_id: str, status: str) -> dict:
         return {"error": f"invalid status '{status}'. "
                 f"Use one of: {', '.join(OPPORTUNITY_STATUSES)}"}
     db = init_reply_schema()
+    now = int(time.time())
+    fields: dict = {"status": status, "updated_at": now}
+    if status == "posted":
+        fields["posted_at"] = now
     try:
-        db["reply_opportunities"].update(opportunity_id, {"status": status})
+        db["reply_opportunities"].update(opportunity_id, fields)
     except Exception as e:
         return {"error": f"no opportunity '{opportunity_id}': {e}"}
+    # Feed the lifecycle signal back into learning: saved/replied → engaged
+    # (seed the corpus), skipped → dismissed (suppress from future finds).
+    _sig = {"saved": "engaged", "posted": "engaged", "skipped": "dismissed"}.get(status)
+    if _sig:
+        try:
+            from .feedback import record_opportunity_feedback
+            record_opportunity_feedback(opportunity_id, _sig)
+        except Exception:
+            pass
     try:
         row = dict(db["reply_opportunities"].get(opportunity_id))
     except Exception:
@@ -221,8 +266,68 @@ def set_status(opportunity_id: str, status: str) -> dict:
             "opportunity": row}
 
 
-def list_opportunities(status: str | None = None, limit: int = 50, min_score: float = 0.0) -> list[dict]:
+def snooze(opportunity_id: str, hours: float = 24.0) -> dict:
+    """Defer an opportunity for `hours`. It auto-resurfaces to `new` once the
+    window elapses (see `_resurface_snoozed`)."""
     db = init_reply_schema()
+    now = int(time.time())
+    until = now + int(max(0.0, hours) * 3600)
+    try:
+        db["reply_opportunities"].update(
+            opportunity_id,
+            {"status": "snoozed", "snooze_until": until, "updated_at": now},
+        )
+    except Exception as e:
+        return {"error": f"no opportunity '{opportunity_id}': {e}"}
+    return {"ok": True, "id": opportunity_id, "status": "snoozed", "snooze_until": until}
+
+
+def approve(opportunity_id: str) -> dict:
+    """Approve the current draft — moves the opportunity to `ready` (awaiting
+    post or queue)."""
+    return set_status(opportunity_id, "ready")
+
+
+def queue(opportunity_id: str, scheduled_at: int | None = None) -> dict:
+    """Queue the approved reply for posting. `scheduled_at` is an epoch second;
+    when omitted the reply is queued for immediate/next-cycle posting."""
+    db = init_reply_schema()
+    now = int(time.time())
+    sched = int(scheduled_at) if scheduled_at else now
+    try:
+        db["reply_opportunities"].update(
+            opportunity_id,
+            {"status": "queued", "scheduled_at": sched, "updated_at": now},
+        )
+    except Exception as e:
+        return {"error": f"no opportunity '{opportunity_id}': {e}"}
+    return {"ok": True, "id": opportunity_id, "status": "queued", "scheduled_at": sched}
+
+
+def mark_posted(opportunity_id: str) -> dict:
+    """Mark a reply as posted (manual-assisted flow)."""
+    return set_status(opportunity_id, "posted")
+
+
+def _search_clause(query: str | None, args: list) -> str:
+    """Append a case-insensitive text filter over title/body/author/sub."""
+    q = (query or "").strip().lower()
+    if not q:
+        return ""
+    like = f"%{q}%"
+    args += [like, like, like, like]
+    return (" AND (lower(title) LIKE ? OR lower(body) LIKE ? "
+            "OR lower(author) LIKE ? OR lower(sub) LIKE ?)")
+
+
+_SORTS = {
+    "score": "score desc",
+    "recent": "coalesce(updated_at, found_at) desc",
+    "engagement": "coalesce(engagement, 0) desc",
+}
+
+
+def _list_where(status: str | None, min_score: float, query: str | None):
     from .agent import active_id
 
     where = "brand_id = ? AND score >= ?"
@@ -230,4 +335,41 @@ def list_opportunities(status: str | None = None, limit: int = 50, min_score: fl
     if status:
         where += " AND status = ?"
         args.append(status)
-    return [dict(r) for r in db["reply_opportunities"].rows_where(where, args, order_by="score desc", limit=limit)]
+    else:
+        # default view hides snoozed (deferred) opportunities
+        where += " AND status != 'snoozed'"
+    where += _search_clause(query, args)
+    return where, args
+
+
+def list_opportunities(
+    status: str | None = None,
+    limit: int = 50,
+    min_score: float = 0.0,
+    query: str | None = None,
+    sort: str = "score",
+    offset: int = 0,
+) -> list[dict]:
+    db = init_reply_schema()
+    _resurface_snoozed(db, _active_brand_id(), int(time.time()))
+    where, args = _list_where(status, min_score, query)
+    order_by = _SORTS.get((sort or "score").lower(), _SORTS["score"])
+    return [dict(r) for r in db["reply_opportunities"].rows_where(
+        where, args, order_by=order_by, limit=limit, offset=max(0, offset))]
+
+
+def count_opportunities(
+    status: str | None = None, min_score: float = 0.0, query: str | None = None
+) -> int:
+    """Total matching rows (ignoring limit/offset) — for pagination."""
+    db = init_reply_schema()
+    where, args = _list_where(status, min_score, query)
+    try:
+        return db["reply_opportunities"].count_where(where, args)
+    except Exception:
+        return 0
+
+
+def _active_brand_id() -> str:
+    from .agent import active_id
+    return active_id() or "default"

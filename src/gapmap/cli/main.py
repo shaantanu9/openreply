@@ -1205,6 +1205,17 @@ def cmd_schedule_tick(
     ran: list[str] = []
     skipped: list[dict] = []
     errored: list[dict] = []
+    learned: list[dict] = []
+
+    # Map topic → agents, so a scheduled collect can also run the agent's
+    # learning pass (the "on schedule" trigger of the autonomous loop).
+    agents_by_topic: dict[str, list[dict]] = {}
+    try:
+        from ..reply.agent import list_agents
+        for ag in list_agents():
+            agents_by_topic.setdefault(ag.get("topic") or "", []).append(ag)
+    except Exception:
+        agents_by_topic = {}
 
     for topic in scheduled:
         # Skip if a collect is already in-flight for this topic.
@@ -1223,6 +1234,16 @@ def cmd_schedule_tick(
         try:
             run_collect(topic=topic, aggressive=True)
             ran.append(topic)
+            # On-schedule learning: distill the just-collected posts into any
+            # agent on this topic. Best-effort — never fails the tick.
+            for ag in agents_by_topic.get(topic, []):
+                try:
+                    from ..reply.learn import learn_for_agent
+                    r = learn_for_agent(ag["id"])
+                    learned.append({"agent": ag.get("name"), "topic": topic,
+                                    "learned": r.get("learned"), "beliefs": r.get("beliefs")})
+                except Exception as e:
+                    learned.append({"agent": ag.get("name"), "topic": topic, "error": str(e)})
             db["topic_prefs"].upsert(
                 {
                     "topic": topic,
@@ -1243,6 +1264,7 @@ def cmd_schedule_tick(
     result = {
         "ran_at": now.isoformat(timespec="seconds"),
         "ran": ran, "skipped": skipped, "errored": errored,
+        "learned": learned,
         "n_scheduled": len(scheduled),
     }
     _emit(result, as_json, table_title="schedule-tick")

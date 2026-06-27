@@ -105,6 +105,27 @@ def knowledge_cmd(id: str = typer.Option(None), json_: bool = typer.Option(True,
     _out(_agent.knowledge_summary(id), json_)
 
 
+@agent_app.command("learn")
+def learn_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    limit: int = typer.Option(30, help="Max new posts to ingest this pass"),
+    no_synthesize: bool = typer.Option(False, "--no-synthesize", help="Ingest only; skip belief synthesis"),
+    provider: str = typer.Option(None, help="Pin an LLM provider (else auto-resolved)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Run one learning pass: distill new posts into memories + beliefs."""
+    from ..reply.learn import learn_for_agent
+    _out(learn_for_agent(id, ingest_limit=limit, synthesize=not no_synthesize,
+                         provider=provider, progress=lambda m: typer.echo(m, err=True)), json_)
+
+
+@agent_app.command("learn-status")
+def learn_status_cmd(id: str = typer.Option(None), json_: bool = typer.Option(True, "--json/--no-json")):
+    """What the agent has learned — memories, beliefs, feedback, recent lessons."""
+    from ..reply.learn import learning_summary
+    _out(learning_summary(id), json_)
+
+
 @agent_app.command("refresh")
 def refresh_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),

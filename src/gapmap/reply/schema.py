@@ -37,26 +37,59 @@ def init_reply_schema(db: Database | None = None) -> Database:
         )
         db["reply_opportunities"].create_index(["brand_id", "status"])
         db["reply_opportunities"].create_index(["score"])
+        # lifecycle columns present from the start on fresh tables
+        for _c in ("snooze_until", "updated_at", "scheduled_at", "posted_at"):
+            db["reply_opportunities"].add_column(_c, int)
     else:
         # forward-compat: add the engagement-RRF score columns to older tables
         existing = {c.name for c in db["reply_opportunities"].columns}
         for col in ("engagement", "freshness", "rrf"):
             if col not in existing:
                 db["reply_opportunities"].add_column(col, float)
+        # lifecycle columns: snooze (snoozed status), updated_at (sort by recent),
+        # scheduled_at (queued), posted_at (posted). All nullable int epochs.
+        for col in ("snooze_until", "updated_at", "scheduled_at", "posted_at"):
+            if col not in existing:
+                db["reply_opportunities"].add_column(col, int)
 
     if "reply_drafts" not in names:
         db["reply_drafts"].create(
             {
                 "id": str, "opportunity_id": str, "brand_id": str, "platform": str,
-                "text": str, "compliant": int, "compliance_notes": str, "created_at": int,
+                "text": str, "compliant": int, "compliance_notes": str,
+                "version": int, "source": str, "created_at": int, "updated_at": int,
             },
             pk="id",
         )
+        db["reply_drafts"].create_index(["opportunity_id", "version"])
+    else:
+        # forward-compat: versioning columns on older draft tables.
+        _dexisting = {c.name for c in db["reply_drafts"].columns}
+        if "version" not in _dexisting:
+            db["reply_drafts"].add_column("version", int)
+        if "source" not in _dexisting:
+            db["reply_drafts"].add_column("source", str)
+        if "updated_at" not in _dexisting:
+            db["reply_drafts"].add_column("updated_at", int)
 
     if "reply_sub_rules" not in names:
         db["reply_sub_rules"].create(
             {"sub": str, "rules_json": str, "summary": str, "fetched_at": int},
             pk="sub",
         )
+
+    if "reply_feedback" not in names:
+        # Lifecycle signal fed back into learning: `engaged` (saved/replied — a
+        # post worth learning from) or `dismissed` (skipped — suppress from
+        # future opportunity lists). One row per opportunity (latest signal wins).
+        db["reply_feedback"].create(
+            {
+                "opportunity_id": str, "agent_id": str, "post_id": str,
+                "platform": str, "signal": str, "title": str, "excerpt": str,
+                "created_at": int,
+            },
+            pk="opportunity_id",
+        )
+        db["reply_feedback"].create_index(["agent_id", "signal"])
 
     return db

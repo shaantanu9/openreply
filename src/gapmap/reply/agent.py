@@ -29,10 +29,18 @@ def _ensure(db):
                 "persona": str, "tone": str, "audience": str, "topic": str,
                 "keywords_json": str, "platforms_json": str, "accounts_json": str,
                 "refresh_cadence": str, "last_refresh_at": int,
+                "last_learn_at": int,
                 "created_at": int, "updated_at": int,
             },
             pk="id",
         )
+    else:
+        # Migration: stamp of the last autonomous-learning pass (ingest+synthesize).
+        if "last_learn_at" not in {c.name for c in db["agents"].columns}:
+            try:
+                db["agents"].add_column("last_learn_at", int)
+            except Exception:
+                pass
     if "reply_state" not in names:
         db["reply_state"].create({"key": str, "value": str}, pk="key")
     if "agent_personas" not in names:
@@ -261,8 +269,11 @@ def knowledge_summary(aid: str | None = None) -> dict:
     }
 
 
-def refresh_agent(aid: str | None = None, light: bool = True, progress=None) -> dict:
-    """Re-fetch the latest niche knowledge for the agent (reuses research.collect)."""
+def refresh_agent(aid: str | None = None, light: bool = True, progress=None,
+                  learn: bool = True) -> dict:
+    """Re-fetch the latest niche knowledge for the agent (reuses research.collect),
+    then — by default — run a learning pass so the freshly fetched posts become
+    memories + beliefs (the autonomous loop's "after every fetch" trigger)."""
     a = get_agent(aid)
     if not a:
         return {"error": "no such agent"}
@@ -279,11 +290,20 @@ def refresh_agent(aid: str | None = None, light: bool = True, progress=None) -> 
             progress=progress,
         )
         update_agent(a["id"], last_refresh_at=int(time.time()))
-        return {
+        out = {
             "agent": a["name"], "topic": a["topic"],
             "posts_fetched": getattr(res, "posts_fetched", None),
             "by_source": getattr(res, "by_source", {}),
             "keywords": keywords,
         }
+        # Autonomous learning: distill the new posts into memories + beliefs.
+        # Best-effort — a learning hiccup must never fail the refresh.
+        if learn:
+            try:
+                from .learn import learn_for_agent
+                out["learning"] = learn_for_agent(a["id"], progress=progress)
+            except Exception as e:
+                out["learning"] = {"error": f"learn skipped: {e}"}
+        return out
     except Exception as e:
         return {"agent": a["name"], "error": f"refresh failed: {e}"}

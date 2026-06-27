@@ -342,6 +342,25 @@ pub async fn agent_refresh(app: AppHandle, id: Option<String>, deep: Option<bool
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent learn` — one autonomous learning pass (ingest + synthesize).
+#[tauri::command]
+pub async fn agent_learn(app: AppHandle, id: Option<String>, limit: Option<u32>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "learn".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(l) = limit { args.push("--limit".into()); args.push(l.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent learn-status` — what the agent has learned (counts + recent).
+#[tauri::command]
+pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "learn-status".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap reply find …` — scan + score opportunities.
 #[tauri::command]
 pub async fn reply_find(app: AppHandle, platforms: Option<String>, limit: Option<u32>, no_score: Option<bool>) -> Result<Value, String> {

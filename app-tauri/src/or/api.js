@@ -20,6 +20,8 @@ export const api = {
   agentUse: (id) => call("agent_use", { id }),
   agentRefresh: (id, deep) => call("agent_refresh", { id: id || null, deep: !!deep }),
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
+  agentLearn: (id, limit) => call("agent_learn", { id: id || null, limit: limit || 30 }),
+  agentLearnStatus: (id) => call("agent_learn_status", { id: id || null }),
   agentUpdate: (p) => call("agent_update", p),
   // agent ↔ persona links (blend a persona's knowledge into this agent's replies)
   agentPersonas: (id) => call("agent_personas", { id: id || null }),
@@ -54,6 +56,11 @@ export const api = {
   geoAdd: (query, surface) => call("geo_add", { query, surface: surface || "ChatGPT" }),
   geoSet: (id, status) => call("geo_set", { id, status }),
   geoDelete: (id) => call("geo_delete", { id }),
+  geoCheck: (id) => call("geo_check", { id }),
+  geoCheckAll: () => call("geo_check_all"),
+  geoHistory: (id) => call("geo_history", { id }),
+  // analytics
+  analyticsSummary: (days) => call("analytics_summary", { days: days || 30 }),
   // content
   contentGenerate: (kind, platform, angle, ctx) =>
     call("content_generate", {

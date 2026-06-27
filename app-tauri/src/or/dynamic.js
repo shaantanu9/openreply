@@ -117,7 +117,7 @@ export async function renderOverview(view) {
   const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
   document.getElementById("ov").outerHTML =
     head(esc(a.name), `${esc(a.niche || "")} · watching ${(a.platforms || []).join(", ")}`,
-      `<button id="ov-refresh" class="${btn}">↻ Refresh knowledge</button><a href="#/opportunities" class="${btnP}">Find opportunities</a>`) +
+      `<button id="ov-refresh" class="${btn}">↻ Refresh + learn</button><button id="ov-learn" class="${btn}"><i data-lucide="brain-circuit" class="inline-block h-4 w-4 align-[-2px]"></i> Learn</button><a href="#/opportunities" class="${btnP}">Find opportunities</a>`) +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
        ${kpi("Posts collected", (k && k.posts) || 0)}
        ${kpi("Map nodes", (k && k.graph_nodes) || 0)}
@@ -134,9 +134,15 @@ export async function renderOverview(view) {
      </div>
      <div id="ov-personas" class="${card} mt-5"><div class="text-sm text-zinc-500">Loading personas…</div></div>`;
   document.getElementById("ov-refresh").onclick = async (e) => {
-    e.target.textContent = "Refreshing…"; e.target.disabled = true;
-    try { await api.agentRefresh(null, false); toast("Knowledge refreshed"); renderOverview(view); }
-    catch (err) { toast("Refresh failed"); e.target.textContent = "↻ Refresh knowledge"; e.target.disabled = false; }
+    e.target.textContent = "Refreshing + learning…"; e.target.disabled = true;
+    try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
+    catch (err) { toast("Refresh failed"); e.target.textContent = "↻ Refresh + learn"; e.target.disabled = false; }
+  };
+  document.getElementById("ov-learn").onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Learning…";
+    try { const r = await api.agentLearn(null, 30); toast(r?.message || "Learned."); }
+    catch (err) { toast("Learn failed"); }
+    b.disabled = false; b.innerHTML = html; icons();
   };
 
   // Knowledge personas — link single-lens learning personas so their beliefs +
@@ -936,30 +942,124 @@ async function inboxAction(b, list, reload) {
   } catch (e) { toast("Failed: " + e); b.disabled = false; }
 }
 
+// ── Learning (the agent's evolving brain — memories + beliefs + feedback) ────
+export async function renderLearning(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  view.innerHTML = head("Learning",
+    "What this agent has learned from the data it fetches. It distills posts into memories, links them into beliefs, and writes from them.",
+    `<button id="ln-learn" class="${btnP}"><i data-lucide="brain-circuit" class="inline-block h-4 w-4 align-[-2px]"></i> Learn now</button>`) +
+    `<div id="ln-body"><div class="${card} text-zinc-500">Loading…</div></div>`;
+  const body = document.getElementById("ln-body");
+  const kpi = (l, v, sub) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div>${sub ? `<div class="text-xs text-zinc-400 mt-0.5">${sub}</div>` : ""}</div>`;
+  const li = (t, who) => `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 text-sm"><span class="text-zinc-700 dark:text-zinc-200">${esc(t.text)}</span>${t.persona ? `<span class="ml-2 text-xs text-zinc-400">· ${esc(t.persona)}</span>` : ""}</div>`;
+
+  async function load() {
+    let s = null;
+    try { s = await api.agentLearnStatus(); } catch (e) {}
+    if (!s || s.error) {
+      body.innerHTML = `<div class="${card} text-zinc-500">${esc(s?.error || "No active agent.")} <a class="text-reddit underline" href="#/agents">Agents →</a></div>`;
+      icons(); return;
+    }
+    const fb = s.feedback || {};
+    const last = s.last_learn_at ? new Date(s.last_learn_at * 1000).toLocaleString() : "never";
+    body.innerHTML =
+      `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+         ${kpi("Memories", s.memories || 0, "distilled lessons")}
+         ${kpi("Beliefs", s.beliefs || 0, "synthesized conclusions")}
+         ${kpi("Engaged", fb.engaged || 0, "saved / replied → learned")}
+         ${kpi("Dismissed", fb.dismissed || 0, "suppressed from finds")}</div>
+       <div class="mt-2 text-xs text-zinc-400">${s.linked_personas || 0} learning persona(s) · last learned ${esc(last)}</div>
+       <div class="mt-5 grid gap-4 lg:grid-cols-2">
+         <div class="${card}"><b class="text-zinc-900 dark:text-white">Recent lessons</b>
+           <div class="mt-3 space-y-2">${(s.recent_lessons || []).map(li).join("") || `<div class="text-sm text-zinc-500">Nothing learned yet — hit “Learn now” after a collect.</div>`}</div></div>
+         <div class="${card}"><b class="text-zinc-900 dark:text-white">Beliefs it writes from</b>
+           <div class="mt-3 space-y-2">${(s.recent_beliefs || []).map(li).join("") || `<div class="text-sm text-zinc-500">No beliefs yet — they form once enough memories accumulate.</div>`}</div></div>
+       </div>`;
+    icons();
+  }
+
+  document.getElementById("ln-learn").onclick = async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true; b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Learning…`; icons();
+    try {
+      const r = await api.agentLearn(null, 30);
+      toast(r?.error ? ("Learn failed: " + r.error) : (r?.message || "Learned."));
+    } catch (err) { toast("Learn failed: " + err); }
+    b.disabled = false; b.innerHTML = `<i data-lucide="brain-circuit" class="inline-block h-4 w-4 align-[-2px]"></i> Learn now`;
+    load();
+  };
+  load();
+}
+
 // ── Analytics (derived from saved opportunities + content) ──────────────────
+// ── Inline-SVG chart helpers (no chart lib) ─────────────────────────────────
+const _kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${esc(l)}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${esc(String(v))}</div></div>`;
+
+// Horizontal bar list scaled to the max value. items = [{label, count}].
+function barList(items, color = "bg-reddit") {
+  if (!items || !items.length) return `<div class="text-sm text-zinc-500">No data yet.</div>`;
+  const max = Math.max(1, ...items.map((i) => i.count || 0));
+  return `<div class="space-y-2">${items.map((i) => {
+    const pct = Math.round(100 * (i.count || 0) / max);
+    return `<div class="flex items-center gap-2 text-sm">
+      <span class="w-28 shrink-0 truncate text-zinc-600 dark:text-zinc-300" title="${esc(i.label)}">${esc(i.label)}</span>
+      <div class="h-2.5 flex-1 rounded-full bg-zinc-100 dark:bg-zinc-800"><div class="h-2.5 rounded-full ${color}" style="width:${pct}%"></div></div>
+      <span class="w-8 shrink-0 text-right text-zinc-500">${i.count || 0}</span></div>`;
+  }).join("")}</div>`;
+}
+
+// Multi-series sparkline chart over the daily series.
+function sparkChart(series, palette) {
+  const labels = series?.labels || [];
+  const streams = series?.streams || {};
+  const names = Object.keys(streams);
+  if (!labels.length || !names.length) return `<div class="text-sm text-zinc-500">No activity in this window.</div>`;
+  const n = labels.length, W = 640, H = 120, pad = 4;
+  const max = Math.max(1, ...names.flatMap((nm) => streams[nm]));
+  const x = (i) => pad + (W - 2 * pad) * (n === 1 ? 0.5 : i / (n - 1));
+  const y = (v) => H - pad - (H - 2 * pad) * (v / max);
+  const colors = palette || ["#ff4500", "#6366f1", "#10b981"];
+  const paths = names.map((nm, k) => {
+    const c = colors[k % colors.length];
+    const pts = streams[nm].map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    return `<polyline fill="none" stroke="${c}" stroke-width="2" points="${pts}" />`;
+  }).join("");
+  const legend = names.map((nm, k) => `<span class="inline-flex items-center gap-1 text-xs text-zinc-500">
+    <span class="h-2 w-2 rounded-full" style="background:${colors[k % colors.length]}"></span>${esc(nm)} (${streams[nm].reduce((a, b) => a + b, 0)})</span>`).join(" · ");
+  return `<svg viewBox="0 0 ${W} ${H}" class="w-full" preserveAspectRatio="none" style="height:120px">${paths}</svg>
+    <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">${legend}</div>`;
+}
+
 export async function renderAnalytics(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  view.innerHTML = head("Analytics", "Activity for the active agent.") + `<div id="an">Loading…</div>`;
-  let opps = [], content = [];
-  try { opps = (await api.replyList(null, 0, 500))?.opportunities || []; } catch (e) {}
-  try { content = (await api.contentList(null, null, 500))?.content || []; } catch (e) {}
-  const byStatus = (arr, f) => arr.filter((x) => x.status === f).length;
-  const group = (arr, key) => { const m = {}; arr.forEach((x) => { const k = x[key] || "—"; m[k] = (m[k] || 0) + 1; }); return m; };
-  const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
-  const rows = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
-    `<div class="flex items-center justify-between text-sm"><span>${esc(k)}</span><span class="text-zinc-500">${v}</span></div>`).join("") || `<div class="text-sm text-zinc-500">none</div>`;
-  // Lifecycle funnel: found → saved → drafted → replied (dismissed is shown
-  // separately so the funnel isn't muddied by hidden ones).
-  document.getElementById("an").outerHTML =
+  view.innerHTML = head("Analytics", "Activity for the active agent — last 30 days.") + `<div id="an">Loading…</div>`;
+  let s = null;
+  try { s = await api.analyticsSummary(30); } catch (e) {}
+  const wrap = document.getElementById("an");
+  if (s === null) { wrap.outerHTML = `<div class="${card} text-zinc-500">Run inside the app to see analytics.</div>`; return; }
+  if (s.error) { wrap.outerHTML = `<div class="${card} text-zinc-500">${esc(s.error)} <a class="text-reddit underline" href="#/agents">Agents →</a></div>`; return; }
+  const k = s.kpis || {};
+  const fkv = Object.entries(s.funnel || {});
+  wrap.outerHTML =
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-       ${kpi("Opportunities", opps.length)}${kpi("Saved", byStatus(opps, "saved"))}
-       ${kpi("Drafted", byStatus(opps, "drafted"))}${kpi("Replied", byStatus(opps, "posted"))}</div>
+       ${_kpi("Opportunities", k.opportunities)}${_kpi("Replied", k.replied)}
+       ${_kpi("Content items", k.content_total)}${_kpi("Citation rate", (k.citation_rate || 0) + "%")}</div>
      <div class="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-       ${kpi("Dismissed", byStatus(opps, "skipped"))}${kpi("Content items", content.length)}
-       ${kpi("Content drafts", byStatus(content, "draft"))}${kpi("Posted content", byStatus(content, "posted"))}</div>
+       ${_kpi("Saved", k.saved)}${_kpi("Drafted", k.drafted)}
+       ${_kpi("Scheduled", k.content_scheduled)}${_kpi("Posted", k.content_posted)}</div>
+
+     <div class="mt-5 ${card}"><b class="text-zinc-900 dark:text-white">Activity over time</b>
+       <div class="mt-3">${sparkChart(s.series)}</div></div>
+
      <div class="mt-5 grid gap-4 lg:grid-cols-2">
-       <div class="${card}"><b class="text-zinc-900 dark:text-white">Opportunities by platform</b><div class="mt-3 space-y-2">${rows(group(opps, "platform"))}</div></div>
-       <div class="${card}"><b class="text-zinc-900 dark:text-white">Opportunities by status</b><div class="mt-3 space-y-2">${rows(group(opps, "status"))}</div></div></div>`;
+       <div class="${card}"><b class="text-zinc-900 dark:text-white">Content by type</b>
+         <div class="mt-3">${barList(s.content_by_kind || [], "bg-indigo-500")}</div></div>
+       <div class="${card}"><b class="text-zinc-900 dark:text-white">Content funnel</b>
+         <div class="mt-3">${barList(fkv.map(([label, count]) => ({ label, count })), "bg-emerald-500")}</div></div>
+       <div class="${card}"><b class="text-zinc-900 dark:text-white">Top subreddits / sources</b>
+         <div class="mt-3">${barList(s.by_subreddit || [], "bg-reddit")}</div></div>
+       <div class="${card}"><b class="text-zinc-900 dark:text-white">Opportunities by keyword</b>
+         <div class="mt-3">${barList(s.by_keyword || [], "bg-amber-500")}</div></div></div>`;
   icons();
 }
 
@@ -1131,12 +1231,22 @@ export async function renderAlerts(view) {
 }
 
 // ── AI Visibility (GEO) ─────────────────────────────────────────────────────
+// Relative "Nm ago" for an epoch-seconds timestamp (0 = never).
+function _ago(ts) {
+  if (!ts) return "never checked";
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
 export async function renderGeo(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("AI Visibility <span class='text-base font-normal text-zinc-400'>(GEO)</span>",
-    "Reddit is the #1 cited source in AI answers. Track queries where your brand should show up.",
-    `<button id="geo-new" class="${btnP}">+ Track a query</button>`) +
-    `<div id="geo-kpi" class="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3"></div>
+    "Reddit is the #1 cited source in AI answers. Track queries, then Check to see if your brand is cited.",
+    `<div class="flex gap-2"><button id="geo-checkall" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Check all</button><button id="geo-new" class="${btnP}">+ Track a query</button></div>`) +
+    `<div id="geo-kpi" class="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4"></div>
      <div id="geo-form" class="hidden mb-5 ${card}"></div><div id="geo-list" class="space-y-3">Loading…</div>`;
   document.getElementById("geo-new").onclick = () => {
     const f = document.getElementById("geo-form");
@@ -1155,21 +1265,55 @@ export async function renderGeo(view) {
       };
     }
   };
+  document.getElementById("geo-checkall").onclick = async () => {
+    const b = document.getElementById("geo-checkall");
+    const prev = b.textContent; b.textContent = "Checking…"; b.disabled = true;
+    try {
+      const r = await api.geoCheckAll();
+      if (r === null) toast("Run inside the app to check");
+      else { const t = r.tally || {}; toast(`Checked ${r.checked || 0} · cited ${t.cited || 0}, competitor ${t.competitor || 0}, absent ${t.absent || 0}`); }
+      load();
+    } catch (e) { toast("Check failed"); }
+    finally { b.textContent = prev; b.disabled = false; }
+  };
   const stColor = (s) => s === "cited" ? "bg-emerald-500/15 text-emerald-500" : s === "competitor" ? "bg-amber-500/15 text-amber-500" : s === "absent" ? "bg-rose-500/15 text-rose-500" : "bg-zinc-500/15 text-zinc-400";
   async function load() {
     try {
       const r = await api.geoList();
       const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
-      document.getElementById("geo-kpi").innerHTML = kpi("Tracked queries", r?.total || 0) + kpi("Cited", r?.cited || 0) + kpi("Citation rate", (r?.citation_rate || 0) + "%");
-      const list = document.getElementById("geo-list");
       const qs = r?.queries || [];
-      list.innerHTML = qs.length ? qs.map((q) => `<div class="${card} flex items-center justify-between gap-4">
-        <div><div class="font-semibold text-zinc-900 dark:text-white">"${esc(q.query)}"</div>
-          <div class="mt-1 flex items-center gap-2 text-sm"><span class="rounded bg-brand/15 px-2 py-0.5 text-xs font-bold text-brand">${esc(q.surface)}</span>
-            <span class="rounded ${stColor(q.status)} px-2 py-0.5 text-xs font-bold">${esc(q.status)}</span></div></div>
-        <div class="flex gap-2"><button data-cite="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Mark cited</button>
-          <button data-del="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-rose-500">✕</button></div></div>`).join("")
+      const comp = qs.filter((q) => q.status === "competitor").length;
+      document.getElementById("geo-kpi").innerHTML = kpi("Tracked queries", r?.total || 0) + kpi("Cited", r?.cited || 0) + kpi("Competitor", comp) + kpi("Citation rate", (r?.citation_rate || 0) + "%");
+      const list = document.getElementById("geo-list");
+      list.innerHTML = qs.length ? qs.map((q) => {
+        let comps = [];
+        try { comps = JSON.parse(q.competitors || "[]"); } catch (e) {}
+        const detail = (q.answer || comps.length) ? `<details class="mt-3 text-sm">
+          <summary class="cursor-pointer text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">What the AI answered</summary>
+          ${q.answer ? `<p class="mt-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 p-3 text-zinc-600 dark:text-zinc-300">${esc(q.answer)}</p>` : ""}
+          ${comps.length ? `<div class="mt-2 flex flex-wrap gap-1.5">${comps.map((c) => `<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">${esc(c)}</span>`).join("")}</div>` : ""}</details>` : "";
+        return `<div class="${card}">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0"><div class="font-semibold text-zinc-900 dark:text-white">"${esc(q.query)}"</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2 text-sm"><span class="rounded bg-brand/15 px-2 py-0.5 text-xs font-bold text-brand">${esc(q.surface)}</span>
+                <span class="rounded ${stColor(q.status)} px-2 py-0.5 text-xs font-bold">${esc(q.status)}</span>
+                <span class="text-xs text-zinc-400">${esc(_ago(q.last_checked))}</span></div></div>
+            <div class="flex shrink-0 gap-2"><button data-check="${esc(q.id)}" class="${btnP} px-3 py-1.5 text-xs">Check</button>
+              <button data-cite="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Mark cited</button>
+              <button data-del="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-rose-500">✕</button></div></div>
+          ${detail}</div>`;
+      }).join("")
         : `<div class="${card} text-zinc-500">No queries tracked. Click "+ Track a query".</div>`;
+      list.querySelectorAll("[data-check]").forEach((b) => b.onclick = async () => {
+        const prev = b.textContent; b.textContent = "Checking…"; b.disabled = true;
+        try {
+          const res = await api.geoCheck(b.getAttribute("data-check"));
+          if (res === null) toast("Run inside the app to check");
+          else if (res.error) toast(res.error);
+          else toast(`Result: ${res.status}`);
+          load();
+        } catch (e) { toast("Check failed"); b.textContent = prev; b.disabled = false; }
+      });
       list.querySelectorAll("[data-cite]").forEach((b) => b.onclick = async () => { await api.geoSet(b.getAttribute("data-cite"), "cited"); toast("Marked cited"); load(); });
       list.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => { await api.geoDelete(b.getAttribute("data-del")); toast("Deleted"); load(); });
       icons();
@@ -1477,6 +1621,7 @@ export const DYN = {
   connections: renderConnections,
   settings: renderSettings,
   knowledge: renderKnowledge,
+  learning: renderLearning,
   inbox: renderInbox,
   analytics: renderAnalytics,
   queue: renderQueue,

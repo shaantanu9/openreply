@@ -185,6 +185,43 @@ def geo_delete_cmd(id: str = typer.Argument(...), json_: bool = typer.Option(Tru
     _out({"deleted": _geo.delete_query(id), "id": id}, json_)
 
 
+@reply_app.command("geo-check")
+def geo_check_cmd(
+    id: str = typer.Argument(..., help="Tracked query id to check"),
+    provider: str = typer.Option(None),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Run an automated visibility check on one query via the BYOK provider."""
+    _out(_geo.check_query(id, provider=provider), json_)
+
+
+@reply_app.command("geo-check-all")
+def geo_check_all_cmd(
+    provider: str = typer.Option(None),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Re-check every tracked query for the active agent."""
+    _out(_geo.check_all(provider=provider), json_)
+
+
+@reply_app.command("geo-history")
+def geo_history_cmd(id: str = typer.Argument(...), json_: bool = typer.Option(True, "--json/--no-json")):
+    """Past checks for one query (trend)."""
+    _out(_geo.query_history(id), json_)
+
+
+# ---- Analytics ------------------------------------------------------------
+
+@reply_app.command("analytics")
+def analytics_cmd(
+    days: int = typer.Option(30, help="Time-series window in days"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Aggregated analytics for the active agent (KPIs, trends, drivers)."""
+    from ..reply import analytics as _an
+    _out(_an.analytics_summary(days=days), json_)
+
+
 # ---- Subreddit Intelligence -----------------------------------------------
 
 @reply_app.command("account-status")
