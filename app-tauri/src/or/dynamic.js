@@ -252,6 +252,16 @@ function statusPill(st) {
   const [label, cls] = OPP_STATUS_META[st] || OPP_STATUS_META.new;
   return `<span class="rounded ${cls} px-2 py-0.5 text-xs font-bold">${label}</span>`;
 }
+// Post-age chip — how old the source post/article is (its own created_utc),
+// with the absolute date in a tooltip. Falls back to when we found it.
+function postWhen(o) {
+  const ts = o.created_utc || o.found_at;
+  if (!ts) return "";
+  let abs = "";
+  try { abs = new Date(ts * 1000).toLocaleString(); } catch (e) {}
+  const kind = o.created_utc ? "posted" : "found";
+  return `<span class="inline-flex items-center gap-1 text-xs text-zinc-400" title="${kind} ${esc(abs)}"><i data-lucide="clock" class="h-3 w-3"></i>${esc(_ago(ts))}</span>`;
+}
 // Discovery = the triage queue: New / Snoozed / Dismissed / All. Saved items
 // move on to the Inbox workspace, so discovery stops showing them once saved.
 const OPP_FILTERS = [
@@ -330,7 +340,7 @@ export async function renderOpportunities(view) {
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2"><span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
-              ${subLabel(o)}${statusPill(o.status || "new")}</div>
+              ${subLabel(o)}${statusPill(o.status || "new")}${postWhen(o)}</div>
             <span class="text-2xl font-extrabold ${scoreCls(o.score || 0)}" title="rel ${o.relevance} · intent ${o.intent} · fit ${o.fit} · eng ${o.engagement} · fresh ${o.freshness}">${s}</span></div>
           <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
           ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}
@@ -662,24 +672,29 @@ export async function renderConnections(view) {
     let actions = "";
     const s = esc(c.source);
     const dl = `data-label="${esc(c.label)}"`;
+    // Preview = live-fetch a sample of real content (titles + links) in a modal.
+    // The truest "is this source working?" test. Shown on public + connected cards
+    // (LinkedIn is URL-reader only, no topic search).
+    const canPreview = (c.kind === "public" || c.connected) && c.source !== "linkedin";
+    const prevBtn = canPreview ? `<button data-act="preview" data-src="${s}" ${dl} class="${primary}"><i data-lucide="eye" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Test reach</button>` : "";
     if (c.kind === "public") {
-      actions = `<button data-act="verify" data-src="${s}" class="${btn}">Test reach</button>`;
+      actions = `${prevBtn}<button data-act="verify" data-src="${s}" class="${btn}">Check status</button>`;
     } else if (c.kind === "api_key") {
       actions = c.connected
-        ? `<button data-act="verify" data-src="${s}" class="${btn}">Verify</button>
+        ? `${prevBtn}<button data-act="verify" data-src="${s}" class="${btn}">Verify</button>
            <button data-act="delete" data-src="${s}" class="${btn} text-rose-500">Remove key</button>`
         : `<button data-act="key" data-src="${s}" ${dl} class="${primary}">Add key</button>
            ${c.login_url ? `<button data-act="open" data-url="${esc(c.login_url)}" class="${btn}">Get key ↗</button>` : ""}`;
     } else if (c.kind === "login_pair") {
       actions = c.connected
-        ? `<button data-act="verify" data-src="${s}" class="${btn}">Verify</button>
+        ? `${prevBtn}<button data-act="verify" data-src="${s}" class="${btn}">Verify</button>
            <button data-act="pair" data-src="${s}" ${dl} class="${btn}">Reconnect</button>
            <button data-act="delete" data-src="${s}" class="${btn} text-rose-500">Disconnect</button>`
         : `${c.login_url ? `<button data-act="open" data-url="${esc(c.login_url)}" class="${btn}">Get app password ↗</button>` : ""}
            <button data-act="pair" data-src="${s}" ${dl} class="${primary}">Add login</button>`;
     } else { // cookie
       actions = c.connected
-        ? `<button data-act="verify" data-src="${s}" class="${btn}">Verify</button>
+        ? `${prevBtn}<button data-act="verify" data-src="${s}" class="${btn}">Verify</button>
            <button data-act="cookie" data-src="${s}" ${dl} class="${btn}">Reconnect</button>
            <button data-act="delete" data-src="${s}" class="${btn} text-rose-500">Disconnect</button>`
         : `${c.login_url ? `<button data-act="open" data-url="${esc(c.login_url)}" class="${primary}">Log in ↗</button>` : ""}
@@ -720,6 +735,35 @@ export async function renderConnections(view) {
       try { const r = (await api.credsVerify(src))?.[0] || {}; setMsg(src, r.message || (r.connected ? "OK" : "Failed"), !!r.connected); load(); }
       catch (e) { setMsg(src, String(e)); }
       b.disabled = false; return;
+    }
+    if (act === "preview") {
+      setMsg(src, "Fetching live content…"); b.disabled = true;
+      let r = {};
+      try { r = (await api.credsPreview(src, null, 6)) || {}; }
+      catch (e) { setMsg(src, "Failed: " + e); b.disabled = false; return; }
+      b.disabled = false;
+      setMsg(src, r.message || (r.ok ? "OK" : "No results"), !!r.ok);
+      if (r.ok) load();  // a successful credentialed preview stamps verified
+      const items = Array.isArray(r.items) ? r.items : [];
+      const body = items.length
+        ? `<div class="max-h-[55vh] space-y-2 overflow-auto">${items.map(it => {
+            const meta = [it.author ? "by " + esc(it.author) : "", it.source_type ? esc(it.source_type) : "",
+              it.score != null ? esc(it.score) + " pts" : "", it.comments != null ? esc(it.comments) + " comments" : ""]
+              .filter(Boolean).join(" · ");
+            return `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
+              <div class="font-semibold text-zinc-900 dark:text-white">${it.url
+                ? `<a href="${esc(it.url)}" target="_blank" rel="noreferrer" class="text-reddit hover:underline">${esc(it.title)} ↗</a>`
+                : esc(it.title)}</div>
+              ${meta ? `<div class="mt-0.5 text-xs text-zinc-400">${meta}</div>` : ""}
+              ${it.snippet ? `<div class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">${esc(it.snippet)}</div>` : ""}</div>`;
+          }).join("")}</div>`
+        : `<p class="text-sm text-zinc-500">${esc(r.message || "No content returned.")}</p>`;
+      window.orModal({
+        title: `${esc(label)} — live preview${r.query ? ` · “${esc(r.query)}”` : ""}`,
+        body: `<p class="mb-3 text-sm text-zinc-500">${items.length ? `Real content this source returns right now (${items.length} items). Click a title to open it.` : "No content — connect/verify the credential, or this source may be rate-limited."}</p>${body}`,
+        okText: "Done",
+      });
+      return;
     }
     if (act === "import") {
       setMsg(src, "Reading cookies from your browser…"); b.disabled = true;
@@ -1367,7 +1411,7 @@ export async function renderInbox(view) {
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0"><div class="flex flex-wrap items-center gap-2">
             <span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
-            ${subLabel(o)}${statusPill(o.status || "saved")}${sched}</div>
+            ${subLabel(o)}${statusPill(o.status || "saved")}${postWhen(o)}${sched}</div>
           <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
           ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}</div>
         <span class="shrink-0 text-xl font-extrabold ${scoreCls(o.score || 0)}">${s}</span></div>
@@ -1975,6 +2019,17 @@ function _host(u) {
   return s.startsWith("www.") ? s.slice(4) : s;
 }
 
+// Compact citation-trend: one colored dot per past check (oldest → newest).
+// cited=green · competitor=amber · absent=rose. Built from geo_checks history.
+function geoTrendDots(checks) {
+  if (!checks || !checks.length) return `<span class="text-xs text-zinc-400">No checks yet — hit Check to start the trend.</span>`;
+  const color = (s) => s === "cited" ? "bg-emerald-500" : s === "competitor" ? "bg-amber-500" : "bg-rose-500";
+  const dots = checks.map((c) =>
+    `<span class="inline-block h-2.5 w-2.5 rounded-full ${color(c.status)}" title="${esc(c.status)} · ${esc(c.engine || "")} · ${esc(_ago(c.checked_at))}"></span>`).join("");
+  return `<div class="text-xs font-semibold text-zinc-500">Citation trend (oldest → newest)</div>
+    <div class="mt-1 flex flex-wrap items-center gap-1">${dots}</div>`;
+}
+
 export async function renderGeo(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("AI Visibility (GEO)",
@@ -2067,9 +2122,11 @@ export async function renderGeo(view) {
                 ${engBadge}
                 <span class="text-xs text-zinc-400">${esc(_ago(q.last_checked))}</span></div></div>
             <div class="flex shrink-0 gap-2"><button data-check="${esc(q.id)}" class="${btnP} px-3 py-1.5 text-xs">Check</button>
+              <button data-trend="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">📈 Trend</button>
               <button data-cite="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Mark cited</button>
               <button data-del="${esc(q.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-rose-500">✕</button></div></div>
-          ${detail}</div>`;
+          ${detail}
+          <div data-trendbox="${esc(q.id)}" class="mt-3 hidden"></div></div>`;
       }).join("")
         : `<div class="${card} text-zinc-500">No queries tracked. Click "+ Track a query".</div>`;
       list.querySelectorAll("[data-check]").forEach((b) => b.onclick = async () => {
@@ -2081,6 +2138,16 @@ export async function renderGeo(view) {
           else toast(`Result: ${res.status}`);
           load();
         } catch (e) { toast("Check failed"); b.textContent = prev; b.disabled = false; }
+      });
+      list.querySelectorAll("[data-trend]").forEach((b) => b.onclick = async () => {
+        const id = b.getAttribute("data-trend");
+        const box = list.querySelector(`[data-trendbox="${CSS.escape(id)}"]`);
+        if (!box) return;
+        if (!box.classList.contains("hidden")) { box.classList.add("hidden"); return; }
+        box.classList.remove("hidden");
+        box.innerHTML = `<div class="text-xs text-zinc-400">Loading trend…</div>`;
+        try { const h = await api.geoHistory(id); box.innerHTML = geoTrendDots(h?.checks || []); }
+        catch (e) { box.innerHTML = `<div class="text-xs text-rose-500">${esc(e)}</div>`; }
       });
       list.querySelectorAll("[data-cite]").forEach((b) => b.onclick = async () => { await api.geoSet(b.getAttribute("data-cite"), "cited"); toast("Marked cited"); load(); });
       list.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => { await api.geoDelete(b.getAttribute("data-del")); toast("Deleted"); load(); });

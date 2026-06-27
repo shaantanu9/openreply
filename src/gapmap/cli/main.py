@@ -304,6 +304,10 @@ from .agent_cmds import agent_app, content_app  # noqa: E402
 app.add_typer(agent_app, name="agent")
 app.add_typer(content_app, name="content")
 
+# Outbound publishing (X / social) — credential-gated, opt-in.
+from .publish_cmds import publish_app  # noqa: E402
+app.add_typer(publish_app, name="publish")
+
 console = Console()
 
 
@@ -1270,12 +1274,22 @@ def cmd_schedule_tick(
     except Exception as e:
         replies_due = {"error": str(e)}
 
+    # Refresh AI-Visibility (GEO) citation checks ~once a day so the trend fills
+    # automatically. Throttled (min_hours) so it never re-runs every tick.
+    geo_checked = None
+    try:
+        from ..reply import geo as _geo
+        geo_checked = _geo.check_all_if_due(min_hours=20)
+    except Exception as e:
+        geo_checked = {"error": str(e)}
+
     result = {
         "ran_at": now.isoformat(timespec="seconds"),
         "ran": ran, "skipped": skipped, "errored": errored,
         "learned": learned,
         "n_scheduled": len(scheduled),
         "replies_due": replies_due,
+        "geo_checked": geo_checked,
     }
     _emit(result, as_json, table_title="schedule-tick")
 
@@ -6509,6 +6523,18 @@ def cmd_creds_toggle(
     """Set whether a connected source is used in collection runs."""
     from ..research.reach_connections import toggle_connection
     _emit([toggle_connection(source, enabled)], as_json, table_title=f"toggle {source}")
+
+
+@creds_app.command("preview")
+def cmd_creds_preview(
+    source: str = typer.Option(..., "--source", "-s"),
+    query: Optional[str] = typer.Option(None, "--query", "-q", help="Override the probe query"),
+    limit: int = typer.Option(6, "--limit", "-l"),
+    as_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Live-fetch a SAMPLE of content from a source (titles + links) to confirm it works."""
+    from ..research.reach_connections import preview_source
+    _emit(preview_source(source, query=query, limit=limit), as_json, table_title=f"preview {source}")
 
 
 @ingest_app.command("video")
