@@ -1,5 +1,6 @@
 // OpenReply shell for the Tauri app — sidebar + theme + Lucide + toast/modal.
 // Ported from the prototype's app.js, adapted for the SPA (hash routes, driven by main.js).
+import { api } from "./api.js";
 
 const NAV = [
   { sec: null, items: [['agents', 'layout-grid', 'Agents']] },
@@ -82,7 +83,8 @@ function sidebarHTML(routeKey) {
     <nav class="flex flex-col gap-0.5">`;
   for (const g of NAV) {
     const label = g.sec === 'AGENT' ? agent : g.sec;
-    if (g.sec) h += `<div class="px-1.5 pt-3 pb-1 text-[11px] uppercase tracking-wider text-zinc-400">${label}</div>`;
+    const attr = g.sec === 'AGENT' ? ' data-agent-label' : '';
+    if (g.sec) h += `<div${attr} class="px-1.5 pt-3 pb-1 text-[11px] uppercase tracking-wider text-zinc-400">${label}</div>`;
     for (const [key, ic, lbl, tag] of g.items) {
       h += `<a href="#/${key}" class="${linkBase}${key === routeKey ? active : idle}">
         <i data-lucide="${ic}" class="h-4 w-4 shrink-0"></i><span class="flex-1">${lbl}</span>
@@ -147,4 +149,28 @@ export function mountShell(routeKey, full) {
     window.orToast('Switched to ' + sel.value);
     mountShell(routeKey, false);
   };
+
+  // Live agents: replace the static switcher with real agents from the backend.
+  if (api.isTauri()) hydrateAgents(routeKey);
+}
+
+async function hydrateAgents(routeKey) {
+  let agents = [];
+  try { agents = (await api.agentList())?.agents || []; } catch (e) { return; }
+  if (!agents.length) return;
+  const sel = document.getElementById('agentSel');
+  const active = agents.find((a) => a.active) || agents[0];
+  if (sel) {
+    sel.innerHTML = agents.map((a) =>
+      `<option value="${a.id}"${a.id === active.id ? ' selected' : ''}>${a.name}</option>`).join('') +
+      '<option value="__new">+ New agent…</option>';
+    sel.onchange = async () => {
+      if (sel.value === '__new') { location.hash = '#/onboarding'; return; }
+      try { await api.agentUse(sel.value); } catch (e) {}
+      window.orToast('Switched agent');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    };
+  }
+  const lab = document.querySelector('#side [data-agent-label]');
+  if (lab) lab.textContent = active.name;
 }
