@@ -83,66 +83,116 @@ def _unlocks(source: str) -> list[str]:
     return GATED.get(source, {}).get("unlocks", [source])
 
 
+def _fetch_rows(source: str, query: str, limit: int) -> list[dict]:
+    """Run the source's real fetcher and return clean rows (errors filtered).
+    Never raises — returns [] on any failure. LinkedIn has no topic-search
+    (URL-reader only) so it returns []. Shared by verify + preview."""
+    try:
+        if source == "reddit":
+            from ..sources.reddit_free import fetch_reddit_free
+            rows = fetch_reddit_free(query, limit=limit)
+        elif source == "twitter":
+            from ..sources.x_twitter import fetch_x
+            rows = fetch_x(query, limit=limit)
+        elif source == "xiaohongshu":
+            from ..sources.xiaohongshu import fetch_xiaohongshu
+            rows = fetch_xiaohongshu(query, limit=limit)
+        elif source == "linkedin":
+            return []  # URL-reader only — no topic search to preview
+        elif source == "xueqiu":
+            from ..sources.xueqiu import fetch_xueqiu
+            rows = fetch_xueqiu(query, limit=limit)
+        elif source == "bilibili":
+            from ..sources.bilibili import fetch_bilibili
+            rows = fetch_bilibili(query, limit=limit)
+        elif source == "exa_search":
+            from ..sources.exa_search import fetch_exa_search
+            rows = fetch_exa_search(query, limit=limit)
+        elif source == "scrapecreators":
+            # The one key powers 4 platforms; probe the cheapest (TikTok search).
+            from ..sources.tiktok import fetch_tiktok
+            rows = fetch_tiktok(query, limit=limit)
+        elif source == "truthsocial":
+            from ..sources.truthsocial import fetch_truthsocial
+            rows = fetch_truthsocial(query, limit=limit)
+        elif source == "youtube":
+            from ..sources.youtube import search_youtube_videos
+            rows = search_youtube_videos(query, limit=limit)
+        elif source == "hackernews":
+            from ..sources.hackernews import fetch_hn
+            rows = fetch_hn(query, limit=limit)
+        elif source == "devto":
+            from ..sources.devto import fetch_devto
+            rows = fetch_devto(query, limit=limit)
+        elif source == "bluesky":
+            from ..sources.bluesky import fetch_bluesky
+            rows = fetch_bluesky(query, limit=limit)
+        elif source == "mastodon":
+            from ..sources.mastodon import fetch_mastodon
+            rows = fetch_mastodon(query, limit=limit)
+        else:
+            return []
+    except Exception:
+        return []
+    return [r for r in (rows or []) if not (isinstance(r, dict) and r.get("_error"))]
+
+
 def _live_check(source: str) -> tuple[bool, str]:
     """Issue a cheap real fetch for *source*. Returns (ok, message)."""
     meta = GATED.get(source)
     if not meta:
         return False, f"unknown source '{source}'"
-    q = meta.get("query") or "ai"
-    try:
-        if source == "reddit":
-            from ..sources.reddit_free import fetch_reddit_free
-            rows = fetch_reddit_free(q, limit=3)
-        elif source == "twitter":
-            from ..sources.x_twitter import fetch_x
-            rows = [r for r in fetch_x(q, limit=3) if not r.get("_error")]
-        elif source == "xiaohongshu":
-            from ..sources.xiaohongshu import fetch_xiaohongshu
-            rows = fetch_xiaohongshu(q, limit=3)
-        elif source == "linkedin":
-            return (_creds.has_credential("linkedin"),
-                    "Cookie stored (LinkedIn deep fetch needs the MCP)")
-        elif source == "xueqiu":
-            from ..sources.xueqiu import fetch_xueqiu
-            rows = fetch_xueqiu(q, limit=3)
-        elif source == "bilibili":
-            from ..sources.bilibili import fetch_bilibili
-            rows = fetch_bilibili(q, limit=3)
-        elif source == "exa_search":
-            from ..sources.exa_search import fetch_exa_search
-            rows = fetch_exa_search(q, limit=3)
-        elif source == "scrapecreators":
-            # The one key powers 4 platforms; probe the cheapest (TikTok search).
-            from ..sources.tiktok import fetch_tiktok
-            rows = [r for r in fetch_tiktok(q, limit=3) if not (isinstance(r, dict) and r.get("_error"))]
-        elif source == "truthsocial":
-            from ..sources.truthsocial import fetch_truthsocial
-            rows = [r for r in fetch_truthsocial(q, limit=3) if not (isinstance(r, dict) and r.get("_error"))]
-        elif source == "youtube":
-            from ..sources.youtube import search_youtube_videos
-            rows = search_youtube_videos(q, limit=3)
-        elif source == "hackernews":
-            from ..sources.hackernews import fetch_hn
-            rows = fetch_hn(q, limit=3)
-        elif source == "devto":
-            from ..sources.devto import fetch_devto
-            rows = fetch_devto(q, limit=3)
-        elif source == "bluesky":
-            from ..sources.bluesky import fetch_bluesky
-            rows = fetch_bluesky(q, limit=3)
-        elif source == "mastodon":
-            from ..sources.mastodon import fetch_mastodon
-            rows = fetch_mastodon(q, limit=3)
-        else:
-            return False, f"unknown source '{source}'"
-    except Exception as e:  # never raise
-        return False, f"check failed: {e}"
-    rows = [r for r in (rows or []) if not (isinstance(r, dict) and r.get("_error"))]
+    if source == "linkedin":
+        return (_creds.has_credential("linkedin"),
+                "Cookie stored (LinkedIn deep fetch needs the MCP)")
+    rows = _fetch_rows(source, meta.get("query") or "ai", 3)
     if rows:
         return True, f"OK — {len(rows)} rows"
     if meta.get("kind") == "public":
         return False, "no rows (source unreachable or rate-limited)"
     return False, "no rows (credential missing, expired, or blocked)"
+
+
+def _preview_item(r: dict) -> dict:
+    """Normalize a fetched row into a compact, link-clickable preview item."""
+    title = (r.get("title") or "").strip()
+    body = (r.get("selftext") or r.get("body") or "").strip()
+    if not title:
+        title = (body[:120] + ("…" if len(body) > 120 else "")) or "(untitled)"
+    return {
+        "title": title[:240],
+        "url": r.get("url") or r.get("permalink") or "",
+        "author": r.get("author") or "",
+        "score": r.get("score"),
+        "comments": r.get("num_comments"),
+        "source_type": r.get("source_type") or r.get("sub") or "",
+        "snippet": body[:280],
+    }
+
+
+def preview_source(source: str, query: str | None = None, limit: int = 6) -> dict:
+    """Run a real fetch and return a SAMPLE of the actual content (titles, links,
+    authors, scores) so the UI can show "this is what we'd pull" in a modal.
+    Never raises. For credentialed sources this also proves the credential works."""
+    meta = GATED.get(source)
+    if not meta:
+        return {"source": source, "ok": False, "message": f"unknown source '{source}'", "items": []}
+    q = (query or meta.get("query") or "ai").strip()
+    if source == "linkedin":
+        return {"source": source, "label": meta.get("label", source), "query": q,
+                "ok": _creds.has_credential("linkedin"), "items": [],
+                "message": "LinkedIn is a URL reader — paste a profile/company URL to fetch; no topic search."}
+    items = [_preview_item(r) for r in _fetch_rows(source, q, max(1, min(limit, 15)))]
+    ok = bool(items)
+    if ok and meta.get("kind") != "public":
+        _creds.mark_verified(source)
+    msg = (f"Fetched {len(items)} item(s) for “{q}”." if ok
+           else ("Source reachable but returned nothing — try a different query."
+                 if meta.get("kind") == "public"
+                 else "No results — connect/verify the credential first."))
+    return {"source": source, "label": meta.get("label", source), "query": q,
+            "kind": meta.get("kind", ""), "ok": ok, "count": len(items),
+            "message": msg, "items": items, "unlocks": meta.get("unlocks", [source])}
 
 
 def list_connections() -> list[dict]:
@@ -200,11 +250,39 @@ def import_browser(source: str, browser: str | None = None) -> dict:
                 "message": "this source is key/credential-based — use save_manual (paste)"}
     cookies = _ce.extract_cookies(source, browser=browser)
     if not cookies:
-        return {"source": source, "connected": False,
-                "message": ("No cookies found in your browser. Log into the site first, "
-                            "or use the manual paste option (Cookie-Editor).")}
+        need = _ce.required_cookies(source)
+        present = _ce.browsers_present()
+        label = GATED[source]["label"]
+        login = GATED[source].get("login_url", "")
+        where = ", ".join(present) if present else "no supported browser"
+        cookie_list = ", ".join(need) or "the session cookie"
+        return {
+            "source": source, "connected": False,
+            "need": need, "browsers": present, "login_url": login,
+            "message": (
+                f"No {label} session cookies found (checked {where}). "
+                f"Make sure you're logged into {label} in that browser, then retry. "
+                f"If it still fails (e.g. macOS blocked Keychain access), paste "
+                f"{cookie_list} manually via the Cookie-Editor browser extension → Export."
+            ),
+        }
     _creds.set_credential(source, cookies, kind="cookie")
     return verify_connection(source)
+
+
+def connect_help(source: str) -> dict:
+    """What the UI needs to guide a connection: required cookie names, login URL,
+    which browsers are present, and the manual-paste hint. Never raises."""
+    meta = GATED.get(source, {})
+    return {
+        "source": source,
+        "label": meta.get("label", source),
+        "kind": meta.get("kind", ""),
+        "login_url": meta.get("login_url", ""),
+        "need": _ce.required_cookies(source),
+        "browsers": _ce.browsers_present(),
+        "note": meta.get("note", ""),
+    }
 
 
 def save_manual(source: str, value: str) -> dict:

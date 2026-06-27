@@ -326,63 +326,68 @@ def _extract_chromium_cookies(
             pass
 
 
-_CHROME_COOKIES_DB = (
-    Path.home() / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Cookies"
-)
-_BRAVE_BASE_DIR = (
-    Path.home() / "Library" / "Application Support" / "BraveSoftware" / "Brave-Browser"
-)
+# Chromium-family browsers: (base profile dir, Keychain service name). All store
+# cookies in the same encrypted SQLite format; only the location + key differ.
+_HOME = Path.home() / "Library" / "Application Support"
+_CHROMIUM_BROWSERS: Dict[str, tuple] = {
+    "chrome": (_HOME / "Google" / "Chrome", "Chrome Safe Storage"),
+    "brave": (_HOME / "BraveSoftware" / "Brave-Browser", "Brave Safe Storage"),
+    "edge": (_HOME / "Microsoft Edge", "Microsoft Edge Safe Storage"),
+}
 
 
-def _find_brave_cookies_db() -> Optional[Path]:
-    default = _BRAVE_BASE_DIR / "Default" / "Cookies"
-    if default.exists():
-        return default
+def _chromium_cookie_dbs(base: Path) -> List[Path]:
+    """Every cookie DB across a Chromium install's profiles. Chrome 86+ moved the
+    store to `<Profile>/Network/Cookies`; older builds used `<Profile>/Cookies`.
+    Scans Default + every `Profile N` so multi-profile users are covered."""
+    out: List[Path] = []
+    if not base.is_dir():
+        return out
     try:
-        candidates = [
-            child for child in _BRAVE_BASE_DIR.iterdir()
-            if child.is_dir() and child.name.startswith("Profile ")
-        ]
-        for child in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True):
-            candidate = child / "Cookies"
-            if candidate.exists():
-                return candidate
+        profiles = ["Default"] + sorted(
+            c.name for c in base.iterdir()
+            if c.is_dir() and c.name.startswith("Profile ")
+        )
     except OSError:
-        pass
+        profiles = ["Default"]
+    seen: set = set()
+    for prof in profiles:
+        for sub in ("Network/Cookies", "Cookies"):  # modern first, then legacy
+            p = base / prof / sub
+            if p.exists() and p not in seen:
+                seen.add(p)
+                out.append(p)
+    return out
+
+
+def _chromium_family_cookies(
+    browser: str, domains: List[str], names: List[str]
+) -> Optional[Dict[str, str]]:
+    """Extract cookies for one Chromium-family browser across all its profiles."""
+    if platform.system() != "Darwin":
+        return None
+    spec = _CHROMIUM_BROWSERS.get(browser)
+    if not spec:
+        return None
+    base, keyservice = spec
+    for db in _chromium_cookie_dbs(base):
+        for domain in domains:
+            result = _extract_chromium_cookies(db, keyservice, domain, names)
+            if result:
+                return result
     return None
 
 
 def _extract_chrome_x_cookies() -> Optional[Dict[str, str]]:
-    try:
-        if platform.system() != "Darwin":
-            return None
-        for domain in _X_DOMAINS:
-            result = _extract_chromium_cookies(
-                _CHROME_COOKIES_DB, "Chrome Safe Storage", domain, _X_COOKIE_NAMES
-            )
-            if result:
-                return result
-    except Exception as exc:
-        logger.debug("Chrome extraction error: %s", exc)
-    return None
+    return _chromium_family_cookies("chrome", _X_DOMAINS, _X_COOKIE_NAMES)
 
 
 def _extract_brave_x_cookies() -> Optional[Dict[str, str]]:
-    try:
-        if platform.system() != "Darwin":
-            return None
-        db_path = _find_brave_cookies_db()
-        if db_path is None:
-            return None
-        for domain in _X_DOMAINS:
-            result = _extract_chromium_cookies(
-                db_path, "Brave Safe Storage", domain, _X_COOKIE_NAMES
-            )
-            if result:
-                return result
-    except Exception as exc:
-        logger.debug("Brave extraction error: %s", exc)
-    return None
+    return _chromium_family_cookies("brave", _X_DOMAINS, _X_COOKIE_NAMES)
+
+
+def _extract_edge_x_cookies() -> Optional[Dict[str, str]]:
+    return _chromium_family_cookies("edge", _X_DOMAINS, _X_COOKIE_NAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +528,7 @@ def _extract_x_cookies_all_browsers() -> dict:
     readers = [
         _extract_chrome_x_cookies,
         _extract_brave_x_cookies,
+        _extract_edge_x_cookies,
         _extract_firefox_x_cookies,
         _extract_safari_x_cookies,
     ]
@@ -583,34 +589,15 @@ def _firefox_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str,
 
 
 def _chrome_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
-    try:
-        if platform.system() != "Darwin":
-            return None
-        for domain in domains:
-            result = _extract_chromium_cookies(
-                _CHROME_COOKIES_DB, "Chrome Safe Storage", domain, names
-            )
-            if result:
-                return result
-    except Exception as exc:
-        logger.debug("Chrome generic extraction error: %s", exc)
-    return None
+    return _chromium_family_cookies("chrome", domains, names)
 
 
 def _brave_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
-    try:
-        if platform.system() != "Darwin":
-            return None
-        db_path = _find_brave_cookies_db()
-        if db_path is None:
-            return None
-        for domain in domains:
-            result = _extract_chromium_cookies(db_path, "Brave Safe Storage", domain, names)
-            if result:
-                return result
-    except Exception as exc:
-        logger.debug("Brave generic extraction error: %s", exc)
-    return None
+    return _chromium_family_cookies("brave", domains, names)
+
+
+def _edge_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
+    return _chromium_family_cookies("edge", domains, names)
 
 
 def _safari_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, str]]:
@@ -633,6 +620,7 @@ def _safari_cookies(domains: List[str], names: List[str]) -> Optional[Dict[str, 
 _BROWSER_READERS = {
     "chrome": _chrome_cookies,
     "brave": _brave_cookies,
+    "edge": _edge_cookies,
     "firefox": _firefox_cookies,
     "safari": _safari_cookies,
 }
@@ -663,3 +651,25 @@ def extract_cookies(source: str, browser: str | None = None) -> Dict[str, str]:
         except Exception as exc:
             logger.debug("Reader %s failed for %s: %s", reader.__name__, source, exc)
     return {}
+
+
+def required_cookies(source: str) -> List[str]:
+    """The session-cookie names that prove a logged-in session for *source*."""
+    spec = COOKIE_REGISTRY.get(source)
+    return list(spec[1]) if spec else []
+
+
+def browsers_present() -> List[str]:
+    """Which supported browsers have a cookie store on disk (for diagnostics)."""
+    found: List[str] = []
+    for key, (base, _svc) in _CHROMIUM_BROWSERS.items():
+        if _chromium_cookie_dbs(base):
+            found.append(key)
+    try:
+        if _get_firefox_profiles_dir() is not None:
+            found.append("firefox")
+    except Exception:
+        pass
+    if any(p.exists() for p in _SAFARI_COOKIE_PATHS):
+        found.append("safari")
+    return found

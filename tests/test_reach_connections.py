@@ -20,8 +20,12 @@ def test_list_connections_all_sources(_db):
     assert {"reddit", "twitter", "xiaohongshu", "linkedin", "xueqiu",
             "bilibili", "exa_search"} <= sources
     for c in conns:
-        assert c["connected"] is False
-        assert c["login_url"].startswith("http")
+        if c["kind"] == "public":
+            # Public sources need no credential — always "ready", no login URL.
+            assert c["connected"] is True
+        else:
+            assert c["connected"] is False
+            assert c["login_url"].startswith("http")
 
 
 def test_save_manual_cookie_then_connected(_db, monkeypatch):
@@ -47,7 +51,10 @@ def test_import_browser_no_cookies(_db, monkeypatch):
     monkeypatch.setattr(RC._ce, "extract_cookies", lambda *a, **k: {})
     res = RC.import_browser("reddit")
     assert res["connected"] is False
-    assert "manual paste" in res["message"].lower()
+    # The message guides the user to the manual-paste fallback and names the cookie.
+    assert "manually" in res["message"].lower()
+    assert "reddit_session" in res["message"]
+    assert res["need"] == ["reddit_session"]
 
 
 def test_import_browser_success(_db, monkeypatch):
