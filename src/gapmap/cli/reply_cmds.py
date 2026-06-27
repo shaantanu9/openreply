@@ -81,13 +81,22 @@ def find_cmd(
 
 @reply_app.command("list")
 def list_cmd(
-    status: str = typer.Option(None, help="Filter: new / drafted / posted / skipped"),
+    status: str = typer.Option(None, help="Filter: new/saved/drafted/ready/queued/posted/skipped"),
     limit: int = typer.Option(30),
     min_score: float = typer.Option(0.0, help="Only show opportunities at/above this score"),
+    query: str = typer.Option("", help="Text search over title/body/author/sub"),
+    sort: str = typer.Option("score", help="score | recent | engagement"),
+    offset: int = typer.Option(0, help="Pagination offset"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
-    """List stored opportunities, highest-scoring first."""
-    _out({"opportunities": _opp.list_opportunities(status=status, limit=limit, min_score=min_score)}, json_)
+    """List stored opportunities with search, sort, and pagination."""
+    q = query or None
+    items = _opp.list_opportunities(
+        status=status, limit=limit, min_score=min_score,
+        query=q, sort=sort, offset=offset,
+    )
+    total = _opp.count_opportunities(status=status, min_score=min_score, query=q)
+    _out({"opportunities": items, "total": total, "offset": offset, "limit": limit}, json_)
 
 
 @reply_app.command("draft")
@@ -108,11 +117,60 @@ def draft_cmd(
 @reply_app.command("set-status")
 def set_status_cmd(
     opportunity: str = typer.Option(..., "--opportunity", "-o", help="Opportunity id (from `reply list`)"),
-    status: str = typer.Option(..., "--status", help="new | saved | drafted | posted | skipped"),
+    status: str = typer.Option(..., "--status", help="new|saved|drafted|ready|queued|posted|skipped|snoozed"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Move an opportunity through its lifecycle (save / dismiss / mark replied)."""
     _out(_opp.set_status(opportunity, status), json_)
+
+
+@reply_app.command("save-draft")
+def save_draft_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Opportunity id"),
+    text: str = typer.Option(..., "--text", help="Edited reply text to persist"),
+    provider: str = typer.Option(None),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Persist a user-edited reply as a new draft version (+ compliance re-check)."""
+    _out(_gen.save_draft(opportunity, text, provider=provider), json_)
+
+
+@reply_app.command("drafts")
+def drafts_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Opportunity id"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """List all draft versions for an opportunity (newest first)."""
+    _out({"drafts": _gen.list_drafts(opportunity)}, json_)
+
+
+@reply_app.command("approve")
+def approve_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Opportunity id"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Approve the current draft → moves the opportunity to `ready`."""
+    _out(_opp.approve(opportunity), json_)
+
+
+@reply_app.command("queue")
+def queue_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Opportunity id"),
+    at: int = typer.Option(0, "--at", help="Schedule epoch seconds (0 = next cycle)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Queue an approved reply for posting (optionally scheduled)."""
+    _out(_opp.queue(opportunity, scheduled_at=at or None), json_)
+
+
+@reply_app.command("snooze")
+def snooze_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Opportunity id"),
+    hours: float = typer.Option(24.0, "--hours", help="Defer for N hours, then resurface"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Snooze an opportunity — it auto-resurfaces to `new` after `hours`."""
+    _out(_opp.snooze(opportunity, hours=hours), json_)
 
 
 @reply_app.command("rules")
