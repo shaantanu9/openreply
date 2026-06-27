@@ -781,13 +781,14 @@ export async function renderConnections(view) {
     const unlocksRow = (unlocks.length > 1)
       ? `<p class="mb-2 text-xs text-zinc-400 dark:text-zinc-500">Unlocks: ${unlocks.map(u => esc(u)).join(" · ")}</p>` : "";
     const noteRow = c.note ? `<p class="mb-2 text-xs text-zinc-400 dark:text-zinc-500">${esc(c.note)}</p>` : "";
+    const usesRow = c.uses ? `<p class="mb-2 text-sm text-zinc-600 dark:text-zinc-300">${esc(c.uses)}</p>` : "";
     // The use-in-collection toggle only makes sense once the source is reachable.
     const toggleRow = c.connected ? `<div class="mt-2">${connToggle(c)}</div>` : "";
     return `<div class="${card}">
       <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">${esc(c.label)}</b>
         <span class="rounded ${cls} px-2 py-0.5 text-xs font-bold">${label}</span></div>
       <p class="mb-2 mt-2 text-sm text-zinc-500 dark:text-zinc-400">${meta}${verified ? ` · ${verified}` : ""}</p>
-      ${noteRow}${unlocksRow}
+      ${usesRow}${noteRow}${unlocksRow}
       <div class="flex flex-wrap gap-2" data-card="${s}">${actions}</div>
       ${toggleRow}
       <div data-msg="${s}" class="mt-2 text-xs"></div>
