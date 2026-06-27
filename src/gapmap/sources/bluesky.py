@@ -73,12 +73,16 @@ def _row(p: dict[str, Any]) -> dict[str, Any]:
     rkey = uri.split("/")[-1] if "/" in uri else uri
     handle = author.get("handle") or author.get("did") or "?"
     permalink = f"https://bsky.app/profile/{handle}/post/{rkey}"
+    # Bluesky posts have no title field — derive a readable one from the text so
+    # the opportunity card doesn't render "(no title)".
+    _text = (record.get("text") or "").strip()
+    title = (_text[:120] + ("…" if len(_text) > 120 else "")) or f"Bluesky post by @{handle}"
     return {
         "id": f"bsky_{uri.replace('/', '_')}",
         "sub": "bluesky",
         "source_type": "bluesky",
         "author": handle,
-        "title": "",
+        "title": title,
         "selftext": (record.get("text") or "")[:2000],
         "url": permalink,
         "score": int(p.get("likeCount") or 0),

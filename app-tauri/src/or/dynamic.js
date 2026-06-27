@@ -79,6 +79,18 @@ export async function renderAgents(view) {
       grid.querySelectorAll("[data-use]").forEach(b => b.onclick = async () => {
         await api.agentUse(b.getAttribute("data-use")); toast("Switched agent"); load();
       });
+      grid.querySelectorAll("[data-edit]").forEach(b => b.onclick = async () => {
+        try { await api.agentUse(b.getAttribute("data-edit")); location.hash = "#/keywords"; }
+        catch (e) { toast("Failed: " + e); }
+      });
+      grid.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+        const id = b.getAttribute("data-del"), name = b.getAttribute("data-name") || "this agent";
+        window.orModal({
+          title: `Delete ${name}?`, okText: "Delete",
+          body: `<p class="text-sm text-zinc-500">Removes the agent and its settings. Collected posts/knowledge stay. This can’t be undone.</p>`,
+          onOk: async () => { try { await api.agentDelete(id); toast("Deleted " + name); load(); } catch (e) { toast("Delete failed: " + e); } },
+        });
+      });
       icons();
     } catch (e) { grid.innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${esc(e)}</div>`; }
   }
@@ -102,7 +114,8 @@ function agentCard(a) {
     <div class="flex flex-wrap gap-2">
       ${a.active ? "" : `<button data-use="${esc(a.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Make active</button>`}
       <a href="#/opportunities" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Find replies</a>
-      <a href="#/compose" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Create content</a></div>
+      <button data-edit="${esc(a.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Edit</button>
+      <button data-del="${esc(a.id)}" data-name="${esc(a.name)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-rose-500">Delete</button></div>
   </div>`;
 }
 
@@ -115,9 +128,15 @@ export async function renderOverview(view) {
   if (!a) { document.getElementById("ov").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
   try { k = await api.agentKnowledge(); } catch (e) {}
   const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
+  // Fresh agent (no knowledge yet) → guide the user to the first action.
+  const fresh = !(k && ((k.posts || 0) > 0 || k.last_refresh_at));
+  const freshBanner = fresh
+    ? `<div class="mb-5 rounded-lg bg-reddit/10 px-4 py-3 text-sm text-reddit"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> <b>New agent — no knowledge yet.</b> Click <b>↻ Refresh + learn</b> to fetch posts for your topic and distill them into the agent's brain. Then try <b>Find opportunities</b>.</div>`
+    : "";
   document.getElementById("ov").outerHTML =
     head(esc(a.name), `${esc(a.niche || "")} · watching ${(a.platforms || []).join(", ")}`,
       `<button id="ov-refresh" class="${btn}">↻ Refresh + learn</button><button id="ov-learn" class="${btn}"><i data-lucide="brain-circuit" class="inline-block h-4 w-4 align-[-2px]"></i> Learn</button><a href="#/opportunities" class="${btnP}">Find opportunities</a>`) +
+    freshBanner +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
        ${kpi("Posts collected", (k && k.posts) || 0)}
        ${kpi("Map nodes", (k && k.graph_nodes) || 0)}
@@ -207,6 +226,17 @@ function platformBadge(pf) {
   if (pf === "pinterest") return "bg-rose-500/15 text-rose-500";
   if (pf === "truthsocial") return "bg-red-600/15 text-red-600";
   return "bg-brand/15 text-brand";
+}
+// Community label: "r/x" only for Reddit. Social adapters hardcode `sub` to the
+// platform name (not a real community) — show nothing in that case; show a real
+// handle/community plainly when the adapter provides one.
+function subLabel(o) {
+  const pf = (o.platform || "").toLowerCase();
+  const sub = (o.sub || "").trim();
+  if (!sub) return "";
+  if (pf.includes("reddit")) return `<span class="text-sm text-zinc-500">r/${esc(sub)}</span>`;
+  if (sub.toLowerCase() === pf) return "";
+  return `<span class="text-sm text-zinc-500">${esc(sub)}</span>`;
 }
 const OPP_STATUS_META = {
   new: ["new", "bg-zinc-500/15 text-zinc-400"],
@@ -300,7 +330,7 @@ export async function renderOpportunities(view) {
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2"><span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
-              ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}${statusPill(o.status || "new")}</div>
+              ${subLabel(o)}${statusPill(o.status || "new")}</div>
             <span class="text-2xl font-extrabold ${scoreCls(o.score || 0)}" title="rel ${o.relevance} · intent ${o.intent} · fit ${o.fit} · eng ${o.engagement} · fresh ${o.freshness}">${s}</span></div>
           <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
           ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}
@@ -1020,7 +1050,7 @@ export async function renderInbox(view) {
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0"><div class="flex flex-wrap items-center gap-2">
             <span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
-            ${o.sub ? `<span class="text-sm text-zinc-500">r/${esc(o.sub)}</span>` : ""}${statusPill(o.status || "saved")}${sched}</div>
+            ${subLabel(o)}${statusPill(o.status || "saved")}${sched}</div>
           <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
           ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}</div>
         <span class="shrink-0 text-xl font-extrabold ${scoreCls(o.score || 0)}">${s}</span></div>
@@ -1324,22 +1354,123 @@ export async function renderAnalytics(view) {
 }
 
 // ── Queue (content items by status) ─────────────────────────────────────────
+const QUEUE_STATUS = { draft: "bg-zinc-500/15 text-zinc-400", scheduled: "bg-amber-500/15 text-amber-500", posted: "bg-emerald-500/15 text-emerald-500" };
+const QUEUE_TABS = [["all", "All"], ["draft", "Drafts"], ["scheduled", "Scheduled"], ["posted", "Posted"]];
+// epoch seconds ↔ value for <input type="datetime-local"> (local time, no tz suffix)
+function _toLocalInput(ts) {
+  const d = ts ? new Date(ts * 1000) : new Date(Date.now() + 3600e3);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 export async function renderQueue(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  view.innerHTML = head("Queue", "Drafts &amp; scheduled content. Publishing is manual for now.",
-    `<a href="#/compose" class="${btn}">+ New content</a>`) + `<div id="q">Loading…</div>`;
-  let content = [];
-  try { content = (await api.contentList(null, null, 200))?.content || []; } catch (e) {}
-  const wrap = document.getElementById("q");
-  if (!content.length) { wrap.outerHTML = `<div class="${card} text-zinc-500">No content yet. <a class="text-reddit underline" href="#/compose">Compose →</a></div>`; return; }
-  const body = content.map((c) => `<tr class="border-b border-zinc-100 dark:border-zinc-800/60">
-      <td class="px-4 py-3"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc((c.kind || "").replace("_", " "))}</span></td>
-      <td class="px-4 py-3">${esc((c.body || "").slice(0, 80))}…</td>
-      <td class="px-4 py-3 text-zinc-500">${esc(c.platform || "")}</td>
-      <td class="px-4 py-3"><span class="rounded bg-zinc-500/15 px-2 py-0.5 text-xs font-bold text-zinc-400">${esc(c.status || "draft")}</span></td></tr>`).join("");
-  wrap.outerHTML = `<div class="overflow-hidden ${card} !p-0"><table class="w-full text-sm"><thead><tr class="text-left text-xs uppercase tracking-wide text-zinc-400">
-      <th class="px-4 py-3">Type</th><th class="px-4 py-3">Content</th><th class="px-4 py-3">Platform</th><th class="px-4 py-3">Status</th></tr></thead><tbody>${body}</tbody></table></div>`;
-  icons();
+  let tab = "all";
+  view.innerHTML = head("Queue", "Drafts, scheduled &amp; posted content. Publishing is manual — copy, post, then mark it posted.",
+    `<a href="#/compose" class="${btnP}">+ New content</a>`) +
+    `<div id="q-tabs" class="mb-4 flex flex-wrap gap-2"></div><div id="q">Loading…</div>`;
+  const wrap = () => document.getElementById("q");
+  const tabsEl = document.getElementById("q-tabs");
+  const chip = (on) => `q-tab rounded-full px-3 py-1.5 text-xs font-semibold ${on ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700 text-zinc-500"}`;
+  let all = [];
+
+  function paintTabs() {
+    const n = (s) => s === "all" ? all.length : all.filter(c => (c.status || "draft") === s).length;
+    tabsEl.innerHTML = QUEUE_TABS.map(([v, l]) => `<button data-tab="${v}" class="${chip(v === tab)}">${l} <span class="opacity-60">${n(v)}</span></button>`).join("");
+    tabsEl.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { tab = b.getAttribute("data-tab"); paintTabs(); paint(); });
+  }
+
+  async function load() {
+    const el = wrap(); if (el) el.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Loading…</div>`;
+    let content;
+    try { content = (await api.contentList(null, null, 200))?.content; }
+    catch (e) { if (wrap()) wrap().innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">Couldn’t load content — ${esc(e)} <button id="q-retry" class="ml-2 underline">Retry</button></div>`; const r = document.getElementById("q-retry"); if (r) r.onclick = load; return; }
+    all = content || [];
+    paintTabs(); paint();
+  }
+
+  function paint() {
+    if (!all.length) { wrap().innerHTML = `<div class="${card} text-zinc-500">No content yet. <a class="text-reddit underline" href="#/compose">Compose your first post →</a></div>`; return; }
+    const list = tab === "all" ? all : all.filter(c => (c.status || "draft") === tab);
+    if (!list.length) { wrap().innerHTML = `<div class="${card} text-zinc-500">No ${tab} content.</div>`; return; }
+    const rows = list.map((c) => {
+      const id = esc(c.id);
+      const st = c.status || "draft";
+      const stCls = QUEUE_STATUS[st] || QUEUE_STATUS.draft;
+      const when = c.scheduled_at ? ` · ${new Date(c.scheduled_at * 1000).toLocaleString()}` : "";
+      const bd = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
+      return `<div class="${card}" data-row="${id}">
+        <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc((c.kind || "").replace(/_/g, " "))}</span>
+          ${c.platform ? `<span class="text-xs text-zinc-500">${esc(c.platform)}</span>` : ""}
+          <span class="rounded ${stCls} px-2 py-0.5 text-xs font-bold">${esc(st)}${esc(when)}</span></div>
+        <div class="mt-1.5 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-200">${esc((c.body || "").slice(0, 300))}${(c.body || "").length > 300 ? "…" : ""}</div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button data-act="copy" data-id="${id}" class="${bd}"><i data-lucide="copy" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Copy</button>
+          <button data-act="edit" data-id="${id}" class="${bd}">Edit</button>
+          ${st === "scheduled"
+            ? `<button data-act="unschedule" data-id="${id}" class="${bd}">↺ Unschedule</button>`
+            : st !== "posted" ? `<button data-act="schedule" data-id="${id}" class="${bd} text-amber-500">Schedule</button>` : ""}
+          ${st !== "posted"
+            ? `<button data-act="posted" data-id="${id}" class="${bd} text-emerald-500">✓ Mark posted</button>`
+            : `<button data-act="draft" data-id="${id}" class="${bd}">↺ Back to draft</button>`}
+          <button data-act="delete" data-id="${id}" class="${bd} text-rose-500">Delete</button></div></div>`;
+    }).join("");
+    wrap().innerHTML = `<div class="space-y-3">${rows}</div>`;
+    wrap().querySelectorAll("[data-act]").forEach(b => b.onclick = () => qAction(b));
+    icons();
+  }
+
+  async function qAction(b) {
+    const act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
+    const c = all.find(x => String(x.id) === id) || {};
+    if (act === "copy") {
+      try { await navigator.clipboard.writeText(c.body || ""); toast("Copied — paste it where you’re posting"); }
+      catch (e) { toast("Couldn’t copy"); }
+      return;
+    }
+    if (act === "edit") {
+      window.orModal({
+        title: "Edit content", okText: "Save",
+        body: `<textarea id="q-body" rows="8" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(c.body || "")}</textarea>`,
+        onOk: async (ov) => {
+          const body = ov.querySelector("#q-body")?.value || "";
+          try { await api.contentUpdate(id, { body }); toast("Saved"); load(); } catch (e) { toast("Save failed: " + e); }
+        },
+      });
+      return;
+    }
+    if (act === "schedule") {
+      window.orModal({
+        title: "Schedule content", okText: "Schedule",
+        body: `<p class="mb-2 text-sm text-zinc-500">Pick when to publish. You’ll still post manually — this just queues a reminder time.</p>
+          <input id="q-when" type="datetime-local" value="${_toLocalInput(c.scheduled_at)}" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">`,
+        onOk: async (ov) => {
+          const v = ov.querySelector("#q-when")?.value;
+          if (!v) { toast("Pick a date/time"); return; }
+          const ts = Math.floor(new Date(v).getTime() / 1000);
+          try { await api.contentUpdate(id, { status: "scheduled", scheduledAt: ts }); toast("Scheduled"); load(); }
+          catch (e) { toast("Failed: " + e); }
+        },
+      });
+      return;
+    }
+    if (act === "delete") {
+      window.orModal({
+        title: "Delete this content?", okText: "Delete",
+        body: `<p class="text-sm text-zinc-500">This can’t be undone.</p>`,
+        onOk: async () => { try { await api.contentDelete(id); toast("Deleted"); load(); } catch (e) { toast("Delete failed: " + e); } },
+      });
+      return;
+    }
+    // status transitions: posted / draft / unschedule(→draft, clear scheduled_at)
+    const patch = act === "unschedule" ? { status: "draft", scheduledAt: 0 } : { status: act };
+    b.disabled = true;
+    try {
+      await api.contentUpdate(id, patch);
+      toast(act === "posted" ? "Marked posted" : act === "unschedule" ? "Unscheduled" : "Back to draft");
+      load();
+    } catch (e) { toast("Failed: " + e); b.disabled = false; }
+  }
+  load();
 }
 
 // ── Keywords (edit the agent's tracked keywords + platforms) ────────────────
@@ -1688,7 +1819,7 @@ export async function renderWelcome(view) {
           <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Provider</span>
             <select id="wc-prov" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">${opts}</select></label>
           <label class="block text-sm" id="wc-keywrap"></label>
-          <button id="wc-test" class="${btn}">Test connection</button>
+          <button id="wc-test" class="${btn}">Test connection <span class="text-zinc-400">(optional)</span></button>
         </div>
         <button id="wc-finish" class="${btnP} w-full">Finish setup →</button>
         <div id="wc-msg" class="text-sm"></div>
@@ -1700,7 +1831,7 @@ export async function renderWelcome(view) {
   const paintKey = () => {
     const p = provSel.value, isOllama = p === "ollama";
     const ph = LLM_PROVIDERS.find(x => x[0] === p)?.[3] || "";
-    keyWrap.innerHTML = `<span class="text-zinc-500 dark:text-zinc-400">${isOllama ? "Base URL" : "API key"}</span>
+    keyWrap.innerHTML = `<span class="text-zinc-500 dark:text-zinc-400">${isOllama ? "Base URL" : "API key"}${isOllama ? "" : ' <span class="text-rose-500">· required to finish</span>'}</span>
       <input id="wc-key" type="${isOllama ? "text" : "password"}" placeholder="${esc(ph)}" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">`;
   };
   paintKey();
@@ -1797,8 +1928,9 @@ export async function renderSubredditFull(view) {
        <label class="flex-1 text-sm text-zinc-500">Check a subreddit<input id="sr-q" placeholder="GetStudying" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
        <button id="sr-go" class="${btnP}">Get intel</button></div></div>
      <div id="sr-detail"></div>
+     <div id="sr-map" class="mb-5"></div>
      <h3 class="mb-2 mt-2 font-semibold text-zinc-900 dark:text-white">Your subreddits</h3>
-     <div id="sr-list" class="space-y-2">Loading…</div>`;
+     <div id="sr-tree" class="space-y-1">Loading…</div>`;
 
   try {
     const a = await api.redditAccountStatus();
@@ -1827,7 +1959,7 @@ export async function renderSubredditFull(view) {
       const rules = i.rules || [];
       const pill = (l, v) => `<div><div class="text-xs uppercase tracking-wide text-zinc-400">${l}</div><div class="font-semibold text-zinc-900 dark:text-white">${v}</div></div>`;
       d.innerHTML = `<div class="${card}">
-        <div class="flex items-center justify-between gap-4"><div><b class="text-zinc-900 dark:text-white">r/${esc(i.sub)}</b>
+        <div class="flex items-center justify-between gap-4"><div><a id="sr-open" href="https://www.reddit.com/r/${esc(i.sub)}" class="font-bold text-zinc-900 hover:text-reddit dark:text-white">r/${esc(i.sub)} ↗</a>
           <div class="text-sm text-zinc-500">${esc(i.description || "") || "—"}</div></div>
           <button id="sr-track" class="${btn}">${i.tracked ? "✓ Tracked" : "Track"}</button></div>
         <div class="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
@@ -1850,28 +1982,198 @@ export async function renderSubredditFull(view) {
         try { const c = await api.subCheck(sub, t); res.innerHTML = c.compliant ? `<span class="text-emerald-500">✓ compliant</span>` : `<span class="text-amber-500">⚠ ${esc(c.notes || "check rules")}</span>`; }
         catch (e) { res.textContent = "failed"; }
       };
+      document.getElementById("sr-open").onclick = (e) => { e.preventDefault(); api.openUrl("https://www.reddit.com/r/" + sub).catch(() => toast("Could not open")); };
       icons();
     } catch (e) { d.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
   }
 
+  // fit → {pct 0-100, tier, color}. Backend `fit` is 0-1 (or already a %).
+  function srFit(s) {
+    const raw = Number(s.fit) || 0;
+    const pct = raw <= 1 ? Math.round(raw * 100) : Math.round(raw);
+    const tier = pct >= 80 ? "best" : pct >= 55 ? "good" : "tangential";
+    const color = tier === "best" ? "#10b981" : tier === "good" ? "#f59e0b" : "#a1a1aa";
+    return { pct, tier, color };
+  }
+
+  // Radial hub-and-spoke graph: niche center → subreddits, size = members,
+  // color = fit, ring = tracked. Nodes are clickable (→ load intel).
+  function srGraph(subs, niche) {
+    const W = 640, H = 340, cx = W / 2, cy = H / 2;
+    const nodes = subs.slice(0, 14);
+    const N = nodes.length || 1;
+    const R = Math.min(130, 64 + N * 7);
+    let edges = "", circles = "", labels = "";
+    nodes.forEach((s, i) => {
+      const ang = (i / N) * 2 * Math.PI - Math.PI / 2;
+      const x = cx + Math.cos(ang) * R, y = cy + Math.sin(ang) * R;
+      const f = srFit(s);
+      const r = Math.max(8, Math.min(22, 8 + Math.log10((Number(s.subscribers) || 100)) * 2.4));
+      edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${f.color}" stroke-width="1.5" stroke-opacity="0.35"/>`;
+      circles += `<g class="cursor-pointer" data-intel="${esc(s.sub)}"><circle cx="${x}" cy="${y}" r="${r}" fill="${f.color}" fill-opacity="0.85"/>${s.tracked ? `<circle cx="${x}" cy="${y}" r="${r + 3}" fill="none" stroke="${f.color}" stroke-width="1.5"/>` : ""}<title>r/${esc(s.sub)} · ${f.pct}% fit</title></g>`;
+      const raw = "r/" + s.sub, lbl = raw.length > 16 ? raw.slice(0, 15) + "…" : raw;
+      const ly = y > cy ? y + r + 12 : y - r - 7;
+      labels += `<text x="${x}" y="${ly}" text-anchor="middle" font-size="10" fill="#71717a" class="pointer-events-none">${esc(lbl)}</text>`;
+    });
+    const hub = `<circle cx="${cx}" cy="${cy}" r="30" fill="#ff4500"/><text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" class="pointer-events-none">${esc((niche || "You").slice(0, 9))}</text>`;
+    return `<div class="${card}"><div class="mb-2 flex flex-wrap items-center justify-between gap-2"><b class="text-zinc-900 dark:text-white">Subreddit map</b>
+       <span class="text-xs text-zinc-400">node size = members · color = fit · ring = tracked · click a node for intel</span></div>
+       <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:340px">${edges}${circles}${hub}${labels}</svg></div>`;
+  }
+
+  // Fit-tier tree: Best / Good / Tangential groups (native <details> = built-in
+  // expand/collapse). Each sub row lazily loads its rules + strictness on open.
+  function srTree(subs) {
+    const byTier = { best: [], good: [], tangential: [] };
+    subs.forEach((s) => byTier[srFit(s).tier].push(s));
+    const tiers = [["best", "Best fit", "bg-emerald-500"], ["good", "Good fit", "bg-amber-500"], ["tangential", "Tangential", "bg-zinc-400"]];
+    return tiers.filter(([k]) => byTier[k].length).map(([k, label, dot]) => {
+      const rows = byTier[k].map((s) => {
+        const f = srFit(s);
+        return `<details data-sub="${esc(s.sub)}" class="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2">
+          <summary class="flex cursor-pointer list-none items-center justify-between gap-2">
+            <span class="min-w-0 truncate"><b class="text-zinc-900 dark:text-white">r/${esc(s.sub)}</b>
+              ${s.tracked ? '<span class="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-500">tracked</span>' : ""}
+              <span class="ml-1 text-xs text-zinc-500">${s.subscribers ? Number(s.subscribers).toLocaleString() + " · " : ""}${s.self_promo ? esc(s.self_promo) + " · " : ""}fit ${f.pct}%</span></span>
+            <span class="flex shrink-0 gap-1.5">
+              <button data-open="${esc(s.sub)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-semibold">Open ↗</button>
+              <button data-intel="${esc(s.sub)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-semibold">Intel</button></span>
+          </summary>
+          <div data-rules class="mt-2 text-sm text-zinc-500">Expand to load rules…</div></details>`;
+      }).join("");
+      return `<details open class="mb-2"><summary class="cursor-pointer list-none py-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+        <span class="mr-1.5 inline-block h-2 w-2 rounded-full ${dot} align-middle"></span>${label} <span class="text-zinc-400">(${byTier[k].length})</span></summary>
+        <div class="mt-1 space-y-1.5">${rows}</div></details>`;
+    }).join("");
+  }
+
   async function loadList() {
-    const list = document.getElementById("sr-list");
+    const tree = document.getElementById("sr-tree");
+    const map = document.getElementById("sr-map");
     try {
       const r = await api.subList();
       const subs = r?.subreddits || [];
-      list.innerHTML = subs.length ? subs.map((s) => `<div class="${card} flex items-center justify-between gap-3">
-        <div><b class="text-zinc-900 dark:text-white">r/${esc(s.sub)}</b> ${s.tracked ? '<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">tracked</span>' : ""}
-          <div class="text-sm text-zinc-500">${s.subscribers ? Number(s.subscribers).toLocaleString() + " members · " : ""}${s.self_promo ? esc(s.self_promo) + " · " : ""}fit ${Math.round((s.fit || 0) * 100) / 100}</div></div>
-        <button data-intel="${esc(s.sub)}" class="${sbtn}">Intel</button></div>`).join("")
-        : `<div class="${card} text-zinc-500">No subs yet — click "✨ Discover subs" (needs Reddit connected for results).</div>`;
-      list.querySelectorAll("[data-intel]").forEach((b) => b.onclick = () => { document.getElementById("sr-q").value = b.getAttribute("data-intel"); runIntel(); });
+      if (!subs.length) {
+        map.innerHTML = "";
+        tree.innerHTML = `<div class="${card} text-zinc-500">No subs yet — click "✨ Discover subs" (needs Reddit connected for results).</div>`;
+        return;
+      }
+      let niche = ""; try { niche = (await api.agentGet())?.name || ""; } catch (e) {}
+      map.innerHTML = srGraph(subs, niche);
+      tree.innerHTML = srTree(subs);
+      // Intel (graph nodes + tree rows) → load detail at top.
+      [map, tree].forEach((root) => {
+        root.querySelectorAll("[data-intel]").forEach((b) => b.onclick = (e) => {
+          e.preventDefault(); e.stopPropagation();
+          document.getElementById("sr-q").value = b.getAttribute("data-intel");
+          runIntel(); window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+        root.querySelectorAll("[data-open]").forEach((b) => b.onclick = (e) => {
+          e.preventDefault(); e.stopPropagation();
+          api.openUrl("https://www.reddit.com/r/" + b.getAttribute("data-open")).catch(() => toast("Could not open"));
+        });
+      });
+      // Lazy-load rules when a tree row is expanded.
+      tree.querySelectorAll("details[data-sub]").forEach((d) => d.addEventListener("toggle", async () => {
+        if (!d.open) return;
+        const box = d.querySelector("[data-rules]");
+        if (!box || box.dataset.loaded) return;
+        box.dataset.loaded = "1"; box.textContent = "Loading rules…";
+        try {
+          const i = await api.subIntel(d.getAttribute("data-sub"), false);
+          const rules = i?.rules || [];
+          const meta = [i?.strictness ? `strictness: <b class="text-zinc-700 dark:text-zinc-300">${esc(i.strictness)}</b>` : "", i?.best_time ? `best time: <b class="text-zinc-700 dark:text-zinc-300">${esc(i.best_time)}</b>` : ""].filter(Boolean).join(" · ");
+          box.innerHTML = (meta ? `<div class="mb-1 text-xs text-zinc-500">${meta}</div>` : "") +
+            (rules.length ? rules.map((x) => `<div>• <b class="text-zinc-700 dark:text-zinc-300">${esc(x.name || "")}</b>${x.desc ? ` — ${esc(x.desc)}` : ""}</div>`).join("") : '<div>No rules returned — connect Reddit (Connections) for live rules.</div>');
+        } catch (e) { box.textContent = "Could not load rules."; box.dataset.loaded = ""; }
+      }));
       icons();
-    } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+    } catch (e) { tree.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
   }
   loadList();
 }
 
+// ── Pricing / Plans (live: current plan from licence + wired upgrade) ────────
+const PRICE_TIERS = [
+  { id: "free", name: "Free / Self-host", price: "$0", tag: "open-source", feats: ["Unlimited agents, keywords, subs", "No scan / reply / post caps", "All platforms · MCP / CLI / API", "Manual posting (review gate)"], cta: "Start free", href: "#/agents", primary: true },
+  { id: "solo", name: "Solo (hosted)", price: "$19", per: "/mo", feats: ["Managed cloud (no setup)", "Real-time inbox alerts", "Analytics + AI Visibility", "1 seat"], cta: "Upgrade", hosted: true },
+  { id: "business", name: "Business", price: "$99", per: "/mo", feats: ["Slack/email alerts", "Scheduling & queue", "3 seats · approvals", "Priority support"], cta: "Upgrade", hosted: true },
+  { id: "team", name: "Team / Agency", price: "$299", per: "/mo", feats: ["Unlimited seats & agents", "Roles · audit log", "SSO · SLA", "Dedicated support"], cta: "Contact", hosted: true },
+];
+const PRICE_COMPARE = [
+  ["Open-source / self-host", "✓", "✗", "✗"],
+  ["BYOK, no caps", "✓", "lifetime only; capped", "✗ (credits)"],
+  ["Multi-platform reply", "✓ 9+", "Reddit only", "Reddit only"],
+  ["Subreddit intel + ban-safety", "✓", "✓", "partial"],
+  ["Self-learning agent", "✓", "✗", "✗"],
+  ["AI Visibility (GEO)", "✓", "✗", "✗"],
+  ["Entry price", "$0", "$49/mo", "$19–$30/mo"],
+];
+export async function renderPricing(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  let st = null, apiBase = "";
+  try { st = await api.licenseStatus(); } catch (e) {}
+  try { apiBase = (await api.licenseDefaultApiBase())?.api_base || ""; } catch (e) {}
+  const plan = String((st && st.plan_id) || "free").toLowerCase();
+  const cur = (id) => plan.includes(id) || (id === "free" && (plan === "free" || plan === "" || plan === "self-host"));
+  const billingUrl = apiBase ? apiBase.replace(/\/$/, "") + "/pricing" : "";
+
+  const planRow = st && st.activated ? (() => {
+    const bits = [];
+    if (st.plan_id) bits.push(`<b class="text-zinc-900 dark:text-white">${esc(st.plan_id)}</b>`);
+    if (st.is_trial) bits.push(`<span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">trial${st.trial_ends_at ? " · ends " + esc(String(st.trial_ends_at).slice(0, 10)) : ""}</span>`);
+    if (st.expires_at) bits.push(`<span class="text-sm text-zinc-500">renews/expires ${esc(String(st.expires_at).slice(0, 10))}</span>`);
+    return `<div class="mb-4 flex flex-wrap items-center justify-between gap-3 ${card}">
+      <div class="flex flex-wrap items-center gap-2 text-sm"><span class="text-zinc-500">Current plan:</span> ${bits.join(" ")}</div>
+      <div class="flex flex-wrap gap-2">
+        <button id="pr-refresh" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">↻ Refresh licence</button>
+        <button id="pr-key" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Apply activation key</button>
+        <a href="#/settings" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Manage in Settings</a></div></div>`;
+  })() : "";
+
+  const cards = PRICE_TIERS.map(t => {
+    const mine = cur(t.id);
+    const cta = t.href
+      ? `<a href="${t.href}" class="mt-4 block rounded-full bg-reddit px-3 py-2 text-center text-sm font-semibold text-white hover:bg-reddit-hi">${t.cta}</a>`
+      : `<button data-up="${t.id}" ${mine ? "disabled" : ""} class="mt-4 block w-full rounded-full ${mine ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 cursor-default" : "border border-zinc-200 dark:border-zinc-700 hover:border-reddit hover:text-reddit"} px-3 py-2 text-sm font-semibold">${mine ? "✓ Current plan" : t.cta + " ↗"}</button>`;
+    return `<div class="rounded-xl border-2 ${t.primary ? "border-reddit" : mine ? "border-emerald-500/50" : "border-zinc-200 dark:border-zinc-800"} bg-white dark:bg-zinc-900 p-5">
+      <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">${esc(t.name)}</b>${mine ? '<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">your plan</span>' : t.tag ? `<span class="rounded bg-reddit/15 px-2 py-0.5 text-xs font-bold text-reddit">${esc(t.tag)}</span>` : ""}</div>
+      <div class="my-2 text-3xl font-extrabold text-zinc-900 dark:text-white">${t.price}${t.per ? `<span class="text-sm text-zinc-400">${t.per}</span>` : ""}</div>
+      <ul class="list-disc space-y-1.5 pl-5 text-sm text-zinc-500 dark:text-zinc-400">${t.feats.map(f => `<li>${esc(f)}</li>`).join("")}</ul>${cta}</div>`;
+  }).join("");
+
+  const compareRows = PRICE_COMPARE.map(([label, a, b, c]) => {
+    const cell = (v) => v === "✓" || v.startsWith("✓") ? `<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">${esc(v)}</span>` : `<span class="text-zinc-${v === "✗" ? "400" : "500"}">${esc(v)}</span>`;
+    return `<tr><td class="py-2.5">${esc(label)}</td><td>${cell(a)}</td><td>${cell(b)}</td><td>${cell(c)}</td></tr>`;
+  }).join("");
+
+  view.innerHTML = head("Plans", "Open-source & self-host free. Hosted plans add convenience — never caps.") +
+    planRow +
+    `<p class="mb-5 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit"><i data-lucide="key-round" class="inline-block h-4 w-4 align-[-2px]"></i> <b>Every tier is bring-your-own-key.</b> Model cost runs on your own key — so unlike ReplyDaddy/ReplyGuy we put <b>no caps</b> on scans, replies, or generated posts.</p>
+     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">${cards}</div>
+     <div class="mt-5 overflow-hidden ${card}"><b class="text-zinc-900 dark:text-white">How we compare</b>
+       <table class="mt-3 w-full text-sm"><thead><tr class="text-left text-xs uppercase tracking-wide text-zinc-400"><th class="py-2"></th><th class="py-2">OpenReply</th><th class="py-2">ReplyDaddy</th><th class="py-2">ReplyGuy / Reppit</th></tr></thead>
+         <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800/70">${compareRows}</tbody></table></div>`;
+
+  // Hosted upgrade → open the billing page on the web (purchase happens there).
+  view.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => {
+    if (billingUrl) { try { await api.openUrl(billingUrl); toast("Opened pricing in your browser — buy there, then ↻ Refresh licence"); return; } catch (e) {} }
+    toast("Hosted plans are coming — you’re on Free/self-host with no caps.");
+  });
+  // Billing actions — pick up an account-tied upgrade, or apply a new key.
+  const rf = view.querySelector("#pr-refresh");
+  if (rf) rf.onclick = async () => {
+    rf.disabled = true; rf.textContent = "Refreshing…";
+    try { await api.licenseRevalidate(); toast("Licence refreshed"); renderPricing(view); }
+    catch (e) { toast("Refresh failed: " + e); rf.disabled = false; rf.textContent = "↻ Refresh licence"; }
+  };
+  const pk = view.querySelector("#pr-key");
+  if (pk) pk.onclick = () => { location.hash = "#/activate"; };
+  icons();
+}
+
 export const DYN = {
+  pricing: renderPricing,
   activate: renderActivate,
   welcome: renderWelcome,
   agents: renderAgents,

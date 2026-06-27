@@ -35,24 +35,51 @@ def _oid(brand_id: str, platform: str, post_id: str) -> str:
 
 # ---- candidate discovery -------------------------------------------------
 
+def _tracked_subs() -> list[str]:
+    """The agent's tracked subreddits (the communities it monitors) — drives the
+    list-aware Reddit pass below so discovery isn't keyword-search-only."""
+    try:
+        from .subreddit import list_tracked
+        return [s.get("sub") for s in (list_tracked().get("subreddits") or [])
+                if s.get("tracked") and s.get("sub")]
+    except Exception:
+        return []
+
+
 def _fetch_reddit(keywords: list[str], limit: int) -> list[dict]:
     from ..sources.reddit_free import fetch_reddit_free
 
-    # Blend recency + relevance: "new" surfaces fresh, still-replyable threads
-    # (so freshness actually contributes to ranking), then "relevance" fills with
-    # the strongest topical matches. Dedup by id so the two passes don't double up.
     rows: list[dict] = []
     seen: set[str] = set()
+
+    def _add(items) -> None:
+        for r in items or []:
+            rid = str(r.get("id") or r.get("url") or "")
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            rows.append(r)
+
+    # 1) Keyword search across all of Reddit. Blend recency + relevance: "new"
+    # surfaces fresh, still-replyable threads (so freshness actually contributes
+    # to ranking), then "relevance" fills with the strongest topical matches.
     for sort in ("new", "relevance"):
         for kw in keywords:
             try:
-                for r in fetch_reddit_free(kw, limit=limit, sort=sort):
-                    rid = str(r.get("id") or r.get("url") or "")
-                    if rid and rid in seen:
-                        continue
-                    if rid:
-                        seen.add(rid)
-                    rows.append(r)
+                _add(fetch_reddit_free(kw, limit=limit, sort=sort))
+            except Exception:
+                pass
+
+    # 2) Monitor the agent's TRACKED subreddits directly — so the fetch knows the
+    # communities it should watch, not just whatever keyword search returns. One
+    # recent-posts pass per tracked sub, filtered by the brand keywords (OR query).
+    subs = _tracked_subs()
+    if subs:
+        q = " OR ".join(keywords[:6]) or (keywords[0] if keywords else "")
+        for sub in subs[:10]:
+            try:
+                _add(fetch_reddit_free(q, sub=sub, limit=limit, sort="new"))
             except Exception:
                 pass
     return rows
