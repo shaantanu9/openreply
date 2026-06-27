@@ -4,10 +4,11 @@
 <script>try{if((localStorage.getItem('or-theme')||'dark')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700',soft:'#ff8b60'},brand:'#0079d3'}}}}</script>
+<script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
 <div class="sticky top-0 z-10 bg-reddit text-white text-xs text-center py-1.5">CLICKABLE PROTOTYPE — static design. <a href="agents.html" class="font-bold underline">Skip to app →</a></div>
-<button onclick="(function(){var d=document.documentElement.classList.toggle('dark');localStorage.setItem('or-theme',d?'dark':'light')})()" class="fixed top-9 right-4 z-10 rounded-full border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm font-semibold">🌓 Theme</button>
+<button onclick="(function(){var d=document.documentElement.classList.toggle('dark');localStorage.setItem('or-theme',d?'dark':'light')})()" class="fixed top-9 right-4 z-10 rounded-full border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm font-semibold"><i data-lucide="moon-star" class="inline-block h-4 w-4 align-[-2px]"></i> Theme</button>
 
 <main class="mx-auto max-w-4xl px-6 py-16 text-center">
   <div class="mx-auto mb-4 h-14 w-14 rounded-full bg-reddit"></div>
@@ -18,7 +19,7 @@
     <a href="onboarding.html" class="rounded-full bg-reddit px-5 py-2.5 text-sm font-semibold text-white hover:bg-reddit-hi">Create your first agent →</a>
     <a href="agents.html" class="rounded-full border border-zinc-300 dark:border-zinc-700 px-5 py-2.5 text-sm font-semibold hover:border-zinc-400">Open the app</a>
   </div>
-  <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400">🔒 <b class="text-zinc-700 dark:text-zinc-200">Read-only &amp; account-safe</b> — we never post for you and never need your password.</p>
+  <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400"><i data-lucide="lock" class="inline-block h-4 w-4 align-[-2px]"></i> <b class="text-zinc-700 dark:text-zinc-200">Read-only &amp; account-safe</b> — we never post for you and never need your password.</p>
 
   <div class="mt-10 flex flex-wrap justify-center gap-8 text-zinc-500 dark:text-zinc-400">
     <div><div class="text-2xl font-extrabold text-zinc-900 dark:text-white">9 platforms</div>watched, not just Reddit</div>
@@ -27,12 +28,12 @@
   </div>
 
   <div class="mt-12 grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-3">
-    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white">🎯 Opportunity Finder</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">10× faster discovery — scored by relevance × intent × fit across every platform.</p></div>
-    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white">✉️ Mentions Inbox</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Real-time keyword alerts with intent &amp; sentiment filters and noise control.</p></div>
-    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white">✍️ Authentic Response Assistant</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Value-first drafts in your persona voice — never sound like AI slop.</p></div>
-    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white">🛡️ Ban-Proof &amp; Subreddit Intel</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Checks subreddit rules + account safety before you post.</p></div>
-    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white">🧠 Brand Context Engine</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Each Agent learns your niche &amp; refreshes its knowledge so content stays current.</p></div>
-    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white">✦ AI Visibility (GEO)</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Track whether your brand gets cited in Google &amp; LLM answers.</p></div>
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Opportunity Finder</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">10× faster discovery — scored by relevance × intent × fit across every platform.</p></div>
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white"><i data-lucide="inbox" class="inline-block h-4 w-4 align-[-2px]"></i> Mentions Inbox</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Real-time keyword alerts with intent &amp; sentiment filters and noise control.</p></div>
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white"><i data-lucide="pen-line" class="inline-block h-4 w-4 align-[-2px]"></i> Authentic Response Assistant</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Value-first drafts in your persona voice — never sound like AI slop.</p></div>
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white"><i data-lucide="shield-check" class="inline-block h-4 w-4 align-[-2px]"></i> Ban-Proof &amp; Subreddit Intel</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Checks subreddit rules + account safety before you post.</p></div>
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white"><i data-lucide="brain" class="inline-block h-4 w-4 align-[-2px]"></i> Brand Context Engine</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Each Agent learns your niche &amp; refreshes its knowledge so content stays current.</p></div>
+    <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"><h3 class="font-semibold text-zinc-900 dark:text-white"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> AI Visibility (GEO)</h3><p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Track whether your brand gets cited in Google &amp; LLM answers.</p></div>
   </div>
 
   <div class="mx-auto mt-10 max-w-2xl rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 text-left">
@@ -46,4 +47,5 @@
     </ul>
   </div>
 </main>
+<script>window.addEventListener("load",function(){window.lucide&&lucide.createIcons()})</script>
 </body></html>

@@ -2,25 +2,25 @@
    Each app page: <aside id="side"></aside> + <script src="app.js"></script>. */
 (function () {
   const NAV = [
-    { sec: null, items: [['agents.html', '▦', 'Agents']] },
+    { sec: null, items: [['agents.html', 'layout-grid', 'Agents']] },
     { sec: 'Acme Notes', items: [
-      ['agent.html', '◷', 'Overview'],
-      ['inbox.html', '✉', 'Inbox', '9'],
-      ['opportunities.html', '◎', 'Opportunities', '12'],
-      ['compose.html', '✎', 'Compose'],
-      ['queue.html', '▤', 'Queue'],
+      ['agent.html', 'gauge', 'Overview'],
+      ['inbox.html', 'inbox', 'Inbox', '9'],
+      ['opportunities.html', 'target', 'Opportunities', '12'],
+      ['compose.html', 'pen-line', 'Compose'],
+      ['queue.html', 'calendar-clock', 'Queue'],
     ]},
     { sec: 'Intelligence', items: [
-      ['keywords.html', '🔑', 'Keywords'],
-      ['subreddit.html', '🛡', 'Subreddit Intel'],
-      ['knowledge.html', '⬡', 'Knowledge'],
-      ['analytics.html', '▥', 'Analytics'],
-      ['geo.html', '✦', 'AI Visibility'],
+      ['keywords.html', 'key-round', 'Keywords'],
+      ['subreddit.html', 'shield-check', 'Subreddit Intel'],
+      ['knowledge.html', 'brain', 'Knowledge'],
+      ['analytics.html', 'bar-chart-3', 'Analytics'],
+      ['geo.html', 'sparkles', 'AI Visibility'],
     ]},
     { sec: 'Account', items: [
-      ['connections.html', '⚯', 'Connections'],
-      ['settings.html', '⚙', 'Settings'],
-      ['pricing.html', '◆', 'Plans'],
+      ['connections.html', 'plug', 'Connections'],
+      ['settings.html', 'settings', 'Settings'],
+      ['pricing.html', 'gem', 'Plans'],
     ]},
   ];
   const here = (location.pathname.split('/').pop() || 'agents.html');
@@ -83,7 +83,7 @@
       if (g.sec) h += `<div class="px-1.5 pt-3 pb-1 text-[11px] uppercase tracking-wider text-zinc-400">${label}</div>`;
       for (const [href, ic, lbl, tag] of g.items) {
         h += `<a href="${href}" class="${link}${href === here ? active : idle}">
-          <span class="w-4 text-center">${ic}</span><span class="flex-1">${lbl}</span>
+          <i data-lucide="${ic}" class="h-4 w-4 shrink-0"></i><span class="flex-1">${lbl}</span>
           ${tag ? `<span class="rounded-full bg-reddit px-1.5 text-[11px] font-extrabold text-white">${tag}</span>` : ''}</a>`;
       }
     }
@@ -101,6 +101,19 @@
     const k = document.getElementById('themeKnob'); if (!k) return;
     k.style.left = document.documentElement.classList.contains('dark') ? '2px' : '18px';
   }
+  function drawIcons() { if (window.lucide) window.lucide.createIcons(); }
+  window.orIcons = drawIcons; // pages can call after injecting icon markup
+  function ensureLucide(cb) {
+    if (window.lucide) { cb(); return; }
+    let s = document.querySelector('script[data-lucide-cdn]');
+    if (!s) {
+      s = document.createElement('script');
+      s.src = 'https://unpkg.com/lucide@latest';
+      s.setAttribute('data-lucide-cdn', '');
+      document.head.appendChild(s);
+    }
+    s.addEventListener('load', cb);
+  }
   document.addEventListener('DOMContentLoaded', () => {
     const side = document.getElementById('side');
     if (side) {
@@ -108,6 +121,7 @@
       side.innerHTML = sidebar();
     }
     syncKnob();
+    ensureLucide(drawIcons);
     const tt = document.getElementById('themeToggle');
     if (tt) tt.addEventListener('click', () => {
       const dark = document.documentElement.classList.toggle('dark');
