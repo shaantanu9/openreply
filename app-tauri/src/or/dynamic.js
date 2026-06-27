@@ -707,6 +707,7 @@ export async function renderConnections(view) {
     "Log in to platforms to unlock authenticated reach. Read-only &amp; account-safe — we never post for you or need your password.",
     `<button id="cn-test-all" class="${btnP}">⚡ Test all</button>`) +
     `<p class="mb-5 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit"><i data-lucide="lock" class="inline-block h-4 w-4 align-[-2px]"></i> Credentials are stored locally on this machine only. Connect a platform and it's automatically pulled into your collection runs — toggle "Used in collection" to opt out. Public sources (Hacker News, Dev.to, Mastodon, YouTube) need no login.</p>
+     <div id="cn-summary" class="mb-5"></div>
      <div id="cn-grid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><div class="text-zinc-500">Loading connections…</div></div>`;
 
   const grid = document.getElementById("cn-grid");
@@ -714,6 +715,15 @@ export async function renderConnections(view) {
   async function load() {
     try {
       const rows = (await api.credsList()) || [];
+      const _accts = rows.filter((c) => c.connected && c.kind !== "public");
+      const _pub = rows.filter((c) => c.kind === "public" && c.enabled !== false);
+      const _sum = document.getElementById("cn-summary");
+      if (_sum) _sum.innerHTML = _accts.length
+        ? `<div class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm">
+             <span class="font-bold text-emerald-600 dark:text-emerald-400"><i data-lucide="check-circle-2" class="inline-block h-4 w-4 align-[-2px]"></i> ${_accts.length} account${_accts.length > 1 ? "s" : ""} connected:</span>
+             ${_accts.map((c) => `<span class="ml-1 inline-block rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-zinc-800 dark:text-emerald-300">${esc(c.label)}</span>`).join(" ")}
+             <span class="ml-2 text-zinc-500">· ${_pub.length} public source${_pub.length === 1 ? "" : "s"} active</span></div>`
+        : `<div class="rounded-lg border border-zinc-200 px-4 py-3 text-sm text-zinc-500 dark:border-zinc-700">No accounts connected yet — log in to a platform below to unlock authenticated reach (${_pub.length} public sources already active).</div>`;
       grid.innerHTML = rows.length
         ? rows.map(connCard).join("")
         : `<div class="${card} text-zinc-500">No reachable platforms configured.</div>`;
