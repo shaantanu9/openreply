@@ -1,54 +1,40 @@
-<!doctype html><html lang="en"><head>
+<!doctype html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Settings — OpenReply</title><link rel="stylesheet" href="proto.css"></head><body>
+<title>Settings — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
 <div class="app">
-  <aside class="side">
-    <div class="brand"><span class="logo">◆</span> OpenReply</div>
-    <div class="agent-switch"><div class="agent-switch-label">Active agent</div>
-      <select><option>Acme Notes</option><option>DevTools Co</option></select></div>
-    <nav class="nav">
-      <a href="agents.html">▦ Agents</a>
-      <div class="nav-sec">Acme Notes</div>
-      <a href="agent.html">◷ Overview</a>
-      <a href="opportunities.html">◎ Opportunities</a>
-      <a href="compose.html">✎ Compose</a>
-      <a href="queue.html">▤ Queue</a>
-      <a href="knowledge.html">⬡ Knowledge</a>
-      <div class="nav-sec">Account</div>
-      <a href="connections.html">⚯ Connections</a>
-      <a class="active" href="settings.html">⚙ Settings</a>
-    </nav>
-    <div class="side-foot">Prototype · <a href="index.html">landing</a></div>
-  </aside>
+  <aside class="side" id="side"></aside>
   <main class="main">
-    <div class="top"><div><h1>Settings</h1><p class="sub">Voice defaults, AI key, and app preferences.</p></div></div>
-
+    <div class="top"><div><h1>Settings</h1><p class="sub">Voice defaults, AI key, alerts, and app preferences.</p></div></div>
     <div class="grid cols-2">
       <div class="card"><b>AI provider (BYOK)</b>
         <p class="muted" style="margin:6px 0 12px">Runs on your own key. Nothing sent to us.</p>
         <label class="fld">Provider<select><option>Anthropic (Claude)</option><option>OpenAI</option><option>OpenRouter</option><option>Groq</option><option>Local Ollama</option></select></label>
         <label class="fld">API key<input type="password" value="sk-ant-************"></label>
-        <button class="btn sm primary">Save</button>
-      </div>
-
+        <button class="btn sm primary">Save</button></div>
+      <div class="card"><b>Appearance</b>
+        <p class="muted" style="margin:6px 0 12px">Theme follows the toggle in the sidebar.</p>
+        <label class="fld">Default theme<select><option>Match system</option><option>Dark</option><option>Light</option></select></label>
+        <label class="fld">Accent<select><option>Reddit orange</option><option>Blue</option></select></label></div>
       <div class="card"><b>Agent voice defaults</b>
         <label class="fld" style="margin-top:8px">Default tone<input value="helpful, concise, non-salesy"></label>
         <label class="fld">Disclosure style<select><option>Disclose affiliation naturally</option><option>No self-promo ever</option><option>Pitch only when asked</option></select></label>
-        <label class="fld">Reply length<select><option>Match platform norms</option><option>Always short</option></select></label>
-      </div>
-
+        <label class="fld">Reply length<select><option>Match platform norms</option><option>Always short</option></select></label></div>
+      <div class="card"><b>Alerts</b>
+        <p class="muted" style="margin:6px 0 12px">Where new high-intent mentions are pushed.</p>
+        <label class="fld">Slack webhook<input placeholder="https://hooks.slack.com/…"></label>
+        <label class="fld">Email digest<select><option>Real-time (high intent)</option><option>Daily digest</option><option>Off</option></select></label>
+        <a class="btn sm" href="alerts.html">Open alert rules →</a></div>
       <div class="card"><b>Knowledge refresh</b>
         <label class="fld" style="margin-top:8px">Cadence<select><option>Daily</option><option>Weekly</option><option>Manual only</option></select></label>
-        <label class="fld">Sweep depth<select><option>Light (fast)</option><option>Deep (thorough)</option></select></label>
-      </div>
-
+        <label class="fld">Sweep depth<select><option>Light (fast)</option><option>Deep (thorough)</option></select></label></div>
       <div class="card"><b>Data &amp; account</b>
         <p class="muted" style="margin:6px 0 12px">Local SQLite · ~180 MB</p>
         <div class="row"><button class="btn sm">Export data</button><button class="btn sm">Custom RSS feeds</button></div>
         <div class="divider"></div>
-        <button class="btn sm" style="color:var(--red);border-color:var(--red)">Delete agent…</button>
-      </div>
+        <button class="btn sm" style="color:var(--red);border-color:var(--red)">Delete agent…</button></div>
     </div>
   </main>
 </div>
-</body></html>
+<script src="app.js"></script></body></html>

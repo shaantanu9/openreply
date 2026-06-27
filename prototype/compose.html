@@ -1,45 +1,26 @@
-<!doctype html><html lang="en"><head>
+<!doctype html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Compose — OpenReply</title><link rel="stylesheet" href="proto.css">
-<style>.kinds a{flex:1;text-align:center}.kinds a.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+<title>Compose — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css">
+<style>.kinds a{flex:1;text-align:center}.kinds a.active{background:var(--reddit);color:#fff;border-color:var(--reddit)}
 .out{display:none}.out.on{display:block}</style></head><body>
 <div class="app">
-  <aside class="side">
-    <div class="brand"><span class="logo">◆</span> OpenReply</div>
-    <div class="agent-switch"><div class="agent-switch-label">Active agent</div>
-      <select><option>Acme Notes</option><option>DevTools Co</option></select></div>
-    <nav class="nav">
-      <a href="agents.html">▦ Agents</a>
-      <div class="nav-sec">Acme Notes</div>
-      <a href="agent.html">◷ Overview</a>
-      <a href="opportunities.html">◎ Opportunities</a>
-      <a class="active" href="compose.html">✎ Compose</a>
-      <a href="queue.html">▤ Queue</a>
-      <a href="knowledge.html">⬡ Knowledge</a>
-      <div class="nav-sec">Account</div>
-      <a href="connections.html">⚯ Connections</a>
-      <a href="settings.html">⚙ Settings</a>
-    </nav>
-    <div class="side-foot">Prototype · <a href="index.html">landing</a></div>
-  </aside>
+  <aside class="side" id="side"></aside>
   <main class="main">
     <div class="top"><div><h1>Compose</h1><p class="sub">Generate content for <b>Acme Notes</b> from its live niche knowledge.</p></div></div>
-
     <div class="card" style="margin-bottom:18px">
       <div class="row kinds" style="margin-bottom:14px">
         <a class="btn active" href="#" onclick="pick(this);return false">Post</a>
         <a class="btn" href="#" onclick="pick(this);return false">Thread</a>
         <a class="btn" href="#" onclick="pick(this);return false">Video script</a>
-        <a class="btn" href="#" onclick="pick(this);return false">Article</a>
-      </div>
+        <a class="btn" href="#" onclick="pick(this);return false">Article</a></div>
       <div class="row">
         <label class="fld" style="margin:0">Platform<select style="width:180px"><option>X / Twitter</option><option>LinkedIn</option><option>Reddit</option></select></label>
         <label class="fld" style="flex:1;margin:0">Angle (optional)<input placeholder="leave blank to auto-pick the strongest angle"></label>
-        <button class="btn primary" style="align-self:flex-end" onclick="document.getElementById('out').classList.add('on')">✨ Generate</button>
-      </div>
+        <button class="btn primary" style="align-self:flex-end" onclick="document.getElementById('out').classList.add('on')">✨ Generate</button></div>
       <div class="note" style="margin-top:12px">Suggested from knowledge: <b>“People hate manual tagging of notes”</b> · <b>“Obsidian sync is fiddly for students”</b></div>
     </div>
-
     <div class="card out" id="out" style="margin-bottom:18px">
       <div class="spread"><b>Draft · Post · X</b><span class="badge green">on-brand</span></div>
       <textarea class="fld" style="width:100%;margin-top:10px" rows="6">Manual note tagging is where note apps go to die.
@@ -51,14 +32,14 @@ The fix: capture in plain text, let the app auto-link by topic. Zero upkeep, ful
 That's the whole bet behind how we built Acme Notes.</textarea>
       <div class="row"><button class="btn sm primary">Save draft</button><a class="btn sm" href="queue.html">Schedule →</a><button class="btn sm ghost">Regenerate</button></div>
     </div>
-
-    <h3 style="margin:24px 0 12px">Recent drafts</h3>
+    <h3 style="margin:24px 0 12px;color:var(--txt-strong)">Recent drafts</h3>
     <div class="grid cols-2">
-      <div class="card"><div class="spread"><span class="badge">thread</span><span class="badge violet">scheduled</span></div><p style="margin:10px 0 0">1/ The 3 reasons students abandon note apps (and the fix)…</p></div>
-      <div class="card"><div class="spread"><span class="badge">article</span><span class="badge amber">draft</span></div><p style="margin:10px 0 0">Why folders fail for lecture notes — and what replaces them</p></div>
-      <div class="card"><div class="spread"><span class="badge">script</span><span class="badge amber">draft</span></div><p style="margin:10px 0 0">[Hook] Your notes app is making you do its job…</p></div>
+      <div class="card"><div class="spread"><span class="badge violet">thread</span><span class="badge green">scheduled</span></div><p style="margin:10px 0 0">1/ The 3 reasons students abandon note apps (and the fix)…</p></div>
+      <div class="card"><div class="spread"><span class="badge violet">article</span><span class="badge amber">draft</span></div><p style="margin:10px 0 0">Why folders fail for lecture notes — and what replaces them</p></div>
+      <div class="card"><div class="spread"><span class="badge violet">script</span><span class="badge amber">draft</span></div><p style="margin:10px 0 0">[Hook] Your notes app is making you do its job…</p></div>
     </div>
   </main>
 </div>
+<script src="app.js"></script>
 <script>function pick(el){[...el.parentNode.children].forEach(a=>a.classList.remove('active'));el.classList.add('active');}</script>
 </body></html>

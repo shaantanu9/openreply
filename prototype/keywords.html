@@ -1,0 +1,39 @@
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keywords — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="top">
+      <div><h1>Keywords &amp; subreddits</h1><p class="sub">What this agent watches. AI suggests the rest from your site &amp; niche.</p></div>
+      <div class="top-actions"><button class="btn">✨ AI-suggest more</button><button class="btn primary">+ Add keyword</button></div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <div class="spread"><b>Tracked keywords</b><span class="muted">8 / 10 on Free</span></div>
+        <table class="tbl" style="margin-top:10px">
+          <tr><th>Keyword</th><th>Intent filter</th><th>30d hits</th><th></th></tr>
+          <tr><td>note taking app</td><td><span class="badge green">buying</span></td><td>142</td><td><button class="btn sm ghost">✕</button></td></tr>
+          <tr><td>obsidian alternative</td><td><span class="badge green">buying</span></td><td>97</td><td><button class="btn sm ghost">✕</button></td></tr>
+          <tr><td>study notes</td><td><span class="badge amber">any</span></td><td>210</td><td><button class="btn sm ghost">✕</button></td></tr>
+          <tr><td>note app too complicated</td><td><span class="badge green">buying</span></td><td>34</td><td><button class="btn sm ghost">✕</button></td></tr>
+        </table>
+        <div class="note" style="margin-top:12px">💡 Negative keywords (mute noise): <span class="chip">crypto</span> <span class="chip">nsfw</span> <button class="btn sm ghost">+ add</button></div>
+      </div>
+      <div class="card">
+        <div class="spread"><b>Tracked subreddits</b><button class="btn sm">✨ Discover</button></div>
+        <table class="tbl" style="margin-top:10px">
+          <tr><th>Subreddit</th><th>Members</th><th>Fit</th><th></th></tr>
+          <tr><td>r/GetStudying</td><td>480k</td><td><span class="score hi" style="font-size:1rem">92</span></td><td><span class="badge green">on</span></td></tr>
+          <tr><td>r/productivity</td><td>3.1M</td><td><span class="score hi" style="font-size:1rem">85</span></td><td><span class="badge green">on</span></td></tr>
+          <tr><td>r/ObsidianMD</td><td>220k</td><td><span class="score mid" style="font-size:1rem">71</span></td><td><span class="badge green">on</span></td></tr>
+          <tr><td>r/notebooks</td><td>90k</td><td><span class="score" style="font-size:1rem">58</span></td><td><button class="btn sm">add</button></td></tr>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app.js"></script></body></html>

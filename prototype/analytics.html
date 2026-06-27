@@ -1,0 +1,60 @@
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analytics — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css">
+<style>.spark{display:flex;align-items:flex-end;gap:6px;height:120px}
+.spark > i{flex:1;background:var(--reddit);border-radius:4px 4px 0 0;opacity:.85}</style></head><body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="top">
+      <div><h1>Analytics</h1><p class="sub">Acme Notes · last 30 days</p></div>
+      <div class="top-actions"><span class="chip on">30d</span><span class="chip">7d</span><span class="chip">all</span></div>
+    </div>
+
+    <div class="grid cols-4" style="margin-bottom:18px">
+      <div class="card"><div class="muted">Replies posted</div><div class="kpi">128</div><div class="badge green">▲ 22%</div></div>
+      <div class="card"><div class="muted">Leads saved</div><div class="kpi">41</div><div class="badge green">▲ 9%</div></div>
+      <div class="card"><div class="muted">Opportunities found</div><div class="kpi">612</div></div>
+      <div class="card"><div class="muted">Reply→lead rate</div><div class="kpi">32%</div></div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <b>Daily momentum</b><p class="muted" style="margin:4px 0 14px">Replies posted per day</p>
+        <div class="spark">
+          <i style="height:30%"></i><i style="height:55%"></i><i style="height:40%"></i><i style="height:70%"></i>
+          <i style="height:60%"></i><i style="height:85%"></i><i style="height:50%"></i><i style="height:95%"></i>
+          <i style="height:65%"></i><i style="height:80%"></i><i style="height:45%"></i><i style="height:100%"></i></div>
+      </div>
+      <div class="card">
+        <b>By platform</b>
+        <table class="tbl" style="margin-top:10px">
+          <tr><th>Platform</th><th>Replies</th><th>Leads</th><th>Rate</th></tr>
+          <tr><td><span class="badge reddit">reddit</span></td><td>84</td><td>29</td><td>35%</td></tr>
+          <tr><td><span class="badge amber">hn</span></td><td>26</td><td>7</td><td>27%</td></tr>
+          <tr><td><span class="badge blue">x</span></td><td>18</td><td>5</td><td>28%</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <b>Top subreddits by leads</b>
+        <div class="col" style="gap:12px;margin-top:12px">
+          <div><div class="spread"><span>r/GetStudying</span><span class="muted">18 leads</span></div><div class="bar"><span style="width:90%"></span></div></div>
+          <div><div class="spread"><span>r/productivity</span><span class="muted">11 leads</span></div><div class="bar"><span style="width:60%"></span></div></div>
+          <div><div class="spread"><span>r/ObsidianMD</span><span class="muted">6 leads</span></div><div class="bar"><span style="width:35%"></span></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <b>Best-performing content</b>
+        <table class="tbl" style="margin-top:10px">
+          <tr><th>Post</th><th>Type</th><th>Views</th></tr>
+          <tr><td>Manual tagging is where note apps die…</td><td><span class="badge violet">post</span></td><td>4.2k</td></tr>
+          <tr><td>3 reasons students abandon note apps</td><td><span class="badge violet">thread</span></td><td>2.8k</td></tr>
+          <tr><td>Why folders fail for lecture notes</td><td><span class="badge violet">article</span></td><td>1.1k</td></tr>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app.js"></script></body></html>

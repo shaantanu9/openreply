@@ -1,70 +1,100 @@
-/* OpenReply — clickable HTML prototype. Static design only (no backend).
-   Goal: lock the UX + flow. Theme it later to match the app. */
+/* OpenReply — clickable HTML prototype.
+   Reddit-inspired palette (orangered #FF4500), with dark (default) + light themes.
+   Theme is toggled by data-theme on <html>; see app.js. */
 :root{
-  --bg:#0f1115; --panel:#161922; --panel2:#1c2030; --line:#262b3a;
-  --txt:#e7e9ee; --muted:#9aa3b2; --accent:#6d5efc; --accent2:#ff6a3d;
-  --green:#27c08a; --amber:#f3b13b; --red:#ef5b6b; --radius:14px;
+  --reddit:#ff4500; --reddit-hi:#ff5700; --reddit-soft:#ff8b60; --blue:#0079d3;
+  /* dark (default) — Reddit night UI */
+  --bg:#0b0c0e; --panel:#1a1a1b; --panel2:#272729; --line:#343536;
+  --txt:#d7dadc; --txt-strong:#fff; --muted:#818384;
+  --accent:var(--reddit); --accent-hi:var(--reddit-hi);
+  --green:#46d160; --amber:#ffb000; --red:#ff585b; --violet:#9494ff;
+  --radius:14px; --shadow:0 1px 0 rgba(0,0,0,.4);
+}
+html[data-theme="light"]{
+  --bg:#dae0e6; --panel:#ffffff; --panel2:#f6f7f8; --line:#e2e4e6;
+  --txt:#1a1a1b; --txt-strong:#000; --muted:#7c7c7c;
+  --green:#1a8917; --amber:#a6740c; --red:#d93a3a; --violet:#5b5bd6;
+  --shadow:0 1px 3px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box} html,body{margin:0}
-body{background:var(--bg);color:var(--txt);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;}
+body{background:var(--bg);color:var(--txt);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif}
 a{color:inherit;text-decoration:none}
 .app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
 
 /* sidebar */
-.side{background:var(--panel);border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:14px;position:sticky;top:0;height:100vh}
+.side{background:var(--panel);border-right:1px solid var(--line);padding:16px 14px;display:flex;flex-direction:column;gap:12px;position:sticky;top:0;height:100vh;overflow:auto}
 .brand{font-weight:800;font-size:1.15rem;display:flex;align-items:center;gap:8px}
-.brand .logo{color:var(--accent2)}
-.agent-switch{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
-.agent-switch-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
-.agent-switch select{width:100%;background:transparent;border:0;color:var(--txt);font-size:.95rem;font-weight:600}
-.nav{display:flex;flex-direction:column;gap:2px;overflow:auto}
-.nav a{padding:9px 11px;border-radius:9px;color:var(--muted);font-weight:500;display:flex;gap:9px;align-items:center}
+.brand .logo{width:22px;height:22px;border-radius:50%;background:var(--reddit);display:inline-block}
+.agent-switch{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+.agent-switch-label{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.agent-switch select{width:100%;background:transparent;border:0;color:var(--txt);font-size:.95rem;font-weight:700}
+.nav{display:flex;flex-direction:column;gap:1px}
+.nav a{padding:8px 11px;border-radius:9px;color:var(--muted);font-weight:600;font-size:.92rem;display:flex;gap:9px;align-items:center}
+.nav a .ic{width:18px;text-align:center}
 .nav a:hover{background:var(--panel2);color:var(--txt)}
-.nav a.active{background:rgba(109,94,252,.16);color:#fff}
-.nav-sec{font-size:.68rem;color:#5d6677;text-transform:uppercase;letter-spacing:.06em;margin:12px 4px 2px}
-.side-foot{margin-top:auto;font-size:.75rem;color:#5d6677}
+.nav a.active{background:rgba(255,69,0,.14);color:var(--accent)}
+.nav a .tag{margin-left:auto;background:var(--reddit);color:#fff;border-radius:999px;font-size:.68rem;padding:0 6px;font-weight:800}
+.nav-sec{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin:12px 6px 3px;opacity:.8}
+.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px}
+.theme-toggle{display:flex;align-items:center;justify-content:space-between;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 11px;cursor:pointer;font-size:.85rem;font-weight:600}
+.theme-toggle .sw{width:34px;height:18px;border-radius:999px;background:var(--line);position:relative}
+.theme-toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--reddit);transition:.2s}
+html[data-theme="light"] .theme-toggle .sw::after{left:18px}
 
 /* main */
-.main{padding:26px 30px 80px;max-width:1180px}
-.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
-.top h1{margin:0 0 4px;font-size:1.7rem}
+.main{padding:24px 30px 80px;max-width:1180px}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}
+.top h1{margin:0 0 3px;font-size:1.6rem;color:var(--txt-strong)}
 .sub{color:var(--muted);margin:0}
 .top-actions{display:flex;gap:10px;flex-wrap:wrap}
 
 /* primitives */
-.btn{display:inline-flex;align-items:center;gap:7px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-size:.92rem;font-weight:600;cursor:pointer}
-.btn:hover{border-color:#3a4256}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn.primary:hover{filter:brightness(1.08)}
+.btn{display:inline-flex;align-items:center;gap:7px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:999px;padding:8px 15px;font-size:.9rem;font-weight:700;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--reddit);border-color:var(--reddit);color:#fff}
+.btn.primary:hover{background:var(--reddit-hi)}
+.btn.blue{background:var(--blue);border-color:var(--blue);color:#fff}
 .btn.ghost{background:transparent}
-.btn.sm{padding:6px 10px;font-size:.82rem}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.btn.sm{padding:5px 11px;font-size:.82rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
 .grid{display:grid;gap:16px}
 .grid.cols-2{grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
-.grid.cols-3{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.grid.cols-3{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.grid.cols-4{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
 .muted{color:var(--muted)}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.col{display:flex;flex-direction:column}
 .spread{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:.78rem;color:var(--muted)}
-.badge{border-radius:6px;padding:2px 8px;font-size:.74rem;font-weight:700}
-.badge.green{background:rgba(39,192,138,.15);color:var(--green)}
-.badge.amber{background:rgba(243,177,59,.15);color:var(--amber)}
-.badge.red{background:rgba(239,91,107,.15);color:var(--red)}
-.badge.violet{background:rgba(109,94,252,.18);color:#b9b0ff}
-.score{font-weight:800;font-size:1.25rem;color:var(--accent)}
+.chip.on{background:rgba(255,69,0,.14);border-color:var(--reddit);color:var(--accent)}
+.badge{border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:800;display:inline-block}
+.badge.green{background:rgba(70,209,96,.16);color:var(--green)}
+.badge.amber{background:rgba(255,176,0,.16);color:var(--amber)}
+.badge.red{background:rgba(255,88,91,.16);color:var(--red)}
+.badge.violet{background:rgba(148,148,255,.18);color:var(--violet)}
+.badge.reddit{background:rgba(255,69,0,.16);color:var(--reddit)}
+.badge.blue{background:rgba(0,121,211,.16);color:var(--blue)}
+.score{font-weight:800;font-size:1.25rem;color:var(--reddit)}
 .score.hi{color:var(--green)} .score.mid{color:var(--amber)}
 label.fld{display:flex;flex-direction:column;gap:5px;font-size:.82rem;color:var(--muted);margin-bottom:12px}
 .fld input,.fld textarea,.fld select{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;color:var(--txt);font:inherit}
 .fld textarea{resize:vertical;min-height:90px}
-.divider{height:1px;background:var(--line);margin:18px 0}
-.kpi{font-size:1.9rem;font-weight:800}
-.pill-tabs{display:flex;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:5px;width:fit-content;margin-bottom:18px}
-.pill-tabs a{padding:7px 14px;border-radius:8px;color:var(--muted);font-weight:600;font-size:.9rem}
-.pill-tabs a.active{background:var(--accent);color:#fff}
+.divider{height:1px;background:var(--line);margin:16px 0}
+.kpi{font-size:1.9rem;font-weight:800;color:var(--txt-strong)}
+.pill-tabs{display:flex;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:5px;width:fit-content;margin-bottom:18px;flex-wrap:wrap}
+.pill-tabs a{padding:7px 14px;border-radius:8px;color:var(--muted);font-weight:700;font-size:.88rem}
+.pill-tabs a.active{background:var(--reddit);color:#fff}
 .empty{border:1px dashed var(--line);border-radius:12px;padding:34px;text-align:center;color:var(--muted)}
 .steps{display:flex;gap:8px;margin-bottom:24px}
 .steps .step{flex:1;height:4px;border-radius:999px;background:var(--line)}
-.steps .step.on{background:var(--accent)}
+.steps .step.on{background:var(--reddit)}
 .checkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .checkgrid label{display:flex;gap:8px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px;font-size:.88rem;cursor:pointer}
-.note{background:rgba(109,94,252,.08);border:1px solid rgba(109,94,252,.3);border-radius:10px;padding:12px 14px;font-size:.88rem;color:#c5bdff}
+.note{background:rgba(255,69,0,.08);border:1px solid rgba(255,69,0,.3);border-radius:10px;padding:12px 14px;font-size:.88rem;color:var(--accent)}
+.bar{height:8px;border-radius:999px;background:var(--panel2);overflow:hidden}
+.bar > span{display:block;height:100%;background:var(--reddit)}
+.list-row{display:grid;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.list-row:last-child{border-bottom:none}
+table.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line)}
+.tbl td{padding:11px 10px;border-bottom:1px solid var(--line)}

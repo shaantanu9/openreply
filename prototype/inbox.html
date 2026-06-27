@@ -1,0 +1,56 @@
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inbox — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="top">
+      <div><h1>Inbox</h1><p class="sub">Live mentions of your keywords — newest first. Real-time alerts, noise filtered.</p></div>
+      <div class="top-actions"><a class="btn" href="alerts.html">🔔 Alerts</a><button class="btn primary">Mark all read</button></div>
+    </div>
+
+    <div class="pill-tabs">
+      <a class="active" href="#">All <span class="muted">(9)</span></a><a href="#">Unread</a>
+      <a href="#">High intent</a><a href="#">Saved leads</a><a href="#">Done</a></div>
+
+    <div class="card" style="margin-bottom:14px"><div class="row">
+      <span class="chip on">Reddit</span><span class="chip">X</span><span class="chip">HN</span>
+      <span style="width:1px;height:18px;background:var(--line)"></span>
+      <span class="chip on">positive</span><span class="chip">neutral</span><span class="chip">negative</span>
+      <span class="muted" style="margin-left:auto">⚡ avg alert delay: 48s</span>
+    </div></div>
+
+    <div class="card">
+      <div class="list-row" style="grid-template-columns:1fr auto">
+        <div><div class="row"><span class="badge reddit">reddit</span><span class="muted">r/GetStudying · 6m ago</span><span class="badge green">high intent</span><span class="badge violet">positive</span></div>
+          <div style="font-weight:600;margin:6px 0">Best app to organize messy lecture notes?</div>
+          <div class="muted">“…tried Notion and Obsidian but it's too much setup. Just want something that files itself.”</div></div>
+        <div class="col" style="gap:6px;align-items:flex-end"><span class="score hi">88</span>
+          <a class="btn sm primary" href="opportunities.html">Draft reply</a><button class="btn sm ghost">Save lead</button></div>
+      </div>
+      <div class="list-row" style="grid-template-columns:1fr auto">
+        <div><div class="row"><span class="badge reddit">reddit</span><span class="muted">r/productivity · 22m ago</span><span class="badge green">high intent</span></div>
+          <div style="font-weight:600;margin:6px 0">Obsidian alternative that's less work?</div>
+          <div class="muted">“Recommend me something simpler for class notes.”</div></div>
+        <div class="col" style="gap:6px;align-items:flex-end"><span class="score hi">81</span>
+          <a class="btn sm primary" href="opportunities.html">Draft reply</a><button class="btn sm ghost">Ignore</button></div>
+      </div>
+      <div class="list-row" style="grid-template-columns:1fr auto">
+        <div><div class="row"><span class="badge blue">x</span><span class="muted">@studygrind · 1h ago</span><span class="badge amber">mid intent</span><span class="badge red">negative</span></div>
+          <div style="font-weight:600;margin:6px 0">"every note app makes me organize MORE not less 😤"</div>
+          <div class="muted">A complaint you can turn into a helpful reply (and a content angle).</div></div>
+        <div class="col" style="gap:6px;align-items:flex-end"><span class="score mid">66</span>
+          <a class="btn sm primary" href="opportunities.html">Draft reply</a><a class="btn sm" href="compose.html">→ Post idea</a></div>
+      </div>
+      <div class="list-row" style="grid-template-columns:1fr auto">
+        <div><div class="row"><span class="badge amber">hn</span><span class="muted">2h ago</span><span class="badge">neutral</span></div>
+          <div style="font-weight:600;margin:6px 0">Show HN: my plain-text note-taking workflow</div></div>
+        <div class="col" style="gap:6px;align-items:flex-end"><span class="score mid">64</span>
+          <a class="btn sm" href="opportunities.html">Draft reply</a></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app.js"></script></body></html>

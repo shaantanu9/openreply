@@ -1,56 +1,24 @@
-<!doctype html><html lang="en"><head>
+<!doctype html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Queue — OpenReply</title><link rel="stylesheet" href="proto.css">
-<style>.q-row{display:grid;grid-template-columns:90px 1fr 110px 150px;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}</style></head><body>
+<title>Queue — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
 <div class="app">
-  <aside class="side">
-    <div class="brand"><span class="logo">◆</span> OpenReply</div>
-    <div class="agent-switch"><div class="agent-switch-label">Active agent</div>
-      <select><option>Acme Notes</option><option>DevTools Co</option></select></div>
-    <nav class="nav">
-      <a href="agents.html">▦ Agents</a>
-      <div class="nav-sec">Acme Notes</div>
-      <a href="agent.html">◷ Overview</a>
-      <a href="opportunities.html">◎ Opportunities</a>
-      <a href="compose.html">✎ Compose</a>
-      <a class="active" href="queue.html">▤ Queue</a>
-      <a href="knowledge.html">⬡ Knowledge</a>
-      <div class="nav-sec">Account</div>
-      <a href="connections.html">⚯ Connections</a>
-      <a href="settings.html">⚙ Settings</a>
-    </nav>
-    <div class="side-foot">Prototype · <a href="index.html">landing</a></div>
-  </aside>
+  <aside class="side" id="side"></aside>
   <main class="main">
     <div class="top"><div><h1>Queue</h1><p class="sub">Drafts &amp; scheduled content. Publishing is manual now (auto-publish later).</p></div>
       <div class="top-actions"><a class="btn" href="compose.html">+ New content</a></div></div>
-
     <div class="pill-tabs"><a class="active" href="#">All</a><a href="#">Drafts</a><a href="#">Scheduled</a><a href="#">Posted</a></div>
-
     <div class="card">
-      <div class="q-row" style="color:var(--muted);font-size:.8rem;border-bottom:1px solid var(--line)">
-        <div>TYPE</div><div>CONTENT</div><div>PLATFORM</div><div>STATUS / WHEN</div></div>
-
-      <div class="q-row"><span class="badge violet">thread</span>
-        <div>1/ The 3 reasons students abandon note apps…</div><div class="muted">X</div>
-        <div><span class="badge green">scheduled</span><div class="muted">Tomorrow 9:00</div></div></div>
-
-      <div class="q-row"><span class="badge violet">post</span>
-        <div>Manual note tagging is where note apps go to die…</div><div class="muted">X</div>
-        <div><span class="badge green">scheduled</span><div class="muted">Fri 12:30</div></div></div>
-
-      <div class="q-row"><span class="badge violet">reply</span>
-        <div>For messy lecture notes, the trick is auto-tagging…</div><div class="muted">Reddit</div>
-        <div><span class="badge amber">draft</span><div class="muted">r/GetStudying</div></div></div>
-
-      <div class="q-row"><span class="badge violet">article</span>
-        <div>Why folders fail for lecture notes — and what replaces them</div><div class="muted">LinkedIn</div>
-        <div><span class="badge amber">draft</span></div></div>
-
-      <div class="q-row" style="border-bottom:none"><span class="badge violet">post</span>
-        <div>Plain text + auto-link beats folders. Here's why…</div><div class="muted">LinkedIn</div>
-        <div><span class="badge">posted</span><div class="muted">Mon · 412 views</div></div></div>
+      <table class="tbl">
+        <tr><th>Type</th><th>Content</th><th>Platform</th><th>Status / when</th><th></th></tr>
+        <tr><td><span class="badge violet">thread</span></td><td>1/ The 3 reasons students abandon note apps…</td><td class="muted">X</td><td><span class="badge green">scheduled</span> <span class="muted">Tomorrow 9:00</span></td><td><button class="btn sm ghost">Edit</button></td></tr>
+        <tr><td><span class="badge violet">post</span></td><td>Manual note tagging is where note apps go to die…</td><td class="muted">X</td><td><span class="badge green">scheduled</span> <span class="muted">Fri 12:30</span></td><td><button class="btn sm ghost">Edit</button></td></tr>
+        <tr><td><span class="badge reddit">reply</span></td><td>For messy lecture notes, the trick is auto-tagging…</td><td class="muted">Reddit</td><td><span class="badge amber">draft</span> <span class="muted">r/GetStudying</span></td><td><button class="btn sm primary">Post</button></td></tr>
+        <tr><td><span class="badge violet">article</span></td><td>Why folders fail for lecture notes — and what replaces them</td><td class="muted">LinkedIn</td><td><span class="badge amber">draft</span></td><td><button class="btn sm ghost">Edit</button></td></tr>
+        <tr><td><span class="badge violet">post</span></td><td>Plain text + auto-link beats folders. Here's why…</td><td class="muted">LinkedIn</td><td><span class="badge">posted</span> <span class="muted">Mon · 412 views</span></td><td><button class="btn sm ghost">View</button></td></tr>
+      </table>
     </div>
   </main>
 </div>
-</body></html>
+<script src="app.js"></script></body></html>

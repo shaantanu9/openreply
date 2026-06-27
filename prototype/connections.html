@@ -1,30 +1,13 @@
-<!doctype html><html lang="en"><head>
+<!doctype html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connections — OpenReply</title><link rel="stylesheet" href="proto.css"></head><body>
+<title>Connections — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
 <div class="app">
-  <aside class="side">
-    <div class="brand"><span class="logo">◆</span> OpenReply</div>
-    <div class="agent-switch"><div class="agent-switch-label">Active agent</div>
-      <select><option>Acme Notes</option><option>DevTools Co</option></select></div>
-    <nav class="nav">
-      <a href="agents.html">▦ Agents</a>
-      <div class="nav-sec">Acme Notes</div>
-      <a href="agent.html">◷ Overview</a>
-      <a href="opportunities.html">◎ Opportunities</a>
-      <a href="compose.html">✎ Compose</a>
-      <a href="queue.html">▤ Queue</a>
-      <a href="knowledge.html">⬡ Knowledge</a>
-      <div class="nav-sec">Account</div>
-      <a class="active" href="connections.html">⚯ Connections</a>
-      <a href="settings.html">⚙ Settings</a>
-    </nav>
-    <div class="side-foot">Prototype · <a href="index.html">landing</a></div>
-  </aside>
+  <aside class="side" id="side"></aside>
   <main class="main">
     <div class="top"><div><h1>Connections</h1><p class="sub">Log in to platforms to unlock authenticated reach &amp; (later) one-click posting.</p></div></div>
-
     <div class="note" style="margin-bottom:18px">Read-only sources (News, RSS, web search) need no login. Logins unlock richer data and posting.</div>
-
     <div class="grid cols-3">
       <div class="card"><div class="spread"><b>Reddit</b><span class="badge green">connected</span></div><p class="muted" style="margin:8px 0 12px">u/acme_dev · verified 2d ago</p><button class="btn sm">Reconnect</button></div>
       <div class="card"><div class="spread"><b>X / Twitter</b><span class="badge red">not connected</span></div><p class="muted" style="margin:8px 0 12px">Cookie login</p><button class="btn sm primary">Connect</button></div>
@@ -35,4 +18,4 @@
     </div>
   </main>
 </div>
-</body></html>
+<script src="app.js"></script></body></html>

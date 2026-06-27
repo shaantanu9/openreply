@@ -1,0 +1,35 @@
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plans — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css">
+<style>.plan{display:flex;flex-direction:column;gap:10px}.plan .price{font-size:2rem;font-weight:800;color:var(--txt-strong)}
+.plan ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:.9rem;line-height:1.8}
+.plan.feat{border-color:var(--reddit);box-shadow:0 0 0 1px var(--reddit)}</style></head><body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="top"><div><h1>Plans</h1><p class="sub">Open-source &amp; self-host free. Or a hosted plan — BYOK, so AI usage is on your own key.</p></div>
+      <div class="top-actions"><span class="chip on">Monthly</span><span class="chip">Lifetime</span></div></div>
+
+    <div class="grid cols-4">
+      <div class="card plan"><b>Free / Self-host</b><div class="price">$0</div>
+        <ul><li>1 agent</li><li>5 subreddits · 10 keywords</li><li>Unlimited replies (BYOK)</li><li>Manual posting</li><li>Community support</li></ul>
+        <a class="btn" href="agents.html">Current plan</a></div>
+
+      <div class="card plan feat"><div class="spread"><b>Solo</b><span class="badge reddit">popular</span></div><div class="price">$49<span class="muted" style="font-size:.9rem">/mo</span></div>
+        <ul><li>3 agents</li><li>Unlimited keywords &amp; subs</li><li>Real-time inbox alerts</li><li>Analytics</li><li>Email support</li></ul>
+        <button class="btn primary">Upgrade</button></div>
+
+      <div class="card plan"><b>Business</b><div class="price">$199<span class="muted" style="font-size:.9rem">/mo</span></div>
+        <ul><li>10 agents</li><li>Slack/email alerts</li><li>Scheduling &amp; queue</li><li>2 seats</li><li>Priority support</li></ul>
+        <button class="btn">Upgrade</button></div>
+
+      <div class="card plan"><b>Team</b><div class="price">$799<span class="muted" style="font-size:.9rem">/mo</span></div>
+        <ul><li>Unlimited agents</li><li>Approval workflow</li><li>Roles &amp; seats</li><li>Audit log</li><li>Dedicated support</li></ul>
+        <button class="btn">Contact</button></div>
+    </div>
+    <div class="note" style="margin-top:18px">Every tier is <b>bring-your-own-key</b> — model costs run on your Anthropic/OpenAI/Ollama key, never ours.</div>
+  </main>
+</div>
+<script src="app.js"></script></body></html>

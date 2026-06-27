@@ -1,0 +1,23 @@
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alert rules — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="top"><div><h1>Alert rules</h1><p class="sub">Get pinged the moment a high-value conversation appears (sub-minute).</p></div>
+      <div class="top-actions"><button class="btn primary">+ New rule</button></div></div>
+    <div class="card">
+      <table class="tbl">
+        <tr><th>When</th><th>Channel</th><th>Status</th><th></th></tr>
+        <tr><td>Keyword match · intent ≥ <b>buying</b> · score ≥ <b>75</b></td><td>Slack #leads + email</td><td><span class="badge green">on</span></td><td><button class="btn sm ghost">Edit</button></td></tr>
+        <tr><td>New mention in <b>r/GetStudying</b></td><td>Email real-time</td><td><span class="badge green">on</span></td><td><button class="btn sm ghost">Edit</button></td></tr>
+        <tr><td>Negative sentiment about <b>your brand</b></td><td>Slack #brand</td><td><span class="badge green">on</span></td><td><button class="btn sm ghost">Edit</button></td></tr>
+        <tr><td>Daily digest of everything else</td><td>Email · 8:00</td><td><span class="badge amber">digest</span></td><td><button class="btn sm ghost">Edit</button></td></tr>
+      </table>
+    </div>
+    <div class="note" style="margin-top:16px">⚡ Median alert latency: <b>48s</b>. Noise control mutes negative keywords &amp; low-intent chatter.</div>
+  </main>
+</div>
+<script src="app.js"></script></body></html>

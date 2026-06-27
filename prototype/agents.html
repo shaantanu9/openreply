@@ -1,31 +1,15 @@
-<!doctype html><html lang="en"><head>
+<!doctype html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agents — OpenReply</title><link rel="stylesheet" href="proto.css"></head><body>
+<title>Agents — OpenReply</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('or-theme')||'dark'}catch(e){}</script>
+<link rel="stylesheet" href="proto.css"></head><body>
 <div class="app">
-  <aside class="side">
-    <div class="brand"><span class="logo">◆</span> OpenReply</div>
-    <div class="agent-switch"><div class="agent-switch-label">Active agent</div>
-      <select><option>Acme Notes</option><option>DevTools Co</option></select></div>
-    <nav class="nav">
-      <a class="active" href="agents.html">▦ Agents</a>
-      <div class="nav-sec">Acme Notes</div>
-      <a href="agent.html">◷ Overview</a>
-      <a href="opportunities.html">◎ Opportunities</a>
-      <a href="compose.html">✎ Compose</a>
-      <a href="queue.html">▤ Queue</a>
-      <a href="knowledge.html">⬡ Knowledge</a>
-      <div class="nav-sec">Account</div>
-      <a href="connections.html">⚯ Connections</a>
-      <a href="settings.html">⚙ Settings</a>
-    </nav>
-    <div class="side-foot">Prototype · <a href="index.html">landing</a></div>
-  </aside>
+  <aside class="side" id="side"></aside>
   <main class="main">
     <div class="top">
       <div><h1>Agents</h1><p class="sub">Each agent is a brand/niche persona with its own knowledge &amp; voice.</p></div>
       <div class="top-actions"><a class="btn primary" href="onboarding.html">+ New agent</a></div>
     </div>
-
     <div class="grid cols-2">
       <div class="card">
         <div class="spread"><div><b style="font-size:1.1rem">Acme Notes</b> <span class="badge green">active</span><div class="muted">AI note-taking for students</div></div></div>
@@ -36,10 +20,8 @@
         <div class="row" style="margin-top:14px">
           <a class="btn sm primary" href="opportunities.html">Find replies</a>
           <a class="btn sm" href="compose.html">Create content</a>
-          <a class="btn sm ghost" href="agent.html">Open</a>
-        </div>
+          <a class="btn sm ghost" href="agent.html">Open</a></div>
       </div>
-
       <div class="card">
         <div class="spread"><div><b style="font-size:1.1rem">DevTools Co</b><div class="muted">CLI productivity for developers</div></div></div>
         <div class="row" style="margin:12px 0 6px"><span class="chip">terminal workflow</span><span class="chip">dotfiles</span><span class="chip">shell tips</span></div>
@@ -49,14 +31,11 @@
         <div class="row" style="margin-top:14px">
           <a class="btn sm" href="agents.html">Make active</a>
           <a class="btn sm primary" href="opportunities.html">Find replies</a>
-          <a class="btn sm ghost" href="agent.html">Open</a>
-        </div>
+          <a class="btn sm ghost" href="agent.html">Open</a></div>
       </div>
-
-      <a class="card" href="onboarding.html" style="display:flex;align-items:center;justify-content:center;color:var(--muted);border-style:dashed;min-height:160px">
-        <div style="text-align:center"><div style="font-size:2rem">＋</div>New agent</div>
-      </a>
+      <a class="card" href="onboarding.html" style="display:flex;align-items:center;justify-content:center;color:var(--muted);border-style:dashed;min-height:170px">
+        <div style="text-align:center"><div style="font-size:2rem;color:var(--reddit)">＋</div>New agent</div></a>
     </div>
   </main>
 </div>
-</body></html>
+<script src="app.js"></script></body></html>
