@@ -53,6 +53,57 @@ the repo as boilerplate rather than rewriting.
 - **Pricing:** Solo ~$49/mo, Business ~$199/mo, Team ~$799/mo; lifetime deals
   ($59/$159/$259 seen on LTD sites). **BYOK** (your OpenAI/Anthropic key).
 
+### ReplyDaddy — VERBATIM, crawl4ai-verified (2026-06-27)
+Static fetch failed (SPA); crawl4ai with `magic=True, simulate_user=True, scan_full_page`
+rendered the full page. Source of truth below (raw saved at `docs/research/replydaddy.md`).
+
+- **Positioning:** "Reddit Marketing Tool & Co-Pilot for Authentic Growth." · "Navigate
+  Reddit faster, find relevant posts to engage with, and respond authentically. **Build
+  real connections, not spam.**" · "Co-pilot, Stay In Control" · "You stay in control ·
+  100% authentic." Framed *vs spammy auto-posters*.
+- **Brand color = `#FF4500`** (confirmed in CSS) → our Reddit-orange palette is exactly right.
+- **5-step flow (their onboarding/how-it-works):** 01 **Brand Analysis** (analyze your
+  website → products, voice, value props) · 02 **Your Persona** (work history + expertise
+  → credible responses) · 03 **Smart Discovery** (AI finds best subreddits + keywords
+  automatically) · 04 **Start Engaging** (review opportunities, craft responses, **post
+  manually**) · 05 **Build Habits** (daily goals, momentum). "No Reddit account connection
+  needed."
+- **6 named features:** **Opportunity Finder** ("10x faster discovery") · **Smart
+  Prioritization** ("Focus on what converts") · **Authentic Response Assistant** ("Never
+  sound like AI slop") · **Ban-Proof Post Creator** ("Posts that never get removed") ·
+  **Subreddit Intelligence** ("Know before you post") · **Brand Context Engine** ("Your
+  voice, amplified").
+- **Proof stats:** 50K+ posts analyzed daily (hot/rising/new) · 0 bans reported · 24/7 AI
+  monitoring + multi-factor scoring · "Trusted by 2,847+ marketers."
+- **FAQ facts:** NO auto-post (you review + manually post) · you **never connect your
+  Reddit account** (read-only scan of public content, copy-paste to post) · **Claude
+  Sonnet 4**, **70% weight on relevance**, scans hot/rising/new · positioned as a
+  "discovery + content generation assistant," not automation.
+- **Pricing (exact):**
+  | Plan | Price | Projects | Subs | Keywords | Posts/mo | Scans/mo |
+  |---|---|---|---|---|---|---|
+  | Free | $0 | 1 | 5 | 10 | — | — |
+  | Solopreneur | $49/mo ($490/yr) | 1 | 5 | 10 | 60 | 30 |
+  | Growing Business ★ | $199/mo ($1,990/yr) | 1 | 15 | 30 | 300 | 60 |
+  | Teams & Agencies | $799/mo ($7,990/yr) | 5 | 15/proj | 30/proj | 300/proj | 60/proj |
+  | Enterprise | Book a call | ∞ | custom | custom | custom | custom |
+  "Unlimited replies" = every opportunity in a scan can get a draft. No credit card; free plan.
+- **Their nouns:** "Project" (= our **Agent**), "scan" (a metered run), monthly **post
+  generation caps**, "subreddits monitored", "keywords tracked".
+
+### OpenReply's differentiation (sharpened by the crawl)
+- **Open-source + BYOK ⇒ no scan caps, no posts/month caps** — ReplyDaddy meters scans
+  (30–60/mo) and post generation (60–300/mo); ours is limited only by your own API key.
+- **Multi-platform**, not Reddit-only (X, LinkedIn, HN, news, …) — ReplyDaddy is Reddit-only.
+- **Agent = richer than "Project"** (persistent persona + auto-refreshed knowledge graph).
+- **Self-host** the whole thing. Adopt their proven microcopy/flow (5 steps, feature
+  names, "never sound like AI slop", "read-only / account-safe").
+
+### Reppit (crawl note)
+Even harder SPA — crawl4ai returned only the title even with simulation. Known from
+research: dark theme (emerald `#10b981` accent on slate), scores threads by **buying
+intent**. Re-crawl later with a `wait_for` selector or its `/features` route.
+
 ### The alternatives landscape (three categories)
 1. **Monitoring/alerting** — *F5Bot* (free, keyword email alerts), *Syften* (faster,
    <1-min delivery, Slack, best filtering/noise control). Great at *finding*, nothing
