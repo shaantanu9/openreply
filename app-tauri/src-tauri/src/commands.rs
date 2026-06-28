@@ -391,6 +391,45 @@ pub async fn agent_corpus_check(app: AppHandle, id: Option<String>, limit: Optio
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent autopilot` — get the daily content + opportunity schedule.
+#[tauri::command]
+pub async fn agent_autopilot(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "autopilot".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent autopilot-set` — configure the daily auto-pilot.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn agent_autopilot_set(
+    app: AppHandle, id: Option<String>,
+    content: Option<bool>, content_kinds: Option<String>, content_count: Option<u32>, content_cadence: Option<String>,
+    opportunity: Option<bool>, opp_count: Option<u32>, opp_cadence: Option<String>,
+) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "autopilot-set".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(b) = content { args.push(if b { "--content".into() } else { "--no-content".into() }); }
+    if let Some(k) = content_kinds { if !k.is_empty() { args.push("--content-kinds".into()); args.push(k); } }
+    if let Some(c) = content_count { args.push("--content-count".into()); args.push(c.to_string()); }
+    if let Some(c) = content_cadence { if !c.is_empty() { args.push("--content-cadence".into()); args.push(c); } }
+    if let Some(b) = opportunity { args.push(if b { "--opportunity".into() } else { "--no-opportunity".into() }); }
+    if let Some(c) = opp_count { args.push("--opp-count".into()); args.push(c.to_string()); }
+    if let Some(c) = opp_cadence { if !c.is_empty() { args.push("--opp-cadence".into()); args.push(c); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap agent autopilot-run` — run the auto-pilot now if due.
+#[tauri::command]
+pub async fn agent_autopilot_run(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "autopilot-run".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap agent build-graph` — build the agent's knowledge graph (brain).
 #[tauri::command]
 pub async fn agent_build_graph(app: AppHandle, id: Option<String>, deep: Option<bool>) -> Result<Value, String> {
@@ -477,6 +516,12 @@ pub async fn reply_list(
     if let Some(pf) = platform { if !pf.is_empty() { args.push("--platform".into()); args.push(pf); } }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `gapmap reply source-counts` — per-source opportunity + fetched-post counts.
+#[tauri::command]
+pub async fn reply_source_counts(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "source-counts", "--json"]).await.map_err(err_to_string)
 }
 
 /// `gapmap reply draft -o <id>` — generate an on-brand reply draft.
@@ -9901,3 +9946,70 @@ SINGLE='world'
     }
 }
 
+
+// ── Goal-directed self-evolving agents (Goal Playbook + idea synthesis) ──────
+// Triangle: these + main.rs::generate_handler! + or/api.js wrappers.
+
+/// Set the active agent's structured goal.
+#[tauri::command]
+pub async fn agent_goal_set(
+    app: AppHandle,
+    objective: String,
+    audience: String,
+    win_signal: String,
+    guardrails: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec![
+        "reply", "goal-set",
+        "--objective", &objective, "--audience", &audience,
+        "--win-signal", &win_signal, "--guardrails", &guardrails, "--json",
+    ]).await.map_err(err_to_string)
+}
+
+/// Read the active agent's current Goal Playbook.
+#[tauri::command]
+pub async fn agent_playbook_get(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "playbook", "--json"]).await.map_err(err_to_string)
+}
+
+/// Re-distill the active agent's Goal Playbook (manual "Evolve now").
+#[tauri::command]
+pub async fn agent_evolve(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "evolve", "--json"]).await.map_err(err_to_string)
+}
+
+/// List suggested ideas, or synthesize fresh ones when `suggest` is true.
+#[tauri::command]
+pub async fn agent_ideas(app: AppHandle, suggest: Option<bool>, n: Option<u32>) -> Result<Value, String> {
+    let nn = n.unwrap_or(5).to_string();
+    let mut args = vec!["reply".to_string(), "ideas".to_string(),
+                        "--n".to_string(), nn, "--json".to_string()];
+    if suggest.unwrap_or(false) {
+        args.push("--suggest".into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Turn a suggested idea into a real content draft.
+#[tauri::command]
+pub async fn agent_idea_draft(
+    app: AppHandle,
+    idea: String,
+    kind: Option<String>,
+    platform: Option<String>,
+) -> Result<Value, String> {
+    let k = kind.unwrap_or_default();
+    let p = platform.unwrap_or_default();
+    run_cli(&app, vec![
+        "reply", "idea-draft", "--idea", &idea, "--kind", &k, "--platform", &p, "--json",
+    ]).await.map_err(err_to_string)
+}
+
+/// Mark a suggested idea used / dismissed.
+#[tauri::command]
+pub async fn agent_idea_status(app: AppHandle, idea: String, status: String) -> Result<Value, String> {
+    run_cli(&app, vec![
+        "reply", "idea-status", "--idea", &idea, "--status", &status, "--json",
+    ]).await.map_err(err_to_string)
+}
