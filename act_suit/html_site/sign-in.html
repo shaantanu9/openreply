@@ -200,11 +200,11 @@
 <div class="right-panel">
   <div class="auth-box">
     <p class="auth-site-nav" style="text-align:center;margin-bottom:20px;font-size:13px;color:var(--muted);line-height:1.5">
-      <a href="index.html" style="color:var(--orange);text-decoration:none;font-weight:500">Site map</a>
+      <a href="index.html" style="color:var(--orange);text-decoration:none;font-weight:500">Homepage</a>
       <span style="opacity:0.35;margin:0 10px">·</span>
       <a href="marketing.html" style="color:var(--orange);text-decoration:none;font-weight:500">Marketing</a>
       <span style="opacity:0.35;margin:0 10px">·</span>
-      <a href="activate.html" style="color:var(--orange);text-decoration:none;font-weight:500">Activate</a>
+      <a href="license.html" style="color:var(--orange);text-decoration:none;font-weight:500">My licence</a>
     </p>
 
     <div class="auth-tabs">
@@ -219,8 +219,8 @@
       <h4>Required flow</h4>
       <ol>
         <li>Create account (name, email, role).</li>
-        <li>Buy or start trial, then get activation key.</li>
-        <li>Open Activate page and enter key to use desktop app.</li>
+        <li>Buy or start trial, then get an activation key.</li>
+        <li>Open My Licence and enter your key to use the desktop app.</li>
       </ol>
       <p style="margin-top:8px;font-size:12px;color:var(--muted)">Need help? See <a href="activation-help.html" style="color:var(--orange)">Activation help</a>.</p>
     </div>
@@ -379,8 +379,8 @@ async function handleLogin() {
   document.getElementById('loginBtnText').textContent = 'Signing in…';
   try {
     await OpenReplyAuth.signIn(email, pwd);
-    showAlert('Signed in successfully. Next step: activate your licence key.', 'success');
-    setTimeout(() => { window.location.href = 'activate.html'; }, 1200);
+    showAlert('Signed in successfully. Next step: manage your licence.', 'success');
+    setTimeout(() => { window.location.href = 'license.html'; }, 1200);
   } catch(e) {
     showAlert(OpenReplyAuth.parseError(e), 'error');
   } finally { btn.classList.remove('loading'); document.getElementById('loginBtnText').textContent = 'Sign in to OpenReply'; }
@@ -402,8 +402,8 @@ async function handleRegister() {
       full_name: [first, last].filter(Boolean).join(' '),
       role: role || 'other',
     });
-    showAlert('Account created. Next step: activate your key (or start trial) on the Activate page.', 'success');
-    setTimeout(() => { window.location.href = 'activate.html'; }, 2000);
+    showAlert('Account created. Next step: activate your key (or start trial) on the My Licence page.', 'success');
+    setTimeout(() => { window.location.href = 'license.html'; }, 2000);
   } catch(e) {
     showAlert(OpenReplyAuth.parseError(e), 'error');
   } finally { document.getElementById('regBtnText').textContent = 'Create account & start trial'; }

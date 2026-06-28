@@ -3,71 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenReply — Activate (moved)</title>
-<!--
-  The activation flow now lives in the Next.js app at activation-suite/.
-  Set OPENREPLY_APP_BASE in env.config.js to the deployed Next.js URL.
-  If it's unset we default to same-origin /activate which is correct when
-  the static site and the Next.js app share a domain via Vercel rewrites.
--->
-<script src="env.config.js" defer></script>
+<title>OpenReply — Activate</title>
+<meta http-equiv="refresh" content="0; url=license.html">
 <style>
   html, body { height: 100%; margin: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #F4EFE6;
-    color: #2E2820;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
+    background: #F4EFE6; color: #2E2820;
+    display: flex; align-items: center; justify-content: center; padding: 2rem;
   }
   .card {
-    max-width: 460px;
-    padding: 2rem 2.25rem;
-    background: #fff;
-    border-radius: 20px;
-    border: 1px solid rgba(30,20,10,0.15);
-    text-align: center;
+    max-width: 460px; padding: 2rem 2.25rem;
+    background: #fff; border-radius: 20px;
+    border: 1px solid rgba(30,20,10,0.15); text-align: center;
   }
   h1 { font-size: 22px; margin: 0 0 0.75rem; color: #1C1710; }
   p  { font-size: 14px; line-height: 1.55; margin: 0 0 1rem; color: #6B6259; }
   a.btn {
-    display: inline-block;
-    background: #E07B3C;
-    color: #fff;
-    padding: 10px 18px;
-    border-radius: 10px;
-    text-decoration: none;
-    font-weight: 500;
-    font-size: 14px;
+    display: inline-block; background: #E07B3C; color: #fff;
+    padding: 10px 18px; border-radius: 10px; text-decoration: none;
+    font-weight: 500; font-size: 14px;
   }
-  code { background: #F9F6F1; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 </style>
 </head>
 <body>
   <div class="card">
     <h1>Activation has moved.</h1>
     <p>
-      The licence portal now lives in the new OpenReply web app. If you are not
-      redirected automatically in a moment, use the link below.
+      Manage your licence and activate keys on the new licence page. If you are not
+      redirected automatically, use the link below.
     </p>
-    <p><a id="activateLink" class="btn" href="/activate">Go to Activate</a></p>
-    <p style="font-size:12px; color:#9B9189;">
-      Bookmark the new URL: the static <code>activate.html</code> page will be
-      removed in a future release.
-    </p>
+    <p><a class="btn" href="license.html">Go to My Licence</a></p>
   </div>
-<script>
-  (function () {
-    var env = (typeof window !== 'undefined' && window.OPENREPLY_ENV) || {};
-    var base = (env.OPENREPLY_APP_BASE || env.LICENSE_API_BASE || '').replace(/\/$/, '');
-    var target = (base ? base + '/activate' : '/activate');
-    var link = document.getElementById('activateLink');
-    if (link) link.href = target;
-    // Give the user 1.2s to read the banner before bouncing.
-    setTimeout(function () { window.location.replace(target); }, 1200);
-  })();
-</script>
 </body>
 </html>

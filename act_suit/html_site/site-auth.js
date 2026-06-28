@@ -227,6 +227,92 @@
     return true;
   }
 
+  function formatPlanName(planId) {
+    const map = {
+      free: "Free",
+      pro: "Pro",
+      pro_trial: "Pro Trial",
+      team: "Team",
+      enterprise: "Enterprise",
+      live_pass: "Live Pass",
+    };
+    return map[planId] || (planId ? planId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Pro");
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  function getActivationFromStorage() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE.activation) || "null");
+    } catch {
+      return null;
+    }
+  }
+
+  function clearActivation() {
+    localStorage.removeItem(STORAGE.activation);
+  }
+
+  /**
+   * Query Supabase for the latest licence belonging to an email.
+   * Returns null if no licence is found. Also fetches activated devices.
+   */
+  async function getLicenseForEmail(email) {
+    const sb = ensureSupabaseClient();
+    const cleaned = String(email || "").trim().toLowerCase();
+    if (!cleaned) return null;
+
+    const { data: licenses, error: licErr } = await sb
+      .from("licenses")
+      .select("id, user_id, email, status, plan_id, max_devices, expires_at, trial_ends_at, is_trial, live_pass_active, activation_key, created_at")
+      .eq("email", cleaned)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (licErr) throw licErr;
+    if (!licenses || licenses.length === 0) return null;
+
+    const license = licenses[0];
+    const { data: devices, error: devErr } = await sb
+      .from("license_devices")
+      .select("signature_hash, os, arch, activated_at, last_seen_at")
+      .eq("license_id", license.id)
+      .order("last_seen_at", { ascending: false });
+
+    if (devErr) throw devErr;
+
+    return {
+      licenseId: license.id,
+      userId: license.user_id,
+      email: license.email,
+      status: license.status,
+      planId: license.plan_id || "pro",
+      planName: formatPlanName(license.plan_id),
+      maxDevices: license.max_devices || 1,
+      devicesUsed: (devices || []).length,
+      devices: (devices || []).map((d) => ({
+        signatureHash: d.signature_hash,
+        os: d.os,
+        arch: d.arch,
+        activatedAt: d.activated_at,
+        lastSeenAt: d.last_seen_at,
+      })),
+      expiresAt: license.expires_at,
+      trialEndsAt: license.trial_ends_at,
+      isTrial: Boolean(license.is_trial),
+      livePassActive: Boolean(license.live_pass_active),
+      activationKeyPreview: license.activation_key
+        ? String(license.activation_key).slice(-4).toUpperCase()
+        : null,
+      createdAt: license.created_at,
+    };
+  }
+
   window.OpenReplyAuth = {
     getEnv,
     getLemonSqueezyUrls,
@@ -244,5 +330,11 @@
     getUser,
     requireSession,
     activateLicense,
+    getLicenseForEmail,
+    getActivationFromStorage,
+    clearActivation,
+    formatPlanName,
+    formatDate,
+    buildWebDeviceSignature,
   };
 })();

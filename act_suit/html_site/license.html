@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenReply — My Licence</title>
+<meta name="description" content="View and manage your OpenReply licence, activate your key, and see connected devices.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --cream: #F4EFE6;
+    --cream-dark: #EDE6D9;
+    --cream-mid: #F9F6F1;
+    --orange: #E07B3C;
+    --orange-light: #F5C49A;
+    --orange-pale: #FBF0E6;
+    --dark: #1C1710;
+    --dark-mid: #2E2820;
+    --text: #2E2820;
+    --muted: #6B6259;
+    --muted-light: #9B9189;
+    --border: rgba(30,20,10,0.1);
+    --border-strong: rgba(30,20,10,0.18);
+    --white: #FFFFFF;
+    --red: #C0392B;
+    --green: #1D9E75;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+  }
+  html, body { min-height: 100%; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--cream);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(244,239,230,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    height: 64px;
+    display: flex; align-items: center;
+    padding: 0 1.5rem;
+  }
+  .nav-inner { max-width: 1200px; margin: 0 auto; width: 100%; display: flex; align-items: center; justify-content: space-between; }
+  .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .nav-logo-mark { width: 32px; height: 32px; background: var(--dark); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .nav-logo-mark svg { width: 16px; height: 16px; }
+  .nav-logo-name { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 500; color: var(--dark); letter-spacing: -0.3px; }
+  .nav-user { display: flex; align-items: center; gap: 12px; }
+  .nav-user-email { font-size: 13px; color: var(--muted); max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500;
+    border-radius: var(--radius-md); padding: 9px 16px; cursor: pointer;
+    text-decoration: none; transition: all .2s; border: none;
+  }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border-strong); }
+  .btn-ghost:hover { background: var(--cream-dark); color: var(--dark); }
+  .btn-primary { background: var(--dark); color: var(--cream); }
+  .btn-primary:hover { background: var(--dark-mid); transform: translateY(-1px); }
+  .btn-orange { background: var(--orange); color: var(--white); }
+  .btn-orange:hover { background: #CC7035; transform: translateY(-1px); }
+  .btn-lg { padding: 13px 24px; font-size: 15px; border-radius: var(--radius-lg); }
+  .btn-block { width: 100%; justify-content: center; }
+
+  /* ── LAYOUT ── */
+  main { padding: 104px 1.5rem 80px; }
+  .container { max-width: 880px; margin: 0 auto; }
+  h1 { font-family: 'Fraunces', serif; font-size: clamp(28px, 4vw, 40px); font-weight: 400; letter-spacing: -0.8px; color: var(--dark); margin-bottom: 8px; }
+  h1 em { font-style: italic; color: var(--orange); }
+  .page-lead { font-size: 16px; color: var(--muted); margin-bottom: 32px; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-xl);
+    padding: 28px; margin-bottom: 20px;
+  }
+  .card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .card-title { font-size: 16px; font-weight: 500; color: var(--dark); }
+  .card-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  /* ── STATUS ── */
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 5px 10px; border-radius: 100px;
+  }
+  .status-active { background: #EDF8F1; color: var(--green); }
+  .status-trial { background: var(--orange-pale); color: #B5581A; }
+  .status-revoked { background: #FDF0EF; color: var(--red); }
+  .status-expired { background: #F5F5F5; color: var(--muted); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ── DETAIL GRID ── */
+  .detail-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media(min-width: 600px) { .detail-grid { grid-template-columns: repeat(2, 1fr); } }
+  .detail-item { background: var(--cream-mid); border-radius: var(--radius-md); padding: 14px 16px; }
+  .detail-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted-light); margin-bottom: 4px; }
+  .detail-value { font-size: 15px; font-weight: 500; color: var(--dark); }
+
+  /* ── FORM ── */
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 7px; }
+  .field input {
+    width: 100%; padding: 12px 14px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md); background: var(--cream-mid);
+    font-family: 'DM Sans', sans-serif; font-size: 15px; color: var(--dark);
+    outline: none; transition: border-color .2s, box-shadow .2s;
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+  .field input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(224,123,60,0.12); background: var(--white); }
+  .field input::placeholder { color: var(--muted-light); text-transform: none; letter-spacing: normal; }
+  .field-hint { font-size: 12px; color: var(--muted-light); margin-top: 6px; }
+
+  /* ── ALERTS ── */
+  .alert { padding: 12px 14px; border-radius: var(--radius-md); font-size: 13.5px; margin-bottom: 18px; display: none; }
+  .alert.error { background: #FDF0EF; border: 1px solid #F5C5C0; color: var(--red); display: block; }
+  .alert.success { background: #EDF8F1; border: 1px solid #9FE1CB; color: var(--green); display: block; }
+  .alert.info { background: #EEF3FD; border: 1px solid #C5D8F5; color: #185FA5; display: block; }
+
+  /* ── DEVICES ── */
+  .device-list { list-style: none; }
+  .device-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .device-item:last-child { border-bottom: none; }
+  .device-info { display: flex; align-items: center; gap: 10px; }
+  .device-icon { width: 32px; height: 32px; border-radius: 8px; background: var(--cream-mid); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .device-name { font-size: 14px; font-weight: 500; color: var(--dark); }
+  .device-meta { font-size: 12px; color: var(--muted-light); }
+  .device-current { font-size: 11px; font-weight: 600; color: var(--orange); background: var(--orange-pale); padding: 3px 8px; border-radius: 100px; }
+
+  /* ── EMPTY STATES ── */
+  .empty { text-align: center; padding: 32px 20px; }
+  .empty-icon { font-size: 36px; margin-bottom: 12px; }
+  .empty h3 { font-size: 17px; font-weight: 500; color: var(--dark); margin-bottom: 6px; }
+  .empty p { font-size: 14px; color: var(--muted); max-width: 360px; margin: 0 auto 18px; }
+
+  /* ── LOADER ── */
+  .skeleton { background: linear-gradient(90deg, var(--cream-mid) 25%, var(--cream-dark) 50%, var(--cream-mid) 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: var(--radius-md); height: 16px; margin-bottom: 10px; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn.loading { opacity: .75; pointer-events: none; }
+
+  /* ── FOOTER ── */
+  .page-footer { text-align: center; padding: 24px 1.5rem 40px; font-size: 13px; color: var(--muted-light); }
+  .page-footer a { color: var(--orange); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <a class="nav-logo" href="index.html">
+      <div class="nav-logo-mark">
+        <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <circle cx="9" cy="9" r="7" stroke="#E07B3C" stroke-width="1.5"/>
+          <circle cx="9" cy="9" r="3" fill="#E07B3C"/>
+        </svg>
+      </div>
+      <span class="nav-logo-name">OpenReply</span>
+    </a>
+    <div class="nav-user">
+      <span class="nav-user-email" id="userEmail"></span>
+      <button class="btn btn-ghost" onclick="handleSignOut()">Sign out</button>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <div class="container">
+    <h1>My <em>licence</em></h1>
+    <p class="page-lead">View your plan, activate a licence key, and manage connected devices.</p>
+
+    <div id="loadingState">
+      <div class="card"><div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:40%"></div></div>
+    </div>
+
+    <div id="contentState" style="display:none">
+      <!-- LICENCE STATUS -->
+      <div class="card" id="licenseCard">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Licence status</div>
+            <div class="card-subtitle" id="licenseSubtitle">Loading…</div>
+          </div>
+          <span class="status-badge" id="statusBadge"><span class="status-dot"></span><span id="statusText">—</span></span>
+        </div>
+        <div class="detail-grid" id="licenseDetails" style="display:none">
+          <div class="detail-item"><div class="detail-label">Plan</div><div class="detail-value" id="planValue">—</div></div>
+          <div class="detail-item"><div class="detail-label">Devices</div><div class="detail-value" id="devicesValue">—</div></div>
+          <div class="detail-item"><div class="detail-label">Activated</div><div class="detail-value" id="createdValue">—</div></div>
+          <div class="detail-item"><div class="detail-label">Expires</div><div class="detail-value" id="expiryValue">—</div></div>
+        </div>
+      </div>
+
+      <!-- DEVICES -->
+      <div class="card" id="devicesCard" style="display:none">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Activated devices</div>
+            <div class="card-subtitle">Machines currently using this licence key.</div>
+          </div>
+        </div>
+        <ul class="device-list" id="deviceList"></ul>
+      </div>
+
+      <!-- ACTIVATION FORM -->
+      <div class="card" id="activateCard">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Activate your licence</div>
+            <div class="card-subtitle">Enter the key from your purchase email or trial welcome message.</div>
+          </div>
+        </div>
+        <div class="alert" id="activateAlert"></div>
+        <div class="field">
+          <label for="activationKey">Activation key</label>
+          <input type="text" id="activationKey" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off">
+          <p class="field-hint">Format: 16 characters, letters A–Z and numbers 2–9.</p>
+        </div>
+        <button class="btn btn-orange btn-lg btn-block" id="activateBtn" onclick="handleActivate()">
+          <span id="activateBtnText">Activate this device</span>
+        </button>
+      </div>
+
+      <!-- DESKTOP CTA -->
+      <div class="card" id="desktopCard" style="display:none">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Ready to use OpenReply</div>
+            <div class="card-subtitle">This browser is activated. Open the desktop app to continue.</div>
+          </div>
+        </div>
+        <a id="openAppLink" href="openreply://dashboard" class="btn btn-primary btn-lg btn-block">Open desktop app</a>
+        <p class="field-hint" style="text-align:center;margin-top:10px">Don't have the app? <a href="index.html#pricing" style="color:var(--orange);text-decoration:none">Download it here</a>.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="page-footer">
+  Need help? See <a href="activation-help.html">Activation help</a> or <a href="sitemap.html">Site map</a>.
+</div>
+
+<script src="./env.config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./site-auth.js"></script>
+<script>
+let currentUser = null;
+let currentLicense = null;
+let currentDeviceSignature = null;
+
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'alert ' + type;
+}
+function hideAlert(id) {
+  const el = document.getElementById(id);
+  el.className = 'alert';
+  el.textContent = '';
+}
+
+function formatKeyInput(raw) {
+  const cleaned = String(raw).toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 16);
+  return cleaned.replace(/(.{4})/g, '$1-').replace(/-$/, '');
+}
+
+document.getElementById('activationKey').addEventListener('input', (e) => {
+  const start = e.target.selectionStart;
+  const end = e.target.selectionEnd;
+  const beforeLen = e.target.value.length;
+  e.target.value = formatKeyInput(e.target.value);
+  const afterLen = e.target.value.length;
+  const offset = afterLen - beforeLen;
+  e.target.setSelectionRange(start + offset, end + offset);
+});
+
+async function init() {
+  const session = await OpenReplyAuth.requireSession('sign-in.html?redirect=license.html');
+  if (!session) return;
+
+  currentUser = await OpenReplyAuth.getUser();
+  document.getElementById('userEmail').textContent = currentUser?.email || '';
+  currentDeviceSignature = await OpenReplyAuth.buildWebDeviceSignature?.() || 'unknown';
+
+  await loadLicense();
+
+  document.getElementById('loadingState').style.display = 'none';
+  document.getElementById('contentState').style.display = 'block';
+}
+
+async function loadLicense() {
+  try {
+    currentLicense = await OpenReplyAuth.getLicenseForEmail(currentUser?.email);
+    renderLicense();
+  } catch (e) {
+    document.getElementById('licenseSubtitle').textContent = 'Could not load licence details: ' + OpenReplyAuth.parseError(e);
+    document.getElementById('statusBadge').className = 'status-badge status-expired';
+    document.getElementById('statusText').textContent = 'Error';
+  }
+}
+
+function renderLicense() {
+  const subtitle = document.getElementById('licenseSubtitle');
+  const badge = document.getElementById('statusBadge');
+  const statusText = document.getElementById('statusText');
+  const details = document.getElementById('licenseDetails');
+
+  if (!currentLicense) {
+    subtitle.textContent = 'No licence found for this account. Start a trial or purchase Pro, then activate your key below.';
+    badge.className = 'status-badge status-expired';
+    statusText.textContent = 'No licence';
+    details.style.display = 'none';
+    document.getElementById('devicesCard').style.display = 'none';
+    return;
+  }
+
+  subtitle.textContent = currentLicense.isTrial
+    ? 'You are on a Pro trial. Activate a full licence key anytime to keep Pro benefits after the trial ends.'
+    : 'Licence connected to this account.';
+
+  const statusClass = currentLicense.status === 'active' ? (currentLicense.isTrial ? 'status-trial' : 'status-active') : 'status-expired';
+  badge.className = 'status-badge ' + statusClass;
+  statusText.textContent = currentLicense.isTrial ? 'Trial' : (currentLicense.status || 'Active');
+
+  document.getElementById('planValue').textContent = currentLicense.planName;
+  document.getElementById('devicesValue').textContent = `${currentLicense.devicesUsed} / ${currentLicense.maxDevices} used`;
+  document.getElementById('createdValue').textContent = OpenReplyAuth.formatDate(currentLicense.createdAt);
+
+  const expiryEl = document.getElementById('expiryValue');
+  if (currentLicense.isTrial && currentLicense.trialEndsAt) {
+    expiryEl.textContent = OpenReplyAuth.formatDate(currentLicense.trialEndsAt) + ' (trial ends)';
+  } else if (currentLicense.expiresAt) {
+    expiryEl.textContent = OpenReplyAuth.formatDate(currentLicense.expiresAt);
+  } else {
+    expiryEl.textContent = 'Never';
+  }
+  details.style.display = 'grid';
+
+  renderDevices();
+}
+
+function renderDevices() {
+  const card = document.getElementById('devicesCard');
+  const list = document.getElementById('deviceList');
+  list.innerHTML = '';
+
+  if (!currentLicense || !currentLicense.devices || currentLicense.devices.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  currentLicense.devices.forEach((d) => {
+    const isCurrent = d.signatureHash === currentDeviceSignature;
+    const li = document.createElement('li');
+    li.className = 'device-item';
+    li.innerHTML = `
+      <div class="device-info">
+        <div class="device-icon">💻</div>
+        <div>
+          <div class="device-name">${escapeHtml(d.os || 'Web')} · ${escapeHtml(d.arch || 'unknown')}</div>
+          <div class="device-meta">Activated ${OpenReplyAuth.formatDate(d.activatedAt)} · Last seen ${OpenReplyAuth.formatDate(d.lastSeenAt)}</div>
+        </div>
+      </div>
+      ${isCurrent ? '<span class="device-current">This device</span>' : ''}
+    `;
+    list.appendChild(li);
+  });
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function handleActivate() {
+  hideAlert('activateAlert');
+  const raw = document.getElementById('activationKey').value;
+  if (!OpenReplyAuth.isValidActivationKey(raw)) {
+    showAlert('activateAlert', 'Please enter a valid 16-character activation key.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('activateBtn');
+  const btnText = document.getElementById('activateBtnText');
+  btn.classList.add('loading');
+  btnText.textContent = 'Activating…';
+
+  try {
+    const result = await OpenReplyAuth.activateLicense(raw);
+    showAlert('activateAlert', 'Activation successful! You can now open the desktop app.', 'success');
+    currentDeviceSignature = result.device_signature;
+    await loadLicense();
+    showDesktopCta();
+  } catch (e) {
+    showAlert('activateAlert', OpenReplyAuth.parseError(e), 'error');
+  } finally {
+    btn.classList.remove('loading');
+    btnText.textContent = 'Activate this device';
+  }
+}
+
+function showDesktopCta() {
+  const stored = OpenReplyAuth.getActivationFromStorage();
+  if (stored?.token) {
+    document.getElementById('activateCard').style.display = 'none';
+    document.getElementById('desktopCard').style.display = 'block';
+    const deepLink = (window.OPENREPLY_ENV?.APP_DEEP_LINK_URL || 'openreply://dashboard');
+    document.getElementById('openAppLink').href = deepLink;
+  }
+}
+
+async function handleSignOut() {
+  try {
+    await OpenReplyAuth.signOut();
+    window.location.href = 'index.html';
+  } catch (e) {
+    alert('Sign out failed: ' + OpenReplyAuth.parseError(e));
+  }
+}
+
+init();
+</script>
+</body>
+</html>
