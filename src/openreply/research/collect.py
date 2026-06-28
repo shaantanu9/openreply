@@ -223,13 +223,18 @@ def _tag_posts(topic: str, post_ids: list[str], source: str) -> int:
     except (TypeError, ValueError):
         gate_threshold = 0.28
 
-    # Local-file ingestion and explicit persona-teach actions already carry
-    # explicit user intent ("ingest this file" / "teach this persona this
-    # video"), so semantic relevance gating can incorrectly drop the
-    # synthetic post and break provenance linking. The "teach:" prefix is
-    # set by persona.teach.teach_from_youtube.
+    # Local-file ingestion, explicit persona-teach actions, and explicit
+    # user-curated account tracking (Watch accounts / X Account save-to-library)
+    # all carry explicit user intent, so semantic relevance gating can
+    # incorrectly drop posts the user deliberately asked for. Skip the gate
+    # for those sources so they reliably land in Library.
     src_str = str(source or "")
-    skip_relevance_gate = src_str.startswith("local:") or src_str.startswith("teach:")
+    skip_relevance_gate = (
+        src_str.startswith("local:")
+        or src_str.startswith("teach:")
+        or src_str.startswith("watch:")
+        or src_str.startswith("x-account:")
+    )
     if (not skip_relevance_gate) and gate_threshold > 0 and post_ids:
         try:
             from .relevance import score_posts
