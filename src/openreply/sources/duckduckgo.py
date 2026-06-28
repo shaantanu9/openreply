@@ -62,11 +62,11 @@ def fetch_duckduckgo(query: str, limit: int = 25) -> list[dict]:
             url = _unwrap(a.get("href", ""))
             if not title or not url:
                 continue
-            # snippet: nearest result__snippet if present
+            # snippet: nearest result__snippet (classic) or result-snippet (lite)
             snippet = ""
             parent = a.find_parent(class_="result") or a.find_parent("tr")
             if parent:
-                sn = parent.select_one(".result__snippet")
+                sn = parent.select_one(".result__snippet") or parent.select_one(".result-snippet")
                 if sn:
                     snippet = sn.get_text(" ", strip=True)
             host = urlparse(url).netloc
@@ -81,6 +81,8 @@ def fetch_duckduckgo(query: str, limit: int = 25) -> list[dict]:
                     author=host,
                 )
             )
-        if rows:
+            if len(rows) >= limit:
+                break
+        if len(rows) >= limit:
             break
     return rows[:limit]

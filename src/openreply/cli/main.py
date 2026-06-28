@@ -615,6 +615,76 @@ def cmd_export(
         typer.echo(result)
 
 
+@app.command("collect-growth")
+def cmd_collect_growth(
+    topic: str = typer.Argument(..., help="Topic / keyword to collect growth content for."),
+    bundle: str = typer.Option(
+        "content",
+        "--bundle", "-b",
+        help="content | social | opensource | web",
+    ),
+    limit: int = typer.Option(20, "--limit", "-n", help="Rows per source."),
+    include: Optional[str] = typer.Option(
+        None, "--include",
+        help="Comma-separated source ids (overrides the bundle).",
+    ),
+    exclude: Optional[str] = typer.Option(
+        None, "--exclude",
+        help="Comma-separated source ids to skip.",
+    ),
+    max_workers: int = typer.Option(8, "--max-workers", help="Parallel source width."),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
+) -> None:
+    """Fetch social + open-source + web content for a topic and persist to SQLite.
+
+    Example:
+      openreply collect-growth "note taking app" --bundle content --limit 10
+      openreply collect-growth "note taking app" --bundle opensource --limit 5
+      openreply collect-growth "note taking app" --include github_trending,hn,producthunt
+    """
+    from ..sources.collect_adapter import (
+        CONTENT_GROWTH_SOURCES,
+        OPEN_SOURCE_GROWTH_SOURCES,
+        SOCIAL_GROWTH_SOURCES,
+        WEB_GROWTH_SOURCES,
+        run_content_growth,
+        run_opensource_growth,
+        run_social_growth,
+        run_web_growth,
+    )
+
+    bundles = {
+        "social": (SOCIAL_GROWTH_SOURCES, run_social_growth),
+        "opensource": (OPEN_SOURCE_GROWTH_SOURCES, run_opensource_growth),
+        "web": (WEB_GROWTH_SOURCES, run_web_growth),
+        "content": (CONTENT_GROWTH_SOURCES, run_content_growth),
+    }
+    if bundle not in bundles:
+        _emit({"ok": False, "error": f"unknown bundle '{bundle}'"}, as_json=True)
+        raise typer.Exit(2)
+
+    _, runner = bundles[bundle]
+    kwargs: dict[str, Any] = {"limit": limit, "max_workers": max_workers}
+    if include:
+        kwargs["include"] = tuple(s.strip() for s in include.split(",") if s.strip())
+    if exclude:
+        kwargs["exclude"] = tuple(s.strip() for s in exclude.split(",") if s.strip())
+
+    results = runner(topic, **kwargs)
+    total = sum(results.values())
+    summary = {
+        "ok": True,
+        "topic": topic,
+        "bundle": bundle,
+        "limit": limit,
+        "total_rows": total,
+        "sources": results,
+    }
+    _emit(summary, as_json=as_json, table_title=f"collect-growth · {topic} · {total} rows")
+    if not as_json:
+        console.print(f"[green]done[/green] — {total} rows persisted for '{topic}'")
+
+
 # ── analyze ──────────────────────────────────────────────────────────────────
 
 def _since_to_days(since: str | None) -> int | None:

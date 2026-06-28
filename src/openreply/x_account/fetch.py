@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,95 @@ import httpx
 from .store import XAccount
 
 _BIRD_MJS = Path(__file__).parent.parent / "sources" / "vendor" / "bird-search" / "bird-search.mjs"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _to_corpus_post(tweet: dict[str, Any], handle: str) -> dict[str, Any] | None:
+    """Convert a fetched X tweet into the shared `posts` table shape."""
+    tid = str(tweet.get("id") or "")
+    if not tid:
+        return None
+    text = str(tweet.get("text") or "").strip()
+    url = tweet.get("url") or f"https://x.com/{handle}/status/{tid}"
+    created = tweet.get("created_at") or ""
+    # Parse ISO-ish created_at to unix timestamp best-effort.
+    created_utc = 0.0
+    try:
+        if created:
+            created_utc = datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        pass
+    return {
+        "id": f"x_{tid}",
+        "sub": "x",
+        "source_type": "x",
+        "author": handle,
+        "title": text[:200] or f"X post by @{handle}",
+        "selftext": text,
+        "url": url,
+        "score": int(tweet.get("likes") or 0),
+        "upvote_ratio": None,
+        "num_comments": int(tweet.get("replies") or 0),
+        "created_utc": created_utc,
+        "is_self": 1,
+        "over_18": 0,
+        "flair": "",
+        "permalink": url,
+        "fetched_at": _now_iso(),
+    }
+
+
+def save_posts_to_corpus(
+    account: XAccount,
+    posts: list[dict[str, Any]] | None = None,
+    *,
+    count: int = 25,
+    with_threads: bool = False,
+    agent_id: str | None = None,
+) -> dict[str, Any]:
+    """Fetch (or use provided) X-account posts and upsert them into the active
+    agent's corpus so they appear in Library, Knowledge, and Compose.
+
+    Returns {"saved": int, "tagged": int, ...}.
+    """
+    from ..core.db import upsert_posts
+    from ..research.collect import _tag_posts
+    from ..reply.agent import active_id, get_agent
+
+    rows = posts if posts is not None else fetch_posts(account, count=count, with_threads=with_threads)
+    if rows is None:
+        rows = []
+
+    handle = account.handle
+    corpus_rows: list[dict[str, Any]] = []
+    for t in rows:
+        main = _to_corpus_post(t, handle)
+        if main:
+            corpus_rows.append(main)
+        # Also flatten any inline reply thread into separate corpus rows.
+        for reply in t.get("thread") or []:
+            r = _to_corpus_post(reply, handle)
+            if r:
+                corpus_rows.append(r)
+
+    if not corpus_rows:
+        return {"saved": 0, "tagged": 0, "message": "No posts to save."}
+
+    upsert_posts(corpus_rows)
+
+    aid = agent_id or active_id() or "default"
+    agent = get_agent(aid)
+    topic = agent.get("topic") or agent.get("name") if agent else aid
+    tagged = _tag_posts(topic, [r["id"] for r in corpus_rows], source=f"x-account:{handle}")
+
+    return {
+        "saved": len(corpus_rows),
+        "tagged": tagged,
+        "message": f"Saved {len(corpus_rows)} post(s) from @{handle} to Library.",
+    }
 
 BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
 USER_BY_SCREEN_NAME_QUERY_ID = "xc8f1g7BYqr6VTzTbvNlGw"

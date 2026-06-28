@@ -9299,12 +9299,20 @@ pub async fn agent_idea_status(app: AppHandle, idea: String, status: String) -> 
 pub async fn x_account_add(
     app: AppHandle,
     handle: String,
-    auth_token: String,
-    ct0: String,
+    auth_token: Option<String>,
+    ct0: Option<String>,
 ) -> Result<Value, String> {
-    run_cli(&app, vec![
-        "x-account", "add", &handle, &auth_token, &ct0, "--json",
-    ]).await.map_err(err_to_string)
+    // Cookies are optional — with just the handle the Python CLI auto-imports
+    // browser cookies (or falls back to public read access).
+    let at = auth_token.unwrap_or_default();
+    let c0 = ct0.unwrap_or_default();
+    let mut args = vec!["x-account", "add", &handle];
+    if !at.is_empty() && !c0.is_empty() {
+        args.push(&at);
+        args.push(&c0);
+    }
+    args.push("--json");
+    run_cli(&app, args).await.map_err(err_to_string)
 }
 
 /// `openreply x-account list`
@@ -9361,4 +9369,21 @@ pub async fn x_account_fetch_thread(
     run_cli(&app, vec![
         "x-account", "fetch-thread", &handle, &tweet_id_or_url, "--limit", &l, "--json",
     ]).await.map_err(err_to_string)
+}
+
+/// `openreply x-account save-to-library <handle> --count n --with-threads`
+#[tauri::command]
+pub async fn x_account_save_to_library(
+    app: AppHandle,
+    handle: String,
+    count: Option<u32>,
+    with_threads: Option<bool>,
+) -> Result<Value, String> {
+    let n = count.unwrap_or(25).to_string();
+    let mut args = vec!["x-account", "save-to-library", &handle, "--count", &n];
+    if with_threads.unwrap_or(false) {
+        args.push("--with-threads");
+    }
+    args.push("--json");
+    run_cli(&app, args).await.map_err(err_to_string)
 }

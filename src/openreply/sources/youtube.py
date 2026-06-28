@@ -392,10 +392,17 @@ def _video_meta_via_ytdlp(
     title = (video_title or info.get("title") or "")[:200]
     description = (info.get("description") or "").strip()
     uploader = info.get("uploader") or info.get("channel") or "[channel]"
-    try:
-        upload_ts = float(info.get("epoch") or 0.0)
-    except (TypeError, ValueError):
-        upload_ts = 0.0
+    upload_ts = 0.0
+    if info.get("timestamp"):
+        try:
+            upload_ts = float(info["timestamp"])
+        except (TypeError, ValueError):
+            upload_ts = 0.0
+    elif info.get("upload_date"):
+        try:
+            upload_ts = datetime.strptime(str(info["upload_date"]), "%Y%m%d").replace(tzinfo=timezone.utc).timestamp()
+        except (ValueError, TypeError):
+            upload_ts = 0.0
 
     rows: list[dict] = []
 
@@ -479,16 +486,27 @@ def _search_via_api(query: str, limit: int) -> list[dict]:
         r.raise_for_status()
     except httpx.HTTPError:
         return []
-    items = (r.json() or {}).get("items") or []
-    return [
-        {
-            "video_id": i.get("id", {}).get("videoId"),
-            "title": (i.get("snippet") or {}).get("title"),
-            "channel": (i.get("snippet") or {}).get("channelTitle"),
-            "published": (i.get("snippet") or {}).get("publishedAt"),
-        }
-        for i in items
-    ]
+    try:
+        items = (r.json() or {}).get("items") or []
+    except Exception:
+        return []
+    out = []
+    for i in items:
+        vid = (i.get("id") or {}).get("videoId")
+        if not vid:
+            continue
+        snippet = i.get("snippet") or {}
+        url = f"https://www.youtube.com/watch?v={vid}"
+        out.append({
+            "video_id": vid,
+            "title": snippet.get("title"),
+            "channel": snippet.get("channelTitle"),
+            "channel_id": snippet.get("channelId"),
+            "published": snippet.get("publishedAt"),
+            "url": url,
+            "canonical_url": url,
+        })
+    return out
 
 
 def _api_comment_row(c: dict[str, Any], video_id: str, video_title: str) -> dict[str, Any]:

@@ -33,13 +33,13 @@ def _row(d: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "selftext": body,
         "url": d.get("url") or f"https://news.ycombinator.com/item?id={oid}",
-        "score": d.get("points") or 0,
+        "score": int(d.get("points") or 0),
         "upvote_ratio": None,
-        "num_comments": d.get("num_comments") or 0,
+        "num_comments": int(d.get("num_comments") or 0),
         "created_utc": float(created),
         "is_self": int(not bool(d.get("url"))),
         "over_18": 0,
-        "flair": (d.get("_tags") or [None])[0],  # 'story' / 'comment' / 'ask_hn' ...
+        "flair": (d.get("_tags") or [None])[0] or "",  # 'story' / 'comment' / 'ask_hn' ...
         "permalink": f"https://news.ycombinator.com/item?id={oid}",
         "fetched_at": _now_iso(),
     }

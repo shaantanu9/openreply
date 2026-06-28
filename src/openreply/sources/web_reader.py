@@ -10,6 +10,7 @@ Ported from agent-reach `channels/web.py` (MIT). Never raises — returns [].
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timezone
 
@@ -43,13 +44,17 @@ def _jina_read(url: str, cookie: str | None = None) -> str | None:
         return None
 
 
+def _stable_id(ident: str) -> str:
+    return hashlib.sha256(ident.encode("utf-8")).hexdigest()[:16]
+
+
 def _row(url: str, text: str, source_type: str = "web") -> dict:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     m = _H1_RE.search(text)
     title = (m.group(1) if m else url)[:300]
     return {
-        "id": f"{source_type}_{hash(url) & 0xFFFFFFFF:x}",
+        "id": f"{source_type}_{_stable_id(url)}",
         "sub": source_type,
         "source_type": source_type,
         "author": "",
@@ -68,9 +73,17 @@ def _row(url: str, text: str, source_type: str = "web") -> dict:
     }
 
 
-def fetch_web_reader(query: str, limit: int = 1, **_) -> list[dict]:
-    """Read the URL in *query* via Jina Reader → one post row. Never raises."""
-    text = _jina_read(query)
+def fetch_web_reader(query: str, limit: int = 1, cookie: str | None = None, **_) -> list[dict]:
+    """Read the URL in *query* via Jina Reader → one post row. Never raises.
+
+    `cookie` is a 'k=v; k2=v2' string forwarded via Jina's `x-set-cookie`
+    header for login-gated pages (e.g. LinkedIn `li_at`). `limit` is accepted
+    for API compatibility but only one row is returned per URL.
+    """
+    url = (query or "").strip()
+    if not url:
+        return []
+    text = _jina_read(url, cookie=cookie)
     if text is None:
         return []
-    return [_row(query.strip(), text, "web")]
+    return [_row(url, text, "web")]

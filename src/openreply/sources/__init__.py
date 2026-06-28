@@ -31,7 +31,7 @@ from .lemmy import fetch_lemmy
 from .bluesky import fetch_bluesky
 from .mastodon import fetch_mastodon
 from .alternativeto import fetch_alternativeto
-from .github_trending import search_github_repos
+from .github_trending import search_github_repos, fetch_github_trending
 from .github_issues import fetch_github_issues
 from .npmstats import fetch_npm_downloads, search_npm_packages
 from .pypistats import fetch_pypi_downloads, search_pypi_packages
@@ -80,7 +80,7 @@ __all__ = [
     "fetch_scholar", "fetch_stackoverflow", "fetch_trends",
     "fetch_arxiv", "fetch_openalex", "fetch_pubmed", "fetch_gnews", "fetch_devto",
     "fetch_lemmy", "fetch_bluesky", "fetch_mastodon", "fetch_alternativeto",
-    "search_github_repos", "fetch_github_issues",
+    "search_github_repos", "fetch_github_trending", "fetch_github_issues",
     "fetch_npm_downloads", "search_npm_packages",
     "fetch_pypi_downloads", "search_pypi_packages",
     "fetch_wikipedia_pageviews", "fetch_wikipedia_summary",

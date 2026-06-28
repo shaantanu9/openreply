@@ -3249,12 +3249,13 @@ export async function renderWatch(view) {
   let a = null; try { a = await api.agentGet(); } catch (e) {}
   if (!a) { view.innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
   view.innerHTML = head("Watch accounts",
-    `Track creators & competitors on X — pull their posts into <b>${esc(a.name)}</b>'s knowledge base to learn from, repurpose & rewrite.`,
-    `<button id="wa-all" class="${btnP}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all + learn</button>`) +
+    `Track creators & competitors on X — their posts are automatically saved to <b>${esc(a.name)}</b>'s Library corpus so you can learn, search, and repurpose.`,
+    `<button id="wa-all" class="${btnP}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all + learn</button>
+     <a href="#/library" class="${btn}">See all in Library →</a>`) +
     `<div class="mb-4 ${card}"><div class="flex flex-wrap items-end gap-3">
        <label class="flex-1 text-sm text-zinc-500">Add an X account<input id="wa-handle" placeholder="@naval  or  x.com/naval" class="mt-1 block w-full ${inputCls}"></label>
        <button id="wa-add" class="${btnP}">Track</button></div>
-       <p class="mt-2 text-xs text-zinc-400">Needs X connected (Connections) to fetch live posts. Their posts land in <a href="#/knowledge" class="text-reddit">Library/Knowledge</a> and feed Compose.</p>
+       <p class="mt-2 text-xs text-zinc-400"><b>What this is:</b> competitor/creator tracking. Add any X handle and we pull their recent posts into this agent's Library corpus. You can see everything in <a href="#/library" class="text-reddit">Library</a>. Needs an X connection in <a href="#/connections" class="text-reddit">Connections</a>.</p>
        <div id="wa-msg" class="mt-2 text-sm"></div></div>
      <div id="wa-list" class="space-y-3">Loading…</div>`;
   const list = view.querySelector("#wa-list");
@@ -3333,9 +3334,10 @@ export async function renderWatch(view) {
 export async function renderXAccount(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("X Account",
-    "Connect an X account with cookies, then fetch profile + posts/threads via the internal GraphQL API.",
+    `Connect an X account to browse its timeline and threads. Posts stay private here unless you click <b>Save to Library</b> — then they appear in <a href="#/library" class="text-reddit underline">Library</a> for search, learning, and repurpose.`,
     `<button id="xa-add-btn" class="${btnP}">+ Add account</button>
-     <button id="xa-import-btn" class="ml-2 ${btn}">Import from browser</button>`) +
+     <button id="xa-import-btn" class="ml-2 ${btn}">Import from browser</button>
+     <a href="#/library" class="ml-2 ${btn}">See all in Library →</a>`) +
     `<div id="xa-form" class="hidden mb-5 ${card}"></div>
      <div id="xa-import-msg" class="hidden mb-2 text-sm text-zinc-500"></div>
      <div id="xa-accounts" class="${card} mb-5"><div class="text-zinc-500">Loading accounts…</div></div>
@@ -3371,22 +3373,19 @@ export async function renderXAccount(view) {
   function renderAddForm() {
     form.innerHTML = `
       <h3 class="mb-3 font-semibold text-zinc-900 dark:text-white">Add X account</h3>
-      <div class="grid gap-3 sm:grid-cols-3">
+      <div class="grid gap-3 sm:grid-cols-2">
         ${field("xa-handle", "Handle (no @)", "elonmusk")}
-        ${field("xa-auth", "auth_token cookie", "abc123...")}
-        ${field("xa-ct0", "ct0 cookie (CSRF)", "xyz789...")}
       </div>
+      <p class="mt-2 text-xs text-zinc-400">Just the handle. We'll auto-import your X cookies from the browser if you're logged in to x.com, and fall back to public access otherwise.</p>
       <button id="xa-save" class="mt-4 ${btnP}">Save account</button> <span id="xa-msg" class="text-sm text-zinc-500"></span>`;
     document.getElementById("xa-save").onclick = async () => {
-      const handle = document.getElementById("xa-handle").value.trim();
-      const auth = document.getElementById("xa-auth").value.trim();
-      const ct0 = document.getElementById("xa-ct0").value.trim();
+      const handle = document.getElementById("xa-handle").value.trim().replace(/^@/, "");
       const msg = document.getElementById("xa-msg");
-      if (!handle || !auth || !ct0) { msg.textContent = "All fields required."; return; }
+      if (!handle) { msg.textContent = "Enter a handle."; return; }
       msg.textContent = "Saving…";
       try {
-        await api.xAccountAdd(handle, auth, ct0);
-        toast("Account saved");
+        const r = await api.xAccountAdd(handle);
+        toast(r?.source === "browser" ? "Account saved — cookies imported" : "Account saved");
         form.classList.add("hidden");
         loadAccounts();
       } catch (e) { msg.textContent = "Failed: " + e; }
@@ -3431,11 +3430,13 @@ export async function renderXAccount(view) {
             <span class="font-semibold">${(p.tweets || 0).toLocaleString()}</span> tweets
           </div>
         </div>
-        <div class="mb-4 flex items-center gap-3 text-sm">
+        <div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
           <label class="flex items-center gap-2 text-zinc-600 dark:text-zinc-300">
             <input id="xa-with-threads" type="checkbox" ${withThreads ? "checked" : ""}> Include reply threads
           </label>
           <button id="xa-reload" class="${btn}">Reload</button>
+          <button id="xa-save-lib" class="${btnP}">Save to Library</button>
+          <a href="#/library" class="text-xs text-reddit hover:underline">See all saved posts →</a>
         </div>
         <div class="mb-4">
           <label class="mb-1 block text-xs font-semibold text-zinc-500">Fetch thread by tweet URL or id</label>
@@ -3449,6 +3450,16 @@ export async function renderXAccount(view) {
 
       document.getElementById("xa-reload").onclick = () => loadAccount(handle);
       document.getElementById("xa-with-threads").onchange = () => loadAccount(handle);
+      document.getElementById("xa-save-lib").onclick = async () => {
+        const btn = document.getElementById("xa-save-lib");
+        btn.disabled = true; const prev = btn.textContent; btn.textContent = "Saving…";
+        try {
+          const withThreads = !!document.getElementById("xa-with-threads")?.checked;
+          const r = await api.xAccountSaveToLibrary(handle, 25, withThreads);
+          toast(r?.message || `Saved ${r?.saved || 0} post(s)`);
+        } catch (e) { toast("Save failed: " + e); }
+        finally { btn.disabled = false; btn.textContent = prev; }
+      };
       document.getElementById("xa-thread-btn").onclick = async () => {
         const input = document.getElementById("xa-thread-input").value.trim();
         const tmsg = document.getElementById("xa-thread-msg");

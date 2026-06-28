@@ -330,11 +330,12 @@ def run_mastodon(topic_or_keywords: str | list[str], instance: str = "mastodon.s
         return 0
 
 
-def run_github_trending(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+def run_github(topic_or_keywords: str | list[str], limit: int = 20) -> int:
+    """GitHub repository keyword search (sorted by stars)."""
     from .github_trending import search_github_repos
 
     kws, stopic = _as_keywords(topic_or_keywords)
-    fid = log_fetch_start("source:github_trending", {"keywords": kws, "limit": limit})
+    fid = log_fetch_start("source:github", {"keywords": kws, "limit": limit})
     total = 0
     try:
         for i, kw in enumerate(kws):
@@ -342,6 +343,32 @@ def run_github_trending(topic_or_keywords: str | list[str], limit: int = 20) -> 
             total += _persist(stopic, rows, source_tag=f"github:{kw}")
             if i < len(kws) - 1:
                 time.sleep(_KW_SLEEP)
+        log_fetch_end(fid, rows=total)
+        return total
+    except Exception as e:
+        log_fetch_end(fid, rows=0, error=str(e))
+        return 0
+
+
+def run_github_trending(
+    topic_or_keywords: str | list[str],
+    limit: int = 25,
+    since: str = "daily",
+    language: str | None = None,
+) -> int:
+    """GitHub Trending page scrape → posts rows. Ignores the keyword and
+    surfaces the current trending repos. Useful for content angles and
+    'what's hot in open source' threads."""
+    from .github_trending import fetch_github_trending
+
+    _, stopic = _as_keywords(topic_or_keywords)
+    fid = log_fetch_start(
+        "source:github_trending",
+        {"topic": stopic, "limit": limit, "since": since, "language": language},
+    )
+    try:
+        rows = fetch_github_trending(since=since, language=language, limit=limit)
+        total = _persist(stopic, rows, source_tag="github:trending")
         log_fetch_end(fid, rows=total)
         return total
     except Exception as e:
@@ -1063,8 +1090,9 @@ SOURCES: dict[str, Any] = {
     "devto": run_devto,
     "lemmy": run_lemmy,
     "mastodon": run_mastodon,
-    "github": run_github_trending,
-    "github_issues": run_github_issues,
+    "github":          run_github,
+    "github_trending": run_github_trending,
+    "github_issues":   run_github_issues,
     "youtube": run_youtube,
     # Phase-4-era customer-feedback additions. Each is an independent
     # host so parallelizes cleanly with the existing fan-out. Trustpilot
@@ -1139,3 +1167,133 @@ SOURCES: dict[str, Any] = {
     "linkedin":    run_linkedin,      # public LinkedIn URL reader (Jina)
     "xiaoyuzhou":  run_xiaoyuzhou,    # podcast episode metadata — pass a URL
 }
+
+
+# ── growth-source bundles ───────────────────────────────────────────────────
+SOCIAL_GROWTH_SOURCES: tuple[str, ...] = (
+    "x", "reddit_free", "linkedin", "bluesky", "mastodon",
+    "threads", "instagram", "tiktok", "pinterest", "youtube",
+    "producthunt", "hn", "devto", "lemmy", "gnews", "duckduckgo", "exa",
+)
+
+OPEN_SOURCE_GROWTH_SOURCES: tuple[str, ...] = (
+    "github", "github_trending", "github_issues",
+)
+
+WEB_GROWTH_SOURCES: tuple[str, ...] = (
+    "web", "duckduckgo", "exa", "tavily",
+)
+
+CONTENT_GROWTH_SOURCES: tuple[str, ...] = (
+    SOCIAL_GROWTH_SOURCES + OPEN_SOURCE_GROWTH_SOURCES + WEB_GROWTH_SOURCES
+)
+
+
+def _call_source(src: str, topic_or_keywords: str | list[str], limit: int) -> int:
+    """Dispatch one growth source with the right kwargs."""
+    fn = SOURCES[src]
+    if src == "hn":
+        return fn(topic_or_keywords, limit_per_tag=limit)
+    if src == "youtube":
+        # videos × comments_per_video ≈ limit; cap videos so we don't over-fetch.
+        videos = max(2, min(10, limit // 5))
+        return fn(topic_or_keywords, videos=videos, comments_per_video=limit)
+    if src in ("mastodon", "lemmy"):
+        return fn(topic_or_keywords, limit=limit)
+    if src == "github_trending":
+        # trending ignores the keyword; pass it anyway so the topic tag sticks.
+        return fn(topic_or_keywords, limit=limit)
+    return fn(topic_or_keywords, limit=limit)
+
+
+def _run_bundle(
+    bundle: tuple[str, ...],
+    topic_or_keywords: str | list[str],
+    limit: int,
+    include: tuple[str, ...] | None,
+    exclude: tuple[str, ...] | None,
+    max_workers: int,
+) -> dict[str, int]:
+    import concurrent.futures
+
+    sources = list(include or bundle)
+    if exclude:
+        sources = [s for s in sources if s not in exclude]
+
+    results: dict[str, int] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(_call_source, s, topic_or_keywords, limit): s
+            for s in sources if s in SOURCES
+        }
+        for fut in concurrent.futures.as_completed(futures):
+            src = futures[fut]
+            try:
+                results[src] = int(fut.result() or 0)
+            except Exception as e:
+                results[src] = 0
+                try:
+                    fid = log_fetch_start(f"source:{src}", {"error": str(e)})
+                    log_fetch_end(fid, rows=0, error=str(e))
+                except Exception:
+                    pass
+    return results
+
+
+def run_social_growth(
+    topic_or_keywords: str | list[str],
+    limit: int = 20,
+    include: tuple[str, ...] | None = None,
+    exclude: tuple[str, ...] | None = None,
+    max_workers: int = 6,
+) -> dict[str, int]:
+    """Run the social-media / audience-growth source suite in parallel."""
+    return _run_bundle(
+        SOCIAL_GROWTH_SOURCES, topic_or_keywords, limit, include, exclude, max_workers
+    )
+
+
+def run_opensource_growth(
+    topic_or_keywords: str | list[str],
+    limit: int = 20,
+    include: tuple[str, ...] | None = None,
+    exclude: tuple[str, ...] | None = None,
+    max_workers: int = 3,
+) -> dict[str, int]:
+    """Run the open-source / GitHub source suite in parallel.
+
+    `github_trending` ignores the keyword and returns today's trending repos —
+    perfect for 'what's hot in open source' posts/threads.
+    """
+    return _run_bundle(
+        OPEN_SOURCE_GROWTH_SOURCES, topic_or_keywords, limit, include, exclude, max_workers
+    )
+
+
+def run_web_growth(
+    topic_or_keywords: str | list[str],
+    limit: int = 20,
+    include: tuple[str, ...] | None = None,
+    exclude: tuple[str, ...] | None = None,
+    max_workers: int = 4,
+) -> dict[str, int]:
+    """Run the general-web source suite in parallel.
+
+    `web` expects a URL as the topic. DDG/Exa/Tavily accept keywords.
+    """
+    return _run_bundle(
+        WEB_GROWTH_SOURCES, topic_or_keywords, limit, include, exclude, max_workers
+    )
+
+
+def run_content_growth(
+    topic_or_keywords: str | list[str],
+    limit: int = 20,
+    include: tuple[str, ...] | None = None,
+    exclude: tuple[str, ...] | None = None,
+    max_workers: int = 8,
+) -> dict[str, int]:
+    """Run social + open-source + web growth sources in one call."""
+    return _run_bundle(
+        CONTENT_GROWTH_SOURCES, topic_or_keywords, limit, include, exclude, max_workers
+    )

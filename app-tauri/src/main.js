@@ -19,16 +19,10 @@ const FULL_SCREENS = new Set(["welcome"]);
 
 // Open-source builds have no license gate. On first launch the onboarding
 // wizard is shown; otherwise the requested route is used as-is.
-// DEV BYPASS: for local GUI testing we auto-mark onboarding complete so the
-// app boots straight into the dashboard. Remove this when shipping the real
-// first-run experience.
 async function gateCheck(reqKey) {
   if (!api.isTauri()) return reqKey;
   if (reqKey === "activate") return "agents";
-  if (!localStorage.getItem("or-onboarded")) {
-    localStorage.setItem("or-onboarded", "1");
-    localStorage.setItem("or-user-name", "Dev User");
-  }
+  if (!localStorage.getItem("or-onboarded")) return "welcome";
   if (reqKey === "welcome") return "agents";
   return reqKey;
 }

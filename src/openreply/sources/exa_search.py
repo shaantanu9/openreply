@@ -8,6 +8,7 @@ No key → [] (degrades gracefully). Never raises.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import datetime, timezone
 
@@ -45,10 +46,14 @@ def _epoch(date_str: str | None) -> float:
         return 0.0
 
 
+def _stable_id(ident: str) -> str:
+    return hashlib.sha256(ident.encode("utf-8")).hexdigest()[:16]
+
+
 def _row(it: dict) -> dict:
     url = it.get("url") or ""
     return {
-        "id": f"exa_{hash(it.get('id') or url) & 0xFFFFFFFF:x}",
+        "id": f"exa_{_stable_id(it.get('id') or url)}",
         "sub": "exa",
         "source_type": "exa",
         "author": it.get("author") or "",

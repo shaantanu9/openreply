@@ -5,7 +5,13 @@ import json
 
 import typer
 
-from .fetch import fetch_posts, fetch_profile, fetch_thread, import_browser_cookies
+from .fetch import (
+    fetch_posts,
+    fetch_profile,
+    fetch_thread,
+    import_browser_cookies,
+    save_posts_to_corpus,
+)
 from .store import add_account, get_account, list_accounts, remove_account
 
 app = typer.Typer(help="X/Twitter account worktree (MVP).")
@@ -18,13 +24,25 @@ def _print_json(data: object) -> None:
 @app.command("add")
 def cmd_add(
     handle: str = typer.Argument(..., help="X handle without @."),
-    auth_token: str = typer.Argument(..., help="auth_token cookie value."),
-    ct0: str = typer.Argument(..., help="ct0 cookie value (CSRF)."),
+    auth_token: str = typer.Argument("", help="auth_token cookie (optional)."),
+    ct0: str = typer.Argument("", help="ct0 cookie / CSRF (optional)."),
     as_json: bool = typer.Option(False, "--json", hidden=True),
 ) -> None:
-    """Add an X account to the local worktree."""
+    """Add an X account with just the handle.
+
+    Cookies are optional: when omitted we try to import them from your browser,
+    and otherwise fall back to public read access (placeholder cookies work for
+    public timelines via the vendored bird client)."""
+    source = "manual"
+    if not auth_token and not ct0:
+        cookies = import_browser_cookies()
+        if cookies:
+            auth_token, ct0 = cookies["auth_token"], cookies["ct0"]
+            source = "browser"
+        else:
+            source = "public"  # placeholder cookies → public reads only
     account = add_account(handle, auth_token, ct0)
-    _print_json({"ok": True, "account": account.to_dict()})
+    _print_json({"ok": True, "account": account.to_dict(), "source": source})
 
 
 @app.command("import-browser")
@@ -115,4 +133,25 @@ def cmd_fetch_thread(
         _print_json({"ok": True, "count": len(thread), "thread": thread})
     except Exception as e:
         _print_json({"ok": False, "error": f"Fetch failed: {e}"})
+        raise typer.Exit(1)
+
+
+@app.command("save-to-library")
+def cmd_save_to_library(
+    handle: str = typer.Argument(..., help="X handle without @."),
+    count: int = typer.Option(25, "--count", "-n", help="Number of tweets to fetch and save."),
+    with_threads: bool = typer.Option(False, "--with-threads", help="Also save reply threads for reply tweets."),
+    as_json: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Fetch an X account's recent posts and save them to the active agent's
+    Library / corpus so they can be searched, learned from, and repurposed."""
+    account = get_account(handle)
+    if not account:
+        _print_json({"ok": False, "error": f"Account @{handle} not found"})
+        raise typer.Exit(1)
+    try:
+        result = save_posts_to_corpus(account, count=count, with_threads=with_threads)
+        _print_json({"ok": True, **result})
+    except Exception as e:
+        _print_json({"ok": False, "error": f"Save failed: {e}"})
         raise typer.Exit(1)

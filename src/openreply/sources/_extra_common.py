@@ -20,11 +20,22 @@ Rules baked in here (see SOURCE_ADDITION_PLAYBOOK.md):
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _stable_id(ident: str) -> str:
+    """Deterministic, cross-process stable hash for row IDs.
+
+    Python's built-in ``hash()`` is randomized per process, so the same
+    URL would get a different ``id`` on every run and break downstream
+    deduplication. Use SHA-256 truncated to 16 hex chars instead.
+    """
+    return hashlib.sha256(ident.encode("utf-8")).hexdigest()[:16]
 
 
 def text_row(
@@ -42,7 +53,7 @@ def text_row(
 ) -> dict:
     """Build one common ``posts`` row from a text/numeric datum."""
     return {
-        "id": f"{source_type}_{hash(ident) & 0xffffffff:x}",
+        "id": f"{source_type}_{_stable_id(ident)}",
         "sub": (sub or source_type)[:60],
         "source_type": source_type,
         "author": (author or "")[:120],

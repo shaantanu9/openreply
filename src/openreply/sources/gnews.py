@@ -4,14 +4,21 @@ https://news.google.com/rss/search?q=<query>
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
+from ._http import DEFAULT_HEADERS
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _stable_id(ident: str) -> str:
+    return hashlib.sha256(ident.encode("utf-8")).hexdigest()[:16]
 
 
 def _require_feedparser():
@@ -25,9 +32,10 @@ def _require_feedparser():
 def fetch_gnews(query: str, limit: int = 50, lang: str = "en", country: str = "US") -> list[dict]:
     feedparser = _require_feedparser()
     url = "https://news.google.com/rss/search"
-    params = {"q": query, "hl": f"{lang}-{country}", "gl": country, "ceid": f"{country}:{lang}"}
+    # Google News RSS expects hl=<lang> (e.g. "en"), not "en-US".
+    params = {"q": query, "hl": lang, "gl": country, "ceid": f"{country}:{lang}"}
     try:
-        r = httpx.get(url, params=params, timeout=20)
+        r = httpx.get(url, params=params, headers=DEFAULT_HEADERS, timeout=20)
         r.raise_for_status()
     except httpx.HTTPError:
         return []
@@ -53,7 +61,7 @@ def fetch_gnews(query: str, limit: int = 50, lang: str = "en", country: str = "U
         publisher_slug = (publisher.lower().replace(" ", "-") if publisher else "google-news")[:60]
         rows.append(
             {
-                "id": f"gnews_{hash(rid) & 0xffffffff:x}",
+                "id": f"gnews_{_stable_id(rid)}",
                 "sub": publisher_slug,
                 "source_type": "gnews",
                 "author": publisher,

@@ -791,6 +791,7 @@ fn main() {
             commands::x_account_profile,
             commands::x_account_fetch_posts,
             commands::x_account_fetch_thread,
+            commands::x_account_save_to_library,
         ])
         .build(tauri::generate_context!())
         .expect("error while building openreply");

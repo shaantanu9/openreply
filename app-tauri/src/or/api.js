@@ -218,7 +218,7 @@ export const api = {
   contentPublishX: (id, dryRun) => call("content_publish_x", { contentId: id, dryRun: !!dryRun }),
   // ── Minimal X-account worktree (MVP) ──
   xAccountAdd: (handle, authToken, ct0) =>
-    call("x_account_add", { handle, authToken, ct0 }),
+    call("x_account_add", { handle, authToken: authToken || null, ct0: ct0 || null }),
   xAccountImportBrowser: (handle) => call("x_account_import_browser", { handle }),
   xAccountList: () => call("x_account_list"),
   xAccountProfile: (handle) => call("x_account_profile", { handle }),
@@ -226,6 +226,8 @@ export const api = {
     call("x_account_fetch_posts", { handle, count: count || 10, with_threads: !!withThreads }),
   xAccountFetchThread: (handle, tweetIdOrUrl, limit) =>
     call("x_account_fetch_thread", { handle, tweet_id_or_url: tweetIdOrUrl, limit: limit || 50 }),
+  xAccountSaveToLibrary: (handle, count, withThreads) =>
+    call("x_account_save_to_library", { handle, count: count || 25, with_threads: !!withThreads }),
   // ── Connections (Reach credentials) — creds_* return a JSON array; the
   // single-result ops return a 1-element array, so callers take [0]. ──
   credsList: () => call("creds_list"),

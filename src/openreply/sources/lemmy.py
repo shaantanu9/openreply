@@ -5,6 +5,7 @@ https://join-lemmy.org/api/
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -54,6 +55,11 @@ def fetch_lemmy(
     type_: str = "Posts",   # Posts | Comments | Communities | Users
     sort: str = "TopAll",   # Active | Hot | New | TopAll | TopYear | TopMonth
 ) -> list[dict]:
+    # Accept "lemmy.world" or "https://lemmy.world".
+    instance = re.sub(r"^https?://", "", (instance or _DEFAULT).strip().rstrip("/"))
+    valid_types = ("Posts", "Comments", "Communities", "Users")
+    if type_ not in valid_types:
+        type_ = "Posts"
     try:
         r = httpx.get(
             f"https://{instance}/api/v3/search",
@@ -64,5 +70,7 @@ def fetch_lemmy(
     except httpx.HTTPError:
         return []
     data = r.json() or {}
-    posts = data.get("posts") or []
+    # The response list key matches the type_
+    key = type_.lower() + "s"
+    posts = data.get(key) or []
     return [_row(p, instance) for p in posts[:limit]]

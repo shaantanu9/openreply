@@ -42,7 +42,7 @@ def _row(p: dict[str, Any], instance: str) -> dict[str, Any]:
         "is_self": 1,
         "over_18": int(bool(p.get("sensitive"))),
         "flair": None,
-        "permalink": p.get("url"),
+        "permalink": p.get("url") or "",
         "fetched_at": _now_iso(),
     }
 
