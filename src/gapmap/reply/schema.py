@@ -32,6 +32,9 @@ def init_reply_schema(db: Database | None = None) -> Database:
                 "score": float, "relevance": float, "intent": float, "fit": float,
                 "engagement": float, "freshness": float, "rrf": float,
                 "reason": str, "status": str, "found_at": int,
+                # created_utc = the source post/article's own timestamp (epoch
+                # seconds) so the UI can show how old the conversation is.
+                "created_utc": int,
             },
             pk="id",
         )
@@ -48,7 +51,7 @@ def init_reply_schema(db: Database | None = None) -> Database:
                 db["reply_opportunities"].add_column(col, float)
         # lifecycle columns: snooze (snoozed status), updated_at (sort by recent),
         # scheduled_at (queued), posted_at (posted). All nullable int epochs.
-        for col in ("snooze_until", "updated_at", "scheduled_at", "posted_at"):
+        for col in ("snooze_until", "updated_at", "scheduled_at", "posted_at", "created_utc"):
             if col not in existing:
                 db["reply_opportunities"].add_column(col, int)
 
@@ -91,5 +94,29 @@ def init_reply_schema(db: Database | None = None) -> Database:
             pk="opportunity_id",
         )
         db["reply_feedback"].create_index(["agent_id", "signal"])
+
+    if "reply_playbook" not in names:
+        # Versioned Goal Playbook — the agent's self-evolving promotion strategy.
+        db["reply_playbook"].create(
+            {
+                "id": str, "agent_id": str, "version": int,
+                "playbook_json": str, "sources_json": str, "summary": str,
+                "created_at": int,
+            },
+            pk="id",
+        )
+        db["reply_playbook"].create_index(["agent_id", "version"])
+
+    if "reply_ideas" not in names:
+        # Synthesized content ideas (fused from memories + beliefs across sources).
+        db["reply_ideas"].create(
+            {
+                "id": str, "agent_id": str, "title": str, "thesis": str,
+                "kind": str, "combines_json": str, "source_mix": str,
+                "goal_fit": float, "status": str, "created_at": int,
+            },
+            pk="id",
+        )
+        db["reply_ideas"].create_index(["agent_id", "status"])
 
     return db
