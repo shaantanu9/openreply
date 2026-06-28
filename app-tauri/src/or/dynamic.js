@@ -595,6 +595,7 @@ export async function renderOpportunities(view) {
 const KINDS = [
   ["post", "Post"], ["thread", "Thread"], ["script", "Short script"],
   ["youtube", "YouTube"], ["article", "Article"], ["followup", "Follow-up"],
+  ["repurpose", "Repurpose"],
 ];
 const _pill = (on) => `rounded-full ${on ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700"} px-4 py-2 text-sm font-semibold`;
 const _field = "mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm";
@@ -625,6 +626,11 @@ export async function renderCompose(view) {
              <select id="cm-orig" class="${_field}">${drafts.length
                ? drafts.map(d => `<option value="${esc(d.id)}">${esc((d.kind || "") + " · " + (d.title || d.body || "").slice(0, 60))}</option>`).join("")
                : `<option value="">(no drafts yet — generate one first)</option>`}</select></label>
+         </div>
+         <div id="cm-repurpose-div" class="hidden">
+           <label class="text-zinc-500">Source post to rewrite in your voice
+             <textarea id="cm-repurpose-text" rows="5" placeholder="Paste the tweet, post, or article you want to repurpose — keep the insight, shed the framing…" class="${_field}"></textarea></label>
+           <p class="mt-1 text-xs text-zinc-400">The AI will rewrite this entirely in your brand voice. It stays in your drafts for editing before you post.</p>
          </div>
        </div>
 
@@ -669,13 +675,35 @@ export async function renderCompose(view) {
   let kind = "post";
   let fmode = "reply";
   const ctxPanel = document.getElementById("cm-ctx");
+  function _applyKind(k) {
+    kind = k;
+    ctxPanel.classList.toggle("hidden", kind !== "followup" && kind !== "repurpose");
+    document.getElementById("cm-fmode").classList.toggle("hidden", kind === "repurpose");
+    document.getElementById("cm-fmode-reply").classList.toggle("hidden", kind === "repurpose");
+    document.getElementById("cm-fmode-sequence").classList.toggle("hidden", kind === "repurpose" || fmode !== "sequence");
+    document.getElementById("cm-repurpose-div").classList.toggle("hidden", kind !== "repurpose");
+  }
   document.getElementById("cm-kinds").onclick = (e) => {
     const b = e.target.closest("[data-kind]"); if (!b) return;
-    kind = b.getAttribute("data-kind");
     [...document.querySelectorAll("#cm-kinds [data-kind]")].forEach(x =>
       x.className = _pill(x === b));
-    ctxPanel.classList.toggle("hidden", kind !== "followup");
+    _applyKind(b.getAttribute("data-kind"));
   };
+  // Check for a repurpose context passed from Watch screen.
+  const _rpCtx = sessionStorage.getItem("or-repurpose-ctx");
+  if (_rpCtx) {
+    sessionStorage.removeItem("or-repurpose-ctx");
+    try {
+      const d = JSON.parse(_rpCtx);
+      const rpBtn = [...document.querySelectorAll("#cm-kinds [data-kind]")].find(b => b.getAttribute("data-kind") === "repurpose");
+      if (rpBtn) {
+        [...document.querySelectorAll("#cm-kinds [data-kind]")].forEach(x => x.className = _pill(x === rpBtn));
+        _applyKind("repurpose");
+        const ta = document.getElementById("cm-repurpose-text");
+        if (ta) ta.value = [d.title, d.text].filter(x => x && x.trim()).join("\n\n");
+      }
+    } catch (e) {}
+  }
   document.getElementById("cm-fmode").onclick = (e) => {
     const b = e.target.closest("[data-fmode]"); if (!b) return;
     fmode = b.getAttribute("data-fmode");
@@ -690,7 +718,7 @@ export async function renderCompose(view) {
     const status = document.getElementById("cm-status");
     const out = document.getElementById("cm-out");
 
-    // Resolve the UI pseudo-kind + gather follow-up context.
+    // Resolve the UI pseudo-kind + gather follow-up / repurpose context.
     let realKind = kind, ctx = {};
     if (kind === "followup") {
       if (fmode === "reply") {
@@ -702,6 +730,9 @@ export async function renderCompose(view) {
         ctx.contextId = document.getElementById("cm-orig").value;
         if (!ctx.contextId) { status.textContent = "Generate a draft first, then follow up on it."; return; }
       }
+    } else if (kind === "repurpose") {
+      ctx.contextText = document.getElementById("cm-repurpose-text").value.trim();
+      if (!ctx.contextText) { status.textContent = "Paste the source post you want to rewrite first."; return; }
     }
 
     status.textContent = "Generating…";
@@ -1438,7 +1469,7 @@ async function buildSemanticCard(el) {
   };
 }
 
-// Power tools — install the `gapmap` CLI + choose the export folder.
+// Power tools — install the `openreply` CLI + choose the export folder.
 async function buildPowerCard(el) {
   let cli = {}, exp = {};
   try { cli = (await api.cliSymlinkStatus()) || {}; } catch (e) {}
@@ -1447,7 +1478,7 @@ async function buildPowerCard(el) {
   const dir = exp.export_dir || exp.dir || "";
   el.innerHTML = `<b class="text-zinc-900 dark:text-white">Power tools</b>
     <div class="mt-3 flex items-center justify-between gap-3 text-sm">
-      <div><div class="text-zinc-900 dark:text-white font-semibold">Terminal CLI</div><div class="text-xs text-zinc-400">Use <code>gapmap</code> from any terminal.</div></div>
+      <div><div class="text-zinc-900 dark:text-white font-semibold">Terminal CLI</div><div class="text-xs text-zinc-400">Use <code>openreply</code> from any terminal.</div></div>
       <button id="st-cli" class="${btn}">${installed ? "Reinstall" : "Install CLI"}</button></div>
     <div class="mt-3 flex items-center justify-between gap-3 text-sm">
       <div class="min-w-0"><div class="text-zinc-900 dark:text-white font-semibold">Export folder</div><div class="truncate text-xs text-zinc-400">${esc(dir || "default (app data)")}</div></div>
@@ -1477,7 +1508,7 @@ async function buildAboutCard(el) {
       <button id="st-fb-gh" class="${btn}"><i data-lucide="github" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Report an issue</button>
       <button id="st-fb-logs" class="${btn}"><i data-lucide="folder" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Open data folder</button></div>`;
   el.querySelector("#st-fb-email").onclick = () => api.openUrl(`mailto:sbombatkar@leaptodigital.com?subject=${encodeURIComponent("OpenReply feedback" + (ver ? " v" + ver : ""))}`).catch(() => toast("Couldn’t open mail"));
-  el.querySelector("#st-fb-gh").onclick = () => api.openUrl("https://github.com/myind-ai/gapmap/issues").catch(() => {});
+  el.querySelector("#st-fb-gh").onclick = () => api.openUrl("https://github.com/myind-ai/openreply/issues").catch(() => {});
   el.querySelector("#st-fb-logs").onclick = () => api.revealInFinder(String(dir || "")).catch(() => toast("Couldn’t open folder"));
 }
 
@@ -2598,7 +2629,7 @@ export async function renderGeo(view) {
   load();
 }
 
-// ── Activation gate (Gap Map licence backend) ───────────────────────────────
+// ── Activation gate (OpenReply licence backend) ───────────────────────────────
 // Format a raw key into XXXX-XXXX-XXXX-XXXX, keeping only the backend's
 // alphabet (A–Z and 2–9 — no 0/1). Returns {raw, display}.
 function fmtKey(s) {
@@ -3413,10 +3444,29 @@ export async function renderWatch(view) {
         const r = await api.accountFetch(h, false);
         const samp = list.querySelector(`[data-samp="${CSS.escape(h)}"]`);
         if (r?.error) { if (samp) samp.innerHTML = `<div class="text-xs text-rose-500">${esc(r.error)}</div>`; }
-        else {
+        else if (!r?.fetched) {
+          if (samp) samp.innerHTML = `<div class="text-xs text-amber-600">${esc(r.message || "No posts returned")} — <a href="#/connections" class="underline">Connect X →</a></div>`;
+        } else {
           toast(r.message || `Pulled ${r.fetched || 0}`);
-          if (samp) samp.innerHTML = (r.sample || []).map((s) => `<div class="text-sm text-zinc-500">• ${esc(s.title)} ${s.url ? `<a href="${esc(s.url)}" target="_blank" class="text-reddit">↗</a>` : ""}</div>`).join("")
-            + `<a href="#/compose" class="text-xs font-semibold text-reddit">Repurpose in Compose →</a>`;
+          const _rp = (s) => { sessionStorage.setItem("or-repurpose-ctx", JSON.stringify({title: s.title, text: s.text || s.title})); location.hash = "#/compose"; };
+          if (samp) {
+            samp.innerHTML = (r.sample || []).map((s, i) =>
+              `<div class="flex items-start gap-2 text-sm text-zinc-500">
+                 <span class="shrink-0">•</span>
+                 <span class="flex-1 min-w-0">${esc(s.title)}${s.url ? ` <a href="${esc(s.url)}" target="_blank" class="text-reddit">↗</a>` : ""}</span>
+                 <button data-rp="${i}" class="shrink-0 text-xs font-semibold text-reddit hover:underline">Rewrite →</button>
+               </div>`).join("")
+              + `<button data-rp-all="1" class="mt-1 text-xs font-semibold text-reddit hover:underline">Open Compose (Repurpose) →</button>`;
+            samp.querySelectorAll("[data-rp]").forEach((btn) => {
+              const idx = Number(btn.getAttribute("data-rp"));
+              const s = (r.sample || [])[idx] || {};
+              btn.onclick = () => _rp(s);
+            });
+            samp.querySelector("[data-rp-all]")?.addEventListener("click", () => {
+              const allText = (r.sample || []).map(s => s.title).join("\n");
+              _rp({title: `Posts from @${h}`, text: allText});
+            });
+          }
         }
         load();
       } catch (e) { toast("Fetch failed"); }
@@ -3439,7 +3489,175 @@ export async function renderWatch(view) {
   load();
 }
 
+// ── Minimal X-account worktree screen ─────────────────────────────────────
+export async function renderXAccount(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  view.innerHTML = head("X Account",
+    "Connect an X account with cookies, then fetch profile + posts/threads via the internal GraphQL API.",
+    `<button id="xa-add-btn" class="${btnP}">+ Add account</button>
+     <button id="xa-import-btn" class="ml-2 ${btn}">Import from browser</button>`) +
+    `<div id="xa-form" class="hidden mb-5 ${card}"></div>
+     <div id="xa-import-msg" class="hidden mb-2 text-sm text-zinc-500"></div>
+     <div id="xa-accounts" class="${card} mb-5"><div class="text-zinc-500">Loading accounts…</div></div>
+     <div id="xa-output" class="${card}"><div class="text-zinc-500">Select an account to see profile/posts.</div></div>`;
+
+  const form = document.getElementById("xa-form");
+  document.getElementById("xa-add-btn").onclick = () => {
+    form.classList.toggle("hidden");
+    if (!form.innerHTML) renderAddForm();
+  };
+
+  document.getElementById("xa-import-btn").onclick = async () => {
+    const msg = document.getElementById("xa-import-msg");
+    const handle = window.prompt("X handle to import cookies for (no @):");
+    if (!handle) return;
+    msg.classList.remove("hidden");
+    msg.textContent = "Importing cookies from browser…";
+    try {
+      await api.xAccountImportBrowser(handle);
+      toast("Cookies imported");
+      msg.textContent = "";
+      loadAccounts();
+    } catch (e) {
+      msg.textContent = "Import failed: " + e;
+    }
+  };
+
+  function field(id, label, placeholder) {
+    return `<div><label class="mb-1 block text-xs font-semibold text-zinc-500">${esc(label)}</label>
+            <input id="${id}" type="text" placeholder="${esc(placeholder)}" class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-1 focus:ring-reddit dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"></div>`;
+  }
+
+  function renderAddForm() {
+    form.innerHTML = `
+      <h3 class="mb-3 font-semibold text-zinc-900 dark:text-white">Add X account</h3>
+      <div class="grid gap-3 sm:grid-cols-3">
+        ${field("xa-handle", "Handle (no @)", "elonmusk")}
+        ${field("xa-auth", "auth_token cookie", "abc123...")}
+        ${field("xa-ct0", "ct0 cookie (CSRF)", "xyz789...")}
+      </div>
+      <button id="xa-save" class="mt-4 ${btnP}">Save account</button> <span id="xa-msg" class="text-sm text-zinc-500"></span>`;
+    document.getElementById("xa-save").onclick = async () => {
+      const handle = document.getElementById("xa-handle").value.trim();
+      const auth = document.getElementById("xa-auth").value.trim();
+      const ct0 = document.getElementById("xa-ct0").value.trim();
+      const msg = document.getElementById("xa-msg");
+      if (!handle || !auth || !ct0) { msg.textContent = "All fields required."; return; }
+      msg.textContent = "Saving…";
+      try {
+        await api.xAccountAdd(handle, auth, ct0);
+        toast("Account saved");
+        form.classList.add("hidden");
+        loadAccounts();
+      } catch (e) { msg.textContent = "Failed: " + e; }
+    };
+  }
+
+  async function loadAccounts() {
+    const el = document.getElementById("xa-accounts");
+    try {
+      const res = await api.xAccountList();
+      const accounts = res?.accounts || [];
+      if (!accounts.length) {
+        el.innerHTML = `<div class="text-zinc-500">No accounts. Click “+ Add account” or “Import from browser”.</div>`;
+        return;
+      }
+      el.innerHTML = `<div class="mb-2 text-sm font-semibold text-zinc-500">Stored accounts</div>
+        <div class="flex flex-wrap gap-2">${accounts.map(a =>
+          `<button data-handle="${esc(a.handle)}" class="xa-acct rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-sm hover:border-reddit hover:text-reddit">@${esc(a.handle)}</button>`
+        ).join("")}</div>`;
+      el.querySelectorAll(".xa-acct").forEach(b => b.onclick = () => loadAccount(b.dataset.handle));
+    } catch (e) { el.innerHTML = `<div class="text-rose-500">${esc(e)}</div>`; }
+  }
+
+  async function loadAccount(handle) {
+    const out = document.getElementById("xa-output");
+    out.innerHTML = `<div class="text-zinc-500">Loading @${esc(handle)}…</div>`;
+    try {
+      const withThreads = !!document.getElementById("xa-with-threads")?.checked;
+      const [profile, posts] = await Promise.all([
+        api.xAccountProfile(handle),
+        api.xAccountFetchPosts(handle, 10, withThreads),
+      ]);
+      const p = profile?.profile || {};
+      out.innerHTML = `
+        <div class="mb-4">
+          <div class="text-lg font-bold text-zinc-900 dark:text-white">@${esc(p.handle || handle)}</div>
+          <div class="text-zinc-500">${esc(p.name || "")}</div>
+          <div class="mt-1 text-sm text-zinc-500">${esc(p.bio || "")}</div>
+          <div class="mt-2 flex gap-4 text-sm">
+            <span class="font-semibold">${(p.followers || 0).toLocaleString()}</span> followers
+            <span class="font-semibold">${(p.following || 0).toLocaleString()}</span> following
+            <span class="font-semibold">${(p.tweets || 0).toLocaleString()}</span> tweets
+          </div>
+        </div>
+        <div class="mb-4 flex items-center gap-3 text-sm">
+          <label class="flex items-center gap-2 text-zinc-600 dark:text-zinc-300">
+            <input id="xa-with-threads" type="checkbox" ${withThreads ? "checked" : ""}> Include reply threads
+          </label>
+          <button id="xa-reload" class="${btn}">Reload</button>
+        </div>
+        <div class="mb-4">
+          <label class="mb-1 block text-xs font-semibold text-zinc-500">Fetch thread by tweet URL or id</label>
+          <div class="flex gap-2">
+            <input id="xa-thread-input" type="text" placeholder="https://x.com/elonmusk/status/123... or 123..." class="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-1 focus:ring-reddit dark:border-zinc-700 dark:bg-zinc-900 dark:text-white">
+            <button id="xa-thread-btn" class="${btnP}">Fetch thread</button>
+          </div>
+          <div id="xa-thread-msg" class="mt-1 text-sm text-zinc-500"></div>
+        </div>
+        <div id="xa-posts" class="space-y-3"></div>`;
+
+      document.getElementById("xa-reload").onclick = () => loadAccount(handle);
+      document.getElementById("xa-with-threads").onchange = () => loadAccount(handle);
+      document.getElementById("xa-thread-btn").onclick = async () => {
+        const input = document.getElementById("xa-thread-input").value.trim();
+        const tmsg = document.getElementById("xa-thread-msg");
+        if (!input) { tmsg.textContent = "Paste a tweet URL or id."; return; }
+        tmsg.textContent = "Loading thread…";
+        try {
+          const res = await api.xAccountFetchThread(handle, input, 50);
+          renderPosts(res?.thread || [], "Thread", true);
+          tmsg.textContent = `${res?.count || 0} tweets`;
+        } catch (e) { tmsg.textContent = "Failed: " + e; }
+      };
+
+      renderPosts(posts?.posts || [], "Recent posts");
+    } catch (e) { out.innerHTML = `<div class="text-rose-500">${esc(e)}</div>`; }
+  }
+
+  function renderPosts(posts, title, skipHeader) {
+    const container = document.getElementById("xa-posts");
+    if (!container) return;
+    const html = (skipHeader ? "" : `<div class="mb-2 text-sm font-semibold text-zinc-500">${esc(title)}</div>`) +
+      posts.map(t => `
+        <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 ${t.is_reply ? "border-l-4 border-l-reddit" : ""}">
+          <div class="text-sm text-zinc-900 dark:text-white whitespace-pre-wrap">${esc(t.text)}</div>
+          <div class="mt-2 flex flex-wrap gap-4 text-xs text-zinc-500">
+            <span>♥ ${t.likes || 0}</span>
+            <span>↻ ${t.retweets || 0}</span>
+            <span>💬 ${t.replies || 0}</span>
+            ${t.is_reply ? "<span>reply</span>" : ""}
+            ${t.is_retweet ? "<span>retweet</span>" : ""}
+            <a href="${esc(t.url)}" target="_blank" class="hover:text-reddit">open →</a>
+          </div>
+          ${(t.thread || []).length ? `
+            <div class="mt-3 space-y-2 border-l-2 border-zinc-200 dark:border-zinc-700 pl-3">
+              ${t.thread.map(r => `
+                <div class="text-sm text-zinc-700 dark:text-zinc-300">${esc(r.text)}</div>
+              `).join("")}
+            </div>
+          ` : ""}
+        </div>
+      `).join("");
+    container.innerHTML = html;
+  }
+
+  loadAccounts();
+  icons();
+}
+
 export const DYN = {
+  "x-account": renderXAccount,
   watch: renderWatch,
   growth: renderGrowth,
   library: renderLibrary,

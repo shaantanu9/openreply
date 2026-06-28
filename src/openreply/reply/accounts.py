@@ -123,12 +123,13 @@ def fetch_account(handle: str, *, platform: str = "x", limit: int = 25,
     except Exception as e:
         return {"handle": h, "platform": platform, "error": f"fetch failed: {e}"}
 
+    # Surface the backend's own error reason before filtering it out.
+    backend_err = next((r.get("_error") for r in rows if isinstance(r, dict) and r.get("_error")), None)
     rows = [r for r in rows if isinstance(r, dict) and "_error" not in r and r.get("id")]
     if not rows:
-        # surface the backend's own reason if it gave one
+        reason = backend_err or f"connect X (Connections) and ensure the handle is correct"
         return {"handle": h, "platform": platform, "fetched": 0,
-                "message": f"No posts returned for @{h} — connect X (Connections) "
-                           f"and ensure the handle is correct."}
+                "message": f"No posts returned for @{h} — {reason}"}
 
     tagged = 0
     try:
@@ -161,7 +162,9 @@ def fetch_account(handle: str, *, platform: str = "x", limit: int = 25,
 
     return {
         "handle": h, "platform": platform, "fetched": len(rows), "tagged": tagged,
-        "sample": [{"title": (r.get("title") or "")[:120], "url": r.get("url")}
+        "sample": [{"title": (r.get("title") or "")[:120],
+                    "text": (r.get("selftext") or r.get("body") or r.get("title") or "")[:500],
+                    "url": r.get("url")}
                    for r in rows[:5]],
         "learned": learned,
         "message": f"Pulled {len(rows)} post(s) from @{h} into your corpus"

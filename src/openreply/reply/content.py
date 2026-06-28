@@ -62,10 +62,16 @@ _KIND_SPECS = {
         "alone yet build on it — an update, a part 2, or a lesson learned since. "
         "Same brand voice, same format family as the original."
     ),
+    "repurpose": (
+        "a rewrite of the SOURCE POST below in your own voice. Keep the core "
+        "insight; replace the original author's framing, sentence structure, and "
+        "wording entirely. Improve clarity and punch where you can. Match the "
+        "natural format and length for the platform."
+    ),
 }
 
-# Kinds that consume external context (a thread reply, or a prior draft).
-_CONTEXT_KINDS = {"followup_reply", "followup_post"}
+# Kinds that consume external context (a thread reply, prior draft, or source post).
+_CONTEXT_KINDS = {"followup_reply", "followup_post", "repurpose"}
 
 # Per-platform length / format hint appended to the prompt.
 _PLATFORM_HINTS = {
@@ -81,7 +87,7 @@ _PLATFORM_HINTS = {
 _KIND_TOKENS = {
     "post": 500, "thread": 800, "script": 600,
     "youtube": 1500, "article": 1500,
-    "followup_reply": 500, "followup_post": 800,
+    "followup_reply": 500, "followup_post": 800, "repurpose": 700,
 }
 
 
@@ -140,7 +146,7 @@ def generate_content(
 ) -> dict:
     a = get_agent(agent_id) if agent_id else get_active_agent()
     if not a:
-        return {"error": "no active agent — run `gapmap agent create ...`"}
+        return {"error": "no active agent — run `openreply agent create ...`"}
     spec = _KIND_SPECS.get(kind)
     if not spec:
         return {"error": f"unknown kind '{kind}' ({'|'.join(_KIND_SPECS)})"}
@@ -165,6 +171,10 @@ def generate_content(
                 context_block = f"\nORIGINAL:\n{context_text.strip()}\n"
             else:
                 return {"error": "followup_post needs --context-id (a prior draft) or --context-text"}
+        elif kind == "repurpose":
+            if not context_text.strip():
+                return {"error": "repurpose needs --context-text (the source post to rewrite)"}
+            context_block = f"\nSOURCE POST (rewrite this in your voice — keep the insight, shed the framing):\n{context_text.strip()}\n"
         else:  # followup_reply
             if not context_text.strip():
                 return {"error": "followup_reply needs --context-text (the thread + the reply to answer)"}
