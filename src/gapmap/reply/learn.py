@@ -135,6 +135,18 @@ def learn_for_agent(
     except Exception:
         pass
 
+    # Self-evolution: once new memories landed, link ideas across sources and
+    # re-distill the Goal Playbook so the next reply/post is smarter. Only when
+    # a goal is set; never blocks the learn result.
+    try:
+        if total_learned > 0 and (a.get("objective") or a.get("goal")):
+            from ..persona.graph import link_associations
+            from .playbook import evolve_playbook
+            link_associations(a["id"], provider=provider)
+            evolve_playbook(a["id"], provider=provider, reason="learn")
+    except Exception:
+        pass
+
     return {
         "agent": a["name"], "topic": topic,
         "learned": total_learned, "beliefs": total_beliefs,
@@ -159,11 +171,11 @@ def teach_for_agent(
     Resolves (or auto-provisions) the agent's learning persona, then feeds it the
     video via :func:`persona.teach.teach_from_video`:
 
-        YouTube  -> yt-dlp auto-captions (subtitles) + transcript + top comments
-        other    -> yt-dlp audio -> faster-whisper transcript
+        YouTube  → yt-dlp auto-captions (subtitles) + transcript + top comments
+        other    → yt-dlp audio → faster-whisper transcript
 
     The transcript rows flow through the SAME ingest pipeline `learn_for_agent`
-    uses (memories -> embed_and_link -> ChromaDB), and any new memories are
+    uses (memories → embed_and_link → ChromaDB), and any new memories are
     synthesized into beliefs — so what the agent learns from the video blends
     straight into its replies & content. Never raises.
     """
@@ -189,11 +201,11 @@ def teach_for_agent(
             if kind == "teach:start":
                 video_id = ev.get("video_id")
                 if progress:
-                    progress(f"fetching video {video_id or url}\u2026")
+                    progress(f"fetching video {video_id or url}…")
             elif kind == "teach:fetched":
                 fetched = {k: int(ev.get(k, 0) or 0) for k in fetched}
                 if progress:
-                    progress(f"fetched {fetched['rows']} rows ({fetched['transcript']} transcript chunks); learning\u2026")
+                    progress(f"fetched {fetched['rows']} rows ({fetched['transcript']} transcript chunks); learning…")
             elif kind in ("teach:error", "error"):
                 teach_errors.append(str(ev.get("error") or "")[:200])
             elif kind == "done":
@@ -207,7 +219,7 @@ def teach_for_agent(
     if synthesize and kept > 0:
         from ..persona.conclude import synthesize_conclusions
         if progress:
-            progress("synthesizing beliefs\u2026")
+            progress("synthesizing beliefs…")
         syn = _drain(synthesize_conclusions(pid, provider=provider, refresh=True))
         beliefs = int(syn.get("written", 0) or 0) + int(syn.get("refreshed", 0) or 0)
 
@@ -265,9 +277,24 @@ def learning_summary(agent_id: str | None = None) -> dict:
         fb = {}
 
     def _recent(rows, key, n=6):
+        """Most-recent N lessons/beliefs, de-duplicated by normalized text so the
+        UI never shows the same insight several times (the extractor can emit the
+        same lesson across passes)."""
         rows = sorted(rows, key=lambda r: r.get("created_at") or "", reverse=True)
-        return [{"text": str(r.get(key) or "")[:240], "persona": r.get("_persona") or ""}
-                for r in rows[:n] if r.get(key)]
+        out: list[dict] = []
+        seen: set[str] = set()
+        for r in rows:
+            text = str(r.get(key) or "").strip()
+            if not text:
+                continue
+            norm = " ".join(text.lower().split())[:160]
+            if norm in seen:
+                continue
+            seen.add(norm)
+            out.append({"text": text[:240], "persona": r.get("_persona") or ""})
+            if len(out) >= n:
+                break
+        return out
 
     return {
         "agent": a["name"], "topic": a.get("topic"),

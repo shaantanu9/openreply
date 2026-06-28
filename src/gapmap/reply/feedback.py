@@ -54,6 +54,22 @@ def record_opportunity_feedback(opportunity_id: str, signal: str) -> dict:
 
     if signal == "engaged":
         _seed_corpus(opp)
+
+    # Self-evolution: count feedback toward the agent and, past a threshold,
+    # re-distill its Goal Playbook so it learns from what you save / dismiss.
+    try:
+        from .agent import get_agent
+        aid = opp.get("brand_id")
+        a = get_agent(aid) if aid else get_agent(None)
+        if a:
+            n = int(a.get("feedback_since_evolve") or 0) + 1
+            db["agents"].update(a["id"], {"feedback_since_evolve": n})
+            if n >= 5 and (a.get("objective") or a.get("goal")):
+                from .playbook import evolve_playbook
+                evolve_playbook(a["id"], reason="feedback")
+    except Exception:
+        pass
+
     return {"ok": True, "opportunity_id": opportunity_id, "signal": signal}
 
 
