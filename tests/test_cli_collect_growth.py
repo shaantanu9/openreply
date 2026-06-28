@@ -87,7 +87,7 @@ def test_collect_growth_drafts_generates_rows(db: Database, monkeypatch: pytest.
             "title": "Seed note app launch",
             "selftext": "A hot new note-taking app.",
             "url": "https://example.com/seed",
-            "score": 999,
+            "score": 10_000_000,
             "upvote_ratio": 0.95,
             "num_comments": 12,
             "created_utc": 1_750_000_000.0,
