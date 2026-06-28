@@ -117,8 +117,9 @@ def fetch_account(handle: str, *, platform: str = "x", limit: int = 25,
     rows: list[dict] = []
     try:
         if platform == "x":
-            from ..sources.x_twitter import fetch_x
-            rows = fetch_x(meta["query"](h), limit=limit) or []
+            # Full user timeline (UserTweets, with from: fallback) — not just search.
+            from ..sources.x_twitter import fetch_x_user
+            rows = fetch_x_user(h, limit=limit) or []
     except Exception as e:
         return {"handle": h, "platform": platform, "error": f"fetch failed: {e}"}
 

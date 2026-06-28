@@ -424,3 +424,68 @@ def fetch_x(query: str, limit: int = 20) -> list[dict]:
         "no X backend available — log into x.com in a browser, "
         "or set XAI_API_KEY or XQUIK_API_KEY in Settings"
     )}]
+
+
+def _ensure_x_env() -> None:
+    """Populate AUTH_TOKEN/CT0 from a stored Reach credential (then live browser),
+    mirroring fetch_x's resolution. Best-effort."""
+    if os.getenv("AUTH_TOKEN") and os.getenv("CT0"):
+        return
+    pair = None
+    try:
+        from ..core import credentials as _creds
+        cred = _creds.get_credential("twitter")
+        if cred and cred["cookies"].get("auth_token") and cred["cookies"].get("ct0"):
+            pair = {"auth_token": cred["cookies"]["auth_token"],
+                    "ct0": cred["cookies"]["ct0"]}
+    except Exception:
+        pair = None
+    if pair is None:
+        try:
+            pair = ce.x_auth_from_browsers()
+        except Exception:
+            pair = None
+    if pair:
+        os.environ.setdefault("AUTH_TOKEN", pair["auth_token"])
+        os.environ.setdefault("CT0", pair["ct0"])
+
+
+def fetch_x_user(handle: str, limit: int = 50) -> list[dict]:
+    """Fetch a user's full timeline via the bird `--user` mode (UserTweets, with a
+    deep `from:<handle>` search fallback inside the JS). Falls back to keyword
+    `from:` search via :func:`fetch_x` when Node/bird aren't available. Returns
+    posts-row dicts; never raises."""
+    h = (handle or "").lstrip("@").strip()
+    if not h:
+        return []
+    _ensure_x_env()
+    if not (os.getenv("AUTH_TOKEN") and shutil.which("node") and _BIRD_MJS.exists()):
+        return fetch_x(f"from:{h}", limit)
+    try:
+        env = os.environ.copy()
+        env["BIRD_DISABLE_BROWSER_COOKIES"] = "1"
+        result = subprocess.run(
+            ["node", str(_BIRD_MJS), "--user", h, "--count", str(limit), "--json"],
+            capture_output=True, text=True, timeout=90, env=env,
+        )
+        if result.returncode != 0:
+            return fetch_x(f"from:{h}", limit)
+        parsed = json.loads((result.stdout or "").strip() or "[]")
+        if isinstance(parsed, dict):
+            if parsed.get("error"):
+                return fetch_x(f"from:{h}", limit)
+            raw = parsed.get("items") or parsed.get("tweets") or []
+        elif isinstance(parsed, list):
+            raw = parsed
+        else:
+            raw = []
+        items = []
+        for i, t in enumerate(raw):
+            if isinstance(t, dict):
+                n = _parse_bird_tweet(t, i)
+                if n:
+                    items.append(n)
+        rows = [_row(t) for t in items[:limit]]
+        return rows if rows else fetch_x(f"from:{h}", limit)
+    except Exception:
+        return fetch_x(f"from:{h}", limit)
