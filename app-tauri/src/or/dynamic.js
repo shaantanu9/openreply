@@ -345,8 +345,23 @@ export async function renderOpportunities(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   let a = null; try { a = await api.agentGet(); } catch (e) {}
   let _allPfs = []; try { _allPfs = ((await api.replyPlatforms())?.platforms || []).filter((p) => p.can_reply); } catch (e) {}
+  // Per-source counts (opportunities found + posts fetched) so the source dropdown
+  // shows which source has how much signal — incl. discovery sources (HN, Dev.to,
+  // Stack Overflow) that produce opportunities even though you don't reply on them.
+  let _cnt = {}; try { _cnt = (await api.replySourceCounts()) || {}; } catch (e) {}
+  const _oppC = _cnt.opportunities || {}, _postC = _cnt.posts || {};
+  const _srcLabelOf = {}; _allPfs.forEach((p) => { _srcLabelOf[p.key] = p.label; });
+  const _srcKeys = [...new Set([..._allPfs.map((p) => p.key), ...Object.keys(_oppC), ...Object.keys(_postC)])]
+    .sort((x, y) => ((_oppC[y] || 0) + (_postC[y] || 0)) - ((_oppC[x] || 0) + (_postC[x] || 0)));
+  const _srcOptLabel = (k) => {
+    const o = _oppC[k] || 0, p = _postC[k] || 0, bits = [];
+    if (o) bits.push(`${o} opp`);
+    if (p) bits.push(`${p} posts`);
+    return (_srcLabelOf[k] || k) + (bits.length ? ` — ${bits.join(" · ")}` : "");
+  };
+  const _allSrcLabel = `All sources${_cnt.total_opportunities ? ` (${_cnt.total_opportunities} opp · ${_cnt.total_posts || 0} posts)` : ""}`;
   const pfs = (a?.platforms || ["reddit_free"]).join(", ");
-  const S = { filter: "new", query: "", sort: "score", minScore: 0, source: "", offset: 0, items: [], total: 0, sel: new Set() };
+  const S = { filter: "new", query: "", sort: "recent", minScore: 0, source: "", offset: 0, items: [], total: 0, sel: new Set() };
 
   view.innerHTML = head("Opportunities",
     `Discover conversations worth replying to for <b>${esc(a?.name || "—")}</b> — Save the good ones to your Inbox.`,
@@ -357,9 +372,9 @@ export async function renderOpportunities(view) {
        <span id="op-status" class="ml-auto text-zinc-400"></span></div>
      <div class="mb-3 flex flex-wrap items-center gap-2">
        <input id="op-q" placeholder="Search title, author, sub…" class="${inputCls} w-60">
-       <select id="op-sort" class="${inputCls}">${REPLY_SORTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+       <select id="op-sort" class="${inputCls}">${REPLY_SORTS.map(([v, l]) => `<option value="${v}"${v === S.sort ? " selected" : ""}>${l}</option>`).join("")}</select>
        <select id="op-min" class="${inputCls}">${MIN_SCORES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
-       <select id="op-src" class="${inputCls}"><option value="">All sources</option>${_allPfs.map((p) => `<option value="${esc(p.key)}">${esc(p.label)}</option>`).join("")}</select>
+       <select id="op-src" class="${inputCls}" title="Source — opportunities found · posts fetched"><option value="">${esc(_allSrcLabel)}</option>${_srcKeys.map((k) => `<option value="${esc(k)}">${esc(_srcOptLabel(k))}</option>`).join("")}</select>
        <div id="op-filters" class="ml-auto flex flex-wrap gap-2">${OPP_FILTERS.map(([v, l]) =>
          `<button data-filter="${v}" class="${_chip(v === "new")}">${l}</button>`).join("")}</div>
      </div>
@@ -415,6 +430,15 @@ export async function renderOpportunities(view) {
 
   const emptyMsg = () => {
     if (S.query) return `No opportunities match “${esc(S.query)}”.`;
+    // Source-aware: a posts-only source (e.g. YouTube, DuckDuckGo) shows real post
+    // counts in the dropdown but has no scored opportunities — explain that instead
+    // of a blank list so it doesn't look broken.
+    if (S.source) {
+      const lbl = _srcLabelOf[S.source] || S.source;
+      const o = _oppC[S.source] || 0, p = _postC[S.source] || 0;
+      if (!o && p) return `<b>${esc(lbl)}</b> has ${p} post${p === 1 ? "" : "s"} collected but no scored opportunities yet. It's a discovery source — pick a source with opportunities, or click <b>Find opportunities</b>.`;
+      if (!o) return `No opportunities from <b>${esc(lbl)}</b> yet. Click <b>Find opportunities</b> to scan it.`;
+    }
     if (S.filter === "new") return `No new opportunities. Click <b>Find opportunities</b> to scan your platforms.`;
     return `No ${OPP_STATUS_META[S.filter]?.[0] || "matching"} opportunities.`;
   };
@@ -565,9 +589,37 @@ export async function renderCompose(view) {
          <button id="cm-gen" class="${btnP}"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> Generate</button></div>
        <span id="cm-status" class="text-sm text-zinc-400"></span></div>
      <div id="cm-out"></div>
+
+     <div class="mb-5 mt-2 ${card}" id="cm-sched">
+       <div class="flex items-center justify-between gap-3">
+         <div><b class="text-zinc-900 dark:text-white"><i data-lucide="calendar-clock" class="inline-block h-4 w-4 align-[-2px]"></i> Auto-pilot</b>
+           <p class="text-sm text-zinc-500">Daily, from your brain + knowledge — drafts waiting when you open the app.</p></div>
+         <span id="ap-status" class="shrink-0 text-xs text-zinc-400"></span>
+       </div>
+       <div class="mt-3 grid gap-4 sm:grid-cols-2">
+         <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
+           <label class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-white"><input type="checkbox" id="ap-content"> Daily content</label>
+           <p class="mt-1 text-xs text-zinc-500">Pick the kinds to auto-draft each day.</p>
+           <div class="mt-2 flex flex-wrap gap-1.5" id="ap-kinds"></div>
+           <label class="mt-2 block text-xs text-zinc-500">Per day <input type="number" id="ap-ccount" min="1" max="5" value="1" class="ml-1 w-14 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1"></label>
+         </div>
+         <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
+           <label class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-white"><input type="checkbox" id="ap-opp"> Daily opportunity reply</label>
+           <p class="mt-1 text-xs text-zinc-500">Finds fresh threads and drafts the top reply.</p>
+           <label class="mt-2 block text-xs text-zinc-500">Per day <input type="number" id="ap-ocount" min="1" max="5" value="1" class="ml-1 w-14 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1"></label>
+         </div>
+       </div>
+       <div class="mt-3 flex flex-wrap items-center gap-2">
+         <button id="ap-save" class="${btnP}">Save schedule</button>
+         <button id="ap-run" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-sm font-semibold">Run now</button>
+         <span id="ap-msg" class="text-xs text-zinc-400"></span>
+       </div>
+     </div>
+
      <h3 class="mb-3 mt-6 font-semibold text-zinc-900 dark:text-white">Recent drafts</h3>
      <div id="cm-recent" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>`;
   icons();
+  initAutopilot();
 
   let kind = "post";
   let fmode = "reply";
@@ -655,6 +707,52 @@ export async function renderCompose(view) {
       wrap.innerHTML = items.length ? items.map(c => contentCard(c, false)).join("") : `<div class="text-zinc-500">No drafts yet.</div>`;
     } catch (e) { wrap.innerHTML = `<div class="text-rose-500">${esc(e)}</div>`; }
   }
+
+  // Auto-pilot: configure the daily content + opportunity schedule.
+  async function initAutopilot() {
+    const AP_KINDS = [["post", "Post"], ["thread", "Thread"], ["article", "Article"], ["youtube", "YouTube"], ["script", "Short"]];
+    let cfg = null, sched = null;
+    try { cfg = await api.agentAutopilot(); } catch (e) {}
+    try { sched = await api.scheduleStatus(); } catch (e) {}
+    const apc = document.getElementById("ap-content"); if (!apc) return;  // panel not present
+    const c = (cfg && cfg.content) || { enabled: true, count: 1, kinds: ["post"] };
+    const o = (cfg && cfg.opportunity) || { enabled: true, count: 1 };
+    const sel = new Set(c.kinds || ["post"]);
+    apc.checked = !!c.enabled;
+    document.getElementById("ap-opp").checked = !!o.enabled;
+    document.getElementById("ap-ccount").value = c.count || 1;
+    document.getElementById("ap-ocount").value = o.count || 1;
+    const kindsBox = document.getElementById("ap-kinds");
+    const paint = () => { kindsBox.innerHTML = AP_KINDS.map(([v, l]) => `<button type="button" data-apk="${v}" class="${_pill(sel.has(v))} !px-3 !py-1 text-xs">${esc(l)}</button>`).join(""); };
+    paint();
+    kindsBox.onclick = (e) => { const b = e.target.closest("[data-apk]"); if (!b) return; const k = b.getAttribute("data-apk"); sel.has(k) ? sel.delete(k) : sel.add(k); if (!sel.size) sel.add(k); paint(); };
+    document.getElementById("ap-status").textContent = (sched && (sched.installed || sched.loaded)) ? "scheduler on ✓" : "scheduler off";
+    document.getElementById("ap-save").onclick = async () => {
+      const msg = document.getElementById("ap-msg"); msg.textContent = "Saving…";
+      const contentOn = apc.checked, oppOn = document.getElementById("ap-opp").checked;
+      try {
+        const r = await api.agentAutopilotSet({
+          content: contentOn, contentKinds: [...sel].join(","), contentCount: +document.getElementById("ap-ccount").value || 1,
+          opportunity: oppOn, oppCount: +document.getElementById("ap-ocount").value || 1,
+        });
+        if (r === null) { msg.textContent = "Run inside the app to save."; return; }
+        if (contentOn || oppOn) { try { await api.scheduleInstall(24); document.getElementById("ap-status").textContent = "scheduler on ✓"; } catch (e) {} }
+        msg.textContent = "Saved ✓ — runs daily"; toast("Auto-pilot saved");
+      } catch (e) { msg.textContent = "Failed: " + e; }
+    };
+    document.getElementById("ap-run").onclick = async () => {
+      const msg = document.getElementById("ap-msg"), btn = document.getElementById("ap-run");
+      btn.disabled = true; btn.textContent = "Running…"; msg.textContent = "Generating from your brain… (a moment)";
+      try {
+        const r = await api.agentAutopilotRun();
+        if (r === null) { msg.textContent = "Run inside the app."; }
+        else { const cN = ((r.content && r.content.generated) || []).length, oN = ((r.opportunity && r.opportunity.drafted) || []).length; msg.textContent = `Created ${cN} content + ${oN} reply draft(s)`; toast("Auto-pilot ran"); loadRecent(); }
+      } catch (e) { msg.textContent = "Failed: " + e; }
+      finally { btn.disabled = false; btn.textContent = "Run now"; }
+    };
+    icons();
+  }
+
   loadRecent();
 }
 
@@ -1776,7 +1874,83 @@ export async function renderLearning(view) {
            <div class="mt-3 space-y-2">${dedup(s.recent_lessons).map((t) => li(t, "book-open")).join("") || `<div class="text-sm text-zinc-500">Nothing learned yet — hit “Learn now” after a collect.</div>`}</div></div>
          <div class="${card}"><b class="text-zinc-900 dark:text-white">Beliefs it writes from</b>
            <div class="mt-3 space-y-2">${dedup(s.recent_beliefs).map((t) => li(t, "lightbulb")).join("") || `<div class="text-sm text-zinc-500">No beliefs yet — they form once enough memories accumulate.</div>`}</div></div>
-       </div>`;
+       </div>
+       <div id="ln-strategy" class="mt-5"></div>
+       <div id="ln-ideas" class="mt-5"></div>`;
+    icons();
+    loadStrategy();
+    loadIdeas();
+  }
+
+  // ── Goal Playbook (self-evolving strategy) ──
+  async function loadStrategy() {
+    const host = document.getElementById("ln-strategy");
+    if (!host) return;
+    let cur = null;
+    try { cur = await api.agentPlaybook(); } catch (e) {}
+    const pb = cur && cur.playbook;
+    const when = cur && cur.created_at ? new Date(cur.created_at * 1000).toLocaleString() : "";
+    const list = (arr, fmt) => (arr && arr.length)
+      ? arr.map(fmt).join("") : `<div class="text-sm text-zinc-500">—</div>`;
+    const body = !pb
+      ? `<div class="text-sm text-zinc-500">No strategy yet — set a goal (Agents → Edit) then hit <b>Evolve now</b>.</div>`
+      : `<div class="grid gap-4 lg:grid-cols-3">
+           <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Winning angles</div>
+             ${list(pb.winning_angles, (a) => `<div class="mb-1.5 text-sm"><b class="text-zinc-800 dark:text-zinc-100">${esc(a.angle || a)}</b>${a.why ? `<div class="text-xs text-zinc-500">${esc(a.why)}</div>` : ""}</div>`)}</div>
+           <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Avoid</div>
+             ${list(pb.avoid, (x) => `<div class="mb-1 text-sm text-zinc-600 dark:text-zinc-300">• ${esc(x)}</div>`)}</div>
+           <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Next experiments</div>
+             ${list(pb.next_experiments, (x) => `<div class="mb-1 text-sm text-zinc-600 dark:text-zinc-300">→ ${esc(x)}</div>`)}</div>
+         </div>`;
+    host.innerHTML = `<div class="${card}">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <b class="text-zinc-900 dark:text-white">Strategy playbook${pb ? ` <span class="text-xs font-normal text-zinc-400">v${cur.version} · ${esc(when)}</span>` : ""}</b>
+        <button id="ln-evolve" class="${btn}"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> Evolve now</button></div>
+      <div class="mt-3">${body}</div></div>`;
+    const eb = document.getElementById("ln-evolve");
+    if (eb) eb.onclick = async () => {
+      eb.disabled = true; eb.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Evolving…`; icons();
+      try { const r = await api.agentEvolve(); toast(r?.skipped ? (r.reason || "Skipped") : (r?.summary || "Evolved ✓")); }
+      catch (e) { toast("Evolve failed: " + e); }
+      loadStrategy();
+    };
+    icons();
+  }
+
+  // ── Idea board (combine knowledge → suggested articles/posts) ──
+  async function loadIdeas() {
+    const host = document.getElementById("ln-ideas");
+    if (!host) return;
+    let ideas = [];
+    try { ideas = (await api.agentIdeas(false))?.ideas || []; } catch (e) {}
+    const mixCls = { "data-source": "bg-sky-500/15 text-sky-500", "conclusion": "bg-indigo-500/15 text-indigo-400", "mixed": "bg-emerald-500/15 text-emerald-500" };
+    const cards = ideas.map((i) => `<div class="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3" data-idea="${esc(i.id)}">
+      <div class="flex items-start justify-between gap-2"><b class="text-sm text-zinc-900 dark:text-white">${esc(i.title)}</b>
+        <span class="shrink-0 rounded ${mixCls[i.source_mix] || "bg-zinc-500/15 text-zinc-400"} px-2 py-0.5 text-[11px] font-bold">${esc(i.source_mix || "mixed")}${i.goal_fit ? ` · fit ${Math.round(i.goal_fit * 100)}` : ""}</span></div>
+      <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">${esc((i.thesis || "").slice(0, 220))}</p>
+      <div class="mt-2 flex gap-2">
+        <button data-idraft="${esc(i.id)}" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white hover:bg-reddit-hi">Draft this</button>
+        <button data-idismiss="${esc(i.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-500">Dismiss</button></div></div>`).join("");
+    host.innerHTML = `<div class="${card}">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <b class="text-zinc-900 dark:text-white">Idea board <span class="text-xs font-normal text-zinc-400">— combines its knowledge into articles/posts</span></b>
+        <button id="ln-suggest" class="${btn}"><i data-lucide="lightbulb" class="inline-block h-4 w-4 align-[-2px]"></i> Suggest ideas</button></div>
+      <div class="mt-3 space-y-2">${cards || `<div class="text-sm text-zinc-500">No ideas yet — Learn from data, then hit <b>Suggest ideas</b>.</div>`}</div></div>`;
+    const sb = document.getElementById("ln-suggest");
+    if (sb) sb.onclick = async () => {
+      sb.disabled = true; sb.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Thinking…`; icons();
+      try { const r = await api.agentIdeas(true); toast(r?.skipped ? (r.reason || "Skipped") : `Suggested ${(r?.ideas || []).length} idea(s)`); }
+      catch (e) { toast("Suggest failed: " + e); }
+      loadIdeas();
+    };
+    host.querySelectorAll("[data-idraft]").forEach((b) => b.onclick = async () => {
+      b.disabled = true; b.textContent = "Drafting…";
+      try { const r = await api.agentIdeaDraft(b.getAttribute("data-idraft")); if (r?.error) { toast(r.error); b.disabled = false; b.textContent = "Draft this"; return; } toast("Draft created → Compose"); location.hash = "#/compose"; }
+      catch (e) { toast("Draft failed: " + e); b.disabled = false; b.textContent = "Draft this"; }
+    });
+    host.querySelectorAll("[data-idismiss]").forEach((b) => b.onclick = async () => {
+      try { await api.agentIdeaStatus(b.getAttribute("data-idismiss"), "dismissed"); loadIdeas(); } catch (e) { toast("Failed: " + e); }
+    });
     icons();
   }
 
@@ -2015,6 +2189,14 @@ export async function renderKeywords(view) {
            <input id="kw-website" value="${esc(a.website || "")}" placeholder="acme-notes.com" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div></div>
        <div class="${card}"><b class="text-zinc-900 dark:text-white">Platforms watched</b>
          <div class="mt-3 grid grid-cols-2 gap-2">${checks}</div></div></div>
+     <div class="mt-4 ${card}"><b class="text-zinc-900 dark:text-white">Goal <span class="text-xs font-normal text-zinc-400">— what this agent evolves toward</span></b>
+       <p class="mb-3 mt-1 text-sm text-zinc-500">The self-evolving engine optimizes every reply &amp; post toward this.</p>
+       <div class="grid gap-3 sm:grid-cols-2">
+         <label class="block text-sm text-zinc-500">Objective<input id="kw-objective" value="${esc(a.objective || "")}" placeholder="drive TestNotes signups" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+         <label class="block text-sm text-zinc-500">Audience<input id="kw-audience" value="${esc(a.audience || "")}" placeholder="students who struggle to organize notes" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+         <label class="block text-sm text-zinc-500">Win signal<input id="kw-winsignal" value="${esc(a.win_signal || "")}" placeholder="reply posted + author engages" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+         <label class="block text-sm text-zinc-500">Guardrails<input id="kw-guardrails" value="${esc(a.guardrails || "")}" placeholder="never spam; disclose; obey sub rules" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+       </div></div>
      <span id="kw-msg" class="mt-3 inline-block text-sm text-zinc-500"></span>`;
   document.getElementById("kw-save").onclick = async () => {
     const msg = document.getElementById("kw-msg");
@@ -2029,8 +2211,15 @@ export async function renderKeywords(view) {
     // Product → the `brand` field the draft generator promotes from. Only set
     // when non-empty so we never clobber an existing description with a blank.
     if (product) patch.brand = product;
-    try { await api.agentUpdate(patch); msg.textContent = "Saved ✓"; toast("Agent saved"); }
-    catch (e) { msg.textContent = "Failed: " + e; }
+    const objective = document.getElementById("kw-objective").value.trim();
+    const audience = document.getElementById("kw-audience").value.trim();
+    const winSignal = document.getElementById("kw-winsignal").value.trim();
+    const guardrails = document.getElementById("kw-guardrails").value.trim();
+    try {
+      await api.agentUpdate(patch);
+      await api.agentGoalSet(objective, audience, winSignal, guardrails);
+      msg.textContent = "Saved ✓"; toast("Agent saved");
+    } catch (e) { msg.textContent = "Failed: " + e; }
   };
   icons();
 }
