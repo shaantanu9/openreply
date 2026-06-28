@@ -22,7 +22,6 @@ app = typer.Typer(
     add_completion=False,
 )
 fetch_app = typer.Typer(help="Fetch data from Reddit (persists to SQLite).")
-analyze_app = typer.Typer(help="LLM-assisted analysis over stored data.")
 mcp_app = typer.Typer(help="MCP server for Claude Code.")
 auth_app = typer.Typer(help="Reddit API credential setup.")
 research_app = typer.Typer(help="Topic/app gap-finding: discover → collect → extract → report.")
@@ -291,7 +290,6 @@ def cmd_research_ingest_csv(
 
 
 app.add_typer(fetch_app, name="fetch")
-app.add_typer(analyze_app, name="analyze")
 app.add_typer(mcp_app, name="mcp")
 app.add_typer(auth_app, name="auth")
 app.add_typer(research_app, name="research")
@@ -766,58 +764,6 @@ def _since_to_days(since: str | None) -> int | None:
         # treat sub-day as 1 day for painpoints/themes
         return max(1, n // 24)
     raise typer.BadParameter(f"--since '{since}' — use e.g. 7d, 24h, 2w")
-
-
-@analyze_app.command("themes")
-def cmd_themes(
-    sub: Optional[str] = typer.Option(None, "--sub", "-s"),
-    since: Optional[str] = typer.Option(None, "--since"),
-    limit: int = typer.Option(100, "--limit", "-n"),
-    provider: Optional[str] = typer.Option(
-        None, "--provider",
-        help="anthropic|openai|ollama|… (omit → use LLM_PROVIDER from Settings)",
-    ),
-    as_json: bool = typer.Option(False, "--json"),
-) -> None:
-    """Cluster stored posts into themes via LLM."""
-    from ..analyze.themes import analyze_themes
-
-    result = analyze_themes(sub=sub, since_days=_since_to_days(since), limit=limit, provider=provider)
-    _emit(result, as_json)
-
-
-@analyze_app.command("summarize")
-def cmd_summarize(
-    post: str = typer.Option(..., "--post", "-p"),
-    provider: Optional[str] = typer.Option(
-        None, "--provider",
-        help="omit → use the default from Settings → BYOK (LLM_PROVIDER env)",
-    ),
-) -> None:
-    """Summarize a single thread (post + top comments)."""
-    from ..analyze.summarize import summarize_thread
-
-    typer.echo(summarize_thread(post_id=post, provider=provider))
-
-
-@analyze_app.command("painpoints")
-def cmd_painpoints(
-    sub: Optional[str] = typer.Option(None, "--sub", "-s"),
-    since: Optional[str] = typer.Option(None, "--since"),
-    top: int = typer.Option(50, "--top"),
-    provider: Optional[str] = typer.Option(
-        None, "--provider",
-        help="omit → use Settings → BYOK default (LLM_PROVIDER env)",
-    ),
-    as_json: bool = typer.Option(False, "--json"),
-) -> None:
-    """Extract user pain points from stored posts (product research)."""
-    from ..analyze.painpoints import extract_painpoints
-
-    result = extract_painpoints(
-        sub=sub, since_days=_since_to_days(since), top=top, provider=provider
-    )
-    _emit(result, as_json)
 
 
 # ── mcp ──────────────────────────────────────────────────────────────────────
