@@ -89,3 +89,6 @@ AGENTS.md
 CLAUDE.md
 .admin-creds.local.md
 .admin-secret.txt
+
+# Local UI screenshots (generated during dev/test, not source)
+screenshots/
