@@ -27,22 +27,22 @@ sidecar `--version` / CI artifact naming match the app.
 ### 3. Stale repo URL → single source of truth (P2 + the user's "fix from one place")
 The old fork URL `github.com/shaantanu98/reddit-myind` was hardcoded in three
 files (OpenRouter `HTTP-Referer`, polite-API `User-Agent`, exported-report
-footer). Created **`src/gapmap/core/identity.py`** as the single source of truth
+footer). Created **`src/openreply/core/identity.py`** as the single source of truth
 (`GITHUB_URL`, `GITHUB_ORG/REPO`, `DOCS_METHODOLOGY_URL`, `HOMEPAGE_URL`,
 `CONTACT_EMAIL`). `chat.py` (HTTP-Referer) and `_http.py` (User-Agent) now import
-`GITHUB_URL`; the export footer is corrected to `myind-ai/gapmap` (left inline —
+`GITHUB_URL`; the export footer is corrected to `myind-ai/openreply` (left inline —
 it's inside a large d3/CSS HTML template where f-string interpolation is unsafe).
 Rebrand/fork now = edit `core/identity.py` once.
 
 ## Files Created
-- `src/gapmap/core/identity.py` — project-identity single source of truth.
+- `src/openreply/core/identity.py` — project-identity single source of truth.
 
 ## Files Modified
 - `app-tauri/src/screens/topic.js` — `inlineMd` escapes input + scheme-validates links.
 - `pyproject.toml` — version 0.1.0 → 0.1.7.
-- `src/gapmap/sources/_http.py` — `USER_AGENT` from `core.identity`.
-- `src/gapmap/research/chat.py` — `HTTP-Referer` from `core.identity`.
-- `src/gapmap/graph/export.py` — footer URL → `myind-ai/gapmap`.
+- `src/openreply/sources/_http.py` — `USER_AGENT` from `core.identity`.
+- `src/openreply/research/chat.py` — `HTTP-Referer` from `core.identity`.
+- `src/openreply/graph/export.py` — footer URL → `myind-ai/openreply`.
 
 ## Verification
 - `node --check topic.js` clean; `npm run build` succeeds.

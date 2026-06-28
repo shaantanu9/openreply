@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import httpx
 
-from gapmap.sources import v2ex
-from gapmap.sources.v2ex import fetch_v2ex
+from openreply.sources import v2ex
+from openreply.sources.v2ex import fetch_v2ex
 
 _SAMPLE = [
     {

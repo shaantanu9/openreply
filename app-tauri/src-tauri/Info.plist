@@ -17,13 +17,13 @@
 
     <!-- Usage description for the file picker (Ingest → "Upload PDF/docx"). -->
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>Gap Map asks for access only when you pick a file in the Ingest screen to add it to your research corpus.</string>
+    <string>OpenReply asks for access only when you pick a file in the Ingest screen to add it to your research corpus.</string>
 
     <!-- The Ingest video flow uses the system ffmpeg to extract audio from
          user-supplied YouTube / local video files. Whisper then transcribes
          it locally — no audio leaves the machine. -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>Gap Map does not use the microphone. Audio handed to Whisper is decoded from video files you pick yourself.</string>
+    <string>OpenReply does not use the microphone. Audio handed to Whisper is decoded from video files you pick yourself.</string>
 
     <!-- Some users land here from a "myapp://" share intent or a deep link
          from the marketing site. Reserve the scheme so we can add later. -->
@@ -31,10 +31,10 @@
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>com.shantanu.gapmap</string>
+            <string>com.shantanu.openreply</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>gapmap</string>
+                <string>openreply</string>
             </array>
         </dict>
     </array>

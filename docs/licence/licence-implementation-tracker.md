@@ -1,4 +1,4 @@
-# Gap Map — Licence & Activation Implementation Tracker
+# OpenReply — Licence & Activation Implementation Tracker
 
 > Companion to `tauri-licence-impl.md` (desktop spec) and `subscription-model.md` (server/plan spec).
 > Single source of truth for **what's done, what's partial, and what's still open** across the whole
@@ -58,13 +58,13 @@ As of this revision:
 
 - [x] **A.1** Confirm `.env` files in `act_suit/*` are gitignored — `git ls-files`
       shows both are untracked; caught by `activation-suite/.gitignore` and root `.gitignore`.
-- [x] **A.2** Removed hardcoded `"gapmap-dev-token-secret"` fallback from
+- [x] **A.2** Removed hardcoded `"openreply-dev-token-secret"` fallback from
       `activation-suite/src/lib/token.ts`. `signingSecret()` now throws on
       missing/short `TOKEN_SIGNING_SECRET`.
 - [x] **A.3** `activation-suite/.env.example` lists every env var including
       `TOKEN_SIGNING_SECRET`, `DEV_MINT_SECRET`, `ALLOW_DEV_MINT`, LS and
       Resend placeholders.
-- [x] **A.4** `html_site/.env.example` already covered all `GAPMAP_ENV` keys
+- [x] **A.4** `html_site/.env.example` already covered all `OPENREPLY_ENV` keys
       and flags server-only secrets.
 - [x] **A.5** `app-tauri/src-tauri/build.rs` panics on missing
       `JWT_DESKTOP_SECRET` (pre-existing; verified).
@@ -111,7 +111,7 @@ As of this revision:
 
 - [x] **E.1** `html_site/activate.html` and `html_site/activation-help.html`
       are now meta-redirect pages that bounce the browser to the Next.js
-      `/activate` and `/activation-help` routes. `GAPMAP_APP_BASE` in
+      `/activate` and `/activation-help` routes. `OPENREPLY_APP_BASE` in
       `env.config.js` configures the target; falls back to same-origin.
 
 ### Phase F — Lemon Squeezy webhook ✅
@@ -171,7 +171,7 @@ Everything the Tauri refactor would have built, now in `activation-suite`:
 
 ### Phase I — Community app foundation ✅ (stubs flagged)
 
-Implements the Community half of `docs/licence/gapmap-dual-app-spec.md` in
+Implements the Community half of `docs/licence/openreply-dual-app-spec.md` in
 the existing `activation-suite` Next.js app. Stubs the source-connector
 fetching + AI extraction (spec §3 Phase 1 — real Rust core crate) so the
 full UI renders end-to-end today.
@@ -243,7 +243,7 @@ full UI renders end-to-end today.
 
 | Item | Status | Evidence |
 |---|---|---|
-| HS256, iss=`gapmap-activation-suite`, aud=`gapmap-desktop` | ✅ | `src/lib/token.ts` |
+| HS256, iss=`openreply-activation-suite`, aud=`openreply-desktop` | ✅ | `src/lib/token.ts` |
 | Claims: sub, user_id, email, device_fingerprint | ✅ | `src/lib/token.ts` |
 | Claims: plan_id, live_pass_active, is_trial, trial_ends_at, features | ✅ **new** | `src/lib/token.ts` + `src/lib/features.ts` |
 | Signing secret fail-hard (no fallback) | ✅ **new** | `signingSecret()` throws |
@@ -267,7 +267,7 @@ full UI renders end-to-end today.
 | Date | Phase.Step | What happened | Commit / file |
 |---|---|---|---|
 | 2026-04-23 | 1.0 | Audit written, this tracker created | `docs/licence/licence-implementation-tracker.md` |
-| 2026-04-23 | A.2 | Removed `"gapmap-dev-token-secret"` fallback | `src/lib/token.ts` |
+| 2026-04-23 | A.2 | Removed `"openreply-dev-token-secret"` fallback | `src/lib/token.ts` |
 | 2026-04-23 | A.3 | Filled out `.env.example` (TOKEN_SIGNING_SECRET, ALLOW_DEV_MINT, …) | `activation-suite/.env.example` |
 | 2026-04-23 | B.1–B.3 | Full claim shape on JWT; `claimsFromLicense[Row]()` | `token.ts`, `activationStore.ts`, `supabaseActivationStore.ts` |
 | 2026-04-23 | B.2 | Created `features.ts` with plan factories + `featuresFor()` | `src/lib/features.ts` |
@@ -321,7 +321,7 @@ Before Phases E, F, G, please answer:
 
 1. **Activation UX:** keep `html_site/activate.html` as a web licence portal
    (view + deactivate devices) or remove it entirely and push all activation
-   into the desktop app via the `gapmap://` deep link?
+   into the desktop app via the `openreply://` deep link?
 2. **Lemon Squeezy:** do you already have store + variant IDs? Without them
    Phase F stays deferred.
 3. **Free-tier limits:** spec says 1 workspace / 3 sources. For this app is
@@ -375,7 +375,7 @@ Before Phases E, F, G, please answer:
   check on the server catches missing values; the desktop fails at
   compile-time via `build.rs`.
 - `html_site` becomes a marketing-only surface. Keep its CTAs pointing at the
-  Next.js domain via `GAPMAP_APP_BASE`.
+  Next.js domain via `OPENREPLY_APP_BASE`.
 
 ---
 

@@ -4,7 +4,7 @@ import { SiteShell } from "@/components/shell/SiteShell";
 import { BRAND, ROUTES } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Activation help",
+  title: "OpenReply — Activation help",
 };
 
 export const revalidate = 3600;

@@ -16,9 +16,9 @@ entry for tamper-evident provenance and cross-session resume.
 
 This is a **clean-room reimplementation** of the high-value patterns analyzed in
 `ACADEMIC_RESEARCH_SKILLS_ANALYSIS.md` / `REPOS_DEEP_DIVE.md`. The reference
-plugin (Academic Research Skills, **CC-BY-NC 4.0**) is non-commercial; Gap Map is
+plugin (Academic Research Skills, **CC-BY-NC 4.0**) is non-commercial; OpenReply is
 commercial, so **no file, prompt, schema, or text was copied** — only the ideas
-were reimplemented in idiomatic Gap Map Python/JS, composing our own existing
+were reimplemented in idiomatic OpenReply Python/JS, composing our own existing
 LLM-provider, paper-pipeline, and traceability machinery.
 
 The new pipeline:
@@ -66,8 +66,8 @@ research → synthesize → [grounding gate]
   installs); `record_academic_brief()` extended.
 - **CLI** `cli/main.py` — `research academic` prints a panel/integrity/citation/
   passport summary line; new `research academic-passport` read command.
-- **MCP** `mcp/server.py` — `gapmap_academic_brief` docstring updated to the new
-  pipeline; new `gapmap_academic_passport` tool (provenance reader).
+- **MCP** `mcp/server.py` — `openreply_academic_brief` docstring updated to the new
+  pipeline; new `openreply_academic_passport` tool (provenance reader).
 - **Tauri** — Rust `academic_passport_get` command (+ `main.rs` registration);
   `api.js` `academicPassportGet` binding.
 - **Frontend** `screens/academic.js` — two new timeline stages (Integrity gate,
@@ -77,10 +77,10 @@ research → synthesize → [grounding gate]
 
 ## Files Created
 
-- `src/gapmap/research/academic_review.py`
-- `src/gapmap/research/academic_integrity.py`
-- `src/gapmap/research/academic_citations.py`
-- `src/gapmap/research/academic_passport.py`
+- `src/openreply/research/academic_review.py`
+- `src/openreply/research/academic_integrity.py`
+- `src/openreply/research/academic_citations.py`
+- `src/openreply/research/academic_passport.py`
 - `tests/test_academic_review.py` (11 tests)
 - `tests/test_academic_integrity.py` (7 tests)
 - `tests/test_academic_citations.py` (5 tests)
@@ -89,10 +89,10 @@ research → synthesize → [grounding gate]
 
 ## Files Modified
 
-- `src/gapmap/research/academic_mode.py` — panel + integrity + citation + passport integration.
-- `src/gapmap/core/db.py` — `academic_briefs` new columns + migration + `record_academic_brief` args.
-- `src/gapmap/cli/main.py` — richer `academic` summary + `academic-passport` command.
-- `src/gapmap/mcp/server.py` — updated docstring + `gapmap_academic_passport` tool.
+- `src/openreply/research/academic_mode.py` — panel + integrity + citation + passport integration.
+- `src/openreply/core/db.py` — `academic_briefs` new columns + migration + `record_academic_brief` args.
+- `src/openreply/cli/main.py` — richer `academic` summary + `academic-passport` command.
+- `src/openreply/mcp/server.py` — updated docstring + `openreply_academic_passport` tool.
 - `app-tauri/src-tauri/src/commands.rs` — `academic_passport_get`.
 - `app-tauri/src-tauri/src/main.rs` — handler registration.
 - `app-tauri/src/api.js` — `academicPassportGet` binding.
@@ -119,7 +119,7 @@ research → synthesize → [grounding gate]
 All four capabilities are clean-room reimplementations of *ideas* described in
 the reference analysis docs. No file/prompt/schema/text was copied from the
 CC-BY-NC Academic Research Skills plugin. All LLM prompts are newly authored in
-Gap Map's house style; all composed functions are pre-existing Gap Map code.
+OpenReply's house style; all composed functions are pre-existing OpenReply code.
 
 ## Follow-up (not in this change)
 

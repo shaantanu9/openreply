@@ -1,22 +1,22 @@
-# Gap Map → Research & Writing Assistant — Detailed Plan
+# OpenReply → Research & Writing Assistant — Detailed Plan
 
-> **Goal:** turn Gap Map into a tool researchers, paper-writers, and PDF-reading
+> **Goal:** turn OpenReply into a tool researchers, paper-writers, and PDF-reading
 > students use to (1) ingest a body of literature, (2) **find connections and
 > relations that haven't been made before** ("connect the dots"), (3) analyse
 > them, and (4) **write the paper** — outline → draft → citations → export.
 > **Date:** 2026-06-06. Companion to `FEATURES.md` and `docs/PRODUCT-DISCOVERY-COVERAGE.md`.
 
-> **MCP note:** the in-repo gapmap research MCP server (`src/gapmap/mcp/server.py`,
+> **MCP note:** the in-repo openreply research MCP server (`src/openreply/mcp/server.py`,
 > 161 tools) is **not** currently connected to this chat session (only the
-> Supabase-project MCP is). We drive the same engine via the gapmap **CLI**
-> (`python -m gapmap.cli.main research …`) and Tauri sidecar — identical
-> capability. To use it from Claude Code, add it with `claude mcp add gapmap …`.
+> Supabase-project MCP is). We drive the same engine via the openreply **CLI**
+> (`python -m openreply.cli.main research …`) and Tauri sidecar — identical
+> capability. To use it from Claude Code, add it with `claude mcp add openreply …`.
 
 ---
 
 ## 1. The big realisation — ~80% of the engine already exists
 
-Gap Map already has a deep academic pipeline. The pivot is mostly **assembly +
+OpenReply already has a deep academic pipeline. The pivot is mostly **assembly +
 researcher-facing UX + a few new capabilities**, not a from-scratch build.
 
 | Capability | Status | Where |
@@ -146,13 +146,13 @@ Persisted to `strategy_artifacts` (kind `connections`) so it caches + is MCP-rea
 | **Connections** tab | Screen | ranked novel links + evidence + save |
 | **Write** tab (or workspace) | Screen | outline → draft → references → export, in one place |
 | **Reading** surface (student) | Screen | drop PDF → cited Q&A (lightweight, topic-optional) |
-| MCP: `gapmap_connections`, `gapmap_citations`, `gapmap_paper_outline/draft` | MCP | drive headlessly |
+| MCP: `openreply_connections`, `openreply_citations`, `openreply_paper_outline/draft` | MCP | drive headlessly |
 
 ## 7. Phased roadmap + STATUS
 
 - **Phase R1 — Connections (the differentiator): ✅ DONE (2026-06-06).**
   `research/connections.py` novelty engine + **Connect Dots** tab + CLI
-  (`research connections`) + Rust + api + MCP (`gapmap_connections`). Proven on a
+  (`research connections`) + Rust + api + MCP (`openreply_connections`). Proven on a
   real topic: 6 ranked connections (understudied intersections, contradictions,
   method-replications), persisted + read back.
 - **Phase R2 — Citations: ✅ ALREADY EXISTED.** `paper_export.py` has
@@ -163,8 +163,8 @@ Persisted to `strategy_artifacts` (kind `connections`) so it caches + is MCP-rea
 - **Phase R3 — Write workspace: ✅ ALREADY EXISTED.** Papers tab has "Build
   knowledge base" + "Generate paper draft" (modal w/ copy); outline + draft wired
   via `paper_outline_generate`/`paper_draft_generate` (Rust+api+**MCP**).
-- **Headless chain: ✅ COMPLETED (2026-06-07).** Added `gapmap_paper_knowledge_build`,
-  `gapmap_paper_gaps`, `gapmap_paper_relations_build` so Claude Code drives the
+- **Headless chain: ✅ COMPLETED (2026-06-07).** Added `openreply_paper_knowledge_build`,
+  `openreply_paper_gaps`, `openreply_paper_relations_build` so Claude Code drives the
   WHOLE flow: build_knowledge → relations_build → connections → outline → draft →
   papers_export.
 - **Phase R4 — Student Reading surface: ⬜ NEXT.** drop-PDF → cited Q&A,

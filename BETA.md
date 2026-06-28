@@ -1,6 +1,6 @@
-# Gap Map — Beta tester guide
+# OpenReply — Beta tester guide
 
-Thanks for testing Gap Map. This page is the only thing you need — install,
+Thanks for testing OpenReply. This page is the only thing you need — install,
 first-launch, the five most useful features, and how to send feedback.
 
 > **5-minute goal:** install the app, run one topic, look at the gap map.
@@ -12,30 +12,30 @@ first-launch, the five most useful features, and how to send feedback.
 
 > **⚠️ macOS 26.5+ (Tahoe) blocks drag-installs from DMGs unless the app
 > is signed with Apple Developer ID + notarized.** We're working on
-> Developer ID — until then, **use `Gap Map_0.1.0_aarch64.zip` instead
+> Developer ID — until then, **use `OpenReply_0.1.0_aarch64.zip` instead
 > of the DMG.** Same .app inside; the ZIP path bypasses Tahoe's
 > DMG-specific restrictions.
 
 ### Path A — ZIP (Tahoe-safe, recommended for beta)
 
-1. Download the file you were sent. It's named `Gap Map_0.1.0_aarch64.zip`
+1. Download the file you were sent. It's named `OpenReply_0.1.0_aarch64.zip`
    (about 60 MB compressed).
 2. Double-click the `.zip` — macOS Archive Utility extracts it, producing
-   `Gap Map.app` next to it.
-3. **Drag `Gap Map.app` to `/Applications`.** This drag works because the
+   `OpenReply.app` next to it.
+3. **Drag `OpenReply.app` to `/Applications`.** This drag works because the
    files came out of a ZIP, not a DMG.
-4. Open Finder → Applications → **right-click `Gap Map.app` → Open**.
+4. Open Finder → Applications → **right-click `OpenReply.app` → Open**.
    macOS warns "developer cannot be verified" — click **Open**. This
    one-time approval persists; subsequent launches are normal double-click.
 5. App launches with the 5-step wizard.
 
 ### Path B — DMG (only on macOS 15 / Sequoia or older)
 
-1. Download `Gap Map_0.1.0_aarch64.dmg` (~159 MB).
-2. Double-click the DMG → Finder window opens with **Gap Map.app** and an
+1. Download `OpenReply_0.1.0_aarch64.dmg` (~159 MB).
+2. Double-click the DMG → Finder window opens with **OpenReply.app** and an
    **Applications** shortcut.
-3. **Drag `Gap Map.app` onto Applications.** Eject the DMG.
-4. Open `Applications` → right-click `Gap Map.app` → Open → Open in the
+3. **Drag `OpenReply.app` onto Applications.** Eject the DMG.
+4. Open `Applications` → right-click `OpenReply.app` → Open → Open in the
    dialog.
 
 If you're on Tahoe (macOS 26.x) and the DMG drag silently produces a
@@ -44,14 +44,14 @@ the .zip from Path A — that's the symptom of Tahoe's signing enforcement.
 
 ### macOS Gatekeeper warning (one-time)
 
-The first time you open Gap Map, macOS will warn you because the app isn't
+The first time you open OpenReply, macOS will warn you because the app isn't
 notarized by Apple (we'll fix that for the public release):
 
-> *"Gap Map" cannot be opened because the developer cannot be verified.*
+> *"OpenReply" cannot be opened because the developer cannot be verified.*
 
 To bypass:
 
-- **Right-click** (or Control-click) on Gap Map.app → choose **Open**
+- **Right-click** (or Control-click) on OpenReply.app → choose **Open**
 - In the dialog, click **Open** again
 
 After this one time, double-click launches normally.
@@ -68,15 +68,15 @@ Then double-click as usual.
 
 ## 2. First launch — the 5-step wizard
 
-When Gap Map opens for the first time you'll see a wizard:
+When OpenReply opens for the first time you'll see a wizard:
 
-1. **What is Gap Map** — a one-screen overview. Next →
+1. **What is OpenReply** — a one-screen overview. Next →
 2. **Your profile** — your name (used in exports). Next →
 3. **Connect sources** — *all optional*. You can:
    - Add an **LLM API key** (Anthropic / OpenAI / Groq / DeepSeek / Mistral /
      Google / OpenRouter / NVIDIA), OR
    - Install **Ollama** for free local LLM, OR
-   - Skip entirely — Gap Map works without an LLM, just with fewer auto-
+   - Skip entirely — OpenReply works without an LLM, just with fewer auto-
      extracted insights.
    - (Optional) Connect **Reddit OAuth** for higher rate limits. Public-JSON
      fallback works without it.
@@ -87,7 +87,7 @@ When Gap Map opens for the first time you'll see a wizard:
    (e.g. `meditation apps`, `AI coding assistants`, `resume builders`).
    **Continue** kicks off a collect.
 
-You land on the topic collect screen. Gap Map starts fetching from Reddit,
+You land on the topic collect screen. OpenReply starts fetching from Reddit,
 Hacker News, arXiv, GitHub, and the App Store. **Takes 1–3 minutes** the
 first time. Watch the progress in the top bar.
 
@@ -112,12 +112,12 @@ node to see the posts that surfaced it. Pinch-zoom, drag to pan.
 Each cluster has citation-backed quotes. Click a persona to see who they
 actually are and what they said.
 
-### d. **Sources** — every post Gap Map collected
+### d. **Sources** — every post OpenReply collected
 SQL-queryable, sortable, filterable. Click a row to read the original.
 
 ### e. **Search** (left sidebar → Search)
 Across all topics you've created. Try a vague phrase like
-"writing tools that respect long form" — Gap Map returns posts, gaps, and
+"writing tools that respect long form" — OpenReply returns posts, gaps, and
 related papers.
 
 ### Other sidebar items worth knowing
@@ -141,38 +141,38 @@ You won't need most of these on day one. Explore as questions come up.
 
 ## 4. Optional power-user setups
 
-### Install the `gapmap` CLI in your terminal
+### Install the `openreply` CLI in your terminal
 
 Settings → **Command line tool** → **Install command line tool**. macOS
 prompts for your password (admin needed to write to `/usr/local/bin`). After
-that, `gapmap` works from any terminal:
+that, `openreply` works from any terminal:
 
 ```bash
-gapmap research collect --topic "AI coding assistants"
-gapmap query "SELECT count(*) FROM posts"
-gapmap research search-all --query "vibe coding"
+openreply research collect --topic "AI coding assistants"
+openreply query "SELECT count(*) FROM posts"
+openreply research search-all --query "vibe coding"
 ```
 
-Full reference: run `gapmap --help` or see `CLI_REFERENCE.md` in the repo.
+Full reference: run `openreply --help` or see `CLI_REFERENCE.md` in the repo.
 
-### Install Gap Map as an MCP server in Claude Code / Cursor / Claude Desktop
+### Install OpenReply as an MCP server in Claude Code / Cursor / Claude Desktop
 
 This is the **big one for AI-coding workflows.** Once installed, 147
-`gapmap_*` tools appear inside your MCP client — you can ask Claude to
+`openreply_*` tools appear inside your MCP client — you can ask Claude to
 search your corpus, find painpoints, build personas, etc. from inside any
 conversation.
 
 From the app's Settings → MCP → **Connect to Claude Code** (or your client).
-Restart your MCP client. The `mcp__gapmap__*` tools appear automatically.
+Restart your MCP client. The `mcp__openreply__*` tools appear automatically.
 
 If your client isn't auto-detected, run the install manually:
 
 ```bash
-gapmap mcp install --client claude-code        # ~/.claude.json
-gapmap mcp install --client cursor             # ~/.cursor/mcp.json
-gapmap mcp install --client claude-desktop     # macOS Claude Desktop config
-gapmap mcp install --client windsurf
-gapmap mcp install --client cline              # Cline VSCode extension
+openreply mcp install --client claude-code        # ~/.claude.json
+openreply mcp install --client cursor             # ~/.cursor/mcp.json
+openreply mcp install --client claude-desktop     # macOS Claude Desktop config
+openreply mcp install --client windsurf
+openreply mcp install --client cline              # Cline VSCode extension
 ```
 
 ### Add a (free) LLM key for the auto-insights
@@ -184,7 +184,7 @@ Settings → BYOK → pick a provider. Cheapest options:
 - **NVIDIA NIM** — Llama 3.3 70B free with API key
 - **Ollama (local)** — totally free, runs on your Mac
 
-Without a key, Gap Map still collects + searches + builds the graph from
+Without a key, OpenReply still collects + searches + builds the graph from
 text signals. With a key, you also get Insights, Audience, Empathy maps,
 synthesized launch briefs, etc.
 
@@ -209,26 +209,26 @@ one-time setup.
 
 ---
 
-## 6. Reset Gap Map (if something gets stuck)
+## 6. Reset OpenReply (if something gets stuck)
 
 If the app gets into a weird state (especially after an upgrade), nuke the
 local state and start fresh:
 
 ```bash
 # Quit the app first (Cmd-Q)
-rm -rf "$HOME/Library/WebKit/com.shantanu.gapmap"          # browser localStorage
-defaults delete com.shantanu.gapmap 2>/dev/null            # native prefs
-# (Data + DB at ~/Library/Application Support/com.shantanu.gapmap/gapmap/
+rm -rf "$HOME/Library/WebKit/com.shantanu.openreply"          # browser localStorage
+defaults delete com.shantanu.openreply 2>/dev/null            # native prefs
+# (Data + DB at ~/Library/Application Support/com.shantanu.openreply/openreply/
 #  is preserved — topics, posts, graph all survive.)
 ```
 
-Re-open Gap Map → fresh 5-step wizard, your topics and collected data
+Re-open OpenReply → fresh 5-step wizard, your topics and collected data
 intact.
 
 To **also** wipe collected data (start completely over):
 
 ```bash
-rm -rf "$HOME/Library/Application Support/com.shantanu.gapmap"
+rm -rf "$HOME/Library/Application Support/com.shantanu.openreply"
 ```
 
 ---
@@ -249,7 +249,7 @@ When you report:
 - One issue per report (it's easier to ack/fix that way)
 - Tell us what you did, what you expected, what actually happened
 - If the app crashed, attach the file at
-  `~/Library/Logs/Gap Map/<latest>.log` (the app will eventually have a
+  `~/Library/Logs/OpenReply/<latest>.log` (the app will eventually have a
   one-click "Export logs" button — for now, find it in Finder).
 
 ---
@@ -272,11 +272,11 @@ gummed up by account flows.
 
 ```
 DMG installer location:    Your inbox / wherever the team sent it
-App location:              /Applications/Gap Map.app
-Data directory:            ~/Library/Application Support/com.shantanu.gapmap/gapmap/
-                             ├─ gapmap.db            (SQLite — posts, graph, findings)
+App location:              /Applications/OpenReply.app
+Data directory:            ~/Library/Application Support/com.shantanu.openreply/openreply/
+                             ├─ openreply.db            (SQLite — posts, graph, findings)
                              └─ exports/             (markdown / docx / pptx outputs)
-CLI binary (after install): /usr/local/bin/gapmap
+CLI binary (after install): /usr/local/bin/openreply
 MCP config files written:  ~/.claude.json
                             ~/Library/Application Support/Claude/claude_desktop_config.json
                             ~/.cursor/mcp.json
@@ -284,8 +284,8 @@ MCP config files written:  ~/.claude.json
 ```
 
 ```
-Reset onboarding:          rm -rf ~/Library/WebKit/com.shantanu.gapmap
-Full wipe (incl. data):    rm -rf ~/Library/Application\ Support/com.shantanu.gapmap
+Reset onboarding:          rm -rf ~/Library/WebKit/com.shantanu.openreply
+Full wipe (incl. data):    rm -rf ~/Library/Application\ Support/com.shantanu.openreply
 View logs:                 ~/Library/Logs/Gap\ Map/
 ```
 

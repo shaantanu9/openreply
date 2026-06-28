@@ -10,7 +10,7 @@ signals to every topic page: a saturation score (distinct graph clusters
 per last 50 posts → rich / converging / saturated) and a coverage-gaps
 strip that suggests one-click enrichments (+ Add appstore, + Add arxiv,
 + Deepen products…) whenever a data dimension drops below its threshold.
-Both panels listen for `gapmap:changed` and refresh automatically after
+Both panels listen for `openreply:changed` and refresh automatically after
 every collect / enrich / ingest.
 
 ## Changes
@@ -32,7 +32,7 @@ every collect / enrich / ingest.
   writes refresh them.
 - `topic.js`: saturation chip in the compact header (tiny SVG sparkline
   + hint text); Coverage gaps panel below the tabs + above tab-content;
-  both re-paint on `gapmap:changed`.
+  both re-paint on `openreply:changed`.
 - CSS: `.topic-saturation` + `.coverage-gaps` styling.
 
 ## Files Created
@@ -52,7 +52,7 @@ every collect / enrich / ingest.
 - `app-tauri/src/api.js` — `topicSaturation` / `topicCoverageGaps`
   bindings + cache invalidation hooks.
 - `app-tauri/src/screens/topic.js` — header badge, coverage-gaps panel
-  insertion point, painters, `gapmap:changed` listener, "+ Add source"
+  insertion point, painters, `openreply:changed` listener, "+ Add source"
   click handlers that fire `api.startCollect(topic, false, [src], false)`
   or `api.enrichGraph(topic)` for `deepen_products`.
 - `app-tauri/src/style.css` — new `.topic-saturation` + `.coverage-gaps`

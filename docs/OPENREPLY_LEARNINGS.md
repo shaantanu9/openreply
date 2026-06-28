@@ -1,6 +1,6 @@
 # OpenReply — Master Learnings & Knowledge Base
 
-> Single, detailed record of everything learned while turning the Gap Map
+> Single, detailed record of everything learned while turning the OpenReply
 > (reddit-myind) codebase into **OpenReply**, an open-source Reddit/social reply &
 > content co-pilot (a ReplyDaddy-style tool). Covers the product research, the
 > architecture we're reusing, every design/flow/UX decision, the palette, what was
@@ -21,7 +21,7 @@ your voice. You review and post. **BYOK** (bring your own AI key) — model cost
 user, never us.
 
 ### Why this codebase is the perfect boilerplate
-Gap Map already implements the *entire inbound half* of a reply tool:
+OpenReply already implements the *entire inbound half* of a reply tool:
 - Reddit fetching **without the official API** (cookie/RSS tier cascade).
 - Subreddit discovery + LLM topic canonicalization.
 - ~58 multi-source adapters (Reddit, X, LinkedIn, HN, news, …) on one contract.
@@ -29,7 +29,7 @@ Gap Map already implements the *entire inbound half* of a reply tool:
 - Per-platform **credentials** store (Reach Connections).
 - A Tauri 2 desktop shell + warm Python sidecar bridge + local SQLite + streaming.
 
-So OpenReply ≈ Gap Map's intake engine + a thin **scoring + reply/content + compliance**
+So OpenReply ≈ OpenReply's intake engine + a thin **scoring + reply/content + compliance**
 layer + a new UI/flow. That's why we build in-place on the `open-reply` branch and use
 the repo as boilerplate rather than rewriting.
 
@@ -159,7 +159,7 @@ A "topic" (research subject) becomes an **Agent** (brand/niche persona). One age
 - **Outputs:** replies (to scored opportunities) + content (post/thread/script/article).
 
 DB (additive, shipped): `agents`, `content_items`, `reply_opportunities`, `reply_drafts`,
-`reply_sub_rules`, `reply_state` (active-agent pointer) — all in the shared `gapmap.db`.
+`reply_sub_rules`, `reply_state` (active-agent pointer) — all in the shared `openreply.db`.
 `brand.py` now projects the *active agent* into the engine's "brand" shape, so the reply
 engine is agent-scoped without changing it.
 
@@ -186,7 +186,7 @@ engine is agent-scoped without changing it.
 
 ## 6. What's been built (state)
 
-### Backend (Python, `src/gapmap/reply/`) — working & tested
+### Backend (Python, `src/openreply/reply/`) — working & tested
 - `platforms.py` — pickable platform catalog (engage vs discovery-only).
 - `agent.py` — Agent CRUD, active pointer, knowledge summary, refresh (reuses `collect`).
 - `brand.py` — active-agent → brand shim.
@@ -195,7 +195,7 @@ engine is agent-scoped without changing it.
 - `generate.py` — reply drafts (voice + platform length) + Reddit compliance.
 - `content.py` — post/thread/script/article from voice + corpus excerpts.
 - `rules.py` — subreddit `about/rules.json` fetch/cache + LLM compliance check.
-- CLI: `gapmap reply …`, `gapmap agent …`, `gapmap content …` (all `--json`).
+- CLI: `openreply reply …`, `openreply agent …`, `openreply content …` (all `--json`).
   Verified end-to-end (real Reddit posts via RSS fallback; real LLM drafts).
 
 ### Desktop UI (Tauri, `app-tauri/`) — wired, compiles, runs

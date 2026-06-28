@@ -51,9 +51,9 @@ transcribed via `tiny.en` in 7.6s into a correct `yt_<id>_wx00`
 
 ## Files Modified
 
-- `src/gapmap/sources/youtube.py`
-- `src/gapmap/sources/collect_adapter.py`
-- `src/gapmap/research/collect.py`
+- `src/openreply/sources/youtube.py`
+- `src/openreply/sources/collect_adapter.py`
+- `src/openreply/research/collect.py`
 
 ## Notes
 

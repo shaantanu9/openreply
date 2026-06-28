@@ -32,7 +32,7 @@ GRACE_SECONDS = 5.0
 
 
 def _spawn(args: list[str], env: dict | None = None) -> subprocess.Popen:
-    """Spawn gapmap as a subprocess. Uses the .venv python so PyInstaller
+    """Spawn openreply as a subprocess. Uses the .venv python so PyInstaller
     sidecar path isn't exercised — matches the dev-mode bypass in cli.rs."""
     repo_root = Path(__file__).resolve().parent.parent
     py = repo_root / ".venv" / "bin" / "python"
@@ -40,7 +40,7 @@ def _spawn(args: list[str], env: dict | None = None) -> subprocess.Popen:
         pytest.skip(f".venv/bin/python not found at {py} — run `uv sync --extra dev` first")
     full_env = {**os.environ, **(env or {})}
     return subprocess.Popen(
-        [str(py), "-m", "gapmap.cli.main", *args],
+        [str(py), "-m", "openreply.cli.main", *args],
         cwd=repo_root,
         env=full_env,
         stdout=subprocess.PIPE,
@@ -68,7 +68,7 @@ def _wait_for_startup(proc: subprocess.Popen, *, needle: str = "", timeout: floa
 @pytest.mark.slow
 def test_cancel_collect_via_sigterm_exits_within_grace(tmp_path):
     """`research collect` with SIGTERM should exit within GRACE_SECONDS."""
-    env = {"GAPMAP_DATA_DIR": str(tmp_path)}
+    env = {"OPENREPLY_DATA_DIR": str(tmp_path)}
     # Aggressive + a clearly-nonexistent topic → maximum parallel work,
     # maximum kill-latency risk. Dry-running the real pipeline is fine
     # since we'll signal before network I/O settles.
@@ -105,7 +105,7 @@ def test_cancel_collect_via_sigterm_exits_within_grace(tmp_path):
 def test_cancel_stream_via_sigterm_exits_within_grace(tmp_path):
     """`stream --sub X --json` with SIGTERM should exit cleanly. This is the
     Watch screen's backing command; cancel-on-navigate-away depends on it."""
-    env = {"GAPMAP_DATA_DIR": str(tmp_path)}
+    env = {"OPENREPLY_DATA_DIR": str(tmp_path)}
     proc = _spawn(
         ["stream", "--sub", "test", "--json"],
         env=env,
@@ -134,7 +134,7 @@ def test_cancel_stream_via_sigterm_exits_within_grace(tmp_path):
 def test_sigint_also_works_on_collect(tmp_path):
     """Ctrl-C (SIGINT) path — same grace window. Some users will hit this
     via the terminal even though the Tauri cancel button uses SIGTERM."""
-    env = {"GAPMAP_DATA_DIR": str(tmp_path)}
+    env = {"OPENREPLY_DATA_DIR": str(tmp_path)}
     proc = _spawn(
         ["research", "collect", "--topic", "test-cancel-sigint", "--aggressive"],
         env=env,

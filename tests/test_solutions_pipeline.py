@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from gapmap.graph.schema import ensure_graph_schema, make_node_id
+from openreply.graph.schema import ensure_graph_schema, make_node_id
 
 
 @pytest.fixture
 def seeded_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
     ensure_graph_schema()
@@ -40,9 +40,9 @@ def seeded_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_solutions_pipeline_builds_full_chain(
     monkeypatch: pytest.MonkeyPatch, seeded_db: dict,
 ) -> None:
-    from gapmap.research import science as sci_mod
-    from gapmap.research import solutions as sol_mod
-    from gapmap.research import why as why_mod
+    from openreply.research import science as sci_mod
+    from openreply.research import solutions as sol_mod
+    from openreply.research import why as why_mod
 
     # Mock LLM provider to return canned why + solution payloads in turn.
     class CannedProvider:

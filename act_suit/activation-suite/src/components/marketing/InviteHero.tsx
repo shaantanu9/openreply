@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const INVITE_FLAG = "gapmap_invite_requested";
+const INVITE_FLAG = "openreply_invite_requested";
 
 // Full-screen invite hero at the top of the homepage (above the slider).
 // Mix of "Minimal Center" + "Social-Proof Stats". Submitting the email hits
@@ -72,7 +72,7 @@ export function InviteHero() {
         </h1>
 
         <p className="mx-auto mt-[18px] max-w-[540px] text-[clamp(15px,2.4vw,18px)] leading-[1.6] text-[var(--ink2)]">
-          Point Gap Map at Reddit, app reviews, HN and 10 more sources — get ranked
+          Point OpenReply at Reddit, app reviews, HN and 10 more sources — get ranked
           pain points, DIY workarounds and market gaps in one sweep.
         </p>
 

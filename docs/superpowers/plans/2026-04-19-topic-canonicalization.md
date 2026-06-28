@@ -821,17 +821,17 @@ git commit -m "fix(cli): handle new discover_subs shape + surface corrections/wa
 ### Task B3: Update MCP tool
 
 **Files:**
-- Modify: `src/reddit_research/mcp/server.py:143-150` (approx — the `gapmap_discover_subs` function)
+- Modify: `src/reddit_research/mcp/server.py:143-150` (approx — the `openreply_discover_subs` function)
 
 - [ ] **Step 1: Edit the MCP wrapper**
 
-Find `def gapmap_discover_subs(topic, limit)`. Its current return type is `list[dict]`. Keep that shape for MCP backward-compat (external clients depend on it). Unwrap `subs`:
+Find `def openreply_discover_subs(topic, limit)`. Its current return type is `list[dict]`. Keep that shape for MCP backward-compat (external clients depend on it). Unwrap `subs`:
 
 Current body (simplified) probably calls `research_discover(topic, limit)` and returns it. Replace with:
 
 ```python
 @mcp.tool()
-def gapmap_discover_subs(topic: str, limit: int = 10) -> list[dict]:
+def openreply_discover_subs(topic: str, limit: int = 10) -> list[dict]:
     """Find the most relevant subreddits for any topic or app domain.
 
     Use this as the FIRST step before research_collect so you (Claude) can
@@ -852,7 +852,7 @@ def gapmap_discover_subs(topic: str, limit: int = 10) -> list[dict]:
 
 ```bash
 .venv/bin/python -c "
-from reddit_research.mcp.server import gapmap_discover_subs
+from reddit_research.mcp.server import openreply_discover_subs
 print('mcp import ok')
 "
 ```

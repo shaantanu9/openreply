@@ -18,10 +18,10 @@ contract problem.
 Concretely:
 
 - Cursor opens a project at `~/code/my-project/`. User invokes
-  `gapmap_research_collect` via the Gap Map MCP. A new SQLite DB and
+  `openreply_research_collect` via the OpenReply MCP. A new SQLite DB and
   palace folder get created at `~/code/my-project/data/`.
-- Meanwhile, the desktop Gap Map app reads from
-  `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/reddit.db`.
+- Meanwhile, the desktop OpenReply app reads from
+  `~/Library/Application Support/com.shantanu.openreply/reddit-myind/reddit.db`.
 - The two DBs diverge. The desktop UI shows stale / empty state; the
   MCP just created findings that the UI can't see.
 - User concludes: "the app is broken."
@@ -75,16 +75,16 @@ New helper in `src/reddit_research/core/config.py`. Resolution order:
    still sets this; tests monkeypatch it).
 2. **Platform app-data folder** — matches what Tauri's
    `app.path().app_data_dir()` returns on each OS:
-   - **macOS:** `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`
-   - **Linux:** `$XDG_DATA_HOME/com.shantanu.gapmap/reddit-myind`
+   - **macOS:** `~/Library/Application Support/com.shantanu.openreply/reddit-myind`
+   - **Linux:** `$XDG_DATA_HOME/com.shantanu.openreply/reddit-myind`
      (falls back to `~/.local/share/...`)
-   - **Windows:** `%APPDATA%\com.shantanu.gapmap\reddit-myind`
+   - **Windows:** `%APPDATA%\com.shantanu.openreply\reddit-myind`
 3. **Legacy `~/.config/reddit-myind/data`** — for installs created
    before the Tauri bundle existed.
 4. **CWD `./data`** — absolute last resort, emits a `warnings.warn` so
    devs notice if they accidentally land here.
 
-The bundle ID (`com.shantanu.gapmap`) is hardcoded to match
+The bundle ID (`com.shantanu.openreply`) is hardcoded to match
 `tauri.conf.json`. This keeps the Python side independent of Tauri IPC
 — we don't need the Rust runtime to tell us where to go.
 
@@ -114,10 +114,10 @@ print(load_config().data_dir)
 print(default_data_dir())
 print(_pidfile_path())
 "
-/Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind
-/Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind
-/Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind
-/Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind/mcp-server.pid
+/Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind
+/Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind
+/Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind
+/Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind/mcp-server.pid
 ```
 
 Four different code paths, called from `/tmp`, all land in the exact
@@ -178,9 +178,9 @@ If you had data under `<repo>/data/` from previous dev runs, the new
 resolver won't find it. Options:
 
 - **Nothing** — the old folder sits there unused; dev can delete it.
-- **One-time symlink** — `ln -s <repo>/data ~/Library/Application\ Support/com.shantanu.gapmap/reddit-myind`
+- **One-time symlink** — `ln -s <repo>/data ~/Library/Application\ Support/com.shantanu.openreply/reddit-myind`
   if you want the old data visible.
-- **Copy** — `cp -R <repo>/data/* ~/Library/Application\ Support/com.shantanu.gapmap/reddit-myind/`.
+- **Copy** — `cp -R <repo>/data/* ~/Library/Application\ Support/com.shantanu.openreply/reddit-myind/`.
 
 Production installs never had `<repo>/data/` — they always shipped with
 the Tauri sidecar setting the env. So this only affects developers.
@@ -223,7 +223,7 @@ for fn, label in [
 ```
 
 Expected: every line ends with
-`com.shantanu.gapmap/reddit-myind` (or the pid file thereof).
+`com.shantanu.openreply/reddit-myind` (or the pid file thereof).
 
 ### 4.2 Env override test
 
@@ -237,8 +237,8 @@ print(_resolve_data_dir())
 
 ### 4.3 Cross-surface integration test (manual)
 
-1. Open Gap Map desktop app → create a topic "testA".
-2. From a different CWD, open Cursor. Invoke `gapmap_get_corpus(topic='testA')`.
+1. Open OpenReply desktop app → create a topic "testA".
+2. From a different CWD, open Cursor. Invoke `openreply_get_corpus(topic='testA')`.
 3. Should return the rows created in step 1. If it returns empty → the
    MCP is reading the wrong DB → this fix isn't applied.
 
@@ -289,7 +289,7 @@ If a future version ships "multiple profiles" (e.g. "work vs personal
 research"), pass the profile name as env:
 
 ```bash
-REDDIT_MYIND_DATA_DIR="$HOME/Library/Application Support/com.shantanu.gapmap/reddit-myind/profiles/work"
+REDDIT_MYIND_DATA_DIR="$HOME/Library/Application Support/com.shantanu.openreply/reddit-myind/profiles/work"
 ```
 
 The resolver already honors the env. No code change — just a UI
@@ -341,7 +341,7 @@ affordance to pick a profile at launch and set the env for the session.
 ### "CI runner is dying with 'cannot create data_dir'"
 
 - **Cause:** ephemeral Docker container with no writable HOME.
-- **Fix:** set `REDDIT_MYIND_DATA_DIR=/tmp/gapmap` in the CI job.
+- **Fix:** set `REDDIT_MYIND_DATA_DIR=/tmp/openreply` in the CI job.
 
 ---
 
@@ -353,7 +353,7 @@ A one-liner diagnostic:
 
 ```bash
 reddit-cli where
-# → data_dir: /Users/.../com.shantanu.gapmap/reddit-myind
+# → data_dir: /Users/.../com.shantanu.openreply/reddit-myind
 #    db     : /Users/.../reddit.db         (128 MB)
 #    palace : /Users/.../palace/            (45 MB)
 #    exports: /Users/.../exports/           (12 MB)
@@ -383,15 +383,15 @@ override. Sketched below; add to `tests/test_tier_quality_pass.py`:
 ```python
 def test_resolver_honors_env(monkeypatch):
     from reddit_research.core.config import _resolve_data_dir
-    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", "/tmp/custom-gapmap")
-    assert str(_resolve_data_dir()) == "/tmp/custom-gapmap"
+    monkeypatch.setenv("REDDIT_MYIND_DATA_DIR", "/tmp/custom-openreply")
+    assert str(_resolve_data_dir()) == "/tmp/custom-openreply"
 
 def test_resolver_falls_back_to_app_data(monkeypatch):
     from reddit_research.core.config import _resolve_data_dir
     import sys
     monkeypatch.delenv("REDDIT_MYIND_DATA_DIR", raising=False)
     result = str(_resolve_data_dir())
-    assert "com.shantanu.gapmap" in result
+    assert "com.shantanu.openreply" in result
     assert "reddit-myind" in result
 ```
 

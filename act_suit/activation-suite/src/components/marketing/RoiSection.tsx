@@ -32,7 +32,7 @@ export function RoiSection() {
               <em>time-to-insight ROI.</em>
             </h2>
             <p className="section-sub">
-              Conservative model: teams that move manual synthesis into Gap Map
+              Conservative model: teams that move manual synthesis into OpenReply
               typically reclaim ~45% of research processing time.
             </p>
             <div className="mt-8 rounded-[20px] border border-[var(--border-strong)] bg-white p-5">

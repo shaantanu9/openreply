@@ -21,11 +21,11 @@ every conversation newest-first.
   relative time), with a client-side search box over title + topic. Empty/error
   states handled; routeGen-guarded like the other screens.
 - **Deep-link handoff**: clicking a conversation sets
-  `sessionStorage gapmap.topic.tab.<topic> = 'chat'` (land on the Chat tab),
-  `localStorage gapmap.chat.active.<topic> = <id>` (remember the thread), and
-  `localStorage gapmap.chat.open.<topic> = <id>` (force-open), then navigates to
+  `sessionStorage openreply.topic.tab.<topic> = 'chat'` (land on the Chat tab),
+  `localStorage openreply.chat.active.<topic> = <id>` (remember the thread), and
+  `localStorage openreply.chat.open.<topic> = <id>` (force-open), then navigates to
   `#/topic/<topic>`.
-- **topic.js `hydrateChat`**: honours the `gapmap.chat.open.<topic>` force-open
+- **topic.js `hydrateChat`**: honours the `openreply.chat.open.<topic>` force-open
   key *before* the per-session hydration guard, so the exact thread opens even
   if that topic's chat was already hydrated this session.
 - **Route + nav**: `{ match: /^\/chats\/?$/, render: renderChats }` in

@@ -1,4 +1,4 @@
-# Gap Map methodology
+# OpenReply methodology
 
 Every design decision in the viewer traces to established research.
 This page exists because users told us they distrust AI-generated
@@ -115,7 +115,7 @@ This is enabled by the pullpush historical archive + live Reddit JSON split at M
 
 — Brin & Page, *The Anatomy of a Large-Scale Hypertextual Web Search Engine*, 1998.
 
-The `gapmap_graph_pagerank` MCP tool ranks painpoints not just by frequency but by how central they are in the evidence graph. A painpoint connected to many DIY workarounds + products + other painpoints will outrank a painpoint with just 8 same-sub Reddit threads.
+The `openreply_graph_pagerank` MCP tool ranks painpoints not just by frequency but by how central they are in the evidence graph. A painpoint connected to many DIY workarounds + products + other painpoints will outrank a painpoint with just 8 same-sub Reddit threads.
 
 ### Louvain community detection
 

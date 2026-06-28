@@ -42,7 +42,7 @@ which accounts are connected.
 
 ## Files Modified
 
-- `src/gapmap/sources/_cookie_extract.py`
+- `src/openreply/sources/_cookie_extract.py`
 - `app-tauri/src/or/dynamic.js`
 
 ## Files Created

@@ -6,7 +6,7 @@
 ## Summary
 
 Completes every remaining 🟡 advanced-analysis module so that no analysis
-function in Gap Map is half-done. The last 6 cat-14 gaps are closed: **Why
+function in OpenReply is half-done. The last 6 cat-14 gaps are closed: **Why
 (root-cause / 5-Whys)**, **Sentiment-by-source charts**, **Tactic library**,
 **Hypothesis-tracker screen** (via a 4-agent workflow writing disjoint files +
 central wiring), and **PERT** + **Idea-scan** (exposed as MCP tools directly).
@@ -39,24 +39,24 @@ reports 0 errors.
 - **Hypothesis tracker:** `screens/hypotheses.js` (status summary + per-item
   status update + delete) on the EXISTING `hypothesis_*` Rust + api surface;
   **Hypotheses** tab (no new backend).
-- **PERT MCP tools:** `gapmap_pert_list`, `gapmap_pert_add_task`,
-  `gapmap_pert_rollup` wrapping `research/pert.py`.
-- **Idea-scan MCP tools:** `gapmap_idea_scan_start` (under the timeout guard +
-  jobs-queue fallback), `gapmap_idea_scan_get`, `gapmap_idea_scan_list`.
+- **PERT MCP tools:** `openreply_pert_list`, `openreply_pert_add_task`,
+  `openreply_pert_rollup` wrapping `research/pert.py`.
+- **Idea-scan MCP tools:** `openreply_idea_scan_start` (under the timeout guard +
+  jobs-queue fallback), `openreply_idea_scan_get`, `openreply_idea_scan_list`.
 
 ## Files Created
 
-- `src/gapmap/research/root_cause.py`
+- `src/openreply/research/root_cause.py`
 - `app-tauri/src/screens/root_cause.js`
 - `app-tauri/src/screens/tactics.js`
 - `app-tauri/src/screens/hypotheses.js`
 
 ## Files Modified
 
-- `src/gapmap/research/tactic_library.py` — `tactics_for_topic()`.
+- `src/openreply/research/tactic_library.py` — `tactics_for_topic()`.
 - `app-tauri/src/screens/sentiment.js` — per-source comparison charts.
-- `src/gapmap/mcp/server.py` — 6 new MCP tools (PERT ×3, idea-scan ×3).
-- `src/gapmap/cli/main.py` — `research root-cause`, `research tactics`.
+- `src/openreply/mcp/server.py` — 6 new MCP tools (PERT ×3, idea-scan ×3).
+- `src/openreply/cli/main.py` — `research root-cause`, `research tactics`.
 - `app-tauri/src-tauri/src/commands.rs` + `main.rs` — `root_cause_get/_compute`,
   `tactics_get`.
 - `app-tauri/src/api.js` — `rootCauseGet/Compute`, `tacticsGet`.

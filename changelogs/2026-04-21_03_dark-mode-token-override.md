@@ -5,7 +5,7 @@
 
 ## Summary
 
-User reported dark mode was "working in some places, not in others." The Settings toggle added `html.dark` class and persisted `gapmap.pref.dark_mode` correctly, but `style.css` had no `html.dark { ... }` rule at all — so only tokens were inverting via OS-level heuristics while the 205 hardcoded `#FFFFFF`/`#1A1614`/`#ECE6DC` usages stayed light. Half-dark UI was the result.
+User reported dark mode was "working in some places, not in others." The Settings toggle added `html.dark` class and persisted `openreply.pref.dark_mode` correctly, but `style.css` had no `html.dark { ... }` rule at all — so only tokens were inverting via OS-level heuristics while the 205 hardcoded `#FFFFFF`/`#1A1614`/`#ECE6DC` usages stayed light. Half-dark UI was the result.
 
 ## Changes
 
@@ -22,11 +22,11 @@ Added a comprehensive `html.dark { ... }` block (69 scoped rules) right after `:
 
 ### `app-tauri/src/screens/settings.js`
 
-Toggle handler now emits `window 'gapmap:theme-changed'` event after flipping the class. Canvas-rendered screens (map, trend chart) read CSS vars via `getComputedStyle` at paint time — they cache those values, so a CSS-only flip leaves charts stuck on the old palette. Listening for this event triggers a re-render.
+Toggle handler now emits `window 'openreply:theme-changed'` event after flipping the class. Canvas-rendered screens (map, trend chart) read CSS vars via `getComputedStyle` at paint time — they cache those values, so a CSS-only flip leaves charts stuck on the old palette. Listening for this event triggers a re-render.
 
 ## Why the earlier `html.dark` class wired up but nothing changed
 
-`main.js::applyEarlyPrefs` adds `html.dark` on boot from `localStorage['gapmap.pref.dark_mode']`. Settings toggle re-applies it on change. Both were correct. The CSS was the missing link — no `.dark` rule existed, so the class was essentially inert. Components inherited `prefers-color-scheme` defaults from the webview, which is why SOME components (browser-default buttons, native form widgets) looked dark-ish while most (surfaces, cards, sidebars using hex literals) stayed light.
+`main.js::applyEarlyPrefs` adds `html.dark` on boot from `localStorage['openreply.pref.dark_mode']`. Settings toggle re-applies it on change. Both were correct. The CSS was the missing link — no `.dark` rule existed, so the class was essentially inert. Components inherited `prefers-color-scheme` defaults from the webview, which is why SOME components (browser-default buttons, native form widgets) looked dark-ish while most (surfaces, cards, sidebars using hex literals) stayed light.
 
 ## Verification
 
@@ -38,4 +38,4 @@ Toggle handler now emits `window 'gapmap:theme-changed'` event after flipping th
 ## Files Modified
 
 - `app-tauri/src/style.css` — dark-mode token overrides + inline-hex attribute selectors
-- `app-tauri/src/screens/settings.js` — `gapmap:theme-changed` event emission
+- `app-tauri/src/screens/settings.js` — `openreply:theme-changed` event emission

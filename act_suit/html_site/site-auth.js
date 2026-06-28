@@ -1,16 +1,16 @@
 /* global supabase */
 (function () {
   const STORAGE = {
-    deviceId: "gapmap.web.device_id",
-    activation: "gapmap.web.activation",
+    deviceId: "openreply.web.device_id",
+    activation: "openreply.web.activation",
   };
 
   function getEnv() {
-    const e = window.GAPMAP_ENV || {};
+    const e = window.OPENREPLY_ENV || {};
     return {
       supabaseUrl: e.SUPABASE_URL || e.NEXT_PUBLIC_SUPABASE_URL || "",
       supabaseAnonKey: e.SUPABASE_ANON_KEY || e.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-      licenseApiBase: (e.LICENSE_API_BASE || e.GAPMAP_LICENSE_API_BASE || "").replace(/\/$/, ""),
+      licenseApiBase: (e.LICENSE_API_BASE || e.OPENREPLY_LICENSE_API_BASE || "").replace(/\/$/, ""),
     };
   }
 
@@ -20,14 +20,14 @@
       throw new Error("Supabase SDK missing. Add @supabase/supabase-js script.");
     }
     if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error("Missing SUPABASE_URL / SUPABASE_ANON_KEY in GAPMAP_ENV.");
+      throw new Error("Missing SUPABASE_URL / SUPABASE_ANON_KEY in OPENREPLY_ENV.");
     }
-    if (!window.__gapmapSb) {
-      window.__gapmapSb = supabase.createClient(supabaseUrl, supabaseAnonKey, {
+    if (!window.__openreplySb) {
+      window.__openreplySb = supabase.createClient(supabaseUrl, supabaseAnonKey, {
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
       });
     }
-    return window.__gapmapSb;
+    return window.__openreplySb;
   }
 
   function normalizeActivationKey(raw) {
@@ -67,7 +67,7 @@
   async function buildWebDeviceSignature() {
     const id = ensureDeviceId();
     const seed = [
-      "gapmap-web",
+      "openreply-web",
       id,
       navigator.platform || "unknown-platform",
       navigator.userAgent || "unknown-ua",
@@ -144,7 +144,7 @@
     }
     const { licenseApiBase } = getEnv();
     if (!licenseApiBase) {
-      throw new Error("Missing LICENSE_API_BASE in GAPMAP_ENV.");
+      throw new Error("Missing LICENSE_API_BASE in OPENREPLY_ENV.");
     }
     const session = await getSession();
     if (!session?.access_token) {
@@ -156,7 +156,7 @@
       email: user?.email || "",
       activation_key: normalizeActivationKey(activationKey),
       device_signature,
-      app: "gapmap-web-activation",
+      app: "openreply-web-activation",
       os: navigator.platform || "web",
       arch: navigator.userAgentData?.architecture || "web",
     };
@@ -200,7 +200,7 @@
   }
 
   function getLemonSqueezyUrls() {
-    const e = window.GAPMAP_ENV || {};
+    const e = window.OPENREPLY_ENV || {};
     return {
       checkoutPro: String(e.LEMONSQUEEZY_CHECKOUT_PRO || e.LEMONSQUEEZY_CHECKOUT_URL || "").trim(),
       checkoutLivePass: String(e.LEMONSQUEEZY_CHECKOUT_LIVE_PASS || "").trim(),
@@ -227,7 +227,7 @@
     return true;
   }
 
-  window.GapMapAuth = {
+  window.OpenReplyAuth = {
     getEnv,
     getLemonSqueezyUrls,
     openLemonSqueezyCheckout,

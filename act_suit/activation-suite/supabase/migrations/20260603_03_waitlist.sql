@@ -7,7 +7,7 @@ create table if not exists public.waitlist (
   email       text not null unique,
   name        text null,
   role        text null,
-  reason      text null,                 -- "what do you want to use Gap Map for"
+  reason      text null,                 -- "what do you want to use OpenReply for"
   status      text not null default 'pending'
                 check (status in ('pending','invited','converted','rejected')),
   invite_code text null,                  -- the coupon generated when invited

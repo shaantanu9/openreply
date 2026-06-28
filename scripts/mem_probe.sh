@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mem_probe.sh — sample RSS of every gap-map process every N seconds and print
+# mem_probe.sh — sample RSS of every openreply-map process every N seconds and print
 # a CSV row per tick. Run while reproducing the leak; pipe to a file and graph.
 #
 #   bash scripts/mem_probe.sh                  # 5s tick, runs forever, csv to stdout
@@ -7,10 +7,10 @@
 #   bash scripts/mem_probe.sh 5 0 leak.csv     # 5s tick, forever, write to leak.csv
 #
 # Output columns: ts,name,pid,rss_mb
-# Names sampled: gapmap (Tauri host), gapmap (Python sidecar), uv,
+# Names sampled: openreply (Tauri host), openreply (Python sidecar), uv,
 #                ollama (LLM), node (vite if running).
 #
-# Tip: open the app, run `await window.__gapmapMemStats()` in DevTools to also
+# Tip: open the app, run `await window.__openreplyMemStats()` in DevTools to also
 # see the JS heap + Rust slot counts that this shell probe can't reach.
 
 # Intentionally NOT `set -e` — this is a tolerant probe. Some pgrep matches
@@ -23,7 +23,7 @@ INTERVAL="${1:-5}"
 TICKS="${2:-0}"   # 0 = forever
 OUTFILE="${3:-/dev/stdout}"
 
-declare -a NAMES=("gapmap" "gapmap" "uv" "ollama" "node")
+declare -a NAMES=("openreply" "openreply" "uv" "ollama" "node")
 
 echo "ts,name,pid,rss_mb" > "$OUTFILE"
 

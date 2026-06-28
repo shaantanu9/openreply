@@ -10,11 +10,11 @@ palace read and falls back to engagement-ranked SQL retrieval on timeout.
 """
 import time
 
-from gapmap.research import chat
+from openreply.research import chat
 
 
 def _patch_palace(monkeypatch, *, search_impl, stats_impl):
-    import gapmap.retrieval.palace as palace
+    import openreply.retrieval.palace as palace
     monkeypatch.setattr(palace, "is_available", lambda: True)
     monkeypatch.setattr(palace, "is_model_ready", lambda: True)
     monkeypatch.setattr(palace, "stats", stats_impl)

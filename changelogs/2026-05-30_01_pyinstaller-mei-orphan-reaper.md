@@ -28,7 +28,7 @@ works smoothly, no interruptions" actually hold on any user's machine.
 
 - Added `cli::reap_pyinstaller_orphans()` — scans `std::env::temp_dir()` for
   `_MEI*` directories, removes those older than `min_age` (default 6 h,
-  override via `GAPMAP_MEI_REAP_MIN_AGE_SECS`), returns `(dirs_removed,
+  override via `OPENREPLY_MEI_REAP_MIN_AGE_SECS`), returns `(dirs_removed,
   bytes_freed)`. Age gate guarantees it never deletes a live extraction or a
   freshly-started MCP server's dir.
 - Added private `cli::dir_size_bytes()` helper (best-effort recursive size,
@@ -43,7 +43,7 @@ works smoothly, no interruptions" actually hold on any user's machine.
 
 - `cargo check` / `cargo build`: 0 errors (1 unrelated JWT debug-fallback warning).
 - Manually confirmed the bundled binary now extracts + runs `exit 0` after
-  the temp cleanup, and `gapmap-cli mcp status --json` reports
+  the temp cleanup, and `openreply-cli mcp status --json` reports
   `installed/connected/db_aligned/token_in_env: true`.
 
 ## Files Created

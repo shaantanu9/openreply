@@ -2,7 +2,7 @@
 
 **Started:** 2026-04-19
 **Owner:** Shantanu
-**Scope:** This is a running ledger. Every time a paper, blog post, or external finding suggests a concrete upgrade to Gap Map (the product) or its desktop app (the engineering), it gets a new entry here.
+**Scope:** This is a running ledger. Every time a paper, blog post, or external finding suggests a concrete upgrade to OpenReply (the product) or its desktop app (the engineering), it gets a new entry here.
 
 ## How to read this doc
 
@@ -15,13 +15,13 @@ Each entry follows a **5-slot template** so that any new research finding slots 
 **Why relevant:**
 
 #### What we have today (code-verified)
-- Product (Gap Map user-facing):  …
+- Product (OpenReply user-facing):  …
 - App / engineering (Tauri + sidecar):  …
 
 #### What this finding improves
 - …  (bullet per measurable improvement — accuracy / UX / cost / latency)
 
-#### What we can build for Gap Map (product upgrades)
+#### What we can build for OpenReply (product upgrades)
 - 🎯 …   (product-visible features, with file/screen pointer)
 
 #### What we can build for the app (engineering upgrades)
@@ -39,17 +39,17 @@ Each entry follows a **5-slot template** so that any new research finding slots 
 ## Finding 01 — Attention Is All You Need (Vaswani et al., 2017, arXiv:1706.03762)
 
 **One-line idea:** Sequence transduction using only stacked multi-head self-attention + positional encodings — no recurrence, no convolution. Foundation of every modern transformer embedding model (BERT, MiniLM, E5, GTE, …).
-**Why relevant:** Gap Map already uses LLMs (downstream of this paper) for extraction. The *upstream primitives* — token embeddings, self-attention as a retrieval mechanism, positional encoding — are tools we have not yet plugged into our own pipeline. Every gap flagged 🔴 in `docs/self-gap-analysis.md` (near-dup merging, emergent clustering, cross-source semantic links) is solvable with a sentence-transformer — which **is** this paper, six years later.
+**Why relevant:** OpenReply already uses LLMs (downstream of this paper) for extraction. The *upstream primitives* — token embeddings, self-attention as a retrieval mechanism, positional encoding — are tools we have not yet plugged into our own pipeline. Every gap flagged 🔴 in `docs/self-gap-analysis.md` (near-dup merging, emergent clustering, cross-source semantic links) is solvable with a sentence-transformer — which **is** this paper, six years later.
 
 ### What we have today (code-verified)
 
-**Product (Gap Map user-facing):**
+**Product (OpenReply user-facing):**
 - `src/reddit_research/research/` — 4 rigid LLM extractors (painpoints / features / competitors / DIY) driven by `prompts/*.yaml`. One LLM call per category per chunk.
 - `src/reddit_research/retrieval/` + `app-tauri/src/screens/find.js` — ONNX embedding-based local semantic search ("Retrieval Palace"), opt-in download on user consent (see `61d676a feat(palace): hybrid opt-in`).
 - `src/reddit_research/research/discover.py` — LLM-backed topic canonicalization with SQLite cache (`8514e45`).
 - Temporal classifier CHRONIC / EMERGING / FADING — **rule-based** (pre/post May-2025 row counts), not embedding-based.
 - Graph edges — **structural** (this post is evidence for this painpoint because the LLM said so), no semantic similarity yet.
-- Chat tab — uses `gapmap_graph_top_nodes` + `gapmap_graph_neighbors` for context assembly. No vector retrieval in the loop.
+- Chat tab — uses `openreply_graph_top_nodes` + `openreply_graph_neighbors` for context assembly. No vector retrieval in the loop.
 
 **App / engineering (Tauri + sidecar):**
 - ONNX runtime already packaged via the Retrieval Palace.
@@ -65,7 +65,7 @@ Each entry follows a **5-slot template** so that any new research finding slots 
 - **LLM cost** — multi-head style extraction (one call emits severity + frequency + emotion + actionability) cuts token spend vs per-aspect calls.
 - **Saturation-math defense** — cross-source confirmation via embedding similarity adds a second, independent confirmation channel next to LLM-label agreement.
 
-### What we can build for Gap Map (product upgrades)
+### What we can build for OpenReply (product upgrades)
 
 - 🎯 **Semantic near-duplicate merging of painpoints** — after `graph build`, run cosine similarity across painpoint nodes, auto-merge at `> 0.85`, surface the merge chain in the evidence panel. Lands in Map tab.
 - 🎯 **Emergent clustering tab** — next to Map/Report/Evidence, a "Themes" tab that lets the user browse discovered clusters instead of the 4 fixed categories. Closes the rigid-YAML gap.
@@ -78,7 +78,7 @@ Each entry follows a **5-slot template** so that any new research finding slots 
 ### What we can build for the app (engineering upgrades)
 
 - 🛠 **Unified embedding encoder** — one shared sentence-transformer instance across `src/reddit_research/retrieval/`, `research/discover.py`, `graph/semantic.py`. Today these are independent paths. One encoder = one geometry = composable features.
-- 🛠 **Vector index per topic** — ChromaDB collection keyed by `topic`. Supersedes ad-hoc cosine loops. Lives under `~/Library/Application Support/com.shantanu.gapmap/vectors/`.
+- 🛠 **Vector index per topic** — ChromaDB collection keyed by `topic`. Supersedes ad-hoc cosine loops. Lives under `~/Library/Application Support/com.shantanu.openreply/vectors/`.
 - 🛠 **Positional-time encoding** — sinusoidal sin/cos over `created_utc` (paper §3.5), feed into the classifier alongside text embeddings. Upgrades CHRONIC/EMERGING/FADING from rule-based to learned.
 - 🛠 **Restricted-attention chunker for PDF ingest** — paper §4's "restricted to neighborhood size r" idea is exactly the logic behind heading-aware PDF chunkers. Formalize the `opendataloader-pdf` output into overlap-chunked, locally-attended windows so 300-page papers don't OOM.
 - 🛠 **Multi-head extractor prompt** — one LLM call returns a JSON with `{severity, frequency, emotion, actionability, topic}` per post instead of 4 separate calls. Halves LLM spend on the Enrich step.
@@ -123,12 +123,12 @@ Copy this when adding a new entry:
 **Why relevant:**
 
 #### What we have today (code-verified)
-- Product (Gap Map user-facing):
+- Product (OpenReply user-facing):
 - App / engineering (Tauri + sidecar):
 
 #### What this finding improves
 
-#### What we can build for Gap Map (product upgrades)
+#### What we can build for OpenReply (product upgrades)
 - 🎯
 
 #### What we can build for the app (engineering upgrades)

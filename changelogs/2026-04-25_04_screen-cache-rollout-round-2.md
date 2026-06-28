@@ -33,7 +33,7 @@ unrelated screens keep their fast paint.
   `posts.${topic}.${sort}.${source}.${sub}.${minScore}.${page}`.
   Toolbar wiring extracted to `wireToolbar()` so the cache and live
   paths share it. Empty pages aren't cached (transient filter typos).
-- Updated `gapmap:changed` invalidation map in main.js:
+- Updated `openreply:changed` invalidation map in main.js:
   - `findings` → `insights/evidence/solutions`
   - `graph` → `insights/solutions/concepts/papers`
   - `trash` → `insights/home/evidence/sources/posts`

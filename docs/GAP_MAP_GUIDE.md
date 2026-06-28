@@ -1,10 +1,10 @@
-# Gap Map — complete guide
+# OpenReply — complete guide
 
-A single source-of-truth for how Gap Map works end-to-end: what every source does, how the LLM sees your data, how to read the Build Guide, and every knob you can turn. Written as the session doc across all recent upgrades — use the table of contents to jump to what you need.
+A single source-of-truth for how OpenReply works end-to-end: what every source does, how the LLM sees your data, how to read the Build Guide, and every knob you can turn. Written as the session doc across all recent upgrades — use the table of contents to jump to what you need.
 
 ## Contents
 
-1. [What Gap Map is](#what-gap-map-is)
+1. [What OpenReply is](#what-openreply-map-is)
 2. [Quick start (first topic in 5 minutes)](#quick-start)
 3. [LLM configuration](#llm-configuration)
 4. [Data sources — all 16 of them](#data-sources)
@@ -19,10 +19,10 @@ A single source-of-truth for how Gap Map works end-to-end: what every source doe
 
 ---
 
-<a id="what-gap-map-is"></a>
-## 1. What Gap Map is
+<a id="what-openreply-map-is"></a>
+## 1. What OpenReply is
 
-Gap Map is a desktop research tool that turns raw chatter — Reddit threads, Hacker News discussions, arXiv papers, App Store reviews, GitHub issues, YouTube comments, your own PDFs — into a **build guide backed by direct citations**. Every painpoint traces to its original source. Every competitor claim traces to a Reddit post you can read. Every cited science paper is one click away from its DOI.
+OpenReply is a desktop research tool that turns raw chatter — Reddit threads, Hacker News discussions, arXiv papers, App Store reviews, GitHub issues, YouTube comments, your own PDFs — into a **build guide backed by direct citations**. Every painpoint traces to its original source. Every competitor claim traces to a Reddit post you can read. Every cited science paper is one click away from its DOI.
 
 It runs **entirely locally**:
 - **Tauri 2** desktop shell + vanilla JS frontend (cream/orange theme)
@@ -218,7 +218,7 @@ Ingested PDFs land in `source_type='ingest'`, show up in the **Research** tab un
 - **Relative timestamps** ("2m ago") with 30 s live refresh
 - **Export conversation** as `.md` with full thread + tool-call collapsibles
 - **Source-aware evidence** — LLM sees `[arxiv:2401.12345]` / `[r_abc] r/rust` / `[ingest:paper.pdf]` / `[youtube:vid_id]` prefixes so it weights peer-reviewed claims differently from Reddit anecdotes
-- **History persists to localStorage** per topic (`gapmap.chat.<topic>`, last 50 messages) — survives page reloads
+- **History persists to localStorage** per topic (`openreply.chat.<topic>`, last 50 messages) — survives page reloads
 
 ### Evidence tab details
 
@@ -346,8 +346,8 @@ The LLM knows what it's reading and weights peer-reviewed claims differently fro
 | Thing | Location |
 |---|---|
 | API keys + env vars | `~/.config/reddit-myind/.env` (chmod 600) |
-| Corpus DB | `~/Library/Application Support/com.shantanu.gapmap/reddit.db` |
-| Gap Map HTML viewers | same dir as DB, per topic |
+| Corpus DB | `~/Library/Application Support/com.shantanu.openreply/reddit.db` |
+| OpenReply HTML viewers | same dir as DB, per topic |
 | Generated reports (markdown) | same dir, per topic |
 | Ollama model cache | `~/.ollama/models` |
 | Chroma embed cache (when palace is used) | `~/.cache/chroma/onnx_models/` |
@@ -394,7 +394,7 @@ The LLM knows what it's reading and weights peer-reviewed claims differently fro
 | 09 | **Topic page UI polish** | Toasts, error cards with retry, skeleton loaders, Evidence pagination, subreddit pagination, chat history persistence, active-LLM pill in header |
 | 10 | **Fix provider routing** | `OpenAIProvider` now supports OpenRouter / Groq / DeepSeek / Mistral / Google / OpenAI via `_PROVIDER_CONFIG` table — killed the "OPENAI_API_KEY not set" bug for every OpenAI-compat provider |
 | 11 | **Parallel multi-source collect** | `ThreadPoolExecutor(6)` + thread-local SQLite + WAL mode. ~4–6× faster aggressive collects |
-| 12 | **Gap Map theme match** | Map-tab D3 viewer dark palette → cream/orange to match the rest of the app |
+| 12 | **OpenReply theme match** | Map-tab D3 viewer dark palette → cream/orange to match the rest of the app |
 | 13 | **Research + PDFs first class** | Papers with score=0 no longer excluded from LLM; source-aware prompt formatting; dual PDF extractor (opendataloader-pdf preferred, pypdf fallback); new Research tab on topic page; Report upgraded to build guide |
 | 14 | **runpy warning fix** | `cli/__init__.py` de-eager-imported; `RuntimeWarning` gone on every sidecar spawn |
 | 15 | **Chat / Evidence / Research UX** | Compact preset pills, auto-grow textarea, typing dots, per-message copy/regen, relative timestamps, export chat as .md, Evidence search filter, Research sort toggle + copy-citation |

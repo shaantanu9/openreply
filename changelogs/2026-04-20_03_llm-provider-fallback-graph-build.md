@@ -40,7 +40,7 @@ Three code bugs, all fixed in this change:
 ## Verification
 
 - `pytest -q tests/ --ignore=tests/test_integration.py` → **20 / 20 pass**.
-- Manual enrich call against the real gapmap DB proves the fallback:
+- Manual enrich call against the real openreply DB proves the fallback:
   - Before fix: `Ollama 500 for model 'llama3.2:3b': llama runner process no longer running` → zero findings written, no retry.
   - After fix: when preferred provider fails, the walker tries each remaining candidate and surfaces an aggregated error listing every provider + its reason. When a provider works, findings land in `graph_nodes`.
 - The stacked-orphan-process symptom documented in `cli.rs` (11 concurrent enrichments locking SQLite) also shrinks naturally once each call either succeeds or fails fast, rather than hanging on a broken provider.

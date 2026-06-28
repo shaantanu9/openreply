@@ -1,8 +1,8 @@
-# Gap Map — Video Ingest via yt-dlp + faster-whisper (Technical Design)
+# OpenReply — Video Ingest via yt-dlp + faster-whisper (Technical Design)
 
 **Status:** Design complete, implementation scheduled in 5 passes.
 **Last updated:** 2026-04-21
-**Scope:** Lets Gap Map accept any video URL (YouTube, Vimeo, podcast MP4, conference talks, any site `yt-dlp` supports) → pull audio → transcribe locally with Whisper → land the transcript in `posts` so it flows through corpus → graph → Report like any other source. Models are user-downloaded on demand; yt-dlp auto-updates on every launch.
+**Scope:** Lets OpenReply accept any video URL (YouTube, Vimeo, podcast MP4, conference talks, any site `yt-dlp` supports) → pull audio → transcribe locally with Whisper → land the transcript in `posts` so it flows through corpus → graph → Report like any other source. Models are user-downloaded on demand; yt-dlp auto-updates on every launch.
 
 ---
 
@@ -115,7 +115,7 @@ Rationale for defaulting to `small.en`:
 ## 4. Storage layout
 
 ```
-~/Library/Application Support/com.shantanu.gapmap/reddit-myind/
+~/Library/Application Support/com.shantanu.openreply/reddit-myind/
     whisper-models/
         small.en/                   ← user-downloaded; from Systran/faster-whisper-small.en
             model.bin
@@ -1073,7 +1073,7 @@ def fetch_video(
         audio_path = audio_dir / f"{video_id}.m4a"
         if not audio_path.exists():
             import yt_dlp
-            ffmpeg = os.environ.get("GAPMAP_FFMPEG_PATH")    # set by Rust side
+            ffmpeg = os.environ.get("OPENREPLY_FFMPEG_PATH")    # set by Rust side
             ydl_opts = {
                 "format": "bestaudio[ext=m4a]/bestaudio",
                 "outtmpl": str(audio_path),
@@ -1166,7 +1166,7 @@ def _to_srt(segments: list[dict]) -> str:
 
 ## 21.5. Reuse already-installed Whisper models (no redundant download)
 
-Gap Map auto-detects Whisper models the user already has on disk from other
+OpenReply auto-detects Whisper models the user already has on disk from other
 Python projects and reuses them in place. No copy, no re-download, no
 config file to edit. First run of a user who already transcribed videos
 somewhere else sees everything they have.
@@ -1176,7 +1176,7 @@ somewhere else sees everything they have.
 Per tier, the first match wins:
 
 1. **App-managed** — `<data>/whisper-models/<tier>/` (dir the app itself populates via HuggingFace download).
-2. **Env override** — `$GAPMAP_WHISPER_MODELS_DIR/<tier>/` (power users + shared machines).
+2. **Env override** — `$OPENREPLY_WHISPER_MODELS_DIR/<tier>/` (power users + shared machines).
 3. **HuggingFace hub cache** — `<HF_HUB_CACHE or ~/.cache/huggingface/hub>/models--Systran--faster-whisper-<tier>/snapshots/<rev>/`. Honours `HF_HOME` + `HF_HUB_CACHE` env. Prefers the snapshot pointed at by `refs/main`; falls back to the newest snapshot with valid files.
 4. **Common dirs** — `~/.cache/whisper/<tier>/`, `~/whisper-models/<tier>/`, `/opt/whisper/<tier>/`.
 
@@ -1229,7 +1229,7 @@ Each row now shows its source:
 
 - `Installed` — app-managed (Download button was clicked here once).
 - `HuggingFace cache` — found in `~/.cache/huggingface/hub/`.
-- `Custom dir` — from `$GAPMAP_WHISPER_MODELS_DIR`.
+- `Custom dir` — from `$OPENREPLY_WHISPER_MODELS_DIR`.
 - `System dir` — `~/.cache/whisper/` etc.
 
 **External rows expose only a "Use it" button** (sets the `.default` marker
@@ -1242,7 +1242,7 @@ Welcome wizard expanded from 4 steps to 5. Step 4 auto-detects and, if a
 suitable tier is found, shows:
 
 ```
-✓ Found existing install — Gap Map can reuse 2 tiers already on your Mac.
+✓ Found existing install — OpenReply can reuse 2 tiers already on your Mac.
   ○ tiny.en                                     tiny.en installed (HF)
   ● small.en (recommended)   HuggingFace cache  ← prefilled
   ○ medium.en
@@ -1261,7 +1261,7 @@ Recommended: small.en (480 MB, ~30 min for a 60-min talk on M1 CPU).
 ```
 
 User can always hit **Skip — set up later** (flag stored in
-`localStorage['gapmap.onboarding.whisper_skipped']`). The Settings card
+`localStorage['openreply.onboarding.whisper_skipped']`). The Settings card
 picks up the same state after onboarding finishes.
 
 ### 21.5.7 Power-user override
@@ -1269,10 +1269,10 @@ picks up the same state after onboarding finishes.
 For shared machines / fleet installs:
 
 ```bash
-export GAPMAP_WHISPER_MODELS_DIR=/opt/company-shared/whisper
+export OPENREPLY_WHISPER_MODELS_DIR=/opt/company-shared/whisper
 ```
 
-`<GAPMAP_WHISPER_MODELS_DIR>/<tier>/` is scanned first (ahead of HF cache
+`<OPENREPLY_WHISPER_MODELS_DIR>/<tier>/` is scanned first (ahead of HF cache
 and common dirs). Every sibling app pointing the same env variable
 at the same NFS/APFS share reuses the same models — no tier gets
 re-downloaded per user.
@@ -1282,7 +1282,7 @@ re-downloaded per user.
 `tests/transcribe/test_external_discovery.py` (6 cases):
 
 - HF hub snapshot detected → `source='hf_hub'`.
-- `GAPMAP_WHISPER_MODELS_DIR` takes priority over HF cache.
+- `OPENREPLY_WHISPER_MODELS_DIR` takes priority over HF cache.
 - Nothing installed anywhere → `[]`.
 - `download_model` short-circuits when external exists (must NOT call `snapshot_download`).
 - `resolve_model_path` prefers the app-managed dir on conflict.

@@ -1,14 +1,14 @@
-# Contributing to Gap Map
+# Contributing to OpenReply
 
-Thank you for your interest in contributing. Gap Map is a local-first research tool and contributions are welcome in all forms — bug reports, documentation improvements, new data sources, and code.
+Thank you for your interest in contributing. OpenReply is a local-first research tool and contributions are welcome in all forms — bug reports, documentation improvements, new data sources, and code.
 
 ---
 
 ## Quick start
 
 ```bash
-git clone https://github.com/shaantanu9/gap-map-pro.git
-cd gap-map-pro
+git clone https://github.com/shaantanu9/openreply.git
+cd openreply
 uv sync --all-extras          # install everything including dev deps
 uv run pytest tests/ -q       # run the test suite
 ```
@@ -19,12 +19,12 @@ Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/).
 
 ## What to work on
 
-Check the [open issues](https://github.com/shaantanu9/gap-map-pro/issues) — bugs labeled `good first issue` are the best entry point. If you have an idea not tracked yet, open an issue first so we can discuss before you invest time.
+Check the [open issues](https://github.com/shaantanu9/openreply/issues) — bugs labeled `good first issue` are the best entry point. If you have an idea not tracked yet, open an issue first so we can discuss before you invest time.
 
 ### High-value areas
 
-- **New data sources** — add a source adapter in `src/gapmap/sources/`. Each adapter is ~50 lines; follow the shape of `arxiv.py` or `hackernews.py`.
-- **MCP tools** — new tools in `src/gapmap/mcp/server.py` following the `@mcp.tool()` pattern.
+- **New data sources** — add a source adapter in `src/openreply/sources/`. Each adapter is ~50 lines; follow the shape of `arxiv.py` or `hackernews.py`.
+- **MCP tools** — new tools in `src/openreply/mcp/server.py` following the `@mcp.tool()` pattern.
 - **Prompts** — improve any prompt in `prompts/*.yaml` without touching code.
 - **Tests** — `tests/` is sparse. Any new test that covers a real behavior is welcome.
 - **Docs** — fix errors, add examples, improve clarity in any `.md` file.
@@ -50,7 +50,7 @@ python -m py_compile $(find src -name "*.py")   # syntax check
 
 ## Adding a data source
 
-Each source lives in `src/gapmap/sources/<name>.py`. The file must export a `fetch_<name>(query, limit, **kwargs) -> list[dict]` function. Each returned row must match the `posts` table shape:
+Each source lives in `src/openreply/sources/<name>.py`. The file must export a `fetch_<name>(query, limit, **kwargs) -> list[dict]` function. Each returned row must match the `posts` table shape:
 
 ```python
 {
@@ -73,7 +73,7 @@ Each source lives in `src/gapmap/sources/<name>.py`. The file must export a `fet
 }
 ```
 
-Then wire it into `src/gapmap/sources/__init__.py` and add an `@mcp.tool()` entry in `src/gapmap/mcp/server.py`. See `ARCHITECTURE.md` for the full data flow.
+Then wire it into `src/openreply/sources/__init__.py` and add an `@mcp.tool()` entry in `src/openreply/mcp/server.py`. See `ARCHITECTURE.md` for the full data flow.
 
 ---
 

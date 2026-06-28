@@ -1,7 +1,7 @@
 # WhyBuddy Skills System — Deep Analysis
 
 **Date:** 2026-06-13
-**Source repo:** `myind-gapmap-ref/WhyBuddy`
+**Source repo:** `myind-openreply-ref/WhyBuddy`
 **Scope:** All skills-related surfaces — shared contracts, server-side registry/activator/monitor, lobster-executor sandbox skill system, built-in skill catalog, security model, authoring contract.
 
 ---
@@ -18,7 +18,7 @@
 8. [Security Model](#8-security-model)
 9. [Monitoring and Observability](#9-monitoring-and-observability)
 10. [Notable Patterns Worth Stealing](#10-notable-patterns-worth-stealing)
-11. [Port to Gap Map](#11-port-to-gap-map)
+11. [Port to OpenReply](#11-port-to-openreply-map)
 
 ---
 
@@ -522,7 +522,7 @@ This appears in `job.started`, `job.completed`, `job.failed` events and in `resu
 
 `shared/executor/skill-manifest.ts:113-158` uses a `.strict()` Zod schema for `skill.json`. Unknown fields are rejected outright. This means a developer cannot accidentally rely on undocumented behavior — the contract is enforced at parse time, not discovered at runtime.
 
-**Why it matters:** In Gap Map's Python sidecar, skill/tool configs are often free-form dicts. A Zod-style (or Pydantic) `.strict()` schema with known-enum capability validation would catch authoring mistakes at load time.
+**Why it matters:** In OpenReply's Python sidecar, skill/tool configs are often free-form dicts. A Zod-style (or Pydantic) `.strict()` schema with known-enum capability validation would catch authoring mistakes at load time.
 
 ### 10.2 Capability-Based Auto-Selection with Safety Penalty
 
@@ -534,25 +534,25 @@ This appears in `job.started`, `job.completed`, `job.failed` events and in `resu
 
 Schema rejects `..` and absolute paths at parse time. `isWithinDirectory()` resolves both paths to canonical absolute paths and checks containment. The combination makes it impossible for a skill manifest to point the entrypoint outside its own directory.
 
-**Why it matters:** Gap Map's Python sidecar accepts user-specified file paths. The same two-layer pattern (regex + resolved containment check) applied at the CLI arg parse level would eliminate a class of local path traversal issues.
+**Why it matters:** OpenReply's Python sidecar accepts user-specified file paths. The same two-layer pattern (regex + resolved containment check) applied at the CLI arg parse level would eliminate a class of local path traversal issues.
 
 ### 10.4 Governance Opt-In Pattern
 
 Sensitive capabilities (credentials, network, filesystem-write) require the **caller** to explicitly set `skillPolicy.allowCredentials = true` etc. The skill manifest declares what it *needs*; the caller decides whether to *grant* it for this specific job. Neither party can unilaterally escalate.
 
-**Why it matters:** In Gap Map, all Python pipeline code runs with whatever permissions the sidecar process has. A governance layer that requires explicit per-call opt-in for sensitive operations (web search, file writes) would provide a minimal audit trail.
+**Why it matters:** In OpenReply, all Python pipeline code runs with whatever permissions the sidecar process has. A governance layer that requires explicit per-call opt-in for sensitive operations (web search, file writes) would provide a minimal audit trail.
 
 ### 10.5 Artifact-Manifest Convention
 
 Skills write their own `artifact-manifest.json` to the artifacts directory. The executor reads this to attach correct `mimeType`, `previewType`, `kind`, `description` metadata without needing to know anything about the skill's outputs ahead of time. The fallback (filename-extension inference) ensures backward compatibility for skills that don't write a manifest.
 
-**Why it matters:** Gap Map's paper pipeline emits various output files. An `artifact-manifest.json` convention would allow the Tauri frontend to display artifacts with correct rendering (PDF viewer, JSON tree, image preview) without hardcoding file type logic in the frontend.
+**Why it matters:** OpenReply's paper pipeline emits various output files. An `artifact-manifest.json` convention would allow the Tauri frontend to display artifacts with correct rendering (PDF viewer, JSON tree, image preview) without hardcoding file type logic in the frontend.
 
 ### 10.6 Canary Routing in Skill Registry
 
 `SkillRegistry.findSkillRecord()` (`skill-registry.ts:191-202`): the latest version can carry a `canary` config with `percentage` and `targetVersion`. Version resolution uses `Math.random()` to route the configured percentage to the canary version. The rest get the stable latest.
 
-**Why it matters for Gap Map:** When evolving prompt templates (e.g., the gap-analysis prompt), a canary configuration would allow A/B testing the new prompt on a percentage of research runs without a full rollout.
+**Why it matters for OpenReply:** When evolving prompt templates (e.g., the gap-analysis prompt), a canary configuration would allow A/B testing the new prompt on a percentage of research runs without a full rollout.
 
 ### 10.7 Side-Effect Tracking per Skill Context
 
@@ -566,9 +566,9 @@ The registry test (`skill-registry.test.ts:164-180`) explicitly verifies that sk
 
 ---
 
-## 11. Port to Gap Map
+## 11. Port to OpenReply
 
-Gap Map's current architecture: Tauri desktop app + Python sidecar (PyInstaller) + Claude Code skills (Markdown files in `~/.claude/skills/`) + MCP tools (`src/gapmap/mcp/server.py`) + research pipeline (`src/gapmap/research/`).
+OpenReply's current architecture: Tauri desktop app + Python sidecar (PyInstaller) + Claude Code skills (Markdown files in `~/.claude/skills/`) + MCP tools (`src/openreply/mcp/server.py`) + research pipeline (`src/openreply/research/`).
 
 Below is a prioritized porting plan.
 
@@ -576,7 +576,7 @@ Below is a prioritized porting plan.
 
 **What:** Replace ad-hoc MCP tool definitions with `skill.json` manifests declaring inputs schema, outputs, and capabilities. Keep MCP as the execution mechanism but add the manifest layer for discoverability and governance.
 
-**How:** Add a `skills/` directory to the Gap Map repo. Each Python research tool (OpenAlex fetcher, Semantic Scholar fetcher, paper-pipeline) gets a `skill.json` with `runtime: "python"`, declared input schema, and output artifact types. A Python `SkillRegistry` loads them at sidecar startup.
+**How:** Add a `skills/` directory to the OpenReply repo. Each Python research tool (OpenAlex fetcher, Semantic Scholar fetcher, paper-pipeline) gets a `skill.json` with `runtime: "python"`, declared input schema, and output artifact types. A Python `SkillRegistry` loads them at sidecar startup.
 
 **Effort:** M (3-5 days). Input schemas already implicit in function signatures. Main work is formalizing them.
 
@@ -594,7 +594,7 @@ Below is a prioritized porting plan.
 
 ### 11.3 Prompt Skill Registry (LLM Skills)
 
-**What:** Port the `SkillDefinition` / `SkillRegistry` / `SkillActivator` pattern to manage Gap Map's research prompts (gap-analysis, literature-matrix, finding-summary prompts).
+**What:** Port the `SkillDefinition` / `SkillRegistry` / `SkillActivator` pattern to manage OpenReply's research prompts (gap-analysis, literature-matrix, finding-summary prompts).
 
 **How:** Define a `SkillDefinition` Pydantic model mirroring `shared/skill-contracts.ts`. Store skills in SQLite (already used). `SkillActivator.buildSkillPromptSection()` outputs a prompt fragment injected into research system prompts.
 
@@ -620,7 +620,7 @@ Below is a prioritized porting plan.
 
 **Effort:** L (5-8 days). Requires threading policy through the MCP tool dispatch layer and updating all call sites.
 
-**Value:** M — primarily audit value for now. High value if Gap Map ever runs in a multi-tenant or cloud context where restricting individual research session permissions matters.
+**Value:** M — primarily audit value for now. High value if OpenReply ever runs in a multi-tenant or cloud context where restricting individual research session permissions matters.
 
 ### 11.6 Security Audit Log
 

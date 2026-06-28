@@ -5,7 +5,7 @@
 
 ## Summary
 
-When a user invoked Gap Map's MCP server from Cursor / Claude Code, the
+When a user invoked OpenReply's MCP server from Cursor / Claude Code, the
 Python code created reports, SQLite DBs, and the palace store at
 `<user-project>/data/` instead of the canonical app-data folder. The
 desktop app couldn't see that data, and every new client session
@@ -24,9 +24,9 @@ New `_resolve_data_dir()` helper in `core/config.py`. Resolution order:
 
 1. `REDDIT_MYIND_DATA_DIR` env var (Tauri sidecar continues to set this)
 2. **Platform app-data folder matching Tauri's convention:**
-   - macOS: `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`
-   - Linux: `$XDG_DATA_HOME/com.shantanu.gapmap/reddit-myind`
-   - Windows: `%APPDATA%\com.shantanu.gapmap\reddit-myind`
+   - macOS: `~/Library/Application Support/com.shantanu.openreply/reddit-myind`
+   - Linux: `$XDG_DATA_HOME/com.shantanu.openreply/reddit-myind`
+   - Windows: `%APPDATA%\com.shantanu.openreply\reddit-myind`
 3. Legacy `~/.config/reddit-myind/data`
 4. CWD `./data` (absolute last resort, emits `warnings.warn`)
 
@@ -44,10 +44,10 @@ Bundle ID hardcoded in one constant (`_TAURI_BUNDLE_ID`); must match
 
 From `/tmp` with no env set:
 ```
-_resolve_data_dir   : /Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind
-load_config.data_dir: /Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind
-install.default_data_dir: /Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind
-server._pidfile_path: /Users/x/Library/Application Support/com.shantanu.gapmap/reddit-myind/mcp-server.pid
+_resolve_data_dir   : /Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind
+load_config.data_dir: /Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind
+install.default_data_dir: /Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind
+server._pidfile_path: /Users/x/Library/Application Support/com.shantanu.openreply/reddit-myind/mcp-server.pid
 ```
 
 All four entry points resolve to the same folder regardless of CWD.

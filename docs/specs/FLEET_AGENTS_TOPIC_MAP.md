@@ -18,9 +18,9 @@ visible from the Map tab.
 
 | FSD Fleet concept | Already in repo | Location |
 |---|---|---|
-| 3-level agent memory | Persona system (memories → edges → conclusions → share → rejections) | `src/gapmap/persona/`, 5 DB tables |
-| Debate / Critic / Synthesizer | `deliberate()` — 5-persona structured debate → Confirmed/Probable/Minority/Discarded | `src/gapmap/research/deliberate.py`, MCP `gapmap_deliberate` |
-| Provenance / Checks ledger / Lineage | `checks_ledger` + `lineage` + `record_check()` / `record_lineage()` | `src/gapmap/core/db.py` |
+| 3-level agent memory | Persona system (memories → edges → conclusions → share → rejections) | `src/openreply/persona/`, 5 DB tables |
+| Debate / Critic / Synthesizer | `deliberate()` — 5-persona structured debate → Confirmed/Probable/Minority/Discarded | `src/openreply/research/deliberate.py`, MCP `openreply_deliberate` |
+| Provenance / Checks ledger / Lineage | `checks_ledger` + `lineage` + `record_check()` / `record_lineage()` | `src/openreply/core/db.py` |
 | Clarification gate | Clarified-brief columns on `topic_prefs` | recent commits |
 
 The work is **~80% UI-surfacing + thin orchestration**, not a from-scratch build.
@@ -98,7 +98,7 @@ a column-exists check, matching the clarified-brief lazy-migration pattern.)
 
 ### 4.2 Orchestration — `run_topic_debate(topic, rounds=1, provider=None)`
 
-New function in `src/gapmap/research/debate_run.py` (keeps `deliberate.py` pure):
+New function in `src/openreply/research/debate_run.py` (keeps `deliberate.py` pure):
 
 1. Load cached findings from `topic_insights.report_json`. If none →
    `{ ok: False, reason: "needs_synthesis" }` (no hard error).

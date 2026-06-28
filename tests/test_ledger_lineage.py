@@ -2,8 +2,8 @@ import tempfile, importlib, json
 
 
 def _db(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db; importlib.reload(db); db.get_db()
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db; importlib.reload(db); db.get_db()
     return db
 
 

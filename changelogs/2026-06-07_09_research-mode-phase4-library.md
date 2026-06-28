@@ -17,7 +17,7 @@ research-mode sidebar entry.
 - **`research/paper_library.py`** — collections CRUD + membership + a unified
   `library()` view joining reading status + collection membership across topics.
 - **CLI**: `research library`, `research collections {list|create|rename|delete|add|remove}`.
-- **MCP**: `gapmap_paper_library`, `gapmap_paper_collections`.
+- **MCP**: `openreply_paper_library`, `openreply_paper_collections`.
 - **Tauri**: `paper_library`, `paper_collections` (registered).
 - **api.js**: `paperLibrary`, `paperCollections`.
 - **`screens/library.js`** + route `#/library`: collections sidebar (create/
@@ -31,10 +31,10 @@ research-mode sidebar entry.
   `node --check` + `cargo check` clean.
 
 ## Files Created
-- `src/gapmap/research/paper_library.py`, `app-tauri/src/screens/library.js`,
+- `src/openreply/research/paper_library.py`, `app-tauri/src/screens/library.js`,
   `changelogs/2026-06-07_09_research-mode-phase4-library.md`
 
 ## Files Modified
-- `src/gapmap/cli/main.py`, `src/gapmap/mcp/server.py`,
+- `src/openreply/cli/main.py`, `src/openreply/mcp/server.py`,
   `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`,
   `app-tauri/src/api.js`, `app-tauri/src/main.js`, `app-tauri/index.html`

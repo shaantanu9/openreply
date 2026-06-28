@@ -1,4 +1,4 @@
-# Gap Map — Changes (June 2026 session)
+# OpenReply — Changes (June 2026 session)
 
 > Comprehensive log of everything shipped in the 2026-06-05 → 06 session, across
 > the desktop app (`app-tauri` + Python sidecar), the website
@@ -13,7 +13,7 @@
 |---|---|
 | **Key-hash bug** | `couponService` / trial / webhook create paths hashed the raw key; activation re-normalizes. Aligned all create sites to `hashSecret(normalizeActivationKey(rawKey))`. *(Later confirmed the normalizer re-adds dashes, so the original was correct — net: create paths made explicit, no behavior change.)* |
 | **Signing secret** | Server `TOKEN_SIGNING_SECRET` ↔ DMG `JWT_DESKTOP_SECRET` rotated + verified (`signing_fp = 6713fd9ce909`); CI drift-guard refuses to build on mismatch. |
-| **Dev-app drift** | "works in dev, fails on install" root-caused to the file-watcher rebuilding the dev app **without** the prod base/secret. Relaunch pinned to `gapmap.myind.ai` + baked secret fixed it. |
+| **Dev-app drift** | "works in dev, fails on install" root-caused to the file-watcher rebuilding the dev app **without** the prod base/secret. Relaunch pinned to `openreply.myind.ai` + baked secret fixed it. |
 | **Old DMGs** | Any DMG built before the secret rotation fails with `InvalidSignature` — must use **v0.1.21+**. |
 
 ### Delete → recreate → activate cycle (made bulletproof)
@@ -37,7 +37,7 @@ commercial use needs written approval.
 
 - `core/public_client.py` rewritten `.json` → **RSS** (feedparser); same row shapes.
 - `config.has_reddit_app` + `get_reddit()` read-only PRAW (`client_credentials`) — `id+secret` alone flips to auth mode.
-- BYOK: id/secret written to `~/.config/gapmap/.env`, loaded by the sidecar → live.
+- BYOK: id/secret written to `~/.config/openreply/.env`, loaded by the sidecar → live.
 - Historical (3-yr) Reddit via **PullPush** (existing; archive cutoff ~May 2025).
 
 ---
@@ -62,20 +62,20 @@ commercial use needs written approval.
 
 ---
 
-## 4. Website (`act_suit/activation-suite`, deployed to gapmap.myind.ai)
+## 4. Website (`act_suit/activation-suite`, deployed to openreply.myind.ai)
 
 - Mobile-responsive navbar (hamburger) + download-button contrast fix.
 - **Login-aware navbar** on every page (compact variant was showing "Sign in" while logged in) + Download CTA everywhere.
 - **No duplicate nav items** (Pricing/Dashboard were doubled).
 - **Clean logged-in home** — "Welcome back" app-launcher; conversion-only sections (urgency/invite/get-beta) hidden when signed in. New `SignedInOnly`/`SignedOutOnly` gates.
 - `/api/download` retries **uncached** when a just-published asset isn't in the cached release (fixes per-platform "serves old version").
-- Multi-platform email copy ("Download for Mac" → "Download Gap Map").
+- Multi-platform email copy ("Download for Mac" → "Download OpenReply").
 
 ---
 
 ## 5. Release v0.1.21 (chat decomposition + more)
 
-Tag `v0.1.21` (myind-ai/gapmap) — signed + notarized, all platforms:
+Tag `v0.1.21` (myind-ai/openreply) — signed + notarized, all platforms:
 - Chat backend decomposed into a tested 7-module package + reusable `chatPanel`
   (topic tab + sidebar inline) + `chat doctor` / in-app Diagnose.
 - Custom RSS feeds; collect-skips-Reddit fix.
@@ -88,7 +88,7 @@ additions). PullPush reliability hardening (timeout/retries/mirror) optional.
 ## 6. Frontend tooling (to stop UI regressions)
 
 Installed: Playwright MCP (visual verify), Context7 MCP (live Tailwind/Next docs),
-Tailwind v4 skill, UI/UX Pro Max (7 skills), and a project `gapmap-design-system`
+Tailwind v4 skill, UI/UX Pro Max (7 skills), and a project `openreply-design-system`
 skill capturing real tokens + the `@layer` rule (the black-on-black-button cause)
 + navbar/login patterns.
 

@@ -5,7 +5,7 @@
 
 ## Summary
 
-Turns Gap Map's MCP server into a first-class paper-research tool without spinning up a separate app. Decision recorded: **keep it in Gap Map** for now — 80% of the infrastructure (Palace semantic index, SQLite, graph, Solutions Agent, 4 paper sources) is already built, the differentiator is the fusion of user pain + science, and pre-splitting for an unvalidated academic audience is premature. If paper-research telemetry shows up, forking a lean "Gap Map Science" variant reusing the same sidecar is a 1-day job.
+Turns OpenReply's MCP server into a first-class paper-research tool without spinning up a separate app. Decision recorded: **keep it in OpenReply** for now — 80% of the infrastructure (Palace semantic index, SQLite, graph, Solutions Agent, 4 paper sources) is already built, the differentiator is the fusion of user pain + science, and pre-splitting for an unvalidated academic audience is premature. If paper-research telemetry shows up, forking a lean "OpenReply Science" variant reusing the same sidecar is a 1-day job.
 
 ## Changes
 
@@ -14,15 +14,15 @@ Turns Gap Map's MCP server into a first-class paper-research tool without spinni
 - `sources/crossref.py` — authoritative DOI metadata, funder/grant info, reference lists for paywalled papers. Free; `CROSSREF_MAILTO` env var puts us in the polite pool. Functions: `fetch_crossref`, `fetch_by_doi`.
 
 **9 new MCP tools** (server.py, paper-research toolkit block):
-- `gapmap_fetch_semantic_scholar(query, limit, year_from, open_access_only)`
-- `gapmap_paper_citations(paper_id, limit)` — accepts S2 id / DOI / arXiv id
-- `gapmap_paper_references(paper_id, limit)`
-- `gapmap_fetch_crossref(query, limit, year_from, filter_type)`
-- `gapmap_fetch_by_doi(doi)` — one-shot canonical lookup
-- `gapmap_research_papers(query, topic, limit_per_source, sources, year_from, persist)` — multi-source search across 6 paper sources in parallel, deduped by id, auto-persisted to `posts` and tagged to `topic` for downstream `semantic_search` / `graph_build` / `analyze_papers_bulk`
-- `gapmap_analyze_paper(topic, post_id, force)` — LLM summary / claims / methods / tier / relevance (cached in `paper_analyses`)
-- `gapmap_analyze_papers_bulk(topic, limit, force)` — batch analysis, citation-ordered
-- `gapmap_paper_analyses(topic, limit)` — read cached LLM analyses, no LLM call
+- `openreply_fetch_semantic_scholar(query, limit, year_from, open_access_only)`
+- `openreply_paper_citations(paper_id, limit)` — accepts S2 id / DOI / arXiv id
+- `openreply_paper_references(paper_id, limit)`
+- `openreply_fetch_crossref(query, limit, year_from, filter_type)`
+- `openreply_fetch_by_doi(doi)` — one-shot canonical lookup
+- `openreply_research_papers(query, topic, limit_per_source, sources, year_from, persist)` — multi-source search across 6 paper sources in parallel, deduped by id, auto-persisted to `posts` and tagged to `topic` for downstream `semantic_search` / `graph_build` / `analyze_papers_bulk`
+- `openreply_analyze_paper(topic, post_id, force)` — LLM summary / claims / methods / tier / relevance (cached in `paper_analyses`)
+- `openreply_analyze_papers_bulk(topic, limit, force)` — batch analysis, citation-ordered
+- `openreply_paper_analyses(topic, limit)` — read cached LLM analyses, no LLM call
 
 Claude can now do end-to-end literature review without touching the app UI:
 
@@ -53,7 +53,7 @@ All 13 paper-related MCP tools register cleanly. ChromaDB + graph pipeline uncha
 
 ## Strategic note
 
-The decision to keep this in Gap Map (vs. forking a "Gap Map Science" app) is recorded in the changelog for this entry's own reasoning. Revisit when:
+The decision to keep this in OpenReply (vs. forking a "OpenReply Science" app) is recorded in the changelog for this entry's own reasoning. Revisit when:
 - Academic-audience signups (if we ever add auth) exceed 100 users
 - Paper-source MCP calls outnumber Reddit-source MCP calls in aggregate telemetry
 - Someone asks for Zotero integration or institutional SSO (both imply a dedicated product)

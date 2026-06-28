@@ -40,10 +40,10 @@ shareable HTML) are tracked in
 
 ## Files Created
 
-- `src/gapmap/sources/polymarket.py`, `truthsocial.py`, `digg.py`, `tiktok.py`,
+- `src/openreply/sources/polymarket.py`, `truthsocial.py`, `digg.py`, `tiktok.py`,
   `instagram.py`, `threads.py`, `pinterest.py`, `x_twitter.py`
-- `src/gapmap/sources/_scrapecreators.py`, `_cookie_extract.py`
-- `src/gapmap/sources/vendor/bird-search/` (vendored MIT Node client)
+- `src/openreply/sources/_scrapecreators.py`, `_cookie_extract.py`
+- `src/openreply/sources/vendor/bird-search/` (vendored MIT Node client)
 - `tests/test_polymarket.py`, `test_truthsocial.py`, `test_digg.py`,
   `test_tiktok.py`, `test_instagram.py`, `test_threads.py`, `test_pinterest.py`,
   `test_x_twitter.py`, `test_cookie_extract.py`, `test_scrapecreators_helper.py`,
@@ -55,8 +55,8 @@ shareable HTML) are tracked in
 
 ## Files Modified
 
-- `src/gapmap/sources/__init__.py` — exports for the 8 new fetchers
-- `src/gapmap/sources/collect_adapter.py` — `run_*` wrappers + `SOURCES` entries
+- `src/openreply/sources/__init__.py` — exports for the 8 new fetchers
+- `src/openreply/sources/collect_adapter.py` — `run_*` wrappers + `SOURCES` entries
 - `app-tauri/src/screens/collect.js` — 8 source-picker labels (both label maps)
 - `app-tauri/src/screens/byok.js` — 6 BYOK key rows
 - `app-tauri/src-tauri/src/commands.rs` — 6 keys in `ALLOWED` + `byok_status`

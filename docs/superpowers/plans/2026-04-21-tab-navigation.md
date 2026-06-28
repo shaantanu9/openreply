@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Chrome-style tab strip at the top of the Gap Map window so users can keep multiple screens open simultaneously with right-click context menus and full keyboard shortcuts.
+**Goal:** Add Chrome-style tab strip at the top of the OpenReply window so users can keep multiple screens open simultaneously with right-click context menus and full keyboard shortcuts.
 
-**Architecture:** Pure frontend state in `localStorage` (`gapmap.tabs.v1`); a new `lib/tabs.js` module owns the store, strip rendering, and keyboard; `lib/contextMenu.js` is a reusable context-menu primitive; `main.js` router intercepts hashchange → tab focus/open.
+**Architecture:** Pure frontend state in `localStorage` (`openreply.tabs.v1`); a new `lib/tabs.js` module owns the store, strip rendering, and keyboard; `lib/contextMenu.js` is a reusable context-menu primitive; `main.js` router intercepts hashchange → tab focus/open.
 
 **Tech Stack:** Vanilla JS (no framework), existing `style.css`, Lucide icons, `localStorage`.
 
@@ -35,7 +35,7 @@
 
 ```js
 // app-tauri/src/lib/tabs.js
-const KEY = 'gapmap.tabs.v1';
+const KEY = 'openreply.tabs.v1';
 const MAX_TABS = 50;
 const MAX_CLOSED = 10;
 
@@ -526,10 +526,10 @@ async function route() {
     if (owner) tabStore.focus(owner.id);
     else {
       // Replace current tab's hash in-place (Chrome-like default)
-      const s = JSON.parse(localStorage.getItem('gapmap.tabs.v1'));
+      const s = JSON.parse(localStorage.getItem('openreply.tabs.v1'));
       const t = s.tabs.find(x => x.id === s.activeId);
       if (t) { t.hash = hash; t.title = titleForHash(hash); t.icon = iconForHash(hash); }
-      localStorage.setItem('gapmap.tabs.v1', JSON.stringify(s));
+      localStorage.setItem('openreply.tabs.v1', JSON.stringify(s));
     }
   }
 
@@ -773,7 +773,7 @@ Then in the running app:
 **Type:** Feature
 
 ## Summary
-Adds a persistent tab strip at the top of Gap Map. Users keep multiple screens open, right-click for Chrome-like context menu, drag to reorder, and get full keyboard shortcuts. Tab state + scroll survive app restart.
+Adds a persistent tab strip at the top of OpenReply. Users keep multiple screens open, right-click for Chrome-like context menu, drag to reorder, and get full keyboard shortcuts. Tab state + scroll survive app restart.
 
 ## Files Created
 - `app-tauri/src/lib/tabs.js`

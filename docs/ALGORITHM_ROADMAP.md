@@ -1,10 +1,10 @@
-# Gap Map — algorithm & retrieval roadmap
+# OpenReply — algorithm & retrieval roadmap
 
 > **Status:** roadmap — nothing here is wired in yet. Existing palace/ChromaDB,
 > dense-graph-relations, hybrid search, and KMeans clustering stay as-is.
 > Items below are additive upgrades; pick what to ship and in what order.
 >
-> Generated **2026-05-26** after auditing current `src/gapmap/` for palace,
+> Generated **2026-05-26** after auditing current `src/openreply/` for palace,
 > graph, clustering, and rerank usage.
 
 ---
@@ -13,14 +13,14 @@
 
 | Layer | Implementation | File |
 |---|---|---|
-| Embedder | ONNX MiniLM-L6-v2 (~90 MB) | `gapmap.research._clustering`, `gapmap.research.palace` |
-| Vector store | ChromaDB persistent client | `gapmap.research.palace` |
-| Hybrid retrieval | 0.6 × cosine + 0.4 × BM25 linear blend | `gapmap.research.search_all`, `gapmap.research.chat` |
-| Graph edges | `relates_to`, `potentially_solves`, `could_address`, `co_evidenced` | `gapmap.graph.relations` (dense_graph_relations skill — already integrated) |
-| Edge thresholds | cosine ≥ 0.55 (`relates_to`) / 0.50 (`potentially_solves`) | env-tunable (`GAPMAP_REL_THRESHOLD`, `GAPMAP_SOLVE_THRESHOLD`) |
-| Clustering | KMeans + silhouette score (sklearn) | `gapmap.research._clustering.kmeans_with_silhouette` |
-| Audience clustering | KMeans (deliberately avoided HDBSCAN to keep dep tree tight) | `gapmap.research.idea_scan` |
-| Chat retrieval | `palace.search_posts(query, topic, k=20, rerank=True)` | `gapmap.research.chat` |
+| Embedder | ONNX MiniLM-L6-v2 (~90 MB) | `openreply.research._clustering`, `openreply.research.palace` |
+| Vector store | ChromaDB persistent client | `openreply.research.palace` |
+| Hybrid retrieval | 0.6 × cosine + 0.4 × BM25 linear blend | `openreply.research.search_all`, `openreply.research.chat` |
+| Graph edges | `relates_to`, `potentially_solves`, `could_address`, `co_evidenced` | `openreply.graph.relations` (dense_graph_relations skill — already integrated) |
+| Edge thresholds | cosine ≥ 0.55 (`relates_to`) / 0.50 (`potentially_solves`) | env-tunable (`OPENREPLY_REL_THRESHOLD`, `OPENREPLY_SOLVE_THRESHOLD`) |
+| Clustering | KMeans + silhouette score (sklearn) | `openreply.research._clustering.kmeans_with_silhouette` |
+| Audience clustering | KMeans (deliberately avoided HDBSCAN to keep dep tree tight) | `openreply.research.idea_scan` |
+| Chat retrieval | `palace.search_posts(query, topic, k=20, rerank=True)` | `openreply.research.chat` |
 | Reranker | linear blend (no cross-encoder) | n/a |
 
 **The palace is used heavily** — 10+ modules. Confirmed working as intended.
@@ -57,11 +57,11 @@ warmup pattern), ~30 ms per query candidate, no new dep tree (uses ONNX
 runtime already in palace).
 
 **Wire-in:**
-- New file: `src/gapmap/research/reranker.py` — loads ONNX bge-reranker-v2-m3,
+- New file: `src/openreply/research/reranker.py` — loads ONNX bge-reranker-v2-m3,
   exposes `rerank(query, candidates) -> sorted candidates`
 - `palace.search_posts` gains `cross_encoder=True` argument (default off
   until model is downloaded)
-- `mcp.serve.gapmap_semantic_search` exposes the flag to MCP clients
+- `mcp.serve.openreply_semantic_search` exposes the flag to MCP clients
 - Settings → Palace card gets a "Install reranker (~300 MB)" button next
   to the existing "Install palace" button
 
@@ -93,7 +93,7 @@ which is pure Python; the graph is already in `graph_nodes` /
 `graph_edges` tables. Per-query cost ~5-20 ms on graphs up to ~10K nodes.
 
 **Wire-in:**
-- New file: `src/gapmap/graph/ppr.py` — exposes `ppr_rank(seed_node_ids,
+- New file: `src/openreply/graph/ppr.py` — exposes `ppr_rank(seed_node_ids,
   topic, alpha=0.5) -> ranked list`
 - `palace.search_posts` learns about graph: when `topic` is given,
   takes top-K vector hits as seeds, runs PPR, returns the merged ranking
@@ -130,7 +130,7 @@ your tool actually has to do).
 Haiku 4). For a topic with 500 posts → 500-1000 findings → ~50¢ one-time.
 
 **Wire-in:**
-- `src/gapmap/research/findings_extract.py` gets a `with_context=True` flag
+- `src/openreply/research/findings_extract.py` gets a `with_context=True` flag
 - Each finding's `text` field in `graph_nodes` carries `{ text, context }`
   separately; the embedder concatenates at embed time but the UI shows
   only `text`
@@ -173,10 +173,10 @@ answer well. Particularly strong for:
 - Stored as new `graph_communities` table
 
 **Wire-in:**
-- New file: `src/gapmap/graph/communities.py` — Leiden + per-community LLM
+- New file: `src/openreply/graph/communities.py` — Leiden + per-community LLM
   summary
 - Runs after `build_structural` + `dense_graph_relations` density pass
-- New MCP tool: `gapmap_topic_landscape(topic)` returns the community
+- New MCP tool: `openreply_topic_landscape(topic)` returns the community
   hierarchy
 - UI: new "Landscape" tab on the topic page
 
@@ -207,7 +207,7 @@ trained on much more diverse data than MiniLM, so it handles edge cases
 - Memory: ~1 GB during inference (vs ~200 MB for MiniLM)
 
 **Wire-in:**
-- `gapmap.research.palace` learns to read a `embedder=` config knob
+- `openreply.research.palace` learns to read a `embedder=` config knob
 - New "Embedder" picker in Settings → Palace card with MiniLM / BGE-M3
   options
 - Reindex triggered on switch
@@ -321,12 +321,12 @@ Tier 2/3 are larger surgery — discuss before committing.
 
 Before merging any of A/B/C, smoke-test through:
 
-1. **CLI**: `gapmap research search-all --topic "X" --query "Y"` returns
+1. **CLI**: `openreply research search-all --topic "X" --query "Y"` returns
    different + better top-K than before
-2. **MCP**: `gapmap_semantic_search(topic, query)` returns the new ranking
-3. **Chat**: `gapmap chat --topic "X" "Q"` cites different sources for
+2. **MCP**: `openreply_semantic_search(topic, query)` returns the new ranking
+3. **Chat**: `openreply chat --topic "X" "Q"` cites different sources for
    queries that involve multi-hop reasoning
-4. **Gap discovery**: `gapmap research gap-discovery --topic "X"`
+4. **Gap discovery**: `openreply research gap-discovery --topic "X"`
    surfaces connections that weren't apparent before
 5. **Insights**: the topic Insights tab renders new related-painpoint
    threads via the graph traversal

@@ -29,7 +29,7 @@ Phase 2 fails to launch the user keeps full results.
 
 - New `app-tauri/src/lib/redditEnrich.js`:
   - `markRedditPending(topic, {aggressive})` — set before Phase 1.
-  - `wireRedditEnrich()` — listens on the global `gapmap:collect-done-global`
+  - `wireRedditEnrich()` — listens on the global `openreply:collect-done-global`
     bus; on a **successful** (`code 0`) Phase-1 done for a topic with a pending
     Reddit pass, kicks `startCollect(topic, aggressive, '' /*no external*/, false
     /*reddit on*/, 'queue')`, sets the active-collect topic so its events are

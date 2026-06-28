@@ -83,7 +83,7 @@ Changelog:
 | **G2** | Not built | ToS prohibits automated access; public API gated by partnership |
 | **Capterra** | Not built | Same as G2 |
 | **Gartner Peer Insights / TrustRadius** | Not built | Enterprise, hostile to scraping |
-| **Intercom / Zendesk (private tickets)** | Not built | Gated on the cloud-pivot decision in `docs/DUAL_MODE_PIVOT.md` + OAuth infra that Gap Map doesn't have yet |
+| **Intercom / Zendesk (private tickets)** | Not built | Gated on the cloud-pivot decision in `docs/DUAL_MODE_PIVOT.md` + OAuth infra that OpenReply doesn't have yet |
 | **Stripe (churn events)** | Not built | Same as above |
 | **Amazon reviews** | Not built | ToS + ASIN-discovery complexity |
 

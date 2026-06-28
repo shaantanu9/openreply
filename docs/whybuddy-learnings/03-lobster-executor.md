@@ -1,7 +1,7 @@
 # WhyBuddy: lobster-executor Deep Dive
 
 **Scope:** `services/lobster-executor/` — the agent execution engine powering WhyBuddy's autonomous task runner.
-**Analysed:** 2026-06-13 for porting ideas into Gap Map (Tauri 2 + Python sidecar + MCP server).
+**Analysed:** 2026-06-13 for porting ideas into OpenReply (Tauri 2 + Python sidecar + MCP server).
 
 ---
 
@@ -89,7 +89,7 @@ POST /api/executor/jobs
 ### `src/native-runner.ts` — Host-Process Runner
 - **Purpose:** Runs commands directly on the host via `child_process.spawn`. Also implements `runAIJob()` at `native-runner.ts:249` which POSTs to `SERVER_BASE_URL/api/chat` (the WhyBuddy server's own LLM proxy) instead of calling an LLM directly.
 - **Cancel:** SIGTERM sent to child process (`native-runner.ts:32`).
-- **Gap Map relevance:** This is the closest analogue to Gap Map's Python sidecar pattern — spawn a process, stream its stdout/stderr, wait for exit, collect artifacts.
+- **OpenReply relevance:** This is the closest analogue to OpenReply's Python sidecar pattern — spawn a process, stream its stdout/stderr, wait for exit, collect artifacts.
 
 ### `ai-bridge/index.js` — In-Container LLM Bridge
 - **Purpose:** Runs **inside** the Docker container. Provides a `generate(messages, options)` function that calls an LLM provider.
@@ -231,90 +231,90 @@ skills/<name>/
 ## 6. Notable Patterns Worth Stealing
 
 ### 6.1 Three-Mode Runner Strategy Pattern
-`src/runner.ts` defines a `JobRunner` interface with `run()`, `cancel?()`, `pause?()`, `resume?()`. `createJobRunner()` factory selects `MockRunner | NativeRunner | DockerRunner` based on `executionMode`. This is directly applicable to Gap Map: swap Python sidecar / subprocess / MCP tool backends behind the same interface.
+`src/runner.ts` defines a `JobRunner` interface with `run()`, `cancel?()`, `pause?()`, `resume?()`. `createJobRunner()` factory selects `MockRunner | NativeRunner | DockerRunner` based on `executionMode`. This is directly applicable to OpenReply: swap Python sidecar / subprocess / MCP tool backends behind the same interface.
 
 ### 6.2 HMAC-Signed Callback Events
-Every event POSTed back to the server carries `x-cube-executor-signature` = `HMAC-SHA256(secret, "${timestamp}.${body}")`. The timestamp prevents replay attacks. The `executorId` header identifies the sender. Gap Map's MCP server could use the same pattern to authenticate tool-result callbacks from the sidecar.
+Every event POSTed back to the server carries `x-cube-executor-signature` = `HMAC-SHA256(secret, "${timestamp}.${body}")`. The timestamp prevents replay attacks. The `executorId` header identifies the sender. OpenReply's MCP server could use the same pattern to authenticate tool-result callbacks from the sidecar.
 
 ### 6.3 Capability Negotiation at Submit Time
-`validateRequiredCapabilities()` (`capabilities.ts:190`) checks the job's `requiredCapabilities[]` against the executor's live capability set before accepting the job. Jobs are rejected with a structured error listing `unsupportedCapabilities` and `supportedCapabilities`. For Gap Map: tools/sources could declare their capabilities (e.g. `source.pubmed`, `source.semantic_scholar`), and the pipeline could check availability before enqueueing.
+`validateRequiredCapabilities()` (`capabilities.ts:190`) checks the job's `requiredCapabilities[]` against the executor's live capability set before accepting the job. Jobs are rejected with a structured error listing `unsupportedCapabilities` and `supportedCapabilities`. For OpenReply: tools/sources could declare their capabilities (e.g. `source.pubmed`, `source.semantic_scholar`), and the pipeline could check availability before enqueueing.
 
 ### 6.4 Skill Auto-Selection by Capability Score
-`SandboxSkillRegistry.findByCapabilities()` (`skill-registry.ts:111`) scores skills: `covered/required - safetyPenalty`. Penalty is 0.08 for credential-needing skills, 0.04 for network-required. This means the safest skill that covers the required capabilities is preferred. Gap Map's tool-selection logic could use a similar scoring approach.
+`SandboxSkillRegistry.findByCapabilities()` (`skill-registry.ts:111`) scores skills: `covered/required - safetyPenalty`. Penalty is 0.08 for credential-needing skills, 0.04 for network-required. This means the safest skill that covers the required capabilities is preferred. OpenReply's tool-selection logic could use a similar scoring approach.
 
 ### 6.5 Three-Level Security Presets
-`strict` / `balanced` / `permissive` preset ladder (`security-policy.ts:138`) is clean and extensible. The key insight: AI jobs need outbound network but should keep other hardening, so `resolveSecurityPolicyForRecord()` silently upgrades only the network from `strict→balanced` for `aiEnabled` jobs. For Gap Map processes (e.g. running user-specified Python): the same ladder applies even in a subprocess context — restrict env vars, working directory, and kill on timeout.
+`strict` / `balanced` / `permissive` preset ladder (`security-policy.ts:138`) is clean and extensible. The key insight: AI jobs need outbound network but should keep other hardening, so `resolveSecurityPolicyForRecord()` silently upgrades only the network from `strict→balanced` for `aiEnabled` jobs. For OpenReply processes (e.g. running user-specified Python): the same ladder applies even in a subprocess context — restrict env vars, working directory, and kill on timeout.
 
 ### 6.6 Credential Scrubbing on All AI Job Outputs
-After every AI-enabled container run, `CredentialScrubber` walks the entire artifacts directory and the log file, replacing `sk-...` / `clp_...` patterns and exact injected key values with `[REDACTED]`. This runs before events are emitted and before artifacts are returned. Gap Map should apply the same post-processing to any LLM-call logs before writing to SQLite or returning to the frontend.
+After every AI-enabled container run, `CredentialScrubber` walks the entire artifacts directory and the log file, replacing `sk-...` / `clp_...` patterns and exact injected key values with `[REDACTED]`. This runs before events are emitted and before artifacts are returned. OpenReply should apply the same post-processing to any LLM-call logs before writing to SQLite or returning to the frontend.
 
 ### 6.7 Idempotency Key on Job Submission
-`service.ts:451-461` — if `request.requestId === existing.request.requestId` OR `request.idempotencyKey === existing.request.idempotencyKey`, the same accepted response is returned without re-running. Prevents double-execution on network retries. Gap Map's MCP tool calls should carry idempotency keys for any stateful side-effect operations (paper ingestion, embedding writes).
+`service.ts:451-461` — if `request.requestId === existing.request.requestId` OR `request.idempotencyKey === existing.request.idempotencyKey`, the same accepted response is returned without re-running. Prevents double-execution on network retries. OpenReply's MCP tool calls should carry idempotency keys for any stateful side-effect operations (paper ingestion, embedding writes).
 
 ### 6.8 Events JSONL + Artifact Manifest
-Jobs write a local `events.jsonl` and a `result.json` plus an `artifact-manifest.json` produced by the container. The manifest contains per-file `mimeType`, `previewType`, `description`, `id`, `size`. This self-describing artifact envelope is exactly what Gap Map needs for its paper pipeline outputs — each research result should carry metadata describing what it is, how to preview it, and what produced it.
+Jobs write a local `events.jsonl` and a `result.json` plus an `artifact-manifest.json` produced by the container. The manifest contains per-file `mimeType`, `previewType`, `description`, `id`, `size`. This self-describing artifact envelope is exactly what OpenReply needs for its paper pipeline outputs — each research result should carry metadata describing what it is, how to preview it, and what produced it.
 
 ### 6.9 Pause/Resume via Promise Gate
-`waitUntilResumed()` (`service.ts:661`) uses a plain Promise stored in `record.resumeWaiter`. Pause sets the promise; resume calls `resumeWaiter.resolve()`. No polling, zero CPU overhead. Gap Map's paper workflow could use the same pattern to suspend mid-pipeline when the user pauses a research run.
+`waitUntilResumed()` (`service.ts:661`) uses a plain Promise stored in `record.resumeWaiter`. Pause sets the promise; resume calls `resumeWaiter.resolve()`. No polling, zero CPU overhead. OpenReply's paper workflow could use the same pattern to suspend mid-pipeline when the user pauses a research run.
 
 ### 6.10 FIFO Semaphore Concurrency Limiter
-`ConcurrencyLimiter` (`concurrency-limiter.ts`) is a 40-line semaphore with FIFO waiter queue. Gap Map's sidecar already has a rough concurrency model; replacing it with this pattern would prevent thundering-herd when multiple topics are queued.
+`ConcurrencyLimiter` (`concurrency-limiter.ts`) is a 40-line semaphore with FIFO waiter queue. OpenReply's sidecar already has a rough concurrency model; replacing it with this pattern would prevent thundering-herd when multiple topics are queued.
 
 ### 6.11 LogBatcher with Size + Time Dual Trigger
-`LogBatcher` (`log-batcher.ts`) flushes when buffer reaches 4096 bytes OR when 500 ms elapses since last push. This prevents both flooding (high-frequency logs) and staleness (sparse logs). Gap Map's streaming output from Python tools is currently flushed line-by-line; batching with a dual trigger would reduce IPC overhead significantly.
+`LogBatcher` (`log-batcher.ts`) flushes when buffer reaches 4096 bytes OR when 500 ms elapses since last push. This prevents both flooding (high-frequency logs) and staleness (sparse logs). OpenReply's streaming output from Python tools is currently flushed line-by-line; batching with a dual trigger would reduce IPC overhead significantly.
 
 ### 6.12 AI-Bridge Wire API Abstraction
-`ai-bridge/index.js` reads `AI_WIRE_API` to select between Chat Completions and Responses API, and reads `AI_BASE_URL` / `AI_MODEL` from env. This is the same pattern Gap Map's `tauri-python-sidecar-app` skill documents for LLM provider auto-resolution. The in-container bridge confirms the pattern: never hardcode `openai.com` — always resolve at runtime from injected env.
+`ai-bridge/index.js` reads `AI_WIRE_API` to select between Chat Completions and Responses API, and reads `AI_BASE_URL` / `AI_MODEL` from env. This is the same pattern OpenReply's `tauri-python-sidecar-app` skill documents for LLM provider auto-resolution. The in-container bridge confirms the pattern: never hardcode `openai.com` — always resolve at runtime from injected env.
 
 ---
 
-## 7. Port to Gap Map — Concrete Ideas
+## 7. Port to OpenReply — Concrete Ideas
 
-Gap Map is a Tauri 2 desktop app with a Python sidecar (`gapmap_cli`) that runs paper research, an MCP server (`src/gapmap/mcp/server.py`), and a BYOK multi-LLM setup. The following ideas are tagged **effort S/M/L** and **value H/M/L**.
+OpenReply is a Tauri 2 desktop app with a Python sidecar (`openreply_cli`) that runs paper research, an MCP server (`src/openreply/mcp/server.py`), and a BYOK multi-LLM setup. The following ideas are tagged **effort S/M/L** and **value H/M/L**.
 
 ### 7.1 Job Lifecycle Events Protocol (S/H)
-**What:** Adopt lobster-executor's typed event vocabulary for Gap Map's sidecar output. Currently the sidecar emits ad-hoc JSON lines; standardising on `{ type, status, progress, message, artifacts }` events would give the frontend a consistent shape to render.
+**What:** Adopt lobster-executor's typed event vocabulary for OpenReply's sidecar output. Currently the sidecar emits ad-hoc JSON lines; standardising on `{ type, status, progress, message, artifacts }` events would give the frontend a consistent shape to render.
 
 **How:** Add `emit_event(type, status, progress, message, artifacts=None)` to the Python sidecar. The Tauri `run_cli` command already reads stdout; map the event types to frontend state.
 
-**Files to touch:** `src/gapmap/cli/main.py`, `app-tauri/src/main.js`.
+**Files to touch:** `src/openreply/cli/main.py`, `app-tauri/src/main.js`.
 
 ### 7.2 Three-Level Security for Python Subprocess (S/M)
-**What:** When Gap Map spawns Python scripts (e.g. user-uploaded analysis scripts or MCP-triggered tools), apply a `strict/balanced/permissive` preset — env var allowlist, working directory confinement, stdout-only IPC (no shell=True), SIGTERM→SIGKILL timeout ladder.
+**What:** When OpenReply spawns Python scripts (e.g. user-uploaded analysis scripts or MCP-triggered tools), apply a `strict/balanced/permissive` preset — env var allowlist, working directory confinement, stdout-only IPC (no shell=True), SIGTERM→SIGKILL timeout ladder.
 
 **How:** A ~50-line `ProcessPolicy` dataclass in Python mirroring `SecurityConfig`. Default to `strict` (no network, confined tmp dir, kill after 60 s). Upgrade to `balanced` only for paper-source fetches (need network).
 
-**Files to touch:** New `src/gapmap/runtime/process_policy.py`. Called from `paper_pipeline.py`.
+**Files to touch:** New `src/openreply/runtime/process_policy.py`. Called from `paper_pipeline.py`.
 
 ### 7.3 Credential Scrubber for LLM Outputs (S/H)
 **What:** After any LLM call in the Python sidecar, scrub `sk-...`, `sk-ant-...`, `clp_...` patterns from logged output before it appears in the Tauri log panel or is written to SQLite.
 
-**How:** Port `CredentialScrubber.scrubLine()` to Python — 15 lines with `re.sub`. Apply in `src/gapmap/runtime/explanations.py` and any tool that logs LLM completions.
+**How:** Port `CredentialScrubber.scrubLine()` to Python — 15 lines with `re.sub`. Apply in `src/openreply/runtime/explanations.py` and any tool that logs LLM completions.
 
-**Files to touch:** New `src/gapmap/runtime/credential_scrubber.py`.
+**Files to touch:** New `src/openreply/runtime/credential_scrubber.py`.
 
 ### 7.4 Idempotency Keys for Paper Ingestion (S/H)
 **What:** Paper ingestion (`paper_pipeline.py`) currently may re-fetch and re-embed the same DOI on repeated runs. Add an idempotency check: `INSERT OR IGNORE` on `(doi, source)` before fetching, plus an in-memory `Set[str]` of in-flight DOIs during a pipeline run.
 
 **How:** Already partially solved by `paper_pipeline.py`'s dedup logic; formalize it with an explicit idempotency key = `sha256(doi + topic + source)` in the jobs table.
 
-**Files to touch:** `src/gapmap/research/paper_pipeline.py`.
+**Files to touch:** `src/openreply/research/paper_pipeline.py`.
 
-### 7.5 Skill Registry for Gap Map Sources/Tools (M/H)
+### 7.5 Skill Registry for OpenReply Sources/Tools (M/H)
 **What:** Model each research source (OpenAlex, PubMed, Semantic Scholar, future sources) as a "skill" with a `skill.json` manifest declaring its capabilities (`source.openalex`, `source.pubmed`), security requirements (`network: required`), and input schema.
 
-**How:** Create `src/gapmap/skills/<source-name>/skill.json` + `run.py`. The existing `sources/` module is already split per-source — this is mostly an organisational formalisation. Benefit: the MCP server's `list_tools` could read from the registry and expose each source as an MCP tool automatically.
+**How:** Create `src/openreply/skills/<source-name>/skill.json` + `run.py`. The existing `sources/` module is already split per-source — this is mostly an organisational formalisation. Benefit: the MCP server's `list_tools` could read from the registry and expose each source as an MCP tool automatically.
 
-**Files to touch:** New `src/gapmap/skills/` directory structure. `src/gapmap/mcp/server.py` updated to enumerate skills.
+**Files to touch:** New `src/openreply/skills/` directory structure. `src/openreply/mcp/server.py` updated to enumerate skills.
 
 **Effort:** M (one-time schema + registry reader). **Value:** H (enables auto-discovery of tools by MCP clients).
 
 ### 7.6 Capability Negotiation in MCP Server (M/H)
-**What:** Gap Map's MCP server currently exposes tools unconditionally. If a required API key or dependency is missing (no PubMed key, no `playwright` installed), the tool call fails at runtime. Instead, advertise capabilities on `initialize` and let the MCP client decide which tools to invoke.
+**What:** OpenReply's MCP server currently exposes tools unconditionally. If a required API key or dependency is missing (no PubMed key, no `playwright` installed), the tool call fails at runtime. Instead, advertise capabilities on `initialize` and let the MCP client decide which tools to invoke.
 
 **How:** At MCP server startup, check which sources are available (API key present, optional deps installed) and include a `capabilities` array in the `initialize` response or as a tool resource. Mirror `createExecutorCapabilities()` — check `LLM_API_KEY`, `PUBMED_API_KEY`, etc.
 
-**Files to touch:** `src/gapmap/mcp/server.py`.
+**Files to touch:** `src/openreply/mcp/server.py`.
 
 **Effort:** M. **Value:** H — prevents confusing runtime failures from missing keys.
 
@@ -323,34 +323,34 @@ Gap Map is a Tauri 2 desktop app with a Python sidecar (`gapmap_cli`) that runs 
 
 **How:** At the end of `paper_workflow.py` (or `paper_pipeline.py`), write `<dataRoot>/runs/<run_id>/artifact-manifest.json`. The Tauri frontend reads this to populate the results panel.
 
-**Files to touch:** `src/gapmap/research/paper_workflow.py`, `app-tauri/src/main.js`.
+**Files to touch:** `src/openreply/research/paper_workflow.py`, `app-tauri/src/main.js`.
 
 **Effort:** M. **Value:** M — better UX in the results panel; enables preview-type rendering.
 
 ### 7.8 HMAC-Signed Sidecar Events (L/M)
-**What:** For multi-user or multi-machine Gap Map scenarios (sidecar on a remote machine, MCP over network), sign sidecar events with `HMAC-SHA256(secret, timestamp.body)` to authenticate them to the Tauri frontend or MCP server.
+**What:** For multi-user or multi-machine OpenReply scenarios (sidecar on a remote machine, MCP over network), sign sidecar events with `HMAC-SHA256(secret, timestamp.body)` to authenticate them to the Tauri frontend or MCP server.
 
-**How:** Port `hmac-signer.ts` to Python (5 lines with `hmac.new`). Add `X-GapMap-Signature` header to any HTTP callbacks the sidecar makes.
+**How:** Port `hmac-signer.ts` to Python (5 lines with `hmac.new`). Add `X-OpenReply-Signature` header to any HTTP callbacks the sidecar makes.
 
-**Files to touch:** New `src/gapmap/runtime/hmac_signer.py`. Used if Gap Map ever adds a remote-sidecar mode.
+**Files to touch:** New `src/openreply/runtime/hmac_signer.py`. Used if OpenReply ever adds a remote-sidecar mode.
 
 **Effort:** L (low priority for desktop-only). **Value:** M (important if remote mode ships).
 
 ### 7.9 Pause/Resume Gate for Research Pipelines (M/M)
-**What:** Gap Map research runs can take 5–20 minutes. Adding a pause/resume mechanism (like `waitUntilResumed()`) would let users pause a run, inspect partial results, then continue.
+**What:** OpenReply research runs can take 5–20 minutes. Adding a pause/resume mechanism (like `waitUntilResumed()`) would let users pause a run, inspect partial results, then continue.
 
 **How:** Add a `pause_event` (Python `asyncio.Event`) to `paper_workflow.py`. The Tauri frontend calls a new `pause_pipeline` command; the Python sidecar checks `await pause_event.wait()` between paper batches.
 
-**Files to touch:** `src/gapmap/research/paper_workflow.py`, `src/gapmap/cli/main.py`, `app-tauri/src/main.js`.
+**Files to touch:** `src/openreply/research/paper_workflow.py`, `src/openreply/cli/main.py`, `app-tauri/src/main.js`.
 
 **Effort:** M. **Value:** M — quality-of-life for long research runs.
 
 ### 7.10 LogBatcher for Sidecar Stdout (S/M)
-**What:** Gap Map's `run_cli` in Tauri currently receives one event per JSON line from the sidecar. Under high-throughput (100+ papers being chunked), this creates IPC overhead. Buffer sidecar log lines for 500 ms or 4096 bytes before emitting.
+**What:** OpenReply's `run_cli` in Tauri currently receives one event per JSON line from the sidecar. Under high-throughput (100+ papers being chunked), this creates IPC overhead. Buffer sidecar log lines for 500 ms or 4096 bytes before emitting.
 
 **How:** Python `LogBatcher` class: maintain a buffer + `threading.Timer`. Flush on buffer full or timer fire. Emit batched lines as a single `{ type: "job.log", message: "..." }` JSON line.
 
-**Files to touch:** New `src/gapmap/runtime/log_batcher.py`. Used in `src/gapmap/cli/main.py`.
+**Files to touch:** New `src/openreply/runtime/log_batcher.py`. Used in `src/openreply/cli/main.py`.
 
 **Effort:** S. **Value:** M — most valuable when processing large topic graphs.
 
@@ -360,4 +360,4 @@ Gap Map is a Tauri 2 desktop app with a Python sidecar (`gapmap_cli`) that runs 
 
 lobster-executor is a production-grade asynchronous job execution engine with pluggable runners (mock/native/Docker), a full container security model (3 levels, seccomp, OOM detection), credential lifecycle management (inject → scrub), HMAC-signed callbacks with retries, a skill registry with capability-scored auto-selection, live browser preview via Playwright screenshot polling, and a robust FIFO concurrency limiter.
 
-The patterns most directly applicable to Gap Map are: (1) typed event protocol for sidecar stdout, (2) credential scrubbing before any LLM output is logged, (3) idempotency keys on paper ingestion, (4) the skill-registry pattern to auto-expose sources as MCP tools, and (5) capability negotiation in the MCP `initialize` response to prevent runtime failures from missing API keys.
+The patterns most directly applicable to OpenReply are: (1) typed event protocol for sidecar stdout, (2) credential scrubbing before any LLM output is logged, (3) idempotency keys on paper ingestion, (4) the skill-registry pattern to auto-expose sources as MCP tools, and (5) capability negotiation in the MCP `initialize` response to prevent runtime failures from missing API keys.

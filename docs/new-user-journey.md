@@ -1,20 +1,20 @@
 # New user journey — analysis & recommendations
 
 **Date:** 2026-05-28  
-**Scope:** Gap Map desktop app (`app-tauri`) — onboarding wizard through first collect, topic map, and dashboard.  
+**Scope:** OpenReply desktop app (`app-tauri`) — onboarding wizard through first collect, topic map, and dashboard.  
 **Audience:** Product, design, and engineering planning first-run UX.
 
 ---
 
 ## Executive summary
 
-Gap Map has a **solid structural journey** (welcome wizard → collect with Phase A/B progress → topic map / Insights). The main gap for new users is **time-to-aha**: the default path favors a long aggressive collect and a busy empty dashboard before data exists. This document maps the current flow, what works, where users stall, and a prioritized plan to make the first session feel successful in under five minutes.
+OpenReply has a **solid structural journey** (welcome wizard → collect with Phase A/B progress → topic map / Insights). The main gap for new users is **time-to-aha**: the default path favors a long aggressive collect and a busy empty dashboard before data exists. This document maps the current flow, what works, where users stall, and a prioritized plan to make the first session feel successful in under five minutes.
 
 ---
 
 ## Current journey map
 
-Gap Map has two entry paths and a gated shell. Most DMG builds use the **gate-off** path (5 wizard steps; device activation optional).
+OpenReply has two entry paths and a gated shell. Most DMG builds use the **gate-off** path (5 wizard steps; device activation optional).
 
 ```mermaid
 flowchart TD
@@ -43,16 +43,16 @@ flowchart TD
 
 | Mechanism | Behavior |
 |-----------|----------|
-| `gapmap.onboarding.completed` | Until set, router forces `#/welcome`; tab strip hidden. |
-| `mustStayInOnboarding()` | Also checks licence activation when `GAPMAP_LICENSE_GATE_ENABLED` is on. |
+| `openreply.onboarding.completed` | Until set, router forces `#/welcome`; tab strip hidden. |
+| `mustStayInOnboarding()` | Also checks licence activation when `OPENREPLY_LICENSE_GATE_ENABLED` is on. |
 | First launch warmup | Home may show 10–30s banner while macOS verifies the PyInstaller sidecar. |
 | Collect on mount | `renderCollect` auto-calls `startCollect`; onboarding only needs `#/collect/<topic>`. |
-| State keys | `gapmap.onboarding.step`, `gapmap.onboarding.pending_topic`, `gapmap.collect.last_aggressive`, profile in `gapmap.profile.*`. |
+| State keys | `openreply.onboarding.step`, `openreply.onboarding.pending_topic`, `openreply.collect.last_aggressive`, profile in `openreply.profile.*`. |
 
 **Primary source files**
 
 - `app-tauri/src/screens/welcome.js` — 6-step wizard (step 6 conditional on licence gate)
-- `app-tauri/src/main.js` — routing, onboarding gate, `gapmapOpenNewTopic`
+- `app-tauri/src/main.js` — routing, onboarding gate, `openreplyOpenNewTopic`
 - `app-tauri/src/screens/home.js` — dashboard, empty state, quick-start chips, warmup banner
 - `app-tauri/src/screens/collect.js` — Phase A/B UI, auto-start collect, post-run CTA
 
@@ -62,7 +62,7 @@ flowchart TD
 
 | Step | Label | Purpose |
 |------|--------|---------|
-| 1 | What is Gap Map | Value prop; branch to **Product Mode** (`#/product/new/setup`) or continue exploring |
+| 1 | What is OpenReply | Value prop; branch to **Product Mode** (`#/product/new/setup`) or continue exploring |
 | 2 | Your profile | Display name, optional email, role — local only |
 | 3 | Connect sources | BYOK LLM providers, Reddit OAuth, system health card — all optional |
 | 4 | Video transcription | Optional Whisper model download |
@@ -84,7 +84,7 @@ flowchart TD
 ## Collect → topic payoff loop
 
 1. User lands on `#/collect/<topic>`.
-2. `aggressive` read from `gapmap.collect.last_aggressive` (then cleared one-shot); default is **true** when key unset (`!== 'false'`).
+2. `aggressive` read from `openreply.collect.last_aggressive` (then cleared one-shot); default is **true** when key unset (`!== 'false'`).
 3. **Phase A:** progress toward 100 posts; ETA copy on collect screen.
 4. **Phase B:** “Extracting insights…” after threshold; live findings counter.
 5. On success: **Open gap map →** navigates to `#/topic/<slug>`.
@@ -111,7 +111,7 @@ flowchart TD
 
 ### 1. Time-to-aha is long and opaque upfront
 
-- Aggressive collect defaults **on** when `gapmap.pref.aggressive` / `last_aggressive` are unset.
+- Aggressive collect defaults **on** when `openreply.pref.aggressive` / `last_aggressive` are unset.
 - Phase B (meaningful extraction narrative) needs **100 posts**; aggressive first run can take **15+ minutes**.
 - Step 5 button text says “Continue to activation →” even when licence gate is off.
 
@@ -153,7 +153,7 @@ Warmup banner on home helps, but step 3 health check can show failing rows while
 |-------|----------|
 | “Activation is required” in step 1 bullets while gate is often off | `welcome.js` step 1 |
 | `loadTopicGrid` called from delete handler when not on home (fixed: null guard on `#topics-subtitle`) | `home.js` |
-| `gapmap:start-collect` fired from re-collect context menu but not required for onboarding path | `home.js` / `main.js` |
+| `openreply:start-collect` fired from re-collect context menu but not required for onboarding path | `home.js` / `main.js` |
 
 ---
 
@@ -175,7 +175,7 @@ Warmup banner on home helps, but step 3 health check can show failing rows while
 
 7. **Home checklist** after first topic: Collect done → Open Insights → Build audience → Run Improve (3 linked items).
 8. **Audience nudge** on topic page only after collect has posts (existing pattern; verify timing).
-9. **Resume wizard** via `gapmap.onboarding.step` if user quits mid-flow.
+9. **Resume wizard** via `openreply.onboarding.step` if user quits mid-flow.
 
 ### P3 — Power users
 
@@ -200,12 +200,12 @@ Warmup banner on home helps, but step 3 health check can show failing rows while
 
 ### Changing default collect mode
 
-- Onboarding step 5: default `#ob-aggressive` unchecked; set `gapmap.pref.aggressive` to `'false'` for new profiles unless user opts in.
-- `collect.js`: consider default `aggressive = false` when `last_aggressive` unset (breaking change for power users — gate with `gapmap.onboarding.completed` timestamp or `gapmap.first_collect.done`).
+- Onboarding step 5: default `#ob-aggressive` unchecked; set `openreply.pref.aggressive` to `'false'` for new profiles unless user opts in.
+- `collect.js`: consider default `aggressive = false` when `last_aggressive` unset (breaking change for power users — gate with `openreply.onboarding.completed` timestamp or `openreply.first_collect.done`).
 
 ### Post-collect redirect
 
-- In `collect.js` on `collect:done` with `code === 0`, if `!localStorage.getItem('gapmap.first_collect.done')`:
+- In `collect.js` on `collect:done` with `code === 0`, if `!localStorage.getItem('openreply.first_collect.done')`:
   - Set flag
   - `location.hash = '#/topic/<slug>?tab=insights'` (if topic router supports tab query)
 
@@ -230,7 +230,7 @@ Work in this order so you can test each slice on a “fresh” machine (see next
 |---|------|--------|
 | A1 | `app-tauri/src/screens/welcome.js` | Step 1: only show “activation is required” when `_licenseGateEnabled`. |
 | A2 | `welcome.js` step 5 | Button label: gate off → `Continue →`; gate on → `Continue to activation →`. |
-| A3 | `welcome.js` step 5 | Default `#ob-aggressive` **unchecked**; `gapmap.pref.aggressive` = `'false'` on first save unless user checks it. |
+| A3 | `welcome.js` step 5 | Default `#ob-aggressive` **unchecked**; `openreply.pref.aggressive` = `'false'` on first save unless user checks it. |
 | A4 | `welcome.js` step 5 | Add small table: Quick (~3–5 min, Reddit) vs Aggressive (~15 min, all sources). |
 | A5 | `welcome.js` step 3 | If `readyCount === 0`, show yellow callout: “Collect works without AI; Insights need one provider.” |
 
@@ -238,9 +238,9 @@ Work in this order so you can test each slice on a “fresh” machine (see next
 
 | # | File | Change |
 |---|------|--------|
-| B1 | `app-tauri/src/screens/collect.js` | On first successful `collect:done`, set `gapmap.first_collect.done` and navigate to `#/topic/<slug>` (Insights tab if supported). |
+| B1 | `app-tauri/src/screens/collect.js` | On first successful `collect:done`, set `openreply.first_collect.done` and navigate to `#/topic/<slug>` (Insights tab if supported). |
 | B2 | `collect.js` | Optional modal before redirect: “Brief ready — Open insights”. |
-| B3 | `collect.js` | First collect only: if `!gapmap.first_collect.done` and no `last_aggressive` in localStorage, default `aggressive = false`. |
+| B3 | `collect.js` | First collect only: if `!openreply.first_collect.done` and no `last_aggressive` in localStorage, default `aggressive = false`. |
 
 ### Phase C — Empty home (half day)
 
@@ -254,7 +254,7 @@ Work in this order so you can test each slice on a “fresh” machine (see next
 | # | File | Change |
 |---|------|--------|
 | D1 | `home.js` | 3-step checklist card until user dismisses or completes items. |
-| D2 | `welcome.js` step 1 | Defer “Product Mode” branch until `gapmap.first_collect.done` is set. |
+| D2 | `welcome.js` step 1 | Defer “Product Mode” branch until `openreply.first_collect.done` is set. |
 
 ### Build & ship to the other PC
 
@@ -286,28 +286,28 @@ In the running app:
 Or in DevTools console (right-click → Inspect if dev build; production may need `tauri dev` or enable devtools):
 
 ```javascript
-localStorage.removeItem('gapmap.onboarding.completed');
-localStorage.removeItem('gapmap.onboarding.step');
-localStorage.removeItem('gapmap.onboarding.pending_topic');
-localStorage.removeItem('gapmap.onboarding.pending_aggressive');
-localStorage.removeItem('gapmap.onboarding.pending_route');
-localStorage.removeItem('gapmap.first_collect.done'); // after you add Phase B
+localStorage.removeItem('openreply.onboarding.completed');
+localStorage.removeItem('openreply.onboarding.step');
+localStorage.removeItem('openreply.onboarding.pending_topic');
+localStorage.removeItem('openreply.onboarding.pending_aggressive');
+localStorage.removeItem('openreply.onboarding.pending_route');
+localStorage.removeItem('openreply.first_collect.done'); // after you add Phase B
 location.hash = '#/welcome';
 location.reload();
 ```
 
-**Does not clear:** SQLite topics, API keys (`~/.config/gapmap/.env`), licence file.
+**Does not clear:** SQLite topics, API keys (`~/.config/openreply/.env`), licence file.
 
 ---
 
 ### Level 2 — Medium reset (feels new, keeps corpus)
 
-1. Quit Gap Map completely.
+1. Quit OpenReply completely.
 2. Delete **webview / UI state** by clearing app support (see paths below) **or** run in DevTools before quit:
 
 ```javascript
 Object.keys(localStorage)
-  .filter(k => k.startsWith('gapmap.'))
+  .filter(k => k.startsWith('openreply.'))
   .forEach(k => localStorage.removeItem(k));
 ```
 
@@ -315,35 +315,35 @@ Object.keys(localStorage)
 
 **Optional:** Settings → **Reset every local preference** (keeps onboarding keys unless you removed them in step 2).
 
-**Keeps:** `gapmap/gapmap.db` (all topics/posts) unless you delete the data folder.
+**Keeps:** `openreply/openreply.db` (all topics/posts) unless you delete the data folder.
 
 ---
 
 ### Level 3 — Hard reset (true fresh install)
 
-Quit the app, then delete these locations for bundle id **`com.shantanu.gapmap`**:
+Quit the app, then delete these locations for bundle id **`com.shantanu.openreply`**:
 
 #### macOS
 
 ```bash
 # App data (SQLite, licence, exports, chroma, etc.)
-rm -rf "$HOME/Library/Application Support/com.shantanu.gapmap"
+rm -rf "$HOME/Library/Application Support/com.shantanu.openreply"
 
 # BYOK / shared env (API keys written by Settings)
-rm -rf "$HOME/.config/gapmap"
+rm -rf "$HOME/.config/openreply"
 
 # Optional: legacy path mentioned in HOW_TO_USE.md
 rm -rf "$HOME/.config/reddit-myind"
 ```
 
-Then **uninstall** Gap Map (drag from Applications to Trash) and install your test `.dmg` again.
+Then **uninstall** OpenReply (drag from Applications to Trash) and install your test `.dmg` again.
 
 #### Windows
 
 ```powershell
 # Typical Tauri app data (adjust if your installer uses a different folder)
-Remove-Item -Recurse -Force "$env:APPDATA\com.shantanu.gapmap" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force "$env:USERPROFILE\.config\gapmap" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:APPDATA\com.shantanu.openreply" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:USERPROFILE\.config\openreply" -ErrorAction SilentlyContinue
 ```
 
 Uninstall from Settings → Apps, then reinstall.
@@ -351,8 +351,8 @@ Uninstall from Settings → Apps, then reinstall.
 #### Linux
 
 ```bash
-rm -rf "$HOME/.local/share/com.shantanu.gapmap"
-rm -rf "$HOME/.config/gapmap"
+rm -rf "$HOME/.local/share/com.shantanu.openreply"
+rm -rf "$HOME/.config/openreply"
 ```
 
 ---
@@ -361,10 +361,10 @@ rm -rf "$HOME/.config/gapmap"
 
 | Location | What it affects |
 |----------|-----------------|
-| **WebView `localStorage`** (`gapmap.*`) | Onboarding done, wizard step, profile name, prefs, tab strip (`gapmap.tabs.v1`), dashboard cache, dismiss flags |
-| **`~/Library/Application Support/com.shantanu.gapmap/gapmap/`** | SQLite DB, graphs, vectors, reports |
-| **`~/Library/Application Support/com.shantanu.gapmap/license_state.json`** | Device activation (when gate on) |
-| **`~/.config/gapmap/.env`** | LLM / Reddit API keys |
+| **WebView `localStorage`** (`openreply.*`) | Onboarding done, wizard step, profile name, prefs, tab strip (`openreply.tabs.v1`), dashboard cache, dismiss flags |
+| **`~/Library/Application Support/com.shantanu.openreply/openreply/`** | SQLite DB, graphs, vectors, reports |
+| **`~/Library/Application Support/com.shantanu.openreply/license_state.json`** | Device activation (when gate on) |
+| **`~/.config/openreply/.env`** | LLM / Reddit API keys |
 
 ---
 
@@ -373,7 +373,7 @@ rm -rf "$HOME/.config/gapmap"
 The **10–30s warmup** on first open is macOS verifying the **bundled Python sidecar**, not your SQLite/localStorage. Clearing data **does not** replay that unless you:
 
 - Delete and reinstall the `.app`, or
-- Remove quarantine: `xattr -cr "/Applications/Gap Map.app"` (dev/testing only)
+- Remove quarantine: `xattr -cr "/Applications/OpenReply.app"` (dev/testing only)
 
 On a **second PC**, the first open after installing the DMG will still show the warmup once per machine.
 

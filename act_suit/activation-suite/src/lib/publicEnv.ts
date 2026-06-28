@@ -31,7 +31,7 @@ export function getPublicEnv(): PublicEnv {
     ),
     appDownloadUrl: process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL || "",
     appDeepLinkUrl:
-      process.env.NEXT_PUBLIC_APP_DEEP_LINK_URL || "gapmap://dashboard",
+      process.env.NEXT_PUBLIC_APP_DEEP_LINK_URL || "openreply://dashboard",
     lemonSqueezyCheckoutPro:
       process.env.NEXT_PUBLIC_LEMONSQUEEZY_CHECKOUT_PRO || "",
     lemonSqueezyCheckoutLivePass:

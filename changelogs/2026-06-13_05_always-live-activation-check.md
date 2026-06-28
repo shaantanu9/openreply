@@ -9,7 +9,7 @@ The licence/activation gate now validates against the **live** server URL on
 every check, not just on the 6-hour background timer. `license_status` (the
 launch gate the UI reads, and which the boot hard-gate `await`s) now runs a
 live `license_revalidate` (`POST {api_base}/v1/licence/validate`,
-default `https://gapmap.myind.ai`) **first**, then reads the freshly-synced
+default `https://openreply.myind.ai`) **first**, then reads the freshly-synced
 state. A renewal unlocks immediately, a server-side revocation/refund/expiry
 locks on that very check.
 

@@ -24,16 +24,16 @@
 
 | File | Responsibility |
 |---|---|
-| `src/gapmap/reply/schema.py` (modify) | add `reply_playbook` + `reply_ideas` tables; goal columns on `agents` |
-| `src/gapmap/reply/agent.py` (modify) | goal allow-list + composed `goal` string + `feedback_since_evolve`/`last_evolve_at` |
-| `src/gapmap/reply/playbook.py` (create) | `current_playbook`, `evolve_playbook` |
-| `src/gapmap/reply/ideas.py` (create) | `suggest_ideas`, `list_ideas`, `draft_from_idea`, `set_idea_status` |
-| `src/gapmap/persona/graph.py` (modify) | `link_associations`, `associates` edges, `neighbors(... include_associates=)` |
-| `src/gapmap/reply/generate.py` (modify) | inject playbook block + optional self-critique |
-| `src/gapmap/reply/content.py` (modify) | inject playbook block |
-| `src/gapmap/reply/learn.py` (modify) | tail-call `link_associations` + `evolve_playbook` |
-| `src/gapmap/reply/feedback.py` (modify) | increment `feedback_since_evolve`, threshold → evolve |
-| `src/gapmap/cli/reply_cmds.py` (modify) | `evolve`, `playbook`, `ideas`, `idea-draft`, `idea-status`, `goal-set` |
+| `src/openreply/reply/schema.py` (modify) | add `reply_playbook` + `reply_ideas` tables; goal columns on `agents` |
+| `src/openreply/reply/agent.py` (modify) | goal allow-list + composed `goal` string + `feedback_since_evolve`/`last_evolve_at` |
+| `src/openreply/reply/playbook.py` (create) | `current_playbook`, `evolve_playbook` |
+| `src/openreply/reply/ideas.py` (create) | `suggest_ideas`, `list_ideas`, `draft_from_idea`, `set_idea_status` |
+| `src/openreply/persona/graph.py` (modify) | `link_associations`, `associates` edges, `neighbors(... include_associates=)` |
+| `src/openreply/reply/generate.py` (modify) | inject playbook block + optional self-critique |
+| `src/openreply/reply/content.py` (modify) | inject playbook block |
+| `src/openreply/reply/learn.py` (modify) | tail-call `link_associations` + `evolve_playbook` |
+| `src/openreply/reply/feedback.py` (modify) | increment `feedback_since_evolve`, threshold → evolve |
+| `src/openreply/cli/reply_cmds.py` (modify) | `evolve`, `playbook`, `ideas`, `idea-draft`, `idea-status`, `goal-set` |
 | `app-tauri/src-tauri/src/commands.rs` (modify) | new `#[tauri::command]`s |
 | `app-tauri/src-tauri/src/main.rs` (modify) | register handlers |
 | `app-tauri/src/or/api.js` (modify) | JS wrappers |
@@ -45,8 +45,8 @@
 ## Task 1: Structured goal columns + composed goal string
 
 **Files:**
-- Modify: `src/gapmap/reply/schema.py` (the `agents` create + a forward-compat migration block)
-- Modify: `src/gapmap/reply/agent.py:160` (allow-list), and the agent-hydration return
+- Modify: `src/openreply/reply/schema.py` (the `agents` create + a forward-compat migration block)
+- Modify: `src/openreply/reply/agent.py:160` (allow-list), and the agent-hydration return
 - Test: `tests/test_agent_goal.py`
 
 **Interfaces:**
@@ -57,10 +57,10 @@
 ```python
 # tests/test_agent_goal.py
 import os, tempfile, pathlib
-os.environ.setdefault("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
 def test_goal_fields_persist_and_compose():
-    from gapmap.reply import agent as A
+    from openreply.reply import agent as A
     a = A.create_agent("GoalCo", make_active=True)
     A.update_agent(a["id"], objective="drive signups",
                    audience="students", win_signal="reply + click",
@@ -78,7 +78,7 @@ Expected: FAIL (KeyError 'objective' or composed goal empty).
 
 - [ ] **Step 3: Add columns in schema.py**
 
-In `src/gapmap/reply/schema.py`, find the `agents` table block. Add to the `create({...})` dict (fresh tables): `"objective": str, "audience": str, "win_signal": str, "guardrails": str, "last_evolve_at": int, "feedback_since_evolve": int,`. Then in the existing-table forward-compat section (mirror the `reply_opportunities` pattern), add:
+In `src/openreply/reply/schema.py`, find the `agents` table block. Add to the `create({...})` dict (fresh tables): `"objective": str, "audience": str, "win_signal": str, "guardrails": str, "last_evolve_at": int, "feedback_since_evolve": int,`. Then in the existing-table forward-compat section (mirror the `reply_opportunities` pattern), add:
 
 ```python
     existing_a = {c.name for c in db["agents"].columns}
@@ -91,7 +91,7 @@ In `src/gapmap/reply/schema.py`, find the `agents` table block. Add to the `crea
 
 - [ ] **Step 4: Extend update_agent allow-list + compose goal**
 
-In `src/gapmap/reply/agent.py:160` change the tuple to include the new text fields:
+In `src/openreply/reply/agent.py:160` change the tuple to include the new text fields:
 
 ```python
     for k in ("name", "brand", "niche", "website", "goal", "product", "persona",
@@ -118,7 +118,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/gapmap/reply/schema.py src/gapmap/reply/agent.py tests/test_agent_goal.py
+git add src/openreply/reply/schema.py src/openreply/reply/agent.py tests/test_agent_goal.py
 git commit -m "feat(agent): structured goal fields (objective/audience/win_signal/guardrails) + composed goal"
 ```
 
@@ -127,7 +127,7 @@ git commit -m "feat(agent): structured goal fields (objective/audience/win_signa
 ## Task 2: `reply_playbook` + `reply_ideas` tables
 
 **Files:**
-- Modify: `src/gapmap/reply/schema.py` (before `return db` at line 98)
+- Modify: `src/openreply/reply/schema.py` (before `return db` at line 98)
 - Test: covered by Tasks 3 & 6 (schema asserted there)
 
 **Interfaces:**
@@ -135,7 +135,7 @@ git commit -m "feat(agent): structured goal fields (objective/audience/win_signa
 
 - [ ] **Step 1: Add the create blocks**
 
-In `src/gapmap/reply/schema.py`, immediately before `return db`:
+In `src/openreply/reply/schema.py`, immediately before `return db`:
 
 ```python
     if "reply_playbook" not in names:
@@ -156,13 +156,13 @@ In `src/gapmap/reply/schema.py`, immediately before `return db`:
 
 - [ ] **Step 2: Verify schema builds**
 
-Run: `.venv/bin/python -c "from gapmap.reply.schema import init_reply_schema; d=init_reply_schema(); print('reply_playbook' in d.table_names(), 'reply_ideas' in d.table_names())"`
+Run: `.venv/bin/python -c "from openreply.reply.schema import init_reply_schema; d=init_reply_schema(); print('reply_playbook' in d.table_names(), 'reply_ideas' in d.table_names())"`
 Expected: `True True`
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/gapmap/reply/schema.py
+git add src/openreply/reply/schema.py
 git commit -m "feat(reply): reply_playbook + reply_ideas tables"
 ```
 
@@ -171,7 +171,7 @@ git commit -m "feat(reply): reply_playbook + reply_ideas tables"
 ## Task 3: Playbook engine (`reply/playbook.py`)
 
 **Files:**
-- Create: `src/gapmap/reply/playbook.py`
+- Create: `src/openreply/reply/playbook.py`
 - Test: `tests/test_playbook.py`
 
 **Interfaces:**
@@ -183,20 +183,20 @@ git commit -m "feat(reply): reply_playbook + reply_ideas tables"
 ```python
 # tests/test_playbook.py
 import os, tempfile
-os.environ.setdefault("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
 def test_evolve_skips_without_goal(monkeypatch):
-    from gapmap.reply import agent as A, playbook as P
+    from openreply.reply import agent as A, playbook as P
     a = A.create_agent("NoGoalCo", make_active=True)
     r = P.evolve_playbook(a["id"])
     assert r["ok"] is False and r["skipped"] is True
 
 def test_evolve_persists_version(monkeypatch):
-    from gapmap.reply import agent as A, playbook as P
+    from openreply.reply import agent as A, playbook as P
     a = A.create_agent("PBCo", make_active=True)
     A.update_agent(a["id"], objective="promote X", audience="devs", win_signal="signup")
     # stub the LLM so no network/key needed
-    import gapmap.reply.playbook as PB
+    import openreply.reply.playbook as PB
     monkeypatch.setattr(PB, "_llm_distill", lambda *args, **kw: {
         "winning_angles": [{"angle": "lead with the pain", "why": "resonates", "for": "devs"}],
         "phrasings": ["start with a question"], "avoid": ["links in first line"],
@@ -388,7 +388,7 @@ Expected: PASS (both tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/reply/playbook.py tests/test_playbook.py
+git add src/openreply/reply/playbook.py tests/test_playbook.py
 git commit -m "feat(reply): Goal Playbook engine — evolve_playbook + current_playbook"
 ```
 
@@ -397,8 +397,8 @@ git commit -m "feat(reply): Goal Playbook engine — evolve_playbook + current_p
 ## Task 4: Playbook-aware generation + self-critique
 
 **Files:**
-- Modify: `src/gapmap/reply/generate.py` (`generate_reply`)
-- Modify: `src/gapmap/reply/content.py` (`generate_content`)
+- Modify: `src/openreply/reply/generate.py` (`generate_reply`)
+- Modify: `src/openreply/reply/content.py` (`generate_content`)
 - Test: `tests/test_playbook.py` (add a generation-prompt test)
 
 **Interfaces:**
@@ -429,7 +429,7 @@ def playbook_block(agent_id: str | None = None) -> str:
 ```python
 # add to tests/test_playbook.py
 def test_playbook_block_renders(monkeypatch):
-    from gapmap.reply import agent as A, playbook as P
+    from openreply.reply import agent as A, playbook as P
     a = A.create_agent("BlkCo", make_active=True)
     A.update_agent(a["id"], objective="promote X")
     monkeypatch.setattr(P, "_llm_distill", lambda *x, **k: {
@@ -456,7 +456,7 @@ In `content.py::generate_content`, after `knowledge = build_knowledge_context(..
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_playbook.py -v`
-Expected: PASS. Also `.venv/bin/python -c "import gapmap.reply.generate, gapmap.reply.content; print('ok')"` → `ok`.
+Expected: PASS. Also `.venv/bin/python -c "import openreply.reply.generate, openreply.reply.content; print('ok')"` → `ok`.
 
 - [ ] **Step 5: Add optional self-critique to generate_reply**
 
@@ -481,9 +481,9 @@ In `generate.py`, after `text = get_provider(provider).complete(prompt, ...).str
 
 - [ ] **Step 6: Verify import + commit**
 
-Run: `.venv/bin/python -c "import gapmap.reply.generate; print('ok')"` → `ok`
+Run: `.venv/bin/python -c "import openreply.reply.generate; print('ok')"` → `ok`
 ```bash
-git add src/gapmap/reply/playbook.py src/gapmap/reply/generate.py src/gapmap/reply/content.py tests/test_playbook.py
+git add src/openreply/reply/playbook.py src/openreply/reply/generate.py src/openreply/reply/content.py tests/test_playbook.py
 git commit -m "feat(reply): playbook-aware generation + optional self-critique pass"
 ```
 
@@ -492,7 +492,7 @@ git commit -m "feat(reply): playbook-aware generation + optional self-critique p
 ## Task 5: Cross-source associative links (`persona/graph.py`)
 
 **Files:**
-- Modify: `src/gapmap/persona/graph.py` (add `link_associations`, extend `neighbors`)
+- Modify: `src/openreply/persona/graph.py` (add `link_associations`, extend `neighbors`)
 - Test: `tests/test_associations.py`
 
 **Interfaces:**
@@ -504,11 +504,11 @@ git commit -m "feat(reply): playbook-aware generation + optional self-critique p
 ```python
 # tests/test_associations.py
 import os, tempfile
-os.environ.setdefault("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
 def test_link_associations_fail_soft_no_personas():
-    from gapmap.reply import agent as A
-    from gapmap.persona import graph as G
+    from openreply.reply import agent as A
+    from openreply.persona import graph as G
     a = A.create_agent("AssocCo", make_active=True)
     r = G.link_associations(a["id"])
     assert r["ok"] is True and r["edges"] >= 0  # no memories yet → 0, never raises
@@ -520,7 +520,7 @@ Run: `.venv/bin/python -m pytest tests/test_associations.py -v` → FAIL (no att
 
 - [ ] **Step 3: Implement `link_associations` + extend `neighbors`**
 
-Add to `src/gapmap/persona/graph.py` (reuses the module's existing ChromaDB collection accessor — match the existing `build_edges_for_memory` pattern for getting a persona's collection + querying):
+Add to `src/openreply/persona/graph.py` (reuses the module's existing ChromaDB collection accessor — match the existing `build_edges_for_memory` pattern for getting a persona's collection + querying):
 
 ```python
 def link_associations(agent_id, min_sim: float = 0.5, cap: int = 8, provider=None) -> dict:
@@ -599,7 +599,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/persona/graph.py tests/test_associations.py
+git add src/openreply/persona/graph.py tests/test_associations.py
 git commit -m "feat(persona): cross-source associative links (associates edges) + neighbors flag"
 ```
 
@@ -608,7 +608,7 @@ git commit -m "feat(persona): cross-source associative links (associates edges) 
 ## Task 6: Idea synthesis (`reply/ideas.py`)
 
 **Files:**
-- Create: `src/gapmap/reply/ideas.py`
+- Create: `src/openreply/reply/ideas.py`
 - Test: `tests/test_ideas.py`
 
 **Interfaces:**
@@ -620,17 +620,17 @@ git commit -m "feat(persona): cross-source associative links (associates edges) 
 ```python
 # tests/test_ideas.py
 import os, tempfile
-os.environ.setdefault("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
 def test_suggest_ideas_fail_soft(monkeypatch):
-    from gapmap.reply import agent as A, ideas as I
+    from openreply.reply import agent as A, ideas as I
     a = A.create_agent("IdeaCo", make_active=True)
     r = I.suggest_ideas(a["id"])  # no memories yet
     assert r["ok"] is True and isinstance(r["ideas"], list)
 
 def test_idea_status_roundtrip():
-    from gapmap.reply import agent as A, ideas as I
-    from gapmap.reply.schema import init_reply_schema
+    from openreply.reply import agent as A, ideas as I
+    from openreply.reply.schema import init_reply_schema
     import time
     a = A.create_agent("IdeaCo2", make_active=True)
     db = init_reply_schema()
@@ -775,7 +775,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/reply/ideas.py tests/test_ideas.py
+git add src/openreply/reply/ideas.py tests/test_ideas.py
 git commit -m "feat(reply): idea synthesis — suggest_ideas/draft_from_idea combining knowledge threads"
 ```
 
@@ -784,8 +784,8 @@ git commit -m "feat(reply): idea synthesis — suggest_ideas/draft_from_idea com
 ## Task 7: Wire evolution triggers (learn + feedback)
 
 **Files:**
-- Modify: `src/gapmap/reply/learn.py` (`learn_for_agent` tail)
-- Modify: `src/gapmap/reply/feedback.py` (`record_opportunity_feedback`)
+- Modify: `src/openreply/reply/learn.py` (`learn_for_agent` tail)
+- Modify: `src/openreply/reply/feedback.py` (`record_opportunity_feedback`)
 - Test: `tests/test_playbook.py` (trigger test)
 
 **Interfaces:**
@@ -830,14 +830,14 @@ In `feedback.py::record_opportunity_feedback`, after the row is upserted (and `_
 ```python
 # add to tests/test_playbook.py
 def test_feedback_increments_counter(monkeypatch):
-    from gapmap.reply import agent as A
-    from gapmap.reply.schema import init_reply_schema
+    from openreply.reply import agent as A
+    from openreply.reply.schema import init_reply_schema
     a = A.create_agent("FbCo", make_active=True)
     A.update_agent(a["id"], objective="promote")
-    import gapmap.reply.feedback as F
+    import openreply.reply.feedback as F
     monkeypatch.setattr(F, "_seed_corpus", lambda *x, **k: None)
     # stub evolve so no LLM
-    import gapmap.reply.playbook as P
+    import openreply.reply.playbook as P
     monkeypatch.setattr(P, "evolve_playbook", lambda *x, **k: {"ok": True})
     db = init_reply_schema()
     db["reply_opportunities"].insert({"id":"o1","brand_id":a["id"],"platform":"reddit_free",
@@ -851,7 +851,7 @@ def test_feedback_increments_counter(monkeypatch):
 
 Run: `.venv/bin/python -m pytest tests/test_playbook.py -v` → PASS
 ```bash
-git add src/gapmap/reply/learn.py src/gapmap/reply/feedback.py tests/test_playbook.py
+git add src/openreply/reply/learn.py src/openreply/reply/feedback.py tests/test_playbook.py
 git commit -m "feat(reply): auto-evolve triggers (after learn + feedback threshold)"
 ```
 
@@ -860,8 +860,8 @@ git commit -m "feat(reply): auto-evolve triggers (after learn + feedback thresho
 ## Task 8: CLI commands
 
 **Files:**
-- Modify: `src/gapmap/cli/reply_cmds.py`
-- Test: manual (`.venv/bin/python -m gapmap.cli.main reply <cmd> --json`)
+- Modify: `src/openreply/cli/reply_cmds.py`
+- Test: manual (`.venv/bin/python -m openreply.cli.main reply <cmd> --json`)
 
 **Interfaces:**
 - Produces CLI: `reply evolve`, `reply playbook`, `reply ideas`, `reply idea-draft`, `reply idea-status`, `reply goal-set`.
@@ -913,13 +913,13 @@ def idea_status_cmd(idea: str = typer.Option(..., "--idea"), status: str = typer
 
 - [ ] **Step 2: Smoke test**
 
-Run: `GAPMAP_DATA_DIR=$(mktemp -d) .venv/bin/python -m gapmap.cli.main reply playbook --json`
+Run: `OPENREPLY_DATA_DIR=$(mktemp -d) .venv/bin/python -m openreply.cli.main reply playbook --json`
 Expected: JSON `{"playbook": null}` (no agent) or a playbook — no traceback.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/gapmap/cli/reply_cmds.py
+git add src/openreply/cli/reply_cmds.py
 git commit -m "feat(cli): reply evolve/playbook/ideas/idea-draft/idea-status/goal-set"
 ```
 
@@ -1061,7 +1061,7 @@ Run: `cd app-tauri/src-tauri && cargo check 2>&1 | tail -3` then `cd app-tauri &
 
 - [ ] **Step 3: Restart the app** (daemon must reload new Python modules)
 
-Stop the running app, ensure `binaries/gapmap-cli-onedir` exists (dev.sh self-heals), then `cd app-tauri && npm run tauri:dev` in background. Confirm "daemon pre-warmed".
+Stop the running app, ensure `binaries/openreply-cli-onedir` exists (dev.sh self-heals), then `cd app-tauri && npm run tauri:dev` in background. Confirm "daemon pre-warmed".
 
 - [ ] **Step 4: Changelog** — add `changelogs/2026-06-28_NN_goal-directed-self-evolving-agents.md` per the repo changelog rule, then commit.
 

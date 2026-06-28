@@ -14,4 +14,4 @@ A collect run with no Reddit credentials (frontend sends `skip_reddit=True`) plu
 
 ## Files Modified
 
-- `src/gapmap/research/collect.py` — `collect()`: set local `subs = []` in the skip-Reddit branch (~line 638); guarded historical loop with `(subs or [])` (~line 855).
+- `src/openreply/research/collect.py` — `collect()`: set local `subs = []` in the skip-Reddit branch (~line 638); guarded historical loop with `(subs or [])` (~line 855).

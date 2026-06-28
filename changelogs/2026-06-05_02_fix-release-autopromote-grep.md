@@ -7,7 +7,7 @@
 
 The "promote release to latest if all platforms are uploaded" step in all
 three release workflows (and the shared helper script) never fired — every
-public release on `myind-ai/gapmap` stayed a **Draft** and the public "Latest"
+public release on `myind-ai/openreply` stayed a **Draft** and the public "Latest"
 pointer was stuck on an old tag. Root cause: the required-asset patterns start
 with a dash (`-macOS-Apple-Silicon\.dmg$`), so `grep -qE "$pat"` parsed the
 pattern as **options** — `-m` is grep's "max count" flag, producing

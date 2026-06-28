@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const INVITE_FLAG = "gapmap_invite_requested";
+const INVITE_FLAG = "openreply_invite_requested";
 
 // Homepage invite-request capture. Hits /api/v1/invite/request (auto-invite
 // while seats remain, else waitlist). Remembers the request in localStorage so
@@ -57,7 +57,7 @@ export function RequestInviteSection() {
           Request your <em className="italic text-[var(--orange)]">founding invite</em>
         </h2>
         <p className="mx-auto mt-4 max-w-[480px] text-[16px] leading-[1.7] text-[var(--muted)]">
-          Gap Map is invite-only while in beta — seats are limited. Drop your email
+          OpenReply is invite-only while in beta — seats are limited. Drop your email
           and we&rsquo;ll send a founding-member code as seats open. First in line,
           first invited.
         </p>
@@ -98,7 +98,7 @@ export function RequestInviteSection() {
               </div>
             </div>
             <div className="mb-4">
-              <label className="mb-1.5 block text-[12.5px] font-medium text-[var(--text)]">What do you want to use Gap Map for? <span className="text-[var(--muted-light)]">(optional)</span></label>
+              <label className="mb-1.5 block text-[12.5px] font-medium text-[var(--text)]">What do you want to use OpenReply for? <span className="text-[var(--muted-light)]">(optional)</span></label>
               <textarea
                 rows={2} placeholder="e.g. finding gaps in the note-taking market…" value={reason}
                 onChange={(e) => setReason(e.target.value)}

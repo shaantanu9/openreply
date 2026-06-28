@@ -1,4 +1,4 @@
-# Tauri App Improvements — Gap Map
+# Tauri App Improvements — OpenReply
 
 Tracking list for applying Tauri skills to `app-tauri/`. Check items off as completed.
 
@@ -43,7 +43,7 @@ Tracking list for applying Tauri skills to `app-tauri/`. Check items off as comp
 
 - [x] **Splashscreen** (`tauri-splashscreen`) — 2026-04-19
   - Main window now starts hidden (`visible: false`); splash covers cold-start gap
-  - Dark gradient splash branded as Gap Map with sliding progress bar
+  - Dark gradient splash branded as OpenReply with sliding progress bar
   - Closes as soon as first route renders (`api.closeSplash()` after `route()`)
   - Files: new `splash.html`, `vite.config.js` rollupOptions input, `src-tauri/tauri.conf.json` windows[], `src-tauri/src/commands.rs` (`close_splash`), `src-tauri/src/main.rs` invoke handler, `src/api.js`, `src/main.js`
 
@@ -81,7 +81,7 @@ Tracking list for applying Tauri skills to `app-tauri/`. Check items off as comp
 
 - [x] **Aria-labels on icon-only buttons** — copy-log, clear-log, byok-model-delete
 - [x] **Modal focus traps** — new-topic modal (main.js) and BYOK modal: Tab cycles within dialog, first input auto-focused on open, focus returned to caller on close
-- [x] **SWR dashboard cache** — home.js paints from `gapmap.dashboard.cache.v1` localStorage instantly on mount, then background-refreshes (covered by `tauri-python-sidecar-app` skill Phase 6)
+- [x] **SWR dashboard cache** — home.js paints from `openreply.dashboard.cache.v1` localStorage instantly on mount, then background-refreshes (covered by `tauri-python-sidecar-app` skill Phase 6)
 
 ## Phase 5 — UI responsiveness + polish (from full-app audit 2026-04-19)
 

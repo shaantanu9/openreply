@@ -38,11 +38,11 @@ one cosmetic counting bug found in the process.
 ## Known non-fatal noise (pre-existing, not introduced here)
 
 During persona ingest the persona-graph step logs `An instance of Chroma already
-exists … with different settings` even under `GAPMAP_SKIP_PALACE=1`. It's caught
+exists … with different settings` even under `OPENREPLY_SKIP_PALACE=1`. It's caught
 and best-effort (memories are still created with `edges_added=0`). Lives in the
 persona-graph/palace interplay, not the fleet flow — left as-is to avoid
 destabilizing that subsystem.
 
 ## Files Modified
 
-- `src/gapmap/research/fleet_flow.py` — correct ground-stage memory/agent count.
+- `src/openreply/research/fleet_flow.py` — correct ground-stage memory/agent count.

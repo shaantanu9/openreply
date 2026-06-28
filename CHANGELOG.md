@@ -5,7 +5,7 @@
 ### New / Changed
 - **Licence gate ON by default** — the app now requires an activated licence. Without a
   valid key it locks to the activation screen; your local data is never touched. (Dev
-  bypass: `GAPMAP_LICENSE_GATE_ENABLED=0`.)
+  bypass: `OPENREPLY_LICENSE_GATE_ENABLED=0`.)
 - **Simpler activation** — onboarding Step 6 and Settings → Licence now ask for just
   **email + activation key** (password optional, server resolved automatically; the
   "License API base URL" input is gone).
@@ -22,7 +22,7 @@
 - Every "are you sure?" `confirm()` dialog across the app now actually waits for your
   answer (they were proceeding without waiting under Tauri v2).
 
-### Ops / Security (server side, `gapmap.myind.ai`)
+### Ops / Security (server side, `openreply.myind.ai`)
 - Deployed the `/v1/licence/validate` alias + enriched validate response (returns
   `expires_at`/`trial_ends_at`/`is_trial`/`plan_id`/`status`) so the app can sync renewals.
 - Rotated the production admin secret (the default placeholder was still live).
@@ -66,7 +66,7 @@
 - Cleaner public-release publishing (cross-draft artifact gathering on mac/linux;
   Windows uses the Git-Bash-safe path); CI `cargo check` resources-glob fix.
 - The map **“Reveal”/“Open in browser”** file-exposing buttons are now behind a
-  `gapmap.flags.reveal` flag (default off).
+  `openreply.flags.reveal` flag (default off).
 
 ## [v0.1.7 — 2026-05-31] · Topic merge · MCP Copy config · data-safety
 
@@ -96,7 +96,7 @@
 - **Build fix** — created the missing shared `src/lib/toast.js` module that the
   topic-merge modal imports (was breaking the production frontend build).
 - **Test isolation** — the topic-merge test fixture now uses an isolated
-  temp database (`GAPMAP_DATA_DIR` + `tmp_path`) and can no longer mutate the
+  temp database (`OPENREPLY_DATA_DIR` + `tmp_path`) and can no longer mutate the
   real application database.
 
 ### CI / Release
@@ -108,7 +108,7 @@
 ## [v0.1.1 — 2026-05-28] · Graphify-pattern port + perf
 
 Ported the high-value patterns from the external `graphify` tool into our
-own knowledge graph (`src/gapmap/graph/`). Additive only — every existing
+own knowledge graph (`src/openreply/graph/`). Additive only — every existing
 command behaves identically; the new artifacts sit alongside.
 
 ### New artifacts (additive)
@@ -172,11 +172,11 @@ After that, every insight + report call is single-digit ms.
 ### CLI commands added
 
 ```bash
-gapmap research graph backfill-confidence --topic "<t>"   # one-shot
-gapmap research graph communities         --topic "<t>"
-gapmap research graph report              --topic "<t>"
-gapmap research graph insights --section all --topic "<t>"
-gapmap research graph cost                --topic "<t>"
+openreply research graph backfill-confidence --topic "<t>"   # one-shot
+openreply research graph communities         --topic "<t>"
+openreply research graph report              --topic "<t>"
+openreply research graph insights --section all --topic "<t>"
+openreply research graph cost                --topic "<t>"
 ```
 
 ### Files touched
@@ -219,7 +219,7 @@ plus mirrored to the marketing site.
   directly, sidecar spawn cost 30-70s → sub-10ms), long-running Python
   sidecar daemon, stale-while-revalidate localStorage cache on every
   per-tab loader, dense graph relations post-pass.
-- **DMG packaging** — Info.plist with `gapmap://` URL scheme + usage
+- **DMG packaging** — Info.plist with `openreply://` URL scheme + usage
   descriptions, hardened-runtime entitlements for PyInstaller, ONNX
   embedding model bundled (offline-first semantic search), ad-hoc
   signed sidecar for Gatekeeper-cache warmup, multi-arch ffmpeg fetch.
@@ -246,17 +246,17 @@ plus mirrored to the marketing site.
 Marketing corpus + tactic-library foundation for insights.
 
 ### Added
-- `src/gapmap/research/tactic_library.py`
+- `src/openreply/research/tactic_library.py`
 - `data/tactics_seed.json`
 - `scripts/ingest_marketing_books.py`
 - `CHANGELOG.md`
 
 ### Changed
-- `src/gapmap/sources/rss_catalog.py`
-- `src/gapmap/sources/collect_adapter.py`
-- `src/gapmap/cli/main.py`
+- `src/openreply/sources/rss_catalog.py`
+- `src/openreply/sources/collect_adapter.py`
+- `src/openreply/cli/main.py`
 - `app-tauri/src/screens/topic.js`
-- `src/gapmap/research/insights.py`
+- `src/openreply/research/insights.py`
 - `app-tauri/src/screens/insights.js`
 - `app-tauri/src/style.css`
 
@@ -264,10 +264,10 @@ Marketing corpus + tactic-library foundation for insights.
 Closed remaining proposal gaps with persistence and robustness.
 
 ### Changed
-- `src/gapmap/graph/semantic.py`
-- `src/gapmap/research/tactic_library.py`
-- `src/gapmap/research/sentiment_by_source.py`
-- `src/gapmap/graph/build.py`
+- `src/openreply/graph/semantic.py`
+- `src/openreply/research/tactic_library.py`
+- `src/openreply/research/sentiment_by_source.py`
+- `src/openreply/graph/build.py`
 - `scripts/ingest_marketing_books.py`
 - `data/tactics_seed.json`
 
@@ -275,11 +275,11 @@ Closed remaining proposal gaps with persistence and robustness.
 Added a structured paper-writing + experiment pipeline with CLI and MCP access.
 
 ### Added
-- `src/gapmap/research/paper_pipeline.py`
+- `src/openreply/research/paper_pipeline.py`
 
 ### Changed
-- `src/gapmap/cli/main.py`
-- `src/gapmap/mcp/server.py`
+- `src/openreply/cli/main.py`
+- `src/openreply/mcp/server.py`
 - `CHANGELOG.md`
 
 ## [2026-04-27d]
@@ -299,5 +299,5 @@ Fixed warm-daemon LLM settings reload so newly saved NVIDIA defaults are picked 
 - `tests/test_cli_daemon_env.py`
 
 ### Changed
-- `src/gapmap/cli/main.py`
+- `src/openreply/cli/main.py`
 - `CHANGELOG.md`

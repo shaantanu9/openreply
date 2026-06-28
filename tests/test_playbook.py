@@ -1,16 +1,16 @@
 import os, tempfile
-os.environ.setdefault("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
 
 def test_evolve_skips_without_goal():
-    from gapmap.reply import agent as A, playbook as P
+    from openreply.reply import agent as A, playbook as P
     a = A.create_agent(name="NoGoalCo", make_active=True)
     r = P.evolve_playbook(a["id"])
     assert r["ok"] is False and r["skipped"] is True
 
 
 def test_evolve_persists_version(monkeypatch):
-    from gapmap.reply import agent as A, playbook as P
+    from openreply.reply import agent as A, playbook as P
     a = A.create_agent(name="PBCo", make_active=True)
     A.update_agent(a["id"], objective="promote X", audience="devs", win_signal="signup")
     monkeypatch.setattr(P, "_llm_distill", lambda *args, **kw: {
@@ -27,7 +27,7 @@ def test_evolve_persists_version(monkeypatch):
 
 
 def test_playbook_block_renders(monkeypatch):
-    from gapmap.reply import agent as A, playbook as P
+    from openreply.reply import agent as A, playbook as P
     a = A.create_agent(name="BlkCo", make_active=True)
     A.update_agent(a["id"], objective="promote X")
     monkeypatch.setattr(P, "_llm_distill", lambda *x, **k: {
@@ -39,13 +39,13 @@ def test_playbook_block_renders(monkeypatch):
 
 
 def test_feedback_increments_counter(monkeypatch):
-    from gapmap.reply import agent as A
-    from gapmap.reply.schema import init_reply_schema
+    from openreply.reply import agent as A
+    from openreply.reply.schema import init_reply_schema
     a = A.create_agent(name="FbCo", make_active=True)
     A.update_agent(a["id"], objective="promote")
-    import gapmap.reply.feedback as F
+    import openreply.reply.feedback as F
     monkeypatch.setattr(F, "_seed_corpus", lambda *x, **k: None)
-    import gapmap.reply.playbook as P
+    import openreply.reply.playbook as P
     monkeypatch.setattr(P, "evolve_playbook", lambda *x, **k: {"ok": True})
     db = init_reply_schema()
     db["reply_opportunities"].insert(

@@ -6,7 +6,7 @@
 
 ## Summary
 
-Shipped the data-model foundation that makes every generated Gap Map artifact
+Shipped the data-model foundation that makes every generated OpenReply artifact
 auditable, ported (and adapted SQLite-first) from WhyBuddy's provenance/ledger/
 lineage patterns. Every write is additive and non-fatal — it never blocks
 enrich/build. 9 tests pass.
@@ -30,21 +30,21 @@ enrich/build. 9 tests pass.
   `structural`; a `build_complete` check recorded at end of `_build_structural_body`.
 
 ## Files Created
-- `src/gapmap/core/runctx.py`
+- `src/openreply/core/runctx.py`
 - `tests/test_provenance_schema.py`, `test_runctx.py`, `test_ledger_lineage.py`,
   `test_node_provenance.py`, `test_semantic_provenance.py`, `test_build_provenance.py`
 
 ## Files Modified
-- `src/gapmap/core/db.py` (schema + helpers)
-- `src/gapmap/graph/build.py` (`_upsert_node` provenance + structural tags + build check)
-- `src/gapmap/graph/semantic.py` (llm tags + lineage emission)
+- `src/openreply/core/db.py` (schema + helpers)
+- `src/openreply/graph/build.py` (`_upsert_node` provenance + structural tags + build check)
+- `src/openreply/graph/semantic.py` (llm tags + lineage emission)
 
 ## Deferred (remaining 1A tasks)
 - **Task 7** — record `json_parse`/`llm_call` checks inside `research/enrich_worker.py`
   (clean file; not yet done — the data model is ready, just needs the call-sites).
-- **Task 8** — MCP tools `gapmap_checks_list`/`gapmap_lineage_get`: **blocked** because
+- **Task 8** — MCP tools `openreply_checks_list`/`openreply_lineage_get`: **blocked** because
   `mcp/server.py` has uncommitted WIP. The data is already queryable via the existing
-  `gapmap_query_db` tool in the meantime.
+  `openreply_query_db` tool in the meantime.
 - **Task 9** — provenance badge on insight cards + read-only Provenance & Audit panel:
   the badge (`insights.js`) + new `provenance.js` are clean to add, but the `#/provenance`
   route lives in `main.js` which has uncommitted WIP — route wiring deferred.

@@ -1,4 +1,4 @@
-# Gap Map — Product gaps + retention plan
+# OpenReply — Product gaps + retention plan
 
 > What we built is great for **first-use** ("wow, this found insights I'd never have surfaced"). It's not yet great for **tenth-use** — there's no daily/weekly loop that pulls people back. This doc names the gap and the fix list.
 
@@ -52,7 +52,7 @@ Ranked by retention impact per engineering hour. Each item names the concrete fe
 ### 2.1 🔴 Critical for retention (ship in next 2–3 weeks)
 
 #### **Hypothesis tracking / decision journal**
-**Why:** Every hypothesis card today is ephemeral. Users think "great idea" and the card sits there. If each card had **[ ] running** / **[ ] validated** / **[ ] invalidated** / **[ ] paused** states with notes + dates, Gap Map becomes the **one place you track your product bets** — the "Superhuman for product research."
+**Why:** Every hypothesis card today is ephemeral. Users think "great idea" and the card sits there. If each card had **[ ] running** / **[ ] validated** / **[ ] invalidated** / **[ ] paused** states with notes + dates, OpenReply becomes the **one place you track your product bets** — the "Superhuman for product research."
 
 **The retention unlock:** users come back every Friday to update their hypothesis states. That's the weekly ritual we lack.
 
@@ -67,7 +67,7 @@ Ranked by retention impact per engineering hour. Each item names the concrete fe
 ---
 
 #### **Monitoring mode / weekly delta view** (Phase 5 from the spec)
-**Why:** Without auto-refresh, Gap Map is a one-shot tool. With it: users open the app and see "this week in your topics: 3 new painpoints, 1 new competitor, 2 new arXiv papers." That's the Kindle-of-research hook — something changed since you last looked.
+**Why:** Without auto-refresh, OpenReply is a one-shot tool. With it: users open the app and see "this week in your topics: 3 new painpoints, 1 new competitor, 2 new arXiv papers." That's the Kindle-of-research hook — something changed since you last looked.
 
 **What to build:**
 - `launchd` weekly cron (already have the infra) → re-runs `collect` + `synthesize_insights` on scheduled topics
@@ -211,7 +211,7 @@ Insights becomes the undisputed home. Power users still get everything via More.
 
 Should exist:
 ```
-Fresh install → Welcome (what Gap Map does, 15s)
+Fresh install → Welcome (what OpenReply does, 15s)
              → Quick-start: "pick a research topic or paste a competitor URL"
              → [5 example chips + free-text + URL paste]
              → First collect (with narrated progress: "we're searching Reddit… arXiv…")
@@ -274,7 +274,7 @@ If the goal is **retention + first paying users**, this is the order:
 **Week 5:** Exportable briefs (§2.2 #1) — 4 days
 **Week 6:** In-product chat on Insights (§2.2 #2) + tab cleanup (§3.1) — 3.5 days
 
-End of 6 weeks: Gap Map is a **research SaaS**, not a one-shot tool. Each user has a reason to return weekly, a way to share, and a compounding library of tracked bets.
+End of 6 weeks: OpenReply is a **research SaaS**, not a one-shot tool. Each user has a reason to return weekly, a way to share, and a compounding library of tracked bets.
 
 ---
 

@@ -40,9 +40,9 @@ End-to-end verified on "Attention Is All You Need" (`arxiv_1706.03762`): downloa
   Single-post mode prints status + cache path; `--show` dumps the first 8k chars. Bulk mode walks every paper for a topic and reports `total / fetched / skipped / failed`.
 
 - **`src/reddit_research/mcp/server.py`** — two new MCP tools:
-  - `gapmap_paper_fulltext(post_id, force, max_chars)` — same shape as `get_full_text`, with `max_chars` truncation so a 200k-char paper doesn't blow MCP message limits on small clients.
-  - `gapmap_paper_fulltext_status(topic)` — aggregate counts.
-  Both tools auto-register the per-call logging events introduced in `2026-04-26_01` (you'll see them in `mcp logs --tool gapmap_paper_fulltext`).
+  - `openreply_paper_fulltext(post_id, force, max_chars)` — same shape as `get_full_text`, with `max_chars` truncation so a 200k-char paper doesn't blow MCP message limits on small clients.
+  - `openreply_paper_fulltext_status(topic)` — aggregate counts.
+  Both tools auto-register the per-call logging events introduced in `2026-04-26_01` (you'll see them in `mcp logs --tool openreply_paper_fulltext`).
 
 ## Files Created
 
@@ -54,7 +54,7 @@ End-to-end verified on "Attention Is All You Need" (`arxiv_1706.03762`): downloa
 - `src/reddit_research/research/paper_analyze.py` — use full text when available
 - `src/reddit_research/research/chat.py` — splice paper excerpts into chat context
 - `src/reddit_research/cli/main.py` — `paper-fulltext` Typer command
-- `src/reddit_research/mcp/server.py` — `gapmap_paper_fulltext` + `_status` tools
+- `src/reddit_research/mcp/server.py` — `openreply_paper_fulltext` + `_status` tools
 
 ## Verification
 
@@ -73,7 +73,7 @@ ok · source=arxiv · chars=39643 · cached=True
 
 - `paper_full_texts` SQLite table created idempotently on first write.
 - `paper_fulltext` module imports clean. `chat`, `paper_analyze` imports clean.
-- Both MCP tools (`gapmap_paper_fulltext`, `gapmap_paper_fulltext_status`) appear in `_list_tools()`.
+- Both MCP tools (`openreply_paper_fulltext`, `openreply_paper_fulltext_status`) appear in `_list_tools()`.
 
 ## Out of scope (follow-ups)
 

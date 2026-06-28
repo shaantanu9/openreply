@@ -15,7 +15,7 @@ Set, so a fast switch-away-and-return does **not** re-fire
 sentiment" loader derived its elapsed counter, progress bar, and stage message
 from `startedAt = Date.now()` captured **locally inside each
 `renderAnalyzingState` call**. On tab re-entry the loader is re-mounted (the
-tab's cached DOM is cleared by the `gapmap:db-changed` events the run itself
+tab's cached DOM is cleared by the `openreply:db-changed` events the run itself
 emits as it persists per-source rows, so `restoreTabDom` fails and
 `loadSentiment` re-runs), so `startedAt` reset to "now" → the loader flashed
 back to `0s elapsed / 0% / "Connecting to LLM…"`. That *looked* like a fresh

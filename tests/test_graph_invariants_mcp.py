@@ -1,7 +1,7 @@
-"""Task 2B.3 — MCP tool gapmap_graph_invariants.
+"""Task 2B.3 — MCP tool openreply_graph_invariants.
 
 Seeds a minimal graph (one topic node + one painpoint + one edge), reloads
-server.py so it picks up the patched GAPMAP_DATA_DIR, then calls the tool
+server.py so it picks up the patched OPENREPLY_DATA_DIR, then calls the tool
 via _TOOL_REGISTRY — same dispatch path the MCP server uses at runtime.
 Mirrors tests/test_mcp_traceability.py.
 """
@@ -11,10 +11,10 @@ import importlib
 import tempfile
 
 
-def test_gapmap_graph_invariants_returns_checks(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+def test_openreply_graph_invariants_returns_checks(monkeypatch):
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
-    import gapmap.core.db as db_mod
+    import openreply.core.db as db_mod
     importlib.reload(db_mod)
     db_mod.get_db.cache_clear()
     db = db_mod.get_db()
@@ -33,10 +33,10 @@ def test_gapmap_graph_invariants_returns_checks(monkeypatch):
         alter=True,
     )
 
-    import gapmap.mcp.server as server_mod
+    import openreply.mcp.server as server_mod
     importlib.reload(server_mod)
 
-    inv_fn = server_mod._TOOL_REGISTRY["gapmap_graph_invariants"]
+    inv_fn = server_mod._TOOL_REGISTRY["openreply_graph_invariants"]
     result = inv_fn(topic="t")
 
     assert "checks" in result, f"Expected 'checks' key; got {result}"
@@ -45,18 +45,18 @@ def test_gapmap_graph_invariants_returns_checks(monkeypatch):
     assert result.get("ok") is True, f"Expected ok=True for clean graph; got {result}"
 
 
-def test_gapmap_graph_invariants_empty_topic_is_ok(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+def test_openreply_graph_invariants_empty_topic_is_ok(monkeypatch):
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
-    import gapmap.core.db as db_mod
+    import openreply.core.db as db_mod
     importlib.reload(db_mod)
     db_mod.get_db.cache_clear()
     db_mod.get_db()
 
-    import gapmap.mcp.server as server_mod
+    import openreply.mcp.server as server_mod
     importlib.reload(server_mod)
 
-    inv_fn = server_mod._TOOL_REGISTRY["gapmap_graph_invariants"]
+    inv_fn = server_mod._TOOL_REGISTRY["openreply_graph_invariants"]
     result = inv_fn(topic="no_such_topic")
 
     assert result.get("ok") is True, f"Empty topic should not fail; got {result}"

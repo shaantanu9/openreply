@@ -126,7 +126,7 @@ def test_canonicalize_returns_search_keywords(
 
 ```python
     import os as _os
-    _max_kw = int(_os.getenv("GAPMAP_MAX_KEYWORDS", "5") or "5")
+    _max_kw = int(_os.getenv("OPENREPLY_MAX_KEYWORDS", "5") or "5")
     _min_rel = "medium" if aggressive else "high"
     _rel_rank = {"high": 3, "medium": 2, "low": 1}
     search_keywords = [

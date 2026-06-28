@@ -20,8 +20,8 @@ User decisions captured during the audit (recorded in
 
 ## Audit findings — what was already in place
 
-- `tauri.conf.json` v2 config: productName "Gap Map", identifier
-  `com.shantanu.gapmap`, CSP locked, asset-protocol scoped, icons set.
+- `tauri.conf.json` v2 config: productName "OpenReply", identifier
+  `com.shantanu.openreply`, CSP locked, asset-protocol scoped, icons set.
 - `Entitlements.plist` already had the PyInstaller hardened-runtime
   exceptions (`allow-unsigned-executable-memory`,
   `disable-library-validation`, `allow-dyld-environment-variables`) +
@@ -37,7 +37,7 @@ User decisions captured during the audit (recorded in
 ## Findings — what was missing or broken
 
 1. **No `Info.plist`** — usage descriptions for the file picker and a
-   reserved `gapmap://` URL scheme. Tauri merges this with its
+   reserved `openreply://` URL scheme. Tauri merges this with its
    generated Info.plist if present.
 2. **No DMG window config** — installer would open with a default-grey
    window and no app-icon positioning.
@@ -60,7 +60,7 @@ User decisions captured during the audit (recorded in
 
 - `app-tauri/src-tauri/Info.plist` — usage descriptions
   (`NSDocumentsFolderUsageDescription`,
-  `NSMicrophoneUsageDescription`), ATS strict, reserved `gapmap://`
+  `NSMicrophoneUsageDescription`), ATS strict, reserved `openreply://`
   URL scheme, `NSHighResolutionCapable`.
 - `scripts/publish-mac.sh` — one-button local DMG build: vite → spec
   PyInstaller → ad-hoc codesign sidecar → fetch ffmpeg → `cargo tauri

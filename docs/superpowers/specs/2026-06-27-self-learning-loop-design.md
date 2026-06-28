@@ -47,7 +47,7 @@ collection/findings but never the persona learning loop.
   (Generic research collects stay learning-free by design — agent fetch = refresh.)
 - **On schedule:** `cli schedule-tick` → after each scheduled topic's collect, learn for
   agents whose topic matches.
-- **Manual:** `gapmap agent learn` → Rust `agent_learn` → JS `agentLearn()` → a
+- **Manual:** `openreply agent learn` → Rust `agent_learn` → JS `agentLearn()` → a
   "🧠 Learn now" button.
 
 ### 5. CLI / Rust / JS

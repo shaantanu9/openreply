@@ -37,10 +37,10 @@ updating to mention it.
 
 ## Files Modified
 
-- `src/gapmap/persona/teach.py` — `parse_instagram_url`, `classify_video_url`,
+- `src/openreply/persona/teach.py` — `parse_instagram_url`, `classify_video_url`,
   `_fetch_media_rows`, `teach_from_media`, `teach_from_video` router.
-- `src/gapmap/persona/__init__.py` — re-export the new functions.
-- `src/gapmap/cli/persona_cmds.py` — `persona teach-video` calls the router
+- `src/openreply/persona/__init__.py` — re-export the new functions.
+- `src/openreply/cli/persona_cmds.py` — `persona teach-video` calls the router
   (accepts YT + IG URLs).
 - `app-tauri/src/screens/personas.js` — teach card copy + placeholder now say
   "YouTube or Instagram"; note IG is transcribed on-device.

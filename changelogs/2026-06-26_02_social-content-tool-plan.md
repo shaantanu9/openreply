@@ -5,7 +5,7 @@
 
 ## Summary
 
-Authored a detailed, self-contained plan for forking the Gap Map (reddit-myind) Tauri 2
+Authored a detailed, self-contained plan for forking the OpenReply (reddit-myind) Tauri 2
 + Python-sidecar architecture into a NEW repo for a social-media content-creation tool.
 The plan specifies the exact file manifest to copy (copy-as-is / copy-and-trim / do-not-copy),
 the target repo structure, the new outbound `publish/` layer and `drafts`/`publish_log`

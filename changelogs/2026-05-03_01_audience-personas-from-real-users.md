@@ -55,8 +55,8 @@ data alone. LLM augmentation is purely additive.
 
 - `src/reddit_research/cli/main.py` — `audience-build` and
   `audience-get` subcommands.
-- `src/reddit_research/mcp/server.py` — `gapmap_audience_personas`
-  (timeout-wrapped) and `gapmap_audience_personas_get` MCP tools.
+- `src/reddit_research/mcp/server.py` — `openreply_audience_personas`
+  (timeout-wrapped) and `openreply_audience_personas_get` MCP tools.
 - `src/reddit_research/research/launch.py` — Launch Brief prefers
   `audience_personas` over empathy/interview shapes;
   `_personas_from_audience_table` helper added.

@@ -24,7 +24,7 @@ SPA (`or/*`) lacked the wrappers, gate, and screens.
   wrappers over the existing registered Rust commands.
 - **First-run gate** in `main.js`: new `gateCheck()` resolves the effective
   route. Fails closed — any error forces the activation screen. Honors
-  `GAPMAP_LICENSE_GATE_ENABLED` (gate off → no blocking). `activate`/`welcome`
+  `OPENREPLY_LICENSE_GATE_ENABLED` (gate off → no blocking). `activate`/`welcome`
   render full-screen (sidebar hidden). Browser-only (no Tauri) skips the gate
   so the static prototype still renders.
 - **Activation screen** (`renderActivate` in `or/dynamic.js`): email +

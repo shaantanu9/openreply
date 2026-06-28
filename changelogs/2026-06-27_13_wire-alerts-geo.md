@@ -10,11 +10,11 @@ Added the last two backend stores and wired the final two screens, bringing Open
 ## Changes
 - Engine: `reply/alerts.py` (reply_alerts table — rule store + matcher) and
   `reply/geo.py` (geo_queries table — tracked queries + citation rate).
-- CLI: `gapmap reply alert-list/alert-add/alert-delete` and
+- CLI: `openreply reply alert-list/alert-add/alert-delete` and
   `reply geo-list/geo-add/geo-set/geo-delete`.
 - Rust: `alerts_list/add/delete`, `geo_list/add/set/delete` (commands.rs + main.rs).
 - JS: `api.alerts*`/`api.geo*`; `dynamic.js` `renderAlerts` + `renderGeo` (DYN keys).
-- Build: created `binaries/gapmap-cli-onedir/.placeholder` so the tauri build-script
+- Build: created `binaries/openreply-cli-onedir/.placeholder` so the tauri build-script
   resource glob resolves in dev.
 
 ## Verified

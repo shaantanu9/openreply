@@ -1,7 +1,7 @@
 """Regression tests for the parallel-collect "database is locked" failure.
 
 Root cause (2026-06-07): every external-source adapter writes to the same
-`gapmap.db` from a worker thread (fetch-audit row → posts → topic_posts). SQLite
+`openreply.db` from a worker thread (fetch-audit row → posts → topic_posts). SQLite
 permits one writer at a time; under the widened source pool (or a second process
 also attached) a writer could be held past the 5s busy_timeout, and the adapters
 surfaced `source:<name>: database is locked` — collecting 0 rows for that source.
@@ -20,7 +20,7 @@ import pytest
 
 
 def test_is_locked_err_classifies_transient_locks():
-    from gapmap.core.db import _is_locked_err
+    from openreply.core.db import _is_locked_err
 
     assert _is_locked_err(sqlite3.OperationalError("database is locked"))
     assert _is_locked_err(sqlite3.OperationalError("database table is locked"))
@@ -32,7 +32,7 @@ def test_is_locked_err_classifies_transient_locks():
 
 
 def test_retry_on_locked_succeeds_after_transient_failures(monkeypatch):
-    from gapmap.core import db
+    from openreply.core import db
 
     monkeypatch.setattr(db, "_DB_RETRY_BASE_SLEEP", 0.0)  # no real sleeping
     calls = {"n": 0}
@@ -48,7 +48,7 @@ def test_retry_on_locked_succeeds_after_transient_failures(monkeypatch):
 
 
 def test_retry_on_locked_reraises_non_lock_immediately(monkeypatch):
-    from gapmap.core import db
+    from openreply.core import db
 
     monkeypatch.setattr(db, "_DB_RETRY_BASE_SLEEP", 0.0)
     calls = {"n": 0}
@@ -63,7 +63,7 @@ def test_retry_on_locked_reraises_non_lock_immediately(monkeypatch):
 
 
 def test_retry_on_locked_reraises_after_exhausting_attempts(monkeypatch):
-    from gapmap.core import db
+    from openreply.core import db
 
     monkeypatch.setattr(db, "_DB_RETRY_BASE_SLEEP", 0.0)
     monkeypatch.setattr(db, "_DB_RETRY_ATTEMPTS", 3)
@@ -81,11 +81,11 @@ def test_retry_on_locked_reraises_after_exhausting_attempts(monkeypatch):
 def test_log_fetch_start_survives_a_held_write_lock(tmp_path, monkeypatch):
     """A concurrently-held write lock that releases within the busy_timeout must
     NOT propagate as 'database is locked' — log_fetch_start returns a real id."""
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GAPMAP_SKIP_PALACE", "1")
-    monkeypatch.setenv("GAPMAP_DB_BUSY_TIMEOUT_MS", "8000")
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_SKIP_PALACE", "1")
+    monkeypatch.setenv("OPENREPLY_DB_BUSY_TIMEOUT_MS", "8000")
 
-    from gapmap.core.db import get_db, log_fetch_start, log_fetch_end
+    from openreply.core.db import get_db, log_fetch_start, log_fetch_end
 
     get_db.cache_clear()
     db = get_db()  # creates schema + the `fetches` table
@@ -130,7 +130,7 @@ def test_log_fetch_start_survives_a_held_write_lock(tmp_path, monkeypatch):
 def test_log_fetch_start_returns_sentinel_when_write_persistently_fails(monkeypatch):
     """If the audit write can never complete, log_fetch_start must degrade to -1
     (never raise) so the adapter proceeds to fetch + persist real data."""
-    from gapmap.core import db
+    from openreply.core import db
 
     monkeypatch.setattr(db, "_DB_RETRY_BASE_SLEEP", 0.0)
     monkeypatch.setattr(db, "_DB_RETRY_ATTEMPTS", 2)

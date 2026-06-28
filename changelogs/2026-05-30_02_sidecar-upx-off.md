@@ -11,12 +11,12 @@ The companion `Could not create temporary directory!` errors were a separate cau
 
 ## Changes
 
-- Set `upx=False` (was `upx=True`) in `gapmap-cli.spec` EXE() with an explanatory comment.
+- Set `upx=False` (was `upx=True`) in `openreply-cli.spec` EXE() with an explanatory comment.
 - Rebuilt the sidecar locally (`scripts/build-pyinstaller.sh`), copied to `binaries/`, ad-hoc codesigned; smoke-tested `info` + a 12-way concurrent-spawn stress test (0/12 failures, no extraction errors).
 
 ## Files Modified
 
-- `gapmap-cli.spec` — `upx=True` → `upx=False`
+- `openreply-cli.spec` — `upx=True` → `upx=False`
 
 ## Follow-up
 

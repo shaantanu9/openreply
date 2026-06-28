@@ -1,5 +1,5 @@
 // OpenReply frontend API — thin wrappers over the Rust commands (command triangle:
-// here → commands.rs → gapmap CLI → reply/agent/content engine → reply_* SQLite).
+// here → commands.rs → openreply CLI → reply/agent/content engine → reply_* SQLite).
 // In a plain browser (no Tauri) calls return null so the static prototype still renders.
 import { invoke } from "@tauri-apps/api/core";
 
@@ -170,7 +170,7 @@ export const api = {
   replyGrowthGet: (id) => call("reply_growth_get", { id: id || null }),
   // subreddit intelligence
   redditAccountStatus: () => call("reddit_account_status"),
-  subDiscover: (limit) => call("sub_discover", { limit: limit || 8 }),
+  subDiscover: (limit, autoTrackTop) => call("sub_discover", { limit: limit || 8, autoTrackTop: autoTrackTop || 0 }),
   subList: () => call("sub_list"),
   subIntel: (sub, refresh) => call("sub_intel", { sub, refresh: !!refresh }),
   subTrack: (sub, off) => call("sub_track", { sub, off: !!off }),
@@ -216,6 +216,16 @@ export const api = {
   publishSetXCreds: (apiKey, apiSecret, accessToken, accessSecret) =>
     call("publish_set_x_creds", { apiKey, apiSecret, accessToken, accessSecret }),
   contentPublishX: (id, dryRun) => call("content_publish_x", { contentId: id, dryRun: !!dryRun }),
+  // ── Minimal X-account worktree (MVP) ──
+  xAccountAdd: (handle, authToken, ct0) =>
+    call("x_account_add", { handle, authToken, ct0 }),
+  xAccountImportBrowser: (handle) => call("x_account_import_browser", { handle }),
+  xAccountList: () => call("x_account_list"),
+  xAccountProfile: (handle) => call("x_account_profile", { handle }),
+  xAccountFetchPosts: (handle, count, withThreads) =>
+    call("x_account_fetch_posts", { handle, count: count || 10, with_threads: !!withThreads }),
+  xAccountFetchThread: (handle, tweetIdOrUrl, limit) =>
+    call("x_account_fetch_thread", { handle, tweet_id_or_url: tweetIdOrUrl, limit: limit || 50 }),
   // ── Connections (Reach credentials) — creds_* return a JSON array; the
   // single-result ops return a 1-element array, so callers take [0]. ──
   credsList: () => call("creds_list"),
@@ -226,7 +236,7 @@ export const api = {
   credsDelete: (source) => call("creds_delete", { source }),
   credsToggle: (source, enabled) => call("creds_toggle", { source, enabled }),
   credsPreview: (source, query, limit) => call("creds_preview", { source, query: query || null, limit: limit || 6 }),
-  // ── License / activation (Gap Map backend — commands.rs) ──
+  // ── License / activation (OpenReply backend — commands.rs) ──
   // Hard gate: the app blocks on #/activate until license_status.activated.
   licenseGateStatus: () => call("license_gate_status"),
   licenseStatus: () => call("license_status"),

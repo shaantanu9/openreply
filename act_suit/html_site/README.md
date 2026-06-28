@@ -1,6 +1,6 @@
-# Gap Map HTML Site
+# OpenReply HTML Site
 
-Static marketing + auth + activation site for Gap Map.
+Static marketing + auth + activation site for OpenReply.
 
 ## Quick Start
 
@@ -25,7 +25,7 @@ Open `http://localhost:5173`.
 
 - `APP_DOWNLOAD_URL` - direct desktop installer URL for marketing/activation download buttons.
 - `APP_DEEP_LINK_URL` - desktop custom-scheme URL used by post-activation "Open desktop app"
-  (default fallback is `gapmap://dashboard`).
+  (default fallback is `openreply://dashboard`).
 
 ## Structure
 

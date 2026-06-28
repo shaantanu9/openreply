@@ -6,15 +6,15 @@
 ## Summary
 
 `core/db.py::_wal_self_heal` could **destroy committed data**. On the
-"checkpoint failed" path it unconditionally deleted `gapmap.db-wal` /
-`gapmap.db-shm`. A SQLite WAL holds committed-but-not-yet-checkpointed
+"checkpoint failed" path it unconditionally deleted `openreply.db-wal` /
+`openreply.db-shm`. A SQLite WAL holds committed-but-not-yet-checkpointed
 pages; deleting it while **another process has the database open**
 discards every transaction living only in the WAL. With more than one
 attached process (e.g. a Tauri sidecar AND an MCP server, or a stray
 standalone script), this silently wipes real rows.
 
 Hit in practice on 2026-05-31: a standalone process opened the DB (which
-runs `_wal_self_heal` on first `get_db()`) while two `gapmap mcp serve`
+runs `_wal_self_heal` on first `get_db()`) while two `openreply mcp serve`
 processes held it open. The heal deleted the shared WAL and ~56k
 `topic_posts` rows that lived in it vanished. (Recovered in full by
 rebuilding `topic_posts` from the surviving `extraction_queue` table.)
@@ -29,7 +29,7 @@ rebuilding `topic_posts` from the surviving `extraction_queue` table.)
   can't proceed, the files are left intact and a real error surfaces on
   first use instead of being papered over with data loss.
 - `tests/test_topic_merge.py` fixture hardened: switched from the
-  unreliable `GAPMAP_DATA_DIR` env-var isolation to the repo's canonical
+  unreliable `OPENREPLY_DATA_DIR` env-var isolation to the repo's canonical
   pattern — `monkeypatch.setattr(config._resolve_data_dir, …)` (see
   `test_smoke.py::db`). Under pytest the env-var approach let the real
   production DB leak through, so the merge tests had been running against
@@ -38,7 +38,7 @@ rebuilding `topic_posts` from the surviving `extraction_queue` table.)
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — `_wal_self_heal` no longer unlinks side files
+- `src/openreply/core/db.py` — `_wal_self_heal` no longer unlinks side files
 - `tests/test_topic_merge.py` — canonical isolated-DB fixture + guard
 
 ## Verification

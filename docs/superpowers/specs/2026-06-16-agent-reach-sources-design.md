@@ -1,19 +1,19 @@
-# Agent Reach → Gap Map native sources + in-app credential flow
+# Agent Reach → OpenReply native sources + in-app credential flow
 
 > **Date:** 2026-06-16 · **Status:** Design approved, ready for implementation plan
-> **Source repo studied:** `~/Documents/GitHub/myind-gapmap-ref/agent-reach` (Agent Reach v1.5.0, MIT)
-> **Target:** `reddit-myind` (Gap Map) — `src/gapmap/sources/` + `app-tauri/`
+> **Source repo studied:** `~/Documents/GitHub/myind-openreply-ref/agent-reach` (Agent Reach v1.5.0, MIT)
+> **Target:** `reddit-myind` (OpenReply) — `src/openreply/sources/` + `app-tauri/`
 > **Companion:** `docs/specs/SOURCE_ADDITION_PLAYBOOK.md` (the 6–7 file wiring recipe this follows)
 
 ## Summary
 
 Agent Reach is a Python CLI/library that gives AI agents read + search access to
-13+ internet platforms via free, no-API-key backends. Gap Map already has ~40 native
-sources in `src/gapmap/sources/`, each emitting the common **posts-row** shape that
+13+ internet platforms via free, no-API-key backends. OpenReply already has ~40 native
+sources in `src/openreply/sources/`, each emitting the common **posts-row** shape that
 feeds dedup + graph + sentiment + audience clustering for free.
 
-This project **ports Agent Reach's logic** (not the package) into native Gap Map
-sources for the platforms Gap Map lacks, fixes Reddit fetching to a robust tiered
+This project **ports Agent Reach's logic** (not the package) into native OpenReply
+sources for the platforms OpenReply lacks, fixes Reddit fetching to a robust tiered
 cascade, and adds an **in-app credential flow**: every cookie-gated source shows its
 status in the desktop app, opens the platform login in the system browser on click,
 captures the session cookie/token, stores it locally, verifies it, and wires it into
@@ -31,7 +31,7 @@ the fetchers.
 ## Non-goals
 
 - Vendoring or depending on the `agent-reach` PyPI package at runtime.
-- Re-implementing sources Gap Map already has well (github, rss, youtube) — except the
+- Re-implementing sources OpenReply already has well (github, rss, youtube) — except the
   two free overlaps explicitly chosen (twitter_free, reddit_free).
 - OS-keychain credential storage (noted as future hardening; v1 uses local SQLite).
 - Heavy/native deps in the sidecar (no playwright/yt-dlp added unless unavoidable).
@@ -110,10 +110,10 @@ registered across all three layers:
 
 | Command | CLI | MCP tool | Rust `commands.rs` | `api.js` |
 |---|---|---|---|---|
-| `creds_list` | ✓ | `gapmap_creds_list` | ✓ | `credsList()` |
+| `creds_list` | ✓ | `openreply_creds_list` | ✓ | `credsList()` |
 | `creds_import_browser` | ✓ | — | ✓ | `credsImportBrowser(source, browser?)` |
 | `creds_save_manual` | ✓ | — | ✓ | `credsSaveManual(source, cookie)` |
-| `creds_verify` | ✓ | `gapmap_creds_verify` | ✓ | `credsVerify(source)` |
+| `creds_verify` | ✓ | `openreply_creds_verify` | ✓ | `credsVerify(source)` |
 | `creds_delete` | ✓ | — | ✓ | `credsDelete(source)` |
 
 (`import_browser` / `save_manual` / `delete` are local-machine credential ops — exposed
@@ -122,12 +122,12 @@ via CLI + Tauri IPC but NOT as MCP tools, to avoid remote agents writing credent
 ## Per-source wiring (the playbook, ×10)
 
 For each source, the 6–7 file trail:
-1. `src/gapmap/sources/<name>.py` — the fetcher (posts-row, never-raise).
-2. `src/gapmap/sources/__init__.py` — import + `__all__` + docstring tier lists.
-3. `src/gapmap/sources/collect_adapter.py` — `collect_<name>` (via `_run_simple_list` or
+1. `src/openreply/sources/<name>.py` — the fetcher (posts-row, never-raise).
+2. `src/openreply/sources/__init__.py` — import + `__all__` + docstring tier lists.
+3. `src/openreply/sources/collect_adapter.py` — `collect_<name>` (via `_run_simple_list` or
    custom for cookie/proxy flows).
-4. `src/gapmap/mcp/server.py` — `gapmap_fetch_<name>` tool.
-5. `src/gapmap/cli/main.py` — source-list help + dispatch branch.
+4. `src/openreply/mcp/server.py` — `openreply_fetch_<name>` tool.
+5. `src/openreply/cli/main.py` — source-list help + dispatch branch.
 6. `pyproject.toml` — only if a new pure-Python dep is required (prefer none).
 7. `source_families.py` + `app-tauri/src/lib/postLink.js` — only for new source families
    (reddit-like / video-like) so rows stay visible to sentiment/sources/audience.
@@ -152,7 +152,7 @@ For each source, the 6–7 file trail:
 
 ## Storage & security notes
 
-- Credentials in local SQLite (gapmap DB), same trust boundary as the rest of the local
+- Credentials in local SQLite (openreply DB), same trust boundary as the rest of the local
   app data. File perms inherited from the app data dir.
 - Manual-todo doc `docs/manual-todo/agent-reach-cookies.md` captures the one-time per-user
   steps (Cookie-Editor install, which cookie per platform, proxy env vars).
@@ -163,7 +163,7 @@ For each source, the 6–7 file trail:
 
 - [ ] Each new source: `fetch_<name>("test")` returns posts-shaped rows or `[]`.
 - [ ] Rows appear in `posts` after `collect_<name>`; selectable in app collect picker.
-- [ ] `gapmap_fetch_<name>` callable via MCP/CLI.
+- [ ] `openreply_fetch_<name>` callable via MCP/CLI.
 - [ ] Reddit returns full-fidelity rows (score/comments) when a cookie is connected;
       never hard-403s (falls to RSS).
 - [ ] Reach Connections screen: open-login → import → verify flips badge to Connected

@@ -5,7 +5,7 @@
 
 ## Summary
 
-Release assets on `myind-ai/gapmap` shipped with the tauri-action
+Release assets on `myind-ai/openreply` shipped with the tauri-action
 default naming convention — technical and confusing to non-developers:
 
 ```
@@ -62,7 +62,7 @@ Homebrew bash 5+.
 ### 2. Workflow rename steps for v0.1.5+ releases
 
 All 3 per-platform release workflows now rename artifacts BEFORE
-uploading to `myind-ai/gapmap`:
+uploading to `myind-ai/openreply`:
 
 - `release-mac.yml` — DMG rename + `.app.tar.gz` rezip-to-`.zip` with
   friendly naming (extends the pre-existing `aarch64 → arm64` rename
@@ -106,7 +106,7 @@ draft → latest; Linux appends to an already-published release later).
 - `bash -n` clean on both shell scripts.
 - **Live verification: v0.1.4 assets successfully renamed via the
   migration script** (8/8 renames, 0 errors, 0 unrecognized). Verified
-  via `gh api repos/myind-ai/gapmap/releases/tags/v0.1.4 --jq
+  via `gh api repos/myind-ai/openreply/releases/tags/v0.1.4 --jq
   '.assets[].name'` — all 8 names now match the new convention.
 - v0.1.5+ workflow steps will be verified at first tag push on the
   new architecture.
@@ -124,7 +124,7 @@ draft → latest; Linux appends to an already-published release later).
 
   The script is per-tag idempotent so re-running is safe.
 
-- The source repo (`gap-map-pro`) draft releases still hold the
+- The source repo (`openreply`) draft releases still hold the
   tauri-action default names — those are internal staging and not
   user-visible. No reason to rename them.
 

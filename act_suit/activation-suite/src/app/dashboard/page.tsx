@@ -3,7 +3,7 @@ import { SiteShell } from "@/components/shell/SiteShell";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Dashboard",
+  title: "OpenReply — Dashboard",
 };
 
 // Session-driven; never cache.

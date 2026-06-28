@@ -53,9 +53,9 @@ currently records an LLM-call proxy, not real token usage.
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — debate_runs audit columns, audit reader, commit fix.
-- `src/gapmap/research/debate_run.py` — transcript enrichment, `get_debate_audit`.
-- `src/gapmap/cli/main.py` — `research debate-audit`.
+- `src/openreply/core/db.py` — debate_runs audit columns, audit reader, commit fix.
+- `src/openreply/research/debate_run.py` — transcript enrichment, `get_debate_audit`.
+- `src/openreply/cli/main.py` — `research debate-audit`.
 - `app-tauri/src-tauri/src/commands.rs` · `main.rs` — `debate_audit` command.
 - `app-tauri/src/api.js` — `debateAudit`.
 - `app-tauri/src/screens/debatePanel.js` — Replay toggle + timeline renderer.

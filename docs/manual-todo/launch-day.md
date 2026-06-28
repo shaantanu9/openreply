@@ -1,4 +1,4 @@
-# Launch-day checklist — Gap Map
+# Launch-day checklist — OpenReply
 
 Everything in-code is done (P0 + P1 + P2 ticked in `docs/mvp-checklist.md`,
 13/13 tests green). This file lists the **manual steps** that can't be
@@ -11,18 +11,18 @@ automated from code and must happen at launch.
 Before anything else, open the built DMG on your own Mac and run the full
 user flow. Catch packaging-layer regressions before any user does.
 
-- [ ] Drag `Gap Map.app` to `/Applications` → double-click
+- [ ] Drag `OpenReply.app` to `/Applications` → double-click
 - [ ] On first open, macOS will say "can't verify the developer" — right-click → Open → Open. (Gatekeeper first-launch warning; ad-hoc signature only.)
 - [ ] Splash screen → welcome step 1 → 4 → click any example topic
 - [ ] Aggressive collect runs → watch the "Now" banner tick through discover/fetch/sources/enrich/export
-- [ ] Map tab populates (gap-map HTML renders in iframe)
+- [ ] Map tab populates (openreply-map HTML renders in iframe)
 - [ ] Report tab loads the pro report (no "Load failed")
 - [ ] Evidence tab shows painpoints / features / workarounds
 - [ ] Chat tab answers a question about the topic grounded in the graph
 - [ ] Settings → Local data shows "✓ DB connected"
 - [ ] Sidebar icons all render (Lucide SVGs, no emoji fallbacks)
 
-If anything above fails → capture `Console.app` logs filtered to "Gap Map" and file an issue.
+If anything above fails → capture `Console.app` logs filtered to "OpenReply" and file an issue.
 
 ---
 
@@ -50,7 +50,7 @@ will see "unidentified developer" warnings**. For real distribution:
 Run ONCE to register an app-specific password:
 ```bash
 # Generate at https://appleid.apple.com → Sign-In & Security → App-Specific Passwords
-xcrun notarytool store-credentials gapmap-notary \
+xcrun notarytool store-credentials openreply-notary \
   --apple-id "your@email" \
   --team-id "TEAMID" \
   --password "xxxx-xxxx-xxxx-xxxx"
@@ -60,7 +60,7 @@ Then per-release:
 ```bash
 # 1. Submit the .dmg (or the notarization-zip of the .app)
 xcrun notarytool submit src-tauri/target/release/bundle/dmg/*.dmg \
-  --keychain-profile gapmap-notary \
+  --keychain-profile openreply-notary \
   --wait
 
 # 2. Once accepted (1-10 min typically), staple the ticket
@@ -104,9 +104,9 @@ for macOS Gatekeeper to not re-verify every invocation (2+ min hang).
 
 ## 5. Copy + asset checklist
 
-- [ ] App name: "Gap Map" ✓ (tauri.conf.json productName)
+- [ ] App name: "OpenReply" ✓ (tauri.conf.json productName)
 - [ ] Version: bump `0.1.0` → `0.1.1` or `1.0.0` in `tauri.conf.json` + `pyproject.toml` before any re-release
-- [ ] Bundle identifier: `com.shantanu.gapmap` ✓
+- [ ] Bundle identifier: `com.shantanu.openreply` ✓
 - [ ] Icons: 32, 128, 128@2x, .icns, .ico ✓
 - [ ] **Missing:** no `longDescription` for landing page, no screenshots, no README link in About card
 
@@ -125,11 +125,11 @@ Recommended first release path: GitHub Releases + Homebrew cask once stable.
 
 ## 7. Privacy + telemetry disclosures (required before public release)
 
-Gap Map fetches from Reddit public JSON, HN, arXiv, app stores, etc. Need an
+OpenReply fetches from Reddit public JSON, HN, arXiv, app stores, etc. Need an
 explicit statement:
 
 - [ ] Add "Privacy" section to README and in Settings → About:
-  - All data stored locally in `~/Library/Application Support/com.shantanu.gapmap/`
+  - All data stored locally in `~/Library/Application Support/com.shantanu.openreply/`
   - No analytics, no telemetry, no cloud backups
   - API keys written to `~/.config/reddit-myind/.env` (chmod 600), never uploaded
   - LLM calls go directly to the provider the user configured (OpenAI/Anthropic/…/localhost Ollama)
@@ -142,7 +142,7 @@ explicit statement:
 
 - [ ] GitHub Issues opened for tracking feedback
 - [ ] Check Ollama usage — any user reports of 404s / model loading failures
-- [ ] Check Tauri crash logs (`~/Library/Logs/DiagnosticReports/Gap Map*.ips`)
+- [ ] Check Tauri crash logs (`~/Library/Logs/DiagnosticReports/OpenReply*.ips`)
 - [ ] First-user walkthrough video / GIF for the README — adoption multiplier
 
 ---
@@ -155,7 +155,7 @@ cd app-tauri && npm run tauri -- dev
 
 # Production build (DMG output)
 cd app-tauri && npm run tauri -- build
-# → src-tauri/target/release/bundle/dmg/Gap Map_0.1.0_aarch64.dmg
+# → src-tauri/target/release/bundle/dmg/OpenReply_0.1.0_aarch64.dmg
 
 # Rebuild the sidecar binary only
 cd /path/to/reddit-myind

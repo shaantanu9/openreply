@@ -38,7 +38,7 @@ batch.
 - Topic page: compact override row above tabs — "This topic uses: Auto ·
   100 posts · batch 5 · [Override]". Override opens an inline popover with
   mode/threshold/batch sliders; Reset clears the override.
-- Main: red `enrich-cap-topbar` banner on `gapmap:enrich-cap` with "Raise
+- Main: red `enrich-cap-topbar` banner on `openreply:enrich-cap` with "Raise
   cap" (→ Settings) and "Pause until tomorrow" (writes `paused_until` to
   `extraction.json`).
 
@@ -62,7 +62,7 @@ batch.
   estimator + mode/threshold/batch/cap/idle-release controls.
 - `app-tauri/src/screens/topic.js` — `_renderExtractionOverrideRow` + inline
   popover.
-- `app-tauri/src/main.js` — `gapmap:enrich-cap` banner with Raise/Pause CTAs.
+- `app-tauri/src/main.js` — `openreply:enrich-cap` banner with Raise/Pause CTAs.
 
 ## Notes / Stubs
 

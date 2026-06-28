@@ -5,7 +5,7 @@
 
 ## Summary
 
-Added `docs/research-applications.md` — a running ledger for mapping external research findings onto Gap Map (product) + the Tauri desktop app (engineering). Seeded with Finding 01 (the Transformer paper, Vaswani 2017) using a reusable 5-slot template so future findings slot in the same way.
+Added `docs/research-applications.md` — a running ledger for mapping external research findings onto OpenReply (product) + the Tauri desktop app (engineering). Seeded with Finding 01 (the Transformer paper, Vaswani 2017) using a reusable 5-slot template so future findings slot in the same way.
 
 ## Changes
 

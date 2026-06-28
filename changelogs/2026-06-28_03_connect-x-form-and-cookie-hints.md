@@ -7,7 +7,7 @@
 
 Two UX follow-ups so connecting accounts is self-explanatory:
 1. A **Settings → "Publish to X / Twitter"** card to paste the four OAuth keys in
-   the UI (instead of the `gapmap publish set-creds` CLI), with a developer-portal
+   the UI (instead of the `openreply publish set-creds` CLI), with a developer-portal
    link and a live connected/not-connected badge.
 2. A **persistent hint on each not-connected cookie Connections card** naming the
    exact cookies needed (e.g. `auth_token`, `ct0`) and how to get them — so users

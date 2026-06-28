@@ -5,7 +5,7 @@
 
 ## Summary
 
-Every fresh clone / new machine / post-pull restart hit the same four things in sequence: venv exists?, extras installed?, any stale tauri/gapmap/vite on port 1420?, sidecar imports clean?. Running them by hand every time ate minutes. This bundle collapses all of it behind one script, with a pre-launch doctor that exits non-zero if the sidecar can't start so the Tauri window never opens on a broken backend.
+Every fresh clone / new machine / post-pull restart hit the same four things in sequence: venv exists?, extras installed?, any stale tauri/openreply/vite on port 1420?, sidecar imports clean?. Running them by hand every time ate minutes. This bundle collapses all of it behind one script, with a pre-launch doctor that exits non-zero if the sidecar can't start so the Tauri window never opens on a broken backend.
 
 ## Changes
 
@@ -18,9 +18,9 @@ Subcommands:
 | `./scripts/dev.sh` (default `dev`) | preflight → kill stray → install deps (if missing) → doctor → `npm run tauri dev` |
 | `./scripts/dev.sh setup` | install deps + run doctor, don't launch |
 | `./scripts/dev.sh doctor` | sidecar health check only |
-| `./scripts/dev.sh kill` | stop running tauri/gapmap/vite/esbuild + free port 1420 |
+| `./scripts/dev.sh kill` | stop running tauri/openreply/vite/esbuild + free port 1420 |
 | `./scripts/dev.sh clean` | kill + remove `target/debug/build`, `app-tauri/dist/` |
-| `./scripts/dev.sh reset-db` | wipe the Tauri app's SQLite DB at `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/` — asks for `YES` confirmation |
+| `./scripts/dev.sh reset-db` | wipe the Tauri app's SQLite DB at `~/Library/Application Support/com.shantanu.openreply/reddit-myind/` — asks for `YES` confirmation |
 
 Preflight specifics:
 - Prefers `.venv/bin/python` when the venv exists (real 3.12+), falls back to `python3.13/3.12/3.11` hunt if venv needs bootstrapping. Refuses to proceed on system `python3` if it's <3.11 (pyproject requires 3.11+).
@@ -47,14 +47,14 @@ Exit codes: 0 healthy / 1 critical (blocks launch) / 2 warnings only.
 | `init_schema` creates `topics` table | only `topic_posts` / `topic_runs` / `topic_prefs` exist; "topic" is an FK string | doctor's required-tables list now matches actual schema |
 | `init_schema` creates `fetch_log`, `analysis_log`, `llm_cache` | real names are `fetches`, `topic_runs`, and LLM output persists in `graph_nodes` (per 2026-04-20 persistence changelog) | doctor list updated |
 | `resolve_provider()` returns `(name, info)` tuple | returns bare `str` | doctor unpacks a string now |
-| script used `GAPMAP_DEV_PYTHON` env var | `cli.rs` reads `REDDIT_MYIND_DEV_PYTHON` | renamed in `dev.sh::launch` |
+| script used `OPENREPLY_DEV_PYTHON` env var | `cli.rs` reads `REDDIT_MYIND_DEV_PYTHON` | renamed in `dev.sh::launch` |
 
 ## Verification
 
 - `./scripts/dev.sh doctor` → all ✓, sidecar healthy, exit 0.
 - `./scripts/dev.sh setup` → idempotent (re-runs report "already installed" instantly).
 - `./scripts/dev.sh kill` on a fresh shell → "nothing was running" (no false positive).
-- `./scripts/dev.sh` launched end-to-end → Vite up on :1420, cargo built, `target/debug/gapmap` process live, sidecar serving queries (logged `dev-python OK in NNms` on multiple Tauri invocations).
+- `./scripts/dev.sh` launched end-to-end → Vite up on :1420, cargo built, `target/debug/openreply` process live, sidecar serving queries (logged `dev-python OK in NNms` on multiple Tauri invocations).
 
 ## Files Created
 

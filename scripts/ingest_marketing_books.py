@@ -23,9 +23,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from gapmap.core.db import get_db
-from gapmap.research.paper_chunks import chunk_paper
-from gapmap.research.paper_fulltext import _cache_path, _extract_text, _record_status
+from openreply.core.db import get_db
+from openreply.research.paper_chunks import chunk_paper
+from openreply.research.paper_fulltext import _cache_path, _extract_text, _record_status
 
 
 BOOKS: list[dict[str, Any]] = [
@@ -110,7 +110,7 @@ def _post_id(slug: str) -> str:
 
 def _download_text(url: str, timeout_s: int = 40) -> str:
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; gapmap/1.0; +https://github.com/shantanubombatkar)",
+        "User-Agent": "Mozilla/5.0 (compatible; openreply/1.0; +https://github.com/shantanubombatkar)",
         "Accept": "text/plain,application/pdf,text/html,*/*",
     }
     last_error: str | None = None

@@ -79,11 +79,11 @@ worst-case for the planner after the JSON indexes were added.
 
 ## Files Modified
 
-- `src/gapmap/graph/schema.py` — composite index + 4 JSON-path indexes + ANALYZE
-- `src/gapmap/graph/communities.py` — `skeleton_only` param + narrowed SQL
-- `src/gapmap/graph/insights.py` — `knowledge_gaps` rewrite (two-query form)
-- `src/gapmap/graph/analyze.py` — `build_nx` cache + `clear_build_nx_cache`
-- `src/gapmap/cli/main.py` — `--all-nodes` flag on `graph communities`
+- `src/openreply/graph/schema.py` — composite index + 4 JSON-path indexes + ANALYZE
+- `src/openreply/graph/communities.py` — `skeleton_only` param + narrowed SQL
+- `src/openreply/graph/insights.py` — `knowledge_gaps` rewrite (two-query form)
+- `src/openreply/graph/analyze.py` — `build_nx` cache + `clear_build_nx_cache`
+- `src/openreply/cli/main.py` — `--all-nodes` flag on `graph communities`
 
 ## How to roll out
 
@@ -97,7 +97,7 @@ If a topic feels stuck on first hit:
 
 ```bash
 # Force the index population synchronously and observe progress:
-uv run python -c "from gapmap.graph.schema import ensure_graph_schema; ensure_graph_schema()"
+uv run python -c "from openreply.graph.schema import ensure_graph_schema; ensure_graph_schema()"
 ```
 
 After that, all insight + report calls return in single-digit ms.

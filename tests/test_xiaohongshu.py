@@ -1,8 +1,8 @@
 """xiaohongshu best-effort cookie source."""
 from __future__ import annotations
 
-from gapmap.sources import xiaohongshu
-from gapmap.sources.xiaohongshu import fetch_xiaohongshu
+from openreply.sources import xiaohongshu
+from openreply.sources.xiaohongshu import fetch_xiaohongshu
 
 _SAMPLE = {
     "data": {

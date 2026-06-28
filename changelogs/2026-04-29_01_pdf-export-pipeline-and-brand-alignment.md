@@ -43,7 +43,7 @@ no more drift between formats.
   brand_link, brand_link_url, extra_pandoc_args)` — graceful auto-detect
   of XeLaTeX (PATH + standard MacTeX/TeX-Live install dirs); returns a
   structured `{ok: False, install_hint}` if missing instead of crashing.
-- New MCP tool: `gapmap_export_pdf_from_markdown`.
+- New MCP tool: `openreply_export_pdf_from_markdown`.
 - New CLI flag: `research export-deck --format md-to-pdf`.
 
 ### Brand alignment (`_doc_design.py`)
@@ -98,7 +98,7 @@ no more drift between formats.
   `build_pdf_from_markdown()`, new `_find_xelatex()` discovery helper,
   new `_pdf_assets_dir()` resolver, `__all__` updated.
 - `src/reddit_research/mcp/server.py` — new
-  `gapmap_export_pdf_from_markdown` MCP tool.
+  `openreply_export_pdf_from_markdown` MCP tool.
 - `src/reddit_research/cli/main.py` — `research export-deck` accepts
   `--format md-to-pdf`.
 - `pyproject.toml` — `[tool.setuptools.package-data]` for the bundled
@@ -116,7 +116,7 @@ reddit-cli research export-deck \
   --subtitle "Deep-Dive Research"
 
 # MCP
-gapmap_export_pdf_from_markdown(
+openreply_export_pdf_from_markdown(
   md_path="docs/research/<brief>.md",
   out_path="docs/research/<brief>.pdf",
   title="...", subtitle="...",

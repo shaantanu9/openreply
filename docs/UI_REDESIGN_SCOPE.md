@@ -1,4 +1,4 @@
-# Gap Map — UI Redesign Scope
+# OpenReply — UI Redesign Scope
 
 **Branch:** `ui-redesign`
 **Worktree:** `.worktrees/ui-redesign/`

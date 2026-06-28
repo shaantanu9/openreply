@@ -5,7 +5,7 @@
 
 ## Summary
 
-The Gap Map sidebar was a fixed 248px column with no way to reclaim
+The OpenReply sidebar was a fixed 248px column with no way to reclaim
 that screen real estate. Power-user requests on Map / Iterate /
 Database screens that want maximum content width had no escape hatch
 short of resizing the window or the browser zoom level.
@@ -33,7 +33,7 @@ Three ways to trigger the cycle:
    through "rail" first when the user said "show me the sidebar"
    would be a confusing UX.
 
-State persists to `localStorage['gapmap.sidebarState.v1']` so the
+State persists to `localStorage['openreply.sidebarState.v1']` so the
 choice survives reload and new tabs.
 
 ## Changes

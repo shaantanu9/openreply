@@ -1,4 +1,4 @@
-# Gap Map — UI guidelines
+# OpenReply — UI guidelines
 
 **Date:** 2026-04-19
 **Status:** Living doc. Update whenever a new pattern ships.

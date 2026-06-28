@@ -60,7 +60,7 @@ if [[ -x "$TARGET" ]]; then
     exit 0
 fi
 
-TMPZIP="$(mktemp /tmp/gapmap-ffmpeg.XXXXXX.zip)"
+TMPZIP="$(mktemp /tmp/openreply-ffmpeg.XXXXXX.zip)"
 trap 'rm -f "$TMPZIP"' EXIT
 
 success=0

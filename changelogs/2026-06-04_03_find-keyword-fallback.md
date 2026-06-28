@@ -9,7 +9,7 @@ Building on the no-hang timeout fix: during an active collect on the same topic,
 the semantic palace stays locked, so search would time out → "busy". Now Find
 always returns useful results.
 
-## Changes (`src/gapmap/cli/main.py`)
+## Changes (`src/openreply/cli/main.py`)
 
 - **Reader priority:** `cmd_research_semantic_search` now raises the
   `mark_chat_active()` coordination flag (heartbeat thread, refreshed every 4s)
@@ -33,7 +33,7 @@ always returns useful results.
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py`, `app-tauri/src/screens/find.js`
+- `src/openreply/cli/main.py`, `app-tauri/src/screens/find.js`
 
 ## Files Created
 

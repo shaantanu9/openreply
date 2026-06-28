@@ -24,7 +24,7 @@ appeared → user sees a gold banner next time they open the topic.
 
 ### Rust
 - New `src-tauri/src/schedule.rs`:
-  - `install(interval_hours, data_dir)` — writes `~/Library/LaunchAgents/com.shantanu.gapmap.schedule.plist` with the resolved sidecar path, `REDDIT_MYIND_DATA_DIR`, and `PYTHONUNBUFFERED=1`; `launchctl load -w` loads it.
+  - `install(interval_hours, data_dir)` — writes `~/Library/LaunchAgents/com.shantanu.openreply.schedule.plist` with the resolved sidecar path, `REDDIT_MYIND_DATA_DIR`, and `PYTHONUNBUFFERED=1`; `launchctl load -w` loads it.
   - `uninstall()` — `launchctl unload -w` + removes the plist.
   - `status()` — reports `installed`, `loaded`, `path`.
   - Sidecar binary path resolved at install time (walks up from `current_exe()` looking for `src-tauri/binaries/reddit-cli-aarch64-apple-darwin`) so the plist works regardless of install location.
@@ -61,6 +61,6 @@ appeared → user sees a gold banner next time they open the topic.
 
 1. `cd app-tauri && npm run tauri dev`.
 2. Settings → **Scheduled runs** → select "Every day" → status reads "Enabled · every 24h".
-3. Check `launchctl list | grep com.shantanu.gapmap.schedule` — should show the agent.
+3. Check `launchctl list | grep com.shantanu.openreply.schedule` — should show the agent.
 4. Open any topic → toggle **Auto-refresh** → `reddit-cli research query "SELECT * FROM topic_prefs"` should show `scheduled=1`.
 5. Flip the Settings select to "Off" → plist + agent removed.

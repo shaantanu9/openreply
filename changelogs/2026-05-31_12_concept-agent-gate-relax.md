@@ -25,11 +25,11 @@ there a corpus*, never on *have we extracted exactly N findings*.
 
 ## Files Modified
 
-- `src/gapmap/research/concept.py`
+- `src/openreply/research/concept.py`
 
 ## Verification
 
-- `python -m py_compile src/gapmap/research/concept.py` ✅
+- `python -m py_compile src/openreply/research/concept.py` ✅
 - For topic "Indian community help app" (1 painpoint, 2 workarounds): old gate
   `< 2 painpoints` → BLOCKED; new gate `pps+was==0` → PASS. The Concept Agent
   now runs (LLM + deterministic fallback) instead of showing the block.

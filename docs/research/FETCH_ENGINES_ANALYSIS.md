@@ -1,8 +1,8 @@
-# Fetch Engines Analysis — last30days-skill, web-edge-engine, vs OpenReply (gapmap)
+# Fetch Engines Analysis — last30days-skill, web-edge-engine, vs OpenReply (openreply)
 
 > Detailed analysis of two external fetch/research engines and how they relate to
 > OpenReply's current data-source/fetch layer. Both external engines were **run live
-> and verified working** (keyless). Conclusion: keep gapmap as OpenReply's fetch
+> and verified working** (keyless). Conclusion: keep openreply as OpenReply's fetch
 > backbone, selectively adopt last30days' ranking + desktop-source patterns, and treat
 > web-edge-engine as the blueprint for a future hosted/web OpenReply.
 >
@@ -95,7 +95,7 @@ social → LLM → persistence → distribution.
 
 ---
 
-## 3. OpenReply's current fetch (gapmap) — recap
+## 3. OpenReply's current fetch (openreply) — recap
 
 (Full detail: `docs/architecture/TAURI_AND_FETCH_ARCHITECTURE.md`.)
 - **Reddit without the API:** PRAW→cookie `.json`→RSS **tier cascade** (`fetch/_reddit_tiers.py`,
@@ -110,7 +110,7 @@ social → LLM → persistence → distribution.
 
 ## 4. Head-to-head
 
-| Dimension | gapmap (OpenReply now) | last30days (Python) | web-edge-engine (TS) |
+| Dimension | openreply (OpenReply now) | last30days (Python) | web-edge-engine (TS) |
 |---|---|---|---|
 | Runtime | Python sidecar in Tauri | Python CLI / Go MCP | Deno/Node/Edge (web) |
 | Sources | ~58 (broad: social+news+academic+econ) | ~18 (social+market+web, engagement-rich) | 4 keyless + key-gated |
@@ -127,7 +127,7 @@ social → LLM → persistence → distribution.
 
 ## 5. Recommendation — "we can continue using that too"
 
-**Keep gapmap as OpenReply's fetch backbone.** It already powers the app, fetches Reddit
+**Keep openreply as OpenReply's fetch backbone.** It already powers the app, fetches Reddit
 without an API key, covers the most sources, has the BYOK LLM layer and the credentials
 store, and is wired through the Tauri command triangle. No reason to rip it out.
 
@@ -138,7 +138,7 @@ store, and is wired through the Tauri command triangle. No reason to rip it out.
 2. **Cross-source entity clustering + MMR** (`cluster.py`) — dedupe/group mentions in the
    Inbox across platforms.
 3. **Desktop-only sources via the TAURI_PORT_GUIDE patterns** — X via bird (cookies),
-   yt-dlp YouTube, polymarket — to extend OpenReply's reach beyond gapmap's set, using the
+   yt-dlp YouTube, polymarket — to extend OpenReply's reach beyond openreply's set, using the
    guide's Rust cookie-extraction + sidecar approach (matches our Tauri architecture).
 4. **Watchlist/sighting deltas** (`store.py`) — powers the Inbox "new since last run" + alerts.
 
@@ -160,5 +160,5 @@ python3 last30days-skill/skills/last30days/scripts/last30days.py "TOPIC" --quick
 cd last30days-skill/examples/web-edge-engine && node --experimental-transform-types driver.ts "TOPIC"
 
 # OpenReply (current): agent-scoped multi-source
-gapmap reply find --platforms reddit_free,hn --json
+openreply reply find --platforms reddit_free,hn --json
 ```

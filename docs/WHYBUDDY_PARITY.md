@@ -1,7 +1,7 @@
-# WhyBuddy → Gap Map — Feature Parity Tracker
+# WhyBuddy → OpenReply — Feature Parity Tracker
 
-> **Updated:** 2026-06-14 · Source: `docs/whybuddy-learnings/00-overview-and-architecture.md` (§2 catalog) cross-checked against `src/gapmap` + `app-tauri`.
-> WhyBuddy is an open-source **3D multi-agent spec-rehearsal engine** (one-sentence → SPEC package, 575k TS lines, Three.js scene, Docker executor, UE5). Gap Map is a **multi-source research / gap-discovery desktop app** (Tauri 2 + Python). Many WhyBuddy features are intentionally **not applicable** to our product. This file maps every WhyBuddy §2 feature to one of:
+> **Updated:** 2026-06-14 · Source: `docs/whybuddy-learnings/00-overview-and-architecture.md` (§2 catalog) cross-checked against `src/openreply` + `app-tauri`.
+> WhyBuddy is an open-source **3D multi-agent spec-rehearsal engine** (one-sentence → SPEC package, 575k TS lines, Three.js scene, Docker executor, UE5). OpenReply is a **multi-source research / gap-discovery desktop app** (Tauri 2 + Python). Many WhyBuddy features are intentionally **not applicable** to our product. This file maps every WhyBuddy §2 feature to one of:
 >
 > - ✅ **Done** — built and working in our code
 > - 🟡 **Portable / not built** — relevant to our domain, could be ported (candidate work)
@@ -15,8 +15,8 @@
 | Clarification dialogue → `clarified_brief.json` | ✅ | Clarified-brief (`topic_prefs.brief_*`, `research/brief.py`) + used by the Fleet `clarify` stage. |
 | Multi-route planning + confirmation gate | ✅ | `fleet_flow.plan_routes` (quick/standard/deep, risk+cost, recommendation). |
 | SPEC tree generation / spec docs (EARS) / arch Mermaid / UI mockups / prompt pack | ⛔ | Spec-engine output; not applicable. (We generate research reports / docx / pptx / pdf instead.) |
-| Traceability matrix | ✅ | `gapmap_traceability` (finding → source posts). |
-| Handoff/export | ✅ (analog) | `gapmap_export_docx/pptx/pdf`. |
+| Traceability matrix | ✅ | `openreply_traceability` (finding → source posts). |
+| Handoff/export | ✅ (analog) | `openreply_export_docx/pptx/pdf`. |
 
 ## 2.2 Multi-Agent Collaboration (FSD Fleet) — the core port
 | WhyBuddy feature | Status | Notes |
@@ -33,7 +33,7 @@
 | 3D office scene (Three.js) | ⛔ | Product/demo layer; not applicable to a research tool. |
 | Task cockpit / streaming stage progress | ✅ | Fleet flow streams stages live (`fleet-run --stream` → `fleet:progress`/`fleet:done`; timeline flips running→final per stage). |
 | Replay / audit timeline | ✅ | Debate ↺ Replay (`debate_audit`); per-round per-persona transcript + checks/lineage. |
-| Cost dashboard / budget alerts | ✅ (estimate) | Per-debate token estimate + `GAPMAP_DEBATE_TOKEN_BUDGET` alert levels. Real provider usage not surfaced (char estimate). |
+| Cost dashboard / budget alerts | ✅ (estimate) | Per-debate token estimate + `OPENREPLY_DEBATE_TOKEN_BUDGET` alert levels. Real provider usage not surfaced (char estimate). |
 
 ## 2.4 Human-in-the-loop governance
 | WhyBuddy feature | Status | Notes |
@@ -45,7 +45,7 @@
 ## 2.5 Execution layer
 | WhyBuddy feature | Status | Notes |
 |---|---|---|
-| Lobster Docker executor / sandbox / skill jobs / log batching / screenshots | ⛔ | WhyBuddy runs generated code in Docker. We have a Python sidecar + jobs queue (`gapmap_jobs_*`); a Docker code-executor is a different product. |
+| Lobster Docker executor / sandbox / skill jobs / log batching / screenshots | ⛔ | WhyBuddy runs generated code in Docker. We have a Python sidecar + jobs queue (`openreply_jobs_*`); a Docker code-executor is a different product. |
 
 ## 2.6 Quality assurance
 | WhyBuddy feature | Status | Notes |

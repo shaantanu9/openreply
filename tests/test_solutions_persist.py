@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from gapmap.graph.schema import ensure_graph_schema, make_node_id
+from openreply.graph.schema import ensure_graph_schema, make_node_id
 
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
     ensure_graph_schema()
@@ -29,7 +29,7 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_persist_why_merges_into_painpoint_metadata(db) -> None:
-    from gapmap.research.persist_solutions import persist_why_for_painpoint
+    from openreply.research.persist_solutions import persist_why_for_painpoint
 
     persist_why_for_painpoint(
         topic="focus",
@@ -44,7 +44,7 @@ def test_persist_why_merges_into_painpoint_metadata(db) -> None:
 
 
 def test_persist_papers_creates_evidence_nodes_and_edges(db) -> None:
-    from gapmap.research.persist_solutions import persist_papers_for_painpoint
+    from openreply.research.persist_solutions import persist_papers_for_painpoint
 
     pp = make_node_id("focus", "painpoint", "cant-focus")
     n = persist_papers_for_painpoint(
@@ -66,7 +66,7 @@ def test_persist_papers_creates_evidence_nodes_and_edges(db) -> None:
 
 
 def test_persist_solutions_creates_mechanism_intervention_chain(db) -> None:
-    from gapmap.research.persist_solutions import (
+    from openreply.research.persist_solutions import (
         persist_papers_for_painpoint,
         persist_solutions_for_painpoint,
     )
@@ -116,7 +116,7 @@ def test_persist_solutions_creates_mechanism_intervention_chain(db) -> None:
 
 
 def test_persist_solutions_skipped_input_no_op(db) -> None:
-    from gapmap.research.persist_solutions import persist_solutions_for_painpoint
+    from openreply.research.persist_solutions import persist_solutions_for_painpoint
 
     pp = make_node_id("focus", "painpoint", "cant-focus")
     summary = persist_solutions_for_painpoint(

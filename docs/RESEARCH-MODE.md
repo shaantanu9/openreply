@@ -1,6 +1,6 @@
 # Research Mode — researcher / PhD workspace
 
-Gap Map's **Research Mode** turns the app into a guided literature workspace:
+OpenReply's **Research Mode** turns the app into a guided literature workspace:
 **Gather → Read → Synthesize → Write**, with a cross-project Library. It reuses
 the academic engine (paper finding, full-text → sections → chunks, palace
 search, cited Q&A, connections, gaps, outline/draft, citation export) and adds a
@@ -12,7 +12,7 @@ Feature catalog: `FEATURES.md` §19.
 ## Turning it on
 
 **Settings → "App mode" → Academic research.** This is a frontend preference
-(localStorage `gapmap.settings.appMode`); it needs no rebuild. In research mode:
+(localStorage `openreply.settings.appMode`); it needs no rebuild. In research mode:
 
 - "Topic" is relabelled **"Project"** (data model unchanged — still `topic`).
 - The sidebar shows **Research** (`#/research-home`) and **Library** (`#/library`).
@@ -62,7 +62,7 @@ paper's `post_id` in `posts`.
 
 ## Headless / scripting (CLI + MCP)
 
-Every surface is scriptable. CLI (`gapmap research …`):
+Every surface is scriptable. CLI (`openreply research …`):
 
 | Command | Purpose |
 |---|---|
@@ -80,12 +80,12 @@ Every surface is scriptable. CLI (`gapmap research …`):
 | `collections {list\|create\|rename\|delete\|add\|remove}` | collections |
 | `flow-status --topic …` | gather→read→synthesize→write progress |
 
-MCP mirrors these: `gapmap_paper_ask`, `gapmap_paper_chunk_search`,
-`gapmap_paper_reading_status`, `gapmap_paper_reading_queue`,
-`gapmap_paper_highlight`, `gapmap_paper_notes`, `gapmap_lit_matrix`,
-`gapmap_paper_library`, `gapmap_paper_collections`, `gapmap_flow_status`,
-plus the existing paper pipeline (`gapmap_paper_knowledge_build`,
-`gapmap_connections`, `gapmap_paper_outline_generate`, …).
+MCP mirrors these: `openreply_paper_ask`, `openreply_paper_chunk_search`,
+`openreply_paper_reading_status`, `openreply_paper_reading_queue`,
+`openreply_paper_highlight`, `openreply_paper_notes`, `openreply_lit_matrix`,
+`openreply_paper_library`, `openreply_paper_collections`, `openreply_flow_status`,
+plus the existing paper pipeline (`openreply_paper_knowledge_build`,
+`openreply_connections`, `openreply_paper_outline_generate`, …).
 
 ## Tests
 

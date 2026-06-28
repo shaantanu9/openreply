@@ -1,6 +1,6 @@
-# Gap Map (activation-suite / gapmap_web) — Features & Flows
+# OpenReply (activation-suite / openreply_web) — Features & Flows
 
-> **Updated:** 2026-06-04 by Claude · **Build state:** production (Vercel `gapmap-web` → gapmap.myind.ai, region `sin1`)
+> **Updated:** 2026-06-04 by Claude · **Build state:** production (Vercel `openreply-web` → openreply.myind.ai, region `sin1`)
 > Source of truth for every user-facing feature of the web app, its flow, code location, completeness, and known gaps. Update after every feature change.
 >
 > Companion docs: `docs/BETA_AND_ADMIN.md` (operator guide), `LICENSE_SYSTEM.md` (licensing internals), `docs/EMAIL_RESEND.md` (email), `docs/PRODUCT_AND_USAGE_GUIDE.md`.
@@ -47,7 +47,7 @@
 **Implementation:** `src/components/auth/SignInPanel.tsx` (`handleForgot`, `handleForgotReset`).
 
 ### Desktop-app login (activation token) ✅
-**Entry:** Gap Map desktop app → `/v1/device/activate`, then periodic `/v1/licence/validate`.
+**Entry:** OpenReply desktop app → `/v1/device/activate`, then periodic `/v1/licence/validate`.
 **Flow:** activate (email+key, or master key) → device-fingerprint-bound signed JWT (`TOKEN_SIGNING_SECRET`) → validate checks signature + fingerprint match + device-still-attached + licence status.
 **Implementation:** `src/app/api/v1/device/activate/route.ts`, `src/app/api/v1/licence/validate/route.ts` (+ `/v1/...` aliases), `src/lib/token.ts`, `src/lib/licenseService.ts`.
 **Verified (2026-06-03):** activate → validate `{valid:true}`; wrong fingerprint → `device_mismatch`.
@@ -138,7 +138,7 @@
 **Implementation:** RPCs `admin_soft_delete_user` / `admin_restore_user` / `admin_hard_delete_user` (`supabase/migrations/20260603_user_deletion.sql`), `supabaseDeleteUser`, `src/app/api/v1/admin/user/route.ts`.
 
 ### Coupons / codes tab ✅ 🔒
-**Flow:** create codes (auto `GAPMAP-XXXX-XXXX` or custom; plan, seats, expiry, device seats, note); list with seats-used + redemption counts; copy; enable/disable; recent-redemptions feed.
+**Flow:** create codes (auto `OPENREPLY-XXXX-XXXX` or custom; plan, seats, expiry, device seats, note); list with seats-used + redemption counts; copy; enable/disable; recent-redemptions feed.
 **Implementation:** `src/components/admin/CouponsSection.tsx`, `src/app/api/v1/admin/coupons/route.ts`, `src/lib/betaAdminStore.ts`.
 
 ### Waitlist tab ✅ 🔒

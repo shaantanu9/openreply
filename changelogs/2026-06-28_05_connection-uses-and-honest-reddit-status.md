@@ -42,8 +42,8 @@ reflect what actually happens.
 
 ## Files Modified
 
-- `src/gapmap/research/reach_connections.py`
-- `src/gapmap/research/collect.py`
+- `src/openreply/research/reach_connections.py`
+- `src/openreply/research/collect.py`
 - `app-tauri/src/or/dynamic.js`
 
 ## Files Created

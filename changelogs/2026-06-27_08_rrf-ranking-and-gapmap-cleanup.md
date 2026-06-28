@@ -1,4 +1,4 @@
-# Engagement-weighted RRF ranking + gapmap cleanup
+# Engagement-weighted RRF ranking + openreply cleanup
 
 **Date:** 2026-06-27
 **Type:** Feature + Refactor
@@ -6,7 +6,7 @@
 ## Summary
 
 Folded last30days' engagement-weighted RRF ranking into OpenReply's opportunity engine,
-then cleaned the gapmap Python down to the OpenReply keep-set (removed 96 research
+then cleaned the openreply Python down to the OpenReply keep-set (removed 96 research
 modules). Verified the whole engine still imports and runs.
 
 ## Changes
@@ -24,13 +24,13 @@ modules). Verified the whole engine still imports and runs.
 
 ## Verified
 - Deterministic rank unit test (high-engagement/recent floats up).
-- Live `gapmap reply find` (RRF-ranked Reddit opportunities).
-- `gapmap.cli.main` + `gapmap.mcp.server` import; `reply/agent/content/discover/info` run clean.
+- Live `openreply reply find` (RRF-ranked Reddit opportunities).
+- `openreply.cli.main` + `openreply.mcp.server` import; `reply/agent/content/discover/info` run clean.
 
 ## Files Created
-- `src/gapmap/reply/rank.py`
-- `changelogs/2026-06-27_08_rrf-ranking-and-gapmap-cleanup.md`
+- `src/openreply/reply/rank.py`
+- `changelogs/2026-06-27_08_rrf-ranking-and-openreply-cleanup.md`
 
 ## Files Modified / Removed
 - Modified: `reply/{opportunity,schema,__init__}.py`, `research/__init__.py`, `graph/semantic.py`, docs
-- Removed: 96 `src/gapmap/research/*.py` modules
+- Removed: 96 `src/openreply/research/*.py` modules

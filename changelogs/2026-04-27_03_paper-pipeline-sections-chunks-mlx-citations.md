@@ -72,10 +72,10 @@ Citation extractor pulled 373 refs from 9 papers — 54 with arxiv id, 38 with D
 
 ### C. MLX embedder backend — `src/reddit_research/retrieval/embedder_mlx.py` (NEW)
 
-- ChromaDB-compatible embedding function backed by `mlx_embeddings`. Default model: `mlx-community/multilingual-e5-base-mlx` (768-dim, multilingual, ~280 MB), env-tunable via `GAPMAP_MLX_EMBEDDING_MODEL`.
+- ChromaDB-compatible embedding function backed by `mlx_embeddings`. Default model: `mlx-community/multilingual-e5-base-mlx` (768-dim, multilingual, ~280 MB), env-tunable via `OPENREPLY_MLX_EMBEDDING_MODEL`.
 - Auto-detect: `_is_apple_silicon()` + `_mlx_available()` → MLX kicks in only when both are True. Falls back silently to ONNX MiniLM otherwise.
 - Lazy load: model isn't fetched until first `__call__`, so import is cheap.
-- `embedder.get_embedding_function()` now honours `GAPMAP_EMBEDDING_BACKEND=mlx|onnx|multilingual|default` in addition to the legacy `GAPMAP_EMBEDDING_MODEL` flag. New `embedder.active_backend()` returns the resolved label so doctor + status tools can surface it.
+- `embedder.get_embedding_function()` now honours `OPENREPLY_EMBEDDING_BACKEND=mlx|onnx|multilingual|default` in addition to the legacy `OPENREPLY_EMBEDDING_MODEL` flag. New `embedder.active_backend()` returns the resolved label so doctor + status tools can surface it.
 
 ### D. Mempalace `paper_chunks` collection — `src/reddit_research/retrieval/palace.py`
 
@@ -104,18 +104,18 @@ After a successful download, `_auto_index_after_download(post_id)` runs the full
 
 | Tool | What it does |
 |------|-------------|
-| `gapmap_paper_sections` | Parse sections for a paper (idempotent). |
-| `gapmap_paper_section_get` | Pull verbatim text of one named section. |
-| `gapmap_paper_chunk` | Chunk one paper + push to Mempalace. |
-| `gapmap_paper_chunk_topic` | Bulk-chunk every cached paper for a topic. |
-| `gapmap_paper_chunk_search` | Semantic + BM25 chunk search, with `sections=[…]` filter. |
-| `gapmap_paper_search_papers` | Chunk retrieval rolled up to paper level. |
-| `gapmap_paper_extract_refs` | Extract references from local PDF cache + auto-link. (Distinct from the existing S2-API-backed `gapmap_paper_references`.) |
-| `gapmap_paper_local_refs` | List locally-extracted refs for a post. |
-| `gapmap_paper_cited_by` | Incoming citations from corpus papers. |
-| `gapmap_paper_chunks_stats` | Mempalace stats for the chunks collection. |
+| `openreply_paper_sections` | Parse sections for a paper (idempotent). |
+| `openreply_paper_section_get` | Pull verbatim text of one named section. |
+| `openreply_paper_chunk` | Chunk one paper + push to Mempalace. |
+| `openreply_paper_chunk_topic` | Bulk-chunk every cached paper for a topic. |
+| `openreply_paper_chunk_search` | Semantic + BM25 chunk search, with `sections=[…]` filter. |
+| `openreply_paper_search_papers` | Chunk retrieval rolled up to paper level. |
+| `openreply_paper_extract_refs` | Extract references from local PDF cache + auto-link. (Distinct from the existing S2-API-backed `openreply_paper_references`.) |
+| `openreply_paper_local_refs` | List locally-extracted refs for a post. |
+| `openreply_paper_cited_by` | Incoming citations from corpus papers. |
+| `openreply_paper_chunks_stats` | Mempalace stats for the chunks collection. |
 
-Each tool inherits the per-call logging from `2026-04-26_01` so `mcp logs --tool gapmap_paper_chunk_search` works out of the box.
+Each tool inherits the per-call logging from `2026-04-26_01` so `mcp logs --tool openreply_paper_chunk_search` works out of the box.
 
 ### H. Six new Typer CLI commands — `src/reddit_research/cli/main.py`
 
@@ -205,7 +205,7 @@ papers — not in posts table; linker activates when cited works arrive)
 ## Limitations & follow-ups
 
 - **OpenFileLoader is a soft dep today.** No package literally named that on PyPI yet — I probe four plausible module names so whichever one the user installs gets picked up. If you have a specific package in mind (`unstructured-io/unstructured`? `langchain-community.document_loaders`?), name it and I'll wire it in directly so it becomes the default path with regex as fallback.
-- **MLX libs not installed.** ONNX MiniLM is serving embeddings — that's fine, the fallback works. To switch on Apple Silicon: `uv pip install mlx mlx_embeddings` then `GAPMAP_EMBEDDING_BACKEND=mlx`. Throughput delta on M-series should be 5-10× MiniLM-CPU.
+- **MLX libs not installed.** ONNX MiniLM is serving embeddings — that's fine, the fallback works. To switch on Apple Silicon: `uv pip install mlx mlx_embeddings` then `OPENREPLY_EMBEDDING_BACKEND=mlx`. Throughput delta on M-series should be 5-10× MiniLM-CPU.
 - **Cross-corpus citation linking is dormant** until the cited works are also in `posts`. Future call: optional auto-fetch of unresolved DOIs via `sources/crossref.py` on a politeness budget.
 - **No PubMed PMC roundtrip yet** — same out-of-scope item from `2026-04-26_02`. PubMed papers still return `not_oa`.
 - **Section parser is regex-based.** Catches the standard ACL/NeurIPS/IEEE conventions cleanly; non-standard layouts fall through to the `body` whole-document chunk. A pdfplumber-aided heading detector would lift accuracy ~10%; out of scope today.

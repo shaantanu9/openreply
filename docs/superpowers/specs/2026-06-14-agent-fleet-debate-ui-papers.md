@@ -15,7 +15,7 @@
 - `fleet_command(directive, execute, level)` → `research fleet-command` (NL decompose)
 - `debate_verdicts(topic)` → `get_debate_verdicts`; `debate_audit(topic)` → `get_debate_audit`
 - `start_fleet_run(topic, route, level, rounds, approved)` → **streaming** via `run_cli_streaming` (reuse the collect/enrich streaming slot pattern) emitting `fleet:progress` per stage (the CLI `fleet-run` must emit NDJSON stage events via the `on_stage` hook) + `fleet:done`. (If streaming is too invasive for v1, fall back to a one-shot `run_cli` with a long timeout for L1/L2; L3 uses streaming.)
-- MCP (thin): `gapmap_fleet_plan`, `gapmap_fleet_run`, `gapmap_fleet_command`, `gapmap_debate_verdicts`.
+- MCP (thin): `openreply_fleet_plan`, `openreply_fleet_run`, `openreply_fleet_command`, `openreply_debate_verdicts`.
 
 **A2 — Fleet screen** (`app-tauri/src/screens/fleet.js`, route `#/fleet` + sidebar entry):
 - Decision-gate card (simple/complex + signals) + route picker (quick/standard/deep) + autopilot selector **L1 (plan only) / L2 (approve before expensive) / L3 (full)**.

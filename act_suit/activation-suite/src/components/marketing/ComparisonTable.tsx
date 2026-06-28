@@ -1,6 +1,6 @@
 import { COMPARISON_ROWS } from "@/lib/constants";
 
-const COLUMNS = ["Capability", "Gap Map", "Dovetail", "Notion AI", "Manual research"] as const;
+const COLUMNS = ["Capability", "OpenReply", "Dovetail", "Notion AI", "Manual research"] as const;
 
 function Cell({ value }: { value: string }) {
   if (value === "yes") {
@@ -19,7 +19,7 @@ export function ComparisonTable() {
       <div className="mx-auto max-w-[1200px]">
         <div className="max-w-[620px]">
           <span className="section-label">Comparison</span>
-          <h2 className="section-h2">How Gap Map stacks up.</h2>
+          <h2 className="section-h2">How OpenReply stacks up.</h2>
         </div>
         <div className="mt-12 overflow-x-auto rounded-[24px] border border-[var(--border-strong)] bg-white">
           <table className="min-w-full text-left">

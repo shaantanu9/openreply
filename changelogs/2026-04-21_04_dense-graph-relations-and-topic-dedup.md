@@ -5,7 +5,7 @@
 
 ## Summary
 
-Two related fixes that make the gap-map graph form proper, logical connections
+Two related fixes that make the openreply-map graph form proper, logical connections
 and prevent duplicate topic rows from the LLM canonicalization step.
 
 ### 1. Dense graph relations (feature)
@@ -32,9 +32,9 @@ Hairball prevention: per-node neighbor cap (top-N by similarity, default 8).
 One popular finding can't dominate with 30+ edges.
 
 Tuning envs:
-- `GAPMAP_REL_THRESHOLD` (default 0.55) — relates_to cutoff
-- `GAPMAP_SOLVE_THRESHOLD` (default 0.50) — cross-kind solve/address cutoff
-- `GAPMAP_REL_MAX_NEIGHBORS` (default 8) — per-node fanout cap
+- `OPENREPLY_REL_THRESHOLD` (default 0.55) — relates_to cutoff
+- `OPENREPLY_SOLVE_THRESHOLD` (default 0.50) — cross-kind solve/address cutoff
+- `OPENREPLY_REL_MAX_NEIGHBORS` (default 8) — per-node fanout cap
 
 Graceful skip when ChromaDB isn't installed — graph stays functional
 (structural tree still built), just without the dense semantic layer.

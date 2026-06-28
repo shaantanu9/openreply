@@ -13,8 +13,8 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
     db["posts"].insert_all([
@@ -26,7 +26,7 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
          "score": 999, "num_comments": 9, "source_type": "reddit"},
     ], pk="id")
     # Seed scored gaps that point at those posts.
-    from gapmap.research import pain_scoring
+    from openreply.research import pain_scoring
     pain_scoring._ensure_table()
     db.execute(
         "INSERT INTO gap_scores(topic,gap_id,title,sample_post_ids,pain_score)"
@@ -43,7 +43,7 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_build_dedupes_and_skips_deleted(db):
-    from gapmap.research import gap_audience
+    from openreply.research import gap_audience
     r = gap_audience.build("t")
     assert r["ok"] is True
     # alice + bob; [deleted] excluded. alice appears in both gaps.
@@ -55,7 +55,7 @@ def test_build_dedupes_and_skips_deleted(db):
 
 
 def test_engagement_ranking(db):
-    from gapmap.research import gap_audience
+    from openreply.research import gap_audience
     gap_audience.build("t")
     rows = gap_audience.get_gap_users("t", "gap-a")["rows"]
     # alice (105) ranks above bob (11).
@@ -64,7 +64,7 @@ def test_engagement_ranking(db):
 
 
 def test_topic_reachout_dedupes_across_gaps(db):
-    from gapmap.research import gap_audience
+    from openreply.research import gap_audience
     gap_audience.build("t")
     out = gap_audience.get_topic_reachout("t")
     by_author = {x["author"]: x for x in out["rows"]}
@@ -74,7 +74,7 @@ def test_topic_reachout_dedupes_across_gaps(db):
 
 
 def test_build_without_scores_is_graceful(db):
-    from gapmap.research import gap_audience
+    from openreply.research import gap_audience
     r = gap_audience.build("unknown-topic")
     assert r["ok"] is False
     assert gap_audience.get_topic_reachout("unknown-topic")["count"] == 0

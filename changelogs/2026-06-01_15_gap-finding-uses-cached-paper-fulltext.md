@@ -42,7 +42,7 @@ unchanged.
   the normal excerpt length. Falls back to the standard `format_corpus` when
   no row is flagged.
 - `find_gaps` enables `prefer_fulltext` by default (both its corpus-size probe
-  and each extractor call); disable with env `GAPMAP_GAPS_FULLTEXT=0` for
+  and each extractor call); disable with env `OPENREPLY_GAPS_FULLTEXT=0` for
   small-context providers.
 
 ## Caps chosen
@@ -65,9 +65,9 @@ unchanged.
 
 ## Files Modified
 
-- `src/gapmap/research/collect.py` — `corpus_for` gained `prefer_fulltext`
+- `src/openreply/research/collect.py` — `corpus_for` gained `prefer_fulltext`
   param; added `_ACADEMIC_SOURCES`, fulltext caps, `_cached_fulltext_slice`,
   `_apply_fulltext`.
-- `src/gapmap/research/gaps.py` — `run_extractor` gained `prefer_fulltext`
+- `src/openreply/research/gaps.py` — `run_extractor` gained `prefer_fulltext`
   param; added `_format_corpus_mixed` + `_FULLTEXT_EXCERPT_CHARS`; `find_gaps`
-  enables full text by default (env-gated by `GAPMAP_GAPS_FULLTEXT`).
+  enables full text by default (env-gated by `OPENREPLY_GAPS_FULLTEXT`).

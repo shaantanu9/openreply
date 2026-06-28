@@ -5,7 +5,7 @@
 
 ## Summary
 
-Adds a persistent tab strip at the top of Gap Map, Chrome-style. Users keep multiple screens open simultaneously, right-click for a native-feel context menu (Reload / Duplicate / Close / Close others / Close to right), drag tabs to reorder, and get the usual keyboard shortcuts (⌘T / ⌘W / ⌘⇧T / ⌘1..9). Tab state + active tab + per-tab scroll survive app restart via `localStorage`.
+Adds a persistent tab strip at the top of OpenReply, Chrome-style. Users keep multiple screens open simultaneously, right-click for a native-feel context menu (Reload / Duplicate / Close / Close others / Close to right), drag tabs to reorder, and get the usual keyboard shortcuts (⌘T / ⌘W / ⌘⇧T / ⌘1..9). Tab state + active tab + per-tab scroll survive app restart via `localStorage`.
 
 Also fixes two regressions introduced while wiring tabs: (1) default home page not rendering because the tab strip was inserted as a third child of the 2-column `.app` grid, pushing `<main>` into the wrong cell; wrapped strip + main in a new `.main-col` flex column. (2) Missing dark-mode styles for the strip and context menu; added explicit `html.dark` rules so both themes align with the rest of the chrome.
 

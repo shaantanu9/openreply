@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local DMG build for Gap Map — one-button publish pipeline.
+# Local DMG build for OpenReply — one-button publish pipeline.
 #
 # Steps (all idempotent):
 #   1. Vite frontend build              (~2 s)
@@ -27,7 +27,7 @@
 #   APPLE_API_ISSUER, APPLE_API_KEY, APPLE_API_KEY_PATH
 #
 # Output:
-#   app-tauri/src-tauri/target/<triple>/release/bundle/dmg/Gap Map_<ver>_<arch>.dmg
+#   app-tauri/src-tauri/target/<triple>/release/bundle/dmg/OpenReply_<ver>_<arch>.dmg
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,7 +55,7 @@ case "$ARCH" in
   *)             echo "Unknown arch: $ARCH" >&2; exit 2 ;;
 esac
 
-echo "▶ Gap Map publish-mac"
+echo "▶ OpenReply publish-mac"
 echo "   arch     : $ARCH ($RUST_TRIPLE)"
 echo "   bundles  : $BUNDLES"
 echo "   sign     : $REQUIRE_SIGN"
@@ -68,38 +68,38 @@ echo "✓ frontend dist/ ready"
 echo
 
 # ─── 2. PyInstaller sidecar build ───────────────────────────────────────
-SIDECAR="app-tauri/src-tauri/binaries/gapmap-cli-${RUST_TRIPLE}"
+SIDECAR="app-tauri/src-tauri/binaries/openreply-cli-${RUST_TRIPLE}"
 if [[ $SKIP_SIDECAR -eq 1 && -x "$SIDECAR" ]]; then
   echo "▶ Step 2/5 — Reusing existing sidecar at $SIDECAR (--skip-sidecar)"
 else
   echo "▶ Step 2/5 — PyInstaller sidecar build (~2 min)"
   rm -rf build dist
   # Use the .spec which bundles ONNX + prompts + every lazy-imported dep.
-  uv run pyinstaller gapmap-cli.spec
-  # ONEDIR build: PyInstaller produces dist/gapmap-cli/ (engine + _internal/),
+  uv run pyinstaller openreply-cli.spec
+  # ONEDIR build: PyInstaller produces dist/openreply-cli/ (engine + _internal/),
   # NOT a single file. The Tauri sidecar is a launcher SCRIPT at $SIDECAR (kept
   # in git) that exec's this onedir engine from
-  # Contents/Resources/binaries/gapmap-cli-onedir/ (shipped via the
+  # Contents/Resources/binaries/openreply-cli-onedir/ (shipped via the
   # tauri.conf.json `resources` glob). So: refresh that resources folder from
   # the fresh build and LEAVE the launcher script intact (do NOT cp the dir
-  # over it). See binaries/gapmap-cli-aarch64-apple-darwin (the launcher).
-  if [[ ! -x dist/gapmap-cli/gapmap-cli ]]; then
-    echo "✗ PyInstaller failed — dist/gapmap-cli/gapmap-cli not present" >&2
+  # over it). See binaries/openreply-cli-aarch64-apple-darwin (the launcher).
+  if [[ ! -x dist/openreply-cli/openreply-cli ]]; then
+    echo "✗ PyInstaller failed — dist/openreply-cli/openreply-cli not present" >&2
     exit 1
   fi
   mkdir -p app-tauri/src-tauri/binaries
-  ONEDIR_DEST="app-tauri/src-tauri/binaries/gapmap-cli-onedir"
+  ONEDIR_DEST="app-tauri/src-tauri/binaries/openreply-cli-onedir"
   rm -rf "$ONEDIR_DEST"
-  cp -R dist/gapmap-cli "$ONEDIR_DEST"
+  cp -R dist/openreply-cli "$ONEDIR_DEST"
   if [[ ! -f "$SIDECAR" ]]; then
     echo "✗ launcher script missing at $SIDECAR — the onedir sidecar needs it (it's tracked in git)" >&2
     exit 1
   fi
-  chmod +x "$SIDECAR" "$ONEDIR_DEST/gapmap-cli"
+  chmod +x "$SIDECAR" "$ONEDIR_DEST/openreply-cli"
   echo "✓ onedir engine → $ONEDIR_DEST ($(du -sh "$ONEDIR_DEST" | cut -f1)); launcher: $SIDECAR"
 fi
 # Path to the onedir engine + its nested Mach-O (needed by codesign + notarization).
-ONEDIR_DEST="${ONEDIR_DEST:-app-tauri/src-tauri/binaries/gapmap-cli-onedir}"
+ONEDIR_DEST="${ONEDIR_DEST:-app-tauri/src-tauri/binaries/openreply-cli-onedir}"
 echo
 
 # ─── 3. Ad-hoc codesign the sidecar ─────────────────────────────────────
@@ -108,7 +108,7 @@ echo
 # APPLE_SIGNING_IDENTITY is exported, but ad-hoc keeps Gatekeeper cache
 # warm in dev mode (so a re-run isn't a 2-minute first-launch hang).
 echo "▶ Step 3/5 — Ad-hoc codesign sidecar (Gatekeeper-cache warmup)"
-# Launcher script (externalBin → Contents/MacOS/gapmap-cli).
+# Launcher script (externalBin → Contents/MacOS/openreply-cli).
 codesign --force --sign - "$SIDECAR" 2>/dev/null || true
 # Onedir engine + every nested Mach-O (.so / .dylib / the engine itself). For
 # a plain directory codesign --deep does NOT recurse, so sign each Mach-O so
@@ -117,7 +117,7 @@ codesign --force --sign - "$SIDECAR" 2>/dev/null || true
 # in Step 5a (after the identity is sourced); this ad-hoc pass keeps dev
 # Gatekeeper warm and gives the bundle a valid baseline.
 if [[ -d "$ONEDIR_DEST" ]]; then
-  # Detect Mach-O by CONTENT (file), not by name — a *.so/*.dylib/gapmap-cli
+  # Detect Mach-O by CONTENT (file), not by name — a *.so/*.dylib/openreply-cli
   # filter misses the extensionless `_internal/Python` interpreter and the
   # `_internal/Python.framework` binaries (both rejected by notarization).
   while IFS= read -r macho; do
@@ -139,7 +139,7 @@ echo
 # ─── 5. Tauri bundle ────────────────────────────────────────────────────
 echo "▶ Step 5/5 — cargo tauri build --target $RUST_TRIPLE --bundles $BUNDLES"
 # JWT_DESKTOP_SECRET is required for release builds (build.rs panics
-# without it). MUST match Vercel's TOKEN_SIGNING_SECRET on gapmap.myind.ai
+# without it). MUST match Vercel's TOKEN_SIGNING_SECRET on openreply.myind.ai
 # or every activation will fail with `invalid-signature` on the desktop.
 #
 # Auto-extract JUST JWT_DESKTOP_SECRET from .env.publish if it exists.
@@ -163,7 +163,7 @@ if [[ -z "${JWT_DESKTOP_SECRET:-}" && -f .env.publish ]]; then
 fi
 if [[ -z "${JWT_DESKTOP_SECRET:-}" ]]; then
   echo "   ⚠ JWT_DESKTOP_SECRET not set and no .env.publish — using random."
-  echo "     This DMG WILL NOT activate against gapmap.myind.ai."
+  echo "     This DMG WILL NOT activate against openreply.myind.ai."
   echo "     Fix: copy .env.publish.example → .env.publish, paste the same"
   echo "     secret you set in Vercel as TOKEN_SIGNING_SECRET, retry."
   export JWT_DESKTOP_SECRET="local-dev-$(openssl rand -hex 32 | head -c 32)"
@@ -232,14 +232,14 @@ fi
 #
 # IMPORTANT (macOS 26.5+ / Tahoe): Tahoe's strict code-signing enforcement
 # rejects unsigned/ad-hoc binaries inside DMGs during file-copy. Symptom:
-# users dragging Gap Map.app from the DMG mount to /Applications end up
+# users dragging OpenReply.app from the DMG mount to /Applications end up
 # with 0-byte / truncated inner binaries (cp returns success but reads
 # fail silently). The realistic fix is Developer ID + notarization
 # (--sign flag + notarytool). For ad-hoc beta builds we ship a .zip
 # alongside the .dmg — extracted files from a .zip don't carry the
 # from-DMG provenance check and copy cleanly.
 # ── Pre-sign the ONEDIR engine + nested Mach-O with Developer ID ──────────
-# Tauri copies binaries/gapmap-cli-onedir/** into Contents/Resources via the
+# Tauri copies binaries/openreply-cli-onedir/** into Contents/Resources via the
 # `resources` glob, but its --deep sign does NOT cover loose Mach-O in
 # Resources. Without signing them here (with the SAME identity + hardened
 # runtime + secure timestamp the wrapper uses), notarization rejects all ~128
@@ -252,7 +252,7 @@ if [[ $REQUIRE_SIGN -eq 1 && -d "$ONEDIR_DEST" ]]; then
   n_pre=0; n_fail=0
   # STEP A — frameworks as BUNDLES (sign each Versions/<X> dir). Signing a
   # framework's inner binary LOOSE makes Apple reject it "signature of the
-  # binary is invalid" (Gap Map v0.1.10) — frameworks need a bundle-level seal.
+  # binary is invalid" (OpenReply v0.1.10) — frameworks need a bundle-level seal.
   while IFS= read -r fw; do
     [[ -z "$fw" ]] && continue
     signed=0
@@ -306,7 +306,7 @@ fi
    -u APPLE_ID -u APPLE_PASSWORD \
    npx tauri build --target "$RUST_TRIPLE" --bundles app)
 
-APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/Gap Map.app"
+APP_PATH="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/macos/OpenReply.app"
 if [[ -d "$APP_PATH" ]]; then
   # ── Step 5a — re-sign the .app bundle ad-hoc (CRITICAL) ────────────────
   # With `signingIdentity` unset, Tauri leaves the .app with only the Rust
@@ -323,7 +323,7 @@ if [[ -d "$APP_PATH" ]]; then
   # `_CodeSignature/CodeResources` seal. --deep also re-signs the inner
   # sidecar binaries. After this, `codesign --verify` passes and the seal
   # survives the zip→download→extract round-trip, so right-click→Open
-  # works on any Mac. Verified on Gap Map 2026-05-27.
+  # works on any Mac. Verified on OpenReply 2026-05-27.
   # Step 5a — re-sign the bundle. Two paths:
   #   --sign present → Developer ID Application + hardened runtime + timestamp
   #                    (this is what notarization REQUIRES).
@@ -342,10 +342,10 @@ if [[ -d "$APP_PATH" ]]; then
     # FIRST. `codesign --deep` on the .app does NOT reliably recurse into loose
     # Mach-O sitting in Resources/, so without this notarization rejects them as
     # "not signed with a valid Developer ID". Search wherever Tauri placed the
-    # onedir (…/Resources/binaries/gapmap-cli-onedir or …/Resources/_up_/…).
+    # onedir (…/Resources/binaries/openreply-cli-onedir or …/Resources/_up_/…).
     onedir_machos=$(find "$APP_PATH/Contents/Resources" -type f \
-                      \( -name '*.so' -o -name '*.dylib' -o -name 'gapmap-cli' \) \
-                      -path '*gapmap-cli-onedir*' 2>/dev/null)
+                      \( -name '*.so' -o -name '*.dylib' -o -name 'openreply-cli' \) \
+                      -path '*openreply-cli-onedir*' 2>/dev/null)
     if [[ -n "$onedir_machos" ]]; then
       n_signed=0
       while IFS= read -r macho; do
@@ -380,7 +380,7 @@ if [[ -d "$APP_PATH" ]]; then
   APP_VERSION=$(python3 -c "import json; print(json.load(open('app-tauri/src-tauri/tauri.conf.json'))['version'])" 2>/dev/null || echo "0.0.0")
   ZIP_OUT="app-tauri/src-tauri/target/${RUST_TRIPLE}/release/bundle/zip"
   mkdir -p "$ZIP_OUT"
-  ZIP_PATH="${ZIP_OUT}/Gap Map_${APP_VERSION}_${ARCH}.zip"
+  ZIP_PATH="${ZIP_OUT}/OpenReply_${APP_VERSION}_${ARCH}.zip"
   rm -f "$ZIP_PATH"
   echo "▶ Step 5b — produce .zip (recommended path on macOS 26.5+ Tahoe)"
   # Apple's canonical way to zip a SIGNED .app for distribution /
@@ -391,7 +391,7 @@ if [[ -d "$APP_PATH" ]]; then
   # recipient extracts with Archive Utility or `unzip`, those sidecars are
   # NOT reattached, so the .app's sealed CodeResources manifest no longer
   # matches what's on disk. Gatekeeper then refuses to launch with:
-  #   "Gap Map.app: code has no resources but signature indicates they
+  #   "OpenReply.app: code has no resources but signature indicates they
   #    must be present"
   # i.e. the app silently fails to open. Plain `ditto -c -k --keepParent`
   # round-trips the signature intact through both Archive Utility and
@@ -413,13 +413,13 @@ if [[ "$BUNDLES" == *dmg* && -d "$APP_PATH" ]]; then
   # Same version-from-config trick as Step 5b. APP_VERSION is set above
   # iff we entered the zip branch; re-resolve here for the dmg-only path.
   APP_VERSION="${APP_VERSION:-$(python3 -c "import json; print(json.load(open('app-tauri/src-tauri/tauri.conf.json'))['version'])" 2>/dev/null || echo "0.0.0")}"
-  DMG_PATH="${DMG_OUT}/Gap Map_${APP_VERSION}_${ARCH}.dmg"
+  DMG_PATH="${DMG_OUT}/OpenReply_${APP_VERSION}_${ARCH}.dmg"
   rm -f "$DMG_PATH"
 
   STAGE="$(mktemp -d)"
-  ditto "$APP_PATH" "$STAGE/Gap Map.app"
+  ditto "$APP_PATH" "$STAGE/OpenReply.app"
   ln -s /Applications "$STAGE/Applications"
-  hdiutil create -volname "Gap Map" -srcfolder "$STAGE" \
+  hdiutil create -volname "OpenReply" -srcfolder "$STAGE" \
     -ov -format UDZO "$DMG_PATH" >/dev/null
   rm -rf "$STAGE"
   echo "✓ DMG: $DMG_PATH ($(du -sh "$DMG_PATH" | cut -f1))"
@@ -427,7 +427,7 @@ if [[ "$BUNDLES" == *dmg* && -d "$APP_PATH" ]]; then
   # Verify the .app INSIDE the DMG still has a valid signature.
   MNT="$(mktemp -d)"
   hdiutil attach "$DMG_PATH" -nobrowse -mountpoint "$MNT" >/dev/null
-  if codesign --verify --deep --strict "$MNT/Gap Map.app" 2>/dev/null; then
+  if codesign --verify --deep --strict "$MNT/OpenReply.app" 2>/dev/null; then
     echo "✓ DMG .app signature verifies"
   else
     echo "⚠ DMG .app signature did not verify cleanly" >&2

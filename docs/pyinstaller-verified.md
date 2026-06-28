@@ -37,10 +37,10 @@ For v1: **62 MB is fine.** Comparable apps: Obsidian (180 MB), Raycast (130 MB),
 ## Single `.dmg` math
 
 ```
-Gap Map.app/
+OpenReply.app/
 ├── Contents/
 │   ├── MacOS/
-│   │   └── gapmap                              ~15 MB  (Tauri Rust)
+│   │   └── openreply                              ~15 MB  (Tauri Rust)
 │   ├── Resources/
 │   │   ├── assets/                             ~2 MB   (HTML/CSS/JS)
 │   │   └── binaries/
@@ -59,13 +59,13 @@ AFTER DMG COMPRESSION (bzip2): ~45-55 MB
 Tauri bundler handles the whole flow in one command:
 
 ```bash
-cd gapmap-tauri/
+cd openreply-tauri/
 APPLE_ID="you@example.com" \
 APPLE_PASSWORD="@keychain:AC_PASSWORD" \
 APPLE_TEAM_ID="XXXXXXXXXX" \
 APPLE_SIGNING_IDENTITY="Developer ID Application: Shantanu Bombatkar (XXXXXXXXXX)" \
 npm run tauri build -- --target aarch64-apple-darwin
-# → dist/Gap Map_1.0.0_aarch64.dmg (signed + notarized)
+# → dist/OpenReply_1.0.0_aarch64.dmg (signed + notarized)
 ```
 
 The embedded Python binary gets signed alongside with
@@ -107,4 +107,4 @@ Sidecar is proven. Next phase creates `app-tauri/` with:
 - `package.json` + `vite.config.js`
 - `src/main.js` — first `invoke('run_cli', ['info'])` wired to sidebar nav
 
-First `npm run tauri dev` → the Gap Map UI renders and real `reddit-cli` calls fire.
+First `npm run tauri dev` → the OpenReply UI renders and real `reddit-cli` calls fire.

@@ -1,6 +1,6 @@
 # Beta, Coupons, Waitlist & Admin — Operator Guide
 
-> **Updated:** 2026-06-04 · Production: `gapmap.myind.ai` (Vercel project `gapmap-web`, region `sin1`) · Supabase `tjikcnsfaaqihgegecpi` (`ap-southeast-1`)
+> **Updated:** 2026-06-04 · Production: `openreply.myind.ai` (Vercel project `openreply-web`, region `sin1`) · Supabase `tjikcnsfaaqihgegecpi` (`ap-southeast-1`)
 >
 > This is the how-to-run guide for the invite-only beta and the admin console.
 > For the feature catalog see `../FEATURES.md`; for licensing internals see
@@ -69,7 +69,7 @@ Migrations: `202605250008_coupons.sql`, `20260603_user_deletion.sql`, `20260603_
 
 ## 3. The admin console (`/admin`)
 
-**Sign in:** open `https://gapmap.myind.ai/admin` and enter `ADMIN_SECRET`
+**Sign in:** open `https://openreply.myind.ai/admin` and enter `ADMIN_SECRET`
 (sets an admin session cookie). Every admin API also accepts an
 `x-admin-secret: <ADMIN_SECRET>` header for scripting.
 
@@ -90,7 +90,7 @@ Three tabs:
   Requires typing the exact email to confirm.
 
 ### Coupons / codes
-- **Create**: leave code blank for an auto `GAPMAP-XXXX-XXXX`, or type your own.
+- **Create**: leave code blank for an auto `OPENREPLY-XXXX-XXXX`, or type your own.
   Set plan, seats (blank = unlimited), expiry in days, device seats, and a note.
 - **List**: seats used (`cur / max`, "full" badge), redemption count, expiry,
   active/disabled status. Click a code to copy it.
@@ -116,8 +116,8 @@ signup consumes a seat; when full, new signups see "that cohort is full".
 Admin → Waitlist → Invite the people you want. Each gets a unique single-use
 code by email. Reject the rest (or leave pending).
 
-**Seeded codes already in prod:** `GAPMAP-BETA-2026` (100 seats),
-`GAPMAP-LAUNCH` (100 seats — from an earlier seed; disable if unused).
+**Seeded codes already in prod:** `OPENREPLY-BETA-2026` (100 seats),
+`OPENREPLY-LAUNCH` (100 seats — from an earlier seed; disable if unused).
 
 **Tighten scarcity / urgency:** lower `seats`, set `expires_in_days`. Time +
 seat limits both drive FOMO.
@@ -132,7 +132,7 @@ the project's mailer config via the Management API. Transactional emails
 (license key, welcome, beta invite) are sent from the Next.js server via Resend
 (`src/lib/email.ts`).
 
-- Sender: `EMAIL_FROM` (default `Gap Map <noreply@tool.myind.ai>`); verified domain `tool.myind.ai`.
+- Sender: `EMAIL_FROM` (default `OpenReply <noreply@tool.myind.ai>`); verified domain `tool.myind.ai`.
 - Key: `RESEND_API_KEY_TOOL_MAIL` (or `RESEND_API_KEY`).
 - If a send fails, the admin invite response shows `emailed:false` / `email_skipped:true` — copy the inline code and send it manually.
 
@@ -198,7 +198,7 @@ are blank (billing off) — set before enabling billing.
 ```sql
 -- Create a cohort code
 insert into public.coupons (code, plan_id, max_redemptions, license_max_devices, note)
-values ('GAPMAP-LAUNCH-2', 'pro', 250, 2, 'Launch wave 2');
+values ('OPENREPLY-LAUNCH-2', 'pro', 250, 2, 'Launch wave 2');
 
 -- See seat usage
 select code, plan_id, current_redemptions, max_redemptions, disabled, expires_at
@@ -220,10 +220,10 @@ select public.admin_hard_delete_user('person@example.com');
 ## 8. Verification / smoke test (no side effects)
 
 ```bash
-B=https://gapmap.myind.ai
+B=https://openreply.myind.ai
 # public, non-consuming
 curl -s -X POST $B/api/v1/coupon/validate -H 'content-type: application/json' \
-  -d '{"coupon_code":"GAPMAP-BETA-2026"}'         # → valid:true, seats_left
+  -d '{"coupon_code":"OPENREPLY-BETA-2026"}'         # → valid:true, seats_left
 # admin endpoints must be 403 without the secret
 curl -s -o /dev/null -w '%{http_code}\n' $B/api/v1/admin/coupons        # → 403
 # with the secret (read-only list)

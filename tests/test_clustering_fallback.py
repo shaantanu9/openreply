@@ -10,7 +10,7 @@ pure-numpy k-means + silhouette implementation.
 import numpy as np
 import pytest
 
-from gapmap.research._clustering import kmeans_with_silhouette
+from openreply.research._clustering import kmeans_with_silhouette
 
 
 def _blobs(seed: int = 0) -> np.ndarray:

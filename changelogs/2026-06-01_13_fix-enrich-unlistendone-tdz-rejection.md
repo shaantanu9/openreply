@@ -36,4 +36,4 @@ before initialization and threw.
 
 The installed app runs from the built JS bundle — a frontend rebuild
 (`npm run build`) and Tauri repackage are required for the fix to reach the
-installed `/Applications/Gap Map.app`.
+installed `/Applications/OpenReply.app`.

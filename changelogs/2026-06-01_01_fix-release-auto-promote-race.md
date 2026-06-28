@@ -6,7 +6,7 @@
 ## Summary
 
 The public release of v0.1.7 built successfully on all three platforms and uploaded all
-8 friendly-named assets to `myind-ai/gapmap`, but the release stayed a **draft** and the
+8 friendly-named assets to `myind-ai/openreply`, but the release stayed a **draft** and the
 public homepage kept showing v0.1.4 as latest — it had to be promoted by hand. Root cause
 is a race in the auto-promote design: each per-platform workflow (release-mac/windows/
 linux) carries an inlined "promote-if-complete" step that runs **mid-job, right after that

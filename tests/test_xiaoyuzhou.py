@@ -1,8 +1,8 @@
 """xiaoyuzhou episode-metadata source."""
 from __future__ import annotations
 
-from gapmap.sources import xiaoyuzhou
-from gapmap.sources.xiaoyuzhou import fetch_xiaoyuzhou
+from openreply.sources import xiaoyuzhou
+from openreply.sources.xiaoyuzhou import fetch_xiaoyuzhou
 from tests._reach_mock import resp
 
 _PAGE = """<html><head>

@@ -5,7 +5,7 @@
 
 ## Summary
 
-Closes the "college student opens the app and gets real value" gap without changing the core Gap Map vision (user pain + science → product decisions). All additive — Solutions / Concepts / Product Mode / Collect / Graph untouched. The Papers tab surfaces data that was already in `posts` (from arXiv, PubMed, OpenAlex, Semantic Scholar, Crossref, Scholar via the Solutions pipeline + MCP fetchers); one-click bibliography export makes Gap Map useful as a research tool for students, UX researchers, and solopreneurs citing evidence in landing pages — same feature, different audiences.
+Closes the "college student opens the app and gets real value" gap without changing the core OpenReply vision (user pain + science → product decisions). All additive — Solutions / Concepts / Product Mode / Collect / Graph untouched. The Papers tab surfaces data that was already in `posts` (from arXiv, PubMed, OpenAlex, Semantic Scholar, Crossref, Scholar via the Solutions pipeline + MCP fetchers); one-click bibliography export makes OpenReply useful as a research tool for students, UX researchers, and solopreneurs citing evidence in landing pages — same feature, different audiences.
 
 ## Changes
 
@@ -24,8 +24,8 @@ Closes the "college student opens the app and gets real value" gap without chang
 - `oa_lookup(doi)`
 
 ### New MCP tools
-- `gapmap_papers_export(topic, fmt, limit)` — Claude can dump a bibliography in 4 formats
-- `gapmap_oa_lookup(doi)` — Claude can fetch legal free PDF URLs mid-conversation
+- `openreply_papers_export(topic, fmt, limit)` — Claude can dump a bibliography in 4 formats
+- `openreply_oa_lookup(doi)` — Claude can fetch legal free PDF URLs mid-conversation
 
 ### New UI
 - `screens/papers.js` — Papers tab: sortable table (src · title · year · cites · OA), 4 export buttons, Unpaywall OA button per row that opens the free PDF in a new window
@@ -47,7 +47,7 @@ Closes the "college student opens the app and gets real value" gap without chang
 
 ## Vision check
 
-This **extends** Gap Map's vision without diluting it:
+This **extends** OpenReply's vision without diluting it:
 
 | Vision pillar | Unchanged? | Note |
 |---|---|---|
@@ -81,7 +81,7 @@ This **extends** Gap Map's vision without diluting it:
 ## How students use this
 
 1. Claude (MCP) or Solutions Agent (app): populate papers for a topic
-2. Open the topic page in Gap Map → More → **Papers**
+2. Open the topic page in OpenReply → More → **Papers**
 3. See every academic source paper with citation count, open the ones they want to cite
 4. For paywalled ones, click **OA** → Unpaywall finds the free PDF
 5. Click **BibTeX** / **RIS** / **APA** / **Markdown** → paste directly into LaTeX, Zotero, a blog post, or a comparison table
@@ -90,4 +90,4 @@ Same flow for UX researchers building a research doc, same flow for a solopreneu
 
 ## Restart note
 
-Requires `tauri dev` restart because Rust commands were added. After restart: topics with papers (run Solutions pipeline first, or use MCP `gapmap_research_papers`) show the new Papers tab in the More dropdown.
+Requires `tauri dev` restart because Rust commands were added. After restart: topics with papers (run Solutions pipeline first, or use MCP `openreply_research_papers`) show the new Papers tab in the More dropdown.

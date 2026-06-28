@@ -6,7 +6,7 @@
 ## Summary
 
 Expanded the Science tab to document every methodology, framework, and
-engineering pattern Gap Map applies. 30 distinct processes are grouped
+engineering pattern OpenReply applies. 30 distinct processes are grouped
 into 7 sections (Data acquisition, Knowledge graph, Semantic extraction,
 Synthesis, Decision support, Research outputs, UX foundations,
 Reliability). Each card shows an icon, title, and one-line description

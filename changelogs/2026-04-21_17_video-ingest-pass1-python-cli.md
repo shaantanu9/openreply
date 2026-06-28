@@ -15,7 +15,7 @@ Pass 1 of the video-ingest plan from `docs/video-ingest.md` — the full Python 
   - `whisper.py` — thin `faster_whisper.WhisperModel` wrapper pinned to `device='cpu'`, `compute_type='int8'`, `vad_filter=True`, `beam_size=1`, with progress-callback emission per segment.
   - `ytdlp_client.py` — overlay path injection + PyPI-driven auto-updater. Installs via `pip install --target <overlay>` so the codesigned bundle stays untouched. Graceful fallback + roll-back on overlay import failure. 24h cooldown stamp.
   - `__init__.py` — public API re-exports.
-- `src/reddit_research/sources/video.py` — `preview_video(url)` (yt-dlp metadata only), `fetch_video(url, topic, model, language, progress_cb)` returning canonical post rows, `fetch_and_persist(...)` handling `upsert_posts` + `_tag_posts` + `fetches` logging. Uses the bundled ffmpeg path from `GAPMAP_FFMPEG_PATH` env (set by Rust later). Transcripts cached at `<data>/transcripts/<video_id>.json` + `.srt` so re-ingest is instant.
+- `src/reddit_research/sources/video.py` — `preview_video(url)` (yt-dlp metadata only), `fetch_video(url, topic, model, language, progress_cb)` returning canonical post rows, `fetch_and_persist(...)` handling `upsert_posts` + `_tag_posts` + `fetches` logging. Uses the bundled ffmpeg path from `OPENREPLY_FFMPEG_PATH` env (set by Rust later). Transcripts cached at `<data>/transcripts/<video_id>.json` + `.srt` so re-ingest is instant.
 - `src/reddit_research/cli/main.py` — new subcommands:
   - `reddit-cli ingest video --url … --topic … [--model auto|tier] [--language auto|en] [--preview] [--json]`
   - `reddit-cli whisper list|catalogue|download <tier>|delete <tier>|default [tier]`

@@ -8,7 +8,7 @@
 During a multi-source collect, sources such as HN, App Store, Product Hunt, and
 Trustpilot intermittently failed with `source:<name>: database is locked`,
 collecting **0 rows** for that source on the run. Root cause: every external
-source adapter runs in a worker thread and writes to the same `gapmap.db`
+source adapter runs in a worker thread and writes to the same `openreply.db`
 (fetch-audit row → `posts` → `topic_posts`). SQLite — even in WAL mode — permits
 exactly one writer at a time; under the recently-widened source worker pool (and
 when a second process such as the MCP server / Tauri sidecar / enrich worker is
@@ -29,10 +29,10 @@ notice, not a failure.
 ## Changes
 
 - `PRAGMA busy_timeout` raised 5000 → 15000 ms, now read from
-  `GAPMAP_DB_BUSY_TIMEOUT_MS` (default 15000, floor 1000).
+  `OPENREPLY_DB_BUSY_TIMEOUT_MS` (default 15000, floor 1000).
 - New `_retry_on_locked(fn, *args, **kwargs)` helper + `_is_locked_err(e)`
   classifier in `core/db.py`. Retries on transient lock/busy/disk-I/O errors with
-  exponential backoff (`GAPMAP_DB_RETRY_ATTEMPTS`, default 5; base 0.2s, cap 2.0s).
+  exponential backoff (`OPENREPLY_DB_RETRY_ATTEMPTS`, default 5; base 0.2s, cap 2.0s).
   Re-raises non-lock errors immediately and the lock error after exhaustion.
 - `log_fetch_start` now retries and returns `-1` instead of raising when the
   (non-critical) audit write can't complete; `log_fetch_end` no-ops on `fid < 0`.
@@ -50,8 +50,8 @@ notice, not a failure.
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — imports (`sqlite3`, `time`, `Callable`/`TypeVar`);
+- `src/openreply/core/db.py` — imports (`sqlite3`, `time`, `Callable`/`TypeVar`);
   `_is_locked_err` + `_retry_on_locked`; env-tunable `busy_timeout`; resilient
   `log_fetch_start`/`log_fetch_end`; retry-wrapped `upsert_posts`/`upsert_comments`.
-- `src/gapmap/research/collect.py` — import `_retry_on_locked`; wrap the
+- `src/openreply/research/collect.py` — import `_retry_on_locked`; wrap the
   `topic_posts` and `extraction_queue` inserts in `_tag_posts`.

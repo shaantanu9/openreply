@@ -14,7 +14,7 @@ topic-level frameworks, each with a cheap cached read and an on-demand LLM
 synthesis (~30–60s) persisted to a new `strategy_artifacts` table, surfaced as
 tabs on the topic page between **Prioritize** and **Bets**.
 
-This directly answers the user's ask to make Gap Map "a proper solution for
+This directly answers the user's ask to make OpenReply "a proper solution for
 anyone who wants to search the gap… get the retail idea, market value, market
 cap, market gaps, and whatever a product manager does to find a gap before
 starting." Market sizing (TAM/SAM/SOM + market value) was the named P0.
@@ -50,13 +50,13 @@ vite builds 1797 modules, `cargo check` reports 0 errors.
 
 ## Files Created
 
-- `src/gapmap/research/strategy_common.py`
-- `src/gapmap/research/market_sizing.py`
-- `src/gapmap/research/porter.py`
-- `src/gapmap/research/swot.py`
-- `src/gapmap/research/lean_canvas.py`
-- `src/gapmap/research/value_prop.py`
-- `src/gapmap/research/north_star.py`
+- `src/openreply/research/strategy_common.py`
+- `src/openreply/research/market_sizing.py`
+- `src/openreply/research/porter.py`
+- `src/openreply/research/swot.py`
+- `src/openreply/research/lean_canvas.py`
+- `src/openreply/research/value_prop.py`
+- `src/openreply/research/north_star.py`
 - `app-tauri/src/screens/market.js`
 - `app-tauri/src/screens/porter.js`
 - `app-tauri/src/screens/swot.js`
@@ -67,7 +67,7 @@ vite builds 1797 modules, `cargo check` reports 0 errors.
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py` — 6 `research` subcommands.
+- `src/openreply/cli/main.py` — 6 `research` subcommands.
 - `app-tauri/src-tauri/src/commands.rs` — 12 Tauri commands.
 - `app-tauri/src-tauri/src/main.rs` — handler registration.
 - `app-tauri/src/api.js` — 12 api methods.

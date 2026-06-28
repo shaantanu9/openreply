@@ -1,4 +1,4 @@
-# Gap Map — Future Scope
+# OpenReply — Future Scope
 
 **Version:** 2026-04-21
 **Horizon:** 2026-Q3 → 2027
@@ -110,7 +110,7 @@ posts" on the right) uses the clean-corpus dry-run.
 
 **Why:** First-ever use of a relevance gate silently admits everything
 because the ONNX model isn't loaded yet. User doesn't know.
-**What:** At sidecar boot, if any `GAPMAP_*_THRESHOLD` > 0, run one
+**What:** At sidecar boot, if any `OPENREPLY_*_THRESHOLD` > 0, run one
 throwaway embedding call to warm the ONNX session. Emit a one-time
 "warming up relevance model, ~10 s" toast on first collect.
 
@@ -239,7 +239,7 @@ either
 ### H2-05 · Shared read-only report link (2 weeks)
 
 **Why:** Users want to send a Minto brief to cofounders / advisors
-without asking them to install Gap Map.
+without asking them to install OpenReply.
 **What:** Export → "Publish read-only link" → the desktop uploads
 the report HTML + quadrant SVG to a one-time bucket (Cloudflare
 R2, S3, or Backblaze B2 — $0-5/month). URL with a nonce. Auto-
@@ -360,7 +360,7 @@ validation.
 billing + multi-user accounts + email/Slack digest delivery + shared
 read-only dashboards.
 **Why:** Described in full at `docs/DUAL_MODE_PIVOT.md`. Transforms
-Gap Map from single-user desktop to team SaaS at $79-499/mo.
+OpenReply from single-user desktop to team SaaS at $79-499/mo.
 **When:** after ≥3 founder-teams explicitly request it AND we've
 validated willingness-to-pay via the `docs/VALIDATION_PLAN.md`
 experiment.
@@ -387,16 +387,16 @@ companion launch. Today it's hypothetical.
 
 ### H3-03 · Plug-in architecture for sources
 
-**Scope:** Third parties can drop a `.py` file in `~/.gapmap/sources/`
+**Scope:** Third parties can drop a `.py` file in `~/.openreply/sources/`
 to add a new source (e.g. custom API, internal tool).
 **What:** Standardize the source-adapter interface, ship an SDK
-(`from gap_map_sdk import Source, fetch_window`), publish docs.
+(`from openreply_map_sdk import Source, fetch_window`), publish docs.
 **Effort:** 3 weeks.
 **Decision gate:** ≥5 external contributors ask. Today 0.
 
 ### H3-04 · Web app via Flutter Web
 
-**Scope:** `gapmap.app` in-browser version.
+**Scope:** `openreply.app` in-browser version.
 **Why:** Lowest-friction install → "try it without downloading
 anything."
 **What:** Flutter Web compiles the same Dart code to JS. Backend
@@ -621,11 +621,11 @@ so the GUI can render them.
 
 | Tier | Uses LLM? | Persists to DB? | Examples |
 |------|-----------|-----------------|----------|
-| Fetch tools | no | yes (raw corpus) | `gapmap_fetch_hn`, `gapmap_fetch_arxiv`, etc. |
-| Query tools | no | no | `gapmap_query_db`, `gapmap_graph_neighbors` |
-| Analysis tools (deterministic) | no | yes | `gapmap_graph_build`, `reddit_cluster_painpoints` |
+| Fetch tools | no | yes (raw corpus) | `openreply_fetch_hn`, `openreply_fetch_arxiv`, etc. |
+| Query tools | no | no | `openreply_query_db`, `openreply_graph_neighbors` |
+| Analysis tools (deterministic) | no | yes | `openreply_graph_build`, `reddit_cluster_painpoints` |
 | Analysis tools (LLM-backed) | yes | yes (new `mcp_analyses` table) | `reddit_summarize_topic`, `reddit_synthesize_findings` |
-| Orchestrator | yes (delegates) | yes | `gapmap_research_collect` |
+| Orchestrator | yes (delegates) | yes | `openreply_research_collect` |
 
 **New DB table (shared with GUI).**
 
@@ -654,7 +654,7 @@ CREATE INDEX IF NOT EXISTS idx_mcp_analyses_kind  ON mcp_analyses(topic, kind, c
 **Interleaved fetch/analyze in MCP.** Because the client LLM drives,
 no orchestrator change is needed — expose the fine-grained tools and
 the client will call them in whatever order. The one-shot
-`gapmap_research_collect` remains for clients that want "do it all"
+`openreply_research_collect` remains for clients that want "do it all"
 in a single call.
 
 **Decision gate.** Ship this *before* the streaming app rework (this

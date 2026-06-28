@@ -11,7 +11,7 @@ needed before a "1.0 / public" release. The step-by-step *how* lives in
 ## 1. `JWT_DESKTOP_SECRET` — add to GitHub Secrets
 
 - [ ] Add `JWT_DESKTOP_SECRET` to
-      <https://github.com/shaantanu9/gap-map-pro/settings/secrets/actions>
+      <https://github.com/shaantanu9/openreply/settings/secrets/actions>
 
 **What it is.** A ≥32-char random secret baked into the binary at compile time
 (`app-tauri/src-tauri/build.rs`). It is the HMAC key that verifies offline

@@ -1,4 +1,4 @@
-# Gap Map — memory leak analysis
+# OpenReply — memory leak analysis
 
 **Date:** 2026-05-28  
 **Scope:** Tauri desktop app (`app-tauri`) — JS webview, Rust host, Python sidecar.
@@ -7,7 +7,7 @@
 
 ## Executive summary
 
-Gap Map is **mostly bounded** on the JS side (capped API cache, screen cache eviction, collect log cap per topic). The largest confirmed **webview leak** was **duplicate `window` listeners** on every topic page visit — fixed in this session.
+OpenReply is **mostly bounded** on the JS side (capped API cache, screen cache eviction, collect log cap per topic). The largest confirmed **webview leak** was **duplicate `window` listeners** on every topic page visit — fixed in this session.
 
 **Real memory growth** during heavy use usually comes from:
 
@@ -15,7 +15,7 @@ Gap Map is **mostly bounded** on the JS side (capped API cache, screen cache evi
 2. **Intentional caches** (map HTML, tab DOM, API responses) — bounded but large.
 3. **Stale listeners / timers** on screens that poll without `hashchange` cleanup — several fixed or low severity.
 
-Use the built-in probe: **`await window.__gapmapMemStats()`** in DevTools (see `api.js`).
+Use the built-in probe: **`await window.__openreplyMemStats()`** in DevTools (see `api.js`).
 
 ---
 
@@ -27,7 +27,7 @@ Open DevTools in dev build (`npm run tauri dev`) or enable webview inspector on 
 
 ```javascript
 // Sample before and after a workflow; diff the counters.
-await window.__gapmapMemStats()
+await window.__openreplyMemStats()
 ```
 
 Watch:
@@ -38,7 +38,7 @@ Watch:
 | `js.heap_used_mb` | Rises then flat after GC |
 | `js.cache_keys_sample` | Rotates, not infinite unique keys |
 
-Chrome also exposes `performance.memory` (included in `__gapmapMemStats` when available).
+Chrome also exposes `performance.memory` (included in `__openreplyMemStats` when available).
 
 ### 2. Rust + Python (host process)
 
@@ -53,7 +53,7 @@ Same call returns `rust.rust_rss_mb` and `rust.sidecars[].rss_mb`.
 
 ### 3. macOS Activity Monitor
 
-- **Gap Map** = Rust + WebView.
+- **OpenReply** = Rust + WebView.
 - Child **Python** processes = sidecar (often 200 MB–1 GB+ during enrich / Chroma).
 
 ---
@@ -86,14 +86,14 @@ flowchart LR
 
 ### Critical (fixed 2026-05-28)
 
-#### Topic page: `gapmap:changed` listeners never removed
+#### Topic page: `openreply:changed` listeners never removed
 
 **File:** `app-tauri/src/screens/topic.js`
 
 Each `renderTopic()` registered:
 
-- `window.addEventListener('gapmap:changed', onGapmapChangedTask8)`
-- `window.addEventListener('gapmap:db-changed', onDbChangedTask8)`
+- `window.addEventListener('openreply:changed', onOpenreplyChangedTask8)`
+- `window.addEventListener('openreply:db-changed', onDbChangedTask8)`
 
 **No `removeEventListener` on navigate away.** Visiting 20 topics → 40 handlers; every DB mutation ran 40 refresh paths → CPU + retained closures → felt like “app gets slower / blank / weird tabs.”
 
@@ -126,7 +126,7 @@ Polling stopped only on next `tick()` (up to 5s late). **Fix:** `hashchange` →
 | **Map render cache** | `topic.js` `_mapRenderCache` + localStorage | Large HTML strings per topic; 7-day TTL; grows with # topics opened |
 | **Tab DOM cache** | `topic.js` `tabDomCache` | Detached DOM trees per tab per topic; freed when leaving topic (root replaced) |
 | **Chat history** | `topic.js` `chatHistory` Map | Grows per topic; unbounded topic keys over long sessions |
-| **main.js `route()` remount** | `main.js` | `gapmap:changed` can call `route()` on list screens → full re-render; intentional but allocates |
+| **main.js `route()` remount** | `main.js` | `openreply:changed` can call `route()` on list screens → full re-render; intentional but allocates |
 | **MCP / external DB writes** | `api.js` poller | Every 5s mtime check; external writes → `clearApiCache` + events (not a leak, but churn) |
 | **Python Chroma idle** | `palace.py` | Memory governor drops client when RSS high; enrichment worker sets `keep_alive=0` for Ollama |
 | **Stuck graph inflight** | Rust `ActiveGraphOps` | Shows in `mem_stats`; causes duplicate work, not always RSS leak |
@@ -157,7 +157,7 @@ Polling stopped only on next `tick()` (up to 5s late). **Fix:** `hashchange` →
 |--------|----------------|---------|
 | Home | 30s interval, db-changed | ✅ `alive()` + routeGen |
 | Collect | 1s + 2s intervals | ✅ hashchange cleanup |
-| Topic | 4s chip poll, gapmap:changed | ✅ hashchange (after fix) |
+| Topic | 4s chip poll, openreply:changed | ✅ hashchange (after fix) |
 | Tasks | 2s poll | ✅ disconnect on leave |
 | Collects | 2s refresh | ✅ hashchange |
 | Activity | refresh timer | ✅ hashchange |
@@ -183,7 +183,7 @@ Enrichment worker includes a **memory governor** (see `desktop-incremental-enric
 
 ## Recommended workflows to stress-test
 
-Run `await window.__gapmapMemStats()` at start, then:
+Run `await window.__openreplyMemStats()` at start, then:
 
 1. Open **15 different topics** (Map tab each) → check `js.heap_used_mb` and listener count (Performance monitor: Event Listeners).
 2. Run **3 collects** on different topics → check `rust.sidecars` RSS after each finishes.
@@ -197,7 +197,7 @@ Run `await window.__gapmapMemStats()` at start, then:
 
 | File | Change |
 |------|--------|
-| `topic.js` | Remove `gapmap:changed` / `gapmap:db-changed` on hashchange; clear enrich unlistens |
+| `topic.js` | Remove `openreply:changed` / `openreply:db-changed` on hashchange; clear enrich unlistens |
 | `personas.js` | Stop orchestra interval on hashchange |
 | `collect.js` | Delete `_collectLogs` for topic on `collect:done` |
 
@@ -216,6 +216,6 @@ Run `await window.__gapmapMemStats()` at start, then:
 ## Related docs
 
 - `docs/new-user-journey.md` — fresh install / reset (for clean leak baselines)
-- `app-tauri/src/api.js` — `__gapmapMemStats`, cache caps
-- `src/gapmap/retrieval/palace.py` — Chroma memory governor
+- `app-tauri/src/api.js` — `__openreplyMemStats`, cache caps
+- `src/openreply/retrieval/palace.py` — Chroma memory governor
 - `changelogs/2026-05-28_08_sidebar-expand-blank-screen.md` — layout bug (not memory, but similar “blank screen” report)

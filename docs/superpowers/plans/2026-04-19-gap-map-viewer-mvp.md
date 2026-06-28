@@ -1,4 +1,4 @@
-# Gap Map viewer MVP — Implementation Plan
+# OpenReply viewer MVP — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, sqlite-utils, Typer (sidecar), Rust 2021 + Tauri 2 (Rust commands stay unchanged), vanilla JS + Lucide icons (frontend), D3.js v7 (viewer), pytest (tests).
 
-**Spec reference:** `docs/superpowers/specs/2026-04-19-gap-map-viewer-mvp-design.md`
+**Spec reference:** `docs/superpowers/specs/2026-04-19-openreply-map-viewer-mvp-design.md`
 
 ---
 
@@ -742,7 +742,7 @@ EOF
 
 ## Part C — Frontend hide-html
 
-Goal: users stop seeing `/Users/.../Library/Application Support/…/gap-map-<topic>.html` in the Topic header and stop seeing the `.html` filename as the primary chip.
+Goal: users stop seeing `/Users/.../Library/Application Support/…/openreply-map-<topic>.html` in the Topic header and stop seeing the `.html` filename as the primary chip.
 
 ### Task C1: Replace path + filename with node/edge/findings chips
 
@@ -961,7 +961,7 @@ Decision tree:
 
 - [ ] **Step 5: Mark the spec as shipped**
 
-Update the spec header at `docs/superpowers/specs/2026-04-19-gap-map-viewer-mvp-design.md` line 4:
+Update the spec header at `docs/superpowers/specs/2026-04-19-openreply-map-viewer-mvp-design.md` line 4:
 
 ```
 Replace:    **Status:** Approved, ready for implementation planning
@@ -970,9 +970,9 @@ With:       **Status:** Shipped 2026-04-19
 
 ```bash
 cd /Users/shantanubombatkar/Documents/GitHub/reddit-myind
-git add docs/superpowers/specs/2026-04-19-gap-map-viewer-mvp-design.md
+git add docs/superpowers/specs/2026-04-19-openreply-map-viewer-mvp-design.md
 git commit -m "$(cat <<'EOF'
-docs(spec): mark gap-map-viewer MVP as shipped
+docs(spec): mark openreply-map-viewer MVP as shipped
 
 All three concerns verified in tauri dev: light theme matches app,
 no path leakage in Map tab, enrichment produces findings with

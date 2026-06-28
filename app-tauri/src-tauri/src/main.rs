@@ -23,7 +23,7 @@ fn load_runtime_env_files() {
     // Search order:
     //   1) current dir .env
     //   2) parent dirs .env (up to 5 levels; catches app-tauri/.env in dev)
-    //   3) ~/.config/gapmap/.env (same path BYOK writes to)
+    //   3) ~/.config/openreply/.env (same path BYOK writes to)
     let mut dir = std::env::current_dir().ok();
     let mut depth = 0usize;
     while let Some(d) = dir {
@@ -38,7 +38,7 @@ fn load_runtime_env_files() {
     if let Ok(home) = std::env::var("HOME") {
         let user_env = std::path::PathBuf::from(home)
             .join(".config")
-            .join("gapmap")
+            .join("openreply")
             .join(".env");
         let _ = dotenvy::from_path(user_env);
     }
@@ -70,7 +70,7 @@ fn main() {
             // self-relocate + relaunch. Without this every MCP install
             // writes a randomized `/private/var/.../AppTranslocation/<UUID>`
             // path into Claude's config that goes stale the instant the
-            // app quits — the user sees "gapmap" in /mcp but it never
+            // app quits — the user sees "openreply" in /mcp but it never
             // connects. See commands::maybe_relocate_to_applications.
             //
             // Release-builds only. Dev builds run from target/debug and
@@ -278,7 +278,7 @@ fn main() {
             // findings extraction) on having enough signal. On fresh
             // installs the worker stays asleep until a collect crosses the
             // threshold; main.js re-triggers the start via
-            // `api.startExtractionWorker()` on `gapmap:changed` kind=collect.
+            // `api.startExtractionWorker()` on `openreply:changed` kind=collect.
             //
             // Dispatched on `async_runtime::spawn` so a slow disk / locked
             // DB never stalls `setup()` — boot is non-blocking.
@@ -290,7 +290,7 @@ fn main() {
                     Ok(d) => d,
                     Err(_) => return,
                 };
-                let db_path = dir.join("gapmap.db");
+                let db_path = dir.join("openreply.db");
                 if !db_path.exists() {
                     return;
                 }
@@ -753,7 +753,7 @@ fn main() {
             commands::mcp_install,
             commands::mcp_config_snippet,
             commands::mcp_uninstall,
-            // CLI symlink — expose bundled gapmap-cli at /usr/local/bin/gapmap
+            // CLI symlink — expose bundled openreply-cli at /usr/local/bin/openreply
             commands::cli_symlink_status,
             commands::install_cli_symlink,
             commands::uninstall_cli_symlink,
@@ -821,9 +821,16 @@ fn main() {
             persona_cmds::persona_agent_ingest_peers,
             // Phase 4c — share-rejection log (lens contradictions)
             persona_cmds::persona_agent_rejections,
+            // ── Minimal X-account worktree (MVP) ──
+            commands::x_account_add,
+            commands::x_account_import_browser,
+            commands::x_account_list,
+            commands::x_account_profile,
+            commands::x_account_fetch_posts,
+            commands::x_account_fetch_thread,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building gapmap");
+        .expect("error while building openreply");
 
     // On app exit (window closed, Cmd-Q, process signal), terminate every
     // tracked Python child so we don't orphan collect/chat/stream processes.
@@ -831,7 +838,7 @@ fn main() {
     //   - prod (PyInstaller sidecar, CommandChild::kill)
     //   - dev  (raw tokio pid → SIGTERM)
     // Without this the user's Activity Monitor fills up with zombie
-    // `gapmap` / `python -m gapmap.cli.main` processes every
+    // `openreply` / `python -m openreply.cli.main` processes every
     // time they quit mid-collect, and the fetches table keeps an
     // `ended_at=NULL` row that the UI reads as "still running".
     app.run(|app_handle, event| {

@@ -15,7 +15,7 @@ instead of falling back to SQL.
 
 ## How it works
 
-- New `src/gapmap/core/coordination.py`: a heartbeat file
+- New `src/openreply/core/coordination.py`: a heartbeat file
   `<data_dir>/.chat_active`.
   - `mark_chat_active()` — chat touches it (current time) around each palace read.
   - `is_chat_active(ttl=10s)` — true if the heartbeat is fresh.
@@ -31,25 +31,25 @@ instead of falling back to SQL.
 
 ## Tuning (env)
 
-- `GAPMAP_CHAT_ACTIVE_TTL` (default 10) — heartbeat freshness window.
-- `GAPMAP_ENRICH_CHAT_BACKOFF_TICK` (default 2) — worker re-check nap.
-- `GAPMAP_ENRICH_CHAT_BACKOFF_MAX` (default 30) — anti-starvation cap.
+- `OPENREPLY_CHAT_ACTIVE_TTL` (default 10) — heartbeat freshness window.
+- `OPENREPLY_ENRICH_CHAT_BACKOFF_TICK` (default 2) — worker re-check nap.
+- `OPENREPLY_ENRICH_CHAT_BACKOFF_MAX` (default 30) — anti-starvation cap.
 
 ## Files Created
 
-- `src/gapmap/core/coordination.py`
+- `src/openreply/core/coordination.py`
 - `changelogs/2026-06-02_03_enrich-worker-chat-backoff.md`
 
 ## Files Modified
 
-- `src/gapmap/research/chat.py` — heartbeat in `_semantic_evidence` + `semantic_search` tool.
-- `src/gapmap/research/enrich_worker.py` — `CHAT_BACKOFF_*` constants + backoff block in `serve()`.
+- `src/openreply/research/chat.py` — heartbeat in `_semantic_evidence` + `semantic_search` tool.
+- `src/openreply/research/enrich_worker.py` — `CHAT_BACKOFF_*` constants + backoff block in `serve()`.
 
 ## Verification
 
 - All three modules `py_compile` clean; `enrich_worker` imports (constants load).
 - Coordination round-trip: `mark_chat_active()` → `is_chat_active()` True, flag
-  at `…/com.shantanu.gapmap/gapmap/.chat_active`, expires on TTL=0.
+  at `…/com.shantanu.openreply/openreply/.chat_active`, expires on TTL=0.
 - Combined effect during a collect: chat read either returns semantic results
   (worker now yields) or, if it just missed the window, times out to SQL in ≤3 s
   — never hangs.

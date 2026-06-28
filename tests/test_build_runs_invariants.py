@@ -8,7 +8,7 @@ import importlib
 
 
 def test_build_structural_body_references_check_graph_invariants():
-    import gapmap.graph.build as build
+    import openreply.graph.build as build
     importlib.reload(build)
     src = inspect.getsource(build)
     assert src.count("check_graph_invariants") >= 1, (

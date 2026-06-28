@@ -35,7 +35,7 @@ Two related features closing the loop on the "calari tracking" thread:
   lazy migration. Stale cache rows (keywords missing) force a re-LLM
   so existing canonicalizations get enriched on next access.
 - `collect.py` extracts `search_keywords` filtered by relevance
-  (`high` by default, `high+medium` in aggressive mode). `GAPMAP_MAX_KEYWORDS`
+  (`high` by default, `high+medium` in aggressive mode). `OPENREPLY_MAX_KEYWORDS`
   caps at 5 (default) — back-compat escape hatch to reduce to single-query.
 - Reddit search stage fans out: `render_queries(kw)` for each keyword,
   merged + dedup'd. Logs "query expansion: N keywords → M unique queries".

@@ -1,4 +1,4 @@
-# MVP launch checklist — Gap Map
+# MVP launch checklist — OpenReply
 
 **Created:** 2026-04-19 from the CodeGraph MVP audit.
 **Target:** shippable DMG that a fresh user can install and use end-to-end without terminal.

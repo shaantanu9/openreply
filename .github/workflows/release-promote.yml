@@ -70,7 +70,7 @@ jobs:
         if: steps.resolve.outputs.skip != '1'
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
-          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
         shell: bash
         run: |
           if [ -z "$GH_TOKEN" ]; then

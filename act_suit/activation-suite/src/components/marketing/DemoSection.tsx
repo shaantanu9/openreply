@@ -82,7 +82,7 @@ export function DemoSection() {
                 <span className="h-3 w-3 rounded-full bg-white/10" />
                 <span className="h-3 w-3 rounded-full bg-white/10" />
                 <span className="ml-3 rounded-md bg-white/[0.04] px-3 py-[3px] font-mono text-[11px] text-white/40">
-                  gap-map · {frame.eyebrow.split("·")[1]?.trim() || "demo"}
+                  openreply-map · {frame.eyebrow.split("·")[1]?.trim() || "demo"}
                 </span>
                 <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-[var(--orange)]/15 px-2.5 py-[3px] text-[10.5px] font-medium uppercase tracking-[1.2px] text-[var(--orange-light)]">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--orange-light)]" />

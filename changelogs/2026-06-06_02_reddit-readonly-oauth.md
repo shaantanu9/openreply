@@ -38,7 +38,7 @@ auth mode (read-only); a refresh token upgrades to full user-scoped auth.
 
 ## Files Modified
 
-- `src/gapmap/core/config.py`, `src/gapmap/core/client.py`
+- `src/openreply/core/config.py`, `src/openreply/core/client.py`
 
 ## Files Created
 

@@ -3,7 +3,7 @@
  * Run: node act_suit/html_site/generate-env-config.mjs
  * Do not add secrets (service role, etc.) to generated output — the browser bundle is public.
  */
-window.GAPMAP_ENV = {
+window.OPENREPLY_ENV = {
   SUPABASE_URL: "",
   SUPABASE_ANON_KEY: "",
   LICENSE_API_BASE: "",

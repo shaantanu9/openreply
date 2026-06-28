@@ -1,8 +1,8 @@
 """exa_search REST source (key-gated)."""
 from __future__ import annotations
 
-from gapmap.sources import exa_search
-from gapmap.sources.exa_search import fetch_exa_search
+from openreply.sources import exa_search
+from openreply.sources.exa_search import fetch_exa_search
 
 _SAMPLE = {
     "results": [

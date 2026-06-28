@@ -5,7 +5,7 @@ exercise the diagnosis logic for each real failure mode without a real corpus.
 """
 import pytest
 
-from gapmap.research.chat import doctor
+from openreply.research.chat import doctor
 
 
 class FakeDB:
@@ -35,7 +35,7 @@ def _provider_ok(monkeypatch):
 
 
 def _patch_palace(monkeypatch, *, available=True, ready=True, by_topic=None):
-    import gapmap.retrieval.palace as palace
+    import openreply.retrieval.palace as palace
     monkeypatch.setattr(palace, "is_available", lambda: available)
     monkeypatch.setattr(palace, "is_model_ready", lambda: ready)
     monkeypatch.setattr(palace, "stats", lambda: {"count": sum((by_topic or {}).values()), "by_topic": by_topic or {}})
@@ -78,7 +78,7 @@ def test_all_good_is_ready(monkeypatch):
 
 def test_no_provider_blocks(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    from gapmap.research.chat import llm_dispatch
+    from openreply.research.chat import llm_dispatch
     monkeypatch.setattr(llm_dispatch, "_auto_detect_provider", lambda: None)
     _patch_palace(monkeypatch, by_topic={"ai": 100})
     rep = doctor.diagnose("ai", db=FakeDB(posts=100, posts_text=100, findings=5))

@@ -1,4 +1,4 @@
-import gapmap.sources.pinterest as mod
+import openreply.sources.pinterest as mod
 
 _FIXTURE = {"results": [{
     "id": "99", "grid_title": "AI workflow",

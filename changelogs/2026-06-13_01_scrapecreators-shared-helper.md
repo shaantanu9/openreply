@@ -9,12 +9,12 @@ Added a shared HTTP helper module for the ScrapeCreators REST API. The four upco
 
 ## Changes
 
-- Created `src/gapmap/sources/_scrapecreators.py` with `api_key()`, `error_row()`, and `get()` helpers
+- Created `src/openreply/sources/_scrapecreators.py` with `api_key()`, `error_row()`, and `get()` helpers
 - Created `tests/test_scrapecreators_helper.py` with 3 TDD tests covering missing-key, error-row shape, and header injection
 
 ## Files Created
 
-- `src/gapmap/sources/_scrapecreators.py`
+- `src/openreply/sources/_scrapecreators.py`
 - `tests/test_scrapecreators_helper.py`
 
 ## Files Modified

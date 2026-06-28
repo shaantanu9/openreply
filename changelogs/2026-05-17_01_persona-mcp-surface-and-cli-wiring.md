@@ -15,8 +15,8 @@ deliberation engine so collected-post beliefs influence finding tiers.
 
 - Added `mcp/tools/persona_tools.py` — the first MCP **sub-server**, mounted
   into the main server via `mcp.mount()` with no namespace prefix so tool
-  names keep the `gapmap_persona_*` convention.
-- Exposed 16 `gapmap_persona_*` MCP tools total:
+  names keep the `openreply_persona_*` convention.
+- Exposed 16 `openreply_persona_*` MCP tools total:
   - CRUD: `create`, `list`, `get`, `update`, `delete`
   - Memory: `memories`, `ingest`, `chat`
   - Conclusions: `conclusions_build`, `conclusions_get`

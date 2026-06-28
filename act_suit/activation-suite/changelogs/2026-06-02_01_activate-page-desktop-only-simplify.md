@@ -30,7 +30,7 @@ it there.** The desktop app remains the only thing that claims a device seat.
   3. Open the app & paste your key — numbered instructions + Open/Download buttons; shows
      a green "Activated on N devices" note once the desktop app has registered.
 - **Re-copyable key:** issued trial/free keys are persisted to `localStorage`
-  (`gapmap.licence.key`) so the user can copy the full key again at any time. For
+  (`openreply.licence.key`) so the user can copy the full key again at any time. For
   pre-existing licences only the masked `activationKeyPreview` is shown (full key lives
   in the purchase email — the server stores only `sha256(key)`).
 - **Removed the API keys (BYOK) tab** from `/activate` — the website never manages the

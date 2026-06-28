@@ -3,21 +3,21 @@ from pathlib import Path
 
 import pytest
 
-from gapmap.core import db as db_mod
+from openreply.core import db as db_mod
 
 
 @pytest.fixture
 def clean_db(tmp_path: Path, monkeypatch):
     """Isolated temp DB per test — canonical pattern (see test_smoke.py::db).
 
-    CRITICAL: the data-dir env var is GAPMAP_DATA_DIR (core/config.py
+    CRITICAL: the data-dir env var is OPENREPLY_DATA_DIR (core/config.py
     _resolve_data_dir). The legacy REDDIT_MYIND_DATA_DIR is NOT honored;
     using it silently falls through to the REAL app database, so these
     tests would run against — and mutate — production data. Always
-    GAPMAP_DATA_DIR + cache_clear(), then assert the attached file is the
+    OPENREPLY_DATA_DIR + cache_clear(), then assert the attached file is the
     temp one before doing anything.
     """
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
     db_mod.get_db.cache_clear()
     db = db_mod.get_db()
     db_mod.init_schema(db)
@@ -56,7 +56,7 @@ def _count(db, table, topic):
 
 
 def test_dry_run_does_not_mutate(clean_db):
-    from gapmap.research.topic_resolver import merge_topics
+    from openreply.research.topic_resolver import merge_topics
     _seed(clean_db)
 
     out = merge_topics("src", "dst", apply=False)
@@ -74,7 +74,7 @@ def test_dry_run_does_not_mutate(clean_db):
 
 
 def test_apply_repoints_and_dedupes(clean_db):
-    from gapmap.research.topic_resolver import merge_topics
+    from openreply.research.topic_resolver import merge_topics
     _seed(clean_db)
 
     out = merge_topics("src", "dst", apply=True)
@@ -92,7 +92,7 @@ def test_apply_repoints_and_dedupes(clean_db):
 
 
 def test_self_merge_rejected(clean_db):
-    from gapmap.research.topic_resolver import merge_topics
+    from openreply.research.topic_resolver import merge_topics
     _seed(clean_db)
     out = merge_topics("src", "src", apply=True)
     assert out["ok"] is False
@@ -100,7 +100,7 @@ def test_self_merge_rejected(clean_db):
 
 
 def test_missing_source_rejected(clean_db):
-    from gapmap.research.topic_resolver import merge_topics
+    from openreply.research.topic_resolver import merge_topics
     _seed(clean_db)
     out = merge_topics("nope", "dst", apply=True)
     assert out["ok"] is False
@@ -108,6 +108,6 @@ def test_missing_source_rejected(clean_db):
 
 
 def test_empty_args_rejected(clean_db):
-    from gapmap.research.topic_resolver import merge_topics
+    from openreply.research.topic_resolver import merge_topics
     assert merge_topics("", "dst")["ok"] is False
     assert merge_topics("src", "")["ok"] is False

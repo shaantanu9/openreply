@@ -9,13 +9,13 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GAPMAP_SKIP_PALACE", "1")
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_SKIP_PALACE", "1")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
-    import gapmap.analyze.providers.base as prov_base
+    import openreply.analyze.providers.base as prov_base
     monkeypatch.setattr(prov_base, "resolve_provider",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
-    from gapmap.core import db as db_mod
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     d = db_mod.get_db()
     db_mod.init_schema(d)
@@ -33,7 +33,7 @@ def _seed(db, topic="focus", n_posts=60, sources=("reddit", "hn", "arxiv")):
     db["posts"].insert_all(posts, pk="id", alter=True)
     db["topic_posts"].insert_all(tps, pk=("topic", "post_id"), alter=True)
     # cached findings so synthesize reuses (no LLM)
-    from gapmap.research import insights
+    from openreply.research import insights
     insights._ensure_topic_insights_table()
     rep = {"ok": True, "topic": topic, "findings": [
         {"title": "Cannot focus during long sessions", "evidence": "loses focus after 30 min today",
@@ -48,7 +48,7 @@ def _seed(db, topic="focus", n_posts=60, sources=("reddit", "hn", "arxiv")):
 
 
 def test_decision_gate_complex_vs_simple(db):
-    from gapmap.research.fleet_flow import decision_gate
+    from openreply.research.fleet_flow import decision_gate
     topic = _seed(db)
     g = decision_gate(topic)
     assert g["mode"] == "complex"             # 60 posts, 3 sources, findings
@@ -58,7 +58,7 @@ def test_decision_gate_complex_vs_simple(db):
 
 
 def test_plan_routes_recommends_by_gate(db):
-    from gapmap.research.fleet_flow import plan_routes
+    from openreply.research.fleet_flow import plan_routes
     topic = _seed(db)
     p = plan_routes(topic)
     assert {r["key"] for r in p["routes"]} == {"quick", "standard", "deep"}
@@ -69,7 +69,7 @@ def test_plan_routes_recommends_by_gate(db):
 
 
 def test_run_fleet_flow_standard_route(db):
-    from gapmap.research.fleet_flow import run_fleet_flow, get_fleet_status
+    from openreply.research.fleet_flow import run_fleet_flow, get_fleet_status
     topic = _seed(db)
     seen = []
     out = run_fleet_flow(topic, route="standard", on_stage=lambda s: seen.append(s["name"]))
@@ -92,7 +92,7 @@ def test_run_fleet_flow_standard_route(db):
 
 
 def test_default_route_follows_gate(db):
-    from gapmap.research.fleet_flow import run_fleet_flow
+    from openreply.research.fleet_flow import run_fleet_flow
     topic = _seed(db)
     out = run_fleet_flow(topic)               # no route → gate says complex → deep
     assert out["route"] == "deep"
@@ -100,7 +100,7 @@ def test_default_route_follows_gate(db):
 
 
 def test_autopilot_l1_suggest_runs_nothing(db):
-    from gapmap.research.fleet_flow import run_fleet_flow
+    from openreply.research.fleet_flow import run_fleet_flow
     topic = _seed(db)
     out = run_fleet_flow(topic, level="L1")
     assert out["status"] == "suggested"
@@ -109,7 +109,7 @@ def test_autopilot_l1_suggest_runs_nothing(db):
 
 
 def test_autopilot_l2_gates_before_expensive_stage(db):
-    from gapmap.research.fleet_flow import run_fleet_flow
+    from openreply.research.fleet_flow import run_fleet_flow
     topic = _seed(db)
     out = run_fleet_flow(topic, route="standard", level="L2")
     assert out["status"] == "waiting_approval"
@@ -125,7 +125,7 @@ def test_autopilot_l2_gates_before_expensive_stage(db):
 
 
 def test_autopilot_l2_deep_gates_before_ground(db):
-    from gapmap.research.fleet_flow import run_fleet_flow
+    from openreply.research.fleet_flow import run_fleet_flow
     topic = _seed(db)
     out = run_fleet_flow(topic, route="deep", level="L2")
     assert out["status"] == "waiting_approval"
@@ -133,7 +133,7 @@ def test_autopilot_l2_deep_gates_before_ground(db):
 
 
 def test_fleet_command_decomposes_directive(db):
-    from gapmap.research.fleet_flow import fleet_command
+    from openreply.research.fleet_flow import fleet_command
     _seed(db)
     # offline → heuristic split on 'and'
     out = fleet_command("note taking apps and task managers", execute=False)

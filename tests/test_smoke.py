@@ -7,24 +7,24 @@ from pathlib import Path
 import pytest
 from sqlite_utils import Database
 
-from gapmap.core.db import (
+from openreply.core.db import (
     init_schema,
     log_fetch_end,
     log_fetch_start,
     upsert_comments,
     upsert_posts,
 )
-from gapmap.core.exporters import export_rows
+from openreply.core.exporters import export_rows
 
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Database:
     # Redirect the module-level singleton to this temp DB.
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
 
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
-    from gapmap.core.config import load_config  # noqa: F401
+    from openreply.core.config import load_config  # noqa: F401
 
     return db_mod.get_db()
 

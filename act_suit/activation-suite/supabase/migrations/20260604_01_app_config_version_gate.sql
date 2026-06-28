@@ -21,7 +21,7 @@ create table if not exists public.app_config (
 
 -- Seed the single config row. Force off, latest pointer at the current build.
 insert into public.app_config (id, force_update, min_app_version, latest_app_version, download_url)
-values (1, false, null, '0.1.19', 'https://gapmap.myind.ai/download')
+values (1, false, null, '0.1.19', 'https://openreply.myind.ai/download')
 on conflict (id) do nothing;
 
 -- Lock it down: only the service role (which bypasses RLS) may read/write.

@@ -1,5 +1,5 @@
 """Tests for the X/Twitter source adapter."""
-import gapmap.sources.x_twitter as mod
+import openreply.sources.x_twitter as mod
 
 
 def test_x_no_backend_skips(monkeypatch):

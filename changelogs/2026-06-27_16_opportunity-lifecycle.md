@@ -18,7 +18,7 @@ platforms (now that social fetch is wired) their own card tint.
 - **Backend lifecycle** (`reply/opportunity.py`): added `set_status(id, status)` with a
   validated `OPPORTUNITY_STATUSES = (new, saved, drafted, posted, skipped)` vocabulary;
   returns the updated row or a graceful `{"error": …}` (never raises).
-- **CLI** (`cli/reply_cmds.py`): `gapmap reply set-status -o <id> --status <s>`.
+- **CLI** (`cli/reply_cmds.py`): `openreply reply set-status -o <id> --status <s>`.
 - **Rust + JS bridge**: `reply_set_status` command (`commands.rs` + `main.rs` register) and
   `api.replySetStatus()` (`or/api.js`).
 - **Opportunities UI** (`or/dynamic.js::renderOpportunities`):
@@ -46,8 +46,8 @@ platforms (now that social fetch is wired) their own card tint.
 
 ## Files Modified
 
-- `src/gapmap/reply/opportunity.py` — `set_status` + status vocabulary.
-- `src/gapmap/cli/reply_cmds.py` — `reply set-status` command.
+- `src/openreply/reply/opportunity.py` — `set_status` + status vocabulary.
+- `src/openreply/cli/reply_cmds.py` — `reply set-status` command.
 - `app-tauri/src-tauri/src/commands.rs`, `main.rs` — `reply_set_status` command + register.
 - `app-tauri/src/or/api.js` — `replySetStatus` wrapper.
 - `app-tauri/src/or/dynamic.js` — Opportunities lifecycle actions + filters + badges; Inbox

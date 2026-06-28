@@ -1,4 +1,4 @@
-# Insight Engine — turn Gap Map into a research-to-decision tool
+# Insight Engine — turn OpenReply into a research-to-decision tool
 
 **Status:** in progress (Phase 1 implementation starting 2026-04-20)
 **Owner:** Shantanu
@@ -8,7 +8,7 @@
 
 ## Why
 
-Gap Map today extracts painpoints / features / workarounds / products from a
+OpenReply today extracts painpoints / features / workarounds / products from a
 multi-source corpus and shows them as ranked lists. That is **exploration**,
 not **decision**. Users leave with "here's what people complain about,"
 not "here's what I should build, why, and where the opportunity is."
@@ -18,7 +18,7 @@ the compute bottleneck that previously forced us into 4 isolated extractors
 on 50-post corpora is gone. We can now operate on the **full corpus at once**
 and produce grounded, cited, decision-grade output.
 
-The gap between what Gap Map produces and what a product strategist or
+The gap between what OpenReply produces and what a product strategist or
 early-stage founder actually needs is the opportunity.
 
 ---
@@ -58,7 +58,7 @@ grounding, all Claude-synthesized from the corpus we already collect.
 
 ## Vision
 
-Turn Gap Map into **the desktop app for product strategists and pre-PMF
+Turn OpenReply into **the desktop app for product strategists and pre-PMF
 founders** to answer: "what should I build in {domain}, what's the evidence,
 and how does it compete?" — in under 15 minutes per topic, citation-grounded,
 with a corpus that refreshes weekly.
@@ -233,7 +233,7 @@ Each item is evaluated for ROI vs. methodology-doc noise. What's IN:
 - Replace "N=14" with "87% CI: 5.2–11.8% of relevant posts mention this."
 - Beta-binomial posterior, 10 lines of Python in `insights.py::_credible_interval`.
 - Displayed as a subtle chip next to evidence count.
-- Anchor: classic Bayesian statistics; makes Gap Map *statistically honest*.
+- Anchor: classic Bayesian statistics; makes OpenReply *statistically honest*.
 
 **Files:**
 - `prompts/insights_synthesis.yaml` — schema extended for Minto + hypotheses +
@@ -438,12 +438,12 @@ Total ≈ 700 lines, ~4-8 hours implementation + tuning.
 ## Success metrics for "best product"
 
 After Phase 1–3:
-- A non-technical early-stage founder can open Gap Map, enter a topic, wait 5 min,
+- A non-technical early-stage founder can open OpenReply, enter a topic, wait 5 min,
   and walk away with a **shareable one-page opportunity brief** with citations.
 - Return visit triggers a delta view: "here's what changed since last time you looked."
 - Export to pitch deck / memo takes 1 click.
 
-If we hit that, Gap Map is a $20–40/mo SaaS-quality product.
+If we hit that, OpenReply is a $20–40/mo SaaS-quality product.
 
 ---
 

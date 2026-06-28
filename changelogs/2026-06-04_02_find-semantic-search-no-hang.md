@@ -14,11 +14,11 @@ the CLI never returned and the UI hung forever.
 
 ## Changes
 
-- **`src/gapmap/cli/main.py` (`cmd_research_semantic_search`):** bound the
+- **`src/openreply/cli/main.py` (`cmd_research_semantic_search`):** bound the
   palace read with a wall-clock ceiling (daemon thread + `join`, same pattern as
   chat's `_call_with_timeout`). On timeout → graceful
   `{ok:false, busy:true, reason, results:[]}`. Default 25s
-  (`GAPMAP_PALACE_SEARCH_TIMEOUT`) — clears a cold ONNX one-shot reload (~12-15s)
+  (`OPENREPLY_PALACE_SEARCH_TIMEOUT`) — clears a cold ONNX one-shot reload (~12-15s)
   yet still bounds a genuinely stuck read. Exceptions → `{ok:false, error}`.
 - **`app-tauri/src/screens/find.js` (`runSearch`):** added a 30s client-side
   safety-net timeout (Promise.race) so the page never hangs even if the backend
@@ -27,14 +27,14 @@ the CLI never returned and the UI hung forever.
 
 ## Verification
 
-- Forced timeout (`GAPMAP_PALACE_SEARCH_TIMEOUT=0.001`) → returns `busy`
+- Forced timeout (`OPENREPLY_PALACE_SEARCH_TIMEOUT=0.001`) → returns `busy`
   immediately (no hang).
 - Default 25s → `ok:true` with results even on a cold one-shot during an active
   enrich-worker.
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py`, `app-tauri/src/screens/find.js`
+- `src/openreply/cli/main.py`, `app-tauri/src/screens/find.js`
 
 ## Files Created
 

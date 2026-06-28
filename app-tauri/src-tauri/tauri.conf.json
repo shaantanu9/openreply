@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OpenReply",
   "version": "0.1.23",
-  "identifier": "com.shantanu.gapmap",
+  "identifier": "com.shantanu.openreply",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -45,7 +45,7 @@
         "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com",
         "font-src": "'self' https://fonts.gstatic.com",
         "img-src": "'self' asset: http://asset.localhost data: blob:",
-        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost http://localhost:* https://www.reddit.com https://api.reddit.com https://oauth.reddit.com https://eutils.ncbi.nlm.nih.gov https://api.openalex.org https://api.semanticscholar.org https://export.arxiv.org https://arxiv.org https://hn.algolia.com https://api.github.com https://dev.to https://api.stackexchange.com https://newsapi.org https://trends.google.com https://itunes.apple.com https://play.google.com https://api.anthropic.com https://api.openai.com https://openrouter.ai https://api.groq.com https://api.deepseek.com https://api.mistral.ai https://generativelanguage.googleapis.com https://chroma-onnx-models.s3.amazonaws.com https://api.pullpush.io https://gapmap.myind.ai",
+        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost http://localhost:* https://www.reddit.com https://api.reddit.com https://oauth.reddit.com https://eutils.ncbi.nlm.nih.gov https://api.openalex.org https://api.semanticscholar.org https://export.arxiv.org https://arxiv.org https://hn.algolia.com https://api.github.com https://dev.to https://api.stackexchange.com https://newsapi.org https://trends.google.com https://itunes.apple.com https://play.google.com https://api.anthropic.com https://api.openai.com https://openrouter.ai https://api.groq.com https://api.deepseek.com https://api.mistral.ai https://generativelanguage.googleapis.com https://chroma-onnx-models.s3.amazonaws.com https://api.pullpush.io https://openreply.myind.ai",
         "frame-src": "'self' asset: http://asset.localhost",
         "object-src": "'none'",
         "base-uri": "'self'",
@@ -56,10 +56,10 @@
         "scope": {
           "allow": [
             "$APPDATA/**",
-            "$APPDATA/gapmap/**",
+            "$APPDATA/openreply/**",
             "$APPLOCALDATA/**",
             "$APPLOCALDATA/paper_pdf_cache/**",
-            "$HOME/Library/Application Support/com.shantanu.gapmap/**"
+            "$HOME/Library/Application Support/com.shantanu.openreply/**"
           ]
         }
       }
@@ -71,7 +71,7 @@
     "category": "DeveloperTool",
     "copyright": "\u00a9 2026 Shantanu Bombatkar",
     "shortDescription": "Multi-source research gap finder",
-    "longDescription": "Gap Map discovers product gaps by fusing Reddit, HN, arXiv, GitHub, and 6 more sources into a single searchable corpus, then extracts pain-points and workarounds via LLM.",
+    "longDescription": "OpenReply discovers product gaps by fusing Reddit, HN, arXiv, GitHub, and 6 more sources into a single searchable corpus, then extracts pain-points and workarounds via LLM.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -80,11 +80,11 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/gapmap-cli",
+      "binaries/openreply-cli",
       "binaries/ffmpeg"
     ],
     "resources": [
-      "binaries/gapmap-cli-onedir/**/*"
+      "binaries/openreply-cli-onedir/**/*"
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add 8 new data-source adapters (Polymarket, TruthSocial, Digg, TikTok, Instagram, Threads, Pinterest, X/Twitter) to Gap Map's collect pipeline, configurable from `.env` and the frontend Settings BYOK modal, each gracefully skipped when its key/binary is missing.
+**Goal:** Add 8 new data-source adapters (Polymarket, TruthSocial, Digg, TikTok, Instagram, Threads, Pinterest, X/Twitter) to OpenReply's collect pipeline, configurable from `.env` and the frontend Settings BYOK modal, each gracefully skipped when its key/binary is missing.
 
-**Architecture:** Each source is a `src/gapmap/sources/<name>.py` module exposing `fetch_<name>(query, limit)` that returns Gap Map's common posts-row dict and returns `[{"_error": "..."}]` when unconfigured. Keyed sources read `os.getenv`. Adapters register via a `run_<name>` wrapper in `collect_adapter.py` `SOURCES`. The 6 new keys are added to the Rust BYOK allowlist + status and to the `byok.js` modal. The 4 ScrapeCreators sources share a `_scrapecreators.py` request helper. X resolves through a backend chain (cookie-extract → bird/Node → xAI → Xquik).
+**Architecture:** Each source is a `src/openreply/sources/<name>.py` module exposing `fetch_<name>(query, limit)` that returns OpenReply's common posts-row dict and returns `[{"_error": "..."}]` when unconfigured. Keyed sources read `os.getenv`. Adapters register via a `run_<name>` wrapper in `collect_adapter.py` `SOURCES`. The 6 new keys are added to the Rust BYOK allowlist + status and to the `byok.js` modal. The 4 ScrapeCreators sources share a `_scrapecreators.py` request helper. X resolves through a backend chain (cookie-extract → bird/Node → xAI → Xquik).
 
 **Tech Stack:** Python 3.12 + httpx (sources), pytest + monkeypatch (tests), Rust/Tauri (`commands.rs` BYOK), vanilla JS (`byok.js`, `collect.js`), behavior ported from `/Users/shantanubombatkar/Documents/GitHub/fintech_repos/last30days-skill/skills/last30days/scripts/lib/`.
 
@@ -52,7 +52,7 @@ filters `_error` rows before `_persist` (confirmed at `collect_adapter.py:244`).
 tests live in `tests/test_<name>.py`. Template:
 
 ```python
-import gapmap.sources.<name> as mod
+import openreply.sources.<name> as mod
 
 class _FakeResp:
     def __init__(self, payload, status=200):
@@ -84,7 +84,7 @@ def test_<name>_maps_rows(monkeypatch):
 ## Task 1: Polymarket adapter (keyless — proves the loop)
 
 **Files:**
-- Create: `src/gapmap/sources/polymarket.py`
+- Create: `src/openreply/sources/polymarket.py`
 - Test: `tests/test_polymarket.py`
 - Reference: `REF/polymarket.py` (Gamma `/public-search`, `_parse_outcome_prices`, `_format_price_movement`)
 
@@ -92,7 +92,7 @@ def test_<name>_maps_rows(monkeypatch):
 
 ```python
 # tests/test_polymarket.py
-import gapmap.sources.polymarket as mod
+import openreply.sources.polymarket as mod
 
 class _FakeResp:
     def __init__(self, payload, status=200):
@@ -131,12 +131,12 @@ def test_polymarket_empty_on_http_error(monkeypatch):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python3 -m pytest tests/test_polymarket.py -v`
-Expected: FAIL — `ModuleNotFoundError: gapmap.sources.polymarket`
+Expected: FAIL — `ModuleNotFoundError: openreply.sources.polymarket`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/polymarket.py
+# src/openreply/sources/polymarket.py
 """Polymarket prediction-market search via the public Gamma API.
 
 No API key required (public read-only, generous rate limits). Behavior
@@ -230,7 +230,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/polymarket.py tests/test_polymarket.py
+git add src/openreply/sources/polymarket.py tests/test_polymarket.py
 git commit -m "feat(sources): add Polymarket prediction-market adapter"
 ```
 
@@ -239,7 +239,7 @@ git commit -m "feat(sources): add Polymarket prediction-market adapter"
 ## Task 2: TruthSocial adapter (TRUTHSOCIAL_TOKEN)
 
 **Files:**
-- Create: `src/gapmap/sources/truthsocial.py`
+- Create: `src/openreply/sources/truthsocial.py`
 - Test: `tests/test_truthsocial.py`
 - Reference: `REF/truthsocial.py` (`/api/v2/search?type=statuses`, `parse_truthsocial_response`, `_strip_html`)
 
@@ -247,7 +247,7 @@ git commit -m "feat(sources): add Polymarket prediction-market adapter"
 
 ```python
 # tests/test_truthsocial.py
-import gapmap.sources.truthsocial as mod
+import openreply.sources.truthsocial as mod
 
 class _FakeResp:
     def __init__(self, payload, status=200):
@@ -289,7 +289,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/truthsocial.py
+# src/openreply/sources/truthsocial.py
 """Truth Social search via its Mastodon-compatible API.
 
 Requires TRUTHSOCIAL_TOKEN (bearer token copied from browser dev tools).
@@ -380,7 +380,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/truthsocial.py tests/test_truthsocial.py
+git add src/openreply/sources/truthsocial.py tests/test_truthsocial.py
 git commit -m "feat(sources): add Truth Social adapter (TRUTHSOCIAL_TOKEN)"
 ```
 
@@ -389,7 +389,7 @@ git commit -m "feat(sources): add Truth Social adapter (TRUTHSOCIAL_TOKEN)"
 ## Task 3: Digg adapter (digg-pp-cli on PATH)
 
 **Files:**
-- Create: `src/gapmap/sources/digg.py`
+- Create: `src/openreply/sources/digg.py`
 - Test: `tests/test_digg.py`
 - Reference: `REF/digg.py` (`_build_search_args`, `_run_cli`, `parse_digg_response`, `_build_url`)
 
@@ -398,7 +398,7 @@ git commit -m "feat(sources): add Truth Social adapter (TRUTHSOCIAL_TOKEN)"
 ```python
 # tests/test_digg.py
 import json
-import gapmap.sources.digg as mod
+import openreply.sources.digg as mod
 
 _CLI_OUT = json.dumps({"results": [{
     "clusterUrlId": "abc123",
@@ -431,7 +431,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/digg.py
+# src/openreply/sources/digg.py
 """Digg AI 1000 clustered-story source.
 
 Shells out to the read-only `digg-pp-cli` (no auth). Activation gate:
@@ -522,7 +522,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/digg.py tests/test_digg.py
+git add src/openreply/sources/digg.py tests/test_digg.py
 git commit -m "feat(sources): add Digg AI-1000 adapter (digg-pp-cli gate)"
 ```
 
@@ -531,7 +531,7 @@ git commit -m "feat(sources): add Digg AI-1000 adapter (digg-pp-cli gate)"
 ## Task 4: ScrapeCreators shared request helper
 
 **Files:**
-- Create: `src/gapmap/sources/_scrapecreators.py`
+- Create: `src/openreply/sources/_scrapecreators.py`
 - Test: `tests/test_scrapecreators_helper.py`
 - Reference: `REF/tiktok.py`, `REF/instagram.py` (`SCRAPECREATORS_API_KEY`, base `https://api.scrapecreators.com`, header `x-api-key`)
 
@@ -539,7 +539,7 @@ git commit -m "feat(sources): add Digg AI-1000 adapter (digg-pp-cli gate)"
 
 ```python
 # tests/test_scrapecreators_helper.py
-import gapmap.sources._scrapecreators as sc
+import openreply.sources._scrapecreators as sc
 
 def test_key_missing_returns_none(monkeypatch):
     monkeypatch.delenv("SCRAPECREATORS_API_KEY", raising=False)
@@ -573,7 +573,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/_scrapecreators.py
+# src/openreply/sources/_scrapecreators.py
 """Shared ScrapeCreators request helper for the TikTok / Instagram /
 Threads / Pinterest adapters. One key (SCRAPECREATORS_API_KEY) powers all
 four; 100 free credits then PAYG. Header auth is `x-api-key`.
@@ -628,7 +628,7 @@ Expected: PASS (3 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/_scrapecreators.py tests/test_scrapecreators_helper.py
+git add src/openreply/sources/_scrapecreators.py tests/test_scrapecreators_helper.py
 git commit -m "feat(sources): add shared ScrapeCreators request helper"
 ```
 
@@ -637,7 +637,7 @@ git commit -m "feat(sources): add shared ScrapeCreators request helper"
 ## Task 5: TikTok adapter
 
 **Files:**
-- Create: `src/gapmap/sources/tiktok.py`
+- Create: `src/openreply/sources/tiktok.py`
 - Test: `tests/test_tiktok.py`
 - Reference: `REF/tiktok.py` — endpoint `/v1/tiktok/search`. **Port the exact response-JSON key extraction from `REF/tiktok.py`'s search-parse block** (the `_row` below uses the documented engagement fields; verify field names like `aweme_id`, `desc`, `statistics.digg_count/play_count/comment_count`, `author.unique_id` against that file and adjust the `.get()` paths if ScrapeCreators changed them).
 
@@ -645,7 +645,7 @@ git commit -m "feat(sources): add shared ScrapeCreators request helper"
 
 ```python
 # tests/test_tiktok.py
-import gapmap.sources.tiktok as mod
+import openreply.sources.tiktok as mod
 
 _FIXTURE = {"search_item_list": [{
     "aweme_info": {
@@ -681,7 +681,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/tiktok.py
+# src/openreply/sources/tiktok.py
 """TikTok keyword search via ScrapeCreators. Score = likes (digg_count),
 views in flair. Ported from last30days lib/tiktok.py.
 """
@@ -740,7 +740,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/tiktok.py tests/test_tiktok.py
+git add src/openreply/sources/tiktok.py tests/test_tiktok.py
 git commit -m "feat(sources): add TikTok adapter (ScrapeCreators)"
 ```
 
@@ -749,7 +749,7 @@ git commit -m "feat(sources): add TikTok adapter (ScrapeCreators)"
 ## Task 6: Instagram (Reels) adapter
 
 **Files:**
-- Create: `src/gapmap/sources/instagram.py`
+- Create: `src/openreply/sources/instagram.py`
 - Test: `tests/test_instagram.py`
 - Reference: `REF/instagram.py` — endpoint `/v1/instagram/search` (verify path + JSON keys `like_count`, `play_count`, `comment_count`, `caption.text`, `user.username`, `code`/`shortcode` against the file).
 
@@ -757,7 +757,7 @@ git commit -m "feat(sources): add TikTok adapter (ScrapeCreators)"
 
 ```python
 # tests/test_instagram.py
-import gapmap.sources.instagram as mod
+import openreply.sources.instagram as mod
 
 _FIXTURE = {"items": [{
     "id": "991",
@@ -792,7 +792,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/instagram.py
+# src/openreply/sources/instagram.py
 """Instagram Reels keyword search via ScrapeCreators. Score = like_count,
 views (play_count) in flair. Ported from last30days lib/instagram.py.
 """
@@ -845,7 +845,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/instagram.py tests/test_instagram.py
+git add src/openreply/sources/instagram.py tests/test_instagram.py
 git commit -m "feat(sources): add Instagram Reels adapter (ScrapeCreators)"
 ```
 
@@ -854,7 +854,7 @@ git commit -m "feat(sources): add Instagram Reels adapter (ScrapeCreators)"
 ## Task 7: Threads adapter
 
 **Files:**
-- Create: `src/gapmap/sources/threads.py`
+- Create: `src/openreply/sources/threads.py`
 - Test: `tests/test_threads.py`
 - Reference: `REF/threads.py` — endpoint `/v1/threads/search` (verify keys `caption.text`/`text`, `like_count`, `reply_count`, `username`, `code`).
 
@@ -862,7 +862,7 @@ git commit -m "feat(sources): add Instagram Reels adapter (ScrapeCreators)"
 
 ```python
 # tests/test_threads.py
-import gapmap.sources.threads as mod
+import openreply.sources.threads as mod
 
 _FIXTURE = {"posts": [{
     "id": "55", "code": "Tabc",
@@ -892,7 +892,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/threads.py
+# src/openreply/sources/threads.py
 """Threads keyword search via ScrapeCreators. Score = like_count.
 Ported from last30days lib/threads.py.
 """
@@ -945,7 +945,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/threads.py tests/test_threads.py
+git add src/openreply/sources/threads.py tests/test_threads.py
 git commit -m "feat(sources): add Threads adapter (ScrapeCreators)"
 ```
 
@@ -954,7 +954,7 @@ git commit -m "feat(sources): add Threads adapter (ScrapeCreators)"
 ## Task 8: Pinterest adapter
 
 **Files:**
-- Create: `src/gapmap/sources/pinterest.py`
+- Create: `src/openreply/sources/pinterest.py`
 - Test: `tests/test_pinterest.py`
 - Reference: `REF/pinterest.py` — endpoint `/v1/pinterest/search` (verify keys `id`, `title`/`grid_title`, `description`, `repin_count` (saves), `pinner.username`, `board.name`).
 
@@ -962,7 +962,7 @@ git commit -m "feat(sources): add Threads adapter (ScrapeCreators)"
 
 ```python
 # tests/test_pinterest.py
-import gapmap.sources.pinterest as mod
+import openreply.sources.pinterest as mod
 
 _FIXTURE = {"results": [{
     "id": "99", "grid_title": "AI workflow",
@@ -993,7 +993,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/pinterest.py
+# src/openreply/sources/pinterest.py
 """Pinterest keyword search via ScrapeCreators. Saves (repin_count) are
 the engagement signal. Ported from last30days lib/pinterest.py.
 """
@@ -1047,7 +1047,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/pinterest.py tests/test_pinterest.py
+git add src/openreply/sources/pinterest.py tests/test_pinterest.py
 git commit -m "feat(sources): add Pinterest adapter (ScrapeCreators)"
 ```
 
@@ -1056,7 +1056,7 @@ git commit -m "feat(sources): add Pinterest adapter (ScrapeCreators)"
 ## Task 9: Browser cookie extraction helper (for X auth)
 
 **Files:**
-- Create: `src/gapmap/sources/_cookie_extract.py`
+- Create: `src/openreply/sources/_cookie_extract.py`
 - Test: `tests/test_cookie_extract.py`
 - Reference: `REF/cookie_extract.py` (stdlib-only Firefox/Chrome/Brave/Safari cookie reading). For Phase 1 port **only** the function that returns X's `auth_token` + `ct0` cookies; full multi-browser support can be trimmed to whatever `REF/cookie_extract.py` exposes as the X entrypoint.
 
@@ -1064,7 +1064,7 @@ git commit -m "feat(sources): add Pinterest adapter (ScrapeCreators)"
 
 ```python
 # tests/test_cookie_extract.py
-import gapmap.sources._cookie_extract as ce
+import openreply.sources._cookie_extract as ce
 
 def test_returns_none_when_no_cookies(monkeypatch):
     # Force every browser path to find nothing.
@@ -1092,7 +1092,7 @@ Port the browser cookie-store reading from `REF/cookie_extract.py` (stdlib
 required by the test and Task 10:
 
 ```python
-# src/gapmap/sources/_cookie_extract.py
+# src/openreply/sources/_cookie_extract.py
 """Best-effort extraction of X/Twitter auth cookies (auth_token + ct0)
 from local browser stores, so X search works with zero config when the
 user is logged into x.com. Stdlib only. Any failure (locked DB, missing
@@ -1135,7 +1135,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/_cookie_extract.py tests/test_cookie_extract.py
+git add src/openreply/sources/_cookie_extract.py tests/test_cookie_extract.py
 git commit -m "feat(sources): add browser cookie extraction for X auth"
 ```
 
@@ -1144,7 +1144,7 @@ git commit -m "feat(sources): add browser cookie extraction for X auth"
 ## Task 10: X / Twitter adapter (multi-backend resolution chain)
 
 **Files:**
-- Create: `src/gapmap/sources/x_twitter.py`
+- Create: `src/openreply/sources/x_twitter.py`
 - Test: `tests/test_x_twitter.py`
 - Reference: `REF/xai_x.py` (`https://api.x.ai/v1/responses`, `XAI_API_KEY`), `REF/xquik.py` (`https://xquik.com/api/v1`, `XQUIK_API_KEY`), `REF/bird_x.py` (`AUTH_TOKEN`/`CT0` + Node), `REF/cookie_extract.py`.
 
@@ -1154,7 +1154,7 @@ git commit -m "feat(sources): add browser cookie extraction for X auth"
 
 ```python
 # tests/test_x_twitter.py
-import gapmap.sources.x_twitter as mod
+import openreply.sources.x_twitter as mod
 
 def test_x_no_backend_skips(monkeypatch):
     for k in ("AUTH_TOKEN", "CT0", "XAI_API_KEY", "XQUIK_API_KEY"):
@@ -1187,7 +1187,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# src/gapmap/sources/x_twitter.py
+# src/openreply/sources/x_twitter.py
 """X / Twitter search via a backend resolution chain:
 
   1. cookie-extract → populate AUTH_TOKEN/CT0 from a logged-in browser
@@ -1301,7 +1301,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/sources/x_twitter.py tests/test_x_twitter.py
+git add src/openreply/sources/x_twitter.py tests/test_x_twitter.py
 git commit -m "feat(sources): add X/Twitter adapter with backend resolution chain"
 ```
 
@@ -1310,20 +1310,20 @@ git commit -m "feat(sources): add X/Twitter adapter with backend resolution chai
 ## Task 10b: Vendor the bird-search Node client (optional X backend)
 
 **Files:**
-- Create: `src/gapmap/sources/vendor/bird-search/` (copy from `REF/vendor/bird-search/`)
+- Create: `src/openreply/sources/vendor/bird-search/` (copy from `REF/vendor/bird-search/`)
 
 - [ ] **Step 1: Copy the vendored client + license**
 
 ```bash
-mkdir -p src/gapmap/sources/vendor
+mkdir -p src/openreply/sources/vendor
 cp -R "/Users/shantanubombatkar/Documents/GitHub/fintech_repos/last30days-skill/skills/last30days/scripts/lib/vendor/bird-search" \
-      src/gapmap/sources/vendor/bird-search
-ls src/gapmap/sources/vendor/bird-search/  # expect: bird-search.mjs, package.json, LICENSE
+      src/openreply/sources/vendor/bird-search
+ls src/openreply/sources/vendor/bird-search/  # expect: bird-search.mjs, package.json, LICENSE
 ```
 
 - [ ] **Step 2: Wire the path in `_fetch_bird`**
 
-In `src/gapmap/sources/x_twitter.py`, set the client path and finish the port:
+In `src/openreply/sources/x_twitter.py`, set the client path and finish the port:
 
 ```python
 from pathlib import Path
@@ -1340,7 +1340,7 @@ Expected: PASS (backend still self-skips when Node/keys absent; chain unaffected
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/gapmap/sources/vendor/bird-search src/gapmap/sources/x_twitter.py
+git add src/openreply/sources/vendor/bird-search src/openreply/sources/x_twitter.py
 git commit -m "feat(sources): vendor bird-search Node client for X (optional backend)"
 ```
 
@@ -1349,15 +1349,15 @@ git commit -m "feat(sources): vendor bird-search Node client for X (optional bac
 ## Task 11: Register all 8 sources in the Python pipeline
 
 **Files:**
-- Modify: `src/gapmap/sources/__init__.py` (add imports + `__all__`)
-- Modify: `src/gapmap/sources/collect_adapter.py` (add `run_*` wrappers + `SOURCES` entries)
+- Modify: `src/openreply/sources/__init__.py` (add imports + `__all__`)
+- Modify: `src/openreply/sources/collect_adapter.py` (add `run_*` wrappers + `SOURCES` entries)
 - Test: `tests/test_new_sources_registered.py`
 
 - [ ] **Step 1: Write the failing registration test**
 
 ```python
 # tests/test_new_sources_registered.py
-from gapmap.sources.collect_adapter import SOURCES
+from openreply.sources.collect_adapter import SOURCES
 
 NEW = ["polymarket", "truthsocial", "digg", "tiktok",
        "instagram", "threads", "pinterest", "x"]
@@ -1375,7 +1375,7 @@ Expected: FAIL — `assert 'polymarket' in SOURCES`
 
 - [ ] **Step 3: Add exports to `__init__.py`**
 
-Append to the import block and `__all__` in `src/gapmap/sources/__init__.py`:
+Append to the import block and `__all__` in `src/openreply/sources/__init__.py`:
 
 ```python
 from .polymarket import fetch_polymarket
@@ -1465,7 +1465,7 @@ Expected: all PASS
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/gapmap/sources/__init__.py src/gapmap/sources/collect_adapter.py tests/test_new_sources_registered.py
+git add src/openreply/sources/__init__.py src/openreply/sources/collect_adapter.py tests/test_new_sources_registered.py
 git commit -m "feat(sources): register 8 last30days sources in collect pipeline"
 ```
 
@@ -1610,7 +1610,7 @@ Expected: compiles clean (no new warnings on the changed lines)
 
 Run the Tauri dev app:
 1. Settings → BYOK → save a dummy `SCRAPECREATORS_API_KEY` → reopen modal → confirm it shows masked/"set".
-2. Confirm `~/.config/gapmap/.env` (or `~/.config/reddit-myind/.env`) contains the key with `0600` perms.
+2. Confirm `~/.config/openreply/.env` (or `~/.config/reddit-myind/.env`) contains the key with `0600` perms.
 3. Clear it → confirm the row shows "unset" and the key is removed from the file.
 
 - [ ] **Step 5: Commit**
@@ -1625,7 +1625,7 @@ git commit -m "feat(byok): allow 6 last30days source keys in BYOK backend"
 ## Task 15: Source-family labels, changelog, and graph sync
 
 **Files:**
-- Modify: `src/gapmap/sources/source_families.py` (only if any new `source_type` needs a subtype label — the 8 new ones are single-family, so likely no change; confirm none fragment)
+- Modify: `src/openreply/sources/source_families.py` (only if any new `source_type` needs a subtype label — the 8 new ones are single-family, so likely no change; confirm none fragment)
 - Create: `changelogs/2026-06-13_01_last30days-source-layer-phase1.md`
 
 - [ ] **Step 1: Confirm no source-family fragmentation**
@@ -1653,7 +1653,7 @@ Settings BYOK modal, and gracefully skipped when their key/binary is missing.
 
 ## Changes
 
-- New source adapters in src/gapmap/sources/ following the posts-row contract
+- New source adapters in src/openreply/sources/ following the posts-row contract
 - Shared ScrapeCreators request helper (_scrapecreators.py) for the 4 IG-family sources
 - Browser cookie extraction (_cookie_extract.py) + multi-backend X chain
 - Registered all 8 in collect_adapter.SOURCES and sources/__init__.py
@@ -1663,15 +1663,15 @@ Settings BYOK modal, and gracefully skipped when their key/binary is missing.
 
 ## Files Created
 
-- src/gapmap/sources/{polymarket,truthsocial,digg,tiktok,instagram,threads,pinterest,x_twitter}.py
-- src/gapmap/sources/{_scrapecreators,_cookie_extract}.py
-- src/gapmap/sources/vendor/bird-search/ (vendored Node client)
+- src/openreply/sources/{polymarket,truthsocial,digg,tiktok,instagram,threads,pinterest,x_twitter}.py
+- src/openreply/sources/{_scrapecreators,_cookie_extract}.py
+- src/openreply/sources/vendor/bird-search/ (vendored Node client)
 - tests/test_{polymarket,truthsocial,digg,tiktok,instagram,threads,pinterest,x_twitter,cookie_extract,scrapecreators_helper,new_sources_registered}.py
 
 ## Files Modified
 
-- src/gapmap/sources/__init__.py (exports)
-- src/gapmap/sources/collect_adapter.py (run_* wrappers + SOURCES)
+- src/openreply/sources/__init__.py (exports)
+- src/openreply/sources/collect_adapter.py (run_* wrappers + SOURCES)
 - app-tauri/src/screens/collect.js (picker labels)
 - app-tauri/src/screens/byok.js (6 key rows)
 - app-tauri/src-tauri/src/commands.rs (ALLOWED + byok_status)
@@ -1685,7 +1685,7 @@ Expected: "Synced N changed files" (N ≥ 14). If 0 synced, run `codegraph index
 - [ ] **Step 4: Commit**
 
 ```bash
-git add changelogs/2026-06-13_01_last30days-source-layer-phase1.md src/gapmap/sources/source_families.py .codegraph graphify-out
+git add changelogs/2026-06-13_01_last30days-source-layer-phase1.md src/openreply/sources/source_families.py .codegraph graphify-out
 git commit -m "docs(changelog): last30days source layer Phase 1 + graph sync"
 ```
 
@@ -1705,4 +1705,4 @@ git commit -m "docs(changelog): last30days source layer Phase 1 + graph sync"
 - **The `# ... port from REF/...` markers in Tasks 9 & 10** are the only spots that require copying upstream code rather than typing what's shown. Those modules (`cookie_extract.py` ~250 lines, `bird_x.py`/`xai_x.py`/`xquik.py` request+parse) are too long to inline verbatim and their exact HTTP/JSON shapes must match the live APIs — copy them from the cited `REF/` files and adapt only the function names + the final dict keys to the intermediate shape `{id, author_handle, text, url, likes, replies, created_utc}`.
 - **ScrapeCreators JSON keys** (Tasks 5-8): the `_row` mappings use the documented field names; if a live response differs, the cited `REF/<source>.py` `parse_*` block is authoritative — adjust the `.get()` paths and update the test fixture to a real captured response.
 - **Don't** add the keyed/social sources to `AGGRESSIVE_SOURCES` in `collect.js` — they stay opt-in.
-- **Per-source timeout:** all sources honor the existing `GAPMAP_SOURCE_TIMEOUT_SEC` budget via the parallel fan-out; no per-adapter timeout wiring needed.
+- **Per-source timeout:** all sources honor the existing `OPENREPLY_SOURCE_TIMEOUT_SEC` budget via the parallel fan-out; no per-adapter timeout wiring needed.

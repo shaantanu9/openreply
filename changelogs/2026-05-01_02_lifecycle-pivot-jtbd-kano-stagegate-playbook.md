@@ -6,7 +6,7 @@
 ## Summary
 
 Pulled four lifecycle-discipline ideas from the resumeforge product-dev
-lifecycle reference into Gap Map: a strict JTBD statement format on the
+lifecycle reference into OpenReply: a strict JTBD statement format on the
 why-extractor, Kano-Model categorization on every intervention, a
 Stage-Gate verdict (Go / Kill / Hold / Recycle) on every Product, and a
 new Playbook screen that maps the 10-phase product-development lifecycle

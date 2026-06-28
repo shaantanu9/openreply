@@ -48,7 +48,7 @@
 
 ---
 
-## 3. Engine functions (Python `src/gapmap/reply/`)
+## 3. Engine functions (Python `src/openreply/reply/`)
 
 | Module | Key functions |
 |---|---|
@@ -63,7 +63,7 @@
 | `schema.py` | `init_reply_schema` (creates/migrates reply_* tables) |
 | `util.py` | `loads_json` |
 
-**CLI groups** (`gapmap …`): `reply` (platforms, brand-set, brand-get, find, list, draft, rules) ·
+**CLI groups** (`openreply …`): `reply` (platforms, brand-set, brand-get, find, list, draft, rules) ·
 `agent` (create, list, get, use, update, delete, knowledge, refresh) · `content` (generate, list).
 
 ---
@@ -75,7 +75,7 @@
 `agent_knowledge` · `agent_refresh` · `reply_find` · `reply_list` · `reply_draft` ·
 `content_generate` · `content_list`  (+ `cli_info`).
 
-### Reused Rust commands (kept from gapmap, wired to Connections/Settings)
+### Reused Rust commands (kept from openreply, wired to Connections/Settings)
 `creds_list/creds_import_browser/creds_save_manual/creds_verify/creds_delete` ·
 `byok_status/byok_set` · `test_llm` · `list_provider_models` · `list_ollama_models` ·
 `feeds_list/feeds_validate/feeds_add/feeds_remove/feeds_enable` ·
@@ -111,7 +111,7 @@ revealInFinder, openUrl, appResetPreview, appHardReset, appRelaunch` (+ `isTauri
 
 **Columns added:** `reply_opportunities.{engagement, freshness, rrf}` (idempotent migration in `schema.py`).
 
-### Kept gapmap tables (used by the OpenReply path)
+### Kept openreply tables (used by the OpenReply path)
 `posts, comments, topic_posts, subreddits, fetches, source_credentials, graph_nodes,
 graph_edges, findings, topic_prefs, topic_canonicalizations, chat_conversations`.
 
@@ -139,7 +139,7 @@ is deferred (see `OPENREPLY_RESHAPE.md`).
 ---
 
 ## 7. Verification log
-- ✅ Engine imports clean (`gapmap.cli.main`, `gapmap.mcp.server`), `reply/agent/content` run.
+- ✅ Engine imports clean (`openreply.cli.main`, `openreply.mcp.server`), `reply/agent/content` run.
 - ✅ RRF ranking: deterministic unit test + live `reply find`.
 - ✅ Agents screen renders real agents from the app DB (screenshot-confirmed).
 - ✅ Sidebar agent switcher = live (`agent_list` → `agent_use`).

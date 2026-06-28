@@ -1,4 +1,4 @@
-import gapmap.sources._scrapecreators as sc
+import openreply.sources._scrapecreators as sc
 
 def test_key_missing_returns_none(monkeypatch):
     monkeypatch.delenv("SCRAPECREATORS_API_KEY", raising=False)

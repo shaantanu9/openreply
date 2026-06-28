@@ -50,7 +50,7 @@ are now answerable in chat (verified live).
   - `paper_workflow.build_paper_knowledge` (the app's "Build knowledge" button)
     — new **"embed"** stage between full-text and relations, so the relations
     build sees every paper's vector.
-- CLI: `gapmap research paper-chunk --abstracts [--topic …]` to backfill on
+- CLI: `openreply research paper-chunk --abstracts [--topic …]` to backfill on
   demand (whole library when `--topic` is omitted).
 
 ## Why abstract chunks "just work" downstream (no retrieval changes)
@@ -68,10 +68,10 @@ are now answerable in chat (verified live).
 
 ## Files Modified
 
-- `src/gapmap/research/paper_chunks.py` — `_load_abstract`,
+- `src/openreply/research/paper_chunks.py` — `_load_abstract`,
   `chunk_paper_abstract`, `chunk_abstracts_all`, retry + heal-on-rerun, `__all__`.
-- `src/gapmap/research/paper_pipeline.py` — step 3c + `abstracts_chunked` in the
+- `src/openreply/research/paper_pipeline.py` — step 3c + `abstracts_chunked` in the
   return payload.
-- `src/gapmap/research/paper_workflow.py` — new `embed` stage in the
+- `src/openreply/research/paper_workflow.py` — new `embed` stage in the
   build-knowledge orchestrator.
-- `src/gapmap/cli/main.py` — `--abstracts` flag on `research paper-chunk`.
+- `src/openreply/cli/main.py` — `--abstracts` flag on `research paper-chunk`.

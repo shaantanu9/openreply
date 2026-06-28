@@ -46,6 +46,6 @@ The fix benefits dev mode (where I tested) and prod mode (`--bin <PyInstaller bi
 
 ## Out of scope (follow-ups)
 
-- Slow tools — `gapmap_fetch_appstore` averages 19 s and maxes at 37 s, exceeding Claude Code's ~25-30 s tool-call timeout. Even with a stable connection these can cause client-side cancellation. Candidates for chunked/streaming response, page-cap, or pre-warmed cache.
+- Slow tools — `openreply_fetch_appstore` averages 19 s and maxes at 37 s, exceeding Claude Code's ~25-30 s tool-call timeout. Even with a stable connection these can cause client-side cancellation. Candidates for chunked/streaming response, page-cap, or pre-warmed cache.
 - `_sweep_stale_siblings` still kills any `reddit-cli mcp serve` older than 1 day regardless of tag — fine for now (per-tag pids prevent the cross-client kill at startup) but should eventually filter by `MCP_CLIENT_TAG` too.
 - Migration: existing entries written before today still use the un-tagged pidfile path until re-synced. `status()` now flags this as a re-sync trigger; the Settings UI's "Re-sync" button (if present) handles it transparently.

@@ -9,15 +9,15 @@ import pytest
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db_mod.get_db()
     return tmp_path
 
 
 def test_import_json_list_of_audiences(env):
-    from gapmap.sources import gummysearch_import as g
+    from openreply.sources import gummysearch_import as g
     p = env / "exp.json"
     p.write_text(json.dumps([
         {"name": "SaaS founders", "subreddits": ["r/SaaS", "/r/startups", "indiehackers"]},
@@ -35,7 +35,7 @@ def test_import_json_list_of_audiences(env):
 
 
 def test_import_json_flat_list(env):
-    from gapmap.sources import gummysearch_import as g
+    from openreply.sources import gummysearch_import as g
     p = env / "flat.json"
     p.write_text(json.dumps(["r/webdev", "programming"]))
     r = g.import_file(str(p))
@@ -44,7 +44,7 @@ def test_import_json_flat_list(env):
 
 
 def test_import_csv(env):
-    from gapmap.sources import gummysearch_import as g
+    from openreply.sources import gummysearch_import as g
     p = env / "exp.csv"
     p.write_text("name,subreddit\nMy Audience,r/SaaS\nMy Audience,startups\nOther,fitness\n")
     r = g.import_file(str(p))
@@ -55,7 +55,7 @@ def test_import_csv(env):
 
 
 def test_presets_and_add_preset(env):
-    from gapmap.sources import gummysearch_import as g
+    from openreply.sources import gummysearch_import as g
     pr = g.presets()
     assert pr["ok"] and pr["count"] > 0
     keys = {p["key"] for p in pr["presets"]}
@@ -66,5 +66,5 @@ def test_presets_and_add_preset(env):
 
 
 def test_missing_file_graceful(env):
-    from gapmap.sources import gummysearch_import as g
+    from openreply.sources import gummysearch_import as g
     assert g.import_file(str(env / "nope.json"))["ok"] is False

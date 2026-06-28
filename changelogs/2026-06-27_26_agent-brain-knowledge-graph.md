@@ -8,7 +8,7 @@
 Gave an OpenReply agent a **real knowledge graph** over its collected content and
 connections, reusing the existing graph builders and the ChromaDB **"Palace"
 (memplace)** MiniLM embeddings — no new model. The graph machinery
-(`gapmap.graph`) and the persona semantic-memory brain already existed, but the
+(`openreply.graph`) and the persona semantic-memory brain already existed, but the
 graph builders were **never invoked from the agent path**, so the agent's
 Knowledge page showed `graph_nodes = 0`. This wires the canonical build chain to
 the agent and surfaces it in the UI.
@@ -37,7 +37,7 @@ the agent and surfaces it in the UI.
     nodes), and strongest semantic connections, for the UI.
 - `reply/learn.py` — every learn pass now builds the structural graph (cheap)
   so the brain stays current.
-- CLI: `gapmap agent build-graph [--deep]`, `gapmap agent graph`.
+- CLI: `openreply agent build-graph [--deep]`, `openreply agent graph`.
 - Tauri: `agent_build_graph`, `agent_graph`; api.js: `agentBuildGraph`,
   `agentGraph`.
 - Knowledge UI: a **"Brain & knowledge graph"** card showing node/edge counts by
@@ -57,13 +57,13 @@ On a 13-post test agent:
 
 ## Files Created
 
-- `src/gapmap/reply/brain.py`
+- `src/openreply/reply/brain.py`
 - `changelogs/2026-06-27_26_agent-brain-knowledge-graph.md`
 
 ## Files Modified
 
-- `src/gapmap/reply/learn.py` — auto-build structural graph each learn pass
-- `src/gapmap/cli/agent_cmds.py` — `agent build-graph` + `agent graph`
+- `src/openreply/reply/learn.py` — auto-build structural graph each learn pass
+- `src/openreply/cli/agent_cmds.py` — `agent build-graph` + `agent graph`
 - `app-tauri/src-tauri/src/commands.rs` — `agent_build_graph` + `agent_graph`
 - `app-tauri/src-tauri/src/main.rs` — command registration
 - `app-tauri/src/or/api.js` — `agentBuildGraph` + `agentGraph`

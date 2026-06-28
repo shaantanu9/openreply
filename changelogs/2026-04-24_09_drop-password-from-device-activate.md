@@ -36,11 +36,11 @@ tjikcnsfaaqihgegecpi):
 
 ```bash
 curl -X POST http://127.0.0.1:3007/api/v1/device/activate -d '{
-  "email": "desktop-test+1776995604@gapmap-dev.local",
+  "email": "desktop-test+1776995604@openreply-dev.local",
   "password": "whatever-anything-is-accepted-now",
   "activation_key": "BWCS-JSSC-M8CL-6BA8",
   "device_signature": "<sha256>",
-  "app": "gapmap-desktop", "os": "macos", "arch": "aarch64"
+  "app": "openreply-desktop", "os": "macos", "arch": "aarch64"
 }'
 → ✅ activation succeeded
   license_id: fe3db956-cae3-4362-9703-02e3b82afb0a

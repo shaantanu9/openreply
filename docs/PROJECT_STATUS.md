@@ -1,9 +1,9 @@
-# Gap Map — Project status
+# OpenReply — Project status
 
 > **Scope:** the full arc of decisions in this session (2026-04-19 → 2026-04-20). What was built, what was deliberately skipped, what's queued for later, and the rationale for each bucket. Meant to be read linearly top-to-bottom.
 
 **Last updated:** 2026-04-20
-**Current branch:** `multi-source` (private: `shaantanu9/gap-map-pro`)
+**Current branch:** `multi-source` (private: `shaantanu9/openreply`)
 **Latest commit:** Phase 2 — Minto + hypothesis cards + counter-evidence + Ulwick scoring
 
 ---
@@ -21,7 +21,7 @@ Built as two Phases of the same spec (`docs/specs/2026-04-20-insight-engine.md`)
 
 **Files:** `src/reddit_research/research/insights.py`, `prompts/insights_synthesis.yaml`, `app-tauri/src/screens/insights.js`, `app-tauri/src-tauri/src/commands.rs` (`synthesize_insights`), topic.js tab wiring.
 
-**Why this is the product's spine:** turns Gap Map from exploration tool ("here's what people complain about") into decision tool ("here's what to build, why, and how you'd test it").
+**Why this is the product's spine:** turns OpenReply from exploration tool ("here's what people complain about") into decision tool ("here's what to build, why, and how you'd test it").
 
 ### 1.2 Multi-source collection pipeline (already existed, hardened this session)
 
@@ -59,10 +59,10 @@ Built as two Phases of the same spec (`docs/specs/2026-04-20-insight-engine.md`)
 
 ### 1.6 Infrastructure
 
-- **Private GitHub repo** created: `shaantanu9/gap-map-pro`.
+- **Private GitHub repo** created: `shaantanu9/openreply`.
 - **Git LFS** set up for `app-tauri/src-tauri/binaries/reddit-cli-*` (219 MB PyInstaller sidecar). History migrated across 126 commits.
 - **`.gitignore` extended:** `app-tauri/.claude/`, `scripts/onnx-model-cache/`.
-- **App icon:** full Tauri icon set generated from `gapmap_logo.jpg` (macOS `.icns`, Windows `.ico`, Linux PNGs, iOS `AppIcon*`, Android mipmaps).
+- **App icon:** full Tauri icon set generated from `openreply_logo.jpg` (macOS `.icns`, Windows `.ico`, Linux PNGs, iOS `AppIcon*`, Android mipmaps).
 
 ### 1.7 Skills created for future reuse
 
@@ -132,7 +132,7 @@ Everything in Phase 2 shares the same LLM call and output schema. Phase 1 ships 
 |---|---|
 | Git | `multi-source` branch, 1 commit ahead of Phase 1 push |
 | Pushed to GitHub? | Phase 1 yes; **Phase 2 local only, awaiting push** |
-| Running app | Debug `.app` exists at `app-tauri/src-tauri/target/debug/bundle/macos/Gap Map.app` with the correct icon |
+| Running app | Debug `.app` exists at `app-tauri/src-tauri/target/debug/bundle/macos/OpenReply.app` with the correct icon |
 | LLM provider | Claude Opus 4.7 (user's default), provider-agnostic fallback to 7 others |
 | Test corpus | 2 topics: "calari tracking app" (7837 posts, 4 sources), "meditation and sound frequency brainwave app" (5182 posts, 8 sources) |
 | Semantic palace | ChromaDB + BM25 hybrid ready; ONNX model cache 80 MB (gitignored, regenerated) |

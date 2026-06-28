@@ -28,7 +28,7 @@ Hardened the public invite flow against abuse and added returning-visitor memory
 ### Client throttle + "already requested" memory (localStorage)
 - **`InviteHero` + `RequestInviteSection`:** 2.5s submit throttle (ignores
   rapid double-submits) and graceful `rate_limited` messaging.
-- Both write a `gapmap_invite_requested` flag to **localStorage** on success and
+- Both write a `openreply_invite_requested` flag to **localStorage** on success and
   read it on mount — a returning visitor sees "You've already requested your
   invite — check your inbox" (with their email + Sign up CTA) instead of the
   form. (The sign-up invite-code field was already debounced 450ms.)

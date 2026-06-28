@@ -1,4 +1,4 @@
-import gapmap.sources._cookie_extract as ce
+import openreply.sources._cookie_extract as ce
 
 
 def test_returns_none_when_no_cookies(monkeypatch):

@@ -1,7 +1,7 @@
 // POST /api/v1/coupon/validate — non-consuming invite-code check for the
 // beta sign-up gate. Public (no auth): runs BEFORE the account exists.
 //
-// Body:    { "coupon_code": "GAPMAP-BETA-2026" }
+// Body:    { "coupon_code": "OPENREPLY-BETA-2026" }
 // 200:     { ok: true, valid, reason, plan_id, seats_total, seats_left, seats_claimed }
 //
 // Does NOT increment the coupon — that happens later at key issuance

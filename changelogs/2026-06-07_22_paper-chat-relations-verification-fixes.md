@@ -55,13 +55,13 @@ real bugs so the paper map now shows weighted paper↔paper semantic relations.
 Only 22–34 of 379 full-text papers (and 379 of 10,160 total) are chunked/embedded
 because `run_paper_research` fetches full text + chunks only the top
 `max_fulltext=3` papers per run. Chat and relations get richer as more papers are
-chunked — run `gapmap research paper-chunk --topic "<topic>"` (batch `chunk_topic`)
+chunked — run `openreply research paper-chunk --topic "<topic>"` (batch `chunk_topic`)
 and re-fetch full text for more papers to densify both the chat corpus and the map.
 
 ## Files Modified
 
-- `src/gapmap/retrieval/palace.py` — `paper_neighbors`: topic→post_id resolution
+- `src/openreply/retrieval/palace.py` — `paper_neighbors`: topic→post_id resolution
   + working zero-match SEGFAULT guard.
-- `src/gapmap/research/paper_relations.py` — `build()` relates_to topic=None;
+- `src/openreply/research/paper_relations.py` — `build()` relates_to topic=None;
   `_norm_author` placeholder blocklist; `get_paper_map` node ordering by
   `has_chunks DESC, has_ft DESC, cites DESC`.

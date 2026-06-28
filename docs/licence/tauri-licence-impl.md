@@ -1,8 +1,8 @@
-# Gap Map — Tauri Licence & Activation System
+# OpenReply — Tauri Licence & Activation System
 ## Complete Implementation Spec for Local Model / Claude Code
 
 > **Read this entire document before writing a single line of code.**
-> This is the authoritative spec for the Tauri (Rust) side of the Gap Map
+> This is the authoritative spec for the Tauri (Rust) side of the OpenReply
 > licensing system. The server-side spec lives in `subscription-model.md`.
 > These two documents together form the full system.
 
@@ -12,7 +12,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Gap Map Desktop (Tauri)                    │
+│                    OpenReply Desktop (Tauri)                    │
 │                                                              │
 │  ┌──────────────┐   invoke()   ┌───────────────────────────┐ │
 │  │   Frontend   │ ──────────► │    Tauri Commands (Rust)   │ │
@@ -81,7 +81,7 @@ src-tauri/
 
 ```toml
 [package]
-name = "gapmap"
+name = "openreply"
 version = "0.1.0"
 edition = "2021"
 
@@ -394,7 +394,7 @@ fn collect_raw_identifiers() -> String {
     let hw_uuid = get_macos_hw_uuid().unwrap_or_else(|| "unknown_uuid".to_string());
     let serial  = get_macos_serial().unwrap_or_else(|| "unknown_serial".to_string());
     // Salt with app name so the same hash can't be used for another app
-    format!("gapmap::macos::{}::{}", hw_uuid, serial)
+    format!("openreply::macos::{}::{}", hw_uuid, serial)
 }
 
 #[cfg(target_os = "macos")]
@@ -444,7 +444,7 @@ fn collect_raw_identifiers() -> String {
         .unwrap_or_else(|| "unknown_guid".to_string());
     let cpu_id = get_windows_cpu_id()
         .unwrap_or_else(|| "unknown_cpu".to_string());
-    format!("gapmap::windows::{}::{}", machine_guid, cpu_id)
+    format!("openreply::windows::{}::{}", machine_guid, cpu_id)
 }
 
 #[cfg(target_os = "windows")]
@@ -478,7 +478,7 @@ fn get_windows_cpu_id() -> Option<String> {
 fn collect_raw_identifiers() -> String {
     let machine_id = get_linux_machine_id()
         .unwrap_or_else(|| "unknown_id".to_string());
-    format!("gapmap::linux::{}", machine_id)
+    format!("openreply::linux::{}", machine_id)
 }
 
 #[cfg(target_os = "linux")]
@@ -510,12 +510,12 @@ use crate::licence::features::Features;
 pub struct LicenceClaims {
     // Standard JWT fields
     pub sub: String,           // licence ID (uuid)
-    pub iss: String,           // "gapmap-activation-suite"
-    pub aud: Vec<String>,      // ["gapmap-desktop"]
+    pub iss: String,           // "openreply-activation-suite"
+    pub aud: Vec<String>,      // ["openreply-desktop"]
     pub iat: i64,              // issued at (unix timestamp)
     pub exp: i64,              // expiry (unix timestamp) — 180 days from issue
 
-    // Gap Map specific
+    // OpenReply specific
     pub user_id: String,
     pub email: String,
     pub device_fingerprint: String,  // sha256 of hardware fingerprint
@@ -555,8 +555,8 @@ pub fn verify_jwt(token: &str) -> Result<LicenceClaims, LicenceError> {
     let key = DecodingKey::from_secret(secret.as_bytes());
 
     let mut validation = Validation::new(Algorithm::HS256);
-    validation.set_issuer(&["gapmap-activation-suite"]);
-    validation.set_audience(&["gapmap-desktop"]);
+    validation.set_issuer(&["openreply-activation-suite"]);
+    validation.set_audience(&["openreply-desktop"]);
     // We handle expiry manually so offline use works past JWT exp
     // (we re-validate online but don't lock out offline users immediately)
     validation.validate_exp = false;
@@ -590,8 +590,8 @@ pub fn verify_jwt(token: &str) -> Result<LicenceClaims, LicenceError> {
 
 use crate::error::LicenceError;
 
-const KEYCHAIN_KEY: &str = "gapmap_licence_token";
-const KEYCHAIN_VAULT: &str = "gapmap.app";
+const KEYCHAIN_KEY: &str = "openreply_licence_token";
+const KEYCHAIN_VAULT: &str = "openreply.app";
 
 /// Save JWT to OS keychain. Overwrites any existing entry.
 pub fn save_token(token: &str) -> Result<(), LicenceError> {
@@ -990,7 +990,7 @@ pub async fn activate_licence(
             email: email.clone(),
             activation_key: clean_key,
             device_fingerprint: fingerprint.clone(),
-            app: "gapmap-desktop".to_string(),
+            app: "openreply-desktop".to_string(),
             os: os.clone(),
             arch: arch.clone(),
         })
@@ -1385,7 +1385,7 @@ fn main() {
             // This means the vault can only be opened on this machine
             use argon2::Argon2;
             let fp = licence::fingerprint::get_device_fingerprint();
-            let salt = b"gapmap_vault_salt_v1";
+            let salt = b"openreply_vault_salt_v1";
             let mut key = vec![0u8; 32];
             Argon2::default()
                 .hash_password_into(fp.as_bytes(), salt, &mut key)
@@ -1549,7 +1549,7 @@ function UpgradePrompt({ plan }: { plan: string }) {
   const onClick = () => {
     // Open the web activate page in the default browser
     // or show an in-app modal
-    window.open('https://gapmap.app/activate', '_blank')
+    window.open('https://openreply.app/activate', '_blank')
   }
   return (
     <div className="upgrade-prompt">
@@ -1651,7 +1651,7 @@ App:     input strips dashes before sending to API
    └─ LS fires webhook → POST /api/v1/webhooks/lemonsqueezy
       └─ Server: create user_plans row, generate key, email key to user
 
-② User opens Gap Map desktop app
+② User opens OpenReply desktop app
    └─ main.rs: LicenceState::load() runs
       └─ read_token() → None (no token yet)
       └─ Returns LicenceState { features: Features::free(), claims: None }
@@ -1666,7 +1666,7 @@ App:     input strips dashes before sending to API
       └─ POST /api/v1/device/activate {
            email, activation_key: "ABCDEF12GHIJ3456",
            device_fingerprint: "a3f9b2c1...f0a1",
-           app: "gapmap-desktop", os: "macos", arch: "aarch64"
+           app: "openreply-desktop", os: "macos", arch: "aarch64"
          }
 
 ④ Server processes activation

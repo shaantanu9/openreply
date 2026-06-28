@@ -11,7 +11,7 @@ run sequentially on the main thread. Pullpush is one slow, rate-limited host, so
 this ~10,000-post backfill was ~80% of the ~15-min first collect — and the
 corpus only displays after the whole collect "completes."
 
-## Changes (`src/gapmap/research/collect.py`)
+## Changes (`src/openreply/research/collect.py`)
 
 - Aggressive historical scope: `historical_days` 1095→**365** (3yr→1yr),
   `historical_limit_per_sub` 1000→**150**.

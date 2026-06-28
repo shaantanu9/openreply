@@ -5,7 +5,7 @@
 
 ## Summary
 
-Scaffolded Gap Map's offline-first licensing system and wrote the full technical design doc. The Ed25519 keypair is generated, mint + keygen scripts work, and `docs/licensing.md` documents every detail of how licenses work without the app ever going online.
+Scaffolded OpenReply's offline-first licensing system and wrote the full technical design doc. The Ed25519 keypair is generated, mint + keygen scripts work, and `docs/licensing.md` documents every detail of how licenses work without the app ever going online.
 
 ## Changes
 

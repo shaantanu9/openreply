@@ -7,7 +7,7 @@
 # Usage:
 #   scripts/verify-dmg.sh path/to/release.dmg [--expected-arch arm64|x86_64]
 #                                              [--expected-version 0.1.1]
-#                                              [--expected-bundle-id com.shantanu.gapmap]
+#                                              [--expected-bundle-id com.shantanu.openreply]
 #
 # Exit codes:
 #   0   all checks passed — safe to upload

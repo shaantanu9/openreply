@@ -5,7 +5,7 @@ import { fetchLatestRelease, RELEASES_PAGE_URL } from "@/lib/releases";
 import { GITHUB } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Download",
+  title: "OpenReply — Download",
 };
 
 // Re-pull the latest release roughly every 15 min so the version stays fresh
@@ -62,7 +62,7 @@ export default async function DownloadPage() {
           <div className="max-w-[620px]">
             <span className="section-label">Download</span>
             <h1 className="font-serif text-[clamp(36px,4.2vw,52px)] font-normal leading-[1.1] tracking-[-1.2px] text-[var(--dark)]">
-              Install Gap Map and start
+              Install OpenReply and start
               <br />
               your first research run.
             </h1>
@@ -138,10 +138,10 @@ export default async function DownloadPage() {
               For enterprise deployment help, contact support through the FAQ
               page or email{" "}
               <a
-                href="mailto:support@gapmap.app"
+                href="mailto:support@openreply.app"
                 className="text-[var(--orange)] hover:underline"
               >
-                support@gapmap.app
+                support@openreply.app
               </a>
               .
             </p>

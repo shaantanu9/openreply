@@ -33,8 +33,8 @@ Visibility page gets a citation-rate-over-time chart.
 
 ## Files Modified
 
-- `src/gapmap/reply/opportunity.py`, `src/gapmap/cli/main.py`,
-  `src/gapmap/reply/geo.py`, `app-tauri/src/or/dynamic.js`
+- `src/openreply/reply/opportunity.py`, `src/openreply/cli/main.py`,
+  `src/openreply/reply/geo.py`, `app-tauri/src/or/dynamic.js`
 
 ## The full auto-flow (per scheduled tick)
 

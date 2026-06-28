@@ -9,7 +9,7 @@ Add one metadata field (`topic_prefs.intent`) that tells the app which deliverab
 
 ## Motivation
 
-Gap Map today has eleven tabs (Insights, Bets, Evidence, Chat, Map, Report, Trends, Sentiment, Sources, Posts, Research) plus three new ones (Solutions, Concepts, Papers). Every audience — student, solopreneur, PM, UX designer, enterprise analyst — sees the same wall of tabs and has to *know* which sequence to run for their workflow. Symptoms:
+OpenReply today has eleven tabs (Insights, Bets, Evidence, Chat, Map, Report, Trends, Sentiment, Sources, Posts, Research) plus three new ones (Solutions, Concepts, Papers). Every audience — student, solopreneur, PM, UX designer, enterprise analyst — sees the same wall of tabs and has to *know* which sequence to run for their workflow. Symptoms:
 
 - Students who'd use Papers + BibTeX export never find the Papers tab (it's in a More dropdown)
 - Solopreneurs who'd use Concepts first see Insights (a more generic landing)

@@ -41,8 +41,8 @@ path — conservative).
 
 ## Files Modified
 - `scripts/preflight-release.sh`
-- `src/gapmap/research/saturation.py`
-- `src/gapmap/graph/query.py`
+- `src/openreply/research/saturation.py`
+- `src/openreply/graph/query.py`
 - `app-tauri/src-tauri/tauri.conf.json`
 
 ## Verification

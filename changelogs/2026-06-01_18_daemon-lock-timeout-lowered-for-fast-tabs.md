@@ -37,7 +37,7 @@ those were never the bottleneck — this targets the daemon-routed commands.
 ## Verification
 
 - `cargo check` clean; release build + ad-hoc deep-sign + reinstall to
-  `/Applications/Gap Map.app` (verified). Daemon + enrich-worker + MCP all
+  `/Applications/OpenReply.app` (verified). Daemon + enrich-worker + MCP all
   spawn from the onedir launcher.
 
 ## Relationship to other changelogs

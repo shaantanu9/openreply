@@ -30,7 +30,7 @@ dev app reads/writes the canonical user DB (515M, 70,669 posts). 13 unit tests
 green.
 
 ## Files Modified
-- `src/gapmap/research/lit_matrix.py`, `app-tauri/src/screens/lit_matrix.js`
+- `src/openreply/research/lit_matrix.py`, `app-tauri/src/screens/lit_matrix.js`
 
 ## Files Created
 - `changelogs/2026-06-07_17_litmatrix-progressive-build.md`

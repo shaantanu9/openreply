@@ -6,7 +6,7 @@
 #   bash scripts/mem_diff.sh 60        # 60s window
 #   bash scripts/mem_diff.sh 120 leak  # 120s window, save baseline as ./leak-{before,after}.txt
 #
-# Output: a table of (process → before → after → delta_mb) for every gapmap
+# Output: a table of (process → before → after → delta_mb) for every openreply
 # host, sidecar, ollama and node helper currently running.
 
 set -u
@@ -17,7 +17,7 @@ TAG="${2:-}"
 snapshot() {
   local out=$1
   : > "$out"
-  for name in gapmap gapmap uv ollama node; do
+  for name in openreply openreply uv ollama node; do
     while read -r pid cmd; do
       if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ ]]; then continue; fi
       if [[ "$cmd" == *mem_diff.sh* || "$cmd" == *mem_probe.sh* || "$cmd" == *grep* ]]; then continue; fi

@@ -5,7 +5,7 @@
 
 ## Summary
 
-Reworked the exported Gap Map graph viewer (`export.py`) from a fixed 3-column
+Reworked the exported OpenReply graph viewer (`export.py`) from a fixed 3-column
 layout (left findings · graph · right lenses/details) into a **2-column layout**:
 a single left panel with a collapsible accordion (📊 Insights · ⚡ Lenses · 🔎
 Selection) and the graph filling the rest. This frees the entire right edge of
@@ -33,5 +33,5 @@ the map for the upcoming chat sidebar overlay, and matches the approved
 
 ## Files Modified
 
-- `src/gapmap/graph/export.py` — layout grid, accordion CSS/HTML/JS, Selection
+- `src/openreply/graph/export.py` — layout grid, accordion CSS/HTML/JS, Selection
   auto-expand in `showNodeDetails`.

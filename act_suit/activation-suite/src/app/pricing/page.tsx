@@ -7,7 +7,7 @@ import { CtaSection } from "@/components/marketing/CtaSection";
 import { ROUTES } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Pricing",
+  title: "OpenReply — Pricing",
 };
 
 export const revalidate = 3600;
@@ -28,7 +28,7 @@ export default function PricingPage() {
               Free while in beta.
             </h1>
             <p className="mt-4 text-[17px] leading-[1.7] text-[var(--muted)]">
-              Gap Map is <strong>free during the invite-only beta</strong> — claim an
+              OpenReply is <strong>free during the invite-only beta</strong> — claim an
               invite, grab your license key, and activate the desktop app. Bring your
               own AI key, and your data stays local on your machine. No card, ever,
               while you&rsquo;re in beta.

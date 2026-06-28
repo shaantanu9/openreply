@@ -5,7 +5,7 @@
 
 ## Summary
 
-Captured the design for connecting the bundled `reddit-myind` MCP server to the Tauri app so they share the same SQLite + ChromaDB. Today they don't — the MCP defaults to `<repo>/data/reddit.db` (432 KB, stale) while the app writes to `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/reddit.db` (49 MB). Anything fetched/scraped via Claude's MCP tools never reaches the app UI.
+Captured the design for connecting the bundled `reddit-myind` MCP server to the Tauri app so they share the same SQLite + ChromaDB. Today they don't — the MCP defaults to `<repo>/data/reddit.db` (432 KB, stale) while the app writes to `~/Library/Application Support/com.shantanu.openreply/reddit-myind/reddit.db` (49 MB). Anything fetched/scraped via Claude's MCP tools never reaches the app UI.
 
 The spec covers a v1 one-click "Connect to Claude Code" Settings button that aligns DB paths, writes a provisioning token (no enforcement yet), and installs/uninstalls the MCP entry in `~/.claude.json` atomically. Token enforcement, OS-keychain storage, and capability-scoped tokens are deferred — explicitly listed as "find a better way to gate this feature in the future."
 

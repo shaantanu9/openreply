@@ -36,7 +36,7 @@ Fetch = fix titles + scan tracked subreddits
   (`osascript -e 'display notification'`) when run headless (launchd) and items are due.
   When the app is open, the Inbox Ready tab shows a **"Due now"** badge (computed from
   `scheduled_at ≤ now`) and a "Post due (N)" nudge.
-- **CLI** `gapmap reply post-due [--notify] [--json]` → `process_due` + notification.
+- **CLI** `openreply reply post-due [--notify] [--json]` → `process_due` + notification.
 - **Scheduler:** call `reply post-due` from the existing `schedule-tick` loop
   (`cli/main.py`) so every tick processes due replies.
 - **Tauri** `reply_post_due` + `api.replyPostDue()`; the Inbox calls it on open to fire

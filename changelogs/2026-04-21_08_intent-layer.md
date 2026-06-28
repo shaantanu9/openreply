@@ -11,7 +11,7 @@ Pure additive. Zero schema redesign, zero pipeline changes, zero MCP-surface cha
 
 ## Verified live
 
-Against the real app DB (`~/Library/Application Support/com.shantanu.gapmap/reddit-myind/`):
+Against the real app DB (`~/Library/Application Support/com.shantanu.openreply/reddit-myind/`):
 
 - 5 presets register cleanly: product-new (→ concepts), product-improve (→ product), thesis (→ papers), ux-research (→ insights), market-report (→ report)
 - `research intent-set --topic "Indian student exam stress" --intent thesis` → updates in place

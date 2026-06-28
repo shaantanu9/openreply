@@ -25,7 +25,7 @@ Added a streaming-aware `httpx.Timeout` (connect 15 s, read 120 s, write 30 s, p
 
 ## Files Modified
 
-- `src/gapmap/research/chat.py` — new `_stream_timeout()` helper; timeout applied to 4 client constructions (2 streaming, 2 connectivity-test).
+- `src/openreply/research/chat.py` — new `_stream_timeout()` helper; timeout applied to 4 client constructions (2 streaming, 2 connectivity-test).
 
 ## Notes / recommendation
 

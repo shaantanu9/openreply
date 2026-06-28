@@ -38,5 +38,5 @@ end-to-end.
 
 ## Files Modified
 
-- `src/gapmap/research/reach_connections.py`
+- `src/openreply/research/reach_connections.py`
 - `app-tauri/src/or/dynamic.js`

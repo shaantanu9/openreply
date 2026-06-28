@@ -52,7 +52,7 @@ Two defects fixed:
 
 ## Files Modified
 
-- `src/gapmap/research/collect.py` — fix the clobbered-variable alias bug
+- `src/openreply/research/collect.py` — fix the clobbered-variable alias bug
   (`register_alias(original_typed, search_topic)`).
 - `app-tauri/src/screens/collect.js` — `storageTopic` / `adoptCanonical()`;
   `buildGraph`, `enrichGraph`, `exportHtml`, `monitorRunTopic`, and `openBtn`

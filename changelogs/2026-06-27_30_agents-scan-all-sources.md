@@ -59,10 +59,10 @@ scanned just the picked list. Fixed.
 
 ## Files Modified
 
-- `src/gapmap/reply/platforms.py`
-- `src/gapmap/reply/agent.py`
-- `src/gapmap/cli/agent_cmds.py`
-- `src/gapmap/reply/opportunity.py`
+- `src/openreply/reply/platforms.py`
+- `src/openreply/reply/agent.py`
+- `src/openreply/cli/agent_cmds.py`
+- `src/openreply/reply/opportunity.py`
 - `app-tauri/src/or/dynamic.js`
 
 ## Notes

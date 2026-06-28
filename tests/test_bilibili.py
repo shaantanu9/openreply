@@ -1,8 +1,8 @@
 """bilibili search-API source."""
 from __future__ import annotations
 
-from gapmap.sources import bilibili
-from gapmap.sources.bilibili import fetch_bilibili
+from openreply.sources import bilibili
+from openreply.sources.bilibili import fetch_bilibili
 
 _SAMPLE = {
     "code": 0,

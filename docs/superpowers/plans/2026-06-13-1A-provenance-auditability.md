@@ -22,7 +22,7 @@
 ## Task 1: Schema — provenance column + checks_ledger + lineage tables
 
 **Files:**
-- Modify: `src/gapmap/core/db.py` (in `init_schema`, near the `graph_nodes` block ~432-460)
+- Modify: `src/openreply/core/db.py` (in `init_schema`, near the `graph_nodes` block ~432-460)
 - Test: `tests/test_provenance_schema.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -30,8 +30,8 @@
 # tests/test_provenance_schema.py
 import os, tempfile
 def _fresh_db(monkeypatch):
-    d = tempfile.mkdtemp(); monkeypatch.setenv("GAPMAP_DATA_DIR", d)
-    import importlib, gapmap.core.db as db; importlib.reload(db)
+    d = tempfile.mkdtemp(); monkeypatch.setenv("OPENREPLY_DATA_DIR", d)
+    import importlib, openreply.core.db as db; importlib.reload(db)
     db.get_db.cache_clear() if hasattr(db.get_db, "cache_clear") else None
     return db
 
@@ -79,7 +79,7 @@ def test_init_schema_idempotent(monkeypatch):
 - [ ] **Step 4: Run → PASS** (both tests)
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/core/db.py tests/test_provenance_schema.py
+git add src/openreply/core/db.py tests/test_provenance_schema.py
 git commit -m "feat(db): provenance column + checks_ledger + lineage tables"
 ```
 
@@ -88,13 +88,13 @@ git commit -m "feat(db): provenance column + checks_ledger + lineage tables"
 ## Task 2: run_id contextvar (`core/runctx.py`)
 
 **Files:**
-- Create: `src/gapmap/core/runctx.py`
+- Create: `src/openreply/core/runctx.py`
 - Test: `tests/test_runctx.py`
 
 - [ ] **Step 1: Failing test**
 ```python
 # tests/test_runctx.py
-from gapmap.core import runctx
+from openreply.core import runctx
 def test_run_id_lifecycle():
     assert runctx.current_run_id() == ""
     rid = runctx.new_run_id()
@@ -107,12 +107,12 @@ def test_run_id_lifecycle():
 - [ ] **Step 2: Run → FAIL** (ModuleNotFoundError)
 - [ ] **Step 3: Implement**
 ```python
-# src/gapmap/core/runctx.py
+# src/openreply/core/runctx.py
 """Per-pipeline-run id, grouping checks_ledger + lineage rows for one
 collect/enrich/build invocation. Best-effort: unset → "" (rows still write)."""
 from __future__ import annotations
 import contextvars, uuid
-_run_id: contextvars.ContextVar[str] = contextvars.ContextVar("gapmap_run_id", default="")
+_run_id: contextvars.ContextVar[str] = contextvars.ContextVar("openreply_run_id", default="")
 def new_run_id() -> str:
     return uuid.uuid4().hex
 def set_run_id(rid: str) -> None:
@@ -126,7 +126,7 @@ def current_run_id() -> str:
 - [ ] **Step 4: Run → PASS**
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/core/runctx.py tests/test_runctx.py
+git add src/openreply/core/runctx.py tests/test_runctx.py
 git commit -m "feat(core): run_id contextvar for run-scoped provenance"
 ```
 
@@ -135,7 +135,7 @@ git commit -m "feat(core): run_id contextvar for run-scoped provenance"
 ## Task 3: `record_check` + `record_lineage` helpers (non-fatal)
 
 **Files:**
-- Modify: `src/gapmap/core/db.py` (after the fetch-audit helpers, ~1440)
+- Modify: `src/openreply/core/db.py` (after the fetch-audit helpers, ~1440)
 - Test: `tests/test_ledger_lineage.py`
 
 - [ ] **Step 1: Failing test**
@@ -143,8 +143,8 @@ git commit -m "feat(core): run_id contextvar for run-scoped provenance"
 # tests/test_ledger_lineage.py
 import tempfile, importlib
 def _db(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db; importlib.reload(db); db.get_db()
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db; importlib.reload(db); db.get_db()
     return db
 
 def test_record_check_roundtrip(monkeypatch):
@@ -215,7 +215,7 @@ def record_lineage(*, topic: str, artifact_id: str, artifact_kind: str,
 - [ ] **Step 4: Run → PASS**
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/core/db.py tests/test_ledger_lineage.py
+git add src/openreply/core/db.py tests/test_ledger_lineage.py
 git commit -m "feat(db): non-fatal record_check + record_lineage helpers"
 ```
 
@@ -224,7 +224,7 @@ git commit -m "feat(db): non-fatal record_check + record_lineage helpers"
 ## Task 4: Thread `provenance` through `_upsert_node`
 
 **Files:**
-- Modify: `src/gapmap/graph/build.py` (`_upsert_node` at :76 — both batch tuple path and legacy per-row path, AND the batch-flush INSERT that maps `_BATCH.nodes` tuples → columns)
+- Modify: `src/openreply/graph/build.py` (`_upsert_node` at :76 — both batch tuple path and legacy per-row path, AND the batch-flush INSERT that maps `_BATCH.nodes` tuples → columns)
 - Test: `tests/test_node_provenance.py`
 
 - [ ] **Step 1: Failing test**
@@ -232,9 +232,9 @@ git commit -m "feat(db): non-fatal record_check + record_lineage helpers"
 # tests/test_node_provenance.py
 import tempfile, importlib
 def test_upsert_node_writes_provenance(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db; importlib.reload(db); db.get_db()
-    import gapmap.graph.build as b; importlib.reload(b)
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db; importlib.reload(db); db.get_db()
+    import openreply.graph.build as b; importlib.reload(b)
     nid = b._upsert_node(db.get_db(), "topic", "painpoint", "k1", "label", provenance="llm")
     row = list(db.get_db().query("SELECT provenance FROM graph_nodes WHERE id=?", [nid]))
     assert row[0]["provenance"] == "llm"
@@ -244,7 +244,7 @@ def test_upsert_node_writes_provenance(monkeypatch):
 - [ ] **Step 4: Run → PASS**
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/graph/build.py tests/test_node_provenance.py
+git add src/openreply/graph/build.py tests/test_node_provenance.py
 git commit -m "feat(graph): thread provenance through _upsert_node write path"
 ```
 
@@ -253,7 +253,7 @@ git commit -m "feat(graph): thread provenance through _upsert_node write path"
 ## Task 5: Tag `llm` / `llm_fallback` + emit lineage in `upsert_semantic`
 
 **Files:**
-- Modify: `src/gapmap/graph/semantic.py` (`_upsert_semantic_body` — pass `provenance="llm"` to each `_upsert_node`; when the row carries a fallback marker from `build_fallback_chain`, pass `"llm_fallback"`; after writing a node, call `record_lineage` with the finding's evidence post ids)
+- Modify: `src/openreply/graph/semantic.py` (`_upsert_semantic_body` — pass `provenance="llm"` to each `_upsert_node`; when the row carries a fallback marker from `build_fallback_chain`, pass `"llm_fallback"`; after writing a node, call `record_lineage` with the finding's evidence post ids)
 - Test: `tests/test_semantic_provenance.py`
 
 - [ ] **Step 1: Failing test**
@@ -261,9 +261,9 @@ git commit -m "feat(graph): thread provenance through _upsert_node write path"
 # tests/test_semantic_provenance.py
 import tempfile, importlib
 def test_semantic_tags_llm_and_lineage(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db; importlib.reload(db); db.get_db()
-    import gapmap.graph.semantic as s; importlib.reload(s)
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db; importlib.reload(db); db.get_db()
+    import openreply.graph.semantic as s; importlib.reload(s)
     s.upsert_semantic("t", painpoints=[{"label":"slow sync","evidence_post_ids":["p1"]}])
     nodes = list(db.get_db().query("SELECT provenance FROM graph_nodes WHERE kind='painpoint'"))
     assert nodes and nodes[0]["provenance"] in ("llm","llm_fallback")
@@ -283,7 +283,7 @@ Wrap in try/except (best-effort).
 - [ ] **Step 4: Run → PASS**
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/graph/semantic.py tests/test_semantic_provenance.py
+git add src/openreply/graph/semantic.py tests/test_semantic_provenance.py
 git commit -m "feat(graph): tag llm/llm_fallback provenance + emit lineage in upsert_semantic"
 ```
 
@@ -292,13 +292,13 @@ git commit -m "feat(graph): tag llm/llm_fallback provenance + emit lineage in up
 ## Task 6: Tag `structural` in build.py + record build invariant checks
 
 **Files:**
-- Modify: `src/gapmap/graph/build.py` (structural node-creation callers — the build_structural path that creates `source`/`document`/`element`/co-occurrence nodes — pass `provenance="structural"`; at the end of a build, `record_check(gate="build_complete", operation="graph_build", passed=True, detail=f"{n} nodes")`)
+- Modify: `src/openreply/graph/build.py` (structural node-creation callers — the build_structural path that creates `source`/`document`/`element`/co-occurrence nodes — pass `provenance="structural"`; at the end of a build, `record_check(gate="build_complete", operation="graph_build", passed=True, detail=f"{n} nodes")`)
 - Test: `tests/test_build_provenance.py`
 
 - [ ] **Step 1: Failing test**
 ```python
 # tests/test_build_provenance.py
-import inspect, gapmap.graph.build as b
+import inspect, openreply.graph.build as b
 def test_structural_callers_pass_provenance():
     src = inspect.getsource(b)
     # every _upsert_node call in the structural builder should set provenance=
@@ -309,7 +309,7 @@ def test_structural_callers_pass_provenance():
 - [ ] **Step 4: Run → PASS**
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/graph/build.py tests/test_build_provenance.py
+git add src/openreply/graph/build.py tests/test_build_provenance.py
 git commit -m "feat(graph): structural provenance tag + build_complete check"
 ```
 
@@ -318,14 +318,14 @@ git commit -m "feat(graph): structural provenance tag + build_complete check"
 ## Task 7: Record checks at enrich LLM/parse gates + set run_id
 
 **Files:**
-- Modify: `src/gapmap/research/enrich_worker.py` (set a run_id at the top of an enrich invocation; `record_check` at: json-parse of LLM output (pass/fail + detail), and per-extractor LLM call with provider/model)
+- Modify: `src/openreply/research/enrich_worker.py` (set a run_id at the top of an enrich invocation; `record_check` at: json-parse of LLM output (pass/fail + detail), and per-extractor LLM call with provider/model)
 - Test: `tests/test_enrich_checks.py`
 
 - [ ] **Step 1: Failing test** — assert that after an enrich run over a stub corpus, `checks_ledger` has ≥1 row with `gate='json_parse'` or `gate='llm_call'`. (Use the existing enrich test fixtures/mocks; if enrich needs an LLM, mock the provider to return a fixed JSON so the parse-gate fires. Grep `tests/test_enrich_worker.py` for the existing mock pattern and reuse it.)
 ```python
 # tests/test_enrich_checks.py  (skeleton — fill mocks from tests/test_enrich_worker.py)
 def test_enrich_records_checks(monkeypatch, tmp_path):
-    # arrange: GAPMAP_DATA_DIR=tmp, seed a couple posts, mock LLM → valid JSON
+    # arrange: OPENREPLY_DATA_DIR=tmp, seed a couple posts, mock LLM → valid JSON
     # act: run the enrich entrypoint for the topic
     # assert: rows in checks_ledger with gate in {'json_parse','llm_call'}
     ...
@@ -335,16 +335,16 @@ def test_enrich_records_checks(monkeypatch, tmp_path):
 - [ ] **Step 4: Run → PASS**
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/research/enrich_worker.py tests/test_enrich_checks.py
+git add src/openreply/research/enrich_worker.py tests/test_enrich_checks.py
 git commit -m "feat(enrich): record json_parse + llm_call checks with run_id"
 ```
 
 ---
 
-## Task 8: MCP tools `gapmap_checks_list` + `gapmap_lineage_get`
+## Task 8: MCP tools `openreply_checks_list` + `openreply_lineage_get`
 
 **Files:**
-- Modify: `src/gapmap/mcp/server.py` (add two thin read tools that query the tables via the existing DB query helper)
+- Modify: `src/openreply/mcp/server.py` (add two thin read tools that query the tables via the existing DB query helper)
 - Test: `tests/test_mcp_provenance_tools.py`
 
 - [ ] **Step 1: Failing test**
@@ -352,24 +352,24 @@ git commit -m "feat(enrich): record json_parse + llm_call checks with run_id"
 # tests/test_mcp_provenance_tools.py
 import tempfile, importlib
 def test_checks_and_lineage_tools(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db; importlib.reload(db); db.get_db()
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db; importlib.reload(db); db.get_db()
     db.record_check(topic="t", gate="g", operation="o", passed=True)
     db.record_lineage(topic="t", artifact_id="a1", artifact_kind="painpoint", from_post_ids=["p1"])
-    import gapmap.mcp.server as m; importlib.reload(m)
-    checks = m.gapmap_checks_list(topic="t")    # call the underlying fn
-    lin = m.gapmap_lineage_get(artifact_id="a1")
+    import openreply.mcp.server as m; importlib.reload(m)
+    checks = m.openreply_checks_list(topic="t")    # call the underlying fn
+    lin = m.openreply_lineage_get(artifact_id="a1")
     assert any(r["gate"]=="g" for r in checks)
     assert any(r["artifact_id"]=="a1" for r in lin)
 ```
-(Match the real registration pattern in `mcp/server.py` — these tools may be registered via a decorator; expose plain callables the test can import, mirroring existing tools like `gapmap_query_db`.)
+(Match the real registration pattern in `mcp/server.py` — these tools may be registered via a decorator; expose plain callables the test can import, mirroring existing tools like `openreply_query_db`.)
 - [ ] **Step 2: Run → FAIL**
-- [ ] **Step 3: Implement** — add two tools mirroring an existing read tool: `gapmap_checks_list(topic, limit=200)` → `SELECT * FROM checks_ledger WHERE topic=:topic ORDER BY id DESC LIMIT :limit`; `gapmap_lineage_get(artifact_id)` → `SELECT * FROM lineage WHERE artifact_id=:artifact_id`. Use the same parameterized-query path the other tools use.
+- [ ] **Step 3: Implement** — add two tools mirroring an existing read tool: `openreply_checks_list(topic, limit=200)` → `SELECT * FROM checks_ledger WHERE topic=:topic ORDER BY id DESC LIMIT :limit`; `openreply_lineage_get(artifact_id)` → `SELECT * FROM lineage WHERE artifact_id=:artifact_id`. Use the same parameterized-query path the other tools use.
 - [ ] **Step 4: Run → PASS**
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/mcp/server.py tests/test_mcp_provenance_tools.py
-git commit -m "feat(mcp): gapmap_checks_list + gapmap_lineage_get read tools"
+git add src/openreply/mcp/server.py tests/test_mcp_provenance_tools.py
+git commit -m "feat(mcp): openreply_checks_list + openreply_lineage_get read tools"
 ```
 
 ---

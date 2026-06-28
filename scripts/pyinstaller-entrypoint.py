@@ -10,13 +10,13 @@ imports from the top-level package so everything resolves cleanly.
 # mid-extraction. Runs in a daemon thread (never blocks startup) and self-noops
 # outside a frozen build. Best-effort: any failure is swallowed.
 try:
-    from gapmap.core.meipass_cleanup import start_background_sweep
+    from openreply.core.meipass_cleanup import start_background_sweep
 
     start_background_sweep()
 except Exception:
     pass
 
-from gapmap.cli.main import app
+from openreply.cli.main import app
 
 if __name__ == "__main__":
     app()

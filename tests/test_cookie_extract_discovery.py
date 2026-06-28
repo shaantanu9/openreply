@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from gapmap.sources import _cookie_extract as ce
+from openreply.sources import _cookie_extract as ce
 
 
 def _make_cookie_db(path: Path, host: str, name: str, value: str, version: int = 24):

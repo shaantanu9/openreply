@@ -7,7 +7,7 @@
 
 The website's "Download" CTAs were gated behind sign-in/activate and the
 `/download` page only offered macOS (with Windows/Linux marked "coming soon"),
-even though `myind-ai/gapmap` now publishes signed builds for macOS (Apple
+even though `myind-ai/openreply` now publishes signed builds for macOS (Apple
 Silicon + Intel), Windows (.exe + .msi), and Linux (.AppImage + .deb). The
 release asset filenames embed the version (`Gap-Map-0.1.18-...`), so GitHub's
 `/releases/latest/download/<file>` shortcut can't be hard-coded — it breaks on

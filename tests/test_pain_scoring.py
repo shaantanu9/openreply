@@ -15,13 +15,13 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
     # Pin weights + half-life so the math is deterministic regardless of env.
     monkeypatch.setenv("PAIN_W_FREQ", "0.40")
     monkeypatch.setenv("PAIN_W_INTENSITY", "0.35")
     monkeypatch.setenv("PAIN_W_RECENCY", "0.25")
     monkeypatch.setenv("PAIN_RECENCY_HALFLIFE_DAYS", "90")
-    from gapmap.core import db as db_mod
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
     # Seed two posts: one very recent + high engagement, one old + low.
@@ -43,7 +43,7 @@ def _fake_find_gaps(painpoints):
 
 
 def test_score_gaps_ranks_and_persists(db, monkeypatch):
-    from gapmap.research import pain_scoring
+    from openreply.research import pain_scoring
     pains = [
         {"painpoint": "High freq recent", "severity": "high", "frequency": 10,
          "evidence": "x", "example_post_ids": ["fresh1"]},
@@ -53,7 +53,7 @@ def test_score_gaps_ranks_and_persists(db, monkeypatch):
     monkeypatch.setattr(pain_scoring, "find_gaps", _fake_find_gaps(pains), raising=False)
     # find_gaps is imported inside score_gaps via `from .gaps import find_gaps`,
     # so patch the source module too.
-    import gapmap.research.gaps as gaps_mod
+    import openreply.research.gaps as gaps_mod
     monkeypatch.setattr(gaps_mod, "find_gaps", _fake_find_gaps(pains))
 
     r = pain_scoring.score_gaps("t1")
@@ -70,14 +70,14 @@ def test_score_gaps_ranks_and_persists(db, monkeypatch):
 
 def test_recency_decay_recent_beats_old(db, monkeypatch):
     """Same frequency + severity, only recency differs → recent wins."""
-    from gapmap.research import pain_scoring
+    from openreply.research import pain_scoring
     pains = [
         {"painpoint": "Recent", "severity": "medium", "frequency": 5,
          "example_post_ids": ["fresh1"]},
         {"painpoint": "Stale", "severity": "medium", "frequency": 5,
          "example_post_ids": ["old1"]},
     ]
-    import gapmap.research.gaps as gaps_mod
+    import openreply.research.gaps as gaps_mod
     monkeypatch.setattr(gaps_mod, "find_gaps", _fake_find_gaps(pains))
     r = pain_scoring.score_gaps("t2")
     by_title = {x["title"]: x for x in r["rows"]}
@@ -86,10 +86,10 @@ def test_recency_decay_recent_beats_old(db, monkeypatch):
 
 
 def test_read_path_returns_cache(db, monkeypatch):
-    from gapmap.research import pain_scoring
+    from openreply.research import pain_scoring
     pains = [{"painpoint": "Only one", "severity": "high", "frequency": 3,
               "example_post_ids": ["fresh1"]}]
-    import gapmap.research.gaps as gaps_mod
+    import openreply.research.gaps as gaps_mod
     monkeypatch.setattr(gaps_mod, "find_gaps", _fake_find_gaps(pains))
     pain_scoring.score_gaps("t3")
     got = pain_scoring.get("t3")
@@ -99,8 +99,8 @@ def test_read_path_returns_cache(db, monkeypatch):
 
 
 def test_empty_corpus_is_graceful(db, monkeypatch):
-    from gapmap.research import pain_scoring
-    import gapmap.research.gaps as gaps_mod
+    from openreply.research import pain_scoring
+    import openreply.research.gaps as gaps_mod
     monkeypatch.setattr(gaps_mod, "find_gaps",
                         lambda topic, **kw: {"topic": topic, "painpoints": [],
                                              "error": "No corpus"})

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import httpx
 
-from gapmap.sources import web_reader
-from gapmap.sources.web_reader import fetch_web_reader
+from openreply.sources import web_reader
+from openreply.sources.web_reader import fetch_web_reader
 
 
 def test_web_reader_one_row(monkeypatch):

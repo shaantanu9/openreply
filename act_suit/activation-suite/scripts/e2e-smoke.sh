@@ -33,7 +33,7 @@ fi
 : "${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}"
 : "${SUPABASE_SERVICE_ROLE_KEY:?set SUPABASE_SERVICE_ROLE_KEY}"
 
-EMAIL="test+$(date +%s)@gapmap-curl.local"
+EMAIL="test+$(date +%s)@openreply-curl.local"
 PASS="CurlTest_$(date +%s)_pw"
 pp() { python3 -m json.tool 2>/dev/null || cat ; }
 

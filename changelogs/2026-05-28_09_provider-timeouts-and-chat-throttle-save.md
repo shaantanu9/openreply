@@ -15,8 +15,8 @@ Two adjacent reliability fixes that pair with the daemon-lock-timeout safety net
 
 ## Changes
 
-- `src/gapmap/analyze/providers/anthropic.py` — read `LLM_REQUEST_TIMEOUT` env (default 300.0s), pass as `timeout=` to `Anthropic(api_key=…, timeout=timeout_s)`.
-- `src/gapmap/analyze/providers/openai.py` — same env, passed to `OpenAI(api_key=…, base_url=…, timeout=timeout_s)`. Covers OpenAI + OpenRouter + Groq + DeepSeek + Mistral + Google + NVIDIA NIM through the existing `_PROVIDER_CONFIG` map.
+- `src/openreply/analyze/providers/anthropic.py` — read `LLM_REQUEST_TIMEOUT` env (default 300.0s), pass as `timeout=` to `Anthropic(api_key=…, timeout=timeout_s)`.
+- `src/openreply/analyze/providers/openai.py` — same env, passed to `OpenAI(api_key=…, base_url=…, timeout=timeout_s)`. Covers OpenAI + OpenRouter + Groq + DeepSeek + Mistral + Google + NVIDIA NIM through the existing `_PROVIDER_CONFIG` map.
 - `app-tauri/src/screens/topic.js` — added `_chatSaveTimer` + `scheduleChatSave()` helper, called from the `token`/`text` branch of `handleChatLine`.
 
 ## Verified

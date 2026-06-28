@@ -1,4 +1,4 @@
-# Gap Map — system verification 2026-05-26
+# OpenReply — system verification 2026-05-26
 
 End-to-end smoke test across CLI / sidecar daemon / MCP server / palace
 (ChromaDB) / graph relations. Run before deciding which Tier-1 algorithm
@@ -12,10 +12,10 @@ upgrade (see `ALGORITHM_ROADMAP.md`) to ship next.
 
 | Test | Result |
 |---|---|
-| `gapmap info --json` | ✅ returned 121,476 posts · 60,865 nodes · 124,870 edges · 38 topics |
-| `gapmap query 'SELECT ... FROM graph_edges'` | ✅ daemon round-trip OK |
-| `gapmap research palace-stats --json` | ✅ 83,243 docs across 38 topics in palace |
-| `gapmap research search-all` | ✅ returns ok=true (zero results on some queries — LLM expansion gated, expected when no key) |
+| `openreply info --json` | ✅ returned 121,476 posts · 60,865 nodes · 124,870 edges · 38 topics |
+| `openreply query 'SELECT ... FROM graph_edges'` | ✅ daemon round-trip OK |
+| `openreply research palace-stats --json` | ✅ 83,243 docs across 38 topics in palace |
+| `openreply research search-all` | ✅ returns ok=true (zero results on some queries — LLM expansion gated, expected when no key) |
 
 ## Sidecar daemon
 
@@ -30,15 +30,15 @@ upgrade (see `ALGORITHM_ROADMAP.md`) to ship next.
 |---|---|
 | `initialize` handshake (dev venv, cold) | ✅ 6.76s — well under 60s timeout |
 | `initialize` handshake (warm) | ✅ ~3-5s |
-| `tools/list` | ✅ **147 `gapmap_*` tools exposed** |
-| `gapmap_search` MCP tool | ✅ returned real posts (Claude Opus 4.6 1M context window post) |
-| `gapmap_query_db` MCP tool | ✅ correctly returned graph-edge kind counts |
+| `tools/list` | ✅ **147 `openreply_*` tools exposed** |
+| `openreply_search` MCP tool | ✅ returned real posts (Claude Opus 4.6 1M context window post) |
+| `openreply_query_db` MCP tool | ✅ correctly returned graph-edge kind counts |
 
 Sample of tools exposed:
 ```
-gapmap_fetch_posts, gapmap_fetch_comments, gapmap_fetch_user,
-gapmap_search, gapmap_query_db, gapmap_palace_reindex,
-gapmap_palace_status, gapmap_palace_warmup, gapmap_palace_repair, ...
+openreply_fetch_posts, openreply_fetch_comments, openreply_fetch_user,
+openreply_search, openreply_query_db, openreply_palace_reindex,
+openreply_palace_status, openreply_palace_warmup, openreply_palace_repair, ...
 (147 total)
 ```
 
@@ -47,7 +47,7 @@ gapmap_palace_status, gapmap_palace_warmup, gapmap_palace_repair, ...
 | Test | Result |
 |---|---|
 | `chromadb` installed | ✅ 1.5.8 |
-| Palace path resolves | ✅ `~/Library/Application Support/com.shantanu.gapmap/gapmap/palace` |
+| Palace path resolves | ✅ `~/Library/Application Support/com.shantanu.openreply/openreply/palace` |
 | Total embedded documents | ✅ **83,243** |
 | Topics indexed | ✅ **38** |
 | `palace.search_posts(query, topic, k=3, rerank=True)` | ✅ returns hits with scores |
@@ -101,17 +101,17 @@ Plus all base structural edges:
 
 | Module | Status |
 |---|---|
-| `gapmap.retrieval.palace` | ✅ ChromaDB-backed, lazy-init pattern |
-| `gapmap.research.search_all` | ✅ wraps palace + cross-table SQL search |
-| `gapmap.research.chat` | ✅ uses `palace.search_posts(rerank=True, k=20)` |
-| `gapmap.research.gap_discovery` | ✅ uses palace + dense_graph_relations edges |
-| `gapmap.research.research_linker` | ✅ links papers to findings via palace |
-| `gapmap.research.cross_topic` | ✅ cross-topic similarity via palace |
-| `gapmap.research.idea_scan` | ✅ idea labels via palace + KMeans |
-| `gapmap.research._clustering` | ✅ KMeans + silhouette (explicitly NOT HDBSCAN) |
-| `gapmap.graph.relations` | ✅ writes 4 dense edge kinds |
-| `gapmap.graph.build.build_structural` | ✅ orchestrator for tree edges + dense edges |
-| `gapmap.mcp.server` | ✅ 147 `gapmap_*` tools registered |
+| `openreply.retrieval.palace` | ✅ ChromaDB-backed, lazy-init pattern |
+| `openreply.research.search_all` | ✅ wraps palace + cross-table SQL search |
+| `openreply.research.chat` | ✅ uses `palace.search_posts(rerank=True, k=20)` |
+| `openreply.research.gap_discovery` | ✅ uses palace + dense_graph_relations edges |
+| `openreply.research.research_linker` | ✅ links papers to findings via palace |
+| `openreply.research.cross_topic` | ✅ cross-topic similarity via palace |
+| `openreply.research.idea_scan` | ✅ idea labels via palace + KMeans |
+| `openreply.research._clustering` | ✅ KMeans + silhouette (explicitly NOT HDBSCAN) |
+| `openreply.graph.relations` | ✅ writes 4 dense edge kinds |
+| `openreply.graph.build.build_structural` | ✅ orchestrator for tree edges + dense edges |
+| `openreply.mcp.server` | ✅ 147 `openreply_*` tools registered |
 
 ## What's confirmed working end-to-end
 
@@ -121,7 +121,7 @@ Plus all base structural edges:
 4. **CLI surface**: 0.7s cold, daemon ~200ms warm ✅
 5. **MCP surface**: 147 tools, real query returns real posts ✅
 6. **Palace search with rerank**: returns scored hits ✅
-7. **Graph queries via MCP**: SQL through `gapmap_query_db` works ✅
+7. **Graph queries via MCP**: SQL through `openreply_query_db` works ✅
 
 ## Known minor issues (non-blocking)
 

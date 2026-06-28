@@ -1,4 +1,4 @@
-# Tauri desktop app plan — "Gap Map"
+# Tauri desktop app plan — "OpenReply"
 
 **Short answer: yes, 100% doable, and honestly the *right* choice given:**
 - You already have the `variant-6-soft-dashboard.html` design as a polished HTML/CSS/SVG artifact. Tauri's webview renders it verbatim with zero translation — Flutter would cost you 3-5 days re-implementing it.
@@ -13,7 +13,7 @@ The plan below assumes **Tauri v2** (stable since Oct 2024) + **vanilla JS** fro
 ## 🏗 Architecture at a glance
 
 ```
-┌────────────────────────────── gapmap.app ─────────────────────────────────┐
+┌────────────────────────────── openreply.app ─────────────────────────────────┐
 │                                                                           │
 │  ┌────────────────── Webview (variant-6-soft-dashboard.html) ──────────┐  │
 │  │                                                                    │  │
@@ -47,7 +47,7 @@ The plan below assumes **Tauri v2** (stable since Oct 2024) + **vanilla JS** fro
 │  │                                     └──────────┬───────────────┘   │  │
 │  └────────────────────────────────────────────────┼───────────────────┘  │
 │                                                   ▼                      │
-│                          ~/Library/Application Support/gapmap/           │
+│                          ~/Library/Application Support/openreply/           │
 │                          ├─ reddit.db                                    │
 │                          ├─ settings.json                                │
 │                          ├─ exports/*.html                               │
@@ -76,7 +76,7 @@ The plan below assumes **Tauri v2** (stable since Oct 2024) + **vanilla JS** fro
 ## 🧩 Directory structure
 
 ```
-gapmap-tauri/
+openreply-tauri/
 ├── package.json                      # Vite + Tauri deps
 ├── vite.config.js
 ├── index.html                        ← entry, loads src/main.js
@@ -98,7 +98,7 @@ gapmap-tauri/
 │   │   ├── ActivityItem.js           # activity feed item
 │   │   └── SrcChip.js                # source-type chip
 │   └── embed/
-│       └── gap-map.html              ← existing D3 viewer (loaded via iframe
+│       └── openreply-map.html              ← existing D3 viewer (loaded via iframe
 │                                        on the map screen, so we reuse it)
 ├── src-tauri/                        ← Rust backend
 │   ├── Cargo.toml
@@ -220,10 +220,10 @@ Two options; go with Option A for v1:
 
 **Option B: Render each screen from scratch in JS.** More componentized; more work. Save for v2 when refactoring.
 
-For the interactive D3 gap-map graph, **load the existing `gap-map.html` in an iframe** on the topic/map screen:
+For the interactive D3 openreply-map graph, **load the existing `openreply-map.html` in an iframe** on the topic/map screen:
 
 ```html
-<iframe src="./embed/gap-map.html?topic=atsresume" 
+<iframe src="./embed/openreply-map.html?topic=atsresume" 
         style="width:100%;height:100%;border:0;border-radius:18px"></iframe>
 ```
 
@@ -253,7 +253,7 @@ pub async fn install_mcp(app: AppHandle) -> Result<PathBuf, String> {
         serde_json::json!({})
     };
 
-    cfg["mcpServers"]["gapmap"] = serde_json::json!({
+    cfg["mcpServers"]["openreply"] = serde_json::json!({
         "command": cli_path.to_str().unwrap(),
         "args": ["mcp", "serve"]
     });
@@ -269,7 +269,7 @@ Click a button in Settings → writes to `~/.claude.json` → user restarts Clau
 
 ### 5. Settings + secrets
 
-Non-secrets (UI prefs, data dir, feature flags) → `tauri-plugin-store` JSON at `~/Library/Application Support/gapmap/settings.json`.
+Non-secrets (UI prefs, data dir, feature flags) → `tauri-plugin-store` JSON at `~/Library/Application Support/openreply/settings.json`.
 
 Secrets (Reddit OAuth tokens, Anthropic key, GitHub token) → `keyring` crate → macOS Keychain / Windows Cred Mgr / Linux secret-service. Never written to disk in plaintext.
 
@@ -278,7 +278,7 @@ use keyring::Entry;
 
 #[tauri::command]
 pub async fn save_reddit_token(refresh_token: String) -> Result<(), String> {
-    let entry = Entry::new("gapmap", "reddit_refresh_token")
+    let entry = Entry::new("openreply", "reddit_refresh_token")
         .map_err(|e| e.to_string())?;
     entry.set_password(&refresh_token).map_err(|e| e.to_string())?;
     Ok(())
@@ -288,7 +288,7 @@ pub async fn save_reddit_token(refresh_token: String) -> Result<(), String> {
 At CLI-spawn time, read the secret from keychain and pass as env var to the Python subprocess:
 
 ```rust
-let token = Entry::new("gapmap", "reddit_refresh_token")?.get_password()?;
+let token = Entry::new("openreply", "reddit_refresh_token")?.get_password()?;
 Command::new_sidecar("reddit-cli")?
     .env("REDDIT_REFRESH_TOKEN", token)
     .args(args);
@@ -319,15 +319,15 @@ PyInstaller with all our deps (praw, httpx, sqlite-utils, fastmcp, anthropic, go
 
 ### Week 1 — Scaffold + Python bundling
 
-- [ ] `npm create tauri-app@latest gapmap -- --template vanilla-ts`
-- [ ] Set up `tauri.conf.json` with app ID `com.shantanu.gapmap`
+- [ ] `npm create tauri-app@latest openreply -- --template vanilla-ts`
+- [ ] Set up `tauri.conf.json` with app ID `com.shantanu.openreply`
 - [ ] Write `scripts/build-python.sh` running PyInstaller per target:
   ```bash
   cd reddit-myind
   uv run pyinstaller --onefile --name reddit-cli \
     --paths=src --collect-all reddit_research \
     src/reddit_research/cli/main.py
-  cp dist/reddit-cli ../gapmap/src-tauri/binaries/reddit-cli-$(rustc -vV | grep host | cut -d' ' -f2)
+  cp dist/reddit-cli ../openreply/src-tauri/binaries/reddit-cli-$(rustc -vV | grep host | cut -d' ' -f2)
   ```
 - [ ] Verify sidecar: `invoke('run_cli', ['info'])` → JSON
 - [ ] Copy `variant-6-soft-dashboard.html` → `src/index.html`; lift `<style>` to `src/style.css`
@@ -350,7 +350,7 @@ PyInstaller with all our deps (praw, httpx, sqlite-utils, fastmcp, anthropic, go
 ### Week 3 — Topic detail screens + ingest + settings
 
 - [ ] `src/screens/topic.js` with tabs: Map / Report / Corpus / Temporal
-- [ ] Map tab: iframe to `embed/gap-map.html?topic=X` (reuse existing viewer)
+- [ ] Map tab: iframe to `embed/openreply-map.html?topic=X` (reuse existing viewer)
 - [ ] Report tab: fetch markdown via `invoke('get_report_pro')`, render with `marked` or similar
 - [ ] Corpus tab: `invoke('query_corpus', { topic, limit: 100 })` → DataTable
 - [ ] `src/screens/ingest.js` — Tauri dialog `open()` for file picker, call `invoke('ingest_file')`
@@ -365,7 +365,7 @@ PyInstaller with all our deps (praw, httpx, sqlite-utils, fastmcp, anthropic, go
 - [ ] Tauri bundler: `npm run tauri build` → `.dmg`, `.exe`, `.AppImage`
 - [ ] macOS: notarize via `xcrun altool` (use existing Apple Developer cert)
 - [ ] Windows: sign with EV cert (or SmartScreen warning until reputation builds)
-- [ ] `tauri-plugin-updater` with self-hosted manifest at `gapmap.io/updates.json`
+- [ ] `tauri-plugin-updater` with self-hosted manifest at `openreply.io/updates.json`
 - [ ] Landing page + Gumroad product setup
 - [ ] TestFlight-equivalent: share early `.dmg` with 10 beta users
 - [ ] Launch on Product Hunt + HN + relevant subs
@@ -494,7 +494,7 @@ The key trick: **all DOM is from variant-6 HTML**, we just replace hardcoded con
 | PyInstaller bundle too large (>80MB) | Bloated installer | Split core vs analysis tier; download on-demand |
 | macOS notarization fails for embedded Python | Can't ship to non-dev Macs | Enable hardened runtime + sign each Python binary; document `xcrun notarytool` flow |
 | Windows SmartScreen flags unsigned binary | Users see warning | EV cert ($200-400/yr) or wait for reputation to build |
-| MCP path breaks on app move/update | `reddit-cli` location changes, Claude Code can't find it | Auto re-register on app start if `mcpServers.gapmap.command` is stale |
+| MCP path breaks on app move/update | `reddit-cli` location changes, Claude Code can't find it | Auto re-register on app start if `mcpServers.openreply.command` is stale |
 | SQLite locking on concurrent commands | Weird errors | Enforce single-collect-at-a-time via Rust Mutex; for reads, WAL mode is safe |
 | Pullpush / Reddit / App Store API changes | Scrapers break silently | Python already fails gracefully; add "last successful fetch" indicator per source on Settings page |
 | Users expect real-time Slack ingest | Scope creep | v1 = file ingest only; document "Slack export → drop file" as official path |
@@ -526,7 +526,7 @@ async fn verify_gumroad(key: &str) -> Result<bool, String> {
 ### Free vs Pro gate
 
 Settings enforces:
-- Free = up to 3 topics, no scheduled runs, no PNG/PDF export, no `gapmap.io` publish
+- Free = up to 3 topics, no scheduled runs, no PNG/PDF export, no `openreply.io` publish
 - Pro = unlimited, all features
 
 ```js

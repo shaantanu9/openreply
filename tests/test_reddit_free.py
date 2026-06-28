@@ -1,8 +1,8 @@
 """reddit_free cookie/proxy source with RSS fallback."""
 from __future__ import annotations
 
-from gapmap.sources import reddit_free
-from gapmap.sources.reddit_free import fetch_reddit_free
+from openreply.sources import reddit_free
+from openreply.sources.reddit_free import fetch_reddit_free
 
 _AUTHED = {
     "data": {"children": [

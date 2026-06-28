@@ -32,7 +32,7 @@
 **Where:**
 - UI: Topic page header → Delete → type-to-confirm modal → undo toast (10 s). Or Dashboard tile → right-click → Delete. Settings → Trash card lists everything soft-deleted with Restore buttons.
 - CLI: `reddit-cli research topic-soft-delete --topic T` · `topic-restore --topic T` · `topic-trash-list` · `topic-trash-purge --min-age-days 7`
-- MCP: `gapmap_topic_soft_delete` / `gapmap_topic_restore` / `gapmap_topic_trash_list` / `gapmap_topic_trash_purge`
+- MCP: `openreply_topic_soft_delete` / `openreply_topic_restore` / `openreply_topic_trash_list` / `openreply_topic_trash_purge`
 
 **How:**
 ```bash
@@ -47,7 +47,7 @@ reddit-cli research topic-trash-purge --min-age-days 7 --json
 
 **From an MCP client** (Claude Code):
 ```
-> Use gapmap_topic_soft_delete to remove "stale-topic", then list the trash.
+> Use openreply_topic_soft_delete to remove "stale-topic", then list the trash.
 ```
 
 ### 1.2 Type-to-confirm destructive modal
@@ -81,8 +81,8 @@ if (ok) await api.deleteTopic(topic);
 
 | Layer | When it runs | Threshold env | Default | Semantics |
 |---|---|---|---|---|
-| Collect-time | `_tag_posts` before insert | `GAPMAP_RELEVANCE_GATE_THRESHOLD` | 0.28 | Recall-leaning |
-| LLM output | `synthesize_insights` after LLM returns | `GAPMAP_FINDING_RELEVANCE_THRESHOLD` | 0.40 | Precision-leaning |
+| Collect-time | `_tag_posts` before insert | `OPENREPLY_RELEVANCE_GATE_THRESHOLD` | 0.28 | Recall-leaning |
+| LLM output | `synthesize_insights` after LLM returns | `OPENREPLY_FINDING_RELEVANCE_THRESHOLD` | 0.40 | Precision-leaning |
 | Retroactive | On demand via `clean-corpus` | `--threshold` CLI | 0.30 | User-decided |
 
 **Why:** Reddit search on "meditation sound frequency brainwave" over-matches r/politics threads about ICE, Epstein, Disney+. Without a gate the LLM extractor dutifully surfaces "Lack of transparency in law enforcement" as a meditation-app painpoint.
@@ -91,7 +91,7 @@ if (ok) await api.deleteTopic(topic);
 - Every new collect is automatically gated. Look for "dropped for relevance" in the collect log.
 - UI: Insights tab shows a "⚖ N off-topic findings dropped" fold under the Top Opportunities section, listing which findings were dropped and why.
 - CLI: `reddit-cli research clean-corpus --topic T [--threshold 0.30] [--apply]`
-- MCP: `gapmap_clean_corpus(topic, threshold, apply, min_keep)`
+- MCP: `openreply_clean_corpus(topic, threshold, apply, min_keep)`
 
 **How to clean an existing garbage topic:**
 ```bash
@@ -120,9 +120,9 @@ Blocked bot list: `AutoModerator, RemindMeBot, GoodBot_BadBot, stabbot, Mentione
 **Why:** Even on-topic posts can be garbage (joke comments, repost farms, bot-generated fluff). The gate complements relevance.
 
 **Where:**
-- `GAPMAP_STRICT_QUALITY=1` env → collect-time gating escalates to strict.
+- `OPENREPLY_STRICT_QUALITY=1` env → collect-time gating escalates to strict.
 - CLI diagnostic: `reddit-cli research collect-quality-check --topic T` (non-mutating; reports lenient/strict fail counts).
-- MCP: `gapmap_collect_quality_check(topic)`
+- MCP: `openreply_collect_quality_check(topic)`
 
 **How:**
 ```bash
@@ -130,7 +130,7 @@ Blocked bot list: `AutoModerator, RemindMeBot, GoodBot_BadBot, stabbot, Mentione
 reddit-cli research collect-quality-check --topic "ai agents" --json
 
 # Enable strict mode for the next collect
-GAPMAP_STRICT_QUALITY=1 reddit-cli research collect --topic "ai agents"
+OPENREPLY_STRICT_QUALITY=1 reddit-cli research collect --topic "ai agents"
 ```
 
 ### 2.3 Multilingual embeddings (T2.3)
@@ -139,7 +139,7 @@ GAPMAP_STRICT_QUALITY=1 reddit-cli research collect --topic "ai agents"
 
 **Why:** A user researching a Hindi / Japanese / Portuguese market today gets garbage because the English MiniLM returns near-zero cosine to non-English content.
 
-**Where:** Set `GAPMAP_EMBEDDING_MODEL=multilingual` in your `.env`. Requires `pip install sentence-transformers`.
+**Where:** Set `OPENREPLY_EMBEDDING_MODEL=multilingual` in your `.env`. Requires `pip install sentence-transformers`.
 
 **How:**
 ```bash
@@ -147,7 +147,7 @@ GAPMAP_STRICT_QUALITY=1 reddit-cli research collect --topic "ai agents"
 pip install sentence-transformers
 
 # Enable
-export GAPMAP_EMBEDDING_MODEL=multilingual
+export OPENREPLY_EMBEDDING_MODEL=multilingual
 reddit-cli research synthesize --topic "app for Japanese students"
 ```
 
@@ -163,7 +163,7 @@ Graceful fallback: if `sentence-transformers` isn't installed the embedder warns
 - Auto — every collect runs through it.
 - `find-existing-topic` pre-check on the New Topic modal asks: *"A topic 'X' with N posts already exists. Open it, or create separate?"*
 - `merge-duplicate-topics` retroactively merges LLM-caused dupes. User re-searches are never merged.
-- MCP: `gapmap_find_existing_topic`, `gapmap_merge_duplicate_topics`.
+- MCP: `openreply_find_existing_topic`, `openreply_merge_duplicate_topics`.
 
 **How (retroactive cleanup):**
 ```bash
@@ -186,7 +186,7 @@ reddit-cli research merge-duplicate-topics --apply
 **Where:**
 - UI: every finding card in the Insights tab.
 - CLI: `reddit-cli research feedback-record --topic T --title "..." --kind painpoint --verdict wrong [--note "..."]`
-- MCP: `gapmap_feedback_record(topic, finding_title, finding_kind, verdict, note)` + `gapmap_feedback_list(topic)`
+- MCP: `openreply_feedback_record(topic, finding_title, finding_kind, verdict, note)` + `openreply_feedback_list(topic)`
 
 **How:**
 ```bash
@@ -211,7 +211,7 @@ reddit-cli research synthesize --topic "meditation apps"
 **Where:**
 - UI: Sidebar → **Competitors**.
 - CLI: `reddit-cli research global-competitors --min-topics 2 --threshold 0.80 --json`
-- MCP: `gapmap_global_competitors(min_topics, threshold)`
+- MCP: `openreply_global_competitors(min_topics, threshold)`
 
 **How:**
 ```bash
@@ -231,7 +231,7 @@ reddit-cli research global-competitors --threshold 0.90
 **Where:**
 - UI: Insights tab → saved-views bar mounted at the top of the Findings section.
 - CLI: `reddit-cli research saved-view-create --scope "topic:<slug>" --name "..." --filter-json '{"min_opportunity_score":15}' --pinned`
-- MCP: `gapmap_saved_view_create(scope, name, filter_json, pinned)` + `gapmap_saved_view_list(scope)`
+- MCP: `openreply_saved_view_create(scope, name, filter_json, pinned)` + `openreply_saved_view_list(scope)`
 
 **Filter schema** (all optional, combined with AND):
 ```json
@@ -252,7 +252,7 @@ reddit-cli research global-competitors --threshold 0.90
 **Where:**
 - UI: Settings → **Advanced: extractor prompts** (gated behind a "I know what I'm doing" checkbox). Lists every known prompt key, shows current text, lets you save or reset.
 - CLI: `prompt-list`, `prompt-get --key K`, `prompt-set --key K --file newprompt.txt`, `prompt-clear --key K`
-- MCP: `gapmap_prompt_list`, `gapmap_prompt_get(key)`, `gapmap_prompt_set(key, override_text)`
+- MCP: `openreply_prompt_list`, `openreply_prompt_get(key)`, `openreply_prompt_set(key, override_text)`
 
 **How:**
 ```bash
@@ -297,7 +297,7 @@ Per-node neighbor cap (default 8) prevents hairballs.
 
 **Where:**
 - Auto — runs at the tail of both `upsert_semantic` (every enrich) AND `build_structural` (every "Build graph" button click).
-- MCP: `gapmap_graph_build_relations(topic)`.
+- MCP: `openreply_graph_build_relations(topic)`.
 
 **How to densify an old graph** (no LLM cost):
 ```bash
@@ -307,7 +307,7 @@ python -c "from reddit_research.graph.relations import build_semantic_relations;
   print(build_semantic_relations('meditation apps'))"
 ```
 
-Env knobs: `GAPMAP_REL_THRESHOLD` (0.55), `GAPMAP_SOLVE_THRESHOLD` (0.50), `GAPMAP_REL_MAX_NEIGHBORS` (8).
+Env knobs: `OPENREPLY_REL_THRESHOLD` (0.55), `OPENREPLY_SOLVE_THRESHOLD` (0.50), `OPENREPLY_REL_MAX_NEIGHBORS` (8).
 
 ### 4.2 Research-to-finding linker
 
@@ -338,20 +338,20 @@ Already existed (`btn-rerun`) — verified reachable.
 
 **What:** Ingest a CSV of posts collected from tools we don't support. Canonical headers: `post_id, title, body, author, url, created_utc, source_type`. Only `title` required. Re-imports dedupe on `post_id`.
 
-**Why:** Users have research data from DataGrep / custom scrapers / spreadsheets. Gap Map was a walled garden.
+**Why:** Users have research data from DataGrep / custom scrapers / spreadsheets. OpenReply was a walled garden.
 
 **Where:**
 - UI: Ingest screen → **Bulk CSV ingest** card.
 - CLI: `reddit-cli research ingest-csv --path /path/to/data.csv --topic T --source "csv"`
-- MCP: `gapmap_ingest_csv(path, topic, source_type)`
+- MCP: `openreply_ingest_csv(path, topic, source_type)`
 
 All ingested posts go through `_tag_posts` → the relevance gate still runs, so garbage CSVs don't poison the graph.
 
 ### 5.4 `find-existing-topic` pre-check (from Topic Resolver)
 
-**What:** When typing a new topic in the modal, Gap Map checks for a semantically-identical topic first and asks "open existing or create separate?" instead of silently creating a duplicate.
+**What:** When typing a new topic in the modal, OpenReply checks for a semantically-identical topic first and asks "open existing or create separate?" instead of silently creating a duplicate.
 
-**Where:** Wired into the New Topic modal in `main.js`. Also available via MCP `gapmap_find_existing_topic`.
+**Where:** Wired into the New Topic modal in `main.js`. Also available via MCP `openreply_find_existing_topic`.
 
 ---
 
@@ -365,18 +365,18 @@ All shipped in the Dual-Mode Pivot (Phases A/B/C/F); MCP surface added this pass
 
 | Tool | What it does |
 |---|---|
-| `gapmap_product_create(name, one_liner, category, topic, competitors)` | Register a Product |
-| `gapmap_product_list(active_only)` | List registered products |
-| `gapmap_product_sweep(product_id, trigger, skip_collect)` | Run the daily sweep + generate signals |
-| `gapmap_product_signals(product_id, since_days, include_resolved, limit)` | List open signals ranked by severity × confidence |
-| `gapmap_product_signal_action(signal_id, action, notes, snooze_days)` | dismissed / acted / snoozed / hypothesis |
-| `gapmap_product_dashboard(product_id, days)` | One-call fetch of Mirror / Lens / Field / Signals |
-| `gapmap_product_digest(product_id, days)` | Plain markdown for Slack / Notion |
-| `gapmap_product_convert_topic(topic, name, one_liner)` | Seed a Product from an existing Topic's graph |
+| `openreply_product_create(name, one_liner, category, topic, competitors)` | Register a Product |
+| `openreply_product_list(active_only)` | List registered products |
+| `openreply_product_sweep(product_id, trigger, skip_collect)` | Run the daily sweep + generate signals |
+| `openreply_product_signals(product_id, since_days, include_resolved, limit)` | List open signals ranked by severity × confidence |
+| `openreply_product_signal_action(signal_id, action, notes, snooze_days)` | dismissed / acted / snoozed / hypothesis |
+| `openreply_product_dashboard(product_id, days)` | One-call fetch of Mirror / Lens / Field / Signals |
+| `openreply_product_digest(product_id, days)` | Plain markdown for Slack / Notion |
+| `openreply_product_convert_topic(topic, name, one_liner)` | Seed a Product from an existing Topic's graph |
 
 **Example from Cursor / Claude Code:**
 ```
-> Using the Gap Map MCP: run a sweep for product_id "mindwave-pro",
+> Using the OpenReply MCP: run a sweep for product_id "mindwave-pro",
   then show me the top 3 signals and their suggested actions.
 ```
 
@@ -427,34 +427,34 @@ All callable from Claude Code, Cursor, Claude Desktop, Windsurf, Cline. Installe
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `gapmap_topic_soft_delete` | `(topic)` | Soft-delete, 7-day undo |
-| `gapmap_topic_restore` | `(topic)` | Restore soft-deleted |
-| `gapmap_topic_trash_list` | `()` | List trash + age |
-| `gapmap_topic_trash_purge` | `(min_age_days=7)` | Hard-delete old trash |
-| `gapmap_find_existing_topic` | `(user_input)` | Pre-check for dupes |
-| `gapmap_merge_duplicate_topics` | `(apply=False)` | Merge LLM-caused dupes |
+| `openreply_topic_soft_delete` | `(topic)` | Soft-delete, 7-day undo |
+| `openreply_topic_restore` | `(topic)` | Restore soft-deleted |
+| `openreply_topic_trash_list` | `()` | List trash + age |
+| `openreply_topic_trash_purge` | `(min_age_days=7)` | Hard-delete old trash |
+| `openreply_find_existing_topic` | `(user_input)` | Pre-check for dupes |
+| `openreply_merge_duplicate_topics` | `(apply=False)` | Merge LLM-caused dupes |
 
 ### Corpus quality
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `gapmap_clean_corpus` | `(topic, threshold=0.30, apply=False, min_keep=20)` | Retroactive relevance filter |
-| `gapmap_collect_quality_check` | `(topic)` | Quality-gate diagnostic |
+| `openreply_clean_corpus` | `(topic, threshold=0.30, apply=False, min_keep=20)` | Retroactive relevance filter |
+| `openreply_collect_quality_check` | `(topic)` | Quality-gate diagnostic |
 
 ### Intelligence layer
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `gapmap_feedback_record` | `(topic, finding_title, finding_kind, verdict, note)` | 👎 a finding |
-| `gapmap_feedback_list` | `(topic=None)` | Read feedback back |
-| `gapmap_global_competitors` | `(min_topics=2, threshold=0.80)` | Cross-topic competitor dedup |
-| `gapmap_saved_view_create` | `(scope, name, filter_json, pinned)` | Save a filter |
-| `gapmap_saved_view_list` | `(scope=None)` | List saved views |
-| `gapmap_prompt_list` | `()` | List extractor prompts + overrides |
-| `gapmap_prompt_get` | `(key)` | Read effective prompt |
-| `gapmap_prompt_set` | `(key, override_text)` | Override a prompt |
-| `gapmap_ingest_csv` | `(path, topic, source_type="csv")` | Bulk CSV ingest |
-| `gapmap_graph_build_relations` | `(topic)` | Densify graph edges |
+| `openreply_feedback_record` | `(topic, finding_title, finding_kind, verdict, note)` | 👎 a finding |
+| `openreply_feedback_list` | `(topic=None)` | Read feedback back |
+| `openreply_global_competitors` | `(min_topics=2, threshold=0.80)` | Cross-topic competitor dedup |
+| `openreply_saved_view_create` | `(scope, name, filter_json, pinned)` | Save a filter |
+| `openreply_saved_view_list` | `(scope=None)` | List saved views |
+| `openreply_prompt_list` | `()` | List extractor prompts + overrides |
+| `openreply_prompt_get` | `(key)` | Read effective prompt |
+| `openreply_prompt_set` | `(key, override_text)` | Override a prompt |
+| `openreply_ingest_csv` | `(path, topic, source_type="csv")` | Bulk CSV ingest |
+| `openreply_graph_build_relations` | `(topic)` | Densify graph edges |
 | `reddit_research_link` | `(topic, k=3)` | Link findings to papers |
 | `reddit_research_links` | `(topic, finding=None)` | Read paper links back |
 
@@ -462,14 +462,14 @@ All callable from Claude Code, Cursor, Claude Desktop, Windsurf, Cline. Installe
 
 | Tool | Signature | Purpose |
 |---|---|---|
-| `gapmap_product_create` | `(name, one_liner, category, topic, competitors)` | Register Product |
-| `gapmap_product_list` | `(active_only=True)` | List Products |
-| `gapmap_product_sweep` | `(product_id, trigger, skip_collect)` | Run sweep |
-| `gapmap_product_signals` | `(product_id, since_days, include_resolved, limit)` | Read open signals |
-| `gapmap_product_signal_action` | `(signal_id, action, notes, snooze_days)` | Dismiss/act/snooze/→hypothesis |
-| `gapmap_product_dashboard` | `(product_id, days=7)` | Full dashboard data |
-| `gapmap_product_digest` | `(product_id, days=7)` | Weekly markdown digest |
-| `gapmap_product_convert_topic` | `(topic, name, one_liner)` | Topic → Product |
+| `openreply_product_create` | `(name, one_liner, category, topic, competitors)` | Register Product |
+| `openreply_product_list` | `(active_only=True)` | List Products |
+| `openreply_product_sweep` | `(product_id, trigger, skip_collect)` | Run sweep |
+| `openreply_product_signals` | `(product_id, since_days, include_resolved, limit)` | Read open signals |
+| `openreply_product_signal_action` | `(signal_id, action, notes, snooze_days)` | Dismiss/act/snooze/→hypothesis |
+| `openreply_product_dashboard` | `(product_id, days=7)` | Full dashboard data |
+| `openreply_product_digest` | `(product_id, days=7)` | Weekly markdown digest |
+| `openreply_product_convert_topic` | `(topic, name, one_liner)` | Topic → Product |
 
 Total MCP tools: **73** (was 45).
 
@@ -543,15 +543,15 @@ reddit-cli research product-convert-topic --topic "meditation" --name "MindWave"
 
 | Var | Default | Controls |
 |---|---|---|
-| `GAPMAP_RELEVANCE_GATE_THRESHOLD` | `0.28` | Collect-time post cosine gate |
-| `GAPMAP_FINDING_RELEVANCE_THRESHOLD` | `0.40` | Post-LLM finding relevance gate |
-| `GAPMAP_STRICT_QUALITY` | `0` | 1 = enable strict post-quality filter |
-| `GAPMAP_EMBEDDING_MODEL` | `default` | `multilingual` for non-English corpora |
-| `GAPMAP_REL_THRESHOLD` | `0.55` | `relates_to` cosine cutoff |
-| `GAPMAP_SOLVE_THRESHOLD` | `0.50` | Cross-kind `potentially_solves` / `could_address` cutoff |
-| `GAPMAP_REL_MAX_NEIGHBORS` | `8` | Hairball-prevention cap per node |
-| `GAPMAP_CLUSTER_THRESHOLD` | `0.82` | Dedup clustering threshold (`retrieval/cluster.py`) |
-| `GAPMAP_MAX_KEYWORDS` | `1` | Query-expansion fanout |
+| `OPENREPLY_RELEVANCE_GATE_THRESHOLD` | `0.28` | Collect-time post cosine gate |
+| `OPENREPLY_FINDING_RELEVANCE_THRESHOLD` | `0.40` | Post-LLM finding relevance gate |
+| `OPENREPLY_STRICT_QUALITY` | `0` | 1 = enable strict post-quality filter |
+| `OPENREPLY_EMBEDDING_MODEL` | `default` | `multilingual` for non-English corpora |
+| `OPENREPLY_REL_THRESHOLD` | `0.55` | `relates_to` cosine cutoff |
+| `OPENREPLY_SOLVE_THRESHOLD` | `0.50` | Cross-kind `potentially_solves` / `could_address` cutoff |
+| `OPENREPLY_REL_MAX_NEIGHBORS` | `8` | Hairball-prevention cap per node |
+| `OPENREPLY_CLUSTER_THRESHOLD` | `0.82` | Dedup clustering threshold (`retrieval/cluster.py`) |
+| `OPENREPLY_MAX_KEYWORDS` | `1` | Query-expansion fanout |
 | `INSIGHTS_HARD_CAP` | `2000` | Synthesis corpus hard cap |
 | `INSIGHTS_CAP_*` | per-source | Per-source caps (see `insights.py`) |
 | `LLM_PROVIDER` | (auto-resolve) | Force a provider |

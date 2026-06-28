@@ -32,14 +32,14 @@ detached node and silently fail to show.
 
 ## Root cause (verified)
 
-- `src/gapmap/research/enrich_worker.py:466` — `rows = list(db.query(sql, params))`
+- `src/openreply/research/enrich_worker.py:466` — `rows = list(db.query(sql, params))`
   ran **outside** `_drain_batch`'s `try` (which starts at the extraction body).
-- `src/gapmap/research/enrich_worker.py` idle path — `db["extraction_queue"].count`
+- `src/openreply/research/enrich_worker.py` idle path — `db["extraction_queue"].count`
   ran outside any `try` in `serve()`.
 - Either raising (transient WAL lock under read contention) → propagates out of
   `serve()` → non-clean process exit → `worker.rs::on_worker_exit` counts a
   restart → 3 in `RESTART_WINDOW` (300s) → `enrich:supervisor-gave-up` →
-  `gapmap:enrich-dead` → banner.
+  `openreply:enrich-dead` → banner.
 
 Reproduced with a unit test that makes `_drain_batch` raise once: on the old
 code `serve()` re-raised (worker crash); with the fix it emits `enrich:error`
@@ -57,7 +57,7 @@ and continues.
 
 ## Files Modified
 
-- `src/gapmap/research/enrich_worker.py` — crash-safe `serve()` loop, `ERROR_BACKOFF_SEC`, guarded idle count.
+- `src/openreply/research/enrich_worker.py` — crash-safe `serve()` loop, `ERROR_BACKOFF_SEC`, guarded idle count.
 - `app-tauri/src/main.js` — `isConnected` re-attach guard in the enrich-error banner `render()`.
 - `tests/test_enrich_worker.py` — added `test_serve_survives_transient_read_error`.
 
@@ -68,7 +68,7 @@ and continues.
 
 ## Known related / follow-up
 
-- `src/gapmap/core/db.py::_wal_self_heal` still deletes `-wal`/`-shm` on a
+- `src/openreply/core/db.py::_wal_self_heal` still deletes `-wal`/`-shm` on a
   checkpoint failure under the assumption of single-process DB access. That
   assumption weakened once the Rust native read-path began holding read-only
   WAL connections; deleting side-files while a reader is attached is a latent

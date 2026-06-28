@@ -6,18 +6,18 @@ import pytest
 
 @pytest.fixture
 def _db(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("AUTH_TOKEN", raising=False)
     monkeypatch.delenv("CT0", raising=False)
-    from gapmap.core import db as db_mod
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db_mod.init_schema(db_mod.get_db())
     yield
 
 
 def test_stored_cookie_populates_auth_env(_db, monkeypatch):
-    from gapmap.core import credentials as C
-    from gapmap.sources import x_twitter
+    from openreply.core import credentials as C
+    from openreply.sources import x_twitter
 
     C.set_credential("twitter", {"auth_token": "AT", "ct0": "C0"}, kind="cookie")
 
@@ -36,7 +36,7 @@ def test_stored_cookie_populates_auth_env(_db, monkeypatch):
 
 
 def test_no_backend_returns_error_sentinel(_db, monkeypatch):
-    from gapmap.sources import x_twitter
+    from openreply.sources import x_twitter
     monkeypatch.setattr(x_twitter.ce, "x_auth_from_browsers", lambda: None)
     monkeypatch.setattr(x_twitter, "_fetch_bird", lambda q, l: [])
     monkeypatch.setattr(x_twitter, "_fetch_xai", lambda q, l: [])

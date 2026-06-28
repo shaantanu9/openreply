@@ -14,8 +14,8 @@ corpus, preserved the full academic-paper base, regenerated on-topic
 findings, and generated an outline + IMRaD draft + citation appendix +
 literature review.
 
-No source code was modified — all changes are to the gapmap SQLite data
-(`~/Library/Application Support/com.shantanu.gapmap/gapmap/gapmap.db`) and
+No source code was modified — all changes are to the openreply SQLite data
+(`~/Library/Application Support/com.shantanu.openreply/openreply/openreply.db`) and
 new output files under `paper_meditation_brainwave/`.
 
 ## Changes
@@ -26,7 +26,7 @@ new output files under `paper_meditation_brainwave/`.
   concurrent heavy ops also deadlocked on the SQLite write lock.
 - **Restored academic papers:** strict 0.40 also dropped 367 of 528 papers
   (cosine to the topic string < 0.40). Re-linked those 367 papers from the
-  pre-clean backup (`gapmap.db.backup_premerge_20260601`) into
+  pre-clean backup (`openreply.db.backup_premerge_20260601`) into
   `topic_posts`, restoring the full 528-paper base while keeping the social
   corpus clean. Final corpus: 1,900 posts (528 papers + ~1,372 clean social).
 - **Cleared contaminated graph findings:** deleted off-topic semantic
@@ -58,12 +58,12 @@ new output files under `paper_meditation_brainwave/`.
 
 ## Files Modified
 
-- gapmap SQLite data only (`topic_posts`, `graph_nodes`, `graph_edges`,
+- openreply SQLite data only (`topic_posts`, `graph_nodes`, `graph_edges`,
   `topic_insights`, `paper_analyses`). No repository source files changed.
 
 ## Gotchas discovered (for future sessions)
 
-- Long gapmap embedding ops (clean-corpus / repair / reindex over thousands
+- Long openreply embedding ops (clean-corpus / repair / reindex over thousands
   of posts) take **minutes** and MUST run in the foreground with a long
   `timeout`; backgrounded runs were killed at turn boundaries and silently
   rolled back (SQLite WAL kept the DB safe).

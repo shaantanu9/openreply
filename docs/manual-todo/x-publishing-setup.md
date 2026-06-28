@@ -1,6 +1,6 @@
 # X (Twitter) Publishing — manual setup
 
-The Compose **𝕏 Publish** button and `gapmap publish x` post real tweets/threads
+The Compose **𝕏 Publish** button and `openreply publish x` post real tweets/threads
 via the X API v2. Code is built and working; it only needs **your** X API write
 credentials (one-time, can't be automated — it requires a developer account).
 
@@ -25,22 +25,22 @@ From an X (Twitter) developer app with **Read and Write** permission:
        generated before step 2) → copy both.
 5. [ ] Store them (CLI):
    ```bash
-   gapmap publish set-creds \
+   openreply publish set-creds \
      --api-key YOUR_API_KEY \
      --api-secret YOUR_API_SECRET \
      --access-token YOUR_ACCESS_TOKEN \
      --access-secret YOUR_ACCESS_SECRET
    ```
    (or, once the Settings → "Connect X" form is added, paste them there)
-6. [ ] Verify: `gapmap publish status` → `{"x": true}`.
+6. [ ] Verify: `openreply publish status` → `{"x": true}`.
 
 ## Using it
 
-- **Preview first (no post):** `gapmap publish x --content-id <id> --dry-run`
+- **Preview first (no post):** `openreply publish x --content-id <id> --dry-run`
   shows exactly which tweets will go out (threads split on blank lines, each
   wrapped to 280 chars).
 - **Post:** the **𝕏 Publish** button on any X content card in Compose, or
-  `gapmap publish x --content-id <id>`. On success the draft flips to `posted`
+  `openreply publish x --content-id <id>`. On success the draft flips to `posted`
   and its tweet URL is recorded.
 
 ## Notes / gotchas

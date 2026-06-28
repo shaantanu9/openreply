@@ -44,8 +44,8 @@ Changes:
 - Added a new false-link guard in `_build_relates_to(...)`:
   - For candidate pair `(a, b)`, if:
     - shared evidence posts == 0, and
-    - lexical overlap < `GAPMAP_REL_LEXICAL_FLOOR` (default `0.08`), and
-    - similarity < (`GAPMAP_REL_THRESHOLD` + `GAPMAP_REL_BRIDGE_MARGIN`, default `+0.08`)
+    - lexical overlap < `OPENREPLY_REL_LEXICAL_FLOOR` (default `0.08`), and
+    - similarity < (`OPENREPLY_REL_THRESHOLD` + `OPENREPLY_REL_BRIDGE_MARGIN`, default `+0.08`)
   - then skip edge creation.
 
 Impact:
@@ -74,7 +74,7 @@ Changes in `enrich_from_llm(...)`:
   - product_complaints
   - diy_workarounds
 - Added env-tunable threshold:
-  - `GAPMAP_FINDING_REL_THRESHOLD` (default `0.45`)
+  - `OPENREPLY_FINDING_REL_THRESHOLD` (default `0.45`)
 - Only `kept` findings are now sent to `upsert_semantic(...)`.
 
 Changes in `enrich_from_llm_for_posts(...)` (incremental worker path):
@@ -122,11 +122,11 @@ uv run reddit-myind research repair-topic-graph \
 
 | Env var | Default | Purpose |
 |---|---:|---|
-| `GAPMAP_FINDING_REL_THRESHOLD` | 0.45 | Drops off-topic extracted findings before upsert |
-| `GAPMAP_REL_THRESHOLD` | 0.55 | Base semantic similarity threshold for `relates_to` |
-| `GAPMAP_REL_LEXICAL_FLOOR` | 0.08 | Minimum token overlap for weakly-evidenced pairs |
-| `GAPMAP_REL_BRIDGE_MARGIN` | 0.08 | Extra cosine required when lexical/evidence bridge is absent |
-| `GAPMAP_REL_MAX_NEIGHBORS` | 8 | Per-node fanout cap to avoid map hairballing |
+| `OPENREPLY_FINDING_REL_THRESHOLD` | 0.45 | Drops off-topic extracted findings before upsert |
+| `OPENREPLY_REL_THRESHOLD` | 0.55 | Base semantic similarity threshold for `relates_to` |
+| `OPENREPLY_REL_LEXICAL_FLOOR` | 0.08 | Minimum token overlap for weakly-evidenced pairs |
+| `OPENREPLY_REL_BRIDGE_MARGIN` | 0.08 | Extra cosine required when lexical/evidence bridge is absent |
+| `OPENREPLY_REL_MAX_NEIGHBORS` | 8 | Per-node fanout cap to avoid map hairballing |
 
 ### C) Quick verification checklist
 

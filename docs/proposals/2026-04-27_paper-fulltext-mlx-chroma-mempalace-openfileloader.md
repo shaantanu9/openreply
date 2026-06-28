@@ -237,10 +237,10 @@ The user explicitly named OpenFileLoader. Without authoritative docs on that exa
 
 The MCP tool surface to expose these:
 
-- `gapmap_paper_chunk_search(query, section?, k=12, topic?)` — returns top-K chunks with `(post_id, section, snippet, score)`.
-- `gapmap_paper_section_get(post_id, section)` — pull a specific section verbatim.
-- `gapmap_paper_citations(post_id)` — outgoing references.
-- `gapmap_paper_cited_by(post_id)` — incoming citations (within our corpus).
+- `openreply_paper_chunk_search(query, section?, k=12, topic?)` — returns top-K chunks with `(post_id, section, snippet, score)`.
+- `openreply_paper_section_get(post_id, section)` — pull a specific section verbatim.
+- `openreply_paper_citations(post_id)` — outgoing references.
+- `openreply_paper_cited_by(post_id)` — incoming citations (within our corpus).
 - `reddit_paper_gap_candidates(topic, kind?)` — runs the section-aware gap heuristics above and returns ranked candidates with evidence pointers.
 
 These slot into the existing `mcp/server.py` decorator pattern; per-tool logging from `2026-04-26_01` works automatically.
@@ -276,10 +276,10 @@ Each is a Typer command (`research write --kind literature-review --topic X`) an
 | Step | Days est. | What ships | What stays unchanged | Verification |
 |------|-----------|-----------|---------------------|--------------|
 | 1. Section parser + `paper_sections` table + `mcp logs` instrumentation | 1 | Existing chat + analyze use it when sections are present, ignore it otherwise. | All tools, all retrieval. | `paper_sections` populated for the 5 verified arxiv papers from `2026-04-27_01`. |
-| 2. Chunker + `paper_chunks` + a new `papers` Chroma collection (still using ONNX MiniLM) | 1 | Two new MCP tools: `gapmap_paper_chunk_search`, `gapmap_paper_section_get`. | Existing `posts` collection untouched. | Chunk count for a known paper matches expected (~40 chunks for a 60k-char paper). |
+| 2. Chunker + `paper_chunks` + a new `papers` Chroma collection (still using ONNX MiniLM) | 1 | Two new MCP tools: `openreply_paper_chunk_search`, `openreply_paper_section_get`. | Existing `posts` collection untouched. | Chunk count for a known paper matches expected (~40 chunks for a 60k-char paper). |
 | 3. MLX embedder + auto-fallback | 1 | Embedder backend selectable; default to MLX on Apple Silicon. | ONNX path stays the default fallback. Mempalace API surface unchanged. | Throughput probe: 100 chunks embed in <2s on M-series, <15s on ONNX. |
 | 4. OpenFileLoader integration for parser + chunker (replace pypdf where possible) | 1-2 | Better section detection; structured ref extraction free. | Pypdf path remains the fallback. | A paper with mixed text+image content extracts both. |
-| 5. `paper_references` extractor + Crossref/OpenAlex resolver | 1 | New tools: `gapmap_paper_citations`, `gapmap_paper_cited_by`. Citation edges in graph. | Existing graph nodes/edges untouched. | For a known paper, ≥80% of references resolve to DOI. |
+| 5. `paper_references` extractor + Crossref/OpenAlex resolver | 1 | New tools: `openreply_paper_citations`, `openreply_paper_cited_by`. Citation edges in graph. | Existing graph nodes/edges untouched. | For a known paper, ≥80% of references resolve to DOI. |
 | 6. Gap heuristics on top of sections + citations | 1 | `reddit_paper_gap_candidates`. | Existing `find_gaps` continues to work in parallel. | At least 3 distinct gap kinds surfaced for the test topic. |
 | 7. `research write --kind X` + MCP `reddit_research_write_*` | 2 | Literature review, gap report, annotated bibliography commands. | Everything else. | Generated literature review for a small test topic passes a manual citation-spot-check. |
 

@@ -10,8 +10,8 @@ import tempfile
 
 
 def _db(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db
     importlib.reload(db)
     db.get_db.cache_clear()
     db.get_db()
@@ -31,7 +31,7 @@ def test_traceability_returns_source_posts(monkeypatch):
     )
     db.record_lineage(topic="t", artifact_id="node1", artifact_kind="painpoint", from_post_ids=["p1", "p2"])
 
-    import gapmap.research.traceability as tr
+    import openreply.research.traceability as tr
     importlib.reload(tr)
     rows = tr.traceability_for_artifact("node1")
     ids = {r["id"] for r in rows}
@@ -41,14 +41,14 @@ def test_traceability_returns_source_posts(monkeypatch):
 
 def test_traceability_unknown_returns_empty(monkeypatch):
     db = _db(monkeypatch)
-    import gapmap.research.traceability as tr
+    import openreply.research.traceability as tr
     importlib.reload(tr)
     assert tr.traceability_for_artifact("nope") == []
 
 
 def test_traceability_never_raises(monkeypatch):
     db = _db(monkeypatch)
-    import gapmap.research.traceability as tr
+    import openreply.research.traceability as tr
     importlib.reload(tr)
     monkeypatch.setattr(tr, "get_db", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     assert tr.traceability_for_artifact("x") == []

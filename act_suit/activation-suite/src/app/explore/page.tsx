@@ -6,9 +6,9 @@ import { listPublishedFeed } from "@/lib/community/publish";
 import { hasSupabaseConfig } from "@/lib/supabaseClient";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Explore public research",
+  title: "OpenReply — Explore public research",
   description:
-    "Browse published gap maps, ranked pain points, and DIY workarounds from the Gap Map Community.",
+    "Browse published gap maps, ranked pain points, and DIY workarounds from the OpenReply Community.",
 };
 
 // Revalidate the feed every 10 minutes so the published list stays fresh
@@ -44,7 +44,7 @@ export default async function ExplorePage() {
             Explore <em className="italic text-[var(--orange)]">public research</em>
           </h1>
           <p className="mt-2 max-w-[520px] text-[15px] font-light text-[var(--muted)]">
-            Published gap maps from Gap Map Community. Every page links back to its
+            Published gap maps from OpenReply Community. Every page links back to its
             extraction chain so you can inspect the signal yourself.
           </p>
         </header>

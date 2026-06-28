@@ -5,7 +5,7 @@
 
 ## Summary
 
-Turns Gap Map from a one-shot topic-research tool into a **daily-use product
+Turns OpenReply from a one-shot topic-research tool into a **daily-use product
 intelligence surface for PMs/CEOs**. Implements the core of
 `docs/DUAL_MODE_PIVOT.md` Phases A–G, shipping:
 
@@ -31,7 +31,7 @@ intelligence surface for PMs/CEOs**. Implements the core of
 - **Phase D** — OAuth integrations (Intercom / Zendesk / Stripe) — requires a
   credential vault + real 3rd-party auth; not yet in architectural scope for
   a local-first desktop app.
-- **Phase E** — Stripe billing + multi-user accounts — Gap Map is single-user
+- **Phase E** — Stripe billing + multi-user accounts — OpenReply is single-user
   local today. Requires an auth layer and a hosted/cloud component.
 - **Phase G** — Shareable public links + Slack/email digest delivery —
   requires a backend. Digest ships as clipboard-copyable markdown instead.
@@ -43,7 +43,7 @@ validation-first approach before Phases D/E/G are scoped.
 
 ## Why this matters
 
-A PM/CEO now has a reason to open Gap Map every morning:
+A PM/CEO now has a reason to open OpenReply every morning:
 
 1. Register their product + 3–10 competitors (10 min)
 2. First sweep runs in the background

@@ -11,10 +11,10 @@ import tempfile
 
 
 def test_drain_batch_records_check(monkeypatch, tmp_path):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
 
     # Fresh DB in isolated dir — clear the per-thread cache first.
-    import gapmap.core.db as db_mod
+    import openreply.core.db as db_mod
     importlib.reload(db_mod)
     db_mod.get_db.cache_clear()
     db = db_mod.get_db()
@@ -30,12 +30,12 @@ def test_drain_batch_records_check(monkeypatch, tmp_path):
     db.conn.commit()
 
     # Reload enrich_worker so it picks up the env-patched data dir.
-    import gapmap.research.enrich_worker as ew_mod
+    import openreply.research.enrich_worker as ew_mod
     importlib.reload(ew_mod)
 
     # Mock _sem.enrich_from_llm_for_posts on the module's already-imported
     # reference so no real LLM or network call is made.
-    from gapmap.graph import semantic as _sem_real
+    from openreply.graph import semantic as _sem_real
     monkeypatch.setattr(_sem_real, "enrich_from_llm_for_posts",
                         lambda topic, post_ids: {"ok": True, "painpoints_added": 1})
 

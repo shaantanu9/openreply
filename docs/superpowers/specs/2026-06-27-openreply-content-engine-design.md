@@ -30,8 +30,8 @@ output editable + saveable + platform-aware. Publishing stays manual
 ```
 api.contentGenerate(kind, platform, angle, ctx)
   → Rust content_generate            (app-tauri/src-tauri/src/commands.rs)
-  → CLI `gapmap content generate …`  (src/gapmap/cli/agent_cmds.py)
-  → content.generate_content()       (src/gapmap/reply/content.py)
+  → CLI `openreply content generate …`  (src/openreply/cli/agent_cmds.py)
+  → content.generate_content()       (src/openreply/reply/content.py)
   → content_items SQLite table
 ```
 
@@ -109,14 +109,14 @@ existing DBs migrate without data loss.
 
 ## Layer-by-layer changes
 
-1. **`src/gapmap/reply/content.py`**
+1. **`src/openreply/reply/content.py`**
    - Restructure `_KIND_SPECS` into rich per-kind blocks; add `youtube`,
      `followup_reply`, `followup_post`.
    - `generate_content`: add `context_id`, `context_text`; platform hint +
      dynamic `max_tokens`; persist `parent_id`.
    - Add `update_content(...)`; add `parent_id` migration in `_ensure`.
 
-2. **`src/gapmap/cli/agent_cmds.py`**
+2. **`src/openreply/cli/agent_cmds.py`**
    - `generate`: add `--context-id`, `--context-text`; update help/kinds doc.
    - New `content update` command (`--body` / `--status` / `--scheduled-at`).
 

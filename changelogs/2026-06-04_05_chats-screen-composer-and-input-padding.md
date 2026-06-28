@@ -25,15 +25,15 @@ screen.
 ## Changes
 
 - **`chats.js`** — added a topic `<select>` + question input + "Start chat"
-  button. `startNewChat()` writes `sessionStorage gapmap.topic.tab.<topic>='chat'`
-  and `localStorage gapmap.chat.prefill.<topic>=<question>`, then navigates to
+  button. `startNewChat()` writes `sessionStorage openreply.topic.tab.<topic>='chat'`
+  and `localStorage openreply.chat.prefill.<topic>=<question>`, then navigates to
   `#/topic/<topic>`. Send button is disabled until both a topic and a non-empty
   question are present; Enter in the question field starts the chat. Topics load
   asynchronously (non-blocking for the saved-chat list); empty/error states are
   handled. Search input switched from inline `width:100%` to the new
   `.chats-input` class.
 - **`topic.js`** — `loadChat()` now reads + clears
-  `localStorage gapmap.chat.prefill.<topic>` up-front (so a queued question can
+  `localStorage openreply.chat.prefill.<topic>` up-front (so a queued question can
   never linger and fire on a later unrelated load), and consumes it after the
   composer is wired: starts a fresh conversation (`newConversation`) and
   auto-sends via `send('ask', q)`. Only fires when the composer actually
@@ -50,5 +50,5 @@ screen.
 ## Files Modified
 
 - `app-tauri/src/screens/chats.js` — new-chat composer + topic picker + padded search input
-- `app-tauri/src/screens/topic.js` — `loadChat()` reads/consumes the `gapmap.chat.prefill.<topic>` deep-link key to auto-start a chat
+- `app-tauri/src/screens/topic.js` — `loadChat()` reads/consumes the `openreply.chat.prefill.<topic>` deep-link key to auto-start a chat
 - `app-tauri/src/style.css` — `.chats-input` / `.chats-search-*` / `.chats-new*` styling

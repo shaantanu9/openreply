@@ -5,7 +5,7 @@
 
 ## Summary
 
-Wrote a detailed reference doc explaining how Gap Map searches research papers
+Wrote a detailed reference doc explaining how OpenReply searches research papers
 and every other external source — the common `posts`-row contract, the shared
 HTTP politeness layer, the 6 academic sources, the citation graph, the one-call
 `run_paper_research` orchestrator, the LLM analysis/tier layer, and the full

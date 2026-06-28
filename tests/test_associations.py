@@ -1,19 +1,19 @@
 import os, tempfile
-os.environ.setdefault("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
 
 def test_link_associations_fail_soft_no_personas():
     """No linked personas (or a single one) → 0 edges, never raises."""
-    from gapmap.reply import agent as A
-    from gapmap.persona import graph as G
+    from openreply.reply import agent as A
+    from openreply.persona import graph as G
     a = A.create_agent(name="AssocCo", make_active=True)
     n = G.link_associations(a["id"])
     assert isinstance(n, int) and n >= 0
 
 
 def test_list_associations_empty_ok():
-    from gapmap.reply import agent as A
-    from gapmap.persona import graph as G
+    from openreply.reply import agent as A
+    from openreply.persona import graph as G
     a = A.create_agent(name="AssocCo2", make_active=True)
     rows = G.list_associations(a["id"])
     assert isinstance(rows, list)
@@ -22,8 +22,8 @@ def test_list_associations_empty_ok():
 def test_neighbors_excludes_associates_by_default():
     """An `associates` edge must not surface in the default reply-blend neighbors,
     but should when include_associates=True."""
-    from gapmap.core.db import get_db
-    from gapmap.persona import graph as G
+    from openreply.core.db import get_db
+    from openreply.persona import graph as G
     db = get_db()
     # two memories under persona 9991 + an associates edge between them
     for mid, lesson in ((90001, "students hate manual tagging"),

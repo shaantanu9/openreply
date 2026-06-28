@@ -7,7 +7,7 @@
 
 Two activation bugs fixed:
 
-1. **macOS was prompting for the login password on every app launch** to unlock the `gapmap-license` Keychain entry. Every dev rebuild re-signs the binary with a new code-sign identity, which invalidates the ACL of the Keychain item — so `security` asks the user to re-grant access. Fix: stop using Keychain; store the activation JWT in a 0600-permissioned file (`license_token`) in the app's data dir, alongside `device_id` which already lives there.
+1. **macOS was prompting for the login password on every app launch** to unlock the `openreply-license` Keychain entry. Every dev rebuild re-signs the binary with a new code-sign identity, which invalidates the ACL of the Keychain item — so `security` asks the user to re-grant access. Fix: stop using Keychain; store the activation JWT in a 0600-permissioned file (`license_token`) in the app's data dir, alongside `device_id` which already lives there.
 
 2. **Re-activating on the same device threw `invalid activation token: InvalidSignature`.** The activation server was signing tokens with `TOKEN_SIGNING_SECRET=replace_with_a_long_random_at_least_32_chars_for_prod` (the placeholder from `.env.example`), while the desktop binary was verifying with `dev-local-jwt-secret-change-before-release-0123456789` (the `build.rs` debug fallback, used because `JWT_DESKTOP_SECRET` was never exported at build time). HS256 tokens from one don't verify under the other. Fix: align both sides to the same secret.
 
@@ -36,7 +36,7 @@ Two activation bugs fixed:
 ## Verification
 
 - `cargo check` passes in `app-tauri/src-tauri` — no warnings beyond the existing `JWT_DESKTOP_SECRET missing` build-script note (which is harmless since the fallback now equals the intended value).
-- The user's existing debug-build Tauri binary already embeds `dev-local-jwt-secret-change-before-release-0123456789` (confirmed via `target/debug/deps/gapmap-*.d`), so after restarting the Next.js activation server with the new env:
+- The user's existing debug-build Tauri binary already embeds `dev-local-jwt-secret-change-before-release-0123456789` (confirmed via `target/debug/deps/openreply-*.d`), so after restarting the Next.js activation server with the new env:
   1. New activation tokens verify cleanly (no more `InvalidSignature`).
   2. File-based token reads never prompt for the login password.
 
@@ -48,7 +48,7 @@ Restart the Next.js activation server so it picks up the new `TOKEN_SIGNING_SECR
 cd act_suit/activation-suite && PORT=3007 npm run dev
 ```
 
-(Use whatever port the desktop UI has saved in localStorage under `gapmap.license.api_base` — the user reported port 3007; the `.env` default is 3434.)
+(Use whatever port the desktop UI has saved in localStorage under `openreply.license.api_base` — the user reported port 3007; the `.env` default is 3434.)
 
 ## Security Trade-off
 

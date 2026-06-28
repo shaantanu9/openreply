@@ -58,6 +58,6 @@ regression for paywalled PubMed content.
 
 ## Files Modified
 
-- `src/gapmap/research/paper_fulltext.py` — PubMed→PMC full-text resolution
+- `src/openreply/research/paper_fulltext.py` — PubMed→PMC full-text resolution
   (helpers + `get_full_text` branch + `_resolve_pdf_url` + `fetch_bulk`
   default sources).

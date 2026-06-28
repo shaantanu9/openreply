@@ -13,7 +13,7 @@ export function SecurityTrustSection() {
               <em>designed into the stack.</em>
             </h2>
             <p className="section-sub">
-              Gap Map is built for teams that need strong evidence workflows
+              OpenReply is built for teams that need strong evidence workflows
               without leaking sensitive research artifacts to third-party clouds.
             </p>
             <div className="mt-6 rounded-[20px] border border-[var(--border-strong)] bg-[var(--cream-mid)] p-5">

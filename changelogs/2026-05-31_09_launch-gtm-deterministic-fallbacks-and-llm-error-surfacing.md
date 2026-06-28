@@ -55,7 +55,7 @@ memory citations) — no code changes needed there.
 
 ## Files Modified
 
-- `src/gapmap/research/launch.py` — added `_channel_label`, `_personas_fallback`,
+- `src/openreply/research/launch.py` — added `_channel_label`, `_personas_fallback`,
   `_launch_sequence_fallback`, `_classify_llm_error`; rewrote `_llm_augment` to
   return error info; added the deterministic safety net to `build_launch_brief`.
 - `app-tauri/src/screens/launch.js` — `LLM_ERROR_COPY`, `llmErrorBanner()`,
@@ -64,6 +64,6 @@ memory citations) — no code changes needed there.
 
 ## Follow-up
 
-- The bundled PyInstaller sidecar (`app-tauri/src-tauri/bin/gapmap-cli-*`) must be
+- The bundled PyInstaller sidecar (`app-tauri/src-tauri/bin/openreply-cli-*`) must be
   rebuilt before the next DMG for the Python-side changes to ship; in
   `npm run tauri:dev` the dev venv picks them up immediately.

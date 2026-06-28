@@ -7,8 +7,8 @@
 
 The OpenReply Connections and Settings pages were static prototype mockups with
 no backend wiring, and the credential backend they depend on was broken: the
-`gapmap research cleanup` (commit 5cd3f4f) deleted
-`src/gapmap/research/reach_connections.py`, but `cli/main.py` still imported it
+`openreply research cleanup` (commit 5cd3f4f) deleted
+`src/openreply/research/reach_connections.py`, but `cli/main.py` still imported it
 in all five `creds` subcommands — so every `creds list/import/save/verify/delete`
 crashed with `ImportError`. This change restores the credential backend and wires
 both pages to live data through the existing Rust command triangle.
@@ -45,7 +45,7 @@ both pages to live data through the existing Rust command triangle.
 
 ## Files Created
 
-- `src/gapmap/research/reach_connections.py` — restored + OpenReply-adapted
+- `src/openreply/research/reach_connections.py` — restored + OpenReply-adapted
   credential backend (public/cookie/api_key kinds).
 
 ## Files Modified

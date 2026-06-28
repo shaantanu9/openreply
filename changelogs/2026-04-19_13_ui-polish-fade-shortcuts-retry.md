@@ -41,4 +41,4 @@ Three small UX + reliability improvements from the roadmap's Phase B polish list
 - `app-tauri/src/screens/home.js` — `fade-in` on hero section + stat-card
 - `app-tauri/src/main.js` — input-aware keyboard handler + `openShortcutsHelp()`
 - `app-tauri/src/api.js` — `invokeWithRetry` + transient-error patterns
-- `docs/gap-map-roadmap.md` — done/remaining checkboxes updated
+- `docs/openreply-roadmap.md` — done/remaining checkboxes updated

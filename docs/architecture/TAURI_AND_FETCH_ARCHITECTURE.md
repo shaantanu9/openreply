@@ -16,7 +16,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Gap Map.app   (one macOS/Win/Linux desktop binary)                    │
+│  OpenReply.app   (one macOS/Win/Linux desktop binary)                    │
 │                                                                        │
 │  ┌────────────────┐   invoke()    ┌──────────────┐  argv + stdin/out  │
 │  │  Frontend      │ ─────────────► │  Rust core   │ ─────────────────► │
@@ -27,19 +27,19 @@
 │         │                                  ▼                           │
 │         │                       ┌────────────────────────┐            │
 │         │                       │  Python sidecar         │            │
-│         │                       │  gapmap-cli (PyInstaller│            │
+│         │                       │  openreply-cli (PyInstaller│            │
 │         │                       │  ONEDIR) OR dev .venv   │            │
 │         │                       └────────────────────────┘            │
 │         │                                  │                           │
-│         └──────────── SQLite (gapmap.db, WAL) ◄─────────────────────── │
+│         └──────────── SQLite (openreply.db, WAL) ◄─────────────────────── │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
 Three rules that explain almost everything:
 
 1. **The Rust layer never does business logic.** Every `#[tauri::command]` is a thin
-   bridge that shells out to the **same Python package** (`gapmap`) — either the
-   bundled `gapmap-cli` binary (prod) or `.venv/bin/python -m gapmap.cli.main` (dev).
+   bridge that shells out to the **same Python package** (`openreply`) — either the
+   bundled `openreply-cli` binary (prod) or `.venv/bin/python -m openreply.cli.main` (dev).
    No logic is duplicated between CLI, MCP server, and desktop app.
 2. **SQLite is the single shared state.** Python writes it; Rust reads it directly
    for hot paths (1 ms) and the frontend polls its mtime to know when to refresh.
@@ -112,18 +112,18 @@ execution strategies**, tried in order of speed:
 
 ### Binary resolution & the dev bypass — `cli.rs:41-73, 168-188`
 ```
-prod:  app.shell().sidecar("gapmap-cli")          // PyInstaller ONEDIR, ~390 MB
+prod:  app.shell().sidecar("openreply-cli")          // PyInstaller ONEDIR, ~390 MB
 dev:   walk up to 5 parent dirs for .venv/bin/python
-       (override with GAPMAP_DEV_PYTHON)
+       (override with OPENREPLY_DEV_PYTHON)
 ```
 The dev bypass exists because a freshly-built/unsigned PyInstaller binary can hang
 **2+ minutes** under macOS Gatekeeper on first spawn. In dev you run the raw `.venv`
 Python instead. (This is the battle-tested pattern from the `tauri-python-sidecar-app` skill.)
 
 ### Environment injected into every spawn
-- `GAPMAP_DATA_DIR` → the app data dir (so Python writes the same SQLite the app reads)
+- `OPENREPLY_DATA_DIR` → the app data dir (so Python writes the same SQLite the app reads)
 - `PYTHONUNBUFFERED=1` → so streamed lines arrive immediately
-- `GAPMAP_FFMPEG_PATH` → bundled ffmpeg for video ingest (`build_sidecar_cmd`, `cli.rs:175-188`)
+- `OPENREPLY_FFMPEG_PATH` → bundled ffmpeg for video ingest (`build_sidecar_cmd`, `cli.rs:175-188`)
 
 ### Mutual exclusion / single-flight — `cli.rs:785-848, 1175-1194`
 Tauri-managed state slots prevent two heavy jobs colliding:
@@ -132,7 +132,7 @@ Tauri-managed state slots prevent two heavy jobs colliding:
 |---|---|
 | `ActiveJob` / `ActiveJobPid` | collect/enrich (prod CommandChild vs dev OS PID) |
 | `ActiveChat` / `ActiveChatPid` | chat (allowed to run **in parallel** with a collect) |
-| `ActiveStream` | `gapmap stream` firehose |
+| `ActiveStream` | `openreply stream` firehose |
 | `ActiveEnrich` / `ActiveGraphOps` | dedup graph enrichment per topic |
 | `CollectCancelMarker` | distinguishes user-cancel from real error on exit |
 
@@ -142,15 +142,15 @@ Starting a second collect while one runs returns
 ## A3. Tauri config, capabilities & security
 
 `app-tauri/src-tauri/tauri.conf.json`:
-- **`externalBin`** (`:82-88`): `binaries/gapmap-cli`, `binaries/ffmpeg`.
-  **`resources`**: `binaries/gapmap-cli-onedir/**/*` (ONEDIR avoids per-spawn temp
+- **`externalBin`** (`:82-88`): `binaries/openreply-cli`, `binaries/ffmpeg`.
+  **`resources`**: `binaries/openreply-cli-onedir/**/*` (ONEDIR avoids per-spawn temp
   extraction that ONEFILE suffers).
-- **`assetProtocol.scope`** (`:54-65`): whitelists `$APPDATA/gapmap/**`,
+- **`assetProtocol.scope`** (`:54-65`): whitelists `$APPDATA/openreply/**`,
   `$APPLOCALDATA/paper_pdf_cache/**`, etc. — required for `fetch(asset://…)` to read
   bundled/generated files (PDFs, exports).
 - **CSP** (`:41-53`): `default-src 'self'`; `connect-src` whitelists the exact
   outbound hosts (Reddit, arXiv, OpenAlex, Anthropic, OpenAI, Ollama).
-- **`capabilities/default.json`**: restricts shell execution to the `gapmap-cli`
+- **`capabilities/default.json`**: restricts shell execution to the `openreply-cli`
   binary only and whitelists the ~50 event names the frontend listens to.
 
 ## A4. The frontend (vanilla JS + Vite)
@@ -178,11 +178,11 @@ This wraps **every** `invoke()` with four behaviors:
 
 **Cache invalidation** (`mutated()`, `:351-375`): after any write, `INVALIDATE_MAP`
 clears the affected read keys (memory + localStorage) and dispatches a
-`gapmap:changed` event so open screens refresh.
+`openreply:changed` event so open screens refresh.
 
 **Freshness poller** (`:377-430`): every 5 s (and on tab focus) calls the cheap
 `db_mtime` command; if the SQLite mtime changed (e.g. MCP server or background CLI
-wrote it), it clears the cache and fires `gapmap:db-changed`.
+wrote it), it clears the cache and fires `openreply:db-changed`.
 
 ### Receiving streamed results
 Screens subscribe to Tauri events through thin `api.onXxx` wrappers:
@@ -197,9 +197,9 @@ log lines and structured progress travel the same channel and are disambiguated 
 
 ## A5. Data layer
 
-- One SQLite file, **`gapmap.db`** (WAL mode), in the data dir:
-  - macOS `~/Library/Application Support/gapmap/` · Linux `~/.local/share/gapmap/` ·
-    Windows `%APPDATA%\gapmap\`
+- One SQLite file, **`openreply.db`** (WAL mode), in the data dir:
+  - macOS `~/Library/Application Support/openreply/` · Linux `~/.local/share/openreply/` ·
+    Windows `%APPDATA%\openreply\`
 - **Rust reads it directly** for hot paths via `app-tauri/src-tauri/src/db.rs`
   (`query_db()`, `:1-136`) — read-only WAL connection, `:named`/`?1` params, rows →
   JSON. ~1–10 ms vs 300–2000 ms through the sidecar. Used by `run_query`,
@@ -214,11 +214,11 @@ collect.js → api.startCollect(topic, true)
   → invoke('start_collect', {topic, aggressive:true})        [api.js: timeout+mutate]
     → commands.rs::start_collect  builds argv
       → cli.rs::run_cli_streaming  (single-flight check)
-        → spawn  gapmap research collect --topic … --aggressive --json
-          env GAPMAP_DATA_DIR, PYTHONUNBUFFERED=1
+        → spawn  openreply research collect --topic … --aggressive --json
+          env OPENREPLY_DATA_DIR, PYTHONUNBUFFERED=1
         → each stdout line → app.emit("collect:progress", scrub(line))
       → on exit → app.emit("collect:done", {code, error_class, hint})
-  ← collect.js renders lines live; freshness poller sees gapmap.db mtime change → refresh
+  ← collect.js renders lines live; freshness poller sees openreply.db mtime change → refresh
 ```
 
 ---
@@ -230,7 +230,7 @@ through public JSON endpoints (optionally with a stored session cookie) and fall
 to RSS. Everything is **fail-soft** — a failure degrades to a weaker tier rather than
 throwing.
 
-## B1. The tier cascade — `src/gapmap/fetch/_reddit_tiers.py:1-104`
+## B1. The tier cascade — `src/openreply/fetch/_reddit_tiers.py:1-104`
 
 ```
 run_cascade([ ("praw",   _fetch_auth),      # Tier 1: official API IF creds configured
@@ -251,7 +251,7 @@ run_cascade([ ("praw",   _fetch_auth),      # Tier 1: official API IF creds conf
     `/r/{sub}/search.json` with `restrict_sr` when sub-scoped.
 - **Tier 3 RSS** — `core/public_client.py` public path; titles/bodies only, no scores.
 
-## B2. The free-fetch shortcut — `src/gapmap/sources/reddit_free.py:1-91`
+## B2. The free-fetch shortcut — `src/openreply/sources/reddit_free.py:1-91`
 
 `fetch_reddit_free(query, sub=None, limit=50)` (`:67`):
 1. Looks up `creds.cookie_header("reddit")` → the stored `reddit_session` cookie.
@@ -271,7 +271,7 @@ app speaks in:
 }
 ```
 
-## B3. Subreddit discovery — `src/gapmap/research/discover.py:302-424`
+## B3. Subreddit discovery — `src/openreply/research/discover.py:302-424`
 
 `discover_subs(topic, limit=10)` turns a free-text topic into a ranked list of subs:
 
@@ -290,7 +290,7 @@ app speaks in:
    plus a confirmation payload `{ auto_corrected, needs_confirmation, reason }` where
    `reason ∈ direct_match | high_confidence_typo_correction | low_confidence_canonicalization | weak_sub_relevance | canonicalization_unavailable`.
 
-## B4. The collect orchestrator — `src/gapmap/research/collect.py:318-650+`
+## B4. The collect orchestrator — `src/openreply/research/collect.py:318-650+`
 
 `collect(topic, subs=None, ...) -> CollectResult` runs **three Reddit phases** plus a
 parallel external-source fan-out.
@@ -303,7 +303,7 @@ Reddit phases
                        limit_per_sub = 50 (100 if aggressive)
 3. SEARCH fan-out:    _build_search_worklist(:97-131) round-robins keywords ×
                        categories {pain, features, complaints, diy}
-                       budget GAPMAP_MAX_SEARCH_QUERIES=24, GAPMAP_SEARCH_WORKERS=4,
+                       budget OPENREPLY_MAX_SEARCH_QUERIES=24, OPENREPLY_SEARCH_WORKERS=4,
                        1 s politeness/req → search_reddit(query, sub)
 4. (optional) HISTORICAL backfill via PullPush (pre-May-2025):
                        fetch_historical(sub, "submission", days, limit)
@@ -311,7 +311,7 @@ Reddit phases
 
 External sources (parallel)
 ───────────────────────────
-GAPMAP_PARALLEL_SOURCES=10 threads, GAPMAP_SOURCE_TIMEOUT_SEC=240
+OPENREPLY_PARALLEL_SOURCES=10 threads, OPENREPLY_SOURCE_TIMEOUT_SEC=240
 HN, arXiv, GitHub, StackOverflow, Dev.to, App/Play Store, Google News, PubMed,
 OpenAlex, Trustpilot, ProductHunt, RSS bundles, Trends, YouTube, DuckDuckGo, …
 errors captured per-source; one flaky provider never blocks the rest
@@ -338,7 +338,7 @@ Reddit's full pass takes ~15 min, which would block the graph. So the frontend s
 - **Phase 1 (foreground, ~2–3 min):** run external sources with `skip_reddit=ON`; the
   enrich worker builds the graph immediately → user sees results fast.
 - **Phase 2 (background, ~15 min):** `markRedditPending(topic, opts)` stores a flag in
-  `localStorage` (`gapmap.collect.reddit_pending::{topic}`), shows a non-blocking banner,
+  `localStorage` (`openreply.collect.reddit_pending::{topic}`), shows a non-blocking banner,
   then reruns `startCollect()` Reddit-only; posts fold into the graph incrementally.
 
 ## B6. Rate limiting, caching, error handling
@@ -352,30 +352,30 @@ Reddit's full pass takes ~15 min, which would block the graph. So the frontend s
 
 ## B7. The fetch surface (CLI + MCP)
 
-**CLI** (`src/gapmap/cli/main.py`):
+**CLI** (`src/openreply/cli/main.py`):
 | Command | Args |
 |---|---|
-| `gapmap fetch posts` | `--sub --sort --limit --time` |
-| `gapmap fetch comments` | `--post --depth --limit` |
-| `gapmap fetch sub-comments` | `--sub --limit --save` |
-| `gapmap fetch historical` | `--sub --kind --days --limit` |
-| `gapmap fetch user` | `--name --kind --limit` |
-| `gapmap search` | `--query --sub --sort --time --limit` |
-| `gapmap stream` | `--sub --keywords --watch --name` |
-| `gapmap research discover` | `--topic --limit` |
-| `gapmap research canonicalize` | `--topic` |
-| `gapmap research collect` | `--topic --subs --per-sub --per-query --categories --historical --sources --aggressive --deep --skip-reddit --skip-extraction` |
+| `openreply fetch posts` | `--sub --sort --limit --time` |
+| `openreply fetch comments` | `--post --depth --limit` |
+| `openreply fetch sub-comments` | `--sub --limit --save` |
+| `openreply fetch historical` | `--sub --kind --days --limit` |
+| `openreply fetch user` | `--name --kind --limit` |
+| `openreply search` | `--query --sub --sort --time --limit` |
+| `openreply stream` | `--sub --keywords --watch --name` |
+| `openreply research discover` | `--topic --limit` |
+| `openreply research canonicalize` | `--topic` |
+| `openreply research collect` | `--topic --subs --per-sub --per-query --categories --historical --sources --aggressive --deep --skip-reddit --skip-extraction` |
 
-**MCP** (`src/gapmap/mcp/server.py`): `gapmap_fetch_posts/comments/user/search`,
-`gapmap_sub_stats`, `gapmap_discover_subs`, `gapmap_collect`, `gapmap_fetch_reddit_free`.
-`gapmap_sub_stats` returns `{ sub, posts_stored, avg_score, avg_comments, max_score,
+**MCP** (`src/openreply/mcp/server.py`): `openreply_fetch_posts/comments/user/search`,
+`openreply_sub_stats`, `openreply_discover_subs`, `openreply_collect`, `openreply_fetch_reddit_free`.
+`openreply_sub_stats` returns `{ sub, posts_stored, avg_score, avg_comments, max_score,
 first/last_post_utc, top_authors[] }`.
 
 ---
 
 # PART C — The wider data engine (context)
 
-## C1. ~61 source adapters, one contract — `src/gapmap/sources/collect_adapter.py`
+## C1. ~61 source adapters, one contract — `src/openreply/sources/collect_adapter.py`
 Every source is a module-level `run_<source>(topic_or_keywords, **opts) -> int` that
 persists to `posts` and returns a count. No dynamic registry — the active list is
 explicit in `research/collect.py`. Categories: social/community (reddit, lemmy,
@@ -387,7 +387,7 @@ stackexchange×8, github_trending, github_issues, duckduckgo, exa, tavily), mark
 (worldbank, fred, bis, yfinance, openmeteo, polymarket), plus rss bundles, youtube,
 gdelt, acled, linkedin, wikipedia, steam, npmstats, discourse.
 
-## C2. Credentials / Reach Connections — `src/gapmap/core/credentials.py`
+## C2. Credentials / Reach Connections — `src/openreply/core/credentials.py`
 Table `source_credentials(source PK, cookie_json, username, kind, saved_at,
 last_verified_at)`. Helpers: `get_credential`, `set_credential`, `mark_verified`,
 `cookie_header(source)` → `Cookie: k=v; …`, `api_key(source)`. Flow: the app captures a
@@ -419,7 +419,7 @@ to this inbound (fetch) engine.
 | Pull trends/competitor content to ideate from | the ~61 fetch adapters + `discover_subs`/`collect` |
 | LLM generation (captions, hooks, scripts) | `analyze/providers/*` (8 providers, auto-resolved) |
 | Streaming long jobs to a responsive UI | `run_cli_streaming` + `collect:progress` event pattern |
-| Local persistence, instant reads | `gapmap.db` (WAL) + native rusqlite read path (`db.rs`) |
+| Local persistence, instant reads | `openreply.db` (WAL) + native rusqlite read path (`db.rs`) |
 
 ## D2. What to add (the outbound half)
 1. **A `publish/` package in Python**, mirroring `sources/` but for posting:
@@ -483,7 +483,7 @@ app-tauri/
   src-tauri/tauri.conf.json          externalBin, resources, CSP, assetProtocol scope
   src-tauri/capabilities/default.json  shell + event permissions
 
-src/gapmap/
+src/openreply/
   cli/main.py                        Typer entry: fetch / research / mcp / auth / ingest / feeds
   sources/reddit_free.py             cookie/RSS free fetch (:1-91)
   sources/collect_adapter.py         ~61 run_<source>() adapters

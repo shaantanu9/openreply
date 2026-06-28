@@ -1,4 +1,4 @@
-from gapmap.research.sources import ACADEMIC_SOURCES, is_academic_source
+from openreply.research.sources import ACADEMIC_SOURCES, is_academic_source
 
 def test_academic_set_exact():
     assert ACADEMIC_SOURCES == frozenset(
@@ -17,12 +17,12 @@ def test_is_academic_source():
 
 
 def test_chunk_paper_skips_non_academic(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core.db import get_db, init_schema
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core.db import get_db, init_schema
     db = get_db(); init_schema(db)
     db["posts"].insert({"id": "r1", "title": "rant", "selftext": "x" * 4000,
                         "source_type": "reddit"}, pk="id")
-    from gapmap.research.paper_chunks import chunk_paper
+    from openreply.research.paper_chunks import chunk_paper
     out = chunk_paper("r1", embed=True)
     assert out.get("skipped") == "non_academic_source"
     assert out["embedded"] == 0

@@ -48,7 +48,7 @@ near-identical painpoints.
 - `src/reddit_research/retrieval/cluster.py` — new module. `cluster_findings`
   embeds finding labels via chromadb's built-in ONNX embedder, runs greedy
   union-find clustering at cosine similarity ≥ threshold (default 0.82,
-  overridable via `GAPMAP_CLUSTER_THRESHOLD`). Near-duplicates collapse to
+  overridable via `OPENREPLY_CLUSTER_THRESHOLD`). Near-duplicates collapse to
   one winner (highest frequency + longest evidence); other labels attach
   as `aliases`.
 - Evidence post IDs merge across the cluster (de-duped) so saturation stays
@@ -63,7 +63,7 @@ near-identical painpoints.
   `showTopicConfirmModal` helpers. Toast auto-dismisses after 10 s;
   modal blocks with variants + "Keep as-is" option.
 - `app-tauri/src/main.js` — new-topic flow now calls `api.discoverSubs`
-  before dispatching `gapmap:start-collect`. High-confidence correction
+  before dispatching `openreply:start-collect`. High-confidence correction
   → toast; low-confidence / weak sub relevance → blocking modal.
 - `app-tauri/src/style.css` — styles for the toast + modal.
 

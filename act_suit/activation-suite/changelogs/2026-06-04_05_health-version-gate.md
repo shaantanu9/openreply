@@ -14,7 +14,7 @@ path. Making a release mandatory is a Vercel env-var flip — no code redeploy.
 - `src/app/v1/health/route.ts` + `src/app/api/v1/health/route.ts`: return
   `min_app_version` (`MIN_APP_VERSION`), `latest_app_version`
   (`LATEST_APP_VERSION`), and `app_download_url` (`APP_DOWNLOAD_URL` /
-  `NEXT_PUBLIC_APP_DOWNLOAD_URL`, default `https://gapmap.myind.ai/download`).
+  `NEXT_PUBLIC_APP_DOWNLOAD_URL`, default `https://openreply.myind.ai/download`).
 
 ## Files Modified
 

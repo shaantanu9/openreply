@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from gapmap.mcp import install
+from openreply.mcp import install
 
 
 def test_probe_spawn_failure_is_not_live():
@@ -52,10 +52,10 @@ def test_status_probe_on_hanging_command_reports_not_connected(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "gapmap": {
+                    "openreply": {
                         "command": "/bin/cat",
                         "args": [],
-                        "env": {"GAPMAP_DATA_DIR": str(data_dir)},
+                        "env": {"OPENREPLY_DATA_DIR": str(data_dir)},
                     }
                 }
             }
@@ -72,12 +72,12 @@ def test_status_probe_on_hanging_command_reports_not_connected(tmp_path):
 @pytest.mark.slow
 def test_probe_real_venv_binary_is_live():
     # Integration: the dev-venv console-script is a real, fast MCP server.
-    venv_bin = Path(__file__).resolve().parents[1] / ".venv" / "bin" / "gapmap"
+    venv_bin = Path(__file__).resolve().parents[1] / ".venv" / "bin" / "openreply"
     if not venv_bin.is_file():
-        pytest.skip("dev venv gapmap binary not present")
+        pytest.skip("dev venv openreply binary not present")
     res = install.probe_server_handshake(
         str(venv_bin), ["mcp", "serve"],
-        {"GAPMAP_IDLE_TIMEOUT": "0", "MCP_TAKEOVER_STALE_LOCK": "1"},
+        {"OPENREPLY_IDLE_TIMEOUT": "0", "MCP_TAKEOVER_STALE_LOCK": "1"},
         timeout=40.0,
     )
     assert res["live"] is True, res

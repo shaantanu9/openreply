@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gap Map — Sign in</title>
+<title>OpenReply — Sign in</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
@@ -168,7 +168,7 @@
         <circle cx="9" cy="9" r="3" fill="#E07B3C"/>
       </svg>
     </div>
-    <span class="lp-logo-name">Gap Map</span>
+    <span class="lp-logo-name">OpenReply</span>
   </a>
 
   <div class="lp-body">
@@ -244,7 +244,7 @@
         <span class="field-error" id="loginPwdErr">Incorrect email or password.</span>
       </div>
       <button class="btn-submit" id="loginBtn" onclick="handleLogin()">
-        <span id="loginBtnText">Sign in to Gap Map</span>
+        <span id="loginBtnText">Sign in to OpenReply</span>
       </button>
       <div class="auth-footer">
         Don't have an account? <a href="#" onclick="switchTab('register');return false">Create one free</a>
@@ -274,7 +274,7 @@
         <span class="field-hint">Use .edu for 50% student discount on Pro.</span>
       </div>
       <div class="field">
-        <label for="regRole">I'm using Gap Map for</label>
+        <label for="regRole">I'm using OpenReply for</label>
         <div class="plan-selector" id="roleSelector">
           <label class="plan-opt selected" onclick="selectOpt(this,'roleSelector')">
             <input type="radio" name="role" value="product" checked>
@@ -378,12 +378,12 @@ async function handleLogin() {
   btn.classList.add('loading');
   document.getElementById('loginBtnText').textContent = 'Signing in…';
   try {
-    await GapMapAuth.signIn(email, pwd);
+    await OpenReplyAuth.signIn(email, pwd);
     showAlert('Signed in successfully. Next step: activate your licence key.', 'success');
     setTimeout(() => { window.location.href = 'activate.html'; }, 1200);
   } catch(e) {
-    showAlert(GapMapAuth.parseError(e), 'error');
-  } finally { btn.classList.remove('loading'); document.getElementById('loginBtnText').textContent = 'Sign in to Gap Map'; }
+    showAlert(OpenReplyAuth.parseError(e), 'error');
+  } finally { btn.classList.remove('loading'); document.getElementById('loginBtnText').textContent = 'Sign in to OpenReply'; }
 }
 
 async function handleRegister() {
@@ -396,7 +396,7 @@ async function handleRegister() {
   if (pwd.length < 8) { showAlert('Password must be at least 8 characters.', 'error'); return; }
   document.getElementById('regBtnText').textContent = 'Creating account…';
   try {
-    await GapMapAuth.signUp(email, pwd, {
+    await OpenReplyAuth.signUp(email, pwd, {
       first_name: first,
       last_name: last,
       full_name: [first, last].filter(Boolean).join(' '),
@@ -405,7 +405,7 @@ async function handleRegister() {
     showAlert('Account created. Next step: activate your key (or start trial) on the Activate page.', 'success');
     setTimeout(() => { window.location.href = 'activate.html'; }, 2000);
   } catch(e) {
-    showAlert(GapMapAuth.parseError(e), 'error');
+    showAlert(OpenReplyAuth.parseError(e), 'error');
   } finally { document.getElementById('regBtnText').textContent = 'Create account & start trial'; }
 }
 
@@ -414,17 +414,17 @@ async function handleForgot() {
   if (!email) { showAlert('Please enter your email.', 'error'); return; }
   document.getElementById('forgotBtnText').textContent = 'Sending…';
   try {
-    await GapMapAuth.sendResetPassword(email);
+    await OpenReplyAuth.sendResetPassword(email);
     showAlert('Reset link sent! Check your inbox.', 'success');
   } catch (e) {
-    showAlert(GapMapAuth.parseError(e), 'error');
+    showAlert(OpenReplyAuth.parseError(e), 'error');
   } finally {
     document.getElementById('forgotBtnText').textContent = 'Send reset link';
   }
 }
 
 (function showEnvConfigHintIfNeeded() {
-  const e = window.GAPMAP_ENV || {};
+  const e = window.OPENREPLY_ENV || {};
   const placeholder = (s) => !s || /your-project-id|your[_-]supabase|placeholder|your\.example|YOUR_/.test(s);
   const needsUrl = placeholder(e.SUPABASE_URL);
   const needsKey = placeholder(e.SUPABASE_ANON_KEY);

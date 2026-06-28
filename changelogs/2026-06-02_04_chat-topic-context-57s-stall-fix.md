@@ -36,9 +36,9 @@ real chat streams to completion (verified: 256 tokens, `done`, no error).
 
 ## Files Modified
 
-- `src/gapmap/research/chat.py` — PK-lookup rewrite of the `source_diversity`
+- `src/openreply/research/chat.py` — PK-lookup rewrite of the `source_diversity`
   subquery; `get_full_text(..., cache_only=True)` at the full-text splice.
-- `src/gapmap/research/paper_fulltext.py` — `get_full_text(cache_only=...)`
+- `src/openreply/research/paper_fulltext.py` — `get_full_text(cache_only=...)`
   param + cold-cache short-circuit before the network download.
 
 ## Files Created

@@ -42,7 +42,7 @@ fragments instead of the rich whole.
 
 ## Fix
 
-New module **`src/gapmap/sources/source_families.py`** — single source
+New module **`src/openreply/sources/source_families.py`** — single source
 of truth for source-family normalization on the Python side:
 
 - `YT_FAMILY` — the set of raw `source_type` values that are
@@ -98,14 +98,14 @@ Then wired into the 4 hot consumers:
 
 ## Files Created
 
-- `src/gapmap/sources/source_families.py`
+- `src/openreply/sources/source_families.py`
 - `changelogs/2026-05-28_12_youtube-subtypes-flow-into-corpus.md`
 
 ## Files Modified
 
-- `src/gapmap/research/sentiment_by_source.py` — 2 queries normalized.
-- `src/gapmap/research/corpus_format.py` — 3 new `_SOURCE_FORMATTERS` entries.
-- `src/gapmap/research/audience.py` — 1 query normalized.
+- `src/openreply/research/sentiment_by_source.py` — 2 queries normalized.
+- `src/openreply/research/corpus_format.py` — 3 new `_SOURCE_FORMATTERS` entries.
+- `src/openreply/research/audience.py` — 1 query normalized.
 - `app-tauri/src/lib/postLink.js` — exports `YT_FAMILY`,
   `youtubeSubtypeLabel`, `normalizedSource`.
 - `app-tauri/src/lib/postLink.test.mjs` — +3 test cases (37 → 40

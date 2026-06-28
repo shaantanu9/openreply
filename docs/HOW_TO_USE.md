@@ -1,6 +1,6 @@
-# How to use Gap Map
+# How to use OpenReply
 
-Gap Map turns raw chatter — Reddit threads, HN discussions, arXiv papers, App Store reviews, GitHub issues, PDFs you own — into a product build guide backed by direct citations. This doc walks through how each piece fits together so you know what to click, what to ingest, and what to trust in the output.
+OpenReply turns raw chatter — Reddit threads, HN discussions, arXiv papers, App Store reviews, GitHub issues, PDFs you own — into a product build guide backed by direct citations. This doc walks through how each piece fits together so you know what to click, what to ingest, and what to trust in the output.
 
 ## The pipeline in one picture
 
@@ -19,7 +19,7 @@ Gap Map turns raw chatter — Reddit threads, HN discussions, arXiv papers, App 
                     (research collect)    (graph enrich)      (Report tab)
 ```
 
-Everything is offline and local. Keys, DB, and generated HTML live under `~/.config/reddit-myind/` and `~/Library/Application Support/com.shantanu.gapmap/`.
+Everything is offline and local. Keys, DB, and generated HTML live under `~/.config/reddit-myind/` and `~/Library/Application Support/com.shantanu.openreply/`.
 
 ## Step 1 — Configure an LLM
 
@@ -122,8 +122,8 @@ Things to change between runs:
 | Thing | Location |
 |---|---|
 | API keys + env | `~/.config/reddit-myind/.env` (chmod 600, never uploaded) |
-| Corpus DB | `~/Library/Application Support/com.shantanu.gapmap/reddit.db` |
-| Gap Map HTML viewers | same dir as DB, per topic |
+| Corpus DB | `~/Library/Application Support/com.shantanu.openreply/reddit.db` |
+| OpenReply HTML viewers | same dir as DB, per topic |
 | Reports | generated on the fly, also saved next to the DB |
 
 ## Troubleshooting

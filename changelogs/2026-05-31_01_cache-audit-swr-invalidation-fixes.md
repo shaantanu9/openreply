@@ -34,11 +34,11 @@ wasn't wired to invalidate it.
 - **rusqlite connection cache** (`db.rs`) — READ_ONLY WAL + per-statement
   autocommit ⇒ every query gets a fresh read snapshot; the Python sidecar's
   committed writes are always visible. No staleness.
-- **topic.js tab snapshots** — `gapmap:changed` marks tabs dirty
+- **topic.js tab snapshots** — `openreply:changed` marks tabs dirty
   (`_dirtyTopicTabs`), which bypasses the persisted HTML snapshot on the next
   visit. Coherent.
 - **screenCache** — invalidated via the `tagsByKind` → `clearScreenCacheBy`
-  map on `gapmap:changed`; covers the screens that use it.
+  map on `openreply:changed`; covers the screens that use it.
 - All other persisted aggregates (`interview_summary`, `pmf_score`,
   `vw_aggregate`, `nps_score`, `maxdiff_ranking`, `pert_list`,
   `audience_personas_get`, `launch_brief_get`, `get_findings`,

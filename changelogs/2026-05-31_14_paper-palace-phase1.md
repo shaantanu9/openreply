@@ -20,8 +20,8 @@ Implemented Paper Palace Phase 1: an explicit academic-source guard at the embed
 
 ## Files Created
 
-- `src/gapmap/research/sources.py`
-- `src/gapmap/research/paper_relations.py`
+- `src/openreply/research/sources.py`
+- `src/openreply/research/paper_relations.py`
 - `tests/test_paper_sources.py`
 - `tests/test_paper_neighbors.py`
 - `tests/test_paper_relations.py`
@@ -29,10 +29,10 @@ Implemented Paper Palace Phase 1: an explicit academic-source guard at the embed
 
 ## Files Modified
 
-- `src/gapmap/research/paper_chunks.py` — academic-source guard in `chunk_paper`
-- `src/gapmap/retrieval/palace.py` — added `paper_neighbors` after `search_papers`
-- `src/gapmap/cli/main.py` — two new `research_app` commands after `paper-stats`
-- `src/gapmap/core/db.py` — `paper_gaps` table in `init_schema`
+- `src/openreply/research/paper_chunks.py` — academic-source guard in `chunk_paper`
+- `src/openreply/retrieval/palace.py` — added `paper_neighbors` after `search_papers`
+- `src/openreply/cli/main.py` — two new `research_app` commands after `paper-stats`
+- `src/openreply/core/db.py` — `paper_gaps` table in `init_schema`
 - `app-tauri/src-tauri/src/commands.rs` — `paper_neighbors` + `paper_relations_build` commands
 - `app-tauri/src-tauri/src/main.rs` — registered in `generate_handler![]`
 - `app-tauri/src/api.js` — `paperNeighbors` + `paperRelationsBuild`

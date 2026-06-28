@@ -15,7 +15,7 @@ The topic detail page was functionally complete but had several rough edges: `al
 - **Pagination.**
   - Evidence: findings cap in Rust raised from `LIMIT 20` to `LIMIT 100`. Frontend shows 20 per kind and renders a "Show N more" button that expands in pages of 20.
   - Sources: subreddit SQL raised from `LIMIT 12` to `LIMIT 60`. Frontend shows 12 and "Show more" reveals 12 at a time.
-- **Chat history persistence.** `chatHistory` Map now hydrates from `localStorage` per topic (`gapmap.chat.<topic>`, last 50 messages) and persists on every push. Reloading the app no longer wipes the conversation. Clear button also clears the stored copy.
+- **Chat history persistence.** `chatHistory` Map now hydrates from `localStorage` per topic (`openreply.chat.<topic>`, last 50 messages) and persists on every push. Reloading the app no longer wipes the conversation. Clear button also clears the stored copy.
 - **Chat empty state upgraded.** When no LLM is configured, the empty state now lists which providers DO have keys saved (if any) and shifts the CTA from "Add a key" to "Pick default" when the user already has keys but no default picked.
 - **Active LLM pill in header.** Small rounded pill next to the stats in the topic topbar shows `<provider> · <model>` (or "No LLM" when nothing is wired up). Click opens the BYOK modal; on close the pill repaints and the current tab refreshes if it was LLM-gated.
 

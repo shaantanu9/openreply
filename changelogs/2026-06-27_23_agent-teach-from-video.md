@@ -18,7 +18,7 @@ exposes it through the CLI, the Tauri command layer, and the UI.
 
 1. **Knowledge** screen → "Teach from a video" card → paste a YouTube URL →
    "Learn from video".
-2. `agent_teach_video` (Tauri) → `gapmap agent teach-video <url>` (CLI) →
+2. `agent_teach_video` (Tauri) → `openreply agent teach-video <url>` (CLI) →
    `reply.learn.teach_for_agent`.
 3. `teach_for_agent` resolves (or auto-provisions) the agent's learning persona,
    then calls `persona.teach.teach_from_video`:
@@ -47,8 +47,8 @@ Real run against a captioned TED talk on the test agent:
 
 ## Files Modified
 
-- `src/gapmap/reply/learn.py` — `teach_for_agent()` (best-effort, never raises)
-- `src/gapmap/cli/agent_cmds.py` — `agent teach-video <url>` command
+- `src/openreply/reply/learn.py` — `teach_for_agent()` (best-effort, never raises)
+- `src/openreply/cli/agent_cmds.py` — `agent teach-video <url>` command
 - `app-tauri/src-tauri/src/commands.rs` — `agent_teach_video` Tauri command
 - `app-tauri/src-tauri/src/main.rs` — command registration
 - `app-tauri/src/or/api.js` — `agentTeachVideo` wrapper

@@ -15,8 +15,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { username } = await params;
   return {
-    title: `@${username} — Gap Map`,
-    description: `Public research profile of @${username} on Gap Map.`,
+    title: `@${username} — OpenReply`,
+    description: `Public research profile of @${username} on OpenReply.`,
   };
 }
 

@@ -11,7 +11,7 @@ in BETA.md.
 Starting with macOS 26.x (Tahoe), Apple enforces strict code-signing on binaries
 *inside* DMGs. Symptoms when this isn't in place:
 
-- Recipients drag `Gap Map.app` from the DMG mount to `/Applications` — Finder
+- Recipients drag `OpenReply.app` from the DMG mount to `/Applications` — Finder
   reports "Operation can't be completed (101000)" OR silently produces an .app
   with 0-byte / truncated inner binaries.
 - `cp -R` from the DMG fails with `fcopyfile failed: Unknown error: 1000`
@@ -70,7 +70,7 @@ Notarization requires an Apple ID + an app-specific password (not your iCloud pa
 
 1. Go to https://appleid.apple.com/account/manage
 2. Sign-In and Security → App-Specific Passwords → **Generate Password**
-3. Name it `Gap Map notarytool`
+3. Name it `OpenReply notarytool`
 4. Copy the password (format `xxxx-xxxx-xxxx-xxxx`) — Apple shows it once.
 
 Save in `.env.publish` (gitignored):
@@ -99,7 +99,7 @@ Developer ID instead of ad-hoc. Tauri then:
 4. Staples the notarization ticket to the DMG once Apple approves (~2-10 min)
 
 Output: a notarized DMG at
-`app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Gap Map_0.1.0_aarch64.dmg`
+`app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/OpenReply_0.1.0_aarch64.dmg`
 that opens cleanly on every Mac — no Gatekeeper warnings, no quarantine issues,
 drag-to-/Applications just works.
 
@@ -109,21 +109,21 @@ drag-to-/Applications just works.
 
 ```bash
 # Check Developer ID is on the .app
-codesign -dvv "/Volumes/Gap Map/Gap Map.app"
+codesign -dvv "/Volumes/OpenReply/OpenReply.app"
 # Expected: "Authority=Developer ID Application: Shantanu Bombatkar (263A33H6P5)"
 
 # Check Gatekeeper accepts it
-spctl -a -vvv "/Volumes/Gap Map/Gap Map.app"
+spctl -a -vvv "/Volumes/OpenReply/OpenReply.app"
 # Expected: "accepted source=Notarized Developer ID"
 
 # Check the inner sidecar inherits the signature
-codesign -dvv "/Volumes/Gap Map/Gap Map.app/Contents/MacOS/gapmap-cli"
+codesign -dvv "/Volumes/OpenReply/OpenReply.app/Contents/MacOS/openreply-cli"
 # Expected: same Developer ID authority
 
 # Confirm a Finder drag-install works (on macOS 26.5+)
 hdiutil attach Gap*.dmg -nobrowse
-cp -R "/Volumes/Gap Map/Gap Map.app" /Applications/
-ls -la "/Applications/Gap Map.app/Contents/MacOS/"
+cp -R "/Volumes/OpenReply/OpenReply.app" /Applications/
+ls -la "/Applications/OpenReply.app/Contents/MacOS/"
 # Expected: all binaries copy with their real sizes (no 0-byte files)
 ```
 
@@ -173,4 +173,4 @@ ad-hoc-signed .app. Faster than getting Developer ID set up.
 
 For public launch (Product Hunt, Hacker News, etc.) — Developer ID + notarization
 is **non-negotiable** on macOS 26.5+. Without it, the majority of users will
-hit "Apple cannot verify Gap Map is free of malware" and abandon the install.
+hit "Apple cannot verify OpenReply is free of malware" and abandon the install.

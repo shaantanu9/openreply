@@ -17,7 +17,7 @@ offline/unreachable server never blocks a working build.
    - `MIN_APP_VERSION` — installs below this are force-updated (hard gate)
    - `LATEST_APP_VERSION` — newest available (soft "update available" nudge)
    - `APP_DOWNLOAD_URL` — where the update screen sends the user
-   (defaults to NEXT_PUBLIC_APP_DOWNLOAD_URL → https://gapmap.myind.ai/download)
+   (defaults to NEXT_PUBLIC_APP_DOWNLOAD_URL → https://openreply.myind.ai/download)
 2. **Desktop** `check_app_version(api_base)` (Rust) GETs `/v1/health`, compares
    the built `CARGO_PKG_VERSION` to min/latest via a dotted `version_lt`
    helper, and returns `{update_required, update_available, download_url, …}`.
@@ -32,7 +32,7 @@ offline/unreachable server never blocks a working build.
 Dormant until the server is deployed with the new health fields AND
 `MIN_APP_VERSION` is set in Vercel. Until then `check_app_version` sees no min
 version → no gating. To force a release: set `MIN_APP_VERSION` (and optionally
-`LATEST_APP_VERSION`) on gapmap-web → outdated apps gate on next boot / within 6h.
+`LATEST_APP_VERSION`) on openreply-web → outdated apps gate on next boot / within 6h.
 
 ## Verification
 - `tsc --noEmit` clean · `npm test` 50/50 · `npm run build` OK · `cargo check` 0 errors.

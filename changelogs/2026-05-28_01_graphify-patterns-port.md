@@ -1,4 +1,4 @@
-# Port graphify patterns into gapmap-graph (additive)
+# Port graphify patterns into openreply-graph (additive)
 
 **Date:** 2026-05-28
 **Type:** Feature + Infrastructure
@@ -7,7 +7,7 @@
 
 Ported the high-value patterns from the external `graphify` tool
 (`/Users/shantanubombatkar/Documents/GitHub/graphify`) into our own
-`src/gapmap/graph/` builder without removing or replacing anything.
+`src/openreply/graph/` builder without removing or replacing anything.
 
 The goal: better connections, better conclusions, better UI — produced by
 adding new artifacts (community labels, edge provenance, markdown audit,
@@ -98,7 +98,7 @@ renders all eight sections; D3 viewer shows new lens controls.
 - Best-effort: a backup failure prints a warning but doesn't abort the
   destructive operation the user explicitly requested.
 
-### CLI commands added under `gapmap research graph`
+### CLI commands added under `openreply research graph`
 - `communities` — Leiden detection + persist community_id
 - `report` — emit GRAPH_REPORT.md for a topic
 - `insights` — JSON dump of `--section all|surprising|gaps|bridges|god`
@@ -115,25 +115,25 @@ renders all eight sections; D3 viewer shows new lens controls.
 
 ## Files Created
 
-- `src/gapmap/graph/communities.py`
-- `src/gapmap/graph/insights.py`
-- `src/gapmap/graph/report.py`
-- `src/gapmap/graph/cost.py`
+- `src/openreply/graph/communities.py`
+- `src/openreply/graph/insights.py`
+- `src/openreply/graph/report.py`
+- `src/openreply/graph/cost.py`
 - `changelogs/2026-05-28_01_graphify-patterns-port.md`
 
 ## Files Modified
 
-- `src/gapmap/graph/__init__.py` — export 11 new symbols (no removals)
-- `src/gapmap/graph/schema.py` — NFKC normalization in `make_node_id`
-- `src/gapmap/graph/build.py` — `confidence` kwarg + `_BATCH.default_confidence`
-- `src/gapmap/graph/semantic.py` — wrap `upsert_semantic` /
+- `src/openreply/graph/__init__.py` — export 11 new symbols (no removals)
+- `src/openreply/graph/schema.py` — NFKC normalization in `make_node_id`
+- `src/openreply/graph/build.py` — `confidence` kwarg + `_BATCH.default_confidence`
+- `src/openreply/graph/semantic.py` — wrap `upsert_semantic` /
   `backfill_source_evidence` with `default_confidence="INFERRED"`; hook
   cost logger after `enrich_from_llm` success
-- `src/gapmap/graph/relations.py` — tag `relates_to`, `potentially_solves`,
+- `src/openreply/graph/relations.py` — tag `relates_to`, `potentially_solves`,
   `could_address`, `co_evidenced` with explicit confidence
-- `src/gapmap/graph/export.py` — emit link metadata + confidence /
+- `src/openreply/graph/export.py` — emit link metadata + confidence /
   community counts in meta; add lens controls + CSS + JS to HTML viewer
-- `src/gapmap/cli/main.py` — register `communities`, `report`, `insights`,
+- `src/openreply/cli/main.py` — register `communities`, `report`, `insights`,
   `cost`, `backfill-confidence` subcommands; add `_snapshot_topic_graph`
   helper + `--backup/--no-backup` flag to `repair-topic-graph`
 
@@ -141,23 +141,23 @@ renders all eight sections; D3 viewer shows new lens controls.
 
 ```bash
 # 1. One-shot: tag every existing edge with confidence
-gapmap research graph backfill-confidence --topic "<your topic>"
+openreply research graph backfill-confidence --topic "<your topic>"
 
 # 2. Compute communities (required for the surprising-connections lens
 #    and the Communities section in the report)
-gapmap research graph communities --topic "<your topic>"
+openreply research graph communities --topic "<your topic>"
 
 # 3. Render the markdown audit
-gapmap research graph report --topic "<your topic>"
+openreply research graph report --topic "<your topic>"
 # → graphify-out/GRAPH_REPORT_<slug>.md
 
 # 4. Inspect insights as JSON
-gapmap research graph insights --topic "<your topic>" --section all --limit 10
+openreply research graph insights --topic "<your topic>" --section all --limit 10
 
 # 5. Cost summary
-gapmap research graph cost --topic "<your topic>"
+openreply research graph cost --topic "<your topic>"
 
 # 6. Re-export the HTML viewer to pick up community color + new lenses
-gapmap research graph export --topic "<your topic>" --format html
+openreply research graph export --topic "<your topic>" --format html
 # → open the file; click ⚡ Surprising / 🕳 Gaps / 🌉 Bridges / 🎨 Communities
 ```

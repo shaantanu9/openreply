@@ -51,19 +51,19 @@ paper chat + relations:
 
 ## Surfaces
 
-- CLI: `gapmap research paper-enrich-abstracts [--topic …]`,
-  `gapmap research paper-citations [--topic …] [--limit N]`.
-- MCP: `gapmap_paper_enrich_abstracts`, `gapmap_paper_citations`.
+- CLI: `openreply research paper-enrich-abstracts [--topic …]`,
+  `openreply research paper-citations [--topic …] [--limit N]`.
+- MCP: `openreply_paper_enrich_abstracts`, `openreply_paper_citations`.
 
 ## Files Created
 
-- `src/gapmap/research/paper_abstract_enrich.py`
-- `src/gapmap/research/paper_citations.py`
+- `src/openreply/research/paper_abstract_enrich.py`
+- `src/openreply/research/paper_citations.py`
 
 ## Files Modified
 
-- `src/gapmap/sources/pubmed.py` — `fetch_abstract`.
-- `src/gapmap/sources/openalex.py` — `fetch_work_abstract`, `fetch_work_abstract_by_doi`.
-- `src/gapmap/sources/semantic_scholar.py` — `fetch_abstract`, `fetch_reference_ids` (+ `time` import, 429 backoff).
-- `src/gapmap/cli/main.py` — `paper-enrich-abstracts`, `paper-citations` commands.
-- `src/gapmap/mcp/server.py` — `gapmap_paper_enrich_abstracts`, `gapmap_paper_citations` tools.
+- `src/openreply/sources/pubmed.py` — `fetch_abstract`.
+- `src/openreply/sources/openalex.py` — `fetch_work_abstract`, `fetch_work_abstract_by_doi`.
+- `src/openreply/sources/semantic_scholar.py` — `fetch_abstract`, `fetch_reference_ids` (+ `time` import, 429 backoff).
+- `src/openreply/cli/main.py` — `paper-enrich-abstracts`, `paper-citations` commands.
+- `src/openreply/mcp/server.py` — `openreply_paper_enrich_abstracts`, `openreply_paper_citations` tools.

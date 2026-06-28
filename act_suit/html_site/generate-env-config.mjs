@@ -10,7 +10,7 @@
  *
  * Merge order:
  *   1) .env.example
- *   2) .env (local, gitignored) — skipped if GAPMAP_ENV_SAMPLE_ONLY=1
+ *   2) .env (local, gitignored) — skipped if OPENREPLY_ENV_SAMPLE_ONLY=1
  *   3) process.env for each PUBLIC_ENV_KEY (Vercel / CI) — wins over files
  *
  * On Vercel: set only the names in PUBLIC_ENV_KEYS in Project → Environment Variables
@@ -86,8 +86,8 @@ function readFileOptional(p) {
 
 const base = parseEnv(readFileOptional(EXAMPLE));
 const sampleOnly =
-  process.env.GAPMAP_ENV_SAMPLE_ONLY === "1" ||
-  process.env.GAPMAP_ENV_SAMPLE_ONLY === "true";
+  process.env.OPENREPLY_ENV_SAMPLE_ONLY === "1" ||
+  process.env.OPENREPLY_ENV_SAMPLE_ONLY === "true";
 const useLocal = !sampleOnly;
 const local = useLocal ? parseEnv(readFileOptional(DOTENV)) : {};
 const merged = { ...base, ...local };
@@ -129,7 +129,7 @@ if (useLocal && !fs.existsSync(DOTENV)) {
 }
 if (sampleOnly) {
   console.warn(
-    "generate-env-config: GAPMAP_ENV_SAMPLE_ONLY=1 — not reading .env or deploy env; using .env.example only (for safe committed defaults / CI)."
+    "generate-env-config: OPENREPLY_ENV_SAMPLE_ONLY=1 — not reading .env or deploy env; using .env.example only (for safe committed defaults / CI)."
   );
 }
 
@@ -138,7 +138,7 @@ const body = `/**
  * Source: .env + .env.example, overridden by process.env (e.g. Vercel) for PUBLIC keys. Re-run: npm run build
  * Public client config only (see PUBLIC_ENV_KEYS in generate-env-config.mjs). This file is loaded in the browser.
  */
-window.GAPMAP_ENV = {
+window.OPENREPLY_ENV = {
   SUPABASE_URL: ${JSON.stringify(env.SUPABASE_URL)},
   SUPABASE_ANON_KEY: ${JSON.stringify(env.SUPABASE_ANON_KEY)},
   LICENSE_API_BASE: ${JSON.stringify(env.LICENSE_API_BASE)},

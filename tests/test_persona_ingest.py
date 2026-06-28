@@ -21,15 +21,15 @@ class _FakeProvider:
 
 
 def test_ingest_persona_batches_posts_into_one_call(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("PERSONA_INGEST_BATCH_SIZE", "8")
 
-    from gapmap.core.db import get_db
+    from openreply.core.db import get_db
 
     get_db.cache_clear()
     db = get_db()
 
-    from gapmap.persona.store import create_persona
+    from openreply.persona.store import create_persona
 
     res = create_persona("Tester", "learn things", "stress")
     assert res.get("ok"), res
@@ -58,13 +58,13 @@ def test_ingest_persona_batches_posts_into_one_call(tmp_path, monkeypatch):
     ])
     fake = _FakeProvider(payload)
 
-    import gapmap.analyze.providers.base as base
+    import openreply.analyze.providers.base as base
     monkeypatch.setattr(base, "get_provider", lambda *_a, **_k: fake)
     # Skip the chromadb edge-build step in the unit test.
-    import gapmap.persona.graph as pgraph
+    import openreply.persona.graph as pgraph
     monkeypatch.setattr(pgraph, "embed_and_link", lambda *a, **k: 0, raising=False)
 
-    from gapmap.persona.ingest import ingest_persona
+    from openreply.persona.ingest import ingest_persona
 
     events = list(ingest_persona(pid, limit=1000))
     memories = [e for e in events if e["event"] == "memory"]
@@ -83,15 +83,15 @@ def test_ingest_persona_batches_posts_into_one_call(tmp_path, monkeypatch):
 
 def test_ingest_persona_skips_irrelevant_in_batch(tmp_path, monkeypatch):
     """A post the model omits from the array is skipped, not stored."""
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("PERSONA_INGEST_BATCH_SIZE", "8")
 
-    from gapmap.core.db import get_db
+    from openreply.core.db import get_db
 
     get_db.cache_clear()
     db = get_db()
 
-    from gapmap.persona.store import create_persona
+    from openreply.persona.store import create_persona
 
     pid = create_persona("Tester2", "learn", "stress")["id"]
     db["posts"].insert_all(
@@ -112,12 +112,12 @@ def test_ingest_persona_skips_irrelevant_in_batch(tmp_path, monkeypatch):
          "importance": 0.5, "tags": [], "evolves_from": []},
     ])
     fake = _FakeProvider(payload)
-    import gapmap.analyze.providers.base as base
+    import openreply.analyze.providers.base as base
     monkeypatch.setattr(base, "get_provider", lambda *_a, **_k: fake)
-    import gapmap.persona.graph as pgraph
+    import openreply.persona.graph as pgraph
     monkeypatch.setattr(pgraph, "embed_and_link", lambda *a, **k: 0, raising=False)
 
-    from gapmap.persona.ingest import ingest_persona
+    from openreply.persona.ingest import ingest_persona
 
     events = list(ingest_persona(pid, limit=1000))
     memories = [e for e in events if e["event"] == "memory"]

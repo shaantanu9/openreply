@@ -1,13 +1,13 @@
-# Gap Map — End-to-End Flow Verification
+# OpenReply — End-to-End Flow Verification
 
 **Last verified:** 2026-05-25 by Claude (Opus 4.7)
-**Build under test:** `~/Desktop/Gap Map_0.1.0_aarch64.dmg` (159 MB, ad-hoc signed, arm64)
-**Branch:** `multi-source` · **Project:** Supabase `tjikcnsfaaqihgegecpi` · **Site:** https://gapmap.myind.ai
+**Build under test:** `~/Desktop/OpenReply_0.1.0_aarch64.dmg` (159 MB, ad-hoc signed, arm64)
+**Branch:** `multi-source` · **Project:** Supabase `tjikcnsfaaqihgegecpi` · **Site:** https://openreply.myind.ai
 
 This file is the live test record for the four moving parts that have to work
-together: the **Python package** (`gapmap`), the **CLI** (both as a venv install
+together: the **Python package** (`openreply`), the **CLI** (both as a venv install
 and as the bundled DMG sidecar), the **MCP server** (FastMCP over stdio), and
-the **public API** at gapmap.myind.ai. Re-run any of the commands below to
+the **public API** at openreply.myind.ai. Re-run any of the commands below to
 re-verify a layer in isolation.
 
 ```
@@ -15,12 +15,12 @@ re-verify a layer in isolation.
 │                                                                     │
 │   Desktop (Tauri)                                                   │
 │   ┌─────────────────┐         ┌──────────────────────────────┐      │
-│   │ Rust host       │ stdio   │ Python sidecar (gapmap-cli)  │      │
-│   │ (./gapmap)      │◀───────▶│ - CLI surface (typer)        │      │
+│   │ Rust host       │ stdio   │ Python sidecar (openreply-cli)  │      │
+│   │ (./openreply)      │◀───────▶│ - CLI surface (typer)        │      │
 │   └─────────────────┘         │ - MCP server (FastMCP)       │      │
 │           │ tauri::invoke     │ - 147 tools                  │      │
 │           ▼                   │ - reads/writes ~/Library/…/  │      │
-│   ┌─────────────────┐         │   gapmap.db (SQLite)         │      │
+│   ┌─────────────────┐         │   openreply.db (SQLite)         │      │
 │   │ JS frontend     │         └──────────────────────────────┘      │
 │   │ (Vite-bundled)  │                       │ HTTPS                 │
 │   └─────────────────┘                       ▼                       │
@@ -31,7 +31,7 @@ re-verify a layer in isolation.
 │                                   └──────────────────────┘          │
 │                                                                     │
 │                                                                     │
-│   Website (gapmap.myind.ai · gapmap_web repo · Vercel)              │
+│   Website (openreply.myind.ai · openreply_web repo · Vercel)              │
 │   ┌──────────────────────────────────────────────────────┐          │
 │   │ Next.js 16 + Supabase                                │          │
 │   │   /v1/health                                         │          │
@@ -59,18 +59,18 @@ uv pip install -e .
 **Tests + observed output:**
 
 ```bash
-.venv/bin/gapmap health --json
-# → {"ok":true, "data_dir":"~/Library/Application Support/com.shantanu.gapmap/gapmap",
-#    "db_path":".../gapmap.db",
+.venv/bin/openreply health --json
+# → {"ok":true, "data_dir":"~/Library/Application Support/com.shantanu.openreply/openreply",
+#    "db_path":".../openreply.db",
 #    "checks":[{id:"data_dir",ok:true},{id:"db",ok:true,detail:"57 tables..."},
 #              {id:"palace",ok:true,detail:"ONNX ready at ~/.cache/chroma/..."},
 #              {id:"llm",ok:false,level:"warn",detail:"No LLM provider..."},
 #              {id:"reddit",ok:false,level:"info"}]}
 
-.venv/bin/gapmap info --json
+.venv/bin/openreply info --json
 # → mode=public, posts=105709, graph_nodes=60865, topic_posts=46954
 
-.venv/bin/gapmap query "SELECT count(*) FROM posts" --json
+.venv/bin/openreply query "SELECT count(*) FROM posts" --json
 # → [{"count(*)": 105709}]
 ```
 
@@ -84,17 +84,17 @@ checks (`llm`, `reddit`) are non-blocking by design.
 
 **Path inside the .app:**
 ```
-/Applications/Gap Map.app/Contents/MacOS/gapmap-cli
+/Applications/OpenReply.app/Contents/MacOS/openreply-cli
                                            ↑ same binary the Tauri host shells out to
 ```
 
 Same Typer surface as the venv install. The DMG is shipped from
-`scripts/publish-mac.sh` which uses `gapmap-cli.spec` (PyInstaller).
+`scripts/publish-mac.sh` which uses `openreply-cli.spec` (PyInstaller).
 
 **Test commands (after mounting the DMG):**
 
 ```bash
-CLI="/Volumes/Gap Map/Gap Map.app/Contents/MacOS/gapmap-cli"
+CLI="/Volumes/OpenReply/OpenReply.app/Contents/MacOS/openreply-cli"
 "$CLI" health --json                          # → ok=true
 "$CLI" info --json | jq '.tables.posts'       # → 105709
 "$CLI" query "SELECT count(*) FROM posts" --json
@@ -105,21 +105,21 @@ CLI="/Volumes/Gap Map/Gap Map.app/Contents/MacOS/gapmap-cli"
 ```
 
 **Status:** ✅ Bundled sidecar fully working from inside the DMG. Reads/writes
-the same `~/Library/Application Support/com.shantanu.gapmap/gapmap/gapmap.db`
+the same `~/Library/Application Support/com.shantanu.openreply/openreply/openreply.db`
 as the venv install — single source of truth.
 
-### One-click `gapmap` in your terminal
+### One-click `openreply` in your terminal
 
 Settings → **Command line tool** → Install creates a symlink at
-`/usr/local/bin/gapmap → <Gap Map.app>/Contents/MacOS/gapmap-cli`. After that,
-`gapmap …` works from any terminal session.
+`/usr/local/bin/openreply → <OpenReply.app>/Contents/MacOS/openreply-cli`. After that,
+`openreply …` works from any terminal session.
 
 ---
 
 ## 3. MCP server — FastMCP over stdio
 
 The sidecar's `mcp serve` subcommand exposes 147 tools, all prefixed
-`gapmap_*`. Any MCP client (Claude Code, Claude Desktop, Cursor, Windsurf,
+`openreply_*`. Any MCP client (Claude Code, Claude Desktop, Cursor, Windsurf,
 Cline) can spawn it.
 
 **Protocol handshake test:**
@@ -129,7 +129,7 @@ Cline) can spawn it.
   echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
   echo '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
   sleep 3
-} | .venv/bin/gapmap mcp serve --transport stdio 2>/dev/null
+} | .venv/bin/openreply mcp serve --transport stdio 2>/dev/null
 ```
 
 **Observed responses:**
@@ -144,7 +144,7 @@ Cline) can spawn it.
     "tools":{"listChanged":true},
     "extensions":{"io.modelcontextprotocol/ui":{}}
   },
-  "serverInfo":{"name":"gapmap","version":"3.2.4"}
+  "serverInfo":{"name":"openreply","version":"3.2.4"}
 }}
 ```
 
@@ -153,33 +153,33 @@ In-process Python verification (faster than full protocol):
 ```bash
 .venv/bin/python -c "
 import asyncio
-from gapmap.mcp.server import mcp
+from openreply.mcp.server import mcp
 tools = asyncio.run(mcp.list_tools())
 print(f'total: {len(tools)}')
-print(f'all gapmap_ prefixed:', all(t.name.startswith('gapmap_') for t in tools))
+print(f'all openreply_ prefixed:', all(t.name.startswith('openreply_') for t in tools))
 print(f'first 5:', sorted(t.name for t in tools)[:5])
 "
 # → total: 147
-#   all gapmap_ prefixed: True
-#   first 5: ['gapmap_analyze_paper', 'gapmap_analyze_papers_bulk',
-#             'gapmap_audience_personas', 'gapmap_audience_personas_get',
-#             'gapmap_clean_corpus']
+#   all openreply_ prefixed: True
+#   first 5: ['openreply_analyze_paper', 'openreply_analyze_papers_bulk',
+#             'openreply_audience_personas', 'openreply_audience_personas_get',
+#             'openreply_clean_corpus']
 ```
 
-**Status:** ✅ Server identifies as `gapmap` v3.2.4. 147 `gapmap_*` tools registered
+**Status:** ✅ Server identifies as `openreply` v3.2.4. 147 `openreply_*` tools registered
 (verified in-process via `mcp.list_tools()`). Initialize handshake responds
 correctly over stdio.
 
-### Install Gap Map MCP into your client
+### Install OpenReply MCP into your client
 
-From any installed Gap Map.app:
+From any installed OpenReply.app:
 
 ```bash
-.venv/bin/gapmap mcp install --client claude-code     # ~/.claude.json
-.venv/bin/gapmap mcp install --client claude-desktop  # macOS Library config
-.venv/bin/gapmap mcp install --client cursor          # ~/.cursor/mcp.json
-.venv/bin/gapmap mcp install --client windsurf
-.venv/bin/gapmap mcp install --client cline
+.venv/bin/openreply mcp install --client claude-code     # ~/.claude.json
+.venv/bin/openreply mcp install --client claude-desktop  # macOS Library config
+.venv/bin/openreply mcp install --client cursor          # ~/.cursor/mcp.json
+.venv/bin/openreply mcp install --client windsurf
+.venv/bin/openreply mcp install --client cline
 ```
 
 The install command writes the entry with `--all-extras` (required — without
@@ -187,30 +187,30 @@ it, `uv run` strips `fastmcp` from the optional-deps extras group and the
 server crashes on import).
 
 After install: restart your MCP client → 147 tools appear under
-`mcp__gapmap__*`.
+`mcp__openreply__*`.
 
 ---
 
-## 4. Public website API — gapmap.myind.ai
+## 4. Public website API — openreply.myind.ai
 
-Deployed via Vercel from `shaantanu9/gapmap_web`. Two surfaces:
+Deployed via Vercel from `shaantanu9/openreply_web`. Two surfaces:
 unauthenticated diagnostics, and bearer-authenticated operations.
 
 ### 4.1 Unauthenticated probes
 
 ```bash
-curl -sS https://gapmap.myind.ai/v1/health
+curl -sS https://openreply.myind.ai/v1/health
 # → {"ok":true}  HTTP 200
 
 curl -sS -X POST -H "Content-Type: application/json" -d '{}' \
-  https://gapmap.myind.ai/v1/device/activate
+  https://openreply.myind.ai/v1/device/activate
 # → {"ok":false,"error":"missing required fields"}  HTTP 400
 #   (proves the endpoint mounted + validates input)
 
-curl -sSI https://gapmap.myind.ai/dashboard | head -1
+curl -sSI https://openreply.myind.ai/dashboard | head -1
 # → HTTP/2 200  (returns HTML — client-side auth check redirects unauth)
 
-curl -sSI https://gapmap.myind.ai/redeem | head -1
+curl -sSI https://openreply.myind.ai/redeem | head -1
 # → HTTP/2 200  (returns HTML — same pattern)
 ```
 
@@ -221,16 +221,16 @@ sub-second latencies.
 
 ```bash
 # Missing-bearer behavior — should be a clean 401, not a 500
-curl -sS https://gapmap.myind.ai/api/v1/licence/me
+curl -sS https://openreply.myind.ai/api/v1/licence/me
 # → {"ok":false,"error":"missing bearer token"}  HTTP 401
 
-curl -sS -X POST -H "Content-Type: application/json" -d '{"coupon_code":"GAPMAP-LAUNCH"}' \
-  https://gapmap.myind.ai/api/v1/coupon/redeem
+curl -sS -X POST -H "Content-Type: application/json" -d '{"coupon_code":"OPENREPLY-LAUNCH"}' \
+  https://openreply.myind.ai/api/v1/coupon/redeem
 # → {"ok":false,"error":"missing bearer token"}  HTTP 401
 ```
 
 To exercise the success paths you need a real Supabase access token. Easiest
-way: sign in at https://gapmap.myind.ai/sign-in, open DevTools → Application
+way: sign in at https://openreply.myind.ai/sign-in, open DevTools → Application
 → Local Storage → copy the `access_token` from the `sb-…-auth-token` entry.
 Then:
 
@@ -238,19 +238,19 @@ Then:
 TOKEN="<paste here>"
 
 # Returns the current licence + features
-curl -sS -H "Authorization: Bearer $TOKEN" https://gapmap.myind.ai/api/v1/licence/me \
+curl -sS -H "Authorization: Bearer $TOKEN" https://openreply.myind.ai/api/v1/licence/me \
   | jq '{ok, plan: .licence.plan_id, key: .licence.activation_key,
          devices: .licence.devices|length, max: .licence.max_devices}'
 
 # Redeem the seeded launch coupon — issues a fresh activation key
 curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"coupon_code":"GAPMAP-LAUNCH"}' \
-  https://gapmap.myind.ai/api/v1/coupon/redeem \
+  -d '{"coupon_code":"OPENREPLY-LAUNCH"}' \
+  https://openreply.myind.ai/api/v1/coupon/redeem \
   | jq '{ok, activation_key, plan_id, is_trial}'
 ```
 
 **Status:** ✅ All auth-gated endpoints reject unauthenticated traffic cleanly.
-Coupon `GAPMAP-LAUNCH` is seeded in Supabase with 100 redemptions, no expiry.
+Coupon `OPENREPLY-LAUNCH` is seeded in Supabase with 100 redemptions, no expiry.
 
 ---
 
@@ -258,10 +258,10 @@ Coupon `GAPMAP-LAUNCH` is seeded in Supabase with 100 redemptions, no expiry.
 
 | Cross-cut | Where it goes |
 |---|---|
-| **CLI ↔ DB** | Both venv `gapmap` and the bundled `gapmap-cli` use `gapmap.core.config._resolve_data_dir()` → `~/Library/Application Support/com.shantanu.gapmap/gapmap/gapmap.db`. Single SQLite file, both readers see identical state. |
-| **CLI ↔ MCP** | `gapmap mcp serve` is the SAME entrypoint module, just with `FastMCP` driving stdio I/O. Every MCP tool ultimately calls into `gapmap.research.*` / `gapmap.fetch.*` / etc. — no parallel implementations. |
-| **GUI ↔ CLI** | Tauri host (`gapmap` Rust binary) spawns `gapmap-cli` for every backend op via `tokio::process::Command`. `GAPMAP_DATA_DIR` env is passed in explicitly so the sidecar opens the same DB the GUI reads. |
-| **CLI ↔ Website** | When activation is required (gate ON), the Rust `license_activate` command POSTs to `gapmap.myind.ai/v1/device/activate`. JWT secret on both sides MUST match (`JWT_DESKTOP_SECRET` ↔ Vercel's `TOKEN_SIGNING_SECRET`). |
+| **CLI ↔ DB** | Both venv `openreply` and the bundled `openreply-cli` use `openreply.core.config._resolve_data_dir()` → `~/Library/Application Support/com.shantanu.openreply/openreply/openreply.db`. Single SQLite file, both readers see identical state. |
+| **CLI ↔ MCP** | `openreply mcp serve` is the SAME entrypoint module, just with `FastMCP` driving stdio I/O. Every MCP tool ultimately calls into `openreply.research.*` / `openreply.fetch.*` / etc. — no parallel implementations. |
+| **GUI ↔ CLI** | Tauri host (`openreply` Rust binary) spawns `openreply-cli` for every backend op via `tokio::process::Command`. `OPENREPLY_DATA_DIR` env is passed in explicitly so the sidecar opens the same DB the GUI reads. |
+| **CLI ↔ Website** | When activation is required (gate ON), the Rust `license_activate` command POSTs to `openreply.myind.ai/v1/device/activate`. JWT secret on both sides MUST match (`JWT_DESKTOP_SECRET` ↔ Vercel's `TOKEN_SIGNING_SECRET`). |
 | **Website ↔ Supabase** | All website endpoints (signup, trial start, coupon redeem, licence me) talk to Supabase project `tjikcnsfaaqihgegecpi`. Tables: `licenses`, `license_devices`, `coupons`, `coupon_redemptions`, `mcp_events`, …. |
 
 ---
@@ -270,7 +270,7 @@ Coupon `GAPMAP-LAUNCH` is seeded in Supabase with 100 redemptions, no expiry.
 
 | Limitation | Reason | Workaround |
 |---|---|---|
-| License gate is **OFF by default** (`GAPMAP_LICENSE_GATE_ENABLED` unset) | DMG distribution to friends doesn't need accounts | Flip to `true` when you start issuing paid keys |
+| License gate is **OFF by default** (`OPENREPLY_LICENSE_GATE_ENABLED` unset) | DMG distribution to friends doesn't need accounts | Flip to `true` when you start issuing paid keys |
 | `mailer_autoconfirm: true` on Supabase auth | Frictionless signup — no email verification today | Wire Resend SMTP + flip to `false` via the runbook in `docs/manual-todo/resend-setup.md` |
 | Bundled DMG is **ad-hoc signed** (not Developer-ID notarized) | Faster local builds | Run `scripts/publish-mac.sh --sign` with Apple env in `.env.publish` for notarized DMG |
 | First launch on Gatekeeper-protected Mac requires right-click → Open | Ad-hoc sig | One-time per recipient |
@@ -285,41 +285,41 @@ Coupon `GAPMAP-LAUNCH` is seeded in Supabase with 100 redemptions, no expiry.
 ```bash
 cd ~/Documents/GitHub/reddit-myind
 uv pip install -e .
-.venv/bin/gapmap health --json
-.venv/bin/gapmap info --json
-.venv/bin/gapmap research search-all --query "your topic"
+.venv/bin/openreply health --json
+.venv/bin/openreply info --json
+.venv/bin/openreply research search-all --query "your topic"
 ```
 
 ### Test the bundled DMG sidecar (without launching the GUI)
 
 ```bash
-hdiutil attach "$HOME/Desktop/Gap Map_0.1.0_aarch64.dmg" -nobrowse -quiet
-CLI="/Volumes/Gap Map/Gap Map.app/Contents/MacOS/gapmap-cli"
+hdiutil attach "$HOME/Desktop/OpenReply_0.1.0_aarch64.dmg" -nobrowse -quiet
+CLI="/Volumes/OpenReply/OpenReply.app/Contents/MacOS/openreply-cli"
 "$CLI" health --json
 "$CLI" info --json
-hdiutil detach "/Volumes/Gap Map" -quiet
+hdiutil detach "/Volumes/OpenReply" -quiet
 ```
 
 ### Test the MCP server end-to-end against Claude Code
 
 ```bash
-.venv/bin/gapmap mcp install --client claude-code
-# → writes ~/.claude.json with the gapmap entry
+.venv/bin/openreply mcp install --client claude-code
+# → writes ~/.claude.json with the openreply entry
 # Restart Claude Code → check the /mcp panel → 147 tools live
 ```
 
 ### Test the production website API
 
 ```bash
-curl https://gapmap.myind.ai/v1/health        # → {"ok":true}
+curl https://openreply.myind.ai/v1/health        # → {"ok":true}
 # All other endpoints: see Section 4 above
 ```
 
 ### Launch the full GUI
 
 ```bash
-open "$HOME/Desktop/Gap Map_0.1.0_aarch64.dmg"  # mounts in Finder
-# Drag Gap Map.app to /Applications
+open "$HOME/Desktop/OpenReply_0.1.0_aarch64.dmg"  # mounts in Finder
+# Drag OpenReply.app to /Applications
 # Right-click → Open the first time (Gatekeeper)
 ```
 
@@ -331,8 +331,8 @@ open "$HOME/Desktop/Gap Map_0.1.0_aarch64.dmg"  # mounts in Finder
 |---|---|---|
 | Python CLI (venv) | health, info, query | ✅ |
 | Python CLI (bundled) | health, info, query, search-all | ✅ |
-| MCP server | initialize handshake | ✅ (`{name: "gapmap", v: "3.2.4"}`) |
-| MCP tool registry | list_tools, prefix audit | ✅ (147 tools, all `gapmap_*`) |
+| MCP server | initialize handshake | ✅ (`{name: "openreply", v: "3.2.4"}`) |
+| MCP tool registry | list_tools, prefix audit | ✅ (147 tools, all `openreply_*`) |
 | Website /v1/health | unauth GET | ✅ (200, `{"ok":true}`) |
 | Website /v1/device/activate | empty POST | ✅ (400, `"missing required fields"`) |
 | Website /api/v1/licence/me | unauth GET | ✅ (401, `"missing bearer token"`) |
@@ -340,8 +340,8 @@ open "$HOME/Desktop/Gap Map_0.1.0_aarch64.dmg"  # mounts in Finder
 | Website /dashboard | unauth GET | ✅ (200 HTML, 11k bytes) |
 | Website /redeem | unauth GET | ✅ (200 HTML, 10k bytes) |
 | Supabase migrations | tables + redeem_coupon() | ✅ (applied via Management API) |
-| Seeded coupon | `GAPMAP-LAUNCH` | ✅ (100 redemptions, no expiry) |
-| GUI from DMG | process spawn + Home loaded | ✅ (saw `gapmap`, `gapmap-cli enrich-worker --serve`, `product-list` calls in `ps aux`) |
+| Seeded coupon | `OPENREPLY-LAUNCH` | ✅ (100 redemptions, no expiry) |
+| GUI from DMG | process spawn + Home loaded | ✅ (saw `openreply`, `openreply-cli enrich-worker --serve`, `product-list` calls in `ps aux`) |
 
 ---
 

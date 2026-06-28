@@ -1,8 +1,8 @@
-# Spec — Porting miroclaw_jyotish's Prediction & Persona Cores into Gap Map
+# Spec — Porting miroclaw_jyotish's Prediction & Persona Cores into OpenReply
 
 > **Date:** 2026-06-07 · **Status:** Draft for review (no code written yet)
 > **Source repo:** `~/Documents/miro_jyotish/miroclaw_jyotish` (its `docs/guides/PORTING_GUIDE.md` is the upstream porting contract)
-> **Target:** `reddit-myind` (Gap Map) — Tauri 2 + Python (PyInstaller) sidecar
+> **Target:** `reddit-myind` (OpenReply) — Tauri 2 + Python (PyInstaller) sidecar
 > **Forecast target chosen:** *painpoint / gap salience growth*
 > **Scope chosen:** P1 (prediction engine) + P2 (OASIS persona sim) + P3 (strategy ensemble)
 
@@ -10,15 +10,15 @@
 
 ## 0. Executive summary & honest framing
 
-miroclaw exposes three portable units. Re-checked against Gap Map's existing code, the value is **very uneven** — this spec keeps all three in scope (as requested) but sequences them by real marginal value:
+miroclaw exposes three portable units. Re-checked against OpenReply's existing code, the value is **very uneven** — this spec keeps all three in scope (as requested) but sequences them by real marginal value:
 
-| Unit | Marginal value to Gap Map | Verdict |
+| Unit | Marginal value to OpenReply | Verdict |
 |---|---|---|
-| **P1 — prediction engine** | **High — net-new.** Gap Map has no forecasting/scoring/self-evolution. This turns "describe the present" into "forecast which gaps grow, with measured accuracy." | **Build (priority).** |
+| **P1 — prediction engine** | **High — net-new.** OpenReply has no forecasting/scoring/self-evolution. This turns "describe the present" into "forecast which gaps grow, with measured accuracy." | **Build (priority).** |
 | **P3 — strategy ensemble** | **Low — mostly redundant.** `research/deliberate.py` is the *same autoresearch lineage* (5-persona consensus + audience votes). | **Extend deliberate.py, do not duplicate.** |
 | **P2 — OASIS persona sim** | **Medium but heavy.** Net-new "population reacts" depth, but CAMEL-AI + Neo4j + subprocess is a real sidecar/packaging risk. | **Build last, behind a feature flag, optional dep — never bundled into the default DMG.** |
 
-**Architectural note:** miroclaw is *downstream* of Gap Map (it consumes `gapmap search` / `audience_personas` / `find_gaps`). So nothing is imported "from that repo as a dependency." We **re-implement the domain-agnostic cores** (the porting guide is written for exactly this) against Gap Map's own corpus + LLM seam.
+**Architectural note:** miroclaw is *downstream* of OpenReply (it consumes `openreply search` / `audience_personas` / `find_gaps`). So nothing is imported "from that repo as a dependency." We **re-implement the domain-agnostic cores** (the porting guide is written for exactly this) against OpenReply's own corpus + LLM seam.
 
 **Zero new heavy deps for P1/P3.** P2 alone adds optional deps, isolated behind a contract.
 
@@ -26,7 +26,7 @@ miroclaw exposes three portable units. Re-checked against Gap Map's existing cod
 
 ## 1. The shared seam (already satisfied)
 
-The porting guide's one hard requirement is an LLM client exposing `chat` / `chat_json`. Gap Map already has the equivalent:
+The porting guide's one hard requirement is an LLM client exposing `chat` / `chat_json`. OpenReply already has the equivalent:
 
 - `research/strategy_common.py::run_llm_json(...)` — provider resolution + tolerant JSON parse, returns `None` when no key (degrade, never raise).
 - `core/client.py` + `complete()` — the chat primitive.
@@ -47,7 +47,7 @@ Then **self-score** against ground truth once the window elapses, and **self-evo
 
 ### 2.2 Module layout (new package)
 ```
-src/gapmap/research/forecast/
+src/openreply/research/forecast/
   __init__.py
   llm_seam.py            # chat / chat_json adapter over strategy_common + client
   scorer.py              # ← PORT ~VERBATIM from miroclaw evolution/scorer.py (crown jewel)
@@ -64,7 +64,7 @@ src/gapmap/research/forecast/
 ### 2.3 The three domain seams to write (everything else ports unchanged)
 
 **(a) `historical_collector.collect_for_window(topic, as_of_date, config) -> dict`**
-- Reuse the existing temporal-split machinery (`gapmap_corpus_temporal_split`, already wired in `mcp/server.py`) to return **only posts dated before `as_of_date`** — no look-ahead.
+- Reuse the existing temporal-split machinery (`openreply_corpus_temporal_split`, already wired in `mcp/server.py`) to return **only posts dated before `as_of_date`** — no look-ahead.
 - `build_seed_document()` → markdown brief the LLM reads: top painpoints, mention counts, sentiment, source mix, recent deltas. Reuse evidence bundling from `strategy_common.topic_context`.
 - **Cache** the slice to disk keyed by `(topic, as_of_date, config_hash)`.
 
@@ -79,7 +79,7 @@ src/gapmap/research/forecast/
 - Swap only: metric names (`sensex_close` → `mention_volume`, `gdp_growth_pct` → `salience_growth_pct`), the `DIRECTIONS:` vocab, and the event vocabulary.
 
 ### 2.4 Config & evolution (`mutator.py` + `engine.py`)
-- `ForecastConfig` dataclass fields = **signal weights** Gap Map already computes: e.g. `mention_velocity_w`, `sentiment_slope_w`, `cross_source_breadth_w`, `competitor_activity_w`, `recency_halflife_days`, `engagement_w`, plus `use_quick_sim`.
+- `ForecastConfig` dataclass fields = **signal weights** OpenReply already computes: e.g. `mention_velocity_w`, `sentiment_slope_w`, `cross_source_breadth_w`, `competitor_activity_w`, `recency_halflife_days`, `engagement_w`, plus `use_quick_sim`.
 - `_PARAM_RANGES` per field for the LLM mutation proposer.
 - `engine.py` walk-forward windows (analog of miroclaw's 1986-2005 / 2006-2025 / live):
   - **TRAIN:** oldest N% of corpus history → learn best config (quick sim).
@@ -98,7 +98,7 @@ Write plain files under the app data dir (reuse `core/config.py` upload/data fol
 
 ### 2.6 Surface
 - **MCP tools** (`mcp/tools/forecast_tools.py`, sub-server pattern like `persona_tools.py`):
-  `gapmap_forecast_create`, `_start` (phase: train/validate/live/all), `_status`, `_best`, `_prediction`, `_ledger`, `_list`, `_delete`.
+  `openreply_forecast_create`, `_start` (phase: train/validate/live/all), `_status`, `_best`, `_prediction`, `_ledger`, `_list`, `_delete`.
 - **CLI:** `cli/forecast_cmds.py` mirroring the MCP surface.
 - **Research Mode panel:** a "Forecast" card in the existing Gather→Read→Synthesize→**Write** flow showing predicted gap growth + the honest accuracy ceiling.
 
@@ -117,7 +117,7 @@ Scorer port + tests (1–2d) → quick-mode predictor + seams (2–3d) → evolu
 
 ## 3. P3 — Strategy Ensemble (extend, don't duplicate)
 
-Gap Map already has `research/deliberate.py` (Synthesizer/Skeptic/Quantifier/Risk-Officer/Devil's-Advocate + audience-cluster votes → Confirmed/Probable/Minority/Discarded). miroclaw's P3 adds two ideas worth grafting on **without** a new module:
+OpenReply already has `research/deliberate.py` (Synthesizer/Skeptic/Quantifier/Risk-Officer/Devil's-Advocate + audience-cluster votes → Confirmed/Probable/Minority/Discarded). miroclaw's P3 adds two ideas worth grafting on **without** a new module:
 
 1. **Per-persona prior `weight` + `confidence_range`**, and a **weighted conclusion = argmax Σ(weight × confidence)** per option.
 2. **Pairwise-agreement graph** (edge when two personas agree on ≥K questions) to surface camps/dissenters explicitly.
@@ -138,7 +138,7 @@ This lets us swap OASIS for any agent framework by reimplementing only `scripts/
 
 ### 4.2 Module layout
 ```
-src/gapmap/research/sim/
+src/openreply/research/sim/
   entity_source.py          # corpus authors / audience clusters → EntityNode (flat JSON; storage=None, NO Neo4j)
   profile_generator.py      # ← PORT oasis_profile_generator.py; KEEP English-mandate; storage=None path
   sim_config_generator.py   # personas → time/event/agent config
@@ -148,7 +148,7 @@ src/gapmap/research/sim/
 scripts/
   run_reddit_simulation.py  # the ONLY place OASIS is imported
 ```
-Reuse **`audience.py` clusters** as the entity source — Gap Map's personas are *real corpus authors*, a strictly better seed than synthetic entities.
+Reuse **`audience.py` clusters** as the entity source — OpenReply's personas are *real corpus authors*, a strictly better seed than synthetic entities.
 
 ### 4.3 Packaging / sidecar rules (critical — per project CLAUDE.md & tauri skills)
 - OASIS deps (`camel-oasis==0.2.5`, `camel-ai==0.2.78`, optional `neo4j>=5.15`) go in an **optional extra** (`[project.optional-dependencies] sim = [...]`), **excluded from the PyInstaller spec** used for the shipped DMG.

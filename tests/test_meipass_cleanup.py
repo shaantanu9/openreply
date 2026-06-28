@@ -10,7 +10,7 @@ import os
 import sys
 import time
 
-from gapmap.core.meipass_cleanup import (
+from openreply.core.meipass_cleanup import (
     select_removable_meipass,
     sweep_orphaned_meipass,
     start_background_sweep,
@@ -112,12 +112,12 @@ def test_sweep_is_noop_outside_frozen_build():
 
 def test_background_sweep_noop_outside_frozen_build():
     # Must return immediately and spawn no thread when not frozen.
-    before = _gapmap_sweep_threads()
+    before = _openreply_sweep_threads()
     start_background_sweep()
     time.sleep(0.05)
-    assert _gapmap_sweep_threads() == before
+    assert _openreply_sweep_threads() == before
 
 
-def _gapmap_sweep_threads():
+def _openreply_sweep_threads():
     import threading
     return [t for t in threading.enumerate() if t.name == "meipass-sweep"]

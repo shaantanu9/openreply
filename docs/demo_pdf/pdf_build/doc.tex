@@ -147,10 +147,10 @@
 \fancyhead[L]{\small\color{lightgray}\sffamily Home-Improvement Lending Marketplace}
 \fancyhead[R]{\small\color{lightgray}\sffamily Deep-Dive Research}
 
-% Footer: small "gapmap.myind.ai" in left corner, page number center, brand right
-\fancyfoot[L]{\footnotesize\sffamily\color{accentlight}\href{http://gapmap.myind.ai}{gapmap.myind.ai}}
+% Footer: small "openreply.myind.ai" in left corner, page number center, brand right
+\fancyfoot[L]{\footnotesize\sffamily\color{accentlight}\href{http://openreply.myind.ai}{openreply.myind.ai}}
 \fancyfoot[C]{\small\color{lightgray}\sffamily \thepage}
-\fancyfoot[R]{\footnotesize\sffamily\color{lightgray}gapmap}
+\fancyfoot[R]{\footnotesize\sffamily\color{lightgray}openreply}
 
 \hypersetup{
   colorlinks=true,
@@ -3314,24 +3314,24 @@ evolves}\label{re-running-the-research-as-the-product-evolves}}
 \begin{Shaded}
 \begin{Highlighting}[]
 \CommentTok{\# Monthly: re{-}collect to catch new entrants + new pain patterns}
-\ExtensionTok{uv}\NormalTok{ run gapmap research collect }\KeywordTok{\textbackslash{}}
+\ExtensionTok{uv}\NormalTok{ run openreply research collect }\KeywordTok{\textbackslash{}}
   \ExtensionTok{{-}t} \StringTok{"US Canada roofing contractor homeowner lending marketplace"} \KeywordTok{\textbackslash{}}
   \ExtensionTok{{-}{-}aggressive}\NormalTok{ {-}{-}skip{-}extraction}
 
 \CommentTok{\# After collect: refresh painpoint extraction}
-\ExtensionTok{uv}\NormalTok{ run gapmap research gaps }\KeywordTok{\textbackslash{}}
+\ExtensionTok{uv}\NormalTok{ run openreply research gaps }\KeywordTok{\textbackslash{}}
   \ExtensionTok{{-}t} \StringTok{"US Canada roofing contractor homeowner lending marketplace"} \KeywordTok{\textbackslash{}}
   \ExtensionTok{{-}n}\NormalTok{ 300 {-}{-}json }\OperatorTok{\textgreater{}}\NormalTok{ docs/research/painpoints{-}}\VariableTok{$(}\FunctionTok{date}\NormalTok{ +\%Y\%m\%d}\VariableTok{)}\NormalTok{.json}
 
 \CommentTok{\# Re{-}pull all 1★ Hearth reviews (the direct competitor)}
-\ExtensionTok{uv}\NormalTok{ run gapmap query }\StringTok{"SELECT id, score, title, substr(selftext,1,500) FROM posts WHERE sub=\textquotesingle{}appstore:Hearth for Contractors\textquotesingle{} AND score=1 ORDER BY id DESC LIMIT 100"}
+\ExtensionTok{uv}\NormalTok{ run openreply query }\StringTok{"SELECT id, score, title, substr(selftext,1,500) FROM posts WHERE sub=\textquotesingle{}appstore:Hearth for Contractors\textquotesingle{} AND score=1 ORDER BY id DESC LIMIT 100"}
 
 \CommentTok{\# What changed in the last 14 days}
-\ExtensionTok{uv}\NormalTok{ run gapmap research diff }\KeywordTok{\textbackslash{}}
+\ExtensionTok{uv}\NormalTok{ run openreply research diff }\KeywordTok{\textbackslash{}}
   \ExtensionTok{{-}t} \StringTok{"US Canada roofing contractor homeowner lending marketplace"}\NormalTok{ {-}{-}days 14}
 
 \CommentTok{\# Pull all GreenSky/EnerBank/Hearth GNews mentions in the last 30 days (industry move detector)}
-\ExtensionTok{uv}\NormalTok{ run gapmap query }\StringTok{"SELECT id, title FROM posts WHERE source\_type=\textquotesingle{}gnews\textquotesingle{} AND (lower(title) LIKE \textquotesingle{}\%greensky\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%hearth\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%enerbank\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%wisetack\%\textquotesingle{}) AND created\_utc \textgreater{} strftime(\textquotesingle{}\%s\textquotesingle{},\textquotesingle{}now\textquotesingle{},\textquotesingle{}{-}30 days\textquotesingle{}) ORDER BY created\_utc DESC"}
+\ExtensionTok{uv}\NormalTok{ run openreply query }\StringTok{"SELECT id, title FROM posts WHERE source\_type=\textquotesingle{}gnews\textquotesingle{} AND (lower(title) LIKE \textquotesingle{}\%greensky\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%hearth\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%enerbank\%\textquotesingle{} OR lower(title) LIKE \textquotesingle{}\%wisetack\%\textquotesingle{}) AND created\_utc \textgreater{} strftime(\textquotesingle{}\%s\textquotesingle{},\textquotesingle{}now\textquotesingle{},\textquotesingle{}{-}30 days\textquotesingle{}) ORDER BY created\_utc DESC"}
 \end{Highlighting}
 \end{Shaded}
 

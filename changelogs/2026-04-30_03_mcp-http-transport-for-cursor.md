@@ -43,7 +43,7 @@ started, pid=68851, http://127.0.0.1:8765/mcp
 
 $ curl -X POST http://127.0.0.1:8765/mcp -H 'Authorization: Bearer …' \
        --data '{"jsonrpc":"2.0","id":3,"method":"tools/call",
-                "params":{"name":"gapmap_palace_status","arguments":{}}}'
+                "params":{"name":"openreply_palace_status","arguments":{}}}'
 HTTP 200 t=0.182951s    # 172 ms server-side
 ```
 
@@ -68,7 +68,7 @@ every 5 min in the prior log).
 
 ## Known follow-up (not fixed here)
 
-`gapmap_semantic_search` still takes seconds (historic warm: ~3s, cold: ~8s)
+`openreply_semantic_search` still takes seconds (historic warm: ~3s, cold: ~8s)
 and the eager-warmup occasionally hits a Chroma compactor error
 (`Error sending backfill request to compactor: Failed to apply logs to
 the hnsw segment writer`). The HTTP-transport switch removes the

@@ -1,6 +1,6 @@
 """Task 8 — MCP read tools for checks_ledger and lineage.
 
-Tests that gapmap_checks_list and gapmap_lineage_get return rows that
+Tests that openreply_checks_list and openreply_lineage_get return rows that
 were seeded via the record_check / record_lineage helpers.
 
 The tools are registered via _TOOL_REGISTRY in server.py (populated by the
@@ -15,10 +15,10 @@ import tempfile
 
 
 def test_checks_and_lineage_tools(monkeypatch, tmp_path):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
 
     # Fresh DB handle.
-    import gapmap.core.db as db_mod
+    import openreply.core.db as db_mod
     importlib.reload(db_mod)
     db_mod.get_db.cache_clear()
     db = db_mod.get_db()
@@ -30,22 +30,22 @@ def test_checks_and_lineage_tools(monkeypatch, tmp_path):
         from_post_ids=["p1"],
     )
 
-    # Reload server so it inherits the patched GAPMAP_DATA_DIR.
-    import gapmap.mcp.server as server_mod
+    # Reload server so it inherits the patched OPENREPLY_DATA_DIR.
+    import openreply.mcp.server as server_mod
     importlib.reload(server_mod)
 
     # Retrieve the underlying callables from the tool registry (same dict
     # _wrap_tool_for_logging populates — the dispatcher key is the function name).
     registry = server_mod._TOOL_REGISTRY
-    checks_fn = registry["gapmap_checks_list"]
-    lineage_fn = registry["gapmap_lineage_get"]
+    checks_fn = registry["openreply_checks_list"]
+    lineage_fn = registry["openreply_lineage_get"]
 
     checks = checks_fn(topic="t")
     lin = lineage_fn(artifact_id="a1")
 
     assert any(r["gate"] == "g" for r in checks), (
-        f"Expected gate='g' row in gapmap_checks_list result; got: {checks}"
+        f"Expected gate='g' row in openreply_checks_list result; got: {checks}"
     )
     assert any(r["artifact_id"] == "a1" for r in lin), (
-        f"Expected artifact_id='a1' row in gapmap_lineage_get result; got: {lin}"
+        f"Expected artifact_id='a1' row in openreply_lineage_get result; got: {lin}"
     )

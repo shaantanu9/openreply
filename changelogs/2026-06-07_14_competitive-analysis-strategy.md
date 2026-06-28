@@ -5,7 +5,7 @@
 
 ## Summary
 
-Created a competitive analysis + product strategy document for Gap Map based on live web research (June 2026) plus internal VISION.md / README.md / FEATURES.md. Captures the competitive matrix, the GummySearch-shutdown market opening, a "what to steal" backlog, and open research questions for GTM.
+Created a competitive analysis + product strategy document for OpenReply based on live web research (June 2026) plus internal VISION.md / README.md / FEATURES.md. Captures the competitive matrix, the GummySearch-shutdown market opening, a "what to steal" backlog, and open research questions for GTM.
 
 ## Changes
 

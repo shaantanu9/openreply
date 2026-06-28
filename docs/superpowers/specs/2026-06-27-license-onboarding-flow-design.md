@@ -2,15 +2,15 @@
 
 **Date:** 2026-06-27
 **Status:** Approved — implementing
-**Decisions:** Hard gate (key required) · Live activation server · Onboarding mandatory steps = AI provider/BYOK + Profile/email · Reuse Gap Map's existing license backend verbatim
+**Decisions:** Hard gate (key required) · Live activation server · Onboarding mandatory steps = AI provider/BYOK + Profile/email · Reuse OpenReply's existing license backend verbatim
 
 ## Context
 
-This repo already carries Gap Map's **complete** license backend (Rust `commands.rs`
+This repo already carries OpenReply's **complete** license backend (Rust `commands.rs`
 L7531–9034: `license_status`, `license_activate`, `license_revalidate`,
 `license_server_check`, `license_default_api_base`, `license_logout`,
 `license_gate_status`) and BYOK system (`byok_status`/`byok_set`/`test_llm`,
-keys persisted to `~/.config/gapmap/.env`, loaded by the sidecar via dotenv —
+keys persisted to `~/.config/openreply/.env`, loaded by the sidecar via dotenv —
 `core/config.py` L36). Settings is already a working 4-card dynamic screen
 (`dynamic.js` `renderSettings` L488). **Nothing on the backend needs porting.**
 

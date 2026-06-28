@@ -44,8 +44,8 @@ the two efforts' uncommitted work.
 
 ## Files Modified
 
-- `src/gapmap/research/topic_resolver.py` — `merge_topics` + helpers
-- `src/gapmap/cli/main.py` — `topic-merge` command
+- `src/openreply/research/topic_resolver.py` — `merge_topics` + helpers
+- `src/openreply/cli/main.py` — `topic-merge` command
 - `app-tauri/src-tauri/src/commands.rs` — `merge_topics` command
 - `app-tauri/src-tauri/src/main.rs` — register `merge_topics`
 - `app-tauri/src/api.js` — `mergeTopics` binding

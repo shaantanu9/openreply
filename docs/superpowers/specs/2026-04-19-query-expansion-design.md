@@ -76,7 +76,7 @@ Reuse `topic_canonicalizations` — add one column `keywords_json TEXT` (lazy mi
 
 - After `search_topic = _canon["canonical"]`, also extract `kw_list = [k["keyword"] for k in _canon["search_keywords"] if k["relevance"] == "high"]`.
 - Aggressive mode: include `"medium"` too.
-- Cap at **`GAPMAP_MAX_KEYWORDS`** env var (default 5; aggressive caps at 8).
+- Cap at **`OPENREPLY_MAX_KEYWORDS`** env var (default 5; aggressive caps at 8).
 - **Reddit stages:** `render_queries` already expands to multiple queries per category; concatenate keyword variants before passing. The existing per-query politeness delay `_SLEEP` prevents hammering.
 - **Extra sources** (`collect_adapter.py`): each source adapter receives one topic string today. Change the contract: adapters receive a **list of keywords**, loop over them internally with per-source delay. Start with a shared `delay_s=1.0` between queries per adapter.
 - Storage key is still the canonical (no change — all keyword variants store under the same `topic`).
@@ -91,5 +91,5 @@ Reuse `topic_canonicalizations` — add one column `keywords_json TEXT` (lazy mi
 - `_canonicalize_topic` result includes a non-empty `search_keywords` list when LLM is configured.
 - `keywords_json` column exists in `topic_canonicalizations`.
 - Running collect for "calari tracking app" fires multiple search queries (visible in the log): "calorie tracking", "macro tracking", "MyFitnessPal", etc., not just "calorie tracking app".
-- `GAPMAP_MAX_KEYWORDS=1` reduces to single-query behavior (back-compat escape hatch).
+- `OPENREPLY_MAX_KEYWORDS=1` reduces to single-query behavior (back-compat escape hatch).
 - All previously-passing tests still pass; 3 new tests cover expansion.

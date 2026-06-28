@@ -1,17 +1,17 @@
 import os, tempfile, time
-os.environ.setdefault("GAPMAP_DATA_DIR", tempfile.mkdtemp())
+os.environ.setdefault("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
 
 
 def test_suggest_ideas_fail_soft():
-    from gapmap.reply import agent as A, ideas as I
+    from openreply.reply import agent as A, ideas as I
     a = A.create_agent(name="IdeaCo", make_active=True)
     r = I.suggest_ideas(a["id"])  # no memories/clusters yet
     assert r["ok"] is True and isinstance(r["ideas"], list)
 
 
 def test_idea_status_roundtrip():
-    from gapmap.reply import agent as A, ideas as I
-    from gapmap.reply.schema import init_reply_schema
+    from openreply.reply import agent as A, ideas as I
+    from openreply.reply.schema import init_reply_schema
     a = A.create_agent(name="IdeaCo2", make_active=True)
     db = init_reply_schema()
     db["reply_ideas"].insert(

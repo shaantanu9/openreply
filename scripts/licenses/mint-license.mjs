@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Mint a signed Gap Map license blob.
+ * Mint a signed OpenReply license blob.
  *
  * Usage:
  *   node scripts/licenses/mint-license.mjs \

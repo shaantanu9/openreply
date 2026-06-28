@@ -20,8 +20,8 @@ invokes). cargo check clean.
   `list_highlights`/`update_highlight`/`delete_highlight`/`topic_notes`.
 - **CLI**: `research paper-reading-status`, `research reading-queue`,
   `research paper-highlight {add|list|update|delete}`, `research paper-notes`.
-- **MCP**: `gapmap_paper_reading_status`, `gapmap_paper_reading_queue`,
-  `gapmap_paper_highlight`, `gapmap_paper_notes`.
+- **MCP**: `openreply_paper_reading_status`, `openreply_paper_reading_queue`,
+  `openreply_paper_highlight`, `openreply_paper_notes`.
 - **Tauri**: `paper_reading_status`, `paper_reading_queue`, `paper_highlight`,
   `paper_notes` (registered in main.rs).
 - **api.js**: `paperReadingStatus`, `paperReadingQueue`, `paperHighlight`,
@@ -35,10 +35,10 @@ cached connection; switched to raw `INSERT … ON CONFLICT` + `db.conn.commit()`
 commit, per db.py:774/999).
 
 ## Files Created
-- `src/gapmap/research/paper_reading.py`
+- `src/openreply/research/paper_reading.py`
 - `changelogs/2026-06-07_05_research-mode-phase1-reading-backend.md`
 
 ## Files Modified
-- `src/gapmap/cli/main.py`, `src/gapmap/mcp/server.py`,
+- `src/openreply/cli/main.py`, `src/openreply/mcp/server.py`,
   `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`,
   `app-tauri/src/api.js`

@@ -28,7 +28,7 @@ backend flags (full parity with the `reason` chain) and the auto-bootstrap
 self-heals every one of them.
 
 Verified the live `claude-code` entry end-to-end: re-synced it (wrote
-`GAPMAP_IDLE_TIMEOUT=0`), and `mcp status` now returns
+`OPENREPLY_IDLE_TIMEOUT=0`), and `mcp status` now returns
 `connected/db_aligned/token_in_env/takeover_configured/timeout_configured/
 client_tag_configured/idle_disabled` all `true` with `reason: null`.
 
@@ -55,5 +55,5 @@ client_tag_configured/idle_disabled` all `true` with `reason: null`.
 - Flag-coverage audit: every backend `not out["…"]` re-sync trigger now has a
   matching Settings branch (db_aligned + token_in_env handled earlier in the
   chain; the four `*_configured`/idle triggers each have an explicit branch).
-- `gapmap mcp status --client claude-code --json` → all flags `true`,
+- `openreply mcp status --client claude-code --json` → all flags `true`,
   `reason: null` after re-sync.

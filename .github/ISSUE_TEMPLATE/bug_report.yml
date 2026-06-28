@@ -13,7 +13,7 @@ body:
       label: Surface
       description: Which part of the app is affected?
       options:
-        - CLI (gapmap)
+        - CLI (openreply)
         - MCP server
         - Desktop app (Gap Map.app)
         - Python library / source adapter
@@ -33,7 +33,7 @@ body:
     attributes:
       label: Command or action
       description: The exact command you ran or what you did in the UI.
-      placeholder: "uv run gapmap research collect --topic 'meditation apps'"
+      placeholder: "uv run openreply research collect --topic 'meditation apps'"
     validations:
       required: true
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gap Map — Activation help (moved)</title>
+<title>OpenReply — Activation help (moved)</title>
 <script src="env.config.js" defer></script>
 <style>
   html, body { height: 100%; margin: 0; }
@@ -30,15 +30,15 @@
   <div class="card">
     <h1>Activation help has moved.</h1>
     <p>
-      The help page now lives in the new Gap Map web app. If you are not
+      The help page now lives in the new OpenReply web app. If you are not
       redirected automatically, use the link below.
     </p>
     <p><a id="helpLink" class="btn" href="/activation-help">Open help</a></p>
   </div>
 <script>
   (function () {
-    var env = (typeof window !== 'undefined' && window.GAPMAP_ENV) || {};
-    var base = (env.GAPMAP_APP_BASE || env.LICENSE_API_BASE || '').replace(/\/$/, '');
+    var env = (typeof window !== 'undefined' && window.OPENREPLY_ENV) || {};
+    var base = (env.OPENREPLY_APP_BASE || env.LICENSE_API_BASE || '').replace(/\/$/, '');
     var target = (base ? base + '/activation-help' : '/activation-help');
     var link = document.getElementById('helpLink');
     if (link) link.href = target;

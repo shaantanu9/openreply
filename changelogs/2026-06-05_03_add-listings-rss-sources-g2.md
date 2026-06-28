@@ -33,7 +33,7 @@ GetApp/TrustRadius/AlternativeTo review HTML, AlternativeTo RSS. G2 official API
 
 ## Changes
 
-- `src/gapmap/sources/rss_catalog.py`
+- `src/openreply/sources/rss_catalog.py`
   - New `listings` category with the 6 verified feeds (G2, SaaSworthy, Product
     Hunt, Show HN, SourceForge, Slashdot).
   - Added `CATEGORY_LABELS["listings"] = "Software listings / reviews"`.
@@ -41,12 +41,12 @@ GetApp/TrustRadius/AlternativeTo review HTML, AlternativeTo RSS. G2 official API
     includes it).
   - Removed dead feeds from `products`: Indie Hackers (`feed.xml` → 0 entries)
     and BetaList (`/feed` → 404).
-- `src/gapmap/sources/collect_adapter.py`
+- `src/openreply/sources/collect_adapter.py`
   - Registered `rss_listings` in `SOURCES` (`_rss_category_runner("listings")`)
     so it's selectable as its own source id.
-- `src/gapmap/research/collect.py`
+- `src/openreply/research/collect.py`
   - Added `rss_listings` to the aggressive-collect default source list.
-- `src/gapmap/research/idea_scan.py`
+- `src/openreply/research/idea_scan.py`
   - Added `rss_listings` to the idea-scan source list (parity with rss_products).
 - `app-tauri/src/screens/collect.js` (desktop UI — kept in sync with Python SOURCES)
   - Added `rss_listings: 'RSS — Listings (G2, etc.)'` to the source-chip label map.
@@ -60,6 +60,6 @@ topic — these feeds add review/listing signal without flooding unrelated runs.
 
 ## Files Modified
 
-- `src/gapmap/sources/rss_catalog.py`
-- `src/gapmap/sources/collect_adapter.py`
-- `src/gapmap/research/collect.py`
+- `src/openreply/sources/rss_catalog.py`
+- `src/openreply/sources/collect_adapter.py`
+- `src/openreply/research/collect.py`

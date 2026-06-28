@@ -13,7 +13,7 @@ Task 4 of the incremental-enrichment plan. Ships `enrich_from_llm_for_posts(topi
 - **`graph/semantic.py`**: added helpers `_corpus_rows_for_posts`, `_run_extractor_on_rows`, `_stamp_evidence_post_ids`. Keeps the whole-topic `enrich_from_llm` signature + semantics untouched — no regression risk.
 - **`core/db.py`**: added nullable `evidence_post_id TEXT` column on `graph_nodes` (create-path + ALTER migration for existing installs) with an index. This is the column Task 1's `_ensure_extraction_queue` backfill LEFT-JOINs on to decide which topic_posts still need extraction.
 - **`retrieval/palace.py`**: added `_drop_client_if_any()` — walks every entry in `_CLIENT_CACHE`, calls `chromadb.api.client.SharedSystemClient.clear_system_cache()` if available, resets the cache dict. Called by the enrich_worker's memory governor. Added `_maybe_evict_idle()` + `_bump_embed_ts()` — a lazy 5-min idle evictor that runs at the top of every `get_palace()` call and stamps the timer after each embed/search/upsert. No background timer thread needed.
-- **`analyze/providers/ollama.py`**: added opt-in idle release. When `GAPMAP_RELEASE_LLM_IDLE=1/true/yes/on` AND the last call was >10 minutes ago, the next generate request sends `keep_alive: 0` so Ollama unloads the model on completion. Default behaviour (Ollama's 5-min keep-alive) is preserved when the toggle is off.
+- **`analyze/providers/ollama.py`**: added opt-in idle release. When `OPENREPLY_RELEASE_LLM_IDLE=1/true/yes/on` AND the last call was >10 minutes ago, the next generate request sends `keep_alive: 0` so Ollama unloads the model on completion. Default behaviour (Ollama's 5-min keep-alive) is preserved when the toggle is off.
 
 ## Files Created
 

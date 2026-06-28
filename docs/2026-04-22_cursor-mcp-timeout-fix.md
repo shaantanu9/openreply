@@ -16,7 +16,7 @@ Observed log sample:
 
 ## User-facing impact
 
-- Gap Map MCP server did not connect in Cursor.
+- OpenReply MCP server did not connect in Cursor.
 - MCP tools were unavailable even though install status looked partially correct in other clients.
 
 ## Root causes found
@@ -115,7 +115,7 @@ Use this checklist after install/reconnect:
 3. Cursor is fully restarted (not just tab reload).
 4. Cursor MCP panel shows `reddit-myind` connected.
 5. Run one MCP tool call and confirm data lands in:
-   - `~/Library/Application Support/com.shantanu.gapmap/reddit-myind`
+   - `~/Library/Application Support/com.shantanu.openreply/reddit-myind`
 
 ## Operational notes
 

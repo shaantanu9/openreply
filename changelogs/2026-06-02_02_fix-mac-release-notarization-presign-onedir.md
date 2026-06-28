@@ -10,7 +10,7 @@ release Tauri bundle (signed)" — `npm run tauri build` exited 1 because
 **notarization returned status `Invalid`**. The errors were on every nested
 Mach-O in the PyInstaller onedir sidecar:
 
-- `binaries/gapmap-cli-onedir/gapmap-cli` (the engine)
+- `binaries/openreply-cli-onedir/openreply-cli` (the engine)
 - `_internal/*.so` (cpython extensions: `__mypyc…so`, `_cffi_backend…so`, …)
 - `_internal/*.dylib` (libSvtAv1Enc, libvorbisenc, libbrotli*, …)
 
@@ -20,7 +20,7 @@ have the hardened runtime enabled."* (The `joblib/test/data/*.gz` "could not be
 unpacked" lines are benign warnings, not the cause.)
 
 Root cause: Tauri ships the onedir via the `resources` glob
-(`binaries/gapmap-cli-onedir/**/*`) and its bundler does **not** deep-sign loose
+(`binaries/openreply-cli-onedir/**/*`) and its bundler does **not** deep-sign loose
 Mach-O placed in `Contents/Resources/`. `scripts/publish-mac.sh` already
 pre-signs the onedir before bundling (commit b2b86c1), but that fix was never
 ported into the CI workflow `release-mac.yml`.
@@ -31,8 +31,8 @@ ported into the CI workflow `release-mac.yml`.
   (Developer ID + hardened runtime + timestamp)"** before the tauri build:
   imports the Developer ID cert into a dedicated keychain, then
   `codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY"`
-  every `.so` / `.dylib` / the `gapmap-cli` engine under
-  `binaries/gapmap-cli-onedir/`. Mirrors `scripts/publish-mac.sh`'s `--sign`
+  every `.so` / `.dylib` / the `openreply-cli` engine under
+  `binaries/openreply-cli-onedir/`. Mirrors `scripts/publish-mac.sh`'s `--sign`
   block. Signatures ride into `Resources/` (Tauri leaves already-signed
   Resources Mach-O untouched), so notarization now accepts the bundle.
 

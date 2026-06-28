@@ -3,8 +3,8 @@ import { SiteShell } from "@/components/shell/SiteShell";
 import { RedeemPanel } from "@/components/redeem/RedeemPanel";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Redeem coupon",
-  description: "Redeem a coupon code for a free Gap Map activation key.",
+  title: "OpenReply — Redeem coupon",
+  description: "Redeem a coupon code for a free OpenReply activation key.",
 };
 
 // Session-driven — never cache.

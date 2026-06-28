@@ -1,16 +1,16 @@
-# Gap Map
+# OpenReply
 
 **Multi-source product research — desktop app, MCP server, and CLI.**
 
-Gap Map collects signals from 23+ sources (Reddit, Hacker News, arXiv, PubMed, GitHub, App Store, YouTube, and more), runs LLM synthesis across 8 providers, and surfaces the gaps competitors haven't filled.
+OpenReply collects signals from 23+ sources (Reddit, Hacker News, arXiv, PubMed, GitHub, App Store, YouTube, and more), runs LLM synthesis across 8 providers, and surfaces the gaps competitors haven't filled.
 
 Three surfaces, one SQLite store:
 
 | Surface | Use it when |
 |---|---|
-| **Desktop app** (`Gap Map.app`) | GUI research — collect, synthesize, graph, export |
+| **Desktop app** (`OpenReply.app`) | GUI research — collect, synthesize, graph, export |
 | **MCP server** (90+ tools) | Claude Code / Cursor integration — research inside your IDE |
-| **CLI** (`gapmap`) | Automation, scripting, headless pipelines |
+| **CLI** (`openreply`) | Automation, scripting, headless pipelines |
 
 ---
 
@@ -21,7 +21,7 @@ Three surfaces, one SQLite store:
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/shaantanu9/gap-map-pro.git && cd gap-map-pro
+git clone https://github.com/shaantanu9/openreply.git && cd openreply
 uv sync --all-extras        # everything (fetch + mcp + analyze + dev)
 # or: uv sync               # base fetch only
 # or: uv sync --extra mcp   # + MCP server
@@ -30,9 +30,9 @@ uv sync --all-extras        # everything (fetch + mcp + analyze + dev)
 
 ### Desktop app
 
-**Download Gap Map → [gapmap.myind.ai](https://gapmap.myind.ai/)**
+**Download OpenReply → [openreply.myind.ai](https://openreply.myind.ai/)**
 
-Or pull a build directly: `.dmg` (macOS Apple Silicon + Intel) / `.msi` / `.exe` (Windows) / `.AppImage` / `.deb` (Linux) from the [latest release](https://github.com/myind-ai/gapmap/releases/latest).
+Or pull a build directly: `.dmg` (macOS Apple Silicon + Intel) / `.msi` / `.exe` (Windows) / `.AppImage` / `.deb` (Linux) from the [latest release](https://github.com/myind-ai/openreply/releases/latest).
 
 ---
 
@@ -41,8 +41,8 @@ Or pull a build directly: `.dmg` (macOS Apple Silicon + Intel) / `.msi` / `.exe`
 ### 1. Reddit auth (OAuth — no password stored)
 
 ```bash
-uv run gapmap auth login    # opens browser, writes token to ~/.config/gapmap/.env
-uv run gapmap auth check    # verify
+uv run openreply auth login    # opens browser, writes token to ~/.config/openreply/.env
+uv run openreply auth check    # verify
 ```
 
 ### 2. Add an LLM key (for synthesis and gap-finding)
@@ -54,10 +54,10 @@ export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY / GEMINI_API_KEY / OLLAMA 
 ### 3. Research a topic end-to-end
 
 ```bash
-uv run gapmap research discover --topic "meditation apps"   # find subreddits
-uv run gapmap research collect  --topic "meditation apps"   # pull all sources
-uv run gapmap research gaps     --topic "meditation apps" --provider anthropic
-uv run gapmap research report   --topic "meditation apps" --out report.md
+uv run openreply research discover --topic "meditation apps"   # find subreddits
+uv run openreply research collect  --topic "meditation apps"   # pull all sources
+uv run openreply research gaps     --topic "meditation apps" --provider anthropic
+uv run openreply research report   --topic "meditation apps" --out report.md
 ```
 
 ---
@@ -67,7 +67,7 @@ uv run gapmap research report   --topic "meditation apps" --out report.md
 Add to your Claude Code config in one command:
 
 ```bash
-uv run gapmap mcp install
+uv run openreply mcp install
 ```
 
 Or wire it manually:
@@ -75,9 +75,9 @@ Or wire it manually:
 ```json
 {
   "mcpServers": {
-    "gapmap": {
+    "openreply": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/gap-map-pro", "run", "gapmap", "mcp", "serve"]
+      "args": ["--directory", "/absolute/path/to/openreply", "run", "openreply", "mcp", "serve"]
     }
   }
 }
@@ -86,7 +86,7 @@ Or wire it manually:
 For Cursor (HTTP daemon, survives 5-min cycling):
 
 ```bash
-uv run gapmap mcp install --client cursor
+uv run openreply mcp install --client cursor
 bash scripts/mcp_http_daemon.sh start
 ```
 
@@ -94,15 +94,15 @@ bash scripts/mcp_http_daemon.sh start
 
 | Category | Example tools |
 |---|---|
-| Fetch | `gapmap_fetch_posts`, `gapmap_fetch_hn`, `gapmap_fetch_arxiv`, `gapmap_fetch_youtube` |
-| Research | `gapmap_research_collect`, `gapmap_find_gaps`, `gapmap_synthesize_insights` |
-| Papers | `gapmap_paper_research_pipeline`, `gapmap_paper_chunk_search`, `gapmap_paper_fulltext` |
-| Graph | `gapmap_graph_build`, `gapmap_graph_communities`, `gapmap_graph_pagerank` |
-| Product mode | `gapmap_product_signals`, `gapmap_product_digest`, `gapmap_product_sweep` |
-| Personas | `gapmap_audience_personas`, `gapmap_launch_brief` |
-| Export | `gapmap_export_docx`, `gapmap_export_pptx`, `gapmap_papers_export` |
-| Jobs | `gapmap_jobs_submit`, `gapmap_jobs_get` (async, survives reconnects) |
-| Admin | `gapmap_diagnostics`, `gapmap_describe_schema`, `gapmap_query_db` |
+| Fetch | `openreply_fetch_posts`, `openreply_fetch_hn`, `openreply_fetch_arxiv`, `openreply_fetch_youtube` |
+| Research | `openreply_research_collect`, `openreply_find_gaps`, `openreply_synthesize_insights` |
+| Papers | `openreply_paper_research_pipeline`, `openreply_paper_chunk_search`, `openreply_paper_fulltext` |
+| Graph | `openreply_graph_build`, `openreply_graph_communities`, `openreply_graph_pagerank` |
+| Product mode | `openreply_product_signals`, `openreply_product_digest`, `openreply_product_sweep` |
+| Personas | `openreply_audience_personas`, `openreply_launch_brief` |
+| Export | `openreply_export_docx`, `openreply_export_pptx`, `openreply_papers_export` |
+| Jobs | `openreply_jobs_submit`, `openreply_jobs_get` (async, survives reconnects) |
+| Admin | `openreply_diagnostics`, `openreply_describe_schema`, `openreply_query_db` |
 
 Full reference: [`MCP_TOOLS.md`](MCP_TOOLS.md)
 
@@ -112,28 +112,28 @@ Full reference: [`MCP_TOOLS.md`](MCP_TOOLS.md)
 
 ```bash
 # Fetch (all writes to SQLite with dedup)
-uv run gapmap fetch posts --sub resumes --sort hot --limit 100
-uv run gapmap fetch hn    --query "product research" --limit 50
-uv run gapmap fetch arxiv --query "LLM agents" --limit 20
-uv run gapmap fetch historical --sub resumes --days 730  # pullpush, 2012–2025
+uv run openreply fetch posts --sub resumes --sort hot --limit 100
+uv run openreply fetch hn    --query "product research" --limit 50
+uv run openreply fetch arxiv --query "LLM agents" --limit 20
+uv run openreply fetch historical --sub resumes --days 730  # pullpush, 2012–2025
 
 # Search, query, export
-uv run gapmap search "ATS resume" --sub cscareerquestions
-uv run gapmap query "SELECT author, count(*) c FROM posts GROUP BY author ORDER BY c DESC LIMIT 20"
-uv run gapmap export posts --sub resumes --since 7d --format csv --out out.csv
+uv run openreply search "ATS resume" --sub cscareerquestions
+uv run openreply query "SELECT author, count(*) c FROM posts GROUP BY author ORDER BY c DESC LIMIT 20"
+uv run openreply export posts --sub resumes --since 7d --format csv --out out.csv
 
 # Analyze
-uv run gapmap analyze themes     --sub resumes --since 7d --provider anthropic
-uv run gapmap analyze painpoints --sub cscareerquestions --top 50
+uv run openreply analyze themes     --sub resumes --since 7d --provider anthropic
+uv run openreply analyze painpoints --sub cscareerquestions --top 50
 
 # Ingest local files
-uv run gapmap ingest file   path/to/doc.pdf  --topic "meditation apps"
-uv run gapmap ingest folder path/to/docs/    --topic "meditation apps"
+uv run openreply ingest file   path/to/doc.pdf  --topic "meditation apps"
+uv run openreply ingest folder path/to/docs/    --topic "meditation apps"
 
 # MCP
-uv run gapmap mcp serve          # stdio (Claude Code)
-uv run gapmap mcp install        # write to ~/.claude.json
-uv run gapmap mcp status
+uv run openreply mcp serve          # stdio (Claude Code)
+uv run openreply mcp install        # write to ~/.claude.json
+uv run openreply mcp status
 ```
 
 All commands support `--json` for machine-readable NDJSON output.
@@ -177,16 +177,16 @@ Historical + live data lets you classify gaps as:
 ## Architecture
 
 ```
-gap-map-pro/
-  src/gapmap/
+openreply/
+  src/openreply/
     sources/     # 23+ source adapters (one file each)
     core/        # client, db, config, exporters
     fetch/       # posts, comments, users, search, stream
     analyze/     # providers (anthropic/openai/ollama/gemini) + themes/gaps/synthesis
     graph/       # knowledge graph (structural + semantic + relations)
     mcp/         # FastMCP server (90+ tools, async job queue, Palace search)
-    cli/         # Typer entry point (gapmap)
-  app-tauri/     # Tauri 2 desktop app (Gap Map.app)
+    cli/         # Typer entry point (openreply)
+  app-tauri/     # Tauri 2 desktop app (OpenReply.app)
     src/         # Vanilla JS frontend (main.js, api.js, style.css)
     src-tauri/   # Rust shell + Python sidecar bridge
   prompts/       # YAML prompt templates — tune without touching code
@@ -216,7 +216,7 @@ docs/
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). The quickest way to contribute:
 
-- **New data source** — add a source adapter in `src/gapmap/sources/` (~50 lines, follow `arxiv.py`)
+- **New data source** — add a source adapter in `src/openreply/sources/` (~50 lines, follow `arxiv.py`)
 - **Prompt improvements** — edit any `prompts/*.yaml` without touching code
 - **Tests** — `tests/` is sparse; any coverage of real behavior is welcome
 - **Bug reports** — use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml)

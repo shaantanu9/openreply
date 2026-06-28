@@ -8,7 +8,7 @@
 User feedback: "stats should cache in the app itself ... I want user
 see the stats the second the app open." The dashboard
 (`screens/home.js`) already had a localStorage stale-while-revalidate
-cache (`gapmap.dashboard.cache.v1`), so the home view paints
+cache (`openreply.dashboard.cache.v1`), so the home view paints
 instantly on repeat opens. The topic page didn't. Every topic open
 spawned a Python sidecar query bundle (~300-800 ms warm, 2+ s cold)
 just to paint the header chips ("345 posts · 0 pains · 0 DIY · 8 src"),
@@ -22,7 +22,7 @@ This adds the same SWR pattern to `topicStats()`, keyed per topic.
 
 - New module-level helpers `readTopicStatsCache(topic)` /
   `writeTopicStatsCache(topic, stats)` backed by localStorage with
-  prefix `gapmap.topic.stats.cache.<topic>`. Best-effort — silent on
+  prefix `openreply.topic.stats.cache.<topic>`. Best-effort — silent on
   read/write/parse failures.
 - `topicStats()` now calls `writeTopicStatsCache(topic, out)` after
   every successful fetch (write-through). Failed fetches leave the

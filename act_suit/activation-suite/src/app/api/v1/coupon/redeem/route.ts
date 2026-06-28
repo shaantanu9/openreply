@@ -4,7 +4,7 @@
 // caller passes a Supabase access-token via Authorization: Bearer <jwt>.
 // Email is read from the verified token (never trusted from the body).
 //
-// Request body:  { "coupon_code": "GAPMAP-LAUNCH-XXXX" }
+// Request body:  { "coupon_code": "OPENREPLY-LAUNCH-XXXX" }
 // Success (200): { ok: true, activation_key, license_id, plan_id,
 //                   expires_at, is_trial, message }
 // Failure (4xx): { ok: false, error: <CouponRedeemError> }
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
     message:
       (result.isTrial
         ? `Trial activated. Your key expires ${result.expiresAt}.`
-        : `Coupon redeemed. Use this key in Gap Map to activate.`) +
+        : `Coupon redeemed. Use this key in OpenReply to activate.`) +
       (mail?.ok ? " We also emailed it to you." : ""),
   });
 }

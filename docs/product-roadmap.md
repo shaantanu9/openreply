@@ -93,7 +93,7 @@ Everything in Free, plus:
 
 - **Polished Flutter Desktop UI** (macOS + Windows + Linux, your existing skill)
 - **Scheduled re-runs** (weekly) — see how gap maps evolve  
-- **Public gap-map hosting** at `gapmap.io/u/<user>/<slug>` (SEO-indexed, shareable)
+- **Public openreply-map hosting** at `openreply.io/u/<user>/<slug>` (SEO-indexed, shareable)
 - **Export formats**: PDF, Notion, Linear, JSON
 - **Multi-topic dashboard** — side-by-side graphs
 - **Auto-updates** via Sparkle/WinSparkle
@@ -121,8 +121,8 @@ Everything in Free, plus:
 
 ### Launch order
 
-1. **Day 0-14**: Ship Flutter Desktop MVP + Gumroad checkout + landing page at `gapmap.io`
-2. **Day 14**: Public gap-maps for 3 trendy markets (AI coding, note-taking apps, habit trackers) — each tweet-driven
+1. **Day 0-14**: Ship Flutter Desktop MVP + Gumroad checkout + landing page at `openreply.io`
+2. **Day 14**: Public openreply-maps for 3 trendy markets (AI coding, note-taking apps, habit trackers) — each tweet-driven
 3. **Day 21**: Product Hunt launch  
 4. **Day 30**: HN "Show HN" post with the ATS gap map as proof artifact
 5. **Day 45**: Indie Hackers weekly thread (interview request)
@@ -130,8 +130,8 @@ Everything in Free, plus:
 
 ### Content / distribution
 
-- **Weekly "Gap Map of X" tweet thread** — uses our tool, drives brand
-- **Public gallery** at `gapmap.io/explore` — SEO moat, each published map a landing page
+- **Weekly "OpenReply of X" tweet thread** — uses our tool, drives brand
+- **Public gallery** at `openreply.io/explore` — SEO moat, each published map a landing page
 - **Free report generator** (email-gated) — drives list
 - **Open-source CLI on Github with live demo** — dev credibility
 
@@ -142,7 +142,7 @@ Everything in Free, plus:
 | Reddit IP-blocks our scraping | Local-first → user's IP, no shared ceiling |
 | LLM cost explodes | BYO key default, hosted tier only for Pro+ |
 | "Just another Reddit scraper" | Differentiation = graph + temporal + multi-source citations |
-| Slow growth (desktop app, no SEO loop initially) | Public gap-map gallery *is* the SEO loop |
+| Slow growth (desktop app, no SEO loop initially) | Public openreply-map gallery *is* the SEO loop |
 | Legal: scraping Reddit/App Store at scale | All done on user's machine per their ToS obligations, not ours |
 
 ---
@@ -161,7 +161,7 @@ Derived from the product gap map tier-2 competitors expose:
 6. **Email/Notion/PDF export** — premium feature gating.
 7. **Scheduled runs with email digest** — weekly "here's what changed in your markets."
 8. **Team shared workspace** — collaborate on annotations.
-9. **Hosted public gallery at gapmap.io** — each user's published maps are SEO + social proof.
+9. **Hosted public gallery at openreply.io** — each user's published maps are SEO + social proof.
 
 ### Missing sources (ordered by value)
 
@@ -191,13 +191,13 @@ The biggest risk isn't technical — it's marketing. You have the Flutter chops;
 
 ## Recommended next 3 moves
 
-1. **Confirm the ATS artifact is good enough** (open `data-validate-ats-resume-and-job-search-apps/gap-map.html` and `report-pro.md`). If yes, you have a demo asset.
+1. **Confirm the ATS artifact is good enough** (open `data-validate-ats-resume-and-job-search-apps/openreply-map.html` and `report-pro.md`). If yes, you have a demo asset.
 2. **Rerun the meta-research** with query `"product research tools Dovetail Condens Notably"` for a narrower corpus that actually validates this roadmap.
 3. **Start Flutter Desktop scaffolding** — the shape is:
    - `app/lib/main.dart` — Flutter Desktop entry
    - `app/lib/services/cli_process.dart` — spawn PyInstaller-bundled reddit-cli as subprocess, talk via stdin/stdout JSON
    - `app/lib/screens/topic_list.dart` — topic dashboard
-   - `app/lib/screens/gap_map.dart` — embed the existing HTML viewer via `webview_flutter`
+   - `app/lib/screens/openreply_map.dart` — embed the existing HTML viewer via `webview_flutter`
    - Gumroad-style license validation in settings
 
 If you want me to scaffold that Flutter app, say so and I'll build the skeleton. Otherwise my read is: the CLI is ready to monetize as-is, the desktop app is the wrapper that unlocks non-technical buyers.

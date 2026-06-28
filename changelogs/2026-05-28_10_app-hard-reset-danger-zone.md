@@ -10,8 +10,8 @@ the same Mac) previously required a terminal incantation across three
 folders:
 
 ```bash
-rm -rf "$HOME/Library/Application Support/com.shantanu.gapmap"
-rm -rf "$HOME/.config/gapmap"
+rm -rf "$HOME/Library/Application Support/com.shantanu.openreply"
+rm -rf "$HOME/.config/openreply"
 # Then uninstall + reinstall the .dmg + open
 ```
 
@@ -27,7 +27,7 @@ unless the user fully uninstalls. Now there's an in-app **Danger Zone
    button — deliberate friction so a stray click or muscle-memory
    double-press can't trigger it.
 3. Wipes the data dir (SQLite + license_state.json + caches +
-   schedule.log) AND the BYOK env file (`~/.config/gapmap/.env`)
+   schedule.log) AND the BYOK env file (`~/.config/openreply/.env`)
    in one round-trip.
 4. Clears localStorage + sessionStorage so the next session has
    zero in-memory state from before the reset.
@@ -36,7 +36,7 @@ unless the user fully uninstalls. Now there's an in-app **Danger Zone
 
 Also added a softer "Reset UI state (keep data + keys)" button next
 to the existing Clear-profile / Reset-prefs row. Clears every
-`gapmap.*` localStorage key (including onboarding completion, tab
+`openreply.*` localStorage key (including onboarding completion, tab
 cache, dismissed banners, dashboard SWR cache) but leaves the SQLite
 DB, license, and BYOK keys intact. Used to recover from a wedged UI
 without losing data — and to reproduce the welcome wizard for
@@ -46,15 +46,15 @@ on-boarding screenshots / demos.
 
 The hard-reset wipes the right paths on every OS Tauri supports:
 
-- **macOS**: `~/Library/Application Support/com.shantanu.gapmap/`
+- **macOS**: `~/Library/Application Support/com.shantanu.openreply/`
   (resolved via `AppHandle::path().app_data_dir()`) and
-  `$HOME/.config/gapmap/.env`.
-- **Windows**: `%APPDATA%\com.shantanu.gapmap\` (same Tauri helper)
-  and `%USERPROFILE%\.config\gapmap\.env` (HOME isn't set on
+  `$HOME/.config/openreply/.env`.
+- **Windows**: `%APPDATA%\com.shantanu.openreply\` (same Tauri helper)
+  and `%USERPROFILE%\.config\openreply\.env` (HOME isn't set on
   Windows by default — fixed `byok_env_path()` to fall back to
   USERPROFILE in the same edit).
-- **Linux**: `~/.local/share/com.shantanu.gapmap/` (Tauri helper)
-  and `$HOME/.config/gapmap/.env`.
+- **Linux**: `~/.local/share/com.shantanu.openreply/` (Tauri helper)
+  and `$HOME/.config/openreply/.env`.
 
 ## Changes
 
@@ -139,6 +139,6 @@ The hard-reset wipes the right paths on every OS Tauri supports:
 7. Type `DELETE` — button enables.
 8. Click → app restarts into a clean welcome wizard with no topics, no
    license, no keys.
-9. Confirm `~/Library/Application Support/com.shantanu.gapmap/gapmap/`
+9. Confirm `~/Library/Application Support/com.shantanu.openreply/openreply/`
    is empty (or whatever the equivalent path is on Windows/Linux).
-10. Confirm `~/.config/gapmap/.env` is gone.
+10. Confirm `~/.config/openreply/.env` is gone.

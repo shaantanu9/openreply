@@ -203,7 +203,7 @@ export default function AdminPage() {
   function openResetDevices(s: Subject) {
     openModal({ title: "Reset devices", tone: "danger",
       context: [{ label: "User", value: s.email }, { label: "Active devices", value: `${s.devicesUsed} / ${s.maxDevices}` }],
-      body: "Clears ALL activated devices, freeing every seat. The user must re-activate Gap Map on each device.",
+      body: "Clears ALL activated devices, freeing every seat. The user must re-activate OpenReply on each device.",
       confirmText: "Reset devices", onConfirm: () => post(s.email, "reset_devices") });
   }
   function openDisable(s: Subject) {

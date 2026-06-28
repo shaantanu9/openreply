@@ -98,31 +98,31 @@ jobs:
         id: pyi-cache
         uses: actions/cache@v4
         with:
-          path: dist/gapmap-cli
-          key: pyinstaller-linux-${{ hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
+          path: dist/openreply-cli
+          key: pyinstaller-linux-${{ hashFiles('openreply-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
 
-      - name: Build gapmap-cli sidecar (PyInstaller)
+      - name: Build openreply-cli sidecar (PyInstaller)
         if: steps.pyi-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: uv run pyinstaller gapmap-cli.spec
+        run: uv run pyinstaller openreply-cli.spec
 
       - name: Stage sidecar binary
         shell: bash
         run: |
           mkdir -p app-tauri/src-tauri/binaries
-          cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-x86_64-unknown-linux-gnu
-          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-x86_64-unknown-linux-gnu
+          cp dist/openreply-cli app-tauri/src-tauri/binaries/openreply-cli-x86_64-unknown-linux-gnu
+          chmod +x app-tauri/src-tauri/binaries/openreply-cli-x86_64-unknown-linux-gnu
 
       # Linux doesn't ship ffmpeg as a sidecar yet — strip the externalBin
       # reference so `cargo tauri build` doesn't fail looking for it. Also strip
       # the macOS-only onedir resource: Linux ships the ONEFILE sidecar (see
-      # gapmap-cli.spec platform split), so binaries/gapmap-cli-onedir/ never
+      # openreply-cli.spec platform split), so binaries/openreply-cli-onedir/ never
       # exists here and the resource glob would otherwise error on a missing path.
       - name: Strip ffmpeg externalBin + onedir resource
         shell: bash
         run: |
           cd app-tauri/src-tauri
-          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; d['bundle']['resources']=[r for r in d['bundle'].get('resources',[]) if 'gapmap-cli-onedir' not in r]; p.write_text(json.dumps(d, indent=2))"
+          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; d['bundle']['resources']=[r for r in d['bundle'].get('resources',[]) if 'openreply-cli-onedir' not in r]; p.write_text(json.dumps(d, indent=2))"
 
       # JWT secret + Node/Rust toolchains
       - name: Require JWT_DESKTOP_SECRET (hard-fail; never random)
@@ -176,7 +176,7 @@ jobs:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           GH_TOKEN_SRC: ${{ secrets.GITHUB_TOKEN }}
           VER: ${{ env.TAG_NAME }}
-          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
         shell: bash
         run: |
           if [ -z "$GH_TOKEN" ]; then
@@ -248,7 +248,7 @@ jobs:
             if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
             {
               printf '## Gap Map %s\n\n' "$VER"
-              printf '**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\n'
+              printf '**Download → [openreply.myind.ai](https://openreply.myind.ai/)**\n\n'
               printf 'Installers:\n\n'
               printf -- '- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n'
               printf -- '- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n'
@@ -281,7 +281,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           VER: ${{ env.TAG_NAME }}
-          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
         shell: bash
         run: |
           if [ -z "$GH_TOKEN" ]; then exit 0; fi

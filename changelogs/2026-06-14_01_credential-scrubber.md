@@ -8,11 +8,11 @@
 
 Added a two-layer credential scrubber so secret/API-key patterns never reach
 the live sidecar log/event stream, retained error buffers, or exports. The
-other three 1C items were found to already exist in Gap Map and were not
+other three 1C items were found to already exist in OpenReply and were not
 re-implemented.
 
 ## Changes (committed)
-- **`src/gapmap/core/scrub.py`** — `scrub_secrets(text)` redacts known key shapes
+- **`src/openreply/core/scrub.py`** — `scrub_secrets(text)` redacts known key shapes
   (`sk-`/`sk-ant-`/`sk-or-`, `gsk_`, `xai-`, `AIza`, `nvapi-`, `gh[pos]_`),
   `Authorization: Bearer …`, and `name=value` for api_key/token/secret/password/
   auth_token/ct0. Conservative — leaves normal prose untouched. 4 tests.
@@ -32,7 +32,7 @@ re-implemented.
   already idempotent on re-run.
 
 ## Files Created
-- `src/gapmap/core/scrub.py`, `tests/test_scrub.py`
+- `src/openreply/core/scrub.py`, `tests/test_scrub.py`
 
 ## Files Modified
 - `app-tauri/src-tauri/src/cli.rs`

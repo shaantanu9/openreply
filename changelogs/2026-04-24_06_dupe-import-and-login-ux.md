@@ -62,5 +62,5 @@ claiming success.
 - Tauri: pid 36086 now uptime ~10 min, `/src/screens/settings.js` served
   by vite has exactly one `openDialog` import.
 - Next.js: `tsc --noEmit` clean. Direct Supabase password-grant with
-  `desktop-test+1776995604@gapmap-dev.local / DesktopTest_1776995604_pw`
+  `desktop-test+1776995604@openreply-dev.local / DesktopTest_1776995604_pw`
   returns a JWT — the credentials I handed you earlier *do* work.

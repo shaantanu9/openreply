@@ -28,7 +28,7 @@ Fix: (a) added `collect_all` for all nine lazy-imported source deps to `reddit-c
 
 While auditing for this fix, confirmed the Rust↔Python DB wiring is correct:
 
-- Rust `cli.rs:data_dir()` resolves `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/` and passes `REDDIT_MYIND_DATA_DIR=<that path>` on **every** sidecar spawn
+- Rust `cli.rs:data_dir()` resolves `~/Library/Application Support/com.shantanu.openreply/reddit-myind/` and passes `REDDIT_MYIND_DATA_DIR=<that path>` on **every** sidecar spawn
 - Python `core/config.py:75` reads that env; `db_path = data_dir / "reddit.db"`
 - Rust **never opens the DB directly** — only `std::fs::metadata()` for the mtime poller
 - All UI queries: Rust dispatcher → Python sidecar → SQLite → JSON → back up

@@ -1,6 +1,6 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   Gap Map — Topic-Insights + Chat prototype : SHARED CORE STYLES
-   Tokens are copied verbatim from src/gapmap/graph/export.py so every variant
+   OpenReply — Topic-Insights + Chat prototype : SHARED CORE STYLES
+   Tokens are copied verbatim from src/openreply/graph/export.py so every variant
    matches the real exported viewer (cream #F6F3EE / orange #FF8C42).
    Variant-specific layout lives in each vN.html <style> block.
    ────────────────────────────────────────────────────────────────────────── */

@@ -15,7 +15,7 @@ button color and responsive utilities both apply.
 
 ## Verified (production)
 
-Playwright computed-style check on gapmap.myind.ai at 375px:
+Playwright computed-style check on openreply.myind.ai at 375px:
 `background = rgb(28,23,16)` (--dark), `color = rgb(244,239,230)` (--cream) →
 high-contrast, legible. Screenshot confirms light "Download" text on the dark
 button with the hamburger visible.

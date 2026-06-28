@@ -1,4 +1,4 @@
-from gapmap.core import runctx
+from openreply.core import runctx
 
 
 def test_run_id_lifecycle():

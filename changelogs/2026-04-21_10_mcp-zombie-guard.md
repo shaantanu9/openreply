@@ -69,7 +69,7 @@ sees it.
 ## How this prevents the production hang
 
 End-user scenario:
-1. User installs Gap Map, connects the MCP to Cursor / Claude Code.
+1. User installs OpenReply, connects the MCP to Cursor / Claude Code.
 2. A `reddit-cli mcp serve` child spawns.
 3. User closes Cursor window → MCP client doesn't send EOF → child
    still running.

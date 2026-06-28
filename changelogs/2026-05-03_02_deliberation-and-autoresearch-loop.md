@@ -20,7 +20,7 @@ making consensus *citation-grounded* rather than purely LLM-vs-itself.
 
 **Phase 4 — Autoresearch loop.** Two surfaces:
 
-1. **Claude Code skill** at `.claude/skills/gap-map-autoresearch/` — the
+1. **Claude Code skill** at `.claude/skills/openreply-autoresearch/` — the
    real Karpathy-style loop: read state → change ONE thing → commit →
    verify → keep if metric up, revert if down → repeat. Pre-canned
    loops for synthesize / audience / launch-brief / deliberate /
@@ -49,12 +49,12 @@ making consensus *citation-grounded* rather than purely LLM-vs-itself.
   transcript log persisted to `mcp_analyses(kind=deliberation)`.
 - `app-tauri/src/screens/iterate.js` — in-app loop UI. Two pre-canned
   loops (deliberate, audience), live grid sweep, best-row highlight.
-- `.claude/skills/gap-map-autoresearch/SKILL.md` — autoresearch skill.
-- `.claude/skills/gap-map-autoresearch/references/synthesize-loop.md`
-- `.claude/skills/gap-map-autoresearch/references/audience-loop.md`
-- `.claude/skills/gap-map-autoresearch/references/launch-brief-loop.md`
-- `.claude/skills/gap-map-autoresearch/references/deliberate-loop.md`
-- `.claude/skills/gap-map-autoresearch/references/relevance-loop.md`
+- `.claude/skills/openreply-autoresearch/SKILL.md` — autoresearch skill.
+- `.claude/skills/openreply-autoresearch/references/synthesize-loop.md`
+- `.claude/skills/openreply-autoresearch/references/audience-loop.md`
+- `.claude/skills/openreply-autoresearch/references/launch-brief-loop.md`
+- `.claude/skills/openreply-autoresearch/references/deliberate-loop.md`
+- `.claude/skills/openreply-autoresearch/references/relevance-loop.md`
 - `changelogs/2026-05-03_02_deliberation-and-autoresearch-loop.md` —
   this file.
 
@@ -64,8 +64,8 @@ making consensus *citation-grounded* rather than purely LLM-vs-itself.
   takes new `deliberate=False, deliberate_rounds=1` flags. When True,
   every finding is stamped with a `consensus` block.
 - `src/reddit_research/cli/main.py` — `research deliberate` subcommand.
-- `src/reddit_research/mcp/server.py` — `gapmap_deliberate` tool;
-  `gapmap_synthesize_insights` accepts `deliberate=True`.
+- `src/reddit_research/mcp/server.py` — `openreply_deliberate` tool;
+  `openreply_synthesize_insights` accepts `deliberate=True`.
 - `app-tauri/src-tauri/src/commands.rs` — `deliberate` Tauri command.
 - `app-tauri/src-tauri/src/main.rs` — registered in `generate_handler!`.
 - `app-tauri/src/api.js` — `api.deliberate(topic, opts)`.

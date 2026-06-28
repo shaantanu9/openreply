@@ -25,7 +25,7 @@ Two compounding problems:
      - iframe refresh
    - Overlap caused sidecar job pileups and memory pressure.
 
-2. **Map auto-refresh loop from `gapmap:changed`**
+2. **Map auto-refresh loop from `openreply:changed`**
    - Reactive mutation handler could re-trigger current tab reload while map
      was already busy.
    - This amplified concurrent map work and made hangs more likely.
@@ -55,7 +55,7 @@ Behavior:
 
 File: `app-tauri/src/screens/topic.js`
 
-In `onGapmapChangedTask8` refresh block:
+In `onOpenreplyChangedTask8` refresh block:
 
 - Skip automatic `switchTab(curr)` when `curr === 'map'`.
 - Map tab now controls its own refresh cycle rather than being force-reloaded by
@@ -74,7 +74,7 @@ In `onGapmapChangedTask8` refresh block:
 - Manual expected behavior:
   - opening map no longer starts overlapping load pipelines
   - repeated triggers queue one safe reload instead of spawning many
-  - map does not auto-loop reload on every `gapmap:changed` event
+  - map does not auto-loop reload on every `openreply:changed` event
 
 ## Regression Checklist
 

@@ -37,14 +37,14 @@ breakdowns.
 
 ## Files Created
 
-- `src/gapmap/reply/analytics.py`
+- `src/openreply/reply/analytics.py`
 - `docs/superpowers/specs/2026-06-27-analytics-ai-visibility-design.md`
 - `changelogs/2026-06-27_18_analytics-ai-visibility-full.md`
 
 ## Files Modified
 
-- `src/gapmap/reply/geo.py` — automated checking + history + migration
-- `src/gapmap/cli/reply_cmds.py` — geo-check/-all/-history + analytics commands
+- `src/openreply/reply/geo.py` — automated checking + history + migration
+- `src/openreply/cli/reply_cmds.py` — geo-check/-all/-history + analytics commands
 - `app-tauri/src-tauri/src/commands.rs` — 4 new commands
 - `app-tauri/src-tauri/src/main.rs` — registered the 4 commands
 - `app-tauri/src/or/api.js` — 4 new API methods

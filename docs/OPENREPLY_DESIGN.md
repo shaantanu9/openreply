@@ -38,7 +38,7 @@ An **Agent** = identity + knowledge + outputs:
   cadence so its graph/angles always reflect the *latest* niche chatter. This is the
   existing `collect → graph build/enrich → gaps/insights` pipeline, scoped to the agent.
 - **Outputs:** from that knowledge the Agent produces, on demand or on schedule:
-  - **Replies** — to scored opportunities (the engine shipped in `src/gapmap/reply/`).
+  - **Replies** — to scored opportunities (the engine shipped in `src/openreply/reply/`).
   - **Posts / threads** — original short-form for X/LinkedIn/Reddit.
   - **Scripts** — short-video / YouTube scripts for a niche.
   - **Articles** — long-form posts / blog drafts.
@@ -216,7 +216,7 @@ generate replies/posts/scripts/articles → review/publish.
 ## 6. Build order (incremental, on top of the shipped engine)
 
 1. **Agent model** — rename `reply_brands`→`agents` (+columns), add `content_items`; CLI
-   `gapmap agent create/list/get/refresh` wrapping brand + a scoped `collect`.
+   `openreply agent create/list/get/refresh` wrapping brand + a scoped `collect`.
 2. **Knowledge refresh** — `agent refresh` = `collect(topic=agent.topic, sources=agent.platforms)`
    + `graph build/enrich` + `gaps` → angles cached on the agent.
 3. **Create generators** — `content/generate.py`: `post|thread|script|article` prompts
@@ -230,7 +230,7 @@ generate replies/posts/scripts/articles → review/publish.
 
 ## 7. What already works today (shipped in this branch)
 
-`gapmap reply` is live and tested:
+`openreply reply` is live and tested:
 - `reply platforms` — the pickable platform catalog (engage vs discovery-only).
 - `reply brand-set / brand-get` — the Agent identity+voice (precursor to `agent`).
 - `reply find` — scans picked platforms, scores by relevance/intent/fit, persists opportunities.

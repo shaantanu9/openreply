@@ -1,4 +1,4 @@
-# Release flow — Gap Map
+# Release flow — OpenReply
 
 > Single source of truth for cutting a new version. Read this every time
 > before tagging — the entire flow has been distilled into automated
@@ -30,10 +30,10 @@ git push origin multi-source
 scripts/preflight-release.sh "$NEW"
 
 # 4. Tag + push (pre-push hook fires preflight again as a safety net)
-git tag -a "$NEW" -m "Gap Map $NEW — <one-line theme>"
+git tag -a "$NEW" -m "OpenReply $NEW — <one-line theme>"
 git push origin "$NEW"
 
-# 5. Wait for release.yml to build + upload to gap-map-pro v* draft
+# 5. Wait for release.yml to build + upload to openreply v* draft
 #    (~12 min for mac arm64 + mac x86_64 + windows; Linux runs separately)
 
 # 6. Sign + notarize locally (CI builds unsigned by default)
@@ -43,26 +43,26 @@ scripts/publish-mac.sh --sign --arch x86_64
 
 # 7. Verify before upload (refuses to continue if signing failed)
 scripts/verify-dmg.sh \
-  "app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Gap Map_${NUM}_aarch64.dmg" \
-  --expected-arch arm64 --expected-version "$NUM" --expected-bundle-id com.shantanu.gapmap
+  "app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/OpenReply_${NUM}_aarch64.dmg" \
+  --expected-arch arm64 --expected-version "$NUM" --expected-bundle-id com.shantanu.openreply
 scripts/verify-dmg.sh \
-  "app-tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/Gap Map_${NUM}_x64.dmg" \
-  --expected-arch x86_64 --expected-version "$NUM" --expected-bundle-id com.shantanu.gapmap
+  "app-tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/OpenReply_${NUM}_x64.dmg" \
+  --expected-arch x86_64 --expected-version "$NUM" --expected-bundle-id com.shantanu.openreply
 
 # 8. Rezip the SIGNED .app bundles for the .zip companions (ditto, NOT tar
 #    — tar strips macOS codesignature xattrs)
 for arch_pair in "aarch64-apple-darwin:arm64" "x86_64-apple-darwin:x64"; do
   triple=${arch_pair%:*}; tag_arch=${arch_pair#*:}
   ditto -ck --rsrc --sequesterRsrc \
-    "app-tauri/src-tauri/target/${triple}/release/bundle/macos/Gap Map.app" \
+    "app-tauri/src-tauri/target/${triple}/release/bundle/macos/OpenReply.app" \
     "/tmp/Gap.Map_${NUM}_${tag_arch}.zip"
 done
 
 # 9. Upload signed artifacts to the public release repo
-PUB=myind-ai/gapmap
+PUB=myind-ai/openreply
 gh release upload "$NEW" --repo "$PUB" \
-  "app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Gap Map_${NUM}_aarch64.dmg" \
-  "app-tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/Gap Map_${NUM}_x64.dmg" \
+  "app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/OpenReply_${NUM}_aarch64.dmg" \
+  "app-tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/OpenReply_${NUM}_x64.dmg" \
   "/tmp/Gap.Map_${NUM}_arm64.zip" "/tmp/Gap.Map_${NUM}_x64.zip" \
   --clobber
 # Rename the arm64.dmg server-side: see "Naming conventions" below
@@ -140,12 +140,12 @@ The post-build signing audit step warns loud in the workflow logs if the
 result is ad-hoc — you'll see it as a yellow GitHub Actions annotation
 on the run.
 
-**Local signing is the current source of truth** for `myind-ai/gapmap` releases.
+**Local signing is the current source of truth** for `myind-ai/openreply` releases.
 Use `scripts/publish-mac.sh --sign --arch arm64/x86_64` after CI finishes,
 THEN upload the signed artifacts. The release workflow's "(unsigned)" path
 is the one that's actually firing today.
 
-To move signing into CI, add these as **repo secrets** on `gap-map-pro`:
+To move signing into CI, add these as **repo secrets** on `openreply`:
 
 - `APPLE_CERTIFICATE` (base64-encoded .p12)
 - `APPLE_CERTIFICATE_PASSWORD`
@@ -162,7 +162,7 @@ Then `HAS_APPLE_CERT` flips to `'yes'` and the "(signed)" path runs.
 
 `tauri-action` produces these names; we rename two of them for the public repo:
 
-| Internal (gap-map-pro draft) | Public (myind-ai/gapmap) |
+| Internal (openreply draft) | Public (myind-ai/openreply) |
 |---|---|
 | `Gap.Map_X.Y.Z_aarch64.dmg` | `Gap.Map_X.Y.Z_arm64.dmg` (rename) |
 | `Gap.Map_aarch64.app.tar.gz` | `Gap.Map_X.Y.Z_arm64.zip` (rezip with `ditto`) |
@@ -182,11 +182,11 @@ upload, label each asset so users see plain-English platform names:
 
 ```bash
 # Get asset IDs
-gh release view "$NEW" --repo myind-ai/gapmap --json assets \
+gh release view "$NEW" --repo myind-ai/openreply --json assets \
   --jq '.assets[] | "\(.apiUrl)\t\(.name)"'
 
 # Then PATCH each
-gh api -X PATCH repos/myind-ai/gapmap/releases/assets/<id> \
+gh api -X PATCH repos/myind-ai/openreply/releases/assets/<id> \
   -f label="macOS — Apple Silicon (.dmg, signed)"
 ```
 
@@ -205,12 +205,12 @@ gh api -X PATCH repos/myind-ai/gapmap/releases/assets/<id> \
 
 ```bash
 # Pull released DMG back to draft IMMEDIATELY
-gh release edit "$TAG" --repo myind-ai/gapmap --draft=true
+gh release edit "$TAG" --repo myind-ai/openreply --draft=true
 
 # Inspect what's actually inside the published DMG
-gh release download "$TAG" --repo myind-ai/gapmap --pattern "*arm64.dmg"
+gh release download "$TAG" --repo myind-ai/openreply --pattern "*arm64.dmg"
 scripts/verify-dmg.sh "Gap.Map_${NUM}_arm64.dmg" \
-  --expected-arch arm64 --expected-version "$NUM" --expected-bundle-id com.shantanu.gapmap
+  --expected-arch arm64 --expected-version "$NUM" --expected-bundle-id com.shantanu.openreply
 # If FAIL: re-sign locally (sections 6/7 of the TL;DR), re-upload --clobber, republish
 ```
 

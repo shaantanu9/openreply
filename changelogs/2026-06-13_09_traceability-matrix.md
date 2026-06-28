@@ -14,7 +14,7 @@ tool. Best-effort / read-only.
 ## Honest scope note (overlap finding)
 
 The **UI** side of "click a finding → see its source posts" **already existed**
-in Gap Map before this work: each insight card renders a `📎 N evidence`
+in OpenReply before this work: each insight card renders a `📎 N evidence`
 citation chip (`renderCitationChips(f.evidence_post_ids)`) with a posts
 drill-down (`showCounterEvidenceModal` pattern, `:ids` post lookup). So no
 redundant sources-expander UI was added — that would duplicate existing
@@ -27,17 +27,17 @@ object — survives independently, is queryable programmatically, and powers
 future Wave-2 items (replay 2G, dependency invalidation 2H).
 
 ## Changes (committed)
-- `src/gapmap/research/traceability.py` — `traceability_for_artifact(artifact_id)`:
+- `src/openreply/research/traceability.py` — `traceability_for_artifact(artifact_id)`:
   `lineage ⋈ json_each(from_post_ids) ⋈ posts` → source rows
   (id/title/url/permalink/source_type/author/score). `[]` on error, never raises.
-- `src/gapmap/mcp/server.py` — `gapmap_traceability(artifact_id)` MCP tool.
+- `src/openreply/mcp/server.py` — `openreply_traceability(artifact_id)` MCP tool.
 
 ## Files Created
-- `src/gapmap/research/traceability.py`
+- `src/openreply/research/traceability.py`
 - `tests/test_traceability.py` (3 tests), `tests/test_mcp_traceability.py` (2 tests)
 
 ## Files Modified
-- `src/gapmap/mcp/server.py` (new tool)
+- `src/openreply/mcp/server.py` (new tool)
 
 ## Not added (by design)
 - A second per-finding sources-expander UI — the existing evidence citation

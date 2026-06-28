@@ -1,4 +1,4 @@
-# Gap Map — Competitive Analysis & Product Strategy
+# OpenReply — Competitive Analysis & Product Strategy
 
 > **Updated:** 2026-06-07 · Source: live web research (June 2026) + internal VISION.md / README.md
 > Single source of truth for *who we compete with*, *where we win*, *what we should steal*, and *what we explore next*.
@@ -8,9 +8,9 @@
 ## 0. TL;DR for an investor
 
 - The category leader for Reddit pain-point research, **GummySearch, is shutting down Nov 30, 2026** — it couldn't get a Reddit commercial API license (~$0.24/1k calls). **Thousands of paying users need a new home this year.**
-- Every Reddit-only competitor faces the **same platform-risk death**. Gap Map's **23+ sources + local-first SQLite** structurally hedges it.
-- The market is split in two — **pain-point tools** (GummySearch, PainOnSocial) vs **research tools** (Elicit, Consensus). **Nobody connects user pain + academic evidence in one graph. Gap Map does.** That's a category, not a feature.
-- **IDE-native (MCP inside Claude Code / Cursor) is unclaimed.** Gap Map ships it.
+- Every Reddit-only competitor faces the **same platform-risk death**. OpenReply's **23+ sources + local-first SQLite** structurally hedges it.
+- The market is split in two — **pain-point tools** (GummySearch, PainOnSocial) vs **research tools** (Elicit, Consensus). **Nobody connects user pain + academic evidence in one graph. OpenReply does.** That's a category, not a feature.
+- **IDE-native (MCP inside Claude Code / Cursor) is unclaimed.** OpenReply ships it.
 
 ---
 
@@ -18,7 +18,7 @@
 
 Legend: ✅ strong · 🟡 partial · ❌ none · 💀 shutting down
 
-| Capability | **Gap Map** | GummySearch | PainOnSocial | Reddinbox | Exploding Topics | IdeaBrowser | Elicit / Consensus |
+| Capability | **OpenReply** | GummySearch | PainOnSocial | Reddinbox | Exploding Topics | IdeaBrowser | Elicit / Consensus |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | **Reddit pain-point mining** | ✅ | 💀 | ✅ | ✅ | 🟡 | 🟡 | ❌ |
 | **Multi-source breadth (20+)** | ✅ 23+ | ❌ | ❌ | 🟡 | 🟡 | 🟡 | ❌ |
@@ -35,7 +35,7 @@ Legend: ✅ strong · 🟡 partial · ❌ none · 💀 shutting down
 | **Platform-risk resilience** | ✅ | 💀 | 🟡 | 🟡 | ✅ | ✅ | ✅ |
 | **Price model** | One-time / OSS | SaaS 💀 | SaaS | SaaS | SaaS $$ | SaaS | SaaS |
 
-**One-line positioning:** *Gap Map is the only research tool that connects what users struggle with, what they wish existed, and what research already knows — across 23+ sources, in one local-first graph, inside your IDE.*
+**One-line positioning:** *OpenReply is the only research tool that connects what users struggle with, what they wish existed, and what research already knows — across 23+ sources, in one local-first graph, inside your IDE.*
 
 ---
 

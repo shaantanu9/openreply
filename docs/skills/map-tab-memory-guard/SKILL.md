@@ -35,7 +35,7 @@ Inside `renderTopic(...)` scope:
 
 ## Reactive Events Rule
 
-In `onGapmapChangedTask8`:
+In `onOpenreplyChangedTask8`:
 
 - If current tab is `map`, skip generic `switchTab(curr)` refresh.
 - Map tab must own its own refresh logic.

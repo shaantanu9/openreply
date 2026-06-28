@@ -1,6 +1,6 @@
-# Gap Map — Research Methodology & Implementation Guide
+# OpenReply — Research Methodology & Implementation Guide
 
-> A consulting-grade, academically-anchored pipeline for discovering market gaps from unstructured public data. This document is the technical and methodological reference for Gap Map's research engine.
+> A consulting-grade, academically-anchored pipeline for discovering market gaps from unstructured public data. This document is the technical and methodological reference for OpenReply's research engine.
 
 **Version:** 1.0  
 **Last updated:** April 20, 2026  
@@ -27,17 +27,17 @@
 
 ### 1.1 The core thesis
 
-Most "market research" tools collapse the research process into keyword-matched sentiment dashboards. That produces noise, not insight. Gap Map rejects this approach and instead implements the same sequential rigor used by **McKinsey, BCG, Bain, and academic qualitative researchers**: hypothesis framing → triangulated collection → grounded coding → saturation testing → JTBD synthesis → competitive mapping → opportunity scoring → structured synthesis → falsifiable output.
+Most "market research" tools collapse the research process into keyword-matched sentiment dashboards. That produces noise, not insight. OpenReply rejects this approach and instead implements the same sequential rigor used by **McKinsey, BCG, Bain, and academic qualitative researchers**: hypothesis framing → triangulated collection → grounded coding → saturation testing → JTBD synthesis → competitive mapping → opportunity scoring → structured synthesis → falsifiable output.
 
 ### 1.2 Three non-negotiable principles
 
 **Principle 1 — Research exists to enable decisions.** Every feature, every extraction, every dashboard widget must move the user closer to a go/no-go/pivot decision. If it doesn't, cut it.
 
-**Principle 2 — Rigor beats volume.** A saturated, triangulated finding from 30 well-analyzed posts outperforms a sentiment score over 30,000 posts. Gap Map optimizes for epistemic quality, not corpus size.
+**Principle 2 — Rigor beats volume.** A saturated, triangulated finding from 30 well-analyzed posts outperforms a sentiment score over 30,000 posts. OpenReply optimizes for epistemic quality, not corpus size.
 
 **Principle 3 — Every claim is traceable.** No insight is displayed without a citation trail back to the raw source. This is the Shneiderman "details-on-demand" tier and the foundation of user trust.
 
-### 1.3 What Gap Map is *not*
+### 1.3 What OpenReply is *not*
 
 - Not a social listening tool (Brandwatch, Sprout)
 - Not a keyword volume tracker (SEMrush, Ahrefs)
@@ -136,7 +136,7 @@ def build_issue_tree(topic: str, client: Anthropic) -> List[IssueNode]:
 
 **The four triangulations:**
 
-| Type | Definition | Gap Map implementation |
+| Type | Definition | OpenReply implementation |
 |------|------------|------------------------|
 | Data | Multiple sources, times, persons | 30+ corpora (Reddit, HN, reviews, RSS, Trends, job postings, GitHub issues, podcasts via Whisper, patents, complaints DBs) |
 | Methodological | Multiple methods (qual + quant) | Pair qualitative extraction with quantitative signals (Trends velocity, job posting counts, review volume) |
@@ -407,7 +407,7 @@ WTP_PATTERNS = [
 
 **The ERRC Grid** (Eliminate / Reduce / Raise / Create):
 
-| Action | Meaning | Gap Map source |
+| Action | Meaning | OpenReply source |
 |--------|---------|----------------|
 | Eliminate | Factors the industry takes for granted that should be removed | Common complaints about standard features |
 | Reduce | Factors that are overserved | Features users say they don't need |
@@ -471,7 +471,7 @@ def solution_gap_score(job: Job, canvas: StrategyCanvas) -> float:
 ```python
 # phase_7_scoring.py
 
-def gap_map_score(opportunity: Opportunity) -> float:
+def openreply_map_score(opportunity: Opportunity) -> float:
     """
     The single ranking number users see.
     Transparent, weighted, auditable.
@@ -512,7 +512,7 @@ def gap_map_score(opportunity: Opportunity) -> float:
 
 Map your CHRONIC / EMERGING / FADING tiers onto this:
 
-| Gap Map tier | Three Horizons | Strategic implication |
+| OpenReply tier | Three Horizons | Strategic implication |
 |--------------|----------------|------------------------|
 | Chronic      | H1             | Ship fast; proven demand |
 | Emerging     | H2             | Build a thesis; MVP |
@@ -527,7 +527,7 @@ Map your CHRONIC / EMERGING / FADING tiers onto this:
 
 **The rule:** Every deliverable leads with **one governing thought**, supported by **3–5 key arguments**, each supported by **evidence**. Nothing else is allowed on the front page.
 
-**The Gap Map topic brief structure:**
+**The OpenReply topic brief structure:**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -642,7 +642,7 @@ def validate_hypothesis(card: HypothesisCard) -> List[str]:
 
 ### 4.1 The graph model
 
-Gap Map is a **property graph**, not a relational dump. Nodes and edges:
+OpenReply is a **property graph**, not a relational dump. Nodes and edges:
 
 ```
 NODES:
@@ -716,7 +716,7 @@ class RunSnapshot:
     outputs_hash: str           # SHA256 of final brief
 ```
 
-This turns Gap Map outputs into **citable research artifacts**. "According to Gap Map run #47A2, April 2026..." becomes a legitimate sentence.
+This turns OpenReply outputs into **citable research artifacts**. "According to OpenReply run #47A2, April 2026..." becomes a legitimate sentence.
 
 ---
 
@@ -876,7 +876,7 @@ Seed known-bad posts into collection (bots, astroturf, irrelevant, low-quality) 
 
 ## 9. Deliverables & Integrations
 
-Research that doesn't ship doesn't matter. Gap Map must close the loop:
+Research that doesn't ship doesn't matter. OpenReply must close the loop:
 
 ### 9.1 Export formats
 
@@ -940,7 +940,7 @@ Click a topic → 10 seconds later you have: governing thought, three arguments,
 ```python
 # main_pipeline.py
 
-def run_gap_map(topic: str) -> TopicBrief:
+def run_openreply_map(topic: str) -> TopicBrief:
     # Phase 1
     issue_tree = build_issue_tree(topic)
     scqa       = build_scqa(topic)
@@ -978,7 +978,7 @@ def run_gap_map(topic: str) -> TopicBrief:
     # Phase 7
     opportunities = [build_opportunity(job) for job in jobs]
     for opp in opportunities:
-        opp.score   = gap_map_score(opp)
+        opp.score   = openreply_map_score(opp)
         opp.horizon = classify_horizon(opp)
     opportunities.sort(key=lambda o: -o.score)
 

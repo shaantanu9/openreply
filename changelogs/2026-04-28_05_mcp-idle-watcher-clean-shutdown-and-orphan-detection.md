@@ -93,7 +93,7 @@ server exited rc=0 after ~62.2s
 ```
 
 Tool-wrapper unit test: `_LAST_ACTIVITY_TS[0]` was 0.0 before the call
-and 1777390500.85 after a `gapmap_query_db("")` invocation — confirming
+and 1777390500.85 after a `openreply_query_db("")` invocation — confirming
 the wrapper now bumps activity on every tool dispatch.
 
 `bash scripts/mcp_doctor.sh` — smoke launch reaches `startup:ready` in

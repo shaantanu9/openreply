@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * One-time keypair generator for Gap Map license signing.
+ * One-time keypair generator for OpenReply license signing.
  *
  * Writes:
  *   scripts/licenses/.keys/private.b64  (chmod 600) — NEVER commit

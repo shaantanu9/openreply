@@ -27,10 +27,10 @@ Every feature in this app is the same triangle. The UI never touches data direct
 └────────────────────────────────│──────────────────────────────────┘
                                   │  subprocess (NDJSON / JSON on stdout)
 ┌─────────────────────────────────▼──────────────────────────────────┐
-│  PYTHON SIDECAR                 src/gapmap/                          │
+│  PYTHON SIDECAR                 src/openreply/                          │
 │   cli/main.py        argparse → cmd_* handlers                      │
 │   sources/ research/ graph/ retrieval/   ← the real logic           │
-│   core/db.py         SQLite (gapmap.db, ~62 tables)                 │
+│   core/db.py         SQLite (openreply.db, ~62 tables)                 │
 │   retrieval/palace.py ChromaDB + ONNX MiniLM embeddings             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -40,7 +40,7 @@ Every feature in this app is the same triangle. The UI never touches data direct
 2. `app-tauri/src-tauri/src/commands.rs` — the `#[tauri::command]` fn that calls `run_cli`.
 3. `app-tauri/src-tauri/src/main.rs` — add the fn to the `generate_handler!(...)` list (миссing this = build error `__cmd__<name>` not found).
 
-Plus the Python side: a `cmd_*` handler wired into `src/gapmap/cli/main.py`'s argparse.
+Plus the Python side: a `cmd_*` handler wired into `src/openreply/cli/main.py`'s argparse.
 
 **Two return styles:**
 - **One-shot JSON** — Rust calls `run_cli`, parses the JSON once, returns it. (Most commands.)
@@ -53,13 +53,13 @@ Plus the Python side: a `cmd_*` handler wired into `src/gapmap/cli/main.py`'s ar
 ### Where it lives
 | Layer | Location |
 |---|---|
-| Fetch sources | `src/gapmap/sources/collect_adapter.py:816` (`SOURCES` registry), `sources/pubmed.py:79` (`fetch_pubmed`) — arxiv, openalex, semantic scholar, pubmed, crossref, scholar |
-| Full text | `src/gapmap/research/paper_fulltext.py` (PDF download + extract) |
-| Sections | `src/gapmap/research/paper_sections.py:173` (`parse_sections_for`) |
-| Chunking | `src/gapmap/research/paper_chunks.py:128` (`chunk_paper`) |
-| Embedding | `src/gapmap/retrieval/palace.py:333` (`upsert_paper_chunks`) |
-| LLM analysis | `src/gapmap/research/paper_analyze.py` (`analyze_paper`) |
-| MCP tools | `src/gapmap/mcp/server.py` — `gapmap_papers:912`, `gapmap_paper_sections:1060`, `gapmap_paper_chunk:1098`, `gapmap_paper_chunk_topic:1165`, `gapmap_paper_research_pipeline:1731`, `gapmap_paper_fulltext`, `gapmap_paper_chunk_search`, `gapmap_analyze_paper` |
+| Fetch sources | `src/openreply/sources/collect_adapter.py:816` (`SOURCES` registry), `sources/pubmed.py:79` (`fetch_pubmed`) — arxiv, openalex, semantic scholar, pubmed, crossref, scholar |
+| Full text | `src/openreply/research/paper_fulltext.py` (PDF download + extract) |
+| Sections | `src/openreply/research/paper_sections.py:173` (`parse_sections_for`) |
+| Chunking | `src/openreply/research/paper_chunks.py:128` (`chunk_paper`) |
+| Embedding | `src/openreply/retrieval/palace.py:333` (`upsert_paper_chunks`) |
+| LLM analysis | `src/openreply/research/paper_analyze.py` (`analyze_paper`) |
+| MCP tools | `src/openreply/mcp/server.py` — `openreply_papers:912`, `openreply_paper_sections:1060`, `openreply_paper_chunk:1098`, `openreply_paper_chunk_topic:1165`, `openreply_paper_research_pipeline:1731`, `openreply_paper_fulltext`, `openreply_paper_chunk_search`, `openreply_analyze_paper` |
 | Rust | `commands.rs` — `paper_research_pipeline:1564`, `paper_outline_generate:1598`, `paper_draft_generate:1617`, `paper_export_with_citations:1659`, `paper_pdf_fetch:3776` |
 | JS API | `api.js` — `analyzePaper:482`, `paperAnalysesGet:490`, `paperOutlineGenerate:924`, `paperDraftGenerate:925`, `paperExportWithCitations:933` |
 | **UI screen** | `app-tauri/src/screens/papers.js` — list with citation counts, Unpaywall PDF links, export toolbar (BibTeX/RIS/APA/Markdown). `renderList:137`, `renderRow:83`, `renderSearchHeader:50` |
@@ -68,7 +68,7 @@ Plus the Python side: a `cmd_*` handler wired into `src/gapmap/cli/main.py`'s ar
 `posts` (paper rows, `source_type='arxiv'…`) · `paper_full_texts` · `paper_sections` · `paper_chunks` · `paper_analyses` · `paper_references`
 
 ### Flow (6 stages, each writes its own table)
-1. **Fetch** → `gapmap_papers` pulls from the source registry → `posts`.
+1. **Fetch** → `openreply_papers` pulls from the source registry → `posts`.
 2. **Full text** → `paper_fulltext` downloads OA PDF/text → `paper_full_texts`.
 3. **Sections** → parse into Abstract/Methods/Results/… → `paper_sections`.
 4. **Chunk** → section-aware windows, hash-stable ids → `paper_chunks`.
@@ -82,8 +82,8 @@ Plus the Python side: a `cmd_*` handler wired into `src/gapmap/cli/main.py`'s ar
 ### Where it lives
 | Layer | Location |
 |---|---|
-| Core | `src/gapmap/research/research_linker.py` — `link_findings_for_topic:66`, `_finding_query_text:57`, `get_links_for_finding:165`, `get_links_summary:185` |
-| MCP | `gapmap_link:2888` (create), `gapmap_links:2896` (read/count) |
+| Core | `src/openreply/research/research_linker.py` — `link_findings_for_topic:66`, `_finding_query_text:57`, `get_links_for_finding:165`, `get_links_summary:185` |
+| MCP | `openreply_link:2888` (create), `openreply_links:2896` (read/count) |
 | Rust | `commands.rs` — `link_research:1714`, `research_links:1728` |
 | JS API | `api.js` — `linkResearch:943` (+ `mutated('research_links')`), `researchLinks:947` |
 
@@ -104,13 +104,13 @@ Plus the Python side: a `cmd_*` handler wired into `src/gapmap/cli/main.py`'s ar
 ### Where it lives
 | Layer | Location |
 |---|---|
-| Structural build | `src/gapmap/graph/build.py:178` (`build_structural`) |
-| Semantic (LLM) | `src/gapmap/graph/semantic.py:228` (`upsert_semantic`), `enrich_from_llm:454`, `backfill_source_evidence:143` |
-| Relations | `src/gapmap/graph/relations.py` (`build_semantic_relations` → relates_to / potentially_solves / could_address) |
-| Analysis | `src/gapmap/graph/analyze.py` — `pagerank_nodes:101`, `detect_communities` (Leiden), `betweenness_bridges` |
-| Insights | `src/gapmap/graph/insights.py` — knowledge_gaps, surprising_connections, cross_source_bridges, god_nodes |
-| Export | `src/gapmap/graph/export.py` (D3 JSON) |
-| MCP | `gapmap_graph_build/_pagerank/_communities/_bridges/_neighbors/_top_nodes/_structural_summary/_export_json` |
+| Structural build | `src/openreply/graph/build.py:178` (`build_structural`) |
+| Semantic (LLM) | `src/openreply/graph/semantic.py:228` (`upsert_semantic`), `enrich_from_llm:454`, `backfill_source_evidence:143` |
+| Relations | `src/openreply/graph/relations.py` (`build_semantic_relations` → relates_to / potentially_solves / could_address) |
+| Analysis | `src/openreply/graph/analyze.py` — `pagerank_nodes:101`, `detect_communities` (Leiden), `betweenness_bridges` |
+| Insights | `src/openreply/graph/insights.py` — knowledge_gaps, surprising_connections, cross_source_bridges, god_nodes |
+| Export | `src/openreply/graph/export.py` (D3 JSON) |
+| MCP | `openreply_graph_build/_pagerank/_communities/_bridges/_neighbors/_top_nodes/_structural_summary/_export_json` |
 | Rust | `commands.rs` — `build_graph:1128`, `enrich_graph:1143`, `enrich_graph_stream:1180` (NDJSON), `relate_graph:1311`, `cancel_enrich_for_topic:999`, `clear_graph_inflight:951` |
 | JS API | `api.js` — `buildGraph:559`, `enrichGraph:564`, `enrichGraphStream:578` (listens `enrich:progress` / `enrich:stream:done`), `relateGraph:587`, `cancelEnrich:604` |
 
@@ -134,10 +134,10 @@ Plus the Python side: a `cmd_*` handler wired into `src/gapmap/cli/main.py`'s ar
 ### Where it lives
 | Layer | Location |
 |---|---|
-| Core | `src/gapmap/retrieval/palace.py` — `is_available:70`, `get_palace`, `get_embedding_function`, `upsert_posts_many:207`, `search_posts:407` (hybrid), `related_posts:486`, `reindex_all:537`, `upsert_paper_chunks:333`, `search_paper_chunks:398`, `heal_corrupt_index`, `warmup_model` |
-| Embedder | `src/gapmap/retrieval/embedder.py` (ONNX MiniLM; env `GAPMAP_EMBEDDING_MODEL`, default `all-MiniLM-L6-v2`) |
-| Relevance | `src/gapmap/research/relevance.py` — `score_posts`, `filter_topic_posts`, `filter_findings` |
-| MCP | `gapmap_palace_warmup/status/reindex/repair`, `search_posts`, `related_posts`, `paper_chunk_search` |
+| Core | `src/openreply/retrieval/palace.py` — `is_available:70`, `get_palace`, `get_embedding_function`, `upsert_posts_many:207`, `search_posts:407` (hybrid), `related_posts:486`, `reindex_all:537`, `upsert_paper_chunks:333`, `search_paper_chunks:398`, `heal_corrupt_index`, `warmup_model` |
+| Embedder | `src/openreply/retrieval/embedder.py` (ONNX MiniLM; env `OPENREPLY_EMBEDDING_MODEL`, default `all-MiniLM-L6-v2`) |
+| Relevance | `src/openreply/research/relevance.py` — `score_posts`, `filter_topic_posts`, `filter_findings` |
+| MCP | `openreply_palace_warmup/status/reindex/repair`, `search_posts`, `related_posts`, `paper_chunk_search` |
 | Rust | `commands.rs` — `palace_warmup:4686` (NDJSON), `palace_reindex:4707` (NDJSON), `palace_prewarm:4674`, `palace_stats:4643`, `palace_model_status:4654`, `reindex_palace:4635`, `semantic_search`, `related_posts` |
 | JS API | `api.js` — `semanticSearch:759`, `relatedPosts:761`, `reindexPalace:763`, `palaceStats:771`, `palaceModelStatus:775`, `palaceWarmup:779` (listens `palace:warmup:*`), `palacePrewarm:787`, `palaceReindex:792` (listens `palace:reindex:*`) |
 | **UI** | `app-tauri/src/screens/search.js` — ad-hoc search; semantic results surface through `semanticSearch`. Palace status/warmup typically lives in the Settings screen. |
@@ -173,7 +173,7 @@ Corpus ─LLM extract─► GRAPH nodes (findings) ─link_findings_for_topic─
 
 - **Palace is the shared semantic engine** — both the graph's INFERRED relation edges and the finding→paper linking call `palace.search_*`.
 - **Linking** is the bridge: graph findings ↔ paper corpus, via `finding_research_links`.
-- Everything keys off the same `gapmap.db` (SQLite, ~62 tables) and the same ONNX embedder.
+- Everything keys off the same `openreply.db` (SQLite, ~62 tables) and the same ONNX embedder.
 
 ---
 
@@ -187,8 +187,8 @@ Corpus ─LLM extract─► GRAPH nodes (findings) ─link_findings_for_topic─
 ### `api.js` — the JS↔Rust bridge
 - Wraps `@tauri-apps/api` `invoke`. `DEFAULT_INVOKE_TIMEOUT_MS = 90_000`; `Promise.race` with a timeout sentinel + single backoff retry.
 - **Two-layer cache** (≈23–91): in-memory `_cache` (TTL, default 5 s) + `_inflight` dedup (burst re-renders collapse to one call) + localStorage SWR (`readPersisted`/`writePersisted`, build-output cached 7 days).
-- **Mutation broadcast** (≈261–375): `mutated(kind)` looks up `INVALIDATE_MAP`, clears affected cache keys, and dispatches a `gapmap:changed` event so other screens refetch. `graph`, `findings`, `research_links`, `collect` are all keys here.
-- **DB-freshness poll** (≈377–430): polls `db_mtime` every 5 s while the window is visible, dispatches `gapmap:db-changed` on external writes.
+- **Mutation broadcast** (≈261–375): `mutated(kind)` looks up `INVALIDATE_MAP`, clears affected cache keys, and dispatches a `openreply:changed` event so other screens refetch. `graph`, `findings`, `research_links`, `collect` are all keys here.
+- **DB-freshness poll** (≈377–430): polls `db_mtime` every 5 s while the window is visible, dispatches `openreply:db-changed` on external writes.
 
 ### Rust — `commands.rs` / `cli.rs` / `main.rs`
 - Each command is an `async fn` annotated `#[tauri::command]` that builds a `["research", "<subcmd>", "--topic", …, "--json"]` arg vec and calls `run_cli` (in `cli.rs`), which spawns the Python sidecar and parses stdout.
@@ -203,7 +203,7 @@ Corpus ─LLM extract─► GRAPH nodes (findings) ─link_findings_for_topic─
 2. Screen calls `api.paperAnalysesGet(topic)`.
 3. `api.js` `cachedInvoke` → dedup/TTL check → `invoke('paper_analyses_get', {topic})`.
 4. Rust command → `run_cli(["research","paper-analyses-get","--topic",topic,"--json"])`.
-5. Python reads `paper_analyses` from `gapmap.db` → returns JSON.
+5. Python reads `paper_analyses` from `openreply.db` → returns JSON.
 6. Result cached (TTL + localStorage SWR); `papers.js renderList()` paints rows (`renderRow:83`), skeleton shown while loading.
 7. Export → `api.paperExportWithCitations(topic,'bibtex')` → `paper_export_with_citations:1659` → sidecar → file download.
 
@@ -223,4 +223,4 @@ Corpus ─LLM extract─► GRAPH nodes (findings) ─link_findings_for_topic─
 
 ---
 
-_See also: `src/gapmap/mcp/server.py` for the full MCP tool surface, and the `tauri-python-sidecar-app` skill for the command-registration-triangle and NDJSON-streaming patterns._
+_See also: `src/openreply/mcp/server.py` for the full MCP tool surface, and the `tauri-python-sidecar-app` skill for the command-registration-triangle and NDJSON-streaming patterns._

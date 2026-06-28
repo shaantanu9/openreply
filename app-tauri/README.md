@@ -1,20 +1,20 @@
-# Gap Map — desktop app (Tauri)
+# OpenReply — desktop app (Tauri)
 
-Soft-dashboard Tauri wrapper for the `gapmap` research tool.
+Soft-dashboard Tauri wrapper for the `openreply` research tool.
 The Python CLI runs as a bundled sidecar; all UI is vanilla JS + the
 `variant-6-soft-dashboard` design.
 
 ## First-time setup
 
-From the `gapmap` repo root:
+From the `openreply` repo root:
 
 ```bash
-# 1. Build the Python sidecar (gapmap binary)
+# 1. Build the Python sidecar (openreply binary)
 ./scripts/build-pyinstaller.sh
 
 # 2. Copy the binary into app-tauri/src-tauri/binaries/
 # (Replace <triple> with your platform, e.g. aarch64-apple-darwin)
-cp dist/gapmap app-tauri/src-tauri/binaries/gapmap-aarch64-apple-darwin
+cp dist/openreply app-tauri/src-tauri/binaries/openreply-aarch64-apple-darwin
 
 # 3. Install Node deps (from app-tauri/)
 cd app-tauri
@@ -66,13 +66,13 @@ app-tauri/
 │   └── screens/
 │       ├── home.js          # hero + stats + activity + topic tiles
 │       ├── collect.js       # live progress log
-│       ├── topic.js         # embeds gap-map.html in iframe
+│       ├── topic.js         # embeds openreply-map.html in iframe
 │       ├── settings.js      # config + table counts
 │       └── ingest.js        # (stub) local file drop
 └── src-tauri/               # Rust backend
     ├── Cargo.toml
     ├── tauri.conf.json      # sidecar declared here
-    ├── binaries/            # platform-specific gapmap builds
+    ├── binaries/            # platform-specific openreply builds
     └── src/
         ├── main.rs          # Tauri builder + invoke handlers
         ├── cli.rs           # sidecar wrapper (run_cli + run_cli_streaming)
@@ -83,16 +83,16 @@ app-tauri/
 
 | Command | Purpose |
 |---|---|
-| `cli_info()` | `gapmap info --json` |
+| `cli_info()` | `openreply info --json` |
 | `list_topics()` | inventory of all collected topics |
 | `overview_stats()` | global post/painpoint/source counts |
 | `recent_activity()` | last 12 fetches |
 | `discover_subs(topic, limit)` | `research discover` |
 | `start_collect(topic, aggressive)` | kicks off `research collect` with live event streaming |
 | `build_graph(topic)` | `research graph build` |
-| `export_html(topic)` | generates gap-map HTML → returns path |
+| `export_html(topic)` | generates openreply-map HTML → returns path |
 | `get_findings(topic, kind)` | query painpoints/products/workarounds/features |
-| `app_data_dir()` | the `GAPMAP_DATA_DIR` path |
+| `app_data_dir()` | the `OPENREPLY_DATA_DIR` path |
 
 Events:
 - `collect:progress` — fired per stdout/stderr line during a collect
@@ -102,7 +102,7 @@ Events:
 
 ```bash
 npm run tauri build
-# → target/release/bundle/dmg/Gap Map_0.1.0_aarch64.dmg
+# → target/release/bundle/dmg/OpenReply_0.1.0_aarch64.dmg
 ```
 
 Code signing + notarization requires the env vars documented in

@@ -1,4 +1,4 @@
-import inspect, gapmap.graph.build as b
+import inspect, openreply.graph.build as b
 
 
 def test_structural_callers_pass_provenance():

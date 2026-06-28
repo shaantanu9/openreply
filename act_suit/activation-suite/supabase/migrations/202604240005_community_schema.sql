@@ -1,4 +1,4 @@
--- Gap Map Community schema (per docs/licence/gapmap-dual-app-spec.md §4.3–4.4).
+-- OpenReply Community schema (per docs/licence/openreply-dual-app-spec.md §4.3–4.4).
 -- This is the research-publishing half of the product. All data here is
 -- user-owned but defaults to public; privacy is what Pro unlocks.
 

@@ -6,7 +6,7 @@
 
 ## Goal
 
-Make every generated Gap Map artifact (graph nodes / gaps / personas) auditable:
+Make every generated OpenReply artifact (graph nodes / gaps / personas) auditable:
 1. **Provenance** — tagged with *how* it was produced (`llm` / `llm_fallback` / `template` / `structural`).
 2. **Checks ledger** — a record of the quality gates that ran (op + outcome + detail).
 3. **Lineage** — each artifact linked to the source posts + run that produced it.
@@ -15,9 +15,9 @@ All additive and **non-fatal** — never blocks enrich/build. Backward-compatibl
 
 ## Why SQLite, not JSONL (adaptation from WhyBuddy)
 
-WhyBuddy used JSONL for lineage because it had no SQL store for it. Gap Map is
+WhyBuddy used JSONL for lineage because it had no SQL store for it. OpenReply is
 SQLite-first with a native rusqlite read path (Phase 17) and an MCP
-`gapmap_query_db` path. SQLite tables ride that existing infra (native reads,
+`openreply_query_db` path. SQLite tables ride that existing infra (native reads,
 MCP queries, screen cache); JSONL would be a second, unqueryable store. So we
 implement the *pattern* (provenance + ledger + lineage DAG) on SQLite.
 
@@ -58,7 +58,7 @@ implement the *pattern* (provenance + ledger + lineage DAG) on SQLite.
 - `graph/build.py` — tag structural provenance + record build invariant checks.
 - `research/enrich_worker.py` (+ gap steps) — call `record_check` at each LLM/parse gate; set run_id.
 - `app-tauri/src/screens/` — a read-only "Provenance & Audit" panel (vanilla JS) reading the two tables via `api.runQuery`; provenance badge on insight cards.
-- MCP (optional, thin): `gapmap_checks_list(topic)` + `gapmap_lineage_get(artifact_id)` querying the tables.
+- MCP (optional, thin): `openreply_checks_list(topic)` + `openreply_lineage_get(artifact_id)` querying the tables.
 
 ## Error handling
 - All ledger/lineage/provenance writes best-effort: catch + return sentinel, never raise, never block the pipeline (mirror `core/db.py:1405` fetch-audit `-1`).

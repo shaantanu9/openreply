@@ -69,7 +69,7 @@ all topics) so a future global "Chats" view is a thin UI add.
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — `chat_conversations` table in `init_schema`.
+- `src/openreply/core/db.py` — `chat_conversations` table in `init_schema`.
 - `app-tauri/src-tauri/src/db.rs` — native read-write chat-conversation CRUD.
 - `app-tauri/src-tauri/src/commands.rs` — 5 Tauri chat-conversation commands.
 - `app-tauri/src-tauri/src/main.rs` — registered the 5 commands.

@@ -1,4 +1,4 @@
-# Gap Map — Features & Usage Guide
+# OpenReply — Features & Usage Guide
 
 > A complete inventory of what's shipped, how to use it, and an honest coverage map against the Dual-Mode Pivot.
 
@@ -10,7 +10,7 @@
 
 ## Table of contents
 
-1. [What Gap Map is, today](#1-what-gap-map-is-today)
+1. [What OpenReply is, today](#1-what-openreply-map-is-today)
 2. [Phase 1 — Claude-native synthesis](#2-phase-1--claude-native-synthesis)
 3. [Phase 2 — Methodology rigor layer](#3-phase-2--methodology-rigor-layer)
 4. [Phase 3 — Hypothesis tracking & decision journal](#4-phase-3--hypothesis-tracking--decision-journal)
@@ -29,9 +29,9 @@
 
 ---
 
-## 1. What Gap Map is, today
+## 1. What OpenReply is, today
 
-Gap Map is a **local-first desktop research app** (Tauri 2 + vanilla-JS frontend + PyInstaller-bundled Python sidecar) that turns a topic into a decision-ready brief.
+OpenReply is a **local-first desktop research app** (Tauri 2 + vanilla-JS frontend + PyInstaller-bundled Python sidecar) that turns a topic into a decision-ready brief.
 
 **Core loop that exists today:**
 
@@ -350,7 +350,7 @@ reddit-cli research export-brief --topic <t> --format slack
    - "Cheapest test?"
    - "US vs EU?"
 4. Click a chip → auto-sends. Or type a free-form question + Enter.
-5. Chat history persists per-topic in `localStorage.gapmap.insights.chat.<topic>` (last 40 turns).
+5. Chat history persists per-topic in `localStorage.openreply.insights.chat.<topic>` (last 40 turns).
 6. Press `⌘/` again to collapse.
 
 **Features:**
@@ -605,7 +605,7 @@ These phases lay groundwork Product Mode can lean on:
 1. **A concept of a user-owned product** — there is no `Product` entity. Today every surface is scoped to a `topic`, which is a free-form string.
 2. **A concept of competitors as first-class entities** — they exist as `graph_nodes(kind='product')` inside a topic's graph, but not as monitored, persisted, cross-topic objects.
 3. **OAuth and credential vault** — BYOK stores API keys for LLMs only. No Intercom / Stripe / Zendesk OAuth flow.
-4. **Account system / billing** — Gap Map is single-user local-only. No Stripe. No auth.
+4. **Account system / billing** — OpenReply is single-user local-only. No Stripe. No auth.
 5. **Scheduled sweeps per product with typed signals** — the Phase 4 monitor is generic (per-topic synthesize diff); not the `daily_product_sweep` that produces typed `competitor_release` / `your_product_regression` / etc. signals.
 6. **Weekly digest infra** — no email transport, no Slack webhook delivery (though the "Slack summary" export format is clipboard-ready).
 7. **Dashboard sections: The Mirror / The Lens / The Field / The Signals / The Hypotheses** — we have individual surfaces (leaderboard, weekly deltas, competitor matrix, hypothesis bets) but they are **per-topic**, not **per-product**. No product-scoped dashboard exists.
@@ -661,8 +661,8 @@ Now: three-layer relevance filter using the same MiniLM embedder:
 
 | Layer | Threshold env | Default | What it does |
 |---|---|---|---|
-| Collect-time | `GAPMAP_RELEVANCE_GATE_THRESHOLD` | 0.28 | `_tag_posts` gates by cosine-to-topic before inserting into `topic_posts`. Recall-leaning. |
-| LLM-output | `GAPMAP_FINDING_RELEVANCE_THRESHOLD` | 0.40 | `synthesize_insights` drops findings whose label is off-topic. Precision-leaning. |
+| Collect-time | `OPENREPLY_RELEVANCE_GATE_THRESHOLD` | 0.28 | `_tag_posts` gates by cosine-to-topic before inserting into `topic_posts`. Recall-leaning. |
+| LLM-output | `OPENREPLY_FINDING_RELEVANCE_THRESHOLD` | 0.40 | `synthesize_insights` drops findings whose label is off-topic. Precision-leaning. |
 | Retroactive | `research clean-corpus --topic T --threshold 0.30` | user | Cleans existing corpora. Dry-run by default; inspect `sample_dropped` first. |
 
 Set any threshold to 0 to disable. Graceful chromadb-missing skip.

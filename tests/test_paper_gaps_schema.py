@@ -1,6 +1,6 @@
 def test_paper_gaps_table_created(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core.db import get_db, init_schema
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core.db import get_db, init_schema
     db = get_db(); init_schema(db)
     assert "paper_gaps" in db.table_names()
     cols = {c.name for c in db["paper_gaps"].columns}

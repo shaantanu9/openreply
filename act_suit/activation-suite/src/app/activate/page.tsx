@@ -3,7 +3,7 @@ import { SiteShell } from "@/components/shell/SiteShell";
 import { ActivatePanel } from "@/components/activate/ActivatePanel";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Activate your licence",
+  title: "OpenReply — Activate your licence",
 };
 
 export const dynamic = "force-dynamic";

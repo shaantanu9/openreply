@@ -18,7 +18,7 @@ def _load(rel_path, name):
     return mod
 
 
-to = _load("src/gapmap/research/chat/timeout.py", "chat_timeout")
+to = _load("src/openreply/research/chat/timeout.py", "chat_timeout")
 
 
 def test_returns_result_when_fast():

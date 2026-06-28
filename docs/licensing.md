@@ -1,8 +1,8 @@
-# Gap Map — Licensing Design (Technical)
+# OpenReply — Licensing Design (Technical)
 
 **Status:** Design + partial scaffold (keypair + mint script in `scripts/licenses/`).
 **Last updated:** 2026-04-21
-**Scope:** Explains exactly how a Gap Map license key is minted, delivered, verified, and enforced on a per-device basis — **entirely offline**, with seat limits, without the app ever needing to phone home.
+**Scope:** Explains exactly how a OpenReply license key is minted, delivered, verified, and enforced on a per-device basis — **entirely offline**, with seat limits, without the app ever needing to phone home.
 
 ---
 
@@ -49,7 +49,7 @@ Nothing crosses the dotted line at runtime. The only "network event" is the emai
 
 ```json
 {
-  "email":       "shantanu@gapmap.io",
+  "email":       "shantanu@openreply.io",
   "tier":        "personal",           // "personal" | "family" | "team"
   "seat_limit":  2,                    // personal=2, family=5, team=N
   "issued_at":   "2026-04-21T00:22:14.000Z",
@@ -217,7 +217,7 @@ If a pirate *does* fake it, they can activate unlimited times — but they now h
 
 ```json
 {
-  "email": "shantanu@gapmap.io",
+  "email": "shantanu@openreply.io",
   "activations": [
     {
       "device_id": "8F2CE9A1-3D7B-5C4E-9A0F-1B2C3D4E5F67",
@@ -283,7 +283,7 @@ Because the blob is signed at mint time, before the user knows their device-UUID
 
 A "My devices" UI lists entries in `activations.json` with a delete button per row. Deletion just rewrites the file. No network.
 
-When a user says *"I lost my old Mac, give me my seat back"*, they can do it themselves without support — but on a lost Mac they can't open Gap Map to remove the entry. Solution: a "Reset all activations" button that wipes the file. Nothing prevents them from using the license on the next 2 Macs.
+When a user says *"I lost my old Mac, give me my seat back"*, they can do it themselves without support — but on a lost Mac they can't open OpenReply to remove the entry. Solution: a "Reset all activations" button that wipes the file. Nothing prevents them from using the license on the next 2 Macs.
 
 ### 5.6 Support scenarios (ops runbook)
 
@@ -306,9 +306,9 @@ When a user says *"I lost my old Mac, give me my seat back"*, they can do it the
 
 ### 6.2 Optional heartbeat
 
-Once every ~30 days, if the network happens to be up, the app *may* GET `https://gapmap.io/api/heartbeat?purchase_id=<id>&ver=<v>`. The response body is ignored on success. A 404 or 500 is ignored. Only a 410 (GONE) response explicitly locks the license, and even then gracefully — the app shows a "license revoked by issuer" banner, grants a 7-day grace period, and continues to work with a persistent nag after that.
+Once every ~30 days, if the network happens to be up, the app *may* GET `https://openreply.io/api/heartbeat?purchase_id=<id>&ver=<v>`. The response body is ignored on success. A 404 or 500 is ignored. Only a 410 (GONE) response explicitly locks the license, and even then gracefully — the app shows a "license revoked by issuer" banner, grants a 7-day grace period, and continues to work with a persistent nag after that.
 
-This is entirely optional. A user who never connects to the internet never hits the heartbeat. **A pirate who blocks `gapmap.io` at firewall level sees no difference — the app keeps working.** That's intentional.
+This is entirely optional. A user who never connects to the internet never hits the heartbeat. **A pirate who blocks `openreply.io` at firewall level sees no difference — the app keeps working.** That's intentional.
 
 ### 6.3 Revocation story
 
@@ -351,7 +351,7 @@ first run ──▶  TRIAL (14 days, full features)
 | MCP server | ✅ | ✅ | ✅ | ✅ |
 | Scheduled weekly re-runs | N/A | ✅ | ❌ | ✅ |
 | Export PDF / Notion / Linear | N/A | ✅ | ❌ | ✅ |
-| Public gap-map gallery upload | N/A | ✅ | ❌ | ✅ |
+| Public openreply-map gallery upload | N/A | ✅ | ❌ | ✅ |
 | Multi-topic dashboard (>3) | N/A | ✅ | ❌ | ✅ |
 | Auto-updater | N/A | ✅ | ✅ | ✅ |
 
@@ -364,7 +364,7 @@ A naive user could delete `~/.config/reddit-myind/.firstrun` to restart the tria
 - Write `.firstrun` at first launch with `chmod 600`, containing `{ first_seen_at, install_hash }`.
 - `install_hash = sha256(device_uuid + app_version)`.
 - If the file is deleted and then app reopens, the recreated file has a newer `first_seen_at` — but `install_hash` identifies that this is the *same* install. A server-side log (via the optional heartbeat) can note resets, but we don't enforce on it.
-- For the basic deterrent, the file also references **system-install-timestamp** of `/Applications/Gap Map.app` — which users can't easily backdate without admin tricks.
+- For the basic deterrent, the file also references **system-install-timestamp** of `/Applications/OpenReply.app` — which users can't easily backdate without admin tricks.
 
 This is 10 lines of code, not a moat. Paying remains the path of least resistance.
 
@@ -461,7 +461,7 @@ The webhook is the *only* place the private key lives in production. Store it in
 
 ```
 1. Alice receives the email with a giant string.
-2. Opens Gap Map → Settings → License → "Paste license".
+2. Opens OpenReply → Settings → License → "Paste license".
 3. Webview verifies signature (offline).
 4. Webview reads device_id via Rust command.
 5. activations.json gets its first entry.
@@ -471,7 +471,7 @@ The webhook is the *only* place the private key lives in production. Store it in
 ### 10.4 Alice installs on her iMac
 
 ```
-1. Fresh Gap Map install. Trial starts.
+1. Fresh OpenReply install. Trial starts.
 2. Alice copies the same blob into Settings → License.
 3. Webview verifies signature (still valid).
 4. activations.json on this Mac is fresh → adds this device (entry #1 locally).

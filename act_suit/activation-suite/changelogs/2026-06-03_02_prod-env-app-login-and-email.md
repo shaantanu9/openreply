@@ -13,7 +13,7 @@ returned false on the server). Separately, the license-key + welcome emails
 wired into `src/lib/email.ts` would have silently no-op'd in prod because
 `RESEND_API_KEY_TOOL_MAIL` / `EMAIL_FROM` weren't set there either. Added the
 missing runtime env vars to Vercel production and redeployed; both flows now
-verified working against `gapmap.myind.ai`.
+verified working against `openreply.myind.ai`.
 
 ## Changes
 
@@ -29,7 +29,7 @@ verified working against `gapmap.myind.ai`.
 - Triggered a fresh production build (empty commit on `main`) so the new env
   vars are injected at build/deploy time.
 
-## Verification (against production gapmap.myind.ai)
+## Verification (against production openreply.myind.ai)
 
 - **Site login (Supabase auth):** `admin/generate_link` → `verify type=email`
   returns a valid access token (200). OTP / recovery / password sign-in OK.

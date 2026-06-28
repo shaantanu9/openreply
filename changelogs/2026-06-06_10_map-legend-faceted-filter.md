@@ -13,7 +13,7 @@ dense gap map readable: hide posts to see the painpoint↔product skeleton, or
 isolate just painpoints + competitors.
 
 Implemented by extending the viewer's existing `shouldShow`/visibility machinery
-(`src/gapmap/graph/export.py` `_HTML_TEMPLATE`) rather than adding new controls,
+(`src/openreply/graph/export.py` `_HTML_TEMPLATE`) rather than adding new controls,
 so it composes with the existing "Show users" toggle. `MAP_EXPORT_VERSION`
 bumped 4→5 so existing cached maps auto-rebuild on next open and pick up the
 clickable legend.
@@ -33,7 +33,7 @@ inline viewer script passes `node --check`; all new tokens present in output.
 
 ## Files Modified
 
-- `src/gapmap/graph/export.py`
+- `src/openreply/graph/export.py`
 - `app-tauri/src/screens/topic.js`
 
 ## Known gaps

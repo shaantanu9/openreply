@@ -31,4 +31,4 @@ isolation). No regression from Research Mode.
 - `tests/test_research_mode.py`, `changelogs/2026-06-07_11_research-mode-tests-and-library-fix.md`
 
 ## Files Modified
-- `src/gapmap/research/paper_library.py`
+- `src/openreply/research/paper_library.py`

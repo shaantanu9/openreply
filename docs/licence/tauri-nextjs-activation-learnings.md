@@ -8,7 +8,7 @@
 - `tauri-licence-impl.md` — the original spec
 - `subscription-model.md` — server-side plan / LS / webhook spec
 - `tauri-activation-runbook.md` — short day-to-day runbook
-- `gapmap-dual-app-spec.md` — product-level dual-app architecture
+- `openreply-dual-app-spec.md` — product-level dual-app architecture
 
 ---
 
@@ -38,7 +38,7 @@ activation-suite/ :3007                         app-tauri/
 
 The Tauri app's ONLY cross-DB touchpoint is activation. After that, it
 runs fully offline on local SQLite at
-`~/Library/Application Support/com.shantanu.gapmap/`. Licence data
+`~/Library/Application Support/com.shantanu.openreply/`. Licence data
 (who holds a key, which devices) lives on Supabase. Research data
 (topics, posts, insights) lives on the user's Mac. Never the twain shall
 meet unless we add a `StorageBackend::Supabase` variant to the desktop.
@@ -78,7 +78,7 @@ compile time — i.e., it is a literal string inside the compiled binary.
 cd app-tauri
 set -a ; source ../act_suit/activation-suite/.env ; set +a
 export JWT_DESKTOP_SECRET="$TOKEN_SIGNING_SECRET"
-export GAPMAP_LICENSE_API_BASE="http://127.0.0.1:3007"
+export OPENREPLY_LICENSE_API_BASE="http://127.0.0.1:3007"
 
 # From the SAME shell — this guarantees env propagates to cargo
 npm run tauri dev > /tmp/tauri-dev.log 2>&1 &
@@ -204,9 +204,9 @@ with a DIFFERENT `JWT_DESKTOP_SECRET` than the server's current
 Step-by-step fix:
 
 ```bash
-# Kill everything. pkill npm alone leaves the child target/debug/gapmap
+# Kill everything. pkill npm alone leaves the child target/debug/openreply
 # detached — it must be killed explicitly.
-pkill -9 -f "target/debug/gapmap"
+pkill -9 -f "target/debug/openreply"
 pkill -9 -f "tauri dev"
 pkill -9 -f "npm run tauri"
 # Free port 1420 from any dangling vite
@@ -219,7 +219,7 @@ sleep 2
 cd app-tauri
 set -a ; source ../act_suit/activation-suite/.env ; set +a
 export JWT_DESKTOP_SECRET="$TOKEN_SIGNING_SECRET"
-export GAPMAP_LICENSE_API_BASE="http://127.0.0.1:3007"
+export OPENREPLY_LICENSE_API_BASE="http://127.0.0.1:3007"
 
 # Force build.rs to re-run even if cargo thinks nothing changed
 touch src-tauri/build.rs
@@ -249,7 +249,7 @@ Credentials below are stable for the local-dev Supabase as long as the
 user isn't deleted and the licence row exists:
 
 ```
-Email:    desktop-test+1776995604@gapmap-dev.local
+Email:    desktop-test+1776995604@openreply-dev.local
 Password: anything (ignored since §3.2 fix)
 Key:      BWCS-JSSC-M8CL-6BA8
 API base: http://127.0.0.1:3007
@@ -260,7 +260,7 @@ If expired or deleted, re-mint:
 
 ```bash
 set -a ; source act_suit/activation-suite/.env ; set +a
-EMAIL="desktop-test+$(date +%s)@gapmap-dev.local"
+EMAIL="desktop-test+$(date +%s)@openreply-dev.local"
 PASS="Test_$(date +%s)_pw"
 UID=$(curl -fs -X POST "$SUPABASE_URL/auth/v1/admin/users" \
   -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
@@ -306,7 +306,7 @@ until curl -s http://127.0.0.1:3007/api/v1/health | grep -q ok ; do sleep 1 ; do
 cd ../../app-tauri
 set -a ; source ../act_suit/activation-suite/.env ; set +a
 export JWT_DESKTOP_SECRET="$TOKEN_SIGNING_SECRET"
-export GAPMAP_LICENSE_API_BASE="http://127.0.0.1:3007"
+export OPENREPLY_LICENSE_API_BASE="http://127.0.0.1:3007"
 npm run tauri dev > /tmp/tauri-dev.log 2>&1 &
 
 # 3. Verify secrets match
@@ -320,7 +320,7 @@ Stop:
 
 ```bash
 pkill -f "next dev -p 3007"
-pkill -9 -f "target/debug/gapmap"
+pkill -9 -f "target/debug/openreply"
 pkill -9 -f "tauri dev"
 pkill -9 -f "npm run tauri"
 ```

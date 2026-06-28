@@ -37,9 +37,9 @@ the timeline.
 
 ## Files Modified
 
-- `src/gapmap/sources/vendor/bird-search/bird-search.mjs`
-- `src/gapmap/sources/x_twitter.py`
-- `src/gapmap/reply/accounts.py`
+- `src/openreply/sources/vendor/bird-search/bird-search.mjs`
+- `src/openreply/sources/x_twitter.py`
+- `src/openreply/reply/accounts.py`
 
 ## Files Created
 

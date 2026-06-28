@@ -34,6 +34,6 @@ answers — all backed by the Phase 1 reading backend + paperAsk.
 - `changelogs/2026-06-07_06_research-mode-phase1-reader-ui.md`
 
 ## Files Modified
-- `src/gapmap/research/paper_reading.py` (read_view), `src/gapmap/cli/main.py`,
+- `src/openreply/research/paper_reading.py` (read_view), `src/openreply/cli/main.py`,
   `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`,
   `app-tauri/src/api.js`, `app-tauri/src/main.js`, `app-tauri/src/screens/papers.js`

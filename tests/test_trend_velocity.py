@@ -8,7 +8,7 @@ import pytest
 
 
 def test_window_velocity_rising():
-    from gapmap.research.trend_velocity import _window_velocity
+    from openreply.research.trend_velocity import _window_velocity
     now = time.time()
     day = 86400.0
     # 5 posts in last 7d, 1 in the prior 7d.
@@ -20,7 +20,7 @@ def test_window_velocity_rising():
 
 
 def test_window_velocity_new_has_no_baseline():
-    from gapmap.research.trend_velocity import _window_velocity
+    from openreply.research.trend_velocity import _window_velocity
     now = time.time()
     created = [now - 86400.0] * 3  # all recent, none prior
     v = _window_velocity(created, 7)
@@ -29,7 +29,7 @@ def test_window_velocity_new_has_no_baseline():
 
 
 def test_window_velocity_falling():
-    from gapmap.research.trend_velocity import _window_velocity
+    from openreply.research.trend_velocity import _window_velocity
     now = time.time()
     day = 86400.0
     created = [now - day] + [now - 9 * day] * 6
@@ -39,7 +39,7 @@ def test_window_velocity_falling():
 
 
 def test_keywords_drops_stopwords():
-    from gapmap.research.trend_velocity import _keywords
+    from openreply.research.trend_velocity import _keywords
     kw = _keywords("Flight tracking app issues")
     assert "app" not in kw and "issues" not in kw
     assert "flight" in kw and "tracking" in kw
@@ -47,8 +47,8 @@ def test_keywords_drops_stopwords():
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
     now = time.time()
@@ -69,21 +69,21 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_topic_velocity_counts(db):
-    from gapmap.research import trend_velocity
+    from openreply.research import trend_velocity
     v = trend_velocity.compute_topic_velocity("t", window_days=7)
     assert v["ok"] and v["total_posts"] == 3
     assert v["recent"] == 2 and v["prior"] == 1
 
 
 def test_gap_velocity_matches_keywords(db):
-    from gapmap.research import trend_velocity
+    from openreply.research import trend_velocity
     # Seed a scored gap so compute_gap_velocity has something to match.
     db.execute(
         "INSERT INTO gap_scores(topic,gap_id,title,pain_score) VALUES(?,?,?,?)",
         ["t", "flight-tracking", "Flight tracking", 60.0],
     ) if "gap_scores" in db.table_names() else None
     # Ensure table exists via pain_scoring then insert.
-    from gapmap.research import pain_scoring
+    from openreply.research import pain_scoring
     pain_scoring._ensure_table()
     db.execute(
         "INSERT OR REPLACE INTO gap_scores(topic,gap_id,title,pain_score) VALUES(?,?,?,?)",

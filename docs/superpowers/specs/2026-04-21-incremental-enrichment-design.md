@@ -6,7 +6,7 @@
 
 ## 1. Goal
 
-Make Gap Map feel useful from minute 1. Instead of "collect → wait 10 minutes → see findings all at once," ship a two-phase pipeline where the user sees visible progress immediately and the analysis engine starts filling findings/graph/solutions/reports as soon as there's enough signal — then keeps improving as more posts land.
+Make OpenReply feel useful from minute 1. Instead of "collect → wait 10 minutes → see findings all at once," ship a two-phase pipeline where the user sees visible progress immediately and the analysis engine starts filling findings/graph/solutions/reports as soon as there's enough signal — then keeps improving as more posts land.
 
 ## 2. Two-phase pipeline
 
@@ -133,7 +133,7 @@ Lives on Home (new-topic flow redirects to `#/collect/<slug>` which renders this
 
 ### 6.2 Phase-B reactive tabs
 
-Every data-bearing tab on the Topic page (Findings, Map, Gaps, Solutions, Chat, Research) subscribes to `gapmap:changed` with kind matching its concern:
+Every data-bearing tab on the Topic page (Findings, Map, Gaps, Solutions, Chat, Research) subscribes to `openreply:changed` with kind matching its concern:
 
 | Tab | Listens for | Action |
 |---|---|---|
@@ -225,7 +225,7 @@ LLM tokens are the main cost. The user must be able to control when extraction r
 
 ### 12.1 Extraction mode
 
-Radio group, stored in `topic_prefs.extraction_mode` (global default in `gapmap.pref.extraction_mode`):
+Radio group, stored in `topic_prefs.extraction_mode` (global default in `openreply.pref.extraction_mode`):
 
 | Mode | Behavior | When to use |
 |---|---|---|
@@ -235,19 +235,19 @@ Radio group, stored in `topic_prefs.extraction_mode` (global default in `gapmap.
 
 ### 12.2 Post threshold
 
-Slider 50 → 500 (default 100). `gapmap.pref.extraction_threshold`. Users with cheap providers or small topics can drop to 50 for faster feedback; users with premium models can raise to 200-500 for higher-quality first pass.
+Slider 50 → 500 (default 100). `openreply.pref.extraction_threshold`. Users with cheap providers or small topics can drop to 50 for faster feedback; users with premium models can raise to 200-500 for higher-quality first pass.
 
 ### 12.3 Batch size
 
-Slider 1 → 20 (default 5). `gapmap.pref.extraction_batch_size`. Larger batches = fewer LLM calls per 100 posts (cheaper per post due to fixed prompt overhead) but higher peak RAM + longer tail latency per batch. Smaller batches = more responsive UI but more total tokens spent on prompt scaffolding.
+Slider 1 → 20 (default 5). `openreply.pref.extraction_batch_size`. Larger batches = fewer LLM calls per 100 posts (cheaper per post due to fixed prompt overhead) but higher peak RAM + longer tail latency per batch. Smaller batches = more responsive UI but more total tokens spent on prompt scaffolding.
 
 ### 12.4 Daily token budget (optional)
 
-Numeric input + "no limit" checkbox. `gapmap.pref.daily_token_cap`. When the worker's cumulative token usage for the current day (reset at local midnight) hits the cap, it pauses and emits `enrich:cap-reached`. UI surfaces a banner with "Resume" and "Raise cap" buttons. Tracked in a new `extraction_daily_usage` table (date, provider, tokens_in, tokens_out, est_usd).
+Numeric input + "no limit" checkbox. `openreply.pref.daily_token_cap`. When the worker's cumulative token usage for the current day (reset at local midnight) hits the cap, it pauses and emits `enrich:cap-reached`. UI surfaces a banner with "Resume" and "Raise cap" buttons. Tracked in a new `extraction_daily_usage` table (date, provider, tokens_in, tokens_out, est_usd).
 
 ### 12.5 Release LLM when idle
 
-Checkbox, off by default. `gapmap.pref.release_llm_idle`. ONLY when on, the worker sends `keep_alive: 0` to Ollama after 10 min idle. For users on a RAM-tight machine who want Ollama offloaded between bursts. Default off because most users don't want the 8s reload lag.
+Checkbox, off by default. `openreply.pref.release_llm_idle`. ONLY when on, the worker sends `keep_alive: 0` to Ollama after 10 min idle. For users on a RAM-tight machine who want Ollama offloaded between bursts. Default off because most users don't want the 8s reload lag.
 
 ### 12.6 Cost estimator (informational, always visible)
 

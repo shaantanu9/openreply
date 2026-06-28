@@ -8,7 +8,7 @@
 Users can now add their own RSS/Atom feed URLs in **Settings → Custom RSS
 feeds**. Each feed is validated on add (scheme/SSRF guard → fetch → parse,
 rejecting non-feeds and Cloudflare-walled review sites), stored in the shared
-`gapmap.db`, and swept on **every collect** via a new `rss_user` source —
+`openreply.db`, and swept on **every collect** via a new `rss_user` source —
 topic-keyword filtered like every other RSS source, and relevance-gated like all
 sources. Rows are tagged `rss:user:<feed name>` so a user's own feed is
 identifiable in the corpus.
@@ -53,13 +53,13 @@ nothing passed user URLs or persisted them. Added:
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — user_feeds table + list/add/remove/set_enabled.
-- `src/gapmap/sources/rss.py` — `validate_feed` + `_is_safe_feed_url`.
-- `src/gapmap/sources/collect_adapter.py` — `run_rss_user`, `rss_user` source,
+- `src/openreply/core/db.py` — user_feeds table + list/add/remove/set_enabled.
+- `src/openreply/sources/rss.py` — `validate_feed` + `_is_safe_feed_url`.
+- `src/openreply/sources/collect_adapter.py` — `run_rss_user`, `rss_user` source,
   `url_names` tagging in `run_rss`.
-- `src/gapmap/sources/rss_catalog.py` — empty `user` sentinel category.
-- `src/gapmap/research/collect.py` — `rss_user` in collect defaults.
-- `src/gapmap/cli/main.py` — `feeds` Typer sub-app.
+- `src/openreply/sources/rss_catalog.py` — empty `user` sentinel category.
+- `src/openreply/research/collect.py` — `rss_user` in collect defaults.
+- `src/openreply/cli/main.py` — `feeds` Typer sub-app.
 - `app-tauri/src-tauri/src/commands.rs` — 5 `feeds_*` Tauri commands.
 - `app-tauri/src-tauri/src/main.rs` — handler registration.
 - `app-tauri/src/api.js` — `feeds*` bridge methods.

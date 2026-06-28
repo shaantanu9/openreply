@@ -1,4 +1,4 @@
-# Gap Map — Licensing & Deployment Tracker
+# OpenReply — Licensing & Deployment Tracker
 
 > **Updated:** 2026-06-03 · Single source of truth for the licence/activation system
 > (desktop app ↔ website) and the Vercel deployment. Read this before touching
@@ -9,10 +9,10 @@
 ## 0. TL;DR (current state)
 
 - **Licence gate is ON by default.** No valid key → the desktop app locks to the
-  activation screen (data is NEVER touched). Dev bypass: `GAPMAP_LICENSE_GATE_ENABLED=0`.
+  activation screen (data is NEVER touched). Dev bypass: `OPENREPLY_LICENSE_GATE_ENABLED=0`.
 - **Activation UI** (onboarding Step 6 **and** Settings → Licence card) asks for only
   **email + activation key** (password optional, server URL auto-resolved & read-only).
-- **Production website** = `https://gapmap.myind.ai`, served by the **`gapmap-web`**
+- **Production website** = `https://openreply.myind.ai`, served by the **`openreply-web`**
   Vercel project (NOT "activation-suite" — see §4). Latest code is deployed & verified.
 - **Renewals/revocations auto-sync** via `license_revalidate` (boot + every 6 h);
   it only locks on an explicit revocation signal, never on a 404/5xx.
@@ -23,8 +23,8 @@
 
 | Repo | Path | Git remote | What it is |
 |---|---|---|---|
-| **App (Tauri)** | `app-tauri/` (inside `reddit-myind`) | `origin` = `github.com/shaantanu9/gap-map-pro` (branch `multi-source`) | The desktop app (Rust + vanilla-JS webview + Python sidecar) |
-| **Website** | `act_suit/activation-suite/` (nested git repo) | `origin` = `github.com/shaantanu9/gapmap_web` (branch `main`) | Next.js licence server + marketing/activation site |
+| **App (Tauri)** | `app-tauri/` (inside `reddit-myind`) | `origin` = `github.com/shaantanu9/openreply` (branch `multi-source`) | The desktop app (Rust + vanilla-JS webview + Python sidecar) |
+| **Website** | `act_suit/activation-suite/` (nested git repo) | `origin` = `github.com/shaantanu9/openreply_web` (branch `main`) | Next.js licence server + marketing/activation site |
 
 The website (`activation-suite`) is its **own** git repo nested inside `reddit-myind`.
 Commit/push each repo separately.
@@ -44,9 +44,9 @@ TOKEN_SIGNING_SECRET   ── MUST EQUAL ──► JWT_DESKTOP_SECRET (baked at 
 - **Invariant:** `TOKEN_SIGNING_SECRET` (website runtime env) **must equal**
   `JWT_DESKTOP_SECRET` (baked into the app at build time via `build.rs`).
   Drift → every activation fails with `InvalidSignature`.
-- The app's licence server URL: `DEFAULT_LICENSE_API_BASE = "https://gapmap.myind.ai"`
+- The app's licence server URL: `DEFAULT_LICENSE_API_BASE = "https://openreply.myind.ai"`
   (`app-tauri/src-tauri/src/commands.rs`). Override for dev with
-  `GAPMAP_LICENSE_API_BASE` (or `LICENSE_API_BASE`).
+  `OPENREPLY_LICENSE_API_BASE` (or `LICENSE_API_BASE`).
 - Auth model: activation authenticates on **(email, activation_key)** only. The
   password field is accepted but **ignored** server-side (kept for legacy/back-compat),
   which is why the UI makes it optional and sends a placeholder when blank.
@@ -60,8 +60,8 @@ TOKEN_SIGNING_SECRET   ── MUST EQUAL ──► JWT_DESKTOP_SECRET (baked at 
 2. **Activate a device** — desktop app (onboarding Step 6 or Settings → Licence):
    enter email + key → app adds the machine **device fingerprint** → `POST {base}/v1/device/activate`
    → server checks key↔email, device limit, expiry → returns a signed **JWT**.
-   App verifies signature + issuer (`gapmap-activation-suite`) + audience
-   (`gapmap-desktop`) + device-fp locally, stores token (file/Keychain) + state.
+   App verifies signature + issuer (`openreply-activation-suite`) + audience
+   (`openreply-desktop`) + device-fp locally, stores token (file/Keychain) + state.
 3. **Stay valid / renew / revoke** — `license_revalidate` (Rust) `POST {base}/v1/licence/validate`
    on boot + every 6 h:
    - valid → sync latest `expires_at` (+ refreshed token), clear `revoked` → **renewal unlocks itself**
@@ -81,11 +81,11 @@ TOKEN_SIGNING_SECRET   ── MUST EQUAL ──► JWT_DESKTOP_SECRET (baked at 
 
 ---
 
-## 4. ⚠️ Vercel deployment — USE THE `gapmap-web` PROJECT
+## 4. ⚠️ Vercel deployment — USE THE `openreply-web` PROJECT
 
-**`gapmap.myind.ai` is served by the Vercel project `gapmap-web`** (`prj_ztaztsE6lqisTHVpg4aXwDodZXFR`,
-org `shantanu-bombatkars-projects`, git `gapmap_web`).
-Dashboard: https://vercel.com/shantanu-bombatkars-projects/gapmap-web
+**`openreply.myind.ai` is served by the Vercel project `openreply-web`** (`prj_ztaztsE6lqisTHVpg4aXwDodZXFR`,
+org `shantanu-bombatkars-projects`, git `openreply_web`).
+Dashboard: https://vercel.com/shantanu-bombatkars-projects/openreply-web
 
 ### Correct deploy procedure
 ```bash
@@ -93,23 +93,23 @@ cd act_suit/activation-suite
 # 1. Make sure local main == origin/main (commit + push your changes first)
 # 2. Link to the RIGHT project (do NOT use bare `vercel link --yes` — it creates
 #    a new project named after the folder!)
-vercel link --yes --project gapmap-web
-# 3. Deploy to production (aliases gapmap.myind.ai)
+vercel link --yes --project openreply-web
+# 3. Deploy to production (aliases openreply.myind.ai)
 vercel --prod --yes
 # 4. Verify
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://gapmap.myind.ai/v1/licence/validate   # expect 401 (live)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://openreply.myind.ai/v1/licence/validate   # expect 401 (live)
 ```
 
 ### Gotcha that bit us (2026-06-03)
 - `vercel link --yes` (no `--project`) **created a stray project "activation-suite"**
-  from the folder name and connected the `gapmap_web` repo to it. That deploy only
-  updated `activation-suite.vercel.app`, NOT `gapmap.myind.ai`.
-- **Fix:** always link with `--project gapmap-web`. The stray `activation-suite`
+  from the folder name and connected the `openreply_web` repo to it. That deploy only
+  updated `activation-suite.vercel.app`, NOT `openreply.myind.ai`.
+- **Fix:** always link with `--project openreply-web`. The stray `activation-suite`
   project should be removed: `vercel remove activation-suite` (and disconnect its git)
   to avoid double-deploys on future pushes. *(TODO — see §8.)*
 
 ### Auto-deploy note
-The prod deploy was **9 days stale** before 2026-06-03 — pushing to `gapmap_web/main`
+The prod deploy was **9 days stale** before 2026-06-03 — pushing to `openreply_web/main`
 did not auto-deploy to production (production branch may differ, or auto-deploy is off).
 Until that's confirmed, **deploy via the CLI procedure above** after pushing.
 
@@ -126,8 +126,8 @@ node_modules/.bin/next dev -p 3939        # health: curl localhost:3939/api/v1/h
 cd app-tauri
 set -a; source ../act_suit/activation-suite/.env; set +a
 export JWT_DESKTOP_SECRET="$TOKEN_SIGNING_SECRET"
-export GAPMAP_LICENSE_API_BASE="http://127.0.0.1:3939"
-# (gate is ON by default; bypass in dev with: export GAPMAP_LICENSE_GATE_ENABLED=0)
+export OPENREPLY_LICENSE_API_BASE="http://127.0.0.1:3939"
+# (gate is ON by default; bypass in dev with: export OPENREPLY_LICENSE_GATE_ENABLED=0)
 npm run tauri:dev                          # verify: grep -c "JWT_DESKTOP_SECRET missing" /tmp/tauri-dev.log  == 0
 ```
 
@@ -146,14 +146,14 @@ npm run tauri build                                  # + code-signing / notariza
 
 ## 7. Session change log (2026-06-03)
 
-### Website (`activation-suite`, repo `gapmap_web/main`)
+### Website (`activation-suite`, repo `openreply_web/main`)
 - `f5e92ad` — add `/v1/licence/validate` alias (the app's validate path)
 - enriched `/api/v1/licence/validate` to return `expires_at/trial_ends_at/is_trial/plan_id/status`
 - `/activate` page rewrite (guided 3-step desktop-only flow; removed browser
   activation, fake BYOK/purchase data, raw JWT; Devices + Billing tabs)
-- **Deployed to production** (gapmap-web) and verified 2026-06-03.
+- **Deployed to production** (openreply-web) and verified 2026-06-03.
 
-### App (`app-tauri`, repo `gap-map-pro/multi-source`)
+### App (`app-tauri`, repo `openreply/multi-source`)
 - `f07fe9b` — `license_revalidate` command + boot/6h timer + `revoked` field + gate sync
 - `4eea92d` — in-app activation flow fixes (`#/activate` route → Settings licence card,
   optional password, dynamic API base, Billing copy, `revoked` gate entry)
@@ -170,11 +170,11 @@ npm run tauri build                                  # + code-signing / notariza
 ## 8. Known follow-ups / manual TODO
 
 - [x] ✅ **DONE 2026-06-03 — rotated `ADMIN_SECRET`.** Set a strong `openssl rand -hex 32`
-      in Vercel `gapmap-web` Production + redeployed. Verified: old placeholder → `bad_secret`/403,
+      in Vercel `openreply-web` Production + redeployed. Verified: old placeholder → `bad_secret`/403,
       new secret → `authed:true`/200. New value saved (gitignored) in `.admin-creds.local.md`.
 - [x] ✅ **DONE 2026-06-03 — `TOKEN_SIGNING_SECRET` verified SAFE (no rotation needed).**
       Probed prod non-destructively: a token signed with the local placeholder secret is
-      **rejected (401)** by `gapmap.myind.ai/v1/licence/validate`, proving prod uses a
+      **rejected (401)** by `openreply.myind.ai/v1/licence/validate`, proving prod uses a
       strong, different secret. The placeholder only lives in the **local `.env`** dev
       fallback (localhost not exposed). `DEV_MINT_SECRET` + `MASTER_KEY` also looked random.
       - ⚠️ **Standing requirement:** every signed app **release** must be built with
@@ -183,13 +183,13 @@ npm run tauri build                                  # + code-signing / notariza
         `docs/runbooks/token-signing-secret-rotation.md`.
 - [x] ✅ **DONE 2026-06-03 — removed the stray `activation-suite` Vercel project**
       (created by mistake during the first wrong deploy).
-- [ ] **Confirm prod auto-deploy** for `gapmap-web` (which branch is production? is
+- [ ] **Confirm prod auto-deploy** for `openreply-web` (which branch is production? is
       git auto-deploy on?). If off, document that releases deploy via the CLI (§4).
 - [ ] **Set `NEXT_PUBLIC_APP_DOWNLOAD_URL`** in the website env (currently empty;
       falls back to `/api/download` → GitHub latest release redirect).
 - [ ] **Ship a signed desktop release** with the matching `JWT_DESKTOP_SECRET` (§6).
 - [x] ✅ **DONE 2026-06-03 — deleted the throwaway demo Supabase account**
-      `trydemo+1780458870@gapmap-test.local` + its licence rows.
+      `trydemo+1780458870@openreply-test.local` + its licence rows.
 - [x] ✅ **DONE 2026-06-03 — removed dead `isValidHttpsUrl`** in `welcome.js` (commit `3c18536`).
 
 ---

@@ -1,6 +1,6 @@
-# Gap Map — Remaining phases roadmap
+# OpenReply — Remaining phases roadmap
 
-> Detailed build plan for every phase after Phase 1–2 (which shipped 2026-04-20). Each phase is self-contained and independently shippable. Order optimized for **retention-first**: features that turn Gap Map from one-shot research → weekly research practice come before polish.
+> Detailed build plan for every phase after Phase 1–2 (which shipped 2026-04-20). Each phase is self-contained and independently shippable. Order optimized for **retention-first**: features that turn OpenReply from one-shot research → weekly research practice come before polish.
 
 **Last updated:** 2026-04-20
 **Companion docs:**
@@ -42,7 +42,7 @@ commit 8+ months of work:
    at `docs/VALIDATION_PLAN.md`.
 2. **Cloud vs. desktop architecture.** Product Mode needs always-on
    sweeps + OAuth to private sources + multi-seat billing, which push
-   toward hosted infra. Today Gap Map is local-only Tauri + SQLite.
+   toward hosted infra. Today OpenReply is local-only Tauri + SQLite.
 
 **The fork lives here:** after shipping **Phase 3 (Hypothesis Tracking)**
 and **Phase 4 (Monitoring Mode + Weekly Delta)**, both paths have the
@@ -83,7 +83,7 @@ primitives later. No wasted work.
 ```
 
 **The Phase 5–11 sequencing below is the ROADMAP PATH** — the
-conservative default that Gap Map becomes a high-quality research
+conservative default that OpenReply becomes a high-quality research
 tool with hypothesis tracking + weekly delta monitoring, priced at
 $20–40/mo for Topic Mode users.
 
@@ -121,11 +121,11 @@ See `docs/VALIDATION_PLAN.md` for the concrete experiment design.
 
 ### 3.1 Goal
 
-Turn every hypothesis card from read-only prose into a **stateful, trackable bet**. Users return weekly to update states, building Gap Map into the canonical "where I track my product bets" tool.
+Turn every hypothesis card from read-only prose into a **stateful, trackable bet**. Users return weekly to update states, building OpenReply into the canonical "where I track my product bets" tool.
 
 ### 3.2 Why this first
 
-Without it, Gap Map is one-shot research. With it, it's a research PRACTICE. This is the single biggest retention lever available and it depends on nothing beyond Phase 2.
+Without it, OpenReply is one-shot research. With it, it's a research PRACTICE. This is the single biggest retention lever available and it depends on nothing beyond Phase 2.
 
 ### 3.3 Schema additions
 
@@ -200,7 +200,7 @@ Added to `init_schema` in `src/reddit_research/core/db.py`.
 
 ### 4.1 Goal
 
-Scheduled re-collect + synthesis for pinned topics → dashboard shows "what's changed this week." Turns Gap Map into a **Monday-morning check-in app**.
+Scheduled re-collect + synthesis for pinned topics → dashboard shows "what's changed this week." Turns OpenReply into a **Monday-morning check-in app**.
 
 ### 4.2 Why this next
 
@@ -249,7 +249,7 @@ CREATE INDEX idx_topic_runs ON topic_runs(topic, run_at DESC);
 ### 4.7 Success criteria
 
 - A user pins 3 topics.
-- Monday morning: native notification "Gap Map: 3 topics updated, 5 new findings."
+- Monday morning: native notification "OpenReply: 3 topics updated, 5 new findings."
 - Click notification → app opens to Dashboard with "What's changed" card highlighting the 5 new findings.
 - User spends 4 minutes reviewing, updates 1 hypothesis state, closes app. **Habit formed.**
 
@@ -265,7 +265,7 @@ CREATE INDEX idx_topic_runs ON topic_runs(topic, run_at DESC);
 
 ### 5.1 Goal
 
-Cross-topic leaderboard ("top opportunities across everything I'm tracking") + global semantic search ("show me every painpoint mentioning 'subscription fatigue' across all my research"). Turns Gap Map from **islands of research** into a **compounding research library**.
+Cross-topic leaderboard ("top opportunities across everything I'm tracking") + global semantic search ("show me every painpoint mentioning 'subscription fatigue' across all my research"). Turns OpenReply from **islands of research** into a **compounding research library**.
 
 ### 5.2 Why this third
 
@@ -690,7 +690,7 @@ tracking     + deltas     + dashboard  + empty      formats      sidebar
 (3 days)     (5 days)     (3 days)     (2 days)     (4 days)     (3 days)
 ```
 
-**End state:** Gap Map is a **research-SaaS ritual** for pre-PMF founders. Weekly return loop is locked in. Shareable output drives virality. Compounding value per topic.
+**End state:** OpenReply is a **research-SaaS ritual** for pre-PMF founders. Weekly return loop is locked in. Shareable output drives virality. Compounding value per topic.
 
 **Phases 9–11 (Competitor matrix, research linking, polish):** another 8 days across weeks 7–8 to round out the product before hitting the first external user cohort.
 

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "supabase_gapmap": {
+    "supabase_openreply": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=tjikcnsfaaqihgegecpi"
     }

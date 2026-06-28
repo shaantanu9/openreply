@@ -8,7 +8,7 @@
 
 1. Open **Connections** in the sidebar.
 2. Click **Open login in browser** → sign into the platform in your system browser.
-3. Click **Import from browser** → Gap Map extracts the session cookie from
+3. Click **Import from browser** → OpenReply extracts the session cookie from
    Chrome/Brave/Firefox/Safari and stores it locally (`source_credentials` table).
 4. The badge flips to **Connected** after a live verify.
 5. If auto-import fails (e.g. Chrome 127+ app-bound encryption), use **Paste
@@ -44,12 +44,12 @@ Nothing leaves the machine — credentials live in the local SQLite DB.
 ## CLI equivalents
 
 ```bash
-gapmap creds list                                   # status of every source
-gapmap creds import --source reddit                 # extract from browser + verify
-gapmap creds save  --source xueqiu --value "xq_a_token=...; u=..."
-gapmap creds save  --source exa_search --value exa_live_xxx
-gapmap creds verify --source reddit
-gapmap creds delete --source reddit
+openreply creds list                                   # status of every source
+openreply creds import --source reddit                 # extract from browser + verify
+openreply creds save  --source xueqiu --value "xq_a_token=...; u=..."
+openreply creds save  --source exa_search --value exa_live_xxx
+openreply creds verify --source reddit
+openreply creds delete --source reddit
 ```
 
 ## Notes / future scope

@@ -8,7 +8,7 @@
 
 The social adapters (`x`, `tiktok`, `instagram`, `threads`, `pinterest`, `bluesky`,
 `truthsocial`, `youtube`, `mastodon`, `bilibili`, `xiaohongshu`, `linkedin`) are
-**already implemented** in `src/gapmap/sources/`. They don't feel "working" because:
+**already implemented** in `src/openreply/sources/`. They don't feel "working" because:
 
 1. **None are in the default collection pipeline** (`research/collect.py` defaults
    exclude all social) — they only run on an explicit `--sources` flag, so the app
@@ -64,6 +64,6 @@ The social adapters (`x`, `tiktok`, `instagram`, `threads`, `pinterest`, `bluesk
 - LinkedIn topic-search (stays URL-only).
 
 ## Verify
-- `gapmap creds verify --source <s>` returns real counts.
+- `openreply creds verify --source <s>` returns real counts.
 - Connect → verify → collect → rows land in `posts`.
 - Prod: sidecar rebuild + re-codesign before DMG.

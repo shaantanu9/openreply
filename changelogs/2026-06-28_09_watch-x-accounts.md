@@ -37,12 +37,12 @@ repurpose/rewrite them in your own voice from Compose.
 
 ## Files Created
 
-- `src/gapmap/reply/accounts.py`
+- `src/openreply/reply/accounts.py`
 - `changelogs/2026-06-28_09_watch-x-accounts.md`
 
 ## Files Modified
 
-- `src/gapmap/cli/agent_cmds.py`, `app-tauri/src-tauri/src/commands.rs`,
+- `src/openreply/cli/agent_cmds.py`, `app-tauri/src-tauri/src/commands.rs`,
   `app-tauri/src-tauri/src/main.rs`, `app-tauri/src/or/api.js`,
   `app-tauri/src/or/dynamic.js`, `app-tauri/src/or/shell.js`
 

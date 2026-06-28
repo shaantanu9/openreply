@@ -234,14 +234,14 @@ def cluster_findings(
     Args:
         findings: {"painpoints": [...], "feature_wishes": [...], ...}
         threshold: cosine similarity threshold. Falls back to
-                   GAPMAP_CLUSTER_THRESHOLD env var, then 0.82.
+                   OPENREPLY_CLUSTER_THRESHOLD env var, then 0.82.
     Returns: same shape, with alias-annotated winners where dupes were merged.
     """
     if not _embeddings_available():
         return findings
     if threshold is None:
         try:
-            threshold = float(os.getenv("GAPMAP_CLUSTER_THRESHOLD", "0.82"))
+            threshold = float(os.getenv("OPENREPLY_CLUSTER_THRESHOLD", "0.82"))
         except ValueError:
             threshold = 0.82
 
@@ -516,9 +516,9 @@ def test_diff_returns_recent_only(clean_env: Path) -> None:
 - `src-tauri/src/main.rs` (mod declaration)
 - `src-tauri/src/commands.rs` (4 new commands)
 
-- [ ] Implement `install_launchd_agent(interval_hours)` — writes plist to `~/Library/LaunchAgents/com.shantanu.gapmap.schedule.plist`, resolves sidecar binary path dynamically, runs `launchctl load <plist>`.
+- [ ] Implement `install_launchd_agent(interval_hours)` — writes plist to `~/Library/LaunchAgents/com.shantanu.openreply.schedule.plist`, resolves sidecar binary path dynamically, runs `launchctl load <plist>`.
 - [ ] Implement `uninstall_launchd_agent()` — `launchctl unload` + rm.
-- [ ] Implement `schedule_status()` — inspects plist existence + `launchctl list | grep gapmap`.
+- [ ] Implement `schedule_status()` — inspects plist existence + `launchctl list | grep openreply`.
 - [ ] All four `#[tauri::command]`s forward to these helpers; on non-macOS, return `{installed: false, reason: "platform not supported"}`.
 
 - [ ] Commit.
@@ -543,5 +543,5 @@ def test_diff_returns_recent_only(clean_env: Path) -> None:
 
 - [ ] **A:** Trigger enrich on a topic with duplicate painpoints → find pills reduced, "+N variants" pill visible on merged winner.
 - [ ] **B:** Run collect twice ~5s apart → second `diff_findings` call shows `summary.new_painpoints: 0` for the second run. Insert a manual row with old ts → shows `stable`.
-- [ ] **C:** Settings → "Scheduled runs" → "Daily" → `launchctl list | grep gapmap.schedule` shows the agent loaded. Re-visit a topic after a scheduled tick → banner appears.
+- [ ] **C:** Settings → "Scheduled runs" → "Daily" → `launchctl list | grep openreply.schedule` shows the agent loaded. Re-visit a topic after a scheduled tick → banner appears.
 - [ ] All pre-existing tests still pass (`.venv/bin/pytest -v tests/test_integration.py`).

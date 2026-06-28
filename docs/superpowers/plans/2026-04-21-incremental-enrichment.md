@@ -489,13 +489,13 @@ import { listen } from '@tauri-apps/api/event';
 import { mutated } from './api.js';
 
 listen('enrich:tick', (e) => mutated('findings', e.payload));
-listen('enrich:idle', (e) => window.dispatchEvent(new CustomEvent('gapmap:enrich-idle', { detail: e.payload })));
-listen('enrich:error', (e) => window.dispatchEvent(new CustomEvent('gapmap:enrich-error', { detail: e.payload })));
+listen('enrich:idle', (e) => window.dispatchEvent(new CustomEvent('openreply:enrich-idle', { detail: e.payload })));
+listen('enrich:error', (e) => window.dispatchEvent(new CustomEvent('openreply:enrich-error', { detail: e.payload })));
 ```
 
 - [ ] **Step 2:** Each topic-page tab header shows `Updated Xs ago · N posts · M findings` — freshness string driven by last `enrich:tick` timestamp.
 
-- [ ] **Step 3:** Top banner on worker error (`gapmap:enrich-error` listener) — dismissible, with "Retry all failed" button.
+- [ ] **Step 3:** Top banner on worker error (`openreply:enrich-error` listener) — dismissible, with "Retry all failed" button.
 
 - [ ] **Step 4: Commit** `feat(enrich): reactive wiring + freshness badges + error banner`
 
@@ -525,7 +525,7 @@ Add nullable columns `extraction_mode TEXT`, `extraction_threshold INTEGER`, `ex
 
 - [ ] **Step 4: Rust `extraction_prefs_get/set` commands**
 
-Read/write a `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/extraction.json` global config file + per-topic rows in `topic_prefs`.
+Read/write a `~/Library/Application Support/com.shantanu.openreply/reddit-myind/extraction.json` global config file + per-topic rows in `topic_prefs`.
 
 - [ ] **Step 5: Settings UI**
 

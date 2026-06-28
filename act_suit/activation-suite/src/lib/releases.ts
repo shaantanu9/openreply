@@ -1,5 +1,5 @@
 /**
- * GitHub Releases resolver for the Gap Map desktop app.
+ * GitHub Releases resolver for the OpenReply desktop app.
  *
  * The published asset filenames embed the version (e.g.
  * `Gap-Map-0.1.18-macOS-Apple-Silicon.dmg`), so GitHub's
@@ -72,7 +72,7 @@ export async function fetchLatestRelease(
   try {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
-      "User-Agent": "gapmap-site",
+      "User-Agent": "openreply-site",
     };
     // Optional: lifts the rate limit from 60 → 5,000 req/hour. Server-only.
     const token = process.env.GITHUB_TOKEN;

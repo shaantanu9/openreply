@@ -5,8 +5,8 @@
 > report, or before doing a release. It explains the *why* behind a non-obvious
 > setup so nobody "fixes" it back into a state that costs money.
 >
-> **Repo:** `shaantanu9/gap-map-pro` (private, personal account) · local dir
-> `reddit-myind` · public release mirror `myind-ai/gapmap`.
+> **Repo:** `shaantanu9/openreply` (private, personal account) · local dir
+> `reddit-myind` · public release mirror `myind-ai/openreply`.
 > **Last updated:** 2026-06-07
 
 ---
@@ -92,8 +92,8 @@ curl -o actions-runner-osx-arm64-VERSION.tar.gz -L \
 tar xzf ./actions-runner-osx-arm64-VERSION.tar.gz
 
 # registration token is short-lived (~1h); mint a fresh one:
-#   gh api -X POST /repos/shaantanu9/gap-map-pro/actions/runners/registration-token --jq .token
-./config.sh --url https://github.com/shaantanu9/gap-map-pro \
+#   gh api -X POST /repos/shaantanu9/openreply/actions/runners/registration-token --jq .token
+./config.sh --url https://github.com/shaantanu9/openreply \
   --token <REGISTRATION_TOKEN> --name shantanu-mac --unattended
 
 ./svc.sh install && ./svc.sh start
@@ -103,7 +103,7 @@ tar xzf ./actions-runner-osx-arm64-VERSION.tar.gz
 
 ```bash
 # is the runner online?
-gh api /repos/shaantanu9/gap-map-pro/actions/runners \
+gh api /repos/shaantanu9/openreply/actions/runners \
   --jq '.runners[] | {name,status,labels:[.labels[].name]}'
 
 # service controls (run from ~/actions-runner)
@@ -132,7 +132,7 @@ window where hosted minutes are free:
 
 ```bash
 # 1. make the repo public (publishing — see warning below)
-gh repo edit shaantanu9/gap-map-pro --visibility public --accept-visibility-change-consequences
+gh repo edit shaantanu9/openreply --visibility public --accept-visibility-change-consequences
 
 # 2. dispatch the two builds for the tag
 gh workflow run release-linux.yml   -f tag=vX.Y.Z
@@ -143,10 +143,10 @@ gh workflow run release-windows.yml -f tag=vX.Y.Z
 gh run watch <run-id>
 
 # 4. make the repo private again — only after both runs finished
-gh repo edit shaantanu9/gap-map-pro --visibility private --accept-visibility-change-consequences
+gh repo edit shaantanu9/openreply --visibility private --accept-visibility-change-consequences
 
 # 5. confirm
-gh repo view shaantanu9/gap-map-pro --json visibility
+gh repo view shaantanu9/openreply --json visibility
 ```
 
 **Billing fact that makes this safe:** Actions usage is metered per-job at the

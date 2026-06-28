@@ -5,15 +5,15 @@
 
 ## Problem
 
-The Tauri app and the `reddit-myind` MCP server both use `reddit_research.core.db` but resolve `data_dir` from `REDDIT_MYIND_DATA_DIR`. The app sets it to `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/`. The MCP, launched by Claude Code via `~/.claude.json`, has no `env` block — so it falls back to `<repo>/data/`, a completely different `reddit.db`.
+The Tauri app and the `reddit-myind` MCP server both use `reddit_research.core.db` but resolve `data_dir` from `REDDIT_MYIND_DATA_DIR`. The app sets it to `~/Library/Application Support/com.shantanu.openreply/reddit-myind/`. The MCP, launched by Claude Code via `~/.claude.json`, has no `env` block — so it falls back to `<repo>/data/`, a completely different `reddit.db`.
 
-Result: anything fetched/scraped/ingested through MCP tools (`gapmap_research_collect`, `reddit_fetch_*`, `reddit_graph_*`) lands in a file the desktop app never reads. Two parallel realities.
+Result: anything fetched/scraped/ingested through MCP tools (`openreply_research_collect`, `reddit_fetch_*`, `reddit_graph_*`) lands in a file the desktop app never reads. Two parallel realities.
 
 ## Goals
 
 1. **Same DB.** MCP writes go to the same SQLite + Palace ChromaDB the app reads.
 2. **One-click provision.** User shouldn't have to hand-edit `~/.claude.json` or know what `REDDIT_MYIND_DATA_DIR` is.
-3. **Bundled with the app.** Once Gap Map is installed, connecting it to Claude Code is a Settings toggle, not a separate setup procedure.
+3. **Bundled with the app.** Once OpenReply is installed, connecting it to Claude Code is a Settings toggle, not a separate setup procedure.
 4. **Future-proof for token gating.** Write the token now, even if we don't enforce it server-side until v2.
 
 ## Non-goals (v1)
@@ -49,7 +49,7 @@ User opens **Settings → Integrations → Claude Code MCP**. Sees current state
          "REDDIT_MYIND_TOKEN":    "<token>"
        }
      }
-5. Atomic write: tmp file + rename. Backup previous as ~/.claude.json.gapmap-bak once.
+5. Atomic write: tmp file + rename. Backup previous as ~/.claude.json.openreply-bak once.
 6. Show toast: "Connected. Restart Claude Code to pick up changes."
 ```
 
@@ -123,9 +123,9 @@ Install it from claude.com/claude-code, then come back.
 
 | OS      | Claude config path                       | Data dir base                                          |
 |---------|------------------------------------------|--------------------------------------------------------|
-| macOS   | `~/.claude.json`                         | `~/Library/Application Support/com.shantanu.gapmap`    |
-| Linux   | `~/.claude.json`                         | `~/.local/share/com.shantanu.gapmap`                   |
-| Windows | `%USERPROFILE%\.claude.json`             | `%APPDATA%\com.shantanu.gapmap`                        |
+| macOS   | `~/.claude.json`                         | `~/Library/Application Support/com.shantanu.openreply`    |
+| Linux   | `~/.claude.json`                         | `~/.local/share/com.shantanu.openreply`                   |
+| Windows | `%USERPROFILE%\.claude.json`             | `%APPDATA%\com.shantanu.openreply`                        |
 
 All three use the same env-var contract — only path resolution differs. Use `app.path().app_data_dir()` and `dirs::home_dir()` (already in deps).
 
@@ -146,7 +146,7 @@ All three use the same env-var contract — only path resolution differs. Use `a
 
 - **Editing user's `~/.claude.json` is sensitive.** Always atomic write, always back up the first time, never delete keys we didn't add.
 - **Stale tokens.** If the user uninstalls the app without clicking Disconnect, the MCP entry references a deleted binary. Claude Code will fail to spawn it on next session — annoying but not destructive. Document a "Clean up" CLI: `reddit-cli mcp uninstall --force` runnable even after the app is gone.
-- **Multiple Gap Map installs.** Two Macs syncing `~/.claude.json` via Dropbox would overwrite each other's `command` paths. Mitigate by including the user's home dir in a marker comment, but ultimately out of scope — local-first means local-first.
+- **Multiple OpenReply installs.** Two Macs syncing `~/.claude.json` via Dropbox would overwrite each other's `command` paths. Mitigate by including the user's home dir in a marker comment, but ultimately out of scope — local-first means local-first.
 
 ## Test plan
 
@@ -164,6 +164,6 @@ When v1 is in users' hands and we have signal, revisit:
 - **OS keychain** instead of plaintext token file (`security` framework on macOS, libsecret on Linux, DPAPI on Windows). Real secret protection for the token.
 - **Capability-scoped tokens.** Read-only token for query/search MCP tools; write-token only for `collect`/`ingest`. Lets users grant Claude read-only access to their corpus without letting it scribble.
 - **Time-boxed tokens.** Rotate every N days, app re-issues silently. Stale clones stop working without manual revoke.
-- **Telemetry on misuse.** Log to app-side audit table when MCP requests come in; user can see "Claude accessed this DB at HH:MM via gapmap_research_collect" in an Activity → MCP tab.
+- **Telemetry on misuse.** Log to app-side audit table when MCP requests come in; user can see "Claude accessed this DB at HH:MM via openreply_research_collect" in an Activity → MCP tab.
 
 None of these are needed for v1. Ship the same-DB, one-click flow. Make it real first, secure it second.

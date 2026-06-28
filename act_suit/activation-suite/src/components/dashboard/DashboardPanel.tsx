@@ -129,7 +129,7 @@ export function DashboardPanel() {
         }).then((x) => x.json());
         if (res?.ok || res?.error === "already_has_license") {
           setBetaClaim("done");
-          if (res?.ok) setBanner({ kind: "success", msg: "🎉 Welcome aboard, founding member — your Pro key is ready below. Download Gap Map and activate it." });
+          if (res?.ok) setBanner({ kind: "success", msg: "🎉 Welcome aboard, founding member — your Pro key is ready below. Download OpenReply and activate it." });
           await reload();
         } else {
           setBetaClaim("error");
@@ -148,7 +148,7 @@ export function DashboardPanel() {
       await startTrial();
       setBanner({
         kind: "success",
-        msg: `Trial started. Your activation key is ready below — copy it and paste into Gap Map.`,
+        msg: `Trial started. Your activation key is ready below — copy it and paste into OpenReply.`,
       });
       await reload();
     } catch (err) {
@@ -159,7 +159,7 @@ export function DashboardPanel() {
   }
 
   async function handleDeactivate(device: DeviceSummary) {
-    if (!window.confirm(`Deactivate ${device.os}/${device.arch}? The device will need to re-activate to use Gap Map again.`))
+    if (!window.confirm(`Deactivate ${device.os}/${device.arch}? The device will need to re-activate to use OpenReply again.`))
       return;
     setActing(device.signatureHash);
     setBanner(null);
@@ -226,7 +226,7 @@ export function DashboardPanel() {
                 ? " Your activation key, devices, and billing live here."
                 : betaClaim === "working"
                   ? " Setting up your founding membership…"
-                  : " Pick a path below to get your Gap Map activation key."}
+                  : " Pick a path below to get your OpenReply activation key."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -293,15 +293,15 @@ export function DashboardPanel() {
               )}
               <div className="mt-5 rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-5 py-4 text-[13px] leading-[1.7] text-[var(--muted)]">
                 <p className="mb-2 font-medium text-[var(--dark)]">
-                  How to activate Gap Map on your computer:
+                  How to activate OpenReply on your computer:
                 </p>
                 <ol className="list-decimal space-y-1 pl-5">
-                  <li>Open <strong>Gap Map.app</strong> on your Mac.</li>
+                  <li>Open <strong>OpenReply.app</strong> on your Mac.</li>
                   <li>Onboarding step 6 (or Settings → Licence) opens the activation form.</li>
                   <li>Email + password are the ones you signed in with here.</li>
                   <li>Paste the key above into the <strong>Activation key</strong> field.</li>
-                  <li>Click <strong>Activate &amp; continue →</strong>. Gap Map verifies the
-                      key against gapmap.myind.ai and stores it on this device.</li>
+                  <li>Click <strong>Activate &amp; continue →</strong>. OpenReply verifies the
+                      key against openreply.myind.ai and stores it on this device.</li>
                 </ol>
               </div>
               <div className="mt-4 flex flex-wrap gap-3 text-[13px] text-[var(--muted)]">
@@ -330,7 +330,7 @@ export function DashboardPanel() {
           <section className="mb-8">
             <div className="mb-5 rounded-[24px] border border-[var(--border-strong)] bg-white px-7 py-6 text-center">
               <h2 className="font-serif text-[26px] font-normal leading-tight tracking-[-0.5px] text-[var(--dark)]">
-                Get your Gap Map activation key
+                Get your OpenReply activation key
               </h2>
               <p className="mx-auto mt-2 max-w-[520px] text-[14px] text-[var(--muted)]">
                 Three ways to get a key. Each issues a key bound to{" "}
@@ -456,7 +456,7 @@ export function DashboardPanel() {
             </div>
             {licence.devices.length === 0 ? (
               <div className="rounded-[10px] border border-dashed border-[var(--border)] bg-[var(--cream-mid)] px-4 py-6 text-center text-[13px] text-[var(--muted)]">
-                No devices activated yet. Paste the key above into the Gap Map desktop app to
+                No devices activated yet. Paste the key above into the OpenReply desktop app to
                 activate this machine.
               </div>
             ) : (

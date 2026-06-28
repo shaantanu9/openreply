@@ -5,7 +5,7 @@
 
 ## Summary
 
-First implementation pass toward making Gap Map a tool researchers, paper-writers
+First implementation pass toward making OpenReply a tool researchers, paper-writers
 and PDF-reading students use to ingest literature, **find connections nobody has
 made before**, analyse them, and write the paper. A capability inventory
 (`docs/RESEARCH-WRITER-PLAN.md`) showed ~80% of the engine already exists; this
@@ -23,12 +23,12 @@ the headless flow so the entire pipeline is driveable from Claude Code.
   `connections_compute`. Wired: CLI `research connections [--compute]`, Rust
   `connections_get/_compute`, api `connectionsGet/Compute`, **Connect Dots** tab
   (`screens/connections.js` — novelty bars, kind chips, evidence), MCP
-  `gapmap_connections`. Proven on `ocr and table data image to text`: 6 ranked
+  `openreply_connections`. Proven on `ocr and table data image to text`: 6 ranked
   connections, persisted + read back.
 - **Completed the headless research-writing chain (MCP):**
-  `gapmap_paper_knowledge_build` (one-shot fulltext→sections→gaps→insights),
-  `gapmap_paper_gaps` (read/compute), `gapmap_paper_relations_build`. Combined
-  with the pre-existing `gapmap_paper_outline_generate` / `…_draft_generate` /
+  `openreply_paper_knowledge_build` (one-shot fulltext→sections→gaps→insights),
+  `openreply_paper_gaps` (read/compute), `openreply_paper_relations_build`. Combined
+  with the pre-existing `openreply_paper_outline_generate` / `…_draft_generate` /
   `papers_export`, Claude Code can now run: build_knowledge → relations_build →
   connections → outline → draft → export (BibTeX/RIS/APA).
 
@@ -43,16 +43,16 @@ the headless flow so the entire pipeline is driveable from Claude Code.
 ## Files Created
 
 - `docs/RESEARCH-WRITER-PLAN.md` (detailed plan: personas, flow, novelty engine, roadmap)
-- `src/gapmap/research/connections.py`
+- `src/openreply/research/connections.py`
 - `app-tauri/src/screens/connections.js`
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py` — `research connections`.
+- `src/openreply/cli/main.py` — `research connections`.
 - `app-tauri/src-tauri/src/commands.rs` + `main.rs` — `connections_get/_compute`.
 - `app-tauri/src/api.js` — `connectionsGet/Compute`.
 - `app-tauri/src/screens/topic.js` — Connect Dots import/tab/loader.
-- `src/gapmap/mcp/server.py` — `gapmap_connections` + 3 paper-chain tools.
+- `src/openreply/mcp/server.py` — `openreply_connections` + 3 paper-chain tools.
 
 ## Known gaps / next
 

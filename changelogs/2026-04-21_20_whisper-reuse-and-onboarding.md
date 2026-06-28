@@ -7,13 +7,13 @@
 
 Two user-facing wins on top of the five-pass video-ingest feature shipped earlier today:
 
-1. **Reuse Whisper models already on disk** — scans 4 locations (HuggingFace hub cache, `$GAPMAP_WHISPER_MODELS_DIR`, common system dirs, app-managed dir) before suggesting any download. A user who already has `small.en` from any other Python project never re-downloads 480 MB. `download_model` short-circuits with a `{skipped:true, source, path}` result when the tier is loadable from anywhere.
+1. **Reuse Whisper models already on disk** — scans 4 locations (HuggingFace hub cache, `$OPENREPLY_WHISPER_MODELS_DIR`, common system dirs, app-managed dir) before suggesting any download. A user who already has `small.en` from any other Python project never re-downloads 480 MB. `download_model` short-circuits with a `{skipped:true, source, path}` result when the tier is loadable from anywhere.
 2. **Onboarding Step 4 (new)** — "Video transcription (optional)" slots between Connect sources and First topic. Auto-detects existing installs → shows "Use it" for reuse, or prompts to download `small.en` with live progress. Fully skippable; decision persists in localStorage so Settings can pick up where onboarding left off.
 
 ## Python changes
 
 - `src/reddit_research/transcribe/models.py` — major rewrite.
-  - New `discover_installed_external()` — scans HF hub cache (respecting `HF_HUB_CACHE` / `HF_HOME`), `GAPMAP_WHISPER_MODELS_DIR`, and `~/.cache/whisper/` / `~/whisper-models/` / `/opt/whisper/`. Returns `[{tier, path, size_mb, rtf, source, installed}]`. `source ∈ {'app','hf_hub','custom','system'}`.
+  - New `discover_installed_external()` — scans HF hub cache (respecting `HF_HUB_CACHE` / `HF_HOME`), `OPENREPLY_WHISPER_MODELS_DIR`, and `~/.cache/whisper/` / `~/whisper-models/` / `/opt/whisper/`. Returns `[{tier, path, size_mb, rtf, source, installed}]`. `source ∈ {'app','hf_hub','custom','system'}`.
   - New `resolve_model_path(tier)` — returns the absolute path to load for a tier (app-managed preferred), or `None` if nothing found.
   - `list_installed()` now returns the union of app-managed + external, deduped on tier, app-managed wins on conflict.
   - `catalogue()` returns `{installed, source, path}` per tier so UI can render an "Already installed" badge.
@@ -34,14 +34,14 @@ Two user-facing wins on top of the five-pass video-ingest feature shipped earlie
   - New `renderStep4Whisper(root, body, info)` between Connect sources (Step 3) and First topic (now Step 5).
   - Auto-fetches `api.whisperCatalogue()`. If any `installed:true` row comes back: shows "Found existing install" banner + tier radio list + **Use selected tier** + **Download a different tier** buttons.
   - If nothing installed: shows "No Whisper model detected" + recommended `small.en` prefilled + **Download selected** with live `whisper:download-progress` / `whisper:download-done` event streaming.
-  - **Skip — set up later** button stores `localStorage['gapmap.onboarding.whisper_skipped']` so the app knows to nudge via Settings later.
+  - **Skip — set up later** button stores `localStorage['openreply.onboarding.whisper_skipped']` so the app knows to nudge via Settings later.
   - Legacy First-topic step (now Step 5) renumbered: button IDs `back-5`/`skip-5`/`start-5`.
 
 ## Tests
 
 - `tests/transcribe/test_external_discovery.py` — new, 6 cases:
   - Discover HF hub snapshot (`source='hf_hub'`).
-  - `GAPMAP_WHISPER_MODELS_DIR` beats HF cache.
+  - `OPENREPLY_WHISPER_MODELS_DIR` beats HF cache.
   - Nothing installed → empty.
   - `download_model` short-circuits when external exists (asserts `snapshot_download` NOT called).
   - `resolve_model_path` prefers app dir on conflict.
@@ -81,5 +81,5 @@ Two user-facing wins on top of the five-pass video-ingest feature shipped earlie
 | User has `small.en` in `~/.cache/huggingface/hub/` from another project | Settings → Download (re-downloads 480 MB) | Settings → `small.en · HuggingFace cache` → **Use it** (0 MB) |
 | Onboarding first-run, nothing installed | (no Whisper step) | Step 4 shows recommendation + Download button with progress |
 | Onboarding first-run, already has `large-v3` | (no Whisper step) | Step 4 auto-selects the found tier, user clicks "Use it", continues |
-| Shared machine with `GAPMAP_WHISPER_MODELS_DIR=/shared/…` | Would re-download per user | All users reuse the shared copy |
+| Shared machine with `OPENREPLY_WHISPER_MODELS_DIR=/shared/…` | Would re-download per user | All users reuse the shared copy |
 | Downloaded via the app previously | Works | Works (tagged `source:'app'`, Delete button shown) |

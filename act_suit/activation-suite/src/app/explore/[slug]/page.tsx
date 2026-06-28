@@ -15,11 +15,11 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  if (!hasSupabaseConfig()) return { title: "Gap Map — Research" };
+  if (!hasSupabaseConfig()) return { title: "OpenReply — Research" };
   const r = await getPublishedBySlug(slug);
-  if (!r) return { title: "Gap Map — Not found" };
+  if (!r) return { title: "OpenReply — Not found" };
   return {
-    title: `${r.title} — Gap Map`,
+    title: `${r.title} — OpenReply`,
     description: r.description || `Published gap map: ${r.title}.`,
   };
 }
@@ -57,7 +57,7 @@ export default async function PublishedResearchPage({
           {r.title}
         </h1>
         <p className="mt-2 text-[13.5px] text-[var(--muted)]">
-          Published {r.pro_publish ? "anonymously by a Gap Map Pro user" : "via Gap Map Community"} on{" "}
+          Published {r.pro_publish ? "anonymously by a OpenReply Pro user" : "via OpenReply Community"} on{" "}
           {formatDate(r.published_at)} ·{" "}
           <span className="text-[var(--orange)]">{r.view_count.toLocaleString()} views</span>
         </p>
@@ -134,7 +134,7 @@ export default async function PublishedResearchPage({
         <footer className="mt-12 rounded-[14px] border border-[var(--border)] bg-[var(--cream-mid)] p-5 text-[13px] text-[var(--muted)]">
           Powered by{" "}
           <Link href={ROUTES.home} className="text-[var(--orange)] hover:underline">
-            {snap?.powered_by || "Gap Map"}
+            {snap?.powered_by || "OpenReply"}
           </Link>
           . Want to run your own sweep?{" "}
           <Link href={ROUTES.workspaces} className="text-[var(--orange)] hover:underline">

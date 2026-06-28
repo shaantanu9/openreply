@@ -22,7 +22,7 @@ activation UX:
 ## Changes
 
 - `src-tauri/src/commands.rs` — `license_gate_enabled()` now **defaults to ON**.
-  It is OFF only when `GAPMAP_LICENSE_GATE_ENABLED` is explicitly `0/false/no/off`
+  It is OFF only when `OPENREPLY_LICENSE_GATE_ENABLED` is explicitly `0/false/no/off`
   (for local dev); unset (shipped DMG) → ON. The frontend follows automatically
   via `license_gate_status()` → `resolveLicenseGate()` → `mustStayInOnboarding()`,
   which redirects every route to `/welcome` until activation.

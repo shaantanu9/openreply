@@ -27,8 +27,8 @@ five gaps caught on review:
    hook the eye-icon uses, so no per-screen JS edits required.
    Dismissed-per-topic flag in localStorage so it never nags twice.
 4. **Trash invalidates auto-build markers.** Trashing or re-creating a
-   topic now clears the `gapmap.audience.autobuilt.v1` and
-   `gapmap.audience.nudge.dismissed.v1` keys for that topic so a fresh
+   topic now clears the `openreply.audience.autobuilt.v1` and
+   `openreply.audience.nudge.dismissed.v1` keys for that topic so a fresh
    collect retriggers the deterministic auto-build and the banner can
    show again.
 5. **Sidebar order.** Promoted **Audience** above **Empathy Maps** so

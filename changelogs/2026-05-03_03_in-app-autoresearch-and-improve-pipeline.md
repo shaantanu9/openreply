@@ -27,7 +27,7 @@ flow inside the Tauri app. The user now gets:
    `synthesize_insights` / `build_audience_personas` read those
    overrides, so improvements **stick** without any prompt edits.
 
-The Claude Code skill at `.claude/skills/gap-map-autoresearch/` is
+The Claude Code skill at `.claude/skills/openreply-autoresearch/` is
 removed — every loop now runs from inside the sidebar.
 
 ## How it ties together
@@ -35,7 +35,7 @@ removed — every loop now runs from inside the sidebar.
 ```
 collect finishes
        ↓
-gapmap:changed (kind=collect)
+openreply:changed (kind=collect)
        ↓
 audiencePersonasBuild(topic, llm=false)   ← AUTO, no LLM key needed
        ↓
@@ -81,17 +81,17 @@ next /improve run uses those values — improvement persisted
 - `src/reddit_research/research/audience.py` — `build_audience_personas` reads `topic_pipeline_config['audience']` and applies overrides when caller didn't pass non-default values.
 - `src/reddit_research/research/insights.py` — same override logic on the `deliberate_rounds` parameter.
 - `src/reddit_research/cli/main.py` — 9 new subcommands: iterate-start, iterate-execute, iterate-run, iterate-status, iterate-list, iterate-cancel, iterate-apply, iterate-applied, pipeline-run, pipeline-status.
-- `src/reddit_research/mcp/server.py` — already exposed `gapmap_deliberate` and audience tools. iterate / pipeline live as CLI surfaces only (small footprint; the GUI calls them via Tauri commands; can be promoted to MCP tools later if agents need them).
+- `src/reddit_research/mcp/server.py` — already exposed `openreply_deliberate` and audience tools. iterate / pipeline live as CLI surfaces only (small footprint; the GUI calls them via Tauri commands; can be promoted to MCP tools later if agents need them).
 - `app-tauri/src-tauri/src/commands.rs` — 10 new Tauri commands wrapping the iterate + pipeline CLI subcommands.
 - `app-tauri/src-tauri/src/main.rs` — all 10 registered in `generate_handler!`.
 - `app-tauri/src/api.js` — `api.iterateRun`, `iterateStart`, `iterateExecute`, `iterateStatus`, `iterateList`, `iterateCancel`, `iterateApply`, `iterateApplied`, `pipelineRun`, `pipelineStatus`.
-- `app-tauri/src/main.js` — `renderImprove` import, route, explainer slug; auto-trigger `audiencePersonasBuild(topic, llm=false)` on `gapmap:changed{kind:collect}` with localStorage marker so it only fires once per topic per session.
+- `app-tauri/src/main.js` — `renderImprove` import, route, explainer slug; auto-trigger `audiencePersonasBuild(topic, llm=false)` on `openreply:changed{kind:collect}` with localStorage marker so it only fires once per topic per session.
 - `app-tauri/index.html` — sidebar entries "Improve" (`zap` icon) + "Iterate" (`repeat` icon) grouped at the end of Workspace. Order: Audience (real users) → ... → Improve (run pipeline) → Iterate (tune configs).
 - `app-tauri/src/style.css` — `.improve-stage-icon` helper.
 
 ## Files Removed
 
-- `.claude/skills/gap-map-autoresearch/` (full directory) — replaced
+- `.claude/skills/openreply-autoresearch/` (full directory) — replaced
   entirely by the in-app `/iterate` and `/improve` screens.
 
 ## Verification

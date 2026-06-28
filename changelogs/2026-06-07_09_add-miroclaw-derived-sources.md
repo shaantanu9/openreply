@@ -5,16 +5,16 @@
 
 ## Summary
 
-Added the 9 external data sources miroclaw_jyotish has that Gap Map lacked —
+Added the 9 external data sources miroclaw_jyotish has that OpenReply lacked —
 GDELT, DuckDuckGo, Tavily, World Bank, FRED, BIS, Yahoo Finance, Open-Meteo, and
-ACLED — re-implemented natively in Gap Map's source pattern. All are pure-`httpx`
+ACLED — re-implemented natively in OpenReply's source pattern. All are pure-`httpx`
 (no `gdeltdoc`/`yfinance`/`wbgapi`/pandas), so **zero new dependencies** and no
 PyInstaller-sidecar risk. Web/news sources map cleanly to the common `posts` row;
 the numeric/macro sources (World Bank, FRED, BIS, yfinance, Open-Meteo) render each
 datum as a text-summary post (miroclaw-style) so dedup/graph/sentiment/audience and
 the future forecast engine read them unchanged. Key-gated sources (Tavily, FRED,
 ACLED) degrade to `[]` cleanly when their env vars are unset. Skipped the 3 that
-duplicate existing Gap Map sources (Google Trends → `fetch_trends`, Google News →
+duplicate existing OpenReply sources (Google Trends → `fetch_trends`, Google News →
 `fetch_gnews`, India RSS → `fetch_rss`).
 
 Verified end-to-end: all 9 import; keyless sources return live rows and persist into
@@ -32,22 +32,22 @@ unrelated corpora. Test data cleaned up afterward.
   `fetch_fred`, `fetch_bis`, `fetch_yfinance`, `fetch_openmeteo`, `fetch_acled`.
 - GDELT throttle handling: one-shot 5s retry on empty/non-JSON (HTTP-200 throttle).
 - Registered each in `sources/__init__.py`, the `collect_adapter.SOURCES` dispatch
-  (with `run_*` wrappers), and as `@mcp.tool() gapmap_fetch_*` tools.
+  (with `run_*` wrappers), and as `@mcp.tool() openreply_fetch_*` tools.
 - Updated CLI `--sources` help to list the new sources + their key requirements.
 
 ## Files Created
 
-- `src/gapmap/sources/_extra_common.py`
-- `src/gapmap/sources/gdelt.py`, `duckduckgo.py`, `tavily.py`, `worldbank.py`,
+- `src/openreply/sources/_extra_common.py`
+- `src/openreply/sources/gdelt.py`, `duckduckgo.py`, `tavily.py`, `worldbank.py`,
   `fred.py`, `bis.py`, `yfinance_src.py`, `openmeteo.py`, `acled.py`
 - `changelogs/2026-06-07_09_add-miroclaw-derived-sources.md` (this file)
 
 ## Files Modified
 
-- `src/gapmap/sources/__init__.py` — import + `__all__` for the 9 fetchers.
-- `src/gapmap/sources/collect_adapter.py` — 9 `run_*` wrappers + `SOURCES` entries.
-- `src/gapmap/mcp/server.py` — 9 `gapmap_fetch_*` MCP tools.
-- `src/gapmap/cli/main.py` — `--sources` help string updated.
+- `src/openreply/sources/__init__.py` — import + `__all__` for the 9 fetchers.
+- `src/openreply/sources/collect_adapter.py` — 9 `run_*` wrappers + `SOURCES` entries.
+- `src/openreply/mcp/server.py` — 9 `openreply_fetch_*` MCP tools.
+- `src/openreply/cli/main.py` — `--sources` help string updated.
 
 ## Fast vs aggressive placement (benchmarked)
 

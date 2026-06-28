@@ -45,21 +45,21 @@ def check_core_imports() -> list[str]:
     """Every module the Tauri sidecar will try to import on first `run_cli`."""
     errors: list[str] = []
     modules = [
-        "gapmap",
-        "gapmap.cli.main",
-        "gapmap.core.db",
-        "gapmap.research.collect",
-        "gapmap.research.chat",
-        "gapmap.research.gaps",
-        "gapmap.analyze.painpoints",
-        "gapmap.analyze.providers.base",
-        "gapmap.analyze.providers.openai",
-        "gapmap.analyze.providers.ollama",
-        "gapmap.graph.build",
-        "gapmap.graph.semantic",
-        "gapmap.sources.collect_adapter",
-        "gapmap.sources.rss",
-        "gapmap.sources.rss_catalog",
+        "openreply",
+        "openreply.cli.main",
+        "openreply.core.db",
+        "openreply.research.collect",
+        "openreply.research.chat",
+        "openreply.research.gaps",
+        "openreply.analyze.painpoints",
+        "openreply.analyze.providers.base",
+        "openreply.analyze.providers.openai",
+        "openreply.analyze.providers.ollama",
+        "openreply.graph.build",
+        "openreply.graph.semantic",
+        "openreply.sources.collect_adapter",
+        "openreply.sources.rss",
+        "openreply.sources.rss_catalog",
     ]
     for mod in modules:
         try:
@@ -74,7 +74,7 @@ def check_core_imports() -> list[str]:
 def check_sources_dict() -> list[str]:
     errors: list[str] = []
     try:
-        from gapmap.sources.collect_adapter import SOURCES
+        from openreply.sources.collect_adapter import SOURCES
     except Exception as e:
         fail(f"SOURCES import failed: {e}")
         return [str(e)]
@@ -106,14 +106,14 @@ def check_db_schema() -> list[str]:
 
     # Isolated scratch DB so we don't touch the user's real DB.
     with tempfile.TemporaryDirectory() as td:
-        os.environ["GAPMAP_DB_PATH"] = str(pathlib.Path(td) / "doctor.db")
+        os.environ["OPENREPLY_DB_PATH"] = str(pathlib.Path(td) / "doctor.db")
         try:
             # Purge any cached get_db() that a previous import pinned to the
             # real DB path — otherwise init_schema initialises the wrong file.
-            from gapmap.core import db as _db
+            from openreply.core import db as _db
             if hasattr(_db, "_cache_clear"):
                 _db._cache_clear()
-            from gapmap.core.db import get_db, init_schema
+            from openreply.core.db import get_db, init_schema
 
             db = get_db()
             init_schema(db)
@@ -142,7 +142,7 @@ def check_db_schema() -> list[str]:
             traceback.print_exc()
             errors.append(str(e))
         finally:
-            os.environ.pop("GAPMAP_DB_PATH", None)
+            os.environ.pop("OPENREPLY_DB_PATH", None)
     return errors
 
 
@@ -170,7 +170,7 @@ def check_optional_extras() -> list[str]:
 def check_llm_provider_resolution() -> list[str]:
     errors: list[str] = []
     try:
-        from gapmap.analyze.providers.base import resolve_provider
+        from openreply.analyze.providers.base import resolve_provider
         provider_name = resolve_provider()
         if provider_name:
             ok(f"resolved LLM provider: {provider_name}")
@@ -183,7 +183,7 @@ def check_llm_provider_resolution() -> list[str]:
 
 
 def main() -> int:
-    print(f"{CYAN}Gap Map sidecar doctor{RESET}")
+    print(f"{CYAN}OpenReply sidecar doctor{RESET}")
     print(f"  root: {ROOT}")
     print(f"  python: {sys.version.split()[0]}")
 

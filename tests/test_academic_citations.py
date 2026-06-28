@@ -1,11 +1,11 @@
 """Tests for the deterministic citation-existence gate.
 
 No network is hit: a fake db supplies post rows and
-``gapmap.sources.crossref.fetch_by_doi`` is monkeypatched per-case.
+``openreply.sources.crossref.fetch_by_doi`` is monkeypatched per-case.
 """
 from __future__ import annotations
 
-from gapmap.research import academic_citations
+from openreply.research import academic_citations
 
 
 class FakeDB:

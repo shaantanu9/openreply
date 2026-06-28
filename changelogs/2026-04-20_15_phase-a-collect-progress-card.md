@@ -11,7 +11,7 @@ chips, rate-based ETA, and a live findings counter that appears when the
 topic crosses the 100-post threshold. The flip is mid-render (DOM nodes
 persist; a CSS class swap animates the border to orange and slides in the
 new copy). Wires new Tauri `enrich:tick` events into the existing
-`gapmap:changed` reactive layer so the card and every other open tab see new
+`openreply:changed` reactive layer so the card and every other open tab see new
 findings as the extraction worker commits batches. Part of Task 7 of the
 incremental-enrichment plan.
 
@@ -30,7 +30,7 @@ incremental-enrichment plan.
 - `listen('enrich:tick', …)` via a dynamic `@tauri-apps/api/event` import
   (guarded for non-Tauri test runtime). Topic-scoped — ticks for other
   topics only refresh the freshness badge, no DB roundtrip.
-- `window.addEventListener('gapmap:changed', …)` updates counts on
+- `window.addEventListener('openreply:changed', …)` updates counts on
   kind='findings' / 'collect' / 'graph'.
 - `routeGen` gate on every async callback so stale events don't mutate DOM
   after the user navigates away. Listeners cleaned up on `hashchange`.
@@ -45,7 +45,7 @@ incremental-enrichment plan.
 ## Files Modified
 
 - `app-tauri/src/screens/collect.js` — new phase-card DOM, post-count/
-  findings-count tracking, enrich:tick + gapmap:changed subscriptions, flip
+  findings-count tracking, enrich:tick + openreply:changed subscriptions, flip
   animation, freshness badge, cleanup on hashchange.
 - `app-tauri/src/style.css` — new `.phase-card`, `.phase-bar`, `.phase-copy`,
   `.phase-freshness`, `.phase-findings-pop` styles + `phaseFlipIn` and

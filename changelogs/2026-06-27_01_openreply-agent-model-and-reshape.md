@@ -18,8 +18,8 @@ from agent knowledge, and trimmed the sidebar to the OpenReply surface.
   via a refactored `brand.py` shim, so opportunities/drafts are agent-scoped.
 - **Agent engine:** `reply/agent.py` (CRUD, active pointer, knowledge summary, refresh
   via `research.collect`) and `reply/content.py` (generate post/thread/script/article
-  from agent voice + corpus excerpts → `content_items`). New `gapmap agent` and
-  `gapmap content` CLI groups. Tested end-to-end (agent create/list/knowledge; content
+  from agent voice + corpus excerpts → `content_items`). New `openreply agent` and
+  `openreply content` CLI groups. Tested end-to-end (agent create/list/knowledge; content
   generate produced a real draft via the configured LLM).
 - **UI reshape:** hid 15 off-mission sidebar items in `app-tauri/index.html` (Products,
   Competitors, Ingest-Video, Reports, Provenance, Science, Playbook, OST, Empathy,
@@ -29,13 +29,13 @@ from agent knowledge, and trimmed the sidebar to the OpenReply surface.
 
 ## Files Created
 
-- `src/gapmap/reply/agent.py`, `src/gapmap/reply/content.py`
-- `src/gapmap/cli/agent_cmds.py`
+- `src/openreply/reply/agent.py`, `src/openreply/reply/content.py`
+- `src/openreply/cli/agent_cmds.py`
 - `docs/OPENREPLY_RESHAPE.md`
 - `changelogs/2026-06-27_01_openreply-agent-model-and-reshape.md`
 
 ## Files Modified
 
-- `src/gapmap/reply/{brand,opportunity,__init__}.py` — agent-scoping
-- `src/gapmap/cli/main.py` — register `agent` + `content` groups
+- `src/openreply/reply/{brand,opportunity,__init__}.py` — agent-scoping
+- `src/openreply/cli/main.py` — register `agent` + `content` groups
 - `app-tauri/index.html` — hide off-mission nav items

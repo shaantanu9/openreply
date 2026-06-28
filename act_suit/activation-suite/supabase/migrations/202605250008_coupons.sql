@@ -113,8 +113,8 @@ grant execute on function public.redeem_coupon(text) to anon, authenticated, ser
 
 -- ─── Example seed data (commented out — uncomment + edit to bootstrap) ─────
 -- insert into public.coupons (code, plan_id, max_redemptions, note)
---   values ('GAPMAP-LAUNCH-EARLY', 'pro', 100,
+--   values ('OPENREPLY-LAUNCH-EARLY', 'pro', 100,
 --           'Early-access cohort — sent via DM, May 2026');
 -- insert into public.coupons (code, plan_id, max_redemptions, expires_at, note)
---   values ('GAPMAP-DEMO',         'pro_trial', 1, now() + interval '30 days',
+--   values ('OPENREPLY-DEMO',         'pro_trial', 1, now() + interval '30 days',
 --           'Single-use demo for partner onboarding call');

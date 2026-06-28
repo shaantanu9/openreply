@@ -29,19 +29,19 @@ loss. All limits are env-configurable.
 ## Changes
 
 - **Capped query budget**: new `_build_search_worklist()` picks up to
-  `GAPMAP_MAX_SEARCH_QUERIES` (default 24) distinct `(category, query)` pairs
+  `OPENREPLY_MAX_SEARCH_QUERIES` (default 24) distinct `(category, query)` pairs
   round-robin across keywords AND categories, so a small budget keeps breadth
   (pain/features/complaints/diy across all keywords) instead of front-loading
   one category.
 - **Search r/all by default**: `targets` is now `[None]` (r/all) unless
-  `sub_scope_search` is set AND `GAPMAP_SEARCH_SUB_CAP > 0`, in which case it
+  `sub_scope_search` is set AND `OPENREPLY_SEARCH_SUB_CAP > 0`, in which case it
   scopes to the top N subs only. Removes the catastrophic ×(all subs) multiplier.
 - **Parallelized search stage**: searches now run through a
-  `ThreadPoolExecutor` (`GAPMAP_SEARCH_WORKERS`, default 4) with a light 1.0 s
+  `ThreadPoolExecutor` (`OPENREPLY_SEARCH_WORKERS`, default 4) with a light 1.0 s
   per-request pace inside each worker (PRAW self-throttles in auth mode),
   replacing the per-iteration 2 s serial sleep.
 - **Timeboxed external-source drain**: the `as_completed` drain now uses an
-  overall `GAPMAP_SOURCE_TIMEOUT_SEC` budget (default 90 s); sources that don't
+  overall `OPENREPLY_SOURCE_TIMEOUT_SEC` budget (default 90 s); sources that don't
   finish are logged as timed-out and the pool is shut down with
   `wait=False, cancel_futures=True` so stragglers can't hang the collect.
 - Updated the module step-3 docstring + added an env-knob reference comment.
@@ -50,14 +50,14 @@ loss. All limits are env-configurable.
 
 | Var | Default | Effect |
 |---|---|---|
-| `GAPMAP_MAX_SEARCH_QUERIES` | 24 | Max distinct search queries executed |
-| `GAPMAP_SEARCH_WORKERS` | 4 | Concurrent Reddit search workers |
-| `GAPMAP_SEARCH_SUB_CAP` | 0 | Extra top-N subs to scope to (0 = r/all only) |
-| `GAPMAP_SOURCE_TIMEOUT_SEC` | 90 | Overall wait budget for external-source pool |
+| `OPENREPLY_MAX_SEARCH_QUERIES` | 24 | Max distinct search queries executed |
+| `OPENREPLY_SEARCH_WORKERS` | 4 | Concurrent Reddit search workers |
+| `OPENREPLY_SEARCH_SUB_CAP` | 0 | Extra top-N subs to scope to (0 = r/all only) |
+| `OPENREPLY_SOURCE_TIMEOUT_SEC` | 90 | Overall wait budget for external-source pool |
 
 ## Files Modified
 
-- `src/gapmap/research/collect.py` — imports (`itertools`,
+- `src/openreply/research/collect.py` — imports (`itertools`,
   `TimeoutError as FuturesTimeout`); new `_env_int` / `_env_float` /
   `_build_search_worklist` helpers + `_SEARCH_PACING`; rewrote stage-3 search
   loop to be budgeted + parallel; timeboxed the external-source drain; docstring.

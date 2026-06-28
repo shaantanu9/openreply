@@ -21,8 +21,8 @@ of the website.
   the Licence card into view, expands its form, and focuses the key input (polls for the
   async-mounted card). Added `#/activate → settings` to `navKey()` so the nav highlights.
 - **API base now resolves dynamically** (`LicenceCard.js`): uses
-  `api.licenseDefaultApiBase()` (honours the `GAPMAP_LICENSE_API_BASE` env in dev, prod
-  constant otherwise) instead of a hardcoded `https://gapmap.myind.ai`. The base field is
+  `api.licenseDefaultApiBase()` (honours the `OPENREPLY_LICENSE_API_BASE` env in dev, prod
+  constant otherwise) instead of a hardcoded `https://openreply.myind.ai`. The base field is
   also moved under an "(advanced)" label since it's prefilled correctly.
 - **Password is now optional** (`LicenceCard.js`): only email + key are required; a
   harmless placeholder is sent when the password is blank (the server requires the field

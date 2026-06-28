@@ -22,7 +22,7 @@ or network break.
 
 - **New `research.discover.warm_llm()`** — fires a 1-token LLM completion to load
   the model. Fail-soft (no provider → `{ok: False}`), idempotent on a warm model.
-- **CLI** `gapmap research warm-llm --json`.
+- **CLI** `openreply research warm-llm --json`.
 - **Tauri** `warm_llm` command (registered in `main.rs`).
 - **`api.js`** `warmLlm()` wrapper.
 - **`main.js`** fires `api.warmLlm()` FIRST in the app-start warm group (max lead
@@ -31,8 +31,8 @@ or network break.
 
 ## Files Modified
 
-- `src/gapmap/research/discover.py` (`warm_llm`)
-- `src/gapmap/cli/main.py` (`research warm-llm`)
+- `src/openreply/research/discover.py` (`warm_llm`)
+- `src/openreply/cli/main.py` (`research warm-llm`)
 - `app-tauri/src-tauri/src/commands.rs`, `main.rs`
 - `app-tauri/src/api.js`, `app-tauri/src/main.js`
 

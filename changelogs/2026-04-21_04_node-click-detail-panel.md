@@ -37,7 +37,7 @@ New CSS rules in `.details .node-*` — ~35 lines covering the redesigned sectio
 
 ### Stale-export cleanup (one-time)
 
-`rm -f ~/Library/Application\ Support/com.shantanu.gapmap/reddit-myind/gap-map-*.html` — the cached HTML on disk predates this fix, so `exportHtml` would hand back the old file without the new `showNodeDetails` logic. Cleared them so the next Map-tab mount rebuilds fresh.
+`rm -f ~/Library/Application\ Support/com.shantanu.openreply/reddit-myind/openreply-map-*.html` — the cached HTML on disk predates this fix, so `exportHtml` would hand back the old file without the new `showNodeDetails` logic. Cleared them so the next Map-tab mount rebuilds fresh.
 
 ## Verification
 

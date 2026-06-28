@@ -89,13 +89,13 @@ likes/replies so engagement-weighted RRF ranking works across sources.
 
 ```bash
 # 1. Connect (or paste) a credential, then live-test it:
-gapmap creds verify --source scrapecreators --json   # → {"connected": true, "message": "OK — 3 rows"}
+openreply creds verify --source scrapecreators --json   # → {"connected": true, "message": "OK — 3 rows"}
 
 # 2. Confirm it's in the run set:
-gapmap creds toggle --source bluesky --enabled --json
+openreply creds toggle --source bluesky --enabled --json
 
 # 3. Run a collect and confirm rows land:
-gapmap collect "your topic"        # connected social sources auto-included
+openreply collect "your topic"        # connected social sources auto-included
 ```
 
 ## Extending — adding a new social source

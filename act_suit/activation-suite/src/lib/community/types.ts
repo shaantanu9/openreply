@@ -1,4 +1,4 @@
-// Wire types mirroring docs/licence/gapmap-dual-app-spec.md §4.3 tables.
+// Wire types mirroring docs/licence/openreply-dual-app-spec.md §4.3 tables.
 // Keep in sync with the Supabase schema; any new column goes both places.
 
 export type SourceType =
@@ -192,7 +192,7 @@ export type InsightsSnapshot = {
     mention_count: number;
   }>;
   published_by: string; // username or "pro_user"
-  powered_by: "Gap Map Community" | "Gap Map Pro";
+  powered_by: "OpenReply Community" | "OpenReply Pro";
 };
 
 export type ByokKey = {

@@ -24,7 +24,7 @@ results, and let the model re-query and cite the freshly-pulled sources.
 
 ### Part 2 — agent "fetch more" tools (Feature)
 - Extracted the inline paper-research pipeline body from the
-  `gapmap_paper_research_pipeline` MCP tool into a reusable module function
+  `openreply_paper_research_pipeline` MCP tool into a reusable module function
   `run_paper_research()` in `paper_pipeline.py`. The MCP tool now calls it via
   `_run_with_timeout(..., kwargs=...)` — one code path, two callers.
 - Added two tools to `AGENT_TOOLS` in `chat.py` (Anthropic agent mode):
@@ -56,10 +56,10 @@ results, and let the model re-query and cite the freshly-pulled sources.
 
 - `app-tauri/src/style.css` — narrowed the user-bubble box selector to
   `.chat-msg-text` (fixes the duplicate timestamp box).
-- `src/gapmap/research/paper_pipeline.py` — added `run_paper_research()`.
-- `src/gapmap/mcp/server.py` — `gapmap_paper_research_pipeline` now delegates
+- `src/openreply/research/paper_pipeline.py` — added `run_paper_research()`.
+- `src/openreply/mcp/server.py` — `openreply_paper_research_pipeline` now delegates
   to `run_paper_research()` (removed the inline `_pipeline_impl`).
-- `src/gapmap/research/chat.py` — two new `AGENT_TOOLS`, their executors in
+- `src/openreply/research/chat.py` — two new `AGENT_TOOLS`, their executors in
   `_exec_tool`, the `_run_bounded` helper, and updated `AGENT_SYSTEM`.
 - `app-tauri/src/screens/topic.js` — added the "Fetch papers" header button +
   its click handler.

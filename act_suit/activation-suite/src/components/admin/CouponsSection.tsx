@@ -96,7 +96,7 @@ export function CouponsSection() {
         <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Create a coupon / invite code</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 12 }}>
           <label style={{ display: "grid", gap: 4, fontSize: 11.5, color: C.ink3, fontWeight: 600 }}>CODE (blank = auto)
-            <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="GAPMAP-XXXX-XXXX" style={{ ...inp, fontFamily: "ui-monospace, monospace" }} /></label>
+            <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="OPENREPLY-XXXX-XXXX" style={{ ...inp, fontFamily: "ui-monospace, monospace" }} /></label>
           <label style={{ display: "grid", gap: 4, fontSize: 11.5, color: C.ink3, fontWeight: 600 }}>PLAN
             <select value={plan} onChange={(e) => setPlan(e.target.value)} style={inp}>
               <option value="pro">pro</option><option value="pro_trial">pro_trial</option><option value="live_pass">live_pass</option><option value="free">free</option>

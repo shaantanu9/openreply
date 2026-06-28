@@ -25,9 +25,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gap Map — Research Intelligence for Product Teams",
+  title: "OpenReply — Research Intelligence for Product Teams",
   description:
-    "Point Gap Map at Reddit, HN, G2, Twitter, arXiv, and 9 more sources. In one sweep it extracts ranked pain points, DIY workarounds, and market gaps — so you stop guessing what to build.",
+    "Point OpenReply at Reddit, HN, G2, Twitter, arXiv, and 9 more sources. In one sweep it extracts ranked pain points, DIY workarounds, and market gaps — so you stop guessing what to build.",
 };
 
 export default function RootLayout({

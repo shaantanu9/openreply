@@ -16,11 +16,11 @@ Ship a **relevance gate** at three points in the pipeline:
 
 1. **Collect-time:** `_tag_posts` scores each candidate post via ChromaDB
    MiniLM cosine-to-topic and only inserts into `topic_posts` above
-   `GAPMAP_RELEVANCE_GATE_THRESHOLD` (default 0.28, recall-leaning).
+   `OPENREPLY_RELEVANCE_GATE_THRESHOLD` (default 0.28, recall-leaning).
 2. **LLM-time:** `synthesize_insights` (single + chunked paths) runs every
    extracted finding through `filter_findings` before persisting — drops
    findings whose label is off-topic above
-   `GAPMAP_FINDING_RELEVANCE_THRESHOLD` (default 0.40, precision-leaning).
+   `OPENREPLY_FINDING_RELEVANCE_THRESHOLD` (default 0.40, precision-leaning).
 3. **Retroactive:** new `research clean-corpus` CLI + Tauri command cleans
    existing corpora where the gate didn't exist yet. Dry-run by default;
    user inspects `sample_dropped`, then re-runs with `--apply`.
@@ -52,7 +52,7 @@ and env-tunable (set threshold to 0 to disable).
 ### Modified files
 - `src/reddit_research/research/collect.py` — `_tag_posts` runs the relevance
   gate before `topic_posts.insert_all`. Threshold via
-  `GAPMAP_RELEVANCE_GATE_THRESHOLD` env (default 0.28).
+  `OPENREPLY_RELEVANCE_GATE_THRESHOLD` env (default 0.28).
 - `src/reddit_research/research/insights.py` — both single-shot AND chunked
   `synthesize_insights` paths call `filter_findings` after the LLM returns,
   stamping `_relevance_dropped_findings` / `_relevance_dropped_count` on the
@@ -80,8 +80,8 @@ reddit-cli research insights --topic "meditation and sound frequency brainwave a
 
 | Env var | Default | Notes |
 |---|---|---|
-| `GAPMAP_RELEVANCE_GATE_THRESHOLD` | 0.28 | Collect-time post filter. Lower = more permissive. Set to 0 to disable. |
-| `GAPMAP_FINDING_RELEVANCE_THRESHOLD` | 0.40 | LLM-output finding filter. Precision-leaning. Set to 0 to disable. |
+| `OPENREPLY_RELEVANCE_GATE_THRESHOLD` | 0.28 | Collect-time post filter. Lower = more permissive. Set to 0 to disable. |
+| `OPENREPLY_FINDING_RELEVANCE_THRESHOLD` | 0.40 | LLM-output finding filter. Precision-leaning. Set to 0 to disable. |
 | min_keep (CLI / API param) | 20 | Retroactive safety floor — never drop below this many posts. |
 
 ## Files Created

@@ -94,7 +94,7 @@ export function ByokPanel() {
           </h1>
           <p className="mt-2 max-w-[520px] text-[14px] font-light text-[var(--muted)]">
             Your keys are encrypted with your password before they hit the database.
-            Gap Map cannot read them. If you forget your password your keys are
+            OpenReply cannot read them. If you forget your password your keys are
             unrecoverable — you&rsquo;ll need to re-enter them.
           </p>
         </header>
@@ -139,7 +139,7 @@ export function ByokPanel() {
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[12px] font-medium text-[var(--muted)]">Your Gap Map password</span>
+              <span className="text-[12px] font-medium text-[var(--muted)]">Your OpenReply password</span>
               <input
                 type="password"
                 autoComplete="current-password"

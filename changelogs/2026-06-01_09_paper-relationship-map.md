@@ -9,10 +9,10 @@ Added a **Paper Map**: a relationship graph of a topic's academic papers, reacha
 
 ## Changes
 
-- `src/gapmap/research/paper_relations.py`:
-  - Extended `build()` with two new edge kinds — `paper_shared_finding` (two papers both linked to the same gap-map finding, via `finding_research_links`) and `paper_same_author` (shared first author). Default `kinds` now covers all four (`ALL_KINDS`).
+- `src/openreply/research/paper_relations.py`:
+  - Extended `build()` with two new edge kinds — `paper_shared_finding` (two papers both linked to the same openreply-map finding, via `finding_research_links`) and `paper_same_author` (shared first author). Default `kinds` now covers all four (`ALL_KINDS`).
   - New `get_paper_map(topic, rebuild=False)` reader → D3 force-graph JSON `{ok, nodes, edges, stats}`. Nodes = topic's academic papers (capped at 200 by citations) with source/year/cites/author/has_fulltext; edges read back from `graph_edges` (`paper_*` kinds), labelled `semantic / cites / shared finding / same author`. Lazily materializes edges on first call. Pure-read, never raises; semantic degrades gracefully when ChromaDB/embeddings are unavailable.
-- `src/gapmap/cli/main.py`: new `research paper-map --topic [--rebuild] --json` command.
+- `src/openreply/cli/main.py`: new `research paper-map --topic [--rebuild] --json` command.
 - `app-tauri/src-tauri/src/commands.rs`: new `paper_map` Tauri command (shells to `research paper-map`); registered in `main.rs`.
 - `app-tauri/src/screens/paperMap.js` (NEW): self-contained Paper Map screen — calls `invoke('paper_map')` directly, computes a deterministic dependency-free SVG force layout, colours nodes by source / sizes by citations, colours edges by relation kind with a togglable legend, click-to-inspect side panel, Rebuild button.
 - `app-tauri/src/main.js`: import + route `#/paper-map/<topic>`.
@@ -26,7 +26,7 @@ Added a **Paper Map**: a relationship graph of a topic's academic papers, reacha
 
 ## Files Modified
 
-- `src/gapmap/research/paper_relations.py`, `src/gapmap/cli/main.py`, `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`, `app-tauri/src/main.js`, `app-tauri/src/screens/papers.js`, `app-tauri/src/style.css`
+- `src/openreply/research/paper_relations.py`, `src/openreply/cli/main.py`, `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`, `app-tauri/src/main.js`, `app-tauri/src/screens/papers.js`, `app-tauri/src/style.css`
 
 ## Verification
 

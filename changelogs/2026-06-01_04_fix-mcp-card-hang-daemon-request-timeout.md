@@ -59,9 +59,9 @@ per the user's request.
 
 ## Note (deployment)
 
-The frontend is bundled into `Gap Map.app`, so these changes (JS + Rust) reach
+The frontend is bundled into `OpenReply.app`, so these changes (JS + Rust) reach
 users only via a **rebuild of the app** — the currently-installed
-`/Applications/Gap Map.app` will not pick them up until then. Immediate relief
+`/Applications/OpenReply.app` will not pick them up until then. Immediate relief
 for a live freeze: quit (⌘Q) and relaunch, which kills the wedged daemon child.
 
 ## Files Modified

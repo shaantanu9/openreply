@@ -11,7 +11,7 @@ import hashlib
 import pytest
 import sqlite_utils
 
-from gapmap.research.academic_passport import (
+from openreply.research.academic_passport import (
     append_passport,
     get_passport,
     verify_passport,

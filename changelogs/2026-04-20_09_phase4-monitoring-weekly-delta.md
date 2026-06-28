@@ -109,5 +109,5 @@ CLI smoke:
 **After Phase 4:** open app → see "What's changed this week" card at top with 3 topics showing fresh signals → click → review delta → (optionally) update a Bets state → close. **Weekly ritual formed.**
 
 This is the retention surface that `docs/PRODUCT_GAPS.md` identified as
-the single biggest gap. With Phase 3 + 4 shipped, Gap Map has crossed
+the single biggest gap. With Phase 3 + 4 shipped, OpenReply has crossed
 from "research tool" into "research practice tool."

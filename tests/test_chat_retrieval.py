@@ -2,7 +2,7 @@
 canonicalization that stops semantic retrieval silently falling back to SQL when
 the UI passes a differently-cased/spaced topic name than palace indexed under.
 """
-from gapmap.research.chat.retrieval_context import resolve_indexed_topic as r
+from openreply.research.chat.retrieval_context import resolve_indexed_topic as r
 
 
 def test_exact_match_preferred():

@@ -30,7 +30,7 @@ still preserved.
 
 ## Files Modified
 
-- `src/gapmap/runtime/explanations.py`
+- `src/openreply/runtime/explanations.py`
 - `app-tauri/src/lib/helpPopover.js`, `screens/why.js`, `screens/help.js`, `style.css`
 
 ## Verification

@@ -1,7 +1,7 @@
 """Unit tests for chat/source_intent.py — loaded in TRUE isolation.
 
 The module is pure (stdlib only), so we exec it directly from its file without
-importing the heavy `gapmap.research.chat` package (which pulls DB/config). This
+importing the heavy `openreply.research.chat` package (which pulls DB/config). This
 is the whole point of the decomposition: every chat piece is testable alone.
 """
 import importlib.util
@@ -17,7 +17,7 @@ def _load(rel_path, name):
     return mod
 
 
-si = _load("src/gapmap/research/chat/source_intent.py", "chat_source_intent")
+si = _load("src/openreply/research/chat/source_intent.py", "chat_source_intent")
 
 
 def test_papers_intent_detected():

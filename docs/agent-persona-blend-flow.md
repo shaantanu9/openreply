@@ -15,7 +15,7 @@ mind** — product framing on the outside, real learned knowledge on the inside.
 
 | | **Agent** (product side) | **Persona** (learning side) |
 |---|---|---|
-| Code | `src/gapmap/reply/` | `src/gapmap/persona/` |
+| Code | `src/openreply/reply/` | `src/openreply/persona/` |
 | Identity | `brand`, `niche`, `persona` (voice), `tone`, `audience` | `name`, `goal`, `lens`, `system_prompt` |
 | Knowledge | shared topic corpus (`posts`/`topic_posts`) | own `persona_memories` (lens-distilled lessons) |
 | Graph | `graph_*` (topic-wide) | `persona_edges` + per-persona ChromaDB collection |
@@ -85,12 +85,12 @@ finally *spent* on output.
 
 **CLI** (`cli/agent_cmds.py`):
 ```
-gapmap agent link-persona <persona_id> [--agent <id>] [--weight 2.0]
-gapmap agent unlink-persona <persona_id> [--agent <id>]
-gapmap agent personas [--agent <id>]
+openreply agent link-persona <persona_id> [--agent <id>] [--weight 2.0]
+openreply agent unlink-persona <persona_id> [--agent <id>]
+openreply agent personas [--agent <id>]
 ```
-**MCP** (`mcp/tools/persona_tools.py`): `gapmap_agent_link_persona`,
-`gapmap_agent_unlink_persona`, `gapmap_agent_personas`.
+**MCP** (`mcp/tools/persona_tools.py`): `openreply_agent_link_persona`,
+`openreply_agent_unlink_persona`, `openreply_agent_personas`.
 
 ## File map
 

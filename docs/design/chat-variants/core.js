@@ -1,5 +1,5 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   Gap Map — Topic-Insights + Chat prototype : SHARED CORE ENGINE
+   OpenReply — Topic-Insights + Chat prototype : SHARED CORE ENGINE
    Exposes window.GM = { DATA, KIND_COLORS, GapGraph, ChatBrain, buildInsights,
    buildLenses, SUGGESTIONS }. Every variant imports this so the graph, the
    mock dataset and the canned chat behave identically — only layout differs.

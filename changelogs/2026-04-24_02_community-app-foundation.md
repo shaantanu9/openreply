@@ -6,7 +6,7 @@
 ## Summary
 
 First pass at implementing the Community half of
-`docs/licence/gapmap-dual-app-spec.md`. The Next.js `activation-suite` now
+`docs/licence/openreply-dual-app-spec.md`. The Next.js `activation-suite` now
 carries the full research-publishing surface — DB schema, server libs, API
 routes, and UI pages — for workspaces, sweeps, insights, publishing, the
 public explore feed, and profiles. Source-connector fetching and AI
@@ -78,7 +78,7 @@ Rust core crate from spec §3 Phase 1.
 - `sweepEngine.ts` generates mock posts and insights. Replace with the
   shared Rust core engine from spec §3 / Phase 1 (real Reddit / HN / G2
   connectors + BYOK AI extraction).
-- BYOK key is encrypted with the user's Gap Map password. The password
+- BYOK key is encrypted with the user's OpenReply password. The password
   itself isn't stored — Supabase Auth stores a bcrypt hash. If a user forgets
   their password, their keys are unrecoverable (documented in the UI).
 - PDF export is stubbed as "Pro-only" in the report tab; CSV + Markdown ship

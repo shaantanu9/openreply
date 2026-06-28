@@ -15,7 +15,7 @@ what-changed entry) and `docs/learnings/2026-04-21-tier-build-patterns.md`
 
 ### 1.1 What the user sees
 
-- "Gap Map hangs on any click."
+- "OpenReply hangs on any click."
 - "My Cursor / Claude Code suddenly lost all `reddit-myind` tools."
 - "Laptop fan is spinning even when I'm not doing anything."
 - "Settings → Palace says 'ready' but semantic search times out."
@@ -23,7 +23,7 @@ what-changed entry) and `docs/learnings/2026-04-21-tier-build-patterns.md`
 ### 1.2 What's actually happening
 
 Each time a user opens a Claude Code / Cursor / Claude Desktop / Windsurf
-session with the Gap Map MCP connector, the client spawns a fresh
+session with the OpenReply MCP connector, the client spawns a fresh
 `reddit-cli mcp serve` child over stdio. When the client window closes,
 crashes, or the session is force-killed, the OS is supposed to send
 EOF on stdin to the child. In practice, this doesn't always happen:
@@ -72,9 +72,9 @@ Because:
 - Users run multiple MCP clients simultaneously (Cursor for code,
   Claude Code for research, Claude Desktop for Q&A).
 - Each client re-spawns a fresh child on reconnect.
-- Nothing in Gap Map before today limited how many could accumulate.
+- Nothing in OpenReply before today limited how many could accumulate.
 
-A user who installs Gap Map and uses it normally for a month will
+A user who installs OpenReply and uses it normally for a month will
 accumulate enough zombies that the app starts feeling slow. They blame
 the app, not the client.
 
@@ -148,7 +148,7 @@ written to stderr.
 
 **Code:** `_sweep_stale_siblings()`.
 
-**Failure mode it prevents:** users who installed Gap Map before this
+**Failure mode it prevents:** users who installed OpenReply before this
 build accumulated zombies already. Guard 1 only blocks NEW accumulation;
 Guard 3 cleans up EXISTING accumulation the first time they restart
 after upgrading.
@@ -231,13 +231,13 @@ ps aux | grep -v grep | grep "reddit-cli mcp serve" | wc -l
 # → {"error":"another_mcp_server_running","hint":"..."}
 
 # Check the PID file
-ls -la ~/Library/Application\ Support/com.shantanu.gapmap/reddit-myind/mcp-server.pid
+ls -la ~/Library/Application\ Support/com.shantanu.openreply/reddit-myind/mcp-server.pid
 # → should exist, owned by you
 
 # Kill the first → lock file released by atexit
 pkill -f "reddit-cli mcp serve"
 sleep 1
-ls ~/Library/Application\ Support/com.shantanu.gapmap/reddit-myind/mcp-server.pid 2>/dev/null
+ls ~/Library/Application\ Support/com.shantanu.openreply/reddit-myind/mcp-server.pid 2>/dev/null
 # → No such file
 
 # Simulate a zombie → test Guard 3
@@ -354,17 +354,17 @@ What the user reports → what's happening → how to fix.
 - **Fix:** have the user re-open the MCP client; a new child spawns
   automatically on the next tool call.
 
-### 7.2 "Gap Map app hangs on any click"
+### 7.2 "OpenReply app hangs on any click"
 
 - **Cause:** zombie MCP / sidecar processes holding DB locks.
 - **Diagnosis:**
   ```bash
-  ps aux | grep -E "reddit-cli|gapmap" | grep -v grep
+  ps aux | grep -E "reddit-cli|openreply" | grep -v grep
   ```
 - **Quick fix:**
   ```bash
   pkill -f "reddit-cli mcp serve"
-  # Then restart Gap Map.
+  # Then restart OpenReply.
   ```
 - **Long-term fix:** they're on a build older than `b8b285e`. Update.
 
@@ -374,7 +374,7 @@ What the user reports → what's happening → how to fix.
   instance.
 - **Diagnosis:** check the PID file:
   ```bash
-  cat ~/Library/Application\ Support/com.shantanu.gapmap/reddit-myind/mcp-server.pid
+  cat ~/Library/Application\ Support/com.shantanu.openreply/reddit-myind/mcp-server.pid
   ps -p $(cat ~/Library/Application\ Support/...mcp-server.pid)
   ```
 - **Fix:**
@@ -383,10 +383,10 @@ What the user reports → what's happening → how to fix.
   - If the PID is dead but the file lingers (shouldn't happen — atexit
     usually cleans up; may happen on SIGKILL):
     ```bash
-    rm ~/Library/Application\ Support/com.shantanu.gapmap/reddit-myind/mcp-server.pid
+    rm ~/Library/Application\ Support/com.shantanu.openreply/reddit-myind/mcp-server.pid
     ```
 
-### 7.4 "Laptop fan spinning when Gap Map is idle"
+### 7.4 "Laptop fan spinning when OpenReply is idle"
 
 - **Cause:** Chroma HNSW compaction across multiple processes (see §1.3).
 - **Fix:** update to `b8b285e` or later. Guards 1 + 3 will reduce to one
@@ -414,7 +414,7 @@ bundle size increase: ~3 MB.
 
 When Guard 2 fires, the user sees nothing — their MCP just goes silent.
 Emit a `terminal-notifier` (macOS) or `osascript` toast on graceful
-exit: *"Gap Map MCP server idle-exited after 30 min. It will re-start
+exit: *"OpenReply MCP server idle-exited after 30 min. It will re-start
 on your next tool call."*
 
 ### 8.3 Tauri sidecar mirror

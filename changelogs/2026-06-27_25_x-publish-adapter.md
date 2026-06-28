@@ -18,7 +18,7 @@ and opt-in — nothing posts without stored X API write credentials, and a
   into ≤280-char tweets on blank lines (the engine's `N/M …` thread format),
   posts the first via `POST /2/tweets`, then replies down the chain to form a
   thread. OAuth 1.0a user-context auth via `requests_oauthlib`.
-- New CLI group `gapmap publish`: `set-creds` / `status` / `clear-creds` /
+- New CLI group `openreply publish`: `set-creds` / `status` / `clear-creds` /
   `x --content-id <id> [--dry-run]`. On success flips the content_items row to
   `posted` and records the tweet URL. Registered in `cli/main.py`.
 - Tauri bridge: `content_publish_x`, `publish_status`, `publish_set_x_creds`
@@ -32,13 +32,13 @@ and opt-in — nothing posts without stored X API write credentials, and a
 
 ## Files Created
 
-- `src/gapmap/publish/__init__.py`, `src/gapmap/publish/base.py`, `src/gapmap/publish/x.py`
-- `src/gapmap/cli/publish_cmds.py`
+- `src/openreply/publish/__init__.py`, `src/openreply/publish/base.py`, `src/openreply/publish/x.py`
+- `src/openreply/cli/publish_cmds.py`
 - `docs/manual-todo/x-publishing-setup.md` — the one manual step (X API keys).
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py` — register the `publish` group.
+- `src/openreply/cli/main.py` — register the `publish` group.
 - `app-tauri/src-tauri/src/commands.rs`, `main.rs` — 3 publish commands.
 - `app-tauri/src/or/api.js` — publish API methods.
 - `app-tauri/src/or/dynamic.js` — Compose 𝕏 Publish button + handler.

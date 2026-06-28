@@ -80,7 +80,7 @@ export function BeforeAfterSection() {
               className="absolute right-6 top-6 inline-flex items-center gap-2 rounded-full bg-[var(--orange-pale)] px-3 py-[4px] text-[10.5px] font-medium uppercase tracking-[1.2px] text-[var(--orange)]"
             >
               <span className="h-[6px] w-[6px] rounded-full bg-[var(--orange)]" />
-              The Gap Map way
+              The OpenReply way
             </span>
             <span className="text-[11px] font-medium uppercase tracking-[1.5px] text-[var(--orange)]">
               {after.label}

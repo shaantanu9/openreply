@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Port Agent Reach's portable platform readers into native Gap Map sources, fix Reddit to a robust tiered cascade, and add an in-app browser-login → cookie-capture → store → verify → use credential flow.
+**Goal:** Port Agent Reach's portable platform readers into native OpenReply sources, fix Reddit to a robust tiered cascade, and add an in-app browser-login → cookie-capture → store → verify → use credential flow.
 
 **Architecture:** Each source is a `fetch_<name>(query, limit) -> list[dict]` module emitting the common posts-row shape (never raises). Cookie/key-gated sources read creds through a new `core/credentials.py` backed by a `source_credentials` SQLite table. The desktop app gets a "Reach Connections" screen that opens platform logins in the system browser (existing `open_url` IPC), extracts the session cookie from the browser, stores+verifies it, after which the matching source uses it. Reddit's first-class fetch becomes a 4-tier cascade (PRAW → cookie → proxy JSON → RSS).
 
@@ -18,20 +18,20 @@
 ## File Structure
 
 **New Python files**
-- `src/gapmap/core/credentials.py` — credential store accessor (get/set/delete/verify).
-- `src/gapmap/sources/v2ex.py` · `web_reader.py` · `bilibili.py` · `xueqiu.py` · `exa_search.py` · `xiaoyuzhou.py` · `linkedin.py` · `xiaohongshu.py` · `reddit_free.py` — fetchers.
+- `src/openreply/core/credentials.py` — credential store accessor (get/set/delete/verify).
+- `src/openreply/sources/v2ex.py` · `web_reader.py` · `bilibili.py` · `xueqiu.py` · `exa_search.py` · `xiaoyuzhou.py` · `linkedin.py` · `xiaohongshu.py` · `reddit_free.py` — fetchers.
 - `tests/test_v2ex.py` · `test_web_reader.py` · `test_bilibili.py` · `test_xueqiu.py` · `test_exa_search.py` · `test_xiaoyuzhou.py` · `test_linkedin.py` · `test_xiaohongshu.py` · `test_reddit_free.py` · `test_credentials.py` · `test_reddit_cascade.py`.
 
 **Modified Python files**
-- `src/gapmap/core/db.py` — `source_credentials` table in `init_schema`.
-- `src/gapmap/sources/_cookie_extract.py` — generalize X-only → multi-platform cookie registry.
-- `src/gapmap/sources/__init__.py` — imports + `__all__` + docstring tiers.
-- `src/gapmap/sources/collect_adapter.py` — `collect_<name>` per source.
-- `src/gapmap/core/public_client.py` — add proxy support.
-- `src/gapmap/fetch/posts.py` · `fetch/search.py` — tiered cascade.
-- `src/gapmap/mcp/server.py` — `gapmap_fetch_<name>` + `gapmap_creds_list` / `gapmap_creds_verify`.
-- `src/gapmap/cli/main.py` — source dispatch + `creds` subcommands.
-- `src/gapmap/sources/source_families.py` — REDDIT_FAMILY includes `reddit_free`.
+- `src/openreply/core/db.py` — `source_credentials` table in `init_schema`.
+- `src/openreply/sources/_cookie_extract.py` — generalize X-only → multi-platform cookie registry.
+- `src/openreply/sources/__init__.py` — imports + `__all__` + docstring tiers.
+- `src/openreply/sources/collect_adapter.py` — `collect_<name>` per source.
+- `src/openreply/core/public_client.py` — add proxy support.
+- `src/openreply/fetch/posts.py` · `fetch/search.py` — tiered cascade.
+- `src/openreply/mcp/server.py` — `openreply_fetch_<name>` + `openreply_creds_list` / `openreply_creds_verify`.
+- `src/openreply/cli/main.py` — source dispatch + `creds` subcommands.
+- `src/openreply/sources/source_families.py` — REDDIT_FAMILY includes `reddit_free`.
 - `pyproject.toml` — only if a new pure-Python dep is needed (target: none).
 
 **Modified app files**
@@ -50,15 +50,15 @@
 
 ### Task 1: `source_credentials` table
 
-**Files:** Modify `src/gapmap/core/db.py:203` (`init_schema`); Test `tests/test_credentials.py`.
+**Files:** Modify `src/openreply/core/db.py:203` (`init_schema`); Test `tests/test_credentials.py`.
 
 - [ ] **Step 1: Write failing test**
 ```python
 # tests/test_credentials.py
-from gapmap.core.db import get_db, init_schema
+from openreply.core.db import get_db, init_schema
 
 def test_source_credentials_table_created(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DB", str(tmp_path / "t.db"))
+    monkeypatch.setenv("OPENREPLY_DB", str(tmp_path / "t.db"))
     get_db.cache_clear()
     db = get_db(); init_schema(db)
     assert "source_credentials" in db.table_names()
@@ -82,20 +82,20 @@ def test_source_credentials_table_created(tmp_path, monkeypatch):
 - [ ] **Step 4: Run** the test → PASS.
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/core/db.py tests/test_credentials.py
+git add src/openreply/core/db.py tests/test_credentials.py
 git commit -m "feat(db): source_credentials table for per-source auth"
 ```
 
 ### Task 2: `core/credentials.py` accessor
 
-**Files:** Create `src/gapmap/core/credentials.py`; Test `tests/test_credentials.py`.
+**Files:** Create `src/openreply/core/credentials.py`; Test `tests/test_credentials.py`.
 
 - [ ] **Step 1: Add failing test**
 ```python
 def test_set_get_delete_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DB", str(tmp_path / "t.db"))
-    from gapmap.core.db import get_db; get_db.cache_clear()
-    from gapmap.core import credentials as C
+    monkeypatch.setenv("OPENREPLY_DB", str(tmp_path / "t.db"))
+    from openreply.core.db import get_db; get_db.cache_clear()
+    from openreply.core import credentials as C
     assert C.get_credential("reddit") is None
     C.set_credential("reddit", {"reddit_session": "abc"}, username="u", kind="cookie")
     cred = C.get_credential("reddit")
@@ -159,20 +159,20 @@ def cookie_header(source: str) -> str:
 - [ ] **Step 4: Run** → PASS.
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/core/credentials.py tests/test_credentials.py
+git add src/openreply/core/credentials.py tests/test_credentials.py
 git commit -m "feat(core): credential store accessor (get/set/delete/cookie_header)"
 ```
 
 ### Task 3: Generalize `_cookie_extract.py` to a platform registry
 
-**Files:** Modify `src/gapmap/sources/_cookie_extract.py`; Test `tests/test_credentials.py`.
+**Files:** Modify `src/openreply/sources/_cookie_extract.py`; Test `tests/test_credentials.py`.
 
 The file already reads Firefox/Chrome/Brave/Safari cookie DBs for X. Add a registry and a generic `extract_cookies(source)` that returns `{}` non-fatally.
 
 - [ ] **Step 1: Add failing test**
 ```python
 def test_extract_cookies_unknown_source_returns_empty():
-    from gapmap.sources._cookie_extract import extract_cookies
+    from openreply.sources._cookie_extract import extract_cookies
     assert extract_cookies("not_a_real_source") == {}
 ```
 - [ ] **Step 2: Run** → FAIL.
@@ -203,7 +203,7 @@ Refactor the existing X reader bodies into `_extract_for(domains, names, browser
 - [ ] **Step 4: Run** → PASS.
 - [ ] **Step 5: Commit**
 ```bash
-git add src/gapmap/sources/_cookie_extract.py tests/test_credentials.py
+git add src/openreply/sources/_cookie_extract.py tests/test_credentials.py
 git commit -m "feat(sources): multi-platform cookie extraction registry"
 ```
 
@@ -221,13 +221,13 @@ git commit -m "feat(sources): multi-platform cookie extraction registry"
 
 ### Task 4: `v2ex` source (public API)
 
-**Files:** Create `src/gapmap/sources/v2ex.py`; Test `tests/test_v2ex.py`.
+**Files:** Create `src/openreply/sources/v2ex.py`; Test `tests/test_v2ex.py`.
 
 - [ ] **Step 1: Failing test**
 ```python
 # tests/test_v2ex.py
 import respx, httpx
-from gapmap.sources.v2ex import fetch_v2ex
+from openreply.sources.v2ex import fetch_v2ex
 
 @respx.mock
 def test_fetch_v2ex_shape():
@@ -240,7 +240,7 @@ def test_fetch_v2ex_shape():
     assert rows[0]["title"] == "T" and rows[0]["permalink"] is None
 
 def test_fetch_v2ex_never_raises(monkeypatch):
-    monkeypatch.setattr("gapmap.sources.v2ex.polite_get",
+    monkeypatch.setattr("openreply.sources.v2ex.polite_get",
                         lambda *a, **k: (_ for _ in ()).throw(Exception("net")))
     assert fetch_v2ex("x") == []
 ```
@@ -284,17 +284,17 @@ def fetch_v2ex(query: str, limit: int = 50, **_) -> list[dict]:
     return rows[:limit]
 ```
 - [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `git add src/gapmap/sources/v2ex.py tests/test_v2ex.py && git commit -m "feat(sources): v2ex public-API source"`
+- [ ] **Step 5: Commit** `git add src/openreply/sources/v2ex.py tests/test_v2ex.py && git commit -m "feat(sources): v2ex public-API source"`
 
 ### Task 5: `web_reader` source (Jina Reader)
 
-**Files:** Create `src/gapmap/sources/web_reader.py`; Test `tests/test_web_reader.py`.
+**Files:** Create `src/openreply/sources/web_reader.py`; Test `tests/test_web_reader.py`.
 `fetch_web_reader(query)` treats `query` as a URL, fetches `https://r.jina.ai/<url>`, returns ONE post row (title = first markdown H1 or the URL; selftext = first 2000 chars).
 
 - [ ] **Step 1: Failing test**
 ```python
 import respx, httpx
-from gapmap.sources.web_reader import fetch_web_reader
+from openreply.sources.web_reader import fetch_web_reader
 
 @respx.mock
 def test_web_reader_one_row():
@@ -341,22 +341,22 @@ def fetch_web_reader(query: str, limit: int = 1, **_) -> list[dict]:
     }]
 ```
 - [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `git add src/gapmap/sources/web_reader.py tests/test_web_reader.py && git commit -m "feat(sources): web_reader (Jina Reader) source"`
+- [ ] **Step 5: Commit** `git add src/openreply/sources/web_reader.py tests/test_web_reader.py && git commit -m "feat(sources): web_reader (Jina Reader) source"`
 
 ### Task 6: `bilibili` source (search API)
 
-**Files:** Create `src/gapmap/sources/bilibili.py`; Test `tests/test_bilibili.py`.
+**Files:** Create `src/openreply/sources/bilibili.py`; Test `tests/test_bilibili.py`.
 Endpoint: `https://api.bilibili.com/x/web-interface/search/all/v2?keyword=<q>&page=1`. Optional `BILIBILI_PROXY` env. Parse `data.result[*]` where `result_type=="video"` → `data` list of videos (`title` has `<em>` HTML — strip tags; `description`, `author`, `play`→score, `bvid`→url `https://www.bilibili.com/video/<bvid>`, `pubdate`→created_utc).
 
 - [ ] **Step 1: Failing test** (mock the search endpoint, assert shape + tag-strip + `source_type=="bilibili"` + never-raise). Mirror the v2ex test structure.
 - [ ] **Step 2: Run** → FAIL.
 - [ ] **Step 3: Implement** following the template; strip `<[^>]+>` from titles; read `proxy=os.environ.get("BILIBILI_PROXY")` and pass to `polite_get(..., proxy=proxy)` if the helper supports it, else `httpx.get(..., proxies=proxy)` in a try/except.
 - [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `git add src/gapmap/sources/bilibili.py tests/test_bilibili.py && git commit -m "feat(sources): bilibili search-API source"`
+- [ ] **Step 5: Commit** `git add src/openreply/sources/bilibili.py tests/test_bilibili.py && git commit -m "feat(sources): bilibili search-API source"`
 
 ### Task 7: `xiaoyuzhou` source (episode metadata)
 
-**Files:** Create `src/gapmap/sources/xiaoyuzhou.py`; Test `tests/test_xiaoyuzhou.py`.
+**Files:** Create `src/openreply/sources/xiaoyuzhou.py`; Test `tests/test_xiaoyuzhou.py`.
 Scope: given an episode/podcast URL (`xiaoyuzhoufm.com/episode/<id>`), fetch the page, parse the `<title>` and the `<meta name="description">`/JSON-LD show notes → ONE post row (`source_type="xiaoyuzhou"`). No audio download/transcription in this plan (that reuses the existing transcribe module in a later effort — note it in the docstring).
 
 - [ ] **Step 1: Failing test** — mock an episode HTML page, assert one row with title + description, never-raise. 
@@ -368,7 +368,7 @@ Scope: given an episode/podcast URL (`xiaoyuzhoufm.com/episode/<id>`), fetch the
 
 ### Task 8: `exa_search` (Exa REST API + key)
 
-**Files:** Create `src/gapmap/sources/exa_search.py`; Test `tests/test_exa_search.py`.
+**Files:** Create `src/openreply/sources/exa_search.py`; Test `tests/test_exa_search.py`.
 Endpoint `POST https://api.exa.ai/search` with header `x-api-key: $EXA_API_KEY`, body `{"query": q, "numResults": limit, "contents": {"text": true}}`. No key → `[]`. Parse `results[*]` (`title`, `url`, `text`→selftext, `publishedDate`→created_utc, `author`).
 
 - [ ] **Step 1: Failing test** — `monkeypatch.delenv("EXA_API_KEY", raising=False)` → `fetch_exa_search("x") == []`; then with key set + mocked `respx` POST, assert shape.
@@ -380,7 +380,7 @@ Endpoint `POST https://api.exa.ai/search` with header `x-api-key: $EXA_API_KEY`,
 
 ### Task 9: `xueqiu` (cookie-warm + optional token)
 
-**Files:** Create `src/gapmap/sources/xueqiu.py`; Test `tests/test_xueqiu.py`.
+**Files:** Create `src/openreply/sources/xueqiu.py`; Test `tests/test_xueqiu.py`.
 Warm the cookie jar by GET `https://xueqiu.com` first (sets `xq_a_token`), then call search `https://xueqiu.com/query/v1/search/status.json?count=<limit>&q=<q>` with `Referer: https://xueqiu.com/`. If `credentials.cookie_header("xueqiu")` is non-empty, send it (better quota). Parse `list[*]` (`text`→title/selftext stripped of HTML, `target`→url, `created_at` ms→created_utc, `reply_count`→num_comments, `like_count`→score).
 
 - [ ] **Step 1: Failing test** — mock homepage + search endpoints, assert shape + never-raise.
@@ -388,7 +388,7 @@ Warm the cookie jar by GET `https://xueqiu.com` first (sets `xq_a_token`), then 
 
 ### Task 10: `xiaohongshu` (best-effort cookie port)
 
-**Files:** Create `src/gapmap/sources/xiaohongshu.py`; Test `tests/test_xiaohongshu.py`.
+**Files:** Create `src/openreply/sources/xiaohongshu.py`; Test `tests/test_xiaohongshu.py`.
 Requires `credentials.get_credential("xiaohongshu")`; if absent → `[]` (no raise). With cookie, call the web search endpoint used by Agent Reach's `xiaohongshu.py` (port the request building + the `web_session` cookie header). Parse note cards → posts rows (`source_type="xiaohongshu"`). Heavily anti-bot: on non-200/JSON-decode error → `[]`.
 
 - [ ] **Step 1: Failing test** — no cookie → `[]`; with cookie + mocked endpoint → shape. 
@@ -396,7 +396,7 @@ Requires `credentials.get_credential("xiaohongshu")`; if absent → `[]` (no rai
 
 ### Task 11: `linkedin` (Jina read of public URLs)
 
-**Files:** Create `src/gapmap/sources/linkedin.py`; Test `tests/test_linkedin.py`.
+**Files:** Create `src/openreply/sources/linkedin.py`; Test `tests/test_linkedin.py`.
 `fetch_linkedin(query)` where `query` is a LinkedIn URL → read via Jina Reader (reuse `web_reader` logic) → one row `source_type="linkedin"`. Non-LinkedIn URL or empty → `[]`. Docstring notes deep profile/company search needs the upstream MCP (future).
 
 - [ ] **Step 1: Failing test** — mock `r.jina.ai/...linkedin...`, assert one row; empty → `[]`.
@@ -404,7 +404,7 @@ Requires `credentials.get_credential("xiaohongshu")`; if absent → `[]` (no rai
 
 ### Task 12: Wire existing `x_twitter` to the credential layer
 
-**Files:** Modify `src/gapmap/sources/x_twitter.py`; Test `tests/test_x_twitter_creds.py`.
+**Files:** Modify `src/openreply/sources/x_twitter.py`; Test `tests/test_x_twitter_creds.py`.
 Add: if no ScrapeCreators key, fall back to `credentials.get_credential("twitter")` (auth_token/ct0) before giving up. Keep current behaviour when the paid key is present.
 
 - [ ] **Step 1: Failing test** — with no paid key but a stored twitter cookie, the free path is attempted (mock it); with neither → `[]`.
@@ -416,7 +416,7 @@ Add: if no ScrapeCreators key, fall back to `credentials.get_credential("twitter
 
 ### Task 13: Proxy support in `public_client`
 
-**Files:** Modify `src/gapmap/core/public_client.py`; Test `tests/test_reddit_cascade.py`.
+**Files:** Modify `src/openreply/core/public_client.py`; Test `tests/test_reddit_cascade.py`.
 In `_get_rss` (and any JSON getter), read `proxy = load_config().reddit_proxy or os.environ.get("REDDIT_PROXY")` and pass `proxies=proxy` to `httpx.get` when set.
 
 - [ ] **Step 1: Failing test** — monkeypatch `httpx.get` to assert it receives `proxies` when `REDDIT_PROXY` is set.
@@ -424,7 +424,7 @@ In `_get_rss` (and any JSON getter), read `proxy = load_config().reddit_proxy or
 
 ### Task 14: Cookie-JSON Reddit tier + `reddit_free` source
 
-**Files:** Create `src/gapmap/sources/reddit_free.py`; Test `tests/test_reddit_free.py`.
+**Files:** Create `src/openreply/sources/reddit_free.py`; Test `tests/test_reddit_free.py`.
 `fetch_reddit_free(query, sub=None, limit=50)`: if `credentials.cookie_header("reddit")` present, GET `https://www.reddit.com/search.json?q=<q>&limit=<limit>` (or `/r/<sub>/search.json`) with that Cookie + a browser UA + optional `REDDIT_PROXY` → full JSON (score/num_comments). Map to posts rows with real `permalink` (Reddit family). If no cookie → fall back to existing `public_client.public_search` (RSS). Never raise.
 
 - [ ] **Step 1: Failing test** — with cookie + mocked `search.json`, assert rows include `score`/`num_comments` and `source_type` in the reddit family; without cookie, assert it calls `public_search` (monkeypatched).
@@ -432,7 +432,7 @@ In `_get_rss` (and any JSON getter), read `proxy = load_config().reddit_proxy or
 
 ### Task 15: Tiered cascade in first-class `fetch/posts.py` + `fetch/search.py`
 
-**Files:** Modify `src/gapmap/fetch/posts.py`, `src/gapmap/fetch/search.py`; Test `tests/test_reddit_cascade.py`.
+**Files:** Modify `src/openreply/fetch/posts.py`, `src/openreply/fetch/search.py`; Test `tests/test_reddit_cascade.py`.
 Replace the `auth ? _fetch_auth : _fetch_public` branch with a cascade: try PRAW (mode=="auth") → cookie JSON (if `credentials.cookie_header("reddit")`) → public proxy JSON → RSS; log the served tier via `log_fetch_end(..., extra={"tier": ...})` if supported, else include in the existing log dict.
 
 - [ ] **Step 1: Failing test** — with `mode!="auth"` and a stored reddit cookie, assert the cookie tier is used (monkeypatch each tier to a sentinel); with nothing, assert RSS is used and no exception bubbles.
@@ -444,12 +444,12 @@ Replace the `auth ? _fetch_auth : _fetch_public` branch with a cascade: try PRAW
 
 ### Task 16: Register sources
 
-**Files:** Modify `src/gapmap/sources/__init__.py`, `collect_adapter.py`, `source_families.py`; Test `tests/test_sources_registry.py`.
+**Files:** Modify `src/openreply/sources/__init__.py`, `collect_adapter.py`, `source_families.py`; Test `tests/test_sources_registry.py`.
 
 - [ ] **Step 1: Failing test**
 ```python
 def test_new_sources_exported():
-    import gapmap.sources as S
+    import openreply.sources as S
     for fn in ["fetch_v2ex","fetch_web_reader","fetch_bilibili","fetch_xueqiu",
                "fetch_exa_search","fetch_xiaoyuzhou","fetch_linkedin",
                "fetch_xiaohongshu","fetch_reddit_free"]:
@@ -459,16 +459,16 @@ def test_new_sources_exported():
 
 ### Task 17: MCP tools
 
-**Files:** Modify `src/gapmap/mcp/server.py`; Test `tests/test_mcp_reach_tools.py`.
-Add `gapmap_fetch_<name>` for each (mirror `gapmap_fetch_gnews`), plus `gapmap_creds_list()` (returns per-source status via `credentials` + a live `verify`) and `gapmap_creds_verify(source)`.
+**Files:** Modify `src/openreply/mcp/server.py`; Test `tests/test_mcp_reach_tools.py`.
+Add `openreply_fetch_<name>` for each (mirror `openreply_fetch_gnews`), plus `openreply_creds_list()` (returns per-source status via `credentials` + a live `verify`) and `openreply_creds_verify(source)`.
 
-- [ ] **Step 1: Failing test** — import server module, assert the tool functions exist and `gapmap_fetch_v2ex` returns a list (monkeypatch `fetch_v2ex`).
+- [ ] **Step 1: Failing test** — import server module, assert the tool functions exist and `openreply_fetch_v2ex` returns a list (monkeypatch `fetch_v2ex`).
 - [ ] **Step 2:** FAIL → **Step 3:** Implement. (Do NOT add MCP tools for import/save/delete creds — local-only.) → **Step 4:** PASS. → **Step 5: Commit** `feat(mcp): fetch tools for Agent Reach sources + creds status`.
 
 ### Task 18: CLI dispatch + `creds` subcommands
 
-**Files:** Modify `src/gapmap/cli/main.py`; Test `tests/test_cli_reach.py`.
-Add new source names to the source-list help + dispatch branch; add `gapmap creds list|import|save|verify|delete` subcommands calling `core.credentials` + `_cookie_extract.extract_cookies`.
+**Files:** Modify `src/openreply/cli/main.py`; Test `tests/test_cli_reach.py`.
+Add new source names to the source-list help + dispatch branch; add `openreply creds list|import|save|verify|delete` subcommands calling `core.credentials` + `_cookie_extract.extract_cookies`.
 
 - [ ] **Step 1: Failing test** — invoke the CLI parser for `creds list` (capture JSON output), assert it runs without error on an empty DB.
 - [ ] **Step 2:** FAIL → **Step 3:** Implement. → **Step 4:** PASS. → **Step 5: Commit** `feat(cli): reach source dispatch + creds subcommands`.

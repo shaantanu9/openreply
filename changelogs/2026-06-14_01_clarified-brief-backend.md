@@ -13,15 +13,15 @@ stated intent rather than producing a generic analysis.
 ## Changes
 
 - `topic_prefs` gains four nullable TEXT columns: `brief_goal`, `brief_constraints`, `brief_success`, `brief_audience` — added via the existing lazy-migration pattern, idempotent on existing databases
-- New `src/gapmap/research/brief.py` module: `set_brief`, `get_brief`, `brief_preamble`, `suggest_clarifications`
+- New `src/openreply/research/brief.py` module: `set_brief`, `get_brief`, `brief_preamble`, `suggest_clarifications`
 - `synthesize_insights` (one-shot path): brief preamble prepended to `user_prompt` before the feedback block
 - `synthesize_insights_chunked` (map-reduce path): brief preamble prepended to `_chunk_system` (the system prompt passed to every chunk call) via closure capture
 - CLI: `research brief set` / `research brief get` subcommands under a new `brief_app` Typer sub-app
-- MCP: `gapmap_brief_get` and `gapmap_brief_set` tools registered via `@mcp.tool()`, accessible via `_TOOL_REGISTRY` without a live server
+- MCP: `openreply_brief_get` and `openreply_brief_set` tools registered via `@mcp.tool()`, accessible via `_TOOL_REGISTRY` without a live server
 
 ## Files Created
 
-- `src/gapmap/research/brief.py`
+- `src/openreply/research/brief.py`
 - `tests/test_brief_schema.py`
 - `tests/test_brief.py`
 - `tests/test_synthesis_brief.py`
@@ -30,7 +30,7 @@ stated intent rather than producing a generic analysis.
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — brief column lazy-migrations in `init_schema`
-- `src/gapmap/research/insights.py` — preamble injection in both synthesis paths
-- `src/gapmap/cli/main.py` — `brief_app` Typer sub-app + `set`/`get` commands
-- `src/gapmap/mcp/server.py` — `gapmap_brief_get` and `gapmap_brief_set` tools
+- `src/openreply/core/db.py` — brief column lazy-migrations in `init_schema`
+- `src/openreply/research/insights.py` — preamble injection in both synthesis paths
+- `src/openreply/cli/main.py` — `brief_app` Typer sub-app + `set`/`get` commands
+- `src/openreply/mcp/server.py` — `openreply_brief_get` and `openreply_brief_set` tools

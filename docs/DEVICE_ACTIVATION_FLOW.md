@@ -107,7 +107,7 @@ Request body (from app):
   "password": "plain-or-app-password",
   "activation_key": "ABCD-EFGH-IJKL-MNOP",
   "device_signature": "sha256hex...",
-  "app": "gapmap-desktop",
+  "app": "openreply-desktop",
   "os": "macos",
   "arch": "aarch64"
 }
@@ -220,7 +220,7 @@ These map to better UI strings already added in onboarding.
 
 Current app uses two checks:
 
-1. Local marker: `gapmap.license.activated === true`
+1. Local marker: `openreply.license.activated === true`
 2. Rust `license_status()`:
    - compares stored `device_signature` with current generated signature
    - confirms token exists

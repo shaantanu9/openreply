@@ -9,11 +9,11 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
-    from gapmap.research import pain_scoring
+    from openreply.research import pain_scoring
     pain_scoring._ensure_table()
     db.execute(
         "INSERT INTO gap_scores(topic,gap_id,title,pain_score,frequency,severity,sample_post_ids)"
@@ -25,24 +25,24 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_digest_has_sections_and_markdown(db):
-    from gapmap.research import gap_digest
+    from openreply.research import gap_digest
     r = gap_digest.build_digest("t", period="daily")
     assert r["ok"] is True
-    assert "Gap Map digest" in r["markdown"]
+    assert "OpenReply digest" in r["markdown"]
     assert "Top gap" in r["markdown"]          # top gap surfaces
     assert "Top gaps by pain" in r["markdown"]
     assert set(["top_gaps", "rising", "people", "alerts"]).issubset(r["sections"].keys())
 
 
 def test_digest_period_label(db):
-    from gapmap.research import gap_digest
+    from openreply.research import gap_digest
     r = gap_digest.build_digest("t", period="weekly")
     assert r["period"] == "weekly"
     assert "Weekly brief" in r["markdown"]
 
 
 def test_digest_empty_topic_is_graceful(db):
-    from gapmap.research import gap_digest
+    from openreply.research import gap_digest
     r = gap_digest.build_digest("nope", period="daily")
     assert r["ok"] is True
     assert "No scored gaps yet" in r["markdown"]

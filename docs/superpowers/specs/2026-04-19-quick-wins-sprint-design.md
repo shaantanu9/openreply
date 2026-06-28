@@ -44,7 +44,7 @@ After the LLM extractor returns findings and BEFORE `upsert_semantic` persists t
 ```
 
 ### Risks
-- Threshold 0.82 is a guess — may need tuning. Expose as env var `GAPMAP_CLUSTER_THRESHOLD` for power users.
+- Threshold 0.82 is a guess — may need tuning. Expose as env var `OPENREPLY_CLUSTER_THRESHOLD` for power users.
 - Chroma cold-start is ~2-5s; acceptable since this runs inside enrich (already slow).
 - If chromadb isn't installed, `cluster_findings` passes findings through unchanged — no UX regression.
 
@@ -116,7 +116,7 @@ schedule_since_last_seen(topic: string) -> {summary: {new_painpoints, new_workar
 ```
 
 ### Platform support
-- **macOS:** full support via launchd. Plist path: `~/Library/LaunchAgents/com.shantanu.gapmap.schedule.plist`.
+- **macOS:** full support via launchd. Plist path: `~/Library/LaunchAgents/com.shantanu.openreply.schedule.plist`.
 - **Linux:** return `{installed: false, reason: "use cron manually; see docs/manual-todo/schedule-linux.md"}`. Write a simple stub doc.
 - **Windows:** return same-shape "not supported" response.
 
@@ -131,6 +131,6 @@ schedule_since_last_seen(topic: string) -> {summary: {new_painpoints, new_workar
 
 - [ ] A: Two painpoints with labels differing by 1-2 words merge into one node with `aliases` populated. A distinct painpoint stays separate.
 - [ ] B: Running collect twice a day apart produces `recent` with ~0 items on the second call (everything is pre-existing), but after a week a new re-extracted finding shows up in `recent`.
-- [ ] C: Installing a schedule creates the plist; `launchctl list | grep gapmap` shows the agent loaded; disabling removes it.
+- [ ] C: Installing a schedule creates the plist; `launchctl list | grep openreply` shows the agent loaded; disabling removes it.
 - [ ] C: After a scheduled run completes and user reopens the app, the topic's Map tab shows the "N new since last viewed" banner.
 - [ ] All 7 existing canonicalization + viewer-MVP tests still pass.

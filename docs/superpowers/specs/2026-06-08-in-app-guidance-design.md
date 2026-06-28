@@ -17,11 +17,11 @@
 Spotlight/coachmark overlay. API: `startTour(id, steps, {onDone})`, `isTourDone(id)`, `resetTour(id)`.
 - `steps[] = { selector, title, body, route?, placement?, beforeStep?() }`.
 - Behavior: dim backdrop with a cut-out around the target; tooltip bubble (title, body, Back/Next/Skip, progress dots); a step may set `route` to navigate first, then wait for the selector (with a timeout fallback that skips the step if the element never appears — never traps the user).
-- Persistence: `localStorage['gapmap.tour.<id>.done']`.
+- Persistence: `localStorage['openreply.tour.<id>.done']`.
 - Accessibility: Esc = skip; focus trap on the bubble; respects `prefers-reduced-motion`.
 
 ### 2. First-run "Getting Started" tour — wired from `welcome.js`
-On `markOnboardingComplete()`, set `gapmap.tour.getting_started.pending=true`. The home/research-home render checks pending + `!isTourDone` → `startTour('getting_started', …)`. ~6 steps: topic/collect entry → sources toggle → results area → stage bar (Gather→Read→Synthesize→Write) → Help icon → done. Mode-aware (Reddit vs Research step copy).
+On `markOnboardingComplete()`, set `openreply.tour.getting_started.pending=true`. The home/research-home render checks pending + `!isTourDone` → `startTour('getting_started', …)`. ~6 steps: topic/collect entry → sources toggle → results area → stage bar (Gather→Read→Synthesize→Write) → Help icon → done. Mode-aware (Reddit vs Research step copy).
 
 ### 3. Inline help popover — upgrade `why.js`
 The existing eye-icon gains a popover (instead of only routing to `/why`): page purpose (from the WHY registry), a "Show me around this screen" button (launches that screen's mini-tour if registered), and a link to the full `/why/<slug>`. New helper `lib/helpPopover.js`; `why.js` registry stays the single source of explainer content.

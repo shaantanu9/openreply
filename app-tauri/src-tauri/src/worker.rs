@@ -211,10 +211,10 @@ async fn spawn_sidecar_worker(
 ) -> Result<()> {
     let cmd = app
         .shell()
-        .sidecar("gapmap-cli")
+        .sidecar("openreply-cli")
         .map_err(|e| anyhow!("sidecar missing: {e}"))?
         .args(["research", "enrich-worker", "--serve"])
-        .env("GAPMAP_DATA_DIR", data_str)
+        .env("OPENREPLY_DATA_DIR", data_str)
         .env("PYTHONUNBUFFERED", "1");
 
     let (mut rx, child) = cmd
@@ -265,7 +265,7 @@ async fn spawn_sidecar_worker(
     Ok(())
 }
 
-/// Dev path — spawn `.venv/bin/python -m gapmap.cli.main research
+/// Dev path — spawn `.venv/bin/python -m openreply.cli.main research
 /// enrich-worker --serve` via tokio::process so we bypass Gatekeeper.
 async fn spawn_dev_python_worker(
     app: &AppHandle,
@@ -278,11 +278,11 @@ async fn spawn_dev_python_worker(
 
     let mut cmd = tokio::process::Command::new(&py);
     cmd.arg("-m")
-        .arg("gapmap.cli.main")
+        .arg("openreply.cli.main")
         .arg("research")
         .arg("enrich-worker")
         .arg("--serve")
-        .env("GAPMAP_DATA_DIR", data_str)
+        .env("OPENREPLY_DATA_DIR", data_str)
         .env("PYTHONUNBUFFERED", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -666,7 +666,7 @@ pub async fn retry_extraction_failures(app: AppHandle) -> Result<Value, String> 
     use rusqlite::Connection;
 
     let dir = crate::cli::data_dir(&app).map_err(|e| e.to_string())?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Err(format!("DB not found at {}", db_path.display()));
     }

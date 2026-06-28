@@ -643,24 +643,24 @@ The corpus has **only 48 posts** in the Canada-specific topic — direct evidenc
 
 ```bash
 # Monthly: re-collect to catch new entrants + new pain patterns
-uv run gapmap research collect \
+uv run openreply research collect \
   -t "US Canada roofing contractor homeowner lending marketplace" \
   --aggressive --skip-extraction
 
 # After collect: refresh painpoint extraction
-uv run gapmap research gaps \
+uv run openreply research gaps \
   -t "US Canada roofing contractor homeowner lending marketplace" \
   -n 300 --json > docs/research/painpoints-$(date +%Y%m%d).json
 
 # Re-pull all 1★ Hearth reviews (the direct competitor)
-uv run gapmap query "SELECT id, score, title, substr(selftext,1,500) FROM posts WHERE sub='appstore:Hearth for Contractors' AND score=1 ORDER BY id DESC LIMIT 100"
+uv run openreply query "SELECT id, score, title, substr(selftext,1,500) FROM posts WHERE sub='appstore:Hearth for Contractors' AND score=1 ORDER BY id DESC LIMIT 100"
 
 # What changed in the last 14 days
-uv run gapmap research diff \
+uv run openreply research diff \
   -t "US Canada roofing contractor homeowner lending marketplace" --days 14
 
 # Pull all GreenSky/EnerBank/Hearth GNews mentions in the last 30 days (industry move detector)
-uv run gapmap query "SELECT id, title FROM posts WHERE source_type='gnews' AND (lower(title) LIKE '%greensky%' OR lower(title) LIKE '%hearth%' OR lower(title) LIKE '%enerbank%' OR lower(title) LIKE '%wisetack%') AND created_utc > strftime('%s','now','-30 days') ORDER BY created_utc DESC"
+uv run openreply query "SELECT id, title FROM posts WHERE source_type='gnews' AND (lower(title) LIKE '%greensky%' OR lower(title) LIKE '%hearth%' OR lower(title) LIKE '%enerbank%' OR lower(title) LIKE '%wisetack%') AND created_utc > strftime('%s','now','-30 days') ORDER BY created_utc DESC"
 ```
 
 ---

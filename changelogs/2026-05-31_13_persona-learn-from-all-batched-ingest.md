@@ -54,7 +54,7 @@ existing `LIMIT ?` path.
 
 ## Files Modified
 
-- `src/gapmap/persona/ingest.py`
+- `src/openreply/persona/ingest.py`
 - `app-tauri/src/screens/personas.js`
 
 ## Verification

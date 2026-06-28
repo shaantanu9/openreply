@@ -54,14 +54,14 @@ streaming command). Debate cost remains a character-based estimate.
 
 ## Files Created
 
-- `src/gapmap/research/fleet_flow.py`
+- `src/openreply/research/fleet_flow.py`
 - `app-tauri/src/screens/fleetFlow.js`
 - `tests/test_fleet_flow.py`
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — `fleet_runs` table + 3 helpers + `__all__`.
-- `src/gapmap/cli/main.py` — fleet-plan / fleet-run / fleet-status.
+- `src/openreply/core/db.py` — `fleet_runs` table + 3 helpers + `__all__`.
+- `src/openreply/cli/main.py` — fleet-plan / fleet-run / fleet-status.
 - `app-tauri/src-tauri/src/commands.rs` · `main.rs` — fleet commands.
 - `app-tauri/src/api.js` — fleetPlan / fleetRun / fleetStatus.
 - `app-tauri/src/screens/topic.js` — import + Run Fleet button + host + mount.

@@ -8,7 +8,7 @@
 The old `.github/workflows/release.yml` was a single matrix job that
 ran mac arm64, mac x64, and windows in parallel — then a separate
 `publish-public` job gated on `needs: [release]` cross-published the
-artifacts to `myind-ai/gapmap`. End-to-end critical path was 14 min
+artifacts to `myind-ai/openreply`. End-to-end critical path was 14 min
 (Windows is the long pole; mac jobs finish in 7-8 min but wait for
 Windows to flip the public release to "latest").
 
@@ -22,16 +22,16 @@ Windows.
 
 | File | Triggers | Builds | Publishes to |
 |---|---|---|---|
-| `release-mac.yml` | `push tags v*` | mac arm64 + x64 (matrix) | `myind-ai/gapmap` |
-| `release-windows.yml` | `push tags v*` | windows x64 (MSI + EXE) | `myind-ai/gapmap` |
-| `release-linux.yml` | `push tags v*` | linux x64 (AppImage + deb + rpm) | `myind-ai/gapmap` |
+| `release-mac.yml` | `push tags v*` | mac arm64 + x64 (matrix) | `myind-ai/openreply` |
+| `release-windows.yml` | `push tags v*` | windows x64 (MSI + EXE) | `myind-ai/openreply` |
+| `release-linux.yml` | `push tags v*` | linux x64 (AppImage + deb + rpm) | `myind-ai/openreply` |
 | `release.yml` | `workflow_dispatch` only | (legacy, full matrix) | (kept as escape hatch) |
 
 All three platform workflows:
 1. Build their platform's sidecar + bundle (signed where applicable).
-2. Upload to the `gap-map-pro` draft release for traceability.
+2. Upload to the `openreply` draft release for traceability.
 3. Download their artifact from that draft + upload to
-   `myind-ai/gapmap` (idempotent: `gh release create --draft || true`
+   `myind-ai/openreply` (idempotent: `gh release create --draft || true`
    then `gh release upload --clobber`).
 4. Run `scripts/promote-release-if-complete.sh` — checks if the
    release has at least mac arm64, mac x64, and Windows artifacts;
@@ -49,7 +49,7 @@ finishing 10-20 min later just appends its `.AppImage` / `.deb` /
    cache, ~30% on cold cache. Biggest single win on Windows where
    the webview2-com dep tree is largest.
 2. **PyInstaller dist cache** via `actions/cache@v4` keyed on
-   `hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock',
+   `hashFiles('openreply-cli.spec', 'pyproject.toml', 'uv.lock',
    'src/**/*.py')`. Skips the 1m 35s (mac) / 3m 15s (Windows) /
    ~2 min (Linux) sidecar rebuild when sources unchanged.
 3. **ONNX MiniLM model cache** — the 83 MB tarball downloaded from
@@ -92,7 +92,7 @@ users from downloading.
 ## Failure isolation
 
 If Windows fails on a future tag, Mac still ships. The release on
-`myind-ai/gapmap` stays in draft (because the promote check requires
+`myind-ai/openreply` stays in draft (because the promote check requires
 windows) but mac users can still download from the draft via direct
 URL. Once Windows is fixed and rerun via `workflow_dispatch`, the
 promote auto-flips draft → latest.

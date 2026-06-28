@@ -4,7 +4,7 @@
 > - `/Users/shantanubombatkar/Documents/miro_jyotish/autoresearch` — Karpathy-style autonomous-loop Claude Code skill (9 commands, multi-persona deliberation, files-as-DB).
 > - `/Users/shantanubombatkar/Documents/miro_jyotish/miroclaw_jyotish` — Flask + Neo4j + OASIS simulator that turns extracted entities into Reddit/Twitter agent profiles, runs synthetic discussions, and evolves prediction parameters via an autoresearch loop.
 >
-> **Target:** `/Users/shantanubombatkar/Documents/GitHub/reddit-myind` — Gap Map Tauri app with Python sidecar.
+> **Target:** `/Users/shantanubombatkar/Documents/GitHub/reddit-myind` — OpenReply Tauri app with Python sidecar.
 >
 > **Date:** 2026-05-03
 > **Status:** Plan — not yet implemented.
@@ -13,14 +13,14 @@
 
 ## 0 · Why this doc exists
 
-The current Gap Map app has a multi-source corpus, findings, empathy maps, interviews, surveys, and a Launch Brief — but the **personas in those artefacts are LLM-imagined**, not grounded in actual Reddit/HN/etc. authors. The user's explicit ask:
+The current OpenReply app has a multi-source corpus, findings, empathy maps, interviews, surveys, and a Launch Brief — but the **personas in those artefacts are LLM-imagined**, not grounded in actual Reddit/HN/etc. authors. The user's explicit ask:
 
 > *"we have some data from reddit actual user post we can link that and proper form the persona around that and make all work proper and real."*
 
 This document specifies, in concrete files-and-functions terms:
 
 1. **What** patterns the two source projects contribute,
-2. **How** to graft those patterns onto Gap Map,
+2. **How** to graft those patterns onto OpenReply,
 3. **Where** every new file/table/screen/skill lands,
 4. **Why** each piece matters (importance + product advantage),
 5. **A phased plan** with effort estimates so the work is shippable in order.
@@ -29,12 +29,12 @@ This document specifies, in concrete files-and-functions terms:
 
 ## 1 · Executive summary
 
-| Pattern | Source | Lands in Gap Map as | Effort | Lift |
+| Pattern | Source | Lands in OpenReply as | Effort | Lift |
 |---|---|---|---|---|
 | **Real-user persona clustering** | (new — inspired by oasis_profile_generator's individual/group split + post-history grounding) | `research/audience.py` + `audience_personas` table + `/audience/<topic>` screen | ~1 day | **Massive** — every persona surface in the app becomes citation-backed |
-| **Persona cards UI** | (Gap Map design language) | `screens/audience.js` + sidebar entry | ~1 day | High — visible proof the personas are real |
+| **Persona cards UI** | (OpenReply design language) | `screens/audience.js` + sidebar entry | ~1 day | High — visible proof the personas are real |
 | **5-persona deliberation** | `autoresearch:predict` (5 expert personas → debate → consensus) | wrapper around `synthesize_insights` + `build_launch_brief` | 2-3 days | High — 3-5× fewer iterations to a confirmed finding |
-| **Autoresearch loop skill** | `autoresearch` (Karpathy 8-rule loop) | `.claude/skills/gap-map-autoresearch/SKILL.md` + a small Goal/Metric/Verify config schema | 1-2 days | Medium — lets users set "improve until PMF ≥40%" and walk away |
+| **Autoresearch loop skill** | `autoresearch` (Karpathy 8-rule loop) | `.claude/skills/openreply-autoresearch/SKILL.md` + a small Goal/Metric/Verify config schema | 1-2 days | Medium — lets users set "improve until PMF ≥40%" and walk away |
 | **OASIS synthetic simulation** | `oasis_profile_generator` + OASIS multi-agent | optional `/simulate/<topic>` screen + Python sidecar plugin | 5+ days | High but heavy — unlocks pre-ship "test your launch copy on synthetic users" |
 | **Prediction lenses → evaluation lenses** | miroclaw's 9 lens scoring + weight-evolving mutator | `research/lenses.py` with N evaluation lenses for findings (severity, novelty, actionability, RICE, …) and a weight learner | 2 days | Medium — replaces hand-tuned thresholds with a self-improving composite |
 | **Activity heatmap** | `simulation_config_generator` (timezone-aware hourly multipliers) | extension of `best_post_time` in launch brief — full hour×day matrix per topic | 0.5 day | Low-medium — better launch timing than a single best hour |
@@ -72,7 +72,7 @@ The whole skill is ~70 lines of prompt + 9 markdown command files. Core loop:
 7. Git is memory (`experiment:` commits, agent reads `git log` each iter)
 8. When stuck, think harder (re-read, combine near-misses, radical changes)
 
-**Why it matters for Gap Map:** every "re-build" button (Re-build empathy, Re-run synthesize, Re-generate launch brief) is currently a one-shot. Wrapping it in this loop turns each into "iterate until metric ≥ threshold."
+**Why it matters for OpenReply:** every "re-build" button (Re-build empathy, Re-run synthesize, Re-generate launch brief) is currently a one-shot. Wrapping it in this loop turns each into "iterate until metric ≥ threshold."
 
 ### 2.2 — Multi-persona deliberation (`autoresearch:predict`, guide at `autoresearch/guide/autoresearch-predict.md`)
 
@@ -93,14 +93,14 @@ The 5 default personas (Architecture / Security / Performance / Reliability / De
 
 **Knowledge representation is plain markdown** (`codebase-analysis.md`, `dependency-map.md`, `component-clusters.md`) — no vector DB, no graph engine. Audited with the current `git rev-parse HEAD`; staleness flagged on next run.
 
-**Why it matters for Gap Map:** our `synthesize_insights` produces a single LLM pass — the LLM has no internal critic. A pre-write debate would catch the off-topic findings, the duplicate hypotheses, and the JTBD statements that don't actually map to evidence. Their measured payoff: 3-5× fewer iterations to a confirmed root cause, 37% higher precision on real issues.
+**Why it matters for OpenReply:** our `synthesize_insights` produces a single LLM pass — the LLM has no internal critic. A pre-write debate would catch the off-topic findings, the duplicate hypotheses, and the JTBD statements that don't actually map to evidence. Their measured payoff: 3-5× fewer iterations to a confirmed root cause, 37% higher precision on real issues.
 
 ### 2.3 — Other autoresearch commands worth grafting
 
-| Command | Behaviour | Gap Map fit |
+| Command | Behaviour | OpenReply fit |
 |---|---|---|
 | `autoresearch:scenario` | Seed scenario → derivative scenarios + edge cases | Generate "what if this finding is wrong?" / "what edge case breaks this experiment?" before running it |
-| `autoresearch:debug` | 7-technique scientific bug hunt loop | Already covered by our `gapmap_diagnostics` tool — could deepen with this pattern |
+| `autoresearch:debug` | 7-technique scientific bug hunt loop | Already covered by our `openreply_diagnostics` tool — could deepen with this pattern |
 | `autoresearch:fix` | Fix-until-zero (tests/types/lint/build) | Wrap `npm run test` + `cargo check` + `pytest` into one "fix everything" loop |
 | `autoresearch:learn` | Doc generation with validation-fix loop | Could regenerate the `docs/` folder when code changes (lower priority) |
 | `autoresearch:security` | STRIDE + OWASP + 4 red-team personas | Could audit the Tauri capabilities + Python sidecar surface (use the existing `/security-review` slash command instead) |
@@ -143,7 +143,7 @@ OASIS itself is a 3rd-party multi-agent social-simulation library that:
 - Logs every action to a SQLite file that can be analyzed afterwards
 - Supports **Interview** mode mid-run via IPC files — drop a JSON command into `ipc_commands/`, get a JSON response in `ipc_responses/`. Lets you ask "what do you think about X?" of any agent during the simulation.
 
-**Why it matters for Gap Map:** before shipping a launch announcement, you'd run it through 200 personas grounded in your actual corpus and see which segments react how. The fail-cases (cluster N hates the messaging) become signals before you ship rather than after.
+**Why it matters for OpenReply:** before shipping a launch announcement, you'd run it through 200 personas grounded in your actual corpus and see which segments react how. The fail-cases (cluster N hates the messaging) become signals before you ship rather than after.
 
 ### 2.6 — Simulation config generator (`miroclaw_jyotish/backend/app/services/simulation_config_generator.py`)
 
@@ -159,7 +159,7 @@ night_hours       = [23]              × 0.5
 
 Then per-agent activity_level (0.0..1.0) modulates that. Result: realistic posting cadence rather than uniformly random.
 
-**Why it matters for Gap Map:** our current `best_post_time` returns a single hour. Extending to a full hour×day-of-week heatmap with audience-segment overlays is a much sharper "when to launch" signal — and it's pure SQL over `posts.created_utc`.
+**Why it matters for OpenReply:** our current `best_post_time` returns a single hour. Extending to a full hour×day-of-week heatmap with audience-segment overlays is a much sharper "when to launch" signal — and it's pure SQL over `posts.created_utc`.
 
 ### 2.7 — Prediction Evolution Engine (`miroclaw_jyotish/backend/app/services/evolution/`)
 
@@ -174,7 +174,7 @@ Five files that together implement the autoresearch loop:
 - `historical_collector.py` — bulk-pull historical truth
 - `time_travel.py` — replay framework for backtesting
 
-**Why it matters for Gap Map:** we don't predict economy time series, but the **same machinery** can evolve our prompt parameters / extraction thresholds / clustering hyperparams against our existing ground truth (e.g. user `feedback_record` rows say "this finding was wrong" — the mutator can hill-climb the synthesize prompt to minimize that signal).
+**Why it matters for OpenReply:** we don't predict economy time series, but the **same machinery** can evolve our prompt parameters / extraction thresholds / clustering hyperparams against our existing ground truth (e.g. user `feedback_record` rows say "this finding was wrong" — the mutator can hill-climb the synthesize prompt to minimize that signal).
 
 ### 2.8 — 9 Prediction Lenses (`miroclaw_jyotish/PREDICTION_LENSES_GUIDE.md`)
 
@@ -199,7 +199,7 @@ Each is a single function returning `{score, confidence, reasoning}`. The loop l
 
 ---
 
-## 3 · Mapping to Gap Map — what each piece becomes
+## 3 · Mapping to OpenReply — what each piece becomes
 
 ### 3.1 — Real-user persona clustering (the user's explicit ask)
 
@@ -268,7 +268,7 @@ CREATE TABLE audience_personas (
 - **NEW** `src/reddit_research/research/audience.py` — `build_audience_personas(topic, k=None, llm=True, persist=True)`, `get_audience_personas(topic)`.
 - **NEW** `src/reddit_research/research/_clustering.py` — pure-deterministic helpers (vector building, HDBSCAN/k-means, silhouette).
 - **MODIFY** `src/reddit_research/cli/main.py` — `research audience-build` + `research audience-get` subcommands.
-- **MODIFY** `src/reddit_research/mcp/server.py` — `gapmap_audience_personas(topic, llm=True)` + `gapmap_audience_personas_get(topic)`.
+- **MODIFY** `src/reddit_research/mcp/server.py` — `openreply_audience_personas(topic, llm=True)` + `openreply_audience_personas_get(topic)`.
 - **MODIFY** `src/reddit_research/research/launch.py` — `_personas_from_existing` reads from `audience_personas` first, falls back to existing empathy/interview path.
 
 ### 3.2 — Persona cards UI
@@ -345,12 +345,12 @@ persist confirmed+probable; surface "X minority views" badge
 
 **Files to create:**
 
-- `.claude/skills/gap-map-autoresearch/SKILL.md` — name, description, trigger phrases, embedded loop body adapted from autoresearch's SKILL.md but pre-configured for Gap Map.
-- `.claude/skills/gap-map-autoresearch/references/synthesize-loop.md` — Goal=`PMF≥40%` / Verify=`python -m reddit_research.cli pmf score --topic $T` / Scope=`research/insights.py` + `research/prompts/insights_synthesis.json` / Direction=`reduce off-topic findings, sharpen JTBD, prune duplicates`.
-- `.claude/skills/gap-map-autoresearch/references/audience-loop.md` — same shape but for the audience clustering hyperparams.
-- `.claude/skills/gap-map-autoresearch/references/launch-loop.md` — for the Launch Brief.
+- `.claude/skills/openreply-autoresearch/SKILL.md` — name, description, trigger phrases, embedded loop body adapted from autoresearch's SKILL.md but pre-configured for OpenReply.
+- `.claude/skills/openreply-autoresearch/references/synthesize-loop.md` — Goal=`PMF≥40%` / Verify=`python -m reddit_research.cli pmf score --topic $T` / Scope=`research/insights.py` + `research/prompts/insights_synthesis.json` / Direction=`reduce off-topic findings, sharpen JTBD, prune duplicates`.
+- `.claude/skills/openreply-autoresearch/references/audience-loop.md` — same shape but for the audience clustering hyperparams.
+- `.claude/skills/openreply-autoresearch/references/launch-loop.md` — for the Launch Brief.
 
-**Trigger:** user types `/gap-map-autoresearch` in Claude Code; the skill loads, asks the 4-7 setup questions, then runs the loop with mechanical verification via the Python CLI we already have.
+**Trigger:** user types `/openreply-autoresearch` in Claude Code; the skill loads, asks the 4-7 setup questions, then runs the loop with mechanical verification via the Python CLI we already have.
 
 ### 3.5 — Activity heatmap upgrade
 
@@ -434,10 +434,10 @@ class FindingLens(Protocol):
 ## 4 · Where every new artefact lives
 
 ```
-gap-map/
+openreply-map/
 ├── .claude/
 │   └── skills/
-│       └── gap-map-autoresearch/
+│       └── openreply-autoresearch/
 │           ├── SKILL.md                          [Phase 4]
 │           └── references/
 │               ├── synthesize-loop.md            [Phase 4]
@@ -487,7 +487,7 @@ gap-map/
     ├── 2026-MM-DD_NN_audience-personas-from-real-users.md   [Phase 1]
     ├── 2026-MM-DD_NN_audience-screen.md                     [Phase 2]
     ├── 2026-MM-DD_NN_multi-persona-deliberation.md          [Phase 3]
-    ├── 2026-MM-DD_NN_gap-map-autoresearch-skill.md          [Phase 4]
+    ├── 2026-MM-DD_NN_openreply-autoresearch-skill.md          [Phase 4]
     └── 2026-MM-DD_NN_evaluation-lenses-and-oasis-sim.md     [Phase 5]
 ```
 
@@ -554,7 +554,7 @@ gap-map/
 
 **Advantages:**
 
-1. **Replaces hand-tuned thresholds** (e.g. our hard-coded `GAPMAP_FINDING_RELEVANCE_THRESHOLD=0.40`) with a learned composite.
+1. **Replaces hand-tuned thresholds** (e.g. our hard-coded `OPENREPLY_FINDING_RELEVANCE_THRESHOLD=0.40`) with a learned composite.
 2. **Per-user weights.** Different teams care about different things; lens weights become user prefs.
 3. **Self-improving** — the `feedback_record` table is the ground truth, the mutator hill-climbs against it.
 
@@ -584,7 +584,7 @@ gap-map/
 | **1** | `research/audience.py` + `_clustering.py` + `audience_personas` table + 2 CLI subcommands + 2 MCP tools + Launch Brief integration | 1 day | none | `audience_personas` populated for ≥3 demo topics; Launch Brief shows real users + post citations |
 | **2** | `screens/audience.js` + sidebar entry + Tauri commands + api.js helpers + route | 1 day | Phase 1 | Audience screen renders for any topic with ≥1 cluster; click-through to real Reddit posts works |
 | **3** | `research/deliberate.py` + flag on `synthesize_insights` + flag on `build_launch_brief` + UI tier chips | 2-3 days | Phase 1 (lens needs real personas) | Every new finding tagged Confirmed/Probable/Minority; debate transcript persisted |
-| **4** | `.claude/skills/gap-map-autoresearch/` with 3 references | 1-2 days | none | `/gap-map-autoresearch` runs the loop end-to-end on the synthesize pipeline |
+| **4** | `.claude/skills/openreply-autoresearch/` with 3 references | 1-2 days | none | `/openreply-autoresearch` runs the loop end-to-end on the synthesize pipeline |
 | **5a** | `research/lenses/*.py` + `lens_evolver.py` + finding `composite_score` | 2 days | Phase 1, 3 | Lens weights mutate against `feedback_record`; composite score visible on findings |
 | **5b** | `simulate/oasis_runner.py` + `oasis_profile_map.py` + `screens/simulate.js` + sidebar gate + Settings toggle | 5+ days | Phase 1, 2 | Settings toggle enables OASIS; simulation runs on demo topic and produces reaction histogram |
 
@@ -636,7 +636,7 @@ After Phase 3 ships:
 
 After Phase 4 ships:
 
-- One demo run of `/gap-map-autoresearch` produces ≥3 net-positive iterations on PMF / synthesize accuracy / off-topic finding rate.
+- One demo run of `/openreply-autoresearch` produces ≥3 net-positive iterations on PMF / synthesize accuracy / off-topic finding rate.
 
 After Phase 5b ships (if pursued):
 
@@ -650,6 +650,6 @@ We've analyzed two existing internal projects:
 - An autonomous-loop Claude Code skill (autoresearch).
 - A persona-grounded multi-agent simulator (miroclaw_jyotish).
 
-Both contribute patterns that fix Gap Map's biggest current weakness: **the personas the app produces are LLM-imagined, not grounded in your actual Reddit users**. The fix is a 1-day deterministic clustering pass over `posts.author` + a 1-day UI screen — that alone replaces every persona surface in the app with citation-backed real users. The follow-on work (5-persona debate over findings, autoresearch loop skill, optional synthetic simulation) compounds quality further. Phases 1-4 ship in ~5-7 days; phase 5 is opt-in.
+Both contribute patterns that fix OpenReply's biggest current weakness: **the personas the app produces are LLM-imagined, not grounded in your actual Reddit users**. The fix is a 1-day deterministic clustering pass over `posts.author` + a 1-day UI screen — that alone replaces every persona surface in the app with citation-backed real users. The follow-on work (5-persona debate over findings, autoresearch loop skill, optional synthetic simulation) compounds quality further. Phases 1-4 ship in ~5-7 days; phase 5 is opt-in.
 
-The core promise: **every claim Gap Map makes about your audience traces back to a specific user post you can click on.** That's the only persona ground-truth that matters.
+The core promise: **every claim OpenReply makes about your audience traces back to a specific user post you can click on.** That's the only persona ground-truth that matters.

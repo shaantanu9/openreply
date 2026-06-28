@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-21
 **Question asked:** can we ship a mobile app on the App Store that auto-
-discovers and connects to the user's desktop Gap Map on the same
+discovers and connects to the user's desktop OpenReply on the same
 Wi-Fi / LAN, browses + controls everything from the phone, and works
 async (cache-then-sync) when on the go?
 
@@ -19,12 +19,12 @@ Home / office Wi-Fi
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
 ║  ┌──────────────────┐            ┌───────────────────────┐  ║
-║  │ Desktop Gap Map  │            │ Mobile Gap Map        │  ║
+║  │ Desktop OpenReply  │            │ Mobile OpenReply        │  ║
 ║  │ (Tauri + Python) │            │ (Flutter iOS/Android) │  ║
 ║  ├──────────────────┤            ├───────────────────────┤  ║
 ║  │ FastAPI :8732    │            │ scan mDNS             │  ║
 ║  │ + pairing token  │            │ ╭────────── QR scan ──▶│   
-║  │ + mDNS broadcast ├──── announce (_gapmap._tcp) ──────▶│ list desktops│  
+║  │ + mDNS broadcast ├──── announce (_openreply._tcp) ──────▶│ list desktops│  
 ║  │ "Alex's Mac"     │            │ pick + pair           │  ║
 ║  │                  │            │                       │  ║
 ║  │ SQLite + palace  │◄── HTTPS + WebSocket (LAN) ───────▶│ Drift cache  │  
@@ -62,21 +62,21 @@ that caches what it fetched so it still works on the go.
 
 **Primary: mDNS / Bonjour / Zeroconf.**
 
-Desktop publishes `_gapmap._tcp` service with its hostname, IP, port,
+Desktop publishes `_openreply._tcp` service with its hostname, IP, port,
 and a stable per-install UUID:
 
 ```
-_gapmap._tcp.local.
+_openreply._tcp.local.
   host: alex-macbook.local.
   port: 8732
   TXT:
     id=7f3a9e-b2c1
-    name=Alex's Gap Map
+    name=Alex's OpenReply
     version=2.0.4
 ```
 
-Mobile browses `_gapmap._tcp` on the current LAN and displays every
-Gap Map instance found. One-tap to select + pair.
+Mobile browses `_openreply._tcp` on the current LAN and displays every
+OpenReply instance found. One-tap to select + pair.
 
 **Fallback: QR-code pairing.**
 When discovery fails (router blocks mDNS, Guest Wi-Fi, VPN, etc.) —
@@ -93,16 +93,16 @@ what ships first; mDNS is the polish layer.
 **Apple-platform specifics:**
 
 - iOS 14+ requires `Local Network Usage` permission. First Bonjour
-  browse triggers the system prompt: *"Gap Map wants to find and
+  browse triggers the system prompt: *"OpenReply wants to find and
   connect to devices on your local network."* Write clear usage
   text in `Info.plist`:
   ```xml
   <key>NSLocalNetworkUsageDescription</key>
-  <string>Gap Map uses your local network to discover and connect
+  <string>OpenReply uses your local network to discover and connect
     to your desktop so your research is available on this phone.</string>
   <key>NSBonjourServices</key>
   <array>
-    <string>_gapmap._tcp</string>
+    <string>_openreply._tcp</string>
   </array>
   ```
 - User denies → fall back to QR pairing.
@@ -230,7 +230,7 @@ No CRDTs in v1. Last-write-wins + server authoritative is enough.
 **Multi-desktop (same user, two machines):**
 
 The pairing flow already supports N desktops. Mobile shows a picker:
-"Which Gap Map? *Alex's MacBook* / *Office iMac*". Each desktop has
+"Which OpenReply? *Alex's MacBook* / *Office iMac*". Each desktop has
 its own token + cache namespace locally. Switching is instant.
 
 **Peer sharing (user A → user B):**
@@ -262,7 +262,7 @@ mitigations:
    reviewer can exercise the UI without any desktop.
 2. **Clear paired-device flow.** `Settings → Paired desktops → Add new`
    with screenshots in your App Store listing.
-3. **Fall-back copy.** When no desktop is found: *"Open Gap Map on
+3. **Fall-back copy.** When no desktop is found: *"Open OpenReply on
    your laptop on the same Wi-Fi, then come back and tap Pair."*
 
 Apps that do this and pass review: Plex, Roon Remote, Transmission,
@@ -274,8 +274,8 @@ Home Assistant Companion, iSCSI Initiator, Overkast, Unraid.net.
 - `NSBonjourServices` (if using mDNS)
 - App Privacy: "no data collected" is the honest answer — all data
   flows LAN-local between paired devices.
-- Clear description: "A companion app for Gap Map on desktop.
-  Discovers your Mac / Windows Gap Map on your home Wi-Fi and gives
+- Clear description: "A companion app for OpenReply on desktop.
+  Discovers your Mac / Windows OpenReply on your home Wi-Fi and gives
   you the full research UI on your phone."
 
 ### Play Store
@@ -348,7 +348,7 @@ benefits).
 ### The honest pitch
 
 **The LAN-companion model is the ideal v1 for a local-first founder
-tool.** It gets Gap Map on your phone without:
+tool.** It gets OpenReply on your phone without:
 
 - Building a hosted backend
 - Paying monthly infra
@@ -407,8 +407,8 @@ def topics(authorization: str = Header(None)):
 def announce_mdns():
     zc = Zeroconf()
     info = ServiceInfo(
-        "_gapmap._tcp.local.",
-        f"{socket.gethostname()}._gapmap._tcp.local.",
+        "_openreply._tcp.local.",
+        f"{socket.gethostname()}._openreply._tcp.local.",
         addresses=[socket.inet_aton(socket.gethostbyname(socket.gethostname()))],
         port=8732,
         properties={"id": _ensure_token()[:8], "version": "2.0"},
@@ -421,7 +421,7 @@ def announce_mdns():
 Skip iOS / Android for day 2 — use Flutter desktop to prove the loop:
 
 - `pubspec.yaml`: `multicast_dns` + `dio` + `flutter_secure_storage`
-- Scan for `_gapmap._tcp` → list all instances
+- Scan for `_openreply._tcp` → list all instances
 - "Pair" button → POST `/pair` with a QR-received token
 - Store token via `flutter_secure_storage`
 - Fetch `/topics` → render plain list
@@ -448,7 +448,7 @@ to phase 1 at that point.
 | Desktop on Wi-Fi, mobile on cellular | Medium | Offline cache + banner |
 | iOS App Review rejection | Low-Medium | Demo data bundle + clear companion-app messaging |
 | Token leakage (QR photographed) | Low | Tokens expire after pairing; per-device tokens |
-| Multiple Gap Map instances on the LAN (laptop + desktop) | Expected | Multi-desktop picker, per-instance token |
+| Multiple OpenReply instances on the LAN (laptop + desktop) | Expected | Multi-desktop picker, per-instance token |
 | Desktop crashes mid-sync | Low | Queued mutations persist in Drift; replay on reconnect |
 
 ---

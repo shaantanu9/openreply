@@ -15,8 +15,8 @@
 ### Task 1: `fetch_video` row shape recon (read-only, no commit)
 
 **Files:**
-- Read: `src/gapmap/sources/video.py:125` (`fetch_video`), `:89` (`preview_video`)
-- Read: `src/gapmap/core/db.py` (`upsert_posts` row contract)
+- Read: `src/openreply/sources/video.py:125` (`fetch_video`), `:89` (`preview_video`)
+- Read: `src/openreply/core/db.py` (`upsert_posts` row contract)
 
 - [ ] **Step 1:** Read `fetch_video(...)` — record its exact signature and the
   posts-table row shape it returns (must include `id`, `source_type`, a
@@ -32,14 +32,14 @@
 ### Task 2: Instagram URL parser + router skeleton (TDD)
 
 **Files:**
-- Modify: `src/gapmap/persona/teach.py` (add `parse_instagram_url`, `VIDEO_SOURCE`)
+- Modify: `src/openreply/persona/teach.py` (add `parse_instagram_url`, `VIDEO_SOURCE`)
 - Test: `tests/test_persona_teach_video.py` (create)
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/test_persona_teach_video.py
-from gapmap.persona.teach import parse_instagram_url, classify_video_url
+from openreply.persona.teach import parse_instagram_url, classify_video_url
 
 def test_parse_instagram_url():
     assert parse_instagram_url("https://www.instagram.com/reel/Cabc123/") == "Cabc123"
@@ -89,7 +89,7 @@ Expected: PASS (2 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/persona/teach.py tests/test_persona_teach_video.py
+git add src/openreply/persona/teach.py tests/test_persona_teach_video.py
 git commit -m "feat(persona): instagram URL parser + video-source classifier"
 ```
 
@@ -98,14 +98,14 @@ git commit -m "feat(persona): instagram URL parser + video-source classifier"
 ### Task 3: `teach_from_media` (Whisper) — IG/other → posts rows → ingest
 
 **Files:**
-- Modify: `src/gapmap/persona/teach.py`
+- Modify: `src/openreply/persona/teach.py`
 - Test: `tests/test_persona_teach_video.py`
 
 - [ ] **Step 1: Write the failing test** (mock the Whisper fetch + ingest so it's fast/offline)
 
 ```python
 def test_teach_from_media_streams_and_ingests(monkeypatch):
-    import gapmap.persona.teach as T
+    import openreply.persona.teach as T
     # Persona exists
     monkeypatch.setattr(T, "get_persona", lambda pid: {"name": "X", "lens": "x", "active": 1})
     # Whisper fetch returns one transcript row (posts-table shape)
@@ -121,7 +121,7 @@ def test_teach_from_media_streams_and_ingests(monkeypatch):
     assert "teach:start" in kinds and "teach:fetched" in kinds and "done" in kinds
 
 def test_teach_from_media_ig_login_error_is_soft(monkeypatch):
-    import gapmap.persona.teach as T
+    import openreply.persona.teach as T
     monkeypatch.setattr(T, "get_persona", lambda pid: {"name": "X", "lens": "x", "active": 1})
     def boom(url, **k): raise RuntimeError("login required")
     monkeypatch.setattr(T, "_fetch_media_rows", boom)
@@ -194,7 +194,7 @@ Expected: PASS (4 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/persona/teach.py tests/test_persona_teach_video.py
+git add src/openreply/persona/teach.py tests/test_persona_teach_video.py
 git commit -m "feat(persona): teach_from_media — Whisper transcript path (Instagram + generic)"
 ```
 
@@ -203,14 +203,14 @@ git commit -m "feat(persona): teach_from_media — Whisper transcript path (Inst
 ### Task 4: `teach_from_video` router
 
 **Files:**
-- Modify: `src/gapmap/persona/teach.py`
+- Modify: `src/openreply/persona/teach.py`
 - Test: `tests/test_persona_teach_video.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 def test_teach_from_video_routes(monkeypatch):
-    import gapmap.persona.teach as T
+    import openreply.persona.teach as T
     monkeypatch.setattr(T, "teach_from_youtube", lambda pid, url, **k: iter([{"event": "yt"}]))
     monkeypatch.setattr(T, "teach_from_media",   lambda pid, url, **k: iter([{"event": "media"}]))
     assert list(T.teach_from_video(1, "https://youtu.be/dQw4w9WgXcQ"))[0]["event"] == "yt"
@@ -241,7 +241,7 @@ def teach_from_video(
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/persona/teach.py tests/test_persona_teach_video.py
+git add src/openreply/persona/teach.py tests/test_persona_teach_video.py
 git commit -m "feat(persona): teach_from_video router (YT captions / IG Whisper)"
 ```
 
@@ -250,7 +250,7 @@ git commit -m "feat(persona): teach_from_video router (YT captions / IG Whisper)
 ### Task 5: CLI — `persona teach-video` accepts any URL
 
 **Files:**
-- Modify: `src/gapmap/cli/persona_cmds.py:31` (import), `:167-202` (`cmd_teach_video`)
+- Modify: `src/openreply/cli/persona_cmds.py:31` (import), `:167-202` (`cmd_teach_video`)
 
 - [ ] **Step 1:** Change the import on line ~31 from
   `teach_from_youtube as _teach_yt` to also import the router:
@@ -262,13 +262,13 @@ git commit -m "feat(persona): teach_from_video router (YT captions / IG Whisper)
   printing as-is (event shapes are identical).
 - [ ] **Step 3: Manual smoke (YT, offline-safe metadata only is fine)**
 
-Run: `.venv/bin/python -m gapmap.cli.main persona teach-video 1 "https://youtu.be/dQw4w9WgXcQ" --json 2>&1 | head`
+Run: `.venv/bin/python -m openreply.cli.main persona teach-video 1 "https://youtu.be/dQw4w9WgXcQ" --json 2>&1 | head`
 Expected: `teach:start` then `teach:fetched`/`teach:error`/`done` NDJSON (no traceback).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/gapmap/cli/persona_cmds.py
+git add src/openreply/cli/persona_cmds.py
 git commit -m "feat(cli): persona teach-video accepts YouTube + Instagram URLs"
 ```
 

@@ -35,7 +35,7 @@ calls in the same timeout hardening as the new-topic modal.
   not a storm, and the reaper sweeps any straggler.
 - **Periodic reaper (main.rs):** the boot `_MEI` reaper now loops hourly
   instead of running once, so a long session can't accumulate orphans.
-- **Reaper default lowered (cli.rs):** `GAPMAP_MEI_REAP_MIN_AGE_SECS` default
+- **Reaper default lowered (cli.rs):** `OPENREPLY_MEI_REAP_MIN_AGE_SECS` default
   6h → 2h — still safely longer than any single sidecar run (longest is an
   aggressive+historical collect, well under an hour) so live extractions are
   never touched, but short enough to sweep crash-orphans the same session.

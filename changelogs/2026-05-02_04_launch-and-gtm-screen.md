@@ -21,7 +21,7 @@ the launch sequence. Failures degrade silently — the screen always
 renders.
 
 Persisted to `launch_briefs(topic)` so re-opens are instant; an MCP
-tool (`gapmap_launch_brief`) lets agents trigger and read the same
+tool (`openreply_launch_brief`) lets agents trigger and read the same
 artefact.
 
 ## Changes
@@ -30,7 +30,7 @@ artefact.
 
 - **`src/reddit_research/research/launch.py`** (new) — `build_launch_brief(topic, llm=True, provider, persist=True)` and `get_launch_brief(topic)`. Deterministic-first design with optional LLM augmentation. Always returns a stable schema dict; LLM failures degrade silently.
 - **`src/reddit_research/cli/main.py`** — two new `research` subcommands: `launch-brief --topic …` and `launch-brief-get --topic …`.
-- **`src/reddit_research/mcp/server.py`** — `gapmap_launch_brief(topic, llm=True, provider=None)` (timeout-wrapped, async-job-recommending) + `gapmap_launch_brief_get(topic)` for cached reads.
+- **`src/reddit_research/mcp/server.py`** — `openreply_launch_brief(topic, llm=True, provider=None)` (timeout-wrapped, async-job-recommending) + `openreply_launch_brief_get(topic)` for cached reads.
 
 ### Tauri
 

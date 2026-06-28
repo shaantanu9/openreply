@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Gap Map — one-command setup + run for the Tauri dev app.
+# OpenReply — one-command setup + run for the Tauri dev app.
 #
 # Usage:
 #   ./scripts/dev.sh            # doctor + (install if needed) + launch
 #   ./scripts/dev.sh setup      # install deps only, don't launch
 #   ./scripts/dev.sh doctor     # sidecar health check only
-#   ./scripts/dev.sh kill       # stop any running gapmap/tauri/vite
+#   ./scripts/dev.sh kill       # stop any running openreply/tauri/vite
 #   ./scripts/dev.sh clean      # kill + remove build artifacts (safe)
 #   ./scripts/dev.sh reset-db   # wipe the app's SQLite DB (destructive — asks)
 #
@@ -62,7 +62,7 @@ preflight() {
     fi
   fi
   # Expose for install_python so it uses the same interpreter we just validated.
-  export GAPMAP_BOOTSTRAP_PYTHON="$py"
+  export OPENREPLY_BOOTSTRAP_PYTHON="$py"
 
   if ! command -v ollama >/dev/null 2>&1; then
     warn "ollama not in PATH — local LLM will fail (fine if you use BYOK cloud keys)"
@@ -76,8 +76,8 @@ preflight() {
 kill_running() {
   hdr "stop any running instances"
   local killed=0
-  # Tauri dev wrapper + its spawned gapmap binary + vite + esbuild
-  for pattern in "npm run tauri dev" "node.*\.bin/tauri" "node.*\.bin/vite" "target/debug/gapmap" "esbuild.*service" ; do
+  # Tauri dev wrapper + its spawned openreply binary + vite + esbuild
+  for pattern in "npm run tauri dev" "node.*\.bin/tauri" "node.*\.bin/vite" "target/debug/openreply" "esbuild.*service" ; do
     local pids
     pids=$(pgrep -f "$pattern" 2>/dev/null || true)
     if [ -n "$pids" ]; then
@@ -88,7 +88,7 @@ kill_running() {
   done
   sleep 1
   # Second pass with SIGKILL for anything that ignored SIGTERM
-  for pattern in "target/debug/gapmap" "node.*\.bin/vite" ; do
+  for pattern in "target/debug/openreply" "node.*\.bin/vite" ; do
     local pids
     pids=$(pgrep -f "$pattern" 2>/dev/null || true)
     if [ -n "$pids" ]; then
@@ -118,7 +118,7 @@ kill_running() {
 install_python() {
   hdr "python deps"
   if [ ! -d .venv ]; then
-    local bootstrap="${GAPMAP_BOOTSTRAP_PYTHON:-python3}"
+    local bootstrap="${OPENREPLY_BOOTSTRAP_PYTHON:-python3}"
     ok "creating .venv ($bootstrap -m venv .venv)"
     "$bootstrap" -m venv .venv || die ".venv creation failed (tried $bootstrap)"
   else
@@ -127,8 +127,8 @@ install_python() {
   # Install project + ALL optional extras used by the app (sources, ingest-rich,
   # analyze). Editable install so Python edits are picked up on next sidecar
   # restart with no reinstall needed.
-  # Check if gapmap is importable first — skip heavy pip work if so.
-  if ! .venv/bin/python -c "import gapmap, feedparser, pypdf, google_play_scraper, pytrends, networkx" 2>/dev/null; then
+  # Check if openreply is importable first — skip heavy pip work if so.
+  if ! .venv/bin/python -c "import openreply, feedparser, pypdf, google_play_scraper, pytrends, networkx" 2>/dev/null; then
     ok "installing package + extras (this can take ~30s first time)…"
     .venv/bin/pip install -e '.[sources,ingest-rich,analyze]' --quiet || \
       die "pip install failed — re-run: .venv/bin/pip install -e '.[sources,ingest-rich,analyze]'"
@@ -160,7 +160,7 @@ run_doctor() {
 
 reset_db() {
   hdr "reset the Tauri app's SQLite DB"
-  local app_db="$HOME/Library/Application Support/com.shantanu.gapmap/gapmap"
+  local app_db="$HOME/Library/Application Support/com.shantanu.openreply/openreply"
   if [ ! -d "$app_db" ]; then
     ok "no DB found at $app_db (already clean)"
     return
@@ -187,9 +187,9 @@ launch() {
   hdr "launch"
   # The tauri-python-sidecar-app skill recommends a dev venv bypass so macOS
   # Gatekeeper doesn't hang the bundled PyInstaller binary for 2+ minutes on
-  # first run. Rust `cli.rs` checks for GAPMAP_DEV_PYTHON and uses it when set.
-  export GAPMAP_DEV_PYTHON="$(pwd)/.venv/bin/python"
-  ok "GAPMAP_DEV_PYTHON=$GAPMAP_DEV_PYTHON"
+  # first run. Rust `cli.rs` checks for OPENREPLY_DEV_PYTHON and uses it when set.
+  export OPENREPLY_DEV_PYTHON="$(pwd)/.venv/bin/python"
+  ok "OPENREPLY_DEV_PYTHON=$OPENREPLY_DEV_PYTHON"
   # cli.rs walks up 5 parent dirs looking for .venv/bin/python, so the explicit
   # override above is belt-and-braces. Setting it means the sidecar uses the
   # dev venv even if you launch Tauri from a different cwd.

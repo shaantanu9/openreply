@@ -15,12 +15,12 @@ social content creation.
 
 ## Changes
 
-- New `src/gapmap/reply/` engine: brand/persona profile, pickable platform catalog
+- New `src/openreply/reply/` engine: brand/persona profile, pickable platform catalog
   (Reddit, X, LinkedIn, HN, news, … — engage vs discovery-only), opportunity find+score
   (relevance/intent/fit via BYOK LLM with heuristic fallback), value-first reply
   generation, and subreddit-rule compliance ("ban-proof") — all persisted to new
-  `reply_*` SQLite tables in the shared gapmap.db.
-- New `gapmap reply` CLI group (`platforms`, `brand-set/get`, `find`, `list`, `draft`,
+  `reply_*` SQLite tables in the shared openreply.db.
+- New `openreply reply` CLI group (`platforms`, `brand-set/get`, `find`, `list`, `draft`,
   `rules`) wired into `cli/main.py`; all `--json`. Tested end-to-end (pulled real Reddit
   posts via the RSS fallback; clean error handling).
 - Design doc: Topic→Agent reframe, agents/content_items data model, end-to-end user
@@ -30,11 +30,11 @@ social content creation.
 
 ## Files Created
 
-- `src/gapmap/reply/{__init__,util,schema,platforms,brand,opportunity,rules,generate}.py`
-- `src/gapmap/cli/reply_cmds.py`
+- `src/openreply/reply/{__init__,util,schema,platforms,brand,opportunity,rules,generate}.py`
+- `src/openreply/cli/reply_cmds.py`
 - `docs/OPENREPLY_DESIGN.md`
 - `changelogs/2026-06-26_03_openreply-engine-and-design.md`
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py` — register the `reply` Typer group
+- `src/openreply/cli/main.py` — register the `reply` Typer group

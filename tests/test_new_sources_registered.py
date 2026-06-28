@@ -1,4 +1,4 @@
-from gapmap.sources.collect_adapter import SOURCES
+from openreply.sources.collect_adapter import SOURCES
 
 NEW = ["polymarket", "truthsocial", "digg", "tiktok",
        "instagram", "threads", "pinterest", "x"]

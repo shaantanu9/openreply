@@ -36,13 +36,13 @@ Reddit-first strategy (target communities, angles, cadence, KPIs, first steps).
 
 ## Files Created
 
-- `src/gapmap/reply/growth.py`
+- `src/openreply/reply/growth.py`
 - `changelogs/2026-06-28_02_agent-purpose-growth-plan.md`
 
 ## Files Modified
 
-- `src/gapmap/reply/agent.py`, `src/gapmap/reply/generate.py`,
-  `src/gapmap/cli/agent_cmds.py`, `src/gapmap/cli/reply_cmds.py`
+- `src/openreply/reply/agent.py`, `src/openreply/reply/generate.py`,
+  `src/openreply/cli/agent_cmds.py`, `src/openreply/cli/reply_cmds.py`
 - `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`
 - `app-tauri/src/or/api.js`, `app-tauri/src/or/dynamic.js`, `app-tauri/src/or/shell.js`
 

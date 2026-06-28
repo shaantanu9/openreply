@@ -105,7 +105,7 @@ the tab auto-renders the moment the other tab's run lands.
 
 ## Manual Test Notes
 
-In the running Gap Map app:
+In the running OpenReply app:
 1. Open any topic with collected posts.
 2. Click the **Sentiment** tab.
 3. If sentiment hasn't been run yet for this topic, you should see:

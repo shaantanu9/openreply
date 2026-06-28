@@ -2,8 +2,8 @@ import { createHash } from "crypto";
 import jwt, { type Secret, type SignOptions, type VerifyOptions } from "jsonwebtoken";
 import { Features, freeFeatures, featuresFor } from "@/lib/features";
 
-export const JWT_ISSUER = "gapmap-activation-suite";
-export const JWT_AUDIENCE = "gapmap-desktop";
+export const JWT_ISSUER = "openreply-activation-suite";
+export const JWT_AUDIENCE = "openreply-desktop";
 
 /**
  * Irreversible fingerprint of the active signing secret — the first 12 hex of

@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from gapmap.research import why as why_mod
+from openreply.research import why as why_mod
 
 
 class FakeProvider:
@@ -76,13 +76,13 @@ def test_extract_why_for_topic_iterates_painpoints(
 ) -> None:
     """Per-topic loop: read painpoint nodes from DB, fetch their evidence
     posts, call extract_why_for_painpoint per node, return list."""
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
 
     # Seed: 1 topic, 2 painpoints, 2 posts, evidence edges
-    from gapmap.graph.schema import ensure_graph_schema, make_node_id
+    from openreply.graph.schema import ensure_graph_schema, make_node_id
     ensure_graph_schema()
     topic = "focus"
     pp1 = make_node_id(topic, "painpoint", "cant-focus")

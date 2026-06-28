@@ -5,7 +5,7 @@
 
 ## Summary
 
-A user on the bundled **Gap Map 0.1.7 DMG** reported that the new-topic modal
+A user on the bundled **OpenReply 0.1.7 DMG** reported that the new-topic modal
 "selections are ignored," the collect "never starts," everything "takes way
 too long," and a second topic started right after the first "doesn't work."
 Investigation traced all four symptoms to **one root cause**: every one of
@@ -16,7 +16,7 @@ cold PyInstaller boot whose first heavy import — chromadb / onnx — stalls)
 held the lock indefinitely and froze every downstream call.
 
 Two common DMG-cascade causes were ruled out first: disk had 9.1 GB free, and
-`upx=False` was already set in `gapmap-cli.spec`.
+`upx=False` was already set in `openreply-cli.spec`.
 
 This change bounds **every** remaining unbounded sidecar wait — frontend and
 backend — so a stuck sidecar self-heals instead of freezing the UI. It

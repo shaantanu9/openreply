@@ -9,7 +9,7 @@ Even with Fix #1, opening a topic still spawned the Python sidecar 3 times: `top
 
 ## Changes
 
-- Added `readPersisted()` / `writePersisted()` helpers backed by `localStorage` under prefix `gapmap.api.cache.`.
+- Added `readPersisted()` / `writePersisted()` helpers backed by `localStorage` under prefix `openreply.api.cache.`.
 - Extended `cachedInvoke` and `cachedFetch` with an optional `persistTtlMs` arg. When set:
   - On a memory-cache miss, if a persisted entry is fresh, hydrate `_cache` from it AND return immediately. Kick off a background fetch that updates both layers — caller gets instant paint without blocking.
   - On a fresh fetcher resolve, mirror the value to localStorage too.

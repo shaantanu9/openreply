@@ -1,4 +1,4 @@
-# Gap Map — License System (website)
+# OpenReply — License System (website)
 
 Complete reference for the activation-suite licensing: free keys, beta master
 key, owner admin, and the desktop-app integration. Free mode is ON by default
@@ -73,7 +73,7 @@ Base = deployed site, e.g. `https://YOUR_SITE`.
 | Admin: list | `GET /api/v1/admin/licenses` | cookie or `x-admin-secret` | — | `{ok, master_key_enabled, licenses[]}` |
 | Admin: disable/enable/expire | `POST /api/v1/admin/license` | cookie or `x-admin-secret` | `{action, email}` | `{ok, status}` |
 
-JWT: HS256, issuer `gapmap-activation-suite`, audience `gapmap-desktop`, 180d,
+JWT: HS256, issuer `openreply-activation-suite`, audience `openreply-desktop`, 180d,
 claims include `device_fingerprint` (anti-sharing) + `features`. Master tokens
 add `is_master` + `master_sig` (revoked when `MASTER_KEY` rotates/clears).
 
@@ -104,7 +104,7 @@ against this site + actually enforce:
    no app-side revoke (app learns from `validate → {revoked:true}`).
 3. **Shared secret** — app build-time `JWT_DESKTOP_SECRET` == site
    `TOKEN_SIGNING_SECRET`; accept issuer/audience above.
-4. **Turn the gate ON** — `GAPMAP_LICENSE_GATE_ENABLED=1` for releases, and
+4. **Turn the gate ON** — `OPENREPLY_LICENSE_GATE_ENABLED=1` for releases, and
    extend gating from MCP-only to `run_cli` so the whole app needs activation.
 5. **Periodic re-validate + lock** — on launch + every N days; on
    `{revoked:true}`/invalid → lock UI ("license disabled — contact owner"),

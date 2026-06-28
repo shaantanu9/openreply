@@ -11,7 +11,7 @@ import { TRUST_LOGOS } from "@/lib/constants";
 export function TrustLogoBar() {
   return (
     <section
-      aria-label="Teams using Gap Map"
+      aria-label="Teams using OpenReply"
       className="border-y border-[var(--border)] bg-[var(--cream-mid)]"
     >
       <div className="mx-auto flex max-w-[1200px] flex-col items-center gap-6 px-8 py-10 md:flex-row md:gap-10">

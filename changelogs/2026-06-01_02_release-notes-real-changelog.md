@@ -5,7 +5,7 @@
 
 ## Summary
 
-The public release notes ended with "See the [source repo](https://github.com/shaantanu9/gap-map-pro) `changelogs/` folder for what changed" — a link to the **private** source repo (leaks org structure and is useless to public users). Replaced it across all three platform release workflows with the **real changelog content**, extracted from the version's section in `CHANGELOG.md` at release time, and fixed the already-published v0.1.7 note in place.
+The public release notes ended with "See the [source repo](https://github.com/shaantanu9/openreply) `changelogs/` folder for what changed" — a link to the **private** source repo (leaks org structure and is useless to public users). Replaced it across all three platform release workflows with the **real changelog content**, extracted from the version's section in `CHANGELOG.md` at release time, and fixed the already-published v0.1.7 note in place.
 
 ## Changes
 
@@ -14,7 +14,7 @@ The public release notes ended with "See the [source repo](https://github.com/sh
   - extracts the `## [vX.Y.Z …]` section from `$GITHUB_WORKSPACE/CHANGELOG.md` via awk (stops at the next `## [` header), with a graceful fallback line if the version has no section;
   - builds the notes with `printf` and passes them via `gh release create --notes-file` (robust quoting, no private-repo link);
   - renders a `## What's changed` section with the extracted content.
-- Updated the live published `myind-ai/gapmap` v0.1.7 release note via `gh release edit --notes-file` (verified: 0 private-repo links, real changelog present).
+- Updated the live published `myind-ai/openreply` v0.1.7 release note via `gh release edit --notes-file` (verified: 0 private-repo links, real changelog present).
 
 ## Files Created
 

@@ -3,7 +3,7 @@ import { SiteShell } from "@/components/shell/SiteShell";
 import { FaqAccordion } from "@/components/marketing/FaqAccordion";
 
 export const metadata: Metadata = {
-  title: "Gap Map — FAQ & Contact",
+  title: "OpenReply — FAQ & Contact",
 };
 
 export const revalidate = 3600;

@@ -1,6 +1,6 @@
-# Publish Gap Map — manual steps that can't be automated
+# Publish OpenReply — manual steps that can't be automated
 
-**Goal:** ship a Developer ID-signed + notarized `Gap Map_0.1.0_aarch64.dmg`
+**Goal:** ship a Developer ID-signed + notarized `OpenReply_0.1.0_aarch64.dmg`
 and `_x64.dmg` via GitHub Releases + the marketing site.
 
 The CI workflow at `.github/workflows/release.yml` already handles the
@@ -45,7 +45,7 @@ Store (signed + notarized DMG). The certs you have today are not this one.
 
 ### Option A — App-specific password (simpler, fine for solo dev)
 - [ ] Open <https://appleid.apple.com> → sign in → App-Specific Passwords
-- [ ] Generate a new one labelled "gap-map-notarize"
+- [ ] Generate a new one labelled "openreply-map-notarize"
 - [ ] Save the 16-char password somewhere safe
 
 ### Option B — App Store Connect API key (recommended by Apple, rotates without password churn)
@@ -57,7 +57,7 @@ Store (signed + notarized DMG). The certs you have today are not this one.
 
 ## 5. Add GitHub Actions secrets
 
-Open <https://github.com/shaantanu9/gap-map-pro/settings/secrets/actions> and add:
+Open <https://github.com/shaantanu9/openreply/settings/secrets/actions> and add:
 
 | Secret | Value |
 |---|---|
@@ -99,8 +99,8 @@ The resulting DMG ends up at
 
 Then verify:
 ```
-codesign -vvv --deep --strict "Gap Map_0.1.0_aarch64.dmg"
-spctl -a -vv "Gap Map_0.1.0_aarch64.dmg"
+codesign -vvv --deep --strict "OpenReply_0.1.0_aarch64.dmg"
+spctl -a -vv "OpenReply_0.1.0_aarch64.dmg"
 # Expected: "accepted" + "source=Notarized Developer ID"
 ```
 

@@ -1,7 +1,7 @@
 """pytest bootstrap — makes `src/`-layout imports work without an editable install.
 
 Why this exists: fresh contributors (and CI runners that skip `uv sync`) would
-otherwise hit `ModuleNotFoundError: No module named 'gapmap'` on every
+otherwise hit `ModuleNotFoundError: No module named 'openreply'` on every
 test collection. The editable install via `uv sync` also papers over this, but
 this file is a defensive backstop so `pytest tests/` Just Works on any checkout.
 

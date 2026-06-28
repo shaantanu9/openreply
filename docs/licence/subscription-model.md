@@ -1,4 +1,4 @@
-# Gap Map — Subscription Model & Server Contract
+# OpenReply — Subscription Model & Server Contract
 
 > Companion to `tauri-licence-impl.md` (desktop spec).
 > Describes the **server-side** half of the licence system: plans, activation
@@ -72,8 +72,8 @@ Hashing: `src/lib/supabaseActivationStore.ts::hashSecret()`.
 ## 3. JWT shape (spec §7)
 
 **Algorithm:** `HS256`
-**Issuer:** `gapmap-activation-suite`
-**Audience:** `gapmap-desktop`
+**Issuer:** `openreply-activation-suite`
+**Audience:** `openreply-desktop`
 **Default expiry:** 180 days
 
 ### Claims payload
@@ -81,8 +81,8 @@ Hashing: `src/lib/supabaseActivationStore.ts::hashSecret()`.
 ```json
 {
   "sub": "<license uuid>",
-  "iss": "gapmap-activation-suite",
-  "aud": "gapmap-desktop",
+  "iss": "openreply-activation-suite",
+  "aud": "openreply-desktop",
   "iat": 1731000000,
   "exp": 1746500000,
 
@@ -128,7 +128,7 @@ Called the first time a user enters a key in the desktop app.
   "password":           "...",                     // see note 1
   "activation_key":     "ABCD-EFGH-JKLM-NPQR",
   "device_signature":   "<sha256 hex>",            // see note 2
-  "app":                "gapmap-desktop",
+  "app":                "openreply-desktop",
   "os":                 "macos",
   "arch":               "aarch64"
 }

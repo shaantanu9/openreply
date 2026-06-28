@@ -48,8 +48,8 @@ export async function listCoupons(): Promise<AdminCoupon[]> {
   return ((data as Array<Record<string, unknown>>) || []).map(rowToCoupon);
 }
 
-/** Generate an unguessable, human-readable invite code: GAPMAP-XXXX-XXXX. */
-export function generateCouponCode(prefix = "GAPMAP"): string {
+/** Generate an unguessable, human-readable invite code: OPENREPLY-XXXX-XXXX. */
+export function generateCouponCode(prefix = "OPENREPLY"): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1 ambiguity
   const block = () =>
     Array.from({ length: 4 }, () => alphabet[crypto.randomInt(alphabet.length)]).join("");

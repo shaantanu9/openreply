@@ -1,7 +1,7 @@
 # US/Canada Home-Lending Marketplace — Research Brief
 
 **Date:** 2026-04-28
-**Topic in Gap Map:** `US Canada roofing contractor homeowner lending marketplace`
+**Topic in OpenReply:** `US Canada roofing contractor homeowner lending marketplace`
 **Method:** Used the `reddit-myind` CLI to canonicalise the topic, discover
 relevant subreddits, run an aggressive multi-source collect (Reddit +
 HN + App Store + Play Store + arXiv + OpenAlex + PubMed + Google News +

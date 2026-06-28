@@ -19,7 +19,7 @@ models in tiny VRAM — Python-only, no CLI/HTTP server, <1 tok/s on
 | Piece | What it is |
 |---|---|
 | `llama-server` binary (~30–50 MB, MIT) | Single self-contained Mac-arm64 binary. OpenAI-compatible HTTP on localhost. Metal GPU acceleration. |
-| Gemma 3 GGUF weights | Downloaded on first "Enable local" click from HuggingFace into `~/Library/Application Support/com.shantanu.gapmap/models/`. Not bundled — keeps DMG under 100 MB. |
+| Gemma 3 GGUF weights | Downloaded on first "Enable local" click from HuggingFace into `~/Library/Application Support/com.shantanu.openreply/models/`. Not bundled — keeps DMG under 100 MB. |
 | Frontend | Adds a "Local (Gemma)" provider in `byok.js` that sets `baseURL=http://localhost:<port>` and skips API-key check. |
 
 ## Why llama.cpp over MLX-LM / Ollama

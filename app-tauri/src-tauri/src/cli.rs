@@ -1,4 +1,4 @@
-//! Thin wrapper around the bundled `gapmap` Python sidecar.
+//! Thin wrapper around the bundled `openreply` Python sidecar.
 //!
 //! Every UI command funnels through here. We always pass `--json` and parse
 //! stdout; on non-zero exit we surface stderr as the error message.
@@ -9,9 +9,9 @@
 //! ## Dev-mode bypass
 //!
 //! On macOS, Gatekeeper verifies every `.so` inside the PyInstaller-bundled
-//! `gapmap` binary on every launch, which can take 2+ minutes per call.
+//! `openreply` binary on every launch, which can take 2+ minutes per call.
 //! Unusable in dev. So in dev builds we detect a project `.venv/bin/python`
-//! relative to the Tauri working dir and invoke `python -m gapmap.cli.main`
+//! relative to the Tauri working dir and invoke `python -m openreply.cli.main`
 //! directly, which launches in ~200 ms. Production bundles (no .venv nearby)
 //! fall through to the sidecar binary as before.
 
@@ -40,7 +40,7 @@ pub fn find_dev_venv_python_pub() -> Option<std::path::PathBuf> {
 
 fn find_dev_venv_python() -> Option<std::path::PathBuf> {
     // Explicit override always wins.
-    if let Ok(p) = std::env::var("GAPMAP_DEV_PYTHON") {
+    if let Ok(p) = std::env::var("OPENREPLY_DEV_PYTHON") {
         let pb = std::path::PathBuf::from(p);
         if pb.exists() {
             return Some(pb);
@@ -107,7 +107,7 @@ fn dir_size_bytes(path: &std::path::Path) -> u64 {
 /// never touch a currently-extracting sidecar or a freshly-started MCP
 /// server (mtime is stamped at extraction = process start). Default 6 h is
 /// well past any single sidecar call and past a normal Claude Code MCP
-/// session cycle; override via `GAPMAP_MEI_REAP_MIN_AGE_SECS`. Returns
+/// session cycle; override via `OPENREPLY_MEI_REAP_MIN_AGE_SECS`. Returns
 /// `(dirs_removed, bytes_freed)`. Cheap to call on boot; safe to call often.
 pub fn reap_pyinstaller_orphans() -> (u64, u64) {
     // Default lowered 6h → 2h (2026-06-01). 2h is still safely longer than any
@@ -116,7 +116,7 @@ pub fn reap_pyinstaller_orphans() -> (u64, u64) {
     // that crash-orphaned `_MEI` dirs are swept the same session instead of
     // lingering for hours. The periodic reaper in main.rs re-runs this on an
     // interval so a long-running session can't accumulate them either.
-    let min_age_secs: u64 = std::env::var("GAPMAP_MEI_REAP_MIN_AGE_SECS")
+    let min_age_secs: u64 = std::env::var("OPENREPLY_MEI_REAP_MIN_AGE_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(2 * 60 * 60);
@@ -166,28 +166,28 @@ pub fn reap_pyinstaller_orphans() -> (u64, u64) {
 }
 
 /// Build a Tauri shell Command for the sidecar binary. Used for both dev
-/// and production — capabilities only whitelist `binaries/gapmap`, which
+/// and production — capabilities only whitelist `binaries/openreply`, which
 /// keeps the DMG-shippable signature intact for any user.
 ///
-/// Pre-injects `GAPMAP_FFMPEG_PATH` when a bundled / system ffmpeg is
+/// Pre-injects `OPENREPLY_FFMPEG_PATH` when a bundled / system ffmpeg is
 /// resolvable, so every sidecar invocation (one-shot or streaming) can hand
 /// yt-dlp a working demuxer without each caller wiring the env.
 fn build_sidecar_cmd(app: &AppHandle, user_args: &[&str]) -> Result<Command> {
     let mut cmd = app
         .shell()
-        .sidecar("gapmap-cli")
+        .sidecar("openreply-cli")
         .map_err(|e| anyhow!("sidecar missing: {e}"))?;
     for a in user_args {
         cmd = cmd.arg(*a);
     }
     let ffmpeg = ffmpeg_env_value(app);
     if !ffmpeg.is_empty() {
-        cmd = cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg);
+        cmd = cmd.env("OPENREPLY_FFMPEG_PATH", ffmpeg);
     }
     Ok(cmd)
 }
 
-/// Dev-only helper: spawn `python -m gapmap.cli.main` via
+/// Dev-only helper: spawn `python -m openreply.cli.main` via
 /// `tokio::process::Command` so we bypass macOS Gatekeeper's 2+ minute
 /// PyInstaller verification. Only runs if a `.venv/bin/python` is found
 /// near CWD — production DMG installs never see this.
@@ -195,15 +195,15 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
     let t0 = std::time::Instant::now();
     eprintln!("[sidecar] dev-python {} args={:?}", py.display(), args);
     let mut cmd = tokio::process::Command::new(&py);
-    cmd.arg("-m").arg("gapmap.cli.main");
+    cmd.arg("-m").arg("openreply.cli.main");
     for a in args { cmd.arg(a); }
-    cmd.env("GAPMAP_DATA_DIR", data_dir)
+    cmd.env("OPENREPLY_DATA_DIR", data_dir)
        .env("PYTHONUNBUFFERED", "1");
-    // Propagate GAPMAP_FFMPEG_PATH — set by the caller (run_cli) via
+    // Propagate OPENREPLY_FFMPEG_PATH — set by the caller (run_cli) via
     // ffmpeg_env_value(app). yt-dlp inside the sidecar reads this to point
     // at the bundled/static ffmpeg instead of a system install.
-    if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
-        if !ffmpeg.is_empty() { cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg); }
+    if let Ok(ffmpeg) = std::env::var("OPENREPLY_FFMPEG_PATH") {
+        if !ffmpeg.is_empty() { cmd.env("OPENREPLY_FFMPEG_PATH", ffmpeg); }
     }
     // Bounded — the daemon path self-heals on wedge, but this one-shot fallback
     // used to await an unbounded `output()`; a hung cold spawn would then freeze
@@ -243,7 +243,7 @@ async fn run_dev_python_cli(py: std::path::PathBuf, args: &[&str], data_dir: &st
 // `run_cli` previously paid the full Python interpreter / module-import cost
 // on EVERY invocation (~300-1500 ms each). When the topic page mounts we fire
 // 3+ such calls in parallel (saturation, coverage-gaps, byok_status, …) and
-// each one spawns its own `python -m gapmap.cli.main`. Multiply by
+// each one spawns its own `python -m openreply.cli.main`. Multiply by
 // every page navigation and the perceived "even local DB feels slow" follows.
 //
 // The daemon process keeps the Python interpreter warm. It reads one
@@ -288,12 +288,12 @@ async fn spawn_dev_daemon(
     use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
 
     let mut cmd = tokio::process::Command::new(py);
-    cmd.arg("-m").arg("gapmap.cli.main").arg("daemon");
-    cmd.env("GAPMAP_DATA_DIR", data_dir)
+    cmd.arg("-m").arg("openreply.cli.main").arg("daemon");
+    cmd.env("OPENREPLY_DATA_DIR", data_dir)
         .env("PYTHONUNBUFFERED", "1");
-    if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
+    if let Ok(ffmpeg) = std::env::var("OPENREPLY_FFMPEG_PATH") {
         if !ffmpeg.is_empty() {
-            cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg);
+            cmd.env("OPENREPLY_FFMPEG_PATH", ffmpeg);
         }
     }
     cmd.stdin(Stdio::piped())
@@ -545,9 +545,9 @@ pub async fn shutdown_dev_daemon() {
 // ─── Long-running BUNDLED-SIDECAR daemon ──────────────────────────────────
 //
 // Mirror of the dev-python daemon above, but driven from the PyInstaller
-// binary inside Gap Map.app/Contents/MacOS/gapmap-cli when no .venv is
+// binary inside OpenReply.app/Contents/MacOS/openreply-cli when no .venv is
 // present. The bundled CLI supports the same `daemon` subcommand
-// (gapmap.cli.main::daemon — JSON-line in / JSON-line out).
+// (openreply.cli.main::daemon — JSON-line in / JSON-line out).
 //
 // Why: previously, every `run_cli` call in DMG mode spawned a fresh
 // PyInstaller process (~2-5 s of macOS Gatekeeper verification + Python
@@ -556,7 +556,7 @@ pub async fn shutdown_dev_daemon() {
 // import graph warm; round-trip drops to ~10-100 ms.
 //
 // The slot is keyed by the resolved binary path, so a user who moves
-// Gap Map.app between locations gets a fresh daemon for the new path
+// OpenReply.app between locations gets a fresh daemon for the new path
 // (and we kill the old one).
 
 static SIDECAR_DAEMON: std::sync::OnceLock<Arc<tokio::sync::Mutex<Option<DevDaemon>>>> =
@@ -577,11 +577,11 @@ async fn spawn_sidecar_daemon(
 
     let mut cmd = tokio::process::Command::new(sidecar);
     cmd.arg("daemon");
-    cmd.env("GAPMAP_DATA_DIR", data_dir)
+    cmd.env("OPENREPLY_DATA_DIR", data_dir)
         .env("PYTHONUNBUFFERED", "1");
-    if let Ok(ffmpeg) = std::env::var("GAPMAP_FFMPEG_PATH") {
+    if let Ok(ffmpeg) = std::env::var("OPENREPLY_FFMPEG_PATH") {
         if !ffmpeg.is_empty() {
-            cmd.env("GAPMAP_FFMPEG_PATH", ffmpeg);
+            cmd.env("OPENREPLY_FFMPEG_PATH", ffmpeg);
         }
     }
     cmd.stdin(Stdio::piped())
@@ -748,13 +748,13 @@ pub async fn shutdown_sidecar_daemon() {
     }
 }
 
-/// Resolve the bundled `gapmap-cli` next to `current_exe`. Mirrors the
+/// Resolve the bundled `openreply-cli` next to `current_exe`. Mirrors the
 /// same helper in commands.rs (kept local to cli.rs so daemon code is
 /// self-contained).
 fn resolve_bundled_sidecar() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    for name in ["gapmap-cli", "gapmap-cli.exe"] {
+    for name in ["openreply-cli", "openreply-cli.exe"] {
         let candidate = dir.join(name);
         if candidate.exists() {
             return Some(candidate);
@@ -803,7 +803,7 @@ pub struct ActiveJobPid(pub Arc<Mutex<Option<u32>>>);
 #[derive(Default, Clone)]
 pub struct ActiveChatPid(pub Arc<Mutex<Option<u32>>>);
 
-/// Same shape as ActiveJob — stores the live `gapmap stream` child handle so cancel can kill it.
+/// Same shape as ActiveJob — stores the live `openreply stream` child handle so cancel can kill it.
 #[derive(Default)]
 pub struct ActiveStream(pub Arc<Mutex<Option<CommandChild>>>);
 
@@ -908,7 +908,7 @@ pub struct CollectQueue(pub Arc<Mutex<std::collections::VecDeque<QueuedCollect>>
 
 /// Resolve the bundled ffmpeg binary the Python sidecar should use for
 /// yt-dlp audio extraction. Priority:
-///   1. `GAPMAP_FFMPEG_PATH` env (dev override — point at /opt/homebrew/bin/ffmpeg).
+///   1. `OPENREPLY_FFMPEG_PATH` env (dev override — point at /opt/homebrew/bin/ffmpeg).
 ///   2. Tauri `resource_dir()/binaries/ffmpeg-aarch64-apple-darwin` (shipped DMG).
 ///   3. `app-tauri/src-tauri/binaries/ffmpeg-aarch64-apple-darwin` relative to
 ///      dev CWD — picks up a drop-in static ffmpeg for `npm run tauri dev`.
@@ -917,7 +917,7 @@ pub struct CollectQueue(pub Arc<Mutex<std::collections::VecDeque<QueuedCollect>>
 /// ship audio directly (rare) but m4a/webm mux jobs will fail with a clean
 /// error message the UI can surface.
 pub fn resolve_ffmpeg_path(app: &AppHandle) -> Option<std::path::PathBuf> {
-    if let Ok(p) = std::env::var("GAPMAP_FFMPEG_PATH") {
+    if let Ok(p) = std::env::var("OPENREPLY_FFMPEG_PATH") {
         let pb = std::path::PathBuf::from(p);
         if pb.exists() { return Some(pb); }
     }
@@ -954,13 +954,13 @@ fn ffmpeg_env_value(app: &AppHandle) -> String {
 }
 
 /// Resolve the data dir used by the Python CLI for this app.
-/// `~/Library/Application Support/com.shantanu.gapmap/gapmap`.
+/// `~/Library/Application Support/com.shantanu.openreply/openreply`.
 pub fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| anyhow!("app_data_dir failed: {e}"))?
-        .join("gapmap");
+        .join("openreply");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
@@ -978,7 +978,7 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     if !ffmpeg.is_empty() {
         // Propagate via process env so run_dev_python_cli picks it up without
         // threading another arg through every caller.
-        std::env::set_var("GAPMAP_FFMPEG_PATH", &ffmpeg);
+        std::env::set_var("OPENREPLY_FFMPEG_PATH", &ffmpeg);
     }
 
     // Dev fast path — skip the bundled PyInstaller binary entirely when a
@@ -1007,7 +1007,7 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     }
 
     // Production fast path — bundled sidecar daemon. Same long-running
-    // process pattern, just spawned from gapmap-cli inside the .app
+    // process pattern, just spawned from openreply-cli inside the .app
     // bundle. Cuts every Settings/Topic/Audience call from ~2-5 s to
     // ~10-100 ms. On daemon IPC failure we fall back to one-shot
     // (the original Tauri shell.sidecar code path below).
@@ -1026,9 +1026,9 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
         }
     }
 
-    // build_sidecar_cmd pre-injects GAPMAP_FFMPEG_PATH itself — no need here.
+    // build_sidecar_cmd pre-injects OPENREPLY_FFMPEG_PATH itself — no need here.
     let sidecar = build_sidecar_cmd(app, &args)?
-        .env("GAPMAP_DATA_DIR", &data_str)
+        .env("OPENREPLY_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1");
 
     // Bounded one-shot — see ONESHOT_REQUEST_TIMEOUT_SECS. This is the final
@@ -1065,7 +1065,7 @@ pub async fn run_cli(app: &AppHandle, args: Vec<&str>) -> Result<Value> {
     Ok(parse_or_diagnostic(&stdout))
 }
 
-/// Dev-only streaming bypass — spawn `.venv/bin/python -m gapmap.cli.main`
+/// Dev-only streaming bypass — spawn `.venv/bin/python -m openreply.cli.main`
 /// via `tokio::process::Command`, pipe stdout+stderr, and emit per-line
 /// events on `progress_event`. When the child exits, emit a done event with
 /// `{code}` (for chat) or `{code, error_class, hint}` (for collect — see
@@ -1093,15 +1093,15 @@ async fn run_dev_python_streaming(
     let done_event = done_event.to_string();
 
     let mut cmd = tokio::process::Command::new(&py);
-    cmd.arg("-m").arg("gapmap.cli.main");
+    cmd.arg("-m").arg("openreply.cli.main");
     for a in args { cmd.arg(*a); }
-    cmd.env("GAPMAP_DATA_DIR", data_str)
+    cmd.env("OPENREPLY_DATA_DIR", data_str)
        .env("PYTHONUNBUFFERED", "1")
        .stdout(Stdio::piped())
        .stderr(Stdio::piped());
     let ffmpeg = ffmpeg_env_value(app);
     if !ffmpeg.is_empty() {
-        cmd.env("GAPMAP_FFMPEG_PATH", &ffmpeg);
+        cmd.env("OPENREPLY_FFMPEG_PATH", &ffmpeg);
     }
     let mut child = cmd.spawn().map_err(|e| anyhow!("dev python spawn failed: {e}"))?;
     if let Some(pid) = child.id() {
@@ -1231,7 +1231,7 @@ pub async fn run_cli_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("GAPMAP_DATA_DIR", &data_str)
+        .env("OPENREPLY_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
@@ -1478,7 +1478,7 @@ pub async fn run_cli_chat_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("GAPMAP_DATA_DIR", &data_str)
+        .env("OPENREPLY_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
@@ -1624,7 +1624,7 @@ pub async fn run_cli_stream_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("GAPMAP_DATA_DIR", &data_str)
+        .env("OPENREPLY_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;
@@ -1677,7 +1677,7 @@ pub async fn run_cli_stream_streaming(
 /// Spawn the sidecar for a stream-mode enrich and forward each stdout line as
 /// a Tauri `progress_event` payload. Uses its own ActiveEnrich/ActiveEnrichPid
 /// slots so it doesn't collide with ActiveJob (collect) or ActiveStream
-/// (gapmap stream) — a user reading the map while a collect finishes still
+/// (openreply stream) — a user reading the map while a collect finishes still
 /// gets progressive painpoints.
 ///
 /// Unlike the collect path, we DON'T refuse a second enrich here — the
@@ -1716,7 +1716,7 @@ pub async fn run_cli_enrich_streaming(
     }
 
     let (mut rx, child) = build_sidecar_cmd(app, &args)?
-        .env("GAPMAP_DATA_DIR", &data_str)
+        .env("OPENREPLY_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .spawn()
         .map_err(|e| anyhow!("sidecar spawn failed: {e}"))?;

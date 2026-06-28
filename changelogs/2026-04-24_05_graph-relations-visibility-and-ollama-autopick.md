@@ -44,7 +44,7 @@ Verified reports/conclusions already use multi-source evidence:
 - `research/chat.py` sorts findings by `source_diversity DESC` so multi-source-corroborated painpoints surface first.
 - `research/export_brief.py` stamps each finding's `source_breakdown` onto the brief.
 - `research/insights.py` derives `triangulation_strength` from `source_breakdown`.
-- `graph/export.py` stamps `source_diversity` on every finding node — the gap-map HTML shows it in the node-detail panel.
+- `graph/export.py` stamps `source_diversity` on every finding node — the openreply-map HTML shows it in the node-detail panel.
 
 No changes needed server-side; the triangulation was already there. The only gap was user visibility, which the two Map-tab chips (`🔗 relations`, `📡 sources`) now close.
 

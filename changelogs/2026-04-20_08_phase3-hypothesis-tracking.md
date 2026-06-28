@@ -13,7 +13,7 @@ lean-startup lifecycle (draft → running → validated/invalidated/paused →
 archived) with per-transition journal notes.
 
 This is the **single biggest retention lever** identified in
-`docs/PRODUCT_GAPS.md`: it turns Gap Map from one-shot research into
+`docs/PRODUCT_GAPS.md`: it turns OpenReply from one-shot research into
 a weekly practice where founders return to update their bets.
 
 Also ships the **Dual-Mode Fork** annotation in `docs/ROADMAP.md` and

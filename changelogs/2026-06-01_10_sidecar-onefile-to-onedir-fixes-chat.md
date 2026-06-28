@@ -39,31 +39,31 @@ Measured (bundled sidecar, same Mac, same data dir):
 
 Tauri's `externalBin`/sidecar mechanism only supports single files, not a
 onedir folder. Rather than rewrite the streaming/cancel/daemon code, a tiny
-**launcher script** is shipped as the externalBin (`gapmap-cli-aarch64-apple-darwin`).
-Tauri copies it to `Contents/MacOS/gapmap-cli`, so both spawn paths resolve
-"gapmap-cli" exactly as before:
-- streaming: `app.shell().sidecar("gapmap-cli")`
+**launcher script** is shipped as the externalBin (`openreply-cli-aarch64-apple-darwin`).
+Tauri copies it to `Contents/MacOS/openreply-cli`, so both spawn paths resolve
+"openreply-cli" exactly as before:
+- streaming: `app.shell().sidecar("openreply-cli")`
 - warm daemon: `resolve_bundled_sidecar()` → `current_exe` dir
 
 The launcher `exec`s the real onedir exe shipped under
-`Contents/Resources/binaries/gapmap-cli-onedir/gapmap-cli`. `exec` replaces the
+`Contents/Resources/binaries/openreply-cli-onedir/openreply-cli`. `exec` replaces the
 process image, so the PID Rust tracks for cancel and the piped
 stdin/stdout/stderr are all preserved (verified: daemon `_daemon_ready`
 handshake works through the launcher).
 
 ## Changes
 
-- **`gapmap-cli.spec`** — `EXE(..., exclude_binaries=True)` + new `COLLECT(...)`
-  → onedir output (`dist/gapmap-cli/{gapmap-cli, _internal/}`) instead of a
+- **`openreply-cli.spec`** — `EXE(..., exclude_binaries=True)` + new `COLLECT(...)`
+  → onedir output (`dist/openreply-cli/{openreply-cli, _internal/}`) instead of a
   single onefile EXE.
-- **`app-tauri/src-tauri/binaries/gapmap-cli-aarch64-apple-darwin`** — replaced
+- **`app-tauri/src-tauri/binaries/openreply-cli-aarch64-apple-darwin`** — replaced
   the 190 MB onefile binary with a bash launcher that `exec`s the onedir exe
-  from Resources (explicit `GAPMAP_ONEDIR_EXE` override → known candidate paths
+  from Resources (explicit `OPENREPLY_ONEDIR_EXE` override → known candidate paths
   → bounded `find` fallback). Old onefile kept as `*.onefile.bak`.
-- **`app-tauri/src-tauri/binaries/gapmap-cli-onedir/`** — the staged onedir
+- **`app-tauri/src-tauri/binaries/openreply-cli-onedir/`** — the staged onedir
   bundle (exe + `_internal/`).
 - **`app-tauri/src-tauri/tauri.conf.json`** — added
-  `bundle.resources: ["binaries/gapmap-cli-onedir/**/*"]` so the onedir ships
+  `bundle.resources: ["binaries/openreply-cli-onedir/**/*"]` so the onedir ships
   under `Contents/Resources/`.
 
 ## Verification
@@ -76,13 +76,13 @@ handshake works through the launcher).
 
 ## Files Created
 
-- `app-tauri/src-tauri/binaries/gapmap-cli-aarch64-apple-darwin` (launcher script)
-- `app-tauri/src-tauri/binaries/gapmap-cli-onedir/` (onedir bundle)
+- `app-tauri/src-tauri/binaries/openreply-cli-aarch64-apple-darwin` (launcher script)
+- `app-tauri/src-tauri/binaries/openreply-cli-onedir/` (onedir bundle)
 - `changelogs/2026-06-01_10_sidecar-onefile-to-onedir-fixes-chat.md`
 
 ## Files Modified
 
-- `gapmap-cli.spec` — onefile → onedir (EXE exclude_binaries + COLLECT).
+- `openreply-cli.spec` — onefile → onedir (EXE exclude_binaries + COLLECT).
 - `app-tauri/src-tauri/tauri.conf.json` — added `bundle.resources` for the onedir.
 
 ## Relationship to other changelogs

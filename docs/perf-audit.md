@@ -25,8 +25,8 @@ That `await` blocks **every** paint, so the user pays the sidecar latency on eve
 
 The few screens that already feel fast use a localStorage stale-while-revalidate cache:
 
-- `home.js` — `gapmap.dashboard.cache.v1` (hero + stat-grid + activity + topic grid)
-- `topic.js` header chips — `gapmap.topic.stats.cache.<topic>` (added 2026-04-25)
+- `home.js` — `openreply.dashboard.cache.v1` (hero + stat-grid + activity + topic grid)
+- `topic.js` header chips — `openreply.topic.stats.cache.<topic>` (added 2026-04-25)
 
 Everything else needs the same treatment.
 
@@ -74,7 +74,7 @@ A single SWR helper any screen can use:
 
 ```js
 // src/lib/screenCache.js
-const PREFIX = 'gapmap.screen.cache.';
+const PREFIX = 'openreply.screen.cache.';
 
 export function readScreenCache(key) {
   try {
@@ -131,16 +131,16 @@ The user-perceived "wherever I go starts loading" win comes from **localStorage*
 
 ### Cache invalidation
 
-- Mutation calls already broadcast `gapmap:changed` via `mutated(kind, …)` in `api.js`.
-- Add a global listener in `main.js` that `localStorage.removeItem`s any `gapmap.screen.cache.*` key whose tag matches the changed kind.
+- Mutation calls already broadcast `openreply:changed` via `mutated(kind, …)` in `api.js`.
+- Add a global listener in `main.js` that `localStorage.removeItem`s any `openreply.screen.cache.*` key whose tag matches the changed kind.
 
 ```js
 // in main.js
-window.addEventListener('gapmap:changed', (e) => {
+window.addEventListener('openreply:changed', (e) => {
   const kind = e.detail?.kind;
   if (!kind) return;
   for (const k of Object.keys(localStorage)) {
-    if (!k.startsWith('gapmap.screen.cache.')) continue;
+    if (!k.startsWith('openreply.screen.cache.')) continue;
     if (k.includes(`.${kind}.`)) localStorage.removeItem(k);
   }
 });
@@ -185,7 +185,7 @@ This keeps the cache fresh without per-screen invalidation logic.
   Toolbar wiring extracted to `wireToolbar()` so cache and live paths
   share it. Empty pages aren't cached (transient filter typos / sidecar
   hiccups shouldn't be locked in).
-- `app-tauri/src/main.js` — `gapmap:changed` → screen-cache invalidation
+- `app-tauri/src/main.js` — `openreply:changed` → screen-cache invalidation
   listener updated to drop the new tags:
   - `findings` → `insights/evidence/solutions`
   - `graph` → `insights/solutions/concepts/papers`

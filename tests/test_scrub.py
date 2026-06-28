@@ -1,4 +1,4 @@
-from gapmap.core.scrub import scrub_secrets
+from openreply.core.scrub import scrub_secrets
 
 
 def test_redacts_known_key_prefixes():

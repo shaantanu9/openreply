@@ -790,7 +790,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gapmap"
+name = "openreply"
 version = "0.1.23"
 source = { editable = "." }
 dependencies = [
@@ -882,7 +882,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'video'", specifier = ">=1.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=0.4" },
     { name = "feedparser", marker = "extra == 'sources'", specifier = ">=6.0" },
-    { name = "gapmap", extras = ["analyze", "mcp", "sources", "dev", "retrieval", "video", "docs"], marker = "extra == 'all'" },
+    { name = "openreply", extras = ["analyze", "mcp", "sources", "dev", "retrieval", "video", "docs"], marker = "extra == 'all'" },
     { name = "google-play-scraper", marker = "extra == 'sources'", specifier = ">=1.2" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'analyze'", specifier = ">=0.27" },

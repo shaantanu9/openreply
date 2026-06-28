@@ -24,8 +24,8 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-SRC_REPO="${SRC_REPO:-shaantanu9/gap-map-pro}"
-PUBLIC_REPO="${PUBLIC_REPO:-myind-ai/gapmap}"
+SRC_REPO="${SRC_REPO:-shaantanu9/openreply}"
+PUBLIC_REPO="${PUBLIC_REPO:-myind-ai/openreply}"
 
 if [ -t 1 ]; then
   bold() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -159,12 +159,12 @@ gh secret list --repo "$SRC_REPO" | grep -E "APPLE|JWT|PUBLIC_RELEASE" | head -2
 echo ""
 bold "── Done ──"
 green "  Push any v* tag from now on and the full pipeline runs autonomously:"
-echo  "    git tag -a v0.1.2 -m 'Gap Map v0.1.2'"
+echo  "    git tag -a v0.1.2 -m 'OpenReply v0.1.2'"
 echo  "    git push origin v0.1.2"
 echo
 echo  "  CI will:"
 echo  "    1. Build + sign + notarize mac arm64 + mac x64 + windows"
-echo  "    2. Upload to the gap-map-pro draft release"
+echo  "    2. Upload to the openreply draft release"
 echo  "    3. Publish-public job: rename, rezip, upload to $PUBLIC_REPO,"
 echo  "       apply labels, flip draft → latest"
 echo  ""

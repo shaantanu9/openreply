@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gap Map performance regression harness.
+"""OpenReply performance regression harness.
 
 Walks every major surface (CLI, sidecar daemon, MCP server, graph build,
 palace, YouTube search) and records latency. Compares against the
@@ -42,7 +42,7 @@ from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BASELINE_PATH = REPO_ROOT / "docs" / "PERFORMANCE_BASELINE.json"
-GAPMAP_BIN = REPO_ROOT / ".venv" / "bin" / "gapmap"
+OPENREPLY_BIN = REPO_ROOT / ".venv" / "bin" / "openreply"
 
 # Hard-fail ceilings (from PERFORMANCE_CATALOG.md §2). Any single sample above
 # the corresponding cap → flag as broken regardless of baseline.
@@ -93,7 +93,7 @@ def p99(samples: list[float]) -> float:
 
 def pick_fixture_topics() -> dict[str, str]:
     """Pick a small + medium topic from the live DB (no setup)."""
-    cmd = [str(GAPMAP_BIN), "query",
+    cmd = [str(OPENREPLY_BIN), "query",
            "SELECT topic, COUNT(*) AS n FROM topic_posts GROUP BY topic ORDER BY n",
            "--json"]
     _, out, rc = time_subprocess(cmd, timeout_s=30)
@@ -123,7 +123,7 @@ def bench_cli() -> list[dict]:
         ("palace_stats",      ["research", "palace-stats", "--json"],        "cli_palace_stats"),
         ("palace_model_status",["research","palace-model-status","--json"],  "cli_palace_model_status"),
     ]:
-        cmd = [str(GAPMAP_BIN), *args]
+        cmd = [str(OPENREPLY_BIN), *args]
         # Warmup (so filesystem caches are primed); ignore result
         time_subprocess(cmd, timeout_s=15)
         samples = []
@@ -153,7 +153,7 @@ def bench_mcp() -> list[dict]:
     """Spawn `mcp serve --transport stdio`, do initialize + tools/list + a few
     calls. Measures the whole MCP roundtrip including FastMCP startup."""
     proc = subprocess.Popen(
-        [str(GAPMAP_BIN), "mcp", "serve", "--transport", "stdio"],
+        [str(OPENREPLY_BIN), "mcp", "serve", "--transport", "stdio"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, bufsize=1, cwd=str(REPO_ROOT),
     )
@@ -200,11 +200,11 @@ def bench_mcp() -> list[dict]:
             "ceiling_ms": HARD_CEILINGS_MS["mcp_tools_list"],
         })
 
-        # 3. gapmap_search call (read-only, no LLM)
+        # 3. openreply_search call (read-only, no LLM)
         call_samples = []
         for _ in range(3):
             t0 = time.perf_counter()
-            send("tools/call", {"name":"gapmap_search","arguments":{"query":"context window"}})
+            send("tools/call", {"name":"openreply_search","arguments":{"query":"context window"}})
             recv()
             call_samples.append((time.perf_counter() - t0) * 1000)
         results.append({
@@ -214,11 +214,11 @@ def bench_mcp() -> list[dict]:
             "ceiling_ms": HARD_CEILINGS_MS["mcp_search_call"],
         })
 
-        # 4. gapmap_query_db call (1-row SQL)
+        # 4. openreply_query_db call (1-row SQL)
         q_samples = []
         for _ in range(3):
             t0 = time.perf_counter()
-            send("tools/call", {"name":"gapmap_query_db",
+            send("tools/call", {"name":"openreply_query_db",
                                 "arguments":{"sql":"SELECT COUNT(*) AS n FROM graph_nodes"}})
             recv()
             q_samples.append((time.perf_counter() - t0) * 1000)
@@ -238,7 +238,7 @@ def bench_graph_build(topics: dict[str, str]) -> list[dict]:
     """Time build_structural at small/medium/large topic sizes. Direct
     Python import — no subprocess overhead, isolates the actual SQL cost."""
     sys.path.insert(0, str(REPO_ROOT / "src"))
-    from gapmap.graph.build import build_structural
+    from openreply.graph.build import build_structural
 
     results = []
     for size in ["small", "medium", "large"]:
@@ -267,7 +267,7 @@ def bench_graph_build(topics: dict[str, str]) -> list[dict]:
 def bench_youtube_search() -> list[dict]:
     """Bench YT search via CLI — network-bound, expect 1-5 s. Cap timeout
     high (10s) since slow connections shouldn't fail the suite."""
-    cmd = [str(GAPMAP_BIN), "ingest", "youtube-search",
+    cmd = [str(OPENREPLY_BIN), "ingest", "youtube-search",
            "--query", "AI coding assistant", "--limit", "5", "--json"]
     samples = []
     for _ in range(2):  # only 2 runs — saves YT bandwidth + rate limits
@@ -391,8 +391,8 @@ def main() -> int:
     parser.add_argument("--no-fail", action="store_true")
     args = parser.parse_args()
 
-    if not GAPMAP_BIN.exists():
-        print(f"ERROR: gapmap binary not found at {GAPMAP_BIN}", file=sys.stderr)
+    if not OPENREPLY_BIN.exists():
+        print(f"ERROR: openreply binary not found at {OPENREPLY_BIN}", file=sys.stderr)
         print("  Run `uv sync --all-extras` in repo root first.", file=sys.stderr)
         return 2
 
@@ -402,7 +402,7 @@ def main() -> int:
         if load1 > 5.0:
             print(
                 f"⚠ System load is {load1:.1f} (5+ means contention) — perf numbers will "
-                "be inflated. Consider closing other processes (especially other gapmap "
+                "be inflated. Consider closing other processes (especially other openreply "
                 "instances) before relying on these results.",
                 file=sys.stderr,
             )

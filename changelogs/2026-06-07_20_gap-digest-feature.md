@@ -10,19 +10,19 @@ A scheduled brief that composes everything moving in a topic — top gaps by pai
 ## Changes
 
 - New core module `research/gap_digest.py`: `build_digest(topic, period)` reading cached pain scores, velocity, people-to-reach, and alert events → `{ok, markdown, sections}`.
-- CLI: `gapmap research gap-digest --topic … [--period daily|weekly] [--out file.md]`.
-- MCP: `gapmap_gap_digest(topic, period)` tool.
+- CLI: `openreply research gap-digest --topic … [--period daily|weekly] [--out file.md]`.
+- MCP: `openreply_gap_digest(topic, period)` tool.
 - Tauri: `gap_digest` command (registered), `gapDigest` in `api.js`, new `gap_digest.js` screen routed at `#/digest/<topic>` (period toggle, minimal markdown→HTML renderer, copy-markdown).
 - Tests: `tests/test_gap_digest.py` — 3 tests (sections + markdown, period label, graceful empty). All pass. `cargo check` clean; JS syntax checked.
 
 ## Files Created
 
-- `src/gapmap/research/gap_digest.py`
+- `src/openreply/research/gap_digest.py`
 - `app-tauri/src/screens/gap_digest.js`
 - `tests/test_gap_digest.py`
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py`, `src/gapmap/mcp/server.py`
+- `src/openreply/cli/main.py`, `src/openreply/mcp/server.py`
 - `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`
 - `app-tauri/src/api.js`, `app-tauri/src/main.js`

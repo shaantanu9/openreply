@@ -53,7 +53,7 @@ Outline:
 2. Rust command `export_pdf(topic) -> path` that:
    - Spawns the app in headless mode (or uses `page.pdf()` from playwright)
    - Renders the preview route
-   - Saves to `~/Library/Application Support/gapmap/exports/<topic>-<date>.pdf`
+   - Saves to `~/Library/Application Support/openreply/exports/<topic>-<date>.pdf`
    - Returns the path
 3. Frontend Export dropdown gets a 4th item: "📄 PDF brief" → calls `export_pdf`
    → shows "Saved to <path>" + "Open in Finder" button.

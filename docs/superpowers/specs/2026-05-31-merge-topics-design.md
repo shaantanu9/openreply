@@ -40,7 +40,7 @@ Settings card  ──┘        │              │ invoke('merge_topics', …)
 
 ## Components
 
-### Python — `src/gapmap/research/topic_resolver.py`
+### Python — `src/openreply/research/topic_resolver.py`
 - `merge_topics(source, target, apply=False)` — validates input
   (no empties, no self-merge, source must exist), computes a dry-run
   preview (`posts_to_move`, `duplicate_posts_skipped`, `nodes_to_move`,
@@ -55,7 +55,7 @@ Settings card  ──┘        │              │ invoke('merge_topics', …)
   topic column (all moved).
 - `_topic_keyed_tables`, `_post_count`, `_known_topics` helpers.
 
-### Python CLI — `src/gapmap/cli/main.py`
+### Python CLI — `src/openreply/cli/main.py`
 - `@research_app.command("topic-merge")` with `--source/-s`, `--target/-t`,
   `--apply`, `--json`.
 

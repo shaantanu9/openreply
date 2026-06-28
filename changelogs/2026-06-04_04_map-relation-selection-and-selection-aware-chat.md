@@ -29,9 +29,9 @@ string sent to `start_chat`.
   clicking a relation highlights it + both endpoints and shows an edge-detail
   panel with click-through to either finding.
 - **Selection bridge (iframe → parent):** `selectNodeById` and `selectEdge` now
-  `postMessage({type:'gapmap:select', selection:{…}})` to the host app with the
+  `postMessage({type:'openreply:select', selection:{…}})` to the host app with the
   node/edge + its relations.
-- **Selection-aware Map chat:** `topic.js` listens for `gapmap:select`, stores
+- **Selection-aware Map chat:** `topic.js` listens for `openreply:select`, stores
   the selection, shows a clearable **"Focused on: ‹label› ✕"** chip in the chat
   drawer head, and prepends a concise context preamble (selection + its
   relations) to the question sent to `start_chat`. The chat log still shows only
@@ -41,7 +41,7 @@ string sent to `start_chat`.
 
 ## Files Modified
 
-- `src/gapmap/graph/export.py` — fixed relation-kinds list + `_neighborsOf`
+- `src/openreply/graph/export.py` — fixed relation-kinds list + `_neighborsOf`
   default; added `RELATION_KINDS`, `_selectionPayload`, `_postSelection`,
   edge hit-area layer, `selectEdge`/`highlightEdge`/`showEdgeDetails`, and the
   selection `postMessage` from `selectNodeById`.

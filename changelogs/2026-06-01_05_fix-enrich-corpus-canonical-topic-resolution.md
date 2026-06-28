@@ -53,5 +53,5 @@ deferred to an explicit decision rather than done silently.
 
 ## Files Modified
 
-- `src/gapmap/research/topic_resolver.py` — new `canonical_for_read()` helper.
-- `src/gapmap/research/collect.py` — `corpus_for()` empty-result canonical retry.
+- `src/openreply/research/topic_resolver.py` — new `canonical_for_read()` helper.
+- `src/openreply/research/collect.py` — `corpus_for()` empty-result canonical retry.

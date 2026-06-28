@@ -5,7 +5,7 @@ import { EvidenceArchitecture } from "@/components/marketing/EvidenceArchitectur
 import { CtaSection } from "@/components/marketing/CtaSection";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Features",
+  title: "OpenReply — Features",
 };
 
 export const revalidate = 3600;
@@ -20,7 +20,7 @@ export default function FeaturesPage() {
             Everything your team needs to research faster.
           </h1>
           <p className="mt-4 max-w-[620px] text-[17px] leading-[1.7] text-[var(--muted)]">
-            Gap Map combines data collection, analysis, and decision support
+            OpenReply combines data collection, analysis, and decision support
             into one workflow so teams can move from signal to roadmap in
             hours, not weeks.
           </p>

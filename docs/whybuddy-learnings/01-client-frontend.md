@@ -1,8 +1,8 @@
 # WhyBuddy Client Frontend — Deep Analysis
 
 **Date:** 2026-06-13
-**Source repo:** `/Users/shantanubombatkar/Documents/GitHub/myind-gapmap-ref/WhyBuddy/`
-**Downstream target:** Gap Map — Tauri 2 + vanilla-JS desktop research app
+**Source repo:** `/Users/shantanubombatkar/Documents/GitHub/myind-openreply-ref/WhyBuddy/`
+**Downstream target:** OpenReply — Tauri 2 + vanilla-JS desktop research app
 
 ---
 
@@ -382,7 +382,7 @@ Simple but important pattern: heavy JSON serialization + SHA-256 hashing moved o
 
 `lib/ai-config.ts:15-30` defines `AIConfig` with `mode: "server_proxy" | "browser_direct"` and `wireApi: "responses" | "chat_completions"`. The user can toggle at runtime; settings persist to `localStorage`. `callBrowserLLM` in `lib/browser-llm.ts:93-223` handles both OpenAI Responses API and standard `chat/completions` with timeout, error normalization, and telemetry.
 
-**Directly portable to Gap Map's BYOK LLM system.** Pure fetch, no React dependencies.
+**Directly portable to OpenReply's BYOK LLM system.** Pure fetch, no React dependencies.
 
 ### B. xterm.js incremental write pattern
 
@@ -411,7 +411,7 @@ Uses `dagre` for auto-layout of the reasoning flow. Renders nodes as HTML `<div>
 
 `i18n/messages.ts` uses nested object with string and function leaves. Functions cover parameterized strings: `description: (progress: number) => \`...\``. `useI18n()` hook returns memoized `copy` object. Toggle between two locales at runtime without page reload.
 
-**Portable to Gap Map:** The `getMessages(locale)` function and `useI18n` pattern translates cleanly to a vanilla-JS module. No React dependency in `messages.ts` itself.
+**Portable to OpenReply:** The `getMessages(locale)` function and `useI18n` pattern translates cleanly to a vanilla-JS module. No React dependency in `messages.ts` itself.
 
 ### G. `useSyncExternalStore` viewport tier
 
@@ -419,7 +419,7 @@ Uses `dagre` for auto-layout of the reasoning flow. Renders nodes as HTML `<div>
 
 ### H. Web Worker SHA-256 off main thread
 
-`workers/snapshot-worker.ts` — pattern: serialize large JSON + compute hash in worker, keep 3D thread smooth. Simple `postMessage` protocol. Easily replicable for any expensive serialization in Gap Map.
+`workers/snapshot-worker.ts` — pattern: serialize large JSON + compute hash in worker, keep 3D thread smooth. Simple `postMessage` protocol. Easily replicable for any expensive serialization in OpenReply.
 
 ### I. UE5 overlay via pointer-events layering
 
@@ -439,9 +439,9 @@ Uses `dagre` for auto-layout of the reasoning flow. Renders nodes as HTML `<div>
 
 ---
 
-## 6. Port to Gap Map — Concrete Items
+## 6. Port to OpenReply — Concrete Items
 
-Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX, Zustand) need vanilla translation. Items tagged React→Vanilla translation cost (Easy = drop-in module, Medium = rewrite without hooks, Hard = full reimplementation without framework).
+OpenReply is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX, Zustand) need vanilla translation. Items tagged React→Vanilla translation cost (Easy = drop-in module, Medium = rewrite without hooks, Hard = full reimplementation without framework).
 
 ---
 
@@ -450,21 +450,21 @@ Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX,
 **Source:** `lib/ai-config.ts`, `lib/browser-llm.ts`, `components/ConfigPanel.tsx`
 **Effort:** S
 **Value:** H
-**React→Vanilla:** Easy — `ai-config.ts` and `browser-llm.ts` have zero React dependencies. Copy them verbatim. Build a vanilla form that reads/writes `localStorage` under a versioned key (`gap-map.ai-settings.v1`). Gap Map's existing BYOK is basic; this adds wire API switching, reasoning effort, router model separation, and proxy URL which are all valuable for multi-provider support.
+**React→Vanilla:** Easy — `ai-config.ts` and `browser-llm.ts` have zero React dependencies. Copy them verbatim. Build a vanilla form that reads/writes `localStorage` under a versioned key (`openreply-map.ai-settings.v1`). OpenReply's existing BYOK is basic; this adds wire API switching, reasoning effort, router model separation, and proxy URL which are all valuable for multi-provider support.
 
 ---
 
 ### 6.2 d3-force Knowledge Graph Panel
-**Description:** Interactive SVG force-directed graph for Gap Map's knowledge graph display. Node color by type, radius by degree, search highlight + auto-zoom, shift-drag box select, zoom/pan, click to inspect node, double-click to expand neighbors.
+**Description:** Interactive SVG force-directed graph for OpenReply's knowledge graph display. Node color by type, radius by degree, search highlight + auto-zoom, shift-drag box select, zoom/pan, click to inspect node, double-click to expand neighbors.
 **Source:** `components/knowledge/KnowledgeGraphPanel.tsx` (350 lines, standalone)
 **Effort:** S
 **Value:** H
-**React→Vanilla:** Easy — the entire component is a `useEffect` that runs d3 on an `<svg ref>`. Strip React: replace `useRef` with `document.querySelector`, replace `useEffect` with a `renderKnowledgeGraph(svgEl, nodes, edges, searchTerm)` function. No React-specific logic inside the d3 imperative block. Gap Map already has a graph store; this gives it a proper interactive visualization.
+**React→Vanilla:** Easy — the entire component is a `useEffect` that runs d3 on an `<svg ref>`. Strip React: replace `useRef` with `document.querySelector`, replace `useEffect` with a `renderKnowledgeGraph(svgEl, nodes, edges, searchTerm)` function. No React-specific logic inside the d3 imperative block. OpenReply already has a graph store; this gives it a proper interactive visualization.
 
 ---
 
 ### 6.3 dagre Reasoning Flow Canvas
-**Description:** Infinite 2D canvas showing reasoning/gap nodes as HTML cards connected by SVG Bezier edges, with LR dagre layout. Pan/zoom via CSS transform, minimap, hover path highlighting. For Gap Map: show the research gap graph or paper citation network.
+**Description:** Infinite 2D canvas showing reasoning/gap nodes as HTML cards connected by SVG Bezier edges, with LR dagre layout. Pan/zoom via CSS transform, minimap, hover path highlighting. For OpenReply: show the research gap graph or paper citation network.
 **Source:** `components/autopilot/ReasoningFlowSurface.tsx` (48 KB)
 **Effort:** L
 **Value:** H
@@ -473,11 +473,11 @@ Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX,
 ---
 
 ### 6.4 Streaming Agent Live-Log Panel
-**Description:** A scrolling log panel that streams agent execution events in real time. Uses bounded queue (≤200 entries), incremental append, status color coding (running/completed/error). Equivalent to Gap Map's research pipeline progress display.
+**Description:** A scrolling log panel that streams agent execution events in real time. Uses bounded queue (≤200 entries), incremental append, status color coding (running/completed/error). Equivalent to OpenReply's research pipeline progress display.
 **Source:** `components/tasks/BlueprintLogStream.tsx` (4 KB), `blueprint-realtime-store.ts` (bounded queue pattern)
 **Effort:** S
 **Value:** H
-**React→Vanilla:** Easy — the bounded queue pattern (`logEntries.slice(-200)`) and status badge coloring are pure logic. The log panel itself is a scrolling `<div>` with appended rows. Gap Map already has a log display area; add the 200-entry FIFO cap and the incremental-write watermark from `TerminalPreview` to prevent full re-render on each event.
+**React→Vanilla:** Easy — the bounded queue pattern (`logEntries.slice(-200)`) and status badge coloring are pure logic. The log panel itself is a scrolling `<div>` with appended rows. OpenReply already has a log display area; add the 200-entry FIFO cap and the incremental-write watermark from `TerminalPreview` to prevent full re-render on each event.
 
 ---
 
@@ -486,7 +486,7 @@ Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX,
 **Source:** `components/sandbox/TerminalPreview.tsx` (12 KB)
 **Effort:** M
 **Value:** M
-**React→Vanilla:** Medium — xterm.js itself is framework-agnostic. The watermark write pattern is pure JS. Strip the React wrapper, initialize `Terminal` on mount, expose `appendLines(lines)` and `clear()` methods. Gap Map's Python sidecar outputs logs that currently go to a simple `<pre>` — replacing with xterm gives real ANSI color support and scroll buffer.
+**React→Vanilla:** Medium — xterm.js itself is framework-agnostic. The watermark write pattern is pure JS. Strip the React wrapper, initialize `Terminal` on mount, expose `appendLines(lines)` and `clear()` methods. OpenReply's Python sidecar outputs logs that currently go to a simple `<pre>` — replacing with xterm gives real ANSI color support and scroll buffer.
 
 ---
 
@@ -495,12 +495,12 @@ Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX,
 **Source:** `i18n/messages.ts`, `i18n/index.ts`
 **Effort:** S
 **Value:** M
-**React→Vanilla:** Easy — `messages.ts` has no React dependency. Copy the structure, replace `useI18n()` hook with a simple module-level `getI18n()` function that returns `{ copy: getMessages(locale), locale, setLocale }` and dispatches a `'locale-changed'` custom event for components to subscribe. Gap Map currently has no i18n.
+**React→Vanilla:** Easy — `messages.ts` has no React dependency. Copy the structure, replace `useI18n()` hook with a simple module-level `getI18n()` function that returns `{ copy: getMessages(locale), locale, setLocale }` and dispatches a `'locale-changed'` custom event for components to subscribe. OpenReply currently has no i18n.
 
 ---
 
 ### 6.7 LLM Cost Tracking Dashboard
-**Description:** Per-session token count + cost tracking. PieChart by agent, LineChart trend, budget alert banner, budget input control. Useful for Gap Map's BYOK users to see spending.
+**Description:** Per-session token count + cost tracking. PieChart by agent, LineChart trend, budget alert banner, budget input control. Useful for OpenReply's BYOK users to see spending.
 **Source:** `components/CostDashboard.tsx` (17 KB), `lib/cost-store.ts`, `lib/browser-telemetry-store.ts`
 **Effort:** M
 **Value:** M
@@ -518,16 +518,16 @@ Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX,
 ---
 
 ### 6.9 Session Export / Import
-**Description:** Export full session state to a JSON bundle. Import to restore. Useful for Gap Map research sessions: export a topic's collected papers, personas, gap map, LLM config to a single file.
+**Description:** Export full session state to a JSON bundle. Import to restore. Useful for OpenReply research sessions: export a topic's collected papers, personas, gap map, LLM config to a single file.
 **Source:** `lib/session-export.ts` (4 KB), `lib/browser-runtime-sync.ts` (5 KB)
 **Effort:** S
 **Value:** M
-**React→Vanilla:** Easy — both files are plain TypeScript with no React. `exportSession()` / `importSession()` serialize and deserialize IndexedDB + localStorage state to JSON. Gap Map can adapt this for SQLite + localStorage state export.
+**React→Vanilla:** Easy — both files are plain TypeScript with no React. `exportSession()` / `importSession()` serialize and deserialize IndexedDB + localStorage state to JSON. OpenReply can adapt this for SQLite + localStorage state export.
 
 ---
 
 ### 6.10 Persona / Agent Role Card System
-**Description:** Role cards showing status (idle / thinking / acting / done), assigned persona, current task summary, confidence indicator. Used in Gap Map's persona system to show which persona is currently running and what it found.
+**Description:** Role cards showing status (idle / thinking / acting / done), assigned persona, current task summary, confidence indicator. Used in OpenReply's persona system to show which persona is currently running and what it found.
 **Source:** `components/tasks/FleetCard.tsx` (4 KB), `components/tasks/AutopilotFleetLiveView.tsx` (10 KB), `lib/role-store.ts`
 **Effort:** M
 **Value:** H
@@ -540,16 +540,16 @@ Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX,
 **Source:** `vite.config.ts:77-149`
 **Effort:** S
 **Value:** L (dev-only)
-**React→Vanilla:** Easy — the plugin is pure Node.js Vite plugin code. Zero UI framework dependency. Drop directly into Gap Map's `vite.config.ts`.
+**React→Vanilla:** Easy — the plugin is pure Node.js Vite plugin code. Zero UI framework dependency. Drop directly into OpenReply's `vite.config.ts`.
 
 ---
 
 ### 6.12 Custom DOM Event Bus
-**Description:** Decouple cross-panel navigation with `CustomEvent` dispatch on `window`. No shared store needed. E.g., a paper card in the graph panel clicking "show in detail panel" dispatches `CustomEvent('gap-map:show-paper', { detail: { paperId } })`.
+**Description:** Decouple cross-panel navigation with `CustomEvent` dispatch on `window`. No shared store needed. E.g., a paper card in the graph panel clicking "show in detail panel" dispatches `CustomEvent('openreply-map:show-paper', { detail: { paperId } })`.
 **Source:** `lib/navigation-events.ts`
 **Effort:** S
 **Value:** M
-**React→Vanilla:** Easy — this is already vanilla-JS-compatible. The pattern is to define typed event names as constants and use `window.dispatchEvent` / `window.addEventListener`. Gap Map's panel communication currently relies on direct function calls; moving to events enables future panel reordering.
+**React→Vanilla:** Easy — this is already vanilla-JS-compatible. The pattern is to define typed event names as constants and use `window.dispatchEvent` / `window.addEventListener`. OpenReply's panel communication currently relies on direct function calls; moving to events enables future panel reordering.
 
 ---
 
@@ -570,7 +570,7 @@ Gap Map is Tauri 2 + vanilla JS (no React). React-specific patterns (hooks, JSX,
 | 6.12 | DOM Event Bus | S | M | Easy |
 | 6.11 | Vite Debug Collector | S | L | Easy |
 
-**Recommended first wave:** 6.1 + 6.2 + 6.4 + 6.12 — all Easy translations, together they give Gap Map interactive graph visualization, improved BYOK config, streaming log panel, and clean cross-panel messaging. Estimated 2-3 days total.
+**Recommended first wave:** 6.1 + 6.2 + 6.4 + 6.12 — all Easy translations, together they give OpenReply interactive graph visualization, improved BYOK config, streaming log panel, and clean cross-panel messaging. Estimated 2-3 days total.
 
 **Second wave:** 6.10 + 6.9 + 6.6 — persona cards, session export, i18n scaffolding.
 

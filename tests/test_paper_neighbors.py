@@ -1,9 +1,9 @@
 import pytest
-from gapmap.retrieval import palace
+from openreply.retrieval import palace
 
 @pytest.mark.skipif(not palace.is_available(), reason="chromadb not installed")
 def test_neighbors_excludes_self_and_ranks(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
     palace.drop_caches() if hasattr(palace, "drop_caches") else None
     def chunks(pid, text):
         return [{"id": f"{pid}#sec=abstract#ord=0", "post_id": pid,

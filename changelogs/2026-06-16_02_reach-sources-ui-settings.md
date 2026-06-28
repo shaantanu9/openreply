@@ -31,7 +31,7 @@ cookie to Jina so login-gated LinkedIn pages read too.
 
 ## Coverage note
 
-GitHub / RSS / YouTube were intentionally NOT re-added from Agent Reach — Gap Map
+GitHub / RSS / YouTube were intentionally NOT re-added from Agent Reach — OpenReply
 already has full native equivalents, so duplicating them would only add UI
 clutter. Audio→text transcription (Xiaoyuzhou podcasts, Bilibili subtitles) and
 LinkedIn deep profile/company search remain follow-ups: they need heavy deps
@@ -40,5 +40,5 @@ LinkedIn deep profile/company search remain follow-ups: they need heavy deps
 ## Files Modified
 
 - `app-tauri/src/screens/{topic,collect,settings,reachConnections}.js`
-- `src/gapmap/sources/{web_reader,linkedin}.py`
+- `src/openreply/sources/{web_reader,linkedin}.py`
 - `tests/test_linkedin.py`

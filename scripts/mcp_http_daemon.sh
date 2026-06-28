@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mcp_http_daemon.sh — start/stop/status for the gapmap MCP server in
+# mcp_http_daemon.sh — start/stop/status for the openreply MCP server in
 # HTTP transport mode. Cursor's stdio MCP client cycles servers every ~5 min,
 # which kills any in-flight long tool call. HTTP transport sidesteps this:
 # Cursor reconnects without ever signalling the server.
@@ -15,11 +15,11 @@
 
 set -u
 
-PROJECT_DIR="${GAPMAP_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
-DATA_DIR="${GAPMAP_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.gapmap/gapmap}"
-PORT="${GAPMAP_HTTP_PORT:-8765}"
-HOST="${GAPMAP_HTTP_HOST:-127.0.0.1}"
-BIN="$PROJECT_DIR/.venv/bin/gapmap"
+PROJECT_DIR="${OPENREPLY_PROJECT_DIR:-$HOME/Documents/GitHub/reddit-myind}"
+DATA_DIR="${OPENREPLY_DATA_DIR:-$HOME/Library/Application Support/com.shantanu.openreply/openreply}"
+PORT="${OPENREPLY_HTTP_PORT:-8765}"
+HOST="${OPENREPLY_HTTP_HOST:-127.0.0.1}"
+BIN="$PROJECT_DIR/.venv/bin/openreply"
 LOG_DIR="$DATA_DIR/logs"
 LOG_FILE="$LOG_DIR/mcp-http.stderr.log"
 PID_FILE="$DATA_DIR/mcp-http.pid"
@@ -49,12 +49,12 @@ cmd_start() {
   [ -f "$TOKEN_FILE" ] && TOKEN=$(cat "$TOKEN_FILE")
   # Export env (instead of inlining before nohup) so $! captures the actual
   # nohup-detached child reliably across bash + zsh.
-  export GAPMAP_DATA_DIR="$DATA_DIR"
-  export GAPMAP_TOKEN="$TOKEN"
-  export GAPMAP_PALACE_EAGER=1
+  export OPENREPLY_DATA_DIR="$DATA_DIR"
+  export OPENREPLY_TOKEN="$TOKEN"
+  export OPENREPLY_PALACE_EAGER=1
   export MCP_TAKEOVER_STALE_LOCK=1
   export MCP_CLIENT_TAG=http-daemon
-  export GAPMAP_NO_IDLE_GUARD=1
+  export OPENREPLY_NO_IDLE_GUARD=1
   nohup "$BIN" mcp serve --transport http --host "$HOST" --port "$PORT" \
     >>"$LOG_FILE" 2>&1 &
   PID=$!

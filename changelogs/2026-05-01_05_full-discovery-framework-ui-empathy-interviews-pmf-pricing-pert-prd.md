@@ -6,7 +6,7 @@
 ## Summary
 
 Wired every still-missing surface from the resumeforge product-discovery
-guide into Gap Map. Eight new operational tools — one per phase that had
+guide into OpenReply. Eight new operational tools — one per phase that had
 either backend-only support or no support at all — landing as new screens,
 new product-dashboard panels, or new database-backed CRUD pipelines.
 

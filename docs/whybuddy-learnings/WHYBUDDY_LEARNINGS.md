@@ -1,9 +1,9 @@
 # WhyBuddy — Deep Learnings (master index)
 
-> **Source repo:** `/Users/shantanubombatkar/Documents/GitHub/myind-gapmap-ref/WhyBuddy`
-> **Produced:** 2026-06-13 · **For:** mining features to port into **Gap Map** (`reddit-myind`, a Tauri 2 + Python desktop research app).
+> **Source repo:** `/Users/shantanubombatkar/Documents/GitHub/myind-openreply-ref/WhyBuddy`
+> **Produced:** 2026-06-13 · **For:** mining features to port into **OpenReply** (`reddit-myind`, a Tauri 2 + Python desktop research app).
 > **How this was produced:** `codegraph index` (2,576 files · 33,808 nodes · 31,232 edges) + `graphify` + 6 parallel subsystem-analysis agents reading the repo's source, tests, and docs (`README`, `ROADMAP`, 72KB `codeflow-report.md`, `.kiro` specs). rtk compressed all shell reads.
-> **Status:** Analysis complete. **Next step (not yet done):** triage the "Port to Gap Map" backlog below and implement the chosen items.
+> **Status:** Analysis complete. **Next step (not yet done):** triage the "Port to OpenReply" backlog below and implement the chosen items.
 
 This file is the entry point. The deep detail lives in 6 sibling section files (3,380 lines total) — each covers one subsystem with per-file purpose, key functions, core logic/algorithms, data flow, and portability notes:
 
@@ -22,7 +22,7 @@ This file is the entry point. The deep detail lives in 6 sibling section files (
 
 An **AI "product rehearsal" engine**: the user types one sentence describing a product/feature idea, and a fleet of role-specialized LLM agents produces, in ~5 minutes, a complete **SPEC package** — requirements, design, task breakdown, architecture diagram, UI mockups, a requirement↔design↔task↔evidence↔test **traceability matrix**, and a prompt pack — with a **cryptographic evidence trail** (every quality gate records the real script it ran + exit code + output). Agents are visible as characters in a 3D office scene (Three.js / optional UE5 pixel-streaming) for real-time observability, and humans can take over at defined "Takeover Points" (L1–L5 autopilot levels).
 
-It is, in essence, a **governed multi-agent orchestration platform** with strong provenance, planning, and human-in-the-loop primitives — which is exactly the layer Gap Map is thinnest on.
+It is, in essence, a **governed multi-agent orchestration platform** with strong provenance, planning, and human-in-the-loop primitives — which is exactly the layer OpenReply is thinnest on.
 
 ## 2. Architecture at a glance
 
@@ -70,12 +70,12 @@ UE5 (optional)                                  ← Pixel Streaming 3D observabi
 
 ---
 
-## 5. Master "Port to Gap Map" backlog (consolidated & deduped)
+## 5. Master "Port to OpenReply" backlog (consolidated & deduped)
 
-Aggregated from all 6 agents. Gap Map already has: a strong multi-source collect pipeline, SQLite knowledge graph, personas, paper research, an MCP server (~150 tools), and a BYOK multi-LLM resolver. So the highest-value ports are the **orchestration / provenance / governance meta-layer** WhyBuddy excels at — not re-implementing collection or graphs.
+Aggregated from all 6 agents. OpenReply already has: a strong multi-source collect pipeline, SQLite knowledge graph, personas, paper research, an MCP server (~150 tools), and a BYOK multi-LLM resolver. So the highest-value ports are the **orchestration / provenance / governance meta-layer** WhyBuddy excels at — not re-implementing collection or graphs.
 
 ### Wave 1 — quick wins (effort S, value High) — do these first
-| Item | Why for Gap Map | Source §|
+| Item | Why for OpenReply | Source §|
 |---|---|---|
 | **Provenance labels on generated artifacts** (`llm` / `llm_fallback` / `template`) | Every LLM-written graph node / gap / persona becomes auditable; one new column + write-path tag | 00, 02 |
 | **Checks ledger** (SQLite table: which script ran, LLM output, invariant checked, exit code) | Turns "trust me" outputs into verifiable ones | 00 |
@@ -89,7 +89,7 @@ Aggregated from all 6 agents. Gap Map already has: a strong multi-source collect
 | **Artifact-manifest convention** for MCP tool results (so the UI renders them richly) | Standardizes how the frontend displays tool output | 05 |
 
 ### Wave 2 — high-value, medium effort
-| Item | Why for Gap Map | Source §|
+| Item | Why for OpenReply | Source §|
 |---|---|---|
 | **Clarification gate before a research run** (blocking/non-blocking Qs → clarified brief) | Dramatically better results on ambiguous topics; avoids burning budget | 00, 02, 04 |
 | **Invariant guard for the SQLite knowledge graph** (unique root, no cycles, parent-reachable, max depth) | Structural validation as a post-write pass | 00 |
@@ -107,17 +107,17 @@ Aggregated from all 6 agents. Gap Map already has: a strong multi-source collect
 | Item | Note | Source §|
 |---|---|---|
 | **Companion Critic role** (auto-review gap claims for weak evidence / overconfidence) | Credibility without per-claim human review | 00 |
-| **Autopilot L1–L5 formalization** (plan → approve-each-stage → full-auto) | Replace Gap Map's all-or-nothing execution | 00 |
-| **Agent/pipeline reputation** (5-dim EMA → auto-pick best pipeline per topic) | Only if Gap Map adds multiple research pipelines | 00, 02 |
-| **A2A JSON-RPC envelope** | If Gap Map's MCP server is called by other agents | 00 |
-| **Package Gap Map's research pipeline as a standalone skill** (`.zip`, host-agnostic) | Distribution play | 00, 05 |
+| **Autopilot L1–L5 formalization** (plan → approve-each-stage → full-auto) | Replace OpenReply's all-or-nothing execution | 00 |
+| **Agent/pipeline reputation** (5-dim EMA → auto-pick best pipeline per topic) | Only if OpenReply adds multiple research pipelines | 00, 02 |
+| **A2A JSON-RPC envelope** | If OpenReply's MCP server is called by other agents | 00 |
+| **Package OpenReply's research pipeline as a standalone skill** (`.zip`, host-agnostic) | Distribution play | 00, 05 |
 | **Prompt-skill versioning + canary routing** for research prompts | A/B prompt improvements safely | 05 |
 
-### Client-side (note: Gap Map UI is **vanilla JS**, WhyBuddy is React — translation cost flagged)
+### Client-side (note: OpenReply UI is **vanilla JS**, WhyBuddy is React — translation cost flagged)
 | Item | Translation | Source §|
 |---|---|---|
-| **d3-force + dagre knowledge-graph render** | The d3 code is framework-agnostic — drops into Gap Map's canvas (S) | 01 |
-| **BYOK key config panel pattern** (key in store → direct provider `fetch`) | Maps onto Gap Map's existing BYOK; minimal (S) | 01 |
+| **d3-force + dagre knowledge-graph render** | The d3 code is framework-agnostic — drops into OpenReply's canvas (S) | 01 |
+| **BYOK key config panel pattern** (key in store → direct provider `fetch`) | Maps onto OpenReply's existing BYOK; minimal (S) | 01 |
 | **Streaming agent-log panel** + **xterm.js** live stdout | Straightforward vanilla port (S–M) | 01 |
 | **DOM event bus** for cross-component routing | Directly portable, no React (S) | 01 |
 | **Web-worker SHA-256 snapshot hashing** | Portable as-is (S) | 01 |
@@ -127,13 +127,13 @@ Aggregated from all 6 agents. Gap Map already has: a strong multi-source collect
 
 ## 6. Honest overlap assessment
 
-Gap Map's *per-component* quality (collection, SQLite graph, personas, papers, BYOK resolver, MCP) is comparable to WhyBuddy's. The genuine gap is the **orchestration meta-layer**: clarification → NL decomposition → parallel governed execution → provenance/lineage → human-in-the-loop course-correction → replay. Prioritize that layer; do **not** re-implement WhyBuddy's collection, graph, or LLM-abstraction from scratch.
+OpenReply's *per-component* quality (collection, SQLite graph, personas, papers, BYOK resolver, MCP) is comparable to WhyBuddy's. The genuine gap is the **orchestration meta-layer**: clarification → NL decomposition → parallel governed execution → provenance/lineage → human-in-the-loop course-correction → replay. Prioritize that layer; do **not** re-implement WhyBuddy's collection, graph, or LLM-abstraction from scratch.
 
 ## 7. Knowledge-graph artifacts (for follow-up queries on WhyBuddy)
 
-- CodeGraph index: `myind-gapmap-ref/WhyBuddy/.codegraph/` (2,576 files indexed) — use `codegraph_search` / `codegraph_explore` against that repo.
-- Graphify graph: `myind-gapmap-ref/WhyBuddy/graphify-out/` (build was finishing at write time) — `graphify query "<q>"` from that dir.
+- CodeGraph index: `myind-openreply-ref/WhyBuddy/.codegraph/` (2,576 files indexed) — use `codegraph_search` / `codegraph_explore` against that repo.
+- Graphify graph: `myind-openreply-ref/WhyBuddy/graphify-out/` (build was finishing at write time) — `graphify query "<q>"` from that dir.
 
 ## 8. Next step
 
-Review Wave 1 + the Wave 2 items you care about, pick the set to implement, and we'll spec → plan → build each into Gap Map (same workflow we used for the source layer). My recommendation: start with **provenance labels + checks ledger + lineage + clarification gate**, since together they make every existing Gap Map output auditable and higher-quality with modest effort.
+Review Wave 1 + the Wave 2 items you care about, pick the set to implement, and we'll spec → plan → build each into OpenReply (same workflow we used for the source layer). My recommendation: start with **provenance labels + checks ledger + lineage + clarification gate**, since together they make every existing OpenReply output auditable and higher-quality with modest effort.

@@ -130,7 +130,7 @@ export function ActivateTab(props: {
             <div className="mt-3 flex flex-col gap-2 rounded-[10px] border border-[rgba(224,123,60,0.3)] bg-[var(--orange-pale)] px-[14px] py-[10px] sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[12.5px] leading-[1.5] text-[var(--text)]">
                 <strong className="font-medium text-[var(--dark)]">Free key, free app.</strong>{" "}
-                If Gap Map helps you, a GitHub star is the nicest way to say thanks 💛
+                If OpenReply helps you, a GitHub star is the nicest way to say thanks 💛
               </p>
               <a
                 href={GITHUB.url}
@@ -200,7 +200,7 @@ export function ActivateTab(props: {
       <Step index={3} title="Open the app & paste your key" state={step3}>
         <div className="rounded-[12px] border border-[var(--border)] bg-[var(--cream-mid)] p-4">
           <ol className="ml-4 grid list-decimal gap-[7px] text-[12.5px] leading-[1.5] text-[var(--text)]">
-            <li>Open the Gap Map desktop app on your Mac.</li>
+            <li>Open the OpenReply desktop app on your Mac.</li>
             <li>
               Sign in with the same email
               {email ? (
@@ -229,7 +229,7 @@ export function ActivateTab(props: {
             onClick={props.openDesktopApp}
             className="inline-flex items-center gap-2 rounded-[9px] border border-[var(--orange)] bg-[var(--orange)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--orange-hover)]"
           >
-            Open Gap Map app
+            Open OpenReply app
           </button>
           <button
             type="button"

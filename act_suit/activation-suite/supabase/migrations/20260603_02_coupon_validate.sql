@@ -49,5 +49,5 @@ grant execute on function public.validate_coupon(text) to anon, authenticated, s
 
 -- Seed the founding-beta invite (idempotent). 100 seats, pro plan, 2 devices.
 insert into public.coupons (code, plan_id, max_redemptions, license_max_devices, note)
-  values ('GAPMAP-BETA-2026', 'pro', 100, 2, 'Founding beta cohort — invite-only FOMO gate')
+  values ('OPENREPLY-BETA-2026', 'pro', 100, 2, 'Founding beta cohort — invite-only FOMO gate')
   on conflict (code) do nothing;

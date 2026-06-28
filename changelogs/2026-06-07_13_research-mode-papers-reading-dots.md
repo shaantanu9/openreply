@@ -28,6 +28,6 @@ table re-render, no interactive mutation.
 - `changelogs/2026-06-07_13_research-mode-papers-reading-dots.md`
 
 ## Files Modified
-- `src/gapmap/cli/main.py`, `app-tauri/src-tauri/src/commands.rs`,
+- `src/openreply/cli/main.py`, `app-tauri/src-tauri/src/commands.rs`,
   `app-tauri/src-tauri/src/main.rs`, `app-tauri/src/api.js`,
   `app-tauri/src/screens/papers.js`

@@ -47,8 +47,8 @@ free/anonymous path — and stale, unreplyable threads outranked timely ones.
 
 ## Files Modified
 
-- `src/gapmap/sources/reddit_free.py`
-- `src/gapmap/reply/opportunity.py`
+- `src/openreply/sources/reddit_free.py`
+- `src/openreply/reply/opportunity.py`
 - `tests/test_reddit_free.py`
 
 ## Files Created

@@ -1,8 +1,8 @@
 # WhyBuddy Server — Backend Architecture Analysis
 
-**Purpose:** Reference document for porting valuable backend patterns to Gap Map (Tauri 2 + Python sidecar, SQLite, multi-source collection, knowledge graph, MCP server).
+**Purpose:** Reference document for porting valuable backend patterns to OpenReply (Tauri 2 + Python sidecar, SQLite, multi-source collection, knowledge graph, MCP server).
 
-**Source:** `/myind-gapmap-ref/WhyBuddy/server/`
+**Source:** `/myind-openreply-ref/WhyBuddy/server/`
 **Analyzed:** 2026-06-13
 
 ---
@@ -442,56 +442,56 @@ Mission status = "done", artifacts attached
 
 FNV-1a variant for token hashing, feature hashing into fixed dimension (96), TF weighting, L2-normalize. Achieves semantic similarity at zero cost. Adequate for per-agent session summaries (hundreds of records). Not adequate for large cross-mission corpora.
 
-**Port signal:** For Gap Map's paper similarity, this pattern can produce fast local embeddings for abstract/title matching before calling external embedders.
+**Port signal:** For OpenReply's paper similarity, this pattern can produce fast local embeddings for abstract/title matching before calling external embedders.
 
 ### 5.2 Reciprocal Rank Fusion (Hybrid Retrieval)
 **File:** `rag/retrieval/rrf-merger.ts`
 
 `score = 1/(k + rank)` where k=60. Merges ANN vector results with BM25 keyword results. Standard, proven, no hyperparameter tuning needed.
 
-**Port signal:** Directly applicable to Gap Map's hybrid paper search (semantic + keyword over title/abstract/venue).
+**Port signal:** Directly applicable to OpenReply's hybrid paper search (semantic + keyword over title/abstract/venue).
 
 ### 5.3 Kahn's BFS Topo Sort with Parallel Groups
 **File:** `core/nl-command/topo-sort.ts:41-100`
 
 Builds `string[][]` parallel execution groups — inner array = nodes runnable concurrently, outer = sequential stages. Detects cycles with DFS-traced `CyclicDependencyError` including cycle path. Deterministic (queue.sort()).
 
-**Port signal:** Gap Map's paper pipeline could use this for dependency ordering when papers build on each other (citation chains → execution order for analysis tasks).
+**Port signal:** OpenReply's paper pipeline could use this for dependency ordering when papers build on each other (citation chains → execution order for analysis tasks).
 
 ### 5.4 Lineage Provenance — JSONL + Multi-Index
 **File:** `lineage/lineage-store.ts`
 
 Append-only JSONL for writes (fast), five in-memory indices rebuilt on load. Binary insert keeps `byTimestamp` sorted for O(log n) range queries. Purge rewrites files. Three node types encode the full data flow: source → transformation → decision.
 
-**Port signal:** Gap Map needs data provenance ("where did this finding come from?"). The `recordSource(sourceId, queryText, resultHash)` + `recordTransformation(agentId, operation, inputLineageIds[])` pattern is directly applicable to paper collection → enrichment → graph insertion chains.
+**Port signal:** OpenReply needs data provenance ("where did this finding come from?"). The `recordSource(sourceId, queryText, resultHash)` + `recordTransformation(agentId, operation, inputLineageIds[])` pattern is directly applicable to paper collection → enrichment → graph insertion chains.
 
 ### 5.5 Audit Chain — ECDSA Signed Hash Chain
 **File:** `audit/audit-chain.ts`
 
 Entry N hash = `SHA256(event_json + "|" + timestamp + "|" + prev_hash + "|" + nonce)`. Signed with ECDSA-P256. Tamper-evident: any modification breaks the chain. Key auto-generation with env-var override.
 
-**Port signal:** For Gap Map, a simpler unsigned hash chain (just SHA256 chain, no signatures) would suffice for "audit who ran what research when" — skip the key management overhead.
+**Port signal:** For OpenReply, a simpler unsigned hash chain (just SHA256 chain, no signatures) would suffice for "audit who ran what research when" — skip the key management overhead.
 
 ### 5.6 Buffer + Timer Batch Flush Pattern
 **Files:** `lineage/lineage-collector.ts`, `replay/event-collector.ts`
 
 Both use: in-memory buffer (100-1000 entries), periodic flush (500-1000ms), overflow policy (drop oldest / retry queue), async write that never throws to caller. Pattern is identical across lineage and replay.
 
-**Port signal:** Gap Map's collect pipeline could buffer paper enrichment writes (embedding generation results) and flush to SQLite in batches rather than per-paper.
+**Port signal:** OpenReply's collect pipeline could buffer paper enrichment writes (embedding generation results) and flush to SQLite in batches rather than per-paper.
 
 ### 5.7 Permission: Deny-First LRU-Cached JWT Matrix
 **File:** `permission/check-engine.ts`
 
 Token carries the full permission matrix. Check order: deny rules first (highest priority), then allow rules, then constraint validators, then governance policy. LRU cache at 10K entries, 60s TTL, invalidation by agent prefix. Governance policy can block even explicit allows.
 
-**Port signal:** For Gap Map's MCP server, a simplified version — capability tokens with deny-first rules and a small LRU cache — would prevent agents from accessing arbitrary filesystem paths.
+**Port signal:** For OpenReply's MCP server, a simplified version — capability tokens with deny-first rules and a small LRU cache — would prevent agents from accessing arbitrary filesystem paths.
 
 ### 5.8 Reputation via EMA + Streak Acceleration
 **File:** `core/reputation/reputation-calculator.ts`
 
 Weighted EMA per dimension. Streak bonus multiplies the learning rate (alpha), so agents on a streak adapt faster. Speed and efficiency dimensions use `ratioToScore()` which maps latency/token ratios to [0, 1000] — linear in the 1.0-2.0 ratio range.
 
-**Port signal:** Gap Map's personas could have lightweight reputation dimensions (coverage, citation quality, dedup rate) to route future research to better-performing sources/methods.
+**Port signal:** OpenReply's personas could have lightweight reputation dimensions (coverage, citation quality, dedup rate) to route future research to better-performing sources/methods.
 
 ### 5.9 NL→Mission: Two-LLM Decomposition
 **File:** `core/nl-command/mission-decomposer.ts`
@@ -503,47 +503,47 @@ Then: topo sort → parallel groups → callback notification per mission.
 
 Handles cyclic deps gracefully — records to audit trail before re-throwing.
 
-**Port signal:** Gap Map could use this pattern for complex research questions: "decompose 'understand CRISPR applications' into sub-missions (literature survey, patent landscape, clinical trials), identify which needs to complete first, run in parallel groups."
+**Port signal:** OpenReply could use this pattern for complex research questions: "decompose 'understand CRISPR applications' into sub-missions (literature survey, patent landscape, clinical trials), identify which needs to complete first, run in parallel groups."
 
 ### 5.10 Graph: Debounced Persistence + Merge-on-Write
 **File:** `knowledge/graph-store.ts`
 
 1000ms debounce before writing to JSON. `mergeEntity()` checks unique key before inserting — avoids duplicates without a separate dedup pass. Entity confidence merge: `max(existing, new)`.
 
-**Port signal:** Gap Map's knowledge graph already uses SQLite. The `mergeEntity()` unique-key + max-confidence pattern is a direct analogue to Gap Map's `upsert_semantic()` logic. The debounce pattern applies to batch imports.
+**Port signal:** OpenReply's knowledge graph already uses SQLite. The `mergeEntity()` unique-key + max-confidence pattern is a direct analogue to OpenReply's `upsert_semantic()` logic. The debounce pattern applies to batch imports.
 
 ---
 
-## 6. Port to Gap Map — Concrete Opportunities
+## 6. Port to OpenReply — Concrete Opportunities
 
-Gap Map already has: multi-source paper collection pipeline, SQLite graph (`graph_nodes` + `graph_edges`), personas, MCP server, ChromaDB embeddings (via `dense-graph-relations` skill), paper chunking, LLM calls via `llm-client.py`.
+OpenReply already has: multi-source paper collection pipeline, SQLite graph (`graph_nodes` + `graph_edges`), personas, MCP server, ChromaDB embeddings (via `dense-graph-relations` skill), paper chunking, LLM calls via `llm-client.py`.
 
 ### Priority Matrix
 
 | Feature | Effort | Value | Notes |
 |---|---|---|---|
 | **JSONL lineage store** for paper provenance | S | H | Track: which source returned paper → which enrichment ran → which graph edge was added. 3 node types map exactly. |
-| **RRF hybrid retrieval** for paper search | S | H | Gap Map queries OpenAlex/PubMed/SS separately. RRF merge would improve ranking. Already have keyword and semantic paths. |
+| **RRF hybrid retrieval** for paper search | S | H | OpenReply queries OpenAlex/PubMed/SS separately. RRF merge would improve ranking. Already have keyword and semantic paths. |
 | **Buffer+batch flush** for enrichment writes | S | M | SQLite WAL + batch insert reduces lock contention during heavy collect runs. |
 | **Topo sort with parallel groups** for pipeline steps | S | M | Order paper analysis steps (abstract → citation → embedding) with dependency awareness. |
 | **Local hash embedding** for fast pre-filter | S | M | Before calling external embedder, use 96-dim BagOfWords to pre-filter candidates. Same FNV pattern. |
-| **NL command decomposition** (2-LLM pattern) | M | H | User types "research X" → decompose into sub-missions (survey, gap analysis, citation map) → run in parallel. Gap Map lacks this top-level orchestration layer. |
+| **NL command decomposition** (2-LLM pattern) | M | H | User types "research X" → decompose into sub-missions (survey, gap analysis, citation map) → run in parallel. OpenReply lacks this top-level orchestration layer. |
 | **Reputation dimensions** for source quality | M | M | Track per-source: recall rate, precision (citation quality), dedup rate. Route future queries to better sources. Different from agent reputation but same EMA math. |
 | **Audit chain** (SHA256 only, no ECDSA) | M | M | Tamper-evident log of "who ran what research when". Good for reproducibility. Skip key management — just chain hashes. |
-| **Decision interrupt** (human-in-the-loop) | M | H | `MissionRecord.decision` pattern: agent pauses with options, user picks, mission resumes. Gap Map's research mode could pause for user course-correction mid-run. |
-| **Clarification dialog** before research run | M | H | CommandAnalyzer pattern: analyze query → if ambiguous, generate questions → wait for answers → finalize. Gap Map currently starts research without disambiguation. |
+| **Decision interrupt** (human-in-the-loop) | M | H | `MissionRecord.decision` pattern: agent pauses with options, user picks, mission resumes. OpenReply's research mode could pause for user course-correction mid-run. |
+| **Clarification dialog** before research run | M | H | CommandAnalyzer pattern: analyze query → if ambiguous, generate questions → wait for answers → finalize. OpenReply currently starts research without disambiguation. |
 | **Permission check engine** for MCP tools | M | M | Deny-first JWT-based matrix already maps to MCP capability model. LRU cache prevents repeated checks. |
-| **Knowledge graph entity status machine** | S | M | `active → deprecated → archived → active` transitions with lifecycle log. Gap Map's nodes have no lifecycle — stale research data stays forever. |
+| **Knowledge graph entity status machine** | S | M | `active → deprecated → archived → active` transitions with lifecycle log. OpenReply's nodes have no lifecycle — stale research data stays forever. |
 | **Replay event collector** for research sessions | L | M | Full event capture of every LLM call, source query, enrichment step during a research session. Enables replay for debugging and reproducibility. High value but large surface area. |
 | **Trust tier evaluator** | L | L | Agent reputation → trust tier → permission level. Overkill for single-user desktop app. Skip. |
-| **Swarm / competition engine** | L | L | Multi-agent competition. Gap Map is single-user, no benefit. Skip. |
+| **Swarm / competition engine** | L | L | Multi-agent competition. OpenReply is single-user, no benefit. Skip. |
 | **Feishu integration** | L | L | Not relevant. Skip. |
 
 ### Recommended Implementation Order
 
 **Phase 1 (days):**
-1. JSONL lineage store — add `data/lineage/nodes.jsonl` + `edges.jsonl` to Gap Map Python sidecar. Instrument `collect_sources()` → `enrich_paper()` → `upsert_to_graph()` with `recordSource` / `recordTransformation` calls. Zero UI changes needed.
-2. Buffer+batch flush — wrap Gap Map's SQLite writes in a 500ms-debounced batch writer during heavy collection.
+1. JSONL lineage store — add `data/lineage/nodes.jsonl` + `edges.jsonl` to OpenReply Python sidecar. Instrument `collect_sources()` → `enrich_paper()` → `upsert_to_graph()` with `recordSource` / `recordTransformation` calls. Zero UI changes needed.
+2. Buffer+batch flush — wrap OpenReply's SQLite writes in a 500ms-debounced batch writer during heavy collection.
 3. Entity lifecycle states — add `status` column to `graph_nodes` (`active/deprecated/archived`). Add `lifecycle_log` table.
 
 **Phase 2 (week):**
@@ -555,15 +555,15 @@ Gap Map already has: multi-source paper collection pipeline, SQLite graph (`grap
 7. NL decomposition — full `MissionDecomposer` pattern for complex research queries. LLM decomposes into sub-missions, topo sort determines parallel groups, sidecar runs groups concurrently.
 8. Audit chain (simplified) — hash chain in SQLite table. No ECDSA — just SHA256(event_json + prev_hash + nonce). Useful for reproducibility reports.
 
-### What Gap Map Already Has That WhyBuddy Reinvents
+### What OpenReply Already Has That WhyBuddy Reinvents
 
-- **Knowledge graph with entity/relation model**: Gap Map's `graph_nodes` / `graph_edges` SQLite tables. WhyBuddy's `GraphStore` is the same concept. Gap Map's ChromaDB + MiniLM semantic edges are actually more sophisticated than WhyBuddy's graph (which has no semantic similarity edges).
-- **Multi-source collection pipeline**: Gap Map already queries OpenAlex, PubMed, Semantic Scholar. WhyBuddy has `web-evidence-adapter.ts` for general web search — less specialized.
-- **Paper chunking**: Gap Map's `paper_chunks.py` covers the same ground as WhyBuddy's `DocumentChunker`.
-- **LLM client with provider auto-resolution**: Gap Map's `llm-client.py` skill is more robust than WhyBuddy's hardcoded provider calls.
-- **Personas**: Gap Map's persona system is richer than WhyBuddy's `soul_md` approach.
+- **Knowledge graph with entity/relation model**: OpenReply's `graph_nodes` / `graph_edges` SQLite tables. WhyBuddy's `GraphStore` is the same concept. OpenReply's ChromaDB + MiniLM semantic edges are actually more sophisticated than WhyBuddy's graph (which has no semantic similarity edges).
+- **Multi-source collection pipeline**: OpenReply already queries OpenAlex, PubMed, Semantic Scholar. WhyBuddy has `web-evidence-adapter.ts` for general web search — less specialized.
+- **Paper chunking**: OpenReply's `paper_chunks.py` covers the same ground as WhyBuddy's `DocumentChunker`.
+- **LLM client with provider auto-resolution**: OpenReply's `llm-client.py` skill is more robust than WhyBuddy's hardcoded provider calls.
+- **Personas**: OpenReply's persona system is richer than WhyBuddy's `soul_md` approach.
 
-**Honest assessment:** The biggest gap in Gap Map vs WhyBuddy is **orchestration layer sophistication** — WhyBuddy has a full NL command decomposition → parallel execution → human-in-the-loop → audit trail stack that Gap Map lacks. The individual components (RAG, graph, chunking) are comparable in quality. The missing value is the **meta-layer**: "what should I research next, in what order, and can I pause for human input?"
+**Honest assessment:** The biggest gap in OpenReply vs WhyBuddy is **orchestration layer sophistication** — WhyBuddy has a full NL command decomposition → parallel execution → human-in-the-loop → audit trail stack that OpenReply lacks. The individual components (RAG, graph, chunking) are comparable in quality. The missing value is the **meta-layer**: "what should I research next, in what order, and can I pause for human input?"
 
 ---
 

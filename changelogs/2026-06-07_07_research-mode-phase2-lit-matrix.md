@@ -17,7 +17,7 @@ links each paper into the Reader.
   `export_csv`. Reuses the BYOK provider + full-text-or-abstract content tier +
   defensive JSON parsing. Idempotent per (topic, post_id).
 - **CLI**: `research lit-matrix --topic … [--build] [--limit] [--csv]`.
-- **MCP**: `gapmap_lit_matrix(topic, build, limit, force)`.
+- **MCP**: `openreply_lit_matrix(topic, build, limit, force)`.
 - **Tauri**: `lit_matrix_get` / `lit_matrix_build` / `lit_matrix_export`.
 - **api.js**: `litMatrixGet` / `litMatrixBuild` / `litMatrixExport`.
 - **`screens/lit_matrix.js`** + route `#/lit-matrix/<topic>`: filter, click-to-sort
@@ -31,10 +31,10 @@ links each paper into the Reader.
   `node --check` + `cargo check` clean.
 
 ## Files Created
-- `src/gapmap/research/lit_matrix.py`, `app-tauri/src/screens/lit_matrix.js`,
+- `src/openreply/research/lit_matrix.py`, `app-tauri/src/screens/lit_matrix.js`,
   `changelogs/2026-06-07_07_research-mode-phase2-lit-matrix.md`
 
 ## Files Modified
-- `src/gapmap/cli/main.py`, `src/gapmap/mcp/server.py`,
+- `src/openreply/cli/main.py`, `src/openreply/mcp/server.py`,
   `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`,
   `app-tauri/src/api.js`, `app-tauri/src/main.js`

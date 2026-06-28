@@ -38,8 +38,8 @@ grounded paper draft.
   summarized.
 - **`paper_fulltext.py`** — `fetch_bulk` gained an optional `progress(i, total,
   post_id, status)` callback for live per-paper counts.
-- **CLI** — `gapmap research paper-knowledge --topic … --scope … [--stream]`
-  (NDJSON lifecycle events) and `gapmap research paper-gaps --topic … [--detect]`.
+- **CLI** — `openreply research paper-knowledge --topic … --scope … [--stream]`
+  (NDJSON lifecycle events) and `openreply research paper-gaps --topic … [--detect]`.
 - **Tauri** — `paper_knowledge_build` (streaming, deduped, fires
   `paper:knowledge:progress` / `paper:knowledge:done`) and `paper_gaps_list`
   commands; registered in `main.rs`.
@@ -51,16 +51,16 @@ grounded paper draft.
 
 ## Files Created
 
-- `src/gapmap/research/paper_gaps.py`
-- `src/gapmap/research/paper_workflow.py`
+- `src/openreply/research/paper_gaps.py`
+- `src/openreply/research/paper_workflow.py`
 - `docs/2026-06-01-paper-knowledge-workflow-design.md`
 
 ## Files Modified
 
-- `src/gapmap/research/paper_pipeline.py` — gaps block in draft prompt
-- `src/gapmap/research/paper_analyze.py` — full academic-source tuple
-- `src/gapmap/research/paper_fulltext.py` — `fetch_bulk` progress callback
-- `src/gapmap/cli/main.py` — `paper-knowledge` (stream) + `paper-gaps` commands
+- `src/openreply/research/paper_pipeline.py` — gaps block in draft prompt
+- `src/openreply/research/paper_analyze.py` — full academic-source tuple
+- `src/openreply/research/paper_fulltext.py` — `fetch_bulk` progress callback
+- `src/openreply/cli/main.py` — `paper-knowledge` (stream) + `paper-gaps` commands
 - `app-tauri/src-tauri/src/commands.rs` — `paper_knowledge_build` + `paper_gaps_list`
 - `app-tauri/src-tauri/src/main.rs` — handler registration
 - `app-tauri/src/api.js` — wrappers + event listeners

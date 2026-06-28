@@ -1,4 +1,4 @@
-# Gap Map — vision for a research-backed product-design starting point
+# OpenReply — vision for a research-backed product-design starting point
 
 **Date:** 2026-04-20
 **Status:** Vision doc. Not a build plan (yet). Each section can be promoted to its own spec via the brainstorming skill when ready.
@@ -11,7 +11,7 @@ This doc captures the full direction. The mechanics (collect → gap map → sol
 
 ## 1. The three audiences + what each wants
 
-| Audience | Primary question | What they need from Gap Map |
+| Audience | Primary question | What they need from OpenReply |
 |---|---|---|
 | **UX / UI designer** | "Who am I designing for and what do they struggle with?" | User personas · JTBD map · quote-rich journey · pain hierarchy · competitor friction points · accessibility / emotional triggers |
 | **Solopreneur / indie hacker** | "Should I build this and is the market real?" | TAM signals · momentum (chronic vs emerging) · competitor gaps · pricing sensitivity · differentiation thesis · launch-ready positioning |
@@ -183,7 +183,7 @@ Product research isn't one-shot. Every week:
 4. User reviews the diff → taps "Regenerate Feature spec" / "Update roadmap" / "Refresh personas"
 5. Prior outputs get re-synthesized with the new data; diffs highlighted (red/green like a git diff)
 
-This turns Gap Map from "one-time research" into "living research" — the whole reason market research fails is it goes stale 90 days after the report ships.
+This turns OpenReply from "one-time research" into "living research" — the whole reason market research fails is it goes stale 90 days after the report ships.
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **Goal:** Stand up a **new git repo** for a social-media **content-creation tool**,
 > reusing the proven Tauri 2 + Python-sidecar architecture from `reddit-myind`
-> (Gap Map). This plan tells you exactly **which files to copy**, **what to delete**,
+> (OpenReply). This plan tells you exactly **which files to copy**, **what to delete**,
 > **what new code to write**, the **phased milestones**, and the **exact git commands**
 > to create the repo and connect a remote.
 >
@@ -13,7 +13,7 @@
 
 ## 0. The core idea in one sentence
 
-Gap Map is an **inbound** engine (pull content from ~61 platforms → store → analyze).
+OpenReply is an **inbound** engine (pull content from ~61 platforms → store → analyze).
 A content tool is the **same engine plus an outbound half** (generate → schedule →
 **publish** to platforms). You keep the shell, the sidecar bridge, the per-platform
 auth, and the LLM layer; you drop the research/gaps/papers/graph subsystems; you add a
@@ -35,11 +35,11 @@ SQLite + streaming events             scheduler (schedule-tick pattern)
 
 | # | Decision | Default | Why |
 |---|----------|---------|-----|
-| D1 | Repo strategy | **Fork-and-strip** (copy subset into fresh repo) | Cleanest history; no Gap Map baggage |
+| D1 | Repo strategy | **Fork-and-strip** (copy subset into fresh repo) | Cleanest history; no OpenReply baggage |
 | D2 | First platform | **X / Twitter (official API v2)** | Simplest official API; proves the outbound path |
 | D3 | Keep Python sidecar? | **Yes** | Reuses fetch adapters, creds, LLM layer untouched |
 | D4 | Frontend | **Keep vanilla JS + Vite** (option to migrate to React later) | Lowest friction; copy `api.js` pattern as-is |
-| D5 | App identity | name `social-forge`, bundle id `com.<you>.socialforge` | Replace all `gapmap`/`com.shantanu.gapmap` strings |
+| D5 | App identity | name `social-forge`, bundle id `com.<you>.socialforge` | Replace all `openreply`/`com.shantanu.openreply` strings |
 | D6 | Launch platforms after M1 | LinkedIn, Instagram/FB (Meta Graph), then cookie-only (TikTok, X-via-cookie) | API-based first, scraping-based later |
 
 > If any of D1–D6 is wrong, fix it here first — the file manifest in §3 depends on them.
@@ -70,7 +70,7 @@ social-forge/
 │       │   └── db.rs               # (copy AS-IS — native read path)
 │       ├── tauri.conf.json         # (copy, change identity + CSP connect-src + externalBin name)
 │       └── capabilities/default.json  # (copy, rename binary + events)
-├── src/socialforge/                # the Python sidecar package (renamed from gapmap)
+├── src/socialforge/                # the Python sidecar package (renamed from openreply)
 │   ├── cli/main.py                 # (copy, trim to: content / publish / auth / sources / mcp)
 │   ├── core/
 │   │   ├── db.py                   # (copy, keep posts; ADD drafts/publish_log)
@@ -106,14 +106,14 @@ app-tauri/src/api.js
 app-tauri/src-tauri/src/cli.rs
 app-tauri/src-tauri/src/db.rs
 app-tauri/src-tauri/capabilities/default.json
-src/gapmap/core/credentials.py
-src/gapmap/core/db.py                 (keep schema infra; you'll add tables)
-src/gapmap/core/client.py
-src/gapmap/core/public_client.py
-src/gapmap/analyze/providers/**       (all 8 LLM providers + base ABC)
+src/openreply/core/credentials.py
+src/openreply/core/db.py                 (keep schema infra; you'll add tables)
+src/openreply/core/client.py
+src/openreply/core/public_client.py
+src/openreply/analyze/providers/**       (all 8 LLM providers + base ABC)
 scripts/  (sidecar build/packaging, e.g. pyinstaller spec + codesign helpers)
 .gitignore
-gapmap-cli.spec                       (rename → socialforge-cli.spec)
+openreply-cli.spec                       (rename → socialforge-cli.spec)
 ```
 
 ### 3b. Copy + TRIM (remove research/gaps/papers/graph branches)
@@ -123,10 +123,10 @@ app-tauri/src/main.js                 → keep router, drop renderTopic/Map/Pape
 app-tauri/src-tauri/src/main.rs       → keep ~15 content commands, drop ~180 research ones
 app-tauri/src-tauri/src/commands.rs   → keep bridge helpers + a few; drop research bridges
 app-tauri/src-tauri/tauri.conf.json   → change identity, externalBin name, CSP connect-src
-src/gapmap/cli/main.py                → keep: auth, ingest(optional), feeds(optional),
+src/openreply/cli/main.py                → keep: auth, ingest(optional), feeds(optional),
                                         sources fetch (for ideation); ADD content/publish groups;
                                         DROP: research, paper-*, graph, persona, product
-src/gapmap/mcp/server.py              → swap tool registry to content/publish tools
+src/openreply/mcp/server.py              → swap tool registry to content/publish tools
 ```
 
 ### 3c. Copy a SUBSET of `sources/` (for IDEATION only — what platforms you create for)
@@ -142,7 +142,7 @@ DROP:  arxiv, pubmed, openalex, crossref, dblp, europepmc, semantic_scholar, sch
 
 ### 3d. DO NOT COPY
 ```
-src/gapmap/research/**, src/gapmap/graph/**, src/gapmap/retrieval/**
+src/openreply/research/**, src/openreply/graph/**, src/openreply/retrieval/**
 app-tauri/data/*.db (start clean)
 .codegraph/, graphify-out/ (regenerate fresh)
 all docs except the architecture seed
@@ -185,7 +185,7 @@ CREATE TABLE publish_log (
 CREATE INDEX idx_publog_draft ON publish_log(draft_id);
 ```
 Reuse the existing `posts`, `topic_posts`, `fetches`, `source_credentials` tables for
-ideation + auth. Keep WAL + `_retry_on_locked` exactly as Gap Map does.
+ideation + auth. Keep WAL + `_retry_on_locked` exactly as OpenReply does.
 
 ---
 
@@ -224,7 +224,7 @@ connections_list, connect_source, verify_source           (reuse existing)
 Follow the **command triangle** and **streaming** patterns documented in the architecture guide.
 
 ### 5d. Scheduler
-Reuse Gap Map's `research schedule-enable/tick` shape: the app calls
+Reuse OpenReply's `research schedule-enable/tick` shape: the app calls
 `schedule_tick` on an interval (or via the `loop`/`schedule` skill / OS cron) →
 `content/schedule.py` selects `drafts WHERE status='scheduled' AND scheduled_at<=now`
 → calls the right `publish/*` adapter → writes `publish_log`.
@@ -251,11 +251,11 @@ Build M1 **before** anything else — it proves the outbound path through all th
 
 Replace every occurrence:
 ```
-gapmap            → socialforge
-gapmap-cli        → socialforge-cli
-com.shantanu.gapmap → com.<you>.socialforge
-GAPMAP_DATA_DIR   → SOCIALFORGE_DATA_DIR  (and all GAPMAP_* envs)
-"Gap Map"         → "Social Forge"
+openreply            → socialforge
+openreply-cli        → socialforge-cli
+com.shantanu.openreply → com.<you>.socialforge
+OPENREPLY_DATA_DIR   → SOCIALFORGE_DATA_DIR  (and all OPENREPLY_* envs)
+"OpenReply"         → "Social Forge"
 ```
 Files that hold identity: `pyproject.toml` (`[project.scripts]`, package name),
 `tauri.conf.json` (`identity`, `productName`, `externalBin`, `assetProtocol.scope`,
@@ -279,7 +279,7 @@ git init -b main
 # 2. First commit (stage explicit paths; never `git add -A` blindly)
 git add app-tauri src pyproject.toml scripts docs .gitignore README.md SOCIAL_CONTENT_TOOL_PLAN.md
 git status                      # eyeball what's staged
-git commit -m "chore: scaffold social-forge from gap-map architecture"
+git commit -m "chore: scaffold social-forge from openreply-map architecture"
 
 # 3. Create the GitHub repo and connect it (private)
 gh repo create social-forge --private --source=. --remote=origin
@@ -300,7 +300,7 @@ prefix, explicit paths, no AI attribution.
    with **official APIs** (D2); treat cookie publishing as best-effort.
 2. **Platform API approval lag** — X/LinkedIn/Meta dev apps need review for write
    scopes. → Apply for developer access on day 1 of M1; build against it.
-3. **Sidecar binary signing** — same macOS Gatekeeper hang Gap Map fixed with the dev
+3. **Sidecar binary signing** — same macOS Gatekeeper hang OpenReply fixed with the dev
    `.venv` bypass + codesign. → Copy `scripts/` packaging + the `tauri-python-sidecar-app`
    gotchas.
 4. **Media upload** — most publish APIs need a 2-step (upload media → attach id). →

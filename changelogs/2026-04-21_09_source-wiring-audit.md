@@ -29,12 +29,12 @@ Full audit of every source module against two wiring layers: the `collect_adapte
 - `discourse` → `run_discourse` (existed as function; registry entry was missing)
 
 ### Added to MCP as `@mcp.tool()` (6)
-- `gapmap_fetch_bluesky(query, limit)` — Bluesky AT Protocol, no key
-- `gapmap_fetch_rss(feed_url, category, publication, query, limit)` — any RSS/Atom feed
-- `gapmap_fetch_producthunt(query, limit)` — recent launches
-- `gapmap_fetch_trustpilot(query, pages, limit)` — brand reviews
-- `gapmap_fetch_alternativeto(product, limit)` — competitor discovery
-- `gapmap_fetch_youtube(query, videos, comments_per_video)` — videos + top comments in one call (requires `YOUTUBE_API_KEY`)
+- `openreply_fetch_bluesky(query, limit)` — Bluesky AT Protocol, no key
+- `openreply_fetch_rss(feed_url, category, publication, query, limit)` — any RSS/Atom feed
+- `openreply_fetch_producthunt(query, limit)` — recent launches
+- `openreply_fetch_trustpilot(query, pages, limit)` — brand reviews
+- `openreply_fetch_alternativeto(product, limit)` — competitor discovery
+- `openreply_fetch_youtube(query, videos, comments_per_video)` — videos + top comments in one call (requires `YOUTUBE_API_KEY`)
 
 ### Live smoke-test results (post-wiring)
 

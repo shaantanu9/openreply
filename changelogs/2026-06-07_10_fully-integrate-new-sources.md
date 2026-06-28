@@ -7,7 +7,7 @@
 
 Completed end-to-end integration of the 9 miroclaw-derived sources (GDELT,
 DuckDuckGo, Tavily, World Bank, FRED, BIS, Yahoo Finance, Open-Meteo, ACLED) into
-every place Gap Map surfaces a source — not just the fetch/dispatch layer. Swept the
+every place OpenReply surfaces a source — not just the fetch/dispatch layer. Swept the
 whole codebase for source-label maps, the user-facing source picker, the corpus
 formatter the LLM reads, sentiment labels, graph node labels/icons, badge colors, and
 the FE source-chip mirrors, and added entries for all 9 in each.
@@ -36,8 +36,8 @@ the FE source-chip mirrors, and added entries for all 9 in each.
 - `app-tauri/src/screens/posts.js`, `find.js`, `intent_ladder.js` — label maps.
 - `app-tauri/src/screens/collects.js` — sweep-count toggle text.
 - `app-tauri/src/style.css` — per-source badge tints.
-- `src/gapmap/research/corpus_format.py` — LLM corpus formatters.
-- `src/gapmap/research/sentiment_by_source.py`, `report_pro.py`, `graph/build.py` — labels/icons.
+- `src/openreply/research/corpus_format.py` — LLM corpus formatters.
+- `src/openreply/research/sentiment_by_source.py`, `report_pro.py`, `graph/build.py` — labels/icons.
 
 ## Verification
 

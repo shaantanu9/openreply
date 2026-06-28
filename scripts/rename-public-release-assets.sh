@@ -14,7 +14,7 @@
 #   scripts/rename-public-release-assets.sh <tag> [owner/repo]
 #
 #   $ scripts/rename-public-release-assets.sh v0.1.4
-#   $ scripts/rename-public-release-assets.sh v0.1.4 myind-ai/gapmap
+#   $ scripts/rename-public-release-assets.sh v0.1.4 myind-ai/openreply
 #
 # Requires:
 #   - gh CLI authenticated with write access to <owner/repo>
@@ -34,7 +34,7 @@
 set -euo pipefail
 
 VER="${1:?tag required (e.g. v0.1.4)}"
-PUBLIC="${2:-myind-ai/gapmap}"
+PUBLIC="${2:-myind-ai/openreply}"
 NUM="${VER#v}"
 
 echo "── rename-public-release-assets ──"

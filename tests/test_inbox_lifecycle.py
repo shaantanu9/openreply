@@ -11,9 +11,9 @@ import time
 
 
 def _db(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core.db import get_db
-    from gapmap.reply.schema import init_reply_schema
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core.db import get_db
+    from openreply.reply.schema import init_reply_schema
 
     get_db.cache_clear()
     return init_reply_schema()
@@ -34,7 +34,7 @@ def _opp(db, oid, *, title="t", body="", author="a", sub="s",
 
 def test_save_draft_creates_versions(tmp_path, monkeypatch):
     db = _db(tmp_path, monkeypatch)
-    from gapmap.reply.generate import save_draft, list_drafts, current_draft
+    from openreply.reply.generate import save_draft, list_drafts, current_draft
 
     _opp(db, "o1", status="saved")
     r1 = save_draft("o1", "first take")
@@ -54,7 +54,7 @@ def test_save_draft_creates_versions(tmp_path, monkeypatch):
 
 def test_snooze_hides_then_resurfaces(tmp_path, monkeypatch):
     db = _db(tmp_path, monkeypatch)
-    from gapmap.reply.opportunity import snooze, list_opportunities
+    from openreply.reply.opportunity import snooze, list_opportunities
 
     _opp(db, "s1", status="new", score=0.9)
     assert snooze("s1", hours=24).get("status") == "snoozed"
@@ -74,7 +74,7 @@ def test_snooze_hides_then_resurfaces(tmp_path, monkeypatch):
 
 def test_approve_queue_posted_lifecycle(tmp_path, monkeypatch):
     db = _db(tmp_path, monkeypatch)
-    from gapmap.reply.opportunity import approve, queue, mark_posted
+    from openreply.reply.opportunity import approve, queue, mark_posted
 
     _opp(db, "l1", status="drafted")
     assert approve("l1")["status"] == "ready"
@@ -94,7 +94,7 @@ def test_approve_queue_posted_lifecycle(tmp_path, monkeypatch):
 
 def test_list_search_sort_offset(tmp_path, monkeypatch):
     db = _db(tmp_path, monkeypatch)
-    from gapmap.reply.opportunity import list_opportunities, count_opportunities
+    from openreply.reply.opportunity import list_opportunities, count_opportunities
 
     _opp(db, "a", title="Alpha launch", score=0.3, found_at=100)
     _opp(db, "b", title="Beta notes", score=0.9, found_at=300)

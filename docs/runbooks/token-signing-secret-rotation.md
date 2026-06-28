@@ -44,7 +44,7 @@ won't help (the new token won't verify under the old baked secret).
 ## 3. Pre-flight checklist (do these first)
 
 - [ ] Generate the new secret: `openssl rand -hex 32` (≥32 chars; keep it out of stdout/logs).
-- [ ] Confirm the CURRENT prod value in Vercel → `gapmap-web` → Settings → Env Vars →
+- [ ] Confirm the CURRENT prod value in Vercel → `openreply-web` → Settings → Env Vars →
       `TOKEN_SIGNING_SECRET` (Production). Note it as `OLD` for the dual-secret window.
 - [ ] Confirm you can build + sign + ship a desktop release (you need this for either option).
 - [ ] Decide the option below based on how many live activated users you have.
@@ -101,8 +101,8 @@ fn verify_license_token(token: &str) -> Result<VerifiedTokenClaims, String> {
         let key = DecodingKey::from_secret(secret.as_bytes());
         let mut v = Validation::new(Algorithm::HS256);
         v.validate_exp = false;
-        v.set_issuer(&["gapmap-activation-suite"]);
-        v.set_audience(&["gapmap-desktop"]);
+        v.set_issuer(&["openreply-activation-suite"]);
+        v.set_audience(&["openreply-desktop"]);
         if let Ok(d) = decode::<VerifiedTokenClaims>(token, &key, &v) { return Ok(d.claims); }
     }
     Err("invalid activation token: InvalidSignature".into())
@@ -134,9 +134,9 @@ Goal: simplest. Accept that **everyone must update the app + re-activate once.**
 
 1. Build + sign + ship the new app release with `JWT_DESKTOP_SECRET=NEW`
    (no previous secret needed). Make it the only download.
-2. Set Vercel `gapmap-web` Production `TOKEN_SIGNING_SECRET = NEW`, redeploy.
+2. Set Vercel `openreply-web` Production `TOKEN_SIGNING_SECRET = NEW`, redeploy.
 3. All installed (old) apps lock on next re-validation (401 → revoked). Notify users:
-   **"Update Gap Map, then re-activate with your existing key."**
+   **"Update OpenReply, then re-activate with your existing key."**
 4. Users download the new app → re-activate (same key) → new token signed+verified with NEW.
 
 > Use this only when the activated-user count is small enough that a forced
@@ -177,7 +177,7 @@ bash /tmp/prod-e2e.sh        # key -> activate -> validate -> revoke -> reactiva
   "everyone re-activates once."
 
 ## 7. User comms (Option B / stragglers)
-> **Gap Map — quick re-activation needed.** We rotated a security key. Please update Gap Map
+> **OpenReply — quick re-activation needed.** We rotated a security key. Please update OpenReply
 > to the latest version, open it, go to **Settings → Licence → Activate this device**, and
 > enter your **email + the same activation key** you already have. Your data stays on your
 > Mac — nothing is lost. (No new purchase needed.)

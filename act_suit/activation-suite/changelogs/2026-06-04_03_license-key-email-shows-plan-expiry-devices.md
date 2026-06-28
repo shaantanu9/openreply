@@ -21,7 +21,7 @@ returned).
   (or "No expiry · yours for the beta" when `expiresAt` is null), **Devices**
   (Up to N), and **Tied to** (the email). Plan label mapping + safe date
   formatting (`fmtDate`) included.
-- Subject line is now plan-aware: "Your Gap Map Pro license key".
+- Subject line is now plan-aware: "Your OpenReply Pro license key".
 - Device count, download CTA, and "reissue from dashboard" link are all driven
   by the real `maxDevices` value (no more hardcoded "2").
 - `/api/v1/coupon/redeem` passes `{ planId, isTrial, expiresAt }` from the

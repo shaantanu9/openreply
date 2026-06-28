@@ -1,4 +1,4 @@
-# Gap Map — License flow (website) + desktop-app change list
+# OpenReply — License flow (website) + desktop-app change list
 
 > Free mode is ON (`BILLING_ENABLED=0`): keys are issued free, LemonSqueezy is
 > disabled. The owner can disable/expire any key at any time.
@@ -9,7 +9,7 @@
 2. **Dashboard** — `/dashboard` (login-gated). On first visit it **auto-issues a
    free license key** and shows the **full key once** with a **Copy** button.
    (Manual "Get my free key" button is also there.)
-3. **Activate the app** — user opens the Gap Map desktop app → activation screen
+3. **Activate the app** — user opens the OpenReply desktop app → activation screen
    → pastes **key + the email they signed in with** → the device activates
    (a device fingerprint is bound to the key).
 4. **Manage devices** — the machine shows under **Activated devices**
@@ -31,7 +31,7 @@ Base: your deployed site, e.g. `https://YOUR_SITE`
 | Deactivate device | `POST /api/v1/device/deactivate` | `Bearer <token>` | `{device_fingerprint}` | `{ok, removed}` |
 | Owner disable/enable/expire | `POST /api/v1/admin/license` | header `x-admin-secret` | `{action:"revoke"|"reactivate"|"expire", email}` | `{ok, status}` |
 
-JWT: HS256, issuer `gapmap-activation-suite`, audience `gapmap-desktop`, 180d,
+JWT: HS256, issuer `openreply-activation-suite`, audience `openreply-desktop`, 180d,
 signed with **`TOKEN_SIGNING_SECRET`**. Claims include `device_fingerprint`
 (anti-sharing), `plan_id`, `features`.
 
@@ -52,7 +52,7 @@ it work against this website and actually enforce:
 3. **Shared JWT secret** — set the app's build-time **`JWT_DESKTOP_SECRET`** equal
    to the site's **`TOKEN_SIGNING_SECRET`** (today the app logs "JWT_DESKTOP_SECRET
    missing; using debug fallback"). Accept issuer/audience above.
-4. **Turn the gate ON** — `GAPMAP_LICENSE_GATE_ENABLED=1` for release builds, and
+4. **Turn the gate ON** — `OPENREPLY_LICENSE_GATE_ENABLED=1` for release builds, and
    extend the gate from MCP-only to the whole app (add `ensure_activated()` to
    `run_cli` so collect/enrich/chat/map all require activation). This is the
    "won't work without a key" change.

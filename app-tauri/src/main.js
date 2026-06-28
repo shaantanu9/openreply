@@ -1,6 +1,6 @@
 // OpenReply — SPA router for the Tauri app.
 // Wired screens (agents/agent/opportunities/compose) render LIVE data via the Rust
-// command bridge (or/dynamic.js → or/api.js → commands.rs → gapmap reply/agent/content).
+// command bridge (or/dynamic.js → or/api.js → commands.rs → openreply reply/agent/content).
 // The rest render the static prototype views (or/views.js). In a plain browser (no Tauri)
 // everything falls back to the static views.
 import { VIEWS } from "./or/views.js";
@@ -69,6 +69,7 @@ function prewarm() {
       api.agentGet(), api.agentKnowledge(),
       api.replyList("saved", 0, 30), api.replyList(null, 0, 100),
       api.contentList(), api.byokStatus(),
+      api.analyticsSummary(30), api.geoList(), api.agentBrain(),
     ]);
   }, 400);
 }

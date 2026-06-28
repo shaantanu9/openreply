@@ -5,7 +5,7 @@
 
 ## Summary
 
-Turns Gap Map from "start a collect → wait 10 minutes → see findings" into "collect freely → at 100 posts a background worker starts extracting in small batches → every open screen refreshes in real time."
+Turns OpenReply from "start a collect → wait 10 minutes → see findings" into "collect freely → at 100 posts a background worker starts extracting in small batches → every open screen refreshes in real time."
 
 Phase A: collect warmup. Sources run as today, a progress card shows live post count + source chips + ETA. No LLM spin until the threshold crosses. Flat ~150 MB.
 
@@ -54,7 +54,7 @@ Also ships a saturation score v1 (new clusters per last-50 posts) and a coverage
 - `src/reddit_research/cli/main.py` — `research enrich-worker --serve`, `research saturation`, `research coverage-gaps`
 - `src/reddit_research/graph/semantic.py` — `enrich_from_llm_for_posts` scoped extractor + token usage write
 - `src/reddit_research/retrieval/palace.py` — `_drop_client_if_any` + idle-drop
-- `src/reddit_research/analyze/providers/ollama.py` — `GAPMAP_RELEASE_LLM_IDLE` opt-in
+- `src/reddit_research/analyze/providers/ollama.py` — `OPENREPLY_RELEASE_LLM_IDLE` opt-in
 - `app-tauri/src-tauri/src/commands.rs` — 5 worker commands + 3 prefs commands + `topic_saturation` + `topic_coverage_gaps`
 - `app-tauri/src-tauri/src/main.rs` — `.setup()` boot gate, generate_handler registrations, `stop_worker_blocking` on exit
 - `app-tauri/src/api.js` — worker controls + prefs CRUD + saturation/coverage readers

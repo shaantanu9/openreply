@@ -27,46 +27,46 @@ PMs and CEOs use Cursor / Claude Code / Claude Desktop daily. The Tier-1..6
 features should be callable from an LLM agent, not just from the desktop
 UI. A PM asking their Cursor agent "run a sweep on mindwave-pro and show
 me the top 3 signals with suggested actions" should Just Work without
-opening Gap Map.app. That's now possible.
+opening OpenReply.app. That's now possible.
 
 ## 28 new MCP tools
 
 ### Topic lifecycle (6)
-- `gapmap_topic_soft_delete`
-- `gapmap_topic_restore`
-- `gapmap_topic_trash_list`
-- `gapmap_topic_trash_purge`
-- `gapmap_find_existing_topic`
-- `gapmap_merge_duplicate_topics`
+- `openreply_topic_soft_delete`
+- `openreply_topic_restore`
+- `openreply_topic_trash_list`
+- `openreply_topic_trash_purge`
+- `openreply_find_existing_topic`
+- `openreply_merge_duplicate_topics`
 
 ### Corpus quality (2)
-- `gapmap_clean_corpus`
-- `gapmap_collect_quality_check`
+- `openreply_clean_corpus`
+- `openreply_collect_quality_check`
 
 ### Intelligence (10)
-- `gapmap_feedback_record`
-- `gapmap_feedback_list`
-- `gapmap_global_competitors`
-- `gapmap_saved_view_create`
-- `gapmap_saved_view_list`
-- `gapmap_prompt_list`
-- `gapmap_prompt_get`
-- `gapmap_prompt_set`
-- `gapmap_graph_build_relations`
+- `openreply_feedback_record`
+- `openreply_feedback_list`
+- `openreply_global_competitors`
+- `openreply_saved_view_create`
+- `openreply_saved_view_list`
+- `openreply_prompt_list`
+- `openreply_prompt_get`
+- `openreply_prompt_set`
+- `openreply_graph_build_relations`
 - `reddit_research_link`
 - `reddit_research_links`
 
 ### Product Mode (8)
-- `gapmap_product_create`
-- `gapmap_product_list`
-- `gapmap_product_sweep`
-- `gapmap_product_signals`
-- `gapmap_product_signal_action`
-- `gapmap_product_dashboard`
-- `gapmap_product_digest`
-- `gapmap_product_convert_topic`
+- `openreply_product_create`
+- `openreply_product_list`
+- `openreply_product_sweep`
+- `openreply_product_signals`
+- `openreply_product_signal_action`
+- `openreply_product_dashboard`
+- `openreply_product_digest`
+- `openreply_product_convert_topic`
 
-Plus `gapmap_ingest_csv` and `gapmap_graph_build_relations` (categorized
+Plus `openreply_ingest_csv` and `openreply_graph_build_relations` (categorized
 above) — actual count 28.
 
 ## CLI verification

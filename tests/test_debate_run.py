@@ -13,20 +13,20 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GAPMAP_SKIP_PALACE", "1")
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_SKIP_PALACE", "1")
     # Force the heuristic (no-LLM) path deterministically, regardless of any
     # provider keys present in the dev/CI environment. deliberate() resolves
     # the provider inside a try/except, so making resolution raise drops it to
     # the offline heuristic tiering.
     monkeypatch.delenv("LLM_API_KEY", raising=False)
-    import gapmap.analyze.providers.base as prov_base
+    import openreply.analyze.providers.base as prov_base
 
     def _no_provider(*_a, **_k):
         raise RuntimeError("forced offline for test")
 
     monkeypatch.setattr(prov_base, "resolve_provider", _no_provider)
-    from gapmap.core import db as db_mod
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     d = db_mod.get_db()
     db_mod.init_schema(d)
@@ -46,7 +46,7 @@ def _seed_topic(db, topic="focus"):
          "mention_count": 5, "supporting_post_ids": ["t3_e", "t3_f"]},
     ]
     report = {"ok": True, "topic": topic, "findings": findings}
-    from gapmap.research import insights
+    from openreply.research import insights
     insights._ensure_topic_insights_table()
     db["topic_insights"].upsert(
         {"topic": topic, "report_json": json.dumps(report),
@@ -65,14 +65,14 @@ def _seed_topic(db, topic="focus"):
 
 
 def test_needs_synthesis_when_no_findings(db):
-    from gapmap.research.debate_run import run_topic_debate
+    from openreply.research.debate_run import run_topic_debate
     out = run_topic_debate("empty-topic")
     assert out["ok"] is False
     assert out["reason"] == "needs_synthesis"
 
 
 def test_debate_writes_verdicts_and_node_cache(db):
-    from gapmap.research.debate_run import run_topic_debate, get_debate_verdicts
+    from openreply.research.debate_run import run_topic_debate, get_debate_verdicts
     topic, findings = _seed_topic(db)
 
     out = run_topic_debate(topic, rounds=1)
@@ -109,7 +109,7 @@ def test_debate_writes_verdicts_and_node_cache(db):
 
 
 def test_staleness_flips_when_findings_change(db):
-    from gapmap.research.debate_run import run_topic_debate, get_debate_verdicts
+    from openreply.research.debate_run import run_topic_debate, get_debate_verdicts
     topic, _ = _seed_topic(db)
     run_topic_debate(topic, rounds=1)
     assert get_debate_verdicts(topic)["stale"] is False
@@ -129,7 +129,7 @@ def test_staleness_flips_when_findings_change(db):
 
 
 def test_audit_payload_after_debate(db):
-    from gapmap.research.debate_run import run_topic_debate, get_debate_audit
+    from openreply.research.debate_run import run_topic_debate, get_debate_audit
     topic, findings = _seed_topic(db)
     out = run_topic_debate(topic, rounds=1)
 
@@ -145,11 +145,11 @@ def test_audit_payload_after_debate(db):
 
 
 def test_budget_status_levels():
-    from gapmap.research.debate_run import _budget_status
+    from openreply.research.debate_run import _budget_status
     import os
-    os.environ.pop("GAPMAP_DEBATE_TOKEN_BUDGET", None)
+    os.environ.pop("OPENREPLY_DEBATE_TOKEN_BUDGET", None)
     assert _budget_status(5000)["level"] == "none"      # no budget configured
-    os.environ["GAPMAP_DEBATE_TOKEN_BUDGET"] = "1000"
+    os.environ["OPENREPLY_DEBATE_TOKEN_BUDGET"] = "1000"
     try:
         assert _budget_status(100)["level"] == "ok"
         assert _budget_status(800)["level"] == "warning"
@@ -157,13 +157,13 @@ def test_budget_status_levels():
         assert _budget_status(1200)["level"] == "exceeded"
         assert _budget_status(1200)["pct"] == 1.2
     finally:
-        os.environ.pop("GAPMAP_DEBATE_TOKEN_BUDGET", None)
+        os.environ.pop("OPENREPLY_DEBATE_TOKEN_BUDGET", None)
 
 
 def test_cost_and_transcript_with_fake_provider(db, monkeypatch):
     # Inject a fake LLM provider so the real persona-vote path runs (also guards
     # the persona_conclusions fix) and produces a token estimate + transcript.
-    import gapmap.analyze.providers.base as prov_base
+    import openreply.analyze.providers.base as prov_base
 
     class _FakeProv:
         def complete(self, *, prompt, system, max_tokens=1800, temperature=0.4):
@@ -175,7 +175,7 @@ def test_cost_and_transcript_with_fake_provider(db, monkeypatch):
     monkeypatch.setattr(prov_base, "resolve_provider", lambda *_a, **_k: "fake")
     monkeypatch.setattr(prov_base, "get_provider", lambda *_a, **_k: _FakeProv())
 
-    from gapmap.research.debate_run import run_topic_debate, get_debate_audit
+    from openreply.research.debate_run import run_topic_debate, get_debate_audit
     topic, findings = _seed_topic(db)
     out = run_topic_debate(topic, rounds=1)
 
@@ -191,17 +191,17 @@ def test_cost_and_transcript_with_fake_provider(db, monkeypatch):
         "synthesizer", "skeptic", "quantifier", "risk_officer", "devils_advocate"}
 
     # With a tiny budget, the same cost trips 'exceeded'.
-    monkeypatch.setenv("GAPMAP_DEBATE_TOKEN_BUDGET", "1")
+    monkeypatch.setenv("OPENREPLY_DEBATE_TOKEN_BUDGET", "1")
     assert get_debate_audit(topic)["budget"]["level"] == "exceeded"
 
 
 def test_dynamic_roles_fallback_offline(db):
     # Offline (no provider): generate_debate_roles falls back to the fixed panel,
     # and a dynamic-roles debate still completes via the heuristic path.
-    from gapmap.research.deliberate import generate_debate_roles, PERSONAS
+    from openreply.research.deliberate import generate_debate_roles, PERSONAS
     roles = generate_debate_roles("anything", n=5)
     assert roles == PERSONAS                       # fallback when no LLM
-    from gapmap.research.debate_run import run_topic_debate
+    from openreply.research.debate_run import run_topic_debate
     topic, findings = _seed_topic(db)
     out = run_topic_debate(topic, rounds=1, dynamic_roles=True)
     assert out["ok"] is True
@@ -211,7 +211,7 @@ def test_dynamic_roles_fallback_offline(db):
 def test_dynamic_roles_used_when_provided(db, monkeypatch):
     # With a fake provider, generate_debate_roles returns a custom panel and
     # deliberate runs over it (persona keys come from the generated roles).
-    import gapmap.analyze.providers.base as prov_base
+    import openreply.analyze.providers.base as prov_base
 
     class _Roles:
         def complete(self, *, prompt, system, max_tokens=900, temperature=0.5):
@@ -224,11 +224,11 @@ def test_dynamic_roles_used_when_provided(db, monkeypatch):
     monkeypatch.setattr(prov_base, "resolve_provider", lambda *a, **k: "fake")
     monkeypatch.setattr(prov_base, "get_provider", lambda *a, **k: _Roles())
 
-    from gapmap.research.deliberate import generate_debate_roles
+    from openreply.research.deliberate import generate_debate_roles
     roles = generate_debate_roles("note apps", n=3)
     assert {r["key"] for r in roles} == {"economist", "ux", "contra"}
 
-    from gapmap.research.debate_run import run_topic_debate, get_debate_audit
+    from openreply.research.debate_run import run_topic_debate, get_debate_audit
     topic, _ = _seed_topic(db)
     out = run_topic_debate(topic, rounds=1, dynamic_roles=True)
     assert out["ok"] is True
@@ -237,7 +237,7 @@ def test_dynamic_roles_used_when_provided(db, monkeypatch):
 
 
 def test_redebate_replaces_prior_verdicts(db):
-    from gapmap.research.debate_run import run_topic_debate
+    from openreply.research.debate_run import run_topic_debate
     topic, findings = _seed_topic(db)
     run_topic_debate(topic, rounds=1)
     run_topic_debate(topic, rounds=1)

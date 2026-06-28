@@ -9,12 +9,12 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
     # A scored gap above threshold for score_threshold alerts.
-    from gapmap.research import pain_scoring
+    from openreply.research import pain_scoring
     pain_scoring._ensure_table()
     db.execute(
         "INSERT INTO gap_scores(topic,gap_id,title,pain_score) VALUES(?,?,?,?)",
@@ -41,7 +41,7 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_create_list_delete(db):
-    from gapmap.research import gap_alerts
+    from openreply.research import gap_alerts
     r = gap_alerts.create_alert("t", "score_threshold", threshold=70)
     assert r["ok"] and r["alert_id"]
     aid = r["alert_id"]
@@ -52,12 +52,12 @@ def test_create_list_delete(db):
 
 
 def test_invalid_type_rejected(db):
-    from gapmap.research import gap_alerts
+    from openreply.research import gap_alerts
     assert gap_alerts.create_alert("t", "bogus")["ok"] is False
 
 
 def test_score_threshold_fires(db):
-    from gapmap.research import gap_alerts
+    from openreply.research import gap_alerts
     gap_alerts.create_alert("t", "score_threshold", threshold=70)
     res = gap_alerts.check_alerts("t")
     assert res["ok"] and res["fired"] == 1
@@ -67,13 +67,13 @@ def test_score_threshold_fires(db):
 
 
 def test_score_threshold_does_not_fire_when_below(db):
-    from gapmap.research import gap_alerts
+    from openreply.research import gap_alerts
     gap_alerts.create_alert("t", "score_threshold", threshold=99)
     assert gap_alerts.check_alerts("t")["fired"] == 0
 
 
 def test_spike_fires_on_rising_topic(db):
-    from gapmap.research import gap_alerts
+    from openreply.research import gap_alerts
     # 6 recent vs 1 prior over 7d → big rising velocity.
     gap_alerts.create_alert("t", "spike", threshold=50, window_days=7)
     res = gap_alerts.check_alerts("t")
@@ -82,7 +82,7 @@ def test_spike_fires_on_rising_topic(db):
 
 
 def test_disabled_alert_skipped(db):
-    from gapmap.research import gap_alerts
+    from openreply.research import gap_alerts
     r = gap_alerts.create_alert("t", "score_threshold", threshold=70)
     gap_alerts.update_alert(r["alert_id"], enabled=False)
     assert gap_alerts.check_alerts("t")["checked"] == 0

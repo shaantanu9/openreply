@@ -2,7 +2,7 @@
 
 All provider access is mocked — NO network/LLM is hit. The module does a
 late import of ``resolve_provider`` / ``get_provider`` from
-``gapmap.analyze.providers.base``, so we monkeypatch those names on that
+``openreply.analyze.providers.base``, so we monkeypatch those names on that
 module and feed a fake provider whose ``complete`` returns canned JSON.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from gapmap.research import academic_integrity as ai
+from openreply.research import academic_integrity as ai
 
 
 class _FakeProvider:
@@ -26,7 +26,7 @@ class _FakeProvider:
 
 def _patch_provider(monkeypatch, payload=None, raise_on_resolve=False,
                     raise_on_complete=False):
-    import gapmap.analyze.providers.base as base
+    import openreply.analyze.providers.base as base
 
     if raise_on_resolve:
         def _resolve(p=None):

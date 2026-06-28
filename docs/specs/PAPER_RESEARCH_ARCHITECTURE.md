@@ -1,7 +1,7 @@
 # Paper & Multi-Source Research — How Fetching Works (and How to Port It)
 
 > **Date:** 2026-06-13 · **Status:** Reference architecture (reflects code on branch `multi-source`)
-> **Scope:** How Gap Map (`reddit-myind`) searches research papers and every other
+> **Scope:** How OpenReply (`reddit-myind`) searches research papers and every other
 > external source, the contract that ties them together, and the exact recipe to
 > lift this pattern into another app/MCP.
 > **Companion docs:** `docs/specs/SOURCE_ADDITION_PLAYBOOK.md` (add-a-source mechanics),
@@ -36,21 +36,21 @@ full-text → chunk → analyze stage that generic web sources don't need.
 
 | Path | Role |
 |---|---|
-| `src/gapmap/sources/*.py` | **One module per source.** ~50 sources. Each exposes `fetch_<name>(query, limit, …) -> list[dict]`. |
-| `src/gapmap/sources/_http.py` | Shared HTTP client: `polite_get()`, `DEFAULT_HEADERS`, `USER_AGENT`, Retry-After (429) handling. |
-| `src/gapmap/sources/__init__.py` | Source registry — imports + `__all__`; docstring lists zero-config vs key-gated. |
-| `src/gapmap/sources/collect_adapter.py` | `run_<name>()` collector wrappers + the **`SOURCES`** dispatch dict (`{name: run_fn}`, 64 sources) — keyword expansion + logging + `upsert_posts` via `_run_simple_list`. |
-| `src/gapmap/research/collect.py` | The collect orchestrator — takes a `sources=[...]` list, validates each against `SOURCES`, and runs them in a thread pool (`collect.py:760`). |
-| `src/gapmap/sources/source_families.py` | Collapses fine-grained subtypes (`youtube_transcript`) into coarse families. |
-| `src/gapmap/research/sources.py` | **`ACADEMIC_SOURCES`** — the single source of truth for "which source_types are papers". |
-| `src/gapmap/research/paper_pipeline.py` | `run_paper_research()` — the one-call search→rank→fulltext→chunk→analyze orchestrator. |
-| `src/gapmap/research/paper_analyze.py` | LLM analysis (`analyze_paper`, `analyze_papers_bulk`) — summary/claims/tier. |
-| `src/gapmap/research/paper_fulltext.py` | PDF/full-text fetch (`get_full_text`). |
-| `src/gapmap/research/paper_chunks.py` | Chunk + embed full text & abstracts into the vector palace. |
-| `src/gapmap/research/paper_citations.py` / `paper_references.py` / `paper_relations.py` | Citation-graph edges (paper→paper `cites`). |
-| `src/gapmap/research/paper_gaps.py` | Literature-gap detector (open-problem finder). |
-| `src/gapmap/mcp/server.py` | Registers every fetch/paper tool as an MCP tool (`gapmap_fetch_*`, `gapmap_paper_*`). |
-| `src/gapmap/cli/main.py` | CLI surface (`gapmap research papers …`, source dispatch). |
+| `src/openreply/sources/*.py` | **One module per source.** ~50 sources. Each exposes `fetch_<name>(query, limit, …) -> list[dict]`. |
+| `src/openreply/sources/_http.py` | Shared HTTP client: `polite_get()`, `DEFAULT_HEADERS`, `USER_AGENT`, Retry-After (429) handling. |
+| `src/openreply/sources/__init__.py` | Source registry — imports + `__all__`; docstring lists zero-config vs key-gated. |
+| `src/openreply/sources/collect_adapter.py` | `run_<name>()` collector wrappers + the **`SOURCES`** dispatch dict (`{name: run_fn}`, 64 sources) — keyword expansion + logging + `upsert_posts` via `_run_simple_list`. |
+| `src/openreply/research/collect.py` | The collect orchestrator — takes a `sources=[...]` list, validates each against `SOURCES`, and runs them in a thread pool (`collect.py:760`). |
+| `src/openreply/sources/source_families.py` | Collapses fine-grained subtypes (`youtube_transcript`) into coarse families. |
+| `src/openreply/research/sources.py` | **`ACADEMIC_SOURCES`** — the single source of truth for "which source_types are papers". |
+| `src/openreply/research/paper_pipeline.py` | `run_paper_research()` — the one-call search→rank→fulltext→chunk→analyze orchestrator. |
+| `src/openreply/research/paper_analyze.py` | LLM analysis (`analyze_paper`, `analyze_papers_bulk`) — summary/claims/tier. |
+| `src/openreply/research/paper_fulltext.py` | PDF/full-text fetch (`get_full_text`). |
+| `src/openreply/research/paper_chunks.py` | Chunk + embed full text & abstracts into the vector palace. |
+| `src/openreply/research/paper_citations.py` / `paper_references.py` / `paper_relations.py` | Citation-graph edges (paper→paper `cites`). |
+| `src/openreply/research/paper_gaps.py` | Literature-gap detector (open-problem finder). |
+| `src/openreply/mcp/server.py` | Registers every fetch/paper tool as an MCP tool (`openreply_fetch_*`, `openreply_paper_*`). |
+| `src/openreply/cli/main.py` | CLI surface (`openreply research papers …`, source dispatch). |
 
 ---
 
@@ -100,7 +100,7 @@ is the keystone — get this right and everything downstream is free.
 
 One place to be polite to every API:
 
-- `USER_AGENT = "gapmap/0.1 (+<repo>; mailto:<contact>)"` — built from
+- `USER_AGENT = "openreply/0.1 (+<repo>; mailto:<contact>)"` — built from
   `core.identity` so the contact/repo is a single source of truth. Many science
   APIs (arXiv, PubMed, OpenAlex polite pool) reward or require a real UA + mailto.
 - `DEFAULT_HEADERS` — UA + `Accept-Encoding`.
@@ -196,7 +196,7 @@ collected into a returned `errors` dict):
 Returns: `{ok, topic, query, search_total, by_source, fulltext_fetched,
 fulltext_ok, papers_chunked, abstracts_chunked, analyzed, analyses[…], errors}`.
 
-The MCP wrapper `gapmap_paper_research_pipeline` (`mcp/server.py:2208`) only adds
+The MCP wrapper `openreply_paper_research_pipeline` (`mcp/server.py:2208`) only adds
 a 120 s wall-clock ceiling (`_run_with_timeout`) and an async hint.
 
 ---
@@ -228,61 +228,61 @@ branch `multi-source`:
 
 ```
 # Per-source fetch (row-shaped, no persist):
-gapmap_fetch_scholar             server.py:812
-gapmap_fetch_arxiv               server.py:846
-gapmap_fetch_openalex            server.py:854
-gapmap_fetch_pubmed              server.py:862
-gapmap_fetch_semantic_scholar    server.py:877
-gapmap_fetch_crossref            server.py:918
-gapmap_fetch_by_doi              server.py:937   # one-shot canonical DOI lookup
+openreply_fetch_scholar             server.py:812
+openreply_fetch_arxiv               server.py:846
+openreply_fetch_openalex            server.py:854
+openreply_fetch_pubmed              server.py:862
+openreply_fetch_semantic_scholar    server.py:877
+openreply_fetch_crossref            server.py:918
+openreply_fetch_by_doi              server.py:937   # one-shot canonical DOI lookup
 
 # Citation graph:
-gapmap_paper_citations           server.py:995   # forward — who cites ONE paper (paper_id)
-gapmap_paper_references          server.py:1005  # backward — what ONE paper cites
-gapmap_paper_citation_graph      server.py:1610  # topic-wide — build paper_cites edges for the map
-gapmap_paper_extract_refs        server.py:1627
-gapmap_paper_local_refs          server.py:1654
-gapmap_paper_cited_by            server.py:1669
+openreply_paper_citations           server.py:995   # forward — who cites ONE paper (paper_id)
+openreply_paper_references          server.py:1005  # backward — what ONE paper cites
+openreply_paper_citation_graph      server.py:1610  # topic-wide — build paper_cites edges for the map
+openreply_paper_extract_refs        server.py:1627
+openreply_paper_local_refs          server.py:1654
+openreply_paper_cited_by            server.py:1669
 
 # Full text / chunks / sections:
-gapmap_paper_fulltext            server.py:1048
-gapmap_paper_fulltext_status     server.py:1083
-gapmap_paper_sections            server.py:1095
-gapmap_paper_chunk               server.py:1133
-gapmap_paper_chunk_search        server.py:1149
-gapmap_paper_search_papers       server.py:1173
-gapmap_paper_chunks_stats        server.py:1583
+openreply_paper_fulltext            server.py:1048
+openreply_paper_fulltext_status     server.py:1083
+openreply_paper_sections            server.py:1095
+openreply_paper_chunk               server.py:1133
+openreply_paper_chunk_search        server.py:1149
+openreply_paper_search_papers       server.py:1173
+openreply_paper_chunks_stats        server.py:1583
 
 # Analysis:
-gapmap_analyze_paper             server.py:1592
-gapmap_analyze_papers_bulk       server.py:1635
-gapmap_paper_analyses            server.py:1673
+openreply_analyze_paper             server.py:1592
+openreply_analyze_papers_bulk       server.py:1635
+openreply_paper_analyses            server.py:1673
 
 # Write-up / knowledge build:
-gapmap_paper_outline_generate    server.py:1769
-gapmap_paper_draft_generate      server.py:1776
-gapmap_paper_knowledge_build     server.py:1799
-gapmap_paper_gaps                server.py:1819
-gapmap_paper_relations_build     server.py:1835
-gapmap_paper_export_with_citations server.py:1847
+openreply_paper_outline_generate    server.py:1769
+openreply_paper_draft_generate      server.py:1776
+openreply_paper_knowledge_build     server.py:1799
+openreply_paper_gaps                server.py:1819
+openreply_paper_relations_build     server.py:1835
+openreply_paper_export_with_citations server.py:1847
 
 # The centrepiece:
-gapmap_paper_research_pipeline   server.py:2208  # search→rank→fulltext→analyze→store
-gapmap_papers_for_topic          server.py:2290  # fast read of analyzed papers (no LLM)
+openreply_paper_research_pipeline   server.py:2208  # search→rank→fulltext→analyze→store
+openreply_papers_for_topic          server.py:2290  # fast read of analyzed papers (no LLM)
 ```
 
 A typical literature review is **3 MCP calls**:
-`gapmap_paper_research_pipeline(topic)` → `gapmap_paper_search_papers(…)` to
-drill in → `gapmap_analyze_papers_bulk(topic)` to extract claims.
+`openreply_paper_research_pipeline(topic)` → `openreply_paper_search_papers(…)` to
+drill in → `openreply_analyze_papers_bulk(topic)` to extract claims.
 
 ---
 
 ## 8. The CLI surface (`cli/main.py`)
 
-- `gapmap research papers --topic … --sources arxiv,pubmed,…` — source subset
+- `openreply research papers --topic … --sources arxiv,pubmed,…` — source subset
   help at `cli/main.py:3733`; default subset
   `arxiv,openalex,semantic_scholar,scholar` at `:3880`.
-- `gapmap research paper-fulltext --post-id arxiv_2403.12345 --show` (`:3906`).
+- `openreply research paper-fulltext --post-id arxiv_2403.12345 --show` (`:3906`).
 - Collect dispatch source list at `cli/main.py:1315`; `--skip-reddit` to top up a
   topic with only external sources at `:1341`.
 
@@ -336,14 +336,14 @@ the "fusion" moat (paper science + user-pain/market signal in one store).
 1. `sources/<name>.py` — `fetch_<name>(query, limit) -> list[dict]` (never raises).
 2. `sources/__init__.py` — `from .<name> import fetch_<name>` + add to `__all__`.
 3. `sources/collect_adapter.py` — **two edits**: (a) define a `run_<name>(topic_or_keywords, limit)` wrapper that calls `_run_simple_list(topic, "<name>", fetch_<name>, limit)`; (b) register it in the **`SOURCES`** dict (`"<name>": run_<name>`). *This is the actual convention — there is no `collect_<name>`.* Skipping the `SOURCES` entry means the collect orchestrator can't dispatch it.
-4. `mcp/server.py` — add a `@mcp.tool() gapmap_fetch_<name>` wrapper (ad-hoc preview) *and* it's automatically collectable via `gapmap_collect` once it's in `SOURCES`.
+4. `mcp/server.py` — add a `@mcp.tool() openreply_fetch_<name>` wrapper (ad-hoc preview) *and* it's automatically collectable via `openreply_collect` once it's in `SOURCES`.
 5. `cli/main.py` — add `<name>` to the `--sources` help string (`:1315`).
 6. `pyproject.toml` — deps (keep pure-`httpx`; native libs bloat a sidecar DMG).
 7. *(only if new source FAMILY)* — `source_families.py` + JS `postLink.js`.
 
 **Acceptance per source:** `fetch_<name>("test")` returns rows or `[]` (never
 raises) · `<name>` is a key in `collect_adapter.SOURCES` · rows land in `posts`
-after a collect with `sources=["<name>"]` · `gapmap_fetch_<name>` callable via MCP.
+after a collect with `sources=["<name>"]` · `openreply_fetch_<name>` callable via MCP.
 
 ### Split-or-merge call
 Stay merged while the value is the *fusion* and usage is undifferentiated. Split
@@ -358,7 +358,7 @@ pre-split — the fusion is the moat.
 
 ```
 User / Claude
-   │  gapmap_paper_research_pipeline(topic="X")
+   │  openreply_paper_research_pipeline(topic="X")
    ▼
 run_paper_research()                              research/paper_pipeline.py:32
    │  ThreadPoolExecutor → fetch_arxiv / fetch_pubmed / fetch_openalex /
@@ -386,23 +386,23 @@ Verified the full 64-source matrix across every layer. Status:
 - **Adding (collect) — ✅ fully wired** for every source, including the 8
   recently-added social/prediction sources (`polymarket`, `digg`,
   `truthsocial`, `tiktok`, `instagram`, `threads`, `pinterest`, `x`). They run
-  via `collect(sources=[...])` / the `gapmap_collect` MCP tool / CLI `--sources`.
-- **Search — ✅** the corpus is searchable via `gapmap_search` (Reddit),
-  `gapmap_semantic_search`, and `gapmap_query_db` regardless of source.
+  via `collect(sources=[...])` / the `openreply_collect` MCP tool / CLI `--sources`.
+- **Search — ✅** the corpus is searchable via `openreply_search` (Reddit),
+  `openreply_semantic_search`, and `openreply_query_db` regardless of source.
 - **Per-source ad-hoc MCP fetch tools — ✅ closed this pass.** Added 11 missing
-  `gapmap_fetch_*` tools (`polymarket, truthsocial, digg, tiktok, instagram,
+  `openreply_fetch_*` tools (`polymarket, truthsocial, digg, tiktok, instagram,
   threads, pinterest, x, steam, dblp, europepmc`) at `mcp/server.py` so each
   source can be previewed without a full collect. Server imports clean; 51
-  `gapmap_fetch_*` tools total.
+  `openreply_fetch_*` tools total.
 - **Smoke test:** `fetch_arxiv("transformer attention")` → 3 rows, posts-shape
   valid, `score` carries citations. `SOURCES` resolves all 8 new social sources.
 
-**Resolved (2026-06-14):** `gapmap_paper_citations` was previously defined twice
+**Resolved (2026-06-14):** `openreply_paper_citations` was previously defined twice
 in `mcp/server.py` — once for single-paper forward citations (`paper_id, limit`)
 and once for the topic-wide citation-graph build (`topic, limit`) — so FastMCP
-logged `Component already exists: tool:gapmap_paper_citations` and the second
+logged `Component already exists: tool:openreply_paper_citations` and the second
 registration silently shadowed the first, leaving the single-paper tool
-unreachable. The topic-wide builder is now `gapmap_paper_citation_graph`
+unreachable. The topic-wide builder is now `openreply_paper_citation_graph`
 (`server.py:1610`); the single-paper tool keeps the documented
-`gapmap_paper_citations` name (`server.py:995`). Server now imports with zero
+`openreply_paper_citations` name (`server.py:995`). Server now imports with zero
 duplicate-component warnings.

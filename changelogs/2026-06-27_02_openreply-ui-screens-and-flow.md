@@ -7,7 +7,7 @@
 
 Built the OpenReply app UI on top of the repo (used as boilerplate): three new
 screens (Agents, Opportunities, Compose) wired through the full command triangle
-(JS `invoke` → Rust `#[tauri::command]` → Python `gapmap` CLI), a reworked flow
+(JS `invoke` → Rust `#[tauri::command]` → Python `openreply` CLI), a reworked flow
 (Agents is now the landing screen), and new sidebar navigation. Verified: Rust
 compiled clean and relaunched with all 12 new commands registered; all new JS
 passes syntax checks; the underlying agent/reply/content engine was tested working.

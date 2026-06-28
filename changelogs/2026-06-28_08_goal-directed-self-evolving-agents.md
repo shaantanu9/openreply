@@ -45,16 +45,16 @@ existing personas/memories/conclusions + palace + `persona_edges` stack.
 
 ## Files Created
 
-- `src/gapmap/reply/playbook.py`, `src/gapmap/reply/ideas.py`
+- `src/openreply/reply/playbook.py`, `src/openreply/reply/ideas.py`
 - `tests/test_agent_goal.py`, `tests/test_playbook.py`, `tests/test_associations.py`, `tests/test_ideas.py`
 - `docs/superpowers/specs/2026-06-28-goal-directed-self-evolving-agents-design.md`
 - `docs/superpowers/plans/2026-06-28-goal-directed-self-evolving-agents.md`
 
 ## Files Modified
 
-- `src/gapmap/reply/{agent,schema,generate,content,learn,feedback}.py`
-- `src/gapmap/persona/graph.py`
-- `src/gapmap/cli/reply_cmds.py`
+- `src/openreply/reply/{agent,schema,generate,content,learn,feedback}.py`
+- `src/openreply/persona/graph.py`
+- `src/openreply/cli/reply_cmds.py`
 - `app-tauri/src-tauri/src/{commands.rs,main.rs}`
 - `app-tauri/src/or/{api.js,dynamic.js}`
 

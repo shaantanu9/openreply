@@ -8,7 +8,7 @@
 Two coupled changes so every LLM/MCP output is preserved and searchable, and so older pipelines can consume that accumulated context.
 
 1. **Mandatory save to `mcp_analyses`** from every GUI-invoked Python pipeline (previously only MCP-server tools did this). Insights, concepts, solutions, sentiment, chat, quick-extract, temporal-gaps, and report-pro now each append a best-effort row at completion.
-2. **Unified cross-table search** — a new `search_all(query, topic, aggressive)` primitive hits posts / graph nodes / analyses / papers / hypotheses / feedback with SQL LIKE in normal mode, and adds LLM query expansion plus palace semantic search in aggressive mode. Every run persists a compact summary to `mcp_analyses` (`kind='search'`) so downstream pipelines can seed prompts with "recently searched-for things" without a second lookup. Exposed via CLI (`research search-all`), Rust command (`search_all`), MCP tool (`gapmap_search_all`), and GUI Search tab.
+2. **Unified cross-table search** — a new `search_all(query, topic, aggressive)` primitive hits posts / graph nodes / analyses / papers / hypotheses / feedback with SQL LIKE in normal mode, and adds LLM query expansion plus palace semantic search in aggressive mode. Every run persists a compact summary to `mcp_analyses` (`kind='search'`) so downstream pipelines can seed prompts with "recently searched-for things" without a second lookup. Exposed via CLI (`research search-all`), Rust command (`search_all`), MCP tool (`openreply_search_all`), and GUI Search tab.
 
 Together: the AI Analyses tab becomes the true unified log of every LLM touchpoint, and the new Search tab lets users (and pipelines) pull any row from any table through one input — with the answers saved back so they compound.
 
@@ -52,7 +52,7 @@ New `Search` tab between Chat and Actions. Text input + aggressive toggle + Ente
 - `src/reddit_research/research/solutions.py` — save row after `solutions_pipeline`.
 - `src/reddit_research/research/sentiment_by_source.py` — save row after `sentiment_for_topic`.
 - `src/reddit_research/cli/main.py` — save rows after `research chat`, `research gaps`, `research temporal-gaps`, `research report-pro`. New `research search-all` subcommand.
-- `src/reddit_research/mcp/server.py` — new `gapmap_search_all(query, topic, aggressive)` MCP tool.
+- `src/reddit_research/mcp/server.py` — new `openreply_search_all(query, topic, aggressive)` MCP tool.
 - `app-tauri/src-tauri/src/commands.rs` — new `search_all(query, topic, aggressive)` Tauri command.
 - `app-tauri/src-tauri/src/main.rs` — register `commands::search_all` in the invoke_handler.
 - `app-tauri/src/api.js` — `api.searchAll(query, {topic, aggressive})` client wrapper.

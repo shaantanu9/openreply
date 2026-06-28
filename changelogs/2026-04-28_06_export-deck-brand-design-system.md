@@ -9,7 +9,7 @@ Replaced the default-Word-styles output of `build_docx` and `build_docx_from_mar
 
 The pandoc path automatically generates and applies a brand reference docx — markdown→docx output now inherits the same fonts, colors, headings, and quote style as the data-driven output. No more visual drift between the two formats.
 
-A strict design-system prompt is exposed via the `gapmap_doc_design_prompt` MCP tool so any LLM that designs a layout plan respects the same invariants the renderer enforces.
+A strict design-system prompt is exposed via the `openreply_doc_design_prompt` MCP tool so any LLM that designs a layout plan respects the same invariants the renderer enforces.
 
 ## Changes
 
@@ -30,15 +30,15 @@ A strict design-system prompt is exposed via the `gapmap_doc_design_prompt` MCP 
 
 ### Brand reference doc auto-applied to pandoc path
 
-- `_ensure_brand_reference_docx()` generates the reference doc on first call, caches it in `~/.gapmap/brand-reference.docx`
+- `_ensure_brand_reference_docx()` generates the reference doc on first call, caches it in `~/.openreply/brand-reference.docx`
 - `build_docx_from_markdown()` now passes that reference doc to pandoc automatically (callers can still override with `reference_docx`)
 - Markdown→docx output grew from 43 KB → 55 KB because the brand styles now ship with it
 
 ### New MCP tools
 
-- `gapmap_doc_design_prompt()` → returns the strict design-system prompt + section-kind enum
-- `gapmap_plan_doc_layout()` → returns the JSON plan without rendering
-- `gapmap_render_planned_docx(plan, out_path)` → renders an LLM-edited plan
+- `openreply_doc_design_prompt()` → returns the strict design-system prompt + section-kind enum
+- `openreply_plan_doc_layout()` → returns the JSON plan without rendering
+- `openreply_render_planned_docx(plan, out_path)` → renders an LLM-edited plan
 
 ## Files Created
 
@@ -48,7 +48,7 @@ A strict design-system prompt is exposed via the `gapmap_doc_design_prompt` MCP 
 ## Files Modified
 
 - `src/reddit_research/research/export_deck.py` — `build_docx` refactored to `plan_layout` + `render_planned_docx`; `build_docx_from_markdown` auto-applies brand reference doc; new `get_design_system_prompt` accessor
-- `src/reddit_research/mcp/server.py` — added `gapmap_doc_design_prompt`, `gapmap_plan_doc_layout`, `gapmap_render_planned_docx` MCP tools
+- `src/reddit_research/mcp/server.py` — added `openreply_doc_design_prompt`, `openreply_plan_doc_layout`, `openreply_render_planned_docx` MCP tools
 
 ## Smoke test (verified)
 

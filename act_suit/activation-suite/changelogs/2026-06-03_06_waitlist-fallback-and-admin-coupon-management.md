@@ -37,7 +37,7 @@ codes + branded email).
 
 ### Shared
 - **`src/lib/betaAdminStore.ts`:** coupon + waitlist service functions, incl.
-  `generateCouponCode()` (GAPMAP-XXXX-XXXX, ambiguity-free alphabet) and
+  `generateCouponCode()` (OPENREPLY-XXXX-XXXX, ambiguity-free alphabet) and
   `inviteFromWaitlist()`.
 - **`src/lib/email.ts`:** branded `sendBetaInviteEmail(to, code, name?)`.
 - **`src/app/admin/page.tsx`:** tab bar (Users / Coupons / Waitlist).

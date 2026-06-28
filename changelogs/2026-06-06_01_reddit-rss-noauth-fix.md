@@ -33,7 +33,7 @@ dependency), restoring the free, no-OAuth Reddit path.
 - RSS exposes title/author/permalink/created/self-text/subreddit, but **not**
   score / upvote_ratio / num_comments (returned as `None`).
 - ~25 items per search feed, up to ~100 per listing (no deep pagination).
-- For score-aware / deep collection, connect Reddit OAuth (`gapmap auth login`)
+- For score-aware / deep collection, connect Reddit OAuth (`openreply auth login`)
   → flips `config.mode` to "auth" (PRAW). Auth mode is unchanged.
 
 ## Verification
@@ -45,7 +45,7 @@ id/sub/author/title/body. `py_compile` clean; module imports clean.
 
 ## Files Modified
 
-- `src/gapmap/core/public_client.py` — RSS rewrite
+- `src/openreply/core/public_client.py` — RSS rewrite
 
 ## Files Created
 

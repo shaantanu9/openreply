@@ -7,7 +7,7 @@
 
 Every OpenReply screen felt slow (~5s) even though it reads a local SQLite DB.
 The cost was not the DB (sub-millisecond) but the Python sidecar: each Tauri
-command shells out to the `gapmap` CLI, paying a cold interpreter/import spawn
+command shells out to the `openreply` CLI, paying a cold interpreter/import spawn
 (~4-5s measured) on every call, and the OpenReply UI had no caching — so every
 navigation re-paid those round-trips and showed a bare "Loading…". This adds a
 stale-while-revalidate (SWR) read cache so navigation is instant, a router-level

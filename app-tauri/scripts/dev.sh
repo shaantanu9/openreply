@@ -52,8 +52,23 @@ if [[ -f "$HOME/.cargo/.package-cache" ]]; then
   rm -f "$HOME/.cargo/.package-cache"
 fi
 
-# ── 3. hand off to the real tauri dev ─────────────────────────────────────
 cd "$(dirname "$0")/.."
+
+# ── 3. self-heal the onedir sidecar resource ──────────────────────────────
+# The bundled onedir engine is gitignored, so `git clean -fdx` / disk cleanups
+# wipe it; the Tauri `resources` glob (openreply-cli-onedir/**/*) then matches
+# nothing and the build dies with "path not found". Dev runs the sidecar via the
+# .venv python anyway, so: restore the real engine from a prior build if present,
+# and ALWAYS guarantee at least one file in the dir so the build can never crash.
+ONEDIR="src-tauri/binaries/openreply-cli-onedir"
+if [[ ! -x "$ONEDIR/openreply-cli" && -x ../dist/openreply-cli/openreply-cli ]]; then
+  echo "→ restoring onedir sidecar from ../dist/openreply-cli"
+  rm -rf "$ONEDIR"; cp -R ../dist/openreply-cli "$ONEDIR" 2>/dev/null || true
+fi
+mkdir -p "$ONEDIR"
+[[ -e "$ONEDIR/.keep" ]] || : > "$ONEDIR/.keep"
+
+# ── 4. hand off to the real tauri dev ─────────────────────────────────────
 if [[ -x ./node_modules/.bin/tauri ]]; then
   exec ./node_modules/.bin/tauri dev "$@"
 fi

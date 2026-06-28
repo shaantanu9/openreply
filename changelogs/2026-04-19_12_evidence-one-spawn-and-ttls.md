@@ -7,7 +7,7 @@
 
 Evidence tab previously fired four separate `api.getFindings` calls, each spawning its own Python process. Replaced with a single parameterized SQL using a CTE + `ROW_NUMBER() OVER (PARTITION BY kind)` to return the top 100 of each of the four kinds (`painpoint`, `feature_wish`, `product`, `workaround`) in one round-trip. The same SQL string is hoisted so the mount-time preload warms the exact cache key the tab-click will hit — first click paints from memory, zero spawns.
 
-Also tuned every cache TTL in `api.js` to reflect how often the underlying data realistically changes (writes already invalidate; TTLs just control how stale a read-only hit can get). Added `docs/gap-map-roadmap.md` as the tracking document for every remaining performance optimization and feature idea, with done / remaining check-marks.
+Also tuned every cache TTL in `api.js` to reflect how often the underlying data realistically changes (writes already invalidate; TTLs just control how stale a read-only hit can get). Added `docs/openreply-roadmap.md` as the tracking document for every remaining performance optimization and feature idea, with done / remaining check-marks.
 
 ## Changes
 
@@ -35,7 +35,7 @@ Tuned per realistic data-change frequency; writes already invalidate, so TTLs ju
 
 ### Roadmap doc
 
-- New `docs/gap-map-roadmap.md` tracks all remaining performance + feature work with done/remaining checkboxes, grouped by phase: Performance · Reliability/UX polish · Features · Developer/ops.
+- New `docs/openreply-roadmap.md` tracks all remaining performance + feature work with done/remaining checkboxes, grouped by phase: Performance · Reliability/UX polish · Features · Developer/ops.
 
 ## Expected impact
 
@@ -48,7 +48,7 @@ Tuned per realistic data-change frequency; writes already invalidate, so TTLs ju
 
 ## Files Created
 
-- `docs/gap-map-roadmap.md`
+- `docs/openreply-roadmap.md`
 - `changelogs/2026-04-19_12_evidence-one-spawn-and-ttls.md` (this file)
 
 ## Files Modified

@@ -5,13 +5,13 @@
 
 ## Summary
 
-User switched their default LLM to Ollama (`llama3.2:3b`) and asked Gap Map to re-analyze the existing `calari tracking app` topic (13K nodes, 5 painpoints from the old provider). Running the enrichment surfaced **three distinct issues** that were silently burning analyses:
+User switched their default LLM to Ollama (`llama3.2:3b`) and asked OpenReply to re-analyze the existing `calari tracking app` topic (13K nodes, 5 painpoints from the old provider). Running the enrichment surfaced **three distinct issues** that were silently burning analyses:
 
 1. **Ollama HTTP timeout was 120s** hardcoded in `OllamaProvider.complete` — enough for GPU-backed models but not for CPU-only small models like `llama3.2:3b` on a 120-post prompt. Every extractor call hit the ceiling exactly at 120.00s and raised `enrich failed: timed out`. Fixed: bumped to 600s, overridable via `OLLAMA_TIMEOUT` env var.
 
 2. **Small Ollama models truncated mid-JSON** — `num_predict=2048` wasn't enough for a 120-post corpus prompt, so llama3.2:3b wrote half an array and stopped. `_parse_json` returned `{"_raw": …, "_parse_error": True}`. `enrich_from_llm`'s `isinstance(..., list)` guard dropped the dict as `[]`, producing a clean `{"ok": true, "painpoints_added": 0}` success that was actually total loss. Fixed: add `"format": "json"` to the Ollama `/api/generate` payload whenever the system prompt mentions JSON. Ollama constrains the grammar to valid JSON output so truncation still produces syntactically-closed arrays.
 
-3. **Dev CLI was reading the wrong database.** The Tauri app stores data under `~/Library/Application Support/com.shantanu.gapmap/reddit-myind/reddit.db`, but `reddit-cli info` without `REDDIT_MYIND_DATA_DIR` set resolves to the repo-local `./data/reddit.db`. When the user ran the CLI to poke at their 13K-post corpus, they hit the empty dev DB by default. This is **not a code bug**; the Rust side sets the env var automatically in the Tauri sidecar path. But it's a real trap for anyone running the CLI manually.
+3. **Dev CLI was reading the wrong database.** The Tauri app stores data under `~/Library/Application Support/com.shantanu.openreply/reddit-myind/reddit.db`, but `reddit-cli info` without `REDDIT_MYIND_DATA_DIR` set resolves to the repo-local `./data/reddit.db`. When the user ran the CLI to poke at their 13K-post corpus, they hit the empty dev DB by default. This is **not a code bug**; the Rust side sets the env var automatically in the Tauri sidecar path. But it's a real trap for anyone running the CLI manually.
 
 ## Why the timeout
 
@@ -34,11 +34,11 @@ Four extractors (painpoints / features / complaints / DIY) × 120 s ceiling each
 
 ## Diagnosis — dual DB
 
-Tauri's Rust `data_dir()` returns `$APPDATA/com.shantanu.gapmap/reddit-myind/`, but the CLI default (when spawned outside Tauri) is `./data/` relative to CWD. Two separate SQLite files end up existing. Both work; they just don't share state.
+Tauri's Rust `data_dir()` returns `$APPDATA/com.shantanu.openreply/reddit-myind/`, but the CLI default (when spawned outside Tauri) is `./data/` relative to CWD. Two separate SQLite files end up existing. Both work; they just don't share state.
 
 **For CLI-against-app-data:**
 ```bash
-export REDDIT_MYIND_DATA_DIR="$HOME/Library/Application Support/com.shantanu.gapmap/reddit-myind"
+export REDDIT_MYIND_DATA_DIR="$HOME/Library/Application Support/com.shantanu.openreply/reddit-myind"
 reddit-cli info
 ```
 

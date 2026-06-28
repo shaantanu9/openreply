@@ -6,7 +6,7 @@
 ## Summary
 
 Mapped six more frameworks from the resumeforge `product-discovery-complete-guide.md`
-reference onto Gap Map's existing painpoint / intervention / paper graph.
+reference onto OpenReply's existing painpoint / intervention / paper graph.
 All six leverage data the Solutions pipeline already produces — no new
 collection, no schema rewrites, fully additive and idempotent. The
 Opportunity Solution Tree (Torres, 2016) is the new centrepiece: it ties

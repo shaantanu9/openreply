@@ -1,5 +1,5 @@
 //! Scheduled-run support — installs a macOS launchd agent that invokes
-//! `gapmap research schedule-tick` on an interval. Linux / Windows
+//! `openreply research schedule-tick` on an interval. Linux / Windows
 //! return a "not supported" status response.
 //!
 //! The sidecar binary path is resolved dynamically at install time so the
@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::Command;
 
-const LABEL: &str = "com.shantanu.gapmap.schedule";
+const LABEL: &str = "com.shantanu.openreply.schedule";
 
 fn plist_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
@@ -36,7 +36,7 @@ fn sidecar_absolute(app: &tauri::AppHandle) -> Option<PathBuf> {
                 let cand = p
                     .join("src-tauri")
                     .join("binaries")
-                    .join("gapmap-cli-aarch64-apple-darwin");
+                    .join("openreply-cli-aarch64-apple-darwin");
                 if cand.exists() {
                     return Some(cand);
                 }
@@ -64,7 +64,7 @@ fn plist_body(interval_secs: u32, sidecar: &str, data_dir: &str) -> String {
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>GAPMAP_DATA_DIR</key><string>{data_dir}</string>
+    <key>OPENREPLY_DATA_DIR</key><string>{data_dir}</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
   </dict>
   <key>StartInterval</key><integer>{interval}</integer>

@@ -6,7 +6,7 @@
 ## Summary
 
 Analyzed two external research/fetch engines in detail and verified both run keyless,
-then documented how they relate to OpenReply's current gapmap fetch layer with a
+then documented how they relate to OpenReply's current openreply fetch layer with a
 keep/adopt recommendation.
 
 ## Changes
@@ -15,7 +15,7 @@ keep/adopt recommendation.
   (Python: 18 sources, planner→fetch→RRF+LLM rerank→cluster→brief, engagement scoring,
   cookie/binary desktop sources, SQLite store/watchlist, Go MCP) and its web-edge-engine
   (portable TS, 4 keyless sources, Next.js + Supabase Edge SSE, Tauri port guide), a
-  head-to-head vs gapmap, and the recommendation: keep gapmap as the backbone; adopt
+  head-to-head vs openreply, and the recommendation: keep openreply as the backbone; adopt
   last30days' engagement-weighted RRF ranking + cross-source clustering + desktop sources
   (X bird/yt-dlp via the Tauri port guide); use web-edge-engine as the blueprint for a
   future hosted/web OpenReply.

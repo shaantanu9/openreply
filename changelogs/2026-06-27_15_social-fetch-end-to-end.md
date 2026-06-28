@@ -62,13 +62,13 @@ toggle). No new scrapers; this is credential-management + wiring + defaults.
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — `source_credentials.enabled` column + migration.
-- `src/gapmap/core/credentials.py` — `enabled` in get/set, `is_enabled`/`set_enabled`.
-- `src/gapmap/research/reach_connections.py` — catalogue, `login_pair`, live checks,
+- `src/openreply/core/db.py` — `source_credentials.enabled` column + migration.
+- `src/openreply/core/credentials.py` — `enabled` in get/set, `is_enabled`/`set_enabled`.
+- `src/openreply/research/reach_connections.py` — catalogue, `login_pair`, live checks,
   `toggle_connection`, `connected_collection_sources`.
-- `src/gapmap/research/collect.py` — auto-include connected social sources.
-- `src/gapmap/sources/_scrapecreators.py`, `truthsocial.py`, `bluesky.py` — read store first.
-- `src/gapmap/cli/main.py` — `creds toggle`.
+- `src/openreply/research/collect.py` — auto-include connected social sources.
+- `src/openreply/sources/_scrapecreators.py`, `truthsocial.py`, `bluesky.py` — read store first.
+- `src/openreply/cli/main.py` — `creds toggle`.
 - `app-tauri/src-tauri/src/commands.rs`, `main.rs` — `creds_toggle` command.
 - `app-tauri/src/or/api.js` — `credsToggle` wrapper.
 - `app-tauri/src/or/dynamic.js` — `renderConnections` cards, toggle, pills, unlocks.

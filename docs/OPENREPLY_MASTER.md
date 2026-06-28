@@ -40,7 +40,7 @@ user, never us.
 **One-line positioning:** *"Reply where your customers already are — open-source, BYOK,
 multi-platform. Automate the 90%, you do the 10% that matters."*
 
-**Why this repo is the boilerplate:** Gap Map already ships the *entire inbound half* —
+**Why this repo is the boilerplate:** OpenReply already ships the *entire inbound half* —
 Reddit fetch without the API, subreddit discovery + LLM canonicalization, ~58 source
 adapters, an 8-provider BYOK LLM layer, a credentials store, and a Tauri 2 + Python
 sidecar + SQLite shell. OpenReply ≈ that intake engine + a thin scoring/reply/content/
@@ -101,7 +101,7 @@ A research **"topic" becomes an Agent** (brand/niche persona). One Agent owns:
 
 **DB (additive, shipped):** `agents`, `content_items`, `reply_opportunities`,
 `reply_drafts`, `reply_sub_rules`, `reply_state` (active-agent pointer) — in the shared
-`gapmap.db`. The reply engine reads the *active agent* via `brand.py`, so it's
+`openreply.db`. The reply engine reads the *active agent* via `brand.py`, so it's
 agent-scoped without rewrites. Full data model + migration in `OPENREPLY_DESIGN.md §2`.
 
 ---
@@ -204,8 +204,8 @@ One variable (`--reddit`) retunes the whole accent.
 - **Fetch:** Reddit tier cascade (PRAW→cookie→RSS, no API key), `discover_subs` + LLM
   canonicalization, ~58 source adapters on one contract, `source_credentials` store.
 - **LLM:** 8-provider BYOK chain with auto-resolution.
-- **New OpenReply engine** (`src/gapmap/reply/`): `agent`, `brand`, `opportunity`,
-  `generate`, `content`, `rules`, `platforms`, **`rank`**. CLI: `gapmap reply|agent|content` (all `--json`).
+- **New OpenReply engine** (`src/openreply/reply/`): `agent`, `brand`, `opportunity`,
+  `generate`, `content`, `rules`, `platforms`, **`rank`**. CLI: `openreply reply|agent|content` (all `--json`).
 
 **Ranking — engagement-weighted RRF** (`reply/rank.py`, adapted from last30days):
 each opportunity's LLM base score (relevance/intent/fit) is fused with a per-platform
@@ -214,12 +214,12 @@ each opportunity's LLM base score (relevance/intent/fit) is fused with a per-pla
 `reply_opportunities` (+ `engagement`/`freshness`/`rrf` columns) and used to sort the Inbox
 / Opportunities. Verified live (Reddit) + deterministic unit test.
 
-**Backend cleanup (2026-06-27):** the gapmap Python was trimmed to the OpenReply keep-set.
+**Backend cleanup (2026-06-27):** the openreply Python was trimmed to the OpenReply keep-set.
 Removed **96 research modules** (papers, academic mode, product mode, and the consultancy
 frameworks: SWOT/lean-canvas/PMF/pricing/launch/OST/empathy/interviews/deliberate/…).
 **Kept:** `research/{collect, discover, gaps, prompts, prompt_store, quality_gate,
 relevance, topic_resolver, corpus_format}` + all of `core/`, `fetch/`, `sources/`,
-`analyze/providers`, `graph/`, `reply/`. Verified: `gapmap.cli.main` + `gapmap.mcp.server`
+`analyze/providers`, `graph/`, `reply/`. Verified: `openreply.cli.main` + `openreply.mcp.server`
 + `reply/agent/content/discover/info` all import and run clean.
 
 Full detail: `TAURI_AND_FETCH_ARCHITECTURE.md` · removal map: `OPENREPLY_RESHAPE.md`.

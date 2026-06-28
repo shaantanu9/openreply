@@ -13,7 +13,7 @@ reads the *same* store from a *different* process. ChromaDB's persistent store
 is not safe for concurrent cross-process write+read, so chat's inline
 `palace.stats()` / `palace.search_posts()` calls blocked on the writer's lock
 — with no timeout — for the whole duration of the collect. (The main
-`gapmap.db` is WAL + `busy_timeout=5000`, so it was never the culprit.)
+`openreply.db` is WAL + `busy_timeout=5000`, so it was never the culprit.)
 
 Fix: bound chat's palace reads with a wall-clock ceiling and fall back to the
 existing engagement-ranked SQL retrieval on timeout. The hang becomes a short
@@ -22,12 +22,12 @@ from SQL when it's busy.
 
 ## Changes
 
-- `src/gapmap/research/chat.py`:
+- `src/openreply/research/chat.py`:
   - New `_call_with_timeout(fn, timeout_s)` helper — runs a blocking
     palace/ChromaDB call on a daemon thread and returns `(False, None)` on
     timeout instead of waiting (deliberately NOT a ThreadPoolExecutor
     `with`-block, whose `shutdown(wait=True)` would re-introduce the hang).
-  - New `_PALACE_CHAT_TIMEOUT` (env `GAPMAP_PALACE_CHAT_TIMEOUT`, default 3 s).
+  - New `_PALACE_CHAT_TIMEOUT` (env `OPENREPLY_PALACE_CHAT_TIMEOUT`, default 3 s).
   - `_semantic_evidence` (the ASK/RAG grounding path) now runs the stats-gate
     + `search_posts` under the ceiling; on timeout → `([], "")` → SQL fallback.
   - The agent-mode `semantic_search` tool is bounded the same way (returns a
@@ -41,7 +41,7 @@ from SQL when it's busy.
 
 ## Files Modified
 
-- `src/gapmap/research/chat.py`
+- `src/openreply/research/chat.py`
 
 ## Verification
 

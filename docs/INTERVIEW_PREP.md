@@ -1,4 +1,4 @@
-# Gap Map — Interview Preparation & Design Concepts
+# OpenReply — Interview Preparation & Design Concepts
 
 > **Purpose:** One document to prepare for any interview about this project. Every design concept is broken into **What / Why / How / Importance / Tradeoffs**, followed by a **mock-drill Q&A bank** (easy → hard) with model answers and likely follow-ups.
 >
@@ -32,7 +32,7 @@
 
 ## 0. The 30-second pitch
 
-> "Gap Map is a **local-first desktop research tool**. A user types a topic, and it pulls signal from **20+ sources** — Reddit, Hacker News, arXiv, PubMed, App Store reviews, GitHub issues — then uses **LLMs to synthesize market gaps, audience personas, and academic-paper insights**. It ships as a Mac desktop app built on **Tauri 2 with a Python sidecar**, but the *same* engine is also a **CLI** and an **MCP server** that AI agents like Claude can call directly."
+> "OpenReply is a **local-first desktop research tool**. A user types a topic, and it pulls signal from **20+ sources** — Reddit, Hacker News, arXiv, PubMed, App Store reviews, GitHub issues — then uses **LLMs to synthesize market gaps, audience personas, and academic-paper insights**. It ships as a Mac desktop app built on **Tauri 2 with a Python sidecar**, but the *same* engine is also a **CLI** and an **MCP server** that AI agents like Claude can call directly."
 
 That single sentence sets up the most important concept: **one engine, three surfaces.**
 
@@ -46,12 +46,12 @@ That single sentence sets up the most important concept: **one engine, three sur
 
 ## A1. One engine, three surfaces
 
-**What it is.** The entire product is **one Python package** (`gapmap`) exposed through three different interfaces that all share the same `core/` + `fetch/` + `research/` modules:
+**What it is.** The entire product is **one Python package** (`openreply`) exposed through three different interfaces that all share the same `core/` + `fetch/` + `research/` modules:
 
 | Surface | Tech | Audience |
 |---|---|---|
 | Desktop app | Tauri 2 + vanilla JS frontend, Python sidecar | End users |
-| CLI (`gapmap`) | Typer | Power users / scripts / automation |
+| CLI (`openreply`) | Typer | Power users / scripts / automation |
 | MCP server | FastMCP, 90+ tools | Claude / AI agents (stdio + HTTP) |
 
 **Why.** Building the same research logic three times would mean three bug surfaces, three places to update when a source changes, and inevitable drift. By separating **interface** from **engine**, business logic lives once.
@@ -95,7 +95,7 @@ That single sentence sets up the most important concept: **one engine, three sur
 
 ## A3. Local-first SQLite data layer
 
-**What it is.** All state lives in **one SQLite file** (`gapmap.db`) in the OS app-support directory, in **WAL mode**, with **thread-local connections** managed by `core/db.py`.
+**What it is.** All state lives in **one SQLite file** (`openreply.db`) in the OS app-support directory, in **WAL mode**, with **thread-local connections** managed by `core/db.py`.
 
 **Why.**
 - **Local-first / privacy:** no backend server, no account, data stays on-device.
@@ -128,7 +128,7 @@ That single sentence sets up the most important concept: **one engine, three sur
 resolve_provider(hint=None):
   1. explicit hint arg (caller override)
   2. DEFAULT_LLM_PROVIDER env var
-  3. BYOK modal choice (persisted to ~/.config/gapmap/.env)
+  3. BYOK modal choice (persisted to ~/.config/openreply/.env)
   4. first key found: ANTHROPIC → OPENAI → OPENROUTER → GROQ →
                       DEEPSEEK → MISTRAL → GEMINI → OLLAMA (local)
 ```
@@ -355,7 +355,7 @@ When asked *"what were your guiding principles?"*, lead with these:
 > Honest, senior answer: "I'd introduce a tiny reactive layer for the frontend earlier — vanilla JS was right for bundle size but the manual DOM wiring across 70 screens got heavy; a minimal state/store abstraction (not a full framework) would've cut bugs. And I'd add a typed IPC contract between Rust and Python sooner — the JSON boundary was a frequent source of subtle bugs."
 
 **Q15. Security considerations?**
-> Parameterized SQL (`:topic` binding) even locally; secrets in `~/.config/gapmap/.env` (chmod 600), never in the DB or repo; provider keys resolved at runtime, never hardcoded; Tauri capability scoping (asset protocol scope, restricted command surface); local-first means minimal attack surface (no server to breach).
+> Parameterized SQL (`:topic` binding) even locally; secrets in `~/.config/openreply/.env` (chmod 600), never in the DB or repo; provider keys resolved at runtime, never hardcoded; Tauri capability scoping (asset protocol scope, restricted command surface); local-first means minimal attack surface (no server to breach).
 
 ---
 
@@ -384,10 +384,10 @@ When asked *"what were your guiding principles?"*, lead with these:
 ```
    Desktop (Tauri+JS)     CLI (Typer)     MCP (FastMCP, 90+ tools)
           │                   │                    │
-          └─────────── shared gapmap core ─────────┘
+          └─────────── shared openreply core ─────────┘
               core/ + fetch/ + research/ + graph/
                             │
-                      SQLite (gapmap.db, WAL)
+                      SQLite (openreply.db, WAL)
 ```
 
 **Desktop IPC path:**

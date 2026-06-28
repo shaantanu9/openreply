@@ -1,4 +1,4 @@
-import gapmap.sources.truthsocial as mod
+import openreply.sources.truthsocial as mod
 
 class _FakeResp:
     def __init__(self, payload, status=200):

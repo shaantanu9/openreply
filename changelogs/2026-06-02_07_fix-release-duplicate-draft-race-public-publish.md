@@ -28,7 +28,7 @@ landed on the *other* draft silently downloaded nothing and uploaded nothing
 
 - Downloaded the missing Intel DMG + Linux AppImage/deb/rpm from the source
   draft, size-verified, uploaded to the public release, and **published it
-  (draft→latest)**: https://github.com/myind-ai/gapmap/releases/tag/v0.1.12
+  (draft→latest)**: https://github.com/myind-ai/openreply/releases/tag/v0.1.12
   — now 8 assets covering every device.
 
 ## Files Modified

@@ -24,6 +24,7 @@ const NAV = [
     ['geo', 'sparkles', 'AI Visibility'],
   ]},
   { sec: 'Account', items: [
+    ['x-account', 'twitter', 'X Account'],
     ['connections', 'plug', 'Connections'],
     ['settings', 'settings', 'Settings'],
     ['pricing', 'gem', 'Plans'],

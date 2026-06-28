@@ -16,9 +16,9 @@ import pytest
 
 @pytest.fixture
 def acad_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GAPMAP_SKIP_PALACE", "1")
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_SKIP_PALACE", "1")
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     d = db_mod.get_db()
     db_mod.init_schema(d)
@@ -28,13 +28,13 @@ def acad_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, *, grounded: int,
                     export_ok: bool = True, gaps: int = 2) -> None:
     """Patch every composed function so run_academic_brief runs offline."""
-    import gapmap.research.paper_pipeline as pp
-    import gapmap.research.paper_analyze as pa
-    import gapmap.research.paper_gaps as pg
-    import gapmap.research.deliberate as dl
-    import gapmap.research.academic_review as ar
-    import gapmap.research.academic_integrity as ai
-    import gapmap.research.academic_citations as ac
+    import openreply.research.paper_pipeline as pp
+    import openreply.research.paper_analyze as pa
+    import openreply.research.paper_gaps as pg
+    import openreply.research.deliberate as dl
+    import openreply.research.academic_review as ar
+    import openreply.research.academic_integrity as ai
+    import openreply.research.academic_citations as ac
 
     analyses = [
         {"post_id": f"arxiv_{i}", "title": f"Paper {i}",
@@ -108,7 +108,7 @@ def _ledger_gates(db, run_id: str) -> dict[str, int]:
 
 def test_full_run_l3_produces_grounded_cited_brief(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     r = run_academic_brief("focus", level="L3")
     assert r["ok"] is True
@@ -132,7 +132,7 @@ def test_full_run_l3_produces_grounded_cited_brief(acad_env, monkeypatch):
 
 def test_citations_restricted_to_committed_academic_papers(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     r = run_academic_brief("focus", level="L3")
     cites = r["brief"]["citations"]
@@ -143,7 +143,7 @@ def test_citations_restricted_to_committed_academic_papers(acad_env, monkeypatch
 
 def test_grounding_gate_hard_blocks_finalize(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=1)  # below min_grounded=2
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     r = run_academic_brief("focus", level="L3")
     assert r["ok"] is False
@@ -157,7 +157,7 @@ def test_grounding_gate_hard_blocks_finalize(acad_env, monkeypatch):
 
 def test_l2_pauses_then_finalizes_on_approval(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     paused = run_academic_brief("focus", level="L2", approved=False)
     assert paused["ok"] is True
@@ -173,7 +173,7 @@ def test_l2_pauses_then_finalizes_on_approval(acad_env, monkeypatch):
 
 def test_l1_suggest_stops_after_synthesize(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     r = run_academic_brief("focus", level="L1")
     assert r["ok"] is True
@@ -187,7 +187,7 @@ def test_l1_suggest_stops_after_synthesize(acad_env, monkeypatch):
 
 def test_gate_ledger_records_every_executed_stage(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     r = run_academic_brief("focus", level="L3")
     gates = _ledger_gates(acad_env, r["run_id"])
@@ -200,7 +200,7 @@ def test_gate_ledger_records_every_executed_stage(acad_env, monkeypatch):
 
 def test_brief_persists_and_is_readable(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    from gapmap.research.academic_mode import run_academic_brief, get_academic_brief
+    from openreply.research.academic_mode import run_academic_brief, get_academic_brief
 
     run_academic_brief("focus", level="L3")
     stored = get_academic_brief("focus")
@@ -212,7 +212,7 @@ def test_brief_persists_and_is_readable(acad_env, monkeypatch):
 
 def test_evidence_post_ids_tolerates_both_shapes():
     # Regression: detect_gaps yields str post_ids; list_gaps yields {post_id} dicts.
-    from gapmap.research.academic_mode import _evidence_post_ids
+    from openreply.research.academic_mode import _evidence_post_ids
     assert _evidence_post_ids(["arxiv_1", "arxiv_2"]) == ["arxiv_1", "arxiv_2"]
     assert _evidence_post_ids([{"post_id": "openalex_W1"}, {"title": "no id"}]) == ["openalex_W1"]
     assert _evidence_post_ids([{"post_id": "x"}, "y", 42, None]) == ["x", "y"]
@@ -221,7 +221,7 @@ def test_evidence_post_ids_tolerates_both_shapes():
 
 def test_integrity_block_flags_brief_but_still_returns_it(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    import gapmap.research.academic_integrity as ai
+    import openreply.research.academic_integrity as ai
     # A blocking fabrication-mode finding hard-flags the brief.
     monkeypatch.setattr(ai, "run_integrity_check", lambda *a, **k: {
         "ok": True, "verdict": "FAIL", "blocking": True, "sampled": 3, "total": 3,
@@ -229,7 +229,7 @@ def test_integrity_block_flags_brief_but_still_returns_it(acad_env, monkeypatch)
             {"mode": "M3", "verdict": "suspected", "claim": "An unsupported result.",
              "note": "no source backs this result"}],
     })
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     r = run_academic_brief("focus", level="L3")
     assert r["ok"] is False               # integrity block fails the overall run
@@ -244,7 +244,7 @@ def test_integrity_block_flags_brief_but_still_returns_it(acad_env, monkeypatch)
 
 def test_citation_block_is_advisory_not_fatal(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    import gapmap.research.academic_citations as ac
+    import openreply.research.academic_citations as ac
     # A citation whose DOI did not resolve flags but does not erase the brief.
     monkeypatch.setattr(ac, "verify_citations", lambda post_ids, **k: {
         "ok": False, "total": len(post_ids), "verified": len(post_ids) - 1,
@@ -252,7 +252,7 @@ def test_citation_block_is_advisory_not_fatal(acad_env, monkeypatch):
         "citations": [{"post_id": "arxiv_0", "identifier": "10.9/x",
                        "kind": "doi", "status": "missing", "title": "T"}],
     })
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     r = run_academic_brief("focus", level="L3")
     assert r["ok"] is True                 # citation miss is advisory (precision-over-recall)
@@ -264,7 +264,7 @@ def test_citation_block_is_advisory_not_fatal(acad_env, monkeypatch):
 
 def test_on_stage_callback_streams_each_stage(acad_env, monkeypatch):
     _patch_pipeline(monkeypatch, grounded=3)
-    from gapmap.research.academic_mode import run_academic_brief
+    from openreply.research.academic_mode import run_academic_brief
 
     seen: list[str] = []
     run_academic_brief("focus", level="L3", on_stage=lambda stage, _p: seen.append(stage))

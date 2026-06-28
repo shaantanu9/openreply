@@ -26,7 +26,7 @@ most recent run.
 | 7 | `result-inflation` | ✅ PASS | palace count=60302 |
 | 8 | `jobs-list` | ✅ PASS | count=5 |
 | 9 | `cancel-unknown` | ✅ PASS | clean error |
-| 10 | `failure-traceback` | ✅ PASS | TypeError: gapmap_topic_stats() missing 1 required positional argument: 'topic' |
+| 10 | `failure-traceback` | ✅ PASS | TypeError: openreply_topic_stats() missing 1 required positional argument: 'topic' |
 | 11 | `live-progress` | ✅ PASS | msg='[collect] fetch r/python top(month) limit=2…' |
 | 12 | `cancel-running-call` | ✅ PASS | was_running=true |
 | 13 | `cancel-observed` | ✅ PASS | ran 12s before observing cancel |
@@ -54,13 +54,13 @@ Pre-requisites:
 
 **Tested end-to-end via this script:**
 - HTTP transport + session handshake
-- All 4 job-control tools: `gapmap_jobs_submit`, `gapmap_jobs_get`, `gapmap_jobs_list`, `gapmap_jobs_cancel`
+- All 4 job-control tools: `openreply_jobs_submit`, `openreply_jobs_get`, `openreply_jobs_list`, `openreply_jobs_cancel`
 - Failure path (state=failed with traceback)
 - Live progress messages (collect)
 - Mid-flight cancel (collect)
 - Concurrent 5-job submission
 - All 8 wired long-tool wrappers fire their start beat
-- `gapmap_palace_reindex` is at least submittable + cancellable
+- `openreply_palace_reindex` is at least submittable + cancellable
   (full reindex skipped — separate known Chroma compactor issue)
 
 **Not covered by this script** (manual verification required):
@@ -69,7 +69,7 @@ Pre-requisites:
 - SIGKILL crash recovery (run `kill -9` on the daemon manually then
   restart and inspect `mcp_jobs` for `state=interrupted`)
 - Result truncation cap (>1 MB) — needs a tool that returns a huge payload
-- `gapmap_palace_reindex` actually completing — blocked on the cold
+- `openreply_palace_reindex` actually completing — blocked on the cold
   ChromaDB compactor issue, separate fix
 
 <!-- BEGIN OPERATOR NOTES — preserved across reruns -->

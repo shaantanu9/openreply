@@ -1,4 +1,4 @@
-import gapmap.sources.instagram as mod
+import openreply.sources.instagram as mod
 
 _FIXTURE = {"items": [{
     "id": "991",

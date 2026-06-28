@@ -13,16 +13,16 @@ lineage (artifacts → source posts) it produced. Distinct from `iterate.py`'s
 config-tuning `iterate_runs`.
 
 ## Changes (committed)
-- `src/gapmap/research/replay.py` — `list_runs(topic=None, limit=50)` (aggregate
+- `src/openreply/research/replay.py` — `list_runs(topic=None, limit=50)` (aggregate
   `checks_ledger` by run_id, exclude empty, counts + last_ts) and `get_run(run_id)`
   (`{checks, lineage}`). Both best-effort, never raise.
 - **CLI**: `research runs [--topic]` + `research run-get --run-id`.
-- **MCP**: `gapmap_runs_list(topic="")` + `gapmap_run_get(run_id)`.
+- **MCP**: `openreply_runs_list(topic="")` + `openreply_run_get(run_id)`.
 - **UI**: a "Recent runs" table in the existing Provenance & Audit panel
   (`provenance.js`) via `api.runQuery` — run_id, topic, passed/total checks, last_ts.
 
 ## Files Created
-- `src/gapmap/research/replay.py`, `tests/test_replay.py`, `tests/test_replay_mcp.py`
+- `src/openreply/research/replay.py`, `tests/test_replay.py`, `tests/test_replay_mcp.py`
 
 ## Files Modified
-- `src/gapmap/cli/main.py`, `src/gapmap/mcp/server.py`, `app-tauri/src/screens/provenance.js`
+- `src/openreply/cli/main.py`, `src/openreply/mcp/server.py`, `app-tauri/src/screens/provenance.js`

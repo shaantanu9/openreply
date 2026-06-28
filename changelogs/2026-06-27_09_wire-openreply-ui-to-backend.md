@@ -6,7 +6,7 @@
 ## Summary
 
 Made the OpenReply Tauri UI actually work: the core screens now render live data from
-the new reply_* SQLite DB via the command bridge (UI → invoke → commands.rs → gapmap
+the new reply_* SQLite DB via the command bridge (UI → invoke → commands.rs → openreply
 reply/agent/content). Verified visually — the Agents screen renders the real agents from
 the app DB.
 

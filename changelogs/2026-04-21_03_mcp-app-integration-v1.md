@@ -14,7 +14,7 @@ Verified end-to-end against a tmp Claude config: install, status, uninstall roun
 ## Changes
 
 - New `mcp install` / `mcp uninstall` / `mcp status` CLI subcommands, all with `--json` for programmatic callers
-- New `src/reddit_research/mcp/install.py` module: atomic JSON writes, one-time `.gapmap-bak` of the user's config, secrets.token_urlsafe(32) → `mcp_token` (mode 0600), idempotent install (re-running re-syncs paths without rotating token)
+- New `src/reddit_research/mcp/install.py` module: atomic JSON writes, one-time `.openreply-bak` of the user's config, secrets.token_urlsafe(32) → `mcp_token` (mode 0600), idempotent install (re-running re-syncs paths without rotating token)
 - New Tauri commands `mcp_status`, `mcp_install`, `mcp_uninstall` — thin wrappers around the CLI; resolve sidecar bin path in prod (sibling of `current_exe()` in `Contents/MacOS/`) or `--project-dir` in dev (walk up to repo with `pyproject.toml` + `.venv`)
 - Settings card replaced — old static "use with Claude Code" instructions swapped for a live status card with colored status dot, three-state UI, and Connect / Re-sync / Disconnect buttons
 - MCP server `run()` now reads `REDDIT_MYIND_TOKEN` from env (no enforcement yet — plumbed for v2)

@@ -1,4 +1,4 @@
-# Gap Map audit fixes — plan + changelog
+# OpenReply audit fixes — plan + changelog
 
 **Date:** 2026-04-20
 **Source:** Thorough audit of Tauri 2 + Python sidecar app on 2026-04-20 (see session log + `~/.claude/skills/tauri-python-sidecar-app/SKILL.md` gotcha additions).

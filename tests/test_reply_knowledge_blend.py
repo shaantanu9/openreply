@@ -16,7 +16,7 @@ import time
 
 
 def test_proportional_alloc_weighted_split():
-    from gapmap.reply.knowledge import proportional_alloc
+    from openreply.reply.knowledge import proportional_alloc
 
     alloc = dict(proportional_alloc([(1, 2.0), (2, 1.0)], 6))
     assert alloc == {1: 4, 2: 2}
@@ -24,20 +24,20 @@ def test_proportional_alloc_weighted_split():
 
 
 def test_proportional_alloc_equal_weights():
-    from gapmap.reply.knowledge import proportional_alloc
+    from openreply.reply.knowledge import proportional_alloc
 
     alloc = dict(proportional_alloc([(1, 1.0), (2, 1.0), (3, 1.0)], 6))
     assert alloc == {1: 2, 2: 2, 3: 2}
 
 
 def test_proportional_alloc_single_persona_takes_all():
-    from gapmap.reply.knowledge import proportional_alloc
+    from openreply.reply.knowledge import proportional_alloc
 
     assert proportional_alloc([(7, 1.0)], 6) == [(7, 6)]
 
 
 def test_proportional_alloc_more_personas_than_slots_picks_top_weight():
-    from gapmap.reply.knowledge import proportional_alloc
+    from openreply.reply.knowledge import proportional_alloc
 
     # k=2 < n=3 → only the two highest-weight personas get a slot each.
     alloc = dict(proportional_alloc([(1, 1.0), (2, 5.0), (3, 2.0)], 2))
@@ -48,8 +48,8 @@ def test_proportional_alloc_more_personas_than_slots_picks_top_weight():
 
 
 def _fresh_db(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core.db import get_db
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core.db import get_db
 
     get_db.cache_clear()
     return get_db()
@@ -73,8 +73,8 @@ def _add_edge(db, *, pid, frm, to, weight=0.8):
 
 def _make_agent_with_personas(db, links):
     """links: [(persona_name, lens, weight)]. Returns (agent_id, [persona_id])."""
-    from gapmap.persona.store import create_persona
-    from gapmap.reply.agent import create_agent, link_persona
+    from openreply.persona.store import create_persona
+    from openreply.reply.agent import create_agent, link_persona
 
     a = create_agent(name="Acme", brand="Acme", niche="sleep tech", persona="founder")
     pids = []
@@ -92,8 +92,8 @@ def _make_agent_with_personas(db, links):
 
 def test_no_linked_personas_yields_corpus_only(tmp_path, monkeypatch):
     db = _fresh_db(tmp_path, monkeypatch)
-    from gapmap.reply.agent import create_agent
-    from gapmap.reply.knowledge import build_knowledge_context, retrieve_for_agent
+    from openreply.reply.agent import create_agent
+    from openreply.reply.knowledge import build_knowledge_context, retrieve_for_agent
 
     a = create_agent(name="Solo", brand="Solo", niche="x")
     # Seed a topic corpus row the agent can fall back to.
@@ -108,7 +108,7 @@ def test_no_linked_personas_yields_corpus_only(tmp_path, monkeypatch):
 
 def test_single_persona_keyword_retrieval_is_lens_tagged(tmp_path, monkeypatch):
     db = _fresh_db(tmp_path, monkeypatch)
-    from gapmap.reply.knowledge import build_knowledge_context, retrieve_for_agent
+    from openreply.reply.knowledge import build_knowledge_context, retrieve_for_agent
 
     aid, (pid,) = _make_agent_with_personas(db, [("Sleep Doc", "sleep", 1.0)])
     _add_memory(db, mid=1, pid=pid, lesson="Consistent sleep schedule beats melatonin")
@@ -126,7 +126,7 @@ def test_single_persona_keyword_retrieval_is_lens_tagged(tmp_path, monkeypatch):
 
 def test_two_personas_proportional_allocation(tmp_path, monkeypatch):
     db = _fresh_db(tmp_path, monkeypatch)
-    from gapmap.reply.knowledge import retrieve_for_agent
+    from openreply.reply.knowledge import retrieve_for_agent
 
     aid, (pa, pb) = _make_agent_with_personas(
         db, [("A", "psychology", 2.0), ("B", "finance", 1.0)]
@@ -147,7 +147,7 @@ def test_two_personas_proportional_allocation(tmp_path, monkeypatch):
 
 def test_graph_neighbor_expansion_included_and_tagged(tmp_path, monkeypatch):
     db = _fresh_db(tmp_path, monkeypatch)
-    from gapmap.reply.knowledge import retrieve_for_agent
+    from openreply.reply.knowledge import retrieve_for_agent
 
     aid, (pid,) = _make_agent_with_personas(db, [("Doc", "sleep", 1.0)])
     _add_memory(db, mid=1, pid=pid, lesson="caffeine cutoff time matters")
@@ -164,7 +164,7 @@ def test_graph_neighbor_expansion_included_and_tagged(tmp_path, monkeypatch):
 
 def test_beliefs_lead_the_knowledge_block(tmp_path, monkeypatch):
     db = _fresh_db(tmp_path, monkeypatch)
-    from gapmap.reply.knowledge import agent_beliefs, build_knowledge_context
+    from openreply.reply.knowledge import agent_beliefs, build_knowledge_context
 
     aid, (pid,) = _make_agent_with_personas(db, [("Doc", "sleep", 1.0)])
     _add_memory(db, mid=1, pid=pid, lesson="sleep regularity is the strongest lever")

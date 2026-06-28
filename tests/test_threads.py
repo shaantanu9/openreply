@@ -1,4 +1,4 @@
-import gapmap.sources.threads as mod
+import openreply.sources.threads as mod
 
 _FIXTURE = {"posts": [{
     "id": "55", "code": "Tabc",

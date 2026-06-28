@@ -1,6 +1,6 @@
-# Gap Map — Product Strategy: The Dual-Mode Pivot
+# OpenReply — Product Strategy: The Dual-Mode Pivot
 
-> How Gap Map evolves from a one-shot research tool into a daily-use product intelligence platform — without losing the research engine that makes it defensible.
+> How OpenReply evolves from a one-shot research tool into a daily-use product intelligence platform — without losing the research engine that makes it defensible.
 
 **Version:** 1.0
 **Last updated:** April 20, 2026
@@ -28,9 +28,9 @@
 
 ## 1. The Core Insight
 
-Gap Map today is a **one-shot research tool**. A user picks a topic, the engine runs, they get a brief. They close the tab. They open it again months later for another topic. This is episodic use — valuable, but not daily, and not defensible against a $20/mo price ceiling.
+OpenReply today is a **one-shot research tool**. A user picks a topic, the engine runs, they get a brief. They close the tab. They open it again months later for another topic. This is episodic use — valuable, but not daily, and not defensible against a $20/mo price ceiling.
 
-The pivot is to add a second mode that turns Gap Map into **continuous product intelligence for an existing product**. Instead of asking "what should I build?", the user asks "what should I fix next, what are my competitors doing, and what is the market telling me about my product?"
+The pivot is to add a second mode that turns OpenReply into **continuous product intelligence for an existing product**. Instead of asking "what should I build?", the user asks "what should I fix next, what are my competitors doing, and what is the market telling me about my product?"
 
 **This does not replace topic-mode research.** It adds a second mode. Both modes share the same engine, the same graph, the same synthesis pipeline. What differs is the *object of attention* (topic vs. product) and the *cadence of consumption* (one-shot vs. continuous).
 
@@ -135,7 +135,7 @@ This is the argument for why both modes must coexist, shown as a timeline for a 
 
 **User:** "I'm thinking of building a meditation app with sound frequency / brainwave features. Is there a real market here?"
 
-**Gap Map mode used:** **Topic Mode**
+**OpenReply mode used:** **Topic Mode**
 
 **What they do:**
 - Create a topic: "meditation sound frequency brainwave app"
@@ -146,13 +146,13 @@ This is the argument for why both modes must coexist, shown as a timeline for a 
 
 **Outcome:** Decision to build, with evidence of a chronic underserved painpoint (say: "users complain that existing apps have shallow sound science — just background music labeled as 432Hz").
 
-**Time spent in Gap Map:** 4 hours across 3 sessions in one week. Then closed.
+**Time spent in OpenReply:** 4 hours across 3 sessions in one week. Then closed.
 
 ### 3.2 Day 30 — MVP built
 
 **User:** "App is in TestFlight. Let me turn on product monitoring."
 
-**Gap Map mode used:** **Both — registers Product Mode for the first time**
+**OpenReply mode used:** **Both — registers Product Mode for the first time**
 
 **What they do:**
 - Register their product ("MindWave Pro") in Product Mode
@@ -169,10 +169,10 @@ This is the argument for why both modes must coexist, shown as a timeline for a 
 
 **User:** "We're live on Product Hunt. Reviews coming in."
 
-**Gap Map mode used:** **Product Mode dominant, Topic Mode on demand**
+**OpenReply mode used:** **Product Mode dominant, Topic Mode on demand**
 
 **What they do:**
-- Daily: open Gap Map first thing, check "The Mirror" for what new users are saying about MindWave Pro
+- Daily: open OpenReply first thing, check "The Mirror" for what new users are saying about MindWave Pro
 - Weekly: review "The Signals" — competitor X released a new feature, triggered 200 reviews, 60% negative about pricing changes. Actionable.
 - Triggered: run a Topic Mode deep-dive on "meditation app pricing resistance" after noticing the signal.
 
@@ -184,7 +184,7 @@ This is the argument for why both modes must coexist, shown as a timeline for a 
 
 **User:** "Growth is steady. Considering adding a sleep feature."
 
-**Gap Map mode used:** **Topic Mode for the expansion question, Product Mode stays on**
+**OpenReply mode used:** **Topic Mode for the expansion question, Product Mode stays on**
 
 **What they do:**
 - Topic Mode run: "sleep sounds sleep meditation app features"
@@ -551,7 +551,7 @@ With the dual-mode product, the math changes favorably.
 
 For a tool in the product-intelligence category targeting indie founders + small SaaS teams:
 
-1. **Founder LinkedIn content** — posts dissecting public product launches using Gap Map outputs. Every post is a live case study. 3–5x per week. Builds organic inbound.
+1. **Founder LinkedIn content** — posts dissecting public product launches using OpenReply outputs. Every post is a live case study. 3–5x per week. Builds organic inbound.
 2. **Indie Hackers + Reddit r/SaaS / r/startups posts** — free value ("here's what the reviews of [popular app] reveal about their roadmap") drives sign-ups.
 3. **Product Hunt launch** — one high-effort launch with 5+ design partner testimonials ready. Mid-six-figure traffic spike; convert 0.5–2%.
 4. **Cold outbound** — 20–50 personalized messages/week to post-MVP founders visible on Twitter, Indie Hackers, LinkedIn. Not mass-blast; targeted.
@@ -566,7 +566,7 @@ Monthly churn at this tier should be <4% for the model to work. Levers:
 - **Weekly digest** — forces re-activation even for skippers
 - **Connected sources** — every integration connected = meaningful switching cost
 - **Historical data accumulation** — 6 months of monitoring history is irreplaceable; user won't start over elsewhere
-- **Hypothesis → outcome tracking** — once a user logs a shipped feature back to a Gap Map hypothesis, the tool has proven its ROI in their internal narrative
+- **Hypothesis → outcome tracking** — once a user logs a shipped feature back to a OpenReply hypothesis, the tool has proven its ROI in their internal narrative
 
 ---
 

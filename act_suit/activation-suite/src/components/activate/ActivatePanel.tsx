@@ -34,7 +34,7 @@ const TRIAL_TOTAL_DAYS = 14;
 // We remember the full licence key in localStorage so the user can re-copy it
 // later. The server only returns the full key once (it's hashed at rest), so
 // this client-side memory is what makes "copy it again" actually work.
-const LS_LICENCE_KEY = "gapmap.licence.key";
+const LS_LICENCE_KEY = "openreply.licence.key";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "activate", label: "Activate" },
@@ -100,7 +100,7 @@ export function ActivatePanel() {
   const desktopLinks = useMemo(() => {
     const env = getPublicEnv();
     return {
-      deepLink: (env.appDeepLinkUrl || "gapmap://dashboard").trim(),
+      deepLink: (env.appDeepLinkUrl || "openreply://dashboard").trim(),
       // Prefer the env override; otherwise use the canonical /api/download
       // route, which redirects to the latest GitHub release for the visitor's
       // OS. This is always populated, so the download button never dead-ends.
@@ -239,7 +239,7 @@ export function ActivatePanel() {
       window.removeEventListener("blur", onBlur);
       if (!handedOff) {
         showAlert(
-          'Gap Map didn’t open — it may not be installed yet. Use "Download the app" below, then try again.',
+          'OpenReply didn’t open — it may not be installed yet. Use "Download the app" below, then try again.',
           "info",
         );
       }
@@ -258,13 +258,13 @@ export function ActivatePanel() {
   }
 
   function resendKeyHelp() {
-    const subject = encodeURIComponent("Gap Map activation key help");
+    const subject = encodeURIComponent("OpenReply activation key help");
     const body = encodeURIComponent(
-      `Hi Gap Map support,\n\nI need help with my activation key.\nAccount email: ${
+      `Hi OpenReply support,\n\nI need help with my activation key.\nAccount email: ${
         email || "[your email]"
       }\nIssue: [did not receive key / key not working]\n\nThanks.`,
     );
-    window.location.href = `mailto:support@gapmap.app?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:support@openreply.app?subject=${subject}&body=${body}`;
   }
 
   // Trial banner data
@@ -279,7 +279,7 @@ export function ActivatePanel() {
         {/* Heading */}
         <div className="mb-8">
           <h1 className="font-serif text-[32px] font-normal leading-tight tracking-[-1px] text-[var(--dark)]">
-            Activate <em className="italic text-[var(--orange)]">Gap Map</em>
+            Activate <em className="italic text-[var(--orange)]">OpenReply</em>
           </h1>
           <p className="mt-2 max-w-[540px] text-[14px] font-light text-[var(--muted)]">
             Just 3 steps: you&rsquo;re signed in, you get a licence key here, then you paste that key

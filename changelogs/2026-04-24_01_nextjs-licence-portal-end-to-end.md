@@ -41,7 +41,7 @@ purchases.
 - `UserMenu` surfaces Dashboard + Activate-new-device links.
 - `ROUTES.dashboard` added to `src/lib/constants.ts`.
 - `html_site/activate.html` and `html_site/activation-help.html` are now thin
-  meta-redirects to the Next.js app (read `GAPMAP_APP_BASE` from
+  meta-redirects to the Next.js app (read `OPENREPLY_APP_BASE` from
   `env.config.js`; fall back to same-origin).
 
 ## Files Created

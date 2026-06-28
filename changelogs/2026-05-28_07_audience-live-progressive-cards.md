@@ -19,7 +19,7 @@ The audience screen now feels like the sentiment one — real cards land one at 
 
 ## Changes
 
-- `src/gapmap/research/audience.py` — moved the `_ensure_table` + `DELETE` calls above the cluster loop; added `_row_for_persist` helper; `insert_all([row])` per persona inside the loop; kept the batched insert as a fallback path when `persist_incremental` setup fails.
+- `src/openreply/research/audience.py` — moved the `_ensure_table` + `DELETE` calls above the cluster loop; added `_row_for_persist` helper; `insert_all([row])` per persona inside the loop; kept the batched insert as a fallback path when `persist_incremental` setup fails.
 - `app-tauri/src/screens/audience.js` —
   - Added `renderBuildingShell(topic, { llm })` — paints the persistent build shell with skeleton cards.
   - Rewrote `buildAndRender` to poll `audiencePersonasGet` every 1.5s, dedup by `cluster_id + generated_at` against the build's start timestamp (so cached personas from a prior run don't shadow new ones), and replace skeletons in-place.
@@ -33,5 +33,5 @@ The audience screen now feels like the sentiment one — real cards land one at 
 
 ## Files Modified
 
-- `src/gapmap/research/audience.py`
+- `src/openreply/research/audience.py`
 - `app-tauri/src/screens/audience.js`

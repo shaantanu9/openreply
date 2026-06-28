@@ -1,8 +1,8 @@
-# Gap Map — User-Feedback Sources (detailed analysis)
+# OpenReply — User-Feedback Sources (detailed analysis)
 
 > What every source gives you, how it authenticates, its limits, what it's best
 > for, and the gaps. "User feedback" = real people saying what they need, hate,
-> or wish existed. Gap Map triangulates it across **four signal tiers** so no
+> or wish existed. OpenReply triangulates it across **four signal tiers** so no
 > single platform's blind spots (or outages) skew the picture.
 > **Updated:** 2026-06-06.
 

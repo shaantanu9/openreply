@@ -5,7 +5,7 @@
 
 ## Summary
 
-Ships the three remaining ROADMAP phases that round out the Gap Map UX:
+Ships the three remaining ROADMAP phases that round out the OpenReply UX:
 
 - **Phase 6 — Onboarding & empty-state polish:** Dashboard 0-topic empty state
   replaced with 5 quick-start chips (AI coding assistants / sleep tracking /

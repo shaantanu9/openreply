@@ -43,13 +43,13 @@ printf '' | uv run reddit-cli mcp serve
 ### Result: cursor status
 
 ```json
-{"installed": true, "connected": true, "db_aligned": true, "has_token": true, "token_in_env": true, "config_path": "/Users/shantanubombatkar/.cursor/mcp.json", "data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.gapmap/reddit-myind", "entry_data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.gapmap/reddit-myind", "claude_present": true, "client_present": true, "client": "cursor", "server_name": "reddit-myind", "reason": null}
+{"installed": true, "connected": true, "db_aligned": true, "has_token": true, "token_in_env": true, "config_path": "/Users/shantanubombatkar/.cursor/mcp.json", "data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.openreply/reddit-myind", "entry_data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.openreply/reddit-myind", "claude_present": true, "client_present": true, "client": "cursor", "server_name": "reddit-myind", "reason": null}
 ```
 
 ### Result: claude-code status
 
 ```json
-{"installed": true, "connected": true, "db_aligned": true, "has_token": true, "token_in_env": true, "config_path": "/Users/shantanubombatkar/.claude.json", "data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.gapmap/reddit-myind", "entry_data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.gapmap/reddit-myind", "claude_present": true, "client_present": true, "client": "claude-code", "server_name": "reddit-myind", "reason": null}
+{"installed": true, "connected": true, "db_aligned": true, "has_token": true, "token_in_env": true, "config_path": "/Users/shantanubombatkar/.claude.json", "data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.openreply/reddit-myind", "entry_data_dir": "/Users/shantanubombatkar/Library/Application Support/com.shantanu.openreply/reddit-myind", "claude_present": true, "client_present": true, "client": "claude-code", "server_name": "reddit-myind", "reason": null}
 ```
 
 ### Result: server startup probe

@@ -3,13 +3,13 @@
 **Date:** 2026-06-28 · **Status:** decision pending (bundle id confirmation)
 
 This is the "advise me" write-up for how to register + launch OpenReply, and the
-plan to move off the legacy `com.shantanu.gapmap` bundle id.
+plan to move off the legacy `com.shantanu.openreply` bundle id.
 
 ---
 
 ## 1. Distribution: DMG vs Mac App Store
 
-OpenReply is a **Tauri app that spawns a bundled PyInstaller `gapmap-cli`
+OpenReply is a **Tauri app that spawns a bundled PyInstaller `openreply-cli`
 sidecar** (network + file I/O + subprocess). That one fact drives everything:
 
 | Path | Uses ASC? | Sidecar OK? | Effort | Verdict |
@@ -20,7 +20,7 @@ sidecar** (network + file I/O + subprocess). That one fact drives everything:
 ### Why the Mac App Store is risky here
 MAS requires the **App Sandbox** + hardened runtime. The sidecar pattern
 conflicts with sandbox rules in several ways that typically fail review:
-- Executing a bundled standalone binary (`gapmap-cli`) that isn't a normal
+- Executing a bundled standalone binary (`openreply-cli`) that isn't a normal
   XPC/helper — sandbox restricts arbitrary process execution.
 - Open network access + writing outside the container — needs entitlements and
   still trips review for a "scraper/automation" tool.
@@ -48,7 +48,7 @@ app record**. Notarization uses `notarytool` + a Developer ID cert — *not* ASC
 
 ## 2. Bundle identifier migration
 
-Current id `com.shantanu.gapmap` is a dev-era name. A "proper" id should be a
+Current id `com.shantanu.openreply` is a dev-era name. A "proper" id should be a
 reverse-domain you **own** (ASC verifies nothing, but it must be unique + stable
 forever). Given the `myind-ai` org / myind.ai, the recommendation is:
 
@@ -58,23 +58,23 @@ forever). Given the `myind-ai` org / myind.ai, the recommendation is:
 | Where | What it controls | File |
 |---|---|---|
 | `identifier` | the bundle id | `tauri.conf.json` |
-| `_TAURI_BUNDLE_ID` | Python data-dir resolution | `src/gapmap/core/config.py` |
-| data dir | `~/Library/Application Support/<id>/gapmap` | derived |
+| `_TAURI_BUNDLE_ID` | Python data-dir resolution | `src/openreply/core/config.py` |
+| data dir | `~/Library/Application Support/<id>/openreply` | derived |
 | launchd label | `<id>.schedule` plist | `src-tauri/src/schedule.rs` |
-| licence | device-binding + JWT `aud` (`gapmap-desktop`) | `commands.rs` activation |
+| licence | device-binding + JWT `aud` (`openreply-desktop`) | `commands.rs` activation |
 | MCP id | the server id installed into Claude clients | mcp install |
 
 ### Migration plan (no user loses data/licence)
-`config.py` already migrates the older `reddit-myind` → `gapmap` layout. We
+`config.py` already migrates the older `reddit-myind` → `openreply` layout. We
 extend the same idea: on first launch under the **new** id, if the new app-data
-dir is empty and the old `com.shantanu.gapmap/gapmap` dir exists, **move/copy it
+dir is empty and the old `com.shantanu.openreply/openreply` dir exists, **move/copy it
 over** (DB + palace + exports + `license_*`). Steps:
 1. `tauri.conf.json` `identifier` → new id.
-2. `config.py` `_TAURI_BUNDLE_ID` → new id + add `com.shantanu.gapmap` to the
+2. `config.py` `_TAURI_BUNDLE_ID` → new id + add `com.shantanu.openreply` to the
    legacy-migration chain.
-3. `schedule.rs` — uninstall the old `com.shantanu.gapmap.schedule` plist, install
+3. `schedule.rs` — uninstall the old `com.shantanu.openreply.schedule` plist, install
    under the new label (handle the rename so we don't leave an orphan).
-4. Licence: the JWT **audience stays `gapmap-desktop`** (server-side constant) —
+4. Licence: the JWT **audience stays `openreply-desktop`** (server-side constant) —
    only the device-dir path moves, so existing tokens keep validating. Confirm
    with the activation-suite before flipping.
 5. MCP: re-install writes the new server id; old entry pruned.

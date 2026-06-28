@@ -228,7 +228,7 @@ When you write a new mutating Tauri command:
 3. If it produces or consumes a cached report, add `'topic_insights_cached'`.
 
 Don't manually invalidate from a screen — always go through `mutated()`
-so other open screens see the change immediately via `gapmap:changed`.
+so other open screens see the change immediately via `openreply:changed`.
 
 ---
 

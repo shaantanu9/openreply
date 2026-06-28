@@ -17,22 +17,22 @@ separate effort).
 
 ## 2. Why this is feasible (current-state anchors)
 
-- The app already has a memory palace: `src/gapmap/retrieval/palace.py` —
+- The app already has a memory palace: `src/openreply/retrieval/palace.py` —
   a ChromaDB `PersistentClient` + bundled `all-MiniLM-L6-v2` ONNX embedder at
   `<data_dir>/palace/chroma.sqlite3`. Offline, zero external calls.
 - Papers are already chunked into `paper_chunks`
-  (`src/gapmap/research/paper_chunks.py`), with `embed` support and
+  (`src/openreply/research/paper_chunks.py`), with `embed` support and
   `embedded_at`/`embed_backend` columns — but they are **not embedded into a
   dedicated paper index**, and no semantic/relationship layer reads them.
 - Citations are already extracted into `paper_references`
-  (`src/gapmap/research/paper_references.py`) with resolution to local posts —
+  (`src/openreply/research/paper_references.py`) with resolution to local posts —
   but never materialized into `graph_edges`. The code itself notes the missing
   "promote to `cites` edges" wrapper.
 - Paper sections (incl. `limitations`, `future_work`) are already parsed into
-  `paper_sections` (`src/gapmap/research/paper_sections.py`).
-- A clustering helper already exists: `src/gapmap/retrieval/cluster.py`.
+  `paper_sections` (`src/openreply/research/paper_sections.py`).
+- A clustering helper already exists: `src/openreply/retrieval/cluster.py`.
 - The canonical academic-source set already lives in
-  `src/gapmap/research/intents.py:194`:
+  `src/openreply/research/intents.py:194`:
   `('arxiv','pubmed','openalex','scholar','semantic_scholar','crossref')`.
 
 So the heavy infra exists. This spec adds the **dedicated paper collection +
@@ -79,7 +79,7 @@ a gap in topic B).
 
 ## 5. Components (new)
 
-### 5.1 `src/gapmap/research/paper_palace.py`
+### 5.1 `src/openreply/research/paper_palace.py`
 - `ACADEMIC_SOURCES` (import/re-export the canonical set).
 - `build(topic: str | None = None, *, force=False) -> dict` — for each academic
   paper (optionally scoped to a topic), ensure chunks exist, embed them into the
@@ -94,7 +94,7 @@ a gap in topic B).
 - Graceful `chromadb`-missing degradation (same pattern as `palace.py`): return
   `{ok: False, skipped: True, reason}` rather than raising.
 
-### 5.2 `src/gapmap/research/paper_relations.py`
+### 5.2 `src/openreply/research/paper_relations.py`
 Materializes paper→paper edges into `graph_edges` (kind tags below), academic
 nodes only, each capped per-paper top-N (the `dense-graph-relations` pattern,
 to avoid hairballs):
@@ -106,7 +106,7 @@ to avoid hairballs):
   (Phase 2).
 - `build(topic=None, *, kinds=[...], force=False) -> dict`.
 
-### 5.3 `src/gapmap/research/paper_gaps.py` + `paper_gaps` table
+### 5.3 `src/openreply/research/paper_gaps.py` + `paper_gaps` table
 New table `paper_gaps(id, topic, kind, title, detail_json, evidence_post_ids_json, score, created_at)`.
 `kind` ∈ `future_work | white_space | coverage | contradiction`.
 - **future_work** (Phase 2): aggregate `paper_sections` where name IN
@@ -123,7 +123,7 @@ New table `paper_gaps(id, topic, kind, title, detail_json, evidence_post_ids_jso
 - `find(topic, *, kinds=[...]) -> dict`.
 
 ### 5.4 Surface (backend only — wired for the future UI)
-- **CLI** (`src/gapmap/cli/main.py`): `research paper-palace build|neighbors|status`,
+- **CLI** (`src/openreply/cli/main.py`): `research paper-palace build|neighbors|status`,
   `research paper-relations build`, `research paper-gaps find`. Each `--json`,
   each tolerant/skip-gracefully on no-LLM / no-chromadb.
 - **Rust** (`app-tauri/src-tauri/src/commands.rs`): thin command wrappers

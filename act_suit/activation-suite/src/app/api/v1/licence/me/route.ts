@@ -79,7 +79,7 @@ export async function GET(req: Request) {
       created_at: licence.createdAt,
       // Full activation key — only returned because the caller authenticated
       // as the licence's owner via Supabase Bearer. Used by the dashboard to
-      // show a Copy-friendly key card so users can paste into Gap Map.app.
+      // show a Copy-friendly key card so users can paste into OpenReply.app.
       activation_key: licence.activationKey,
       activation_key_preview: licence.activationKeyPreview,
       devices: licence.devices,

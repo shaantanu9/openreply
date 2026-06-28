@@ -1,4 +1,4 @@
-# Spec — Local Semantic Retrieval (Palace) for Gap Map
+# Spec — Local Semantic Retrieval (Palace) for OpenReply
 
 **Status:** Phase 1 code complete on branch `multi-source`, awaiting local verification before wiring UI.
 **Owner:** shantanu (with Claude as pair)
@@ -9,7 +9,7 @@
 
 ## 1. Why we're doing this
 
-Gap Map today can answer "**what posts mention this exact word**" (SQL `LIKE`) but can't answer "**what posts mean the same thing**". That's a structural gap for a research tool:
+OpenReply today can answer "**what posts mention this exact word**" (SQL `LIKE`) but can't answer "**what posts mean the same thing**". That's a structural gap for a research tool:
 
 - Cross-topic dedup is impossible — a user who collected "ATS resumes" and "job tracker apps" can't see which painpoints overlap.
 - Chat agent's grounding is weak — today it only has `run_query` / `get_findings`. With a semantic search tool it can answer qualitative questions ("what DIY workarounds keep coming up?") without guessing column names.
@@ -32,7 +32,7 @@ Phase 1 is done when:
 - [ ] A second identical search completes in ≤ 50 ms (warm cache).
 - [ ] `reddit-cli research related-posts --post-id <id>` returns k ≠ self hits.
 - [ ] Running a normal `research collect` auto-indexes new posts into the palace (verify via `palace-stats` before/after).
-- [ ] `GAPMAP_SKIP_PALACE=1 reddit-cli research collect …` skips palace sync cleanly (no error, no entries added).
+- [ ] `OPENREPLY_SKIP_PALACE=1 reddit-cli research collect …` skips palace sync cleanly (no error, no entries added).
 - [ ] With `chromadb` uninstalled, every palace CLI call returns a skip-stub, and `research collect` still succeeds.
 
 Phase 2 is a separate doc (UI wiring).
@@ -76,7 +76,7 @@ Related-posts uses the same path but seeds the query with the target post's exis
 Every palace function checks `is_available()` (which just tries `import chromadb`). If the extras aren't installed:
 - CLI commands print `{"ok": false, "skipped": true, "reason": "chromadb not installed"}` and exit 0.
 - `upsert_posts` in `core/db.py` swallows the `ImportError` and continues — ingest is unblocked.
-- Opt-out path: set `GAPMAP_SKIP_PALACE=1` to skip palace sync even when chromadb is present (CI, benchmark runs, tight disk envs).
+- Opt-out path: set `OPENREPLY_SKIP_PALACE=1` to skip palace sync even when chromadb is present (CI, benchmark runs, tight disk envs).
 
 ---
 
@@ -152,7 +152,7 @@ uv sync --extra retrieval
 .venv/bin/reddit-cli research collect --topic "test palace" --aggressive  # or small flag set
 
 # 7. Confirm collect still works with palace intentionally disabled
-GAPMAP_SKIP_PALACE=1 .venv/bin/reddit-cli research collect --topic "test palace noindex"
+OPENREPLY_SKIP_PALACE=1 .venv/bin/reddit-cli research collect --topic "test palace noindex"
 ```
 
 ### 6.2 Automated (`tests/test_retrieval_palace.py` — follow-up)
@@ -222,7 +222,7 @@ No schema migrations, no data loss.
 | 6. search latency warm | repeat step 5 query | < 50 ms | ⏳ waiting on step 5 | |
 | 7. related-posts | `related_posts("h2", k=3)` excludes self | non-empty, no `"h2"` in ids | ⏳ waiting on step 5 | |
 | 8. collect auto-index | `research collect` then `palace-stats` | count grew | ⏭ deferred | Need a real topic to test; will run after step 5 confirms round-trip. |
-| 9. skip-env | `GAPMAP_SKIP_PALACE=1 research collect` then `palace-stats` | count unchanged | ⏭ deferred | Same — runs after step 5. |
+| 9. skip-env | `OPENREPLY_SKIP_PALACE=1 research collect` then `palace-stats` | count unchanged | ⏭ deferred | Same — runs after step 5. |
 
 **Fix landed during verification:** `retrieval/__init__.py` now re-exports `stats`, `upsert_post`, `upsert_posts_many` (previously they were in `palace.py` only, which broke `from reddit_research.retrieval import stats`). Commit follow-up.
 

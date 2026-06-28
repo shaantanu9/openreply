@@ -13,12 +13,12 @@ def _seg(start, end, text):
 
 
 def test_empty_input_returns_empty():
-    from gapmap.transcribe.chunker import chunk_segments
+    from openreply.transcribe.chunker import chunk_segments
     assert chunk_segments([]) == []
 
 
 def test_single_short_segment_becomes_one_chunk():
-    from gapmap.transcribe.chunker import chunk_segments
+    from openreply.transcribe.chunker import chunk_segments
     out = chunk_segments([_seg(0.0, 3.5, "Hello world.")])
     assert len(out) == 1
     assert out[0]["chunk_idx"] == 0
@@ -28,7 +28,7 @@ def test_single_short_segment_becomes_one_chunk():
 
 
 def test_packs_until_max_chars_then_splits():
-    from gapmap.transcribe.chunker import chunk_segments
+    from openreply.transcribe.chunker import chunk_segments
     segs = [
         _seg(0.0, 1.0, "a" * 100),
         _seg(1.0, 2.0, "b" * 100),
@@ -46,7 +46,7 @@ def test_packs_until_max_chars_then_splits():
 
 def test_oversized_segment_emitted_intact():
     """A single segment longer than max_chars must not be split."""
-    from gapmap.transcribe.chunker import chunk_segments
+    from openreply.transcribe.chunker import chunk_segments
     big = "x" * 800
     out = chunk_segments([_seg(0.0, 10.0, big)], max_chars=500)
     assert len(out) == 1
@@ -54,7 +54,7 @@ def test_oversized_segment_emitted_intact():
 
 
 def test_srt_output_has_block_per_segment():
-    from gapmap.transcribe.chunker import segments_to_srt
+    from openreply.transcribe.chunker import segments_to_srt
     srt = segments_to_srt([
         _seg(0.0,  2.0, "one"),
         _seg(2.5,  4.0, "two"),

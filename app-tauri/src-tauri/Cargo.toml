@@ -1,10 +1,10 @@
 [package]
-name = "gapmap"
+name = "openreply"
 version = "0.1.23"
-description = "Gap Map — Multi-source research gap finder"
+description = "OpenReply — Multi-source research gap finder"
 authors = ["Shantanu Bombatkar"]
-homepage = "https://gapmap.myind.ai/"
-repository = "https://github.com/myind-ai/gapmap"
+homepage = "https://openreply.myind.ai/"
+repository = "https://github.com/myind-ai/openreply"
 edition = "2021"
 
 [build-dependencies]

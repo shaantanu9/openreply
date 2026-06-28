@@ -1,4 +1,4 @@
-# Gap Map — performance + functions catalog
+# OpenReply — performance + functions catalog
 
 > **Purpose:** single source of truth for every user-facing function in
 > the app, its current expected latency, its known bottlenecks, and the
@@ -11,7 +11,7 @@
 
 ## 1 · Function inventory by surface
 
-### Surface A — CLI (`gapmap …` from terminal)
+### Surface A — CLI (`openreply …` from terminal)
 
 Run from a terminal. The Tauri app uses the same CLI under the hood for
 many operations, but spawns it as a sidecar daemon (JSON-line protocol,
@@ -19,8 +19,8 @@ warm interpreter) rather than one-shot.
 
 | Group | Command | What it does | Read/Write |
 |---|---|---|---|
-| `info` | `gapmap info --json` | Returns mode, data dir, table counts, key state | R |
-| `query` | `gapmap query SQL --json` | Direct SQL against `gapmap.db` | R/W |
+| `info` | `openreply info --json` | Returns mode, data dir, table counts, key state | R |
+| `query` | `openreply query SQL --json` | Direct SQL against `openreply.db` | R/W |
 | `topics` | (under `research`) | List, create, delete, rename topics | R/W |
 | `research collect` | Pull posts from Reddit/HN/arXiv/GitHub/AppStore | W (heavy) | |
 | `research graph build` | `build_structural(topic)` — see §3.A | W (heavy) | |
@@ -72,20 +72,20 @@ but go through the Rust sidecar daemon for warmth + transaction sharing.
 ### Surface C — MCP server (`mcp serve --transport stdio`)
 
 147 tools exposed to Claude Code / Cursor / Claude Desktop / Cline /
-Windsurf. Full naming convention: `gapmap_<verb>` or `gapmap_<noun>_<verb>`.
+Windsurf. Full naming convention: `openreply_<verb>` or `openreply_<noun>_<verb>`.
 
 | Category | Sample tools | What they expose |
 |---|---|---|
-| Search | `gapmap_search`, `gapmap_semantic_search`, `gapmap_search_all` | Hybrid + dense retrieval |
-| Topic ops | `gapmap_list_topics`, `gapmap_topic_stats`, `gapmap_find_existing_topic` | Read/list topics |
-| Collect | `gapmap_start_collect`, `gapmap_active_collects` | Long-running collect jobs |
-| Graph | `gapmap_build_graph`, `gapmap_enrich_graph`, `gapmap_relate_graph` | Build phases |
-| Palace | `gapmap_palace_status`, `gapmap_palace_warmup`, `gapmap_palace_reindex` | Embedding store ops |
-| Query | `gapmap_query_db` | Raw SQL — primary integration point |
-| Personas | `gapmap_persona_list`, `gapmap_persona_chat` | Persona system |
-| Papers | `gapmap_papers_for_topic`, `gapmap_paper_outline` | Research papers |
-| Feedback | `gapmap_feedback_list`, `gapmap_feedback_record` | Beta feedback |
-| Findings | `gapmap_get_findings` (when added), `gapmap_solutions_data_bundle` | Structured extracts |
+| Search | `openreply_search`, `openreply_semantic_search`, `openreply_search_all` | Hybrid + dense retrieval |
+| Topic ops | `openreply_list_topics`, `openreply_topic_stats`, `openreply_find_existing_topic` | Read/list topics |
+| Collect | `openreply_start_collect`, `openreply_active_collects` | Long-running collect jobs |
+| Graph | `openreply_build_graph`, `openreply_enrich_graph`, `openreply_relate_graph` | Build phases |
+| Palace | `openreply_palace_status`, `openreply_palace_warmup`, `openreply_palace_reindex` | Embedding store ops |
+| Query | `openreply_query_db` | Raw SQL — primary integration point |
+| Personas | `openreply_persona_list`, `openreply_persona_chat` | Persona system |
+| Papers | `openreply_papers_for_topic`, `openreply_paper_outline` | Research papers |
+| Feedback | `openreply_feedback_list`, `openreply_feedback_record` | Beta feedback |
+| Findings | `openreply_get_findings` (when added), `openreply_solutions_data_bundle` | Structured extracts |
 
 ---
 
@@ -176,7 +176,7 @@ via chroma_api).
 work but it is not working".
 
 **Where to investigate:**
-- BYOK flow: `byok_set` → writes to `~/Library/Application Support/.../gapmap/.env`
+- BYOK flow: `byok_set` → writes to `~/Library/Application Support/.../openreply/.env`
 - Test button calls: `research test-llm --provider X` (CLI) → currently?
 - The 8-file checklist in `tauri-python-sidecar-app` SKILL Phase 10.5
 

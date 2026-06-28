@@ -16,7 +16,7 @@ export type VersionGate = {
   app_download_url: string;
 };
 
-const DEFAULT_DOWNLOAD = "https://gapmap.myind.ai/download";
+const DEFAULT_DOWNLOAD = "https://openreply.myind.ai/download";
 
 type AppConfigRow = {
   force_update: boolean | null;

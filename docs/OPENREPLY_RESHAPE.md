@@ -83,7 +83,7 @@ Misc research: `ingest_video` (Whisper), `reports`.
 
 ## 2. Backend Python — Keep / Delete
 
-`src/gapmap/`
+`src/openreply/`
 
 ### ✅ KEEP
 - `core/` (db, credentials, public_client, client, config, exporters)
@@ -138,7 +138,7 @@ KEEP set to the user).
   audience_personas` (if superseded), `launch_briefs, trend_series, saved_views`
   (research-only), `extraction_queue/daily_usage` (if extraction dropped).
 
-> Provide a one-shot `gapmap reply migrate --drop-research` that drops these behind a
+> Provide a one-shot `openreply reply migrate --drop-research` that drops these behind a
 > confirmation + a DB backup copy — never silent.
 
 ---

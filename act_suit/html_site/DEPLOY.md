@@ -22,7 +22,7 @@
    - `SUPABASE_ANON_KEY` (this is a **public** client key; RLS is what secures your data)
    - `LICENSE_API_BASE` (if your API is meant to be called from the browser with the user JWT)
    - `APP_DOWNLOAD_URL` (optional, direct DMG/App download URL for marketing CTAs)
-   - `APP_DEEP_LINK_URL` (optional desktop deep-link for post-activation "Open app" button, e.g. `gapmap://dashboard`)
+   - `APP_DEEP_LINK_URL` (optional desktop deep-link for post-activation "Open app" button, e.g. `openreply://dashboard`)
    - `LEMONSQUEEZY_CHECKOUT_PRO`
    - `LEMONSQUEEZY_CHECKOUT_LIVE_PASS`
    - `LEMONSQUEEZY_CUSTOMER_PORTAL`
@@ -33,7 +33,7 @@
 
 ## Local
 
-Use `.env` (gitignored) and run `npm run build` or `node generate-env-config.mjs`. File-based values are used when `process.env` does not override them (except in `GAPMAP_ENV_SAMPLE_ONLY=1` for placeholder builds).
+Use `.env` (gitignored) and run `npm run build` or `node generate-env-config.mjs`. File-based values are used when `process.env` does not override them (except in `OPENREPLY_ENV_SAMPLE_ONLY=1` for placeholder builds).
 
 ## Other hosts (Netlify, Cloudflare Pages, etc.)
 

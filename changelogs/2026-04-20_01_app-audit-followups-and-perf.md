@@ -50,7 +50,7 @@ Net: repeat topic-open drops from 4-6 sidecar spawns to 1 (or 0 when
 - `topic.js::detectExistingSources`: per-topic 60 s cache. Source
   Picker modal re-opens for the same topic don't re-fire the SQL.
 - `main.js`: nav-counts now wired to refresh on the
-  `gapmap:db-changed` event — no manual reload needed after external
+  `openreply:db-changed` event — no manual reload needed after external
   writes.
 - `database.js`: SQL error message enriched with the offending token
   and line-number if parseable from sqlite's raw message, plus a
@@ -100,7 +100,7 @@ live code. Kept here for the record so we don't re-audit them:
 - `app-tauri/src/screens/solutions.js` — surfaced re-run errors.
 - `app-tauri/src/api.js` — `exportHtml` accepts `force`.
 - `app-tauri/src/main.js` — sidecar pre-warm + `refreshNavCounts` +
-  `gapmap:db-changed` hook.
+  `openreply:db-changed` hook.
 - `app-tauri/src-tauri/src/commands.rs::export_html` — fast-path cache.
 
 ## Commits

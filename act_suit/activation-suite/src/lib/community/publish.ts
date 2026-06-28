@@ -16,7 +16,7 @@ import { slugify } from "@/lib/community/slug";
 export async function buildInsightsSnapshot(
   workspace: Workspace,
   publishedBy: string,
-  poweredBy: "Gap Map Community" | "Gap Map Pro" = "Gap Map Community",
+  poweredBy: "OpenReply Community" | "OpenReply Pro" = "OpenReply Community",
 ): Promise<InsightsSnapshot> {
   const sb = getSupabaseServerClient();
   const insights: Insight[] = await listInsights(workspace.id);
@@ -63,13 +63,13 @@ export async function publishWorkspace(input: {
   userId: string | null;
   workspace: Workspace;
   publishedBy: string;
-  poweredBy?: "Gap Map Community" | "Gap Map Pro";
+  poweredBy?: "OpenReply Community" | "OpenReply Pro";
 }): Promise<PublishedResearch> {
   const sb = getSupabaseServerClient();
   const snapshot = await buildInsightsSnapshot(
     input.workspace,
     input.publishedBy,
-    input.poweredBy || "Gap Map Community",
+    input.poweredBy || "OpenReply Community",
   );
   const slug = input.workspace.slug || slugify(input.workspace.name);
 
@@ -91,7 +91,7 @@ export async function publishWorkspace(input: {
         post_count: snapshot.post_count,
         insight_count: snapshot.insights.length + snapshot.workarounds.length,
         user_id: input.userId,
-        pro_publish: input.poweredBy === "Gap Map Pro",
+        pro_publish: input.poweredBy === "OpenReply Pro",
       })
       .eq("id", existing.id)
       .select("*")
@@ -112,7 +112,7 @@ export async function publishWorkspace(input: {
       source_types: snapshot.sources,
       post_count: snapshot.post_count,
       insight_count: snapshot.insights.length + snapshot.workarounds.length,
-      pro_publish: input.poweredBy === "Gap Map Pro",
+      pro_publish: input.poweredBy === "OpenReply Pro",
     })
     .select("*")
     .single<PublishedResearch>();

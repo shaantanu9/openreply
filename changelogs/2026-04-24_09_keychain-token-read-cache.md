@@ -7,8 +7,8 @@
 
 Every Settings → MCP card open + every `mcp_*` command fired
 `read_access_token()`, which hit the macOS keychain and triggered the
-*"gapmap wants to use your confidential information stored in
-'gapmap-license'"* prompt repeatedly. In dev the ACL never matches
+*"openreply wants to use your confidential information stored in
+'openreply-license'"* prompt repeatedly. In dev the ACL never matches
 (each rebuild produces a new ad-hoc signature), so users saw that
 dialog over and over — it reads as a privacy breach even though we're
 always pulling the same one JWT we wrote ourselves.

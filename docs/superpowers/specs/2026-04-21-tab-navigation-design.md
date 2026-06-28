@@ -6,7 +6,7 @@
 
 ## 1. Goal
 
-Let users keep multiple Gap Map screens open at once (Chrome-style tabs) so they can flip between a Topic, the Posts list, the Graph, and a Report without re-rendering each from scratch on every navigation.
+Let users keep multiple OpenReply screens open at once (Chrome-style tabs) so they can flip between a Topic, the Posts list, the Graph, and a Report without re-rendering each from scratch on every navigation.
 
 ## 2. Why
 
@@ -41,7 +41,7 @@ Let users keep multiple Gap Map screens open at once (Chrome-style tabs) so they
 
 ### 3.3 Persistence
 
-- Open tabs persist across app restart via `localStorage` key `gapmap.tabs.v1`.
+- Open tabs persist across app restart via `localStorage` key `openreply.tabs.v1`.
 - Per-tab scroll position restored on focus. Per-tab screen state (current sub-tab within Topic, filter chips, selection) also persisted into the same structure.
 - If a topic was deleted while the app was closed, its tab is silently dropped on restore.
 
@@ -54,7 +54,7 @@ Let users keep multiple Gap Map screens open at once (Chrome-style tabs) so they
 ## 4. Data model
 
 ```js
-// localStorage "gapmap.tabs.v1"
+// localStorage "openreply.tabs.v1"
 {
   version: 1,
   activeId: "t_03",

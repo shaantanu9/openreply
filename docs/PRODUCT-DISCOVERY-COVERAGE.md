@@ -1,8 +1,8 @@
-# Gap Map — Product-Discovery Framework Coverage (Gap Map applied to itself)
+# OpenReply — Product-Discovery Framework Coverage (OpenReply applied to itself)
 
-> Goal: make Gap Map a *complete* pre-build product-discovery tool — everything a
+> Goal: make OpenReply a *complete* pre-build product-discovery tool — everything a
 > PM / product designer does to find a market gap and judge it **before** writing
-> code. This doc learns the canonical frameworks, maps Gap Map's coverage against
+> code. This doc learns the canonical frameworks, maps OpenReply's coverage against
 > them, and lists the gaps to close. **Updated:** 2026-06-06.
 
 Sources: [Product School — opportunity assessment](https://productschool.com/blog/product-fundamentals/opportunity-assessment) ·
@@ -15,10 +15,10 @@ Sources: [Product School — opportunity assessment](https://productschool.com/b
 
 ## The pre-build product-discovery toolkit (what PMs actually use)
 
-A PM/founder moves through six stages before committing to build. Gap Map's job
+A PM/founder moves through six stages before committing to build. OpenReply's job
 is to support every stage with evidence pulled from the corpus + market.
 
-| # | Stage | Canonical frameworks | Gap Map today |
+| # | Stage | Canonical frameworks | OpenReply today |
 |---|---|---|---|
 | 1 | **Understand the customer** | JTBD · Empathy map · Continuous Discovery (weekly interviews) · The Mom Test · personas | painpoints ✅ · personas ✅ · Empathy/JTBD 🟡 · Interviews 🟡 |
 | 2 | **Map the problem space** | Opportunity-Solution Tree · root-cause (5-whys) · intent ladder · gap map (pain↔product↔evidence) | gap map ✅ · OST 🟡 · Why 🟡 · Intents 🟡 |
@@ -29,7 +29,7 @@ is to support every stage with evidence pulled from the corpus + market.
 
 ---
 
-## Where Gap Map is already strong
+## Where OpenReply is already strong
 - **Evidence-first gap discovery** (stage 1–2) — the core: 40 sources → painpoints / feature-wishes / complaints → a pain↔product↔evidence graph, grounded in real quotes. This is the hard part most tools skip.
 - **Competitive + demand** (stage 3, partial) — `competitors.py`, global-competitors, compare, Google Trends.
 - **Estimation** (stage 6) — `estimate.js`: three-point PERT, McConnell overhead, LTV/CAC (Skok), tiered pricing.
@@ -56,7 +56,7 @@ is to support every stage with evidence pulled from the corpus + market.
 
 ---
 
-## Build roadmap (to make Gap Map a complete pre-build solution)
+## Build roadmap (to make OpenReply a complete pre-build solution)
 
 | Phase | Build | Closes |
 |---|---|---|
@@ -68,5 +68,5 @@ is to support every stage with evidence pulled from the corpus + market.
 
 **End state:** open a topic → collect → find gaps → understand users (JTBD/empathy/interviews) → size the market (TAM/SAM/SOM) → assess strategy (Porter/SWOT/Blue-Ocean) → frame the business (Lean/Value-Prop/North-Star) → prioritize (RICE/Kano/MoSCoW) → validate (PMF/pricing/hypotheses) → spec (PRD) → estimate (PERT/LTV-CAC). Every step evidence-backed. That's the complete PM pre-build toolkit in one app.
 
-> Meta: this doc *is* Gap Map applied to Gap Map — the gap analysis that found
+> Meta: this doc *is* OpenReply applied to OpenReply — the gap analysis that found
 > what's missing in our own product-discovery coverage.

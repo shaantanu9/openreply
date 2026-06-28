@@ -6,8 +6,8 @@ import tempfile
 
 
 def test_brief_columns_present(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db
     importlib.reload(db)
     db.get_db()
     cols = {c.name for c in db.get_db()["topic_prefs"].columns}
@@ -15,8 +15,8 @@ def test_brief_columns_present(monkeypatch):
 
 
 def test_idempotent(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db
     importlib.reload(db)
     db.init_schema(db.get_db())
     db.init_schema(db.get_db())

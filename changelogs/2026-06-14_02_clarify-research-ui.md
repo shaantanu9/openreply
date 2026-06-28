@@ -23,7 +23,7 @@ This closes the command-registration triangle for the brief feature.
   Save via `briefSet`, Cancel/Esc/backdrop close). Frontend builds.
 
 ## Files Modified
-- `src/gapmap/cli/main.py`, `app-tauri/src-tauri/src/{commands,main}.rs`,
+- `src/openreply/cli/main.py`, `app-tauri/src-tauri/src/{commands,main}.rs`,
   `app-tauri/src/api.js`, `app-tauri/src/screens/topic.js`, `app-tauri/src/style.css`
 
 ## Feature status

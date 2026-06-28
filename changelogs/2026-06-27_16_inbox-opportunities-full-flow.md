@@ -50,8 +50,8 @@ thread + Mark posted) and Queue/schedule.
 
 ## Files Modified
 
-- `src/gapmap/reply/schema.py`, `src/gapmap/reply/opportunity.py`,
-  `src/gapmap/reply/generate.py`, `src/gapmap/cli/reply_cmds.py`
+- `src/openreply/reply/schema.py`, `src/openreply/reply/opportunity.py`,
+  `src/openreply/reply/generate.py`, `src/openreply/cli/reply_cmds.py`
 - `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`
 - `app-tauri/src/or/api.js`, `app-tauri/src/or/dynamic.js`
 

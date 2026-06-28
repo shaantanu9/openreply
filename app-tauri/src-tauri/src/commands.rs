@@ -1,6 +1,6 @@
 //! Tauri commands invoked from the frontend via `invoke(...)`.
 //!
-//! Each command is a thin bridge to one gapmap invocation. Heavy
+//! Each command is a thin bridge to one openreply invocation. Heavy
 //! lifting stays in Python.
 
 use crate::cli::{
@@ -17,7 +17,7 @@ use uuid::Uuid;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 // NOTE: `keyring::Entry` intentionally removed 2026-04-24. Keychain storage
 // caused macOS to prompt for the login password on every dev rebuild (code-sign
-// identity changes invalidate the ACL of the `gapmap-license` keychain item,
+// identity changes invalidate the ACL of the `openreply-license` keychain item,
 // so `security` asks the user to unlock it again). Switched to a file-based
 // token store in the app's data dir (0600 perms, same as `device_id`). Less
 // defensive against local disk compromise than Keychain, but the threat model
@@ -58,7 +58,7 @@ const LICENSE_TOKEN_FILE: &str = "license_token";
 // In-process cache of the activation JWT. Exists purely to collapse repeated
 // keychain reads down to one per app launch. Without this, every Settings
 // page load + every `mcp_*` command fires its own `read_access_token()` →
-// macOS shows its "gapmap wants to read …" prompt every time the current
+// macOS shows its "openreply wants to read …" prompt every time the current
 // binary's code signature doesn't match the item's ACL (which is ~every
 // dev rebuild). Feels like a privacy breach even though we're always
 // reading the same one string.
@@ -256,7 +256,7 @@ fn forbidden_keyword_present(lower: &str, needle: &str) -> bool {
     }
 }
 
-/// `gapmap info` — config + table counts.
+/// `openreply info` — config + table counts.
 #[tauri::command]
 pub async fn cli_info(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["info"]).await.map_err(err_to_string)
@@ -264,22 +264,22 @@ pub async fn cli_info(app: AppHandle) -> Result<Value, String> {
 
 // ─────────────────────────────────────────────────────────────────────────
 // OpenReply — Agents (personas), opportunities, and content generation.
-// Thin bridges to `gapmap agent|reply|content …`. Heavy work stays in Python.
+// Thin bridges to `openreply agent|reply|content …`. Heavy work stays in Python.
 // ─────────────────────────────────────────────────────────────────────────
 
-/// `gapmap reply platforms` — the pickable platform catalog.
+/// `openreply reply platforms` — the pickable platform catalog.
 #[tauri::command]
 pub async fn reply_platforms(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "platforms", "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap agent list` — all agents (active flagged).
+/// `openreply agent list` — all agents (active flagged).
 #[tauri::command]
 pub async fn agent_list(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["agent", "list", "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap agent get` — the active agent (or a given id).
+/// `openreply agent get` — the active agent (or a given id).
 #[tauri::command]
 pub async fn agent_get(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "get".to_string(), "--json".to_string()];
@@ -290,7 +290,7 @@ pub async fn agent_get(app: AppHandle, id: Option<String>) -> Result<Value, Stri
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent create …`.
+/// `openreply agent create …`.
 #[tauri::command]
 pub async fn agent_create(
     app: AppHandle,
@@ -323,13 +323,13 @@ pub async fn agent_create(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent use <id>` — switch active agent.
+/// `openreply agent use <id>` — switch active agent.
 #[tauri::command]
 pub async fn agent_use(app: AppHandle, id: String) -> Result<Value, String> {
     run_cli(&app, vec!["agent", "use", &id, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap agent knowledge` — corpus/graph/findings counts.
+/// `openreply agent knowledge` — corpus/graph/findings counts.
 #[tauri::command]
 pub async fn agent_knowledge(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "knowledge".to_string(), "--json".to_string()];
@@ -338,7 +338,7 @@ pub async fn agent_knowledge(app: AppHandle, id: Option<String>) -> Result<Value
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent refresh` — re-fetch latest niche knowledge (can be slow).
+/// `openreply agent refresh` — re-fetch latest niche knowledge (can be slow).
 #[tauri::command]
 pub async fn agent_refresh(app: AppHandle, id: Option<String>, deep: Option<bool>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "refresh".to_string(), "--json".to_string()];
@@ -348,7 +348,7 @@ pub async fn agent_refresh(app: AppHandle, id: Option<String>, deep: Option<bool
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent learn` — one autonomous learning pass (ingest + synthesize).
+/// `openreply agent learn` — one autonomous learning pass (ingest + synthesize).
 #[tauri::command]
 pub async fn agent_learn(app: AppHandle, id: Option<String>, limit: Option<u32>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "learn".to_string(), "--json".to_string()];
@@ -358,7 +358,7 @@ pub async fn agent_learn(app: AppHandle, id: Option<String>, limit: Option<u32>)
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent learn-status` — what the agent has learned (counts + recent).
+/// `openreply agent learn-status` — what the agent has learned (counts + recent).
 #[tauri::command]
 pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "learn-status".to_string(), "--json".to_string()];
@@ -367,7 +367,7 @@ pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Va
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent watch-*` — track X accounts and pull their posts into the corpus.
+/// `openreply agent watch-*` — track X accounts and pull their posts into the corpus.
 #[tauri::command]
 pub async fn account_track(app: AppHandle, handle: String, note: Option<String>, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "watch-add".to_string(), handle, "--json".to_string()];
@@ -403,7 +403,7 @@ pub async fn account_fetch(app: AppHandle, handle: Option<String>, learn: Option
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent corpus` — browse the agent's collected multi-source corpus.
+/// `openreply agent corpus` — browse the agent's collected multi-source corpus.
 #[tauri::command]
 pub async fn agent_corpus(app: AppHandle, id: Option<String>, source: Option<String>, query: Option<String>, relevance: Option<String>, limit: Option<u32>, offset: Option<u32>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "corpus".to_string(), "--json".to_string()];
@@ -417,7 +417,7 @@ pub async fn agent_corpus(app: AppHandle, id: Option<String>, source: Option<Str
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent corpus-check` — LLM relevance check on fetched corpus posts.
+/// `openreply agent corpus-check` — LLM relevance check on fetched corpus posts.
 #[tauri::command]
 pub async fn agent_corpus_check(app: AppHandle, id: Option<String>, limit: Option<u32>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "corpus-check".to_string(), "--json".to_string()];
@@ -427,7 +427,7 @@ pub async fn agent_corpus_check(app: AppHandle, id: Option<String>, limit: Optio
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent autopilot` — get the daily content + opportunity schedule.
+/// `openreply agent autopilot` — get the daily content + opportunity schedule.
 #[tauri::command]
 pub async fn agent_autopilot(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "autopilot".to_string(), "--json".to_string()];
@@ -436,7 +436,7 @@ pub async fn agent_autopilot(app: AppHandle, id: Option<String>) -> Result<Value
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent autopilot-set` — configure the daily auto-pilot.
+/// `openreply agent autopilot-set` — configure the daily auto-pilot.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn agent_autopilot_set(
@@ -457,7 +457,7 @@ pub async fn agent_autopilot_set(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent autopilot-run` — run the auto-pilot now if due.
+/// `openreply agent autopilot-run` — run the auto-pilot now if due.
 #[tauri::command]
 pub async fn agent_autopilot_run(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "autopilot-run".to_string(), "--json".to_string()];
@@ -466,7 +466,7 @@ pub async fn agent_autopilot_run(app: AppHandle, id: Option<String>) -> Result<V
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent build-graph` — build the agent's knowledge graph (brain).
+/// `openreply agent build-graph` — build the agent's knowledge graph (brain).
 #[tauri::command]
 pub async fn agent_build_graph(app: AppHandle, id: Option<String>, deep: Option<bool>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "build-graph".to_string(), "--json".to_string()];
@@ -476,7 +476,7 @@ pub async fn agent_build_graph(app: AppHandle, id: Option<String>, deep: Option<
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent graph` — knowledge-graph overview (counts, hubs, connections).
+/// `openreply agent graph` — knowledge-graph overview (counts, hubs, connections).
 #[tauri::command]
 pub async fn agent_graph(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "graph".to_string(), "--json".to_string()];
@@ -485,7 +485,7 @@ pub async fn agent_graph(app: AppHandle, id: Option<String>) -> Result<Value, St
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent brain` — unified brain (structural graph + persona memories + beliefs).
+/// `openreply agent brain` — unified brain (structural graph + persona memories + beliefs).
 #[tauri::command]
 pub async fn agent_brain(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "brain".to_string(), "--json".to_string()];
@@ -494,7 +494,7 @@ pub async fn agent_brain(app: AppHandle, id: Option<String>) -> Result<Value, St
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent brain-relink` — (re)build the cross-links that merge persona brains.
+/// `openreply agent brain-relink` — (re)build the cross-links that merge persona brains.
 #[tauri::command]
 pub async fn agent_brain_relink(app: AppHandle, id: Option<String>, semantic: Option<bool>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "brain-relink".to_string(), "--json".to_string()];
@@ -504,7 +504,7 @@ pub async fn agent_brain_relink(app: AppHandle, id: Option<String>, semantic: Op
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent teach-video` — teach the agent from one video's subtitles/transcript.
+/// `openreply agent teach-video` — teach the agent from one video's subtitles/transcript.
 #[tauri::command]
 pub async fn agent_teach_video(app: AppHandle, url: String, id: Option<String>, comments: Option<u32>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "teach-video".to_string(), url, "--json".to_string()];
@@ -514,7 +514,7 @@ pub async fn agent_teach_video(app: AppHandle, url: String, id: Option<String>, 
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap reply find …` — scan + score opportunities.
+/// `openreply reply find …` — scan + score opportunities.
 #[tauri::command]
 pub async fn reply_find(app: AppHandle, platforms: Option<String>, limit: Option<u32>, no_score: Option<bool>) -> Result<Value, String> {
     let lim = limit.unwrap_or(15).to_string();
@@ -525,7 +525,7 @@ pub async fn reply_find(app: AppHandle, platforms: Option<String>, limit: Option
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap reply list …` — stored opportunities with search/sort/pagination.
+/// `openreply reply list …` — stored opportunities with search/sort/pagination.
 #[tauri::command]
 pub async fn reply_list(
     app: AppHandle,
@@ -554,19 +554,19 @@ pub async fn reply_list(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap reply source-counts` — per-source opportunity + fetched-post counts.
+/// `openreply reply source-counts` — per-source opportunity + fetched-post counts.
 #[tauri::command]
 pub async fn reply_source_counts(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "source-counts", "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply draft -o <id>` — generate an on-brand reply draft.
+/// `openreply reply draft -o <id>` — generate an on-brand reply draft.
 #[tauri::command]
 pub async fn reply_draft(app: AppHandle, opportunity: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "draft", "-o", &opportunity, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply set-status -o <id> --status <s>` — move an opportunity through
+/// `openreply reply set-status -o <id> --status <s>` — move an opportunity through
 /// its lifecycle (save / dismiss / mark replied).
 #[tauri::command]
 pub async fn reply_set_status(app: AppHandle, opportunity: String, status: String) -> Result<Value, String> {
@@ -575,7 +575,7 @@ pub async fn reply_set_status(app: AppHandle, opportunity: String, status: Strin
         .map_err(err_to_string)
 }
 
-/// `gapmap reply save-draft -o <id> --text <t>` — persist a user-edited reply
+/// `openreply reply save-draft -o <id> --text <t>` — persist a user-edited reply
 /// as a new versioned draft (+ compliance re-check).
 #[tauri::command]
 pub async fn reply_save_draft(app: AppHandle, opportunity: String, text: String) -> Result<Value, String> {
@@ -584,19 +584,19 @@ pub async fn reply_save_draft(app: AppHandle, opportunity: String, text: String)
         .map_err(err_to_string)
 }
 
-/// `gapmap reply drafts -o <id>` — all draft versions (history), newest first.
+/// `openreply reply drafts -o <id>` — all draft versions (history), newest first.
 #[tauri::command]
 pub async fn reply_drafts(app: AppHandle, opportunity: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "drafts", "-o", &opportunity, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply approve -o <id>` — approve the current draft (→ ready).
+/// `openreply reply approve -o <id>` — approve the current draft (→ ready).
 #[tauri::command]
 pub async fn reply_approve(app: AppHandle, opportunity: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "approve", "-o", &opportunity, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply queue -o <id> [--at <epoch>]` — queue an approved reply.
+/// `openreply reply queue -o <id> [--at <epoch>]` — queue an approved reply.
 #[tauri::command]
 pub async fn reply_queue(app: AppHandle, opportunity: String, scheduled_at: Option<i64>) -> Result<Value, String> {
     let at = scheduled_at.unwrap_or(0).to_string();
@@ -605,7 +605,7 @@ pub async fn reply_queue(app: AppHandle, opportunity: String, scheduled_at: Opti
         .map_err(err_to_string)
 }
 
-/// `gapmap reply snooze -o <id> --hours <n>` — defer; auto-resurfaces.
+/// `openreply reply snooze -o <id> --hours <n>` — defer; auto-resurfaces.
 #[tauri::command]
 pub async fn reply_snooze(app: AppHandle, opportunity: String, hours: Option<f64>) -> Result<Value, String> {
     let h = hours.unwrap_or(24.0).to_string();
@@ -614,14 +614,14 @@ pub async fn reply_snooze(app: AppHandle, opportunity: String, hours: Option<f64
         .map_err(err_to_string)
 }
 
-/// `gapmap reply post-due` — process queued replies whose schedule is due
+/// `openreply reply post-due` — process queued replies whose schedule is due
 /// (best-effort auto-post; otherwise the item stays queued for a manual post).
 #[tauri::command]
 pub async fn reply_post_due(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "post-due", "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply growth-plan` — generate + save a growth plan from the agent's
+/// `openreply reply growth-plan` — generate + save a growth plan from the agent's
 /// goal/product/niche.
 #[tauri::command]
 pub async fn reply_growth_plan(app: AppHandle, id: Option<String>) -> Result<Value, String> {
@@ -631,7 +631,7 @@ pub async fn reply_growth_plan(app: AppHandle, id: Option<String>) -> Result<Val
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap reply growth-get` — the last-saved growth plan for the agent.
+/// `openreply reply growth-get` — the last-saved growth plan for the agent.
 #[tauri::command]
 pub async fn reply_growth_get(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["reply".to_string(), "growth-get".to_string(), "--json".to_string()];
@@ -640,7 +640,7 @@ pub async fn reply_growth_get(app: AppHandle, id: Option<String>) -> Result<Valu
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap content generate <kind> …`.
+/// `openreply content generate <kind> …`.
 /// `context_id` / `context_text` feed the follow-up kinds (the prior draft, or
 /// the thread + reply to answer); ignored by the other kinds.
 #[tauri::command]
@@ -661,7 +661,7 @@ pub async fn content_generate(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap content update <id> …` — edit / save / schedule a draft.
+/// `openreply content update <id> …` — edit / save / schedule a draft.
 #[tauri::command]
 pub async fn content_update(
     app: AppHandle,
@@ -678,19 +678,19 @@ pub async fn content_update(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap content delete <id>` — remove a content draft.
+/// `openreply content delete <id>` — remove a content draft.
 #[tauri::command]
 pub async fn content_delete(app: AppHandle, id: String) -> Result<Value, String> {
     run_cli(&app, vec!["content", "delete", &id, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap agent delete <id>` — remove an agent.
+/// `openreply agent delete <id>` — remove an agent.
 #[tauri::command]
 pub async fn agent_delete(app: AppHandle, id: String) -> Result<Value, String> {
     run_cli(&app, vec!["agent", "delete", &id, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap content list …` — generated drafts.
+/// `openreply content list …` — generated drafts.
 #[tauri::command]
 pub async fn content_list(app: AppHandle, kind: Option<String>, status: Option<String>, limit: Option<u32>) -> Result<Value, String> {
     let lim = limit.unwrap_or(30).to_string();
@@ -701,13 +701,13 @@ pub async fn content_list(app: AppHandle, kind: Option<String>, status: Option<S
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap publish status` — which platforms have publish credentials stored.
+/// `openreply publish status` — which platforms have publish credentials stored.
 #[tauri::command]
 pub async fn publish_status(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["publish", "status", "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap publish set-creds …` — store X (Twitter) OAuth 1.0a write credentials.
+/// `openreply publish set-creds …` — store X (Twitter) OAuth 1.0a write credentials.
 #[tauri::command]
 pub async fn publish_set_x_creds(
     app: AppHandle,
@@ -729,7 +729,7 @@ pub async fn publish_set_x_creds(
     .map_err(err_to_string)
 }
 
-/// `gapmap publish x --content-id <id> [--dry-run]` — post a draft to X as a
+/// `openreply publish x --content-id <id> [--dry-run]` — post a draft to X as a
 /// tweet/thread. `dry_run` previews the split tweets without posting.
 #[tauri::command]
 pub async fn content_publish_x(
@@ -746,7 +746,7 @@ pub async fn content_publish_x(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent update …` — edit the active (or given) agent's voice/keywords/platforms.
+/// `openreply agent update …` — edit the active (or given) agent's voice/keywords/platforms.
 #[tauri::command]
 pub async fn agent_update(
     app: AppHandle,
@@ -783,7 +783,7 @@ pub async fn agent_update(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent personas` — list personas linked to this agent (with blend weights).
+/// `openreply agent personas` — list personas linked to this agent (with blend weights).
 #[tauri::command]
 pub async fn agent_personas(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "personas".to_string(), "--json".to_string()];
@@ -792,7 +792,7 @@ pub async fn agent_personas(app: AppHandle, id: Option<String>) -> Result<Value,
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent link-persona <pid> [--agent id] [--weight w]` — blend a persona's
+/// `openreply agent link-persona <pid> [--agent id] [--weight w]` — blend a persona's
 /// knowledge (memories + graph + beliefs) into this agent's replies/content.
 #[tauri::command]
 pub async fn agent_link_persona(
@@ -811,7 +811,7 @@ pub async fn agent_link_persona(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap agent unlink-persona <pid> [--agent id]` — remove a persona link.
+/// `openreply agent unlink-persona <pid> [--agent id]` — remove a persona link.
 #[tauri::command]
 pub async fn agent_unlink_persona(
     app: AppHandle,
@@ -827,7 +827,7 @@ pub async fn agent_unlink_persona(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
-/// `gapmap reply rules --sub <sub>` — fetch + cache a subreddit's rules (Subreddit Intel).
+/// `openreply reply rules --sub <sub>` — fetch + cache a subreddit's rules (Subreddit Intel).
 #[tauri::command]
 pub async fn reply_rules(app: AppHandle, sub: String, refresh: Option<bool>) -> Result<Value, String> {
     let mut args = vec!["reply".to_string(), "rules".to_string(), "--sub".to_string(), sub, "--json".to_string()];
@@ -878,25 +878,25 @@ pub async fn geo_delete(app: AppHandle, id: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "geo-delete", &id, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply geo-check <id>` — automated visibility check via the BYOK provider.
+/// `openreply reply geo-check <id>` — automated visibility check via the BYOK provider.
 #[tauri::command]
 pub async fn geo_check(app: AppHandle, id: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "geo-check", &id, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply geo-check-all` — re-check every tracked query.
+/// `openreply reply geo-check-all` — re-check every tracked query.
 #[tauri::command]
 pub async fn geo_check_all(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "geo-check-all", "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply geo-history <id>` — past checks for one query (trend).
+/// `openreply reply geo-history <id>` — past checks for one query (trend).
 #[tauri::command]
 pub async fn geo_history(app: AppHandle, id: String) -> Result<Value, String> {
     run_cli(&app, vec!["reply", "geo-history", &id, "--json"]).await.map_err(err_to_string)
 }
 
-/// `gapmap reply analytics [--days N]` — aggregated analytics for the active agent.
+/// `openreply reply analytics [--days N]` — aggregated analytics for the active agent.
 #[tauri::command]
 pub async fn analytics_summary(app: AppHandle, days: Option<u32>) -> Result<Value, String> {
     let d = days.unwrap_or(30).to_string();
@@ -910,9 +910,19 @@ pub async fn reddit_account_status(app: AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn sub_discover(app: AppHandle, limit: Option<u32>) -> Result<Value, String> {
+pub async fn sub_discover(
+    app: AppHandle,
+    limit: Option<u32>,
+    auto_track_top: Option<u32>,
+) -> Result<Value, String> {
     let lim = limit.unwrap_or(8).to_string();
-    run_cli(&app, vec!["reply", "sub-discover", "--limit", &lim, "--json"]).await.map_err(err_to_string)
+    let att = auto_track_top.unwrap_or(0).to_string();
+    run_cli(
+        &app,
+        vec!["reply", "sub-discover", "--limit", &lim, "--auto-track-top", &att, "--json"],
+    )
+    .await
+    .map_err(err_to_string)
 }
 
 #[tauri::command]
@@ -1009,7 +1019,7 @@ pub async fn recent_activity(app: AppHandle) -> Result<Value, String> {
 }
 
 /// Per-topic graph coverage — how many of each node + edge kind exist, plus
-/// the source_type breakdown for posts. Powers the "Gap Map coverage" card
+/// the source_type breakdown for posts. Powers the "OpenReply coverage" card
 /// on the topic page so users see the full pipeline output at a glance
 /// (posts → painpoints → mechanisms → interventions → evidence_papers →
 ///  concepts, and every relation type between them).
@@ -1051,7 +1061,7 @@ pub async fn topic_graph_summary(app: AppHandle, topic: String) -> Result<Value,
 /// queries are hardcoded string literals above, not user-supplied).
 async fn native_query(app: &AppHandle, sql: &str) -> Result<Value, String> {
     let dir = crate::cli::data_dir(app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -1588,7 +1598,7 @@ pub async fn start_collect(
 }
 
 /// Catalog of external sources the Python `research collect` will sweep.
-/// Mirrors the lists in `src/gapmap/research/collect.py` so the
+/// Mirrors the lists in `src/openreply/research/collect.py` so the
 /// "topic recon" card on the collect screen can preview the exact set
 /// that's about to be queried — without spinning up the sidecar first.
 ///
@@ -1858,7 +1868,7 @@ pub async fn cancel_enrich_for_topic(
 /// Snapshot of current memory + state-slot sizes across the Rust process and
 /// any tracked sidecar children. Plumbed for diagnosing the "memory grows
 /// exponentially / app hangs" reports — call from DevTools console
-/// (`window.__gapmapMemStats()`) to see which layer is bloating.
+/// (`window.__openreplyMemStats()`) to see which layer is bloating.
 ///
 /// Returns:
 ///   - `rust_pid` / `rust_rss_mb`: this Tauri host process.
@@ -2241,7 +2251,7 @@ pub async fn list_experiments(app: AppHandle, topic: String) -> Result<Value, St
     // Native — mirrors gap_discovery.list_experiments + the experiments-list
     // CLI envelope `{"topic": …, "experiments": [...]}`.
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"topic": topic, "experiments": []}));
     }
@@ -2369,7 +2379,7 @@ pub async fn export_brief(
     // We invoke CLI raw and return the string.
     let data_dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
     let data_str = data_dir.to_string_lossy().to_string();
-    let py = std::env::var("GAPMAP_DEV_PYTHON").ok().and_then(|p| {
+    let py = std::env::var("OPENREPLY_DEV_PYTHON").ok().and_then(|p| {
         let pb = std::path::PathBuf::from(p);
         if pb.exists() { Some(pb) } else { None }
     }).or_else(|| {
@@ -2384,11 +2394,11 @@ pub async fn export_brief(
     if let Some(py) = py {
         // Dev path — tokio::process for direct stdout capture
         let output = tokio::process::Command::new(&py)
-            .arg("-m").arg("gapmap.cli.main")
+            .arg("-m").arg("openreply.cli.main")
             .arg("research").arg("export-brief")
             .arg("--topic").arg(&topic)
             .arg("--format").arg(&fmt)
-            .env("GAPMAP_DATA_DIR", &data_str)
+            .env("OPENREPLY_DATA_DIR", &data_str)
             .env("PYTHONUNBUFFERED", "1")
             .output().await.map_err(|e| e.to_string())?;
         if !output.status.success() {
@@ -2400,10 +2410,10 @@ pub async fn export_brief(
     // wraps it in serde_json::from_str and returns Value::Null on parse
     // failure. We want the raw string, so we use shell().sidecar().
     use tauri_plugin_shell::ShellExt;
-    let output = app.shell().sidecar("gapmap-cli")
+    let output = app.shell().sidecar("openreply-cli")
         .map_err(|e| e.to_string())?
         .args(["research", "export-brief", "--topic", &topic, "--format", &fmt])
-        .env("GAPMAP_DATA_DIR", &data_str)
+        .env("OPENREPLY_DATA_DIR", &data_str)
         .env("PYTHONUNBUFFERED", "1")
         .output().await.map_err(|e| e.to_string())?;
     if !output.status.success() {
@@ -3087,7 +3097,7 @@ pub async fn research_links(
 //
 // Runs `research monitor-*` CLI commands. Drives the Dashboard's
 // "What's changed this week" card and per-topic delta indicators.
-// See src/gapmap/research/monitor.py.
+// See src/openreply/research/monitor.py.
 
 #[tauri::command]
 pub async fn monitor_run_topic(
@@ -3144,7 +3154,7 @@ pub async fn monitor_deltas(
 // stored in the `hypothesis_tests` SQLite table. The UI's "Save as bet"
 // button calls `hypothesis_create`; the Bets tab + state pills call
 // `hypothesis_update_status` and `hypothesis_list`. See
-// src/gapmap/research/hypothesis_tracker.py for the state machine.
+// src/openreply/research/hypothesis_tracker.py for the state machine.
 
 #[tauri::command]
 pub async fn hypothesis_create(
@@ -3909,7 +3919,7 @@ pub async fn ost_experiments_list(
     // + the `{"experiments": [...]}` CLI envelope.
     let pp = painpoint_id.unwrap_or_default();
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"experiments": []}));
     }
@@ -4057,7 +4067,7 @@ pub async fn empathy_get(
     // against the Python `empathy-get --json` golden output.
     let p = persona.unwrap_or_else(|| "primary".to_string());
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"ok": false, "error": "empathy_maps table missing"}));
     }
@@ -4117,7 +4127,7 @@ pub async fn empathy_list(app: AppHandle, topic: String) -> Result<Value, String
     // Native rusqlite read — mirrors Python `research.empathy.list_empathy_maps`
     // wrapped in the `{"maps": [...]}` envelope the CLI emits.
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"maps": []}));
     }
@@ -4159,7 +4169,7 @@ fn now_ms() -> i64 {
 #[tauri::command]
 pub async fn chat_conv_list(app: AppHandle, topic: Option<String>) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -4176,7 +4186,7 @@ pub async fn chat_conv_list(app: AppHandle, topic: Option<String>) -> Result<Val
 #[tauri::command]
 pub async fn chat_conv_get(app: AppHandle, id: String) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(Value::Null);
     }
@@ -4199,7 +4209,7 @@ pub async fn chat_conv_save(
     messages_json: String,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     let now = now_ms();
     tokio::task::spawn_blocking(move || -> Result<Value, String> {
         crate::db::chat_conv_save(&db_path, &id, &topic, &title, &messages_json, now)
@@ -4213,7 +4223,7 @@ pub async fn chat_conv_save(
 #[tauri::command]
 pub async fn chat_conv_rename(app: AppHandle, id: String, title: String) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     let now = now_ms();
     tokio::task::spawn_blocking(move || -> Result<Value, String> {
         crate::db::chat_conv_rename(&db_path, &id, &title, now)
@@ -4227,7 +4237,7 @@ pub async fn chat_conv_rename(app: AppHandle, id: String, title: String) -> Resu
 #[tauri::command]
 pub async fn chat_conv_delete(app: AppHandle, id: String) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     tokio::task::spawn_blocking(move || -> Result<Value, String> {
         crate::db::chat_conv_delete(&db_path, &id)
             .map(|_| serde_json::json!({ "ok": true }))
@@ -4310,7 +4320,7 @@ async fn product_blob_get(
     shape: impl FnOnce(&str, &serde_json::Map<String, Value>) -> Value + Send + 'static,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"ok": false, "error": "products table not initialized"}));
     }
@@ -4576,7 +4586,7 @@ pub async fn interview_delete(app: AppHandle, interview_id: String) -> Result<Va
 pub async fn interview_get(app: AppHandle, interview_id: String) -> Result<Value, String> {
     // Native — mirrors interviews.get_interview + _to_dict (tags_json → tags).
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"ok": false, "error": "interviews table missing"}));
     }
@@ -4628,7 +4638,7 @@ pub async fn interview_list(
     let t = topic.unwrap_or_default();
     let p = product_id.unwrap_or_default();
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"interviews": []}));
     }
@@ -4711,7 +4721,7 @@ pub async fn pmf_list(
     let t = topic.unwrap_or_default();
     let p = product_id.unwrap_or_default();
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"responses": []}));
     }
@@ -4827,7 +4837,7 @@ pub async fn survey_list(
     let p = product_id.unwrap_or_default();
     let k = kind.unwrap_or_default();
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"responses": []}));
     }
@@ -4943,7 +4953,7 @@ pub async fn pert_list(
     // created_at ASC) + `_decorate` (expected/stddev) + `{"tasks": [...]}`.
     let t = tier.unwrap_or_default();
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({"tasks": []}));
     }
@@ -5161,7 +5171,7 @@ pub async fn paper_pdf_fetch(
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .redirect(reqwest::redirect::Policy::limited(8))
-            .user_agent("gapmap/1.0 (paper-pdf-fetch)")
+            .user_agent("openreply/1.0 (paper-pdf-fetch)")
             .build()
             .map_err(|e| format!("client build: {e}"))?;
         let resp = client
@@ -5811,7 +5821,7 @@ pub async fn paper_analyses_get(
     // Native — was a sidecar `query` round-trip; identical SELECT, ~10ms now.
     // Returns the bare rows array the `query` command emitted.
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -5835,7 +5845,7 @@ pub async fn paper_analyses_get(
     Ok(result)
 }
 
-/// Export the gap-map HTML for a topic. Returns absolute path.
+/// Export the openreply-map HTML for a topic. Returns absolute path.
 #[tauri::command]
 pub async fn export_html(
     app: AppHandle,
@@ -5846,7 +5856,7 @@ pub async fn export_html(
 ) -> Result<String, String> {
     let export_dir = read_export_dir(&app)?;
     let file_stem = sanitize_export_file_stem(&topic);
-    let out_path = export_dir.join(format!("gap-map-{}.html", file_stem));
+    let out_path = export_dir.join(format!("openreply-map-{}.html", file_stem));
     let out_str = out_path.to_string_lossy().to_string();
 
     // Fast path — skip the sidecar spawn if we already have a non-empty
@@ -6243,7 +6253,7 @@ pub async fn app_data_dir(app: AppHandle) -> Result<String, String> {
         .map_err(err_to_string)
 }
 
-/// Onboarding / startup diagnostics. Wraps `gapmap health --json` with a
+/// Onboarding / startup diagnostics. Wraps `openreply health --json` with a
 /// sidecar-spawn probe so the frontend can distinguish three failure modes:
 ///   (a) sidecar binary can't even launch (permissions / notarization / arch)
 ///   (b) sidecar launches but individual checks fail (data dir, DB, model, LLM)
@@ -6418,7 +6428,7 @@ pub async fn palace_reindex(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn db_mtime(app: AppHandle) -> Result<u64, String> {
     let dir = data_dir(&app).map_err(err_to_string)?;
-    let db = dir.join("gapmap.db");
+    let db = dir.join("openreply.db");
     match std::fs::metadata(&db) {
         Ok(m) => {
             let mt = m.modified().map_err(|e| e.to_string())?;
@@ -6589,7 +6599,7 @@ pub async fn run_query(
     // goes from 30-70s (bundled sidecar cold start on a fresh DMG) to
     // sub-10ms. See src/db.rs for the connection cache + param binding.
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         // No DB yet — return an empty array so the UI doesn't error out
         // on a fresh install before the first collect has landed.
@@ -6633,7 +6643,7 @@ pub async fn topic_insights_cached(
     topic: String,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({
             "ok": false, "topic": topic,
@@ -6721,7 +6731,7 @@ pub async fn topic_counts_bundle(
     topic: String,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({
             "painpoints": 0, "feature_wishes": 0, "workarounds": 0,
@@ -6792,7 +6802,7 @@ pub async fn papers_list_native(
 ) -> Result<Value, String> {
     let lim = limit.unwrap_or(200) as i64;
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -6868,7 +6878,7 @@ pub async fn hypothesis_list_native(
     include_archived: Option<bool>,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
@@ -6943,7 +6953,7 @@ pub async fn solutions_data_bundle(
     topic: String,
 ) -> Result<Value, String> {
     let dir = crate::cli::data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({ "painpoints": [] }));
     }
@@ -7045,19 +7055,19 @@ pub async fn solutions_data_bundle(
     Ok(bundle)
 }
 
-/// Path to the user's BYOK env file (`~/.config/gapmap/.env`).
+/// Path to the user's BYOK env file (`~/.config/openreply/.env`).
 ///
-/// macOS/Linux: `$HOME/.config/gapmap/.env`.
-/// Windows: `%USERPROFILE%\.config\gapmap\.env` — `HOME` is not set by
+/// macOS/Linux: `$HOME/.config/openreply/.env`.
+/// Windows: `%USERPROFILE%\.config\openreply\.env` — `HOME` is not set by
 /// default on Windows, so we fall back to `USERPROFILE` (the standard
-/// per-user root the OS guarantees). Same `.config/gapmap` suffix is
-/// kept so `gapmap reset` (and the bundled `.env` doc) point at the
+/// per-user root the OS guarantees). Same `.config/openreply` suffix is
+/// kept so `openreply reset` (and the bundled `.env` doc) point at the
 /// same location on every platform.
 fn byok_env_path() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map_err(|e| format!("HOME/USERPROFILE unset: {e}"))?;
-    let dir = std::path::PathBuf::from(home).join(".config").join("gapmap");
+    let dir = std::path::PathBuf::from(home).join(".config").join("openreply");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join(".env"))
 }
@@ -7079,7 +7089,7 @@ fn parse_env(contents: &str) -> std::collections::BTreeMap<String, String> {
 /// Serialize the env map back, one KEY=VALUE per line.
 fn serialize_env(map: &std::collections::BTreeMap<String, String>) -> String {
     let mut lines = String::new();
-    lines.push_str("# Generated by Gap Map — edit keys in Settings\n");
+    lines.push_str("# Generated by OpenReply — edit keys in Settings\n");
     for (k, v) in map {
         lines.push_str(&format!("{}={}\n", k, v));
     }
@@ -7537,13 +7547,13 @@ fn normalize_models(provider: &str, raw: &Value) -> Vec<Value> {
 // ─── MCP ↔ App integration (one-click connect to Claude Code) ─────────────────
 //
 // Spec: docs/superpowers/specs/2026-04-21-mcp-app-integration.md (v1).
-// We shell out to `gapmap mcp {install,uninstall,status} --json` so all
+// We shell out to `openreply mcp {install,uninstall,status} --json` so all
 // the JSON-merge / token-gen / atomic-write logic stays in one place
-// (src/gapmap/mcp/install.py), testable from CLI.
+// (src/openreply/mcp/install.py), testable from CLI.
 //
 // Two execution modes for the MCP entry's command:
 //   - Dev:  if `.venv/bin/python` is found near CWD → register as
-//           `uv --directory <repo> run gapmap mcp serve` (current dev flow).
+//           `uv --directory <repo> run openreply mcp serve` (current dev flow).
 //   - Prod: bundled binary → register the absolute path to the sidecar exe
 //           inside Contents/MacOS so Claude Code spawns it directly without
 //           needing `uv` on the user's PATH.
@@ -7558,9 +7568,9 @@ fn normalize_models(provider: &str, raw: &Value) -> Vec<Value> {
 ///
 /// Why this matters: MCP install writes Claude's `command:` to the path
 /// it sees right now. Under translocation that's a randomized
-/// `/private/var/folders/.../AppTranslocation/<UUID>/d/Gap Map.app/...`
+/// `/private/var/folders/.../AppTranslocation/<UUID>/d/OpenReply.app/...`
 /// path that reaps when the app quits. Claude saves it, then can't find
-/// it on the next launch — the user sees "gapmap" in /mcp but "failed
+/// it on the next launch — the user sees "openreply" in /mcp but "failed
 /// to start" every time.
 ///
 /// All the dialogs use `osascript display dialog` so we don't need to
@@ -7598,8 +7608,8 @@ pub fn maybe_relocate_to_applications() -> bool {
     // Ask the user. `osascript` returns exit 0 on the default/right
     // button (Move) and exit 1 on Cancel.
     let prompt = format!(
-        r#"display dialog "Gap Map needs to live in your Applications folder for MCP and auto-updates to work properly.\n\nMove it now? (recommended)" \
-           with title "Move Gap Map to Applications" \
+        r#"display dialog "OpenReply needs to live in your Applications folder for MCP and auto-updates to work properly.\n\nMove it now? (recommended)" \
+           with title "Move OpenReply to Applications" \
            buttons {{"Cancel", "Move to Applications"}} default button "Move to Applications" \
            with icon caution"#,
     );
@@ -7613,12 +7623,12 @@ pub fn maybe_relocate_to_applications() -> bool {
         return false;
     }
 
-    // If something already lives at /Applications/Gap Map.app, ask
+    // If something already lives at /Applications/OpenReply.app, ask
     // before clobbering — could be an older version the user wants to
     // keep, or a stuck-installed one we should replace.
     if target.exists() {
-        let confirm = r#"display dialog "An older Gap Map.app already lives in /Applications. Replace it with this version?" \
-                       with title "Replace existing Gap Map" \
+        let confirm = r#"display dialog "An older OpenReply.app already lives in /Applications. Replace it with this version?" \
+                       with title "Replace existing OpenReply" \
                        buttons {"Cancel", "Replace"} default button "Replace" \
                        with icon caution"#;
         let ok2 = std::process::Command::new("osascript")
@@ -7643,7 +7653,7 @@ pub fn maybe_relocate_to_applications() -> bool {
         .map(|s| s.success())
         .unwrap_or(false);
     if !copy_ok {
-        let err = r#"display alert "Couldn't copy Gap Map to /Applications" message "Drag Gap Map.app to /Applications manually, then reopen it from there." as critical"#;
+        let err = r#"display alert "Couldn't copy OpenReply to /Applications" message "Drag OpenReply.app to /Applications manually, then reopen it from there." as critical"#;
         let _ = std::process::Command::new("osascript")
             .arg("-e")
             .arg(err)
@@ -7673,10 +7683,10 @@ pub fn maybe_relocate_to_applications() -> bool {
 fn resolve_sidecar_bin_path() -> Option<std::path::PathBuf> {
     // In a packaged Tauri app, the sidecar lives next to the main exe in
     // Contents/MacOS/. `current_exe()` gives us the main app binary; its
-    // sibling `gapmap` (or `gapmap.exe` on Windows) is the sidecar.
+    // sibling `openreply` (or `openreply.exe` on Windows) is the sidecar.
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    for name in ["gapmap-cli", "gapmap-cli.exe"] {
+    for name in ["openreply-cli", "openreply-cli.exe"] {
         let candidate = dir.join(name);
         if candidate.exists() {
             return Some(candidate);
@@ -7729,7 +7739,7 @@ pub async fn mcp_clients(app: AppHandle) -> Result<Value, String> {
     run_cli(&app, vec!["mcp", "clients", "--json"]).await.map_err(err_to_string)
 }
 
-/// Check whether Gap Map is connected to the chosen MCP client and DB-aligned.
+/// Check whether OpenReply is connected to the chosen MCP client and DB-aligned.
 /// `client` defaults to `claude-code` when None/empty.
 #[tauri::command]
 pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value, String> {
@@ -7756,7 +7766,7 @@ pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value,
                 obj.insert(
                     "ephemeral_app_path_hint".into(),
                     Value::String(format!(
-                        "Gap Map.app is running from {}. Move it to /Applications and re-open from there before clicking Connect.",
+                        "OpenReply.app is running from {}. Move it to /Applications and re-open from there before clicking Connect.",
                         bin.display()
                     )),
                 );
@@ -7766,8 +7776,8 @@ pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value,
     Ok(result)
 }
 
-/// Connect (or re-sync) Gap Map's MCP entry in the chosen client's config.
-/// Aligns GAPMAP_DATA_DIR and writes a token to the data dir.
+/// Connect (or re-sync) OpenReply's MCP entry in the chosen client's config.
+/// Aligns OPENREPLY_DATA_DIR and writes a token to the data dir.
 #[tauri::command]
 pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value, String> {
     ensure_mcp_allowed(&app)?;
@@ -7797,28 +7807,28 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
             let bin_str = bin.to_string_lossy().to_string();
             let msg = if bin_str.contains("/AppTranslocation/") {
                 format!(
-                    "Gap Map.app is running under macOS App Translocation ({}). \
+                    "OpenReply.app is running under macOS App Translocation ({}). \
                      This happens when the .app is launched from anywhere other than \
                      /Applications (e.g. from the DMG mount, Downloads, or Desktop). \
                      The translocated path changes on every launch — Claude can't \
                      find the MCP binary after a restart. \
-                     \n\nFix: Quit Gap Map. Move (don't copy) Gap Map.app to /Applications. \
-                     Run in Terminal: xattr -dr com.apple.quarantine '/Applications/Gap Map.app'. \
+                     \n\nFix: Quit OpenReply. Move (don't copy) OpenReply.app to /Applications. \
+                     Run in Terminal: xattr -dr com.apple.quarantine '/Applications/OpenReply.app'. \
                      Reopen from /Applications. MCP will auto-connect on the next launch.",
                     bin_str
                 )
             } else if bin_str.starts_with("/Volumes/") {
                 format!(
-                    "Gap Map.app is running from a mounted disk image ({}). \
-                     MCP needs a stable path. Quit Gap Map, drag Gap Map.app to \
+                    "OpenReply.app is running from a mounted disk image ({}). \
+                     MCP needs a stable path. Quit OpenReply, drag OpenReply.app to \
                      /Applications (eject the DMG), then open it from /Applications \
                      and click Connect again.",
                     bin_str
                 )
             } else {
                 format!(
-                    "Gap Map.app is running from a temporary location ({}). \
-                     Move Gap Map.app to /Applications and reopen it from there.",
+                    "OpenReply.app is running from a temporary location ({}). \
+                     Move OpenReply.app to /Applications and reopen it from there.",
                     bin_str
                 )
             };
@@ -7862,22 +7872,22 @@ pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Resul
             let bin_str = bin.to_string_lossy().to_string();
             let msg = if bin_str.contains("/AppTranslocation/") {
                 format!(
-                    "Gap Map.app is running under macOS App Translocation ({}). \
-                     Move Gap Map.app to /Applications and reopen it from there \
+                    "OpenReply.app is running under macOS App Translocation ({}). \
+                     Move OpenReply.app to /Applications and reopen it from there \
                      before copying the MCP config — the current path changes on \
                      every launch and won't work after a restart.",
                     bin_str
                 )
             } else if bin_str.starts_with("/Volumes/") {
                 format!(
-                    "Gap Map.app is running from a mounted disk image ({}). \
+                    "OpenReply.app is running from a mounted disk image ({}). \
                      Drag it to /Applications (eject the DMG) and reopen from there \
                      before copying the MCP config.",
                     bin_str
                 )
             } else {
                 format!(
-                    "Gap Map.app is running from a temporary location ({}). \
+                    "OpenReply.app is running from a temporary location ({}). \
                      Move it to /Applications and reopen before copying the config.",
                     bin_str
                 )
@@ -7891,7 +7901,7 @@ pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Resul
     run_cli(&app, arg_refs).await.map_err(err_to_string)
 }
 
-/// Remove Gap Map's MCP entry from the chosen client's config + delete the token.
+/// Remove OpenReply's MCP entry from the chosen client's config + delete the token.
 #[tauri::command]
 pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Value, String> {
     ensure_mcp_allowed(&app)?;
@@ -7909,19 +7919,19 @@ pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Val
     run_cli(&app, arg_refs).await.map_err(err_to_string)
 }
 
-// ── CLI symlink to /usr/local/bin/gapmap ──────────────────────────────────
+// ── CLI symlink to /usr/local/bin/openreply ───────────────────────────────
 //
 // In a DMG install the Python sidecar binary lives at
-// `<Gap Map.app>/Contents/MacOS/gapmap-cli-aarch64-apple-darwin` — invisible
+// `<OpenReply.app>/Contents/MacOS/openreply-cli-aarch64-apple-darwin` — invisible
 // to the user's terminal. These commands manage a symlink at
-// `/usr/local/bin/gapmap` pointing at that bundled binary so the recipient
-// can `gapmap research collect ...` from anywhere. The link uses
+// `/usr/local/bin/openreply` pointing at that bundled binary so the recipient
+// can `openreply research collect ...` from anywhere. The link uses
 // `osascript with administrator privileges` since /usr/local/bin requires
 // sudo on a fresh Mac without homebrew.
 //
 // Symlink (not copy) so a future app update is picked up automatically.
 
-const CLI_SYMLINK_PATH: &str = "/usr/local/bin/gapmap";
+const CLI_SYMLINK_PATH: &str = "/usr/local/bin/openreply";
 
 #[tauri::command]
 pub async fn cli_symlink_status() -> Result<Value, String> {
@@ -7952,7 +7962,7 @@ pub async fn cli_symlink_status() -> Result<Value, String> {
 #[tauri::command]
 pub async fn install_cli_symlink() -> Result<Value, String> {
     let sidecar = resolve_sidecar_bin_path()
-        .ok_or_else(|| "Could not locate the bundled gapmap-cli binary. Reinstall Gap Map and try again.".to_string())?;
+        .ok_or_else(|| "Could not locate the bundled openreply-cli binary. Reinstall OpenReply and try again.".to_string())?;
     let sidecar_str = sidecar.to_string_lossy().to_string();
     // Escape single-quotes for embedding inside the AppleScript double-quoted
     // shell command. AppleScript handles its own outer quoting; we just need
@@ -8074,11 +8084,11 @@ fn compute_activation_reason(app: &AppHandle) -> Result<Option<(String, String)>
 /// without anyone needing an activation key first; flip ON when you start
 /// monetising via paid keys.
 ///
-/// Read from `GAPMAP_LICENSE_GATE_ENABLED` env at runtime (truthy:
+/// Read from `OPENREPLY_LICENSE_GATE_ENABLED` env at runtime (truthy:
 /// "1", "true", "yes", "on" — anything else is OFF). Runtime not
 /// compile-time so the same DMG can be deployed both gated and ungated
 /// just by toggling the env (e.g. via a wrapper script that exports it
-/// before launching Gap Map.app).
+/// before launching OpenReply.app).
 fn license_gate_enabled() -> bool {
     // DEFAULT ON: the app requires an activated licence. Until a valid key is
     // entered the UI is gated to the activation screen and MCP commands are
@@ -8086,10 +8096,10 @@ fn license_gate_enabled() -> bool {
     // commands, never the SQLite store).
     //
     // For local development you can bypass the gate by exporting
-    // GAPMAP_LICENSE_GATE_ENABLED=0 (also accepts false/no/off). Anything else
+    // OPENREPLY_LICENSE_GATE_ENABLED=0 (also accepts false/no/off). Anything else
     // — including the var being unset, as in a shipped DMG — keeps it ON.
     !matches!(
-        std::env::var("GAPMAP_LICENSE_GATE_ENABLED")
+        std::env::var("OPENREPLY_LICENSE_GATE_ENABLED")
             .unwrap_or_default()
             .trim()
             .to_ascii_lowercase()
@@ -8102,7 +8112,7 @@ fn license_gate_enabled() -> bool {
 pub async fn license_gate_status() -> Result<Value, String> {
     Ok(serde_json::json!({
         "enabled": license_gate_enabled(),
-        "env_var": "GAPMAP_LICENSE_GATE_ENABLED",
+        "env_var": "OPENREPLY_LICENSE_GATE_ENABLED",
     }))
 }
 
@@ -8200,7 +8210,7 @@ pub async fn prompt_set(app: AppHandle, key: String, text: String) -> Result<Val
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    tmp.push(format!("gapmap_prompt_{}_{}.txt", key.replace('/', "_"), ts));
+    tmp.push(format!("openreply_prompt_{}_{}.txt", key.replace('/', "_"), ts));
     {
         let mut f = std::fs::File::create(&tmp).map_err(|e| format!("tmpfile: {e}"))?;
         f.write_all(text.as_bytes()).map_err(|e| format!("write: {e}"))?;
@@ -8378,7 +8388,7 @@ pub async fn topic_coverage_gaps(app: AppHandle, topic: String) -> Result<Value,
 //   whisper_*            → model catalogue / download / delete / default
 //   ytdlp_version|update → overlay auto-updater controls
 //
-// All wrap the Python CLI (src/gapmap/cli/main.py → ingest video /
+// All wrap the Python CLI (src/openreply/cli/main.py → ingest video /
 // whisper / ytdlp subcommands). Streaming commands emit events the webview
 // listens to via @tauri-apps/api/event::listen().
 
@@ -8733,7 +8743,7 @@ pub async fn extraction_prefs_get(
     let mut effective = compute_effective(&global_map, None);
     if let Some(t) = topic.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
         let dir = data_dir(&app).map_err(err_to_string)?;
-        let db_path = dir.join("gapmap.db");
+        let db_path = dir.join("openreply.db");
         if db_path.exists() {
             match read_topic_prefs_row(&db_path, &t) {
                 Ok(Some(row)) => {
@@ -8783,7 +8793,7 @@ pub async fn extraction_prefs_set(
             return Err("scope 'topic:' must include a topic name".into());
         }
         let dir = data_dir(&app).map_err(err_to_string)?;
-        let db_path = dir.join("gapmap.db");
+        let db_path = dir.join("openreply.db");
         if !db_path.exists() {
             return Err("db not initialized yet — run a collect first".into());
         }
@@ -8798,7 +8808,7 @@ pub async fn extraction_prefs_set(
 #[tauri::command]
 pub async fn today_token_spend(app: AppHandle) -> Result<Value, String> {
     let dir = data_dir(&app).map_err(err_to_string)?;
-    let db_path = dir.join("gapmap.db");
+    let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(serde_json::json!({
             "tokens_in": 0, "tokens_out": 0, "est_usd": 0.0, "breakdown": []
@@ -8878,8 +8888,8 @@ fn verify_license_token(token: &str) -> Result<VerifiedTokenClaims, String> {
     // app flow; keep JWT exp soft to avoid hard lockout during transient clock
     // drift. Signature + issuer + audience are still strictly verified.
     validation.validate_exp = false;
-    validation.set_issuer(&["gapmap-activation-suite"]);
-    validation.set_audience(&["gapmap-desktop"]);
+    validation.set_issuer(&["openreply-activation-suite"]);
+    validation.set_audience(&["openreply-desktop"]);
     decode::<VerifiedTokenClaims>(token, &key, &validation)
         .map(|d| d.claims)
         .map_err(|e| format!("invalid activation token: {e}"))
@@ -9116,7 +9126,7 @@ fn build_device_signature(app: &AppHandle) -> Result<String, String> {
         }
     };
     let stable = hw_id.unwrap_or_else(|| ensure_device_id(app).unwrap_or_else(|_| "unknown-device".to_string()));
-    let seed = format!("gapmap|{}|{}|{}", os, arch, stable);
+    let seed = format!("openreply|{}|{}|{}", os, arch, stable);
     let mut hasher = Sha256::new();
     hasher.update(seed.as_bytes());
     Ok(format!("{:x}", hasher.finalize()))
@@ -9260,7 +9270,7 @@ pub async fn license_activate(
         password: password.trim(),
         activation_key: &cleaned_key,
         device_signature: &sig,
-        app: "gapmap-desktop",
+        app: "openreply-desktop",
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         onboarding: onboarding.as_ref(),
@@ -9496,18 +9506,18 @@ pub async fn license_server_check(api_base: String) -> Result<Value, String> {
 /// Default License API URL pre-filled into onboarding Step 6.
 ///
 /// Priority:
-///   1. `GAPMAP_LICENSE_API_BASE` env (highest — set by user/op for testing).
+///   1. `OPENREPLY_LICENSE_API_BASE` env (highest — set by user/op for testing).
 ///   2. `LICENSE_API_BASE` env (legacy alias).
 ///   3. Compile-time constant `DEFAULT_LICENSE_API_BASE`.
 ///
 /// Baking the URL into the binary means a DMG recipient sees
-/// `https://gapmap.myind.ai` pre-filled in onboarding — they don't have
+/// `https://openreply.myind.ai` pre-filled in onboarding — they don't have
 /// to know it. Override via env for staging / localhost dev.
-const DEFAULT_LICENSE_API_BASE: &str = "https://gapmap.myind.ai";
+const DEFAULT_LICENSE_API_BASE: &str = "https://openreply.myind.ai";
 
 #[tauri::command]
 pub async fn license_default_api_base() -> Result<Value, String> {
-    let from_env = std::env::var("GAPMAP_LICENSE_API_BASE")
+    let from_env = std::env::var("OPENREPLY_LICENSE_API_BASE")
         .or_else(|_| std::env::var("LICENSE_API_BASE"))
         .unwrap_or_default();
     let base = from_env.trim().trim_end_matches('/').to_string();
@@ -9627,7 +9637,7 @@ pub async fn license_logout(app: AppHandle) -> Result<Value, String> {
 
 /// Recursive size walker for the data_dir preview. Returns
 /// (file_count, total_bytes). Symlinks intentionally NOT followed —
-/// otherwise an `~/Library/Application Support/com.shantanu.gapmap/gapmap`
+/// otherwise an `~/Library/Application Support/com.shantanu.openreply/openreply`
 /// containing a symlink to / would lock the UI for minutes.
 fn walk_dir_size(path: &std::path::Path) -> (u64, u64) {
     fn recurse(p: &std::path::Path, files: &mut u64, bytes: &mut u64) {
@@ -9662,7 +9672,7 @@ fn walk_dir_size(path: &std::path::Path) -> (u64, u64) {
 /// Returns a JSON object the FE renders inside the confirmation modal:
 ///   - `data_dir`: absolute path of the app data folder.
 ///   - `data_files`, `data_bytes`, `data_mb`: total content under it.
-///   - `sqlite_present`: whether `gapmap.sqlite` exists.
+///   - `sqlite_present`: whether `openreply.sqlite` exists.
 ///   - `topic_count`: distinct topics with at least one post (0 if no DB).
 ///   - `license_present`, `license_email`: license_state.json status.
 ///   - `byok_env_path`: absolute path to the keys file (may be null
@@ -9679,7 +9689,7 @@ pub async fn app_reset_preview(app: AppHandle) -> Result<Value, String> {
     // SQLite topic count — open read-only so a held write-lock from the
     // running app doesn't block us. Falls back to 0 silently on any
     // error (schema missing, file absent, version mismatch).
-    let sqlite_path = data.join("gapmap.sqlite");
+    let sqlite_path = data.join("openreply.sqlite");
     let sqlite_present = sqlite_path.exists();
     let mut topic_count: i64 = 0;
     if sqlite_present {
@@ -9801,7 +9811,7 @@ pub async fn app_hard_reset(app: AppHandle) -> Result<Value, String> {
         }
     }
 
-    // BYOK env file — delete the file but leave the .config/gapmap
+    // BYOK env file — delete the file but leave the .config/openreply
     // directory so future `byok_set` calls don't have to recreate it.
     if let Ok(env_path) = byok_env_path() {
         if env_path.exists() {
@@ -10047,5 +10057,78 @@ pub async fn agent_idea_draft(
 pub async fn agent_idea_status(app: AppHandle, idea: String, status: String) -> Result<Value, String> {
     run_cli(&app, vec![
         "reply", "idea-status", "--idea", &idea, "--status", &status, "--json",
+    ]).await.map_err(err_to_string)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Minimal X-account worktree bridge.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// `openreply x-account add <handle> <auth_token> <ct0>`
+#[tauri::command]
+pub async fn x_account_add(
+    app: AppHandle,
+    handle: String,
+    auth_token: String,
+    ct0: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec![
+        "x-account", "add", &handle, &auth_token, &ct0, "--json",
+    ]).await.map_err(err_to_string)
+}
+
+/// `openreply x-account list`
+#[tauri::command]
+pub async fn x_account_list(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["x-account", "list", "--json"]).await.map_err(err_to_string)
+}
+
+/// `openreply x-account profile <handle>`
+#[tauri::command]
+pub async fn x_account_profile(app: AppHandle, handle: String) -> Result<Value, String> {
+    run_cli(&app, vec!["x-account", "profile", &handle, "--json"]).await.map_err(err_to_string)
+}
+
+/// `openreply x-account fetch-posts <handle> --count n --with-threads`
+#[tauri::command]
+pub async fn x_account_fetch_posts(
+    app: AppHandle,
+    handle: String,
+    count: Option<u32>,
+    with_threads: Option<bool>,
+) -> Result<Value, String> {
+    let n = count.unwrap_or(10).to_string();
+    let mut args = vec![
+        "x-account", "fetch-posts", &handle, "--count", &n,
+    ];
+    if with_threads.unwrap_or(false) {
+        args.push("--with-threads");
+    }
+    args.push("--json");
+    run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// `openreply x-account import-browser <handle>`
+#[tauri::command]
+pub async fn x_account_import_browser(
+    app: AppHandle,
+    handle: String,
+) -> Result<Value, String> {
+    run_cli(&app, vec![
+        "x-account", "import-browser", &handle, "--json",
+    ]).await.map_err(err_to_string)
+}
+
+/// `openreply x-account fetch-thread <handle> <tweet_id_or_url> --limit n`
+#[tauri::command]
+pub async fn x_account_fetch_thread(
+    app: AppHandle,
+    handle: String,
+    tweet_id_or_url: String,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let l = limit.unwrap_or(50).to_string();
+    run_cli(&app, vec![
+        "x-account", "fetch-thread", &handle, &tweet_id_or_url, "--limit", &l, "--json",
     ]).await.map_err(err_to_string)
 }

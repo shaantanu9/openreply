@@ -45,6 +45,6 @@ allow Keychain, or paste manually.
 
 ## Files Modified
 
-- `src/gapmap/sources/_cookie_extract.py`
-- `src/gapmap/research/reach_connections.py`
+- `src/openreply/sources/_cookie_extract.py`
+- `src/openreply/research/reach_connections.py`
 - `tests/test_cookie_extract_discovery.py`, `tests/test_reach_connections.py`

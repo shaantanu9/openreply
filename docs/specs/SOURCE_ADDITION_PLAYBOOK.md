@@ -1,11 +1,11 @@
-# Source-Addition Playbook — Learning miroclaw's Data Layer, Adding ALL Candidate Sources to Gap Map
+# Source-Addition Playbook — Learning miroclaw's Data Layer, Adding ALL Candidate Sources to OpenReply
 
 > **Date:** 2026-06-07 · **Status:** Implementation playbook + decision framework (no production code changed yet)
 > **Learned from:** `~/Documents/miro_jyotish/miroclaw_jyotish/backend/app/services/data_sources/` (`base.py`, `router.py`, `collector.py`, `sources/*`)
-> **Target:** `reddit-myind` (Gap Map) — `src/gapmap/sources/`
-> **Companion:** `docs/specs/MIROCLAW_GAPMAP_FULL_ANALYSIS.md` (the strategic "which sources help" decision — this file is the *how to add any/all of them* mechanics + comparison)
+> **Target:** `reddit-myind` (OpenReply) — `src/openreply/sources/`
+> **Companion:** `docs/specs/MIROCLAW_OPENREPLY_FULL_ANALYSIS.md` (the strategic "which sources help" decision — this file is the *how to add any/all of them* mechanics + comparison)
 
-**Goal of this file:** document the full mechanics for adding *any* external source to Gap Map (learned from miroclaw's clean pattern), provide a **template + step-by-step recipe**, then **catalog every candidate source** (all 12 from miroclaw + extras) with a **scoring framework** so we can later compare and add the best — not just GDELT + web search.
+**Goal of this file:** document the full mechanics for adding *any* external source to OpenReply (learned from miroclaw's clean pattern), provide a **template + step-by-step recipe**, then **catalog every candidate source** (all 12 from miroclaw + extras) with a **scoring framework** so we can later compare and add the best — not just GDELT + web search.
 
 ---
 
@@ -13,7 +13,7 @@
 
 Both repos use the same philosophy ("one file per source + register it"), but different contracts.
 
-| Concern | miroclaw | Gap Map |
+| Concern | miroclaw | OpenReply |
 |---|---|---|
 | **Unit of a source** | A class `XSource(BaseSource)` with `fetch(query, max_results, start_date, end_date)` | A module function `fetch_<name>(query, limit, ...) -> list[dict]` |
 | **Output contract** | `DataResult` dataclass (`source, category, title, content, url, published_at, relevance_score, metadata`) | **Common `posts` row dict** (`id, sub, source_type, author, title, selftext, url, score, upvote_ratio, num_comments, created_utc, is_self, over_18, flair, permalink, fetched_at`) |
@@ -25,15 +25,15 @@ Both repos use the same philosophy ("one file per source + register it"), but di
 | **HTTP politeness** | per-source | centralized `sources/_http.py` (`polite_get`, UA, Retry-After) |
 | **Persistence** | returns to caller (LLM text) | writes to SQLite `posts` table via `upsert_posts` |
 
-**Takeaway:** miroclaw's `BaseSource`/`DataResult` is a slightly cleaner *abstraction*; Gap Map's `posts`-row contract is more *powerful downstream* (dedup + graph + sentiment + audience clustering all work for free on any new source). **We keep Gap Map's contract** and **borrow miroclaw's best ideas** (router, historical flags, min-year guards, `requires_api_key`).
+**Takeaway:** miroclaw's `BaseSource`/`DataResult` is a slightly cleaner *abstraction*; OpenReply's `posts`-row contract is more *powerful downstream* (dedup + graph + sentiment + audience clustering all work for free on any new source). **We keep OpenReply's contract** and **borrow miroclaw's best ideas** (router, historical flags, min-year guards, `requires_api_key`).
 
 ---
 
-## PART 2 — The canonical Gap Map "add a source" recipe
+## PART 2 — The canonical OpenReply "add a source" recipe
 
 Every new source touches the same **6 files** (7 if it introduces a new source *family*). This is the exact wiring trail traced from existing sources (`gnews`, `hackernews`).
 
-### Step 1 — `src/gapmap/sources/<name>.py` (the fetcher)
+### Step 1 — `src/openreply/sources/<name>.py` (the fetcher)
 Write `fetch_<name>(query, limit=50, **opts) -> list[dict]` returning rows in the **common posts shape**. Rules:
 - **Never raise** — catch, return `[]`.
 - Use `sources/_http.polite_get` for HTTP (gets UA + Retry-After for free).
@@ -84,10 +84,10 @@ def fetch_<name>(query: str, limit: int = 50,
     return rows
 ```
 
-### Step 2 — `src/gapmap/sources/__init__.py`
+### Step 2 — `src/openreply/sources/__init__.py`
 Add `from .<name> import fetch_<name>` and append `"fetch_<name>"` to `__all__`. Update the module docstring's "zero-config / config-gated" lists.
 
-### Step 3 — `src/gapmap/sources/collect_adapter.py`
+### Step 3 — `src/openreply/sources/collect_adapter.py`
 Add a `collect_<name>(topic_or_keywords, limit=...)` so multi-source collect includes it. Simple sources use the existing helper:
 ```python
 def collect_<name>(topic_or_keywords, limit: int = 50) -> int:
@@ -96,16 +96,16 @@ def collect_<name>(topic_or_keywords, limit: int = 50) -> int:
 ```
 `_run_simple_list` already does keyword expansion + `log_fetch_start/end` + `upsert_posts` + error capture. Custom flows (per-app reviews, date ranges) follow the `collect_hn`/`collect_appstore` shape instead.
 
-### Step 4 — `src/gapmap/mcp/server.py`
-Register the MCP tool (mirrors `gapmap_fetch_gnews` at server.py:1746):
+### Step 4 — `src/openreply/mcp/server.py`
+Register the MCP tool (mirrors `openreply_fetch_gnews` at server.py:1746):
 ```python
-def gapmap_fetch_<name>(query: str, limit: int = 30) -> list[dict]:
+def openreply_fetch_<name>(query: str, limit: int = 30) -> list[dict]:
     """<docstring the LLM/UI sees>."""
     from ..sources.<name> import fetch_<name>
     return fetch_<name>(query=query, limit=limit)
 ```
 
-### Step 5 — `src/gapmap/cli/main.py`
+### Step 5 — `src/openreply/cli/main.py`
 Add `<name>` to the source-list help string (~line 1315) and its dispatch branch.
 
 ### Step 6 — `pyproject.toml`
@@ -117,7 +117,7 @@ If the source emits subtypes (like `youtube_*`) or is "reddit-like", update `YT_
 ### Acceptance per source
 - [ ] `fetch_<name>("test")` returns posts-shaped rows or `[]` (never raises).
 - [ ] Rows appear in `posts` after `collect_<name>`.
-- [ ] `gapmap_fetch_<name>` callable via MCP/CLI.
+- [ ] `openreply_fetch_<name>` callable via MCP/CLI.
 - [ ] No new heavy/native dep in the default bundle.
 - [ ] `created_utc` populated (forecast/temporal features need it).
 
@@ -127,11 +127,11 @@ If the source emits subtypes (like `youtube_*`) or is "reddit-like", update `YT_
 
 These are the architecture lessons worth importing regardless of which sources we add:
 
-1. **A keyword router** (`router.py`). Gap Map has no central "given this topic, which sources?" selector — the user picks manually. Porting a keyword→source map (e.g. *fintech topic → add Trustpilot + App Store + GitHub issues*; *science topic → arXiv + PubMed + OpenAlex*) would auto-pick a smart default source set per topic. **High value, LLM-free, ~120 lines.**
+1. **A keyword router** (`router.py`). OpenReply has no central "given this topic, which sources?" selector — the user picks manually. Porting a keyword→source map (e.g. *fintech topic → add Trustpilot + App Store + GitHub issues*; *science topic → arXiv + PubMed + OpenAlex*) would auto-pick a smart default source set per topic. **High value, LLM-free, ~120 lines.**
 2. **Historical-capability flags + per-source min-year guard.** miroclaw tags each source as historical-capable and skips sources with no data for old windows (eliminating pre-1997 timeout waste). **This is exactly what the P1 forecast engine's leak-free `historical_collector` needs.** Adopt a `SUPPORTS_HISTORICAL` / `MIN_YEAR` registry.
 3. **`requires_api_key` declared up-front** so the orchestrator skips key-less sources cleanly instead of failing mid-collect.
-4. **`relevance_score` stamped per row** (miroclaw computes a query-match relevance). Gap Map mostly leaves `score=0` for non-Reddit; a lightweight relevance heuristic would improve ranking/dedup.
-5. **`category` tagging** (news/web/economic/sentiment). Maps onto Gap Map's `source_families` idea — useful for the Sources tab + sentiment bucketing.
+4. **`relevance_score` stamped per row** (miroclaw computes a query-match relevance). OpenReply mostly leaves `score=0` for non-Reddit; a lightweight relevance heuristic would improve ranking/dedup.
+5. **`category` tagging** (news/web/economic/sentiment). Maps onto OpenReply's `source_families` idea — useful for the Sources tab + sentiment bucketing.
 
 ---
 
@@ -144,7 +144,7 @@ Below is every source from miroclaw's 12 **plus** extra generally-useful ones, e
 | Source | Gives | Key | Historical | Gap-Map fit | Effort | Verdict |
 |---|---|---|---|---|---|---|
 | **GDELT** | Structured global news/events, India-or-any country filter, date ranges | No | **Yes** | Event-driven topics; **forecast ground-truth/seed**; fills news-history hole | Low (`gdeltdoc`) | **ADD (high)** |
-| **DuckDuckGo** | General web+news search (keyless) | No | No | Gap Map has **no general web search**; context/seed fallback | Low (`duckduckgo-search`) | **ADD (med)** |
+| **DuckDuckGo** | General web+news search (keyless) | No | No | OpenReply has **no general web search**; context/seed fallback | Low (`duckduckgo-search`) | **ADD (med)** |
 | **Tavily** | High-quality web search (LLM-grade) | Yes (free 1k/mo) | No | Better web context than DDG; forecast seed | Low | **ADD (med, key-gated)** |
 | **World Bank** | Country macro indicators (GDP, CPI, unemployment…), annual | No | Yes (1960+) | Only **market-sizing/TAM** enrichment | Low (`wbgapi`) | **OPTIONAL (market-sizing)** |
 | **FRED** | US macro series (rates, VIX, yields), deep history | Yes (free) | Yes | Market-sizing/macro context only | Low | **OPTIONAL (market-sizing)** |
@@ -156,7 +156,7 @@ Below is every source from miroclaw's 12 **plus** extra generally-useful ones, e
 | **Open-Meteo** | Weather/rainfall | No | Yes (1940+) | Irrelevant to product gaps | Low | **SKIP (off-domain)** |
 | **ACLED** | Conflict/protest events | Yes (free) | Yes | Irrelevant to product gaps | Med (OAuth) | **SKIP (off-domain)** |
 
-### Group B — Extra sources worth considering (NOT in miroclaw, native to Gap Map's domain)
+### Group B — Extra sources worth considering (NOT in miroclaw, native to OpenReply's domain)
 These are higher-value *for gap discovery* than most of miroclaw's finance set. Listed so the comparison is complete.
 
 | Source | Gives | Key | Gap-Map fit | Verdict |
@@ -179,7 +179,7 @@ Score each candidate 1–5 on these weighted criteria; rank by weighted total. T
 | Criterion | Weight | 5 = | 1 = |
 |---|---|---|---|
 | **Domain relevance** (does it surface user pain / wishes / competitor signal / forecast ground-truth?) | ×3 | Direct voice-of-customer or forecast truth | Off-domain (finance/weather) |
-| **Uniqueness** (does Gap Map already cover this?) | ×2 | No overlap | Exact dupe |
+| **Uniqueness** (does OpenReply already cover this?) | ×2 | No overlap | Exact dupe |
 | **Cost/keys** (friction to enable) | ×2 | Keyless, unlimited | Paid/registration/OAuth |
 | **Historical support** (needed by forecast engine) | ×2 | Deep date-range | None |
 | **Packaging safety** (pure-python/httpx vs heavy/native dep) | ×2 | httpx-only | Heavy native (sidecar risk) |
@@ -202,7 +202,7 @@ Score each candidate 1–5 on these weighted criteria; rank by weighted total. T
 
 ## PART 6 — Packaging & sidecar safety (mandatory)
 
-Gap Map ships as a Tauri + PyInstaller DMG. Every source dep is frozen into the binary.
+OpenReply ships as a Tauri + PyInstaller DMG. Every source dep is frozen into the binary.
 - **Prefer httpx-only sources** (GDELT via REST instead of pulling pandas-heavy `gdeltdoc`? evaluate — `gdeltdoc` pulls pandas which is *already* a transitive dep via analyze extra, so acceptable; verify before committing).
 - **Avoid** adding heavy/native libs to the default `sources` extra. If a source needs one (e.g. a scraper with a headless browser), gate it behind a **separate optional extra** and a feature flag — never in the default DMG (see `tauri-fresh-install-triage` for the decompression-failure class this prevents).
 - **Key-gated sources degrade to `[]`** when the env var is absent — never hard-fail the collect.
@@ -210,9 +210,9 @@ Gap Map ships as a Tauri + PyInstaller DMG. Every source dep is frozen into the 
 
 ---
 
-## PART 7 — miroclaw `DataResult` → Gap Map `posts` row mapping (for any port)
+## PART 7 — miroclaw `DataResult` → OpenReply `posts` row mapping (for any port)
 
-| miroclaw `DataResult` | Gap Map `posts` row |
+| miroclaw `DataResult` | OpenReply `posts` row |
 |---|---|
 | `source` | `source_type` |
 | `category` | (→ `source_families` family; optionally a `category` tag) |
@@ -224,7 +224,7 @@ Gap Map ships as a Tauri + PyInstaller DMG. Every source dep is frozen into the 
 | `metadata{}` | fold key bits into `sub`/`flair`; drop the rest |
 | — | `id` (synthesize stable hash), `permalink=None`, `is_self=0`, `over_18=0`, `num_comments`, `upvote_ratio=None`, `fetched_at` |
 
-A ~15-line adapter converts any miroclaw `XSource.fetch()` output into Gap Map rows — useful if we want to lift a source's *fetch logic* wholesale and just reshape the output.
+A ~15-line adapter converts any miroclaw `XSource.fetch()` output into OpenReply rows — useful if we want to lift a source's *fetch logic* wholesale and just reshape the output.
 
 ---
 
@@ -246,17 +246,17 @@ A ~15-line adapter converts any miroclaw `XSource.fetch()` output into Gap Map r
 - **Don't let a source raise** — one bad source must not kill a multi-source collect. Catch → `[]` → `log_fetch_end(error=...)`.
 - **Don't add a heavy/native dep to the default `sources` extra** — sidecar bundle risk.
 - **Don't forget `source_families.py` + `postLink.js`** for a new family — rows go invisible to sentiment/sources/audience.
-- **Don't re-import duplicate sources** (Trends/Google News/RSS) — Gap Map already has them.
+- **Don't re-import duplicate sources** (Trends/Google News/RSS) — OpenReply already has them.
 - **Don't claim a source is "historical" without a min-year guard** — old-window queries will timeout-waste (miroclaw's documented lesson).
 
 ---
 
 ## Appendix — Files touched per new source (checklist)
-- [ ] `src/gapmap/sources/<name>.py` (fetcher, posts-row, never-raise)
-- [ ] `src/gapmap/sources/__init__.py` (import + `__all__` + docstring lists)
-- [ ] `src/gapmap/sources/collect_adapter.py` (`collect_<name>` via `_run_simple_list`)
-- [ ] `src/gapmap/mcp/server.py` (`gapmap_fetch_<name>` tool)
-- [ ] `src/gapmap/cli/main.py` (source list + dispatch)
+- [ ] `src/openreply/sources/<name>.py` (fetcher, posts-row, never-raise)
+- [ ] `src/openreply/sources/__init__.py` (import + `__all__` + docstring lists)
+- [ ] `src/openreply/sources/collect_adapter.py` (`collect_<name>` via `_run_simple_list`)
+- [ ] `src/openreply/mcp/server.py` (`openreply_fetch_<name>` tool)
+- [ ] `src/openreply/cli/main.py` (source list + dispatch)
 - [ ] `pyproject.toml` (`[project.optional-dependencies] sources`, if new dep)
-- [ ] `src/gapmap/sources/source_families.py` + `app-tauri/src/lib/postLink.js` (only if new family)
+- [ ] `src/openreply/sources/source_families.py` + `app-tauri/src/lib/postLink.js` (only if new family)
 - [ ] `changelogs/…`, `FEATURES.md`, `codegraph sync`

@@ -62,7 +62,7 @@ test-isolation gaps, then re-ran the full suite green.
    `default_tier()` (`test_default_tier_falls_back_to_default_when_nothing_installed`
    and `test_default_tier_ignores_stale_marker`) isolated
    `REDDIT_MYIND_DATA_DIR` but not `HF_HUB_CACHE` or
-   `GAPMAP_WHISPER_MODELS_DIR`. On a workstation with `tiny.en` already
+   `OPENREPLY_WHISPER_MODELS_DIR`. On a workstation with `tiny.en` already
    in the HuggingFace cache, `list_installed()` picked it up as
    externally-discovered, so `default_tier()` returned `tiny.en`
    instead of falling back to `DEFAULT_TIER=small.en`. Added the same
@@ -82,7 +82,7 @@ test-isolation gaps, then re-ran the full suite green.
   shapes; switched provider-key cleanup to drive off the real provider
   table.
 - `tests/transcribe/test_models_catalogue.py` — added `HF_HUB_CACHE` +
-  `GAPMAP_WHISPER_MODELS_DIR` isolation to two tests.
+  `OPENREPLY_WHISPER_MODELS_DIR` isolation to two tests.
 
 ## Verification
 

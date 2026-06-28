@@ -10,7 +10,7 @@ import sys
 
 
 def test_is_newer_semantic_compare():
-    from gapmap.transcribe.ytdlp_client import _is_newer
+    from openreply.transcribe.ytdlp_client import _is_newer
     assert _is_newer("2026.4.20", "2026.4.19") is True
     assert _is_newer("2026.4.19", "2026.4.20") is False
     assert _is_newer("2026.4.19", "2026.4.19") is False
@@ -19,15 +19,15 @@ def test_is_newer_semantic_compare():
 
 
 def test_overlay_dir_uses_data_root_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.transcribe.ytdlp_client import overlay_dir
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.transcribe.ytdlp_client import overlay_dir
     assert overlay_dir() == tmp_path / "ytdlp-overlay"
 
 
 def test_cooldown_skips_update(tmp_path, monkeypatch):
     """If the .last-check stamp is fresh we return skipped:cooldown."""
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.transcribe.ytdlp_client import (
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.transcribe.ytdlp_client import (
         ensure_latest_ytdlp,
         overlay_dir,
     )
@@ -48,8 +48,8 @@ def test_cooldown_skips_update(tmp_path, monkeypatch):
 
 
 def test_force_bypasses_cooldown_but_handles_pypi_down(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.transcribe import ytdlp_client as mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.transcribe import ytdlp_client as mod
 
     # Fresh stamp — would normally skip.
     od = mod.overlay_dir()
@@ -65,8 +65,8 @@ def test_force_bypasses_cooldown_but_handles_pypi_down(tmp_path, monkeypatch):
 
 
 def test_no_update_needed_stamps_and_returns(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.transcribe import ytdlp_client as mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.transcribe import ytdlp_client as mod
 
     monkeypatch.setattr(mod, "ytdlp_current_version", lambda: "2026.5.1")
     monkeypatch.setattr(mod, "_pypi_latest_stable", lambda *_: "2026.5.0")
@@ -78,8 +78,8 @@ def test_no_update_needed_stamps_and_returns(tmp_path, monkeypatch):
 
 
 def test_overlay_injected_first_on_sys_path(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.transcribe.ytdlp_client import (
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.transcribe.ytdlp_client import (
         _inject_overlay_to_path,
         overlay_dir,
     )

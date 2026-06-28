@@ -12,7 +12,7 @@ evidence instead of a relevance-ranked mix dominated by Reddit.
 
 ## Changes
 
-- `src/gapmap/research/chat.py`:
+- `src/openreply/research/chat.py`:
   - Added `_SOURCE_FAMILIES` mapping DB `source_type` values into families
     (research papers · news · app store reviews · developer sources · video ·
     community discussion) with trigger keywords.

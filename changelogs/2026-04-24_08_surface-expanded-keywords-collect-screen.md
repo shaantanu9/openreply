@@ -14,7 +14,7 @@ visibility and a too-tight default cap.
 
 ## Changes
 
-- **`GAPMAP_MAX_KEYWORDS` default bumped 4 → 6.** For a topic like
+- **`OPENREPLY_MAX_KEYWORDS` default bumped 4 → 6.** For a topic like
   "public speaking anxiety app," 6 gives enough room for canonical +
   "confident speaking" + "speaking tricks" + "convey message" + couple
   more. Each extra keyword adds ~1 s politeness sleep per source which
@@ -43,7 +43,7 @@ visibility and a too-tight default cap.
 
 ## Files Modified
 
-- `src/reddit_research/research/collect.py` — `GAPMAP_MAX_KEYWORDS`
+- `src/reddit_research/research/collect.py` — `OPENREPLY_MAX_KEYWORDS`
   default 4 → 6 with updated comment.
 - `src/reddit_research/cli/main.py` — new `research canonicalize`
   subcommand.

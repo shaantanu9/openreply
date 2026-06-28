@@ -36,13 +36,13 @@ anonymous.
 
 ## Files Created
 
-- `src/gapmap/reply/subreddit.py`
+- `src/openreply/reply/subreddit.py`
 - `changelogs/2026-06-27_17_subreddit-intelligence.md`
 
 ## Files Modified
 
-- `src/gapmap/reply/__init__.py` — export `subreddit`
-- `src/gapmap/cli/reply_cmds.py` — 6 subreddit CLI commands
+- `src/openreply/reply/__init__.py` — export `subreddit`
+- `src/openreply/cli/reply_cmds.py` — 6 subreddit CLI commands
 - `app-tauri/src-tauri/src/commands.rs` — 6 Rust commands
 - `app-tauri/src-tauri/src/main.rs` — register the 6 commands
 - `app-tauri/src/or/api.js` — `redditAccountStatus` + `sub*` wrappers

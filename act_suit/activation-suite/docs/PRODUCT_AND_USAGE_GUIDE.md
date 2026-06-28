@@ -1,4 +1,4 @@
-# Gap Map Activation Suite - Complete Product and Usage Guide
+# OpenReply Activation Suite - Complete Product and Usage Guide
 
 ## 1. Document Purpose
 
@@ -26,7 +26,7 @@ This guide is intended for founders, PMs, engineers, designers, QA, and growth t
 `activation-suite` currently has **two coordinated responsibilities**:
 
 1. **Public-facing marketing website (sales layer)**  
-   A research-led product website for Gap Map that explains value, methodology, pricing, and download flow.
+   A research-led product website for OpenReply that explains value, methodology, pricing, and download flow.
 
 2. **Activation and billing API backend (activation layer)**  
    A server API that supports:
@@ -52,7 +52,7 @@ In short: this repo is both the **customer-facing site** and the **license/activ
 
 ### 3.2 Core promise
 
-Gap Map helps teams:
+OpenReply helps teams:
 
 - collect multi-source voice-of-customer signals
 - extract structured insights with AI
@@ -108,7 +108,7 @@ Defined in `src/app/globals.css`:
   - `gm-btn-accent`
   - `gm-btn-ghost`
 
-The website intentionally mirrors the Gap Map visual language from the desktop experience.
+The website intentionally mirrors the OpenReply visual language from the desktop experience.
 
 ---
 
@@ -268,7 +268,7 @@ Request:
   "password": "secret",
   "activation_key": "ABCD-EF12-3456-7890",
   "device_signature": "sha256_or_plain",
-  "app": "gapmap-desktop",
+  "app": "openreply-desktop",
   "os": "macos",
   "arch": "aarch64"
 }
@@ -338,8 +338,8 @@ On successful activation, service returns JWT containing:
 Token details:
 
 - algorithm: `HS256`
-- issuer: `gapmap-activation-suite`
-- audience: `gapmap-desktop`
+- issuer: `openreply-activation-suite`
+- audience: `openreply-desktop`
 - default expiry: `180d`
 
 ---

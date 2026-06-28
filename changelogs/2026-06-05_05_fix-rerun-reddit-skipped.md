@@ -8,7 +8,7 @@
 On rerunning a topic collect, Reddit was sometimes not fetched. Root cause:
 the source-picker's `_persistPickerSelection()` was called by BOTH "Run" and
 "Save (don't fetch yet)", and it always wrote the **one-shot handoff keys**
-(`gapmap.collect.last_skip_reddit` / `last_sources` / `last_aggressive`) that
+(`openreply.collect.last_skip_reddit` / `last_sources` / `last_aggressive`) that
 the very next `collect.js` mount reads-then-deletes. So a saved sources-only /
 Reddit-unchecked selection leaked into the NEXT collect fired by any trigger —
 "Fetch more", a fresh collect, even a *different topic* — silently skipping

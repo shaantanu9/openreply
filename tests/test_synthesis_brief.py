@@ -16,13 +16,13 @@ from unittest.mock import MagicMock
 
 def _setup(monkeypatch, tmp_path):
     """Fresh isolated DB + reload all relevant modules."""
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    import gapmap.core.db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    import openreply.core.db as db_mod
     importlib.reload(db_mod)
     db_mod.get_db.cache_clear()
     db_mod.get_db()
 
-    import gapmap.research.brief as br_mod
+    import openreply.research.brief as br_mod
     importlib.reload(br_mod)
 
     return db_mod, br_mod
@@ -54,11 +54,11 @@ def test_brief_preamble_in_synthesis_prompt(monkeypatch, tmp_path):
             # Return minimal valid JSON so parse path doesn't crash.
             return '{"findings": []}'
 
-    import gapmap.research.insights as ins_mod
+    import openreply.research.insights as ins_mod
     importlib.reload(ins_mod)
 
     # get_provider is imported lazily inside the function; patch on the base module.
-    import gapmap.analyze.providers.base as base_mod
+    import openreply.analyze.providers.base as base_mod
     monkeypatch.setattr(base_mod, "get_provider", lambda name=None: FakeProvider())
 
     # Patch resolve_provider to return a dummy name.
@@ -90,10 +90,10 @@ def test_no_brief_no_preamble(monkeypatch, tmp_path):
             captured.append(prompt)
             return '{"findings": []}'
 
-    import gapmap.research.insights as ins_mod
+    import openreply.research.insights as ins_mod
     importlib.reload(ins_mod)
 
-    import gapmap.analyze.providers.base as base_mod
+    import openreply.analyze.providers.base as base_mod
     monkeypatch.setattr(base_mod, "get_provider", lambda name=None: FakeProvider())
     monkeypatch.setattr(ins_mod, "resolve_provider", lambda p=None: "fake")
     monkeypatch.setattr(ins_mod, "_select_corpus", lambda topic, min_score=0: [_make_fake_row()])

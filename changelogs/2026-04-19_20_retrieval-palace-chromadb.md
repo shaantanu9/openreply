@@ -5,7 +5,7 @@
 
 ## Summary
 
-Adopted the mempalace pattern for Gap Map: a **local, offline, HNSW-backed
+Adopted the mempalace pattern for OpenReply: a **local, offline, HNSW-backed
 semantic search layer** over the posts corpus. Every post collected through
 any source adapter is now (best-effort) embedded via ChromaDB's bundled
 `all-MiniLM-L6-v2` ONNX model and upserted into a sibling SQLite file
@@ -17,7 +17,7 @@ Additive only — the existing `posts`, `topic_posts`, `graph_nodes`, and
 `graph_edges` schemas are untouched. The palace lives next to them. If the
 `retrieval` extras group isn't installed, every API call returns a
 `{"ok": False, "skipped": True, "reason": ...}` stub and ingest continues
-silently. Opt-out via `GAPMAP_SKIP_PALACE=1` for CI / minimal deploys.
+silently. Opt-out via `OPENREPLY_SKIP_PALACE=1` for CI / minimal deploys.
 
 ## Changes
 
@@ -35,7 +35,7 @@ silently. Opt-out via `GAPMAP_SKIP_PALACE=1` for CI / minimal deploys.
 ### Auto-indexing on every post ingest
 - `src/reddit_research/core/db.py::upsert_posts` now tail-calls
   `retrieval.palace.upsert_posts_many` after the SQLite upsert. Wrapped in
-  try/except so missing chromadb never breaks ingest. Honors `GAPMAP_SKIP_PALACE=1`.
+  try/except so missing chromadb never breaks ingest. Honors `OPENREPLY_SKIP_PALACE=1`.
 
 ### CLI (`research` app)
 - `reddit-cli research semantic-search --query X [--topic Y] [--source reddit] [--k 10] [--no-rerank]` — hybrid search, JSON out

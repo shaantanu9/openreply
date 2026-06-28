@@ -5,9 +5,9 @@
 
 ## Summary
 
-Some MCP tools take 20–30 minutes (`gapmap_research_collect` on a big
-topic, `gapmap_palace_reindex` on a 60K-post corpus, bulk
-`gapmap_paper_fulltext`, `gapmap_graph_build_relations`, anything LLM-
+Some MCP tools take 20–30 minutes (`openreply_research_collect` on a big
+topic, `openreply_palace_reindex` on a 60K-post corpus, bulk
+`openreply_paper_fulltext`, `openreply_graph_build_relations`, anything LLM-
 heavy). A single synchronous `tools/call` over MCP holds the client
 connection open for that entire run — fights every client's transport
 timeout, dies on chat reset, and ties up one of the agent's reasoning
@@ -15,9 +15,9 @@ turns waiting for a result it can't even check on incrementally.
 
 Pattern B from the 2026-04-30 brainstorm: introduce an async job queue
 inside the same MCP daemon. Any registered tool can now be fired with
-`gapmap_jobs_submit(tool_name, args)`, which returns a `job_id` in ~50
+`openreply_jobs_submit(tool_name, args)`, which returns a `job_id` in ~50
 ms while the work runs in a 4-thread pool. Agents poll
-`gapmap_jobs_get(job_id)` whenever they want — survives Cursor cycling,
+`openreply_jobs_get(job_id)` whenever they want — survives Cursor cycling,
 chat resets, even daemon restarts (recovered to `interrupted` state on
 next startup).
 
@@ -39,10 +39,10 @@ next startup).
     paged retrieval.
 - `src/reddit_research/mcp/server.py`:
   - Added `_TOOL_REGISTRY` populated by the existing `@mcp.tool()`
-    logging wrapper at registration time. `gapmap_jobs_submit`
+    logging wrapper at registration time. `openreply_jobs_submit`
     dispatches via this dict, independent of FastMCP's private API.
-  - Four new MCP tools: `gapmap_jobs_submit`, `gapmap_jobs_get`,
-    `gapmap_jobs_list`, `gapmap_jobs_cancel`.
+  - Four new MCP tools: `openreply_jobs_submit`, `openreply_jobs_get`,
+    `openreply_jobs_list`, `openreply_jobs_cancel`.
   - `run()` calls `jobs.recover_stale()` at startup and registers
     `jobs.shutdown` via `atexit` so executor cleanup is graceful.
 
@@ -50,20 +50,20 @@ next startup).
 
 ```
 $ # 1. submit no-arg tool — returns instantly
-$ gapmap_jobs_submit(tool_name="gapmap_palace_status", args={})
+$ openreply_jobs_submit(tool_name="openreply_palace_status", args={})
 {"ok":true,"job_id":"j_9ce9976246","state":"queued",
- "tool_name":"gapmap_palace_status",
- "hint":"poll with gapmap_jobs_get(job_id) — runs in background, server stays responsive for other tool calls"}
+ "tool_name":"openreply_palace_status",
+ "hint":"poll with openreply_jobs_get(job_id) — runs in background, server stays responsive for other tool calls"}
 # HTTP 200 in 50 ms
 
-$ gapmap_jobs_get(job_id="j_9ce9976246")    # 1 s later
+$ openreply_jobs_get(job_id="j_9ce9976246")    # 1 s later
 state=done  progress_pct=100
 result={ok:true, ready:true, count:60302, ...}
 
-$ gapmap_jobs_list(limit=5)
+$ openreply_jobs_list(limit=5)
 2 jobs:
-  j_9ce9976246  gapmap_palace_status   done    pct=100
-  j_03d7993b35  gapmap_topic_stats     failed  pct=null  (missing required arg)
+  j_9ce9976246  openreply_palace_status   done    pct=100
+  j_03d7993b35  openreply_topic_stats     failed  pct=null  (missing required arg)
 ```
 
 Failure path verified: missing args produce `state=failed` with full
@@ -85,8 +85,8 @@ traceback in the row, never crash the daemon.
 
 ```
 # Long collect — fire and continue working
-job = gapmap_jobs_submit(
-    tool_name="gapmap_research_collect",
+job = openreply_jobs_submit(
+    tool_name="openreply_research_collect",
     args={"topic": "presentation skills", "max_posts": 5000},
 )
 # → returns in 50ms with job.job_id
@@ -94,7 +94,7 @@ job = gapmap_jobs_submit(
 # … do other tool calls, answer the user, write code …
 
 # Whenever you're ready to check
-gapmap_jobs_get(job.job_id)
+openreply_jobs_get(job.job_id)
 # state: queued | running | done | failed | cancelled | interrupted
 # when state == done: result is inflated and ready
 ```
@@ -108,13 +108,13 @@ Migrated the five long tools that already accept a `progress=` hook so
 they auto-report into the job row AND honour cancel without any change
 to their underlying functions:
 
-- `gapmap_research_collect` — emits per-source / per-subreddit msgs
+- `openreply_research_collect` — emits per-source / per-subreddit msgs
   ("[collect] fetch r/python top(month) limit=5", "[gnews] starting…").
-- `gapmap_palace_reindex` — emits "[palace] upserted N posts so far…".
-- `gapmap_palace_warmup` — emits structured-event dicts adapted to text.
-- `gapmap_analyze_papers_bulk` — emits "[i/N] post_id" so progress_pct
+- `openreply_palace_reindex` — emits "[palace] upserted N posts so far…".
+- `openreply_palace_warmup` — emits structured-event dicts adapted to text.
+- `openreply_analyze_papers_bulk` — emits "[i/N] post_id" so progress_pct
   ticks up automatically (regex extracts pct from "i/N" patterns).
-- `gapmap_find_gaps` — emits per-extractor msgs via `progress_cb=`.
+- `openreply_find_gaps` — emits per-extractor msgs via `progress_cb=`.
 
 Mechanism (in `jobs.py`):
 
@@ -140,7 +140,7 @@ Verified end-to-end:
   sweep auto-marks the orphan as `interrupted` with prior worker_pid
   in the error column.
 - MCP daemon stays responsive (sub-second `tools/call` for
-  `gapmap_jobs_cancel`) while a worker is doing real fetch work.
+  `openreply_jobs_cancel`) while a worker is doing real fetch work.
 
 ## Tightened recovery sweep
 
@@ -162,13 +162,13 @@ all `queued` rows as `interrupted` immediately. Eliminates the
     instead of waiting for stale-heartbeat threshold.
 - `src/reddit_research/mcp/server.py`:
   - 5 long tools wired with `progress=jobs.make_progress_logger(...)`:
-    `gapmap_research_collect`, `gapmap_palace_reindex`,
-    `gapmap_palace_warmup`, `gapmap_analyze_papers_bulk`,
-    `gapmap_find_gaps`.
+    `openreply_research_collect`, `openreply_palace_reindex`,
+    `openreply_palace_warmup`, `openreply_analyze_papers_bulk`,
+    `openreply_find_gaps`.
   - 3 monolithic tools wrapped with start/done beats (cancel-on-start
     only, since they have no internal loop):
-    `gapmap_paper_fulltext`, `gapmap_paper_draft_generate`,
-    `gapmap_graph_build_relations`.
+    `openreply_paper_fulltext`, `openreply_paper_draft_generate`,
+    `openreply_graph_build_relations`.
 
 ## Tracking doc
 

@@ -25,7 +25,7 @@ Functionality-wise nothing was broken; these are all first-class UX affordances 
 
 **5. Relative timestamps.** Every message now stores a `ts` field (ms epoch) when created. The bubble renders it as `timeAgo()` — "just now" / "2m ago" / "3h ago". A `setInterval(30s)` refreshes all visible `.chat-msg-ts[data-ts]` elements while the Chat tab is active; cleared on tab-switch-away + hash cleanup to avoid leaks.
 
-**6. Export conversation.** New **Export** button in the chat header. Downloads the full thread as `.md` with headers for each turn, ISO timestamps, tool-call collapsibles, and body content. Filename: `gapmap-chat-<topic-slug>-<timestamp>.md`. No network call, no server.
+**6. Export conversation.** New **Export** button in the chat header. Downloads the full thread as `.md` with headers for each turn, ISO timestamps, tool-call collapsibles, and body content. Filename: `openreply-chat-<topic-slug>-<timestamp>.md`. No network call, no server.
 
 ### Evidence tab — 1 win
 

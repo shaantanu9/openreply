@@ -1,5 +1,5 @@
 {
-  "name": "gapmap-html-site",
+  "name": "openreply-html-site",
   "private": true,
   "type": "module",
   "engines": {
@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "node generate-env-config.mjs",
-    "build:sample": "GAPMAP_ENV_SAMPLE_ONLY=1 node generate-env-config.mjs",
+    "build:sample": "OPENREPLY_ENV_SAMPLE_ONLY=1 node generate-env-config.mjs",
     "check:env": "node scripts/check-env.mjs",
     "check": "npm run check:env",
     "dev": "npx --yes serve@14 -p 5173"

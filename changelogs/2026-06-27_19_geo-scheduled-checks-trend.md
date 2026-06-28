@@ -30,7 +30,7 @@ history.
 
 ## Files Modified
 
-- `src/gapmap/reply/geo.py`, `src/gapmap/cli/main.py`, `app-tauri/src/or/dynamic.js`
+- `src/openreply/reply/geo.py`, `src/openreply/cli/main.py`, `app-tauri/src/or/dynamic.js`
 
 ## Verification
 

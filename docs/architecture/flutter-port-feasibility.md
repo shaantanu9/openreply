@@ -1,4 +1,4 @@
-# Flutter port feasibility — can Gap Map become a Flutter app?
+# Flutter port feasibility — can OpenReply become a Flutter app?
 
 **Date:** 2026-04-21
 **Short answer:** Yes, but there are three very different meanings of
@@ -43,7 +43,7 @@ paying users.**
           ONNX)     Ollama …     (13+ sources)
 ```
 
-The hard parts — the ones that make Gap Map *Gap Map* — all live in
+The hard parts — the ones that make OpenReply *OpenReply* — all live in
 the Python layer:
 
 - Claude-native synthesis with Minto pyramid + Popper + Ulwick

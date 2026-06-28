@@ -13,31 +13,31 @@
 ## Reconciliation with existing code (read first)
 
 The Explore pass under-reported. These ALREADY EXIST — do NOT recreate them:
-- `src/gapmap/retrieval/palace.py`: `_PAPER_CHUNKS_COLLECTION = "paper_chunks"` (separate collection), `get_paper_chunks_collection()`, `upsert_paper_chunks(chunks, post_id, topic)`, `search_paper_chunks(query, k, topic, post_id, section_filter, rerank)`, `search_papers(...)`, `paper_chunks_stats()`.
-- `src/gapmap/research/paper_chunks.py:212`: `chunk_paper(embed=True)` already calls `palace.upsert_paper_chunks(changed, post_id=post_id)`.
-- `src/gapmap/research/paper_references.py`: `get_references(post_id)`, `get_cited_by(post_id)`, `resolve_to_existing_posts(post_id)`, `extract_topic_references(topic, limit, force)`.
-- Canonical academic set: `src/gapmap/research/intents.py:194` →
+- `src/openreply/retrieval/palace.py`: `_PAPER_CHUNKS_COLLECTION = "paper_chunks"` (separate collection), `get_paper_chunks_collection()`, `upsert_paper_chunks(chunks, post_id, topic)`, `search_paper_chunks(query, k, topic, post_id, section_filter, rerank)`, `search_papers(...)`, `paper_chunks_stats()`.
+- `src/openreply/research/paper_chunks.py:212`: `chunk_paper(embed=True)` already calls `palace.upsert_paper_chunks(changed, post_id=post_id)`.
+- `src/openreply/research/paper_references.py`: `get_references(post_id)`, `get_cited_by(post_id)`, `resolve_to_existing_posts(post_id)`, `extract_topic_references(topic, limit, force)`.
+- Canonical academic set: `src/openreply/research/intents.py:194` →
   `('arxiv','pubmed','openalex','scholar','semantic_scholar','crossref')`.
 - `graph_edges` schema (`core/db.py:409`): columns `src, dst, kind, topic, weight, metadata_json`; PK `(src, dst, kind)`. Upsert via `db["graph_edges"].upsert({...}, pk=("src","dst","kind"))`.
 
 What's MISSING (this plan builds it): an explicit source guard, paper→paper `neighbors`, materialized `relates_to`/`cites` edges, CLI/Rust surface, and the `paper_gaps` table.
 
-**Test bootstrap:** `tests/conftest.py` already puts `src/` on the path and points `GAPMAP_DATA_DIR` at a temp dir per test (verify; if a test needs an isolated DB, use the existing `clean_env`/tmp fixture pattern other tests use). Run tests with `.venv/bin/pytest`.
+**Test bootstrap:** `tests/conftest.py` already puts `src/` on the path and points `OPENREPLY_DATA_DIR` at a temp dir per test (verify; if a test needs an isolated DB, use the existing `clean_env`/tmp fixture pattern other tests use). Run tests with `.venv/bin/pytest`.
 
 ---
 
 ## Task 1: Centralize the academic-source guard
 
 **Files:**
-- Create: `src/gapmap/research/sources.py`
-- Modify: `src/gapmap/research/paper_chunks.py` (gate the embed in `chunk_paper`)
+- Create: `src/openreply/research/sources.py`
+- Modify: `src/openreply/research/paper_chunks.py` (gate the embed in `chunk_paper`)
 - Test: `tests/test_paper_sources.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/test_paper_sources.py
-from gapmap.research.sources import ACADEMIC_SOURCES, is_academic_source
+from openreply.research.sources import ACADEMIC_SOURCES, is_academic_source
 
 def test_academic_set_exact():
     assert ACADEMIC_SOURCES == frozenset(
@@ -58,12 +58,12 @@ def test_is_academic_source():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_paper_sources.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'gapmap.research.sources'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'openreply.research.sources'`
 
 - [ ] **Step 3: Write minimal implementation**
 
 ```python
-# src/gapmap/research/sources.py
+# src/openreply/research/sources.py
 """Single source of truth for which post source_types are academic papers.
 Used to gate the paper palace: ONLY these sources are embedded into the
 paper-chunk collection and considered for paper relationships/gaps. Mirrors
@@ -85,7 +85,7 @@ Expected: PASS (2 tests)
 
 - [ ] **Step 5: Gate the embed boundary in `chunk_paper`**
 
-In `src/gapmap/research/paper_chunks.py`, at the top of `chunk_paper(post_id, *, force, embed)` (after the early-return guards, before chunking/embedding), add an explicit academic-source check so a non-academic post can never embed into the paper collection:
+In `src/openreply/research/paper_chunks.py`, at the top of `chunk_paper(post_id, *, force, embed)` (after the early-return guards, before chunking/embedding), add an explicit academic-source check so a non-academic post can never embed into the paper collection:
 
 ```python
     # Explicit academic-source guard (defense in depth — chunking normally only
@@ -108,12 +108,12 @@ In `src/gapmap/research/paper_chunks.py`, at the top of `chunk_paper(post_id, *,
 ```python
 # tests/test_paper_sources.py  (append)
 def test_chunk_paper_skips_non_academic(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core.db import get_db, init_schema
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core.db import get_db, init_schema
     db = get_db(); init_schema(db)
     db["posts"].insert({"id": "r1", "title": "rant", "selftext": "x" * 4000,
                         "source_type": "reddit"}, pk="id")
-    from gapmap.research.paper_chunks import chunk_paper
+    from openreply.research.paper_chunks import chunk_paper
     out = chunk_paper("r1", embed=True)
     assert out.get("skipped") == "non_academic_source"
     assert out["embedded"] == 0
@@ -123,7 +123,7 @@ def test_chunk_paper_skips_non_academic(tmp_path, monkeypatch):
 
 Run: `.venv/bin/pytest tests/test_paper_sources.py -v`  → Expected: PASS (3 tests)
 ```bash
-git add src/gapmap/research/sources.py src/gapmap/research/paper_chunks.py tests/test_paper_sources.py
+git add src/openreply/research/sources.py src/openreply/research/paper_chunks.py tests/test_paper_sources.py
 git commit -m "feat(papers): explicit academic-source guard for the paper palace"
 ```
 
@@ -132,7 +132,7 @@ git commit -m "feat(papers): explicit academic-source guard for the paper palace
 ## Task 2: `paper_neighbors(post_id)` — paper→paper semantic similarity
 
 **Files:**
-- Modify: `src/gapmap/retrieval/palace.py` (add after `search_papers`, ~line 1020)
+- Modify: `src/openreply/retrieval/palace.py` (add after `search_papers`, ~line 1020)
 - Test: `tests/test_paper_neighbors.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -140,11 +140,11 @@ git commit -m "feat(papers): explicit academic-source guard for the paper palace
 ```python
 # tests/test_paper_neighbors.py
 import pytest
-from gapmap.retrieval import palace
+from openreply.retrieval import palace
 
 @pytest.mark.skipif(not palace.is_available(), reason="chromadb not installed")
 def test_neighbors_excludes_self_and_ranks(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
     palace.drop_caches() if hasattr(palace, "drop_caches") else None
     def chunks(pid, text):
         return [{"id": f"{pid}#sec=abstract#ord=0", "post_id": pid,
@@ -163,11 +163,11 @@ def test_neighbors_excludes_self_and_ranks(tmp_path, monkeypatch):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_paper_neighbors.py -v`
-Expected: FAIL — `AttributeError: module 'gapmap.retrieval.palace' has no attribute 'paper_neighbors'`
+Expected: FAIL — `AttributeError: module 'openreply.retrieval.palace' has no attribute 'paper_neighbors'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Add to `src/gapmap/retrieval/palace.py` after `search_papers`:
+Add to `src/openreply/retrieval/palace.py` after `search_papers`:
 
 ```python
 def paper_neighbors(post_id: str, *, k: int = 8, topic: str | None = None) -> dict:
@@ -222,7 +222,7 @@ Expected: PASS (or SKIP if chromadb missing — acceptable; CI installs the `mcp
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/retrieval/palace.py tests/test_paper_neighbors.py
+git add src/openreply/retrieval/palace.py tests/test_paper_neighbors.py
 git commit -m "feat(papers): paper_neighbors — mean-pooled paper-to-paper similarity"
 ```
 
@@ -231,7 +231,7 @@ git commit -m "feat(papers): paper_neighbors — mean-pooled paper-to-paper simi
 ## Task 3: `paper_relations.py` — materialize `relates_to` + `cites` edges
 
 **Files:**
-- Create: `src/gapmap/research/paper_relations.py`
+- Create: `src/openreply/research/paper_relations.py`
 - Test: `tests/test_paper_relations.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -239,22 +239,22 @@ git commit -m "feat(papers): paper_neighbors — mean-pooled paper-to-paper simi
 ```python
 # tests/test_paper_relations.py
 def test_cites_edges_from_resolved_refs(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core.db import get_db, init_schema
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core.db import get_db, init_schema
     db = get_db(); init_schema(db)
     for pid in ("a", "b"):
         db["posts"].insert({"id": pid, "title": pid, "source_type": "arxiv"}, pk="id")
     db["topic_posts"].insert_all([
         {"topic": "t", "post_id": "a"}, {"topic": "t", "post_id": "b"}], pk=("topic", "post_id"))
     # a resolved reference: a cites b
-    from gapmap.research.paper_references import _ensure_table
+    from openreply.research.paper_references import _ensure_table
     _ensure_table()
     db["paper_references"].insert({
         "id": "a:1", "src_post_id": "a", "dst_post_id": "b", "dst_doi": "",
         "dst_arxiv_id": "", "dst_title": "b", "dst_year": 2024, "dst_authors_json": "[]",
         "raw": "b et al", "resolution_status": "ok", "extractor": "test",
         "fetched_at": ""}, pk="id")
-    from gapmap.research.paper_relations import build
+    from openreply.research.paper_relations import build
     out = build(topic="t", kinds=["cites"])
     assert out["ok"] is True
     edges = list(db.query(
@@ -265,12 +265,12 @@ def test_cites_edges_from_resolved_refs(tmp_path, monkeypatch):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/test_paper_relations.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'gapmap.research.paper_relations'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'openreply.research.paper_relations'`
 
 - [ ] **Step 3: Write minimal implementation**
 
 ```python
-# src/gapmap/research/paper_relations.py
+# src/openreply/research/paper_relations.py
 """Materialize paper->paper edges into graph_edges (academic nodes only).
 Phase 1 kinds: `relates_to` (semantic neighbors) and `cites` (resolved
 references). Each src capped to top-N to avoid hairballs."""
@@ -340,7 +340,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/gapmap/research/paper_relations.py tests/test_paper_relations.py
+git add src/openreply/research/paper_relations.py tests/test_paper_relations.py
 git commit -m "feat(papers): materialize relates_to + cites edges into graph_edges"
 ```
 
@@ -349,7 +349,7 @@ git commit -m "feat(papers): materialize relates_to + cites edges into graph_edg
 ## Task 4: CLI subcommands
 
 **Files:**
-- Modify: `src/gapmap/cli/main.py` (add near the other `research paper-*` commands, ~line 3650)
+- Modify: `src/openreply/cli/main.py` (add near the other `research paper-*` commands, ~line 3650)
 
 - [ ] **Step 1: Add the subcommands**
 
@@ -379,15 +379,15 @@ def cmd_research_paper_relations_build(
 
 Run (a real arxiv-bearing topic, e.g. "Indian community help app" which has 86 paper_analyses):
 ```bash
-export GAPMAP_DATA_DIR="$HOME/Library/Application Support/com.shantanu.gapmap/gapmap"
-.venv/bin/python -m gapmap.cli.main research paper-relations-build --topic "Indian community help app" --json
+export OPENREPLY_DATA_DIR="$HOME/Library/Application Support/com.shantanu.openreply/openreply"
+.venv/bin/python -m openreply.cli.main research paper-relations-build --topic "Indian community help app" --json
 ```
 Expected JSON: `{"ok": true, "papers": <N>, "edges": {"relates_to": ..., "cites": ...}}`
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/gapmap/cli/main.py
+git add src/openreply/cli/main.py
 git commit -m "feat(papers): CLI — paper-neighbors + paper-relations-build"
 ```
 
@@ -446,7 +446,7 @@ git commit -m "feat(papers): Rust + api wrappers for paper_neighbors + paper_rel
 ## Task 6: Pre-create the `paper_gaps` table (for Phase 2)
 
 **Files:**
-- Modify: `src/gapmap/core/db.py` (in `init_schema`, near the other table creates)
+- Modify: `src/openreply/core/db.py` (in `init_schema`, near the other table creates)
 - Test: `tests/test_paper_gaps_schema.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -454,8 +454,8 @@ git commit -m "feat(papers): Rust + api wrappers for paper_neighbors + paper_rel
 ```python
 # tests/test_paper_gaps_schema.py
 def test_paper_gaps_table_created(tmp_path, monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core.db import get_db, init_schema
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core.db import get_db, init_schema
     db = get_db(); init_schema(db)
     assert "paper_gaps" in db.table_names()
     cols = {c.name for c in db["paper_gaps"].columns}
@@ -484,7 +484,7 @@ Expected: FAIL — `assert 'paper_gaps' in [...]`
 
 Run: `.venv/bin/pytest tests/test_paper_gaps_schema.py -v` → Expected: PASS
 ```bash
-git add src/gapmap/core/db.py tests/test_paper_gaps_schema.py
+git add src/openreply/core/db.py tests/test_paper_gaps_schema.py
 git commit -m "feat(papers): pre-create paper_gaps table (Phase 2 populates it)"
 ```
 
@@ -495,7 +495,7 @@ git commit -m "feat(papers): pre-create paper_gaps table (Phase 2 populates it)"
 - [ ] Run the full Python suite: `.venv/bin/pytest tests/ -q` → all pass.
 - [ ] `cd app-tauri/src-tauri && cargo check` → 0 errors.
 - [ ] Build the sidecar so the new CLI subcommands ship to prod:
-      `rm -rf build dist && .venv/bin/pyinstaller gapmap-cli.spec && cp dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-aarch64-apple-darwin && codesign --force --deep --sign - app-tauri/src-tauri/binaries/gapmap-cli-aarch64-apple-darwin` (Python-side change — needs sidecar rebuild per the skill).
+      `rm -rf build dist && .venv/bin/pyinstaller openreply-cli.spec && cp dist/openreply-cli app-tauri/src-tauri/binaries/openreply-cli-aarch64-apple-darwin && codesign --force --deep --sign - app-tauri/src-tauri/binaries/openreply-cli-aarch64-apple-darwin` (Python-side change — needs sidecar rebuild per the skill).
 - [ ] Changelog: `changelogs/2026-05-31_NN_paper-palace-phase1.md`.
 
 ## Phase 2/3 (NOT in this plan — separate plans later)

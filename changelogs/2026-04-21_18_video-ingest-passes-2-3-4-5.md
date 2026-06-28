@@ -11,7 +11,7 @@ Completed the remaining four passes of the video-ingest plan from `docs/video-in
 
 - `app-tauri/src-tauri/src/cli.rs`
   - New `resolve_ffmpeg_path(app)` — picks bundled → dev drop-in → system PATH.
-  - `build_sidecar_cmd` pre-injects `GAPMAP_FFMPEG_PATH` on every sidecar spawn.
+  - `build_sidecar_cmd` pre-injects `OPENREPLY_FFMPEG_PATH` on every sidecar spawn.
   - `run_dev_python_cli` + `run_dev_python_streaming` also propagate the env so dev-venv mode gets the same path.
 - `scripts/fetch-ffmpeg.sh` — downloads a static arm64 ffmpeg into `app-tauri/src-tauri/binaries/`, chmod +x, strips quarantine.
 - `app-tauri/src-tauri/binaries/README.md` — explains the resolver order + how to wire the binary into `tauri.conf.json` → `externalBin`.

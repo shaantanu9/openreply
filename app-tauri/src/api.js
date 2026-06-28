@@ -47,7 +47,7 @@ function cacheKey(name, args) {
 // that the *next* topic-page open (even after a fresh app launch) resolves
 // from disk in microseconds instead of paying a Python-sidecar spawn. Only
 // callers that opt in via `persistTtlMs` write/read here.
-const PERSIST_PREFIX = 'gapmap.api.cache.';
+const PERSIST_PREFIX = 'openreply.api.cache.';
 
 // Cross-navigation SWR window for read-only "build output" reads (empathy
 // maps, product-strategy analyses, PMF/pricing surveys, PERT, audience
@@ -283,7 +283,7 @@ export function clearApiCache() { _cache.clear(); _inflight.clear(); }
 
 /**
  * Memory snapshot for leak hunting. Call from DevTools console:
- *   await window.__gapmapMemStats()
+ *   await window.__openreplyMemStats()
  *
  * Returns:
  *   - js: webview-side cache + map sizes + heap (when Chrome's
@@ -328,7 +328,7 @@ async function memStats() {
 if (typeof window !== 'undefined') {
   // Expose so devs can call from the console without imports. Always returns
   // a Promise; non-Tauri contexts get js-only stats.
-  window.__gapmapMemStats = memStats;
+  window.__openreplyMemStats = memStats;
 }
 export { memStats };
 
@@ -339,7 +339,7 @@ export { memStats };
  * listeners anything changed — they keep showing stale data until something
  * else re-fetches. After any write (startCollect, deleteTopic, ingestFile,
  * enrichGraph, byokSet, hypothesis*, productSweep, …) call `mutated(kind)`
- * to invalidate the right cache keys AND dispatch `gapmap:changed` with
+ * to invalidate the right cache keys AND dispatch `openreply:changed` with
  * `{ kind, ts }`. Nav counts refresh. Screens that care (home, topics,
  * dashboard, sidebar counts) subscribe and re-render immediately.
  *
@@ -368,7 +368,7 @@ export function mutated(kind, extra = {}) {
   const keys = INVALIDATE_MAP[kind] || [];
   invalidate(...keys);
   try {
-    window.dispatchEvent(new CustomEvent('gapmap:changed', {
+    window.dispatchEvent(new CustomEvent('openreply:changed', {
       detail: { kind, ts: Date.now(), ...extra },
     }));
   } catch {}
@@ -380,7 +380,7 @@ export function mutated(kind, extra = {}) {
 // the window is visible. If the SQLite file has been touched since the last
 // check (meaning something outside this app wrote to it — background collect,
 // MCP server, manual CLI run), we clear the cache and dispatch a
-// `gapmap:db-changed` event so open screens can re-fetch if they want truly
+// `openreply:db-changed` event so open screens can re-fetch if they want truly
 // live data.
 //
 // Writes from *within* this app already invalidate via the explicit calls in
@@ -397,7 +397,7 @@ async function pollOnce() {
         // Real change (not the first observation) — clear cache + notify.
         clearApiCache();
         try {
-          window.dispatchEvent(new CustomEvent('gapmap:db-changed', { detail: { mtime } }));
+          window.dispatchEvent(new CustomEvent('openreply:db-changed', { detail: { mtime } }));
         } catch {}
       }
       _lastMtime = mtime;
@@ -416,7 +416,7 @@ function startFreshnessPoller() {
   pollOnce();
   _pollTimer = setInterval(tick, 5000);
   // Also poll immediately when the tab regains focus so a user Tab-ing back
-  // into Gap Map after running the CLI sees fresh data within ~100 ms.
+  // into OpenReply after running the CLI sees fresh data within ~100 ms.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') pollOnce();
   });
@@ -966,7 +966,7 @@ export const api = {
   // findings. `cardJson` is the JSON-stringified hypothesis card from the
   // Insight Engine synthesis output. Status values: draft / running /
   // validated / invalidated / paused / archived. See
-  // src/gapmap/research/hypothesis_tracker.py for the state machine.
+  // src/openreply/research/hypothesis_tracker.py for the state machine.
   hypothesisCreate: (topic, cardJson, status = 'draft') => {
     invalidate('hypothesis_list', 'hypothesis_stats');
     return invoke('hypothesis_create', { topic, cardJson, status });
@@ -1606,7 +1606,7 @@ export const api = {
   mcpConfigSnippet: (client) => invoke('mcp_config_snippet', { client: client || null }),
   mcpUninstall: (client)  => invoke('mcp_uninstall', { client: client || null }),
 
-  // ----- CLI symlink (one-click install gapmap-cli to /usr/local/bin) -----
+  // ----- CLI symlink (one-click install openreply-cli to /usr/local/bin) -----
   // Status: { installed, healthy, path, points_to, expected }
   // Install/Uninstall prompt for admin via osascript.
   // 30s in-memory + 10-minute persisted cache. The symlink only changes
@@ -1633,7 +1633,7 @@ export const api = {
 
   // ── Task 8: saturation v1 + coverage gaps panel ───────────────────
   // Both are pure-SQL reads so a 30s cache is plenty — they auto-refresh
-  // anyway when any screen fires `gapmap:changed` (see main.js).
+  // anyway when any screen fires `openreply:changed` (see main.js).
   // SWR-persisted: saturation and coverage-gaps reflect graph state that
   // only moves on collect/enrich/ingest writes — all of which call
   // `mutated()` and invalidate both cache layers. 10-min persist window
@@ -1700,7 +1700,7 @@ export const api = {
   // ── Incremental enrichment: extraction-worker supervisor ───────────────
   // `start_extraction_worker` is idempotent on the Rust side — calling it
   // when the worker is already running is a no-op. That makes it safe to
-  // wire to `gapmap:changed` kind=collect without guarding state here.
+  // wire to `openreply:changed` kind=collect without guarding state here.
   startExtractionWorker: () => invoke('start_extraction_worker'),
   stopExtractionWorker:  () => invoke('stop_extraction_worker'),
   // Short TTL — Settings / topic-page freshness badge poll this and want

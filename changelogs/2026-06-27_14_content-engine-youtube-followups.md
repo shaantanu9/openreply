@@ -43,8 +43,8 @@ gave every kind a distinct structured template plus platform-aware length.
 
 ## Files Modified
 
-- `src/gapmap/reply/content.py` — new kinds, context, platform hints, update_content, parent_id migration
-- `src/gapmap/cli/agent_cmds.py` — context options + `content update` command
+- `src/openreply/reply/content.py` — new kinds, context, platform hints, update_content, parent_id migration
+- `src/openreply/cli/agent_cmds.py` — context options + `content update` command
 - `app-tauri/src-tauri/src/commands.rs` — context passthrough + `content_update`
 - `app-tauri/src-tauri/src/main.rs` — registered `content_update`
 - `app-tauri/src/or/api.js` — `contentGenerate` ctx arg + `contentUpdate`
@@ -55,5 +55,5 @@ gave every kind a distinct structured template plus platform-aware length.
 - Python guards tested (unknown kind, follow-up missing context, bad status).
 - CLI `--help` confirms new options/commands.
 - `cargo check` — 0 errors (with temp placeholder for the pre-existing
-  `gapmap-cli-onedir` bundle-resource glob).
+  `openreply-cli-onedir` bundle-resource glob).
 - `node --check` clean on `dynamic.js` and `api.js`.

@@ -5,7 +5,7 @@
 
 ## Summary
 
-Reworked the four Gap Map emails so each carries **distinct, purpose-specific
+Reworked the four OpenReply emails so each carries **distinct, purpose-specific
 content** instead of the same repeated engagement block (the same 40k/13/10x
 stats strip, the same Shreya R. testimonial, the same "Explore live gap maps"
 CTA, and overlapping feature rows were previously duplicated across every

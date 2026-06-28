@@ -31,7 +31,7 @@ function friendlyError(code: string): string {
     case "exhausted":
       return "That coupon's redemptions are used up.";
     case "already_has_license":
-      return "Your account already has an active Gap Map licence. Visit the dashboard to manage it.";
+      return "Your account already has an active OpenReply licence. Visit the dashboard to manage it.";
     case "missing bearer token":
     case "invalid session":
       return "Your session expired. Please sign in again.";
@@ -136,7 +136,7 @@ export function RedeemPanel() {
       <div className="space-y-2 text-center">
         <h1 className="text-3xl font-bold tracking-tight">Redeem a coupon</h1>
         <p className="text-muted-foreground">
-          Enter a coupon code to get a free Gap Map activation key. The key works
+          Enter a coupon code to get a free OpenReply activation key. The key works
           immediately in the desktop app.
         </p>
       </div>
@@ -152,7 +152,7 @@ export function RedeemPanel() {
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="GAPMAP-LAUNCH-XXXX"
+              placeholder="OPENREPLY-LAUNCH-XXXX"
               autoComplete="off"
               autoCapitalize="characters"
               spellCheck={false}
@@ -174,7 +174,7 @@ export function RedeemPanel() {
           </button>
           <p className="text-xs text-muted-foreground">
             Coupons are case-insensitive. Each coupon issues a free activation key
-            that you can paste into Gap Map on the desktop app.
+            that you can paste into OpenReply on the desktop app.
           </p>
         </form>
       )}
@@ -187,7 +187,7 @@ export function RedeemPanel() {
             </p>
             <h2 className="text-2xl font-bold">Your activation key</h2>
             <p className="text-sm text-muted-foreground">
-              Open Gap Map → Settings → Licence (or onboarding step 6) and paste this key.
+              Open OpenReply → Settings → Licence (or onboarding step 6) and paste this key.
               {result.isTrial && result.expiresAt ? (
                 <>
                   {" "}
@@ -220,7 +220,7 @@ export function RedeemPanel() {
               href={ROUTES.activate}
               className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
             >
-              Open Gap Map activation help
+              Open OpenReply activation help
             </Link>
           </div>
         </div>

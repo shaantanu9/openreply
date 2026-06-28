@@ -1,11 +1,11 @@
-# Gap Map viewer theme matched to app shell
+# OpenReply viewer theme matched to app shell
 
 **Date:** 2026-04-19
 **Type:** UI Enhancement
 
 ## Summary
 
-The Gap Map visualizer (the HTML/D3 graph loaded in the Map tab's iframe) shipped with its own dark navy color scheme — cards, badges, graph background, node strokes and label fills were all tuned for `#0b0e13` bg with `#e6edf3` text. The rest of the app uses the soft-dashboard cream/orange theme (`#F6F3EE` bg, `#1A1614` ink, `#FF8C42` accent), so the iframe visually clashed with everything around it. Swapped the viewer's palette to match the app shell so Map blends with the sidebar, tabs, and topbar instead of punching a dark hole through them.
+The OpenReply visualizer (the HTML/D3 graph loaded in the Map tab's iframe) shipped with its own dark navy color scheme — cards, badges, graph background, node strokes and label fills were all tuned for `#0b0e13` bg with `#e6edf3` text. The rest of the app uses the soft-dashboard cream/orange theme (`#F6F3EE` bg, `#1A1614` ink, `#FF8C42` accent), so the iframe visually clashed with everything around it. Swapped the viewer's palette to match the app shell so Map blends with the sidebar, tabs, and topbar instead of punching a dark hole through them.
 
 ## Changes
 

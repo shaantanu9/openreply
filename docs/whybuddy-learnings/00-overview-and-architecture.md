@@ -1,8 +1,8 @@
 # WhyBuddy — Overview, Architecture & Feature Catalog
 
 **Date:** 2026-06-13
-**Source repo:** `/Users/shantanubombatkar/Documents/GitHub/myind-gapmap-ref/WhyBuddy/`
-**Purpose:** Deep learnings for porting valuable concepts into Gap Map (Tauri 2 + Python desktop research app)
+**Source repo:** `/Users/shantanubombatkar/Documents/GitHub/myind-openreply-ref/WhyBuddy/`
+**Purpose:** Deep learnings for porting valuable concepts into OpenReply (Tauri 2 + Python desktop research app)
 
 ---
 
@@ -341,62 +341,62 @@ Understanding this vocabulary is essential for reading WhyBuddy code.
 
 ---
 
-## 6. Port to Gap Map — Prioritized Feature List
+## 6. Port to OpenReply — Prioritized Feature List
 
-Gap Map is a Tauri 2 + Python desktop app: multi-source data (Reddit/HN/YouTube/papers/OpenAlex/PubMed/Semantic Scholar), gap discovery from evidence, audience personas, paper research, SQLite knowledge graph, MCP server, BYOK multi-LLM. The following WhyBuddy features/concepts are directly portable or inspirational.
+OpenReply is a Tauri 2 + Python desktop app: multi-source data (Reddit/HN/YouTube/papers/OpenAlex/PubMed/Semantic Scholar), gap discovery from evidence, audience personas, paper research, SQLite knowledge graph, MCP server, BYOK multi-LLM. The following WhyBuddy features/concepts are directly portable or inspirational.
 
 ### Tier 1 — High Value, Low/Medium Effort
 
 | # | Feature/Concept | Effort | Value | Why Port |
 |---|---|---|---|---|
-| 1 | **Multi-route planning with confirmation gate** | S | High | Gap Map currently runs one research path. Offering "quick scan vs. deep research vs. comprehensive review" routes with risk/cost comparison before executing would let users make informed tradeoffs before burning API budget. Directly analogous: `route_options.json` + confirmation gate. |
-| 2 | **Checks ledger (deterministic quality gates)** | S | High | Gap Map generates gap maps and personas with no provenance. Adding a `checks_ledger.json` (or SQLite table) that records: what script ran, what LLM returned, what invariant was checked, with exit codes — makes the output verifiable rather than trusted by faith. |
-| 3 | **Provenance labels on all generated artifacts** | S | High | Every LLM-generated node in Gap Map's knowledge graph should be labeled `llm`, `llm_fallback`, or `template`. Currently there's no distinction. Direct lift of the provenance tagging pattern from `spec_tree.json`. |
-| 4 | **LLM key capability pool (parallel race)** | S | High | Gap Map uses a single LLM key. WhyBuddy's `BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS` pattern — N keys race in parallel, first to return wins — would dramatically reduce latency on the most expensive research pipeline calls. |
-| 5 | **Deterministic fallback tree** | S | High | When the LLM fails mid-research, Gap Map currently returns errors. WhyBuddy's `fallback_tree.py` pattern (a valid minimal output that satisfies all invariants, labeled `llm_fallback`) would give users a usable partial result instead of nothing. |
-| 6 | **Invariant guard for the knowledge graph** | M | High | Gap Map's SQLite knowledge graph has no structural validation. WhyBuddy's SPEC tree invariant guard (unique root, parent-reachable, no cycles, max depth, required fields present) maps directly to Gap Map's `graph_nodes`/`graph_edges` schema. Port the guard as a post-write validation pass. |
-| 7 | **Traceability matrix concept** | M | High | Gap Map produces gaps and personas but loses the thread back to source evidence. WhyBuddy's traceability matrix (gap ↔ evidence ↔ source ↔ test case) would let users click a gap and see every Reddit thread / paper / HN comment that contributed to it. |
-| 8 | **Clarification dialogue before research** | M | High | Gap Map launches research immediately. WhyBuddy's clarification phase (blocking vs. non-blocking questions → `clarified_brief.json` with goal + constraints + success criteria) would dramatically improve result quality when the topic is ambiguous. |
+| 1 | **Multi-route planning with confirmation gate** | S | High | OpenReply currently runs one research path. Offering "quick scan vs. deep research vs. comprehensive review" routes with risk/cost comparison before executing would let users make informed tradeoffs before burning API budget. Directly analogous: `route_options.json` + confirmation gate. |
+| 2 | **Checks ledger (deterministic quality gates)** | S | High | OpenReply generates gap maps and personas with no provenance. Adding a `checks_ledger.json` (or SQLite table) that records: what script ran, what LLM returned, what invariant was checked, with exit codes — makes the output verifiable rather than trusted by faith. |
+| 3 | **Provenance labels on all generated artifacts** | S | High | Every LLM-generated node in OpenReply's knowledge graph should be labeled `llm`, `llm_fallback`, or `template`. Currently there's no distinction. Direct lift of the provenance tagging pattern from `spec_tree.json`. |
+| 4 | **LLM key capability pool (parallel race)** | S | High | OpenReply uses a single LLM key. WhyBuddy's `BLUEPRINT_SPEC_DOCS_LLM_POOL_KEYS` pattern — N keys race in parallel, first to return wins — would dramatically reduce latency on the most expensive research pipeline calls. |
+| 5 | **Deterministic fallback tree** | S | High | When the LLM fails mid-research, OpenReply currently returns errors. WhyBuddy's `fallback_tree.py` pattern (a valid minimal output that satisfies all invariants, labeled `llm_fallback`) would give users a usable partial result instead of nothing. |
+| 6 | **Invariant guard for the knowledge graph** | M | High | OpenReply's SQLite knowledge graph has no structural validation. WhyBuddy's SPEC tree invariant guard (unique root, parent-reachable, no cycles, max depth, required fields present) maps directly to OpenReply's `graph_nodes`/`graph_edges` schema. Port the guard as a post-write validation pass. |
+| 7 | **Traceability matrix concept** | M | High | OpenReply produces gaps and personas but loses the thread back to source evidence. WhyBuddy's traceability matrix (gap ↔ evidence ↔ source ↔ test case) would let users click a gap and see every Reddit thread / paper / HN comment that contributed to it. |
+| 8 | **Clarification dialogue before research** | M | High | OpenReply launches research immediately. WhyBuddy's clarification phase (blocking vs. non-blocking questions → `clarified_brief.json` with goal + constraints + success criteria) would dramatically improve result quality when the topic is ambiguous. |
 
 ### Tier 2 — High Value, Medium/Large Effort
 
 | # | Feature/Concept | Effort | Value | Why Port |
 |---|---|---|---|---|
-| 9 | **Web evidence adapter / web search grounding** | M | High | WhyBuddy's `web-evidence-adapter.ts` (SerpAPI → DuckDuckGo fallback → mock) and Grounding role (force real citations) directly address Gap Map's evidence quality problem. Currently Gap Map fetches source content but doesn't validate that LLM-generated gap claims cite real passages. |
-| 10 | **Session replay** | M | High | Gap Map has no replay. WhyBuddy's replay system (events persisted to job store, replayed with session isolation) would let users re-examine exactly what data drove a gap conclusion — critical for researcher trust. |
-| 11 | **Cost governance / budget alerts** | M | Med | Gap Map has no budget enforcement. WhyBuddy's four-level alert model (WARNING → EXCEEDED) with model-downgrade policies would let researchers set a token budget per research session and get a cheaper model substituted instead of hitting a hard error. |
-| 12 | **Dependency invalidation engine** | M | High | When a user adds a new data source to an existing topic in Gap Map, downstream gaps/personas become stale but aren't re-derived. WhyBuddy's `STALE` + `RECOMP` pattern (upstream change → mark stale → auto-recompute along dependency chain) would solve this cleanly. |
+| 9 | **Web evidence adapter / web search grounding** | M | High | WhyBuddy's `web-evidence-adapter.ts` (SerpAPI → DuckDuckGo fallback → mock) and Grounding role (force real citations) directly address OpenReply's evidence quality problem. Currently OpenReply fetches source content but doesn't validate that LLM-generated gap claims cite real passages. |
+| 10 | **Session replay** | M | High | OpenReply has no replay. WhyBuddy's replay system (events persisted to job store, replayed with session isolation) would let users re-examine exactly what data drove a gap conclusion — critical for researcher trust. |
+| 11 | **Cost governance / budget alerts** | M | Med | OpenReply has no budget enforcement. WhyBuddy's four-level alert model (WARNING → EXCEEDED) with model-downgrade policies would let researchers set a token budget per research session and get a cheaper model substituted instead of hitting a hard error. |
+| 12 | **Dependency invalidation engine** | M | High | When a user adds a new data source to an existing topic in OpenReply, downstream gaps/personas become stale but aren't re-derived. WhyBuddy's `STALE` + `RECOMP` pattern (upstream change → mark stale → auto-recompute along dependency chain) would solve this cleanly. |
 | 13 | **NL Command layer for batch research** | L | High | Power users want to say "research 5 topics, compare their gaps, and produce a competitive report." WhyBuddy's NL Command → mission decomposition → execution plan with approval flow is the right pattern — far better than running 5 separate research sessions manually. |
-| 14 | **Companion Critic role** | M | Med | A persistent Critic that reviews Gap Map's generated gap claims for: (a) lack of evidence, (b) overconfident framing, (c) gaps already well-solved — and writes its findings to a companion log. Increases credibility of the output without human review of every claim. |
-| 15 | **Agent reputation system** | L | Med | If Gap Map adds multiple research pipelines (fast-scan, deep-academic, social-first), a reputation score per pipeline per topic category would auto-select the best pipeline for the context. WhyBuddy's 5-dimension reputation model is a clean reference. |
+| 14 | **Companion Critic role** | M | Med | A persistent Critic that reviews OpenReply's generated gap claims for: (a) lack of evidence, (b) overconfident framing, (c) gaps already well-solved — and writes its findings to a companion log. Increases credibility of the output without human review of every claim. |
+| 15 | **Agent reputation system** | L | Med | If OpenReply adds multiple research pipelines (fast-scan, deep-academic, social-first), a reputation score per pipeline per topic category would auto-select the best pipeline for the context. WhyBuddy's 5-dimension reputation model is a clean reference. |
 
 ### Tier 3 — Medium Value or High Effort
 
 | # | Feature/Concept | Effort | Value | Why Port |
 |---|---|---|---|---|
-| 16 | **A2A protocol** | L | Med | If Gap Map ever exposes an MCP server that other agents call, the A2A JSON-RPC envelope is a clean, tested protocol to adopt for agent-to-agent invocations. |
-| 17 | **Autopilot L1-L5 model** | M | Med | Formalizing Gap Map's execution levels: L1 = show research plan; L2 = run with human approval at each stage; L3 = full automated research. Currently Gap Map is all-or-nothing. |
-| 18 | **Skill hot-plug registry** | L | Med | WhyBuddy's Skill contracts (`shared/skill/contracts.ts`) — each skill declares systemPrompt, tool bindings, applicable roles, version — is a clean pattern for making Gap Map's research pipelines modular and user-configurable without code changes. |
-| 19 | **UE5 / 3D observability** | L | Low | Not a priority for Gap Map (desktop utility, not a demo product), but the pattern of mapping agent state → visible characters in a 3D scene is notable for any product that needs to show users what an AI system is doing. |
-| 20 | **Standalone Skill package pattern** | S | Med | WhyBuddy ships `skills/whybuddy.zip` — a self-contained agent skill that works in any host. Gap Map's research pipeline could be packaged as a Claude Code skill the same way, increasing distribution. |
+| 16 | **A2A protocol** | L | Med | If OpenReply ever exposes an MCP server that other agents call, the A2A JSON-RPC envelope is a clean, tested protocol to adopt for agent-to-agent invocations. |
+| 17 | **Autopilot L1-L5 model** | M | Med | Formalizing OpenReply's execution levels: L1 = show research plan; L2 = run with human approval at each stage; L3 = full automated research. Currently OpenReply is all-or-nothing. |
+| 18 | **Skill hot-plug registry** | L | Med | WhyBuddy's Skill contracts (`shared/skill/contracts.ts`) — each skill declares systemPrompt, tool bindings, applicable roles, version — is a clean pattern for making OpenReply's research pipelines modular and user-configurable without code changes. |
+| 19 | **UE5 / 3D observability** | L | Low | Not a priority for OpenReply (desktop utility, not a demo product), but the pattern of mapping agent state → visible characters in a 3D scene is notable for any product that needs to show users what an AI system is doing. |
+| 20 | **Standalone Skill package pattern** | S | Med | WhyBuddy ships `skills/whybuddy.zip` — a self-contained agent skill that works in any host. OpenReply's research pipeline could be packaged as a Claude Code skill the same way, increasing distribution. |
 
 ---
 
 ## 7. Key Architectural Decisions Worth Noting
 
-1. **Shared module strategy**: All contracts live in `shared/` as pure TypeScript interfaces (no runtime imports). Both client and server import from `shared/`. This eliminates the "frontend and backend drift on types" problem. For Gap Map, a shared Python dataclass / TypedDict layer between the Tauri frontend and Python sidecar would achieve the same benefit.
+1. **Shared module strategy**: All contracts live in `shared/` as pure TypeScript interfaces (no runtime imports). Both client and server import from `shared/`. This eliminates the "frontend and backend drift on types" problem. For OpenReply, a shared Python dataclass / TypedDict layer between the Tauri frontend and Python sidecar would achieve the same benefit.
 
-2. **Feature flags for every expensive/risky LLM feature**: Every LLM-backed capability has an env flag (`BLUEPRINT_SPEC_TREE_LLM_ENABLED`, etc.) defaulting to `false` or to a template fallback. This lets the app boot and demo without any keys, and lets CI always run in deterministic mode. Gap Map should adopt this — current behavior crashes if LLM keys are absent.
+2. **Feature flags for every expensive/risky LLM feature**: Every LLM-backed capability has an env flag (`BLUEPRINT_SPEC_TREE_LLM_ENABLED`, etc.) defaulting to `false` or to a template fallback. This lets the app boot and demo without any keys, and lets CI always run in deterministic mode. OpenReply should adopt this — current behavior crashes if LLM keys are absent.
 
 3. **Deterministic fallback everywhere**: WhyBuddy never returns a hard error from the SPEC pipeline. Every LLM call has a `deterministic-provider.ts` fallback that produces a structurally valid output labeled `llm_fallback`. The user gets something usable at every level.
 
-4. **HMAC-signed executor callbacks**: The Lobster Executor signs every callback with HMAC. The server rejects unsigned or time-skewed callbacks. For Gap Map's Python sidecar callbacks (if any), this pattern prevents spoofed completion signals.
+4. **HMAC-signed executor callbacks**: The Lobster Executor signs every callback with HMAC. The server rejects unsigned or time-skewed callbacks. For OpenReply's Python sidecar callbacks (if any), this pattern prevents spoofed completion signals.
 
 5. **Property-based testing (fast-check)**: The executor has 18+ property-based test files covering concurrency, cancellation, security policy, log batching, callback signing. This is notably thorough for an open-source AI project and explains why the executor is reliable despite being complex.
 
-6. **Session-isolated realtime state**: All Socket.IO rooms and realtime stores are keyed by `sessionId`. Multiple browser tabs or users don't bleed state into each other. For Gap Map's multi-tab MCP + Tauri setup, session isolation is worth formalizing the same way.
+6. **Session-isolated realtime state**: All Socket.IO rooms and realtime stores are keyed by `sessionId`. Multiple browser tabs or users don't bleed state into each other. For OpenReply's multi-tab MCP + Tauri setup, session isolation is worth formalizing the same way.
 
-7. **Lineage DAG as audit primitive**: Rather than ad-hoc logging, WhyBuddy tracks every LLM call and data transformation as a node in a lineage DAG with typed edge relationships. This makes "why did the system produce this output?" answerable programmatically. Gap Map's current logging is console-only.
+7. **Lineage DAG as audit primitive**: Rather than ad-hoc logging, WhyBuddy tracks every LLM call and data transformation as a node in a lineage DAG with typed edge relationships. This makes "why did the system produce this output?" answerable programmatically. OpenReply's current logging is console-only.
 
 ---
 

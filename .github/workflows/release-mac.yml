@@ -125,36 +125,36 @@ jobs:
         id: pyi-cache
         uses: actions/cache@v4
         with:
-          path: dist/gapmap-cli
-          key: pyinstaller-nonfw-${{ matrix.target }}-${{ hashFiles('gapmap-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
+          path: dist/openreply-cli
+          key: pyinstaller-nonfw-${{ matrix.target }}-${{ hashFiles('openreply-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
 
-      - name: Build gapmap-cli sidecar (PyInstaller)
+      - name: Build openreply-cli sidecar (PyInstaller)
         if: steps.pyi-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: uv run pyinstaller gapmap-cli.spec
+        run: uv run pyinstaller openreply-cli.spec
 
       - name: Stage sidecar binary (ONEDIR)
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p app-tauri/src-tauri/binaries
-          # macOS ships the PyInstaller ONEDIR bundle: dist/gapmap-cli/ is a
+          # macOS ships the PyInstaller ONEDIR bundle: dist/openreply-cli/ is a
           # DIRECTORY (engine + _internal), not a single file. Two pieces must
           # land in binaries/ to match tauri.conf.json:
-          #   • resources   → binaries/gapmap-cli-onedir/**  (the engine dir)
-          #   • externalBin → binaries/gapmap-cli-<triple>   (scripts/onedir-launcher.sh,
-          #                   which Tauri copies to Contents/MacOS/gapmap-cli and
+          #   • resources   → binaries/openreply-cli-onedir/**  (the engine dir)
+          #   • externalBin → binaries/openreply-cli-<triple>   (scripts/onedir-launcher.sh,
+          #                   which Tauri copies to Contents/MacOS/openreply-cli and
           #                   which exec's the onedir engine under ../Resources/).
           # Mirrors scripts/publish-mac.sh exactly.
-          if [ ! -d dist/gapmap-cli ]; then
-            echo "✗ expected ONEDIR dist/gapmap-cli/ (got a file?) — spec drift" >&2
+          if [ ! -d dist/openreply-cli ]; then
+            echo "✗ expected ONEDIR dist/openreply-cli/ (got a file?) — spec drift" >&2
             ls -la dist/ >&2; exit 1
           fi
-          rm -rf app-tauri/src-tauri/binaries/gapmap-cli-onedir
-          cp -R dist/gapmap-cli app-tauri/src-tauri/binaries/gapmap-cli-onedir
-          chmod +x app-tauri/src-tauri/binaries/gapmap-cli-onedir/gapmap-cli
-          cp scripts/onedir-launcher.sh "app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}"
-          chmod +x "app-tauri/src-tauri/binaries/gapmap-cli-${{ matrix.target }}"
+          rm -rf app-tauri/src-tauri/binaries/openreply-cli-onedir
+          cp -R dist/openreply-cli app-tauri/src-tauri/binaries/openreply-cli-onedir
+          chmod +x app-tauri/src-tauri/binaries/openreply-cli-onedir/openreply-cli
+          cp scripts/onedir-launcher.sh "app-tauri/src-tauri/binaries/openreply-cli-${{ matrix.target }}"
+          chmod +x "app-tauri/src-tauri/binaries/openreply-cli-${{ matrix.target }}"
           echo "✓ staged onedir engine + launcher for ${{ matrix.target }}"
 
       # ---------- ffmpeg sidecar ----------
@@ -196,7 +196,7 @@ jobs:
           JWT_DESKTOP_SECRET: ${{ secrets.JWT_DESKTOP_SECRET }}
           LICENCE_HEALTH_URL: ${{ vars.LICENCE_HEALTH_URL }}
         run: |
-          URL="${LICENCE_HEALTH_URL:-https://gapmap.myind.ai/api/v1/health}"
+          URL="${LICENCE_HEALTH_URL:-https://openreply.myind.ai/api/v1/health}"
           LOCAL_FP=$(printf '%s' "$JWT_DESKTOP_SECRET" | shasum -a 256 | cut -c1-12)
           BODY=$(curl -fsS --max-time 20 "$URL" || true)
           SERVER_FP=$(printf '%s' "$BODY" | python3 -c 'import sys,json;print((json.load(sys.stdin) or {}).get("signing_fp",""))' 2>/dev/null || true)
@@ -257,11 +257,11 @@ jobs:
         run: npm ci
 
       # ---------- Pre-sign the ONEDIR Mach-O (CRITICAL for notarization) ----------
-      # Tauri copies binaries/gapmap-cli-onedir/** into Contents/Resources via
+      # Tauri copies binaries/openreply-cli-onedir/** into Contents/Resources via
       # the `resources` glob, but its bundler does NOT deep-sign loose Mach-O in
       # Resources. Without signing them HERE (Developer ID + hardened runtime +
       # secure timestamp), notarization returns status=Invalid and rejects the
-      # whole bundle for every ~128 nested .so/.dylib + the gapmap-cli engine:
+      # whole bundle for every ~128 nested .so/.dylib + the openreply-cli engine:
       #   "not signed with a valid Developer ID / no secure timestamp /
       #    hardened runtime not enabled"  (observed run 26775805808, v0.1.8).
       # Signing in binaries/ BEFORE the bundle means the signatures ride along
@@ -276,7 +276,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
-          ONEDIR="app-tauri/src-tauri/binaries/gapmap-cli-onedir"
+          ONEDIR="app-tauri/src-tauri/binaries/openreply-cli-onedir"
           [ -d "$ONEDIR" ] || { echo "✗ onedir missing: $ONEDIR" >&2; exit 1; }
 
           # Import the Developer ID cert into a dedicated keychain so codesign
@@ -420,7 +420,7 @@ jobs:
           fi
 
       # ---------- Publish to public repo (per-platform) ----------
-      # Each mac job uploads its own DMG/zip to myind-ai/gapmap. Idempotent
+      # Each mac job uploads its own DMG/zip to myind-ai/openreply. Idempotent
       # release create + clobber on upload, so jobs racing each other (and
       # racing release-windows.yml / release-linux.yml) all succeed cleanly.
       - name: Publish mac artifact to public repo
@@ -428,7 +428,7 @@ jobs:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           GH_TOKEN_SRC: ${{ secrets.GITHUB_TOKEN }}
           VER: ${{ env.TAG_NAME }}
-          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
         shell: bash
         run: |
           if [ -z "$GH_TOKEN" ]; then
@@ -534,7 +534,7 @@ jobs:
             if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
             {
               printf '## Gap Map %s\n\n' "$VER"
-              printf '**Download → [gapmap.myind.ai](https://gapmap.myind.ai/)**\n\n'
+              printf '**Download → [openreply.myind.ai](https://openreply.myind.ai/)**\n\n'
               printf 'Installers:\n\n'
               printf -- '- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n'
               printf -- '- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n'
@@ -570,7 +570,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
           VER: ${{ env.TAG_NAME }}
-          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/gapmap' }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
         shell: bash
         run: |
           if [ -z "$GH_TOKEN" ]; then exit 0; fi

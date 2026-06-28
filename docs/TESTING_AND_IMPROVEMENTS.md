@@ -107,18 +107,18 @@ cd /Users/shantanubombatkar/Documents/GitHub/reddit-myind
 Connect to the MCP server (`.venv/bin/python -m reddit_research.mcp.server` or via the in-app "Connect to Claude Code" button) and from any MCP client:
 
 ```
-Call gapmap_topic_trash_list()             → {ok: true, trash: [...]}
-Call gapmap_find_existing_topic(user_input="x")  → {ok: true, match: null}
-Call gapmap_clean_corpus(topic="ai", threshold=0.30, apply=false)
+Call openreply_topic_trash_list()             → {ok: true, trash: [...]}
+Call openreply_find_existing_topic(user_input="x")  → {ok: true, match: null}
+Call openreply_clean_corpus(topic="ai", threshold=0.30, apply=false)
     → {ok, scored, dropped, sample_dropped: [...]}
-Call gapmap_collect_quality_check(topic="ai")
+Call openreply_collect_quality_check(topic="ai")
     → {ok, total, lenient_fail, strict_fail, sample_*: [...]}
-Call gapmap_global_competitors(min_topics=2, threshold=0.80)
+Call openreply_global_competitors(min_topics=2, threshold=0.80)
     → [{canonical_name, aliases, topics, total_mentions}, ...]
-Call gapmap_prompt_list()
+Call openreply_prompt_list()
     → {painpoints: {has_override, bundled_preview, override_preview}, ...}
-Call gapmap_product_list(active_only=true) → [...]
-Call gapmap_graph_build_relations(topic="ai")
+Call openreply_product_list(active_only=true) → [...]
+Call openreply_graph_build_relations(topic="ai")
     → {ok, relates_to_edges, co_evidenced_edges, ...}
 ```
 
@@ -175,7 +175,7 @@ Shipped ≠ done. "Done" means a non-technical user can run through the capabili
 
 ### 3.4 Multilingual embeddings
 **Done when:**
-- [ ] Set `GAPMAP_EMBEDDING_MODEL=multilingual`, collect a topic in a non-English language, and the relevance gate correctly keeps >= 70% of on-topic posts.
+- [ ] Set `OPENREPLY_EMBEDDING_MODEL=multilingual`, collect a topic in a non-English language, and the relevance gate correctly keeps >= 70% of on-topic posts.
 - [ ] Fallback warning surfaces when `sentence-transformers` isn't installed.
 - [ ] Performance benchmark: multilingual model adds <500 ms per synthesize.
 
@@ -235,7 +235,7 @@ Shipped ≠ done. "Done" means a non-technical user can run through the capabili
 Every item is a 0.25 – 1 day ship. If two weeks isn't enough for all, top-to-bottom by priority.
 
 ### Day 1–2 — reliability
-- [ ] **Warm the embedder eagerly on sidecar boot** when `GAPMAP_EMBEDDING_MODEL != default`. Prevents silent cold-first-call behavior.
+- [ ] **Warm the embedder eagerly on sidecar boot** when `OPENREPLY_EMBEDDING_MODEL != default`. Prevents silent cold-first-call behavior.
 - [ ] **Relevance threshold slider** in Settings (currently env-only).
 - [ ] **Malformed-CSV per-row error report** in `ingest_csv`.
 - [ ] **Mid-collect-delete guard** in `_tag_posts` — check topic isn't in trash before inserting.
@@ -329,7 +329,7 @@ What the user sees vs. what it means vs. how to fix:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| "0 findings after synthesize" | Empty corpus OR all findings dropped by gate | Check `report._relevance_dropped_findings`; lower `GAPMAP_FINDING_RELEVANCE_THRESHOLD` |
+| "0 findings after synthesize" | Empty corpus OR all findings dropped by gate | Check `report._relevance_dropped_findings`; lower `OPENREPLY_FINDING_RELEVANCE_THRESHOLD` |
 | Graph has 15k edges but UI looks sparse | Dense-relations post-pass didn't run (chromadb missing) | `pip install chromadb` or check embedder.py for shared-function errors |
 | Product sweep returns 0 signals | Linked topic has no synthesis; synth diff is empty | Run `research synthesize --topic <linked>` first |
 | Delete button does nothing | Tauri IPC `delete_topic` now soft-deletes via CLI; check sidecar logs | Run `reddit-cli research topic-soft-delete --topic T` directly to verify backend |

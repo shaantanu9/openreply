@@ -1,4 +1,4 @@
-# Gap Map — Dual-Mode Validation Plan
+# OpenReply — Dual-Mode Validation Plan
 
 > Before committing 8 months to build Product Mode, we run a concierge-MVP experiment with 3 post-MVP founders. Two weeks, ~3 days of effort, measurable outcome. This doc operationalizes §10 of `DUAL_MODE_PIVOT.md` into an executable playbook.
 
@@ -40,7 +40,7 @@ To prevent a one-category false positive:
 
 - **Different categories:** e.g., one consumer mobile app, one dev tool, one B2B SaaS.
 - **Different stages:** one pre-$1K MRR, one $1–10K MRR, one $10K+ MRR (if findable).
-- **Different public source mix:** one with heavy Reddit, one with heavy App Store, one with heavy HN/Product Hunt. So we see if Gap Map works across source distributions.
+- **Different public source mix:** one with heavy Reddit, one with heavy App Store, one with heavy HN/Product Hunt. So we see if OpenReply works across source distributions.
 
 ### 1.3 Where to find them
 
@@ -82,11 +82,11 @@ For each founder:
 
 ### 3.1 Data collection (you do this manually)
 
-1. **Run Topic Mode collect** on 3 queries using existing Gap Map infrastructure:
+1. **Run Topic Mode collect** on 3 queries using existing OpenReply infrastructure:
    - `"<their product name>"` — captures direct mentions
    - `"<their category>"` — captures the broader field
    - `"<competitor1>" OR "<competitor2>"` — captures competitor mentions
-2. **Use existing Phase 1+2 synthesis** on each corpus. This is already what Gap Map does.
+2. **Use existing Phase 1+2 synthesis** on each corpus. This is already what OpenReply does.
 3. **Also use Phase 3 Hypothesis Tracking** (if shipped) to seed a few cards for them.
 
 ### 3.2 Manual dashboard (Notion page or Google Doc)

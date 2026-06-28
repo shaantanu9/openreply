@@ -10,7 +10,7 @@ remaining auto-running topic sub-tabs: **Concepts, Solutions, Insights**.
 
 Each of these auto-fires a blocking LLM pipeline when you open the tab with no
 data yet. On re-entry (switch a tab away within ~1s and back, or a
-`gapmap:db-changed` event re-running the loader) the screen's `loadX` re-ran
+`openreply:db-changed` event re-running the loader) the screen's `loadX` re-ran
 and — because there was still no persisted data — **hit the empty CTA path and
 auto-fired the pipeline AGAIN**. So a fast tab bounce could double- (or triple-)
 fire an expensive LLM call, and the alive loader visibly restarted from

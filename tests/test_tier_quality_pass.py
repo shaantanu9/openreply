@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib
 import pytest
 
-from gapmap.core.db import get_db, init_schema
+from openreply.core.db import get_db, init_schema
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ def _purge_topic(topic):
 
 # ── Topic resolver ────────────────────────────────────────────────────
 def test_resolve_topic_returns_input_unchanged_without_alias():
-    tr = _try_import("gapmap.research.topic_resolver")
+    tr = _try_import("openreply.research.topic_resolver")
     if tr is None:
         pytest.skip("topic_resolver module missing")
     topic = _unique_topic("resolve")
@@ -59,7 +59,7 @@ def test_resolve_topic_returns_input_unchanged_without_alias():
 
 
 def test_resolve_topic_follows_llm_alias():
-    tr = _try_import("gapmap.research.topic_resolver")
+    tr = _try_import("openreply.research.topic_resolver")
     if tr is None:
         pytest.skip("topic_resolver module missing")
     canon = _unique_topic("canon")
@@ -80,7 +80,7 @@ def test_resolve_topic_follows_llm_alias():
 
 # ── Soft-delete ───────────────────────────────────────────────────────
 def test_soft_delete_hides_then_restore_unhides():
-    trash = _try_import("gapmap.research.trash")
+    trash = _try_import("openreply.research.trash")
     if trash is None:
         pytest.skip("trash module missing")
     topic = _unique_topic("soft")
@@ -112,7 +112,7 @@ def test_soft_delete_hides_then_restore_unhides():
 
 
 def test_purge_older_than_zero_days_removes_soft_deleted():
-    trash = _try_import("gapmap.research.trash")
+    trash = _try_import("openreply.research.trash")
     if trash is None:
         pytest.skip("trash module missing")
     topic = _unique_topic("purge")
@@ -143,7 +143,7 @@ def test_purge_older_than_zero_days_removes_soft_deleted():
     ({"score": 5, "title": "ok",   "selftext": "x" * 150,"author": "AutoModerator"}, False, False),  # bot blocked lenient
 ])
 def test_quality_gate_heuristics(row, strict, expect):
-    qg = _try_import("gapmap.research.quality_gate")
+    qg = _try_import("openreply.research.quality_gate")
     if qg is None:
         pytest.skip("quality_gate module missing")
     assert qg.passes_quality(row, strict=strict) is expect
@@ -151,7 +151,7 @@ def test_quality_gate_heuristics(row, strict, expect):
 
 # ── Finding feedback ──────────────────────────────────────────────────
 def test_feedback_record_and_prompt_integration():
-    fb = _try_import("gapmap.research.feedback")
+    fb = _try_import("openreply.research.feedback")
     if fb is None:
         pytest.skip("feedback module missing")
     topic = _unique_topic("fb")
@@ -171,7 +171,7 @@ def test_feedback_record_and_prompt_integration():
 
 # ── Saved views filter evaluator ──────────────────────────────────────
 def test_saved_views_apply_filter():
-    sv = _try_import("gapmap.research.saved_views")
+    sv = _try_import("openreply.research.saved_views")
     if sv is None:
         pytest.skip("saved_views module missing")
     findings = [
@@ -194,7 +194,7 @@ def test_saved_views_apply_filter():
 
 # ── Prompt override ───────────────────────────────────────────────────
 def test_prompt_override_roundtrip():
-    ps = _try_import("gapmap.research.prompt_store")
+    ps = _try_import("openreply.research.prompt_store")
     if ps is None:
         pytest.skip("prompt_store module missing")
     key = f"_test_override_{id(test_prompt_override_roundtrip)}"

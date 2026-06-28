@@ -1,6 +1,6 @@
 # Per-Page First-Open Tutorials + Replay Shortcut (Design)
 
-> **Status:** Approved for implementation · **Date:** 2026-06-17 · **App:** Gap Map (`reddit-myind`, Tauri + vanilla JS)
+> **Status:** Approved for implementation · **Date:** 2026-06-17 · **App:** OpenReply (`reddit-myind`, Tauri + vanilla JS)
 
 ## 1. Summary
 
@@ -46,10 +46,10 @@ resolvePageTour(key, ctx)       -> async: steps[] | null  (hand-authored -> expl
 maybeAutoRunPageTour(key, ctx)  -> async: first-open auto-run, guarded
 runPageTour(key, ctx, {force})  -> async: explicit replay
 currentPageKey()                -> key for the page on screen now (hash + active topic tab)
-autoToursEnabled()/setAutoTours -> Settings toggle accessor (gapmap.pref.auto_tours)
+autoToursEnabled()/setAutoTours -> Settings toggle accessor (openreply.pref.auto_tours)
 ```
 
-Tour id namespace: **`page.<key>`** → done flag `gapmap.tour.page.<key>.done`
+Tour id namespace: **`page.<key>`** → done flag `openreply.tour.page.<key>.done`
 (set by the existing engine on completion/dismiss).
 
 ### Resolve precedence (`resolvePageTour`)
@@ -80,7 +80,7 @@ the page is still current (mirror the route's `routeGen` stale-guard / verify
 | `main.js` | `openShortcutsHelp()` (the `?` modal, ~:1756) | Inject top item **"🎓 Tour this page"** → `runPageTour(currentPageKey(), {force:true})`; + "Replay getting-started" |
 | `lib/helpPopover.js` | "Show me around" button | Route to `runPageTour(currentPageKey(), {force:true})` so it works on all pages |
 | `lib/tour.js` | — | Add `export function isTourActive()` (reads existing root presence) |
-| `settings.js` | Preferences section | Toggle "Auto-show page tours" ↔ `gapmap.pref.auto_tours` (default on) |
+| `settings.js` | Preferences section | Toggle "Auto-show page tours" ↔ `openreply.pref.auto_tours` (default on) |
 
 ## 5. Core pages hand-authored (~10)
 
@@ -91,9 +91,9 @@ the render output); steps with no selector render as centered cards.
 
 ## 6. Persistence / keys
 
-- `gapmap.tour.page.<key>.done` — per-page seen flag (engine-managed).
-- `gapmap.pref.auto_tours` — `'false'` disables auto-run (default on / absent).
-- Reuses existing `gapmap.onboarding.completed` for the onboarding guard.
+- `openreply.tour.page.<key>.done` — per-page seen flag (engine-managed).
+- `openreply.pref.auto_tours` — `'false'` disables auto-run (default on / absent).
+- Reuses existing `openreply.onboarding.completed` for the onboarding guard.
 
 ## 7. Error handling / degradation
 

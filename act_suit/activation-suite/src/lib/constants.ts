@@ -1,19 +1,19 @@
 // Brand + copy constants shared across the site. Content belongs here, not inline.
 
 export const BRAND = {
-  name: "Gap Map",
+  name: "OpenReply",
   tagline: "Research intelligence for product teams that make evidence-backed decisions.",
-  supportEmail: "support@gapmap.app",
-  copyright: "© 2026 Gap Map. All rights reserved.",
+  supportEmail: "support@openreply.app",
+  copyright: "© 2026 OpenReply. All rights reserved.",
   footerStrap: "Desktop-first · BYOK · Privacy-native",
 } as const;
 
 // Public GitHub repo where desktop releases are published. Used by the
 // download resolver and the "star us" CTAs.
 export const GITHUB = {
-  repo: "myind-ai/gapmap",
-  url: "https://github.com/myind-ai/gapmap",
-  releases: "https://github.com/myind-ai/gapmap/releases",
+  repo: "myind-ai/openreply",
+  url: "https://github.com/myind-ai/openreply",
+  releases: "https://github.com/myind-ai/openreply/releases",
 } as const;
 
 export const ROUTES = {
@@ -133,12 +133,12 @@ export const HOW_STEPS = [
   {
     num: "01",
     title: "Ingest multi-source signals",
-    body: "Point Gap Map at Reddit, HN, G2, Capterra, App Store reviews, arXiv, Twitter, and 6 more. The pipeline fetches and normalises in one sweep.",
+    body: "Point OpenReply at Reddit, HN, G2, Capterra, App Store reviews, arXiv, Twitter, and 6 more. The pipeline fetches and normalises in one sweep.",
   },
   {
     num: "02",
     title: "AI extracts structured pain points",
-    body: "Using your own API key (BYOK), Gap Map classifies each post into structured insights — pain, workaround, request, praise — with entity tagging and severity scoring.",
+    body: "Using your own API key (BYOK), OpenReply classifies each post into structured insights — pain, workaround, request, praise — with entity tagging and severity scoring.",
   },
   {
     num: "03",
@@ -160,7 +160,7 @@ export const FEATURE_CARDS = [
   },
   {
     title: "AI insight extraction",
-    body: "BYOK architecture — your API key, your data. Gap Map classifies each post into pains, workarounds, requests, and sentiment.",
+    body: "BYOK architecture — your API key, your data. OpenReply classifies each post into pains, workarounds, requests, and sentiment.",
   },
   {
     title: "Graph map view",
@@ -184,14 +184,14 @@ export const FEATURE_CARDS = [
 export const TESTIMONIALS = [
   {
     quote:
-      "We used to spend two weeks synthesising research before a roadmap review. Gap Map cut that to two days — with better source coverage than we had before.",
+      "We used to spend two weeks synthesising research before a roadmap review. OpenReply cut that to two days — with better source coverage than we had before.",
     name: "Shreya R.",
     role: "Head of Product, Bangalore",
     initials: "SR",
   },
   {
     quote:
-      "The BYOK model was the deciding factor. Our security team would never approve a tool that sends customer verbatim to a vendor cloud. Gap Map just works differently.",
+      "The BYOK model was the deciding factor. Our security team would never approve a tool that sends customer verbatim to a vendor cloud. OpenReply just works differently.",
     name: "Arjun M.",
     role: "Principal Engineer, Series B startup",
     initials: "AM",
@@ -209,15 +209,15 @@ export const TESTIMONIALS = [
 export const FAQS = [
   {
     q: "What is BYOK and why does it matter?",
-    a: "BYOK (Bring Your Own Key) means Gap Map uses your own OpenAI or Anthropic API key for AI inference. Your data never passes through our servers. You control costs, you control data residency.",
+    a: "BYOK (Bring Your Own Key) means OpenReply uses your own OpenAI or Anthropic API key for AI inference. Your data never passes through our servers. You control costs, you control data residency.",
   },
   {
     q: "Is this really fully offline?",
-    a: "The desktop app stores all ingested data locally in SQLite. Fetches go directly from your machine to source APIs — there's no Gap Map relay. AI inference uses your key directly. The only outbound Gap Map traffic is license activation.",
+    a: "The desktop app stores all ingested data locally in SQLite. Fetches go directly from your machine to source APIs — there's no OpenReply relay. AI inference uses your key directly. The only outbound OpenReply traffic is license activation.",
   },
   {
     q: "How does the token model work?",
-    a: "Gap Map tokens are consumed when you run an AI extraction sweep. Starter includes 10k/month, Pro includes 50k/month. You can top up anytime. BYOK users skip the token model entirely and pay only the flat seat price.",
+    a: "OpenReply tokens are consumed when you run an AI extraction sweep. Starter includes 10k/month, Pro includes 50k/month. You can top up anytime. BYOK users skip the token model entirely and pay only the flat seat price.",
   },
   {
     q: "What sources can I ingest?",
@@ -229,7 +229,7 @@ export const FAQS = [
   },
   {
     q: "How do activation keys and app access work?",
-    a: "Flow is simple: create account, complete checkout (or trial), then enter your activation key on the Activate page. Activation is required before using Gap Map desktop workspaces. If you lose your key, use the Lemon Squeezy customer portal link from the Activate page.",
+    a: "Flow is simple: create account, complete checkout (or trial), then enter your activation key on the Activate page. Activation is required before using OpenReply desktop workspaces. If you lose your key, use the Lemon Squeezy customer portal link from the Activate page.",
   },
   {
     q: "Can I use this for competitive intelligence?",
@@ -246,7 +246,7 @@ export const HERO_SLIDES = [
       className: "persona-builder",
     },
     headline: ["Turn 40k posts of", "noise into your", { em: "next feature.", color: "orange" as const }],
-    sub: "Point Gap Map at Reddit, HN, G2, Twitter, and 9 more sources. In one sweep it extracts ranked pain points, DIY workarounds, and market gaps — so you stop guessing what to build.",
+    sub: "Point OpenReply at Reddit, HN, G2, Twitter, and 9 more sources. In one sweep it extracts ranked pain points, DIY workarounds, and market gaps — so you stop guessing what to build.",
     primaryCta: { label: "Download free for Mac", variant: "orange" as const },
     secondaryCta: { label: "How it works →", href: "#how" },
     trust: {
@@ -261,7 +261,7 @@ export const HERO_SLIDES = [
     microProof: ["13 source types", "BYOK AI", "Local-first storage"],
     ctaNote: "No card needed · macOS desktop · activation in 2 mins",
     mock: {
-      titlebar: "Gap Map — Source Ingest · WildDex",
+      titlebar: "OpenReply — Source Ingest · WildDex",
       stats: [
         { val: "17", lbl: "Pain points" },
         { val: "13", lbl: "Sources live" },
@@ -303,7 +303,7 @@ export const HERO_SLIDES = [
       { em: "before", color: "blue" as const },
       "someone else does.",
     ],
-    sub: "Gap Map sweeps arXiv, Semantic Scholar, and academic forums. It clusters papers by topic, surfaces under-researched intersections, and maps what's been studied vs what's still open — with source links you can cite.",
+    sub: "OpenReply sweeps arXiv, Semantic Scholar, and academic forums. It clusters papers by topic, surfaces under-researched intersections, and maps what's been studied vs what's still open — with source links you can cite.",
     primaryCta: { label: "Download free for Mac", variant: "blue" as const },
     secondaryCta: { label: "See the method →", href: "#how" },
     trust: {
@@ -318,7 +318,7 @@ export const HERO_SLIDES = [
     microProof: ["arXiv + Scholar", "Citation-linked output", "BYOK AI"],
     ctaNote: "No card needed · macOS desktop · activation in 2 mins",
     mock: {
-      titlebar: "Gap Map — Literature Sweep · Multimodal LLMs",
+      titlebar: "OpenReply — Literature Sweep · Multimodal LLMs",
       stats: [
         { val: "312", lbl: "Papers indexed", accent: "blue" as const },
         { val: "8", lbl: "Sub-topics" },
@@ -369,7 +369,7 @@ export const HERO_SLIDES = [
       "next. Every single",
       { em: "morning.", color: "green" as const },
     ],
-    sub: "Inject your Intercom tickets, App Store reviews, and support logs. Gap Map combines them with live competitor sweeps from Reddit and G2, then surfaces your ranked priority list — so every stand-up starts with evidence, not opinion.",
+    sub: "Inject your Intercom tickets, App Store reviews, and support logs. OpenReply combines them with live competitor sweeps from Reddit and G2, then surfaces your ranked priority list — so every stand-up starts with evidence, not opinion.",
     primaryCta: { label: "Download free for Mac", variant: "green" as const },
     secondaryCta: { label: "View Pro plan →", href: "#pricing" },
     trust: {
@@ -384,7 +384,7 @@ export const HERO_SLIDES = [
     microProof: ["Intercom + App reviews", "Competitor sweeps", "Local-first data"],
     ctaNote: "No card needed · macOS desktop · activation in 2 mins",
     mock: {
-      titlebar: "Gap Map — Daily Brief · Postmee.ai",
+      titlebar: "OpenReply — Daily Brief · Postmee.ai",
       stats: [
         { val: "6", lbl: "New signals", accent: "green" as const },
         { val: "3", lbl: "Your sources" },
@@ -489,7 +489,7 @@ export const USE_CASES = [
     title: "Prioritize roadmap using live market evidence",
     pain: "Roadmap debates stall because feedback is scattered across reviews, forums, and support channels.",
     outcome:
-      "Gap Map unifies the signal and ranks what to build next with direct source proof for every priority.",
+      "OpenReply unifies the signal and ranks what to build next with direct source proof for every priority.",
     proof: "Common result: planning meetings shift from opinion-driven to evidence-linked.",
   },
   {
@@ -563,7 +563,7 @@ export const PROBLEM_STATS = [
 
 export const BEFORE_AFTER = {
   before: {
-    label: "Without Gap Map",
+    label: "Without OpenReply",
     title: "Manual synthesis sprawl",
     items: [
       "Spreadsheets of links across 6+ tools",
@@ -574,7 +574,7 @@ export const BEFORE_AFTER = {
     ],
   },
   after: {
-    label: "With Gap Map",
+    label: "With OpenReply",
     title: "One auditable graph",
     items: [
       "1,890 posts deduped across 16 sources in one click",
@@ -648,7 +648,7 @@ export const FINAL_PROMISE = {
     {
       n: "03",
       claim: "If it doesn't pay back in 30 days, we will refund you.",
-      proof: "Pro plan only. Email support@gapmap.ai with your workspace ID. No questions, no clawback windows.",
+      proof: "Pro plan only. Email support@openreply.ai with your workspace ID. No questions, no clawback windows.",
     },
   ],
 } as const;

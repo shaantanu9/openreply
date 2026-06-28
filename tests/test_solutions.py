@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from gapmap.research import solutions as sol_mod
+from openreply.research import solutions as sol_mod
 
 
 class FakeProvider:

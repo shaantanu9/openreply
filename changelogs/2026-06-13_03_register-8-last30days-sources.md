@@ -27,5 +27,5 @@ miroclaw-derived adapter convention exactly.
 
 ## Files Modified
 
-- `src/gapmap/sources/__init__.py` — 9 new import lines + 8 new `__all__` entries
-- `src/gapmap/sources/collect_adapter.py` — 8 `run_*` functions + 8 `SOURCES` entries
+- `src/openreply/sources/__init__.py` — 9 new import lines + 8 new `__all__` entries
+- `src/openreply/sources/collect_adapter.py` — 8 `run_*` functions + 8 `SOURCES` entries

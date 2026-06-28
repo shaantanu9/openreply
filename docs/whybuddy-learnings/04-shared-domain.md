@@ -614,16 +614,16 @@ Failed ingestion is captured with the failure stage. Retry can resume from the e
 
 ---
 
-## 7. Port to Gap Map — Concrete Adoption Recommendations
+## 7. Port to OpenReply — Concrete Adoption Recommendations
 
-Gap Map is a research paper discovery and gap analysis desktop app (Tauri + Python sidecar). It needs: multi-source paper ingestion, LLM-powered gap analysis, session persistence, and research workflow tracking.
+OpenReply is a research paper discovery and gap analysis desktop app (Tauri + Python sidecar). It needs: multi-source paper ingestion, LLM-powered gap analysis, session persistence, and research workflow tracking.
 
 ### 7.1 High Value, Small Effort
 
 **`shared/llm/contracts.ts` → Port the `ILLMProvider` + `ILLMProviderRegistry` interfaces verbatim**  
 **Effort:** S | **Value:** H
 
-Gap Map currently hardcodes the Anthropic provider in several places. The registry pattern enables:
+OpenReply currently hardcodes the Anthropic provider in several places. The registry pattern enables:
 - Runtime provider switching (user can choose OpenAI vs Anthropic)
 - `isTemporaryError()` for automatic retry on rate limits
 - `embed()` optional interface for switching embedding providers
@@ -643,7 +643,7 @@ Replace string literal unions defined inline with the `as const` + `(typeof X)[n
 **`RAGPipelineContext` + step chain pattern → Paper ingestion pipeline**  
 **Effort:** M | **Value:** H
 
-Gap Map's current paper ingestion is ad-hoc. Adopting the pipeline pattern:
+OpenReply's current paper ingestion is ad-hoc. Adopting the pipeline pattern:
 - Each step (`parse`, `chunk`, `embed`, `store`) implements `IRAGPipelineStep`
 - `RAGPipelineContext` carries paper content through all steps
 - `DeadLetterEntry` captures papers that fail to ingest at specific stages
@@ -656,7 +656,7 @@ The chunk ID format `${sourceType}:${sourceId}:${chunkIndex}` is directly applic
 **`DataLineageNode` + `LineageEdge` → Research provenance tracking**  
 **Effort:** M | **Value:** H
 
-Gap Map generates LLM-inferred gap analyses. Tracking data lineage enables:
+OpenReply generates LLM-inferred gap analyses. Tracking data lineage enables:
 - Knowing which papers contributed to which gaps
 - Which LLM model version produced a specific analysis
 - `ChangeAlert` when upstream paper metadata changes (retraction, new version)
@@ -671,20 +671,20 @@ Implement `lineageId` on each `GapAnalysisResult` and trace back to source paper
 **`knowledge/types.ts` Entity/Relation model → Paper knowledge graph**  
 **Effort:** M | **Value:** H
 
-Papers have entities (Author, Institution, Method, Finding, Dataset) and relations (cites, extends, contradicts, uses-method, produced-at). The existing SQLite graph_nodes/graph_edges schema in Gap Map is simpler than this model. Adopting:
+Papers have entities (Author, Institution, Method, Finding, Dataset) and relations (cites, extends, contradicts, uses-method, produced-at). The existing SQLite graph_nodes/graph_edges schema in OpenReply is simpler than this model. Adopting:
 - `confidence: number` on entities (LLM-inferred entities get lower confidence)
 - `needsReview: boolean` for human-in-the-loop quality control
 - `linkedMemoryIds: string[]` linking entities to their source paper chunks
 - `GCConfig` for archiving stale entities (papers >2 years old get lower priority)
 
-The `UnifiedKnowledgeResult` pattern (merge structured graph + semantic vector results) is exactly what Gap Map needs for the "find related work" feature.
+The `UnifiedKnowledgeResult` pattern (merge structured graph + semantic vector results) is exactly what OpenReply needs for the "find related work" feature.
 
 ---
 
 **`MemoryReader`/`MemoryWriter`/`MemoryIndex` pattern → Research session memory**  
 **Effort:** M | **Value:** M
 
-Gap Map has no concept of session memory. Adopting this would enable:
+OpenReply has no concept of session memory. Adopting this would enable:
 - Storing previous search queries and their results as `MemoryEntry` with source `"workflow_summary"`
 - Semantic search over past research sessions
 - `materializeWorkflow()` to consolidate a research session into compact memory after completion
@@ -697,7 +697,7 @@ The `MemorySource` union can be extended with `"paper_search"`, `"gap_analysis"`
 **`MissionRecord` + stage lifecycle → Research workflow tracking**  
 **Effort:** M | **Value:** M
 
-Gap Map could model each research topic as a "mission" with stages matching the research workflow:
+OpenReply could model each research topic as a "mission" with stages matching the research workflow:
 - `receive` → query received
 - `understand` → topic canonicalization  
 - `plan` → search strategy generation
@@ -713,13 +713,13 @@ The 6-stage blueprint maps cleanly. `MissionArtifact` covers gap reports, citati
 
 **Blueprint V5 capability pool + turn-route projection**  
 **Effort:** L | **Value:** M  
-Overkill for Gap Map's current scope. The concept of routing through named capabilities (intent.parse → evidence.search → synthesis.merge → report.write) is sound, but implementing the full orchestrator, coverage gate, and ship gate system requires significant infrastructure. Consider adopting the **names** of the capabilities (as an enum/vocabulary) while implementing a simpler sequential executor.
+Overkill for OpenReply's current scope. The concept of routing through named capabilities (intent.parse → evidence.search → synthesis.merge → report.write) is sound, but implementing the full orchestrator, coverage gate, and ship gate system requires significant infrastructure. Consider adopting the **names** of the capabilities (as an enum/vocabulary) while implementing a simpler sequential executor.
 
 ---
 
 **`nl-command/` StrategicCommand → NL research directive**  
 **Effort:** M | **Value:** M  
-Gap Map's research mode could benefit from the command decomposition pattern — user types "find gaps in transformer architecture for edge inference" → decompose into multiple sub-queries with dependency order. The `MissionDecomposition.executionOrder: string[][]` (parallel layers) is directly applicable to Gap Map's multi-source concurrent fetch strategy. But the full clarification dialog and approval workflow is not needed at this stage.
+OpenReply's research mode could benefit from the command decomposition pattern — user types "find gaps in transformer architecture for edge inference" → decompose into multiple sub-queries with dependency order. The `MissionDecomposition.executionOrder: string[][]` (parallel layers) is directly applicable to OpenReply's multi-source concurrent fetch strategy. But the full clarification dialog and approval workflow is not needed at this stage.
 
 ---
 
@@ -731,7 +731,7 @@ Full collaboration replay is not needed for a single-user desktop research tool.
 
 **`scene-command/` UE5 protocol**  
 **Effort:** S | **Value:** L  
-Not applicable to Gap Map. Interesting JSON-RPC 2.0 Zod validation pattern but the domain is irrelevant.
+Not applicable to OpenReply. Interesting JSON-RPC 2.0 Zod validation pattern but the domain is irrelevant.
 
 ---
 

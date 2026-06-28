@@ -35,7 +35,7 @@ invalidations causing avoidable cold refreshes.
 
 **File:** `app-tauri/src/screens/topic.js`
 
-Updated `onGapmapChangedTask8`:
+Updated `onOpenreplyChangedTask8`:
 
 - now reads mutation metadata (`detail.kind`, `detail.topic`)
 - ignores mutation events for other topics
@@ -60,7 +60,7 @@ Kind-scoped invalidation map added for:
 
 **File:** `app-tauri/src/screens/topic.js`
 
-Added `gapmap:db-changed` listener routing into the same incremental invalidation
+Added `openreply:db-changed` listener routing into the same incremental invalidation
 logic. This keeps topic views correct when data changes outside the screen flow
 (e.g., CLI/MCP/background writes) while preserving unaffected tab caches.
 

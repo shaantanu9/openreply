@@ -14,12 +14,12 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GAPMAP_SKIP_PALACE", "1")  # no vector writes in unit tests
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENREPLY_SKIP_PALACE", "1")  # no vector writes in unit tests
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
-    from gapmap.research.collect import _ensure_topics_table
+    from openreply.research.collect import _ensure_topics_table
     _ensure_topics_table()
     # Seed 3 academic papers under one topic.
     topic = "binaural beats"
@@ -43,7 +43,7 @@ TOPIC = "binaural beats"
 
 # ─── paper_reading ───────────────────────────────────────────────────────────
 def test_reading_status_roundtrip(db) -> None:
-    from gapmap.research import paper_reading as pr
+    from openreply.research import paper_reading as pr
     assert pr.get_status("arxiv_0")["status"] == "to_read"  # default
     assert pr.set_status("arxiv_0", "reading")["ok"]
     assert pr.get_status("arxiv_0")["status"] == "reading"
@@ -52,12 +52,12 @@ def test_reading_status_roundtrip(db) -> None:
 
 
 def test_reading_status_rejects_bad_value(db) -> None:
-    from gapmap.research import paper_reading as pr
+    from openreply.research import paper_reading as pr
     assert pr.set_status("arxiv_0", "bogus")["ok"] is False
 
 
 def test_reading_queue_and_counts(db) -> None:
-    from gapmap.research import paper_reading as pr
+    from openreply.research import paper_reading as pr
     # All 3 are implicitly to_read for the topic.
     assert pr.reading_queue(TOPIC)["count"] == 3
     pr.set_status("arxiv_0", "read")
@@ -67,7 +67,7 @@ def test_reading_queue_and_counts(db) -> None:
 
 
 def test_highlights_crud(db) -> None:
-    from gapmap.research import paper_reading as pr
+    from openreply.research import paper_reading as pr
     r = pr.add_highlight("arxiv_0", section="results", char_start=5, char_end=20,
                          quote="theta rises", note="key", color="green")
     hid = r["highlight"]["id"]
@@ -81,14 +81,14 @@ def test_highlights_crud(db) -> None:
 
 
 def test_highlight_same_span_is_idempotent(db) -> None:
-    from gapmap.research import paper_reading as pr
+    from openreply.research import paper_reading as pr
     pr.add_highlight("pubmed_1", section="methods", char_start=0, char_end=10, quote="abc")
     pr.add_highlight("pubmed_1", section="methods", char_start=0, char_end=10, quote="abc again")
     assert pr.list_highlights("pubmed_1")["count"] == 1  # same span → one row
 
 
 def test_read_view_shape(db) -> None:
-    from gapmap.research import paper_reading as pr
+    from openreply.research import paper_reading as pr
     v = pr.read_view("arxiv_0")
     assert v["ok"] and v["title"] and v["status"] == "to_read"
     assert isinstance(v["sections"], list) and v["sections"]
@@ -97,7 +97,7 @@ def test_read_view_shape(db) -> None:
 
 # ─── paper_library ───────────────────────────────────────────────────────────
 def test_collections_and_membership(db) -> None:
-    from gapmap.research import paper_library as pl
+    from openreply.research import paper_library as pl
     c = pl.create_collection("Week 1")
     cid = c["id"]
     assert pl.list_collections()["count"] == 1
@@ -113,15 +113,15 @@ def test_collections_and_membership(db) -> None:
 
 
 def test_library_lists_all_topic_papers(db) -> None:
-    from gapmap.research import paper_library as pl
+    from openreply.research import paper_library as pl
     lib = pl.library()
     assert lib["count"] == 3
     assert {p["post_id"] for p in lib["papers"]} == {"arxiv_0", "pubmed_1", "openalex_2"}
 
 
 def test_library_status_filter(db) -> None:
-    from gapmap.research import paper_reading as pr
-    from gapmap.research import paper_library as pl
+    from openreply.research import paper_reading as pr
+    from openreply.research import paper_library as pl
     pr.set_status("arxiv_0", "read")
     assert pl.library(status="read")["count"] == 1
     assert pl.library(status="to_read")["count"] == 2
@@ -129,7 +129,7 @@ def test_library_status_filter(db) -> None:
 
 # ─── lit_matrix (non-LLM paths) ──────────────────────────────────────────────
 def test_lit_matrix_parse() -> None:
-    from gapmap.research import lit_matrix as lm
+    from openreply.research import lit_matrix as lm
     assert lm._parse('{"method": "x"}')["method"] == "x"
     assert lm._parse('```json\n{"method": "y"}\n```')["method"] == "y"
     assert lm._parse("noise {\"method\": \"z\"} tail")["method"] == "z"
@@ -137,7 +137,7 @@ def test_lit_matrix_parse() -> None:
 
 
 def test_lit_matrix_empty_read_and_export(db) -> None:
-    from gapmap.research import lit_matrix as lm
+    from openreply.research import lit_matrix as lm
     got = lm.get(TOPIC)
     assert got["ok"] and got["count"] == 0 and got["fields"] == lm.FIELDS
     csv = lm.export_csv(TOPIC)
@@ -146,8 +146,8 @@ def test_lit_matrix_empty_read_and_export(db) -> None:
 
 # ─── flow_status ─────────────────────────────────────────────────────────────
 def test_flow_status_shape_and_progress(db) -> None:
-    from gapmap.research.flow_status import flow_status
-    from gapmap.research import paper_reading as pr
+    from openreply.research.flow_status import flow_status
+    from openreply.research import paper_reading as pr
     fs = flow_status(TOPIC)
     assert fs["ok"] and fs["papers"] == 3
     assert fs["stages"]["gather"] == 1.0
@@ -159,6 +159,6 @@ def test_flow_status_shape_and_progress(db) -> None:
 
 
 def test_flow_status_empty_topic(db) -> None:
-    from gapmap.research.flow_status import flow_status
+    from openreply.research.flow_status import flow_status
     fs = flow_status("nonexistent topic")
     assert fs["ok"] and fs["papers"] == 0 and fs["stages"]["gather"] == 0.0

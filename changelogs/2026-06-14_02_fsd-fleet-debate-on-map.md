@@ -53,16 +53,16 @@ go "stale" when the findings change. Spec: `docs/specs/FLEET_AGENTS_TOPIC_MAP.md
 ## Files Created
 
 - `docs/specs/FLEET_AGENTS_TOPIC_MAP.md` — approved design (phases 0–3).
-- `src/gapmap/research/debate_run.py` — debate orchestrator + verdict reader.
+- `src/openreply/research/debate_run.py` — debate orchestrator + verdict reader.
 - `app-tauri/src/screens/debatePanel.js` — debate panel + trust badge module.
 - `tests/test_debate_run.py` — orchestrator tests.
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — debate tables, graph_nodes cache columns, 6 helpers, `__all__`.
-- `src/gapmap/research/deliberate.py` — `_persona_vote` `persona_conclusions` fix.
-- `src/gapmap/cli/main.py` — `research debate` + `research debate-verdicts` commands.
-- `src/gapmap/graph/export.py` — debate glyph + verdict on exported nodes.
+- `src/openreply/core/db.py` — debate tables, graph_nodes cache columns, 6 helpers, `__all__`.
+- `src/openreply/research/deliberate.py` — `_persona_vote` `persona_conclusions` fix.
+- `src/openreply/cli/main.py` — `research debate` + `research debate-verdicts` commands.
+- `src/openreply/graph/export.py` — debate glyph + verdict on exported nodes.
 - `app-tauri/src-tauri/src/commands.rs` — `debate_topic` / `debate_verdicts` commands.
 - `app-tauri/src-tauri/src/main.rs` — handler registration.
 - `app-tauri/src/api.js` — `debateTopic` / `debateVerdicts`.

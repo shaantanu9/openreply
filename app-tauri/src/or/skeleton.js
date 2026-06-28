@@ -69,6 +69,7 @@ const MAP = {
   keywords: () => skelHead() + `<div class="grid gap-5 lg:grid-cols-2">${skelCard(4)}${skelCard(4)}</div>`,
   subreddit: () => skelHead() + skelList(4),
   geo: () => skelHead() + skelList(3),
+  brain: () => skelHead() + `<div class="grid gap-4 lg:grid-cols-[1fr,18rem]">${blk("520px", "100%", "rounded-xl")}${skelCard(4)}</div>`,
   compose: () => skelHead() + `<div class="grid gap-5 lg:grid-cols-[1fr,1.2fr]">${skelCard(5)}${skelCard(6)}</div>`,
 };
 

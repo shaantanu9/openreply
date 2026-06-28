@@ -11,19 +11,19 @@ _COLLECT = ["v2ex", "bilibili", "xueqiu", "exa", "xiaohongshu", "reddit_free",
 
 
 def test_fetchers_exported():
-    import gapmap.sources as S
+    import openreply.sources as S
     for fn in _FETCHERS:
-        assert hasattr(S, fn), f"{fn} not exported from gapmap.sources"
+        assert hasattr(S, fn), f"{fn} not exported from openreply.sources"
         assert fn in S.__all__
 
 
 def test_collect_dispatch_registered():
-    from gapmap.sources.collect_adapter import SOURCES
+    from openreply.sources.collect_adapter import SOURCES
     for key in _COLLECT:
         assert key in SOURCES and callable(SOURCES[key]), f"{key} missing from SOURCES"
 
 
 def test_reddit_free_in_reddit_family():
-    from gapmap.sources.source_families import REDDIT_FAMILY, normalize_source_type
+    from openreply.sources.source_families import REDDIT_FAMILY, normalize_source_type
     assert "reddit_free" in REDDIT_FAMILY
     assert normalize_source_type("reddit_free") == "reddit_free"

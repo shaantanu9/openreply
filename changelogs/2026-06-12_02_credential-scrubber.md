@@ -14,7 +14,7 @@ line loop applied before every `emit()` and every `push_back()` into the
 
 ## Changes
 
-- Created `src/gapmap/core/scrub.py` — conservative `scrub_secrets(text)` with
+- Created `src/openreply/core/scrub.py` — conservative `scrub_secrets(text)` with
   8 compiled regex patterns covering sk-/sk-ant-/sk-or-/sk-proj- (OpenAI family),
   gsk_ (Groq), xai- (xAI), AIza (Google), nvapi- (NVIDIA), gh[pos]_ (GitHub),
   `Authorization: Bearer <token>`, and generic `*api_key/*token/*secret/*password
@@ -36,7 +36,7 @@ line loop applied before every `emit()` and every `push_back()` into the
 
 ## Files Created
 
-- `src/gapmap/core/scrub.py`
+- `src/openreply/core/scrub.py`
 - `tests/test_scrub.py`
 - `changelogs/2026-06-12_02_credential-scrubber.md`
 

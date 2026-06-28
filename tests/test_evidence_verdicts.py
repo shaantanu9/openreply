@@ -13,8 +13,8 @@ import pytest
 
 @pytest.fixture
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", str(tmp_path))
-    from gapmap.core import db as db_mod
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", str(tmp_path))
+    from openreply.core import db as db_mod
     db_mod.get_db.cache_clear()  # type: ignore[attr-defined]
     db = db_mod.get_db()
     db["posts"].insert_all([
@@ -42,13 +42,13 @@ class _FakeProvider:
 
 
 def _patch_provider(monkeypatch, stances):
-    import gapmap.analyze.providers.base as base
+    import openreply.analyze.providers.base as base
     monkeypatch.setattr(base, "resolve_provider", lambda p=None: "test")
     monkeypatch.setattr(base, "get_provider", lambda p=None: _FakeProvider(stances))
 
 
 def test_supported_verdict(db, monkeypatch):
-    from gapmap.research import evidence_verdicts
+    from openreply.research import evidence_verdicts
     _patch_provider(monkeypatch, [
         {"id": "s1", "stance": "support"}, {"id": "s2", "stance": "support"},
         {"id": "s3", "stance": "support"}, {"id": "c1", "stance": "contradict"},
@@ -61,7 +61,7 @@ def test_supported_verdict(db, monkeypatch):
 
 
 def test_mixed_verdict(db, monkeypatch):
-    from gapmap.research import evidence_verdicts
+    from openreply.research import evidence_verdicts
     _patch_provider(monkeypatch, [
         {"id": "s1", "stance": "support"}, {"id": "s2", "stance": "support"},
         {"id": "s3", "stance": "contradict"}, {"id": "c1", "stance": "contradict"},
@@ -71,7 +71,7 @@ def test_mixed_verdict(db, monkeypatch):
 
 
 def test_insufficient_when_few_decisive(db, monkeypatch):
-    from gapmap.research import evidence_verdicts
+    from openreply.research import evidence_verdicts
     _patch_provider(monkeypatch, [
         {"id": "s1", "stance": "support"}, {"id": "s2", "stance": "neutral"},
         {"id": "s3", "stance": "neutral"}, {"id": "c1", "stance": "neutral"},
@@ -81,14 +81,14 @@ def test_insufficient_when_few_decisive(db, monkeypatch):
 
 
 def test_no_matching_evidence(db, monkeypatch):
-    from gapmap.research import evidence_verdicts
+    from openreply.research import evidence_verdicts
     _patch_provider(monkeypatch, [])
     r = evidence_verdicts.answer("t", "completely unrelated zxqw topic")
     assert r["ok"] is False and r["verdict"] == "insufficient"
 
 
 def test_cached_read(db, monkeypatch):
-    from gapmap.research import evidence_verdicts
+    from openreply.research import evidence_verdicts
     _patch_provider(monkeypatch, [
         {"id": "s1", "stance": "support"}, {"id": "s2", "stance": "support"},
         {"id": "s3", "stance": "support"},

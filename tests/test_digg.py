@@ -1,5 +1,5 @@
 import json
-import gapmap.sources.digg as mod
+import openreply.sources.digg as mod
 
 _CLI_OUT = json.dumps({"results": [{
     "clusterUrlId": "abc123",

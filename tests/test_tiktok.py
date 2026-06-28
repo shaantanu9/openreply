@@ -1,4 +1,4 @@
-import gapmap.sources.tiktok as mod
+import openreply.sources.tiktok as mod
 
 _FIXTURE = {"search_item_list": [{
     "aweme_info": {

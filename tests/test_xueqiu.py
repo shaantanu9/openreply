@@ -1,8 +1,8 @@
 """xueqiu status-search source."""
 from __future__ import annotations
 
-from gapmap.sources import xueqiu
-from gapmap.sources.xueqiu import fetch_xueqiu
+from openreply.sources import xueqiu
+from openreply.sources.xueqiu import fetch_xueqiu
 
 _SAMPLE = {
     "list": [

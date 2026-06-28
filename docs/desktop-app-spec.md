@@ -7,7 +7,7 @@
 
 ## 🧭 Part A — The Build Prompt (paste this into Claude/Cursor)
 
-> Build a **Flutter Desktop** app (macOS + Windows + Linux) named **"Gap Map"**.
+> Build a **Flutter Desktop** app (macOS + Windows + Linux) named **"OpenReply"**.
 > It wraps the existing `reddit-myind` Python CLI. Spawn `reddit-cli` as a
 > subprocess for every operation. Never re-implement the research logic in
 > Dart — just orchestrate calls and render results.
@@ -15,7 +15,7 @@
 > **Core loop:**
 > User types a topic → app runs `research collect --aggressive` → shows a
 > live progress log → builds + enriches the graph → embeds our existing
-> self-contained HTML gap-map viewer in a `webview_flutter_plus` panel →
+> self-contained HTML openreply-map viewer in a `webview_flutter_plus` panel →
 > user can export / share / tweak / ingest their own files.
 >
 > **Stack (non-negotiable):**
@@ -129,11 +129,11 @@
 Exposed so AI agents can drive research without the desktop UI.
 Full list in `src/reddit_research/mcp/server.py`; key ones:
 
-- `gapmap_research_collect(topic, aggressive=true, sources=[...])`
-- `gapmap_graph_build(topic)` / `gapmap_graph_stats(topic)` / `gapmap_graph_pagerank(topic)`
-- `gapmap_graph_upsert_semantic(topic, painpoints=[], features=[], ...)` — lets Claude persist its synthesis
-- `gapmap_graph_export_json(topic)` — get the D3 data shape
-- `gapmap_corpus_temporal_split(topic)` — pre/post-May-2025 for CHRONIC/EMERGING/FADING classification
+- `openreply_research_collect(topic, aggressive=true, sources=[...])`
+- `openreply_graph_build(topic)` / `openreply_graph_stats(topic)` / `openreply_graph_pagerank(topic)`
+- `openreply_graph_upsert_semantic(topic, painpoints=[], features=[], ...)` — lets Claude persist its synthesis
+- `openreply_graph_export_json(topic)` — get the D3 data shape
+- `openreply_corpus_temporal_split(topic)` — pre/post-May-2025 for CHRONIC/EMERGING/FADING classification
 
 ---
 
@@ -318,15 +318,15 @@ Output: ~2,000-10,000 posts tagged under topic.
 3. Upsert (idempotent)
 ```
 
-### D.3 — Enrich pipeline (`research graph enrich` OR `gapmap_graph_upsert_semantic` via MCP)
+### D.3 — Enrich pipeline (`research graph enrich` OR `openreply_graph_upsert_semantic` via MCP)
 
 **Option A (CLI, needs LLM key):** Runs `research gaps` → persists to graph.
 
 **Option B (MCP, Claude-as-LLM, no key):**
 ```
-1. Claude calls gapmap_get_corpus(topic, limit=200)
+1. Claude calls openreply_get_corpus(topic, limit=200)
 2. Claude synthesizes in-context: 8-15 painpoints, 5-10 features, products, DIYs
-3. Claude calls gapmap_graph_upsert_semantic(
+3. Claude calls openreply_graph_upsert_semantic(
      topic,
      painpoints=[{painpoint, severity, frequency, classification, evidence, example_post_ids}],
      feature_wishes=[{feature, user_quote, frequency, example_post_ids}],
@@ -577,7 +577,7 @@ All exposed via CLI and MCP:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ Gap Map                           [Settings] [Help] │
+│ OpenReply                           [Settings] [Help] │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
 │  ┌──────────────────────────────────────────┐       │
@@ -632,7 +632,7 @@ Live-streaming progress from Python subprocess. Pipe stderr line-by-line:
 
 ### H.5 — Map screen (`/topic/:id/map`)
 
-The hero screen. **Embed the existing HTML gap-map via WebView.** The HTML already has:
+The hero screen. **Embed the existing HTML openreply-map via WebView.** The HTML already has:
 - Exec summary block with copy-tweet + save-as-PNG
 - Findings panel (painpoints, workarounds, products, features)
 - D3 graph with skeleton mode
@@ -659,7 +659,7 @@ Actions drawer (⋮):
   - Ingest local file
   - Export report-pro.md
   - Export raw JSON
-  - Publish to gapmap.io (Pro only — v2)
+  - Publish to openreply.io (Pro only — v2)
   - Delete topic
 ```
 
@@ -842,14 +842,14 @@ Settings UI:
 ## 📂 Part K — File locations (macOS)
 
 ```
-~/Library/Application Support/com.yourco.gapmap/
+~/Library/Application Support/com.yourco.openreply/
 ├── bin/
 │   └── reddit-cli                       ← extracted at first run
 ├── reddit-myind/
 │   ├── reddit.db                        ← SQLite (user data)
 │   ├── .env                             ← secrets (chmod 600)
 │   └── exports/
-│       └── gap-map-<topic-slug>.html    ← generated artifacts
+│       └── openreply-map-<topic-slug>.html    ← generated artifacts
 └── logs/
     └── reddit-cli-<date>.log            ← subprocess stderr tail
 ```
@@ -866,7 +866,7 @@ Settings UI:
 | Pretty Flutter UI | ⚠ (7-day trial) | ✅ |
 | Unlimited topics | 3 | ∞ |
 | Scheduled re-runs | ❌ | ✅ |
-| Publish to gapmap.io | ❌ | ✅ |
+| Publish to openreply.io | ❌ | ✅ |
 | Export PDF | ❌ | ✅ |
 | Priority support | ❌ | ✅ |
 
@@ -882,7 +882,7 @@ if (!entitlements.entitlements.active.containsKey('pro')) {
 }
 ```
 
-Product ID: `gapmap_pro_lifetime` · Price: $49 · one-time in-app purchase (no subscription).
+Product ID: `openreply_pro_lifetime` · Price: $49 · one-time in-app purchase (no subscription).
 
 ---
 
@@ -926,7 +926,7 @@ From `docs/self-gap-analysis.md` — open gaps our research surfaced:
 - **Scheduled weekly runs + diff mode** ("what changed since last week?")
 - **Notion / Airtable direct export**
 - **Team workspaces + cloud sync** (for $99/mo hosted tier)
-- **Public gap-map gallery** at gapmap.io/explore (SEO moat)
+- **Public openreply-map gallery** at openreply.io/explore (SEO moat)
 - **Browser extension** — highlight a Reddit thread, send to tool
 - **Podcast transcript ingestion** (Listennotes)
 - **YouTube comments** (already stubbed, needs key)
@@ -952,8 +952,8 @@ uv run pyinstaller --onefile --name reddit-cli \
 ./dist/reddit-cli research discover --topic "habit tracker apps" --json
 
 # 4. Scaffold Flutter Desktop
-flutter create --platforms=macos,windows,linux gapmap
-cd gapmap
+flutter create --platforms=macos,windows,linux openreply
+cd openreply
 # Copy dist/reddit-cli → assets/bin/
 # Add to pubspec.yaml assets
 # Start building screens per Part H above

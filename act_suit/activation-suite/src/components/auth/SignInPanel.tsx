@@ -338,7 +338,7 @@ export function SignInPanel() {
             </svg>
           </span>
           <span className="font-serif text-[18px] font-normal tracking-[-0.3px] text-white">
-            Gap Map
+            OpenReply
           </span>
         </Link>
         <div className="relative z-10">
@@ -506,7 +506,7 @@ export function SignInPanel() {
                 disabled={loginBusy}
                 className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--dark)] px-4 py-3 text-[15px] font-medium text-white transition-all hover:-translate-y-px hover:bg-[var(--dark-mid)] disabled:pointer-events-none disabled:opacity-70"
               >
-                {loginBusy ? "Signing in…" : "Sign in to Gap Map"}
+                {loginBusy ? "Signing in…" : "Sign in to OpenReply"}
               </button>
               <p className="mt-5 text-center text-[13px] text-[var(--muted)]">
                 Don&rsquo;t have an account?{" "}
@@ -553,7 +553,7 @@ export function SignInPanel() {
                     className="w-full rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]" />
                 </div>
                 <div className="mb-5">
-                  <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">What do you want to use Gap Map for? <span className="text-[var(--muted-light)]">(optional)</span></label>
+                  <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">What do you want to use OpenReply for? <span className="text-[var(--muted-light)]">(optional)</span></label>
                   <textarea rows={3} placeholder="e.g. finding gaps in the note-taking market…" value={wlReason}
                     onChange={(e) => setWlReason(e.target.value)}
                     className="w-full resize-none rounded-[10px] border border-[var(--border-strong)] bg-white px-[14px] py-[11px] text-[14px] text-[var(--text)] outline-none transition-shadow focus:border-[var(--orange)] focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)]" />
@@ -594,7 +594,7 @@ export function SignInPanel() {
                     <input
                       type="text"
                       autoCapitalize="characters"
-                      placeholder="GAPMAP-BETA-2026"
+                      placeholder="OPENREPLY-BETA-2026"
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                       className={`w-full rounded-[10px] border bg-white px-[14px] py-[11px] pr-24 font-mono text-[14px] tracking-[2px] text-[var(--text)] outline-none transition-shadow focus:shadow-[0_0_0_3px_rgba(224,123,60,0.12)] ${
@@ -677,7 +677,7 @@ export function SignInPanel() {
               </div>
               <div className="mb-5">
                 <label className="mb-2 block text-[13px] font-medium text-[var(--text)]">
-                  I&rsquo;m using Gap Map for
+                  I&rsquo;m using OpenReply for
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {ROLE_OPTIONS.map((opt) => {

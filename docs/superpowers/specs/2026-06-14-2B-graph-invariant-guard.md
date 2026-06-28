@@ -13,15 +13,15 @@ After a graph build, validate the SQLite knowledge graph's structural invariants
 - (max_depth: skip for v1 — the graph isn't strictly a tree.)
 
 ## Components
-1. `src/gapmap/graph/invariants.py` — `check_graph_invariants(topic) -> dict`:
+1. `src/openreply/graph/invariants.py` — `check_graph_invariants(topic) -> dict`:
    loads nodes+edges for the topic, runs the checks, calls
    `record_check(topic=topic, gate="invariant_<name>", operation="graph_build", passed=<bool>, invariant="<name>", detail="<summary>")` for each, returns
    `{"ok": all_passed, "checks": [{"invariant","passed","detail"}, ...]}`.
    Best-effort: any error → `{"ok": True, "skipped": True, "error": ...}` (never raises, never fails a build).
 2. **Wire into build**: in `graph/build.py::_build_structural_body`, right after the 1A `build_complete` `record_check`, call `check_graph_invariants(topic)` (best-effort, wrapped). So every build validates + logs.
 3. **CLI**: `research graph-invariants --topic` (prints JSON).
-4. **MCP**: `gapmap_graph_invariants(topic)` (thin wrapper).
-5. **UI**: NONE needed — invariant results are `checks_ledger` rows, already rendered by 1A's Provenance & Audit panel (and visible via `gapmap_checks_list`). Synergy.
+4. **MCP**: `openreply_graph_invariants(topic)` (thin wrapper).
+5. **UI**: NONE needed — invariant results are `checks_ledger` rows, already rendered by 1A's Provenance & Audit panel (and visible via `openreply_checks_list`). Synergy.
 
 ## Testing
 - `check_graph_invariants`: seed a clean small graph → all pass + ledger rows written. Seed a cycle (a→b→a) → `acyclic` fails. Seed a node missing `label` → `required_fields` fails. Missing/empty graph → `skipped`/ok, no raise.

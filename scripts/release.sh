@@ -9,7 +9,7 @@
 #   3. While CI runs: sign + notarize locally for arm64 + x86_64
 #   4. Verify each signed DMG with verify-dmg.sh
 #   5. Rename DMG / zip to public-convention filenames
-#   6. Upload signed artifacts to the public release repo (myind-ai/gapmap)
+#   6. Upload signed artifacts to the public release repo (myind-ai/openreply)
 #   7. Apply friendly asset labels (Apple Silicon / Intel / Windows ...)
 #   8. Publish (--draft=false --latest)
 #
@@ -20,7 +20,7 @@
 #   --yes         non-interactive (default asks for confirmation between phases)
 #   --skip-tag    tag is already pushed; resume from sign step
 #   --skip-sign   sign step already done; resume from upload step
-#   --public-repo OWNER/REPO   override public repo (default: myind-ai/gapmap)
+#   --public-repo OWNER/REPO   override public repo (default: myind-ai/openreply)
 #
 # Pre-reqs (all checked by preflight):
 #   tauri.conf.json + package.json + Cargo.toml all at the new version
@@ -34,8 +34,8 @@ VERSION_TAG=""
 YES=0
 SKIP_TAG=0
 SKIP_SIGN=0
-PUBLIC_REPO="myind-ai/gapmap"
-BUNDLE_ID="com.shantanu.gapmap"
+PUBLIC_REPO="myind-ai/openreply"
+BUNDLE_ID="com.shantanu.openreply"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -78,7 +78,7 @@ confirm() {
 die() { red "✗ $*"; exit 1; }
 
 bold "╔══════════════════════════════════════════════════════════════╗"
-bold "║  Gap Map release — $VERSION_TAG"
+bold "║  OpenReply release — $VERSION_TAG"
 bold "╚══════════════════════════════════════════════════════════════╝"
 
 # ── 1. preflight ────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ set -a; source .env.publish; set +a
 if [ "$SKIP_TAG" -eq 0 ]; then
   bold "── 2. Push tag ──"
   if confirm "create + push tag $VERSION_TAG?"; then
-    git tag -a "$VERSION_TAG" -m "Gap Map $VERSION_TAG"
+    git tag -a "$VERSION_TAG" -m "OpenReply $VERSION_TAG"
     git push origin "$VERSION_TAG"
     green "  ✓ tag pushed; release.yml is now firing on origin"
   else
@@ -184,7 +184,7 @@ bold "── 7. Upload to public release ($PUBLIC_REPO) ──"
 if ! gh release view "$VERSION_TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
   yellow "  no $VERSION_TAG release on $PUBLIC_REPO — creating draft"
   gh release create "$VERSION_TAG" --repo "$PUBLIC_REPO" --target main --draft \
-    --title "Gap Map $VERSION_TAG" \
+    --title "OpenReply $VERSION_TAG" \
     --notes "(release notes filled in below)" \
     || die "couldn't create draft on $PUBLIC_REPO"
 fi

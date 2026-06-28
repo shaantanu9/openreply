@@ -15,7 +15,7 @@ Surfaced as a 4-segment progress bar on each Research Home project card.
 
 - **`research/flow_status.py`** — `flow_status(topic)`; defensive (`_table_exists`
   guards) so it works before any research tables are created.
-- **CLI**: `research flow-status --topic`. **MCP**: `gapmap_flow_status`.
+- **CLI**: `research flow-status --topic`. **MCP**: `openreply_flow_status`.
   **Tauri**: `flow_status`. **api.js**: `flowStatus`.
 - **Research Home**: project cards get a lazily-filled Gather→Read→Synthesize→
   Write bar (sequential, bounded to 14 cards to avoid a sidecar flood).
@@ -27,10 +27,10 @@ Surfaced as a 4-segment progress bar on each Research Home project card.
 - 13 unit tests pass; `cargo check` + `node --check` clean.
 
 ## Files Created
-- `src/gapmap/research/flow_status.py`, `changelogs/2026-06-07_12_research-mode-flow-status.md`
+- `src/openreply/research/flow_status.py`, `changelogs/2026-06-07_12_research-mode-flow-status.md`
 
 ## Files Modified
-- `src/gapmap/cli/main.py`, `src/gapmap/mcp/server.py`,
+- `src/openreply/cli/main.py`, `src/openreply/mcp/server.py`,
   `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`,
   `app-tauri/src/api.js`, `app-tauri/src/screens/research_home.js`,
   `tests/test_research_mode.py`

@@ -25,5 +25,5 @@ Net: new-topic visibility latency drops from **30-60s → ~1s**.
 
 ## Files Modified
 
-- `src/gapmap/research/collect.py` — `_now_iso`→`_ts_iso`; early `topic_prefs` insert + canonical migration (drop empty typed row).
+- `src/openreply/research/collect.py` — `_now_iso`→`_ts_iso`; early `topic_prefs` insert + canonical migration (drop empty typed row).
 - `app-tauri/src/api.js` — `startCollect` delayed follow-up `mutated('topics')` refreshes.

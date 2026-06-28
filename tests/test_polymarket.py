@@ -1,4 +1,4 @@
-import gapmap.sources.polymarket as mod
+import openreply.sources.polymarket as mod
 
 class _FakeResp:
     def __init__(self, payload, status=200):

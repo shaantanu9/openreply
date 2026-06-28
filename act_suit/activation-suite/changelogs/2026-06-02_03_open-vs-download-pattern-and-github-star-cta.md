@@ -10,7 +10,7 @@ Two related improvements to the activate/download experience:
 1. **"Open app" vs "Download" now follows the industry-standard web→desktop
    handoff pattern.** A website cannot detect whether a desktop app is
    installed (browsers block this), so — like Slack, Linear, VS Code, Discord —
-   the "Open Gap Map app" button fires the `gapmap://` deep link and watches for
+   the "Open OpenReply app" button fires the `openreply://` deep link and watches for
    the tab losing focus (`visibilitychange` / `blur`). If the OS hands off to
    the app, we stay silent; if the tab is still in the foreground after 1.5s,
    the app likely isn't installed and we prompt the user to download. The
@@ -20,7 +20,7 @@ Two related improvements to the activate/download experience:
 
 2. **GitHub star CTA ("⭐ Star us on GitHub").** Added the public repo link as a
    soft, honest ask near the free-key flow on `/activate` and on the `/download`
-   page: "Free key, free app. If Gap Map helps you, a GitHub star is the nicest
+   page: "Free key, free app. If OpenReply helps you, a GitHub star is the nicest
    way to say thanks." The free key remains available to everyone — starring is
    encouraged, not gated/verified (no false promise of star verification).
 

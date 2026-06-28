@@ -1,17 +1,17 @@
-# Gap Map — product brief
+# OpenReply — product brief
 
 **Date:** 2026-04-19
 **Repo:** `reddit-myind` (Python CLI + MCP) + `app-tauri/` (desktop)
-**Bundle name:** `com.shantanu.gapmap`
+**Bundle name:** `com.shantanu.openreply`
 **Status:** MVP — shippable DMG, P0/P1/P2 items closed per `docs/mvp-checklist.md`.
 
 This is the single source of truth for what the product is, what is actually built today, which fields it serves, who it is sold to, and how to sell it. Everything here is cross-referenced with the code and existing docs — no aspirational features unless explicitly flagged as "roadmap".
 
 ---
 
-## 1. What Gap Map actually is
+## 1. What OpenReply actually is
 
-Gap Map is a **local-first market-research + product-discovery engine**. It turns raw chatter (Reddit, Hacker News, arXiv, PubMed, App Store reviews, GitHub issues, private PDFs, Slack exports, interview transcripts…) into:
+OpenReply is a **local-first market-research + product-discovery engine**. It turns raw chatter (Reddit, Hacker News, arXiv, PubMed, App Store reviews, GitHub issues, private PDFs, Slack exports, interview transcripts…) into:
 
 1. a deduplicated local **SQLite corpus**, tagged by source,
 2. a **knowledge graph** of painpoints / feature wishes / competitors / DIY workarounds — each edge backed by citations,
@@ -26,7 +26,7 @@ Three surfaces ship today:
 | MCP server | `uv run reddit-cli mcp serve` | Claude Code sessions |
 | Desktop app (Tauri 2) | `app-tauri/` → DMG | non-technical PMs, founders, researchers |
 
-Local-first by design: API keys, corpus DB, and generated HTML live under `~/.config/reddit-myind/` and `~/Library/Application Support/com.shantanu.gapmap/`. Nothing leaves the user's machine except LLM calls they explicitly make with their own key (BYOK).
+Local-first by design: API keys, corpus DB, and generated HTML live under `~/.config/reddit-myind/` and `~/Library/Application Support/com.shantanu.openreply/`. Nothing leaves the user's machine except LLM calls they explicitly make with their own key (BYOK).
 
 ---
 
@@ -85,11 +85,11 @@ Provider and model are resolved **at call-time**, so switching the default in Se
 
 `grep -c "@mcp.tool" src/reddit_research/mcp/server.py` → **40**. Named groups:
 
-- Core fetch: `gapmap_fetch_posts`, `gapmap_fetch_comments`, `gapmap_fetch_user`, `gapmap_search`, `gapmap_query_db`, `gapmap_sub_stats`.
-- Historical: `gapmap_fetch_historical`.
-- Research (gap-finding): `gapmap_discover_subs`, `gapmap_research_collect`, `gapmap_get_corpus`, `gapmap_corpus_temporal_split`, `gapmap_topic_stats`.
-- Graph (agent memory): `gapmap_graph_build`, `gapmap_graph_stats`, `gapmap_graph_top_nodes`, `gapmap_graph_neighbors`, `gapmap_graph_upsert_semantic`, `gapmap_graph_export_json`.
-- Extra-source adapters: `gapmap_fetch_hn`, `gapmap_fetch_appstore`, `gapmap_fetch_playstore`, `gapmap_fetch_scholar`, `gapmap_fetch_stackoverflow`, `gapmap_fetch_trends`, `gapmap_fetch_arxiv`, `gapmap_fetch_openalex`, `gapmap_fetch_pubmed`, … (+ lemmy/mastodon/devto/gnews/gh/etc.).
+- Core fetch: `openreply_fetch_posts`, `openreply_fetch_comments`, `openreply_fetch_user`, `openreply_search`, `openreply_query_db`, `openreply_sub_stats`.
+- Historical: `openreply_fetch_historical`.
+- Research (gap-finding): `openreply_discover_subs`, `openreply_research_collect`, `openreply_get_corpus`, `openreply_corpus_temporal_split`, `openreply_topic_stats`.
+- Graph (agent memory): `openreply_graph_build`, `openreply_graph_stats`, `openreply_graph_top_nodes`, `openreply_graph_neighbors`, `openreply_graph_upsert_semantic`, `openreply_graph_export_json`.
+- Extra-source adapters: `openreply_fetch_hn`, `openreply_fetch_appstore`, `openreply_fetch_playstore`, `openreply_fetch_scholar`, `openreply_fetch_stackoverflow`, `openreply_fetch_trends`, `openreply_fetch_arxiv`, `openreply_fetch_openalex`, `openreply_fetch_pubmed`, … (+ lemmy/mastodon/devto/gnews/gh/etc.).
 
 The MCP server intentionally has **no LLM calls inside**. Claude Code is the LLM; the server is pure data access. One-line install: `uv run reddit-cli mcp install`.
 
@@ -184,7 +184,7 @@ reddit-cli research report --topic "freelance invoicing" --out report.md
 **Honest gap (from `docs/self-gap-analysis.md`):** no Slack OAuth or Gong integration yet — local file ingest covers it today, real-time integrations are v2.
 
 ### 3.4 Growth / content marketers
-**Use:** Weekly "Gap Map of X" tweet threads. Each gap-map is a self-contained HTML artifact → screenshot → thread. SEO moat via public gallery at `gapmap.io/explore/<topic>`.
+**Use:** Weekly "OpenReply of X" tweet threads. Each openreply-map is a self-contained HTML artifact → screenshot → thread. SEO moat via public gallery at `openreply.io/explore/<topic>`.
 **Concrete flow:** collect → graph export → screenshot cluster → caption with 2 non-obvious findings → thread.
 
 ### 3.5 VCs / scouts / strategy consultants
@@ -194,11 +194,11 @@ reddit-cli research report --topic "freelance invoicing" --out report.md
 **Use:** Cross-source meta-analysis across arXiv + PubMed + OpenAlex + Scholar. Source-aware prompts let the LLM weight peer-reviewed claims vs anecdotal ones. Each paper is listed with DOI/URL so every downstream claim is re-verifiable.
 
 ### 3.7 Consulting / research agencies
-**Use:** Deliverable factory — one repo per client, one gap-map per engagement. The $49 one-time pricing becomes a cost line in a client bill, not a recurring SaaS seat.
+**Use:** Deliverable factory — one repo per client, one openreply-map per engagement. The $49 one-time pricing becomes a cost line in a client bill, not a recurring SaaS seat.
 **Roadmap:** white-label / branded reports is a clear v2 play.
 
 ### 3.8 AI-agent builders (developer segment)
-**Use:** Persistent cross-session memory for Claude Code. The graph is structured state; `gapmap_graph_top_nodes` + `gapmap_graph_neighbors` give agents curated context 10× more efficient than `gapmap_get_corpus(limit=300)`. Multi-agent compose: agent A collects, agent B enriches, agent C reports — each idempotent, typed, independent (see `docs/applications.md` §"What it does for AI agents").
+**Use:** Persistent cross-session memory for Claude Code. The graph is structured state; `openreply_graph_top_nodes` + `openreply_graph_neighbors` give agents curated context 10× more efficient than `openreply_get_corpus(limit=300)`. Multi-agent compose: agent A collects, agent B enriches, agent C reports — each idempotent, typed, independent (see `docs/applications.md` §"What it does for AI agents").
 
 ### 3.9 Investors / equity analysts
 **Use:** Track App Store + Play Store review sentiment over time for public-comp companies. Aggressive mode pulls 3 years history → baseline → weekly delta = early catalyst.
@@ -249,7 +249,7 @@ reddit-cli research report --topic "freelance invoicing" --out report.md
 | **OSS CLI** | free | All 20 sources, MCP server, CLI commands, local viewer | **shipped** |
 | **Desktop Pro** | $49 one-time | Polished Tauri UI, scheduled re-runs, export (PDF/Notion/Linear/JSON), license + priority support | MVP **shipped**; Gumroad licensing = 3 days work |
 | **Hosted Team** | $99/mo/workspace | Shared workspaces, we pay LLM, Slack/Discord integrations, webhooks, API | v2 roadmap |
-| **VC / Consultant** | $299/mo | Hosted gap-map gallery, DD-branded reports, priority access | v3 roadmap |
+| **VC / Consultant** | $299/mo | Hosted openreply-map gallery, DD-branded reports, priority access | v3 roadmap |
 | **Agency / white-label** | custom | Per-client workspace, branded exports | post-launch |
 
 Rationale (from `docs/product-roadmap.md`):
@@ -292,7 +292,7 @@ Reddit + ChatGPT + Notion databases + Google Sheets.
 
 ### 7.1 Three distribution loops, ranked by leverage
 
-**Loop 1 — Artifact-led growth (the moat).** Every gap-map is a self-contained, sharable HTML. Publish one per week for a trending niche (AI coding assistants, habit trackers, ATS resumes, note-taking apps, meditation apps). Each artifact → tweet → PH/HN post → SEO page at `gapmap.io/explore/<topic>`. Volume compounds; the gallery becomes the moat.
+**Loop 1 — Artifact-led growth (the moat).** Every openreply-map is a self-contained, sharable HTML. Publish one per week for a trending niche (AI coding assistants, habit trackers, ATS resumes, note-taking apps, meditation apps). Each artifact → tweet → PH/HN post → SEO page at `openreply.io/explore/<topic>`. Volume compounds; the gallery becomes the moat.
 
 **Loop 2 — OSS flywheel.** Free CLI on GitHub + one-line MCP install inside Claude Code. Devs star, fork, post. The paid Desktop Pro wraps the same functionality for their non-technical teammate or boss.
 
@@ -302,8 +302,8 @@ Reddit + ChatGPT + Notion databases + Google Sheets.
 
 | Day | Milestone | Status |
 |---|---|---|
-| 0–14 | Desktop Pro MVP + Gumroad checkout + `gapmap.io` landing | DMG ready, licensing TODO |
-| 14 | 3 public gap-maps for trending markets (each a tweet-driven launch) | 2/3 ready (ATS + habit tracker exist) |
+| 0–14 | Desktop Pro MVP + Gumroad checkout + `openreply.io` landing | DMG ready, licensing TODO |
+| 14 | 3 public openreply-maps for trending markets (each a tweet-driven launch) | 2/3 ready (ATS + habit tracker exist) |
 | 21 | Product Hunt launch | TODO |
 | 30 | HN "Show HN" with ATS artifact as proof | TODO |
 | 45 | Indie Hackers weekly thread / interview | TODO |
@@ -313,7 +313,7 @@ Reddit + ChatGPT + Notion databases + Google Sheets.
 
 - **Mon:** run collect on next week's topic.
 - **Tue–Wed:** write narrative pulling 2 non-obvious findings from the map.
-- **Thu:** publish gap-map HTML to `gapmap.io/explore/<slug>`, tweet thread.
+- **Thu:** publish openreply-map HTML to `openreply.io/explore/<slug>`, tweet thread.
 - **Fri:** post to 1–2 relevant subs (r/SaaS, r/Entrepreneur, r/UXResearch depending on topic).
 
 ### 7.4 Risks (from roadmap) + mitigations
@@ -323,7 +323,7 @@ Reddit + ChatGPT + Notion databases + Google Sheets.
 | Reddit IP-blocks mass scraping | Local-first → user's IP, no shared ceiling |
 | LLM cost explodes | BYO key by default, hosted tier only for Pro+ |
 | "Just another Reddit scraper" | Differentiate via graph + temporal + 20-source citations |
-| Slow growth (no SEO loop initially) | Public gap-map gallery *is* the SEO loop |
+| Slow growth (no SEO loop initially) | Public openreply-map gallery *is* the SEO loop |
 | Scraping legality (Reddit/App Store ToS) | Happens on user's machine under their ToS, not ours — we ship software, not data |
 
 ---
@@ -337,7 +337,7 @@ From `docs/self-gap-analysis.md` + `docs/mvp-checklist.md` P3:
 - 🔴 **Emergent theme clustering via embeddings** — today the 4-category YAML prompts are rigid. `sentence-transformers` → near-duplicate merging = next UX win.
 - 🔴 **Diff-two-corpora mode** — run today vs last month = trend delta. Temporal classification *across runs* is the natural extension of CHRONIC/EMERGING/FADING.
 - 🔴 **Slack / Gong / Intercom OAuth** — today covered only via file export ingest. Real-time integrations = v2 wedge for research ops ICP.
-- 🔴 **Hosted gap-map gallery at `gapmap.io`** — each user's published map = SEO + social proof. Biggest unrealized loop.
+- 🔴 **Hosted openreply-map gallery at `openreply.io`** — each user's published map = SEO + social proof. Biggest unrealized loop.
 - 🔴 **Scheduled weekly runs + email digest** — "here's what changed in your markets." Foundation for the Team tier.
 - 🔴 **Bundled local LLM via llama.cpp + Gemma** — removes the BYOK friction for non-technical buyers. Tracked in `docs/manual-todo/future-scope-bundled-local-llm.md`.
 - 🔴 **Browser extension** — in-context annotation while browsing Reddit/HN.
@@ -349,10 +349,10 @@ None of these block launch. All are v2+.
 
 ## 9. TL;DR for the founder
 
-- **Product:** local-first Gap Map — 20 sources + temporal classifier + knowledge graph + build-guide Report + 40-tool MCP. CLI free, desktop $49.
+- **Product:** local-first OpenReply — 20 sources + temporal classifier + knowledge graph + build-guide Report + 40-tool MCP. CLI free, desktop $49.
 - **Who to sell to first:** indie founders + PMs via Gumroad + ProductHunt. Then SMB UX-research teams. VCs / consultants last (higher ACV, needs hosted).
-- **How to sell:** weekly public gap-maps as marketing artifacts + OSS MCP as dev funnel + narrative content (Show HN, PH, IH).
-- **What to build next for revenue:** Gumroad license flow (3 days) + `gapmap.io` landing + public gallery v1 (SEO loop) + diff-mode + Slack export parser.
+- **How to sell:** weekly public openreply-maps as marketing artifacts + OSS MCP as dev funnel + narrative content (Show HN, PH, IH).
+- **What to build next for revenue:** Gumroad license flow (3 days) + `openreply.io` landing + public gallery v1 (SEO loop) + diff-mode + Slack export parser.
 - **What NOT to build yet:** SSO, SOC2, enterprise panel tools. Revisit at 1,000 Pro seats.
 
 Biggest risk is *marketing*, not technical — the ATS proof artifact already exists (`data-validate-ats-resume-and-job-search-apps/report-pro.md`, 755 lines, 8,682 posts). Total to revenue from here ≈ 3–4 weeks of focused GTM work.

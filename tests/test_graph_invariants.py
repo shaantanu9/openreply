@@ -2,8 +2,8 @@ import tempfile, importlib
 
 
 def _db(monkeypatch):
-    monkeypatch.setenv("GAPMAP_DATA_DIR", tempfile.mkdtemp())
-    import gapmap.core.db as db; importlib.reload(db); db.get_db(); return db
+    monkeypatch.setenv("OPENREPLY_DATA_DIR", tempfile.mkdtemp())
+    import openreply.core.db as db; importlib.reload(db); db.get_db(); return db
 
 
 def _seed(db, edges, nodes):
@@ -19,7 +19,7 @@ def test_clean_graph_passes(monkeypatch):
     _seed(db, [{"src": "t::topic::x", "dst": "t::painpoint::a", "kind": "has", "topic": "t"}],
           [{"id": "t::topic::x", "topic": "t", "kind": "topic", "label": "x"},
            {"id": "t::painpoint::a", "topic": "t", "kind": "painpoint", "label": "a"}])
-    import gapmap.graph.invariants as inv; importlib.reload(inv)
+    import openreply.graph.invariants as inv; importlib.reload(inv)
     r = inv.check_graph_invariants("t")
     assert r["ok"] is True
     rows = list(db.get_db().query("SELECT * FROM checks_ledger WHERE topic='t' AND gate LIKE 'invariant_%'"))
@@ -32,7 +32,7 @@ def test_cycle_fails(monkeypatch):
                {"src": "b", "dst": "a", "kind": "x", "topic": "t"}],
           [{"id": "a", "topic": "t", "kind": "topic", "label": "a"},
            {"id": "b", "topic": "t", "kind": "painpoint", "label": "b"}])
-    import gapmap.graph.invariants as inv; importlib.reload(inv)
+    import openreply.graph.invariants as inv; importlib.reload(inv)
     r = inv.check_graph_invariants("t")
     assert any(c["invariant"] == "acyclic" and not c["passed"] for c in r["checks"])
 
@@ -40,13 +40,13 @@ def test_cycle_fails(monkeypatch):
 def test_missing_label_fails(monkeypatch):
     db = _db(monkeypatch)
     _seed(db, [], [{"id": "a", "topic": "t", "kind": "topic", "label": ""}])
-    import gapmap.graph.invariants as inv; importlib.reload(inv)
+    import openreply.graph.invariants as inv; importlib.reload(inv)
     r = inv.check_graph_invariants("t")
     assert any(c["invariant"] == "required_fields" and not c["passed"] for c in r["checks"])
 
 
 def test_empty_graph_skips(monkeypatch):
     _db(monkeypatch)
-    import gapmap.graph.invariants as inv; importlib.reload(inv)
+    import openreply.graph.invariants as inv; importlib.reload(inv)
     r = inv.check_graph_invariants("nope")
     assert r.get("ok") is True  # never raises; empty graph is not a failure

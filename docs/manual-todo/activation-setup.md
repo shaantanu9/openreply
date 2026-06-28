@@ -1,11 +1,11 @@
-# Activation flow setup — desktop ↔ gapmap.myind.ai
+# Activation flow setup — desktop ↔ openreply.myind.ai
 
 This file documents the **one-time setup** you (the operator) do once, then
 forget. After that the activation flow works for every new DMG you ship and
 every new user who signs up on the website.
 
-Website lives in https://github.com/shaantanu9/gapmap_web, deployed via
-Vercel at https://gapmap.myind.ai. Desktop ships from this repo as a DMG.
+Website lives in https://github.com/shaantanu9/openreply_web, deployed via
+Vercel at https://openreply.myind.ai. Desktop ships from this repo as a DMG.
 The two communicate via the website's `/v1/device/activate` endpoint and a
 shared HS256 JWT secret.
 
@@ -19,8 +19,8 @@ Desktop (Tauri)                              Website (Vercel)
 POST /v1/device/activate                  → activateLicenseForDevice()
 {email, password, key, sig}                  validates against Supabase
                                           ← signs JWT with TOKEN_SIGNING_SECRET
-                                             (HS256, iss=gapmap-activation-suite,
-                                              aud=gapmap-desktop)
+                                             (HS256, iss=openreply-activation-suite,
+                                              aud=openreply-desktop)
 verifies JWT with JWT_DESKTOP_SECRET
 stores in macOS keychain
 ```
@@ -53,7 +53,7 @@ pre-build guard will refuse to build until server and DMG secrets match.
 
 ### 2. Set Vercel env var
 
-In the Vercel dashboard for project `gapmap_web`:
+In the Vercel dashboard for project `openreply_web`:
 
 - Settings → Environment Variables
 - Add **`TOKEN_SIGNING_SECRET`** with the value from step 1
@@ -62,7 +62,7 @@ In the Vercel dashboard for project `gapmap_web`:
 
 Verify via curl that the deploy is live:
 ```bash
-curl https://gapmap.myind.ai/v1/health    # → {"ok":true}
+curl https://openreply.myind.ai/v1/health    # → {"ok":true}
 ```
 
 ### 3. Keep `.env.publish` matching
@@ -107,15 +107,15 @@ confirm column names; the Supabase service-role key is in
 
 From the desktop DMG (after sourcing `.env.publish` and rebuilding):
 
-1. Open Gap Map.app
+1. Open OpenReply.app
 2. Reach onboarding step 6 ("Activate licence")
-3. **API base** should be pre-filled with `https://gapmap.myind.ai`
+3. **API base** should be pre-filled with `https://openreply.myind.ai`
    (default added 2026-05-25 in `commands.rs::DEFAULT_LICENSE_API_BASE`)
 4. Click "Test server" → green "Server reachable (200)"
 5. Enter email + password + activation key from step 4
 6. Click "Activate & continue"
 7. Status flips green; MCP auto-installs into Claude Code/Cursor/etc.
-8. Restart Claude Code → confirm 147 `gapmap_*` tools available
+8. Restart Claude Code → confirm 147 `openreply_*` tools available
 
 If step 6 errors with "activation token belongs to a different device" or
 "invalid signature" → the secrets are not aligned. Re-run step 2.
@@ -127,8 +127,8 @@ If step 6 errors with "activation token belongs to a different device" or
 | Activation: `invalid signature` | Vercel `TOKEN_SIGNING_SECRET` ≠ local `JWT_DESKTOP_SECRET` | Re-run step 2 with the value from `.env.publish` |
 | Activation: `activation token belongs to a different device` | User activated on Machine A, you're testing on Machine B with the same email; or hostname changed | License is bound to device signature — each machine activates independently |
 | Activation: `activation api base is required` | Onboarding's API base field empty | Should be auto-filled now via `DEFAULT_LICENSE_API_BASE` constant; if still empty, rebuild with the latest commit |
-| `gapmap.myind.ai/v1/health` returns 404 | Vercel redeploy stalled / wrong project | Trigger a manual redeploy in Vercel dashboard |
-| MCP install still asks "not activated" after activation | Token-device fingerprint mismatch (rare) | `gapmap mcp uninstall && gapmap mcp install` after activating again |
+| `openreply.myind.ai/v1/health` returns 404 | Vercel redeploy stalled / wrong project | Trigger a manual redeploy in Vercel dashboard |
+| MCP install still asks "not activated" after activation | Token-device fingerprint mismatch (rare) | `openreply mcp uninstall && openreply mcp install` after activating again |
 
 ## Files of record
 

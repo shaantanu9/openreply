@@ -20,7 +20,7 @@ import uuid
 
 import pytest
 
-from gapmap.core.db import get_db, init_schema
+from openreply.core.db import get_db, init_schema
 
 
 @pytest.fixture(scope="module")
@@ -97,7 +97,7 @@ def _seed_posts(db, topic: str, n: int = 5) -> list[str]:
 # 1. Soft-delete round-trip
 # ───────────────────────────────────────────────────────────────────────
 def test_soft_delete_roundtrip(db, test_topic):
-    from gapmap.research.trash import soft_delete, restore, list_trash
+    from openreply.research.trash import soft_delete, restore, list_trash
     _seed_posts(db, test_topic, n=3)
 
     out = soft_delete(test_topic)
@@ -125,7 +125,7 @@ def test_soft_delete_roundtrip(db, test_topic):
 # 2. Clean-corpus dry-run runs cleanly
 # ───────────────────────────────────────────────────────────────────────
 def test_clean_corpus_dry_run(db, test_topic):
-    from gapmap.research.relevance import filter_topic_posts
+    from openreply.research.relevance import filter_topic_posts
     _seed_posts(db, test_topic, n=5)
 
     # Dry-run — must not touch the DB
@@ -145,7 +145,7 @@ def test_clean_corpus_dry_run(db, test_topic):
 # 3. Saved views CRUD + filter evaluator
 # ───────────────────────────────────────────────────────────────────────
 def test_saved_views_crud(db, test_topic):
-    from gapmap.research.saved_views import create_view, list_views, apply_filter
+    from openreply.research.saved_views import create_view, list_views, apply_filter
     out = create_view(
         scope=f"topic:{test_topic}",
         name="High opportunity",
@@ -170,7 +170,7 @@ def test_saved_views_crud(db, test_topic):
 # 4. Feedback record → prompt injection
 # ───────────────────────────────────────────────────────────────────────
 def test_feedback_roundtrip(db, test_topic):
-    from gapmap.research.feedback import record_feedback, feedback_for_prompt
+    from openreply.research.feedback import record_feedback, feedback_for_prompt
 
     record_feedback(test_topic, "bogus pain", "painpoint", "wrong", "hallucination")
     record_feedback(test_topic, "off-topic pain", "painpoint", "off_topic", "")
@@ -188,7 +188,7 @@ def test_feedback_roundtrip(db, test_topic):
 # 5. Topic resolver find-existing + no auto-register
 # ───────────────────────────────────────────────────────────────────────
 def test_resolver_read_only_by_default(db, test_topic):
-    from gapmap.research.topic_resolver import (
+    from openreply.research.topic_resolver import (
         resolve_topic, find_existing_topic,
     )
     _seed_posts(db, test_topic, n=2)
@@ -208,7 +208,7 @@ def test_resolver_read_only_by_default(db, test_topic):
 # 6. Quality gate diagnostic
 # ───────────────────────────────────────────────────────────────────────
 def test_quality_gate_counts(db, test_topic):
-    from gapmap.research.quality_gate import passes_quality
+    from openreply.research.quality_gate import passes_quality
     _seed_posts(db, test_topic, n=5)
 
     rows = list(db.query(
@@ -231,7 +231,7 @@ def test_quality_gate_counts(db, test_topic):
 # ───────────────────────────────────────────────────────────────────────
 def test_dense_relations_graceful(db, test_topic):
     """Smoke-test: relations builder either runs or gracefully skips."""
-    from gapmap.graph.relations import build_semantic_relations
+    from openreply.graph.relations import build_semantic_relations
     # No semantic nodes yet → should skip cleanly
     out = build_semantic_relations(test_topic)
     assert out.get("ok"), f"relations returned not-ok: {out}"
@@ -243,7 +243,7 @@ def test_dense_relations_graceful(db, test_topic):
 # 8. Prompt store override roundtrip (key isolated)
 # ───────────────────────────────────────────────────────────────────────
 def test_prompt_override_e2e():
-    from gapmap.research.prompt_store import get_prompt, set_prompt
+    from openreply.research.prompt_store import get_prompt, set_prompt
     key = f"_e2e_{uuid.uuid4().hex[:8]}"
     try:
         def default_loader():
@@ -275,7 +275,7 @@ def test_prompt_override_e2e():
 # 9. Product-Mode CRUD sanity
 # ───────────────────────────────────────────────────────────────────────
 def test_product_create_list_delete():
-    from gapmap.research.product import (
+    from openreply.research.product import (
         create_product, list_products, delete_product, get_product,
     )
     name = f"E2EProd_{uuid.uuid4().hex[:6]}"

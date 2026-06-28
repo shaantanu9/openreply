@@ -17,7 +17,7 @@ These were caused by a mix of route remount races, stale listener writes, and un
 ## Root Causes
 
 1. **Route remount while inside topic page**
-   - Global `gapmap:changed` handler in `app-tauri/src/main.js` called `route()` for topic-relevant mutations.
+   - Global `openreply:changed` handler in `app-tauri/src/main.js` called `route()` for topic-relevant mutations.
    - That remounted `#/topic/...` and reset tab state to default (`Home`), making `Map` appear to "not click".
 
 2. **Collect screen stale instance writes**
@@ -38,7 +38,7 @@ These were caused by a mix of route remount races, stale listener writes, and un
 
 File: `app-tauri/src/main.js`
 
-- In the `gapmap:changed` reactive handler:
+- In the `openreply:changed` reactive handler:
   - skip `route()` when current route is `#/collect/...` (already done)
   - **also skip `route()` when current route is `#/topic/...`**
 - Topic screen now owns in-place refresh without being remounted by the global router.
@@ -48,7 +48,7 @@ File: `app-tauri/src/main.js`
 File: `app-tauri/src/screens/topic.js`
 
 - Added per-topic session key:
-  - `gapmap.topic.tab.<topic>`
+  - `openreply.topic.tab.<topic>`
 - On `switchTab(name)`, store selected tab in `sessionStorage`.
 - On render, restore remembered tab first; only use intent preset default when no remembered tab exists.
 
@@ -99,7 +99,7 @@ Additional hardening done during the same session:
 
 - Rust Tauri runtime now reads dotenv files on startup.
 - `app-tauri/.env` normalized to dotenv format (`KEY=value`) instead of shell `export`.
-- License API base can come from env (`GAPMAP_LICENSE_API_BASE` or `LICENSE_API_BASE`) and onboarding pre-fills from it.
+- License API base can come from env (`OPENREPLY_LICENSE_API_BASE` or `LICENSE_API_BASE`) and onboarding pre-fills from it.
 
 ## Validation Checklist
 

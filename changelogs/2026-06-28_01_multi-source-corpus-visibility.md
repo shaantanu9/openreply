@@ -45,13 +45,13 @@ can be filtered by source.
 
 ## Files Created
 
-- `src/gapmap/reply/library.py`
+- `src/openreply/reply/library.py`
 - `changelogs/2026-06-28_01_multi-source-corpus-visibility.md`
 
 ## Files Modified
 
-- `src/gapmap/reply/agent.py`, `src/gapmap/reply/opportunity.py`,
-  `src/gapmap/cli/agent_cmds.py`, `src/gapmap/cli/reply_cmds.py`,
+- `src/openreply/reply/agent.py`, `src/openreply/reply/opportunity.py`,
+  `src/openreply/cli/agent_cmds.py`, `src/openreply/cli/reply_cmds.py`,
   `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`,
   `app-tauri/src/or/api.js`, `app-tauri/src/or/dynamic.js`,
   `app-tauri/src/or/shell.js`

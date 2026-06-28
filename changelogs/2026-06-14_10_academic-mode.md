@@ -9,7 +9,7 @@ Added an **Academic Mode** capability that turns a topic into a grounded, cited
 research brief through a four-stage pipeline — research → synthesize →
 [grounding gate] → peer_review → finalize — surfaced across the CLI, MCP, and a
 new desktop tab. It is a clean-room reimplementation (idiomatic Python/Tauri) of
-the WhyBuddy "Academic Mode" MVP idea, composing Gap Map's existing paper
+the WhyBuddy "Academic Mode" MVP idea, composing OpenReply's existing paper
 pipeline, deliberation engine, and lineage/checks traceability rather than
 rebuilding them. The one new invariant: **finalize may cite only academic papers
 actually committed to the corpus, and hard-blocks when fewer than 2 are
@@ -18,17 +18,17 @@ gated (pause for approval), L3 auto (default).
 
 ## Changes
 
-- **Orchestrator** `src/gapmap/research/academic_mode.py` — `run_academic_brief(...)`
+- **Orchestrator** `src/openreply/research/academic_mode.py` — `run_academic_brief(...)`
   chains the four stages, records a `check` + `lineage` row per stage, enforces
   the grounding hard-block, and folds peer-review dissent into an "Acknowledged
   Limitations" section. `get_academic_brief(topic)` reads the latest brief.
 - **Persistence** — new `academic_briefs` table in `core/db.py::init_schema`
   + `record_academic_brief()` / `get_academic_brief()` helpers (exported in
   `__all__`).
-- **CLI** — `gapmap research academic` (with `--level/--approved/--rounds/
-  --dynamic-roles/--style/--format/--stream`) and `gapmap research academic-get`.
-- **MCP** — `gapmap_academic_brief` (timeout-guarded) and
-  `gapmap_academic_brief_get`.
+- **CLI** — `openreply research academic` (with `--level/--approved/--rounds/
+  --dynamic-roles/--style/--format/--stream`) and `openreply research academic-get`.
+- **MCP** — `openreply_academic_brief` (timeout-guarded) and
+  `openreply_academic_brief_get`.
 - **Tauri** — Rust `academic_brief_run`, `academic_brief_run_stream` (NDJSON
   `academic:progress`/`academic:done`), `academic_brief_get`; registered in
   `main.rs`; `api.js` bindings (`academicBriefRun(Stream)`, `academicBriefGet`,
@@ -44,7 +44,7 @@ gated (pause for approval), L3 auto (default).
 
 ## Files Created
 
-- `src/gapmap/research/academic_mode.py`
+- `src/openreply/research/academic_mode.py`
 - `tests/test_academic_mode.py`
 - `app-tauri/src/screens/academic.js`
 - `app-tauri/src/screens/academic.test.mjs`
@@ -53,9 +53,9 @@ gated (pause for approval), L3 auto (default).
 
 ## Files Modified
 
-- `src/gapmap/core/db.py` — `academic_briefs` table + record/get helpers + `__all__`.
-- `src/gapmap/cli/main.py` — `academic` + `academic-get` commands (with `--stream`).
-- `src/gapmap/mcp/server.py` — `gapmap_academic_brief` + `gapmap_academic_brief_get`.
+- `src/openreply/core/db.py` — `academic_briefs` table + record/get helpers + `__all__`.
+- `src/openreply/cli/main.py` — `academic` + `academic-get` commands (with `--stream`).
+- `src/openreply/mcp/server.py` — `openreply_academic_brief` + `openreply_academic_brief_get`.
 - `app-tauri/src-tauri/src/commands.rs` — three academic commands.
 - `app-tauri/src-tauri/src/main.rs` — handler registration.
 - `app-tauri/src/api.js` — academic bindings + events.

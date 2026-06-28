@@ -1,4 +1,4 @@
-# Gap Map viewer — MVP design
+# OpenReply viewer — MVP design
 
 **Date:** 2026-04-19
 **Status:** Approved, ready for implementation planning
@@ -8,7 +8,7 @@
 
 Make the Map tab — the product's core output — ship-ready for MVP. Three tightly-coupled problems live in this one slice:
 
-1. The embedded gap-map viewer renders in a dark theme that clashes with the app's light/cream theme.
+1. The embedded openreply-map viewer renders in a dark theme that clashes with the app's light/cream theme.
 2. The viewer leaks its implementation — file path and `.html` filename are shown to users.
 3. Enrichment fails with `OPENAI_API_KEY not set` even when the user has configured OpenRouter + `openai/gpt-4o`. Result: 1,212 collected posts produce 0 findings.
 
@@ -111,7 +111,7 @@ Apply the tauri-python-sidecar-app skill's Phase 4 pattern end-to-end:
 
 ### Before (topic.js lines 177, 185–197)
 
-- `#topic-sub` gets the absolute `outPath` as text — leaks `/Users/<name>/Library/Application Support/…/gap-map-<topic>.html`.
+- `#topic-sub` gets the absolute `outPath` as text — leaks `/Users/<name>/Library/Application Support/…/openreply-map-<topic>.html`.
 - First toolbar chip shows `outPath.split('/').pop()` — i.e. the `.html` filename.
 
 ### After
@@ -132,7 +132,7 @@ Apply the tauri-python-sidecar-app skill's Phase 4 pattern end-to-end:
 
 1. **Python — provider fix.** Edit `enrich_from_llm` to call `resolve_provider(provider)` and stop any slashed-model misparse. Confirm `research/gaps.py` resolution path is clean. Confirm `analyze/providers/openai.py` is only constructed when resolved provider is literally `"openai"`.
 2. **Python — integration test.** Add `test_enrich_uses_openrouter_when_configured` to `tests/test_integration.py`. Run the suite.
-3. **Python — viewer theme.** Refactor the embedded `<style>` block in `export_graph_html` to declare `--v-*` CSS variables and swap the palette to the app tokens mapped in §2. Add colored-accent treatment to finding sections. Visual diff: export → open `gap-map-<topic>.html` → compare to screenshot reference.
+3. **Python — viewer theme.** Refactor the embedded `<style>` block in `export_graph_html` to declare `--v-*` CSS variables and swap the palette to the app tokens mapped in §2. Add colored-accent treatment to finding sections. Visual diff: export → open `openreply-map-<topic>.html` → compare to screenshot reference.
 4. **Sidecar rebuild (optional for dev verification — required before DMG).** `pyinstaller reddit-cli.spec` → `cp dist/reddit-cli app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin` → `codesign --force --deep --sign -`. Per skill Phase 2, `npm run tauri dev` uses `.venv/bin/python` and reads the Python source directly — the bundled binary is NOT required to verify the fix in dev. Rebuild before any production build or DMG export.
 5. **Frontend — topic.js.** Replace `#topic-sub` path with summary line. Replace filename chip with counter chips. Relabel "Open externally" → "Open in browser".
 6. **Skill update.** Append the openrouter slashed-model bug to the Gotchas table in `~/.claude/skills/tauri-python-sidecar-app/SKILL.md` (per CLAUDE.md skill-evolution rule).

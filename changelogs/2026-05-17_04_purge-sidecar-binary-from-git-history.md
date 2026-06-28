@@ -29,7 +29,7 @@ rewrite (it is now an untracked, gitignored file).
 - Added `app-tauri/src-tauri/binaries/reddit-cli-*` and `ffmpeg-*` to `.gitignore`.
 - Removed `.gitattributes` (its only entry was the now-obsolete LFS filter for `reddit-cli-*`).
 - Rewrote `app-tauri/src-tauri/binaries/README.md` to document that **both** sidecar binaries are build artifacts, not committed, with local build commands.
-- Full pre-rewrite backup bundle written to `/tmp/gapmap-prefilter-backup-*.bundle` (all refs + stash).
+- Full pre-rewrite backup bundle written to `/tmp/openreply-prefilter-backup-*.bundle` (all refs + stash).
 
 ## Files Created
 

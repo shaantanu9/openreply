@@ -5,7 +5,7 @@
 
 ## Summary
 
-Added `src/gapmap/sources/_cookie_extract.py`, a stdlib-only helper that
+Added `src/openreply/sources/_cookie_extract.py`, a stdlib-only helper that
 extracts X/Twitter `auth_token` + `ct0` cookies from local browser stores
 (Chrome, Brave, Firefox, Safari). All failures are non-fatal by design — a
 locked database, missing permissions, or uninstalled browser returns `{}`/`None`
@@ -27,7 +27,7 @@ logged into x.com in any supported browser.
 
 ## Files Created
 
-- `src/gapmap/sources/_cookie_extract.py` — implementation (~280 lines, stdlib only)
+- `src/openreply/sources/_cookie_extract.py` — implementation (~280 lines, stdlib only)
 - `tests/test_cookie_extract.py` — 3 tests, all passing
 
 ## Files Modified

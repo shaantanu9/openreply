@@ -179,8 +179,8 @@ Implement strict tier gating in activation-suite API so free users always stay p
 Update publish behavior so metadata reflects tier:
 
 1) In publish route, set poweredBy:
-   - "Gap Map Community" for free
-   - "Gap Map Pro" for paid
+   - "OpenReply Community" for free
+   - "OpenReply Pro" for paid
 2) Ensure publish can auto-flip private->public when user explicitly publishes.
 3) Ensure explore feed only includes published/public snapshots.
 4) Add tests for both free and paid publish paths.

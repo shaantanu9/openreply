@@ -26,12 +26,12 @@ saved selection of the topic the user originally tweaked.
   - New `_persistPickerSelection()` helper extracted from the inline
     block in `#src-pick-go`. Writes the same three localStorage keys
     (`last_aggressive`, `last_sources`, `last_skip_reddit`) AND a new
-    per-topic key `gapmap.topic.sources.${topic}` with `{checked,
+    per-topic key `openreply.topic.sources.${topic}` with `{checked,
     aggressive, ts}`. Returns null when nothing is checked.
   - New `#src-pick-save` button between Cancel and Run. On click: calls
     `_persistPickerSelection`, closes the modal, fires a toast confirming
     the save count. No navigation, no fetch.
-  - Picker open now reads `gapmap.topic.sources.${topic}` first; if
+  - Picker open now reads `openreply.topic.sources.${topic}` first; if
     present, uses that as the initial checked-set (still unioned with
     detected existing sources so a prior collect's contributions don't
     drop). Saved aggressive flag also restores.

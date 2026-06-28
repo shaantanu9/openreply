@@ -3,7 +3,7 @@ import { SiteShell } from "@/components/shell/SiteShell";
 import { WorkspaceDetailPanel } from "@/components/workspaces/WorkspaceDetailPanel";
 
 export const metadata: Metadata = {
-  title: "Gap Map — Workspace",
+  title: "OpenReply — Workspace",
 };
 
 export const dynamic = "force-dynamic";

@@ -6,7 +6,7 @@ alone" confirmations + optional hardening. No code changes needed.
 ## How it works (so you know what NOT to break)
 
 - Every "Download" button → `/api/download`.
-- That route calls the GitHub Releases API for **`myind-ai/gapmap`**, finds the
+- That route calls the GitHub Releases API for **`myind-ai/openreply`**, finds the
   **latest** release, picks the right asset for the visitor's OS, and 302-redirects.
 - Asset matching is by filename suffix (stable across versions):
   - `mac-arm` → `…macOS-Apple-Silicon.dmg`
@@ -20,7 +20,7 @@ alone" confirmations + optional hardening. No code changes needed.
 - [x] **`NEXT_PUBLIC_APP_DOWNLOAD_URL` is BLANK** in `.env` and in Vercel.
       → If you set it to a single URL, every download becomes that one fixed
       file/version for everyone. Keep it empty so the per-device "latest" logic runs.
-- [x] **The `myind-ai/gapmap` repo's Releases are public.** (Repo can stay
+- [x] **The `myind-ai/openreply` repo's Releases are public.** (Repo can stay
       private; only the *Releases* + their assets need to be downloadable. They are —
       the site fetches them with no auth.)
 - [x] **The latest release is published, not a Draft or Pre-release.** GitHub's

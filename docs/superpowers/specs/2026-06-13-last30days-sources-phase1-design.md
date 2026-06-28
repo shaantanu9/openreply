@@ -1,4 +1,4 @@
-# Phase 1 — Port last30days source layer into Gap Map (reddit-myind)
+# Phase 1 — Port last30days source layer into OpenReply (reddit-myind)
 
 **Date:** 2026-06-13
 **Status:** Design approved, pending spec review
@@ -8,11 +8,11 @@
 ## Background
 
 `last30days` is a multi-source social-research engine scored by engagement.
-Gap Map already has ~50 source adapters and an MCP/collect pipeline, so most of
+OpenReply already has ~50 source adapters and an MCP/collect pipeline, so most of
 `last30days` would duplicate existing capability. This is the first of three
-phases that bring its *unique* value into Gap Map:
+phases that bring its *unique* value into OpenReply:
 
-- **Phase 1 (this spec):** add the 8 source families Gap Map lacks, wired into
+- **Phase 1 (this spec):** add the 8 source families OpenReply lacks, wired into
   the existing `collect` + MCP pipeline, key-gated, configurable from both
   `.env` and the frontend Settings BYOK modal, and gracefully skipped when a
   key/binary is absent.
@@ -25,7 +25,7 @@ This spec covers **Phase 1 only**.
 
 ## Goal
 
-Add these sources as native Gap Map adapters (rewritten to Gap Map conventions,
+Add these sources as native OpenReply adapters (rewritten to OpenReply conventions,
 behavior ported from the cited `last30days` modules — not vendored):
 
 | Source | Auth / key | Cost | last30days reference |
@@ -62,10 +62,10 @@ If none resolve, `fetch_x` returns `[{"_error": "no X backend available — set 
 
 ## Architecture & conventions
 
-Every adapter follows the existing Gap Map source contract (confirmed against
+Every adapter follows the existing OpenReply source contract (confirmed against
 `sources/producthunt.py`, `sources/_http.py`, `sources/collect_adapter.py`):
 
-1. **Module:** `src/gapmap/sources/<name>.py` exposing `fetch_<name>(query,
+1. **Module:** `src/openreply/sources/<name>.py` exposing `fetch_<name>(query,
    limit)` (X uses `fetch_x`). Pure-httpx sources use `sources/_http.py`
    helpers (`polite_get`, `USER_AGENT`, `DEFAULT_TIMEOUT`).
 2. **Output:** the common posts-row dict — `id, sub, source_type, author,
@@ -78,7 +78,7 @@ Every adapter follows the existing Gap Map source contract (confirmed against
    pattern; register it in the `SOURCES` dict. Export `fetch_<name>` from
    `sources/__init__.py`.
 5. **Vendoring (X/bird only):** copy the MIT-licensed `bird-search` Node client
-   into `src/gapmap/sources/vendor/bird-search/`, preserving its `package.json`
+   into `src/openreply/sources/vendor/bird-search/`, preserving its `package.json`
    + LICENSE. This is the one non-Python dependency; it self-skips when Node is
    absent.
 
@@ -122,7 +122,7 @@ none.)
 
 ## UI source picker
 
-All 8 must appear in the collect source picker (Gap Map has hidden sources
+All 8 must appear in the collect source picker (OpenReply has hidden sources
 before — e.g. Steam/Bluesky were registered but not surfaced). Add the new
 `source_type` values to: the picker list, `source_families.py` display labels,
 and the JS-side source label/`postLink.js` map where applicable.
@@ -157,7 +157,7 @@ merge, recency-brief UI, ELI5, shareable HTML. Those are Phases 2 & 3.
   aren't surprise-billed.
 - **TruthSocial / X token longevity:** browser-derived tokens expire; the
   `_error` message tells the user how to refresh. No silent stale-token hangs
-  (honor existing per-source timeout budget `GAPMAP_SOURCE_TIMEOUT_SEC`).
+  (honor existing per-source timeout budget `OPENREPLY_SOURCE_TIMEOUT_SEC`).
 - **Cookie extraction & OS permissions:** Safari cookie DB may require Full Disk
   Access; extraction failure is non-fatal (falls through to key-based backends).
 

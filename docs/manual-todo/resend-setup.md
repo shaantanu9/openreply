@@ -22,7 +22,7 @@ This runbook is the operator side of the
 
 In Resend dashboard → **Domains** → **Add Domain**:
 
-- [ ] Domain: `gapmap.myind.ai`
+- [ ] Domain: `openreply.myind.ai`
 - [ ] Region: closest to your users (US East is fine)
 - [ ] Click **Add**
 
@@ -31,10 +31,10 @@ Resend will show 4 DNS records. Copy them into your DNS provider
 
 | Type | Name | Content |
 |---|---|---|
-| MX | `send.gapmap.myind.ai` | `feedback-smtp.us-east-1.amazonses.com` priority 10 |
-| TXT | `send.gapmap.myind.ai` | `v=spf1 include:amazonses.com ~all` |
-| TXT | `resend._domainkey.gapmap.myind.ai` | (long DKIM key — copy verbatim, one line) |
-| TXT | `_dmarc.gapmap.myind.ai` | `v=DMARC1; p=none;` |
+| MX | `send.openreply.myind.ai` | `feedback-smtp.us-east-1.amazonses.com` priority 10 |
+| TXT | `send.openreply.myind.ai` | `v=spf1 include:amazonses.com ~all` |
+| TXT | `resend._domainkey.openreply.myind.ai` | (long DKIM key — copy verbatim, one line) |
+| TXT | `_dmarc.openreply.myind.ai` | `v=DMARC1; p=none;` |
 
 ⚠️ **DO NOT skip DMARC.** Without it, Gmail/Apple Mail demote you to
 Promotions even with valid SPF+DKIM.
@@ -52,10 +52,10 @@ UI sometimes wraps it; that breaks the signature.
 
 In Resend → **API Keys** → **Create API Key**:
 
-- [ ] Name: `Gap Map Supabase SMTP`
-- [ ] Permission: **Sending access** → restrict to `gapmap.myind.ai`
+- [ ] Name: `OpenReply Supabase SMTP`
+- [ ] Permission: **Sending access** → restrict to `openreply.myind.ai`
 - [ ] **Copy the key immediately** (`re_…`) — Resend shows it once only
-- [ ] Save it in 1Password as `Gap Map / Resend SMTP`
+- [ ] Save it in 1Password as `OpenReply / Resend SMTP`
 
 ## Push step — ME (or you with one command)
 
@@ -65,12 +65,12 @@ SUPABASE_PAT="$(grep ^PAT_TOKEN .env.publish | cut -d= -f2)" \
   python3 supabase/email_templates/_smtp_resend.py
 ```
 
-That file lives in the website repo (`shaantanu9/gapmap_web`). To run it from
+That file lives in the website repo (`shaantanu9/openreply_web`). To run it from
 this main repo:
 
 ```bash
-cd /tmp && gh repo clone shaantanu9/gapmap_web /tmp/gapmap_web_resend 2>/dev/null
-cd /tmp/gapmap_web_resend
+cd /tmp && gh repo clone shaantanu9/openreply_web /tmp/openreply_web_resend 2>/dev/null
+cd /tmp/openreply_web_resend
 RESEND_API_KEY='re_…' SUPABASE_PAT="$(grep ^PAT_TOKEN $OLDPWD/.env.publish | cut -d= -f2)" \
   python3 supabase/email_templates/_smtp_resend.py
 ```
@@ -79,7 +79,7 @@ Expected output:
 ```
 OK status=200
   host=smtp.resend.com:465  user=resend
-  from='Gap Map <auth@gapmap.myind.ai>'
+  from='OpenReply <auth@openreply.myind.ai>'
   rate_limit_email_sent=30/hr
 ```
 
@@ -99,9 +99,9 @@ curl -X POST "https://${PROJECT_REF}.supabase.co/auth/v1/recover" \
 
 Verify in inbox:
 - [ ] Lands in **Inbox** (not Promotions or Spam)
-- [ ] From: `Gap Map <auth@gapmap.myind.ai>`
+- [ ] From: `OpenReply <auth@openreply.myind.ai>`
 - [ ] Subject + body look right (branded — not the default Supabase blob)
-- [ ] The CTA in the email opens https://gapmap.myind.ai/auth/v1/verify... and
+- [ ] The CTA in the email opens https://openreply.myind.ai/auth/v1/verify... and
       redirects back
 
 If it lands in Promotions:
@@ -153,7 +153,7 @@ server-side SMTP swap, invisible to clients.
 
 ## Multi-app extension (for later)
 
-Once Gap Map is on Resend, you can add other apps under the same Resend
+Once OpenReply is on Resend, you can add other apps under the same Resend
 account. Each app verifies its own subdomain (e.g. `unmute.myind.ai`) and
 gets its own API key + DKIM. One DMARC record at the apex
 (`_dmarc.myind.ai`) applies to all. Free-tier 3k/mo is shared across all

@@ -6,7 +6,7 @@
 ## Summary
 
 The first time a user opens any page — a top-level route **or** a topic-detail
-tab — Gap Map now auto-runs a short **spotlight tour** demoing what the page does
+tab — OpenReply now auto-runs a short **spotlight tour** demoing what the page does
 and its key actions. Coverage is universal: ~10 core pages get hand-authored
 multi-step tours; every other page auto-generates a tour from the existing
 backend page-explanations (`api.pageExplanationGet`). Pressing **`?`** opens the
@@ -42,7 +42,7 @@ spotlight engine, the eye-icon help popover, the `route()` dispatcher, and
   routes to `runPageTour(currentPageKey())`, so it works on every page (not just
   the 3 legacy mini-tours).
 - **`screens/settings.js`** — "Auto-show page tours" toggle
-  (`gapmap.pref.auto_tours`) + "Reset page tours" button in the Onboarding & help
+  (`openreply.pref.auto_tours`) + "Reset page tours" button in the Onboarding & help
   card.
 - **`style.css`** — `.shortcuts-tour-cta` styles for the modal CTA row.
 
@@ -65,8 +65,8 @@ spotlight engine, the eye-icon help popover, the `route()` dispatcher, and
 
 ## Persistence / keys
 
-- `gapmap.tour.page.<key>.done` — per-page seen flag (engine-managed).
-- `gapmap.pref.auto_tours` — `'false'` disables auto-run (default on).
+- `openreply.tour.page.<key>.done` — per-page seen flag (engine-managed).
+- `openreply.pref.auto_tours` — `'false'` disables auto-run (default on).
 
 ## Verification
 

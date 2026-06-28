@@ -37,7 +37,7 @@ synthesize → debate → audit), with the next stage shown as running.
 
 ## Files Modified
 
-- `src/gapmap/cli/main.py` — `fleet-run --stream` NDJSON mode.
+- `src/openreply/cli/main.py` — `fleet-run --stream` NDJSON mode.
 - `app-tauri/src-tauri/src/commands.rs` · `main.rs` — `fleet_run_stream` command.
 - `app-tauri/src/api.js` — `fleetRunStream` + `onFleetProgress` / `onFleetDone`.
 - `app-tauri/src/screens/fleetFlow.js` — live streaming `_run` + defensive parse.

@@ -1,4 +1,4 @@
-# Gap Map — monetization + sales strategy
+# OpenReply — monetization + sales strategy
 
 **Date:** 2026-04-20
 **Status:** Opinion doc. Not a commitment. Decisions here direct which features get built first.
@@ -14,7 +14,7 @@ The agent-layer vision (`2026-04-20-product-vision-agents.md`) helps monetizatio
 
 ## Why agents help monetization
 
-Today Gap Map gives users **data** (gap maps, sentiment cards, painpoint lists). Data is nice-to-have.
+Today OpenReply gives users **data** (gap maps, sentiment cards, painpoint lists). Data is nice-to-have.
 
 Agents give users **artifacts** (concept briefs, feature specs, roadmaps). Artifacts = concrete value = something to show a client / send to leadership / add to a pitch deck = willingness to pay.
 
@@ -92,8 +92,8 @@ Don't build the full 8-agent vision speculatively. Ship this first:
 
 ## Skip all of this if
 
-- You're happy with Gap Map as a **personal tool** (research for your own projects only)
-- You're willing to run a **paid consulting service** that uses Gap Map as an internal tool
+- You're happy with OpenReply as a **personal tool** (research for your own projects only)
+- You're willing to run a **paid consulting service** that uses OpenReply as an internal tool
 - You're optimizing for **portfolio / OSS contributions** not revenue
 
 Those are all valid outcomes. Monetization only makes sense if you actually want the revenue.

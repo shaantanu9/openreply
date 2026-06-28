@@ -14,8 +14,8 @@ After the historical-crash fix, an aggressive `--skip-reddit` collect still tagg
    - **Pre-warm** the embedder once on the main thread in `collect()` before any parallel pool starts (warms in ~1.1 s; verified in logs).
 
 2. **Pool budget was a total wall-clock ceiling, not per-source.** `as_completed(ext_futures, timeout=90)` gives the WHOLE ~18-source pool 90 s; slow providers pinned workers and the valuable consumer sources (HN, App Store, Google News) were killed before persisting.
-   - Raised default `GAPMAP_SOURCE_TIMEOUT_SEC` 90 → **240** s.
-   - Raised external-pool width 6 → **10** workers (new env `GAPMAP_PARALLEL_SOURCES`), since these are I/O-bound.
+   - Raised default `OPENREPLY_SOURCE_TIMEOUT_SEC` 90 → **240** s.
+   - Raised external-pool width 6 → **10** workers (new env `OPENREPLY_PARALLEL_SOURCES`), since these are I/O-bound.
    - Trimmed `run_playstore` default `reviews_per_app` 100 → **50** (the google-play scraper paginates ~1.4 s/review; 5×100 ran ~11 min and pinned a worker).
 
 3. **`.env` parse noise.** Commented the free-text vision line in the root `.env` so `python-dotenv` stops emitting "could not parse statement" on every sidecar spawn.
@@ -26,9 +26,9 @@ Same command (`research collect --topic "Brainwave meditation app…" --aggressi
 
 ## Files Modified
 
-- `src/gapmap/retrieval/embedder.py` — `_EF_LOCK` + double-checked locking in `get_embedding_function`.
-- `src/gapmap/research/collect.py` — pre-warm embedder before pools; `_PARALLEL_SOURCES` 6→10 (env-tunable); `GAPMAP_SOURCE_TIMEOUT_SEC` default 90→240.
-- `src/gapmap/sources/collect_adapter.py` — `run_playstore` `reviews_per_app` 100→50.
+- `src/openreply/retrieval/embedder.py` — `_EF_LOCK` + double-checked locking in `get_embedding_function`.
+- `src/openreply/research/collect.py` — pre-warm embedder before pools; `_PARALLEL_SOURCES` 6→10 (env-tunable); `OPENREPLY_SOURCE_TIMEOUT_SEC` default 90→240.
+- `src/openreply/sources/collect_adapter.py` — `run_playstore` `reviews_per_app` 100→50.
 - `.env` — commented the prose vision line.
 
 ## Known follow-up (P2)

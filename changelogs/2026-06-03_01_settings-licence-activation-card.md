@@ -32,7 +32,7 @@ or sign the licence out — all after onboarding.
 - **Not-activated / expired / revoked** users get the activation form (API base,
   email, password, key) → `license_activate`, plus *Test server*
   (`license_server_check`), *Get a key — sign up*, and *Redeem a coupon* links.
-- On successful activation it sets the `gapmap.license.*` localStorage keys the
+- On successful activation it sets the `openreply.license.*` localStorage keys the
   boot gate reads and best-effort bootstraps MCP clients, then re-renders.
 - The dev/local server base is resolved via `license_default_api_base` so a dev
   build can activate against a local server instead of hardcoding prod.

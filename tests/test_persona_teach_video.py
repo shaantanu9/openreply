@@ -5,7 +5,7 @@ Both converge on the same upsert_posts → _tag_posts → ingest_persona tail, s
 persona memory + the mirofish (per-persona ChromaDB) learning are identical
 regardless of source. See docs/superpowers/specs/2026-05-31-persona-video-teach-design.md
 """
-import gapmap.persona.teach as T
+import openreply.persona.teach as T
 
 
 # ── URL parsing + routing ────────────────────────────────────────────────

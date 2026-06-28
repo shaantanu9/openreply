@@ -36,12 +36,12 @@ bug will reappear if any future source adopts subtype tagging
 - `app-tauri/src/screens/science.js`
 - `app-tauri/src/lib/tabPipelines.js`
 - `app-tauri/src/api.js`
-- `src/gapmap/research/search_all.py`
-- `src/gapmap/research/collect.py`
-- `src/gapmap/research/ingest.py`
-- `src/gapmap/research/paper_fulltext.py`
-- `src/gapmap/research/gap_discovery.py`
-- `src/gapmap/research/empathy.py`
+- `src/openreply/research/search_all.py`
+- `src/openreply/research/collect.py`
+- `src/openreply/research/ingest.py`
+- `src/openreply/research/paper_fulltext.py`
+- `src/openreply/research/gap_discovery.py`
+- `src/openreply/research/empathy.py`
 
 **Approach:** import the existing helper at each site. JS:
 `import { normalizedSource, YT_FAMILY } from '../lib/postLink.js'`.
@@ -107,13 +107,13 @@ rather than a single-flight serializer for everything.
 ### 5. Per-screen incremental DOM updates instead of full remounts
 
 **Why:** Flagged in `changelogs/2026-05-28_08_app-stops-refreshing.md`
-as out of scope. The `gapmap:db-changed` listener currently full-remounts
+as out of scope. The `openreply:db-changed` listener currently full-remounts
 list-of-everything screens (topics list, posts list, findings list)
 when SQL data changes. A debounce + skip-list combo dramatically
 reduced user-visible churn, but the remount on Activity / Find /
 Search / Database tabs still feels heavy.
 
-**Fix:** opt-in `gapmap:data-update` handler per screen that appends
+**Fix:** opt-in `openreply:data-update` handler per screen that appends
 new rows / cards and updates counts in place. Out of scope until
 someone takes the full pass through all list screens.
 
@@ -208,7 +208,7 @@ the actual app window on the test device:
   description` labels.
 - [ ] **Hard-reset Danger Zone**
   (`_10_app-hard-reset-danger-zone.md`). Typed-DELETE flow wipes
-  data_dir + `.config/gapmap/.env` + localStorage and relaunches into
+  data_dir + `.config/openreply/.env` + localStorage and relaunches into
   fresh welcome wizard.
 - [ ] **Daemon lock timeout** (`_06_daemon-lock-timeout-fallback.md`).
   Run a long LLM job, switch to Settings — cards should refresh

@@ -30,7 +30,7 @@ rejects every JWT the server issues with `invalid signature`.
 cd app-tauri
 set -a ; source ../act_suit/activation-suite/.env ; set +a
 export JWT_DESKTOP_SECRET="$TOKEN_SIGNING_SECRET"
-export GAPMAP_LICENSE_API_BASE="http://127.0.0.1:3007"
+export OPENREPLY_LICENSE_API_BASE="http://127.0.0.1:3007"
 npm run tauri dev > /tmp/tauri-dev.log 2>&1 &
 ```
 
@@ -42,7 +42,7 @@ The dev file watcher will also rebuild after env changes; that's normal.
 ```bash
 set -a ; source act_suit/activation-suite/.env ; set +a
 BASE=http://127.0.0.1:3007
-EMAIL="desktop-test+$(date +%s)@gapmap-dev.local"
+EMAIL="desktop-test+$(date +%s)@openreply-dev.local"
 PASS="DesktopTest_$(date +%s)_pw"
 
 # Create confirmed Supabase user via admin API
@@ -83,7 +83,7 @@ final step (Step 6 — Activation):
 
 Click **Activate**. The desktop POSTs to the local Next.js which writes a
 `license_devices` row in Supabase and returns a JWT. That JWT is written to
-`~/Library/Application Support/com.shantanu.gapmap/license_state.json` and
+`~/Library/Application Support/com.shantanu.openreply/license_state.json` and
 the main dashboard unlocks.
 
 ## 5. Verify the activation landed on Supabase
@@ -99,12 +99,12 @@ curl -s -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
 Expected: the most recent row has `os=macos`, `arch=aarch64` (or x86_64),
 and `activated_at` within the last few minutes.
 
-## 6. Two-DB architecture reminder (per `gapmap-dual-app-spec.md`)
+## 6. Two-DB architecture reminder (per `openreply-dual-app-spec.md`)
 
 | App | Licence data | Research data |
 |---|---|---|
 | Next.js (Community) | Supabase `licenses`, `license_devices`, `byok_keys` | Supabase `workspaces`, `posts`, `insights`, `sweeps`, `published_research` |
-| Tauri (Pro) | Reads/writes Supabase **only** at activate / deactivate / validate | Local SQLite at `~/Library/Application Support/com.shantanu.gapmap/reddit.db` |
+| Tauri (Pro) | Reads/writes Supabase **only** at activate / deactivate / validate | Local SQLite at `~/Library/Application Support/com.shantanu.openreply/reddit.db` |
 
 Workspaces created on the web **do not** show in the Tauri app, and
 Tauri topics/posts **do not** show on the web. This is the spec's
@@ -116,7 +116,7 @@ new `StorageBackend::Supabase` variant in the Tauri core engine).
 ```bash
 pkill -f "next dev -p 3007"
 pkill -f "tauri dev"
-pkill -f "target/debug/gapmap"
+pkill -f "target/debug/openreply"
 ```
 
 ## 8. Safety nets already in place

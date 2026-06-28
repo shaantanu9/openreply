@@ -7,7 +7,7 @@ tested separately.
 """
 import pytest
 
-from gapmap.research.chat import llm_dispatch as ld
+from openreply.research.chat import llm_dispatch as ld
 
 
 def test_default_models_per_provider():

@@ -1,4 +1,4 @@
-# Gap Map — Research Mode (PhD / researcher experience)
+# OpenReply — Research Mode (PhD / researcher experience)
 
 **Date:** 2026-06-07
 **Status:** Approved (user: "do all") — building in phases.
@@ -6,10 +6,10 @@
 
 ## Goal
 
-Turn Gap Map into a first-class **literature research workspace** for PhD students and
+Turn OpenReply into a first-class **literature research workspace** for PhD students and
 researchers, without forking the app. A Settings-selected **App Mode** reconfigures the
 existing product into a guided **Gather → Read → Synthesize → Write** flow over an
-academic corpus that Gap Map's own collect pipeline gathers.
+academic corpus that OpenReply's own collect pipeline gathers.
 
 ## Principles
 
@@ -25,7 +25,7 @@ academic corpus that Gap Map's own collect pipeline gathers.
 
 ## App Mode
 
-Setting **"What are you using Gap Map for?"** → `product` (today) | `research`.
+Setting **"What are you using OpenReply for?"** → `product` (today) | `research`.
 - Stored in core config (`app_mode`), read by CLI/MCP/Tauri; mirrored to `localStorage`
   for instant frontend branching.
 - In `research` mode:

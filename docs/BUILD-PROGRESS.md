@@ -1,7 +1,7 @@
-# Gap Map — Build Progress Tracker
+# OpenReply — Build Progress Tracker
 
 > Durable cross-session log so we keep track across context compactions.
-> **Goal:** make Gap Map a *complete* pre-build product-discovery tool — everything a
+> **Goal:** make OpenReply a *complete* pre-build product-discovery tool — everything a
 > PM/founder does to find a market gap and judge it **before** building.
 > Companion docs: `FEATURES.md` (live feature catalog), `docs/PRODUCT-DISCOVERY-COVERAGE.md`
 > (framework gap analysis), `CHANGES-2026-06.md` (changelog). **Updated:** 2026-06-06.
@@ -31,7 +31,7 @@
   range + response tables), PRD (sparse-state + copy/download), Empathy (JTBD grid + persona
   switcher + XSS fix), Intents, Iterate, Interviews. All vite-verified + committed.
 
-### Website (gapmap.myind.ai)
+### Website (openreply.myind.ai)
 - Login-aware navbar (SignedInOnly/SignedOutOnly), clean app-home, download button for
   logged-in users, uncached /download retry on asset-miss. Deployed.
 
@@ -77,8 +77,8 @@ get/compute, topic.js tab + loader.
 - ✅ Sentiment-by-source charts — per-source comparison charts added to `sentiment.js`
 - ✅ Tactic library — `tactics_for_topic()` + `tactics.js` + CLI/Rust/api/**Tactics** tab
 - ✅ Hypothesis tracker — dedicated `hypotheses.js` screen (status pills + update/delete) on existing Rust+api
-- ✅ PERT — MCP tools `gapmap_pert_list/add_task/rollup`
-- ✅ Idea scan — MCP tools `gapmap_idea_scan_start/get/list`
+- ✅ PERT — MCP tools `openreply_pert_list/add_task/rollup`
+- ✅ Idea scan — MCP tools `openreply_idea_scan_start/get/list`
 Build-verified: CLI returns JSON, vite 1800 modules, cargo 0 errors. FEATURES.md cat-14 → 18/18 ✅.
 
 ### State (2026-06-06)
@@ -89,7 +89,7 @@ Build-verified: CLI returns JSON, vite 1800 modules, cargo 0 errors. FEATURES.md
 
 ### Cross-cutting
 - ✅ **MCP exposure DONE** for the 6 cat-17 strategy frameworks + root-cause + tactics
-  (`gapmap_market_sizing/porter/swot/lean_canvas/value_prop/north_star/root_cause/tactics`)
+  (`openreply_market_sizing/porter/swot/lean_canvas/value_prop/north_star/root_cause/tactics`)
   + PERT + idea-scan. Headless Claude Code now drives the whole funnel. MCP tool count 161.
 - P2 still open: a few legacy cat-14 Tauri-only modules without their own MCP tool;
   new collect-only sources (stackexchange/europepmc/dblp/steam) lack MCP tools; persona-module tests.
@@ -109,7 +109,7 @@ Build-verified: CLI returns JSON, vite 1800 modules, cargo 0 errors. FEATURES.md
 ---
 
 ## Canonical patterns (for new modules — mimic these)
-- **Core:** `src/gapmap/research/prioritize.py` — `get_db()`, read `graph_nodes`/`graph_edges`
+- **Core:** `src/openreply/research/prioritize.py` — `get_db()`, read `graph_nodes`/`graph_edges`
   filtered by `topic`, parse `metadata_json`, pure-read never-raises, return a dict.
 - **Painpoints/competitors live in** `graph_nodes` by `kind` ('painpoint','intervention','competitor');
   edges in `graph_edges` (src/dst/topic).

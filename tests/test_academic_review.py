@@ -1,7 +1,7 @@
 """Tests for the multi-reviewer peer-review panel (academic_review.py).
 
 All LLM calls are mocked — no network / no real provider is hit. We patch
-the symbols inside `gapmap.analyze.providers.base` (which the module imports
+the symbols inside `openreply.analyze.providers.base` (which the module imports
 lazily) so `resolve_provider` / `get_provider` are deterministic.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from gapmap.research import academic_review as ar
+from openreply.research import academic_review as ar
 
 
 # ── Fakes ─────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ class _RaisingProvider:
 
 
 def _patch_provider(monkeypatch, provider_obj, *, resolves=True):
-    import gapmap.analyze.providers.base as base
+    import openreply.analyze.providers.base as base
     if resolves:
         monkeypatch.setattr(base, "resolve_provider", lambda p=None: "fakeprov")
         monkeypatch.setattr(base, "get_provider", lambda name=None: provider_obj)

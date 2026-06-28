@@ -260,7 +260,7 @@ Mocking: use `monkeypatch.setattr` on `_canonicalize_topic` helpers and on `_sea
 - **Cost.** ~300 tokens per first-ever discovery, ~$0.0001 with a cheap model. Negligible.
 - **Schema migration.** The new `topic_canonicalizations` table must be created in `init_schema()` — same pattern as the existing tables. Existing databases get it on next startup without user action.
 - **Modal UI discovery.** The frontend change depends on finding the current new-topic flow. If it's embedded in multiple places, the scope grows. Plan step-1 will audit.
-- **Breaking change to `discover_subs` callers.** Four callers depend on the current `list[dict]` return shape: `cli/main.py:508-510`, `mcp/server.py:143` (`gapmap_discover_subs`), `research/collect.py:147`, `src-tauri/src/commands.rs::discover_subs`. Each must be updated to unwrap `result["subs"]` (or handle the new dict). The plan must include a task that updates all four callers in lockstep with the `discover_subs` signature change. Failing to do so silently breaks the CLI and MCP integration paths.
+- **Breaking change to `discover_subs` callers.** Four callers depend on the current `list[dict]` return shape: `cli/main.py:508-510`, `mcp/server.py:143` (`openreply_discover_subs`), `research/collect.py:147`, `src-tauri/src/commands.rs::discover_subs`. Each must be updated to unwrap `result["subs"]` (or handle the new dict). The plan must include a task that updates all four callers in lockstep with the `discover_subs` signature change. Failing to do so silently breaks the CLI and MCP integration paths.
 
 ---
 

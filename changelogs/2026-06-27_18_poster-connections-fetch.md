@@ -44,14 +44,14 @@ fetch monitors the agent's tracked subreddit list.
 
 ## Files Created
 
-- `src/gapmap/reply/poster.py`
+- `src/openreply/reply/poster.py`
 - `docs/superpowers/specs/2026-06-27-queue-poster-connections-fetch-design.md`
 - `changelogs/2026-06-27_18_poster-connections-fetch.md`
 
 ## Files Modified
 
-- `src/gapmap/sources/bluesky.py`, `src/gapmap/reply/opportunity.py`,
-  `src/gapmap/cli/reply_cmds.py`, `src/gapmap/cli/main.py`
+- `src/openreply/sources/bluesky.py`, `src/openreply/reply/opportunity.py`,
+  `src/openreply/cli/reply_cmds.py`, `src/openreply/cli/main.py`
 - `app-tauri/src-tauri/src/commands.rs`, `app-tauri/src-tauri/src/main.rs`
 - `app-tauri/src/or/api.js`, `app-tauri/src/or/dynamic.js`
 

@@ -15,15 +15,15 @@ Fix: resolve `topic → its paper post_ids` from `topic_posts` (the source of tr
 
 ## New: cited Q&A over papers
 
-New module `src/gapmap/research/paper_chat.py`:
+New module `src/openreply/research/paper_chat.py`:
 - `paper_qa(topic, question, …)` / `paper_qa_stream(…)` — retrieve section-aware chunks via palace, ground an LLM (reuses `chat.llm_dispatch` BYOK provider resolution + streaming), return `{answer, citations:[{n,title,author,year,url,sections}], used_chunks, sources_markdown}`.
 - Citations are built **deterministically** from retrieved chunks (never invented); answer instructed to refuse rather than hallucinate when papers don't cover the question (verified: it correctly declined an unsupported question, then answered a supported one with `[1, §abstract]`-style cites).
 - **Noise-section filter**: over-fetches and drops `references / acknowledgments / appendix / supplementary` chunks (a bibliography was scoring 0.99 on keyword overlap) so grounding stays on Methods/Results/Discussion.
 
 ## Surfaces wired
 
-- **CLI**: `gapmap research paper-ask "<q>" --topic … [--sections methods,results] [--post-id …] [--no-stream] [--json]`.
-- **MCP**: `gapmap_paper_ask(question, topic, sections, post_id, k, provider)`.
+- **CLI**: `openreply research paper-ask "<q>" --topic … [--sections methods,results] [--post-id …] [--no-stream] [--json]`.
+- **MCP**: `openreply_paper_ask(question, topic, sections, post_id, k, provider)`.
 - **Tauri**: new commands `paper_ask` and `paper_chunk_search` (`commands.rs` + registered in `main.rs`; `cargo check` clean).
 - **api.js**: `paperAsk(question, {topic,sections,postId,k,provider})` and `paperChunkSearch(query, {topic,sections,k,rollup})`.
 - **UI**: "Ask the papers" panel in the Papers tab (`papers.js`) with an Ask/Search toggle, section-scope chips, answer + numbered Sources rendering, and passage-hit rendering for Search mode.
@@ -35,14 +35,14 @@ New module `src/gapmap/research/paper_chat.py`:
 
 ## Files Created
 
-- `src/gapmap/research/paper_chat.py` — cited Q&A engine.
+- `src/openreply/research/paper_chat.py` — cited Q&A engine.
 - `changelogs/2026-06-07_03_paper-cited-qa-and-search.md`
 
 ## Files Modified
 
-- `src/gapmap/retrieval/palace.py` — `_paper_post_ids_for_topic` helper; topic filter now resolves to post_id set.
-- `src/gapmap/cli/main.py` — `research paper-ask` command.
-- `src/gapmap/mcp/server.py` — `gapmap_paper_ask` tool.
+- `src/openreply/retrieval/palace.py` — `_paper_post_ids_for_topic` helper; topic filter now resolves to post_id set.
+- `src/openreply/cli/main.py` — `research paper-ask` command.
+- `src/openreply/mcp/server.py` — `openreply_paper_ask` tool.
 - `app-tauri/src-tauri/src/commands.rs` — `paper_ask`, `paper_chunk_search`.
 - `app-tauri/src-tauri/src/main.rs` — registered both handlers.
 - `app-tauri/src/api.js` — `paperAsk`, `paperChunkSearch`.

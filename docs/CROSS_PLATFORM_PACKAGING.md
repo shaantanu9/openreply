@@ -9,7 +9,7 @@
 - **Target:** macOS only (Apple Silicon, `aarch64-apple-darwin`)
 - **Output:** `.dmg` disk image via Tauri's built-in DMG bundler
 - **Sidecar:** `app-tauri/src-tauri/binaries/reddit-cli-aarch64-apple-darwin` — a PyInstaller bundle of the Python CLI
-- **Build command:** from `app-tauri/`, `npm run tauri build` produces `src-tauri/target/release/bundle/dmg/Gap Map_0.1.0_aarch64.dmg`
+- **Build command:** from `app-tauri/`, `npm run tauri build` produces `src-tauri/target/release/bundle/dmg/OpenReply_0.1.0_aarch64.dmg`
 - **Signing:** ad-hoc (`codesign --force --deep --sign -` in the build script). Users right-click → Open first time; macOS shows "cannot be opened" + warning
 
 **Files involved:**
@@ -267,7 +267,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gapmap-${{ matrix.target }}
+          name: openreply-${{ matrix.target }}
           path: |
             app-tauri/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
             app-tauri/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
@@ -298,11 +298,11 @@ Doesn't need changes — it only runs on the dev host. CI does its own build inv
 Add installation instructions per platform:
 - macOS: drag .dmg → Applications, right-click → Open first time
 - Windows: run .exe installer, click "More info → Run anyway" on SmartScreen
-- Linux: `sudo dpkg -i gapmap_0.1.0_amd64.deb` or chmod+x the AppImage
+- Linux: `sudo dpkg -i openreply_0.1.0_amd64.deb` or chmod+x the AppImage
 
 ---
 
-## Other cross-platform gotchas specific to Gap Map
+## Other cross-platform gotchas specific to OpenReply
 
 - **Data dir paths** — we already use Tauri's `$APPDATA` variable via `app.path().app_data_dir()`. This resolves to `~/Library/Application Support/...` on macOS, `%APPDATA%\...` on Windows, `~/.config/...` on Linux. No code change needed.
 - **Sidecar invocation** — Rust uses `app.shell().sidecar("reddit-cli")` which auto-resolves to the `-<triple>` suffix. No code change.

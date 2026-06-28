@@ -40,7 +40,7 @@ enrich runs, causing high memory usage, sidecar pileups, and "loading forever".
 
 ### 1) Router remount guard (critical)
 
-Inspect `app-tauri/src/main.js` `gapmap:changed` listener.
+Inspect `app-tauri/src/main.js` `openreply:changed` listener.
 
 - If current route is `#/topic/...`, do **not** call global `route()`.
 - Topic page must handle its own in-place refresh logic.
@@ -63,7 +63,7 @@ This avoids per-button listener drift on rapid re-renders.
 In `topic.js`:
 
 - Persist selected tab in `sessionStorage` key:
-  - `gapmap.topic.tab.<topic>`
+  - `openreply.topic.tab.<topic>`
 - Restore remembered tab on render before falling back to intent default.
 
 ### 4) Timeout guards for heavy tab loaders
@@ -83,7 +83,7 @@ Also ensure map export has a hard timeout and fallback UI; never allow
 
 ### 4.5) Reactive event loop guard for map
 
-In the `gapmap:changed` refresh path:
+In the `openreply:changed` refresh path:
 
 - If current tab is `map`, skip `switchTab('map')` auto-refresh loops.
 - Let map tab own its own refresh/reload cycle.

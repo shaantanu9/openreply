@@ -7,7 +7,7 @@
 
 v0.1.9's mac release still failed notarization (`status: Invalid`) even though
 the new pre-sign step ran successfully. Root cause: the pre-sign loop matched
-Mach-O **by name** (`*.so` / `*.dylib` / `gapmap-cli`), which signed ~128 files
+Mach-O **by name** (`*.so` / `*.dylib` / `openreply-cli`), which signed ~128 files
 but **missed two**:
 
 - `_internal/Python` — an **extensionless** Mach-O interpreter executable

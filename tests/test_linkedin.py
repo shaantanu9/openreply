@@ -1,8 +1,8 @@
 """linkedin public-URL reader (Jina-backed)."""
 from __future__ import annotations
 
-from gapmap.sources import linkedin, web_reader
-from gapmap.sources.linkedin import fetch_linkedin
+from openreply.sources import linkedin, web_reader
+from openreply.sources.linkedin import fetch_linkedin
 
 
 def _no_cookie(monkeypatch):

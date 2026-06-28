@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines a production-ready integration plan for `opendataloader-pdf` in Gap Map desktop, including:
+This document defines a production-ready integration plan for `opendataloader-pdf` in OpenReply desktop, including:
 
 - scope of usage
 - architecture changes
@@ -77,7 +77,7 @@ Implication:
 
 ---
 
-## Key Use Cases for Gap Map
+## Key Use Cases for OpenReply
 
 1. **Research Paper Ingestion**
    - Parse scientific papers with multi-column layouts and tables.

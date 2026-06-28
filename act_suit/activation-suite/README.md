@@ -61,11 +61,11 @@ curl -s http://localhost:3000/api/v1/health
 curl -s -X POST http://localhost:3000/api/v1/dev/mint \
   -H "content-type: application/json" \
   -H "x-dev-mint-secret: $DEV_MINT_SECRET" \
-  -d '{"email":"demo@gapmap.local","password":"demo123","max_devices":1}'
+  -d '{"email":"demo@openreply.local","password":"demo123","max_devices":1}'
 
 curl -s -X POST http://localhost:3000/api/v1/device/activate \
   -H "content-type: application/json" \
-  -d '{"email":"demo@gapmap.local","password":"demo123","activation_key":"PASTE_KEY","device_signature":"device-a","app":"gapmap-desktop","os":"macos","arch":"aarch64"}'
+  -d '{"email":"demo@openreply.local","password":"demo123","activation_key":"PASTE_KEY","device_signature":"device-a","app":"openreply-desktop","os":"macos","arch":"aarch64"}'
 
 curl -s http://localhost:3000/v1/health
 ```

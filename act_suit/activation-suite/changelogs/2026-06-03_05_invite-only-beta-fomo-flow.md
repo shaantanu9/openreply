@@ -29,7 +29,7 @@ auto-issues the key and shows a Founding Beta Member badge.
 - **Migration `20260603_02_coupon_validate.sql`:** `validate_coupon(code)` —
   read-only check returning `{valid, reason, plan_id, seats_total, seats_left,
   seats_claimed}` (no counter increment); granted to anon/authenticated/
-  service_role. Seeds `GAPMAP-BETA-2026` (pro, 100 seats, 2 devices). Reuses the
+  service_role. Seeds `OPENREPLY-BETA-2026` (pro, 100 seats, 2 devices). Reuses the
   existing `coupons` / `redeem_coupon` infra from migration 202605250008.
 - **`src/app/api/v1/coupon/validate/route.ts`:** public POST wrapping the RPC
   (runs before the account exists).
@@ -55,5 +55,5 @@ auto-issues the key and shows a Founding Beta Member badge.
 
 - Create more cohorts by inserting rows into `public.coupons` (set
   `max_redemptions` for scarcity, `expires_at` for time pressure, `note` for
-  context). Seeded code: `GAPMAP-BETA-2026` (100 seats).
+  context). Seeded code: `OPENREPLY-BETA-2026` (100 seats).
 - Existing `/redeem` page still works as a manual fallback.

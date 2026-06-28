@@ -1,13 +1,13 @@
-# Gap Map — Vision
+# OpenReply — Vision
 
-> **Gap Map is where curiosity becomes understanding** — a single place where the
+> **OpenReply is where curiosity becomes understanding** — a single place where the
 > messy signals of *what people struggle with*, *what they wish existed*, and
 > *what research already knows* come together so you can learn from them and act
 > on them.
 
 ## Why this exists
 
-I built Gap Map for myself, for two reasons that turned out to be the same thing:
+I built OpenReply for myself, for two reasons that turned out to be the same thing:
 
 1. **To truly understand users and where the real market gaps are** — not by
    guessing, but grounded in what people actually say across the web.
