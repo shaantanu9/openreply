@@ -3295,9 +3295,9 @@ export async function renderWatch(view) {
               `<div class="flex items-start gap-2 text-sm text-zinc-500">
                  <span class="shrink-0">•</span>
                  <span class="flex-1 min-w-0">${esc(s.title)}${s.url ? ` <a href="${esc(s.url)}" target="_blank" class="text-reddit">↗</a>` : ""}</span>
-                 <button data-rp="${i}" class="shrink-0 text-xs font-semibold text-reddit hover:underline">Rewrite →</button>
+                 <button data-rp="${i}" class="shrink-0 text-xs font-semibold text-reddit hover:underline">Create post →</button>
                </div>`).join("")
-              + `<button data-rp-all="1" class="mt-1 text-xs font-semibold text-reddit hover:underline">Open Compose (Repurpose) →</button>`;
+              + `<div class="mt-2 flex gap-3"><button data-rp-all="1" class="text-xs font-semibold text-reddit hover:underline">Open Compose (repurpose all) →</button><a href="#/library" class="text-xs font-semibold text-reddit hover:underline">See all in Library →</a></div>`;
             samp.querySelectorAll("[data-rp]").forEach((btn) => {
               const idx = Number(btn.getAttribute("data-rp"));
               const s = (r.sample || [])[idx] || {};

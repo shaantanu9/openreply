@@ -163,15 +163,21 @@ function openAccountPopover() {
     document.addEventListener('keydown', onKey);
   }, 0);
 
-  panel.querySelector('#popoverTheme').onclick = () => {
+  panel.querySelector('#popoverTheme').onclick = (e) => {
+    e.stopPropagation();
     const dark = document.documentElement.classList.toggle('dark');
     try { localStorage.setItem('or-theme', dark ? 'dark' : 'light'); } catch (e) {}
-    // refresh popover to reflect new theme icon/label
-    close();
-    openAccountPopover();
+    const lbl = panel.querySelector('#themeLabel');
+    const icon = panel.querySelector('#popoverTheme i[data-lucide]');
+    if (lbl) lbl.textContent = dark ? 'Dark' : 'Light';
+    if (icon) { icon.setAttribute('data-lucide', dark ? 'moon' : 'sun'); drawIcons(); }
   };
 
-  panel.querySelector('a[href="#/settings"]').onclick = () => { close(); };
+  panel.querySelector('a[href="#/settings"]').onclick = (e) => {
+    e.preventDefault();
+    close();
+    location.hash = '#/settings';
+  };
 
   // clean up listeners when closed
   const origClose = close;
