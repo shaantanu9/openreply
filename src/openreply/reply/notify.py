@@ -200,31 +200,61 @@ def _post_json(url: str, payload: dict, timeout: int = 12) -> tuple[bool, str]:
         return False, str(e)
 
 
+# Telegram's hard per-message ceiling is 4096 UTF-16 code units; stay safely under.
+_TG_LIMIT = 4000
+
+
+def _strip_html(s: str) -> str:
+    """Crude tag strip + entity un-escape for the plain-text fallback path."""
+    import re
+    s = re.sub(r"<[^>]+>", "", s or "")
+    return (s.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+
+
 def send_telegram(text: str, buttons: list | None = None,
                   token: str | None = None, chat: str | None = None) -> tuple[bool, str]:
     """Send an HTML message to Telegram. `buttons` is a list of
-    [{"text","data"}] rows rendered as a one-per-row inline keyboard."""
+    [{"text","data"}] rows rendered as a one-per-row inline keyboard.
+
+    Hardened (lessons from a heavier bot framework, kept stdlib-only): the body is
+    capped to Telegram's length ceiling, and if HTML entity parsing fails (a stray
+    tag in user content) we retry once as plain text rather than dropping the
+    message — a notification with imperfect formatting beats no notification."""
     c = _raw_config()
     token = token or c.get("telegram_token") or ""
     chat = chat or c.get("telegram_chat") or ""
     if not token or not chat:
         return False, "telegram not configured (token + chat id)"
-    payload: dict = {
-        "chat_id": chat, "text": text,
-        "parse_mode": "HTML", "disable_web_page_preview": False,
-    }
+    text = text or ""
+    if len(text) > _TG_LIMIT:
+        text = text[:_TG_LIMIT - 1] + "…"
+    markup = None
     if buttons:
-        payload["reply_markup"] = {
+        markup = {
             "inline_keyboard": [[{"text": b["text"], "callback_data": b["data"]}] for b in buttons]
         }
-    ok, body = _post_json(_TG_API.format(token=token, method="sendMessage"), payload)
-    if ok:
-        try:
-            if not json.loads(body).get("ok", False):
-                return False, body[:200]
-        except Exception:
-            pass
-    return ok, body[:200]
+
+    def _attempt(body_text: str, html: bool) -> tuple[bool, str]:
+        payload: dict = {"chat_id": chat, "text": body_text,
+                         "disable_web_page_preview": False}
+        if html:
+            payload["parse_mode"] = "HTML"
+        if markup:
+            payload["reply_markup"] = markup
+        ok, raw = _post_json(_TG_API.format(token=token, method="sendMessage"), payload)
+        if ok:
+            try:
+                if not json.loads(raw).get("ok", False):
+                    return False, raw[:200]
+            except Exception:
+                pass
+        return ok, raw[:200]
+
+    ok, body = _attempt(text, html=True)
+    # 400 "can't parse entities" → retry once as plain text (tags stripped).
+    if not ok and ("parse" in body.lower() or "entit" in body.lower()):
+        return _attempt(_strip_html(text)[:_TG_LIMIT], html=False)
+    return ok, body
 
 
 def send_slack(text: str, webhook: str | None = None) -> tuple[bool, str]:
