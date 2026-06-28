@@ -28,6 +28,10 @@ def _ensure(db):
                 "id": str, "name": str, "brand": str, "niche": str,
                 "persona": str, "tone": str, "audience": str, "topic": str,
                 "website": str, "goal": str, "product": str,
+                # Structured goal (the thing the self-evolving engine optimizes toward).
+                "objective": str, "win_signal": str, "guardrails": str,
+                # Self-evolution bookkeeping.
+                "last_evolve_at": int, "feedback_since_evolve": int,
                 "keywords_json": str, "platforms_json": str, "accounts_json": str,
                 "refresh_cadence": str, "last_refresh_at": int,
                 "last_learn_at": int,
@@ -58,6 +62,16 @@ def _ensure(db):
                     db["agents"].add_column(_pc, str)
                 except Exception:
                     pass
+        # Migration: structured goal (objective/win_signal/guardrails — audience
+        # already exists) + self-evolution bookkeeping (last_evolve_at epoch,
+        # feedback_since_evolve counter). Drive the Goal Playbook engine.
+        for _gc, _typ in (("objective", str), ("win_signal", str), ("guardrails", str),
+                          ("last_evolve_at", int), ("feedback_since_evolve", int)):
+            if _gc not in cols:
+                try:
+                    db["agents"].add_column(_gc, _typ)
+                except Exception:
+                    pass
     if "reply_state" not in names:
         db["reply_state"].create({"key": str, "value": str}, pk="key")
     if "agent_personas" not in names:
@@ -85,6 +99,15 @@ def _hydrate(row: dict) -> dict:
     row["keywords"] = json.loads(row.get("keywords_json") or "[]")
     row["platforms"] = json.loads(row.get("platforms_json") or "[]")
     row["accounts"] = json.loads(row.get("accounts_json") or "[]")
+    # Compose a goal string from the structured fields when no free-text goal is
+    # set, so generation (which reads agent["goal"]) always has a target.
+    if not (row.get("goal") or "").strip():
+        parts = []
+        if row.get("objective"):  parts.append(row["objective"])
+        if row.get("audience"):   parts.append(f"for {row['audience']}")
+        if row.get("win_signal"): parts.append(f"win = {row['win_signal']}")
+        if parts:
+            row["goal"] = " · ".join(parts)
     return row
 
 
@@ -157,14 +180,17 @@ def update_agent(aid: str, **fields) -> dict | None:
     if not _row(db, aid):
         return None
     patch: dict = {}
-    for k in ("name", "brand", "niche", "website", "goal", "product", "persona", "tone", "audience", "refresh_cadence"):
+    for k in ("name", "brand", "niche", "website", "goal", "product", "persona",
+              "tone", "audience", "refresh_cadence",
+              "objective", "win_signal", "guardrails"):
         if k in fields and fields[k] is not None:
             patch[k] = fields[k]
     for k in ("keywords", "platforms", "accounts"):
         if k in fields and fields[k] is not None:
             patch[f"{k}_json"] = json.dumps(fields[k])
-    if "last_refresh_at" in fields:
-        patch["last_refresh_at"] = fields["last_refresh_at"]
+    for k in ("last_refresh_at", "last_evolve_at", "feedback_since_evolve"):
+        if k in fields and fields[k] is not None:
+            patch[k] = fields[k]
     patch["updated_at"] = int(time.time())
     db["agents"].update(aid, patch)
     return get_agent(aid)
