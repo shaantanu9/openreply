@@ -159,10 +159,14 @@ def create_agent(
     if _row(db, aid):
         aid = f"{aid}-{hashlib.sha1(f'{name}{time.time()}'.encode()).hexdigest()[:6]}"
     now = int(time.time())
+    # The agent's knowledge corpus is keyed by `topic`. Niche is the natural
+    # corpus key — multiple agents for the same niche should share one brain.
+    # Fall back to brand/name only when no niche is supplied.
+    topic = (niche or brand or name or aid).strip()
     rec = {
         "id": aid, "name": name, "brand": brand or name, "niche": niche,
         "website": website, "goal": goal, "product": product,
-        "persona": persona, "tone": tone, "audience": audience, "topic": aid,
+        "persona": persona, "tone": tone, "audience": audience, "topic": topic,
         "keywords_json": json.dumps(keywords or []),
         "platforms_json": json.dumps(platforms or ["reddit_free", "hn", "lemmy", "mastodon", "devto", "stackoverflow", "producthunt"]),
         "accounts_json": json.dumps(accounts or []),
@@ -307,11 +311,21 @@ def knowledge_summary(aid: str | None = None) -> dict:
         except Exception:
             return 0
 
+    # The legacy `findings` table is no longer populated by the current
+    # graph/LLM pipeline. Surface meaningful insight counts from the semantic
+    # concept nodes (painpoints / wishes / workarounds / products) instead.
+    concept_kinds = ("painpoint", "feature_wish", "workaround", "product")
+    ph = ",".join(["?"] * len(concept_kinds))
+    concept_count = _count(
+        f"SELECT COUNT(*) FROM graph_nodes WHERE topic=? AND kind IN ({ph})",
+        [topic, *concept_kinds],
+    )
+    legacy_findings = _count("SELECT COUNT(*) FROM findings WHERE topic=?", [topic])
     return {
         "agent": a["name"], "topic": topic,
         "posts": _count("SELECT COUNT(*) FROM topic_posts WHERE topic=?", [topic]),
         "graph_nodes": _count("SELECT COUNT(*) FROM graph_nodes WHERE topic=?", [topic]),
-        "findings": _count("SELECT COUNT(*) FROM findings WHERE topic=?", [topic]),
+        "findings": concept_count or legacy_findings,
         "last_refresh_at": a["last_refresh_at"],
     }
 

@@ -98,6 +98,17 @@ def build_brain_for_agent(
     except Exception as e:
         out["source_evidence_error"] = str(e)[:200]
 
+    # 5) Weld persona memory graphs into the structural graph so the unified
+    #    brain view shows real cross-links (memory → concept, belief → memory).
+    #    Best-effort; never blocks the build.
+    try:
+        if progress:
+            progress("linking memories to concepts…")
+        from .brain_unified import relink
+        out["cross_links"] = relink(agent_id, semantic=True)
+    except Exception as e:
+        out["cross_links_error"] = str(e)[:200]
+
     # Refreshed counts for the UI (graph_nodes / findings now populated).
     try:
         out["graph"] = _agent.knowledge_summary(a["id"])

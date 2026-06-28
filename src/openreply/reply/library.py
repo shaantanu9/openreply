@@ -19,10 +19,14 @@ from .agent import get_agent
 from .schema import init_reply_schema
 
 # Free, no-auth discovery sources every agent should pull into its corpus so the
-# brain learns from news / web / forums / communities, not just reply targets.
+# brain learns from news / web / forums / communities / science / code, not just
+# reply targets. Keep these to the fast, reliable fetchers; heavy/academic ones
+# (pubmed / openalex / appstore / playstore / trends / gdelt) stay opt-in via
+# aggressive collect or explicit --sources.
 DEFAULT_DISCOVERY_SOURCES = [
     "hn", "devto", "stackoverflow", "producthunt", "lemmy", "mastodon",
-    "gnews", "rss_tech_news", "duckduckgo",
+    "gnews", "rss_tech_news", "rss_products", "rss_user", "duckduckgo",
+    "github", "arxiv",
 ]
 
 
