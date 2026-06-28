@@ -1,0 +1,4 @@
+{
+  "outputDirectory": ".",
+  "buildCommand": "node generate-env-config.mjs"
+}
