@@ -19,6 +19,22 @@ from .schema import init_reply_schema
 _CADENCE_HOURS = {"daily": 20.0, "weekly": 24.0 * 6.5}
 _CONTENT_KINDS = ("post", "thread", "article", "youtube", "script")
 
+
+def _notify_article(rec: dict) -> None:
+    """Push a 'new <kind> drafted' alert (Telegram/Slack). Best-effort, deduped
+    per content id, event-toggle gated."""
+    try:
+        from . import notify as _n
+        if not _n.is_configured() or not _n.get_config()["events"].get("article"):
+            return
+        _n.notify_once(
+            f"art:{rec.get('id')}", "article",
+            {"art": {"kind": rec.get("kind"), "title": rec.get("title"),
+                     "preview": rec.get("body") or ""}},
+        )
+    except Exception:
+        pass
+
 DEFAULTS = {
     "content": {"enabled": True, "cadence": "daily", "count": 1, "kinds": ["post"]},
     "opportunity": {"enabled": True, "cadence": "daily", "count": 1},
@@ -105,6 +121,8 @@ def run_autopilot_if_due(agent_id: str | None = None, provider: str | None = Non
                 for _ in range(per):
                     r = _content.generate_content(kind, agent_id=aid, provider=provider)
                     made.append({"kind": kind, "id": r.get("id"), "error": r.get("error")})
+                    if not r.get("error"):
+                        _notify_article(r)
             cfg["content_last"] = now
         except Exception as e:
             made.append({"error": str(e)})

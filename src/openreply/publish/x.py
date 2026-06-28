@@ -106,3 +106,59 @@ def publish(body: str, *, dry_run: bool = False) -> PublishResult:
 
     url = f"https://x.com/i/web/status/{ids[0]}" if ids else ""
     return PublishResult(ok=True, platform="x", url=url, ids=ids, parts=len(ids))
+
+
+def publish_reply(body: str, reply_to_tweet_id: str, *, dry_run: bool = False) -> PublishResult:
+    """Post a single reply tweet to an existing tweet via API v2.
+
+    Uses the same OAuth 1.0a write credentials as `publish()`.
+    """
+    body = (body or "").strip()
+    if not body:
+        return PublishResult(ok=False, platform="x", error="empty content")
+    if not reply_to_tweet_id:
+        return PublishResult(ok=False, platform="x", error="reply_to_tweet_id required")
+
+    tweets = split_thread(body)
+    if not tweets:
+        return PublishResult(ok=False, platform="x", error="empty content")
+    if dry_run:
+        return PublishResult(ok=True, platform="x", parts=len(tweets), reply_to_tweet_id=reply_to_tweet_id)
+
+    creds = _creds()
+    if not creds:
+        return PublishResult(
+            ok=False, platform="x",
+            error="no X credentials — run `openreply publish set-creds` "
+                  "(needs an X developer app with Write access)",
+        )
+    try:
+        import requests
+        from requests_oauthlib import OAuth1
+    except Exception as e:  # pragma: no cover - dep guard
+        return PublishResult(ok=False, platform="x", error=f"missing dependency: {e}")
+
+    auth = OAuth1(creds["api_key"], creds["api_secret"],
+                  creds["access_token"], creds["access_secret"])
+    ids: list[str] = []
+    reply_to: str | None = reply_to_tweet_id
+    for t in tweets:
+        payload: dict = {"text": t, "reply": {"in_reply_to_tweet_id": reply_to}}
+        try:
+            r = requests.post(API_URL, json=payload, auth=auth, timeout=30)
+        except Exception as e:
+            return PublishResult(ok=False, platform="x", ids=ids, parts=len(ids),
+                                 error=f"network error: {e}")
+        if r.status_code >= 300:
+            return PublishResult(ok=False, platform="x", ids=ids, parts=len(ids),
+                                 error=f"X API {r.status_code}: {r.text[:200]}")
+        tid = ((r.json() or {}).get("data") or {}).get("id")
+        if not tid:
+            return PublishResult(ok=False, platform="x", ids=ids, parts=len(ids),
+                                 error="X API returned no tweet id")
+        ids.append(str(tid))
+        reply_to = str(tid)
+
+    url = f"https://x.com/i/web/status/{ids[0]}" if ids else ""
+    return PublishResult(ok=True, platform="x", url=url, ids=ids, parts=len(ids),
+                         reply_to_tweet_id=reply_to_tweet_id)

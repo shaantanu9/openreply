@@ -46,8 +46,8 @@ OpenReply is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-s
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
 | 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
 | 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
-| 21. OpenReply — content, analytics, visibility & brain | 6 | 6 | 0 | 0 | 0 |
-| **Total** | **228** | **227** | **1** | **0** | **0** |
+| 21. OpenReply — content, analytics, visibility & brain | 7 | 7 | 0 | 0 | 0 |
+| **Total** | **229** | **228** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -1020,6 +1020,45 @@ similarity) into new `brain_links`; `unified_brain()` returns
 **Known gaps:** force layout is O(n²)/tick (node cap 400; needs Barnes-Hut for
 thousands) (P2); exact `grounds` links depend on personas sharing the structural
 graph's source posts — semantic `about` bridges otherwise (P2).
+
+### Telegram + Slack notifications — two-way control ✅ NEW (2026-06-29)
+**Status:** ✅ Complete — config + transport + dedup + two-way Telegram poller +
+Settings UI, all verified via CLI roundtrip + frontend build. (Live send not
+exercised against a real bot token/webhook.)
+**Entry points:** Settings → **Notifications** card · CLI `openreply reply
+notify-get` / `notify-set` / `notify-test` / `bot-poll [--once]` · Rust
+`notify_get`/`notify_set`/`notify_test`/`bot_poll_once`.
+**User flow:** open Settings → enter a Telegram bot token (@BotFather) + chat id
+(@userinfobot) and/or a Slack incoming-webhook URL → pick which events to receive
+(new opportunity / new drafted post / reply due, plus optional digest + AI-
+visibility) → set a min opportunity-match floor → Save → "Send test" confirms each
+channel. While the app window is open, alerts arrive as they happen; on Telegram,
+opportunity and reply alerts carry **Approve/Draft · Regenerate · Skip** buttons
+whose taps are handled live (the desktop polls `bot-poll --once` every 4s and
+stops on window close — no server, no public webhook).
+**Events & sources (existing event producers, new transport):**
+- new opportunity → `reply/opportunity.py::_notify_new_opportunities` (gated by
+  `events.opportunity` + `min_score`)
+- new drafted post/article → `reply/scheduler.py::_notify_article` (autopilot loop)
+- reply due → `reply/poster.py` reminder branch (`notify_once("reply:…")`)
+**Implementation:** `reply/notify.py` (`reply_notify` config row, `get_config`/
+`set_config` with masked secrets, `notify_once`/`was_notified`/`mark_notified`
+dedup keyed `opp:`/`reply:`/`art:`, `send_telegram` inline-keyboard + `send_slack`
+via stdlib `urllib`, formatters, `dispatch`, `send_test`) · `reply/bot.py`
+(`poll(once)` — `getUpdates` callback_query handler for skip/posted/draft/regen,
+SIGTERM/SIGINT + `bot.stop` sentinel) · `cli/reply_cmds.py` (notify-get/set/test,
+bot-poll) · `commands.rs`/`main.rs` (4 commands) · `or/api.js`
+(`notifyGet`/`notifySet`/`notifyTest`/`botPollOnce`) · `or/dynamic.js`
+(`buildNotifyCard`, `ensureBotPoller`) · `main.js` (poller boot).
+**Data:** `reply_notify` singleton (token/chat/webhook/event flags/min_score in
+the local app-data SQLite — secrets never leave the machine, masked to last-4 in
+the UI) · `reply_notified` dedup ledger · `bot.stop` sentinel file in data dir.
+**Known gaps:** Slack is **notify-only** — its interactive buttons need a public
+endpoint a local Mac can't host (P2). Two-way Telegram only works **while the app
+window is open** (the poller is frontend-driven by design — "while running on the
+PC") (P2). Live send not yet exercised against a real token/webhook in this build
+(P1 — verify on first real configure). Headless launchd ticks fire one-way
+notifications (no button handling) since the poller needs the open window (P2).
 
 ---
 

@@ -7,6 +7,7 @@ the CLI.
 from __future__ import annotations
 
 import json
+from typing import Optional
 
 import typer
 
@@ -443,3 +444,71 @@ def idea_status_cmd(
     """Mark a suggested idea used / dismissed."""
     from ..reply.ideas import set_idea_status
     _out(set_idea_status(idea, status), json_)
+
+
+# ───────────────────────── Telegram / Slack notifications ─────────────────────
+
+@reply_app.command("notify-get")
+def notify_get_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """Current notification config (tokens masked)."""
+    from ..reply import notify as _n
+    _out(_n.get_config(), json_)
+
+
+@reply_app.command("notify-set")
+def notify_set_cmd(
+    enabled: Optional[bool] = typer.Option(None, "--enabled/--disabled"),
+    two_way: Optional[bool] = typer.Option(None, "--two-way/--one-way"),
+    telegram_token: Optional[str] = typer.Option(None, "--telegram-token"),
+    telegram_chat: Optional[str] = typer.Option(None, "--telegram-chat"),
+    slack_webhook: Optional[str] = typer.Option(None, "--slack-webhook"),
+    min_score: Optional[float] = typer.Option(None, "--min-score"),
+    ev_opportunity: Optional[bool] = typer.Option(None, "--opp/--no-opp"),
+    ev_article: Optional[bool] = typer.Option(None, "--article/--no-article"),
+    ev_reply: Optional[bool] = typer.Option(None, "--reply/--no-reply"),
+    ev_digest: Optional[bool] = typer.Option(None, "--digest/--no-digest"),
+    ev_geo: Optional[bool] = typer.Option(None, "--geo/--no-geo"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Update notification config. Only passed flags change; pass --telegram-token ''
+    to clear a secret."""
+    from ..reply import notify as _n
+    events = {}
+    for key, val in (("opportunity", ev_opportunity), ("article", ev_article),
+                     ("reply", ev_reply), ("digest", ev_digest), ("geo", ev_geo)):
+        if val is not None:
+            events[key] = val
+    fields: dict = {}
+    if enabled is not None:
+        fields["enabled"] = enabled
+    if two_way is not None:
+        fields["two_way"] = two_way
+    if telegram_token is not None:
+        fields["telegram_token"] = telegram_token
+    if telegram_chat is not None:
+        fields["telegram_chat"] = telegram_chat
+    if slack_webhook is not None:
+        fields["slack_webhook"] = slack_webhook
+    if min_score is not None:
+        fields["min_score"] = min_score
+    if events:
+        fields["events"] = events
+    _out(_n.set_config(**fields), json_)
+
+
+@reply_app.command("notify-test")
+def notify_test_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """Send a test message to every configured channel (ignores on/off toggles)."""
+    from ..reply import notify as _n
+    _out(_n.send_test(), json_)
+
+
+@reply_app.command("bot-poll")
+def bot_poll_cmd(
+    once: bool = typer.Option(False, "--once", help="Drain pending updates and exit"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Run the two-way Telegram poller (Approve / Regenerate / Skip buttons).
+    Long-running — the desktop app spawns this on launch and kills it on quit."""
+    from ..reply import bot as _bot
+    _out(_bot.poll(once=once), json_)

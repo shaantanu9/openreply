@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -547,6 +548,27 @@ def cmd_stream(
             console.print("\n[yellow]stopped.[/yellow]")
 
 
+_READONLY_SQL = re.compile(r"^\s*(?:select|with|explain|pragma\s+table_info)\b", re.IGNORECASE)
+_WRITE_SQL = re.compile(
+    r"\b(?:insert|update|delete|drop|alter|create|replace|truncate|attach|detach|reindex|vacuum)\b",
+    re.IGNORECASE,
+)
+
+
+def _assert_readonly_sql(sql: str) -> None:
+    """Reject anything that isn't a single read-only statement.
+
+    The `query` / `export --sql` paths run caller-supplied SQL against the
+    local store. They're meant for SELECTs only — refuse write/DDL verbs and
+    multi-statement payloads so a stray (or injected) call can't mutate or
+    drop the corpus."""
+    body = (sql or "").strip().rstrip(";")
+    if ";" in body:
+        raise typer.BadParameter("only a single statement is allowed")
+    if not _READONLY_SQL.match(body) or _WRITE_SQL.search(body):
+        raise typer.BadParameter("only read-only SELECT/WITH queries are allowed")
+
+
 @app.command("query")
 def cmd_query(
     sql: str = typer.Argument(..., help="SQL query against the SQLite store"),
@@ -566,6 +588,7 @@ def cmd_query(
       openreply query "SELECT * FROM topic_posts WHERE topic = :topic" --topic "my app"
       openreply query "SELECT * FROM graph_nodes WHERE topic=:topic AND kind=:k" --topic X --param k=painpoint
     """
+    _assert_readonly_sql(sql)
     db = get_db()
     params: dict[str, str] = {}
     if topic is not None:
@@ -591,8 +614,16 @@ def cmd_export(
     """Export rows to JSON / CSV / Parquet."""
     db = get_db()
     if sql:
+        _assert_readonly_sql(sql)
         rows = list(db.query(sql))
     else:
+        # `table` is interpolated into the SQL (identifiers can't be bound as
+        # params), so it MUST be a real table name — validate against the live
+        # schema to close the injection vector.
+        if table not in set(db.table_names()):
+            raise typer.BadParameter(
+                f"unknown table '{table}'. Use --sql for a custom SELECT."
+            )
         where, params = [], []
         if sub and table in ("posts",):
             where.append("sub = ?")
@@ -633,6 +664,11 @@ def cmd_collect_growth(
         help="Comma-separated source ids to skip.",
     ),
     max_workers: int = typer.Option(8, "--max-workers", help="Parallel source width."),
+    drafts: bool = typer.Option(False, "--drafts", "-d", help="Generate queue drafts from top posts via LLM."),
+    draft_count: int = typer.Option(3, "--draft-count", help="How many drafts to generate."),
+    draft_platform: str = typer.Option("x", "--draft-platform", help="x | linkedin | reddit"),
+    draft_type: str = typer.Option("post", "--draft-type", help="post | thread | article"),
+    provider: Optional[str] = typer.Option(None, "--provider", help="LLM provider override."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
 ) -> None:
     """Fetch social + open-source + web content for a topic and persist to SQLite.
@@ -641,6 +677,7 @@ def cmd_collect_growth(
       openreply collect-growth "note taking app" --bundle content --limit 10
       openreply collect-growth "note taking app" --bundle opensource --limit 5
       openreply collect-growth "note taking app" --include github_trending,hn,producthunt
+      openreply collect-growth "note taking app" --drafts --draft-count 3 --draft-platform x
     """
     from ..sources.collect_adapter import (
         CONTENT_GROWTH_SOURCES,
@@ -672,7 +709,7 @@ def cmd_collect_growth(
 
     results = runner(topic, **kwargs)
     total = sum(results.values())
-    summary = {
+    summary: dict[str, Any] = {
         "ok": True,
         "topic": topic,
         "bundle": bundle,
@@ -680,9 +717,38 @@ def cmd_collect_growth(
         "total_rows": total,
         "sources": results,
     }
+
+    generated_drafts: list[dict] = []
+    if drafts:
+        from ..content.drafts import generate_drafts_from_posts
+        from ..core.db import get_db
+
+        db = get_db()
+        cur = db.execute(
+            "SELECT p.* FROM posts p "
+            "JOIN topic_posts tp ON p.id = tp.post_id "
+            "WHERE tp.topic = ? ORDER BY p.score DESC LIMIT ?",
+            [topic, draft_count * 3],
+        )
+        cols = [d[0] for d in cur.description]
+        posts = [dict(zip(cols, row)) for row in cur.fetchall()]
+        generated_drafts = generate_drafts_from_posts(
+            topic=topic,
+            posts=posts,
+            count=draft_count,
+            platform=draft_platform,
+            content_type=draft_type,
+            provider=provider,
+            persist=True,
+        )
+        summary["drafts_generated"] = len(generated_drafts)
+        summary["draft_ids"] = [d["id"] for d in generated_drafts]
+
     _emit(summary, as_json=as_json, table_title=f"collect-growth · {topic} · {total} rows")
     if not as_json:
         console.print(f"[green]done[/green] — {total} rows persisted for '{topic}'")
+        if drafts:
+            console.print(f"[green]drafts[/green] — {len(generated_drafts)} generated and saved to queue")
 
 
 # ── analyze ──────────────────────────────────────────────────────────────────
@@ -6189,6 +6255,10 @@ _EXPECTED_TABLES = (
     "posts", "comments", "fetches", "streams", "stream_hits", "subreddits",
     "users", "topic_posts", "topic_canonicalizations", "topic_prefs",
     "paper_analyses", "graph_nodes", "graph_edges", "trend_series",
+    # Reply engine (OpenReply) — created in core.db.init_schema since 2026-06-29.
+    # Listed here so `health` flags a regression if init ever stops creating them.
+    "reply_brands", "reply_opportunities", "reply_drafts", "reply_sub_rules",
+    "reply_feedback", "reply_playbook", "reply_ideas",
 )
 
 

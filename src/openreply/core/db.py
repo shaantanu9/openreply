@@ -1003,6 +1003,34 @@ def init_schema(db: Database) -> None:
     # trail. Edges + conclusions are populated by Phase-2 consolidation.
     _ensure_persona_schema(db)
 
+    # Content queue / drafts (2026-06-28) — posts/threads generated from
+    # growth collection (collect-growth --drafts) and surfaced in the Queue
+    # UI for review, scheduling, and publishing.
+    if "content_queue" not in db.table_names():
+        db["content_queue"].create(
+            {
+                "id": str,                    # uuid4 hex
+                "topic": str,                 # growth topic, e.g. "note taking app"
+                "source_post_id": str,        # posts.id that inspired the draft
+                "source_type": str,           # e.g. "github_trending", "hn"
+                "source_url": str,            # original URL
+                "platform": str,              # "X" | "LinkedIn" | "Reddit" | "Blog"
+                "content_type": str,          # "post" | "thread" | "article" | "reply"
+                "title": str,                 # headline / thread hook
+                "body": str,                  # full draft text
+                "status": str,                # "draft" | "scheduled" | "posted" | "archived"
+                "scheduled_at": str,          # ISO UTC
+                "created_at": str,            # ISO UTC
+                "updated_at": str,            # ISO UTC
+                "metadata_json": str,         # JSON: {author, score, flair, ...}
+            },
+            pk="id",
+        )
+        db["content_queue"].create_index(["topic"])
+        db["content_queue"].create_index(["status"])
+        db["content_queue"].create_index(["source_type"])
+        db["content_queue"].create_index(["created_at"])
+
     # ── Retro-add hot-path indices (2026-05-30) ─────────────────────────
     # `create_index` in the table-create blocks above only fires the first
     # time a table is created. For databases that already exist (every user
@@ -1031,6 +1059,21 @@ def init_schema(db: Database) -> None:
     # next query. Best-effort; ANALYZE is idempotent and cheap.
     try:
         db.conn.execute("ANALYZE")
+    except Exception:
+        pass
+
+    # ── Reply engine tables (OpenReply) ─────────────────────────────────
+    # The reply_* tables (brands / opportunities / drafts / sub_rules /
+    # feedback / playbook / ideas) live in this same DB. Historically they
+    # were created only on the first reply-engine op via ~80 scattered
+    # init_reply_schema() calls — so any READ path that ran before a write
+    # hit "no such table: reply_*" on a fresh install. Pre-create them here,
+    # in the canonical init, so the schema is complete the moment the DB
+    # exists. Lazy import avoids a core↔reply circular import; best-effort so
+    # a reply-layer issue can never block core schema creation.
+    try:
+        from ..reply.schema import init_reply_schema
+        init_reply_schema(db)
     except Exception:
         pass
 
@@ -2038,6 +2081,74 @@ def upsert_users(rows: Iterable[dict[str, Any]]) -> int:
 
 def upsert_subreddit(row: dict[str, Any]) -> None:
     get_db()["subreddits"].upsert(row, pk="name")
+
+
+# ── Content queue / drafts ──────────────────────────────────────────────────
+
+def save_content_draft(row: dict[str, Any]) -> None:
+    """Insert or replace one content_queue row."""
+    get_db()["content_queue"].upsert(row, pk="id")
+
+
+def save_content_drafts(rows: Iterable[dict[str, Any]]) -> int:
+    rows = list(rows)
+    if not rows:
+        return 0
+    get_db()["content_queue"].upsert_all(rows, pk="id")
+    return len(rows)
+
+
+def list_content_drafts(
+    topic: str | None = None,
+    status: str | None = None,
+    source_type: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return content_queue rows, newest first."""
+    db = get_db()
+    where: list[str] = []
+    params: list[Any] = []
+    if topic:
+        where.append("topic = ?")
+        params.append(topic)
+    if status:
+        where.append("status = ?")
+        params.append(status)
+    if source_type:
+        where.append("source_type = ?")
+        params.append(source_type)
+    q = "SELECT * FROM content_queue"
+    if where:
+        q += " WHERE " + " AND ".join(where)
+    q += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+    return list(db.query(q, params))
+
+
+def get_content_draft(draft_id: str) -> dict[str, Any] | None:
+    try:
+        return dict(get_db()["content_queue"].get(draft_id))
+    except Exception:
+        return None
+
+
+def delete_content_draft(draft_id: str) -> bool:
+    try:
+        get_db()["content_queue"].delete(draft_id)
+        return True
+    except Exception:
+        return False
+
+
+def update_content_draft_status(draft_id: str, status: str, scheduled_at: str | None = None) -> bool:
+    try:
+        patch: dict[str, Any] = {"status": status, "updated_at": _utc_now()}
+        if scheduled_at is not None:
+            patch["scheduled_at"] = scheduled_at
+        get_db()["content_queue"].update(draft_id, patch)
+        return True
+    except Exception:
+        return False
 
 
 def save_mcp_analysis(

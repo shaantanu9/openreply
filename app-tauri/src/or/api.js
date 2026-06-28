@@ -68,18 +68,63 @@ function _invalidateForWrite(cmd) {
   _invalidate(fams);
 }
 
+// ── Hard timeout + tolerant-JSON guard ──────────────────────────────────────
+// Tauri's `invoke` has no built-in timeout, so a cold/stuck sidecar (macOS
+// Gatekeeper can stall the first spawn for minutes) would otherwise leave the
+// UI spinning forever. We race every call against a ceiling: snappy reads/writes
+// get 120 s, while genuinely long LLM / collect / learn ops get 6 min so real
+// work is never cut short. On timeout the promise rejects and the caller's catch
+// path renders an error instead of an infinite "Loading…".
+const DEFAULT_TIMEOUT_MS = 120_000;
+const LONG_TIMEOUT_MS = 360_000;
+const LONG_COMMANDS = new Set([
+  "agent_learn", "agent_refresh", "agent_build_graph", "agent_brain_relink",
+  "agent_evolve", "agent_teach_video", "agent_ideas", "agent_idea_draft",
+  "agent_corpus_check", "agent_autopilot_run",
+  "content_generate", "reply_find", "reply_post_due", "reply_growth_plan",
+  "sub_intel", "sub_discover", "account_fetch",
+  "x_account_fetch_posts", "x_account_fetch_thread", "x_account_save_to_library",
+  "geo_check", "geo_check_all", "palace_reindex",
+]);
+
+class TimeoutError extends Error {}
+
+// The Rust bridge returns `{_parse_error:true, _parse_error_message, _raw}` when
+// the sidecar emitted non-JSON on a command we expected JSON from. Surface it as
+// a real rejection so the caller shows a diagnostic, not a silently-blank screen.
+function _checkParseError(v) {
+  if (v && typeof v === "object" && (v._parse_error || v._parse_error_message)) {
+    const e = new Error(v._parse_error_message || "the engine returned malformed output");
+    e.parseError = true;
+    e.raw = v._raw;
+    throw e;
+  }
+  return v;
+}
+
+function _invoke(cmd, args) {
+  const ms = LONG_COMMANDS.has(cmd) ? LONG_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new TimeoutError(
+      `“${cmd}” timed out after ${Math.round(ms / 1000)}s — the engine may be busy or unreachable. Try again.`)), ms);
+  });
+  const run = Promise.resolve(invoke(cmd, args || {})).then(_checkParseError);
+  return Promise.race([run, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function call(cmd, args) {
   if (!TAURI) return null;
   if (SWR_READS.has(cmd)) {
     const k = _key(cmd, args);
     const cached = _readCache(k);
-    const fresh = invoke(cmd, args || {})
+    const fresh = _invoke(cmd, args)
       .then((v) => { _writeCache(k, v); return v; })
       .catch((e) => { if (cached === undefined) throw e; return cached; });
     if (cached !== undefined) { fresh.catch(() => {}); return cached; } // instant + bg refresh
     return await fresh;                                                  // cold cache: await real data
   }
-  const res = await invoke(cmd, args || {});
+  const res = await _invoke(cmd, args);
   _invalidateForWrite(cmd);
   return res;
 }
@@ -168,6 +213,23 @@ export const api = {
   replyPostDue: () => call("reply_post_due"),
   replyGrowthPlan: (id) => call("reply_growth_plan", { id: id || null }),
   replyGrowthGet: (id) => call("reply_growth_get", { id: id || null }),
+  // Telegram / Slack notifications
+  notifyGet: () => call("notify_get"),
+  notifySet: (cfg) => call("notify_set", {
+    enabled: cfg.enabled ?? null,
+    twoWay: cfg.twoWay ?? null,
+    telegramToken: cfg.telegramToken ?? null,
+    telegramChat: cfg.telegramChat ?? null,
+    slackWebhook: cfg.slackWebhook ?? null,
+    minScore: cfg.minScore ?? null,
+    evOpportunity: cfg.evOpportunity ?? null,
+    evArticle: cfg.evArticle ?? null,
+    evReply: cfg.evReply ?? null,
+    evDigest: cfg.evDigest ?? null,
+    evGeo: cfg.evGeo ?? null,
+  }),
+  notifyTest: () => call("notify_test"),
+  botPollOnce: () => call("bot_poll_once"),
   // subreddit intelligence
   redditAccountStatus: () => call("reddit_account_status"),
   subDiscover: (limit, autoTrackTop) => call("sub_discover", { limit: limit || 8, autoTrackTop: autoTrackTop || 0 }),
@@ -216,6 +278,8 @@ export const api = {
   publishSetXCreds: (apiKey, apiSecret, accessToken, accessSecret) =>
     call("publish_set_x_creds", { apiKey, apiSecret, accessToken, accessSecret }),
   contentPublishX: (id, dryRun) => call("content_publish_x", { contentId: id, dryRun: !!dryRun }),
+  contentPublishXReply: (replyToTweetId, text, dryRun) =>
+    call("content_publish_x_reply", { replyToTweetId, text, dryRun: !!dryRun }),
   // ── Minimal X-account worktree (MVP) ──
   xAccountAdd: (handle, authToken, ct0) =>
     call("x_account_add", { handle, authToken: authToken || null, ct0: ct0 || null }),
@@ -223,11 +287,11 @@ export const api = {
   xAccountList: () => call("x_account_list"),
   xAccountProfile: (handle) => call("x_account_profile", { handle }),
   xAccountFetchPosts: (handle, count, withThreads) =>
-    call("x_account_fetch_posts", { handle, count: count || 10, with_threads: !!withThreads }),
+    call("x_account_fetch_posts", { handle, count: count || 10, withThreads: !!withThreads }),
   xAccountFetchThread: (handle, tweetIdOrUrl, limit) =>
-    call("x_account_fetch_thread", { handle, tweet_id_or_url: tweetIdOrUrl, limit: limit || 50 }),
+    call("x_account_fetch_thread", { handle, tweetIdOrUrl, limit: limit || 50 }),
   xAccountSaveToLibrary: (handle, count, withThreads) =>
-    call("x_account_save_to_library", { handle, count: count || 25, with_threads: !!withThreads }),
+    call("x_account_save_to_library", { handle, count: count || 25, withThreads: !!withThreads }),
   // ── Connections (Reach credentials) — creds_* return a JSON array; the
   // single-result ops return a 1-element array, so callers take [0]. ──
   credsList: () => call("creds_list"),
@@ -278,6 +342,8 @@ export const api = {
   cliSymlinkStatus: () => call("cli_symlink_status"),
   exportPrefsGet: () => call("export_prefs_get"),
   exportPrefsSet: (exportDir) => call("export_prefs_set", { exportDir: exportDir || null }),
+  // ── Startup diagnostics (sidecar / DB / LLM provider) ──
+  healthCheck: () => call("health_check"),
   // ── Settings: about / version + semantic-memory (palace) engine ──
   cliInfo: () => call("cli_info"),
   checkAppVersion: () => call("check_app_version"),

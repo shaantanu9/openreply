@@ -12,6 +12,7 @@ class PublishResult:
     ids: list = field(default_factory=list)   # remote ids, in post order
     parts: int = 0          # number of posts made (1 = single, >1 = thread)
     error: str = ""
+    reply_to_tweet_id: str = ""  # for X replies: the tweet this was a reply to
 
     def to_dict(self) -> dict:
         return asdict(self)

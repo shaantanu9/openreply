@@ -43,7 +43,7 @@ export async function renderAgents(view) {
         <div class="mt-3 text-sm text-zinc-500">Platforms</div>
         <div class="mt-1 grid grid-cols-3 gap-2 text-sm">${platforms.filter(p => p.can_reply).map(p =>
           `<label class="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1.5">
-             <input type="checkbox" value="${esc(p.key)}" ${OR_DEFAULT_PICK.has(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("")}</div>
+             <input type="checkbox" class="accent-reddit" value="${esc(p.key)}" ${OR_DEFAULT_PICK.has(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("")}</div>
         <button id="ag-create" class="mt-4 ${btnP}">Create agent</button> <span id="ag-msg" class="text-sm text-zinc-500"></span>`;
       document.getElementById("ag-create").onclick = createAgent;
     }
@@ -76,7 +76,10 @@ export async function renderAgents(view) {
       const agents = res?.agents || [];
       grid.innerHTML = agents.length ? agents.map(agentCard).join("") +
         `<a href="#/onboarding" class="flex min-h-[170px] items-center justify-center rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:border-reddit hover:text-reddit"><div class="text-center"><div class="text-3xl text-reddit">＋</div>New agent</div></a>`
-        : `<div class="${card} text-zinc-500">No agents yet — click “+ New agent”.</div>`;
+        : `<div class="${card} sm:col-span-2 text-center">
+             <p class="text-zinc-500">No agents yet. Set up your first brand persona to start finding conversations worth joining.</p>
+             <a href="#/onboarding" class="mt-3 inline-block ${btnP}">Set up your first agent</a>
+           </div>`;
       grid.querySelectorAll("[data-use]").forEach(b => b.onclick = async () => {
         await api.agentUse(b.getAttribute("data-use")); toast("Switched agent"); load();
       });
@@ -1145,6 +1148,7 @@ export async function renderSettings(view) {
        <div id="st-semantic" data-skw="semantic memory embeddings palace vector graph model reindex learning" class="${card}"><div class="text-zinc-500">Loading…</div></div>
        <div id="st-feeds" data-skw="feeds rss custom sources news add url" class="${card}"><div class="text-zinc-500">Loading feeds…</div></div>
        <div id="st-publish" data-skw="publish x twitter post tweet thread api key oauth social outbound connect" class="${card}"><div class="text-zinc-500">Loading publishing…</div></div>
+       <div id="st-notify" data-skw="notifications telegram slack bot alerts opportunity reminder reply article webhook chat push mobile two-way" class="${card}"><div class="text-zinc-500">Loading notifications…</div></div>
        <div id="st-power" data-skw="cli terminal install symlink export folder power tools" class="${card}"><div class="text-zinc-500">Loading…</div></div>
        <div id="st-data" data-skw="data export reset delete local database backup storage wipe" class="${card}"><div class="text-zinc-500">Loading data…</div></div>
        <div id="st-about" data-skw="about version support feedback email github issue logs help" class="${card}"><div class="text-zinc-500">Loading…</div></div>
@@ -1158,6 +1162,7 @@ export async function renderSettings(view) {
   buildSemanticCard(document.getElementById("st-semantic"));
   buildFeedsCard(document.getElementById("st-feeds"));
   buildPublishCard(document.getElementById("st-publish"));
+  buildNotifyCard(document.getElementById("st-notify"));
   buildPowerCard(document.getElementById("st-power"));
   buildDataCard(document.getElementById("st-data"));
   buildAboutCard(document.getElementById("st-about"));
@@ -1175,6 +1180,122 @@ export async function renderSettings(view) {
     if (empty) empty.classList.toggle("hidden", shown > 0);
   };
   icons();
+}
+
+// ── Telegram / Slack notifications ──────────────────────────────────────────
+// The two-way Telegram poller runs only while the app is open: a module-level
+// interval calls bot-poll --once, so button taps (Approve/Regenerate/Skip) are
+// handled live, and it stops the moment the window closes. No always-on server.
+let _botTimer = null;
+export async function ensureBotPoller() {
+  try {
+    const c = await api.notifyGet();
+    const want = c && c.enabled && c.two_way && c.has_telegram;
+    if (want && !_botTimer) {
+      const tick = async () => { try { await api.botPollOnce(); } catch (e) {} };
+      _botTimer = setInterval(tick, 4000);
+      tick();
+    } else if (!want && _botTimer) {
+      clearInterval(_botTimer); _botTimer = null;
+    }
+  } catch (e) {}
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => { if (_botTimer) { clearInterval(_botTimer); _botTimer = null; } });
+}
+
+async function buildNotifyCard(el) {
+  let c = {};
+  try { c = (await api.notifyGet()) || {}; } catch (e) {
+    el.innerHTML = `<b class="text-zinc-900 dark:text-white">Notifications</b><p class="mt-1 text-sm text-rose-500">Unavailable: ${esc(e)}</p>`; return;
+  }
+  const ev = c.events || {};
+  const onBadge = c.enabled
+    ? `<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">on</span>`
+    : `<span class="rounded bg-zinc-500/15 px-2 py-0.5 text-xs font-bold text-zinc-400">off</span>`;
+  const chk = (id, on, label) =>
+    `<label class="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"><input type="checkbox" id="${id}" ${on ? "checked" : ""} class="h-4 w-4 accent-reddit"> ${label}</label>`;
+  el.innerHTML = `
+    <div class="flex items-center gap-2"><b class="text-zinc-900 dark:text-white">Notifications</b>${onBadge}</div>
+    <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Get pinged on <b>Telegram</b> or <b>Slack</b> when there's a new opportunity, a freshly drafted post, or a reply due — with the draft + link so you can post fast. Tokens stay on this Mac.</p>
+
+    <div class="mb-3">
+      <div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Telegram${c.has_telegram ? ` <span class="text-emerald-500">· saved ${esc(c.telegram_hint)}</span>` : ""}</div>
+      <p class="mb-2 text-xs text-zinc-500">Message <a href="https://t.me/BotFather" target="_blank" class="text-reddit underline">@BotFather</a> → <code>/newbot</code> for a token, then <a href="https://t.me/userinfobot" target="_blank" class="text-reddit underline">@userinfobot</a> for your chat id. Supports two-way buttons (Approve / Regenerate / Skip).</p>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <input id="nt-token" type="password" placeholder="${c.has_telegram ? "Bot token (leave blank to keep)" : "Bot token"}" class="${inputCls}">
+        <input id="nt-chat" placeholder="Chat id" value="${esc(c.telegram_chat || "")}" class="${inputCls}">
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Slack${c.has_slack ? ` <span class="text-emerald-500">· saved ${esc(c.slack_hint)}</span>` : ""}</div>
+      <p class="mb-2 text-xs text-zinc-500">Create an <a href="https://api.slack.com/messaging/webhooks" target="_blank" class="text-reddit underline">Incoming Webhook ↗</a> for a channel. Notify-only — Slack buttons need a public server a local Mac can't host.</p>
+      <input id="nt-slack" type="password" placeholder="${c.has_slack ? "Webhook URL (leave blank to keep)" : "https://hooks.slack.com/services/…"}" class="${inputCls} w-full">
+    </div>
+
+    <div class="mb-3">
+      <div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Send me</div>
+      <div class="grid gap-1.5 sm:grid-cols-2">
+        ${chk("nt-ev-opp", ev.opportunity, "New opportunities")}
+        ${chk("nt-ev-article", ev.article, "New drafted posts")}
+        ${chk("nt-ev-reply", ev.reply, "Replies due (reminder)")}
+        ${chk("nt-ev-digest", ev.digest, "Daily digest")}
+        ${chk("nt-ev-geo", ev.geo, "AI-visibility changes")}
+      </div>
+      <label class="mt-2 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">Min opportunity match
+        <input id="nt-minscore" type="number" min="0" max="1" step="0.05" value="${Number(c.min_score || 0)}" class="${inputCls} w-24"></label>
+    </div>
+
+    <div class="mb-3 flex flex-wrap gap-3">
+      ${chk("nt-enabled", c.enabled, "Notifications on")}
+      ${chk("nt-twoway", c.two_way, "Telegram two-way buttons")}
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <button id="nt-save" class="${btnP}">Save</button>
+      <button id="nt-test" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Send test</button>
+      <span id="nt-msg" class="text-xs text-zinc-400"></span>
+    </div>`;
+
+  const msg = el.querySelector("#nt-msg");
+  const val = (id) => (el.querySelector(id)?.value || "").trim();
+  const chkd = (id) => !!el.querySelector(id)?.checked;
+
+  async function save() {
+    msg.textContent = "Saving…";
+    const cfg = {
+      enabled: chkd("#nt-enabled"),
+      twoWay: chkd("#nt-twoway"),
+      telegramChat: val("#nt-chat"),
+      minScore: parseFloat(val("#nt-minscore") || "0") || 0,
+      evOpportunity: chkd("#nt-ev-opp"),
+      evArticle: chkd("#nt-ev-article"),
+      evReply: chkd("#nt-ev-reply"),
+      evDigest: chkd("#nt-ev-digest"),
+      evGeo: chkd("#nt-ev-geo"),
+    };
+    const tok = val("#nt-token"); if (tok) cfg.telegramToken = tok;
+    const hook = val("#nt-slack"); if (hook) cfg.slackWebhook = hook;
+    try {
+      const r = await api.notifySet(cfg);
+      if (r?.error) { msg.textContent = r.error; return; }
+      toast("Notifications saved");
+      ensureBotPoller();
+      buildNotifyCard(el);
+    } catch (e) { msg.textContent = "Failed: " + esc(e); }
+  }
+  el.querySelector("#nt-save").onclick = save;
+  el.querySelector("#nt-test").onclick = async () => {
+    msg.textContent = "Sending test… (save first if you just changed a token)";
+    try {
+      const r = await api.notifyTest();
+      if (r?.error) { msg.textContent = r.error; return; }
+      const okTg = r.telegram ? (r.telegram.ok ? "Telegram ✓" : "Telegram ✗ " + (r.telegram.msg || "")) : "";
+      const okSk = r.slack ? (r.slack.ok ? "Slack ✓" : "Slack ✗ " + (r.slack.msg || "")) : "";
+      msg.textContent = [okTg, okSk].filter(Boolean).join(" · ") || "No channel configured.";
+    } catch (e) { msg.textContent = "Failed: " + esc(e); }
+  };
 }
 
 async function buildPublishCard(el) {
@@ -3467,29 +3588,40 @@ export async function renderXAccount(view) {
         tmsg.textContent = "Loading thread…";
         try {
           const res = await api.xAccountFetchThread(handle, input, 50);
-          renderPosts(res?.thread || [], "Thread", true);
+          renderPosts(res?.thread || [], "Thread", true, handle);
           tmsg.textContent = `${res?.count || 0} tweets`;
         } catch (e) { tmsg.textContent = "Failed: " + e; }
       };
 
-      renderPosts(posts?.posts || [], "Recent posts");
+      renderPosts(posts?.posts || [], "Recent posts", false, handle);
     } catch (e) { out.innerHTML = `<div class="text-rose-500">${esc(e)}</div>`; }
   }
 
-  function renderPosts(posts, title, skipHeader) {
+  function renderPosts(posts, title, skipHeader, accountHandle) {
     const container = document.getElementById("xa-posts");
     if (!container) return;
     const html = (skipHeader ? "" : `<div class="mb-2 text-sm font-semibold text-zinc-500">${esc(title)}</div>`) +
       posts.map(t => `
-        <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 ${t.is_reply ? "border-l-4 border-l-reddit" : ""}">
+        <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 ${t.is_reply ? "border-l-4 border-l-reddit" : ""}" data-tweet-id="${esc(t.id)}">
           <div class="text-sm text-zinc-900 dark:text-white whitespace-pre-wrap">${esc(t.text)}</div>
-          <div class="mt-2 flex flex-wrap gap-4 text-xs text-zinc-500">
+          <div class="mt-2 flex flex-wrap items-center gap-4 text-xs text-zinc-500">
             <span>♥ ${t.likes || 0}</span>
             <span>↻ ${t.retweets || 0}</span>
             <span>💬 ${t.replies || 0}</span>
             ${t.is_reply ? "<span>reply</span>" : ""}
             ${t.is_retweet ? "<span>retweet</span>" : ""}
             <a href="${esc(t.url)}" target="_blank" class="hover:text-reddit">open →</a>
+            <button data-reply="${esc(t.id)}" class="text-reddit hover:underline font-semibold">Reply</button>
+          </div>
+          <div data-reply-form="${esc(t.id)}" class="hidden mt-3 rounded-lg bg-zinc-50 dark:bg-zinc-800 p-3">
+            <label class="mb-1 block text-xs font-semibold text-zinc-500">Your reply as @${esc(accountHandle || "")}</label>
+            <textarea data-reply-text="${esc(t.id)}" rows="3" class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-1 focus:ring-reddit dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" placeholder="Write your reply…"></textarea>
+            <div class="mt-2 flex gap-2">
+              <button data-reply-post="${esc(t.id)}" class="${btnP}">Post reply</button>
+              <button data-reply-preview="${esc(t.id)}" class="${btn}">Preview</button>
+              <button data-reply-cancel="${esc(t.id)}" class="${btn}">Cancel</button>
+            </div>
+            <div data-reply-msg="${esc(t.id)}" class="mt-2 text-sm"></div>
           </div>
           ${(t.thread || []).length ? `
             <div class="mt-3 space-y-2 border-l-2 border-zinc-200 dark:border-zinc-700 pl-3">
@@ -3501,6 +3633,52 @@ export async function renderXAccount(view) {
         </div>
       `).join("");
     container.innerHTML = html;
+
+    // Reply toggles
+    container.querySelectorAll("[data-reply]").forEach((btn) => {
+      const id = btn.getAttribute("data-reply");
+      btn.onclick = () => {
+        const form = container.querySelector(`[data-reply-form="${CSS.escape(id)}"]`);
+        if (form) form.classList.toggle("hidden");
+      };
+    });
+
+    // Cancel
+    container.querySelectorAll("[data-reply-cancel]").forEach((btn) => {
+      const id = btn.getAttribute("data-reply-cancel");
+      btn.onclick = () => {
+        const form = container.querySelector(`[data-reply-form="${CSS.escape(id)}"]`);
+        if (form) form.classList.add("hidden");
+      };
+    });
+
+    // Preview / Post reply
+    container.querySelectorAll("[data-reply-preview], [data-reply-post]").forEach((btn) => {
+      const id = btn.getAttribute("data-reply-preview") || btn.getAttribute("data-reply-post");
+      const dryRun = btn.hasAttribute("data-reply-preview");
+      btn.onclick = async () => {
+        const ta = container.querySelector(`[data-reply-text="${CSS.escape(id)}"]`);
+        const msg = container.querySelector(`[data-reply-msg="${CSS.escape(id)}"]`);
+        const text = (ta?.value || "").trim();
+        if (!text) { if (msg) msg.innerHTML = `<span class="text-amber-500">Enter reply text.</span>`; return; }
+        btn.disabled = true; const prev = btn.textContent; btn.textContent = dryRun ? "Previewing…" : "Posting…";
+        try {
+          const r = await api.contentPublishXReply(id, text, dryRun);
+          if (r?.ok) {
+            if (dryRun) {
+              const parts = (r?.tweets || [text]).map(s => `<li class="mt-1">${esc(s)}</li>`).join("");
+              if (msg) msg.innerHTML = `<div class="text-emerald-600">Preview (${r?.parts || 1} tweet(s)):</div><ul class="list-disc pl-4 text-zinc-600 dark:text-zinc-300">${parts}</ul>`;
+            } else {
+              if (msg) msg.innerHTML = `<div class="text-emerald-600">Posted! <a href="${esc(r?.url || "")}" target="_blank" class="underline">View reply →</a></div>`;
+              ta.value = "";
+            }
+          } else {
+            if (msg) msg.innerHTML = `<div class="text-rose-500">${esc(r?.error || "Post failed")}</div>`;
+          }
+        } catch (e) { if (msg) msg.innerHTML = `<div class="text-rose-500">${esc(e)}</div>`; }
+        finally { btn.disabled = false; btn.textContent = prev; }
+      };
+    });
   }
 
   loadAccounts();

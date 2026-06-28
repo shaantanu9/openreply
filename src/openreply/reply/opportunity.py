@@ -404,8 +404,33 @@ def find_if_due(provider: str | None = None) -> dict:
         update_agent(a["id"], last_refresh_at=now)
     except Exception:
         pass
+    _notify_new_opportunities(res.get("opportunities") or [])
     return {"skipped": False, "cadence": cadence, "found": res.get("found", 0),
             "error": res.get("error")}
+
+
+def _notify_new_opportunities(opps: list[dict], cap: int = 5) -> None:
+    """Push Telegram/Slack alerts for the strongest, not-yet-notified finds.
+    Best-effort, threshold-gated, deduped per opportunity id."""
+    try:
+        from . import notify as _n
+    except Exception:
+        return
+    if not _n.is_configured():
+        return
+    cfg = _n.get_config()
+    if not cfg["events"].get("opportunity"):
+        return
+    floor = float(cfg.get("min_score") or 0.0)
+    ranked = sorted(opps, key=lambda o: float(o.get("score") or 0), reverse=True)
+    sent = 0
+    for opp in ranked:
+        if sent >= cap:
+            break
+        if float(opp.get("score") or 0) < floor:
+            break  # ranked desc — nothing below will qualify either
+        _n.notify_once(f"opp:{opp.get('id')}", "opportunity", {"opp": opp})
+        sent += 1
 
 
 # Lifecycle states an opportunity can move through.

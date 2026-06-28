@@ -108,6 +108,14 @@ def process_due(now: int | None = None, notify: bool = False) -> dict:
                 "id": oid, "title": opp.get("title"),
                 "url": opp.get("url"), "reason": msg,
             })
+            # Rich push (Telegram draft + buttons / Slack) — deduped per reply so
+            # a still-queued item doesn't re-ping every scheduler tick.
+            try:
+                from . import notify as _n
+                if _n.is_configured() and _n.get_config()["events"].get("reply"):
+                    _n.notify_once(f"reply:{oid}", "reply", {"opp": opp, "draft": text})
+            except Exception:
+                pass
     if notify and reminders:
         n = len(reminders)
         _notify("OpenReply — replies due",

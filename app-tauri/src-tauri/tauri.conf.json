@@ -70,8 +70,8 @@
     "targets": "all",
     "category": "DeveloperTool",
     "copyright": "\u00a9 2026 Shantanu Bombatkar",
-    "shortDescription": "Multi-source research gap finder",
-    "longDescription": "OpenReply discovers product gaps by fusing Reddit, HN, arXiv, GitHub, and 6 more sources into a single searchable corpus, then extracts pain-points and workarounds via LLM.",
+    "shortDescription": "AI social reply & growth co-pilot",
+    "longDescription": "OpenReply is a social reply co-pilot for founders and creators. It builds a brand/niche persona for each agent, scans Reddit, Hacker News, and connected platforms for conversations worth joining, then drafts on-brand, on-voice replies and growth content you can review and post.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -573,6 +573,61 @@ pub async fn reply_growth_get(app: AppHandle, id: Option<String>) -> Result<Valu
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `openreply reply notify-get` — current notification config (tokens masked).
+#[tauri::command]
+pub async fn notify_get(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "notify-get", "--json"]).await.map_err(err_to_string)
+}
+
+/// `openreply reply notify-set` — update Telegram/Slack notification config.
+/// Every field is optional; only the ones supplied change. Pass an empty string
+/// for a token to clear it. Bool fields are tri-state (None = unchanged).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn notify_set(
+    app: AppHandle,
+    enabled: Option<bool>,
+    two_way: Option<bool>,
+    telegram_token: Option<String>,
+    telegram_chat: Option<String>,
+    slack_webhook: Option<String>,
+    min_score: Option<f64>,
+    ev_opportunity: Option<bool>,
+    ev_article: Option<bool>,
+    ev_reply: Option<bool>,
+    ev_digest: Option<bool>,
+    ev_geo: Option<bool>,
+) -> Result<Value, String> {
+    let mut args: Vec<String> = vec!["reply".into(), "notify-set".into(), "--json".into()];
+    if let Some(b) = enabled { args.push(if b { "--enabled".into() } else { "--disabled".into() }); }
+    if let Some(b) = two_way { args.push(if b { "--two-way".into() } else { "--one-way".into() }); }
+    if let Some(s) = telegram_token { args.push("--telegram-token".into()); args.push(s); }
+    if let Some(s) = telegram_chat { args.push("--telegram-chat".into()); args.push(s); }
+    if let Some(s) = slack_webhook { args.push("--slack-webhook".into()); args.push(s); }
+    if let Some(n) = min_score { args.push("--min-score".into()); args.push(n.to_string()); }
+    if let Some(b) = ev_opportunity { args.push(if b { "--opp".into() } else { "--no-opp".into() }); }
+    if let Some(b) = ev_article { args.push(if b { "--article".into() } else { "--no-article".into() }); }
+    if let Some(b) = ev_reply { args.push(if b { "--reply".into() } else { "--no-reply".into() }); }
+    if let Some(b) = ev_digest { args.push(if b { "--digest".into() } else { "--no-digest".into() }); }
+    if let Some(b) = ev_geo { args.push(if b { "--geo".into() } else { "--no-geo".into() }); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply reply notify-test` — send a test message to every configured channel.
+#[tauri::command]
+pub async fn notify_test(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "notify-test", "--json"]).await.map_err(err_to_string)
+}
+
+/// `openreply reply bot-poll --once` — drain pending Telegram button taps and
+/// return. The open app calls this on a short interval; when the app closes the
+/// interval dies, so the two-way bot runs only while the app is running.
+#[tauri::command]
+pub async fn bot_poll_once(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "bot-poll", "--once", "--json"]).await.map_err(err_to_string)
+}
+
 /// `openreply content generate <kind> …`.
 /// `context_id` / `context_text` feed the follow-up kinds (the prior draft, or
 /// the thread + reply to answer); ignored by the other kinds.
@@ -673,6 +728,24 @@ pub async fn content_publish_x(
     let mut args = vec![
         "publish".to_string(), "x".to_string(),
         "--content-id".to_string(), content_id, "--json".to_string(),
+    ];
+    if dry_run.unwrap_or(false) { args.push("--dry-run".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply publish x-reply <reply_to_tweet_id> --text <text> [--dry-run]`
+/// — post a reply to an existing X tweet.
+#[tauri::command]
+pub async fn content_publish_x_reply(
+    app: AppHandle,
+    reply_to_tweet_id: String,
+    text: String,
+    dry_run: Option<bool>,
+) -> Result<Value, String> {
+    let mut args = vec![
+        "publish".to_string(), "x-reply".to_string(), reply_to_tweet_id,
+        "--text".to_string(), text, "--json".to_string(),
     ];
     if dry_run.unwrap_or(false) { args.push("--dry-run".into()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -960,26 +1033,22 @@ pub async fn recent_activity(app: AppHandle) -> Result<Value, String> {
 pub async fn topic_graph_summary(app: AppHandle, topic: String) -> Result<Value, String> {
     // Three queries instead of one so each subquery can be read independently
     // by callers and the JS side doesn't have to parse a hand-rolled payload.
-    let nodes_sql = format!(
-        "SELECT kind, count(*) AS c FROM graph_nodes WHERE topic = '{t}' \
-         GROUP BY kind ORDER BY count(*) DESC",
-        t = topic.replace('\'', "''"),
-    );
-    let edges_sql = format!(
-        "SELECT kind, count(*) AS c FROM graph_edges WHERE topic = '{t}' \
-         GROUP BY kind ORDER BY count(*) DESC",
-        t = topic.replace('\'', "''"),
-    );
-    let sources_sql = format!(
-        "SELECT coalesce(p.source_type,'reddit') AS source_type, count(*) AS c \
-         FROM posts p JOIN topic_posts tp ON tp.post_id = p.id \
-         WHERE tp.topic = '{t}' GROUP BY p.source_type ORDER BY count(*) DESC",
-        t = topic.replace('\'', "''"),
-    );
+    // Bind `topic` as a real `:topic` param (project convention) instead of
+    // string-interpolating it — no manual quote-escaping, no injection surface.
+    let nodes_sql = "SELECT kind, count(*) AS c FROM graph_nodes WHERE topic = :topic \
+                     GROUP BY kind ORDER BY count(*) DESC";
+    let edges_sql = "SELECT kind, count(*) AS c FROM graph_edges WHERE topic = :topic \
+                     GROUP BY kind ORDER BY count(*) DESC";
+    let sources_sql = "SELECT coalesce(p.source_type,'reddit') AS source_type, count(*) AS c \
+                       FROM posts p JOIN topic_posts tp ON tp.post_id = p.id \
+                       WHERE tp.topic = :topic GROUP BY p.source_type ORDER BY count(*) DESC";
 
-    let nodes = native_query(&app, &nodes_sql).await?;
-    let edges = native_query(&app, &edges_sql).await?;
-    let sources = native_query(&app, &sources_sql).await?;
+    let mut binds = serde_json::Map::new();
+    binds.insert("topic".to_string(), Value::String(topic.clone()));
+
+    let nodes = native_query_params(&app, nodes_sql, Some(&binds)).await?;
+    let edges = native_query_params(&app, edges_sql, Some(&binds)).await?;
+    let sources = native_query_params(&app, sources_sql, Some(&binds)).await?;
 
     Ok(serde_json::json!({
         "topic":   topic,
@@ -993,14 +1062,25 @@ pub async fn topic_graph_summary(app: AppHandle, topic: String) -> Result<Value,
 /// if DB doesn't exist yet) but without the read-only SQL validator (these
 /// queries are hardcoded string literals above, not user-supplied).
 async fn native_query(app: &AppHandle, sql: &str) -> Result<Value, String> {
+    native_query_params(app, sql, None).await
+}
+
+/// Same as `native_query` but binds named `:params` (project convention for
+/// topic-scoped queries — no string interpolation, no injection surface).
+async fn native_query_params(
+    app: &AppHandle,
+    sql: &str,
+    params: Option<&serde_json::Map<String, Value>>,
+) -> Result<Value, String> {
     let dir = crate::cli::data_dir(app).map_err(err_to_string)?;
     let db_path = dir.join("openreply.db");
     if !db_path.exists() {
         return Ok(Value::Array(vec![]));
     }
     let sql_owned = sql.to_string();
+    let params_owned = params.cloned();
     tokio::task::spawn_blocking(move || {
-        crate::db::query_db(&db_path, &sql_owned, None).map(Value::from)
+        crate::db::query_db(&db_path, &sql_owned, params_owned.as_ref()).map(Value::from)
     })
     .await
     .map_err(|e| format!("query task failed: {e}"))?

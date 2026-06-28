@@ -95,3 +95,40 @@ def x_cmd(
         except Exception:
             pass
     _out(res, json_)
+
+
+@publish_app.command("x-reply")
+def x_reply_cmd(
+    reply_to_tweet_id: str = typer.Argument(..., help="Tweet id or x.com status URL to reply to"),
+    content_id: str = typer.Option(None, "--content-id", help="content_items id to post as reply"),
+    text: str = typer.Option(None, "--text", help="Raw reply text (alternative to --content-id)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without posting"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Post a reply to an existing X tweet. Provide either --content-id or --text."""
+    body = ""
+    if content_id:
+        item = _load_content(content_id)
+        if not item:
+            _out({"error": f"no content '{content_id}'"}, json_)
+            raise typer.Exit(1)
+        body = item.get("body") or ""
+    elif text:
+        body = text
+    else:
+        _out({"error": "Provide --content-id or --text"}, json_)
+        raise typer.Exit(1)
+
+    # Extract tweet id from URL if needed.
+    tweet_id = reply_to_tweet_id
+    if "/status/" in tweet_id:
+        import re
+        m = re.search(r"/status/(\d+)", tweet_id)
+        if m:
+            tweet_id = m.group(1)
+
+    if dry_run:
+        _out({**_x.plan(body), "reply_to_tweet_id": tweet_id, "dry_run": True}, json_)
+        return
+    res = _x.publish_reply(body, tweet_id, dry_run=False).to_dict()
+    _out(res, json_)
