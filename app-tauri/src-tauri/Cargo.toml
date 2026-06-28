@@ -26,8 +26,6 @@ uuid = { version = "1", features = ["v4"] }
 # don't allow webview origins. rustls-tls avoids pulling in OpenSSL at build.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 base64 = "0.22"
-jsonwebtoken = "9"
-keyring = "2"
 # Native SQLite — bypasses Python sidecar for read queries. Every sidecar
 # spawn takes 30-70s on a fresh DMG (PyInstaller boot + Gatekeeper verify
 # every `.so` on each launch). Opening the same WAL-mode DB from Rust is

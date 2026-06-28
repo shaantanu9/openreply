@@ -8,7 +8,6 @@
 > - **New sources** — **Stack Exchange network ×8**, **Europe PMC**, **DBLP**, **Steam reviews**, **Bluesky** (app-password fix). Lemmy + GitHub Issues now default-on. ✅
 > - **Paper full-text** — auto-prefetch (download+extract PDF, no LLM) of top-15 papers after collect → chat grounds on intro+conclusions, not just abstracts. ✅
 > - **Prioritize tab** (NEW) — ranked opportunity list (RICE + Kano + MoSCoW + painpoint). Closes the cat-14 🟡 for RICE/Kano/MoSCoW. ✅
-> - **Activation** — key-hash + secret rotation hardened; auth-delete cleanup trigger (delete→recreate→activate verified end-to-end). ✅
 > - **Docs** — `CHANGES-2026-06.md`, `docs/USER-FEEDBACK-SOURCES.md`.
 > - **Strategy frameworks (NEW, cat 17)** — TAM/SAM/SOM market sizing, Porter, SWOT, Lean Canvas, Value-Prop, North-Star. ✅
 > - **Cat-14 fully closed** — Why root-cause, Sentiment charts, Tactics, Hypothesis-tracker screen shipped; PERT + idea-scan exposed as MCP tools. ✅
@@ -779,8 +778,7 @@ toolkit-linked but not yet smoke-tested in a running desktop build.
 |---|---|---|
 | ✅ resolved | Sidecar binary staleness — the binary is no longer committed (gitignored); `release.yml` rebuilds it fresh per release, local dev rebuilds via `pyinstaller openreply-cli.spec` | `app-tauri/src-tauri/binaries/` |
 | ✅ resolved | Developer ID cert + notarization — v0.1.21 ships **signed + notarized** via CI | `.github/workflows/release-mac.yml` |
-| ✅ resolved | `JWT_DESKTOP_SECRET` now in GitHub Secrets (fp `6713fd9ce909`); CI **drift-guard** refuses to build on mismatch, no random fallback | `.github/workflows/release-mac.yml` |
-| **deferred** | Auto-update not configured (users manually download `.dmg`) | `docs/manual-todo/future-scope-signing-and-secrets.md` |
+| **deferred** | Auto-update not configured (users manually download `.dmg`) | `docs/manual-todo/` |
 | ✅ resolved | **Advanced-analysis completion punch-list — DONE.** All 14 cat-14 🟡 now ✅: RICE/Kano/MoSCoW (Prioritize tab) · OST/PMF/Pricing/PRD/Empathy/Intents/Iterate/Interviews (screen-completion workflow) · **Why root-cause** (new `root_cause` module+screen+tab) · **Sentiment-by-source** (charts) · **Tactic library** (`tactics_for_topic`+screen) · **Hypothesis tracker** (dedicated screen) · **PERT + Idea-scan** (MCP tools). | category 14 |
 | ✅ resolved | **NEW strategy frameworks** (product-strategy coverage): TAM/SAM/SOM market sizing (+market value), Porter, SWOT, Lean Canvas, Value-Prop, North-Star — **all shipped** end-to-end (cat 17). | category 17 |
 | ✅ resolved | **All cat-15 Tauri screens done** — consensus tiers, OST 2×2 matrix, Global-Competitors detail, Personas enrichment, Bets polish, Map clickable-legend faceted filtering. cat-15 now 25/25. | category 15 |
@@ -797,45 +795,6 @@ toolkit-linked but not yet smoke-tested in a running desktop build.
 - **Phase G — Business framing (NEW):** Lean Canvas + Value-Proposition Canvas + North-Star metric.
 - ✅ **Remaining cat-14 🟡 — DONE:** Why root-cause, Sentiment-by-source charts, Tactic library, Hypothesis-tracker screen, PERT + Idea-scan MCP.
 - **Cross-cutting:** expose cat-14 modules + new sources as MCP tools so Claude Code drives the whole funnel headlessly; add persona tests.
-
----
-
-## OpenReply UI — License activation, onboarding & settings ✅
-
-> Added 2026-06-27. The OpenReply SPA (`app-tauri/src/or/*`) reuses OpenReply's
-> existing license backend verbatim; only the frontend gate + screens are new.
-
-### License activation gate ✅
-**Status:** ✅ Complete
-**Entry points:** App launch (forced) · Settings › Licence › Deactivate returns here
-**User flow:** launch → router `gateCheck()` calls `licenseGateStatus()` +
-`licenseStatus()` → if gate enabled and not activated → blocking full-screen
-activation form → enter email/password/key → `licenseServerCheck` →
-`licenseActivate` (`POST {api_base}/v1/device/activate`) → on success → `#/welcome`.
-**Implementation:** `app-tauri/src/main.js` `gateCheck()` + `FULL_SCREENS`;
-`app-tauri/src/or/dynamic.js` `renderActivate` / `fmtKey` / `humanLicenseError`;
-`app-tauri/src/or/api.js` license wrappers; backend `src-tauri/src/commands.rs`
-`license_gate_status` / `license_activate` / `license_status` (registered
-`main.rs` L429–435, L709). Activation server: `act_suit/activation-suite/`.
-**Data:** JWT in `data_dir/license_token` (0600) + `data_dir/license_state.json`
-(Rust). localStorage `or-onboarded`, `or-user-name` (UX only). Gate default ON;
-bypass with `OPENREPLY_LICENSE_GATE_ENABLED=0` for dev.
-**Known gaps:** none known. Browser (no Tauri) skips the gate by design.
-
-### Post-activation onboarding ✅
-**Status:** ✅ Complete
-**User flow:** activated but `!or-onboarded` → `#/welcome` → step 1 profile
-(name; email prefilled from license) → step 2 AI provider + BYOK key (reuses
-`byokStatus`/`byokSet`/`testLlm`) → Finish sets `or-onboarded` → `#/agents`.
-**Implementation:** `or/dynamic.js` `renderWelcome`. Reddit auth + first-agent
-creation are deferred to first use (existing `#/onboarding` agent flow).
-
-### Settings › Licence panel ✅
-**Status:** ✅ Complete
-**User flow:** Settings → Licence card shows email/plan/id/expiry+days-left/trial;
-Refresh (`licenseRevalidate`) · Deactivate (`licenseLogout` → `#/activate`).
-**Implementation:** `or/dynamic.js` `buildLicenseCard`, wired full-width into
-`renderSettings` alongside the existing LLM/BYOK, appearance, feeds, data cards.
 
 ---
 

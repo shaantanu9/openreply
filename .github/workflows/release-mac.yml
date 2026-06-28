@@ -168,52 +168,6 @@ jobs:
         shell: bash
         run: bash scripts/fetch-ffmpeg.sh x86_64
 
-      # ---------- JWT + Apple keys ----------
-      # The DMG verifies activation tokens with JWT_DESKTOP_SECRET baked at build
-      # time. It MUST equal the licence server's TOKEN_SIGNING_SECRET, or every
-      # activation fails with "invalid activation token: InvalidSignature".
-      # We NEVER fall back to a random secret (the old behaviour silently shipped
-      # an unrecoverable DMG). Hard-fail instead.
-      - name: Require JWT_DESKTOP_SECRET (hard-fail; never random)
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.JWT_DESKTOP_SECRET }}" ]; then
-            echo "::error::JWT_DESKTOP_SECRET repo secret is NOT set."
-            echo "::error::Set it equal to the licence server's TOKEN_SIGNING_SECRET:"
-            echo "::error::  gh secret set JWT_DESKTOP_SECRET"
-            echo "::error::Refusing to build a DMG with a random secret (would brick activation)."
-            exit 1
-          fi
-          echo "JWT_DESKTOP_SECRET=${{ secrets.JWT_DESKTOP_SECRET }}" >> "$GITHUB_ENV"
-
-      # Pre-build guard: refuse to build if the secret we are about to bake does
-      # not match what the production licence server signs with. Compares an
-      # irreversible sha256[:12] fingerprint exposed at /api/v1/health.signing_fp
-      # (the secret itself never leaves either side).
-      - name: Verify desktop secret matches the licence server
-        shell: bash
-        env:
-          JWT_DESKTOP_SECRET: ${{ secrets.JWT_DESKTOP_SECRET }}
-          LICENCE_HEALTH_URL: ${{ vars.LICENCE_HEALTH_URL }}
-        run: |
-          URL="${LICENCE_HEALTH_URL:-https://openreply.myind.ai/api/v1/health}"
-          LOCAL_FP=$(printf '%s' "$JWT_DESKTOP_SECRET" | shasum -a 256 | cut -c1-12)
-          BODY=$(curl -fsS --max-time 20 "$URL" || true)
-          SERVER_FP=$(printf '%s' "$BODY" | python3 -c 'import sys,json;print((json.load(sys.stdin) or {}).get("signing_fp",""))' 2>/dev/null || true)
-          echo "licence server : $URL"
-          echo "desktop fp     : $LOCAL_FP"
-          echo "server  fp     : $SERVER_FP"
-          if [ -z "$SERVER_FP" ] || [ "$SERVER_FP" = "unset" ]; then
-            echo "::error::Could not read signing_fp from $URL (server down or TOKEN_SIGNING_SECRET unset). Refusing to build."
-            exit 1
-          fi
-          if [ "$LOCAL_FP" != "$SERVER_FP" ]; then
-            echo "::error::SECRET DRIFT — DMG's JWT_DESKTOP_SECRET != server TOKEN_SIGNING_SECRET."
-            echo "::error::Every activation would fail with InvalidSignature."
-            echo "::error::Fix: make GH secret JWT_DESKTOP_SECRET == Vercel prod TOKEN_SIGNING_SECRET, redeploy server, then re-run."
-            exit 1
-          fi
-          echo "OK: desktop and server signing secrets match — safe to build."
 
       - name: Materialize APPLE_API_KEY_PATH from secret content
         if: env.HAS_APPLE_CERT == 'yes'
@@ -364,7 +318,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -394,7 +347,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JWT_DESKTOP_SECRET: ${{ env.JWT_DESKTOP_SECRET }}
         with:
           projectPath: ./app-tauri
           tagName: v__VERSION__

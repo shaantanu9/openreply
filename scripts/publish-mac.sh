@@ -138,36 +138,6 @@ echo
 
 # ─── 5. Tauri bundle ────────────────────────────────────────────────────
 echo "▶ Step 5/5 — cargo tauri build --target $RUST_TRIPLE --bundles $BUNDLES"
-# JWT_DESKTOP_SECRET is required for release builds (build.rs panics
-# without it). MUST match Vercel's TOKEN_SIGNING_SECRET on openreply.myind.ai
-# or every activation will fail with `invalid-signature` on the desktop.
-#
-# Auto-extract JUST JWT_DESKTOP_SECRET from .env.publish if it exists.
-# We deliberately do NOT auto-export the whole file — APPLE_SIGNING_IDENTITY
-# would then trigger Tauri's Developer-ID code path even on local ad-hoc
-# builds, failing with "no identity found" if the Developer ID cert isn't
-# loaded in the keychain. The Apple vars are sourced only when --sign is
-# explicitly requested (block below).
-if [[ -z "${JWT_DESKTOP_SECRET:-}" && -f .env.publish ]]; then
-  jwt_line=$(grep -E '^[[:space:]]*JWT_DESKTOP_SECRET[[:space:]]*=' .env.publish | head -1 || true)
-  if [[ -n "$jwt_line" ]]; then
-    # Strip leading whitespace + the var name + optional quotes.
-    jwt_value="${jwt_line#*=}"
-    jwt_value="${jwt_value%\"}"
-    jwt_value="${jwt_value#\"}"
-    jwt_value="${jwt_value%\'}"
-    jwt_value="${jwt_value#\'}"
-    export JWT_DESKTOP_SECRET="$jwt_value"
-    echo "   ✓ JWT_DESKTOP_SECRET loaded from .env.publish (${#JWT_DESKTOP_SECRET} chars)"
-  fi
-fi
-if [[ -z "${JWT_DESKTOP_SECRET:-}" ]]; then
-  echo "   ⚠ JWT_DESKTOP_SECRET not set and no .env.publish — using random."
-  echo "     This DMG WILL NOT activate against openreply.myind.ai."
-  echo "     Fix: copy .env.publish.example → .env.publish, paste the same"
-  echo "     secret you set in Vercel as TOKEN_SIGNING_SECRET, retry."
-  export JWT_DESKTOP_SECRET="local-dev-$(openssl rand -hex 32 | head -c 32)"
-fi
 
 if [[ $REQUIRE_SIGN -eq 1 ]]; then
   # Auto-source the Developer-ID + notarization vars from .env.publish so

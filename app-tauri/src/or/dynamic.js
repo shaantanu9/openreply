@@ -1136,7 +1136,6 @@ export async function renderSettings(view) {
        <input id="set-search" type="search" autocomplete="off" placeholder="Search settings…" class="${inputCls} w-full pl-9">
        <p id="set-empty" class="mt-2 hidden text-sm text-zinc-400">No settings match.</p></div>
      <div id="set-grid" class="grid gap-4 lg:grid-cols-2">
-       <div id="st-license" data-skw="licence license plan plans subscription key activate upgrade" class="${card} lg:col-span-2"><div class="text-zinc-500">Loading licence…</div></div>
        <div id="st-profile" data-skw="profile name avatar account you identity" class="${card}"><div class="text-zinc-500">Loading profile…</div></div>
        <div id="st-llm" data-skw="ai provider llm api key model anthropic openai gemini ollama byok draft" class="${card}"><div class="text-zinc-500">Loading provider…</div></div>
        <div id="st-appear" data-skw="appearance theme dark light mode display" class="${card}"></div>
@@ -1150,7 +1149,6 @@ export async function renderSettings(view) {
        <div id="st-data" data-skw="data export reset delete local database backup storage wipe" class="${card}"><div class="text-zinc-500">Loading data…</div></div>
        <div id="st-about" data-skw="about version support feedback email github issue logs help" class="${card}"><div class="text-zinc-500">Loading…</div></div>
      </div>`;
-  buildLicenseCard(document.getElementById("st-license"));
   buildProfileCard(document.getElementById("st-profile"));
   buildLlmCard(document.getElementById("st-llm"));
   buildAppearanceCard(document.getElementById("st-appear"));
@@ -1421,10 +1419,9 @@ function avatarColor(name) {
 }
 
 // Profile — name + avatar (closes the onboarding "or-user-name collected but unused"
-// gap). Email is read-only from the licence. Stored locally.
+// gap). Stored locally.
 async function buildProfileCard(el) {
   const name = localStorage.getItem("or-user-name") || "";
-  let email = ""; try { email = (await api.licenseStatus())?.email || ""; } catch (e) {}
   const paint = (n) => {
     const av = el.querySelector("#st-av");
     if (av) { av.textContent = avatarInitials(n || "You"); av.style.background = avatarColor(n || "You"); }
@@ -2629,87 +2626,10 @@ export async function renderGeo(view) {
   load();
 }
 
-// ── Activation gate (OpenReply licence backend) ───────────────────────────────
-// Format a raw key into XXXX-XXXX-XXXX-XXXX, keeping only the backend's
-// alphabet (A–Z and 2–9 — no 0/1). Returns {raw, display}.
-function fmtKey(s) {
-  const raw = (s || "").toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 16);
-  const display = raw.replace(/(.{4})/g, "$1-").replace(/-$/, "");
-  return { raw, display };
-}
-
-function humanLicenseError(s) {
-  const t = String(s).toLowerCase();
-  if (t.includes("network") || t.includes("connect") || t.includes("timeout")) return "Network error — couldn't reach the activation server.";
-  if (t.includes("password") || t.includes("credential") || t.includes("401")) return "Wrong email or password.";
-  if (t.includes("device")) return "This key is already bound to another device.";
-  if (t.includes("revoked") || t.includes("expired")) return "This licence has expired or was revoked.";
-  if (t.includes("invalid") || t.includes("not found") || t.includes("404")) return "That activation key isn't valid.";
-  return String(s).replace(/^Error:\s*/i, "") || "Activation failed.";
-}
-
-export async function renderActivate(view) {
-  view.className = "min-h-screen w-full flex items-center justify-center px-6 py-10";
-  let apiBase = "";
-  try { apiBase = (await api.licenseDefaultApiBase())?.api_base || ""; } catch (e) {}
-  view.innerHTML = `
-    <div class="w-full max-w-md">
-      <div class="mb-6 flex items-center gap-2 text-xl font-extrabold text-zinc-900 dark:text-white">
-        <span class="h-6 w-6 rounded-full bg-reddit"></span> OpenReply</div>
-      <div class="${card} space-y-3">
-        <h1 class="text-xl font-bold text-zinc-900 dark:text-white">Activate your licence</h1>
-        <p class="text-sm text-zinc-500 dark:text-zinc-400">Enter the email, password, and activation key from your purchase to unlock OpenReply on this device.</p>
-        ${field("ac-email", "Email", "you@example.com")}
-        <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Password</span>
-          <input id="ac-pass" type="password" placeholder="••••••••" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
-        <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Activation key</span>
-          <input id="ac-key" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 font-mono tracking-widest"></label>
-        <details class="text-sm">
-          <summary class="cursor-pointer text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">Advanced</summary>
-          <label class="mt-2 block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Activation server</span>
-            <input id="ac-api" value="${esc(apiBase)}" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-xs"></label>
-        </details>
-        <button id="ac-go" class="${btnP} w-full">Activate</button>
-        <div id="ac-msg" class="text-sm"></div>
-      </div>
-      <p class="mt-4 text-center text-xs text-zinc-400">Need a key? Check your purchase email or account page.</p>
-    </div>`;
-
-  const keyEl = view.querySelector("#ac-key");
-  keyEl.addEventListener("input", () => { keyEl.value = fmtKey(keyEl.value).display; });
-
-  const msg = view.querySelector("#ac-msg");
-  const setMsg = (t, cls) => { msg.innerHTML = `<span class="${cls}">${esc(t)}</span>`; };
-  view.querySelector("#ac-go").onclick = async () => {
-    const email = view.querySelector("#ac-email").value.trim();
-    const password = view.querySelector("#ac-pass").value;
-    const { raw } = fmtKey(view.querySelector("#ac-key").value);
-    const base = view.querySelector("#ac-api").value.trim() || apiBase;
-    if (!email || !email.includes("@")) { setMsg("Enter a valid email.", "text-rose-500"); return; }
-    if (!password) { setMsg("Enter your password.", "text-rose-500"); return; }
-    if (raw.length !== 16) { setMsg("Activation key must be 16 characters (A–Z, 2–9).", "text-rose-500"); return; }
-    const btn2 = view.querySelector("#ac-go");
-    btn2.disabled = true;
-    setMsg("Contacting activation server…", "text-zinc-500");
-    try {
-      const chk = await api.licenseServerCheck(base);
-      if (chk && chk.ok === false) { setMsg("Can't reach the activation server. Check your connection.", "text-rose-500"); btn2.disabled = false; return; }
-    } catch (e) { /* non-fatal — let activate surface the real error */ }
-    setMsg("Activating…", "text-zinc-500");
-    try {
-      const r = await api.licenseActivate(base, email, password, raw, null);
-      if (r && (r.ok || r.activated)) { toast("Licence activated"); location.hash = "#/welcome"; }
-      else { setMsg(humanLicenseError((r && (r.reason || r.error)) || "Activation failed."), "text-rose-500"); btn2.disabled = false; }
-    } catch (e) { setMsg(humanLicenseError(e), "text-rose-500"); btn2.disabled = false; }
-  };
-  icons();
-}
-
-// ── Post-activation onboarding: profile + AI provider (BYOK) ─────────────────
+// ── Onboarding: profile + AI provider (BYOK) ─────────────────
 export async function renderWelcome(view) {
   view.className = "min-h-screen w-full flex items-center justify-center px-6 py-10";
-  let lic = {}, st = {};
-  try { lic = (await api.licenseStatus()) || {}; } catch (e) {}
+  let st = {};
   try { st = (await api.byokStatus()) || {}; } catch (e) {}
   const curProv = (st.llm_provider || "anthropic").toLowerCase();
   const sel = LLM_PROVIDERS.some(p => p[0] === curProv) ? curProv : "anthropic";
@@ -2726,8 +2646,6 @@ export async function renderWelcome(view) {
           <div class="text-xs font-bold uppercase tracking-wider text-zinc-400">1 · Your profile</div>
           <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Name</span>
             <input id="wc-name" value="${esc(name)}" placeholder="Your name" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
-          <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Email</span>
-            <input value="${esc(lic.email || "")}" disabled class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/60 px-3 py-2 text-zinc-500"></label>
         </div>
         <div class="space-y-2">
           <div class="text-xs font-bold uppercase tracking-wider text-zinc-400">2 · AI provider (your own key)</div>
@@ -2782,54 +2700,6 @@ export async function renderWelcome(view) {
     } catch (err) { setMsg(String(err.message || err), "text-rose-500"); e.target.disabled = false; }
   };
   icons();
-}
-
-// ── Settings › Licence card ─────────────────────────────────────────────────
-export async function buildLicenseCard(el) {
-  let st = {};
-  try { st = (await api.licenseStatus()) || {}; } catch (e) {}
-  const row = (k, v) => v ? `<div class="flex justify-between gap-3 py-1.5 text-sm"><span class="text-zinc-500">${k}</span><span class="font-semibold text-zinc-900 dark:text-white">${esc(v)}</span></div>` : "";
-  const daysLeft = (iso) => {
-    if (!iso) return "";
-    const d = Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
-    return isFinite(d) ? `${d} day${d === 1 ? "" : "s"} left` : "";
-  };
-  const badge = !st.activated
-    ? `<span class="rounded bg-rose-500/15 px-2 py-0.5 text-xs font-bold text-rose-500">Inactive</span>`
-    : st.is_trial
-      ? `<span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">Trial</span>`
-      : `<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">Active</span>`;
-  el.innerHTML = `
-    <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Licence</b>${badge}</div>
-    <div class="mt-2 divide-y divide-zinc-100 dark:divide-zinc-800">
-      ${row("Email", st.email)}
-      ${row("Plan", st.plan_id)}
-      ${row("Licence ID", st.license_id)}
-      ${row("Expires", st.expires_at ? `${st.expires_at}${daysLeft(st.expires_at) ? " · " + daysLeft(st.expires_at) : ""}` : "")}
-      ${st.is_trial ? row("Trial ends", st.trial_ends_at) : ""}
-    </div>
-    <div class="mt-3 flex flex-wrap gap-2">
-      <button id="lic-refresh" class="${btn}">Refresh</button>
-      <button id="lic-logout" class="rounded-full border border-rose-300 dark:border-rose-800 px-4 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-500/10">Deactivate</button>
-    </div>
-    <div id="lic-msg" class="mt-2 text-xs"></div>`;
-  const msg = el.querySelector("#lic-msg");
-  el.querySelector("#lic-refresh").onclick = async (e) => {
-    e.target.disabled = true; msg.innerHTML = `<span class="text-zinc-500">Checking…</span>`;
-    try { await api.licenseRevalidate(); toast("Licence refreshed"); buildLicenseCard(el); }
-    catch (err) { msg.innerHTML = `<span class="text-rose-500">${esc(err)}</span>`; e.target.disabled = false; }
-  };
-  el.querySelector("#lic-logout").onclick = () => {
-    window.orModal({
-      title: "Deactivate licence?",
-      body: `<p class="text-sm text-zinc-500 dark:text-zinc-400">This signs the licence out of this device. You'll need your activation key to use OpenReply here again.</p>`,
-      okText: "Deactivate",
-      onOk: async () => {
-        try { await api.licenseLogout(); localStorage.removeItem("or-onboarded"); location.hash = "#/activate"; }
-        catch (e) { toast("Failed: " + e); }
-      },
-    });
-  };
 }
 
 // ── Subreddit Intelligence (full) ───────────────────────────────────────────
@@ -3054,7 +2924,7 @@ export async function renderSubredditFull(view) {
   loadList();
 }
 
-// ── Pricing / Plans (live: current plan from licence + wired upgrade) ────────
+// ── Pricing / Plans ─────────────────────────────────────────────────────────
 const PRICE_TIERS = [
   { id: "free", name: "Free / Self-host", price: "$0", tag: "open-source", feats: ["Unlimited agents, keywords, subs", "No scan / reply / post caps", "All platforms · MCP / CLI / API", "Manual posting (review gate)"], cta: "Start free", href: "#/agents", primary: true },
   { id: "solo", name: "Solo (hosted)", price: "$19", per: "/mo", feats: ["Managed cloud (no setup)", "Real-time inbox alerts", "Analytics + AI Visibility", "1 seat"], cta: "Upgrade", hosted: true },
@@ -3072,25 +2942,7 @@ const PRICE_COMPARE = [
 ];
 export async function renderPricing(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  let st = null, apiBase = "";
-  try { st = await api.licenseStatus(); } catch (e) {}
-  try { apiBase = (await api.licenseDefaultApiBase())?.api_base || ""; } catch (e) {}
-  const plan = String((st && st.plan_id) || "free").toLowerCase();
-  const cur = (id) => plan.includes(id) || (id === "free" && (plan === "free" || plan === "" || plan === "self-host"));
-  const billingUrl = apiBase ? apiBase.replace(/\/$/, "") + "/pricing" : "";
-
-  const planRow = st && st.activated ? (() => {
-    const bits = [];
-    if (st.plan_id) bits.push(`<b class="text-zinc-900 dark:text-white">${esc(st.plan_id)}</b>`);
-    if (st.is_trial) bits.push(`<span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">trial${st.trial_ends_at ? " · ends " + esc(String(st.trial_ends_at).slice(0, 10)) : ""}</span>`);
-    if (st.expires_at) bits.push(`<span class="text-sm text-zinc-500">renews/expires ${esc(String(st.expires_at).slice(0, 10))}</span>`);
-    return `<div class="mb-4 flex flex-wrap items-center justify-between gap-3 ${card}">
-      <div class="flex flex-wrap items-center gap-2 text-sm"><span class="text-zinc-500">Current plan:</span> ${bits.join(" ")}</div>
-      <div class="flex flex-wrap gap-2">
-        <button id="pr-refresh" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">↻ Refresh licence</button>
-        <button id="pr-key" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Apply activation key</button>
-        <a href="#/settings" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Manage in Settings</a></div></div>`;
-  })() : "";
+  const cur = (id) => id === "free" || id === "self-host";
 
   const cards = PRICE_TIERS.map(t => {
     const mine = cur(t.id);
@@ -3109,27 +2961,15 @@ export async function renderPricing(view) {
   }).join("");
 
   view.innerHTML = head("Plans", "Open-source & self-host free. Hosted plans add convenience — never caps.") +
-    planRow +
     `<p class="mb-5 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit"><i data-lucide="key-round" class="inline-block h-4 w-4 align-[-2px]"></i> <b>Every tier is bring-your-own-key.</b> Model cost runs on your own key — so unlike ReplyDaddy/ReplyGuy we put <b>no caps</b> on scans, replies, or generated posts.</p>
      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">${cards}</div>
      <div class="mt-5 overflow-hidden ${card}"><b class="text-zinc-900 dark:text-white">How we compare</b>
        <table class="mt-3 w-full text-sm"><thead><tr class="text-left text-xs uppercase tracking-wide text-zinc-400"><th class="py-2"></th><th class="py-2">OpenReply</th><th class="py-2">ReplyDaddy</th><th class="py-2">ReplyGuy / Reppit</th></tr></thead>
          <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800/70">${compareRows}</tbody></table></div>`;
 
-  // Hosted upgrade → open the billing page on the web (purchase happens there).
-  view.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => {
-    if (billingUrl) { try { await api.openUrl(billingUrl); toast("Opened pricing in your browser — buy there, then ↻ Refresh licence"); return; } catch (e) {} }
+  view.querySelectorAll("[data-up]").forEach(b => b.onclick = () => {
     toast("Hosted plans are coming — you’re on Free/self-host with no caps.");
   });
-  // Billing actions — pick up an account-tied upgrade, or apply a new key.
-  const rf = view.querySelector("#pr-refresh");
-  if (rf) rf.onclick = async () => {
-    rf.disabled = true; rf.textContent = "Refreshing…";
-    try { await api.licenseRevalidate(); toast("Licence refreshed"); renderPricing(view); }
-    catch (e) { toast("Refresh failed: " + e); rf.disabled = false; rf.textContent = "↻ Refresh licence"; }
-  };
-  const pk = view.querySelector("#pr-key");
-  if (pk) pk.onclick = () => { location.hash = "#/activate"; };
   icons();
 }
 
@@ -3662,7 +3502,6 @@ export const DYN = {
   growth: renderGrowth,
   library: renderLibrary,
   pricing: renderPricing,
-  activate: renderActivate,
   welcome: renderWelcome,
   agents: renderAgents,
   agent: renderOverview,

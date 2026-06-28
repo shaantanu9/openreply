@@ -61,7 +61,6 @@ Open <https://github.com/shaantanu9/openreply/settings/secrets/actions> and add:
 
 | Secret | Value |
 |---|---|
-| `JWT_DESKTOP_SECRET` | **REQUIRED** — ≥32 random chars. `build.rs` panics on release builds if missing. Bake once and never rotate (in-flight licenses would break). Generate with: `openssl rand -hex 32` |
 | `APPLE_CERTIFICATE` | base64 of `developer-id.p12` (step 3) |
 | `APPLE_CERTIFICATE_PASSWORD` | password you set when exporting |
 | `APPLE_SIGNING_IDENTITY` | `Developer ID Application: Shantanu Bombatkar (263A33H6P5)` |
@@ -71,11 +70,6 @@ Open <https://github.com/shaantanu9/openreply/settings/secrets/actions> and add:
 | `APPLE_API_ISSUER` | Issuer UUID (Option B only) |
 | `APPLE_API_KEY` | Key ID (Option B only) |
 | `APPLE_API_KEY_BASE64` | base64 of the `.p8` (Option B only — needs a small workflow edit to materialize into a file) |
-
-**Important about `JWT_DESKTOP_SECRET`:** This is baked into the binary at
-build time and used to verify offline license tokens the marketing site
-issues. If you ever rotate it, every previously-activated install becomes
-unactivated. Generate it once, treat it like a database master key.
 
 ## 6. Smoke-test the build locally first
 

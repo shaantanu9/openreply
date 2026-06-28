@@ -362,7 +362,7 @@ EXPLANATIONS: list[dict[str, Any]] = [
         "title": "Settings",
         "simple": "Your keys, preferences, and account — set up once.",
         "do": ["Add your AI key (only if you use AI features)", "Set your preferences", "Check everything's connected"],
-        "purpose": "API keys, model preferences, extraction defaults, server status, license activation.",
+        "purpose": "API keys, model preferences, extraction defaults, server status.",
         "science": "Bring-your-own-keys — your AI bill is yours, your data only touches providers you authorise.",
         "data_source": "Reads and writes the settings file on your machine. Keys stay local.",
         "frameworks": ["BYOK"],

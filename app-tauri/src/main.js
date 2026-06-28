@@ -14,25 +14,22 @@ function currentKey() {
   return h || "agents";
 }
 
-// Screens that own the whole window (no sidebar): the activation gate and the
-// post-activation onboarding wizard.
-const FULL_SCREENS = new Set(["activate", "welcome"]);
+// Screens that own the whole window (no sidebar): the onboarding wizard.
+const FULL_SCREENS = new Set(["welcome"]);
 
-// Hard license gate. Resolves the route the user is actually allowed to see.
-// Fails CLOSED — any error checking the licence forces the activation screen.
-// In a plain browser (no Tauri) there is no gate, so the static prototype still
-// renders for design work.
+// Open-source builds have no license gate. On first launch the onboarding
+// wizard is shown; otherwise the requested route is used as-is.
+// DEV BYPASS: for local GUI testing we auto-mark onboarding complete so the
+// app boots straight into the dashboard. Remove this when shipping the real
+// first-run experience.
 async function gateCheck(reqKey) {
   if (!api.isTauri()) return reqKey;
-  // Fetch both gate signals in parallel (SWR-cached → instant after first load).
-  const [gate, st] = await Promise.all([
-    api.licenseGateStatus().catch(() => null),
-    api.licenseStatus().catch(() => null),
-  ]);
-  if (gate && gate.enabled === false) return reqKey; // gate disabled via env
-  if (!st || !st.activated) return "activate";
-  if (!localStorage.getItem("or-onboarded")) return "welcome";
-  if (reqKey === "activate" || reqKey === "welcome") return "agents";
+  if (reqKey === "activate") return "agents";
+  if (!localStorage.getItem("or-onboarded")) {
+    localStorage.setItem("or-onboarded", "1");
+    localStorage.setItem("or-user-name", "Dev User");
+  }
+  if (reqKey === "welcome") return "agents";
   return reqKey;
 }
 

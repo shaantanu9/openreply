@@ -18,7 +18,7 @@ const SWR_READS = new Set([
   "reply_platforms", "reply_list", "reply_drafts", "content_list",
   "persona_agent_list", "sub_list", "geo_list", "geo_history", "analytics_summary",
   "alerts_list", "feeds_list",
-  "byok_status", "license_gate_status", "license_status", "license_default_api_base",
+  "byok_status",
   "reddit_account_status", "app_data_dir", "agent_learn_status",
 ]);
 const SWR_PREFIX = "or-swr:";
@@ -55,7 +55,7 @@ function _invalidate(fams) {
 }
 // A write to `cmd` dirties its own family plus any whose results derive from it.
 function _invalidateForWrite(cmd) {
-  if (cmd.includes("reset") || cmd === "license_logout") return _clearAll();
+  if (cmd.includes("reset")) return _clearAll();
   const fam = cmd.split("_")[0];
   const fams = new Set([fam]);
   // reply/content lifecycle changes opportunities, drafts AND agent knowledge counts.
@@ -236,16 +236,6 @@ export const api = {
   credsDelete: (source) => call("creds_delete", { source }),
   credsToggle: (source, enabled) => call("creds_toggle", { source, enabled }),
   credsPreview: (source, query, limit) => call("creds_preview", { source, query: query || null, limit: limit || 6 }),
-  // ── License / activation (OpenReply backend — commands.rs) ──
-  // Hard gate: the app blocks on #/activate until license_status.activated.
-  licenseGateStatus: () => call("license_gate_status"),
-  licenseStatus: () => call("license_status"),
-  licenseDefaultApiBase: () => call("license_default_api_base"),
-  licenseServerCheck: (apiBase) => call("license_server_check", { apiBase }),
-  licenseActivate: (apiBase, email, password, activationKey, onboarding = null) =>
-    call("license_activate", { apiBase, email, password, activationKey, onboarding }),
-  licenseRevalidate: () => call("license_revalidate"),
-  licenseLogout: () => call("license_logout"),
   // ── Settings: BYOK / LLM provider ──
   byokStatus: () => call("byok_status"),
   byokSet: (name, value) => call("byok_set", { name, value }),

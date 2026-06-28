@@ -487,7 +487,6 @@ export const api = {
   // check on every page mount.
   byokStatus:      ()        => cachedInvoke('byok_status',    null, 60000, 30 * 60 * 1000),
   deviceSignature: ()        => cachedInvoke('device_signature', null, 60000),
-  licenseStatus:   ()        => cachedInvoke('license_status', null, 10000),
   getFindings:     (topic, kind) => cachedInvoke('get_findings', { topic, kind }, 30000, SWR_BUILD_OUTPUT_MS),
   runQuery:        (sql, topic, params) => cachedInvoke('run_query', { sql, topic, params }, 10000),
 
@@ -707,7 +706,9 @@ export const api = {
   // CLI / test harnesses can use them programmatically.
   //
   //   appResetPreview() → read-only summary {data_dir, data_mb,
-  //     topic_count, license_email, byok_providers:[]} for the modal.
+  //     topic_count, license_present, license_email, byok_providers:[]}
+  //     for the modal. license_* are kept for API compatibility but are
+  //     always false/null in the open-source build.
   //   appHardReset()    → wipes data_dir + BYOK env file; FE must
   //     follow up with localStorage.clear() AND appRelaunch().
   //   appRelaunch()     → calls Tauri's AppHandle::restart() — process
@@ -811,33 +812,10 @@ export const api = {
     mutated('byok');
     return p;
   },
-  licenseActivate: (apiBase, email, password, activationKey, onboarding = null) => {
-    invalidate('license_status');
-    return invoke('license_activate', {
-      apiBase,
-      email,
-      password,
-      activationKey,
-      onboarding,
-    });
-  },
-  // Re-check the activated licence with the server and sync the result
-  // (renewal → new expiry/token; cancellation → locked). Invalidate the
-  // cached status so the next `licenseStatus()` reflects the new verdict.
-  licenseRevalidate: () => {
-    invalidate('license_status');
-    return invoke('license_revalidate');
-  },
-  licenseServerCheck: (apiBase) => invoke('license_server_check', { apiBase }),
-  licenseDefaultApiBase: () => invoke('license_default_api_base'),
   // Force-update gate: compares the built version to the server's
   // min/latest_app_version. Returns {ok, current, min, latest, download_url,
   // update_required, update_available}. ok:false on any network failure.
   checkAppVersion: (apiBase) => invoke('check_app_version', { apiBase }),
-  licenseLogout:    () => {
-    invalidate('license_status');
-    return invoke('license_logout');
-  },
   // start_chat is streaming (fire-and-forget; work arrives via chat:progress /
   // chat:done) so it returns quickly — left raw like start_collect.
   startChat:       (topic, question, mode, agent = false) => invoke('start_chat', { topic, question, mode, agent }),
@@ -1227,14 +1205,6 @@ export const api = {
     return invoke('product_convert_topic', { topic, name, oneLiner });
   },
 
-  // Lifecycle pivot — Stage-Gate verdict (Cooper, 2017). status='' clears.
-  productGateSet: (productId, status, notes = '') => {
-    invalidate('product_get'); invalidate('product_dashboard'); invalidate('product_list');
-    return invoke('product_gate_set', { productId, status, notes });
-  },
-  productGateGet: (productId) =>
-    cachedInvoke('product_gate_get', { productId }, 5000),
-
   // Kano-Model categorization for interventions in a topic.
   runKanoCategorize: (topic) => {
     invalidate('run_query');
@@ -1616,9 +1586,6 @@ export const api = {
   cliSymlinkStatus:   ()  => cachedInvoke('cli_symlink_status', null, 30000, 10 * 60 * 1000),
   installCliSymlink:  ()  => { invalidate('cli_symlink_status'); return invoke('install_cli_symlink'); },
   uninstallCliSymlink:()  => { invalidate('cli_symlink_status'); return invoke('uninstall_cli_symlink'); },
-
-  // ----- License gate feature flag (read-only — env-driven) -----
-  licenseGateStatus:  ()  => invoke('license_gate_status'),
 
   quickExtractGaps:   (topic) => invoke('quick_extract_gaps', { topic }),
 

@@ -40,7 +40,6 @@ fi
 [[ -f "$ENV_FILE" ]] || { echo "✗ $ENV_FILE missing (generated during publish-prep)" >&2; exit 1; }
 # shellcheck disable=SC1090
 source "$ENV_FILE"
-: "${JWT_DESKTOP_SECRET:?JWT_DESKTOP_SECRET missing in $ENV_FILE}"
 : "${APPLE_TEAM_ID:?APPLE_TEAM_ID missing in $ENV_FILE}"
 : "${APPLE_SIGNING_IDENTITY:?APPLE_SIGNING_IDENTITY missing in $ENV_FILE}"
 
@@ -108,7 +107,6 @@ set_secret() {
   echo "  ✓ $name"
 }
 
-set_secret JWT_DESKTOP_SECRET         "$JWT_DESKTOP_SECRET"
 set_secret APPLE_CERTIFICATE          "$B64_P12"
 set_secret APPLE_CERTIFICATE_PASSWORD "$P12_PASS"
 set_secret APPLE_SIGNING_IDENTITY     "$SIGNING_IDENTITY"
@@ -132,7 +130,7 @@ echo
 echo "🎉 GitHub Actions is ready. Final pre-tag smoke test:"
 echo
 echo "   source .env.publish"
-echo "   export JWT_DESKTOP_SECRET APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_ID APPLE_PASSWORD"
+echo "   export APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_ID APPLE_PASSWORD"
 echo "   scripts/publish-mac.sh --arch arm64 --sign"
 echo
 echo "   # Inspect the DMG:"

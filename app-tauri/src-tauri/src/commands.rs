@@ -14,73 +14,6 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-// NOTE: `keyring::Entry` intentionally removed 2026-04-24. Keychain storage
-// caused macOS to prompt for the login password on every dev rebuild (code-sign
-// identity changes invalidate the ACL of the `openreply-license` keychain item,
-// so `security` asks the user to unlock it again). Switched to a file-based
-// token store in the app's data dir (0600 perms, same as `device_id`). Less
-// defensive against local disk compromise than Keychain, but the threat model
-// here (user's own Mac, token is a 180d JWT that can be revoked server-side
-// via `/v1/license/revoke`) makes the UX trade worth it.
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct LicenseState {
-    api_base: String,
-    email: String,
-    license_id: String,
-    activation_key: String,
-    device_signature: String,
-    access_token: String,
-    user_id: Option<String>,
-    expires_at: Option<String>,
-    last_verified_at: Option<String>,
-    // Set true when a server re-validation says the licence is revoked /
-    // refunded / expired. `#[serde(default)]` keeps older state files (which
-    // never wrote this field) loading as `false`. The launch gate reads it.
-    #[serde(default)]
-    revoked: bool,
-    // Trial metadata, synced from the validate response so the UI can show
-    // "trial ends in N days" and the right renew CTA. Device-activate doesn't
-    // return these, so they fill in on the first periodic re-validation.
-    #[serde(default)]
-    is_trial: bool,
-    #[serde(default)]
-    trial_ends_at: Option<String>,
-    #[serde(default)]
-    plan_id: Option<String>,
-}
-
-// Filename inside data_dir that holds the activation JWT. 0600 perms on Unix.
-// Parallel with `device_id` (also a plain file in the same directory).
-const LICENSE_TOKEN_FILE: &str = "license_token";
-
-// In-process cache of the activation JWT. Exists purely to collapse repeated
-// keychain reads down to one per app launch. Without this, every Settings
-// page load + every `mcp_*` command fires its own `read_access_token()` →
-// macOS shows its "openreply wants to read …" prompt every time the current
-// binary's code signature doesn't match the item's ACL (which is ~every
-// dev rebuild). Feels like a privacy breach even though we're always
-// reading the same one string.
-//
-// Semantics:
-//   `None`          → never attempted a read in this process yet.
-//   `Some(None)`    → read returned empty / entry missing — negative cache
-//                     so we don't re-prompt for a user who simply hasn't
-//                     activated yet.
-//   `Some(Some(t))` → last known token value.
-//
-// Invalidation: `save_access_token` re-seeds the cache with the fresh value.
-// `clear_access_token` flips it to `Some(None)`. There is no time-based
-// expiry — the JWT's own `expires_at` is the authoritative expiry (checked
-// by `compute_activation_reason`).
-use std::sync::Mutex;
-static TOKEN_CACHE: Mutex<Option<Option<String>>> = Mutex::new(None);
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct VerifiedTokenClaims {
-    device_fingerprint: Option<String>,
-}
 
 fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
@@ -3562,33 +3495,6 @@ pub async fn runtime_snapshot(
     ).await.map_err(err_to_string)
 }
 
-// ─── Lifecycle pivot — Stage-Gate verdict + Kano categorization ──────────
-
-#[tauri::command]
-pub async fn product_gate_set(
-    app: AppHandle,
-    product_id: String,
-    status: String,
-    notes: Option<String>,
-) -> Result<Value, String> {
-    let n = notes.unwrap_or_default();
-    run_cli(
-        &app,
-        vec!["research", "product-gate-set", "--id", &product_id,
-             "--status", &status, "--notes", &n, "--json"],
-    ).await.map_err(err_to_string)
-}
-
-#[tauri::command]
-pub async fn product_gate_get(
-    app: AppHandle,
-    product_id: String,
-) -> Result<Value, String> {
-    run_cli(
-        &app,
-        vec!["research", "product-gate-get", "--id", &product_id, "--json"],
-    ).await.map_err(err_to_string)
-}
 
 #[tauri::command]
 pub async fn run_kano_categorize(app: AppHandle, topic: String) -> Result<Value, String> {
@@ -7735,7 +7641,6 @@ fn dev_project_dir() -> Option<std::path::PathBuf> {
 /// List known MCP clients (Claude Code, Cursor, Cline, …) and which configs exist.
 #[tauri::command]
 pub async fn mcp_clients(app: AppHandle) -> Result<Value, String> {
-    ensure_mcp_allowed(&app)?;
     run_cli(&app, vec!["mcp", "clients", "--json"]).await.map_err(err_to_string)
 }
 
@@ -7743,7 +7648,6 @@ pub async fn mcp_clients(app: AppHandle) -> Result<Value, String> {
 /// `client` defaults to `claude-code` when None/empty.
 #[tauri::command]
 pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value, String> {
-    ensure_mcp_allowed(&app)?;
     let dd = data_dir(&app).map_err(err_to_string)?;
     let dd_str = dd.to_string_lossy().to_string();
     let mut args: Vec<String> = vec![
@@ -7780,7 +7684,6 @@ pub async fn mcp_status(app: AppHandle, client: Option<String>) -> Result<Value,
 /// Aligns OPENREPLY_DATA_DIR and writes a token to the data dir.
 #[tauri::command]
 pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value, String> {
-    ensure_mcp_allowed(&app)?;
     let dd = data_dir(&app).map_err(err_to_string)?;
     let dd_str = dd.to_string_lossy().to_string();
 
@@ -7850,7 +7753,6 @@ pub async fn mcp_install(app: AppHandle, client: Option<String>) -> Result<Value
 /// snippet matches what Connect would actually write.
 #[tauri::command]
 pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Result<Value, String> {
-    ensure_mcp_allowed(&app)?;
     let dd = data_dir(&app).map_err(err_to_string)?;
     let dd_str = dd.to_string_lossy().to_string();
 
@@ -7904,7 +7806,6 @@ pub async fn mcp_config_snippet(app: AppHandle, client: Option<String>) -> Resul
 /// Remove OpenReply's MCP entry from the chosen client's config + delete the token.
 #[tauri::command]
 pub async fn mcp_uninstall(app: AppHandle, client: Option<String>) -> Result<Value, String> {
-    ensure_mcp_allowed(&app)?;
     let dd = data_dir(&app).map_err(err_to_string)?;
     let dd_str = dd.to_string_lossy().to_string();
     let mut args: Vec<String> = vec![
@@ -8020,114 +7921,6 @@ pub async fn uninstall_cli_symlink() -> Result<Value, String> {
     Ok(serde_json::json!({"ok": true, "removed": true}))
 }
 
-/// Structured activation check — shared by `license_status`, `ensure_mcp_allowed`,
-/// and anything else that needs to know *why* a licence is failing (not just
-/// that it is). Returns a `(code, human_message)` pair when the device is
-/// not fully activated, or `None` when everything checks out.
-///
-/// Reason codes (stable, safe to match on in UI):
-///   - `not_activated`         — no licence state persisted (first-time user)
-///   - `device_mismatch`       — stored state is for a different device signature
-///   - `token_missing`         — licence state exists but access-token blob is empty
-///   - `expired`               — `expires_at` is in the past
-///   - `token_device_mismatch` — JWT's device_fingerprint claim ≠ current device
-fn compute_activation_reason(app: &AppHandle) -> Result<Option<(String, String)>, String> {
-    let sig = build_device_signature(app)?;
-    let Some(state) = load_license_state(app)? else {
-        return Ok(Some((
-            "not_activated".into(),
-            "This device has not been activated yet. Activate your licence in onboarding or Settings → Licence.".into(),
-        )));
-    };
-    if state.device_signature != sig {
-        return Ok(Some((
-            "device_mismatch".into(),
-            "Stored licence is for a different device. Re-activate this device to unlock MCP.".into(),
-        )));
-    }
-    let token = read_access_token(&app).unwrap_or_default();
-    if token.trim().is_empty() {
-        return Ok(Some((
-            "token_missing".into(),
-            "Activation token is missing from local storage. Re-activate this device to refresh it.".into(),
-        )));
-    }
-    // Server-confirmed revocation/refund (set by `license_revalidate`). Takes
-    // priority over the local expiry check so a cancelled licence locks even
-    // before its stored expiry date passes.
-    if state.revoked {
-        return Ok(Some((
-            "revoked".into(),
-            "This licence was cancelled, refunded, or expired on the server. Renew on the website (Activate → Billing), then re-activate this device.".into(),
-        )));
-    }
-    if !is_license_not_expired(&state.expires_at) {
-        let when = state.expires_at.clone().unwrap_or_else(|| "unknown".into());
-        return Ok(Some((
-            "expired".into(),
-            format!(
-                "Licence expired on {when}. Renew from Activate → Billing on the website, then re-activate."
-            ),
-        )));
-    }
-    if !token_matches_device_fingerprint(&token, &sig) {
-        return Ok(Some((
-            "token_device_mismatch".into(),
-            "Activation token does not match this device fingerprint (hostname or hardware changed). Re-activate to refresh.".into(),
-        )));
-    }
-    Ok(None)
-}
-
-/// True when the license gate should enforce activation as a precondition
-/// for MCP install/uninstall/status. Default OFF so a DMG can be shared
-/// without anyone needing an activation key first; flip ON when you start
-/// monetising via paid keys.
-///
-/// Read from `OPENREPLY_LICENSE_GATE_ENABLED` env at runtime (truthy:
-/// "1", "true", "yes", "on" — anything else is OFF). Runtime not
-/// compile-time so the same DMG can be deployed both gated and ungated
-/// just by toggling the env (e.g. via a wrapper script that exports it
-/// before launching OpenReply.app).
-fn license_gate_enabled() -> bool {
-    // DEFAULT ON: the app requires an activated licence. Until a valid key is
-    // entered the UI is gated to the activation screen and MCP commands are
-    // refused — but NO local data is ever touched (gating only blocks routes /
-    // commands, never the SQLite store).
-    //
-    // For local development you can bypass the gate by exporting
-    // OPENREPLY_LICENSE_GATE_ENABLED=0 (also accepts false/no/off). Anything else
-    // — including the var being unset, as in a shipped DMG — keeps it ON.
-    !matches!(
-        std::env::var("OPENREPLY_LICENSE_GATE_ENABLED")
-            .unwrap_or_default()
-            .trim()
-            .to_ascii_lowercase()
-            .as_str(),
-        "0" | "false" | "no" | "off"
-    )
-}
-
-#[tauri::command]
-pub async fn license_gate_status() -> Result<Value, String> {
-    Ok(serde_json::json!({
-        "enabled": license_gate_enabled(),
-        "env_var": "OPENREPLY_LICENSE_GATE_ENABLED",
-    }))
-}
-
-fn ensure_mcp_allowed(app: &AppHandle) -> Result<(), String> {
-    // Feature flag — when OFF (default), MCP install/uninstall/status
-    // work regardless of activation. Lets you ship the DMG to anyone
-    // without provisioning a key for them first.
-    if !license_gate_enabled() {
-        return Ok(());
-    }
-    match compute_activation_reason(app)? {
-        None => Ok(()),
-        Some((code, msg)) => Err(format!("[mcp:{code}] {msg}")),
-    }
-}
 
 // ── AG-C: global-competitors (T2.5) + finding feedback (T2.4) ─────────
 
@@ -8869,150 +8662,6 @@ fn local_today_iso() -> String {
     format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
-fn is_license_not_expired(expires_at: &Option<String>) -> bool {
-    let Some(raw) = expires_at else { return true; };
-    let expiry_date = raw.get(0..10).unwrap_or("").trim();
-    if expiry_date.is_empty() {
-        return true;
-    }
-    // ISO date lexical compare is safe for YYYY-MM-DD.
-    let today = local_today_iso();
-    today.as_str() <= expiry_date
-}
-
-fn verify_license_token(token: &str) -> Result<VerifiedTokenClaims, String> {
-    let secret = env!("JWT_DESKTOP_SECRET");
-    let key = DecodingKey::from_secret(secret.as_bytes());
-    let mut validation = Validation::new(Algorithm::HS256);
-    // Expiry is checked using the server-issued `expires_at` field for this
-    // app flow; keep JWT exp soft to avoid hard lockout during transient clock
-    // drift. Signature + issuer + audience are still strictly verified.
-    validation.validate_exp = false;
-    validation.set_issuer(&["openreply-activation-suite"]);
-    validation.set_audience(&["openreply-desktop"]);
-    decode::<VerifiedTokenClaims>(token, &key, &validation)
-        .map(|d| d.claims)
-        .map_err(|e| format!("invalid activation token: {e}"))
-}
-
-fn token_matches_device_fingerprint(token: &str, expected_sig: &str) -> bool {
-    match verify_license_token(token) {
-        Ok(claims) => match claims.device_fingerprint.as_deref() {
-            Some(fp) => fp == expected_sig,
-            None => false,
-        },
-        Err(_) => false,
-    }
-}
-
-fn normalize_activation_key(raw: &str) -> Result<String, String> {
-    let cleaned = raw
-        .trim()
-        .replace('-', "")
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect::<String>()
-        .to_uppercase();
-    if cleaned.len() != 16 {
-        return Err("activation key must be 16 chars (format XXXX-XXXX-XXXX-XXXX)".into());
-    }
-    let is_allowed = cleaned.chars().all(|c| matches!(c, 'A'..='Z' | '2'..='9'));
-    if !is_allowed {
-        return Err("activation key may only use A-Z and 2-9 (no 0/1)".into());
-    }
-    Ok(cleaned)
-}
-
-fn license_token_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = data_dir(app).map_err(err_to_string)?;
-    std::fs::create_dir_all(&dir).map_err(err_to_string)?;
-    Ok(dir.join(LICENSE_TOKEN_FILE))
-}
-
-fn save_access_token(app: &AppHandle, token: &str) -> Result<(), String> {
-    let path = license_token_path(app)?;
-    std::fs::write(&path, token).map_err(err_to_string)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    if let Ok(mut guard) = TOKEN_CACHE.lock() {
-        *guard = Some(Some(token.to_string()));
-    }
-    Ok(())
-}
-
-fn read_access_token(app: &AppHandle) -> Option<String> {
-    // Fast path: cache is populated (positive or negative).
-    if let Ok(guard) = TOKEN_CACHE.lock() {
-        if let Some(cached) = guard.as_ref() {
-            return cached.clone();
-        }
-    }
-    // Cold path: read the file. Never prompts the user (file is owned by
-    // the user and 0600-read-permissioned), so this replaces the Keychain
-    // round-trip that was triggering macOS's login prompt on every rebuild.
-    let path = match license_token_path(app) {
-        Ok(p) => p,
-        Err(_) => {
-            if let Ok(mut guard) = TOKEN_CACHE.lock() {
-                *guard = Some(None);
-            }
-            return None;
-        }
-    };
-    let mut fetched: Option<String> = std::fs::read_to_string(&path)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    // Fallback / migration path. Older builds stored the activation JWT in
-    // the macOS Keychain (later in this file before 2026-04-24) — when we
-    // moved to file-based storage existing users were left with no token at
-    // the new location. `license_state.json` *also* persists `access_token`
-    // in plain text, so we can recover it from there silently and then
-    // promote it to the canonical file location on first read. Without
-    // this, every previously-activated user hits `[mcp:token_missing]` on
-    // their first launch after the upgrade and the MCP card just spins.
-    if fetched.is_none() {
-        if let Ok(Some(state)) = load_license_state(app) {
-            let from_state = state.access_token.trim().to_string();
-            if !from_state.is_empty() {
-                fetched = Some(from_state.clone());
-                // Best-effort write-through so the next read goes straight
-                // to the file. Failures here are non-fatal — we still have
-                // the value in memory + license_state.json.
-                if let Err(e) = std::fs::write(&path, &from_state) {
-                    eprintln!("[license] migrate token to file failed: {e}");
-                } else {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(
-                            &path,
-                            std::fs::Permissions::from_mode(0o600),
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(mut guard) = TOKEN_CACHE.lock() {
-        *guard = Some(fetched.clone());
-    }
-    fetched
-}
-
-fn clear_access_token(app: &AppHandle) {
-    if let Ok(path) = license_token_path(app) {
-        let _ = std::fs::remove_file(&path);
-    }
-    if let Ok(mut guard) = TOKEN_CACHE.lock() {
-        *guard = Some(None);
-    }
-}
 
 /// Days-since-Unix-epoch → (year, month, day). Gregorian, Howard Hinnant's
 /// civil-from-days algorithm.
@@ -9029,11 +8678,6 @@ fn days_to_ymd(days: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-fn license_state_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = data_dir(app).map_err(err_to_string)?;
-    std::fs::create_dir_all(&dir).map_err(err_to_string)?;
-    Ok(dir.join("license_state.json"))
-}
 
 fn device_id_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = data_dir(app).map_err(err_to_string)?;
@@ -9132,29 +8776,6 @@ fn build_device_signature(app: &AppHandle) -> Result<String, String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn load_license_state(app: &AppHandle) -> Result<Option<LicenseState>, String> {
-    let path = license_state_path(app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let raw = std::fs::read_to_string(&path).map_err(err_to_string)?;
-    let parsed: LicenseState = serde_json::from_str(&raw).map_err(err_to_string)?;
-    Ok(Some(parsed))
-}
-
-fn save_license_state(app: &AppHandle, state: &LicenseState) -> Result<(), String> {
-    let path = license_state_path(app)?;
-    let mut safe = state.clone();
-    safe.access_token = String::new();
-    let raw = serde_json::to_string_pretty(&safe).map_err(err_to_string)?;
-    std::fs::write(&path, raw).map_err(err_to_string)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn device_signature(app: AppHandle) -> Result<Value, String> {
@@ -9166,370 +8787,6 @@ pub async fn device_signature(app: AppHandle) -> Result<Value, String> {
     }))
 }
 
-#[tauri::command]
-pub async fn license_status(app: AppHandle) -> Result<Value, String> {
-    let sig = build_device_signature(&app)?;
-    // ALWAYS validate against the live licence server first, on every check —
-    // not just on the 6 h background timer. `license_revalidate` POSTs to
-    // `{api_base}/v1/licence/validate` and persists the live verdict before we
-    // read state below: a renewal refreshes the token/expiry and clears
-    // `revoked` (auto-unlock), a server-side cancellation/refund/expiry sets
-    // `revoked = true` (auto-lock on this very check). When the server is
-    // unreachable (offline / outage / blip) it leaves the cached state
-    // untouched, so a legitimate paid user is never locked out for being on a
-    // plane or during a server hiccup (offline grace). Best-effort: ignore its
-    // Result here — we read the freshly-synced state via
-    // `compute_activation_reason` immediately after. Never-activated / no-token
-    // machines early-return inside revalidate before any network call, so this
-    // adds no latency to the first-run path.
-    let _ = license_revalidate(app.clone()).await;
-    let reason = compute_activation_reason(&app)?;
-    let state = load_license_state(&app)?;
-    let activated = reason.is_none();
-    let (reason_code, reason_msg) = match reason {
-        Some((c, m)) => (Some(c), Some(m)),
-        None => (None, None),
-    };
-    if let Some(s) = state {
-        return Ok(serde_json::json!({
-            "activated": activated,
-            "reason_code": reason_code,
-            "reason": reason_msg,
-            "email": s.email,
-            "license_id": s.license_id,
-            "device_signature": sig,
-            "expires_at": s.expires_at,
-            "is_trial": s.is_trial,
-            "trial_ends_at": s.trial_ends_at,
-            "plan_id": s.plan_id,
-            "last_verified_at": s.last_verified_at,
-            "api_base": s.api_base
-        }));
-    }
-    Ok(serde_json::json!({
-        "activated": false,
-        "reason_code": reason_code.unwrap_or_else(|| "not_activated".into()),
-        "reason": reason_msg.unwrap_or_else(|| "This device has not been activated yet.".into()),
-        "device_signature": sig
-    }))
-}
-
-#[derive(Debug, serde::Serialize)]
-struct ActivateRequest<'a> {
-    email: &'a str,
-    password: &'a str,
-    activation_key: &'a str,
-    device_signature: &'a str,
-    app: &'a str,
-    os: &'a str,
-    arch: &'a str,
-    onboarding: Option<&'a Value>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct ActivateResponse {
-    ok: Option<bool>,
-    token: Option<String>,
-    access_token: Option<String>,
-    license_id: Option<String>,
-    user_id: Option<String>,
-    expires_at: Option<String>,
-    // Trial metadata so the desktop shows the real trial end (e.g. signup+14d)
-    // instead of the generic activation expiry. Server sends these from
-    // /v1/device/activate; license_revalidate also syncs them from /validate.
-    is_trial: Option<bool>,
-    trial_ends_at: Option<String>,
-    plan_id: Option<String>,
-}
-
-#[tauri::command]
-pub async fn license_activate(
-    app: AppHandle,
-    api_base: String,
-    email: String,
-    password: String,
-    activation_key: String,
-    onboarding: Option<Value>,
-) -> Result<Value, String> {
-    let base = api_base.trim().trim_end_matches('/').to_string();
-    if base.is_empty() {
-        return Err("license api base is required".into());
-    }
-    if email.trim().is_empty() || password.trim().is_empty() || activation_key.trim().is_empty() {
-        return Err("email, password and activation key are required".into());
-    }
-    let cleaned_key = normalize_activation_key(&activation_key)?;
-    let sig = build_device_signature(&app)?;
-    let endpoint = format!("{}/v1/device/activate", base);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(err_to_string)?;
-    let payload = ActivateRequest {
-        email: email.trim(),
-        password: password.trim(),
-        activation_key: &cleaned_key,
-        device_signature: &sig,
-        app: "openreply-desktop",
-        os: std::env::consts::OS,
-        arch: std::env::consts::ARCH,
-        onboarding: onboarding.as_ref(),
-    };
-    let resp = client
-        .post(endpoint)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(err_to_string)?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(err_to_string)?;
-    if !status.is_success() {
-        return Err(format!("activation failed ({}): {}", status.as_u16(), body));
-    }
-    let parsed: ActivateResponse = serde_json::from_str(&body).map_err(|e| {
-        format!("activation response is not valid JSON: {} | body={}", e, body)
-    })?;
-    let ok = parsed.ok.unwrap_or(true);
-    let token = parsed.access_token.or(parsed.token).unwrap_or_default();
-    let license_id = parsed.license_id.unwrap_or_default();
-    if !ok || token.is_empty() || license_id.is_empty() {
-        return Err("activation response missing token/license_id".into());
-    }
-    // Hard requirement from licence spec: token must be signed with baked secret
-    // and bound to this device fingerprint before we persist it.
-    let claims = verify_license_token(&token)?;
-    if claims.device_fingerprint.as_deref() != Some(sig.as_str()) {
-        return Err("activation token belongs to a different device".into());
-    }
-    let state = LicenseState {
-        api_base: base,
-        email: email.trim().to_string(),
-        license_id: license_id.clone(),
-        activation_key: cleaned_key,
-        device_signature: sig.clone(),
-        access_token: token,
-        user_id: parsed.user_id,
-        expires_at: parsed.expires_at.clone(),
-        last_verified_at: Some(local_today_iso()),
-        revoked: false,
-        is_trial: parsed.is_trial.unwrap_or(false),
-        trial_ends_at: parsed.trial_ends_at.clone(),
-        plan_id: parsed.plan_id.clone(),
-    };
-    save_access_token(&app, &state.access_token)?;
-    save_license_state(&app, &state)?;
-    Ok(serde_json::json!({
-        "ok": true,
-        "activated": true,
-        "license_id": license_id,
-        "device_signature": sig,
-        "expires_at": parsed.expires_at,
-        "is_trial": parsed.is_trial.unwrap_or(false),
-        "trial_ends_at": parsed.trial_ends_at,
-        "plan_id": parsed.plan_id
-    }))
-}
-
-/// Re-check a previously-activated licence against the server and sync the
-/// result locally. This is what makes renewals and revocations take effect
-/// WITHOUT the user re-entering their key:
-///   - server says valid  → store the latest `expires_at` (+ any refreshed
-///     token), clear the `revoked` flag → a renewal unlocks automatically.
-///   - server says revoked / 401 / not-valid → set `revoked = true` → the
-///     launch gate locks the app on next check.
-///   - network/offline failure → leave cached state untouched (offline grace,
-///     never lock someone out for being on a plane).
-///
-/// Called on a timer from `setup()` (boot + every few hours) and can also be
-/// invoked from the frontend on demand (e.g. a "Refresh licence" button).
-#[tauri::command]
-pub async fn license_revalidate(app: AppHandle) -> Result<Value, String> {
-    let Some(mut state) = load_license_state(&app)? else {
-        return Ok(serde_json::json!({ "ok": true, "activated": false, "skipped": "not_activated" }));
-    };
-    let token = read_access_token(&app).unwrap_or_default();
-    if token.trim().is_empty() {
-        return Ok(serde_json::json!({ "ok": true, "activated": false, "skipped": "token_missing" }));
-    }
-    let sig = build_device_signature(&app)?;
-    let base = state.api_base.trim().trim_end_matches('/').to_string();
-    if base.is_empty() {
-        return Err("license api base is missing from stored state".into());
-    }
-    let endpoint = format!("{}/v1/licence/validate", base);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(err_to_string)?;
-    let resp = client
-        .post(&endpoint)
-        .header("authorization", format!("Bearer {}", token))
-        .json(&serde_json::json!({ "device_fingerprint": sig }))
-        .send()
-        .await;
-
-    // Offline / network error: do NOT change anything. Keep the cached verdict.
-    let resp = match resp {
-        Ok(r) => r,
-        Err(e) => {
-            return Ok(serde_json::json!({
-                "ok": true,
-                "online": false,
-                "valid": !state.revoked,
-                "error": err_to_string(e)
-            }));
-        }
-    };
-
-    let status = resp.status();
-    let body = resp.text().await.unwrap_or_default();
-    let parsed: Value = serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));
-    let code = status.as_u16();
-    let valid_field = parsed.get("valid").and_then(|v| v.as_bool());
-    let revoked_field = parsed.get("revoked").and_then(|v| v.as_bool());
-    let reason = parsed
-        .get("reason")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    // Act ONLY on explicit server signals. Lock only when the server clearly
-    // says the token / licence is no longer good:
-    //   - HTTP 401          → server rejected the token (bad signature / expired)
-    //   - {revoked:true}    → licence cancelled / refunded / expired server-side
-    //   - HTTP 200 + {valid:false}
-    let explicit_revoked = code == 401
-        || revoked_field == Some(true)
-        || (code == 200 && valid_field == Some(false));
-    let explicit_valid = code == 200 && valid_field == Some(true);
-
-    if explicit_revoked {
-        state.revoked = true;
-        state.last_verified_at = Some(local_today_iso());
-        save_license_state(&app, &state)?;
-        return Ok(serde_json::json!({
-            "ok": true, "valid": false, "revoked": true, "reason": reason
-        }));
-    }
-
-    // Inconclusive — a 404 from a stale deploy, a 5xx, a proxy error, or an
-    // unparseable body. DO NOT touch state: never lock a user out over server
-    // trouble. They keep their last known-good state until a clear answer.
-    if !explicit_valid {
-        return Ok(serde_json::json!({
-            "ok": true, "inconclusive": true, "http": code
-        }));
-    }
-
-    // Valid — sync a refreshed token (if any) and the latest expiry, and clear
-    // the revoked flag so a renewed-then-revalidated licence unlocks itself.
-    let mut token_refreshed = false;
-    if let Some(rt) = parsed.get("refreshed_token").and_then(|v| v.as_str()) {
-        if !rt.is_empty() {
-            // Only persist a refreshed token if it verifies AND binds to this device.
-            if let Ok(claims) = verify_license_token(rt) {
-                if claims.device_fingerprint.as_deref() == Some(sig.as_str()) {
-                    state.access_token = rt.to_string();
-                    save_access_token(&app, rt)?;
-                    token_refreshed = true;
-                }
-            }
-        }
-    }
-    if parsed.get("expires_at").is_some() {
-        state.expires_at = parsed
-            .get("expires_at")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-    }
-    // Sync trial metadata so the UI can show "trial ends in N days" + CTA.
-    if let Some(b) = parsed.get("is_trial").and_then(|v| v.as_bool()) {
-        state.is_trial = b;
-    }
-    if parsed.get("trial_ends_at").is_some() {
-        state.trial_ends_at = parsed
-            .get("trial_ends_at")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-    }
-    if let Some(p) = parsed.get("plan_id").and_then(|v| v.as_str()) {
-        state.plan_id = Some(p.to_string());
-    }
-    state.revoked = false;
-    state.last_verified_at = Some(local_today_iso());
-    save_license_state(&app, &state)?;
-
-    Ok(serde_json::json!({
-        "ok": true,
-        "valid": true,
-        "revoked": false,
-        "expires_at": state.expires_at,
-        "token_refreshed": token_refreshed
-    }))
-}
-
-#[tauri::command]
-pub async fn license_server_check(api_base: String) -> Result<Value, String> {
-    let base = api_base.trim().trim_end_matches('/').to_string();
-    if base.is_empty() {
-        return Err("license api base is required".into());
-    }
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(err_to_string)?;
-    let probes = [
-        format!("{}/v1/health", base),
-        format!("{}/health", base),
-        format!("{}/healthz", base),
-    ];
-    let mut last_err = String::new();
-    for url in probes {
-        match client.get(&url).send().await {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    return Ok(serde_json::json!({
-                        "ok": true,
-                        "url": url,
-                        "status": resp.status().as_u16()
-                    }));
-                }
-                last_err = format!("{} -> HTTP {}", url, resp.status().as_u16());
-            }
-            Err(e) => {
-                last_err = format!("{} -> {}", url, e);
-            }
-        }
-    }
-    Err(format!("license server not reachable: {}", last_err))
-}
-
-/// Default License API URL pre-filled into onboarding Step 6.
-///
-/// Priority:
-///   1. `OPENREPLY_LICENSE_API_BASE` env (highest — set by user/op for testing).
-///   2. `LICENSE_API_BASE` env (legacy alias).
-///   3. Compile-time constant `DEFAULT_LICENSE_API_BASE`.
-///
-/// Baking the URL into the binary means a DMG recipient sees
-/// `https://openreply.myind.ai` pre-filled in onboarding — they don't have
-/// to know it. Override via env for staging / localhost dev.
-const DEFAULT_LICENSE_API_BASE: &str = "https://openreply.myind.ai";
-
-#[tauri::command]
-pub async fn license_default_api_base() -> Result<Value, String> {
-    let from_env = std::env::var("OPENREPLY_LICENSE_API_BASE")
-        .or_else(|_| std::env::var("LICENSE_API_BASE"))
-        .unwrap_or_default();
-    let base = from_env.trim().trim_end_matches('/').to_string();
-    let final_base = if base.is_empty() {
-        DEFAULT_LICENSE_API_BASE.to_string()
-    } else {
-        base
-    };
-    Ok(serde_json::json!({
-        "api_base": final_base
-    }))
-}
 
 /// Dotted version compare. `version_lt("0.1.19", "0.1.20") == true`. Missing /
 /// non-numeric segments are treated as 0, so partial or `v`-prefixed strings
@@ -9589,7 +8846,7 @@ pub async fn check_app_version(api_base: String) -> Result<Value, String> {
         .get("app_download_url")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_LICENSE_API_BASE)
+        .unwrap_or("")
         .to_string();
     let update_required = min.map(|m| version_lt(current, m)).unwrap_or(false);
     let update_available = latest.map(|l| version_lt(current, l)).unwrap_or(false);
@@ -9604,28 +8861,19 @@ pub async fn check_app_version(api_base: String) -> Result<Value, String> {
     }))
 }
 
-#[tauri::command]
-pub async fn license_logout(app: AppHandle) -> Result<Value, String> {
-    let path = license_state_path(&app)?;
-    if path.exists() {
-        let _ = std::fs::remove_file(path);
-    }
-    clear_access_token(&app);
-    Ok(serde_json::json!({ "ok": true }))
-}
 
 // ════════════════════════════════════════════════════════════════════════
 //  App reset / clean-install — Danger Zone in Settings.
 //
 //  Three commands powering the "start fresh on this machine" flow:
 //    1. `app_reset_preview` — read-only summary of what would be
-//       deleted (paths, sizes, topic count, license email, BYOK
-//       provider list). Drives the confirmation modal so users know
-//       exactly what's going away before they type DELETE.
+//       deleted (paths, sizes, topic count, BYOK provider list).
+//       Drives the confirmation modal so users know exactly what's
+//       going away before they type DELETE.
 //    2. `app_hard_reset` — wipes the entire data_dir contents
-//       (SQLite + license_state.json + caches + schedule.log) AND
-//       the BYOK env file. Caller (FE) is responsible for clearing
-//       localStorage and triggering relaunch.
+//       (SQLite + caches + schedule.log) AND the BYOK env file.
+//       Caller (FE) is responsible for clearing localStorage and
+//       triggering relaunch.
 //    3. `app_relaunch` — calls Tauri's `app.restart()` so the user
 //       gets the fresh-install experience without manually quitting.
 //
@@ -9674,7 +8922,7 @@ fn walk_dir_size(path: &std::path::Path) -> (u64, u64) {
 ///   - `data_files`, `data_bytes`, `data_mb`: total content under it.
 ///   - `sqlite_present`: whether `openreply.sqlite` exists.
 ///   - `topic_count`: distinct topics with at least one post (0 if no DB).
-///   - `license_present`, `license_email`: license_state.json status.
+///   - `license_present`, `license_email`: always false / null in the open-source build.
 ///   - `byok_env_path`: absolute path to the keys file (may be null
 ///     if HOME/USERPROFILE unset).
 ///   - `byok_present`: whether the file exists.
@@ -9708,27 +8956,9 @@ pub async fn app_reset_preview(app: AppHandle) -> Result<Value, String> {
         }
     }
 
-    // License email — best-effort parse, never error out.
-    let license_path = data.join("license_state.json");
-    let license_present = license_path.exists();
-    let mut license_email: Option<String> = None;
-    if license_present {
-        if let Ok(content) = std::fs::read_to_string(&license_path) {
-            if let Ok(json) = serde_json::from_str::<Value>(&content) {
-                license_email = json
-                    .get("email")
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-                    // Some license payloads nest under "user".
-                    .or_else(|| {
-                        json.get("user")
-                            .and_then(|u| u.get("email"))
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                    });
-            }
-        }
-    }
+    // License fields are not used in the open-source build.
+    let license_present = false;
+    let license_email: Option<String> = None;
 
     // BYOK env file — list providers that have a non-empty key.
     let byok_path = byok_env_path().ok();

@@ -135,15 +135,6 @@ else
   yellow "  ⚠ APPLE_API_KEY_PATH not set or file missing — skipping API-key secrets"
 fi
 
-# JWT desktop secret — used by build.rs. If unset locally, generate one
-# stable per-repo value and reuse forever (the activation system needs a
-# stable secret to validate signed licenses).
-if [ -z "${JWT_DESKTOP_SECRET:-}" ]; then
-  JWT_DESKTOP_SECRET=$(openssl rand -hex 32)
-  yellow "  ℹ generated new JWT_DESKTOP_SECRET (32 bytes hex). Save to .env.publish."
-fi
-set_secret JWT_DESKTOP_SECRET "$JWT_DESKTOP_SECRET"
-
 # Cross-repo publish token
 set_secret PUBLIC_RELEASE_TOKEN "$PUBLIC_PAT"
 
