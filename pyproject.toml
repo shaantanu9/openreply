@@ -112,7 +112,6 @@ all = ["openreply[analyze,mcp,sources,dev,retrieval,video,docs]"]
 
 [project.scripts]
 openreply = "openreply.cli.main:app"
-gapmap = "openreply.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
