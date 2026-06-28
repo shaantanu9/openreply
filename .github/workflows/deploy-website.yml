@@ -29,6 +29,8 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Generate env config (placeholder if secrets not set)
         working-directory: website
