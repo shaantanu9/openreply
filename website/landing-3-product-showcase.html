@@ -131,57 +131,15 @@
   .reveal{opacity:0;transform:translateY(18px);transition:.6s}.reveal.in{opacity:1;transform:none}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}}
 </style>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-
-<style>
-/* Terminal hero — scoped to .t-hero so it lives beside the light landing-3 theme */
-.t-hero{font-family:"Inter",-apple-system,sans-serif;background:#08090B;color:#E7E9ED;padding:70px 0 40px;position:relative;
-  background-image:radial-gradient(700px 360px at 85% -5%,rgba(255,69,0,.10),transparent),radial-gradient(600px 300px at 5% 30%,rgba(140,147,255,.07),transparent)}
-.t-hero .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
-.t-hero h1{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:clamp(34px,5vw,56px);font-weight:800;line-height:1.1;letter-spacing:-.02em;margin-top:14px}
-.t-hero h1 .o{color:#FF4500}
-.t-hero .eyebrow{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.08em;color:#46D369}
-.t-hero .eyebrow::before{content:"> "}
-.t-hero .lede{color:#aeb2bb;font-size:18px;max-width:560px;margin:20px 0 26px}
-.t-hero .cta{display:flex;gap:12px;flex-wrap:wrap}
-.t-hero .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14.5px;border-radius:9px;padding:12px 20px;font-family:"JetBrains Mono",ui-monospace,monospace;transition:.15s;text-decoration:none}
-.t-hero .btn-p{background:#FF4500;color:#0b0b0d}.t-hero .btn-p:hover{background:#FF6A33}
-.t-hero .btn-o{background:transparent;border:1px solid #23262D;color:#E7E9ED}.t-hero .btn-o:hover{border-color:#FF4500;color:#FF4500}
-.t-hero .meta{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12.5px;color:#8A8F99;margin-top:20px;display:flex;gap:18px;flex-wrap:wrap}
-.t-hero .meta b{color:#46D369}
-.t-hero .term{margin-top:38px;background:#101216;border:1px solid #23262D;border-radius:14px;overflow:hidden;box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
-.t-hero .term .bar{display:flex;align-items:center;gap:7px;padding:12px 15px;border-bottom:1px solid #23262D;background:#16181D}
-.t-hero .term .bar i{width:11px;height:11px;border-radius:50%}
-.t-hero .term .bar i:nth-child(1){background:#ff5f57}.t-hero .term .bar i:nth-child(2){background:#febc2e}.t-hero .term .bar i:nth-child(3){background:#28c840}
-.t-hero .term .bar .t{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;color:#8A8F99;margin-left:8px}
-.t-hero .term pre{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13.5px;line-height:2;padding:20px;margin:0;overflow-x:auto;white-space:pre-wrap}
-.t-hero .c-cmt{color:#5c616b}.t-hero .c-cmd{color:#fff}.t-hero .c-g{color:#46D369}.t-hero .c-o{color:#FF4500}.t-hero .c-p{color:#8C93FF}.t-hero .c-d{color:#aeb2bb}
-.t-hero .cursor{display:inline-block;width:8px;height:15px;background:#FF4500;vertical-align:-2px;animation:bl 1s steps(2) infinite}
-@keyframes bl{50%{opacity:0}}
-@media(max-width:760px){.t-hero{padding-top:50px}}
-</style>
 </head>
 <body>
 <nav><div class="wrap nv">
-  <a class="brand" href="#top"><span class="mk">▲</span> OpenReply</a>
+  <a class="brand" href="index.html"><span class="mk">▲</span> OpenReply</a>
   <div class="lk"><a href="#how">How it works</a><a href="#features">Features</a><a href="#oss">Open source</a><a href="#pricing">Pricing</a></div>
   <div class="r"><a class="gh" href="#oss"><span class="s">★</span> 2.4k</a><a class="btn btn-p" href="sign-in.html#register">Get started</a></div>
 </div></nav>
 
-<section class="t-hero" id="top">
-  <div class="wrap">
-    <span class="eyebrow">MIT licensed &middot; self-hostable &middot; bring your own key</span>
-    <h1>The open-source Reddit co-pilot<br>that <span class="o">never touches your account.</span></h1>
-    <p class="lede">Scan Reddit for high-intent threads, score every one 0&ndash;100, and get a draft reply that sounds like you. You post it manually. No bots, no bans, no lock-in.</p>
-    <div class="cta"><a class="btn btn-p" href="sign-in.html#register">&#9654; Start free</a><a class="btn btn-o" href="#product">See the product &rarr;</a></div>
-    <div class="meta"><span><b>&#10003;</b> read-only access</span><span><b>&#10003;</b> hard budget caps</span><span><b>&#10003;</b> own your data</span></div>
-    <div class="term reveal">
-      <div class="bar"><i></i><i></i><i></i><span class="t">~/openreply &mdash; scan</span></div>
-      <pre id="termpre"></pre>
-    </div>
-  </div>
-</section>
-<header class="hero" id="product"><div class="wrap">
+<header class="hero" id="top"><div class="wrap">
   <span class="eyebrow">⚡ Open source · MIT · self-hostable</span>
   <h1>The Reddit co-pilot that finds leads <span class="o">without getting you banned</span></h1>
   <p class="lede">OpenReply scans Reddit for high-intent threads, scores each one 0–100, and drafts a reply that sounds like you. You review and post it manually — your account is never at risk.</p>
@@ -274,7 +232,7 @@ $ openreply scan<br>
   <div class="sh reveal"><span class="eyebrow">Free forever if you self-host</span><h2>Simple, honest pricing</h2><p>Every plan uses your own AI key with a hard budget cap.</p></div>
   <div class="price">
     <div class="pc reveal"><div class="nm">Self-Hosted</div><div class="pp">$0</div><div class="pd">Run the open-source build on your own Supabase.</div><ul><li><span class="c">✓</span> Unlimited projects &amp; keywords</li><li><span class="c">✓</span> Full source, MIT</li><li><span class="c">✓</span> Your infra &amp; data</li></ul><a class="btn btn-o" href="https://github.com/openreply/openreply" target="_blank">Clone the repo</a></div>
-    <div class="pc f reveal"><div class="tag">Most popular</div><div class="nm">Cloud</div><div class="pp">$19<span>/mo</span></div><div class="pd">We host and run scans. You bring your key.</div><ul><li><span class="c">✓</span> Managed scheduled scans</li><li><span class="c">✓</span> 3 projects · unlimited keywords</li><li><span class="c">✓</span> Intent scoring + drafts</li><li><span class="c">✓</span> Cost meter &amp; budget caps</li></ul><a class="btn btn-p" href="sign-in.html#register">Start 14-day trial</a></div>
+    <div class="pc f reveal"><div class="tag">Most popular</div><div class="nm">Cloud</div><div class="pp">$19<span>/mo</span></div><div class="pd">We host and run scans. You bring your key.</div><ul><li><span class="c">✓</span> Managed scheduled scans</li><li><span class="c">✓</span> 3 projects · unlimited keywords</li><li><span class="c">✓</span> Intent scoring + drafts</li><li><span class="c">✓</span> Cost meter &amp; budget caps</li></ul><a class="btn btn-p" href="#">Start 14-day trial</a></div>
     <div class="pc reveal"><div class="nm">Agency</div><div class="pp">$49<span>/mo</span></div><div class="pd">For teams running Reddit for many brands.</div><ul><li><span class="c">✓</span> Unlimited projects</li><li><span class="c">✓</span> Mention &amp; competitor tracking</li><li><span class="c">✓</span> AI-visibility tracking</li></ul><a class="btn btn-o" href="mailto:hello@openreply.dev">Talk to us</a></div>
   </div>
 </div></section>
@@ -300,37 +258,6 @@ $ openreply scan<br>
 <script>
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
 document.querySelectorAll('.reveal').forEach(e=>io.observe(e));
-</script>
-
-<script>
-const LINES=[
-  ['c-cmd','$ openreply scan --project "my-saas"
-'],
-  ['c-d','  scanning r/SaaS r/indiehackers r/FlutterDev …
-'],
-  ['c-g','  &#10003; '],['c-d','1,284 threads scanned
-'],
-  ['c-o','  &#9650; '],['c-d','6 opportunities found
-'],
-  ['c-d','  ———————————————————
-'],
-  ['c-o','  94 '],['c-d','r/SaaS  "find leads without getting banned?"
-'],
-  ['c-o','  88 '],['c-d','r/indiehackers  "reddit marketing in 2026?"
-'],
-  ['c-p','  81 '],['c-d','r/FlutterDev  "firebase vs supabase?"
-'],
-  ['c-g','  &#10003; '],['c-d','drafts ready &mdash; review in the app
-'],
-];
-const pre=document.getElementById('termpre');
-let li=0;
-function typeTerm(){
-  if(li>=LINES.length){pre.insertAdjacentHTML('beforeend','<span class="cursor"></span>');return;}
-  const [cls,txt]=LINES[li];const span=document.createElement('span');span.className=cls;pre.appendChild(span);
-  let i=0;(function ch(){ if(i<=txt.length){span.textContent=txt.slice(0,i);i+=2;setTimeout(ch,12);} else{li++;setTimeout(typeTerm,90);} })();
-}
-window.addEventListener('load',()=>setTimeout(typeTerm,500));
 </script>
 </body>
 </html>
