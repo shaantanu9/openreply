@@ -96,8 +96,14 @@ def list_cmd(
         status=status, limit=limit, min_score=min_score,
         query=q, sort=sort, offset=offset, platform=platform or None,
     )
-    total = _opp.count_opportunities(status=status, min_score=min_score, query=q)
+    total = _opp.count_opportunities(status=status, min_score=min_score, query=q, platform=platform or None)
     _out({"opportunities": items, "total": total, "offset": offset, "limit": limit}, json_)
+
+
+@reply_app.command("source-counts")
+def source_counts_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """Per-source opportunity + fetched-post counts for the active agent."""
+    _out(_opp.source_counts(), json_)
 
 
 @reply_app.command("draft")
@@ -361,3 +367,74 @@ def sub_check_cmd(
 ):
     """Check a draft against a subreddit's rules (ban-proof)."""
     _out(_sub.check_draft(sub, text), json_)
+
+
+# ── Goal + self-evolving playbook + idea synthesis ──────────────────────────
+
+@reply_app.command("goal-set")
+def goal_set_cmd(
+    objective: str = typer.Option("", "--objective"),
+    audience: str = typer.Option("", "--audience"),
+    win_signal: str = typer.Option("", "--win-signal"),
+    guardrails: str = typer.Option("", "--guardrails"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Set the active agent's structured goal (drives the self-evolving engine)."""
+    from ..reply.agent import get_active_agent, update_agent
+    a = get_active_agent()
+    if not a:
+        _out({"error": "no active agent"}, json_)
+        return
+    _out(update_agent(a["id"], objective=objective, audience=audience,
+                      win_signal=win_signal, guardrails=guardrails), json_)
+
+
+@reply_app.command("playbook")
+def playbook_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """Show the active agent's current Goal Playbook."""
+    from ..reply.playbook import current_playbook
+    _out(current_playbook() or {"playbook": None}, json_)
+
+
+@reply_app.command("evolve")
+def evolve_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """Re-distill the active agent's Goal Playbook from memory + feedback."""
+    from ..reply.playbook import evolve_playbook
+    _out(evolve_playbook(reason="manual"), json_)
+
+
+@reply_app.command("ideas")
+def ideas_cmd(
+    n: int = typer.Option(5, "--n"),
+    suggest: bool = typer.Option(False, "--suggest"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """List suggested content ideas, or --suggest to synthesize fresh ones."""
+    from ..reply.ideas import suggest_ideas, list_ideas
+    if suggest:
+        _out(suggest_ideas(n=n), json_)
+    else:
+        _out({"ideas": list_ideas(status="suggested")}, json_)
+
+
+@reply_app.command("idea-draft")
+def idea_draft_cmd(
+    idea: str = typer.Option(..., "--idea"),
+    kind: str = typer.Option("", "--kind"),
+    platform: str = typer.Option("", "--platform"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Turn a suggested idea into a real content draft."""
+    from ..reply.ideas import draft_from_idea
+    _out(draft_from_idea(idea, kind=kind or None, platform=platform or None), json_)
+
+
+@reply_app.command("idea-status")
+def idea_status_cmd(
+    idea: str = typer.Option(..., "--idea"),
+    status: str = typer.Option(..., "--status"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Mark a suggested idea used / dismissed."""
+    from ..reply.ideas import set_idea_status
+    _out(set_idea_status(idea, status), json_)
