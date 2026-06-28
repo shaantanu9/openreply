@@ -192,6 +192,129 @@ def embed_and_link(persona_id: int, memory_id: int, lesson: str) -> int:
     return build_edges_for_memory(persona_id, memory_id)
 
 
+def _cosine(u: list[float], v: list[float]) -> float:
+    import math
+    dot = sum(x * y for x, y in zip(u, v))
+    nu = math.sqrt(sum(x * x for x in u)) or 1.0
+    nv = math.sqrt(sum(y * y for y in v)) or 1.0
+    return dot / (nu * nv)
+
+
+def link_associations(agent_id: str, *, min_sim: float = 0.5, cap: int = 8,
+                      provider: str | None = None) -> int:
+    """Brain-like CROSS-PERSONA idea linking: cosine-match memory embeddings
+    ACROSS the agent's different linked personas (within-persona links are
+    already `relates_to`), and record the strongest pairs as `associates`
+    edges with an LLM one-line rationale in `meta`. Returns edges written.
+    Fail-soft — never raises; 0 for single-persona agents."""
+    try:
+        from ..reply.agent import list_linked_personas
+        pids = [int(l["persona_id"]) for l in list_linked_personas(agent_id)]
+    except Exception:
+        pids = []
+    if len(pids) < 2:
+        return 0  # nothing to link across; within-persona is handled by relates_to
+
+    # Gather (persona_id, memory_id, doc, embedding) for every persona.
+    items: list[tuple[int, int, str, list]] = []
+    for pid in pids:
+        coll = _get_collection(pid)
+        if coll is None:
+            continue
+        try:
+            got = coll.get(include=["embeddings", "documents"])
+        except Exception:
+            continue
+        ids = (got or {}).get("ids") or []
+        embs = (got or {}).get("embeddings") or []
+        docs = (got or {}).get("documents") or []
+        for i, mid_s in enumerate(ids):
+            try:
+                mid = int(mid_s)
+            except (TypeError, ValueError):
+                continue
+            emb = embs[i] if i < len(embs) else None
+            doc = docs[i] if i < len(docs) else ""
+            if emb is not None:
+                items.append((pid, mid, doc or "", list(emb)))
+    if len(items) < 2:
+        return 0
+
+    pairs: list[tuple[float, tuple, tuple]] = []
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            if items[i][0] == items[j][0]:
+                continue  # same persona → already a relates_to candidate
+            s = _cosine(items[i][3], items[j][3])
+            if s >= min_sim:
+                pairs.append((s, items[i], items[j]))
+    pairs.sort(key=lambda p: p[0], reverse=True)
+
+    db = get_db()
+    now = _now()
+    written = 0
+    for s, A_, B_ in pairs[:cap]:
+        pid_a, mid_a, doc_a, _ = A_
+        pid_b, mid_b, doc_b, _ = B_
+        # Canonicalise the undirected pair; dedup if it already exists.
+        fid, tid = (mid_a, mid_b) if mid_a < mid_b else (mid_b, mid_a)
+        try:
+            existing = db.execute(
+                "SELECT id FROM persona_edges WHERE kind='associates' AND "
+                "from_memory_id=? AND to_memory_id=?", [fid, tid]).fetchone()
+        except Exception:
+            existing = None
+        if existing:
+            continue
+        why = "semantically similar"
+        try:
+            from ..analyze.providers.base import get_provider
+            why = get_provider(provider).complete(
+                f'Idea A: "{doc_a[:160]}"\nIdea B: "{doc_b[:160]}"\n'
+                "In ONE short sentence, why do these connect?",
+                system="Output one plain sentence.", max_tokens=60,
+                temperature=0.3).strip()[:200] or why
+        except Exception:
+            pass
+        try:
+            db["persona_edges"].insert({
+                "persona_id": pid_a, "from_memory_id": fid, "to_memory_id": tid,
+                "kind": "associates", "weight": round(float(s), 3),
+                "meta": why, "created_at": now,
+            }, alter=True)  # alter=True auto-adds the `meta` column if absent
+            written += 1
+        except Exception:
+            pass
+    return written
+
+
+def list_associations(agent_id: str, *, limit: int = 20) -> list[dict]:
+    """Top cross-source `associates` links for the agent, with both lessons +
+    the rationale — for the 'how the brain connected ideas' UI."""
+    try:
+        from ..reply.agent import list_linked_personas
+        pids = [int(l["persona_id"]) for l in list_linked_personas(agent_id)]
+    except Exception:
+        pids = []
+    if not pids:
+        return []
+    db = get_db()
+    qm = ",".join("?" * len(pids))
+    try:
+        cur = db.execute(
+            f"SELECT e.from_memory_id, e.to_memory_id, e.weight, "
+            f"COALESCE(e.meta,'') AS meta, a.lesson AS la, b.lesson AS lb "
+            f"FROM persona_edges e "
+            f"JOIN persona_memories a ON a.id = e.from_memory_id "
+            f"JOIN persona_memories b ON b.id = e.to_memory_id "
+            f"WHERE e.kind='associates' AND e.persona_id IN ({qm}) "
+            f"ORDER BY e.weight DESC LIMIT ?", [*pids, limit])
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception:
+        return []
+
+
 # ── backfill / recompute ────────────────────────────────────────────────────
 
 def backfill_persona(persona_id: int) -> dict:
@@ -244,10 +367,15 @@ def backfill_persona(persona_id: int) -> dict:
 
 # ── readers (for UI / chat) ─────────────────────────────────────────────────
 
-def neighbors(persona_id: int, memory_ids: list[int], *, limit: int = 4) -> list[dict]:
+def neighbors(persona_id: int, memory_ids: list[int], *, limit: int = 4,
+              include_associates: bool = False) -> list[dict]:
     """1-hop graph expansion: return memories edge-linked to ``memory_ids`` but
     not already in that seed set, strongest edge first. Used by the reply blend
     to pull "related knowledge" around the directly-retrieved memories.
+
+    By default excludes cross-source ``associates`` edges (those are for the
+    idea-synthesis / connections views); pass ``include_associates=True`` to
+    walk them too.
     """
     import json as _json
 
@@ -259,9 +387,10 @@ def neighbors(persona_id: int, memory_ids: list[int], *, limit: int = 4) -> list
     cur = db.execute(
         f"SELECT from_memory_id, to_memory_id, weight FROM persona_edges "
         f"WHERE persona_id = ? "
+        f"AND (kind != 'associates' OR ? = 1) "
         f"AND (from_memory_id IN ({qmarks}) OR to_memory_id IN ({qmarks})) "
         f"ORDER BY weight DESC",
-        [persona_id, *seed, *seed],
+        [persona_id, 1 if include_associates else 0, *seed, *seed],
     )
     neigh_ids: list[int] = []
     for a, b, _w in cur.fetchall():
