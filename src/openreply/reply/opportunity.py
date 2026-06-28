@@ -288,9 +288,13 @@ def find_opportunities(
     if not brand:
         return {"error": "no brand configured. Run: openreply reply brand-set --name ... --keywords ..."}
 
-    keywords = [k for k in (brand.get("keywords") or [brand.get("name", "")]) if k]
+    # Discover by what the agent's AUDIENCE searches for — topics/keywords the
+    # LLM derives from the agent's identity — NOT the literal agent name (an
+    # agent named "textnote" must not just search the string "textnote").
+    from .keywords import agent_search_keywords
+    keywords = agent_search_keywords(brand, provider=provider)
     if not keywords:
-        return {"error": "brand has no keywords. Run: openreply reply brand-set --keywords a,b,c"}
+        return {"error": "agent has no topic to search. Set a niche, product, goal, or keywords."}
     platforms = _scan_platforms(platforms or brand.get("platforms"))
 
     db = init_reply_schema()

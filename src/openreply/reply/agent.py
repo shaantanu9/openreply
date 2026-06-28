@@ -338,7 +338,14 @@ def refresh_agent(aid: str | None = None, light: bool = True, progress=None,
     a = get_agent(aid)
     if not a:
         return {"error": "no such agent"}
-    keywords = a["keywords"] or [a["name"]]
+    # Audience-topic keywords (LLM-expanded from the agent's identity), never the
+    # bare agent name — surfaced for visibility; collect itself canonicalizes the
+    # topic internally.
+    try:
+        from .keywords import agent_search_keywords
+        keywords = agent_search_keywords(a) or a["keywords"] or [a["topic"]]
+    except Exception:
+        keywords = a["keywords"] or [a["topic"]]
     try:
         from ..research.collect import collect
         from .library import corpus_sources
