@@ -144,6 +144,10 @@ def generate_reply(opportunity_id: str, provider: str | None = None, tone: str |
     # (and promotes the product only as much as the sub allows).
     rules_block = _rules_guidance(platform, opp.get("sub") or "")
 
+    # The agent's self-evolving strategy (winning angles + avoid-list).
+    from .playbook import playbook_block
+    pb_block = playbook_block(agent_id)
+
     # The agent's purpose — its growth goal + what it offers. Replies are written
     # to advance the goal by being genuinely helpful first (never salesy).
     product = (agent.get("product") or brand.get("description") or "").strip()
@@ -160,6 +164,7 @@ def generate_reply(opportunity_id: str, provider: str | None = None, tone: str |
         f"What {brand.get('name')} offers (the product you may promote when relevant): "
         f"{product or '—'}\n"
         f"{goal_block}"
+        f"{pb_block}"
         f"Tone: {tone or brand.get('tone')}\n"
         f"Platform: {platform}. {_length_hint(platform)}\n"
         f"{rules_block}\n"
@@ -170,6 +175,25 @@ def generate_reply(opportunity_id: str, provider: str | None = None, tone: str |
         "Follow the subreddit rules above exactly."
     )
     text = get_provider(provider).complete(prompt, system=_SYS, max_tokens=400, temperature=0.6).strip()
+
+    # Self-critique: one pass to catch salesy / rule-breaking / bot-sounding /
+    # off-strategy drafts and rewrite once. Toggle via OR_SELF_CRITIQUE=0.
+    import os
+    if os.getenv("OR_SELF_CRITIQUE", "1") == "1":
+        try:
+            crit = (
+                f"{goal_block}{pb_block}{rules_block}\n"
+                f'Draft reply:\n"""{text}"""\n\n'
+                "If this is salesy, breaks a rule, sounds like a bot, or ignores the "
+                "strategy, rewrite it ONCE to fix that while keeping it genuinely helpful. "
+                "Return ONLY the final reply text (no preamble)."
+            )
+            revised = get_provider(provider).complete(
+                crit, system=_SYS, max_tokens=400, temperature=0.4).strip()
+            if revised and len(revised) > 20:
+                text = revised
+        except Exception:
+            pass
     return _persist_draft(db, opp, brand.get("id", "default"), text, "generated", provider)
 
 

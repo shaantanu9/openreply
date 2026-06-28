@@ -171,6 +171,13 @@ def generate_content(
             context_block = f"\nCONVERSATION CONTEXT (answer the latest reply):\n{context_text.strip()}\n"
 
     platform_hint = _PLATFORM_HINTS.get((platform or "").lower(), "")
+    # Goal + self-evolving strategy so content advances the agent's objective
+    # (promote the product helpfully), not just generic value.
+    from .playbook import playbook_block
+    pb_block = playbook_block(a["id"])
+    goal = (a.get("goal") or "").strip()
+    goal_block = (f"Goal (advance it without being salesy — help first): {goal}\n" if goal else "")
+    product = (a.get("product") or a.get("brand") or a.get("niche") or "").strip()
     sys = (
         "You are a social content writer for a brand. Write authentic, specific, "
         "value-first content that a real expert would post. No clickbait, no fluff, "
@@ -178,6 +185,9 @@ def generate_content(
     )
     prompt = (
         f"Brand: {a['brand']} — niche: {a['niche']}\n"
+        f"Product (promote when genuinely relevant): {product or '—'}\n"
+        f"{goal_block}"
+        f"{pb_block}"
         f"Voice / persona: {a['persona']}\nTone: {a['tone']}\nAudience: {a['audience']}\n"
         f"Platform: {platform}\n"
         f"{platform_hint + chr(10) if platform_hint else ''}"
@@ -235,6 +245,18 @@ def update_content(
         patch["scheduled_at"] = int(scheduled_at)
     db["content_items"].update(content_id, patch)
     return dict(db["content_items"].get(content_id))
+
+
+def delete_content(content_id: str) -> dict:
+    """Delete a content draft. Returns {ok, id}; never raises."""
+    db = _ensure(init_reply_schema())
+    try:
+        if not list(db["content_items"].rows_where("id = ?", [content_id], limit=1)):
+            return {"ok": False, "error": f"no content item '{content_id}'"}
+        db["content_items"].delete(content_id)
+        return {"ok": True, "id": content_id}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def list_content(
