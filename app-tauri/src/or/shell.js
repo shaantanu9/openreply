@@ -26,7 +26,6 @@ const NAV = [
   { sec: 'Account', items: [
     ['x-account', 'twitter', 'X Account'],
     ['connections', 'plug', 'Connections'],
-    ['settings', 'settings', 'Settings'],
     ['pricing', 'gem', 'Plans'],
   ]},
 ];
@@ -106,23 +105,87 @@ function sidebarHTML(routeKey) {
     }
   }
   h += `</nav>
-    <div class="mt-auto flex flex-col gap-2">
-      <button id="themeToggle" class="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold dark:border-zinc-700/70 dark:bg-zinc-800/50">
-        <span>Theme</span>
-        <span class="relative h-[18px] w-[34px] rounded-full bg-zinc-300 dark:bg-zinc-700">
-          <span id="themeKnob" class="absolute top-0.5 h-3.5 w-3.5 rounded-full bg-reddit transition-all"></span></span></button>
-      <a href="#/settings" class="flex items-center gap-2 rounded-lg px-1.5 py-1 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
-        <span class="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-extrabold text-white" id="side-avatar"></span>
-        <span class="flex-1 truncate" data-user-name>${(localStorage.getItem('or-user-name') || 'You')}</span>
-        <i data-lucide="settings" class="h-3.5 w-3.5"></i></a>
+    <div class="mt-auto">
+      <button id="accountMenu" class="flex w-full items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2 text-left transition hover:bg-zinc-100 dark:border-zinc-700/70 dark:bg-zinc-800/50 dark:hover:bg-zinc-800">
+        <span id="side-avatar" class="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-extrabold text-white"></span>
+        <span data-user-name class="flex-1 truncate text-sm font-semibold text-zinc-900 dark:text-white">${(localStorage.getItem('or-user-name') || 'You')}</span>
+        <i data-lucide="chevron-up" class="h-4 w-4 shrink-0 text-zinc-400"></i>
+      </button>
     </div>`;
   return h;
 }
-function syncKnob() {
-  const k = document.getElementById('themeKnob'); if (!k) return;
-  k.style.left = document.documentElement.classList.contains('dark') ? '2px' : '18px';
+
+function accountPopoverHTML() {
+  const nm = (localStorage.getItem('or-user-name') || 'You').trim();
+  const isDark = document.documentElement.classList.contains('dark');
+  return `<div id="accountPopover" class="fixed bottom-4 left-4 z-50 w-56 rounded-xl border border-zinc-200 bg-white p-1 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+    <div class="px-3 py-2">
+      <div class="text-sm font-bold text-zinc-900 dark:text-white">${nm}</div>
+      <div class="text-xs text-zinc-500 dark:text-zinc-400">Local account</div>
+    </div>
+    <div class="h-px bg-zinc-200 dark:bg-zinc-800"></div>
+    <button id="popoverTheme" class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
+      <span class="flex items-center gap-2"><i data-lucide="${isDark ? 'moon' : 'sun'}" class="h-4 w-4"></i> Theme</span>
+      <span class="text-xs text-zinc-500 dark:text-zinc-400" id="themeLabel">${isDark ? 'Dark' : 'Light'}</span>
+    </button>
+    <a href="#/settings" class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
+      <i data-lucide="settings" class="h-4 w-4"></i> Settings
+    </a>
+  </div>`;
 }
 
+let popoverEl = null;
+function openAccountPopover() {
+  if (popoverEl) { closeAccountPopover(); return; }
+  popoverEl = document.createElement('div');
+  popoverEl.innerHTML = accountPopoverHTML();
+  const panel = popoverEl.firstElementChild;
+  document.body.appendChild(panel);
+  drawIcons();
+
+  const close = () => {
+    if (!popoverEl) return;
+    popoverEl.firstElementChild?.remove();
+    popoverEl = null;
+  };
+
+  const onDocClick = (e) => {
+    if (!popoverEl) return;
+    const menu = document.getElementById('accountMenu');
+    if (menu && (e.target === menu || menu.contains(e.target))) return;
+    if (!panel.contains(e.target)) close();
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+
+  // Defer binding so the same click that opened the menu doesn't close it.
+  setTimeout(() => {
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('keydown', onKey);
+  }, 0);
+
+  panel.querySelector('#popoverTheme').onclick = () => {
+    const dark = document.documentElement.classList.toggle('dark');
+    try { localStorage.setItem('or-theme', dark ? 'dark' : 'light'); } catch (e) {}
+    // refresh popover to reflect new theme icon/label
+    close();
+    openAccountPopover();
+  };
+
+  panel.querySelector('a[href="#/settings"]').onclick = () => { close(); };
+
+  // clean up listeners when closed
+  const origClose = close;
+  popoverEl._close = () => {
+    document.removeEventListener('click', onDocClick);
+    document.removeEventListener('keydown', onKey);
+    origClose();
+  };
+}
+
+function closeAccountPopover() {
+  if (popoverEl && popoverEl._close) popoverEl._close();
+  else if (popoverEl) { popoverEl.firstElementChild?.remove(); popoverEl = null; }
+}
 let bootned = false;
 function bootOnce() {
   if (bootned) return; bootned = true;
@@ -130,8 +193,10 @@ function bootOnce() {
   document.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.id === 'themeToggle' || b.hasAttribute('onclick') || b.hasAttribute('data-ok') ||
-        b.hasAttribute('data-x') || b.closest('#kinds') || b.closest('[data-step]')) return;
+    if (b.id === 'accountMenu' || b.id === 'popoverTheme' ||
+        b.hasAttribute('onclick') || b.hasAttribute('data-ok') ||
+        b.hasAttribute('data-x') || b.closest('#kinds') || b.closest('[data-step]') ||
+        b.closest('#accountPopover')) return;
     const label = (b.getAttribute('data-toast') || b.textContent || 'Done').trim().replace(/\s+/g, ' ');
     window.orToast(label.length > 36 ? 'Done ✓' : label + ' ✓');
   });
@@ -178,14 +243,9 @@ export function mountShell(routeKey, full) {
     let h = 0; for (const c of nm) h = (h * 31 + c.charCodeAt(0)) | 0;
     av.style.background = pal[Math.abs(h) % pal.length];
   }
-  syncKnob();
   ensureLucide(drawIcons);
-  const tt = document.getElementById('themeToggle');
-  if (tt) tt.onclick = () => {
-    const dark = document.documentElement.classList.toggle('dark');
-    try { localStorage.setItem('or-theme', dark ? 'dark' : 'light'); } catch (e) {}
-    syncKnob();
-  };
+  const accountMenu = document.getElementById('accountMenu');
+  if (accountMenu) accountMenu.onclick = (e) => { e.stopPropagation(); openAccountPopover(); };
   const navSearch = document.getElementById('navSearch');
   if (navSearch) {
     const applyNavFilter = () => {
