@@ -98,6 +98,18 @@ export const api = {
   agentLearnStatus: (id) => call("agent_learn_status", { id: id || null }),
   agentCorpus: (source, query, limit, offset, relevance) => call("agent_corpus", { id: null, source: source || null, query: query || null, relevance: relevance || null, limit: limit || 60, offset: offset || 0 }),
   agentCorpusCheck: (limit) => call("agent_corpus_check", { id: null, limit: limit || 60 }),
+  agentAutopilot: (id) => call("agent_autopilot", { id: id || null }),
+  agentAutopilotSet: (cfg) => call("agent_autopilot_set", {
+    id: null,
+    content: cfg && cfg.content != null ? cfg.content : null,
+    contentKinds: (cfg && cfg.contentKinds) || null,
+    contentCount: cfg && cfg.contentCount != null ? cfg.contentCount : null,
+    contentCadence: (cfg && cfg.contentCadence) || null,
+    opportunity: cfg && cfg.opportunity != null ? cfg.opportunity : null,
+    oppCount: cfg && cfg.oppCount != null ? cfg.oppCount : null,
+    oppCadence: (cfg && cfg.oppCadence) || null,
+  }),
+  agentAutopilotRun: (id) => call("agent_autopilot_run", { id: id || null }),
   agentBuildGraph: (deep, id) => call("agent_build_graph", { id: id || null, deep: !!deep }),
   agentGraph: (id) => call("agent_graph", { id: id || null }),
   agentBrain: (id) => call("agent_brain", { id: id || null }),
@@ -114,6 +126,16 @@ export const api = {
   // learning personas (single-lens knowledge agents) — used to populate the link picker
   personaList: () => call("persona_agent_list"),
   replyRules: (sub, refresh) => call("reply_rules", { sub, refresh: !!refresh }),
+  // goal + self-evolving playbook + idea synthesis
+  agentGoalSet: (objective, audience, winSignal, guardrails) =>
+    call("agent_goal_set", { objective: objective || "", audience: audience || "",
+      winSignal: winSignal || "", guardrails: guardrails || "" }),
+  agentPlaybook: () => call("agent_playbook_get"),
+  agentEvolve: () => call("agent_evolve"),
+  agentIdeas: (suggest, n) => call("agent_ideas", { suggest: !!suggest, n: n || 5 }),
+  agentIdeaDraft: (idea, kind, platform) =>
+    call("agent_idea_draft", { idea, kind: kind || "", platform: platform || "" }),
+  agentIdeaStatus: (idea, status) => call("agent_idea_status", { idea, status }),
   // reply / opportunities
   replyPlatforms: () => call("reply_platforms"),
   replyFind: (platforms, limit, noScore) =>
@@ -126,6 +148,7 @@ export const api = {
       offset: (opts && opts.offset) || 0,
       platform: (opts && opts.platform) || null,
     }),
+  replySourceCounts: () => call("reply_source_counts"),
   replyDraft: (opportunity) => call("reply_draft", { opportunity }),
   // workspace: edit/save (versioned), approve, queue, snooze, draft history
   replySaveDraft: (opportunity, text) => {
