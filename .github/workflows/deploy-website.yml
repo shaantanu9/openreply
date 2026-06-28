@@ -32,9 +32,17 @@ jobs:
         with:
           enablement: true
 
-      - name: Generate env config (placeholder if secrets not set)
+      - name: Generate env config from repository secrets
         working-directory: website
-        run: node generate-env-config.mjs --dry-run || true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          LICENSE_API_BASE: ${{ secrets.LICENSE_API_BASE }}
+          APP_DOWNLOAD_URL: ${{ secrets.APP_DOWNLOAD_URL }}
+          LEMONSQUEEZY_CHECKOUT_PRO: ${{ secrets.LEMONSQUEEZY_CHECKOUT_PRO }}
+          LEMONSQUEEZY_CHECKOUT_LIVE_PASS: ${{ secrets.LEMONSQUEEZY_CHECKOUT_LIVE_PASS }}
+          LEMONSQUEEZY_CUSTOMER_PORTAL: ${{ secrets.LEMONSQUEEZY_CUSTOMER_PORTAL }}
+        run: node generate-env-config.mjs
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
