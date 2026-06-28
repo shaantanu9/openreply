@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenReply — Sitemap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav>
+  <div class="nav-container">
+    <a class="nav-logo" href="index.html">
+      <div class="nav-logo-mark">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="7" stroke="#E07B3C" stroke-width="1.5"/>
+          <circle cx="9" cy="9" r="3" fill="#E07B3C"/>
+        </svg>
+      </div>
+      <span class="nav-logo-name">OpenReply</span>
+    </a>
+
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="index.html#features">Features</a>
+      <a href="index.html#pricing">Pricing</a>
+      <a href="sitemap.html">Sitemap</a>
+    </div>
+
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="sign-in.html">Sign in</a>
+      <a class="btn btn-primary" href="sign-in.html#register">Get started</a>
+    </div>
+  </div>
+</nav>
+
+<main style="padding-top:80px">
+<div class="container" style="max-width:720px">
+  <h1 style="font-family:var(--font-serif);font-size:42px;font-weight:300;margin-bottom:12px">Sitemap</h1>
+  <p style="color:var(--muted);margin-bottom:40px">All public pages for OpenReply.</p>
+
+  <div class="sitemap-group">
+    <h2 class="sitemap-group-title">Marketing</h2>
+    <ul class="sitemap-list">
+      <li><a href="index.html">Homepage — Variant 1: Intent Scoring</a></li>
+      <li><a href="variant-2.html">Homepage — Variant 2: Account Safety</a></li>
+      <li><a href="variant-3.html">Homepage — Variant 3: Workflow Pipeline</a></li>
+      <li><a href="variant-4.html">Homepage — Variant 4: BYOK Cost Control</a></li>
+      <li><a href="variant-5.html">Homepage — Variant 5: Community &amp; Multi-Platform</a></li>
+    </ul>
+  </div>
+
+  <div class="sitemap-group">
+    <h2 class="sitemap-group-title">Auth &amp; licence</h2>
+    <ul class="sitemap-list">
+      <li><a href="sign-in.html">Sign in / Create account</a></li>
+      <li><a href="license.html">My Licence dashboard</a></li>
+      <li><a href="activate.html">Activate device (deep-link helper)</a></li>
+    </ul>
+  </div>
+
+  <div class="sitemap-group">
+    <h2 class="sitemap-group-title">Utility</h2>
+    <ul class="sitemap-list">
+      <li><a href="sitemap.html">Sitemap</a></li>
+      <li><a href="privacy.html">Privacy Policy</a></li>
+      <li><a href="terms.html">Terms of Service</a></li>
+    </ul>
+  </div>
+
+  <div class="sitemap-group">
+    <h2 class="sitemap-group-title">System</h2>
+    <ul class="sitemap-list">
+      <li><code>styles.css</code> — shared design tokens and components</li>
+      <li><code>site-auth.js</code> — Supabase auth + licence activation logic</li>
+      <li><code>env.config.js</code> — runtime environment config (generated)</li>
+      <li><code>generate-env-config.mjs</code> — build-time env generator</li>
+      <li><code>.env.example</code> — required environment variables</li>
+    </ul>
+  </div>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <div>
+      <div class="footer-logo">
+        <div class="nav-logo-mark"><svg width="16" height="16" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="#E07B3C" stroke-width="1.5"/><circle cx="9" cy="9" r="3" fill="#E07B3C"/></svg></div>
+        <span>OpenReply</span>
+      </div>
+      <p>Organic Reddit acquisition, done right.</p>
+    </div>
+    <div>
+      <h4>Product</h4>
+      <ul><li><a href="index.html#features">Features</a></li><li><a href="index.html#pricing">Pricing</a></li><li><a href="sign-in.html">Sign in</a></li></ul>
+    </div>
+    <div>
+      <h4>Resources</h4>
+      <ul><li><a href="sitemap.html">Sitemap</a></li><li><a href="license.html">My licence</a></li></ul>
+    </div>
+    <div>
+      <h4>Legal</h4>
+      <ul><li><a href="privacy.html">Privacy</a></li><li><a href="terms.html">Terms</a></li></ul>
+    </div>
+  </div>
+  <div class="container" style="text-align:center;padding-top:40px;color:#9B928A;font-size:12px">
+    © 2026 OpenReply. All rights reserved.
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>OpenReply</title>
+<script>try{var t=localStorage.getItem('or-theme')||'dark';var d=t==='dark'||(t==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','sans-serif'] },
+    colors: { reddit: { DEFAULT: '#ff4500', hi: '#ff5700', soft: '#ff8b60' }, brand: '#0079d3' },
+  }},
+};
+</script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  /* App-wide form-control polish — consistent, comfortable padding for every
+     input / select / textarea (page bodies AND injected modals). */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),
+  select, textarea {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+    line-height: 1.4;
+    min-height: 2.6rem;
+    box-sizing: border-box;
+  }
+  textarea { min-height: unset; }
+  /* Native <select> arrow crowds the text — swap it for a custom chevron and
+     reserve right padding so the value never overlaps the icon. */
+  select {
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 2.25rem !important;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+    background-size: 1rem 1rem;
+  }
+  /* Consistent focus ring (brand orange) on anything not already given one. */
+  input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: none;
+    border-color: #ff4500;
+    box-shadow: 0 0 0 2px rgba(255, 69, 0, 0.35);
+  }
+  input::placeholder, textarea::placeholder { color: #a1a1aa; }
+  /* Nav search keeps room for its leading magnifier icon (other search inputs
+     use normal padding). */
+  #navSearch { padding-left: 2rem; }
+  /* Sidebar "Active agent" selector is a compact, borderless control — opt it
+     out of the comfortable form sizing so the card doesn't grow tall. */
+  #agentSel {
+    min-height: 0;
+    padding-top: 0.1rem;
+    padding-bottom: 0.1rem;
+    padding-left: 0;
+    padding-right: 1.4rem !important;
+    background-position: right 0.25rem center;
+    background-size: 0.85rem 0.85rem;
+  }
+</style>
+</head>
+<body class="bg-zinc-50 font-sans text-zinc-800 antialiased dark:bg-zinc-950 dark:text-zinc-200">
+  <div class="flex min-h-screen">
+    <aside id="side"></aside>
+    <main id="main-content" class="w-full max-w-6xl flex-1 px-8 py-7"></main>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

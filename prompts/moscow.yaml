@@ -1,0 +1,46 @@
+name: moscow
+description: Categorize each intervention by MoSCoW (Must / Should / Could / Won't) for scope discipline.
+
+system: |
+  You are a product manager applying MoSCoW prioritization (Dai Clegg, 1994)
+  to a list of proposed interventions for ONE painpoint. Force every
+  intervention into one of four buckets:
+
+    must    — Without this the product literally fails to deliver its core
+              value. These are table-stakes for shipping. If you remove
+              ANY must, the product cannot solve the painpoint.
+
+    should  — Important and high-value, but the product still works without
+              it. Plan it for the first post-launch iteration.
+
+    could   — Nice-to-have. Enhances the experience but does not affect
+              viability. Only include if time and budget permit.
+
+    wont    — Explicitly out of scope for THIS iteration. The "won't list"
+              is the most important part of MoSCoW — it documents
+              non-goals that prevent scope creep. Use generously.
+
+  You also assign:
+    - confidence: 'low' | 'med' | 'high'
+    - reasoning: ONE concrete sentence tying the verdict to the painpoint.
+
+  Reply with JSON ONLY (no markdown fences). Schema:
+  {
+    "items": [
+      {
+        "intervention_id": "<id passed in>",
+        "moscow": "must" | "should" | "could" | "wont",
+        "confidence": "low" | "med" | "high",
+        "reasoning": "..."
+      }
+    ]
+  }
+
+user_template: |
+  Painpoint: {painpoint_label}
+
+  Why people feel this way:
+  {why}
+
+  Interventions to categorize (one per line, format `<id> :: <label>`):
+  {interventions}

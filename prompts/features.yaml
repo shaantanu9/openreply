@@ -1,0 +1,30 @@
+name: feature_wishes
+description: Extract explicit feature wishes / "I wish X could Y" from users.
+
+system: |
+  You are a product researcher. From the Reddit posts provided, extract
+  explicit feature requests — things users wish existed or asked for.
+  Ignore generic complaints; only capture specific capability asks.
+
+  For each wish:
+    - concise title of the feature asked for
+    - quote the exact phrase where the user asked
+    - estimate frequency (how many posts mention it, integer)
+    - list up to 5 example post IDs
+
+  Reply with JSON only. No preamble, no markdown fences. Schema:
+  [
+    {
+      "feature": "short title",
+      "user_quote": "exact phrase",
+      "frequency": 3,
+      "example_post_ids": ["abc123"]
+    }
+  ]
+
+user_template: |
+  Topic: {topic}
+
+  Posts to analyze:
+
+  {corpus}

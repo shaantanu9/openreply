@@ -1,0 +1,145 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   OpenReply — Topic-Insights + Chat prototype : SHARED CORE STYLES
+   Tokens are copied verbatim from src/openreply/graph/export.py so every variant
+   matches the real exported viewer (cream #F6F3EE / orange #FF8C42).
+   Variant-specific layout lives in each vN.html <style> block.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --v-bg:#F6F3EE; --v-surface:#FFFFFF; --v-surface-2:#FBF8F2;
+  --v-ink:#1A1614; --v-ink-2:#4A4339; --v-ink-3:#8A8278;
+  --v-line:#ECE6DC; --v-line-2:#E2DBCF;
+  --v-orange:#FF8C42; --v-orange-soft:#FFE9D6;
+  --v-lavender:#C9B6F2; --v-lavender-soft:#EFE7FB;
+  --v-mint:#A8DCC4; --v-mint-soft:#E1F2EA;
+  --v-sky:#B5D4F0; --v-sky-soft:#E4F0FA;
+  --v-rose:#F4B6BD; --v-rose-soft:#FBE3E6;
+  --v-gold:#F0D78A; --v-gold-soft:#FBF1D4;
+  --v-chronic:#E26A6A; --v-emerging:#E69447; --v-fading:#9C948A;
+  --v-radius:18px; --v-radius-sm:12px;
+  /* legacy aliases used by component rules */
+  --bg:var(--v-bg); --panel:var(--v-surface); --surface:var(--v-surface);
+  --surface-2:var(--v-surface-2); --border:var(--v-line); --line-2:var(--v-line-2);
+  --text:var(--v-ink); --muted:var(--v-ink-3); --accent:var(--v-orange);
+  --chronic:var(--v-chronic); --emerging:var(--v-emerging); --fading:var(--v-fading);
+  --shadow:0 6px 24px rgba(26,22,20,.10); --shadow-sm:0 2px 8px rgba(26,22,20,.06);
+}
+* { box-sizing:border-box; }
+html, body { margin:0; padding:0; height:100%; width:100%; background:var(--bg);
+  color:var(--text); font-family:"Plus Jakarta Sans","Inter",system-ui,sans-serif;
+  overflow:hidden; -webkit-font-smoothing:antialiased; }
+
+/* ── header (shared across variants) ── */
+.gm-header { padding:10px 16px; border-bottom:1px solid var(--border); background:var(--panel);
+  display:flex; align-items:center; justify-content:space-between; gap:12px; height:52px; }
+.gm-header h1 { font-size:15px; margin:0; font-weight:700; letter-spacing:-.2px; }
+.gm-header .subtitle { font-size:12px; color:var(--muted); margin-top:2px; }
+.gm-header .stats { font-size:11px; color:var(--muted); text-align:right; }
+.gm-header .stats b { color:var(--text); }
+.gm-brand { display:flex; align-items:center; gap:10px; }
+.gm-logo { width:26px; height:26px; border-radius:8px; background:var(--accent);
+  display:grid; place-items:center; color:#fff; font-weight:800; font-size:14px; flex:0 0 auto; }
+
+/* ── insight cards (left panel content, shared markup) ── */
+.gm-h2 { font-size:13px; font-weight:700; margin:14px 0 8px; color:var(--v-ink);
+  display:flex; align-items:center; gap:8px; }
+.gm-h2:first-child { margin-top:0; }
+.gm-h2 .muted { font-weight:500; font-size:11px; color:var(--muted); }
+.card { background:var(--bg); border:1px solid var(--border); border-radius:7px;
+  padding:8px 10px; margin-bottom:6px; cursor:pointer; transition:border-color .15s, box-shadow .15s, transform .08s; }
+.card:hover { border-color:var(--accent); box-shadow:var(--shadow-sm); }
+.card:active { transform:translateY(1px); }
+.card.active { border-color:var(--accent); background:#FFF4EA; }
+.card-title { font-size:12px; font-weight:600; line-height:1.35; }
+.card-meta { font-size:10px; color:var(--muted); margin-top:4px; display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.card-evidence { font-size:11px; color:var(--muted); margin-top:5px; font-style:italic;
+  border-top:1px solid var(--border); padding-top:5px; line-height:1.4; }
+#painpoints .card { border-left:3px solid var(--v-chronic); }
+#workarounds .card { border-left:3px solid var(--v-mint); }
+#products .card { border-left:3px solid var(--v-emerging); }
+#features .card { border-left:3px solid var(--v-gold); }
+.badge { display:inline-block; font-size:10px; font-weight:700; padding:2px 8px;
+  border-radius:var(--v-radius-sm); text-transform:uppercase; letter-spacing:.4px; }
+.badge.severity-high   { background:var(--v-rose-soft); color:var(--v-chronic); }
+.badge.severity-medium { background:var(--v-gold-soft); color:var(--v-emerging); }
+.badge.sat-thin        { background:var(--v-line); color:var(--v-ink-3); }
+.badge.variants        { background:var(--v-lavender-soft); color:#5C43A0; }
+
+/* ── graph svg (shared) ── */
+.gm-graph { width:100%; height:100%; background:var(--bg); display:block; }
+.node { cursor:pointer; }
+.node circle { transition:stroke-width .15s, opacity .25s; }
+.node text { font-size:9px; fill:var(--v-ink-2); pointer-events:none; transition:opacity .25s; }
+.node.highlighted circle { stroke:#1A1614; stroke-width:3px; }
+.node.dim circle, .node.dim text { opacity:.12; }
+.node.hidden { display:none; }
+.link { stroke:#C9BEAA; stroke-opacity:.45; transition:stroke .2s, stroke-opacity .2s; }
+.link.highlighted { stroke:var(--accent); stroke-opacity:.95; stroke-width:1.8px; }
+.link.surprising { stroke:var(--accent)!important; stroke-width:2.5px!important; stroke-opacity:.85!important; }
+.link.dim { stroke-opacity:.06!important; }
+.link.hidden { display:none; }
+.node.gap circle { stroke:var(--v-chronic); stroke-width:3.5px; }
+.node.bridge circle { stroke:#3D8A6A; stroke-width:3.5px; filter:drop-shadow(0 0 4px var(--v-mint)); }
+
+/* ── lens controls (right panel content, shared markup) ── */
+.lenses { display:flex; flex-wrap:wrap; gap:5px; padding:8px; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:10px; }
+.lenses .lens-search { flex:1 1 100%; background:var(--bg); color:var(--text);
+  border:1px solid var(--border); border-radius:6px; padding:6px 9px; font-size:11px; margin-bottom:4px; }
+.lenses .lens-search:focus { outline:none; border-color:var(--accent); }
+.lens-btn { background:var(--bg); color:var(--text); border:1px solid var(--border);
+  border-radius:14px; padding:4px 10px; font-size:11px; cursor:pointer; user-select:none; transition:all .15s; }
+.lens-btn:hover { border-color:var(--accent); color:var(--accent); }
+.lens-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.gm-controls { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+.gm-controls button, .gm-controls label { background:var(--bg); color:var(--text);
+  border:1px solid var(--border); border-radius:6px; padding:4px 9px; cursor:pointer;
+  font-size:11px; user-select:none; display:inline-flex; align-items:center; gap:5px; }
+.gm-controls button:hover { border-color:var(--accent); }
+
+/* ── chat (shared bubbles + composer, layout varies per variant) ── */
+.chat-log { display:flex; flex-direction:column; gap:10px; }
+.msg { max-width:80%; padding:9px 12px; border-radius:14px; font-size:12.5px; line-height:1.5;
+  animation:msgIn .28s cubic-bezier(.2,.8,.2,1); }
+@keyframes msgIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+.msg.user { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:5px; }
+.msg.bot  { align-self:flex-start; background:var(--surface); border:1px solid var(--border);
+  border-bottom-left-radius:5px; box-shadow:var(--shadow-sm); }
+.msg.bot b { color:var(--v-ink); }
+.msg .cites { margin-top:8px; display:flex; flex-wrap:wrap; gap:5px; }
+.cite-chip { font-size:10px; font-weight:600; background:var(--v-orange-soft); color:#9a4a12;
+  border:1px solid #f2cda8; border-radius:10px; padding:2px 8px; cursor:pointer; transition:all .12s; }
+.cite-chip:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+.typing { display:inline-flex; gap:3px; padding:4px 2px; }
+.typing i { width:6px; height:6px; border-radius:50%; background:var(--muted); animation:blink 1.2s infinite; }
+.typing i:nth-child(2){ animation-delay:.2s; } .typing i:nth-child(3){ animation-delay:.4s; }
+@keyframes blink { 0%,60%,100%{ opacity:.25; } 30%{ opacity:1; } }
+.chat-composer { display:flex; gap:8px; align-items:flex-end; }
+.chat-composer textarea, .chat-composer input { flex:1; resize:none; background:var(--bg);
+  border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px;
+  font-family:inherit; color:var(--text); line-height:1.4; max-height:120px; }
+.chat-composer textarea:focus, .chat-composer input:focus { outline:none; border-color:var(--accent); }
+.chat-send { flex:0 0 auto; background:var(--accent); color:#fff; border:none; border-radius:12px;
+  width:40px; height:40px; cursor:pointer; font-size:16px; display:grid; place-items:center; transition:filter .15s; }
+.chat-send:hover { filter:brightness(1.05); }
+.suggest-row { display:flex; gap:6px; flex-wrap:wrap; }
+.suggest-chip { font-size:11px; background:var(--surface); border:1px solid var(--border);
+  color:var(--v-ink-2); border-radius:14px; padding:5px 11px; cursor:pointer; transition:all .14s; white-space:nowrap; }
+.suggest-chip:hover { border-color:var(--accent); color:var(--accent); background:var(--v-orange-soft); }
+
+/* ── collapse rails (shared visual; each variant wires its own toggles) ── */
+.rail { width:40px; background:var(--panel); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; align-items:center; gap:8px; padding:10px 0; }
+.rail.right { border-right:none; border-left:1px solid var(--border); }
+.rail-btn { width:28px; height:28px; border-radius:8px; border:1px solid var(--border);
+  background:var(--bg); cursor:pointer; display:grid; place-items:center; font-size:13px; color:var(--v-ink-2); }
+.rail-btn:hover { border-color:var(--accent); color:var(--accent); }
+.rail-label { writing-mode:vertical-rl; font-size:10px; letter-spacing:1px; text-transform:uppercase;
+  color:var(--muted); margin-top:4px; }
+
+.empty { color:var(--muted); font-size:11px; font-style:italic; padding:6px 2px; }
+.gm-footer { position:fixed; bottom:4px; right:10px; font-size:9px; color:var(--muted); z-index:5; pointer-events:none; }
+
+/* scrollbars — calm */
+::-webkit-scrollbar { width:9px; height:9px; }
+::-webkit-scrollbar-thumb { background:var(--v-line-2); border-radius:6px; border:2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background:var(--v-ink-3); }

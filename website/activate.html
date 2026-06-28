@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenReply — Activate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body style="background:#F4EFE6">
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div style="max-width:520px;width:100%;background:#fff;border:1px solid var(--border);border-radius:20px;padding:40px;box-shadow:0 8px 30px rgba(0,0,0,0.04)">
+    <div style="text-align:center;margin-bottom:28px">
+      <div class="nav-logo-mark" style="margin:0 auto 12px;width:44px;height:44px">
+        <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="7" stroke="#E07B3C" stroke-width="1.5"/>
+          <circle cx="9" cy="9" r="3" fill="#E07B3C"/>
+        </svg>
+      </div>
+      <h1 style="font-family:var(--font-serif);font-size:26px;font-weight:300;margin-bottom:8px">Open your OpenReply app</h1>
+      <p id="statusText" style="color:var(--muted)">Verifying your session…</p>
+    </div>
+
+    <div class="auth-alert" id="activateAlert" style="display:none"></div>
+
+    <div id="actions" style="display:none;flex-direction:column;gap:12px;margin-top:24px">
+      <a id="openAppBtn" class="btn btn-primary btn-block" href="#" style="text-align:center;padding:13px">Open app & activate</a>
+      <a class="btn btn-ghost btn-block" href="license.html" style="text-align:center">Manage licence online</a>
+      <a class="btn btn-ghost btn-block" href="index.html" style="text-align:center">Back to homepage</a>
+    </div>
+
+    <div id="manualBox" style="display:none;margin-top:24px;padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--cream)">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:10px">If the app didn't open automatically, open OpenReply and paste this key:</p>
+      <code id="manualKey" style="display:block;background:#fff;border:1px solid var(--border);padding:10px 12px;border-radius:6px;font-size:13px;word-break:break-all"></code>
+    </div>
+  </div>
+</div>
+
+<script src="./env.config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./site-auth.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const key = params.get('key') || '';
+const email = params.get('email') || '';
+
+function showStatus(msg, type) {
+  const s = document.getElementById('statusText');
+  s.textContent = msg;
+  if (type) s.style.color = type === 'error' ? '#C0392B' : (type === 'success' ? '#27AE60' : 'var(--muted)');
+}
+function showAlert(msg, type) {
+  const a = document.getElementById('activateAlert');
+  a.textContent = msg; a.className = 'auth-alert ' + type; a.style.display = 'block';
+}
+(async function init() {
+  const env = window.OPENREPLY_ENV || {};
+  const openBtn = document.getElementById('openAppBtn');
+  const actions = document.getElementById('actions');
+  const manualBox = document.getElementById('manualBox');
+  const manualKey = document.getElementById('manualKey');
+
+  // If opened from email with key prefill
+  if (key) {
+    manualKey.textContent = key;
+    manualBox.style.display = 'block';
+  }
+
+  try {
+    const user = await OpenReplyAuth.getUser();
+    if (!user) {
+      showStatus('Please sign in first to activate this device.', 'error');
+      showAlert('Redirecting to sign in…', 'error');
+      setTimeout(() => location.href = 'sign-in.html?redirect=' + encodeURIComponent(location.pathname + location.search), 1500);
+      return;
+    }
+
+    // Show current licence
+    const lic = await OpenReplyAuth.getLicenseForEmail(user.email);
+    const activeLic = lic && (lic.status === 'active' || lic.status === 'trialing') ? lic : null;
+
+    const deep = env.APP_DEEP_LINK_URL || 'openreply://activate';
+    const query = new URLSearchParams();
+    query.set('key', activeLic?.activationKey || key || '');
+    query.set('email', user.email);
+    query.set('device', await OpenReplyAuth.buildWebDeviceSignature());
+    openBtn.href = `${deep}?${query.toString()}`;
+
+    showStatus(activeLic ? `Licence ${activeLic.status}. Ready to open the app.` : 'No active licence found. Start a trial from My Licence.', activeLic ? 'success' : 'error');
+    actions.style.display = 'flex';
+  } catch(e) {
+    showStatus('Something went wrong.', 'error');
+    showAlert(OpenReplyAuth.parseError(e), 'error');
+    actions.style.display = 'flex';
+  }
+})();
+</script>
+</body>
+</html>

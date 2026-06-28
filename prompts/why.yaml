@@ -1,0 +1,41 @@
+name: why
+description: Extract emotion vector + JTBD context for a single painpoint, grounded in evidence posts.
+
+system: |
+  You are a behavioral researcher. For ONE painpoint and 3-5 evidence posts,
+  return a JSON object with:
+    - emotions: list of Plutchik primary emotions present in the posts
+      (anger, anticipation, joy, trust, fear, surprise, sadness, disgust).
+      Pick at most 3, ordered by salience.
+    - jtbd: object with three string fields:
+        struggling_moment: when does the user hit this painpoint? (one sentence)
+        anxiety: what are they afraid of? (one sentence)
+        desired_outcome: what would success feel like? (one sentence)
+    - jtbd_statement: a SINGLE sentence in the canonical Christensen format,
+      EXACTLY: "When [situation], I want [motivation], so I can [outcome]."
+      Keep it concrete — name the actual situation users described, the
+      actual motivation, the actual outcome. Bad: "When I'm frustrated, I
+      want help, so I can be happy." Good: "When my reps spike past 90 BPM
+      mid-set, I want a watch that buzzes a clear cue, so I can pace
+      without breaking form."
+
+  Quote sparingly from the posts. Be specific and concrete — generic answers
+  ("users are frustrated") are wrong. Reply with JSON only, no markdown fences.
+
+  Schema:
+  {
+    "emotions": ["fear", "sadness"],
+    "jtbd": {
+      "struggling_moment": "...",
+      "anxiety": "...",
+      "desired_outcome": "..."
+    },
+    "jtbd_statement": "When [situation], I want [motivation], so I can [outcome]."
+  }
+
+user_template: |
+  Painpoint: {painpoint_label}
+
+  Evidence posts:
+
+  {evidence}

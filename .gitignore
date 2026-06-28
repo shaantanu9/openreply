@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+openreply-cli.spec
+# uv caches — but DO commit uv.lock (tracked for reproducibility)
+.uv-cache/
+!uv.lock
+
+# Secrets + data
+.env
+.env.local
+data/
+!data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Git worktrees (created by superpowers:using-git-worktrees)
+.worktrees/
+
+# Local-only Claude Code per-worktree settings
+app-tauri/.claude/
+
+# 80 MB ONNX model cache — regenerates via palace warmup on first use
+scripts/onnx-model-cache/
+
+# License-mint private key — NEVER commit. Public key is embedded in the
+# built app; the private key stays on your laptop (or webhook server).
+scripts/licenses/.keys/
+
+
+# Sidecar binaries — NOT committed. They were the cause of a 1.5 GB git
+# history (every PyInstaller rebuild added a fresh ~230 MB copy). Build them
+# locally: `pyinstaller openreply-cli.spec` (Python sidecar) and
+# `scripts/fetch-ffmpeg.sh` (ffmpeg). CI rebuilds both on every tagged
+# release — see release.yml. The README in this dir has full instructions.
+app-tauri/src-tauri/binaries/openreply-cli-*
+app-tauri/src-tauri/binaries/ffmpeg-*
+
+# Node.js / Next.js — never commit, regenerated via `npm i` / `npm run build`
+**/node_modules/
+**/.next/
+**/.npm-cache/
+**/dist/
+
+# Nested .env files (top-level rule above only matches root)
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+
+# Editor / IDE state
+.cursor/
+
+# Local scratch / probes — not part of source
+tmp/
+
+# Stray "html_site copy" — looks like a duplicated folder, exclude
+act_suit/html_site copy/
+
+# Per-worktree venv symlink (ui-redesign worktree)
+/.venv
+
+# Code-signing artefacts (private keys, .p12, CSR). Never commit.
+.secrets/
+.env.publish
+
+# Claude Code session state (per-session, not source of truth)
+.claude/
+
+# Archive folder — validation run dumps, HTML prototypes. Not source.
+_archive/
+.agents/
+.codex/
+graphify-out/
+AGENTS.md
+CLAUDE.md
+.admin-creds.local.md
+.admin-secret.txt
+
+# Local UI screenshots (generated during dev/test, not source)
+screenshots/
+act_suit/

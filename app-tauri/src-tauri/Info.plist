@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- High-resolution capable -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- Apple App Transport Security: app exclusively talks HTTPS, but we
+         keep ATS strict to surface accidental HTTP exfiltration during dev. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
+
+    <!-- Usage description for the file picker (Ingest → "Upload PDF/docx"). -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>OpenReply asks for access only when you pick a file in the Ingest screen to add it to your research corpus.</string>
+
+    <!-- The Ingest video flow uses the system ffmpeg to extract audio from
+         user-supplied YouTube / local video files. Whisper then transcribes
+         it locally — no audio leaves the machine. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>OpenReply does not use the microphone. Audio handed to Whisper is decoded from video files you pick yourself.</string>
+
+    <!-- Some users land here from a "myapp://" share intent or a deep link
+         from the marketing site. Reserve the scheme so we can add later. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.shantanu.openreply</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>openreply</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>OpenReply — Soft Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --bg: #F6F3EE;
+    --surface: #FFFFFF;
+    --surface-2: #FBF8F2;
+    --ink: #1A1614;
+    --ink-2: #4A4339;
+    --ink-3: #8A8278;
+    --line: #ECE6DC;
+    --line-2: #E2DBCF;
+
+    --orange: #FF8C42;
+    --orange-2: #FFB37A;
+    --orange-soft: #FFE9D6;
+    --lavender: #C9B6F2;
+    --lavender-soft: #EFE7FB;
+    --mint: #A8DCC4;
+    --mint-soft: #E1F2EA;
+    --sky: #B5D4F0;
+    --sky-soft: #E4F0FA;
+    --rose: #F4B6BD;
+    --rose-soft: #FBE3E6;
+    --gold: #F0D78A;
+    --gold-soft: #FBF1D4;
+
+    --chronic: #E26A6A;
+    --emerging: #E69447;
+    --fading: #9C948A;
+
+    --radius: 18px;
+    --radius-sm: 12px;
+    --shadow: 0 1px 2px rgba(26,22,20,.04), 0 8px 28px rgba(26,22,20,.04);
+  }
+  html, body { height: 100%; }
+  body{
+    font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.45;
+  }
+
+  /* ---------- Layout ---------- */
+  .app{
+    display: grid;
+    grid-template-columns: 248px 1fr;
+    min-height: 100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    background: var(--surface);
+    border-right: 1px solid var(--line);
+    padding: 22px 18px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px;
+    padding: 4px 6px 12px;
+  }
+  .brand-mark{
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--orange) 0%, #FFA563 100%);
+    display: grid; place-items: center;
+    color: white; font-weight: 800; font-size: 16px;
+    box-shadow: 0 6px 14px rgba(255,140,66,.35);
+  }
+  .brand-name{ font-weight: 800; font-size: 17px; letter-spacing: -.01em; }
+  .brand-sub{ font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+
+  .nav-section-label{
+    font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-3); padding: 6px 10px; margin-top: 6px;
+  }
+  .nav{ display: flex; flex-direction: column; gap: 2px; }
+  .nav a{
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 10px;
+    text-decoration: none; color: var(--ink-2);
+    font-weight: 500; font-size: 14px;
+    transition: background .15s;
+  }
+  .nav a:hover{ background: var(--surface-2); color: var(--ink); }
+  .nav a.active{ background: #FFF4EA; color: var(--ink); font-weight: 600; }
+  .nav a.active .nav-ic{ background: var(--orange); color: #fff; }
+  .nav-ic{
+    width: 26px; height: 26px; border-radius: 8px;
+    background: var(--surface-2); color: var(--ink-2);
+    display: grid; place-items: center; font-size: 13px;
+  }
+  .nav-count{
+    margin-left:auto; font-size:11px; font-weight:600; color: var(--ink-3);
+    background: var(--surface-2); padding: 2px 8px; border-radius: 999px;
+  }
+  .nav a.active .nav-count{ background: var(--orange-soft); color: #B85A1E; }
+
+  .pro-card{
+    margin-top: auto;
+    background: linear-gradient(160deg, #1A1614 0%, #2C2522 100%);
+    color: white; padding: 16px; border-radius: 14px;
+    position: relative; overflow: hidden;
+  }
+  .pro-card::after{
+    content:""; position:absolute; right:-30px; top:-30px;
+    width: 110px; height: 110px; border-radius: 50%;
+    background: radial-gradient(circle, var(--orange) 0%, transparent 70%);
+    opacity: .55;
+  }
+  .pro-badge{
+    display:inline-block; background: var(--orange);
+    color:#1A1614; font-weight:700; font-size:10px;
+    padding: 2px 8px; border-radius: 999px; letter-spacing:.06em;
+  }
+  .pro-card h4{ font-size: 14px; margin: 8px 0 4px; font-weight: 700; }
+  .pro-card p{ font-size: 12px; color: rgba(255,255,255,.65); margin-bottom: 10px; }
+  .pro-card .pro-cta{
+    background: var(--orange); color:#1A1614;
+    padding: 7px 12px; border-radius: 8px;
+    font-size: 12px; font-weight: 700;
+    display:inline-block; cursor: pointer;
+  }
+
+  /* ---------- Main ---------- */
+  .main{ padding: 22px 28px 40px; }
+
+  .topbar{
+    display:flex; align-items:center; gap:14px;
+    padding: 6px 0 22px;
+  }
+  .crumbs{ font-size: 13px; color: var(--ink-3); }
+  .crumbs strong{ color: var(--ink); font-weight: 600; }
+  .topbar-spacer{ flex: 1; }
+  .search{
+    display:flex; align-items:center; gap:8px;
+    background: var(--surface); border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 999px;
+    width: 280px; font-size: 13px; color: var(--ink-3);
+  }
+  .icon-btn{
+    width: 38px; height: 38px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--line);
+    display: grid; place-items: center; cursor: pointer;
+    position: relative;
+  }
+  .icon-btn .dot{
+    position:absolute; top:8px; right:9px;
+    width:8px; height:8px; border-radius:50%;
+    background: var(--orange); border: 2px solid var(--surface);
+  }
+  .avatar{
+    width: 38px; height: 38px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--lavender) 0%, var(--rose) 100%);
+    display:grid; place-items:center; font-weight:700; color:#3E2F60;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero{
+    background: linear-gradient(120deg, #FFE4CD 0%, #FFD1B0 60%, #FFC196 100%);
+    border-radius: 22px; padding: 28px 32px;
+    display: grid; grid-template-columns: 1.4fr 1fr;
+    gap: 32px; margin-bottom: 24px;
+    position: relative; overflow: hidden;
+  }
+  .hero::before{
+    content:""; position:absolute; right:-80px; top:-80px;
+    width: 280px; height: 280px; border-radius: 50%;
+    background: rgba(255,255,255,.35);
+  }
+  .hero::after{
+    content:""; position:absolute; right:60px; bottom:-60px;
+    width: 160px; height: 160px; border-radius: 50%;
+    background: rgba(255,255,255,.25);
+  }
+  .hero-eyebrow{
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    color: #B85A1E; text-transform: uppercase;
+  }
+  .hero h1{
+    font-size: 32px; font-weight: 800; line-height: 1.15;
+    margin: 8px 0 10px; letter-spacing: -.02em;
+    color: #1A1614;
+  }
+  .hero p{ color: #4A3729; font-size: 14px; max-width: 480px; }
+  .hero-actions{ display: flex; gap: 10px; margin-top: 18px; }
+  .btn{
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 18px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer; border: none; font-family: inherit;
+  }
+  .btn-primary{ background: #1A1614; color: white; }
+  .btn-ghost{ background: rgba(255,255,255,.7); color: #1A1614; backdrop-filter: blur(6px); }
+
+  .hero-stat{
+    background: rgba(255,255,255,.65);
+    backdrop-filter: blur(8px);
+    border-radius: 18px; padding: 18px;
+    position: relative; z-index: 2;
+    align-self: center;
+  }
+  .hero-stat-row{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;}
+  .hero-stat h4{ font-size: 13px; font-weight: 600; color: #4A3729; }
+  .hero-stat-up{ font-size: 11px; color: #2E7D5B; font-weight: 700; }
+  .hero-num{ font-size: 36px; font-weight: 800; letter-spacing: -.02em; color: #1A1614; }
+  .hero-bars{ display: flex; align-items: flex-end; gap: 6px; height: 50px; margin-top: 12px; }
+  .hero-bar{ flex: 1; background: var(--orange); border-radius: 4px 4px 0 0; opacity: .85; }
+
+  /* ---------- Stat row ---------- */
+  .stat-grid{
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 14px; margin-bottom: 24px;
+  }
+  .stat-card{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow);
+  }
+  .stat-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom: 16px; }
+  .stat-icon{
+    width: 40px; height: 40px; border-radius: 12px;
+    display: grid; place-items: center; font-size: 18px;
+  }
+  .stat-icon.peach{ background: var(--orange-soft); color: #B85A1E; }
+  .stat-icon.lavender{ background: var(--lavender-soft); color: #6B4FA8; }
+  .stat-icon.mint{ background: var(--mint-soft); color: #2E7D5B; }
+  .stat-icon.sky{ background: var(--sky-soft); color: #2E5B8C; }
+  .stat-trend{
+    font-size: 11px; font-weight: 700; padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .trend-up{ background: var(--mint-soft); color: #2E7D5B; }
+  .trend-down{ background: var(--rose-soft); color: #B84747; }
+  .trend-flat{ background: var(--surface-2); color: var(--ink-3); }
+  .stat-num{ font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+  .stat-label{ font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+
+  /* ---------- Two-column row ---------- */
+  .two-col{
+    display: grid; grid-template-columns: 1.5fr 1fr;
+    gap: 18px; margin-bottom: 24px;
+  }
+  .card{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  .card-head{
+    padding: 18px 20px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--line);
+  }
+  .card-head h3{ font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .card-head p{ font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .card-body{ padding: 20px; }
+  .pill{
+    font-size: 11px; font-weight: 600;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--ink-2);
+  }
+  .pill.active{ background: var(--ink); color: white; }
+
+  /* sentiment chart */
+  .chart-wrap{ padding: 8px 4px 4px; }
+  .chart-svg{ width: 100%; height: 200px; display:block; }
+  .chart-legend{
+    display: flex; gap: 18px; padding: 14px 20px 4px;
+    font-size: 12px; color: var(--ink-2);
+  }
+  .legend-dot{
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* activity feed */
+  .activity{ padding: 8px 0; }
+  .activity-item{
+    display: flex; gap: 12px; padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .activity-item:last-child{ border-bottom: none; }
+  .activity-ic{
+    width: 36px; height: 36px; border-radius: 10px;
+    display: grid; place-items: center; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .activity-body{ flex: 1; }
+  .activity-title{ font-size: 13px; font-weight: 600; }
+  .activity-meta{ font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+
+  /* ---------- Topic Detail ---------- */
+  .section-head{
+    display: flex; align-items: end; justify-content: space-between;
+    margin: 8px 0 14px;
+  }
+  .section-head h2{ font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+  .section-head p{ font-size: 13px; color: var(--ink-3); margin-top: 4px; }
+  .filter-bar{ display: flex; gap: 8px; }
+
+  /* graph + findings */
+  .detail-row{
+    display: grid; grid-template-columns: 1.4fr 1fr;
+    gap: 18px; margin-bottom: 24px;
+  }
+  .graph-card{ min-height: 380px; padding: 0; overflow: hidden; }
+  .graph-svg{ width: 100%; height: 380px; display: block; }
+
+  .findings-rail{ padding: 16px 18px; }
+  .finding{
+    display: flex; gap: 12px; padding: 14px;
+    border-radius: 14px; margin-bottom: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    transition: background .15s, border-color .15s;
+  }
+  .finding:hover{ background: #FFF4EA; border-color: var(--orange-2); }
+  .finding-bullet{
+    width: 34px; height: 34px; border-radius: 10px;
+    display: grid; place-items: center; font-size: 13px; font-weight: 700;
+    color: white; flex-shrink: 0;
+  }
+  .finding-bullet.chronic{ background: var(--chronic); }
+  .finding-bullet.emerging{ background: var(--emerging); }
+  .finding-bullet.fading{ background: var(--fading); }
+  .finding-body h4{ font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+  .finding-meta{ display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--ink-3); }
+
+  /* topic tile grid */
+  .topic-grid{
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 14px; margin-bottom: 24px;
+  }
+  .topic-tile{
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px;
+    box-shadow: var(--shadow);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .topic-tile:hover{
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(26,22,20,.08);
+  }
+  .topic-cover{
+    height: 80px; border-radius: 12px;
+    display: grid; place-items: center; font-size: 28px;
+    margin-bottom: 14px;
+  }
+  .cover-1{ background: linear-gradient(135deg, var(--orange-soft), var(--gold-soft)); }
+  .cover-2{ background: linear-gradient(135deg, var(--lavender-soft), var(--rose-soft)); }
+  .cover-3{ background: linear-gradient(135deg, var(--mint-soft), var(--sky-soft)); }
+  .cover-4{ background: linear-gradient(135deg, var(--rose-soft), var(--orange-soft)); }
+  .topic-tile h4{ font-size: 14px; font-weight: 700; line-height: 1.3; margin-bottom: 8px; }
+  .topic-stats{ display: flex; gap: 12px; font-size: 11px; color: var(--ink-3); }
+  .topic-stats b{ color: var(--ink); font-weight: 700; }
+
+  /* Evidence table */
+  .evidence-table{ width: 100%; border-collapse: collapse; }
+  .evidence-table th{
+    text-align: left; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ink-3); padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .evidence-table td{
+    padding: 14px 20px; font-size: 13px;
+    border-bottom: 1px solid var(--line); vertical-align: top;
+  }
+  .evidence-table tr:last-child td{ border-bottom: none; }
+  .evidence-quote{ color: var(--ink); font-weight: 500; max-width: 480px; }
+  .evidence-meta{ color: var(--ink-3); font-size: 11px; margin-top: 4px; }
+  .src-chip{
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--surface-2); padding: 4px 10px;
+    border-radius: 999px; font-size: 11px; font-weight: 600;
+    color: var(--ink-2);
+  }
+  .src-dot{ width: 6px; height: 6px; border-radius: 50%; background: var(--orange); }
+
+  .footer-note{
+    font-size: 11px; color: var(--ink-3); text-align: center;
+    padding: 24px 0 4px;
+  }
+
+  @media (max-width: 1100px){
+    .stat-grid{ grid-template-columns: repeat(2, 1fr); }
+    .topic-grid{ grid-template-columns: repeat(2, 1fr); }
+    .two-col, .detail-row{ grid-template-columns: 1fr; }
+    .hero{ grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px){
+    .app{ grid-template-columns: 1fr; }
+    .sidebar{ display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">G</div>
+      <div>
+        <div class="brand-name">OpenReply</div>
+        <div class="brand-sub">research workspace</div>
+      </div>
+    </div>
+
+    <div class="nav-section-label">Workspace</div>
+    <nav class="nav">
+      <a href="#" class="active">
+        <span class="nav-ic">▦</span>
+        <span>Dashboard</span>
+        <span class="nav-count">12</span>
+      </a>
+      <a href="#">
+        <span class="nav-ic">◉</span>
+        <span>Topics</span>
+        <span class="nav-count">4</span>
+      </a>
+      <a href="#">
+        <span class="nav-ic">↓</span>
+        <span>Ingest</span>
+      </a>
+      <a href="#">
+        <span class="nav-ic">⏱</span>
+        <span>Schedules</span>
+        <span class="nav-count">3</span>
+      </a>
+      <a href="#">
+        <span class="nav-ic">▤</span>
+        <span>Reports</span>
+      </a>
+    </nav>
+
+    <div class="nav-section-label">Account</div>
+    <nav class="nav">
+      <a href="#"><span class="nav-ic">⚙</span><span>Settings</span></a>
+      <a href="#"><span class="nav-ic">?</span><span>Help &amp; docs</span></a>
+    </nav>
+
+    <div class="pro-card">
+      <span class="pro-badge">PRO</span>
+      <h4>Unlock unlimited ingests</h4>
+      <p>Schedule deep crawls, export to Notion, and get weekly digests.</p>
+      <span class="pro-cta">Upgrade →</span>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="crumbs">Workspace / <strong>Dashboard</strong></div>
+      <div class="topbar-spacer"></div>
+      <div class="search">
+        <span>⌕</span>
+        <span>Search topics, painpoints, posts…</span>
+      </div>
+      <div class="icon-btn">🔔<span class="dot"></span></div>
+      <div class="avatar">SB</div>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div>
+        <div class="hero-eyebrow">Active Research</div>
+        <h1>ATS resume &amp; job<br/>search apps</h1>
+        <p>Your knowledge graph has 3 chronic painpoints, 2 emerging trends and 9 sources synthesised across 1,284 posts.</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary">+ New ingest</button>
+          <button class="btn btn-ghost">View report</button>
+        </div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-row">
+          <div>
+            <h4>This week</h4>
+            <div class="hero-num">+128</div>
+          </div>
+          <div class="hero-stat-up">▲ 18.4%</div>
+        </div>
+        <div class="hero-bars">
+          <div class="hero-bar" style="height: 32%"></div>
+          <div class="hero-bar" style="height: 56%"></div>
+          <div class="hero-bar" style="height: 44%"></div>
+          <div class="hero-bar" style="height: 72%"></div>
+          <div class="hero-bar" style="height: 60%"></div>
+          <div class="hero-bar" style="height: 88%"></div>
+          <div class="hero-bar" style="height: 100%"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stat grid -->
+    <section class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon peach">◉</div>
+          <span class="stat-trend trend-up">▲ 12%</span>
+        </div>
+        <div class="stat-num">12</div>
+        <div class="stat-label">Painpoints surfaced</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon lavender">✦</div>
+          <span class="stat-trend trend-up">▲ 5</span>
+        </div>
+        <div class="stat-num">9</div>
+        <div class="stat-label">Sources synthesised</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon mint">◢</div>
+          <span class="stat-trend trend-up">▲ 0.18</span>
+        </div>
+        <div class="stat-num">0.86</div>
+        <div class="stat-label">Saturation index</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-head">
+          <div class="stat-icon sky">▭</div>
+          <span class="stat-trend trend-flat">— same</span>
+        </div>
+        <div class="stat-num">1,284</div>
+        <div class="stat-label">Posts indexed</div>
+      </div>
+    </section>
+
+    <!-- Sentiment + Activity -->
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Topic momentum</h3>
+            <p>Painpoint mentions across the last 12 weeks</p>
+          </div>
+          <div class="filter-bar">
+            <span class="pill">1M</span>
+            <span class="pill active">3M</span>
+            <span class="pill">YTD</span>
+          </div>
+        </div>
+        <div class="chart-legend">
+          <span><span class="legend-dot" style="background:var(--chronic)"></span>Chronic</span>
+          <span><span class="legend-dot" style="background:var(--emerging)"></span>Emerging</span>
+          <span><span class="legend-dot" style="background:var(--fading)"></span>Fading</span>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart-svg" viewBox="0 0 600 200" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="gChronic" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#E26A6A" stop-opacity=".55"/>
+                <stop offset="100%" stop-color="#E26A6A" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="gEmerging" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#E69447" stop-opacity=".5"/>
+                <stop offset="100%" stop-color="#E69447" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <line x1="0" y1="50"  x2="600" y2="50"  stroke="#ECE6DC" stroke-dasharray="3 4"/>
+            <line x1="0" y1="100" x2="600" y2="100" stroke="#ECE6DC" stroke-dasharray="3 4"/>
+            <line x1="0" y1="150" x2="600" y2="150" stroke="#ECE6DC" stroke-dasharray="3 4"/>
+
+            <path d="M0,140 L50,130 L100,118 L150,124 L200,108 L250,96 L300,90 L350,82 L400,72 L450,68 L500,60 L550,52 L600,44 L600,200 L0,200 Z" fill="url(#gChronic)"/>
+            <path d="M0,140 L50,130 L100,118 L150,124 L200,108 L250,96 L300,90 L350,82 L400,72 L450,68 L500,60 L550,52 L600,44" fill="none" stroke="#E26A6A" stroke-width="2.5" stroke-linejoin="round"/>
+
+            <path d="M0,170 L50,164 L100,160 L150,150 L200,148 L250,138 L300,128 L350,124 L400,112 L450,100 L500,88 L550,82 L600,72 L600,200 L0,200 Z" fill="url(#gEmerging)"/>
+            <path d="M0,170 L50,164 L100,160 L150,150 L200,148 L250,138 L300,128 L350,124 L400,112 L450,100 L500,88 L550,82 L600,72" fill="none" stroke="#E69447" stroke-width="2.5" stroke-linejoin="round"/>
+
+            <circle cx="500" cy="60" r="5" fill="#fff" stroke="#E26A6A" stroke-width="3"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Recent activity</h3>
+            <p>Latest ingests &amp; events</p>
+          </div>
+          <span class="pill">Live</span>
+        </div>
+        <div class="activity">
+          <div class="activity-item">
+            <div class="activity-ic" style="background:var(--mint-soft);color:#2E7D5B;">↓</div>
+            <div class="activity-body">
+              <div class="activity-title">Reddit ingest completed · r/jobs</div>
+              <div class="activity-meta">412 posts · 2m ago</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-ic" style="background:var(--orange-soft);color:#B85A1E;">◉</div>
+            <div class="activity-body">
+              <div class="activity-title">New chronic painpoint detected</div>
+              <div class="activity-meta">"ATS keyword stuffing" · 18m ago</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-ic" style="background:var(--lavender-soft);color:#6B4FA8;">✦</div>
+            <div class="activity-body">
+              <div class="activity-title">App Store reviews synced</div>
+              <div class="activity-meta">Jobscan · 1.2k reviews · 1h ago</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-ic" style="background:var(--sky-soft);color:#2E5B8C;">▤</div>
+            <div class="activity-body">
+              <div class="activity-title">Weekly report drafted</div>
+              <div class="activity-meta">Ready to review · 3h ago</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-ic" style="background:var(--rose-soft);color:#B84747;">!</div>
+            <div class="activity-body">
+              <div class="activity-title">Hacker News scrape rate-limited</div>
+              <div class="activity-meta">Retrying in 12m · 5h ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Topic Tiles -->
+    <div class="section-head">
+      <div>
+        <h2>Your topics</h2>
+        <p>Active research projects</p>
+      </div>
+      <div class="filter-bar">
+        <span class="pill active">All</span>
+        <span class="pill">Active</span>
+        <span class="pill">Archived</span>
+      </div>
+    </div>
+
+    <section class="topic-grid">
+      <div class="topic-tile">
+        <div class="topic-cover cover-1">📄</div>
+        <h4>ATS resume &amp; job search apps</h4>
+        <div class="topic-stats">
+          <span><b>1.2k</b> posts</span>
+          <span><b>12</b> pains</span>
+          <span><b>0.86</b> sat</span>
+        </div>
+      </div>
+      <div class="topic-tile">
+        <div class="topic-cover cover-2">🎓</div>
+        <h4>Indie game dev burnout</h4>
+        <div class="topic-stats">
+          <span><b>842</b> posts</span>
+          <span><b>9</b> pains</span>
+          <span><b>0.72</b> sat</span>
+        </div>
+      </div>
+      <div class="topic-tile">
+        <div class="topic-cover cover-3">🌱</div>
+        <h4>Plant care for beginners</h4>
+        <div class="topic-stats">
+          <span><b>506</b> posts</span>
+          <span><b>6</b> pains</span>
+          <span><b>0.61</b> sat</span>
+        </div>
+      </div>
+      <div class="topic-tile">
+        <div class="topic-cover cover-4">💸</div>
+        <h4>Freelance invoicing tools</h4>
+        <div class="topic-stats">
+          <span><b>389</b> posts</span>
+          <span><b>5</b> pains</span>
+          <span><b>0.54</b> sat</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Detail row: graph + findings -->
+    <div class="section-head">
+      <div>
+        <h2>Knowledge graph</h2>
+        <p>ATS resume &amp; job search apps · 12 painpoints · 9 sources</p>
+      </div>
+      <div class="filter-bar">
+        <span class="pill active">All</span>
+        <span class="pill">Chronic</span>
+        <span class="pill">Emerging</span>
+        <span class="pill">Fading</span>
+      </div>
+    </div>
+
+    <section class="detail-row">
+      <div class="card graph-card">
+        <svg class="graph-svg" viewBox="0 0 600 380">
+          <defs>
+            <radialGradient id="bg" cx="50%" cy="50%" r="60%">
+              <stop offset="0%" stop-color="#FFF4EA"/>
+              <stop offset="100%" stop-color="#FFFFFF"/>
+            </radialGradient>
+          </defs>
+          <rect width="600" height="380" fill="url(#bg)"/>
+
+          <g stroke="#E2DBCF" stroke-width="1.4" fill="none">
+            <line x1="300" y1="190" x2="160" y2="100"/>
+            <line x1="300" y1="190" x2="120" y2="200"/>
+            <line x1="300" y1="190" x2="170" y2="290"/>
+            <line x1="300" y1="190" x2="300" y2="80"/>
+            <line x1="300" y1="190" x2="430" y2="100"/>
+            <line x1="300" y1="190" x2="470" y2="210"/>
+            <line x1="300" y1="190" x2="430" y2="300"/>
+            <line x1="300" y1="190" x2="270" y2="320"/>
+            <line x1="160" y1="100" x2="80"  y2="60"/>
+            <line x1="430" y1="100" x2="510" y2="60"/>
+            <line x1="430" y1="300" x2="520" y2="340"/>
+            <line x1="170" y1="290" x2="80"  y2="320"/>
+          </g>
+
+          <circle cx="300" cy="190" r="38" fill="#1A1614"/>
+          <text x="300" y="187" text-anchor="middle" fill="#FFB37A" font-size="10" font-weight="700" font-family="Plus Jakarta Sans">TOPIC</text>
+          <text x="300" y="202" text-anchor="middle" fill="white" font-size="11" font-weight="600" font-family="Plus Jakarta Sans">ATS apps</text>
+
+          <circle cx="160" cy="100" r="20" fill="#E26A6A"/>
+          <text x="160" y="103" text-anchor="middle" fill="white" font-size="10" font-weight="700">P1</text>
+          <text x="160" y="78" text-anchor="middle" fill="#1A1614" font-size="10" font-weight="600">Keyword stuffing</text>
+
+          <circle cx="120" cy="200" r="18" fill="#E26A6A"/>
+          <text x="120" y="203" text-anchor="middle" fill="white" font-size="10" font-weight="700">P2</text>
+          <text x="80"  y="225" text-anchor="start" fill="#1A1614" font-size="10" font-weight="600">Format errors</text>
+
+          <circle cx="170" cy="290" r="22" fill="#E26A6A"/>
+          <text x="170" y="293" text-anchor="middle" fill="white" font-size="10" font-weight="700">P3</text>
+          <text x="170" y="320" text-anchor="middle" fill="#1A1614" font-size="10" font-weight="600">Ghost jobs</text>
+
+          <circle cx="430" cy="100" r="18" fill="#E69447"/>
+          <text x="430" y="103" text-anchor="middle" fill="white" font-size="10" font-weight="700">E1</text>
+          <text x="430" y="78" text-anchor="middle" fill="#1A1614" font-size="10" font-weight="600">AI tailoring</text>
+
+          <circle cx="470" cy="210" r="16" fill="#E69447"/>
+          <text x="470" y="213" text-anchor="middle" fill="white" font-size="10" font-weight="700">E2</text>
+          <text x="497" y="213" text-anchor="start" fill="#1A1614" font-size="10" font-weight="600">Cover letter AI</text>
+
+          <circle cx="430" cy="300" r="14" fill="#9C948A"/>
+          <text x="430" y="303" text-anchor="middle" fill="white" font-size="9" font-weight="700">F1</text>
+          <text x="430" y="328" text-anchor="middle" fill="#1A1614" font-size="10" font-weight="600">PDF parsing</text>
+
+          <circle cx="300" cy="80" r="14" fill="#fff" stroke="#C9B6F2" stroke-width="2.5"/>
+          <text x="300" y="83" text-anchor="middle" fill="#6B4FA8" font-size="10" font-weight="700">F</text>
+          <text x="300" y="58" text-anchor="middle" fill="#1A1614" font-size="10" font-weight="600">Bulk applies</text>
+
+          <circle cx="270" cy="320" r="12" fill="#fff" stroke="#A8DCC4" stroke-width="2.5"/>
+          <text x="270" y="323" text-anchor="middle" fill="#2E7D5B" font-size="10" font-weight="700">W</text>
+          <text x="270" y="345" text-anchor="middle" fill="#1A1614" font-size="10" font-weight="600">Workaround</text>
+
+          <circle cx="80"  cy="60"  r="8" fill="#B5D4F0"/>
+          <circle cx="510" cy="60"  r="8" fill="#B5D4F0"/>
+          <circle cx="520" cy="340" r="8" fill="#B5D4F0"/>
+          <circle cx="80"  cy="320" r="8" fill="#B5D4F0"/>
+
+          <g font-family="Plus Jakarta Sans" font-size="10">
+            <rect x="14" y="350" width="258" height="22" rx="11" fill="#fff" stroke="#ECE6DC"/>
+            <circle cx="28" cy="361" r="5" fill="#E26A6A"/><text x="38" y="364" fill="#4A4339">Chronic</text>
+            <circle cx="92" cy="361" r="5" fill="#E69447"/><text x="102" y="364" fill="#4A4339">Emerging</text>
+            <circle cx="170" cy="361" r="5" fill="#9C948A"/><text x="180" y="364" fill="#4A4339">Fading</text>
+            <circle cx="232" cy="361" r="5" fill="#B5D4F0"/><text x="242" y="364" fill="#4A4339">Source</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h3>Top findings</h3>
+            <p>Ranked by severity × frequency</p>
+          </div>
+          <span class="pill">12</span>
+        </div>
+        <div class="findings-rail">
+
+          <div class="finding">
+            <div class="finding-bullet chronic">P1</div>
+            <div class="finding-body">
+              <h4>ATS bots reject resumes for keyword density before a human ever reads them.</h4>
+              <div class="finding-meta">
+                <span>● chronic</span>
+                <span>↗ 0.92 sev</span>
+                <span>⌖ 218 mentions</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="finding">
+            <div class="finding-bullet chronic">P2</div>
+            <div class="finding-body">
+              <h4>Two-column resumes get scrambled into unreadable text by most ATS parsers.</h4>
+              <div class="finding-meta">
+                <span>● chronic</span>
+                <span>↗ 0.88 sev</span>
+                <span>⌖ 174 mentions</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="finding">
+            <div class="finding-bullet chronic">P3</div>
+            <div class="finding-body">
+              <h4>"Ghost jobs" stay open for months — applicants never get rejection signals.</h4>
+              <div class="finding-meta">
+                <span>● chronic</span>
+                <span>↗ 0.81 sev</span>
+                <span>⌖ 142 mentions</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="finding">
+            <div class="finding-bullet emerging">E1</div>
+            <div class="finding-body">
+              <h4>Users want AI to tailor each resume per job description, not just rewrite it.</h4>
+              <div class="finding-meta">
+                <span>● emerging</span>
+                <span>↗ 0.74 sev</span>
+                <span>⌖ 96 mentions</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="finding">
+            <div class="finding-bullet emerging">E2</div>
+            <div class="finding-body">
+              <h4>Cover-letter generators feel templated — recruiters can spot them in seconds.</h4>
+              <div class="finding-meta">
+                <span>● emerging</span>
+                <span>↗ 0.66 sev</span>
+                <span>⌖ 71 mentions</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="finding">
+            <div class="finding-bullet fading">F1</div>
+            <div class="finding-body">
+              <h4>PDF parsing complaints — declining as ATSes upgrade to LLM-based extraction.</h4>
+              <div class="finding-meta">
+                <span>● fading</span>
+                <span>↘ 0.42 sev</span>
+                <span>⌖ 38 mentions</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Evidence table -->
+    <div class="section-head">
+      <div>
+        <h2>Evidence stream</h2>
+        <p>Verbatim quotes powering the top findings</p>
+      </div>
+      <div class="filter-bar">
+        <span class="pill">Reddit</span>
+        <span class="pill">HN</span>
+        <span class="pill">App Store</span>
+        <span class="pill active">All</span>
+      </div>
+    </div>
+
+    <section class="card" style="margin-bottom:24px;">
+      <table class="evidence-table">
+        <thead>
+          <tr>
+            <th style="width:55%">Quote</th>
+            <th>Painpoint</th>
+            <th>Source</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="evidence-quote">"I had a friend who's a recruiter look at my resume — she said it was great. But I literally never get past the ATS. It's a black box."</div>
+              <div class="evidence-meta">u/jobhunter_2025 · r/jobs · 312 upvotes</div>
+            </td>
+            <td><span class="pill" style="background:#FBE0E0;color:#B84747;">P1 Keyword stuffing</span></td>
+            <td><span class="src-chip"><span class="src-dot"></span>Reddit</span></td>
+            <td>2d ago</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="evidence-quote">"Stop using two-column templates. The ATS reads left-to-right and your work history ends up sandwiched between your skills."</div>
+              <div class="evidence-meta">u/recruiter_anon · r/recruiting · 891 upvotes</div>
+            </td>
+            <td><span class="pill" style="background:#FBE0E0;color:#B84747;">P2 Format errors</span></td>
+            <td><span class="src-chip"><span class="src-dot"></span>Reddit</span></td>
+            <td>4d ago</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="evidence-quote">"Applied to 200+ 'open' roles in 3 months. The companies aren't even hiring — they're just collecting CVs for a future pipeline."</div>
+              <div class="evidence-meta">throwaway · Hacker News · 412 points</div>
+            </td>
+            <td><span class="pill" style="background:#FBE0E0;color:#B84747;">P3 Ghost jobs</span></td>
+            <td><span class="src-chip"><span class="src-dot" style="background:#E69447"></span>Hacker News</span></td>
+            <td>1w ago</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="evidence-quote">"I built a tool that rewrites my resume per job description and my interview rate went from 2% to 18% in a month."</div>
+              <div class="evidence-meta">u/builderdev · r/cscareerquestions · 1.2k upvotes</div>
+            </td>
+            <td><span class="pill" style="background:#FFE9D6;color:#B85A1E;">E1 AI tailoring</span></td>
+            <td><span class="src-chip"><span class="src-dot"></span>Reddit</span></td>
+            <td>3d ago</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="evidence-quote">"Jobscan is okay but it's just keyword matching. I want something that actually understands what the JD is asking for."</div>
+              <div class="evidence-meta">App Store review · 3★ · iOS</div>
+            </td>
+            <td><span class="pill" style="background:#FFE9D6;color:#B85A1E;">E2 Cover letter AI</span></td>
+            <td><span class="src-chip"><span class="src-dot" style="background:#C9B6F2"></span>App Store</span></td>
+            <td>5d ago</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <div class="footer-note">OpenReply · single-page prototype · variant 6 — soft dashboard</div>
+
+  </main>
+</div>
+
+</body>
+</html>

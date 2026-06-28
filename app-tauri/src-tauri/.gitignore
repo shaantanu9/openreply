@@ -1,0 +1,11 @@
+# Rust build output — regenerates via `cargo build`
+target/
+**/*.rs.bk
+
+# Tauri build artifacts
+gen/
+
+# env files (never commit)
+.env
+.env.local
+.env.*.local

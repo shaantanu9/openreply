@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenReply — the open-source Reddit co-pilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--o:#FF4500;--o2:#E03D00;--blue:#0079D3;--blue-s:#E8F3FC;--tint:#FFF2EC;--ink:#111419;--bg:#FBFCFD;--mut:#697282;--line:#EAEEF2;--green:#16A34A;--gold:#C2870B;
+    --disp:"Plus Jakarta Sans",-apple-system,sans-serif;--body:"Inter",-apple-system,sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+  body{font-family:var(--body);background:var(--bg);color:var(--ink);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}button{font-family:inherit;cursor:pointer;border:none}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+  h1,h2,h3{font-family:var(--disp);letter-spacing:-.025em;line-height:1.1}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--disp);font-weight:700;font-size:13px;color:var(--o);background:var(--tint);border-radius:30px;padding:6px 14px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--disp);font-weight:700;font-size:15px;border-radius:12px;padding:13px 22px;transition:.16s}
+  .btn-p{background:var(--o);color:#fff;box-shadow:0 8px 20px -8px rgba(255,69,0,.6)}.btn-p:hover{background:var(--o2);transform:translateY(-1px)}
+  .btn-o{background:#fff;border:1px solid var(--line);color:var(--ink)}.btn-o:hover{border-color:var(--ink)}
+  :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+  nav{position:sticky;top:0;z-index:50;background:rgba(251,252,253,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .nv{display:flex;align-items:center;height:66px;gap:26px}
+  .brand{display:flex;align-items:center;gap:9px;font-family:var(--disp);font-weight:800;font-size:19px}
+  .brand .mk{width:30px;height:30px;border-radius:9px;background:var(--o);color:#fff;display:grid;place-items:center;font-size:15px}
+  .lk{display:flex;gap:24px;margin-left:8px;font-weight:600;font-size:14.5px;color:#454b56}
+  .lk a:hover{color:var(--o)}
+  .nv .r{margin-left:auto;display:flex;gap:12px;align-items:center}
+  .gh{display:inline-flex;gap:7px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 13px;font-weight:600;font-size:13.5px}.gh .s{color:var(--gold)}
+  @media(max-width:840px){.lk{display:none}}
+
+  /* hero */
+  .hero{text-align:center;padding:64px 0 0;position:relative;overflow:hidden}
+  .hero::before{content:"";position:absolute;top:-160px;left:50%;transform:translateX(-50%);width:900px;height:520px;background:radial-gradient(circle,rgba(255,69,0,.10),transparent 62%);z-index:0}
+  .hero>*{position:relative;z-index:1}
+  .hero h1{font-size:clamp(36px,5.6vw,60px);font-weight:800;max-width:16ch;margin:18px auto 0}
+  .hero h1 .o{color:var(--o)}
+  .hero .lede{font-size:19px;color:#454b56;max-width:620px;margin:20px auto 26px}
+  .hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .hero .trust{display:flex;gap:22px;justify-content:center;flex-wrap:wrap;margin-top:20px;font-size:13.5px;color:var(--mut)}
+  .hero .trust b{color:var(--ink)}
+
+  /* product mock */
+  .shot{margin:48px auto -120px;max-width:980px;background:#fff;border:1px solid var(--line);border-radius:18px 18px 0 0;box-shadow:0 30px 80px -30px rgba(17,20,25,.3);overflow:hidden}
+  .shot .tb{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--line);background:#fbfbfc}
+  .shot .tb .d{display:flex;gap:6px}.shot .tb .d i{width:11px;height:11px;border-radius:50%;background:#e3e6ea}
+  .shot .tb .u{flex:1;text-align:center;font-size:12.5px;color:var(--mut);background:#f1f3f5;border-radius:7px;padding:5px 0;max-width:280px;margin:0 auto}
+  .shot .app{display:grid;grid-template-columns:200px 1fr;min-height:380px}
+  .shot .side{border-right:1px solid var(--line);padding:18px 14px;background:#fcfcfd}
+  .shot .side .it{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;font-weight:600;color:#55585f;margin-bottom:3px}
+  .shot .side .it.on{background:var(--tint);color:var(--o)}
+  .shot .side .it .b{margin-left:auto;background:var(--o);color:#fff;font-size:10px;border-radius:9px;padding:0 6px}
+  .shot .side .cost{margin-top:20px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px}
+  .shot .side .cost .l{font-size:10px;color:var(--mut)}.shot .side .cost .v{font-weight:700;font-size:13px;margin:2px 0 6px}.shot .side .cost .bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden}.shot .side .cost .bar i{display:block;height:100%;width:32%;background:var(--o)}
+  .shot .feed{padding:18px}
+  .shot .feed h4{font-size:15px;margin-bottom:3px}
+  .shot .feed .sub{font-size:12px;color:var(--mut);margin-bottom:14px}
+  .opp{display:flex;gap:13px;align-items:flex-start;border:1px solid var(--line);border-radius:13px;padding:13px;margin-bottom:10px}
+  .opp .sc{width:46px;height:46px;border-radius:11px;display:grid;place-items:center;font-family:var(--disp);font-weight:800;font-size:16px;flex-shrink:0}
+  .sc.hi{background:var(--o);color:#fff}.sc.mid{background:#FFF1D6;color:var(--gold)}.sc.lo{background:#EEF0F3;color:var(--mut)}
+  .opp .m{font-size:11px;color:var(--blue);font-weight:700}
+  .opp h5{font-size:13.5px;font-weight:600;line-height:1.3;margin:2px 0 5px;font-family:var(--body)}
+  .opp .kw{font-size:10.5px;background:#F1F3F5;color:var(--mut);border-radius:5px;padding:2px 7px;font-weight:600}
+  @media(max-width:640px){.shot .app{grid-template-columns:1fr}.shot .side{display:none}}
+
+  /* spacer for overlap */
+  .post-shot{height:130px;background:var(--ink)}
+
+  /* logos */
+  .logos{background:var(--ink);color:#fff;padding:0 0 56px;text-align:center}
+  .logos .l{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#7c828d;margin-bottom:16px}
+  .logos .row{display:flex;justify-content:center;flex-wrap:wrap;gap:14px 28px;font-weight:600;color:#aeb3bc}
+
+  section{padding:80px 0}
+  .sh{text-align:center;max-width:680px;margin:0 auto 48px}
+  .sh h2{font-size:clamp(28px,3.6vw,42px);font-weight:800;margin:12px 0}
+  .sh p{font-size:17px;color:#454b56}
+
+  .how{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .hc{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;text-align:center}
+  .hc .n{width:38px;height:38px;border-radius:50%;background:var(--tint);color:var(--o);font-family:var(--disp);font-weight:800;display:grid;place-items:center;margin:0 auto}
+  .hc h3{font-size:17px;font-weight:700;margin:14px 0 8px}
+  .hc p{font-size:14px;color:#54585f}
+  @media(max-width:880px){.how{grid-template-columns:1fr 1fr}}@media(max-width:480px){.how{grid-template-columns:1fr}}
+
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .fc{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;transition:.16s}
+  .fc:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px rgba(17,20,25,.25)}
+  .fc .ic{width:44px;height:44px;border-radius:12px;background:var(--tint);display:grid;place-items:center;font-size:21px}
+  .fc.b .ic{background:var(--blue-s)}
+  .fc h3{font-size:18.5px;font-weight:700;margin:15px 0 9px}
+  .fc p{font-size:14.5px;color:#54585f}
+  .fc .pill{display:inline-block;margin-top:11px;font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-s);border-radius:20px;padding:3px 11px}
+  @media(max-width:880px){.feat{grid-template-columns:1fr}}
+
+  .osband{background:linear-gradient(180deg,#fff,var(--bg))}
+  .os{display:grid;grid-template-columns:1fr 1fr;gap:46px;align-items:center}
+  .os h2{font-size:clamp(26px,3.3vw,38px);font-weight:800}
+  .os ul{list-style:none;margin:22px 0}
+  .os li{display:flex;gap:11px;padding:9px 0;font-size:15.5px;color:#3c4049}.os li .c{color:var(--green);font-weight:800;flex-shrink:0}
+  .osimg{background:#0F1217;border-radius:18px;padding:24px;font-family:ui-monospace,monospace;font-size:13.5px;line-height:2;color:#dde0e5;box-shadow:0 24px 60px -28px rgba(17,20,25,.5)}
+  .osimg .o{color:var(--o)}.osimg .g{color:#46d369}.osimg .m{color:#727884}
+  @media(max-width:880px){.os{grid-template-columns:1fr;gap:28px}}
+
+  .price{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start}
+  .pc{background:#fff;border:1px solid var(--line);border-radius:18px;padding:28px;position:relative}
+  .pc.f{border:2px solid var(--o);box-shadow:0 20px 48px -24px rgba(255,69,0,.45)}
+  .pc .tag{position:absolute;top:-12px;left:28px;background:var(--o);color:#fff;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:5px 12px;border-radius:20px}
+  .pc .nm{font-family:var(--disp);font-weight:700;font-size:20px}
+  .pc .pp{font-family:var(--disp);font-weight:800;font-size:42px;margin:12px 0 2px}.pc .pp span{font-size:15px;color:var(--mut);font-weight:600}
+  .pc .pd{font-size:14px;color:var(--mut);min-height:42px}
+  .pc ul{list-style:none;margin:18px 0 22px}.pc li{display:flex;gap:10px;padding:7px 0;font-size:14.5px;color:#3c4049}.pc li .c{color:var(--green);font-weight:800}
+  .pc .btn{width:100%;justify-content:center}
+  @media(max-width:880px){.price{grid-template-columns:1fr}}
+
+  .faq{max-width:780px;margin:0 auto}
+  details{background:#fff;border:1px solid var(--line);border-radius:14px;margin-bottom:12px}
+  summary{padding:18px 22px;font-family:var(--disp);font-weight:700;font-size:17px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:12px}
+  summary::-webkit-details-marker{display:none}summary .pl{color:var(--o);font-size:22px;transition:.2s}details[open] summary .pl{transform:rotate(45deg)}
+  .ans{padding:0 22px 20px;color:#54585f;font-size:15px}.ans a{color:var(--blue);text-decoration:underline}
+
+  .final{background:var(--ink);color:#fff;border-radius:24px;padding:62px 40px;text-align:center;position:relative;overflow:hidden}
+  .final::before{content:"";position:absolute;bottom:-140px;left:50%;transform:translateX(-50%);width:600px;height:340px;background:radial-gradient(circle,rgba(255,69,0,.3),transparent 60%)}
+  .final h2{font-size:clamp(28px,4vw,46px);font-weight:800;position:relative}
+  .final p{color:#b7bcc4;font-size:18px;margin:16px auto 30px;max-width:520px;position:relative}
+  .final .cta{display:flex;gap:13px;justify-content:center;flex-wrap:wrap;position:relative}
+  .final .btn-o{background:transparent;border-color:#3a3e46;color:#fff}.final .btn-o:hover{border-color:#fff}
+  footer{padding:48px 0;font-size:14px;color:var(--mut)}
+  .fb{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;border-top:1px solid var(--line);padding-top:24px}
+  .reveal{opacity:0;transform:translateY(18px);transition:.6s}.reveal.in{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* Terminal hero — scoped to .t-hero so it lives beside the light landing-3 theme */
+.t-hero{font-family:"Inter",-apple-system,sans-serif;background:#08090B;color:#E7E9ED;padding:70px 0 40px;position:relative;
+  background-image:radial-gradient(700px 360px at 85% -5%,rgba(255,69,0,.10),transparent),radial-gradient(600px 300px at 5% 30%,rgba(140,147,255,.07),transparent)}
+.t-hero .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.t-hero h1{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:clamp(34px,5vw,56px);font-weight:800;line-height:1.1;letter-spacing:-.02em;margin-top:14px}
+.t-hero h1 .o{color:#FF4500}
+.t-hero .eyebrow{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.08em;color:#46D369}
+.t-hero .eyebrow::before{content:"> "}
+.t-hero .lede{color:#aeb2bb;font-size:18px;max-width:560px;margin:20px 0 26px}
+.t-hero .cta{display:flex;gap:12px;flex-wrap:wrap}
+.t-hero .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14.5px;border-radius:9px;padding:12px 20px;font-family:"JetBrains Mono",ui-monospace,monospace;transition:.15s;text-decoration:none}
+.t-hero .btn-p{background:#FF4500;color:#0b0b0d}.t-hero .btn-p:hover{background:#FF6A33}
+.t-hero .btn-o{background:transparent;border:1px solid #23262D;color:#E7E9ED}.t-hero .btn-o:hover{border-color:#FF4500;color:#FF4500}
+.t-hero .meta{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12.5px;color:#8A8F99;margin-top:20px;display:flex;gap:18px;flex-wrap:wrap}
+.t-hero .meta b{color:#46D369}
+.t-hero .term{margin-top:38px;background:#101216;border:1px solid #23262D;border-radius:14px;overflow:hidden;box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
+.t-hero .term .bar{display:flex;align-items:center;gap:7px;padding:12px 15px;border-bottom:1px solid #23262D;background:#16181D}
+.t-hero .term .bar i{width:11px;height:11px;border-radius:50%}
+.t-hero .term .bar i:nth-child(1){background:#ff5f57}.t-hero .term .bar i:nth-child(2){background:#febc2e}.t-hero .term .bar i:nth-child(3){background:#28c840}
+.t-hero .term .bar .t{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;color:#8A8F99;margin-left:8px}
+.t-hero .term pre{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13.5px;line-height:2;padding:20px;margin:0;overflow-x:auto;white-space:pre-wrap}
+.t-hero .c-cmt{color:#5c616b}.t-hero .c-cmd{color:#fff}.t-hero .c-g{color:#46D369}.t-hero .c-o{color:#FF4500}.t-hero .c-p{color:#8C93FF}.t-hero .c-d{color:#aeb2bb}
+.t-hero .cursor{display:inline-block;width:8px;height:15px;background:#FF4500;vertical-align:-2px;animation:bl 1s steps(2) infinite}
+@keyframes bl{50%{opacity:0}}
+@media(max-width:760px){.t-hero{padding-top:50px}}
+</style>
+</head>
+<body>
+<nav><div class="wrap nv">
+  <a class="brand" href="#top"><span class="mk">▲</span> OpenReply</a>
+  <div class="lk"><a href="#how">How it works</a><a href="#features">Features</a><a href="#oss">Open source</a><a href="#pricing">Pricing</a></div>
+  <div class="r"><a class="gh" href="#oss"><span class="s">★</span> 2.4k</a><a class="btn btn-p" href="sign-in.html#register">Get started</a></div>
+</div></nav>
+
+<section class="t-hero" id="top">
+  <div class="wrap">
+    <span class="eyebrow">MIT licensed &middot; self-hostable &middot; bring your own key</span>
+    <h1>The open-source Reddit co-pilot<br>that <span class="o">never touches your account.</span></h1>
+    <p class="lede">Scan Reddit for high-intent threads, score every one 0&ndash;100, and get a draft reply that sounds like you. You post it manually. No bots, no bans, no lock-in.</p>
+    <div class="cta"><a class="btn btn-p" href="sign-in.html#register">&#9654; Start free</a><a class="btn btn-o" href="#product">See the product &rarr;</a></div>
+    <div class="meta"><span><b>&#10003;</b> read-only access</span><span><b>&#10003;</b> hard budget caps</span><span><b>&#10003;</b> own your data</span></div>
+    <div class="term reveal">
+      <div class="bar"><i></i><i></i><i></i><span class="t">~/openreply &mdash; scan</span></div>
+      <pre id="termpre"></pre>
+    </div>
+  </div>
+</section>
+<header class="hero" id="product"><div class="wrap">
+  <span class="eyebrow">⚡ Open source · MIT · self-hostable</span>
+  <h1>The Reddit co-pilot that finds leads <span class="o">without getting you banned</span></h1>
+  <p class="lede">OpenReply scans Reddit for high-intent threads, scores each one 0–100, and drafts a reply that sounds like you. You review and post it manually — your account is never at risk.</p>
+  <div class="cta"><a class="btn btn-p" href="sign-in.html#register">Start free →</a><a class="btn btn-o" href="#oss"><span style="color:var(--gold)">★</span> Self-host on GitHub</a></div>
+  <div class="trust"><span>✓ <b>Bring your own key</b></span><span>✓ <b>Hard budget caps</b></span><span>✓ <b>Own your data</b></span></div>
+
+  <!-- product mock -->
+  <div class="shot reveal">
+    <div class="tb"><div class="d"><i></i><i></i><i></i></div><div class="u">app.openreply.dev</div></div>
+    <div class="app">
+      <div class="side">
+        <div class="it on">📥 Opportunities <span class="b">6</span></div>
+        <div class="it">✓ Replied</div>
+        <div class="it">📣 Mentions</div>
+        <div class="it">📊 Analytics</div>
+        <div class="cost"><div class="l">API budget this month</div><div class="v">$6.40 / $20.00</div><div class="bar"><i></i></div></div>
+      </div>
+      <div class="feed">
+        <h4>High-intent opportunities</h4><div class="sub">Sorted by buying intent · scanned 14 min ago</div>
+        <div class="opp"><div class="sc hi">94</div><div><div class="m">r/SaaS</div><h5>What do you use to find leads on Reddit without getting banned?</h5><span class="kw">🔑 find leads on reddit</span></div></div>
+        <div class="opp"><div class="sc hi">88</div><div><div class="m">r/indiehackers</div><h5>Reddit marketing in 2026 after GummySearch shut down?</h5><span class="kw">🔑 reddit marketing tool</span></div></div>
+        <div class="opp"><div class="sc mid">81</div><div><div class="m">r/FlutterDev</div><h5>Best backend for a Flutter side project — Firebase vs Supabase?</h5><span class="kw">🔑 supabase flutter</span></div></div>
+      </div>
+    </div>
+  </div>
+</div></header>
+<div class="post-shot"></div>
+
+<div class="logos"><div class="wrap"><div class="l">Built for founders who grow on Reddit</div>
+  <div class="row"><span>r/SaaS</span><span>r/indiehackers</span><span>r/FlutterDev</span><span>r/sideproject</span><span>r/Supabase</span><span>r/Entrepreneur</span></div>
+</div></div>
+
+<section id="problem"><div class="wrap">
+  <div class="sh reveal"><span class="eyebrow">The Reddit dilemma</span><h2>Reddit converts. Most tools get you banned doing it.</h2><p>Auto-posters get flagged. Cold DMs end accounts. Managed accounts build nothing you own. OpenReply does the opposite.</p></div>
+  <div class="feat">
+    <div class="fc reveal"><div class="ic">🤖</div><h3>Auto-posters get flagged</h3><p>Bots trip Reddit's spam filters — comments removed, accounts shadowbanned, silently.</p></div>
+    <div class="fc reveal"><div class="ic">📨</div><h3>Cold DMs end accounts</h3><p>Mass-messaging is the riskiest move on Reddit. One flag and the account is gone.</p></div>
+    <div class="fc reveal"><div class="ic">🕳️</div><h3>Managed accounts build nothing</h3><p>Rented profiles nobody trusts — zero reputation that compounds for you.</p></div>
+  </div>
+</div></section>
+
+<section id="how" style="background:linear-gradient(180deg,var(--bg),#fff)"><div class="wrap">
+  <div class="sh reveal"><span class="eyebrow">From zero to first lead</span><h2>How OpenReply works</h2><p>One setup, then about 20 minutes a day clearing a feed that converts.</p></div>
+  <div class="how">
+    <div class="hc reveal"><div class="n">1</div><h3>Drop your URL</h3><p>We build a brand + persona profile from your site.</p></div>
+    <div class="hc reveal"><div class="n">2</div><h3>Auto-discover</h3><p>The right subreddits and unlimited keywords.</p></div>
+    <div class="hc reveal"><div class="n">3</div><h3>Scan &amp; score</h3><p>Every thread scored 0–100 by buying intent.</p></div>
+    <div class="hc reveal"><div class="n">4</div><h3>Review &amp; post</h3><p>Edit the draft, copy, post as yourself.</p></div>
+  </div>
+</div></section>
+
+<section id="features"><div class="wrap">
+  <div class="sh reveal"><span class="eyebrow">What's inside</span><h2>Everything to win Reddit, nothing that gets you banned</h2></div>
+  <div class="feat">
+    <div class="fc b reveal"><div class="ic">🎯</div><h3>Buying-intent scoring</h3><p>0–100 for how ready a poster is to buy — skip the noise, reply where it converts.</p><span class="pill">the differentiator</span></div>
+    <div class="fc reveal"><div class="ic">🛡️</div><h3>Account-safe by design</h3><p>Read-only public data. No auto-posting, no DMs, no credential capture.</p></div>
+    <div class="fc reveal"><div class="ic">✍️</div><h3>Context-aware drafts</h3><p>Written from your persona and the thread. Value-first, never templated.</p></div>
+    <div class="fc reveal"><div class="ic">📜</div><h3>Subreddit-rule checks</h3><p>Reads each community's rules and flags a draft before it gets removed.</p></div>
+    <div class="fc reveal"><div class="ic">💸</div><h3>BYOK + budget caps</h3><p>Your own AI key, a live cost meter, and a hard monthly cap. No surprise bills.</p></div>
+    <div class="fc b reveal"><div class="ic">🔎</div><h3>SEO &amp; AI visibility</h3><p>Reddit ranks on Google and trains LLMs. Prioritize threads that surface in both.</p><span class="pill">show up in ChatGPT</span></div>
+  </div>
+</div></section>
+
+<section class="osband" id="oss"><div class="wrap os">
+  <div class="reveal">
+    <span class="eyebrow">100% open source</span>
+    <h2 style="margin-top:12px">Your growth engine, owned by you</h2>
+    <p style="color:#454b56;margin-top:12px">MIT-licensed, full Flutter + Supabase stack. Self-host it, plug in your own AI key, and keep every byte of your data.</p>
+    <ul>
+      <li><span class="c">✓</span> <b>Self-host in minutes</b> — fully documented</li>
+      <li><span class="c">✓</span> <b>Bring your own model</b> — Claude, GPT, or any API</li>
+      <li><span class="c">✓</span> <b>Fork &amp; extend</b> — change the scoring prompt, add adapters</li>
+      <li><span class="c">✓</span> <b>Own your data</b> — it stays in your database</li>
+    </ul>
+    <div class="cta" style="display:flex;gap:12px"><a class="btn btn-p" href="https://github.com/openreply/openreply" target="_blank">★ View on GitHub</a><a class="btn btn-o" href="https://docs.openreply.dev" target="_blank">Read the docs</a></div>
+  </div>
+  <div class="osimg reveal">
+<span class="m"># self-host your own instance</span><br>
+$ git clone openreply/openreply<br>
+$ supabase db push<br>
+<span class="g">✓</span> <span class="m">projects · opportunities · drafts</span><br>
+$ openreply key set anthropic<br>
+<span class="g">✓</span> <span class="m">stored in Vault (encrypted)</span><br>
+$ openreply scan<br>
+<span class="o">▲</span> <span class="m">1,284 threads · top intent</span> <span class="o">94</span>/100
+  </div>
+</div></section>
+
+<section id="pricing"><div class="wrap">
+  <div class="sh reveal"><span class="eyebrow">Free forever if you self-host</span><h2>Simple, honest pricing</h2><p>Every plan uses your own AI key with a hard budget cap.</p></div>
+  <div class="price">
+    <div class="pc reveal"><div class="nm">Self-Hosted</div><div class="pp">$0</div><div class="pd">Run the open-source build on your own Supabase.</div><ul><li><span class="c">✓</span> Unlimited projects &amp; keywords</li><li><span class="c">✓</span> Full source, MIT</li><li><span class="c">✓</span> Your infra &amp; data</li></ul><a class="btn btn-o" href="https://github.com/openreply/openreply" target="_blank">Clone the repo</a></div>
+    <div class="pc f reveal"><div class="tag">Most popular</div><div class="nm">Cloud</div><div class="pp">$19<span>/mo</span></div><div class="pd">We host and run scans. You bring your key.</div><ul><li><span class="c">✓</span> Managed scheduled scans</li><li><span class="c">✓</span> 3 projects · unlimited keywords</li><li><span class="c">✓</span> Intent scoring + drafts</li><li><span class="c">✓</span> Cost meter &amp; budget caps</li></ul><a class="btn btn-p" href="sign-in.html#register">Start 14-day trial</a></div>
+    <div class="pc reveal"><div class="nm">Agency</div><div class="pp">$49<span>/mo</span></div><div class="pd">For teams running Reddit for many brands.</div><ul><li><span class="c">✓</span> Unlimited projects</li><li><span class="c">✓</span> Mention &amp; competitor tracking</li><li><span class="c">✓</span> AI-visibility tracking</li></ul><a class="btn btn-o" href="mailto:hello@openreply.dev">Talk to us</a></div>
+  </div>
+</div></section>
+
+<section id="faq" style="background:linear-gradient(180deg,var(--bg),#fff)"><div class="wrap">
+  <div class="sh reveal"><span class="eyebrow">Good questions</span><h2>FAQ</h2></div>
+  <div class="faq">
+    <details class="reveal"><summary>Will this get my account banned?<span class="pl">+</span></summary><div class="ans">No. OpenReply only reads public Reddit data and never posts, DMs, or logs in. You post every reply yourself — the safest way to use Reddit.</div></details>
+    <details class="reveal"><summary>What is buying-intent scoring?<span class="pl">+</span></summary><div class="ans">A thread can be on-topic with zero purchase intent. We score 0–100 for how ready the poster is to adopt a solution, so you spend time where it converts.</div></details>
+    <details class="reveal"><summary>Why bring my own AI key?<span class="pl">+</span></summary><div class="ans">It keeps you in control of cost and model — and our hosting cheap. A live meter and hard cap stop runaway bills.</div></details>
+    <details class="reveal"><summary>Is it really open source?<span class="pl">+</span></summary><div class="ans">Yes — MIT, the full Flutter + Supabase stack. Self-host free, read every line, change the prompt. <a href="#oss">See the repo</a>.</div></details>
+  </div>
+</div></section>
+
+<section><div class="wrap"><div class="final reveal">
+  <h2>Stop scrolling. Start finding your users.</h2>
+  <p>Point OpenReply at your site and get your first scored feed of conversations today.</p>
+  <div class="cta"><a class="btn btn-p" href="sign-in.html#register">Start free →</a><a class="btn btn-o" href="https://github.com/openreply/openreply" target="_blank">★ Self-host on GitHub</a></div>
+</div></div></section>
+
+<footer><div class="wrap fb"><span>© 2026 OpenReply · MIT licensed · built for builders</span><span>OpenReply reads only public Reddit data. It never posts on your behalf.</span></div></footer>
+
+<script>
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(e=>io.observe(e));
+</script>
+
+<script>
+const LINES=[
+  ['c-cmd','$ openreply scan --project "my-saas"
+'],
+  ['c-d','  scanning r/SaaS r/indiehackers r/FlutterDev …
+'],
+  ['c-g','  &#10003; '],['c-d','1,284 threads scanned
+'],
+  ['c-o','  &#9650; '],['c-d','6 opportunities found
+'],
+  ['c-d','  ———————————————————
+'],
+  ['c-o','  94 '],['c-d','r/SaaS  "find leads without getting banned?"
+'],
+  ['c-o','  88 '],['c-d','r/indiehackers  "reddit marketing in 2026?"
+'],
+  ['c-p','  81 '],['c-d','r/FlutterDev  "firebase vs supabase?"
+'],
+  ['c-g','  &#10003; '],['c-d','drafts ready &mdash; review in the app
+'],
+];
+const pre=document.getElementById('termpre');
+let li=0;
+function typeTerm(){
+  if(li>=LINES.length){pre.insertAdjacentHTML('beforeend','<span class="cursor"></span>');return;}
+  const [cls,txt]=LINES[li];const span=document.createElement('span');span.className=cls;pre.appendChild(span);
+  let i=0;(function ch(){ if(i<=txt.length){span.textContent=txt.slice(0,i);i+=2;setTimeout(ch,12);} else{li++;setTimeout(typeTerm,90);} })();
+}
+window.addEventListener('load',()=>setTimeout(typeTerm,500));
+</script>
+</body>
+</html>

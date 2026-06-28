@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Outbound network for fetching Reddit/HN/arxiv/etc. and LLM APIs -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Hardened-runtime exceptions required by the PyInstaller sidecar.
+         PyInstaller unpacks compiled .so/.dylib files at runtime and loads
+         them dynamically; Apple's default hardened runtime blocks that. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- User-selected files for the Ingest feature (open/save dialog) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,94 @@
+{
+  "ok": true,
+  "topic": "meditation and sound frequency brainwave app",
+  "outline": {
+    "title": "Evidence-driven market research on meditation and sound frequency brainwave app",
+    "sections": [
+      {
+        "id": "abstract",
+        "heading": "Abstract",
+        "notes": "Problem, method, top findings, and implications."
+      },
+      {
+        "id": "introduction",
+        "heading": "Introduction",
+        "notes": "Motivation, scope, and contribution."
+      },
+      {
+        "id": "related_work",
+        "heading": "Related Work",
+        "notes": "Position findings against known frameworks and prior work."
+      },
+      {
+        "id": "methods",
+        "heading": "Methods",
+        "notes": "Data sources, collection, filtering, and synthesis process."
+      },
+      {
+        "id": "results",
+        "heading": "Results",
+        "notes": "Opportunity-ranked findings with evidence."
+      },
+      {
+        "id": "discussion",
+        "heading": "Discussion",
+        "notes": "Interpretation, practical implications, and trade-offs."
+      },
+      {
+        "id": "limitations",
+        "heading": "Limitations",
+        "notes": "Biases, source constraints, and model limitations."
+      },
+      {
+        "id": "experiments",
+        "heading": "Experiment Plan",
+        "notes": "Falsifiable hypotheses, success metrics, and next tests."
+      },
+      {
+        "id": "conclusion",
+        "heading": "Conclusion",
+        "notes": "Summary and future work."
+      }
+    ],
+    "key_findings": [
+      {
+        "title": "Meditation is not fixing my mental health",
+        "opportunity_score": 19.0,
+        "triangulation_strength": "narrow",
+        "source_breakdown": {}
+      },
+      {
+        "title": "Meditation helps with self-awareness",
+        "opportunity_score": 16.0,
+        "triangulation_strength": "narrow",
+        "source_breakdown": {}
+      },
+      {
+        "title": "Meditation apps are overwhelming",
+        "opportunity_score": 16.0,
+        "triangulation_strength": "narrow",
+        "source_breakdown": {}
+      },
+      {
+        "title": "Need for minimalism in meditation apps",
+        "opportunity_score": 16.0,
+        "triangulation_strength": "narrow",
+        "source_breakdown": {}
+      },
+      {
+        "title": "Meditation is not fixing my focusing issues",
+        "opportunity_score": 16.0,
+        "triangulation_strength": "narrow",
+        "source_breakdown": {}
+      },
+      {
+        "title": "Meditation can improve mental health",
+        "opportunity_score": 15.0,
+        "triangulation_strength": "narrow",
+        "source_breakdown": {}
+      }
+    ],
+    "generated_at": "2026-06-01T08:19:28+00:00"
+  },
+  "report_cached": true
+}

@@ -1,0 +1,137 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openreply"
+version = "0.1.23"
+description = "OpenReply — multi-source product gap finder. CLI + MCP server fusing Reddit, HN, arXiv, GitHub, App Store, and 10+ more sources into a single corpus, with pluggable LLM analysis."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Shantanu Bombatkar" }]
+dependencies = [
+    "praw>=7.7",
+    "httpx>=0.27",
+    "typer>=0.12",
+    "rich>=13.7",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+    "sqlite-utils>=3.36",
+    "pyyaml>=6.0",
+    "tomli>=2.0; python_version<'3.11'",
+    # LLM SDKs — core to the chat / enrichment / report-pro flows. Kept in
+    # base deps (not the `analyze` extras) because Ollama's chat endpoint
+    # is served through the OpenAI SDK (Ollama exposes /v1 OpenAI-compat),
+    # so even users who only want local LLMs need `openai` installed. Same
+    # for Anthropic — the first-class BYOK provider shouldn't need extras.
+    "openai>=1.40",
+    "anthropic>=0.34",
+    # Author clustering for the Audience-personas pipeline (k-means +
+    # silhouette). Base dep — NOT an extra — because Audience is a
+    # first-class feature and the previous "sklearn is a transitive dep of
+    # chromadb" assumption was false, breaking the tab on every install.
+    # `_clustering.py` still ships a pure-numpy fallback for slim installs.
+    "scikit-learn>=1.4",
+]
+
+
+
+[project.optional-dependencies]
+sources = [
+    "google-play-scraper>=1.2",
+    "pytrends>=4.9",
+    "feedparser>=6.0",
+    "networkx>=3.1",
+    "scipy>=1.11",
+    "pypdf>=4.0",
+    # HTML → Markdown for RSS/web-page selftext. Cuts LLM prompt char-count
+    # 3-5× vs raw HTML with no loss of signal. See insights.py::_strip_html.
+    "markdownify>=0.13",
+    "beautifulsoup4>=4.12",
+]
+# Structure-aware PDF extraction (headings / tables / references preserved).
+# Needs Java 11+ on the machine; falls back to pypdf transparently if
+# unavailable. Install on dev/server machines for higher-quality extraction
+# on academic papers — skip on minimal deployments.
+ingest-rich = [
+    "opendataloader-pdf>=2.0",
+]
+analyze = [
+    # anthropic + openai are now base deps (chat + Ollama need them).
+    # This group is retained for backwards compat with existing install
+    # scripts / docs that reference `--extra analyze`; it's now a no-op
+    # beyond pulling httpx (which is also a base dep).
+    "httpx>=0.27",
+]
+# Local semantic search over the corpus — ChromaDB PersistentClient with the
+# bundled all-MiniLM-L6-v2 ONNX embedder. Zero external API calls. ~200 MB
+# install (onnxruntime + chromadb + sentence-transformers' onnx model). All
+# offline; all local. Adds ~15 ms / post on ingest for embedding; ~15 ms p50
+# on a k=10 search at 2K documents. Separate .sqlite3 file under the app's
+# data dir (doesn't touch the existing openreply.db).
+retrieval = [
+    "chromadb>=1.5.4,<2",
+    "rank-bm25>=0.2.2",
+]
+# Video ingest — yt-dlp pulls audio from any URL, bundled ffmpeg demuxes it,
+# faster-whisper transcribes locally. Model weights are user-downloaded from
+# HuggingFace on demand (not bundled), keeping the DMG lean. yt-dlp itself
+# ships bundled AND auto-updates into a user-writable overlay dir on every
+# sidecar cold-start with a 24h cooldown (YouTube extractor rotations break
+# yt-dlp ~monthly). See docs/video-ingest.md for the full design.
+video = [
+    "yt-dlp>=2024.10",
+    "faster-whisper>=1.0",
+    "huggingface_hub>=0.24",
+    "packaging>=23.0",
+]
+mcp = [
+    "fastmcp>=0.4",
+]
+# Stakeholder-ready DOCX + PPTX exports. Both are pure-Python, no system
+# deps (no pandoc, no LibreOffice, no Cairo) — work fine inside a
+# PyInstaller sidecar. Together ~10 MB. Drives `research export-deck`
+# and the `openreply_export_docx` / `openreply_export_pptx` MCP tools.
+docs = [
+    "python-docx>=1.1",
+    "python-pptx>=0.6.23",
+    # Bundles a pandoc binary (~25 MB) so the markdown→docx converter
+    # has full GFM-table / blockquote / footnote fidelity without
+    # asking the user to install pandoc separately. Plain `pypandoc`
+    # also works if pandoc is already on PATH.
+    "pypandoc-binary>=1.13",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "pyinstaller>=6.10",
+]
+all = ["openreply[analyze,mcp,sources,dev,retrieval,video,docs]"]
+
+[project.scripts]
+openreply = "openreply.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Ship the LaTeX header + Lua filter that drive the markdown→PDF pipeline.
+# Without this, `pip install openreply` would skip the assets and
+# `build_pdf_from_markdown()` would error at runtime.
+[tool.setuptools.package-data]
+"openreply.research" = ["_doc_assets/pdf/*.tex", "_doc_assets/pdf/*.lua"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests that spawn real subprocesses or hit the network (deselect via -m 'not slow')",
+]
+
+[tool.uv]
+package = true
+

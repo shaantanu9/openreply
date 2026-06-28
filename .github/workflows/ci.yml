@@ -1,0 +1,157 @@
+name: ci
+
+# Lightweight CI for pull requests into main and for pushes on main / multi-source.
+#
+# Design goals:
+# - Fast: no sidecar build, no Tauri bundle, no LFS download.
+# - Cheap: LFS bandwidth is 1GB/mo on free tier — never fetch LFS in CI.
+# - Catch the common mistakes early: Python syntax errors, missing Rust deps,
+#   broken JS syntax, obvious test failures.
+#
+# The heavy cross-platform bundle build lives in release.yml and runs only on
+# tags (v*) or workflow_dispatch.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, multi-source]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Opt every JavaScript action (checkout@v4, setup-node@v4, setup-python@v5) into
+# the Node 24 runtime. Without this, mid-2026 GitHub emits a "Node.js 20 actions
+# are deprecated" warning on every step that hasn't shipped a v4/v5 with Node 24
+# yet. Removing this once the upstream actions release Node-24-native versions.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  python-check:
+    name: Python — install + parse + tests
+    runs-on: [self-hosted, macOS]
+    steps:
+      - name: Checkout (no LFS — sidecar binary not needed for CI)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      # Self-hosted-runner note: we deliberately do NOT use actions/setup-python.
+      # Its prebuilt macOS Python is hardcoded to install at
+      # /Users/runner/hostedtoolcache (the GitHub-hosted runner's username) and
+      # fails on a real Mac with "mkdir: /Users/runner: Permission denied"
+      # (AGENT_TOOLSDIRECTORY is ignored on macOS). The runner Mac already has
+      # Python 3.11 via Homebrew, so build a venv from it and put it on PATH for
+      # the rest of the job. pyproject requires-python is >=3.11.
+      - name: Set up Python 3.11 (Homebrew — self-hosted)
+        run: |
+          PY="$(command -v python3.11 || echo /opt/homebrew/bin/python3.11)"
+          "$PY" -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv/bin/python" --version
+
+      - name: Install project (editable, all extras)
+        run: |
+          python -m pip install --upgrade pip
+          # Install ALL extras, not just `dev`. The test suite imports the MCP
+          # server (needs `fastmcp` from the `mcp` extra), source adapters,
+          # retrieval (chromadb) and docs deps. `.[dev]` alone makes
+          # test_mcp_module_importable fail on a missing `fastmcp`.
+          pip install -e ".[all]"
+
+      - name: Parse-check every Python source file
+        run: |
+          python -c "import ast, glob, sys; [ast.parse(open(f).read()) for f in glob.glob('src/**/*.py', recursive=True)]"
+
+      - name: Run pytest (if tests/ exists)
+        run: |
+          if [ -d tests ]; then
+            # -m 'not slow' keeps the run CI-friendly: no real subprocesses, no network.
+            python -m pytest tests/ -q --no-header -m "not slow"
+          else
+            echo "::warning::no tests yet — skipping pytest"
+          fi
+
+  rust-check:
+    name: Rust — cargo check
+    runs-on: [self-hosted, macOS]
+    steps:
+      - name: Checkout (no LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      # Self-hosted-runner fix: the job shell is non-login (bash --noprofile
+      # --norc), so the Mac's ~/.cargo/bin isn't on PATH. Without this,
+      # dtolnay/rust-toolchain can't find the already-installed rustup and tries
+      # to re-run rustup-init, which fails amending the root-owned ~/.tcshrc
+      # ("could not amend shell profile ... Permission denied"). Surfacing the
+      # existing rustup makes the toolchain action a no-op.
+      - name: Put pre-installed rustup/cargo on PATH (self-hosted)
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache (scoped to app-tauri/src-tauri)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./app-tauri/src-tauri -> target
+
+      # `cargo check` runs build.rs (tauri-build) AND the `generate_context!()`
+      # macro. Both validate build artifacts that are gitignored, so a bare
+      # checkout fails the check:
+      #   - tauri-build verifies every `externalBin` path exists (the sidecar
+      #     binaries — see app-tauri/src-tauri/binaries/README.md)
+      #   - tauri-build ALSO resolves every `resources` glob; the onedir sidecar
+      #     glob `binaries/openreply-cli-onedir/**/*` matches nothing on a bare
+      #     checkout and aborts the build script (exit 101).
+      #   - generate_context!() reads `frontendDist` (../dist), the Vite bundle
+      # CI only type-checks the Rust source — it doesn't bundle. So strip
+      # externalBin + resources and stub a minimal frontend dist. The real
+      # bundle build in release.yml builds the binaries + frontend first and
+      # keeps both intact.
+      - name: Prep tauri.conf.json + stub frontend for cargo check
+        working-directory: ./app-tauri
+        run: |
+          python3 -c "import json, pathlib; p=pathlib.Path('src-tauri/tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[]; d['bundle']['resources']=[]; p.write_text(json.dumps(d, indent=2))"
+          mkdir -p dist
+          echo '<!doctype html><title>ci stub</title>' > dist/index.html
+
+      - name: cargo check
+        working-directory: ./app-tauri/src-tauri
+        run: cargo check --message-format short
+
+  js-check:
+    name: JS — install + syntax
+    runs-on: [self-hosted, macOS]
+    steps:
+      - name: Checkout (no LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app-tauri/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: ./app-tauri
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Syntax-check every JS file under src/
+        working-directory: ./app-tauri
+        run: |
+          # `find ... -exec node --check {} \;` fails the step on any syntax error
+          # because find's exit status is non-zero when an -exec command fails.
+          find src -type f -name "*.js" -exec node --check {} \;

@@ -1,0 +1,307 @@
+name: release (linux)
+
+# Linux Tauri bundle — part of the per-platform release architecture
+# (release-mac.yml, release-windows.yml, release-linux.yml).
+#
+# Why separate: the Linux `cargo tauri build` step takes 30+ min on a
+# stock ubuntu-22.04 runner (cold WebKit2GTK link, 400-crate compile).
+# Running it alongside mac + windows would block the fast path to
+# publishing macOS DMGs / Windows MSIs.
+#
+# Triggers:
+#   - workflow_dispatch — manual rebuild against any tag
+#   - push tag v* — auto-fires in parallel with release-mac.yml +
+#     release-windows.yml. The promote gate is MAC-ONLY: as soon as the
+#     two macOS DMGs are present the public release flips to "latest",
+#     without waiting for Windows OR Linux. Once Linux finishes (10-20
+#     min later), it appends its .AppImage / .deb to the already-
+#     published release.
+#
+# Tier 1 caches: sccache + PyInstaller dist + ONNX model.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build Linux artifacts for (e.g. v0.1.4)'
+        required: true
+  # NOTE: auto-trigger on `push: tags v*` intentionally removed.
+  # Linux runs on GitHub-hosted runners (billed). To build a Linux release,
+  # make the repo public first, then manually run this workflow (Actions tab
+  # or `gh workflow run release-linux.yml -f tag=vX.Y.Z`). Make private again
+  # once the run completes.
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0   # full history + tags for the release-notes git-log fallback
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Install Linux WebKit + libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python deps
+        shell: bash
+        run: uv sync --frozen --all-extras || uv sync --all-extras
+
+      - name: Cache ONNX MiniLM embedding model
+        uses: actions/cache@v4
+        with:
+          path: scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+          key: onnx-minilm-l6-v2-v1
+
+      - name: Pre-download ONNX MiniLM (if not cached)
+        shell: bash
+        run: |
+          mkdir -p scripts/onnx-model-cache/all-MiniLM-L6-v2
+          if [ ! -f scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz ]; then
+            curl -fsSL --retry 3 --retry-delay 2 \
+              -o scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz \
+              https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz
+          else
+            echo "  ✓ ONNX tarball restored from cache"
+          fi
+          ls -lh scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+
+      - name: Cache PyInstaller dist
+        id: pyi-cache
+        uses: actions/cache@v4
+        with:
+          path: dist/openreply-cli
+          key: pyinstaller-linux-${{ hashFiles('openreply-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
+
+      - name: Build openreply-cli sidecar (PyInstaller)
+        if: steps.pyi-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: uv run pyinstaller openreply-cli.spec
+
+      - name: Stage sidecar binary
+        shell: bash
+        run: |
+          mkdir -p app-tauri/src-tauri/binaries
+          cp dist/openreply-cli app-tauri/src-tauri/binaries/openreply-cli-x86_64-unknown-linux-gnu
+          chmod +x app-tauri/src-tauri/binaries/openreply-cli-x86_64-unknown-linux-gnu
+
+      # Linux doesn't ship ffmpeg as a sidecar yet — strip the externalBin
+      # reference so `cargo tauri build` doesn't fail looking for it. Also strip
+      # the macOS-only onedir resource: Linux ships the ONEFILE sidecar (see
+      # openreply-cli.spec platform split), so binaries/openreply-cli-onedir/ never
+      # exists here and the resource glob would otherwise error on a missing path.
+      - name: Strip ffmpeg externalBin + onedir resource
+        shell: bash
+        run: |
+          cd app-tauri/src-tauri
+          python3 -c "import json, pathlib; p=pathlib.Path('tauri.conf.json'); d=json.loads(p.read_text()); d['bundle']['externalBin']=[b for b in d['bundle']['externalBin'] if 'ffmpeg' not in b]; d['bundle']['resources']=[r for r in d['bundle'].get('resources',[]) if 'openreply-cli-onedir' not in r]; p.write_text(json.dumps(d, indent=2))"
+
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app-tauri/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./app-tauri/src-tauri -> target
+          shared-key: linux-tauri
+
+      - name: Install frontend deps
+        working-directory: ./app-tauri
+        run: npm ci
+
+      # Append Linux artifacts (.deb / .rpm / .AppImage) to the gap-map-pro
+      # release draft (whichever platform workflow created it first).
+      - name: Build and append Linux bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ./app-tauri
+          tagName: v__VERSION__
+          releaseName: Gap Map v__VERSION__
+          releaseDraft: true
+          prerelease: false
+          args: ''
+
+      # ---------- Publish to public repo ----------
+      - name: Publish linux artifact to public repo
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          GH_TOKEN_SRC: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ env.TAG_NAME }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PUBLIC_RELEASE_TOKEN not set — skipping public publish"
+            exit 0
+          fi
+          mkdir -p ./pub
+          # Pull from ALL source-repo releases carrying this tag — tauri-action
+          # can race-create DUPLICATE drafts, and `gh release download <tag>`
+          # would hit only one (the linux assets may be on the other), silently
+          # downloading nothing. Download by asset id across all. (Hardened 2026-06-02.)
+          dl_src() {
+            # The LIST call MUST use the SOURCE token — the ambient GH_TOKEN in
+            # this step is the PUBLIC repo token, which can't read the private
+            # source repo's releases (returns empty → downloads nothing → empty
+            # public release). The per-asset download below also uses it.
+            GH_TOKEN="$GH_TOKEN_SRC" gh api "/repos/${{ github.repository }}/releases" --paginate \
+              -q ".[] | select(.tag_name==\"$VER\") | .assets[] | \"\(.id)\t\(.name)\"" \
+            | while IFS="$(printf '\t')" read -r id name; do
+                id="${id%$'\r'}"; name="${name%$'\r'}"   # strip CRLF (Windows Git-Bash)
+                [ -n "$id" ] || continue
+                matched=0
+                for g in "$@"; do case "$name" in $g) matched=1 ;; esac; done
+                [ "$matched" = 1 ] || continue
+                [ -f "./pub/$name" ] && continue
+                GH_TOKEN="$GH_TOKEN_SRC" gh api -H "Accept: application/octet-stream" \
+                  "/repos/${{ github.repository }}/releases/assets/$id" > "./pub/$name" \
+                  && echo "  ↓ $name" || echo "  ! failed $name"
+              done || true
+            return 0
+          }
+          dl_src "Gap.Map_*_amd64.AppImage" "Gap.Map_*_amd64.deb" "Gap.Map_*_x86_64.rpm"
+          ls -lh ./pub/ | head -10
+
+          # Rename to user-friendly public-convention names. Linux only
+          # builds x86_64 today; if/when arm64 Linux lands, extend this
+          # block + the FILES glob + the parent download patterns above.
+          # Keep in sync with release-mac.yml, release-windows.yml, and
+          # scripts/promote-release-if-complete.sh.
+          cd ./pub
+          NUM="${VER#v}"
+          if [ -f "Gap.Map_${NUM}_amd64.AppImage" ]; then
+            mv "Gap.Map_${NUM}_amd64.AppImage" "Gap-Map-${NUM}-Linux.AppImage"
+          fi
+          if [ -f "Gap.Map_${NUM}_amd64.deb" ]; then
+            mv "Gap.Map_${NUM}_amd64.deb" "Gap-Map-${NUM}-Linux.deb"
+          fi
+          if [ -f "Gap.Map_${NUM}_x86_64.rpm" ]; then
+            mv "Gap.Map_${NUM}_x86_64.rpm" "Gap-Map-${NUM}-Linux.rpm"
+          fi
+          ls -lh
+
+          if ! gh release view "$VER" --repo "$PUBLIC" >/dev/null 2>&1; then
+            # Pull this version's real changelog section from CHANGELOG.md
+            # (between its "## [vX.Y.Z ...]" header and the next "## [" header).
+            # No private-repo links in public notes.
+            CHANGES=$(awk -v ver="$VER" '$0 ~ ("^## \\[" ver "[^0-9.]") {f=1; next} f && /^## \[/{exit} f{print}' "$GITHUB_WORKSPACE/CHANGELOG.md")
+            # Fallback: if CHANGELOG has no section for this tag, synthesize
+            # notes from commit subjects since the previous tag so the card
+            # ALWAYS shows real detail (needs fetch-depth: 0 on checkout).
+            if [ -z "$CHANGES" ]; then
+              PREV=$(git -C "$GITHUB_WORKSPACE" describe --tags --abbrev=0 "${VER}^" 2>/dev/null || true)
+              if [ -n "$PREV" ]; then
+                LOG=$(git -C "$GITHUB_WORKSPACE" log --no-merges --pretty='- %s' "${PREV}..${VER}" 2>/dev/null \
+                  | grep -viE '^- (merge |wip:|chore.*bump|docs\(changelog\))' | head -40)
+                [ -n "$LOG" ] && CHANGES="_Auto-generated from commits since ${PREV}._"$'\n\n'"$LOG"
+              fi
+            fi
+            if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
+            {
+              printf '## Gap Map %s\n\n' "$VER"
+              printf '**Download → [openreply.myind.ai](https://openreply.myind.ai/)**\n\n'
+              printf 'Installers:\n\n'
+              printf -- '- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n'
+              printf -- '- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n'
+              printf -- '- **Windows** — `Gap-Map-*-Windows.msi` (managed deploy) or `Gap-Map-*-Windows-Installer.exe` (click-to-install)\n'
+              printf -- '- **Linux** — `Gap-Map-*-Linux.AppImage` (portable) or `Gap-Map-*-Linux.deb` (Debian/Ubuntu APT)\n\n'
+              printf "## What's changed\n"
+              printf '%s\n' "$CHANGES"
+            } > "$RUNNER_TEMP/release-notes.md"
+            gh release create "$VER" --repo "$PUBLIC" --target main --draft \
+              --title "Gap Map $VER" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+            echo "  ✓ created draft on $PUBLIC"
+          fi
+
+          shopt -s nullglob
+          FILES=(Gap-Map-*-Linux.AppImage Gap-Map-*-Linux.deb Gap-Map-*-Linux.rpm)
+          if [ ${#FILES[@]} -gt 0 ]; then
+            gh release upload "$VER" --repo "$PUBLIC" "${FILES[@]}" --clobber
+            echo "  ✓ uploaded ${#FILES[@]} linux artifact(s)"
+          fi
+
+      # ---------- Promote if all platforms uploaded ----------
+      # Linux is OPTIONAL in the promote check (mac + windows alone can
+      # promote). This run typically lands AFTER the release is already
+      # latest-published, in which case the inlined logic below is a no-op.
+      # Inlined — see release-mac.yml for why (script-file-missing
+      # protection when checkout is pinned to a pre-fix tag).
+      - name: Promote release to latest if all platforms are uploaded
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          VER: ${{ env.TAG_NAME }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then exit 0; fi
+          echo "── promote-if-complete: $VER on $PUBLIC ──"
+          ASSETS=$(gh release view "$VER" --repo "$PUBLIC" --json assets --jq '.assets[].name' 2>/dev/null) || {
+            echo "  release $VER not found on $PUBLIC — nothing to promote"; exit 0
+          }
+          echo "  current assets:"; echo "$ASSETS" | sed 's/^/    - /'
+          # Mac-only promote gate: mac DMGs alone publish the release;
+          # Windows + Linux artifacts append later. This Linux run usually
+          # lands AFTER the release is already latest-published, so the logic
+          # below is a no-op. Keep in sync with release-mac.yml,
+          # release-windows.yml, scripts/promote-release-if-complete.sh.
+          REQUIRED=(
+            '-macOS-Apple-Silicon\.dmg$'
+            '-macOS-Intel\.dmg$'
+          )
+          MISSING=()
+          for pat in "${REQUIRED[@]}"; do
+            echo "$ASSETS" | grep -qE -- "$pat" || MISSING+=("$pat")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "  ⏳ waiting on missing platforms:"
+            for m in "${MISSING[@]}"; do echo "    - $m"; done
+            echo "  release stays draft. NOT promoting."; exit 0
+          fi
+          IS_DRAFT=$(gh release view "$VER" --repo "$PUBLIC" --json isDraft --jq '.isDraft' 2>/dev/null)
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "  ✓ all required platforms present — flipping draft → latest published"
+            gh release edit "$VER" --repo "$PUBLIC" --draft=false --latest
+            echo "  ✓ promoted $VER to latest on $PUBLIC"
+          else
+            echo "  already published — nothing to do"
+          fi

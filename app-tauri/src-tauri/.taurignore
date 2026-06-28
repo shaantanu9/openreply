@@ -1,0 +1,6 @@
+# Paths the Tauri dev file-watcher must ignore. Without this, `tauri dev`
+# rebuilds endlessly: the bundled Python sidecar (binaries/openreply-cli-onedir/…)
+# gets touched on every build, the watcher sees "changed", and rebuilds again.
+binaries/
+gen/
+target/

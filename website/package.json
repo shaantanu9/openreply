@@ -1,0 +1,11 @@
+{
+  "name": "openreply-website",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node generate-env-config.mjs",
+    "dev": "python3 -m http.server 5173",
+    "check": "node generate-env-config.mjs --dry-run"
+  }
+}

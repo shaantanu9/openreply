@@ -1,0 +1,111 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenReply",
+  "version": "0.1.23",
+  "identifier": "com.shantanu.openreply",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist",
+    "removeUnusedCommands": true
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "OpenReply",
+        "width": 1380,
+        "height": 880,
+        "minWidth": 1100,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false
+      },
+      {
+        "label": "splash",
+        "url": "splash.html",
+        "width": 360,
+        "height": 240,
+        "center": true,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com https://d3js.org https://cdnjs.cloudflare.com",
+        "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com",
+        "font-src": "'self' https://fonts.gstatic.com",
+        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost http://localhost:* https://www.reddit.com https://api.reddit.com https://oauth.reddit.com https://eutils.ncbi.nlm.nih.gov https://api.openalex.org https://api.semanticscholar.org https://export.arxiv.org https://arxiv.org https://hn.algolia.com https://api.github.com https://dev.to https://api.stackexchange.com https://newsapi.org https://trends.google.com https://itunes.apple.com https://play.google.com https://api.anthropic.com https://api.openai.com https://openrouter.ai https://api.groq.com https://api.deepseek.com https://api.mistral.ai https://generativelanguage.googleapis.com https://chroma-onnx-models.s3.amazonaws.com https://api.pullpush.io https://openreply.myind.ai",
+        "frame-src": "'self' asset: http://asset.localhost",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "frame-ancestors": "'none'"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": [
+            "$APPDATA/**",
+            "$APPDATA/openreply/**",
+            "$APPLOCALDATA/**",
+            "$APPLOCALDATA/paper_pdf_cache/**",
+            "$HOME/Library/Application Support/com.shantanu.openreply/**"
+          ]
+        }
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "copyright": "\u00a9 2026 Shantanu Bombatkar",
+    "shortDescription": "AI social reply & growth co-pilot",
+    "longDescription": "OpenReply is a social reply co-pilot for founders and creators. It builds a brand/niche persona for each agent, scans Reddit, Hacker News, and connected platforms for conversations worth joining, then drafts on-brand, on-voice replies and growth content you can review and post.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/openreply-cli",
+      "binaries/ffmpeg"
+    ],
+    "resources": [
+      "binaries/openreply-cli-onedir/**/*"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "entitlements": "./Entitlements.plist",
+      "exceptionDomain": "",
+      "dmg": {
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 200
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 200
+        }
+      }
+    },
+    "fileAssociations": []
+  },
+  "plugins": {}
+}

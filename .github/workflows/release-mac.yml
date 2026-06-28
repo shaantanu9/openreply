@@ -1,0 +1,564 @@
+name: release (mac)
+
+# macOS-only release path — splits out from the old monolithic `release.yml`
+# so Mac users get their DMG the moment the mac build matrix finishes,
+# instead of waiting for Windows (~14 min) to also complete.
+#
+# Triggers on v* tag push (parallel with release-windows.yml + release-linux.yml).
+# Each platform workflow does its own upload to the public release repo
+# (idempotent: first to finish creates the draft, subsequent ones just
+# append). The promote gate is MAC-ONLY: the moment both macOS DMGs are
+# present the public release flips draft → latest published; Windows +
+# Linux assets append afterward as those builds finish.
+#
+# Quality: same signing (Developer ID Application + notarytool via API
+# key) + same notarization as before. Tier 1 caches added:
+#   - sccache (mozilla-actions/sccache-action@v0.0.6) → 30-50% Rust
+#     compile reduction across runs.
+#   - PyInstaller dist cache → if the sidecar deps + Python source
+#     haven't changed since last build, skip the 1m 35s rebuild and
+#     restore from cache (~5s).
+#   - actions/cache for ONNX model tarball (83 MB) → avoid the S3
+#     download on warm cache.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.1.4)'
+        required: true
+  push:
+    tags:
+      - 'v*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  mac:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+
+    runs-on: [self-hosted, macOS]
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' && 'yes' || 'no' }}
+      TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+      # sccache hooks into rustc as the compiler wrapper. GHA cache backend
+      # (free for public repos) auto-discovers via SCCACHE_GHA_ENABLED.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0   # full history + tags for the release-notes git-log fallback
+
+      # ---------- sccache for Rust ----------
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      # ---------- Python sidecar ----------
+      # Use a uv-managed python-build-standalone (NON-framework) Python — NOT
+      # actions/setup-python, which installs /Library/Frameworks/Python.framework.
+      # A framework Python makes PyInstaller bundle `_internal/Python.framework`
+      # into the onedir, and that nested framework can't be kept validly signed
+      # through Tauri's bundle-signing pass → notarization Invalid ("signature
+      # of the binary is invalid") even after correct pre-signing (Gap Map
+      # v0.1.8–v0.1.11). A standalone Python ships a loose libpython*.dylib that
+      # signs + notarizes cleanly like every other .dylib. Matches the known-good
+      # local build (sysconfig PYTHONFRAMEWORK = none). UV_PYTHON_PREFERENCE
+      # =only-managed forces uv to ignore any system/framework Python.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install non-framework Python (uv-managed standalone)
+        shell: bash
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+        run: |
+          uv python install 3.11
+          echo "UV_PYTHON_PREFERENCE=only-managed" >> "$GITHUB_ENV"
+          echo "UV_PYTHON=3.11" >> "$GITHUB_ENV"
+
+      - name: Install Python deps
+        shell: bash
+        run: uv sync --frozen --all-extras || uv sync --all-extras
+
+      # Cache the 83 MB ONNX MiniLM tarball — same URL every release, so a
+      # restore-on-hit avoids the S3 round-trip (sometimes 30-60s on
+      # cold AWS CDN). Keyed on a static name; never invalidates unless
+      # we change the URL in this workflow.
+      - name: Cache ONNX MiniLM embedding model
+        uses: actions/cache@v4
+        with:
+          path: scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+          key: onnx-minilm-l6-v2-v1
+
+      - name: Pre-download ONNX MiniLM embedding model (if not cached)
+        shell: bash
+        run: |
+          mkdir -p scripts/onnx-model-cache/all-MiniLM-L6-v2
+          if [ ! -f scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz ]; then
+            curl -fsSL --retry 3 --retry-delay 2 \
+              -o scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz \
+              https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz
+          else
+            echo "  ✓ ONNX tarball restored from cache"
+          fi
+          ls -lh scripts/onnx-model-cache/all-MiniLM-L6-v2/onnx.tar.gz
+
+      # Cache the PyInstaller `dist/` output. Key includes the spec file,
+      # uv.lock (Python deps), and every .py source file under src/. Any
+      # touched dep or source line invalidates; otherwise restore = ~3s.
+      - name: Cache PyInstaller dist
+        id: pyi-cache
+        uses: actions/cache@v4
+        with:
+          path: dist/openreply-cli
+          key: pyinstaller-nonfw-${{ matrix.target }}-${{ hashFiles('openreply-cli.spec', 'pyproject.toml', 'uv.lock', 'src/**/*.py') }}
+
+      - name: Build openreply-cli sidecar (PyInstaller)
+        if: steps.pyi-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: uv run pyinstaller openreply-cli.spec
+
+      - name: Stage sidecar binary (ONEDIR)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app-tauri/src-tauri/binaries
+          # macOS ships the PyInstaller ONEDIR bundle: dist/openreply-cli/ is a
+          # DIRECTORY (engine + _internal), not a single file. Two pieces must
+          # land in binaries/ to match tauri.conf.json:
+          #   • resources   → binaries/openreply-cli-onedir/**  (the engine dir)
+          #   • externalBin → binaries/openreply-cli-<triple>   (scripts/onedir-launcher.sh,
+          #                   which Tauri copies to Contents/MacOS/openreply-cli and
+          #                   which exec's the onedir engine under ../Resources/).
+          # Mirrors scripts/publish-mac.sh exactly.
+          if [ ! -d dist/openreply-cli ]; then
+            echo "✗ expected ONEDIR dist/openreply-cli/ (got a file?) — spec drift" >&2
+            ls -la dist/ >&2; exit 1
+          fi
+          rm -rf app-tauri/src-tauri/binaries/openreply-cli-onedir
+          cp -R dist/openreply-cli app-tauri/src-tauri/binaries/openreply-cli-onedir
+          chmod +x app-tauri/src-tauri/binaries/openreply-cli-onedir/openreply-cli
+          cp scripts/onedir-launcher.sh "app-tauri/src-tauri/binaries/openreply-cli-${{ matrix.target }}"
+          chmod +x "app-tauri/src-tauri/binaries/openreply-cli-${{ matrix.target }}"
+          echo "✓ staged onedir engine + launcher for ${{ matrix.target }}"
+
+      # ---------- ffmpeg sidecar ----------
+      - name: Fetch ffmpeg sidecar (arm64)
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh arm64
+
+      - name: Fetch ffmpeg sidecar (x86_64)
+        if: matrix.target == 'x86_64-apple-darwin'
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh x86_64
+
+
+      - name: Materialize APPLE_API_KEY_PATH from secret content
+        if: env.HAS_APPLE_CERT == 'yes'
+        shell: bash
+        env:
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          if [ -z "$APPLE_API_KEY_CONTENT" ]; then
+            echo "::warning::APPLE_API_KEY_CONTENT secret is empty"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/asc-keys"
+          KEY_PATH="$RUNNER_TEMP/asc-keys/AuthKey_${{ secrets.APPLE_API_KEY }}.p8"
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> $GITHUB_ENV
+
+      # ---------- Node + Rust toolchains ----------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app-tauri/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./app-tauri/src-tauri -> target
+          # Share the cache across the two mac jobs (arm64 + x64) so the
+          # second one inherits compiled deps from the first.
+          shared-key: mac-tauri
+
+      - name: Install frontend deps
+        working-directory: ./app-tauri
+        run: npm ci
+
+      # ---------- Pre-sign the ONEDIR Mach-O (CRITICAL for notarization) ----------
+      # Tauri copies binaries/openreply-cli-onedir/** into Contents/Resources via
+      # the `resources` glob, but its bundler does NOT deep-sign loose Mach-O in
+      # Resources. Without signing them HERE (Developer ID + hardened runtime +
+      # secure timestamp), notarization returns status=Invalid and rejects the
+      # whole bundle for every ~128 nested .so/.dylib + the openreply-cli engine:
+      #   "not signed with a valid Developer ID / no secure timestamp /
+      #    hardened runtime not enabled"  (observed run 26775805808, v0.1.8).
+      # Signing in binaries/ BEFORE the bundle means the signatures ride along
+      # into Resources (Tauri leaves already-signed Resources Mach-O untouched).
+      # Mirrors scripts/publish-mac.sh's --sign pre-signing block exactly.
+      - name: Pre-sign onedir Mach-O (Developer ID + hardened runtime + timestamp)
+        if: env.HAS_APPLE_CERT == 'yes'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          ONEDIR="app-tauri/src-tauri/binaries/openreply-cli-onedir"
+          [ -d "$ONEDIR" ] || { echo "✗ onedir missing: $ONEDIR" >&2; exit 1; }
+
+          # Import the Developer ID cert into a dedicated keychain so codesign
+          # finds the identity BEFORE tauri-action runs (it re-imports into its
+          # own keychain during the build — harmless).
+          KC="$RUNNER_TEMP/presign.keychain-db"
+          KC_PWD="$(openssl rand -hex 16)"
+          security create-keychain -p "$KC_PWD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PWD" "$KC"
+          P12="$RUNNER_TEMP/presign-cert.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$P12"
+          security import "$P12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PWD" "$KC" >/dev/null
+          # Prepend our keychain to the user search list (keep the existing ones).
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | sed 's/"//g')
+          rm -f "$P12"
+
+          SIGN_ID="$APPLE_SIGNING_IDENTITY"
+          fail=0
+
+          # STEP A — sign .framework bundles PROPERLY (as bundles, not as loose
+          # inner binaries). v0.1.9 missed them entirely; v0.1.10 signed the
+          # inner Mach-O LOOSE and Apple still rejected them as "signature of the
+          # binary is invalid" (run 26778451836) — a framework must be signed at
+          # the version-directory level so its bundle seal is valid. The loose
+          # .so/.dylib (signed in STEP B) passed fine, proving the issue is
+          # framework-specific. Sign each concrete Versions/<X> dir (deepest
+          # first); the Current symlink + top-level then resolve to it.
+          while IFS= read -r fw; do
+            [ -z "$fw" ] && continue
+            signed=0
+            if [ -d "$fw/Versions" ]; then
+              while IFS= read -r vdir; do
+                [ -z "$vdir" ] && continue
+                [ "$(basename "$vdir")" = "Current" ] && continue
+                codesign --force --timestamp --options runtime --keychain "$KC" --sign "$SIGN_ID" "$vdir" \
+                  && signed=1 || { echo "   ! framework version failed: $vdir" >&2; fail=$((fail + 1)); }
+              done < <(find "$fw/Versions" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+            fi
+            if [ "$signed" -eq 0 ]; then
+              codesign --force --timestamp --options runtime --keychain "$KC" --sign "$SIGN_ID" "$fw" \
+                || { echo "   ! framework failed: $fw" >&2; fail=$((fail + 1)); }
+            fi
+          done < <(find "$ONEDIR" -type d -name '*.framework' 2>/dev/null | awk '{print length"\t"$0}' | sort -rn | cut -f2-)
+
+          # STEP B — sign every remaining loose Mach-O OUTSIDE any .framework
+          # (detected by CONTENT, not extension — catches the extensionless
+          # `_internal/Python` interpreter, .so/.dylib, the engine). Deepest first.
+          n=0
+          while IFS= read -r m; do
+            [ -z "$m" ] && continue
+            case "$m" in */*.framework/*) continue ;; esac   # handled in STEP A
+            case "$(file -b "$m" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
+            if codesign --force --timestamp --options runtime --keychain "$KC" --sign "$SIGN_ID" "$m" 2>/dev/null; then
+              n=$((n + 1))
+            else
+              echo "   ! failed to sign $m" >&2; fail=$((fail + 1))
+            fi
+          done < <(find "$ONEDIR" -type f 2>/dev/null | awk '{print length"\t"$0}' | sort -rn | cut -f2-)
+          echo "✓ signed $n loose Mach-O + frameworks ($fail failures)"
+          [ "$fail" -eq 0 ] || { echo "✗ signing failures — notarization would reject" >&2; exit 1; }
+
+          # STEP C — VERIFY before wasting ~4 min on notarytool. Frameworks get
+          # --deep --strict (bundle seal); loose Mach-O get --strict. This is
+          # what catches a framework whose inner binary "looks" signed but whose
+          # bundle seal is invalid — exactly the v0.1.10 miss.
+          bad=0
+          while IFS= read -r fw; do
+            [ -z "$fw" ] && continue
+            codesign --verify --deep --strict "$fw" 2>/dev/null || { echo "   ✗ framework invalid: $fw" >&2; bad=$((bad + 1)); }
+          done < <(find "$ONEDIR" -type d -name '*.framework' 2>/dev/null)
+          while IFS= read -r m; do
+            [ -z "$m" ] && continue
+            case "$m" in */*.framework/*) continue ;; esac
+            case "$(file -b "$m" 2>/dev/null)" in *Mach-O*) ;; *) continue ;; esac
+            codesign --verify --strict "$m" 2>/dev/null || { echo "   ✗ Mach-O invalid: $m" >&2; bad=$((bad + 1)); }
+          done < <(find "$ONEDIR" -type f 2>/dev/null)
+          [ "$bad" -eq 0 ] || { echo "✗ $bad signatures invalid — aborting BEFORE notarization" >&2; exit 1; }
+          echo "✓ verified all onedir Mach-O + frameworks are validly signed"
+
+      # ---------- Build + sign + upload to gap-map-pro draft ----------
+      - name: Build and release Tauri bundle (signed)
+        if: env.HAS_APPLE_CERT == 'yes'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: ./app-tauri
+          tagName: v__VERSION__
+          releaseName: Gap Map v__VERSION__
+          releaseBody: |
+            Download the installer for your platform below.
+
+            - macOS (Apple Silicon): `*_arm64.dmg`
+            - macOS (Intel): `*_x64.dmg`
+            - Windows: `*_x64_en-US.msi` / `*_x64-setup.exe`
+            - Linux: `*.AppImage` / `*.deb`
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build and release Tauri bundle (unsigned fallback)
+        if: env.HAS_APPLE_CERT == 'no'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ./app-tauri
+          tagName: v__VERSION__
+          releaseName: Gap Map v__VERSION__ (unsigned)
+          releaseBody: |
+            **Unsigned build** — for testing only.
+          releaseDraft: true
+          prerelease: true
+          args: ${{ matrix.args }}
+
+      - name: Audit macOS signature
+        shell: bash
+        run: |
+          BUNDLE_DIR="app-tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          APP=$(find "$BUNDLE_DIR" -maxdepth 1 -name "*.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then exit 0; fi
+          OUT=$(codesign -dv --verbose=2 "$APP" 2>&1 || true)
+          echo "$OUT"
+          if echo "$OUT" | grep -q "Authority=Developer ID Application"; then
+            echo "::notice::macOS bundle properly signed"
+          elif echo "$OUT" | grep -q "Signature=adhoc"; then
+            echo "::warning title=Unsigned macOS bundle::This build is AD-HOC SIGNED, not Developer ID."
+          fi
+
+      # ---------- Publish to public repo (per-platform) ----------
+      # Each mac job uploads its own DMG/zip to myind-ai/openreply. Idempotent
+      # release create + clobber on upload, so jobs racing each other (and
+      # racing release-windows.yml / release-linux.yml) all succeed cleanly.
+      - name: Publish mac artifact to public repo
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          GH_TOKEN_SRC: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ env.TAG_NAME }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PUBLIC_RELEASE_TOKEN not set — skipping public publish"
+            exit 0
+          fi
+
+          mkdir -p ./pub
+          # Download THIS PLATFORM's artifacts from the source-repo draft(s).
+          # NOTE: the source repo can hold DUPLICATE drafts for one tag —
+          # tauri-action's create-release isn't atomic, so parallel platform
+          # jobs (mac arm64/x64 + windows + linux) race and sometimes make two
+          # drafts. `gh release download <tag>` resolves to only ONE of them,
+          # so a platform whose asset landed on the OTHER draft silently
+          # downloads nothing → incomplete public release (v0.1.12 needed
+          # manual consolidation). Fix: pull matching assets from ALL releases
+          # carrying this tag, by asset id. (Hardened 2026-06-02.)
+          dl_src() {
+            # The LIST call MUST use the SOURCE token — the ambient GH_TOKEN in
+            # this step is the PUBLIC repo token, which can't read the private
+            # source repo's releases (returns empty → downloads nothing → empty
+            # public release). The per-asset download below also uses it.
+            GH_TOKEN="$GH_TOKEN_SRC" gh api "/repos/${{ github.repository }}/releases" --paginate \
+              -q ".[] | select(.tag_name==\"$VER\") | .assets[] | \"\(.id)\t\(.name)\"" \
+            | while IFS="$(printf '\t')" read -r id name; do
+                id="${id%$'\r'}"; name="${name%$'\r'}"   # strip CRLF (Windows Git-Bash)
+                [ -n "$id" ] || continue
+                matched=0
+                for g in "$@"; do case "$name" in $g) matched=1 ;; esac; done
+                [ "$matched" = 1 ] || continue
+                [ -f "./pub/$name" ] && continue
+                GH_TOKEN="$GH_TOKEN_SRC" gh api -H "Accept: application/octet-stream" \
+                  "/repos/${{ github.repository }}/releases/assets/$id" > "./pub/$name" \
+                  && echo "  ↓ $name" || echo "  ! failed $name"
+              done || true
+            return 0
+          }
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            dl_src "Gap.Map_*_aarch64.dmg" "Gap.Map_aarch64.app.tar.gz"
+          else
+            dl_src "Gap.Map_*_x64.dmg" "Gap.Map_x64.app.tar.gz"
+          fi
+
+          # Rename to user-friendly public-convention names so a user
+          # looking at the GitHub release page can tell at a glance which
+          # installer fits their machine:
+          #   Gap.Map_X_aarch64.dmg       → Gap-Map-X-macOS-Apple-Silicon.dmg
+          #   Gap.Map_X_x64.dmg           → Gap-Map-X-macOS-Intel.dmg
+          #   Gap.Map_aarch64.app.tar.gz  → Gap-Map-X-macOS-Apple-Silicon.zip
+          #   Gap.Map_x64.app.tar.gz      → Gap-Map-X-macOS-Intel.zip
+          # Naming chosen 2026-05-29 — Apple's official wording is
+          # "Apple Silicon" / "Intel". Keep in sync with scripts/
+          # promote-release-if-complete.sh (matching regex) and the
+          # rename-public-release-assets.sh migration tool.
+          cd ./pub
+          NUM="${VER#v}"
+          # DMG renames — straightforward `mv`.
+          if [ -f "Gap.Map_${NUM}_aarch64.dmg" ]; then
+            mv "Gap.Map_${NUM}_aarch64.dmg" "Gap-Map-${NUM}-macOS-Apple-Silicon.dmg"
+          fi
+          if [ -f "Gap.Map_${NUM}_x64.dmg" ]; then
+            mv "Gap.Map_${NUM}_x64.dmg" "Gap-Map-${NUM}-macOS-Intel.dmg"
+          fi
+          # .app.tar.gz → .zip via ditto-equivalent so the bundle's
+          # macOS-extended-attribute codesignature stays intact (`tar`
+          # would silently strip the xattrs).
+          for tar in Gap.Map_aarch64.app.tar.gz Gap.Map_x64.app.tar.gz; do
+            [ -f "$tar" ] || continue
+            case "$tar" in
+              *aarch64*) friendly="Gap-Map-${NUM}-macOS-Apple-Silicon.zip" ;;
+              *x64*)     friendly="Gap-Map-${NUM}-macOS-Intel.zip" ;;
+            esac
+            tmp=$(mktemp -d)
+            tar -xzf "$tar" -C "$tmp"
+            APP=$(find "$tmp" -maxdepth 1 -name "*.app" -type d | head -1)
+            if [ -n "$APP" ]; then
+              (cd "$tmp" && zip -qry "$RUNNER_TEMP/zipout.zip" "$(basename "$APP")")
+              mv "$RUNNER_TEMP/zipout.zip" "./$friendly"
+            fi
+            rm -rf "$tmp" "$tar"
+          done
+          ls -lh
+
+          # Create the public release as draft if it doesn't exist yet.
+          # Release notes use the friendly names so they line up with the
+          # asset list rendered below.
+          if ! gh release view "$VER" --repo "$PUBLIC" >/dev/null 2>&1; then
+            # Pull this version's real changelog section from CHANGELOG.md
+            # (between its "## [vX.Y.Z ...]" header and the next "## [" header).
+            # No private-repo links in public notes.
+            CHANGES=$(awk -v ver="$VER" '$0 ~ ("^## \\[" ver "[^0-9.]") {f=1; next} f && /^## \[/{exit} f{print}' "$GITHUB_WORKSPACE/CHANGELOG.md")
+            # Fallback: if CHANGELOG has no section for this tag, synthesize
+            # notes from commit subjects since the previous tag so the card
+            # ALWAYS shows real detail (needs fetch-depth: 0 on checkout).
+            if [ -z "$CHANGES" ]; then
+              PREV=$(git -C "$GITHUB_WORKSPACE" describe --tags --abbrev=0 "${VER}^" 2>/dev/null || true)
+              if [ -n "$PREV" ]; then
+                LOG=$(git -C "$GITHUB_WORKSPACE" log --no-merges --pretty='- %s' "${PREV}..${VER}" 2>/dev/null \
+                  | grep -viE '^- (merge |wip:|chore.*bump|docs\(changelog\))' | head -40)
+                [ -n "$LOG" ] && CHANGES="_Auto-generated from commits since ${PREV}._"$'\n\n'"$LOG"
+              fi
+            fi
+            if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
+            {
+              printf '## Gap Map %s\n\n' "$VER"
+              printf '**Download → [openreply.myind.ai](https://openreply.myind.ai/)**\n\n'
+              printf 'Installers:\n\n'
+              printf -- '- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n'
+              printf -- '- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n'
+              printf -- '- **Windows** — `Gap-Map-*-Windows.msi` (managed deploy) or `Gap-Map-*-Windows-Installer.exe` (click-to-install)\n'
+              printf -- '- **Linux** — `Gap-Map-*-Linux.AppImage` (portable) or `Gap-Map-*-Linux.deb` (Debian/Ubuntu APT)\n\n'
+              printf "## What's changed\n"
+              printf '%s\n' "$CHANGES"
+            } > "$RUNNER_TEMP/release-notes.md"
+            gh release create "$VER" --repo "$PUBLIC" --target main --draft \
+              --title "Gap Map $VER" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+            echo "  ✓ created draft on $PUBLIC"
+          fi
+
+          # Upload — --clobber lets us re-upload if a previous job's
+          # artifact had a stale signature.
+          shopt -s nullglob
+          FILES=(Gap-Map-*-macOS-*.dmg Gap-Map-*-macOS-*.zip)
+          if [ ${#FILES[@]} -gt 0 ]; then
+            gh release upload "$VER" --repo "$PUBLIC" "${FILES[@]}" --clobber
+            echo "  ✓ uploaded ${#FILES[@]} mac artifact(s)"
+          fi
+
+      # ---------- Promote if all platforms uploaded ----------
+      # Inlined (not `bash scripts/promote-release-if-complete.sh`) so that
+      # this step keeps working even when the workflow file is loaded from
+      # multi-source HEAD but `actions/checkout` was pinned to a tag whose
+      # commit predates the script file (e.g. when we workflow_dispatch an
+      # older tag after the split). If the inlined logic is identical to
+      # the script, this step is self-contained and can't go missing.
+      - name: Promote release to latest if all platforms are uploaded
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASE_TOKEN }}
+          VER: ${{ env.TAG_NAME }}
+          PUBLIC: ${{ vars.PUBLIC_RELEASE_REPO || 'myind-ai/openreply' }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then exit 0; fi
+          echo "── promote-if-complete: $VER on $PUBLIC ──"
+          ASSETS=$(gh release view "$VER" --repo "$PUBLIC" --json assets --jq '.assets[].name' 2>/dev/null) || {
+            echo "  release $VER not found on $PUBLIC — nothing to promote"; exit 0
+          }
+          echo "  current assets:"; echo "$ASSETS" | sed 's/^/    - /'
+          # Required patterns for promote — matches the friendly names
+          # produced by the rename step above (and by release-windows.yml
+          # / release-linux.yml's equivalent rename steps). Keep in sync
+          # with scripts/promote-release-if-complete.sh.
+          # Promote as soon as BOTH mac installers are present (they land
+          # together when this mac job finishes). Windows + Linux are now
+          # OPTIONAL — their assets append to the already-published release
+          # as each finishes (the upload step below + their own runs are
+          # idempotent). Keep in sync with the other workflows' REQUIRED
+          # arrays and scripts/promote-release-if-complete.sh.
+          REQUIRED=(
+            '-macOS-Apple-Silicon\.dmg$'
+            '-macOS-Intel\.dmg$'
+          )
+          MISSING=()
+          for pat in "${REQUIRED[@]}"; do
+            echo "$ASSETS" | grep -qE -- "$pat" || MISSING+=("$pat")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "  ⏳ waiting on missing platforms:"
+            for m in "${MISSING[@]}"; do echo "    - $m"; done
+            echo "  release stays draft. NOT promoting."; exit 0
+          fi
+          IS_DRAFT=$(gh release view "$VER" --repo "$PUBLIC" --json isDraft --jq '.isDraft' 2>/dev/null)
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "  ✓ all required platforms present — flipping draft → latest published"
+            gh release edit "$VER" --repo "$PUBLIC" --draft=false --latest
+            echo "  ✓ promoted $VER to latest on $PUBLIC"
+          else
+            echo "  already published — nothing to do"
+          fi
