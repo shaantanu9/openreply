@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Gap Map",
+  "productName": "OpenReply",
   "version": "0.1.23",
   "identifier": "com.shantanu.gapmap",
   "build": {
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Gap Map",
+        "title": "OpenReply",
         "width": 1380,
         "height": 880,
         "minWidth": 1100,
