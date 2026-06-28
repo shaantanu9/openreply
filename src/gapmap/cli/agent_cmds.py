@@ -213,6 +213,48 @@ def teach_video_cmd(
                          provider=provider, progress=lambda m: typer.echo(m, err=True)), json_)
 
 
+@agent_app.command("watch-add")
+def watch_add_cmd(
+    handle: str = typer.Argument(..., help="X handle (@naval, naval, or x.com/naval)"),
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    note: str = typer.Option("", help="Why you're tracking them"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Track an X account; its posts feed the agent's corpus + knowledge base."""
+    from ..reply.accounts import track_account
+    _out(track_account(handle, note=note, agent_id=id), json_)
+
+
+@agent_app.command("watch-list")
+def watch_list_cmd(id: str = typer.Option(None), json_: bool = typer.Option(True, "--json/--no-json")):
+    """List the accounts this agent watches."""
+    from ..reply.accounts import list_accounts
+    _out(list_accounts(agent_id=id), json_)
+
+
+@agent_app.command("watch-remove")
+def watch_remove_cmd(handle: str = typer.Argument(...), id: str = typer.Option(None),
+                     json_: bool = typer.Option(True, "--json/--no-json")):
+    """Stop watching an account."""
+    from ..reply.accounts import untrack_account
+    _out(untrack_account(handle, agent_id=id), json_)
+
+
+@agent_app.command("watch-fetch")
+def watch_fetch_cmd(
+    handle: str = typer.Option("", help="One handle (blank = all tracked)"),
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    limit: int = typer.Option(25),
+    learn: bool = typer.Option(False, "--learn", help="Run a learn pass after fetching"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Pull tracked accounts' recent posts into the corpus (optionally learn)."""
+    from ..reply.accounts import fetch_account, fetch_tracked
+    res = (fetch_account(handle, limit=limit, agent_id=id, learn=learn) if handle
+           else fetch_tracked(limit=limit, agent_id=id, learn=learn))
+    _out(res, json_)
+
+
 @agent_app.command("refresh")
 def refresh_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),

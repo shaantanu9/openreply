@@ -367,6 +367,42 @@ pub async fn agent_learn_status(app: AppHandle, id: Option<String>) -> Result<Va
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `gapmap agent watch-*` — track X accounts and pull their posts into the corpus.
+#[tauri::command]
+pub async fn account_track(app: AppHandle, handle: String, note: Option<String>, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "watch-add".to_string(), handle, "--json".to_string()];
+    if let Some(n) = note { if !n.is_empty() { args.push("--note".into()); args.push(n); } }
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn account_list(app: AppHandle, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "watch-list".to_string(), "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn account_untrack(app: AppHandle, handle: String, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "watch-remove".to_string(), handle, "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+#[tauri::command]
+pub async fn account_fetch(app: AppHandle, handle: Option<String>, learn: Option<bool>, id: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "watch-fetch".to_string(), "--json".to_string()];
+    if let Some(h) = handle { if !h.is_empty() { args.push("--handle".into()); args.push(h); } }
+    if learn.unwrap_or(false) { args.push("--learn".into()); }
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// `gapmap agent corpus` — browse the agent's collected multi-source corpus.
 #[tauri::command]
 pub async fn agent_corpus(app: AppHandle, id: Option<String>, source: Option<String>, query: Option<String>, relevance: Option<String>, limit: Option<u32>, offset: Option<u32>) -> Result<Value, String> {

@@ -15,6 +15,7 @@ const NAV = [
   { sec: 'Intelligence', items: [
     ['keywords', 'key-round', 'Keywords'],
     ['subreddit', 'shield-check', 'Subreddit Intel'],
+    ['watch', 'users', 'Watch accounts'],
     ['knowledge', 'brain', 'Knowledge'],
     ['library', 'library', 'Library'],
     ['learning', 'brain-circuit', 'Learning'],

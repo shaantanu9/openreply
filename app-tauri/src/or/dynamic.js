@@ -3373,7 +3373,74 @@ export async function renderGrowth(view) {
   load();
 }
 
+export async function renderWatch(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  let a = null; try { a = await api.agentGet(); } catch (e) {}
+  if (!a) { view.innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
+  view.innerHTML = head("Watch accounts",
+    `Track creators & competitors on X — pull their posts into <b>${esc(a.name)}</b>'s knowledge base to learn from, repurpose & rewrite.`,
+    `<button id="wa-all" class="${btnP}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all + learn</button>`) +
+    `<div class="mb-4 ${card}"><div class="flex flex-wrap items-end gap-3">
+       <label class="flex-1 text-sm text-zinc-500">Add an X account<input id="wa-handle" placeholder="@naval  or  x.com/naval" class="mt-1 block w-full ${inputCls}"></label>
+       <button id="wa-add" class="${btnP}">Track</button></div>
+       <p class="mt-2 text-xs text-zinc-400">Needs X connected (Connections) to fetch live posts. Their posts land in <a href="#/knowledge" class="text-reddit">Library/Knowledge</a> and feed Compose.</p>
+       <div id="wa-msg" class="mt-2 text-sm"></div></div>
+     <div id="wa-list" class="space-y-3">Loading…</div>`;
+  const list = view.querySelector("#wa-list");
+  async function load() {
+    try {
+      const accts = (await api.accountList())?.accounts || [];
+      list.innerHTML = accts.length ? accts.map((c) => `<div class="${card}" data-row="${esc(c.handle)}">
+        <div class="flex items-center justify-between gap-3">
+          <div><a href="https://x.com/${esc(c.handle)}" target="_blank" class="font-semibold text-zinc-900 dark:text-white">@${esc(c.handle)}</a>
+            ${c.note ? `<span class="ml-2 text-xs text-zinc-400">${esc(c.note)}</span>` : ""}
+            <div class="text-xs text-zinc-400">${c.posts_count ? `${c.posts_count} posts pulled` : "not fetched yet"}${c.last_fetched_at ? ` · ${_ago(c.last_fetched_at)}` : ""}</div></div>
+          <div class="flex gap-2">
+            <button data-act="fetch" data-h="${esc(c.handle)}" class="${btn}">Fetch posts</button>
+            <button data-act="untrack" data-h="${esc(c.handle)}" class="${btn} text-rose-500">Untrack</button></div></div>
+        <div data-samp="${esc(c.handle)}" class="mt-2 space-y-1"></div></div>`).join("")
+        : `<div class="${card} text-zinc-500">No accounts tracked yet — add an X handle above.</div>`;
+      list.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => waAction(b));
+      icons();
+    } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+  async function waAction(b) {
+    const act = b.getAttribute("data-act"), h = b.getAttribute("data-h");
+    if (act === "untrack") { try { await api.accountUntrack(h); toast("Untracked @" + h); load(); } catch (e) { toast("Failed"); } return; }
+    if (act === "fetch") {
+      b.disabled = true; const t = b.textContent; b.textContent = "Fetching…";
+      try {
+        const r = await api.accountFetch(h, false);
+        const samp = list.querySelector(`[data-samp="${CSS.escape(h)}"]`);
+        if (r?.error) { if (samp) samp.innerHTML = `<div class="text-xs text-rose-500">${esc(r.error)}</div>`; }
+        else {
+          toast(r.message || `Pulled ${r.fetched || 0}`);
+          if (samp) samp.innerHTML = (r.sample || []).map((s) => `<div class="text-sm text-zinc-500">• ${esc(s.title)} ${s.url ? `<a href="${esc(s.url)}" target="_blank" class="text-reddit">↗</a>` : ""}</div>`).join("")
+            + `<a href="#/compose" class="text-xs font-semibold text-reddit">Repurpose in Compose →</a>`;
+        }
+        load();
+      } catch (e) { toast("Fetch failed"); }
+      b.disabled = false; b.textContent = t;
+    }
+  }
+  view.querySelector("#wa-add").onclick = async () => {
+    const inp = view.querySelector("#wa-handle"); const msg = view.querySelector("#wa-msg");
+    const h = (inp.value || "").trim();
+    if (!h) { msg.innerHTML = `<span class="text-amber-500">Enter a handle.</span>`; return; }
+    try { await api.accountTrack(h); inp.value = ""; toast("Tracking " + h); load(); }
+    catch (e) { msg.innerHTML = `<span class="text-rose-500">${esc(e)}</span>`; }
+  };
+  view.querySelector("#wa-all").onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Fetching all…";
+    try { const r = await api.accountFetch(null, true); toast(`Pulled ${r.fetched || 0} posts from ${r.accounts || 0} accounts`); }
+    catch (err) { toast("Fetch failed"); }
+    b.disabled = false; b.innerHTML = html; icons(); load();
+  };
+  load();
+}
+
 export const DYN = {
+  watch: renderWatch,
   growth: renderGrowth,
   library: renderLibrary,
   pricing: renderPricing,
