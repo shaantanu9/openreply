@@ -145,8 +145,11 @@ export async function renderOverview(view) {
   document.getElementById("ov").outerHTML =
     head(esc(a.name), `${esc(a.niche || "—")} · watching ${(a.platforms || []).join(", ") || "no sources yet"}`,
       `<button id="ov-refresh" class="${btn}"><i data-lucide="refresh-cw" class="inline-block h-4 w-4 align-[-2px]"></i> Refresh + learn</button>
+       <button id="ov-evolve" class="${btn}"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> Evolve now</button>
+       <button id="ov-suggest" class="${btn}"><i data-lucide="lightbulb" class="inline-block h-4 w-4 align-[-2px]"></i> Suggest ideas</button>
        <a href="#/opportunities" class="${btnP}"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</a>`) +
     freshBanner +
+    `<div id="ov-strategy" class="mb-5"></div>` +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
        ${kpi("Posts collected", (k && k.posts) || 0, "#/knowledge", "database")}
        ${kpi("Brain nodes", (k && k.graph_nodes) || 0, "#/knowledge", "brain")}
@@ -191,6 +194,48 @@ export async function renderOverview(view) {
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
     catch (err) { toast("Refresh failed"); b.disabled = false; b.innerHTML = html; icons(); }
   };
+
+  // Evolve the Goal Playbook from here (mirrors the Learning screen's button).
+  document.getElementById("ov-evolve").onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
+    b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Evolving…`; icons();
+    try { const r = await api.agentEvolve(); toast(r?.skipped ? (r.reason || "Skipped") : (r?.summary || "Evolved ✓")); }
+    catch (err) { toast("Evolve failed: " + err); }
+    b.disabled = false; b.innerHTML = html; icons(); loadStrategyStrip();
+  };
+  document.getElementById("ov-suggest").onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
+    b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Thinking…`; icons();
+    try { const r = await api.agentIdeas(true); toast(r?.skipped ? (r.reason || "Skipped") : `Suggested ${(r?.ideas || []).length} idea(s) — see Learning`); }
+    catch (err) { toast("Suggest failed: " + err); }
+    b.disabled = false; b.innerHTML = html; icons();
+  };
+
+  // Compact strategy strip: current playbook top angle + freshness, links to Learning.
+  async function loadStrategyStrip() {
+    const host = document.getElementById("ov-strategy");
+    if (!host) return;
+    let cur = null;
+    try { cur = await api.agentPlaybook(); } catch (e) {}
+    const pb = cur && cur.playbook;
+    if (!pb) {
+      const goalSet = (a.objective || a.goal || "").trim();
+      host.innerHTML = `<div class="${card} flex flex-wrap items-center justify-between gap-2">
+        <div class="text-sm text-zinc-500"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> ${goalSet ? "No strategy yet — hit <b>Evolve now</b> to build one." : "Set a <a href='#/keywords' class='text-reddit'>goal</a> so the agent can self-evolve a strategy."}</div>
+        <a href="#/learning" class="text-xs font-semibold text-reddit">Learning →</a></div>`;
+      icons(); return;
+    }
+    const top = (pb.winning_angles || [])[0];
+    const angle = top ? (typeof top === "string" ? top : top.angle) : "";
+    const when = cur.created_at ? new Date(cur.created_at * 1000).toLocaleDateString() : "";
+    host.innerHTML = `<div class="${card}">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <b class="text-zinc-900 dark:text-white"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> Strategy <span class="text-xs font-normal text-zinc-400">v${cur.version}${when ? " · " + esc(when) : ""}</span></b>
+        <a href="#/learning" class="text-xs font-semibold text-reddit">Full playbook →</a></div>
+      ${angle ? `<p class="mt-2 text-sm text-zinc-600 dark:text-zinc-300">Leading angle: <b>${esc(angle)}</b></p>` : ""}</div>`;
+    icons();
+  }
+  loadStrategyStrip();
 
   // Live counts + snippets (best-effort; never block the page).
   (async () => {
