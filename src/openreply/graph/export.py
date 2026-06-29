@@ -699,7 +699,7 @@ _HTML_TEMPLATE = """<!doctype html>
   <svg id="graph"></svg>
   <button type="button" class="left-expand" id="leftExpand" title="Show insights &amp; lenses">» Insights &amp; Lenses</button>
 </main>
-<footer>openreply · gap map · <a href="https://github.com/myind-ai/openreply/blob/main/docs/methodology.md" target="_blank">methodology</a></footer>
+<footer>openreply · knowledge graph · <a href="https://github.com/myind-ai/openreply/blob/main/docs/methodology.md" target="_blank">methodology</a></footer>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js"></script>
@@ -880,7 +880,7 @@ function renderExec() {
 
   // Copy buttons
   const tweet = (() => {
-    const lines = [`Gap map — ${topicName}:`, ""];
+    const lines = [`Knowledge graph — ${topicName}:`, ""];
     pps.forEach((p, i) => {
       const cls = (p.metadata||{}).classification;
       lines.push(`${i+1}. ${p.label}${cls && cls !== "UNCLASSIFIED" ? " ["+cls+"]" : ""}`);

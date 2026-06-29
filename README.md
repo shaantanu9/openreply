@@ -1,15 +1,15 @@
 # OpenReply
 
-**Multi-source product research — desktop app, MCP server, and CLI.**
+**Open-source social marketing reply & content co-pilot — desktop app, MCP server, and CLI.**
 
-OpenReply collects signals from 23+ sources (Reddit, Hacker News, arXiv, PubMed, GitHub, App Store, YouTube, and more), runs LLM synthesis across 8 providers, and surfaces the gaps competitors haven't filled.
+OpenReply listens across 20+ sources (Reddit, Hacker News, X, Mastodon, Bluesky, Dev.to, Stack Overflow, Product Hunt, and more), surfaces the conversations worth joining, and drafts on-brand replies & content with your own AI agents — bring-your-own-LLM across 8 providers.
 
 Three surfaces, one SQLite store:
 
 | Surface | Use it when |
 |---|---|
-| **Desktop app** (`OpenReply.app`) | GUI research — collect, synthesize, graph, export |
-| **MCP server** (90+ tools) | Claude Code / Cursor integration — research inside your IDE |
+| **Desktop app** (`OpenReply.app`) | GUI — find opportunities, manage agents, draft replies & posts |
+| **MCP server** | Claude Code / Cursor integration — research & drafting inside your IDE |
 | **CLI** (`openreply`) | Automation, scripting, headless pipelines |
 
 ---
@@ -38,26 +38,27 @@ Or pull a build directly: `.dmg` (macOS Apple Silicon + Intel) / `.msi` / `.exe`
 
 ## Quick start
 
-### 1. Reddit auth (OAuth — no password stored)
-
-```bash
-uv run openreply auth login    # opens browser, writes token to ~/.config/openreply/.env
-uv run openreply auth check    # verify
-```
-
-### 2. Add an LLM key (for synthesis and gap-finding)
+### 1. Add an LLM key (bring your own)
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY / GEMINI_API_KEY / OLLAMA auto-detected
 ```
 
-### 3. Research a topic end-to-end
+### 2. Create an agent (your brand/niche persona)
 
 ```bash
-uv run openreply research discover --topic "meditation apps"   # find subreddits
-uv run openreply research collect  --topic "meditation apps"   # pull all sources
-uv run openreply research gaps     --topic "meditation apps" --provider anthropic
-uv run openreply research report   --topic "meditation apps" --out report.md
+uv run openreply agent create --name "Acme Notes" --niche "AI note-taking" \
+  --persona "ex-teacher, founder" --keywords "note taking app, obsidian alternative"
+uv run openreply agent learn          # build the agent's knowledge from its sources
+```
+
+### 3. Find conversations and draft on-brand replies
+
+```bash
+uv run openreply reply find                    # score reply opportunities across sources
+uv run openreply reply draft --id <opp-id>     # draft an on-voice reply
+uv run openreply content generate --kind post  # draft original content from agent knowledge
+uv run openreply reply queue                   # review the queue before posting
 ```
 
 ---
@@ -90,17 +91,15 @@ uv run openreply mcp install --client cursor
 bash scripts/mcp_http_daemon.sh start
 ```
 
-**90+ tools across 9 categories:**
+**120 tools across these categories:**
 
 | Category | Example tools |
 |---|---|
-| Fetch | `openreply_fetch_posts`, `openreply_fetch_hn`, `openreply_fetch_arxiv`, `openreply_fetch_youtube` |
-| Research | `openreply_research_collect`, `openreply_find_gaps`, `openreply_synthesize_insights` |
-| Papers | `openreply_paper_research_pipeline`, `openreply_paper_chunk_search`, `openreply_paper_fulltext` |
-| Graph | `openreply_graph_build`, `openreply_graph_communities`, `openreply_graph_pagerank` |
-| Product mode | `openreply_product_signals`, `openreply_product_digest`, `openreply_product_sweep` |
-| Personas | `openreply_audience_personas`, `openreply_launch_brief` |
-| Export | `openreply_export_docx`, `openreply_export_pptx`, `openreply_papers_export` |
+| Fetch (sources) | `openreply_fetch_posts`, `openreply_fetch_hn`, `openreply_fetch_x`, `openreply_fetch_mastodon`, `openreply_fetch_youtube` |
+| Corpus | `openreply_collect`, `openreply_get_corpus`, `openreply_discover_subs`, `openreply_sub_stats` |
+| Graph (brain) | `openreply_graph_build`, `openreply_graph_communities`, `openreply_graph_neighbors` |
+| Memory | `openreply_palace_status`, `openreply_palace_reindex`, `openreply_semantic_search` |
+| Connections | `openreply_creds_list`, `openreply_creds_verify`, `openreply_connections` |
 | Jobs | `openreply_jobs_submit`, `openreply_jobs_get` (async, survives reconnects) |
 | Admin | `openreply_diagnostics`, `openreply_describe_schema`, `openreply_query_db` |
 
@@ -111,24 +110,28 @@ Full reference: [`MCP_TOOLS.md`](MCP_TOOLS.md)
 ## CLI reference
 
 ```bash
-# Fetch (all writes to SQLite with dedup)
-uv run openreply fetch posts --sub resumes --sort hot --limit 100
-uv run openreply fetch hn    --query "product research" --limit 50
-uv run openreply fetch arxiv --query "LLM agents" --limit 20
-uv run openreply fetch historical --sub resumes --days 730  # pullpush, 2012–2025
+# Agents — your brand/niche personas
+uv run openreply agent create --name "Acme Notes" --niche "AI note-taking" --keywords "obsidian alternative"
+uv run openreply agent learn                 # build knowledge from the agent's sources
+uv run openreply agent watch-add --handle naval   # track a creator to learn from / repurpose
 
-# Search, query, export
+# Find & reply
+uv run openreply reply find                  # score reply opportunities across all sources
+uv run openreply reply draft --id <opp-id>   # draft an on-voice reply
+uv run openreply reply queue                 # review queued replies
+uv run openreply reply post-due              # post approved/scheduled replies
+
+# Content
+uv run openreply content generate --kind post     # post | thread | script | article | repurpose
+uv run openreply content list
+
+# Publish (credential-gated, opt-in)
+uv run openreply publish x --id <content-id>
+
+# Search, query, export, ingest
 uv run openreply search "ATS resume" --sub cscareerquestions
 uv run openreply query "SELECT author, count(*) c FROM posts GROUP BY author ORDER BY c DESC LIMIT 20"
-uv run openreply export posts --sub resumes --since 7d --format csv --out out.csv
-
-# Analyze
-uv run openreply analyze themes     --sub resumes --since 7d --provider anthropic
-uv run openreply analyze painpoints --sub cscareerquestions --top 50
-
-# Ingest local files
-uv run openreply ingest file   path/to/doc.pdf  --topic "meditation apps"
-uv run openreply ingest folder path/to/docs/    --topic "meditation apps"
+uv run openreply ingest url https://example.com/post   # pull a page into the corpus
 
 # MCP
 uv run openreply mcp serve          # stdio (Claude Code)
@@ -164,30 +167,23 @@ Full reference: [`CLI_REFERENCE.md`](CLI_REFERENCE.md)
 
 ---
 
-## Pain-point classification
-
-Historical + live data lets you classify gaps as:
-
-- **CHRONIC** — strong in both eras → durable, safe to build
-- **EMERGING** — only recent → early-mover opportunity
-- **FADING** — only historical → likely solved
-
----
-
 ## Architecture
 
 ```
 openreply/
   src/openreply/
-    sources/     # 23+ source adapters (one file each)
+    sources/     # 20+ source adapters (one file each)
     core/        # client, db, config, exporters
     fetch/       # posts, comments, users, search, stream
-    analyze/     # providers (anthropic/openai/ollama/gemini) + themes/gaps/synthesis
+    analyze/     # LLM providers (anthropic/openai/ollama/gemini)
+    reply/       # agents, opportunities, drafting, brain, knowledge, content, watch
+    persona/     # persona memory + knowledge blend
     graph/       # knowledge graph (structural + semantic + relations)
-    mcp/         # FastMCP server (90+ tools, async job queue, Palace search)
+    retrieval/   # embeddings + Palace semantic memory
+    mcp/         # FastMCP server (120 tools, async job queue, Palace search)
     cli/         # Typer entry point (openreply)
   app-tauri/     # Tauri 2 desktop app (OpenReply.app)
-    src/         # Vanilla JS frontend (main.js, api.js, style.css)
+    src/or/      # Vanilla JS frontend (views, shell, api, dynamic)
     src-tauri/   # Rust shell + Python sidecar bridge
   prompts/       # YAML prompt templates — tune without touching code
   scripts/       # build, publish, fetch-ffmpeg, mcp_http_daemon
@@ -201,10 +197,9 @@ Full architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 
 ```
 ARCHITECTURE.md   — system design, data flow, component map
-MCP_TOOLS.md      — all 90+ MCP tools with parameters
+MCP_TOOLS.md      — MCP tools with parameters
 CLI_REFERENCE.md  — all CLI commands
 docs/
-  GAP_MAP_GUIDE.md      — end-user desktop app guide
   MCP_INFRA.md          — MCP transport, job queue, operating playbook
   FEATURES.md           — feature coverage and status
   manual-todo/          — manual steps (certs, secrets, store setup)
@@ -231,7 +226,9 @@ MIT — see [`LICENSE`](LICENSE).
 
 ## Responsible use
 
-This tool is for **research and analysis**, not mass posting or vote manipulation.
-Respect [Reddit's API terms](https://support.reddithelp.com/hc/en-us/articles/16160319875092)
-and the [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564).
-PRAW's built-in rate limiting (100 req/min OAuth) is left on — do not disable it.
+OpenReply is for **genuine, on-brand participation** — drafting replies and content
+you review before posting. It is **not** for spam, mass posting, or vote manipulation.
+Keep a human in the loop, respect each platform's terms (e.g.
+[Reddit's API terms](https://support.reddithelp.com/hc/en-us/articles/16160319875092)
+and the [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564)),
+and leave built-in rate limiting on — do not disable it.
