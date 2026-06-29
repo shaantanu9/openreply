@@ -35,6 +35,7 @@ _EVENT_FLAG = {
     "opportunity": "ev_opportunity",
     "article": "ev_article",
     "reply": "ev_reply",
+    "content_item": "ev_content_item",
     "digest": "ev_digest",
     "geo": "ev_geo",
 }
@@ -49,6 +50,7 @@ _DEFAULTS = {
     "ev_opportunity": 1,
     "ev_article": 1,
     "ev_reply": 1,
+    "ev_content_item": 1,
     "ev_digest": 0,
     "ev_geo": 0,
     "min_score": 0.0,
@@ -65,11 +67,16 @@ def _ensure(db):
                 "id": str, "enabled": int, "telegram_token": str,
                 "telegram_chat": str, "slack_webhook": str, "two_way": int,
                 "ev_opportunity": int, "ev_article": int, "ev_reply": int,
-                "ev_digest": int, "ev_geo": int, "min_score": float,
-                "updated_at": int,
+                "ev_content_item": int, "ev_digest": int, "ev_geo": int,
+                "min_score": float, "updated_at": int,
             },
             pk="id",
         )
+        return db
+    # Forward-compat: add the content_item event toggle to older configs.
+    existing = {c.name for c in db["reply_notify"].columns}
+    if "ev_content_item" not in existing:
+        db["reply_notify"].add_column("ev_content_item", int)
     return db
 
 
@@ -102,6 +109,7 @@ def get_config() -> dict:
             "opportunity": bool(c["ev_opportunity"]),
             "article": bool(c["ev_article"]),
             "reply": bool(c["ev_reply"]),
+            "content_item": bool(c.get("ev_content_item", 1)),
             "digest": bool(c["ev_digest"]),
             "geo": bool(c["ev_geo"]),
         },
@@ -137,7 +145,11 @@ def set_config(**fields) -> dict:
 
 def is_configured() -> bool:
     c = _raw_config()
-    return bool(c["enabled"]) and bool(c.get("telegram_token") or c.get("slack_webhook"))
+    has_tg = bool(c.get("telegram_token")) and (
+        bool(c.get("telegram_chat")) or bool(get_targets(enabled_only=True))
+    )
+    has_slack = bool(c.get("slack_webhook"))
+    return bool(c["enabled"]) and (has_tg or has_slack)
 
 
 # ───────────────────────── dedup ─────────────────────────
@@ -321,10 +333,47 @@ def _fmt_reply(opp: dict, draft_text: str) -> tuple[str, str, list]:
     return tg, sk, buttons
 
 
+def _fmt_content_item(item: dict, platform: str | None = None) -> tuple[str, str, list]:
+    """Returns (telegram_html, slack_text, telegram_buttons) for a Compose draft."""
+    kind = _esc((item.get("kind") or "post").title())
+    platform = platform or item.get("platform") or "post"
+    title = _esc((item.get("title") or f"{kind} · {platform}")[:200])
+    body = (item.get("body") or "").strip()
+    # If a platform variant exists, prefer it.
+    variants_raw = item.get("variants_json") or ""
+    if variants_raw:
+        try:
+            variants = json.loads(variants_raw)
+            if isinstance(variants, dict) and platform in variants:
+                body = variants[platform].strip()
+        except Exception:
+            pass
+    body_preview = _esc(body[:1200])
+    tg = (
+        f"📝 <b>{title}</b>\n"
+        f"Platform: <b>{_esc(platform)}</b>\n\n"
+        f"<code>{body_preview}</code>"
+    )
+    sk = (
+        f"📝 *{title}*\n"
+        f"Platform: *{_esc(platform)}*\n\n"
+        f"```{body[:1200]}```"
+    )
+    cid = item.get("id") or ""
+    buttons = [
+        {"text": "📋 Copy text", "data": f"copy:{cid}:{platform}"},
+        {"text": "✅ Mark posted", "data": f"posted:{cid}:{platform}"},
+        {"text": "🗓 Reschedule", "data": f"schedule:{cid}"},
+        {"text": "🔄 Regenerate", "data": f"regen:{cid}:{platform}"},
+    ]
+    return tg, sk, buttons
+
+
 _FORMATTERS = {
     "opportunity": lambda p: _fmt_opportunity(p["opp"]),
     "article": lambda p: _fmt_article(p["art"]),
     "reply": lambda p: _fmt_reply(p["opp"], p.get("draft", "")),
+    "content_item": lambda p: _fmt_content_item(p.get("item", {}), p.get("platform")),
     "digest": lambda p: (p.get("text", ""), p.get("text", ""), []),
     "geo": lambda p: (p.get("text", ""), p.get("text", ""), []),
 }
@@ -391,3 +440,7 @@ def notify_article(art: dict) -> dict:
 
 def notify_reply_due(opp: dict, draft_text: str) -> dict:
     return dispatch("reply", {"opp": opp, "draft": draft_text})
+
+
+def notify_content_item(item: dict, platform: str | None = None) -> dict:
+    return dispatch("content_item", {"item": item, "platform": platform})
