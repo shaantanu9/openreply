@@ -28,6 +28,39 @@ feeds_app = typer.Typer(help="Manage user-added custom RSS feeds (swept on every
 app.add_typer(feeds_app, name="feeds")
 
 
+ingest_app = typer.Typer(help="Ingest local files or web URLs into a topic's corpus.")
+app.add_typer(ingest_app, name="ingest")
+
+
+@ingest_app.command("url")
+def cmd_ingest_url(
+    url: str = typer.Option(..., "--url", "-u", help="Web page URL to fetch."),
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic to tag the page under."),
+) -> None:
+    """Fetch any URL via Jina Reader and upsert it into a topic's corpus.
+
+    The page content becomes part of the agent's knowledge scope for that topic,
+    so reply drafting and insight extraction can cite it.
+
+    Example:
+      openreply ingest url --url https://example.com/post --topic "my product"
+    """
+    from ..sources.web_reader import fetch_web_reader
+    from ..core.db import upsert_posts
+    from ..research.collect import _tag_posts
+
+    rows = fetch_web_reader(url)
+    if not rows:
+        console.print("[yellow]no rows fetched[/yellow] — check the URL or try again")
+        raise typer.Exit(1)
+    upsert_posts(rows)
+    tagged = _tag_posts(topic, [r["id"] for r in rows], source="local:web:url")
+    console.print(
+        f"[green]ingested {len(rows)} row(s)[/green] from {url} "
+        f"under topic={topic!r} (tagged {tagged})"
+    )
+
+
 @feeds_app.command("list")
 def cmd_feeds_list(as_json: bool = typer.Option(False, "--json", hidden=True)) -> None:
     """List the user's saved custom RSS feeds."""
