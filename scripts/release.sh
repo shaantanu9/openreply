@@ -154,8 +154,8 @@ bold "── 6. Stage upload artifacts ──"
 STAGE="$(mktemp -d)"
 trap "rm -rf $STAGE" EXIT
 
-cp "$ARM64_DMG" "$STAGE/Gap.Map_${VERSION_NUM}_arm64.dmg"
-cp "$X64_DMG"   "$STAGE/Gap.Map_${VERSION_NUM}_x64.dmg"
+cp "$ARM64_DMG" "$STAGE/OpenReply_${VERSION_NUM}_arm64.dmg"
+cp "$X64_DMG"   "$STAGE/OpenReply_${VERSION_NUM}_x64.dmg"
 
 # Companion .zip files — same source bundles, ditto -c -k --keepParent
 # (publish-mac.sh already produces these in the right form using Apple's
@@ -164,16 +164,16 @@ ARM64_ZIP=$(ls -t "app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundl
 X64_ZIP=$(ls -t   "app-tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/zip/"*.zip 2>/dev/null | head -1)
 [ -f "$ARM64_ZIP" ] || die "arm64 zip missing"
 [ -f "$X64_ZIP" ]   || die "x86_64 zip missing"
-cp "$ARM64_ZIP" "$STAGE/Gap.Map_${VERSION_NUM}_arm64.zip"
-cp "$X64_ZIP"   "$STAGE/Gap.Map_${VERSION_NUM}_x64.zip"
+cp "$ARM64_ZIP" "$STAGE/OpenReply_${VERSION_NUM}_arm64.zip"
+cp "$X64_ZIP"   "$STAGE/OpenReply_${VERSION_NUM}_x64.zip"
 
 # Windows MSI + EXE come from origin CI's draft release (we don't sign these locally)
 echo "  pulling Windows artifacts from $ORIGIN_REPO v$VERSION_NUM..."
 WIN_DRAFT_AVAILABLE=1
 gh release download "$VERSION_TAG" --repo "$ORIGIN_REPO" \
   --dir "$STAGE" \
-  --pattern "Gap.Map_${VERSION_NUM}_x64-setup.exe" \
-  --pattern "Gap.Map_${VERSION_NUM}_x64_en-US.msi" 2>&1 | tail -3 \
+  --pattern "OpenReply_${VERSION_NUM}_x64-setup.exe" \
+  --pattern "OpenReply_${VERSION_NUM}_x64_en-US.msi" 2>&1 | tail -3 \
   || { yellow "  ⚠ Windows artifacts not found on origin draft — releasing macOS only"; WIN_DRAFT_AVAILABLE=0; }
 
 ls -lh "$STAGE"/*.dmg "$STAGE"/*.zip "$STAGE"/*.msi "$STAGE"/*.exe 2>&1 | head -10
@@ -190,13 +190,13 @@ if ! gh release view "$VERSION_TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
 fi
 
 if confirm "upload all artifacts to $PUBLIC_REPO $VERSION_TAG (--clobber)?"; then
-  UPLOAD_ARGS=("$STAGE/Gap.Map_${VERSION_NUM}_arm64.dmg"
-               "$STAGE/Gap.Map_${VERSION_NUM}_arm64.zip"
-               "$STAGE/Gap.Map_${VERSION_NUM}_x64.dmg"
-               "$STAGE/Gap.Map_${VERSION_NUM}_x64.zip")
+  UPLOAD_ARGS=("$STAGE/OpenReply_${VERSION_NUM}_arm64.dmg"
+               "$STAGE/OpenReply_${VERSION_NUM}_arm64.zip"
+               "$STAGE/OpenReply_${VERSION_NUM}_x64.dmg"
+               "$STAGE/OpenReply_${VERSION_NUM}_x64.zip")
   if [ "$WIN_DRAFT_AVAILABLE" -eq 1 ]; then
-    UPLOAD_ARGS+=("$STAGE/Gap.Map_${VERSION_NUM}_x64-setup.exe"
-                  "$STAGE/Gap.Map_${VERSION_NUM}_x64_en-US.msi")
+    UPLOAD_ARGS+=("$STAGE/OpenReply_${VERSION_NUM}_x64-setup.exe"
+                  "$STAGE/OpenReply_${VERSION_NUM}_x64_en-US.msi")
   fi
   gh release upload "$VERSION_TAG" --repo "$PUBLIC_REPO" "${UPLOAD_ARGS[@]}" --clobber \
     || die "upload failed"

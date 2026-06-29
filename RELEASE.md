@@ -55,7 +55,7 @@ for arch_pair in "aarch64-apple-darwin:arm64" "x86_64-apple-darwin:x64"; do
   triple=${arch_pair%:*}; tag_arch=${arch_pair#*:}
   ditto -ck --rsrc --sequesterRsrc \
     "app-tauri/src-tauri/target/${triple}/release/bundle/macos/OpenReply.app" \
-    "/tmp/Gap.Map_${NUM}_${tag_arch}.zip"
+    "/tmp/OpenReply_${NUM}_${tag_arch}.zip"
 done
 
 # 9. Upload signed artifacts to the public release repo
@@ -63,7 +63,7 @@ PUB=myind-ai/openreply
 gh release upload "$NEW" --repo "$PUB" \
   "app-tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/OpenReply_${NUM}_aarch64.dmg" \
   "app-tauri/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/OpenReply_${NUM}_x64.dmg" \
-  "/tmp/Gap.Map_${NUM}_arm64.zip" "/tmp/Gap.Map_${NUM}_x64.zip" \
+  "/tmp/OpenReply_${NUM}_arm64.zip" "/tmp/OpenReply_${NUM}_x64.zip" \
   --clobber
 # Rename the arm64.dmg server-side: see "Naming conventions" below
 
@@ -164,12 +164,12 @@ Then `HAS_APPLE_CERT` flips to `'yes'` and the "(signed)" path runs.
 
 | Internal (openreply draft) | Public (myind-ai/openreply) |
 |---|---|
-| `Gap.Map_X.Y.Z_aarch64.dmg` | `Gap.Map_X.Y.Z_arm64.dmg` (rename) |
-| `Gap.Map_aarch64.app.tar.gz` | `Gap.Map_X.Y.Z_arm64.zip` (rezip with `ditto`) |
-| `Gap.Map_X.Y.Z_x64.dmg` | (same) |
-| `Gap.Map_x64.app.tar.gz` | `Gap.Map_X.Y.Z_x64.zip` (rezip with `ditto`) |
-| `Gap.Map_X.Y.Z_x64_en-US.msi` | (same) |
-| `Gap.Map_X.Y.Z_x64-setup.exe` | (same) |
+| `OpenReply_X.Y.Z_aarch64.dmg` | `OpenReply_X.Y.Z_arm64.dmg` (rename) |
+| `OpenReply_aarch64.app.tar.gz` | `OpenReply_X.Y.Z_arm64.zip` (rezip with `ditto`) |
+| `OpenReply_X.Y.Z_x64.dmg` | (same) |
+| `OpenReply_x64.app.tar.gz` | `OpenReply_X.Y.Z_x64.zip` (rezip with `ditto`) |
+| `OpenReply_X.Y.Z_x64_en-US.msi` | (same) |
+| `OpenReply_X.Y.Z_x64-setup.exe` | (same) |
 
 Linux ships separately via `release-linux.yml`.
 
@@ -209,7 +209,7 @@ gh release edit "$TAG" --repo myind-ai/openreply --draft=true
 
 # Inspect what's actually inside the published DMG
 gh release download "$TAG" --repo myind-ai/openreply --pattern "*arm64.dmg"
-scripts/verify-dmg.sh "Gap.Map_${NUM}_arm64.dmg" \
+scripts/verify-dmg.sh "OpenReply_${NUM}_arm64.dmg" \
   --expected-arch arm64 --expected-version "$NUM" --expected-bundle-id com.shantanu.openreply
 # If FAIL: re-sign locally (sections 6/7 of the TL;DR), re-upload --clobber, republish
 ```

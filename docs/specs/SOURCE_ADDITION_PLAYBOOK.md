@@ -137,11 +137,11 @@ These are the architecture lessons worth importing regardless of which sources w
 
 ## PART 4 — Catalog of ALL candidate sources (the full menu to compare)
 
-Below is every source from miroclaw's 12 **plus** extra generally-useful ones, each with: what it gives, key, historical, posts-row fit, Gap-Map relevance, effort, verdict. Use the scoring framework in Part 5 to rank.
+Below is every source from miroclaw's 12 **plus** extra generally-useful ones, each with: what it gives, key, historical, posts-row fit, OpenReply relevance, effort, verdict. Use the scoring framework in Part 5 to rank.
 
 ### Group A — miroclaw's 12
 
-| Source | Gives | Key | Historical | Gap-Map fit | Effort | Verdict |
+| Source | Gives | Key | Historical | OpenReply fit | Effort | Verdict |
 |---|---|---|---|---|---|---|
 | **GDELT** | Structured global news/events, India-or-any country filter, date ranges | No | **Yes** | Event-driven topics; **forecast ground-truth/seed**; fills news-history hole | Low (`gdeltdoc`) | **ADD (high)** |
 | **DuckDuckGo** | General web+news search (keyless) | No | No | OpenReply has **no general web search**; context/seed fallback | Low (`duckduckgo-search`) | **ADD (med)** |
@@ -159,7 +159,7 @@ Below is every source from miroclaw's 12 **plus** extra generally-useful ones, e
 ### Group B — Extra sources worth considering (NOT in miroclaw, native to OpenReply's domain)
 These are higher-value *for gap discovery* than most of miroclaw's finance set. Listed so the comparison is complete.
 
-| Source | Gives | Key | Gap-Map fit | Verdict |
+| Source | Gives | Key | OpenReply fit | Verdict |
 |---|---|---|---|---|
 | **Reddit (authenticated)** | Deeper historical/comments beyond public | OAuth | Core voice-of-customer | Already core |
 | **G2 / Capterra reviews** | B2B SaaS reviews (pain/wishes, competitor) | Scrape/key | **Very high** — direct competitor pain | Consider |

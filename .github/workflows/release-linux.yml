@@ -145,7 +145,7 @@ jobs:
         working-directory: ./app-tauri
         run: npm ci
 
-      # Append Linux artifacts (.deb / .rpm / .AppImage) to the gap-map-pro
+      # Append Linux artifacts (.deb / .rpm / .AppImage) to the OpenReply
       # release draft (whichever platform workflow created it first).
       - name: Build and append Linux bundle
         uses: tauri-apps/tauri-action@v0
@@ -154,7 +154,7 @@ jobs:
         with:
           projectPath: ./app-tauri
           tagName: v__VERSION__
-          releaseName: Gap Map v__VERSION__
+          releaseName: OpenReply v__VERSION__
           releaseDraft: true
           prerelease: false
           args: ''
@@ -197,7 +197,7 @@ jobs:
               done || true
             return 0
           }
-          dl_src "Gap.Map_*_amd64.AppImage" "Gap.Map_*_amd64.deb" "Gap.Map_*_x86_64.rpm"
+          dl_src "OpenReply_*_amd64.AppImage" "OpenReply_*_amd64.deb" "OpenReply_*_x86_64.rpm"
           ls -lh ./pub/ | head -10
 
           # Rename to user-friendly public-convention names. Linux only
@@ -207,14 +207,14 @@ jobs:
           # scripts/promote-release-if-complete.sh.
           cd ./pub
           NUM="${VER#v}"
-          if [ -f "Gap.Map_${NUM}_amd64.AppImage" ]; then
-            mv "Gap.Map_${NUM}_amd64.AppImage" "Gap-Map-${NUM}-Linux.AppImage"
+          if [ -f "OpenReply_${NUM}_amd64.AppImage" ]; then
+            mv "OpenReply_${NUM}_amd64.AppImage" "OpenReply-${NUM}-Linux.AppImage"
           fi
-          if [ -f "Gap.Map_${NUM}_amd64.deb" ]; then
-            mv "Gap.Map_${NUM}_amd64.deb" "Gap-Map-${NUM}-Linux.deb"
+          if [ -f "OpenReply_${NUM}_amd64.deb" ]; then
+            mv "OpenReply_${NUM}_amd64.deb" "OpenReply-${NUM}-Linux.deb"
           fi
-          if [ -f "Gap.Map_${NUM}_x86_64.rpm" ]; then
-            mv "Gap.Map_${NUM}_x86_64.rpm" "Gap-Map-${NUM}-Linux.rpm"
+          if [ -f "OpenReply_${NUM}_x86_64.rpm" ]; then
+            mv "OpenReply_${NUM}_x86_64.rpm" "OpenReply-${NUM}-Linux.rpm"
           fi
           ls -lh
 
@@ -236,24 +236,24 @@ jobs:
             fi
             if [ -z "$CHANGES" ]; then CHANGES="- See the in-app changelog (Settings → About) for what changed."; fi
             {
-              printf '## Gap Map %s\n\n' "$VER"
+              printf '## OpenReply %s\n\n' "$VER"
               printf '**Download → [openreply.myind.ai](https://openreply.myind.ai/)**\n\n'
               printf 'Installers:\n\n'
-              printf -- '- **macOS Apple Silicon** — `Gap-Map-*-macOS-Apple-Silicon.dmg`\n'
-              printf -- '- **macOS Intel** — `Gap-Map-*-macOS-Intel.dmg`\n'
-              printf -- '- **Windows** — `Gap-Map-*-Windows.msi` (managed deploy) or `Gap-Map-*-Windows-Installer.exe` (click-to-install)\n'
-              printf -- '- **Linux** — `Gap-Map-*-Linux.AppImage` (portable) or `Gap-Map-*-Linux.deb` (Debian/Ubuntu APT)\n\n'
+              printf -- '- **macOS Apple Silicon** — `OpenReply-*-macOS-Apple-Silicon.dmg`\n'
+              printf -- '- **macOS Intel** — `OpenReply-*-macOS-Intel.dmg`\n'
+              printf -- '- **Windows** — `OpenReply-*-Windows.msi` (managed deploy) or `OpenReply-*-Windows-Installer.exe` (click-to-install)\n'
+              printf -- '- **Linux** — `OpenReply-*-Linux.AppImage` (portable) or `OpenReply-*-Linux.deb` (Debian/Ubuntu APT)\n\n'
               printf "## What's changed\n"
               printf '%s\n' "$CHANGES"
             } > "$RUNNER_TEMP/release-notes.md"
             gh release create "$VER" --repo "$PUBLIC" --target main --draft \
-              --title "Gap Map $VER" \
+              --title "OpenReply $VER" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
             echo "  ✓ created draft on $PUBLIC"
           fi
 
           shopt -s nullglob
-          FILES=(Gap-Map-*-Linux.AppImage Gap-Map-*-Linux.deb Gap-Map-*-Linux.rpm)
+          FILES=(OpenReply-*-Linux.AppImage OpenReply-*-Linux.deb OpenReply-*-Linux.rpm)
           if [ ${#FILES[@]} -gt 0 ]; then
             gh release upload "$VER" --repo "$PUBLIC" "${FILES[@]}" --clobber
             echo "  ✓ uploaded ${#FILES[@]} linux artifact(s)"

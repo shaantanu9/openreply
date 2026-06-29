@@ -3,8 +3,8 @@
 # GitHub via the API, without re-uploading them.
 #
 # Used to retroactively re-name the v0.1.4 assets from the
-# tauri-action default convention (Gap.Map_0.1.4_arm64.dmg) to the
-# user-friendly convention (Gap-Map-0.1.4-macOS-Apple-Silicon.dmg).
+# tauri-action default convention (OpenReply_0.1.4_arm64.dmg) to the
+# user-friendly convention (OpenReply-0.1.4-macOS-Apple-Silicon.dmg).
 # Future releases get the friendly name at upload time via the
 # `Rename for friendly download` step inside each per-platform
 # release workflow — this script is the migration tool, not the
@@ -47,29 +47,29 @@ echo
 # the caller treats "" as "leave the asset alone".
 #
 # OLD pattern → NEW pattern:
-#   Gap.Map_<NUM>_arm64.dmg          → Gap-Map-<NUM>-macOS-Apple-Silicon.dmg
-#   Gap.Map_<NUM>_arm64.zip          → Gap-Map-<NUM>-macOS-Apple-Silicon.zip
-#   Gap.Map_<NUM>_x64.dmg            → Gap-Map-<NUM>-macOS-Intel.dmg
-#   Gap.Map_<NUM>_x64.zip            → Gap-Map-<NUM>-macOS-Intel.zip
-#   Gap.Map_<NUM>_x64-setup.exe      → Gap-Map-<NUM>-Windows-Installer.exe
-#   Gap.Map_<NUM>_x64_en-US.msi      → Gap-Map-<NUM>-Windows.msi
-#   Gap.Map_<NUM>_amd64.AppImage     → Gap-Map-<NUM>-Linux.AppImage
-#   Gap.Map_<NUM>_amd64.deb          → Gap-Map-<NUM>-Linux.deb
-#   Gap.Map_aarch64.app.tar.gz       → Gap-Map-<NUM>-macOS-Apple-Silicon.app.tar.gz
-#   Gap.Map_x64.app.tar.gz           → Gap-Map-<NUM>-macOS-Intel.app.tar.gz
+#   OpenReply_<NUM>_arm64.dmg          → OpenReply-<NUM>-macOS-Apple-Silicon.dmg
+#   OpenReply_<NUM>_arm64.zip          → OpenReply-<NUM>-macOS-Apple-Silicon.zip
+#   OpenReply_<NUM>_x64.dmg            → OpenReply-<NUM>-macOS-Intel.dmg
+#   OpenReply_<NUM>_x64.zip            → OpenReply-<NUM>-macOS-Intel.zip
+#   OpenReply_<NUM>_x64-setup.exe      → OpenReply-<NUM>-Windows-Installer.exe
+#   OpenReply_<NUM>_x64_en-US.msi      → OpenReply-<NUM>-Windows.msi
+#   OpenReply_<NUM>_amd64.AppImage     → OpenReply-<NUM>-Linux.AppImage
+#   OpenReply_<NUM>_amd64.deb          → OpenReply-<NUM>-Linux.deb
+#   OpenReply_aarch64.app.tar.gz       → OpenReply-<NUM>-macOS-Apple-Silicon.app.tar.gz
+#   OpenReply_x64.app.tar.gz           → OpenReply-<NUM>-macOS-Intel.app.tar.gz
 compute_newname() {
   local name="$1"
   case "$name" in
-    "Gap.Map_${NUM}_arm64.dmg")          echo "Gap-Map-${NUM}-macOS-Apple-Silicon.dmg" ;;
-    "Gap.Map_${NUM}_arm64.zip")          echo "Gap-Map-${NUM}-macOS-Apple-Silicon.zip" ;;
-    "Gap.Map_${NUM}_x64.dmg")            echo "Gap-Map-${NUM}-macOS-Intel.dmg" ;;
-    "Gap.Map_${NUM}_x64.zip")            echo "Gap-Map-${NUM}-macOS-Intel.zip" ;;
-    "Gap.Map_${NUM}_x64-setup.exe")      echo "Gap-Map-${NUM}-Windows-Installer.exe" ;;
-    "Gap.Map_${NUM}_x64_en-US.msi")      echo "Gap-Map-${NUM}-Windows.msi" ;;
-    "Gap.Map_${NUM}_amd64.AppImage")     echo "Gap-Map-${NUM}-Linux.AppImage" ;;
-    "Gap.Map_${NUM}_amd64.deb")          echo "Gap-Map-${NUM}-Linux.deb" ;;
-    "Gap.Map_aarch64.app.tar.gz")        echo "Gap-Map-${NUM}-macOS-Apple-Silicon.app.tar.gz" ;;
-    "Gap.Map_x64.app.tar.gz")            echo "Gap-Map-${NUM}-macOS-Intel.app.tar.gz" ;;
+    "OpenReply_${NUM}_arm64.dmg")          echo "OpenReply-${NUM}-macOS-Apple-Silicon.dmg" ;;
+    "OpenReply_${NUM}_arm64.zip")          echo "OpenReply-${NUM}-macOS-Apple-Silicon.zip" ;;
+    "OpenReply_${NUM}_x64.dmg")            echo "OpenReply-${NUM}-macOS-Intel.dmg" ;;
+    "OpenReply_${NUM}_x64.zip")            echo "OpenReply-${NUM}-macOS-Intel.zip" ;;
+    "OpenReply_${NUM}_x64-setup.exe")      echo "OpenReply-${NUM}-Windows-Installer.exe" ;;
+    "OpenReply_${NUM}_x64_en-US.msi")      echo "OpenReply-${NUM}-Windows.msi" ;;
+    "OpenReply_${NUM}_amd64.AppImage")     echo "OpenReply-${NUM}-Linux.AppImage" ;;
+    "OpenReply_${NUM}_amd64.deb")          echo "OpenReply-${NUM}-Linux.deb" ;;
+    "OpenReply_aarch64.app.tar.gz")        echo "OpenReply-${NUM}-macOS-Apple-Silicon.app.tar.gz" ;;
+    "OpenReply_x64.app.tar.gz")            echo "OpenReply-${NUM}-macOS-Intel.app.tar.gz" ;;
     *) echo "" ;;
   esac
 }

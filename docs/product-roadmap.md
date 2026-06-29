@@ -43,7 +43,7 @@
 | **Crayon / Klue** | Competitive intel | Tracks competitor updates only, no user voice |
 | **Sensor Tower / Apptopia** | App-store intelligence | App-only, no Reddit/HN triangulation |
 
-**Gap:** No one combines temporal classification + multi-source triangulation + shareable gap maps.
+**Gap:** No one combines temporal classification + multi-source triangulation + shareable OpenReply maps.
 
 ### Tier 3: Indie / manual workflows
 
@@ -66,7 +66,7 @@
 | **Source breadth** | 20 sources (vs most competitors: 1-3) |
 | **Temporal signal** | CHRONIC / EMERGING / FADING via pre-May-2025 pullpush + live |
 | **Triangulation** | Evidence edges cross-reference sources automatically |
-| **Shareable output** | Self-contained HTML gap map as marketing vector |
+| **Shareable output** | Self-contained HTML OpenReply map as marketing vector |
 | **Local-first** | Users bring own IP + LLM key, data never leaves their machine |
 | **Open source + commercial** | CLI free, desktop app paid (Raycast / Obsidian model) |
 | **Graph-native** | Only one that exposes the structural topology |
@@ -92,7 +92,7 @@
 Everything in Free, plus:
 
 - **Polished Flutter Desktop UI** (macOS + Windows + Linux, your existing skill)
-- **Scheduled re-runs** (weekly) — see how gap maps evolve  
+- **Scheduled re-runs** (weekly) — see how OpenReply maps evolve  
 - **Public openreply-map hosting** at `openreply.io/u/<user>/<slug>` (SEO-indexed, shareable)
 - **Export formats**: PDF, Notion, Linear, JSON
 - **Multi-topic dashboard** — side-by-side graphs
@@ -124,7 +124,7 @@ Everything in Free, plus:
 1. **Day 0-14**: Ship Flutter Desktop MVP + Gumroad checkout + landing page at `openreply.io`
 2. **Day 14**: Public openreply-maps for 3 trendy markets (AI coding, note-taking apps, habit trackers) — each tweet-driven
 3. **Day 21**: Product Hunt launch  
-4. **Day 30**: HN "Show HN" post with the ATS gap map as proof artifact
+4. **Day 30**: HN "Show HN" post with the ATS OpenReply map as proof artifact
 5. **Day 45**: Indie Hackers weekly thread (interview request)
 6. **Day 60**: First $1k MRR check (20 lifetime sales = $980)
 
@@ -149,7 +149,7 @@ Everything in Free, plus:
 
 ## Build plan — what to add next to the tool itself
 
-Derived from the product gap map tier-2 competitors expose:
+Derived from the product research map tier-2 competitors expose:
 
 ### Missing features (ordered by pain → effort)
 
@@ -181,7 +181,7 @@ Derived from the product gap map tier-2 competitors expose:
 1. The viewer still needs ~1 week of UX polish (currently functional, not *beautiful*)
 2. Flutter Desktop scaffolding: 2 weeks
 3. Gumroad + landing page + domain: 3 days
-4. First-launch content (3 public gap maps) — done in this repo already on habit-tracker + ATS, needs a third
+4. First-launch content (3 public OpenReply maps) — done in this repo already on habit-tracker + ATS, needs a third
 
 **Total to revenue: 3-4 weeks of focused work.**
 

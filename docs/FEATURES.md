@@ -4,7 +4,7 @@
 
 **Version:** 2026-04-20 (post-Dual-Mode-foundation)
 **Status:** All 11 ROADMAP phases + DUAL_MODE_PIVOT Phases A/B/C/F shipped. Phases D (OAuth), E (billing), G (cloud/share) deferred — see §15.
-**Related:** `docs/ROADMAP.md`, `docs/DUAL_MODE_PIVOT.md`, `docs/GAP_MAP_METHODOLOGY.md`, `docs/GAP_MAP_GUIDE.md`
+**Related:** `docs/ROADMAP.md`, `docs/DUAL_MODE_PIVOT.md`, `docs/RESEARCH_METHODOLOGY.md`, `docs/OPENREPLY_GUIDE.md`
 
 ---
 
@@ -636,7 +636,7 @@ trustworthy.
 ### 15.5.1 Dense graph relations
 
 Was: `topic → finding → post` tree only. Two painpoints about the same
-concept never linked. Users saw disconnected islands in the gap map.
+concept never linked. Users saw disconnected islands in the research map.
 
 Now: after `upsert_semantic` persists findings, a post-pass uses ChromaDB
 MiniLM ONNX embeddings + shared-evidence signal to emit four new edge kinds:

@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in Gap Map (CLI, MCP server, or desktop app)
+description: Report a bug in OpenReply (CLI, MCP server, or desktop app)
 labels: ["bug"]
 body:
   - type: markdown
@@ -15,7 +15,7 @@ body:
       options:
         - CLI (openreply)
         - MCP server
-        - Desktop app (Gap Map.app)
+        - Desktop app (OpenReply.app)
         - Python library / source adapter
     validations:
       required: true

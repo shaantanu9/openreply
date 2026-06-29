@@ -41,7 +41,7 @@ Tick items as fixed. Each entry has a file:line pointer, the failure mode, and t
   - **Fix applied:** Real bug was in `topic.js:205` where `#btn-ev-keys` opened the BYOK modal with no callback. Now passes `() => loadEvidence()` so the Evidence tab re-runs after key save (replaces the "add key" empty state with real extracted findings). Welcome Step 3 callback was already correct.
 
 - [x] **P1-8 · Chat opens with empty graph** ✅ 2026-04-19
-  - **Fix applied:** `loadChat` in `topic.js` adds a second gate after the LLM-ready check. Runs `SELECT count(*) FROM graph_nodes WHERE topic=:topic AND kind IN ('painpoint','feature_wish','workaround','product')` — if 0, renders a placeholder with "Build gap map now" (calls `buildGraph` + `enrichGraph`) and "Re-run collect" buttons.
+  - **Fix applied:** `loadChat` in `topic.js` adds a second gate after the LLM-ready check. Runs `SELECT count(*) FROM graph_nodes WHERE topic=:topic AND kind IN ('painpoint','feature_wish','workaround','product')` — if 0, renders a placeholder with "Build research map now" (calls `buildGraph` + `enrichGraph`) and "Re-run collect" buttons.
 
 ---
 
