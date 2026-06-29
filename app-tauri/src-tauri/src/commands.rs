@@ -327,11 +327,23 @@ pub async fn account_untrack(app: AppHandle, handle: String, id: Option<String>)
 }
 
 #[tauri::command]
-pub async fn account_fetch(app: AppHandle, handle: Option<String>, learn: Option<bool>, id: Option<String>) -> Result<Value, String> {
+pub async fn account_fetch(app: AppHandle, handle: Option<String>, learn: Option<bool>, id: Option<String>, limit: Option<u32>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "watch-fetch".to_string(), "--json".to_string()];
     if let Some(h) = handle { if !h.is_empty() { args.push("--handle".into()); args.push(h); } }
     if learn.unwrap_or(false) { args.push("--learn".into()); }
     if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(l) = limit { args.push("--limit".into()); args.push(l.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply agent watch-inbox <handle> --limit n --post-id <id>` — fetch a tracked account's posts and create Inbox opportunities.
+#[tauri::command]
+pub async fn account_save_inbox(app: AppHandle, handle: String, id: Option<String>, post_id: Option<String>, limit: Option<u32>) -> Result<Value, String> {
+    let mut args = vec!["agent".to_string(), "watch-inbox".to_string(), handle, "--json".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(p) = post_id { if !p.is_empty() { args.push("--post-id".into()); args.push(p); } }
+    if let Some(l) = limit { args.push("--limit".into()); args.push(l.to_string()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }
@@ -4603,6 +4615,12 @@ pub async fn x_account_add(
     run_cli(&app, args).await.map_err(err_to_string)
 }
 
+/// `openreply x-account remove <handle>`
+#[tauri::command]
+pub async fn x_account_remove(app: AppHandle, handle: String) -> Result<Value, String> {
+    run_cli(&app, vec!["x-account", "remove", &handle, "--json"]).await.map_err(err_to_string)
+}
+
 /// `openreply x-account list`
 #[tauri::command]
 pub async fn x_account_list(app: AppHandle) -> Result<Value, String> {
@@ -4674,4 +4692,24 @@ pub async fn x_account_save_to_library(
     }
     args.push("--json");
     run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// `openreply x-account save-to-inbox <handle> --count n --with-threads --post-id`
+#[tauri::command]
+pub async fn x_account_save_to_inbox(
+    app: AppHandle,
+    handle: String,
+    count: Option<u32>,
+    with_threads: Option<bool>,
+    post_id: Option<String>,
+) -> Result<Value, String> {
+    let n = count.unwrap_or(25).to_string();
+    let mut args = vec!["x-account".to_string(), "save-to-inbox".to_string(), handle, "--count".to_string(), n];
+    if with_threads.unwrap_or(false) {
+        args.push("--with-threads".to_string());
+    }
+    if let Some(p) = post_id { if !p.is_empty() { args.push("--post-id".to_string()); args.push(p); } }
+    args.push("--json".to_string());
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
 }

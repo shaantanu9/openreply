@@ -339,6 +339,7 @@ fn main() {
             commands::account_list,
             commands::account_untrack,
             commands::account_fetch,
+            commands::account_save_inbox,
             commands::agent_corpus_check,
             commands::agent_autopilot,
             commands::agent_autopilot_set,
@@ -469,12 +470,14 @@ fn main() {
             persona_cmds::persona_agent_ingest_peers,
             persona_cmds::persona_agent_rejections,
             commands::x_account_add,
+            commands::x_account_remove,
             commands::x_account_import_browser,
             commands::x_account_list,
             commands::x_account_profile,
             commands::x_account_fetch_posts,
             commands::x_account_fetch_thread,
-            commands::x_account_save_to_library
+            commands::x_account_save_to_library,
+            commands::x_account_save_to_inbox
         ])
         .build(tauri::generate_context!())
         .expect("error while building openreply");

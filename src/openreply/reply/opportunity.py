@@ -83,7 +83,8 @@ def _as_epoch(v) -> int | None:
     """Normalize a source post's created_utc to int epoch SECONDS, or None.
 
     Sources vary: reddit gives float epoch seconds, some give milliseconds, a few
-    give ISO-8601 strings. Be tolerant so the UI always gets a usable timestamp."""
+    give ISO-8601 strings, and X returns Twitter legacy date strings. Be tolerant
+    so the UI always gets a usable timestamp."""
     if v is None or v == "":
         return None
     try:
@@ -95,7 +96,11 @@ def _as_epoch(v) -> int | None:
         pass
     try:
         from datetime import datetime
-        return int(datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp())
+        s = str(v)
+        if len(s) > 10 and s[10] == "T":
+            return int(datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp())
+        # Twitter legacy: "Mon Jun 29 02:36:08 +0000 2026"
+        return int(datetime.strptime(s, "%a %b %d %H:%M:%S %z %Y").timestamp())
     except Exception:
         return None
 
@@ -431,6 +436,89 @@ def _notify_new_opportunities(opps: list[dict], cap: int = 5) -> None:
             break  # ranked desc — nothing below will qualify either
         _n.notify_once(f"opp:{opp.get('id')}", "opportunity", {"opp": opp})
         sent += 1
+
+
+def save_posts_to_inbox(posts: list[dict], platform: str = "x") -> dict:
+    """Create saved opportunities from a list of fetched posts so they appear in
+    the Inbox workspace. The posts can be in x_account canonical shape or corpus
+    rows; they are normalised before inserting. Returns the count saved and ids.
+    """
+    brand = get_brand()
+    if not brand:
+        return {"error": "no brand configured"}
+    db = init_reply_schema()
+    now = int(time.time())
+    bid = brand["id"]
+    saved = []
+    skipped = 0
+    for post in posts or []:
+        pid = str(post.get("id") or "")
+        # Watched-account corpus rows prefix X tweet ids with "x_" to keep them
+        # distinct from other sources. For reply opportunities we want the bare
+        # tweet id so connected and watched saves dedupe against each other.
+        if pid.startswith("x_"):
+            pid = pid[2:]
+        if not pid:
+            skipped += 1
+            continue
+        # Normalise text/body.
+        text = str(post.get("text") or post.get("title") or post.get("selftext") or "").strip()
+        body = str(post.get("selftext") or post.get("body") or post.get("text") or "").strip()
+        if not text and not body:
+            skipped += 1
+            continue
+        # Use the full text as title if it's short, otherwise keep title short.
+        title = text[:300] if len(text) <= 300 else (text[:297] + "...")
+        url = post.get("url") or post.get("permalink") or ""
+        author = str(post.get("author") or post.get("author_handle") or "").lstrip("@")
+        if not author and url:
+            try:
+                # https://x.com/handle/status/123... -> handle
+                author = url.split("/")[3].lstrip("@") if url.startswith("http") else ""
+            except Exception:
+                author = ""
+        created = _as_epoch(post.get("created_utc") or post.get("created_at"))
+        # Pass the normalised timestamp into a mutable copy so freshness/engagement
+        # scoring sees it even when the source only provided created_at.
+        scoring_post = dict(post)
+        if created:
+            scoring_post["created_utc"] = created
+        # Engagement proxy: likes/comments/retweets or score/num_comments.
+        eng_score = _rank.engagement_score(scoring_post)
+        fresh_score = _rank.freshness(scoring_post, now)
+        opp_id = _oid(bid, platform, pid)
+        base = 0.5
+        rec = {
+            "id": opp_id,
+            "brand_id": bid,
+            "platform": platform,
+            "post_id": pid,
+            "title": title,
+            "body": body[:2000],
+            "url": url,
+            "author": author,
+            "sub": author if author else "",
+            "relevance": base,
+            "intent": base,
+            "fit": base,
+            "reason": f"Saved from {platform} account fetch",
+            "status": "saved",
+            "found_at": now,
+            "created_utc": created,
+            "engagement": eng_score,
+            "freshness": fresh_score,
+            "score": 0.0,
+            "updated_at": now,
+        }
+        # Fuse a final score (mirror find_opportunities weights).
+        rec["score"] = round(0.55 * base + 0.20 * _rank.platform_weight(platform)
+                              + 0.15 * eng_score + 0.10 * fresh_score, 4)
+        try:
+            db["reply_opportunities"].upsert(rec, pk="id")
+            saved.append(opp_id)
+        except Exception:
+            skipped += 1
+    return {"saved": len(saved), "skipped": skipped, "opportunity_ids": saved}
 
 
 # Lifecycle states an opportunity can move through.
