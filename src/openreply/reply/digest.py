@@ -21,10 +21,42 @@ from .agent import get_agent
 from .schema import init_reply_schema
 from .util import loads_json
 
-# Fast, news-leaning sources for the light fresh top-up (no Reddit — that's the
-# reply surface, kept out of the "what's new in the world" fetch). Heavy/academic
-# fetchers stay out; this must stay quick enough for an on-open build.
-NEWS_SOURCES = ["gnews", "hn", "rss_tech_news", "rss_products", "devto", "arxiv", "github", "duckduckgo"]
+# Sources grouped into the four learning buckets the Overview feed renders.
+# Reddit stays OUT — it's the reply/Opportunities surface, not "what's new in the
+# world." These keys are all valid `research.collect(sources=…)` entries.
+CATEGORY_SOURCES = {
+    "news":      ["gnews", "rss_tech_news", "rss_products", "duckduckgo"],
+    "articles":  ["devto", "hn", "github"],
+    "community": ["lemmy", "mastodon"],
+    "research":  ["arxiv", "pubmed", "scholar"],
+}
+# Flat list for the daily collect sweep.
+DIGEST_SOURCES = [s for v in CATEGORY_SOURCES.values() for s in v]
+# Free, key-less sources used by the on-demand news search box.
+NEWS_SEARCH_SOURCES = ["gnews", "duckduckgo"]
+
+# source_type (corpus `p.source_type`) → feed category. Prefix-tolerant so a tag
+# like "github_trending" or "scholar:kw" still resolves.
+_CATEGORY_RULES = (
+    ("research",  ("arxiv", "pubmed", "scholar", "semantic_scholar", "openalex",
+                   "crossref", "dblp", "unpaywall", "bis")),
+    ("community", ("lemmy", "mastodon", "reddit", "bluesky", "linkedin",
+                   "truthsocial", "x")),
+    ("articles",  ("devto", "hn", "hackernews", "github", "producthunt",
+                   "stackoverflow")),
+    ("news",      ("gnews", "duckduckgo", "exa", "tavily", "web", "wikipedia",
+                   "news")),
+)
+
+
+def _category_of(source: str) -> str:
+    base = (source or "").lower().split(":")[0].strip()
+    if "rss" in base:
+        return "news"
+    for cat, keys in _CATEGORY_RULES:
+        if base in keys or any(base.startswith(k) for k in keys):
+            return cat
+    return "news"
 
 _SYS = ("You brief a founder on today's most relevant developments for THEIR GOAL. "
         "Be concrete, skimmable, and honest. Output ONLY strict JSON.")
@@ -70,15 +102,31 @@ def _row_to_dict(r: dict, *, cached: bool) -> dict:
     }
 
 
-def _fresh_items(agent_id: str, *, days: int = 3, limit: int = 12) -> list[dict]:
+def _to_feed_item(it: dict, final: float) -> dict:
+    return {
+        "title": (it.get("title") or "").strip()[:240],
+        "url": it.get("url") or "",
+        "source": it.get("source") or "",
+        "sub": it.get("sub") or "",
+        "category": _category_of(it.get("source") or ""),
+        "score": round(final, 4),
+        "created_utc": it.get("created_utc"),
+        "snippet": (it.get("snippet") or "").strip()[:240],
+    }
+
+
+def _fresh_items(agent_id: str, *, days: int = 7, limit: int = 40,
+                 per_cat_floor: int = 3) -> list[dict]:
     """Top-N freshest, highest-signal corpus items for the agent, ranked by
-    freshness x engagement x source weight. Reads the shared corpus via
-    `list_corpus` (no parallel fetcher)."""
+    freshness x engagement x source weight and tagged with a feed category.
+    Reads the shared corpus via `list_corpus` (no parallel fetcher). Guarantees
+    each category's top `per_cat_floor` items appear (so the pills aren't empty),
+    then fills the rest by global score."""
     from .library import list_corpus
     from .rank import engagement_score, freshness, platform_weight
 
     try:
-        res = list_corpus(agent_id, limit=120, offset=0)
+        res = list_corpus(agent_id, limit=240, offset=0)
     except Exception:
         return []
     items = (res or {}).get("items") or []
@@ -90,30 +138,44 @@ def _fresh_items(agent_id: str, *, days: int = 3, limit: int = 12) -> list[dict]
         if it.get("relevant") == 0:
             continue
         cu = it.get("created_utc")
-        # Keep recent items; items with no date get a neutral-low freshness but
-        # are only kept if we're short on dated ones (handled by the sort).
+        # Keep recent items; undated items (cu falsy) survive and get a neutral
+        # freshness from rank.freshness() so key-less sources still surface.
         if cu and cu < cutoff:
             continue
         post = {"score": it.get("score"), "num_comments": it.get("comments"),
                 "created_utc": cu}
         fr = freshness(post, now)
         eng = engagement_score(post)
-        w = platform_weight((it.get("source") or "").split("_")[0] if (it.get("source") or "").startswith("rss") else (it.get("source") or ""))
+        src = it.get("source") or ""
+        w = platform_weight(src.split("_")[0] if src.startswith("rss") else src)
         final = 0.55 * fr + 0.25 * eng + 0.20 * w
         scored.append((final, it))
     scored.sort(key=lambda t: t[0], reverse=True)
-    out: list[dict] = []
-    for final, it in scored[:limit]:
-        out.append({
-            "title": (it.get("title") or "").strip()[:240],
-            "url": it.get("url") or "",
-            "source": it.get("source") or "",
-            "sub": it.get("sub") or "",
-            "score": round(final, 4),
-            "created_utc": it.get("created_utc"),
-            "snippet": (it.get("snippet") or "").strip()[:240],
-        })
-    return out
+
+    # Balanced selection: each category's top `per_cat_floor` first, then fill
+    # the remainder by global rank — deduped by item id.
+    chosen: list[tuple[float, dict]] = []
+    seen: set = set()
+    by_cat: dict[str, list[tuple[float, dict]]] = {}
+    for final, it in scored:
+        by_cat.setdefault(_category_of(it.get("source") or ""), []).append((final, it))
+    for lst in by_cat.values():
+        for final, it in lst[:per_cat_floor]:
+            iid = it.get("id") or it.get("url")
+            if iid in seen:
+                continue
+            seen.add(iid)
+            chosen.append((final, it))
+    for final, it in scored:
+        if len(chosen) >= limit:
+            break
+        iid = it.get("id") or it.get("url")
+        if iid in seen:
+            continue
+        seen.add(iid)
+        chosen.append((final, it))
+    chosen.sort(key=lambda t: t[0], reverse=True)
+    return [_to_feed_item(it, final) for final, it in chosen[:limit]]
 
 
 def _goal_block(a: dict) -> str:
@@ -177,9 +239,17 @@ def _synthesize(a: dict, feed: list[dict], provider: str | None) -> dict | None:
 
 
 def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
-                 collect_fresh: bool = True, n: int = 12,
+                 collect_fresh: bool = True, learn: bool = True, n: int = 40,
                  provider: str | None = None, progress=None) -> dict:
-    """Build (or return the cached) daily digest for the agent. Fail-soft."""
+    """Build (or return the cached) daily digest for the agent. Fail-soft.
+
+    On a real build (first-of-day or `rebuild`) this:
+      1. collects fresh items across News/Articles/Community/Research → corpus,
+      2. runs one learn pass so the agent ingests them into memories + beliefs
+         (the "brain") — set `learn=False` to skip,
+      3. synthesizes a goal-framed briefing,
+      4. caches one row/agent/day.
+    """
     db = init_reply_schema()
     a = get_agent(agent_id)
     if not a:
@@ -192,34 +262,96 @@ def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
         if cached:
             return cached
 
+    def _p(msg: str) -> None:
+        if progress:
+            try:
+                progress(msg)
+            except Exception:
+                pass
+
     collected = False
     by_source: dict = {}
     if collect_fresh:
         try:
             from ..research.collect import collect
-            res = collect(topic=a["topic"], subs=None, sources=NEWS_SOURCES,
+            _p("digest: fetching fresh news, articles, community & research…")
+            res = collect(topic=a["topic"], subs=None, sources=DIGEST_SOURCES,
                           skip_reddit=True, skip_extraction=True, progress=progress)
             by_source = dict(getattr(res, "by_source", {}) or {})
             collected = True
         except Exception as e:
-            if progress:
-                try:
-                    progress(f"digest: news fetch skipped ({e})")
-                except Exception:
-                    pass
+            _p(f"digest: news fetch skipped ({e})")
+
+    # Ingest the freshly-collected corpus into the agent's brain (memories +
+    # beliefs). Fail-soft: a learn miss must never break the digest.
+    learned: dict = {}
+    if learn and collected:
+        try:
+            from .learn import learn_for_agent
+            _p("digest: learning from new items…")
+            learned = learn_for_agent(a["id"], ingest_limit=25, progress=progress) or {}
+        except Exception as e:
+            _p(f"digest: learn skipped ({e})")
 
     feed = _fresh_items(a["id"], limit=n)
+    by_category: dict = {}
+    for it in feed:
+        by_category[it["category"]] = by_category.get(it["category"], 0) + 1
     briefing = _synthesize(a, feed, provider)
     now = int(time.time())
     rec = {
         "id": _digest_id(a["id"], day), "agent_id": a["id"], "day": day,
         "briefing_json": json.dumps(briefing) if briefing else "",
         "feed_json": json.dumps(feed),
-        "sources_json": json.dumps({"by_source": by_source, "item_count": len(feed),
-                                    "llm": bool(briefing), "collected": collected}),
+        "sources_json": json.dumps({
+            "by_source": by_source, "by_category": by_category,
+            "item_count": len(feed), "llm": bool(briefing),
+            "collected": collected,
+            "learned": {"memories": learned.get("memories_added"),
+                        "ingested": learned.get("ingested")} if learned else {},
+        }),
         "created_at": now,
     }
     db["reply_digest"].upsert(rec, pk="id")
     return {"ok": True, "cached": False, "day": day, "briefing": briefing,
             "feed": feed, "sources": json.loads(rec["sources_json"]),
             "generated_at": now}
+
+
+def search_news(agent_id: str | None = None, query: str = "", *, n: int = 20) -> dict:
+    """On-demand news search over free, key-less sources (Google News + DuckDuckGo).
+    Read-only: returns mapped feed items without persisting. Fail-soft."""
+    q = (query or "").strip()
+    if not q:
+        return {"ok": False, "error": "empty query", "query": "", "results": []}
+    rows: list[dict] = []
+    try:
+        from ..sources.gnews import fetch_gnews
+        rows += fetch_gnews(q, limit=n) or []
+    except Exception:
+        pass
+    try:
+        from ..sources.duckduckgo import fetch_duckduckgo
+        rows += fetch_duckduckgo(q, limit=n) or []
+    except Exception:
+        pass
+    seen: set = set()
+    out: list[dict] = []
+    for r in rows:
+        url = (r.get("url") or "").strip()
+        key = url or (r.get("title") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "title": (r.get("title") or "").strip()[:240],
+            "url": url,
+            "source": r.get("source_type") or "",
+            "sub": r.get("sub") or "",
+            "category": _category_of(r.get("source_type") or ""),
+            "score": 0,
+            "created_utc": r.get("created_utc"),
+            "snippet": (r.get("selftext") or "").strip()[:240],
+        })
+    out.sort(key=lambda it: it.get("created_utc") or 0, reverse=True)
+    return {"ok": True, "query": q, "results": out[:n]}

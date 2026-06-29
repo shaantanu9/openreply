@@ -6,51 +6,146 @@
 <script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
 </head>
 <body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
-<div class="flex min-h-screen">
+<div class="flex h-screen overflow-hidden">
   <aside id="side"></aside>
-  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+  <main class="w-full max-w-6xl flex-1 overflow-auto px-8 py-7">
     <div class="mb-5"><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Compose</h1>
       <p class="text-zinc-500 dark:text-zinc-400">Generate content for <b>Acme Notes</b> from its live niche knowledge.</p></div>
 
     <div class="mb-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-      <div class="mb-4 flex gap-2" id="kinds">
-        <button class="kind rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white">Post</button>
-        <button class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Thread</button>
-        <button class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Video script</button>
-        <button class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Article</button>
+      <div class="mb-4 flex flex-wrap gap-2" id="kinds">
+        <button data-kind="post" class="kind rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white">Post</button>
+        <button data-kind="thread" class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Thread</button>
+        <button data-kind="script" class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Video script</button>
+        <button data-kind="article" class="kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">Article</button>
       </div>
       <div class="flex flex-wrap items-end gap-4 text-sm">
-        <label class="text-zinc-500 dark:text-zinc-400">Platform<select class="mt-1 block w-44 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>X / Twitter</option><option>LinkedIn</option><option>Reddit</option></select></label>
-        <label class="flex-1 text-zinc-500 dark:text-zinc-400">Angle (optional)<input placeholder="leave blank to auto-pick the strongest angle" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
-        <button onclick="document.getElementById('out').classList.remove('hidden')" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> Generate</button>
+        <label class="text-zinc-500 dark:text-zinc-400">Platform<select id="platform" class="mt-1 block w-44 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"><option>X / Twitter</option><option>LinkedIn</option><option>Reddit</option></select></label>
+        <label class="flex-1 text-zinc-500 dark:text-zinc-400">Angle (optional)<input id="angle" placeholder="leave blank to auto-pick the strongest angle" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+        <button id="generate" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> Generate</button>
       </div>
-      <p class="mt-3 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit">Suggested from knowledge: <b>"People hate manual tagging of notes"</b> · <b>"Obsidian sync is fiddly for students"</b></p>
+      <p class="mt-3 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit">Suggested from knowledge: <a href="knowledge.html" class="underline"><b>"People hate manual tagging of notes"</b></a> · <a href="knowledge.html" class="underline"><b>"Obsidian sync is fiddly for students"</b></a></p>
     </div>
 
     <div id="out" class="hidden mb-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-      <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Draft · Post · X</b><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">on-brand · never AI slop</span></div>
-      <textarea rows="6" class="mt-3 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">Manual note tagging is where note apps go to die.
-
-Students don't quit because they lack folders — they quit because filing is work.
-
-The fix: capture in plain text, let the app auto-link by topic. Zero upkeep, full recall.
-
-That's the whole bet behind how we built Acme Notes.</textarea>
-      <div class="mt-2 flex gap-2"><button class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save draft</button><a href="queue.html" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule →</a><button class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500">Regenerate</button></div>
+      <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white" id="draftLabel">Draft · Post · X</b><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">on-brand · never AI slop</span></div>
+      <textarea id="draftBody" rows="10" class="mt-3 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></textarea>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button id="saveBtn" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save draft</button>
+        <a id="scheduleLink" href="queue.html" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule →</a>
+        <button id="regenerate" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500">Regenerate</button>
+      </div>
     </div>
 
     <h3 class="mb-3 mt-6 font-semibold text-zinc-900 dark:text-white">Recent drafts</h3>
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"><div class="flex justify-between"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">thread</span><span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">scheduled</span></div><p class="mt-2 text-sm">1/ The 3 reasons students abandon note apps (and the fix)…</p></div>
-      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"><div class="flex justify-between"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">article</span><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">draft</span></div><p class="mt-2 text-sm">Why folders fail for lecture notes — and what replaces them</p></div>
-      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"><div class="flex justify-between"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">script</span><span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-500">draft</span></div><p class="mt-2 text-sm">[Hook] Your notes app is making you do its job…</p></div>
-    </div>
+    <div id="recent" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
   </main>
 </div>
 <script src="app.js"></script>
 <script>
-document.getElementById('kinds').addEventListener('click',e=>{const b=e.target.closest('.kind');if(!b)return;
- [...document.querySelectorAll('.kind')].forEach(k=>k.className='kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold');
- b.className='kind rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white';});
+const draftsKey = 'or-drafts';
+function getDrafts() { try { return JSON.parse(localStorage.getItem(draftsKey)) || []; } catch (e) { return []; } }
+function setDrafts(d) { localStorage.setItem(draftsKey, JSON.stringify(d)); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+const samples = {
+  post: {
+    platform: 'X / Twitter',
+    body: `Manual note tagging is where note apps go to die.\n\nStudents don't quit because they lack folders — they quit because filing is work.\n\nThe fix: capture in plain text, let the app auto-link by topic. Zero upkeep, full recall.\n\nThat's the whole bet behind how we built Acme Notes.`
+  },
+  thread: {
+    platform: 'X / Twitter',
+    body: `1/ The 3 reasons students abandon note apps (and the fix)\n\n2/ Reason 1: Manual tagging feels like homework. If filing takes longer than writing, the system breaks.\n\n3/ Reason 2: Folders look organized but hide notes forever. Search only works if you remember the file name.\n\n4/ Reason 3: Sync and setup friction. The best workflow is the one you actually use.\n\n5/ The fix: capture in plain text, auto-link by topic. That's what we're building with Acme Notes.`
+  },
+  script: {
+    platform: 'YouTube',
+    body: `[HOOK] Your notes app is making you do its job.\n\n[PROBLEM] Every semester, students spend more time organizing notes than studying them. Tags, folders, backlinks… it becomes a second job.\n\n[STORY] I watched a friend rebuild her Notion setup three times before finals. She never opened it again.\n\n[SOLUTION] Acme Notes auto-links your plain-text notes by topic. Capture once, find everything later.\n\n[CTA] Try it free. Link in bio.`
+  },
+  article: {
+    platform: 'LinkedIn',
+    body: `Why folders fail for lecture notes — and what replaces them\n\nFor decades, the default way to organize notes has been folders. Biology > Week 3 > Lecture Slides. It looks clean on day one. By week six, it is a graveyard of half-remembered file names.\n\nThe problem isn't the student. It's the model.\n\nFolders assume you already know where a note belongs before you need it. In practice, a single lecture touches synthesis, a recurring concept from last month, and a method you will not fully understand until the exam. A folder forces you to pick one home. Your future self loses the others.\n\nThe alternative is topic-based auto-linking. Capture notes in plain text, and let the surface surface connections by concept, not by location. The result: zero filing tax, full recall.\n\nAt Acme Notes, that is the bet we are building on. Not more organization. Less.`
+  }
+};
+
+let currentKind = 'post';
+function setKind(kind) {
+  currentKind = kind;
+  document.querySelectorAll('.kind').forEach(k => {
+    const active = k.dataset.kind === kind;
+    k.className = active
+      ? 'kind rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white'
+      : 'kind rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold';
+  });
+}
+function generate() {
+  const s = samples[currentKind];
+  document.getElementById('platform').value = s.platform;
+  document.getElementById('draftBody').value = s.body;
+  document.getElementById('draftLabel').textContent = `Draft · ${currentKind === 'script' ? 'Video script' : currentKind[0].toUpperCase() + currentKind.slice(1)} · ${s.platform}`;
+  document.getElementById('out').classList.remove('hidden');
+  document.getElementById('draftBody').focus();
+}
+function saveDraft(redirectTo) {
+  const body = document.getElementById('draftBody').value.trim();
+  if (!body) { window.orToast('Nothing to save'); return; }
+  const drafts = getDrafts();
+  const params = new URLSearchParams(location.search);
+  const editId = params.get('id');
+  const platform = document.getElementById('platform').value;
+  const angle = document.getElementById('angle').value.trim();
+  const title = body.split('\n')[0].slice(0, 80) || (currentKind === 'article' ? 'Untitled article' : 'Untitled draft');
+  const existing = drafts.find(d => d.id === editId);
+  const payload = { id: editId || uid(), type: currentKind, status: existing?.status || 'draft', content: title, platform, body, angle, date: new Date().toISOString(), meta: existing?.meta || '' };
+  const idx = drafts.findIndex(d => d.id === editId);
+  if (idx >= 0) drafts[idx] = { ...drafts[idx], ...payload };
+  else drafts.unshift(payload);
+  setDrafts(drafts);
+  window.orToast('Draft saved');
+  renderRecent();
+  if (redirectTo) location.href = redirectTo;
+}
+function renderRecent() {
+  const list = getDrafts().slice(0, 6);
+  const typeLabel = { post:'post', thread:'thread', script:'script', article:'article' };
+  const stClass = { scheduled:'bg-emerald-500/15 text-emerald-500', draft:'bg-amber-500/15 text-amber-500', posted:'bg-zinc-500/15 text-zinc-400' };
+  document.getElementById('recent').innerHTML = list.map(d => `
+    <a href="compose.html?id=${d.id}" class="block rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 hover:border-reddit dark:hover:border-reddit">
+      <div class="flex justify-between"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${typeLabel[d.type]||d.type}</span><span class="rounded ${stClass[d.status]||stClass.draft} px-2 py-0.5 text-xs font-bold">${d.status}</span></div>
+      <p class="mt-2 text-sm">${d.content}</p>
+      <div class="mt-2 text-xs text-zinc-400">${d.platform}${d.meta ? ' · ' + d.meta : ''}</div>
+    </a>`).join('');
+}
+
+document.getElementById('kinds').addEventListener('click', e => {
+  const b = e.target.closest('.kind'); if (!b) return;
+  setKind(b.dataset.kind);
+});
+document.getElementById('generate').addEventListener('click', generate);
+document.getElementById('regenerate').addEventListener('click', generate);
+document.getElementById('saveBtn').addEventListener('click', () => saveDraft());
+document.getElementById('scheduleLink').addEventListener('click', e => {
+  e.preventDefault();
+  saveDraft('queue.html');
+});
+
+// Edit / prefill from URL
+(function init() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id');
+  const angle = params.get('angle');
+  if (angle) document.getElementById('angle').value = decodeURIComponent(angle);
+  if (id) {
+    const d = getDrafts().find(x => x.id === id);
+    if (d) {
+      setKind(d.type || 'post');
+      document.getElementById('platform').value = d.platform || 'X / Twitter';
+      document.getElementById('angle').value = d.angle || document.getElementById('angle').value;
+      document.getElementById('draftBody').value = d.body || d.content || '';
+      document.getElementById('draftLabel').textContent = `Draft · ${d.type || 'post'} · ${d.platform || 'X / Twitter'}`;
+      document.getElementById('out').classList.remove('hidden');
+    }
+  }
+  renderRecent();
+})();
 </script>
 </body></html>

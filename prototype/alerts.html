@@ -6,9 +6,9 @@
 <script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
 </head>
 <body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
-<div class="flex min-h-screen">
+<div class="flex h-screen overflow-hidden">
   <aside id="side"></aside>
-  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+  <main class="w-full max-w-6xl flex-1 overflow-auto px-8 py-7">
     <div class="mb-5 flex items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Alert rules</h1>
         <p class="text-zinc-500 dark:text-zinc-400">Get pinged the moment a high-value conversation appears (sub-minute).</p></div>

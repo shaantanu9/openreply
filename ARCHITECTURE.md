@@ -8,7 +8,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  OpenReply.app  (Tauri 2 + vanilla JS)                            │
+│  OpenReply.app  (Tauri 2 + vanilla JS)                          learn the onboarding skill we have and use that in this│
 │  ┌──────────────┐   IPC / asset://   ┌───────────────────────┐  │
 │  │  Frontend    │ ◄────────────────► │  Python Sidecar       │  │
 │  │  (JS/HTML)   │                    │  (PyInstaller bundle) │  │

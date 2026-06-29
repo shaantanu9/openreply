@@ -1746,7 +1746,7 @@ pub async fn test_llm(
     provider: Option<String>,
     model: Option<String>,
 ) -> Result<Value, String> {
-    let mut args: Vec<String> = vec!["research".into(), "test-llm".into(), "--json".into()];
+    let mut args: Vec<String> = vec!["test-llm".into(), "--json".into()];
     if let Some(p) = provider { if !p.is_empty() { args.push("--provider".into()); args.push(p); } }
     if let Some(m) = model    { if !m.is_empty() { args.push("--model".into());    args.push(m); } }
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -1756,7 +1756,7 @@ pub async fn test_llm(
 /// List locally installed Ollama models.
 #[tauri::command]
 pub async fn list_ollama_models(app: AppHandle) -> Result<Value, String> {
-    run_cli(&app, vec!["research", "list-models", "--provider", "ollama", "--json"])
+    run_cli(&app, vec!["list-models", "--provider", "ollama", "--json"])
         .await
         .map_err(err_to_string)
 }
@@ -3723,6 +3723,104 @@ pub async fn agent_ideas(app: AppHandle, suggest: Option<bool>, n: Option<u32>) 
     if suggest.unwrap_or(false) {
         args.push("--suggest".into());
     }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Today's Daily Update digest (goal-framed briefing + fresh feed). Cached one
+/// row per agent per day; `rebuild` forces a fresh build (light fetch + LLM).
+#[tauri::command]
+pub async fn agent_digest(app: AppHandle, rebuild: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "digest".to_string(), "--json".to_string()];
+    if rebuild.unwrap_or(false) {
+        args.push("--rebuild".into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// On-demand news search for the Daily Update feed (free sources).
+#[tauri::command]
+pub async fn agent_digest_search(app: AppHandle, query: String) -> Result<Value, String> {
+    let args = vec![
+        "reply".to_string(),
+        "digest-search".to_string(),
+        query,
+        "--json".to_string(),
+    ];
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// List the active agent's tasks (optionally filtered by status).
+#[tauri::command]
+pub async fn agent_task_list(app: AppHandle, status: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "task-list".to_string(), "--json".to_string()];
+    if let Some(s) = status {
+        if !s.is_empty() {
+            args.push("--status".into());
+            args.push(s);
+        }
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Create a task (from a graph node, a digest item, or manually).
+#[tauri::command]
+pub async fn agent_task_create(
+    app: AppHandle,
+    title: String,
+    kind: Option<String>,
+    target: Option<String>,
+    payload: Option<Value>,
+    source: Option<String>,
+    source_ref: Option<String>,
+    note: Option<String>,
+) -> Result<Value, String> {
+    let mut args = vec![
+        "reply".to_string(), "task-create".to_string(), "--json".to_string(),
+        "--title".to_string(), title,
+    ];
+    if let Some(k) = kind { if !k.is_empty() { args.push("--kind".into()); args.push(k); } }
+    if let Some(t) = target { if !t.is_empty() { args.push("--target".into()); args.push(t); } }
+    if let Some(p) = payload { args.push("--payload".into()); args.push(p.to_string()); }
+    if let Some(s) = source { if !s.is_empty() { args.push("--source".into()); args.push(s); } }
+    if let Some(r) = source_ref { if !r.is_empty() { args.push("--source-ref".into()); args.push(r); } }
+    if let Some(n) = note { if !n.is_empty() { args.push("--note".into()); args.push(n); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Update a task (status / title / note / payload).
+#[tauri::command]
+pub async fn agent_task_update(
+    app: AppHandle,
+    task: String,
+    status: Option<String>,
+    title: Option<String>,
+    note: Option<String>,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    let mut args = vec![
+        "reply".to_string(), "task-update".to_string(), "--json".to_string(),
+        "--task".to_string(), task,
+    ];
+    if let Some(s) = status { if !s.is_empty() { args.push("--status".into()); args.push(s); } }
+    if let Some(t) = title { args.push("--title".into()); args.push(t); }
+    if let Some(n) = note { args.push("--note".into()); args.push(n); }
+    if let Some(p) = payload { args.push("--payload".into()); args.push(p.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Delete a task.
+#[tauri::command]
+pub async fn agent_task_delete(app: AppHandle, task: String) -> Result<Value, String> {
+    let args = vec![
+        "reply".to_string(), "task-delete".to_string(), "--json".to_string(),
+        "--task".to_string(), task,
+    ];
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }

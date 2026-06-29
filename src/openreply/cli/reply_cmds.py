@@ -332,6 +332,104 @@ def analytics_cmd(
     _out(_an.analytics_summary(days=days), json_)
 
 
+@reply_app.command("digest")
+def digest_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    rebuild: bool = typer.Option(False, "--rebuild", help="Force a fresh build"),
+    no_collect: bool = typer.Option(False, "--no-collect", help="Skip the news fetch"),
+    no_learn: bool = typer.Option(False, "--no-learn", help="Skip the corpus→brain learn pass"),
+    n: int = typer.Option(40, "--n", help="Max feed items"),
+    provider: str = typer.Option(None),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Today's Daily Update digest (goal-framed briefing + categorized feed); builds + caches if missing."""
+    from ..reply import digest as _digest
+    _out(_digest.build_digest(agent_id=id, rebuild=rebuild,
+                              collect_fresh=not no_collect, learn=not no_learn,
+                              n=n, provider=provider,
+                              progress=lambda m: typer.echo(m, err=True)), json_)
+
+
+@reply_app.command("digest-search")
+def digest_search_cmd(
+    query: str = typer.Argument(..., help="Search query"),
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    n: int = typer.Option(20, "--n", help="Max results"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """On-demand news search over free sources (Google News + DuckDuckGo)."""
+    from ..reply import digest as _digest
+    _out(_digest.search_news(agent_id=id, query=query, n=n), json_)
+
+
+# ---- Tasks (knowledge → action → sections) --------------------------------
+
+def _parse_payload(s: str | None) -> dict:
+    if not s:
+        return {}
+    import json as _json
+    try:
+        v = _json.loads(s)
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
+
+
+@reply_app.command("task-list")
+def task_list_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    status: str = typer.Option(None, help="Filter: todo|in_progress|done"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """List the agent's tasks (optionally filtered by status)."""
+    from ..reply import tasks as _tasks
+    _out(_tasks.list_tasks(agent_id=id, status=status), json_)
+
+
+@reply_app.command("task-create")
+def task_create_cmd(
+    title: str = typer.Option(..., help="Task title"),
+    kind: str = typer.Option("custom", help="draft_post|draft_article|draft_thread|find_replies|whats_new|custom"),
+    target: str = typer.Option("", help="Section to seed: compose|inbox|queue"),
+    payload: str = typer.Option(None, help="JSON seed for the target section"),
+    source: str = typer.Option("manual", help="graph|digest|manual"),
+    source_ref: str = typer.Option("", "--source-ref", help="Origin id (node/digest day)"),
+    note: str = typer.Option("", help="Optional note"),
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Create a task for the agent."""
+    from ..reply import tasks as _tasks
+    _out(_tasks.create_task(id, title, kind, target=target,
+                            payload=_parse_payload(payload), source=source,
+                            source_ref=source_ref, note=note), json_)
+
+
+@reply_app.command("task-update")
+def task_update_cmd(
+    task: str = typer.Option(..., help="Task id"),
+    status: str = typer.Option(None, help="todo|in_progress|done"),
+    title: str = typer.Option(None, help="New title"),
+    note: str = typer.Option(None, help="New note"),
+    payload: str = typer.Option(None, help="New JSON payload"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Update a task (status / title / note / payload)."""
+    from ..reply import tasks as _tasks
+    pl = _parse_payload(payload) if payload is not None else None
+    _out(_tasks.update_task(task, status=status, title=title, note=note, payload=pl), json_)
+
+
+@reply_app.command("task-delete")
+def task_delete_cmd(
+    task: str = typer.Option(..., help="Task id"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Delete a task."""
+    from ..reply import tasks as _tasks
+    _out(_tasks.delete_task(task), json_)
+
+
 # ---- Subreddit Intelligence -----------------------------------------------
 
 @reply_app.command("account-status")

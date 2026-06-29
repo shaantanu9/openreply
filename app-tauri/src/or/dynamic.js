@@ -153,6 +153,7 @@ export async function renderOverview(view) {
        <a href="#/opportunities" class="${btnP}"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</a>`) +
     freshBanner +
     `<div id="ov-strategy" class="mb-5"></div>` +
+    `<div id="ov-digest" class="mb-5"></div>` +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
        ${kpi("Posts collected", (k && k.posts) || 0, "#/knowledge", "database")}
        ${kpi("Brain nodes", (k && k.graph_nodes) || 0, "#/knowledge", "brain")}
@@ -239,6 +240,176 @@ export async function renderOverview(view) {
     icons();
   }
   loadStrategyStrip();
+
+  // ── Daily Update (digest) — what's new in the world about the agent's topics.
+  // SWR: instant-paint yesterday/today's cached digest from localStorage, then
+  // call agentDigest(false) (the server only does the slow fetch+LLM on the
+  // first open each day; later opens hit the cached row). Refresh now forces it.
+  const DIGEST_KEY = `or.digest.${a.id}`;
+  function digestAgo(sec) {
+    if (!sec) return "";
+    const d = Math.max(0, Math.floor(Date.now() / 1000 - sec));
+    if (d < 3600) return `${Math.floor(d / 60)}m`;
+    if (d < 86400) return `${Math.floor(d / 3600)}h`;
+    return `${Math.floor(d / 86400)}d`;
+  }
+  // Feed categories → label + badge classes (kept in sync with digest.py).
+  const DIGEST_CATS = {
+    news:      { label: "News",      badge: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
+    articles:  { label: "Articles",  badge: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+    community: { label: "Community", badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+    research:  { label: "Research",  badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  };
+  const digestCatOf = (it) => (it && DIGEST_CATS[it.category]) ? it.category : "news";
+  // View state: server data + the active category pill + an optional live search.
+  const D = { data: null, cat: "all" };
+  let digestSearch = null; // { query, results } when in search mode
+
+  function digestShell(inner, { busy = false } = {}) {
+    return `<div class="${card}">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <b class="text-zinc-900 dark:text-white"><i data-lucide="newspaper" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> Daily Update <span class="text-xs font-normal text-zinc-400">what's new for your goal · today</span></b>
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-700 px-2 py-1">
+            <i data-lucide="search" class="h-3.5 w-3.5 text-zinc-400"></i>
+            <input id="ov-digest-search" placeholder="search news…" value="${esc(digestSearch ? digestSearch.query : "")}" class="w-28 bg-transparent text-xs outline-none placeholder:text-zinc-400 transition-all focus:w-44"/>
+          </div>
+          <button id="ov-digest-refresh" class="${btn}" ${busy ? "disabled" : ""}><i data-lucide="${busy ? "loader" : "refresh-cw"}" class="inline-block h-3.5 w-3.5 align-[-2px] ${busy ? "animate-spin" : ""}"></i> ${busy ? "Building…" : "Refresh now"}</button>
+        </div>
+      </div>${inner}</div>`;
+  }
+
+  // "+ Task" → seed a "what's new today" Compose task from a digest item.
+  async function digestTask({ title, context, url }) {
+    try {
+      const r = await api.taskCreate({
+        title: "What’s new: " + (title || "").slice(0, 80),
+        kind: "whats_new", target: "compose", source: "digest",
+        payload: { compose_kind: "post", angle: title || "", context: context || "", url: url || "" },
+      });
+      if (r?.error) { toast(r.error); return; }
+      toast("Added to Tasks");
+    } catch (e) { toast("Couldn’t add task: " + e); }
+  }
+
+  function digestPaint({ building = false } = {}) {
+    const host = document.getElementById("ov-digest");
+    if (!host) return;
+    const d = D.data;
+    const briefing = d && d.briefing;
+    const allFeed = (d && d.feed) || [];
+    if (building && !digestSearch) {
+      host.innerHTML = digestShell(
+        `<div class="flex items-center gap-2 text-sm text-zinc-500"><i data-lucide="loader" class="inline-block h-4 w-4 animate-spin"></i> Building today's update — fetching news, articles, community &amp; research, then learning…</div>`,
+        { busy: true });
+      wireDigest(); icons(); return;
+    }
+    if (!digestSearch && !briefing && !allFeed.length) {
+      host.innerHTML = digestShell(
+        `<div class="text-sm text-zinc-400">Nothing new yet — hit <b>Refresh now</b>, search news above, or <a href="#/knowledge" class="text-reddit">Refresh + learn</a>.</div>`);
+      wireDigest(); icons(); return;
+    }
+
+    // ── Briefing column ──
+    const sections = (briefing && briefing.sections) || [];
+    const tk = "shrink-0 rounded-full border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 hover:border-reddit/50 hover:text-reddit";
+    const link = (l) => `<a data-ov-url="${esc(l.url || "")}" href="#" class="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-500 hover:border-reddit/50 hover:text-reddit"><span class="font-semibold uppercase text-zinc-400">${esc((l.source || "").split("_")[0] || "src")}</span> <span class="truncate">${esc((l.title || "").slice(0, 60) || "open")}</span></a>`;
+    const briefingHtml = briefing
+      ? `${briefing.summary ? `<p class="mb-3 text-sm text-zinc-600 dark:text-zinc-300">${esc(briefing.summary)}</p>` : ""}
+         <div class="space-y-2.5">${sections.slice(0, 4).map((s, si) => `
+           <div class="rounded-lg border border-zinc-100 dark:border-zinc-800 p-3">
+             <div class="flex items-start justify-between gap-2">
+               <div class="font-semibold text-zinc-900 dark:text-white">${esc(s.headline || "")}</div>
+               <button data-ov-theme="${si}" class="${tk}">+ Task</button></div>
+             ${s.why ? `<div class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">${esc(s.why)}</div>` : ""}
+             ${(s.links || []).length ? `<div class="mt-2 flex flex-wrap gap-1.5">${(s.links || []).slice(0, 6).map(link).join("")}</div>` : ""}
+           </div>`).join("")}</div>`
+      : `<p class="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400"><i data-lucide="info" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Add an AI provider in <a href="#/settings" class="underline">Settings</a> for the daily briefing.</p>`;
+
+    // ── Feed column (category pills or search header + scroll list) ──
+    const inSearch = !!digestSearch;
+    const baseFeed = inSearch ? (digestSearch.results || []) : allFeed;
+    const counts = { all: baseFeed.length };
+    Object.keys(DIGEST_CATS).forEach((k) => counts[k] = baseFeed.filter((f) => digestCatOf(f) === k).length);
+    const list = (inSearch || D.cat === "all") ? baseFeed : baseFeed.filter((f) => digestCatOf(f) === D.cat);
+    const pill = (key, label) => { const on = !inSearch && D.cat === key; return `<button data-cat="${key}" class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${on ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-reddit/50 hover:text-reddit"}">${esc(label)} <span class="${on ? "text-white/80" : "text-zinc-400"}">${counts[key] || 0}</span></button>`; };
+    const feedHeader = inSearch
+      ? `<div class="mb-2 flex items-center justify-between"><div class="truncate text-xs font-bold uppercase tracking-wider text-zinc-400">Search: “${esc(digestSearch.query)}” · ${baseFeed.length}</div><button id="ov-digest-clear" class="shrink-0 text-[11px] font-semibold text-reddit">Clear ✕</button></div>`
+      : `<div class="mb-2 flex flex-wrap items-center gap-1.5">${[pill("all", "All")].concat(Object.keys(DIGEST_CATS).map((k) => pill(k, DIGEST_CATS[k].label))).join("")}</div>`;
+    const feedRows = list.length
+      ? `<div class="feed-scroll max-h-[420px] space-y-1.5 overflow-y-auto pr-1">${list.map((it, fi) => `
+          <div class="group flex items-start gap-2 rounded-lg border border-zinc-100 dark:border-zinc-800 px-3 py-2 text-sm hover:border-reddit/40">
+            <span class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold uppercase ${DIGEST_CATS[digestCatOf(it)].badge}">${esc(DIGEST_CATS[digestCatOf(it)].label)}</span>
+            <div class="min-w-0 flex-1">
+              <a data-ov-url="${esc(it.url || "")}" href="#" class="block truncate font-medium text-zinc-700 dark:text-zinc-200 hover:text-reddit">${esc(it.title || "(untitled)")}</a>
+              <div class="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-400"><span class="font-semibold uppercase">${esc((it.source || "").split("_")[0] || "src")}</span>${it.created_utc ? `<span>·</span><span>${digestAgo(it.created_utc)}</span>` : ""}</div>
+            </div>
+            <button data-ov-feed="${fi}" class="${tk} opacity-0 group-hover:opacity-100">+ Task</button>
+          </div>`).join("")}</div>`
+      : `<div class="grid h-[160px] place-items-center text-sm text-zinc-400">Nothing in this category today.</div>`;
+
+    const grid = `<div class="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <div><div class="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-400">Briefing · your goal lens</div>${briefingHtml}</div>
+      <div class="lg:border-l lg:border-zinc-100 lg:pl-5 dark:lg:border-zinc-800">${feedHeader}${feedRows}</div>
+    </div>`;
+    host.innerHTML = digestShell(grid);
+
+    host.querySelectorAll("[data-ov-url]").forEach((el) => el.onclick = (e) => {
+      e.preventDefault();
+      const u = el.getAttribute("data-ov-url");
+      if (u) api.openUrl(u).catch(() => toast("Couldn't open link"));
+    });
+    host.querySelectorAll("[data-cat]").forEach((el) => el.onclick = () => { D.cat = el.getAttribute("data-cat"); digestPaint(); });
+    const clr = document.getElementById("ov-digest-clear"); if (clr) clr.onclick = () => { digestSearch = null; digestPaint(); };
+    host.querySelectorAll("[data-ov-theme]").forEach((el) => el.onclick = () => {
+      const s = sections[+el.getAttribute("data-ov-theme")] || {};
+      digestTask({ title: s.headline, context: s.why });
+    });
+    host.querySelectorAll("[data-ov-feed]").forEach((el) => el.onclick = () => {
+      const it = list[+el.getAttribute("data-ov-feed")] || {};
+      digestTask({ title: it.title, context: it.snippet, url: it.url });
+    });
+    wireDigest(); icons();
+  }
+
+  // Re-entry used by SWR + refresh: store new server data (if any), then paint.
+  function renderDigest(d, opts) { if (d !== undefined) D.data = d; digestPaint(opts || {}); }
+
+  function wireDigest() {
+    const s = document.getElementById("ov-digest-search");
+    if (s) s.onkeydown = async (e) => {
+      if (e.key !== "Enter") return;
+      const q = (e.target.value || "").trim(); if (!q) return;
+      toast("Searching news for “" + q + "”…");
+      try { const r = await api.agentDigestSearch(q); digestSearch = { query: q, results: (r && r.results) || [] }; digestPaint(); }
+      catch (err) { toast("Search failed: " + err); }
+    };
+    const b = document.getElementById("ov-digest-refresh");
+    if (b) b.onclick = async () => {
+      digestSearch = null; digestPaint({ building: true });
+      try {
+        const d = await api.agentDigest(true);
+        if (d && (d.briefing || (d.feed || []).length)) localStorage.setItem(DIGEST_KEY, JSON.stringify(d));
+        renderDigest(d);
+      } catch (err) { toast("Update failed: " + err); renderDigest(loadCachedDigest()); }
+    };
+  }
+  function loadCachedDigest() {
+    try { return JSON.parse(localStorage.getItem(DIGEST_KEY) || "null"); } catch (e) { return null; }
+  }
+  (async () => {
+    const cached = loadCachedDigest();
+    renderDigest(cached, { building: !cached });
+    try {
+      const d = await api.agentDigest(false);
+      if (d && (d.briefing || (d.feed || []).length)) {
+        localStorage.setItem(DIGEST_KEY, JSON.stringify(d));
+        renderDigest(d);
+      } else if (!cached) {
+        renderDigest(d || null);
+      }
+    } catch (e) { if (!cached) renderDigest(null); }
+  })();
 
   // Live counts + snippets (best-effort; never block the page).
   (async () => {
@@ -652,13 +823,13 @@ export async function renderCompose(view) {
        </div>
        <div class="mt-3 grid gap-4 sm:grid-cols-2">
          <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
-           <label class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-white"><input type="checkbox" id="ap-content"> Daily content</label>
+           <label class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-white"><input type="checkbox" id="ap-content" class="accent-reddit"> Daily content</label>
            <p class="mt-1 text-xs text-zinc-500">Pick the kinds to auto-draft each day.</p>
            <div class="mt-2 flex flex-wrap gap-1.5" id="ap-kinds"></div>
            <label class="mt-2 block text-xs text-zinc-500">Per day <input type="number" id="ap-ccount" min="1" max="5" value="1" class="ml-1 w-14 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1"></label>
          </div>
          <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
-           <label class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-white"><input type="checkbox" id="ap-opp"> Daily opportunity reply</label>
+           <label class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-white"><input type="checkbox" id="ap-opp" class="accent-reddit"> Daily opportunity reply</label>
            <p class="mt-1 text-xs text-zinc-500">Finds fresh threads and drafts the top reply.</p>
            <label class="mt-2 block text-xs text-zinc-500">Per day <input type="number" id="ap-ocount" min="1" max="5" value="1" class="ml-1 w-14 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1"></label>
          </div>
@@ -707,6 +878,22 @@ export async function renderCompose(view) {
       }
     } catch (e) {}
   }
+  // Check for a Compose task seeded from the Tasks board / Brain / digest.
+  const _tkCtx = sessionStorage.getItem("or-task-compose");
+  if (_tkCtx) {
+    sessionStorage.removeItem("or-task-compose");
+    try {
+      const d = JSON.parse(_tkCtx);
+      const want = (d.compose_kind || "post").toLowerCase();
+      const tkBtn = [...document.querySelectorAll("#cm-kinds [data-kind]")].find(b => b.getAttribute("data-kind") === want);
+      if (tkBtn) {
+        [...document.querySelectorAll("#cm-kinds [data-kind]")].forEach(x => x.className = _pill(x === tkBtn));
+        _applyKind(want);
+      }
+      const ang = document.getElementById("cm-angle");
+      if (ang) ang.value = [d.angle, d.context].filter(x => x && x.trim()).join(" — ").slice(0, 240) || d.title || "";
+    } catch (e) {}
+  }
   document.getElementById("cm-fmode").onclick = (e) => {
     const b = e.target.closest("[data-fmode]"); if (!b) return;
     fmode = b.getAttribute("data-fmode");
@@ -721,7 +908,7 @@ export async function renderCompose(view) {
     const status = document.getElementById("cm-status");
     const out = document.getElementById("cm-out");
 
-    // Resolve the UI pseudo-kind + gather follow-up / repurpose context.
+    // Resolve the UI pseudo-kind + gather follow-up / repurpose / seeded context.
     let realKind = kind, ctx = {};
     if (kind === "followup") {
       if (fmode === "reply") {
@@ -736,6 +923,8 @@ export async function renderCompose(view) {
     } else if (kind === "repurpose") {
       ctx.contextText = document.getElementById("cm-repurpose-text").value.trim();
       if (!ctx.contextText) { status.textContent = "Paste the source post you want to rewrite first."; return; }
+    } else if (seededContext) {
+      ctx.contextText = seededContext;
     }
 
     status.textContent = "Generating…";
@@ -750,7 +939,7 @@ export async function renderCompose(view) {
     } catch (e) { status.textContent = "Failed: " + e; out.innerHTML = ""; }
   };
 
-  // One delegated handler for Save / Schedule on every card (output + recent).
+  // One delegated handler for Save / Schedule / Article / Copy on every card.
   view.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-cm-act]"); if (!b) return;
     const wrap = b.closest("[data-cid]"); if (!wrap) return;
@@ -760,6 +949,16 @@ export async function renderCompose(view) {
     const act = b.getAttribute("data-cm-act");
     try {
       let r;
+      if (act === "copy") {
+        try { await navigator.clipboard.writeText(ta ? ta.value : ""); toast("Copied"); } catch (e) { toast("Copy failed"); }
+        return;
+      }
+      if (act === "article") {
+        const angle = document.getElementById("cm-angle")?.value.trim() || "";
+        const body = ta ? ta.value.trim() : "";
+        location.hash = `#/compose?kind=article&angle=${encodeURIComponent(angle || "Expand into article")}&context=${encodeURIComponent(body.slice(0, 800))}`;
+        return;
+      }
       if (act === "publish-x") {
         if (ta) { try { await api.contentUpdate(id, { body: ta.value }); } catch (e) {} }
         if (msg) msg.textContent = "Posting to X…";
@@ -832,20 +1031,58 @@ export async function renderCompose(view) {
     icons();
   }
 
+  // URL-driven edit / angle / kind / context prefill (e.g. Queue → Compose, Chat/Brain suggestions).
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const angleParam = params.get('angle');
+  const contextParam = params.get('context');
+  if (angleParam) {
+    const angEl = document.getElementById('cm-angle');
+    if (angEl) angEl.value = decodeURIComponent(angleParam);
+  }
+  const seededContext = contextParam ? decodeURIComponent(contextParam) : "";
+  const kindParam = params.get('kind');
+  if (kindParam && KINDS.some(([v]) => v === kindParam)) {
+    kind = kindParam;
+    [...document.querySelectorAll("#cm-kinds [data-kind]")].forEach(x => x.className = _pill(x.getAttribute("data-kind") === kind));
+    _applyKind(kind);
+  }
+  const editId = params.get('id');
+  if (editId) {
+    try {
+      const r = await api.contentList(null, null, 200);
+      const c = (r?.content || []).find(x => String(x.id) === editId);
+      if (c) {
+        kind = c.kind || 'post';
+        [...document.querySelectorAll("#cm-kinds [data-kind]")].forEach(x => x.className = _pill(x.getAttribute("data-kind") === kind));
+        _applyKind(kind);
+        const pfEl = document.getElementById('cm-pf');
+        if (pfEl) pfEl.value = c.platform || (platforms[0]) || 'reddit_free';
+        const out = document.getElementById('cm-out');
+        if (out) out.innerHTML = contentCard(c, true);
+      }
+    } catch (e) {}
+  }
+
   loadRecent();
 }
 
 function contentCard(c, big) {
   const statusColor = c.status === "scheduled" ? "bg-emerald-500/15 text-emerald-500"
     : c.status === "posted" ? "bg-sky-500/15 text-sky-500" : "bg-amber-500/15 text-amber-500";
-  return `<div class="${card}" data-cid="${esc(c.id)}">
-    <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc((c.kind || "").replace("_", " "))}</span>
+  const kind = (c.kind || "").replace("_", " ");
+  const isArticle = /article/i.test(kind);
+  const angle = (c.angle || c.title || "").slice(0, 120);
+  return `<div class="${card}" data-cid="${esc(c.id)}" data-kind="${esc(c.kind || "")}">
+    <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc(kind)}</span>
       <span class="text-xs text-zinc-500">${esc(c.platform || "")}</span>
       <span class="rounded ${statusColor} px-2 py-0.5 text-xs font-bold">${esc(c.status || "draft")}</span></div>
     <textarea rows="${big ? 8 : 4}" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(c.body || "")}</textarea>
-    <div class="mt-2 flex items-center gap-2">
+    <div class="mt-2 flex flex-wrap items-center gap-2">
       <button data-cm-act="save" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save draft</button>
       <button data-cm-act="schedule" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule</button>
+      ${!isArticle && big ? `<button data-cm-act="article" class="rounded-full border border-violet-200 dark:border-violet-800 px-3 py-1.5 text-xs font-semibold text-violet-500">Generate article</button>` : ""}
+      <button data-cm-act="copy" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Copy</button>
+      <a href="#/queue" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Open in Queue</a>
       ${/^(x|twitter)$/i.test(c.platform || "") ? `<button data-cm-act="publish-x" class="rounded-full border border-zinc-900 dark:border-white px-3 py-1.5 text-xs font-semibold text-zinc-900 dark:text-white">𝕏 Publish</button>` : ""}
       <span data-cm-msg class="text-xs text-zinc-400"></span>
     </div></div>`;
@@ -1539,29 +1776,83 @@ function avatarColor(name) {
   return palette[Math.abs(h) % palette.length];
 }
 
-// Profile — name + avatar (closes the onboarding "or-user-name collected but unused"
-// gap). Stored locally.
-async function buildProfileCard(el) {
+// Profile — basic workspace identity. Stored locally.
+export async function buildProfileCard(el) {
   const name = localStorage.getItem("or-user-name") || "";
+  const email = localStorage.getItem("or-user-email") || "";
+  const company = localStorage.getItem("or-user-company") || "";
+  const location = localStorage.getItem("or-user-location") || "";
+  const website = localStorage.getItem("or-user-website") || "";
+  const bio = localStorage.getItem("or-user-bio") || "";
+
   const paint = (n) => {
     const av = el.querySelector("#st-av");
     if (av) { av.textContent = avatarInitials(n || "You"); av.style.background = avatarColor(n || "You"); }
   };
-  el.innerHTML = `<b class="text-zinc-900 dark:text-white">Profile</b>
-    <div class="mt-3 flex items-center gap-3">
-      <span id="st-av" class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-extrabold text-white" style="background:${avatarColor(name || "You")}">${esc(avatarInitials(name || "You"))}</span>
-      <div class="min-w-0 flex-1">
-        <input id="st-name" value="${esc(name)}" placeholder="Your name" class="block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">
-        ${email ? `<p class="mt-1 truncate text-xs text-zinc-400">${esc(email)}</p>` : ""}</div></div>
-    <div class="mt-3 flex gap-2"><button id="st-name-save" class="${btnP}">Save</button><span id="st-name-msg" class="self-center text-xs text-zinc-400"></span></div>`;
-  const input = el.querySelector("#st-name");
-  input.oninput = () => paint(input.value);
-  el.querySelector("#st-name-save").onclick = () => {
-    const v = input.value.trim();
-    try { localStorage.setItem("or-user-name", v); } catch (e) {}
-    el.querySelector("#st-name-msg").textContent = "Saved ✓";
+
+  const field = (id, label, value, placeholder, type = "text") => `
+    <label class="block">
+      <span class="text-xs font-bold uppercase tracking-wide text-zinc-400">${label}</span>
+      <input id="${id}" type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}"
+        class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">
+    </label>`;
+
+  const area = (id, label, value, placeholder) => `
+    <label class="block">
+      <span class="text-xs font-bold uppercase tracking-wide text-zinc-400">${label}</span>
+      <textarea id="${id}" rows="3" placeholder="${esc(placeholder)}"
+        class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm resize-y">${esc(value)}</textarea>
+    </label>`;
+
+  el.innerHTML = `
+    <div class="flex items-center justify-between gap-3">
+      <b class="text-zinc-900 dark:text-white">Profile</b>
+      <span class="rounded bg-zinc-500/15 px-2 py-0.5 text-xs font-bold text-zinc-400">local</span>
+    </div>
+    <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Your workspace identity. Stored on this device only.</p>
+    <div class="mt-4 flex items-start gap-4">
+      <span id="st-av" class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-extrabold text-white"
+        style="background:${avatarColor(name || "You")}">${esc(avatarInitials(name || "You"))}</span>
+      <div class="min-w-0 flex-1 space-y-3">
+        ${field("st-name", "Name", name, "Your name")}
+        ${field("st-email", "Email", email, "you@example.com", "email")}
+        ${field("st-company", "Company / role", company, "Acme Inc · Founder")}
+        <div class="grid gap-3 sm:grid-cols-2">
+          ${field("st-location", "Location", location, "San Francisco, CA")}
+          ${field("st-website", "Website", website, "https://you.example.com", "url")}
+        </div>
+        ${area("st-bio", "Bio", bio, "A short line about you")}
+      </div>
+    </div>
+    <div class="mt-4 flex flex-wrap items-center gap-3">
+      <button id="st-profile-save" class="${btnP}">Save profile</button>
+      <span id="st-profile-msg" class="text-xs text-zinc-400"></span>
+    </div>`;
+
+  const nameInput = el.querySelector("#st-name");
+  nameInput.oninput = () => paint(nameInput.value);
+
+  el.querySelector("#st-profile-save").onclick = () => {
+    const vName = nameInput.value.trim();
+    const vEmail = (el.querySelector("#st-email")?.value || "").trim();
+    const vCompany = (el.querySelector("#st-company")?.value || "").trim();
+    const vLocation = (el.querySelector("#st-location")?.value || "").trim();
+    const vWebsite = (el.querySelector("#st-website")?.value || "").trim();
+    const vBio = (el.querySelector("#st-bio")?.value || "").trim();
+    try {
+      localStorage.setItem("or-user-name", vName);
+      localStorage.setItem("or-user-email", vEmail);
+      localStorage.setItem("or-user-company", vCompany);
+      localStorage.setItem("or-user-location", vLocation);
+      localStorage.setItem("or-user-website", vWebsite);
+      localStorage.setItem("or-user-bio", vBio);
+    } catch (e) {}
+    el.querySelector("#st-profile-msg").textContent = "Saved ✓";
     // Reflect in the sidebar footer immediately if present.
-    const f = document.querySelector("#side [data-user-name]"); if (f) f.textContent = v || "You";
+    const f = document.querySelector("#side [data-user-name]");
+    if (f) f.textContent = vName || "You";
+    // Broadcast so the account popover can refresh if open.
+    try { window.dispatchEvent(new CustomEvent("or-profile-changed")); } catch (e) {}
   };
 }
 
@@ -2021,6 +2312,19 @@ export async function renderInbox(view) {
   // auto-post; the rest surface a "Due now" badge for manual posting). If
   // anything posted, refresh so it moves to the Posted tab.
   api.replyPostDue?.().then((r) => { if (r && r.posted && r.posted.length) load(true); }).catch(() => {});
+  // Seed a search query from a Tasks-board "find replies" task.
+  const _tkInbox = sessionStorage.getItem("or-task-inbox");
+  if (_tkInbox) {
+    sessionStorage.removeItem("or-task-inbox");
+    try {
+      const d = JSON.parse(_tkInbox);
+      if (d.query) {
+        S.query = String(d.query).trim();
+        const qEl = view.querySelector("#ib-q");
+        if (qEl) qEl.value = S.query;
+      }
+    } catch (e) {}
+  }
   load(true);
 }
 
@@ -2273,11 +2577,14 @@ export async function renderQueue(view) {
     const list = tab === "all" ? all : all.filter(c => (c.status || "draft") === tab);
     if (!list.length) { wrap().innerHTML = `<div class="${card} text-zinc-500">No ${tab} content.</div>`; return; }
     const rows = list.map((c) => {
+      const rawId = String(c.id);
       const id = esc(c.id);
       const st = c.status || "draft";
       const stCls = QUEUE_STATUS[st] || QUEUE_STATUS.draft;
       const when = c.scheduled_at ? ` · ${new Date(c.scheduled_at * 1000).toLocaleString()}` : "";
       const bd = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
+      const isArticle = /article/i.test(c.kind || "");
+      const angleLink = c.angle || c.source_ref || "";
       return `<div class="${card}" data-row="${id}">
         <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc((c.kind || "").replace(/_/g, " "))}</span>
           ${c.platform ? `<span class="text-xs text-zinc-500">${esc(c.platform)}</span>` : ""}
@@ -2285,6 +2592,9 @@ export async function renderQueue(view) {
         <div class="mt-1.5 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-200">${esc((c.body || "").slice(0, 300))}${(c.body || "").length > 300 ? "…" : ""}</div>
         <div class="mt-3 flex flex-wrap gap-2">
           <button data-act="copy" data-id="${id}" class="${bd}"><i data-lucide="copy" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Copy</button>
+          <a href="#/compose?id=${encodeURIComponent(rawId)}" class="${bd} text-reddit hover:border-reddit">Open in Compose</a>
+          ${!isArticle ? `<a href="#/compose?kind=article&id=${encodeURIComponent(rawId)}" class="${bd} text-violet-500 hover:border-violet-500">Generate article</a>` : ""}
+          ${angleLink ? `<a href="#/brain/angle/${encodeURIComponent(angleLink)}" class="${bd} text-sky-500 hover:border-sky-500">View angle in Brain</a>` : ""}
           <button data-act="edit" data-id="${id}" class="${bd}">Edit</button>
           ${st === "scheduled"
             ? `<button data-act="unschedule" data-id="${id}" class="${bd}">↺ Unschedule</button>`
@@ -2353,6 +2663,234 @@ export async function renderQueue(view) {
   load();
 }
 
+// ── Chat helpers (used by full Chat page + Brain side-panel) ────────────────
+function chatCardHTML() {
+  return `<div class="chat-card-host ${card} flex flex-col h-full min-h-0 opacity-0 animate-fade-in">
+     <div id="ch-msgs" class="flex-1 overflow-y-auto space-y-4 p-1"></div>
+     <div id="ch-typing" class="hidden px-1 py-2">
+       <div class="flex items-center gap-2 text-xs text-zinc-400">
+         <span class="h-2 w-2 animate-pulse rounded-full bg-reddit"></span>
+         <span class="h-2 w-2 animate-pulse rounded-full bg-reddit" style="animation-delay:0.15s"></span>
+         <span class="h-2 w-2 animate-pulse rounded-full bg-reddit" style="animation-delay:0.3s"></span>
+         <span>Agent is thinking…</span>
+       </div>
+     </div>
+     <div class="border-t border-zinc-200 dark:border-zinc-800 pt-4">
+       <form id="ch-form" class="flex gap-2">
+         <input id="ch-input" autocomplete="off" placeholder="Ask about an angle, competitor, or draft idea…" class="${inputCls} flex-1 rounded-full transition-all focus:ring-2 focus:ring-reddit/30">
+         <button type="submit" class="${btnP} transition-transform active:scale-95"><i data-lucide="send" class="inline-block h-4 w-4 align-[-2px]"></i></button>
+       </form>
+       <div class="mt-2 flex flex-wrap gap-2">
+         <button type="button" class="ch-quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 transition hover:border-reddit hover:text-reddit hover:-translate-y-0.5">Top angle today?</button>
+         <button type="button" class="ch-quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 transition hover:border-reddit hover:text-reddit hover:-translate-y-0.5">Draft a reply</button>
+         <button type="button" class="ch-quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 transition hover:border-reddit hover:text-reddit hover:-translate-y-0.5">What are competitors missing?</button>
+         <button type="button" class="ch-quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 transition hover:border-reddit hover:text-reddit hover:-translate-y-0.5">What’s new today?</button>
+       </div>
+     </div>
+   </div>`;
+}
+function chatAngleActions(angle, context) {
+  const a = encodeURIComponent(angle || "");
+  const c = encodeURIComponent(context || "");
+  return `<div class="mt-2 flex flex-wrap gap-1.5 opacity-0 animate-fade-in" style="animation-delay:80ms">
+    <a href="#/compose?kind=post&angle=${a}&context=${c}" class="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">Draft post</a>
+    <a href="#/compose?kind=article&angle=${a}&context=${c}" class="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-400">Draft article</a>
+    <a href="#/brain/angle/${a}" class="rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">View in Brain</a>
+    <a href="#/opportunities" class="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600 hover:underline dark:text-amber-400">Find replies</a>
+  </div>`;
+}
+// Lightweight markdown-ish formatting for chat replies.
+function formatChatReply(text) {
+  if (!text) return "";
+  let h = esc(text);
+  // Bold / italic
+  h = h.replace(/\*\*(.+?)\*\*/g, "<b class=\"font-semibold\">$1</b>");
+  h = h.replace(/\*(.+?)\*/g, "<i>$1</i>");
+  // Code inline
+  h = h.replace(/`([^`]+)`/g, "<code class=\"rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800\">$1</code>");
+  // URLs
+  h = h.replace(/(https?:\/\/[^\s<>"{}|\^`\[\]]+)/g, '<a href="$1" target="_blank" rel="noopener" class="text-reddit underline break-all">$1</a>');
+  // Line breaks
+  h = h.replace(/\n/g, "<br>");
+  return h;
+}
+// Grounded chat answer. Uses real agent data when inside Tauri; falls back to
+// helpful canned answers in the browser preview.
+async function chatAnswer(text, agent) {
+  const t = text.toLowerCase();
+  const fallback = (fn) => { try { return fn(); } catch (e) { return null; } };
+
+  // ── Top angle today ──
+  if (t.includes("top angle") || t.includes("angle today") || t.includes("strongest angle")) {
+    if (api.isTauri()) {
+      try {
+        const r = await api.agentIdeas(false, 5);
+        const ideas = (r && r.ideas) || [];
+        if (ideas.length) {
+          const top = ideas[0];
+          const angle = top.title || top.idea || top.angle || "";
+          return `The strongest angle right now is **“${angle}.”** ${top.why || top.context || "It has good momentum in your niche."}${chatAngleActions(angle, top.why || top.context)}`;
+        }
+      } catch (e) {}
+    }
+    const angle = "People hate manual tagging of notes";
+    return `The strongest angle right now is **“${angle}.”** It keeps surfacing in your niche with high intent.${chatAngleActions(angle, "High-intent pain point about note-taking")}`;
+  }
+
+  // ── What's new / digest ──
+  if (t.includes("what's new") || t.includes("whats new") || t.includes("daily update") || t.includes("news today")) {
+    if (api.isTauri()) {
+      try {
+        const d = await api.agentDigest(false);
+        if (d && (d.briefing || (d.feed || []).length)) {
+          const b = d.briefing || {};
+          const themes = (b.sections || []).slice(0, 3).map((s) => `• **${s.headline}**${s.why ? " — " + s.why : ""}`).join("\n");
+          const feed = (d.feed || []).slice(0, 4).map((it) => `• [${it.title || "link"}](${it.url || ""}) _${it.source || ""}_`).join("\n");
+          return `**Daily update for ${esc(agent?.name || "your agent")}**\n\n${b.summary || "Here’s what’s moving in your niche today:"}\n\n${themes}\n\n**Top sources**\n${feed || "No links yet."}`;
+        }
+      } catch (e) {}
+    }
+    return `I’d check today’s news, community posts, and research for your agent — but I need to run inside the app to fetch the live digest. In the app, ask **“What’s new today?”** or hit **Refresh now** on Overview.`;
+  }
+
+  // ── Competitor gap ──
+  if (t.includes("competitor") || t.includes("competitors") || t.includes("missing") || t.includes("gap")) {
+    if (api.isTauri()) {
+      try {
+        const r = await api.agentCorpus(null, "competitor friction missing gap", 5);
+        const rows = (r && r.rows) || [];
+        if (rows.length) {
+          const snippets = rows.slice(0, 3).map((row) => `• ${(row.text || row.snippet || "").slice(0, 140)}…`).join("\n");
+          return `**Competitor gaps I’m seeing**\n\n${snippets}\n\nThe pattern: users love power but hate setup friction. Own the angle **“capture now, organize automatically.”**${chatAngleActions("capture now, organize automatically", "Competitor gap: setup friction vs automatic organization")}`;
+        }
+      } catch (e) {}
+    }
+    const angle = "Capture now, organize automatically";
+    return `Competitors like Notion and Obsidian are praised for power but criticized for setup friction. The gap to own: **“${angle}.”**${chatAngleActions(angle, "Competitor gap: setup friction vs automatic organization")}`;
+  }
+
+  // ── Specific topic / angle / concept analysis ──
+  const aboutMatch = text.match(/(?:tell me about|what do we know about|analyze|explain)\s+["“"]?([^"""?]+?)["""]?$/i);
+  if (aboutMatch) {
+    const topic = aboutMatch[1].trim();
+    if (api.isTauri() && topic.length > 2) {
+      try {
+        const r = await api.agentCorpus(null, topic, 6);
+        const rows = (r && r.rows) || [];
+        if (rows.length) {
+          const snippets = rows.slice(0, 4).map((row) => `• ${(row.text || row.snippet || "").slice(0, 160)}…`).join("\n");
+          return `**What I know about “${topic}”**\n\n${snippets}\n\nWant me to turn this into a post, article, or reply?${chatAngleActions(topic, rows.map((x) => x.text || x.snippet || "").join(" ").slice(0, 200))}`;
+        }
+      } catch (e) {}
+    }
+    return `I don’t have corpus data for **“${topic}”** yet. Try running **Learn** in the app, then ask again. In the meantime, you can draft from this angle manually.${chatAngleActions(topic, "User-asked topic")}`;
+  }
+
+  // ── Drafting intents ──
+  if (t.includes("draft") && (t.includes("reply") || t.includes("reddit"))) {
+    return `For Reddit, value-first replies work best. I can draft one from any opportunity in **[Opportunities](#/opportunities)**, or write a standalone post if you give me an angle.`;
+  }
+  if (t.includes("draft") || t.includes("write") || t.includes("post") || t.includes("article")) {
+    return `I can draft a post, thread, article, or short script. Pick a type in **[Compose](#/compose)** or tell me the platform and angle here.`;
+  }
+
+  // ── Default helper ──
+  return `Good question. I can help with:\n\n• **Top angle today?** — surfaces the strongest current angle\n• **What’s new today?** — daily digest for your agent\n• **Tell me about X** — analyzes what your agent knows\n• **What are competitors missing?** — finds positioning gaps\n• **Draft a reply/post/article** — routes you to the composer`;
+}
+
+// Mount a chat card inside `host`. Returns a controller for sending / seeding.
+function mountChatCard(host, agentName, seedAngle, seedContext) {
+  host.innerHTML = chatCardHTML();
+  const msgs = host.querySelector("#ch-msgs");
+  const typing = host.querySelector("#ch-typing");
+  const input = host.querySelector("#ch-input");
+  const form = host.querySelector("#ch-form");
+  let busy = false;
+  let mounted = true;
+
+  function bubble(who, text, { delay = 0 } = {}) {
+    const isUser = who === "user";
+    const div = document.createElement("div");
+    div.className = `flex gap-3 opacity-0 translate-y-2 ${isUser ? "flex-row-reverse" : ""}`;
+    div.style.animation = "fade-in-up 240ms ease-out forwards";
+    if (delay) div.style.animationDelay = `${delay}ms`;
+    div.innerHTML = `
+      <div class="h-8 w-8 shrink-0 rounded-full ${isUser ? "bg-brand" : "bg-reddit"}"></div>
+      <div class="max-w-[80%]">
+        <div class="rounded-2xl ${isUser ? "rounded-tr-sm bg-reddit text-white" : "rounded-tl-sm bg-zinc-100 dark:bg-zinc-800"} px-4 py-2.5 text-sm leading-relaxed">${formatChatReply(text)}</div>
+        <div class="mt-1 text-xs text-zinc-400 ${isUser ? "text-right" : ""}">${isUser ? "You" : "Agent"}</div>
+      </div>`;
+    msgs.appendChild(div);
+    msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
+    return div;
+  }
+
+  async function send(text) {
+    if (!mounted || !text.trim() || busy) return;
+    busy = true;
+    bubble("user", text);
+    input.value = "";
+    typing.classList.remove("hidden");
+    msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
+    try {
+      const reply = await chatAnswer(text, { name: agentName });
+      typing.classList.add("hidden");
+      bubble("agent", reply);
+    } catch (e) {
+      typing.classList.add("hidden");
+      bubble("agent", `Sorry, I hit an error: ${e.message || e}. Try again in a moment.`);
+    }
+    busy = false;
+    icons();
+    if (mounted) input.focus();
+  }
+
+  function seed(angle, context) {
+    if (!angle) return;
+    bubble("user", `Tell me about the angle “${angle}”`);
+    const reply = `Here’s what I know about **“${angle}”**${context ? ": " + context : "."}${chatAngleActions(angle, context)}`;
+    bubble("agent", reply, { delay: 120 });
+    icons();
+  }
+
+  function onSubmit(e) { e.preventDefault(); send(input.value); }
+  form.addEventListener("submit", onSubmit);
+  const quicks = host.querySelectorAll(".ch-quick");
+  const quickClick = (b) => () => send(b.textContent);
+  const quickHandlers = [];
+  quicks.forEach((b) => { const fn = quickClick(b); b.addEventListener("click", fn); quickHandlers.push({ el: b, fn }); });
+
+  bubble("agent", `Hi — I'm your **${esc(agentName || "agent")}** research assistant. Ask me about the latest angles, competitor mentions, or what to write today.`);
+  if (seedAngle) seed(seedAngle, seedContext);
+
+  return {
+    send,
+    seed,
+    focus: () => { if (mounted) input.focus(); },
+    destroy: () => {
+      mounted = false;
+      form.removeEventListener("submit", onSubmit);
+      quickHandlers.forEach(({ el, fn }) => el.removeEventListener("click", fn));
+      host.innerHTML = "";
+    },
+  };
+}
+
+export async function renderChat(view) {
+  let a = null; try { a = await api.agentGet(); } catch (e) {}
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const seedAngle = decodeURIComponent(params.get("angle") || "");
+  const seedContext = decodeURIComponent(params.get("context") || "");
+
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7 opacity-0 animate-fade-in";
+  view.innerHTML = head("Chat", `Ask ${esc(a?.name || "your agent")} anything about its niche, angles, or drafts.`,
+    `<a href="#/compose" class="${btnP}"><i data-lucide="pen-line" class="inline-block h-4 w-4 align-[-2px]"></i> New draft</a>`) +
+    `<div style="height:calc(100vh - 160px)"><div class="chat-card-host h-full"></div></div>`;
+  icons();
+  const ctrl = mountChatCard(view.querySelector(".chat-card-host"), a?.name, seedAngle, seedContext);
+  view.__orCleanup = () => { if (ctrl) { ctrl.destroy(); view.__orCleanup = null; } };
+}
+
 // ── Keywords (edit the agent's tracked keywords + platforms) ────────────────
 export async function renderKeywords(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
@@ -2363,7 +2901,7 @@ export async function renderKeywords(view) {
   try { platforms = (await api.replyPlatforms())?.platforms || []; } catch (e) {}
   const checks = platforms.filter((p) => p.can_reply).map((p) =>
     `<label class="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 text-sm">
-       <input type="checkbox" value="${esc(p.key)}" ${(a.platforms || []).includes(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("");
+       <input type="checkbox" class="accent-reddit" value="${esc(p.key)}" ${(a.platforms || []).includes(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("");
   document.getElementById("kw").outerHTML =
     head("Keywords &amp; platforms", `What <b>${esc(a.name)}</b> watches.`,
       `<button id="kw-save" class="${btnP}">Save</button>`) +
@@ -2747,80 +3285,199 @@ export async function renderGeo(view) {
   load();
 }
 
-// ── Onboarding: profile + AI provider (BYOK) ─────────────────
+// ── Onboarding: guided 4-step welcome (value prop → profile → AI key → how-to) ─
+// Acts as both a setup wizard AND a lightweight in-app sales page so a brand-new
+// user understands what OpenReply does and how to use it before landing in the app.
+// Steps: 0 welcome/value-prop · 1 profile · 2 connect AI (BYOK + live test) · 3 ready/how-to.
 export async function renderWelcome(view) {
   view.className = "min-h-screen w-full flex items-center justify-center px-6 py-10";
   let st = {};
   try { st = (await api.byokStatus()) || {}; } catch (e) {}
   const curProv = (st.llm_provider || "anthropic").toLowerCase();
-  const sel = LLM_PROVIDERS.some(p => p[0] === curProv) ? curProv : "anthropic";
-  const opts = LLM_PROVIDERS.map(([v, l]) => `<option value="${v}"${v === sel ? " selected" : ""}>${l}</option>`).join("");
-  const name = localStorage.getItem("or-user-name") || "";
-  view.innerHTML = `
-    <div class="w-full max-w-lg">
-      <div class="mb-6 flex items-center gap-2 text-xl font-extrabold text-zinc-900 dark:text-white">
-        <span class="h-6 w-6 rounded-full bg-reddit"></span> OpenReply</div>
-      <div class="${card} space-y-4">
-        <div><h1 class="text-xl font-bold text-zinc-900 dark:text-white">Welcome 👋</h1>
-          <p class="text-sm text-zinc-500 dark:text-zinc-400">Two quick things and you're in.</p></div>
-        <div class="space-y-2">
-          <div class="text-xs font-bold uppercase tracking-wider text-zinc-400">1 · Your profile</div>
-          <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Name</span>
-            <input id="wc-name" value="${esc(name)}" placeholder="Your name" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
-        </div>
-        <div class="space-y-2">
-          <div class="text-xs font-bold uppercase tracking-wider text-zinc-400">2 · AI provider (your own key)</div>
-          <p class="text-sm text-zinc-500 dark:text-zinc-400">Runs on your key — used to draft replies &amp; content. Stored locally only.</p>
-          <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Provider</span>
-            <select id="wc-prov" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">${opts}</select></label>
-          <label class="block text-sm" id="wc-keywrap"></label>
-          <button id="wc-test" class="${btn}">Test connection <span class="text-zinc-400">(optional)</span></button>
-        </div>
-        <button id="wc-finish" class="${btnP} w-full">Finish setup →</button>
-        <div id="wc-msg" class="text-sm"></div>
-      </div>
+
+  const S = {
+    step: 0,
+    name: localStorage.getItem("or-user-name") || "",
+    provider: LLM_PROVIDERS.some(p => p[0] === curProv) ? curProv : "anthropic",
+    key: "",
+    tested: null,   // null | true | false
+  };
+  const TOTAL = 4;
+
+  const brandBar = `<div class="mb-6 flex items-center gap-2 text-xl font-extrabold text-zinc-900 dark:text-white">
+    <span class="h-6 w-6 rounded-full bg-reddit"></span> OpenReply</div>`;
+  const dots = () => `<div class="mt-5 flex items-center justify-center gap-1.5">${
+    Array.from({ length: TOTAL }, (_, i) =>
+      `<span class="h-1.5 rounded-full transition-all ${i === S.step ? "w-6 bg-reddit" : i < S.step ? "w-1.5 bg-reddit/50" : "w-1.5 bg-zinc-300 dark:bg-zinc-700"}"></span>`
+    ).join("")}</div>`;
+
+  const wrapMax = () => S.step === 0 ? "max-w-xl" : "max-w-lg";
+
+  function paint() {
+    view.innerHTML = `<div class="w-full ${wrapMax()}">${brandBar}<div class="${card} space-y-5">${stepHTML()}</div>${dots()}</div>`;
+    wire();
+    icons();
+  }
+
+  // ── per-step markup ──────────────────────────────────────────────
+  function stepHTML() {
+    if (S.step === 0) return welcomeStep();
+    if (S.step === 1) return profileStep();
+    if (S.step === 2) return aiStep();
+    return readyStep();
+  }
+
+  const feature = (icon, title, body) => `
+    <div class="flex gap-3">
+      <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-reddit/10 text-reddit"><i data-lucide="${icon}" class="h-5 w-5"></i></span>
+      <div><div class="text-sm font-semibold text-zinc-900 dark:text-white">${title}</div>
+        <div class="text-sm text-zinc-500 dark:text-zinc-400">${body}</div></div>
     </div>`;
 
-  const provSel = view.querySelector("#wc-prov");
-  const keyWrap = view.querySelector("#wc-keywrap");
-  const paintKey = () => {
-    const p = provSel.value, isOllama = p === "ollama";
-    const ph = LLM_PROVIDERS.find(x => x[0] === p)?.[3] || "";
-    keyWrap.innerHTML = `<span class="text-zinc-500 dark:text-zinc-400">${isOllama ? "Base URL" : "API key"}${isOllama ? "" : ' <span class="text-rose-500">· required to finish</span>'}</span>
-      <input id="wc-key" type="${isOllama ? "text" : "password"}" placeholder="${esc(ph)}" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">`;
-  };
-  paintKey();
-  provSel.onchange = paintKey;
+  function welcomeStep() {
+    return `
+      <div class="text-center">
+        <h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Turn conversations into customers</h1>
+        <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">OpenReply is your AI social-reply &amp; growth co-pilot. It finds the conversations worth joining and drafts on-brand replies you can post in a click.</p>
+      </div>
+      <div class="space-y-4">
+        ${feature("radar", "Find the right conversations", "Continuously scans Reddit, Hacker News &amp; 20+ sources for posts where your product is the answer — no more manual hunting.")}
+        ${feature("sparkles", "On-brand AI drafts", "Each agent learns your brand voice, product &amp; knowledge, then drafts replies and growth content that sound like <em>you</em> — never generic.")}
+        ${feature("shield-check", "You stay in control", "Review, edit and post on your terms. Bring your own AI key — your data and keys stay local on this device.")}
+      </div>
+      <button id="wc-next" class="${btnP} w-full">Get started →</button>`;
+  }
 
-  const msg = view.querySelector("#wc-msg");
-  const setMsg = (t, cls) => { msg.innerHTML = `<span class="${cls}">${esc(t)}</span>`; };
+  function profileStep() {
+    return `
+      <div><h1 class="text-xl font-bold text-zinc-900 dark:text-white">First, what should we call you?</h1>
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">Used to personalize your workspace. You can change it anytime in Settings.</p></div>
+      <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Name</span>
+        <input id="wc-name" value="${esc(S.name)}" placeholder="Your name" autocomplete="name"
+          class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+      <div class="flex gap-2">
+        <button id="wc-back" class="${btn}">← Back</button>
+        <button id="wc-next" class="${btnP} flex-1">Continue →</button>
+      </div>`;
+  }
+
+  function aiStep() {
+    const opts = LLM_PROVIDERS.map(([v, l]) => `<option value="${v}"${v === S.provider ? " selected" : ""}>${l}</option>`).join("");
+    return `
+      <div><h1 class="text-xl font-bold text-zinc-900 dark:text-white">Connect your AI</h1>
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">OpenReply runs on <b>your own</b> AI key — it's used to draft replies &amp; content and is stored locally only. Pick any provider you already have.</p></div>
+      <label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">Provider</span>
+        <select id="wc-prov" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">${opts}</select></label>
+      <label class="block text-sm" id="wc-keywrap"></label>
+      <div class="flex items-center gap-3">
+        <button id="wc-test" class="${btn}">Test connection</button>
+        <span id="wc-msg" class="text-sm"></span>
+      </div>
+      <div class="flex gap-2">
+        <button id="wc-back" class="${btn}">← Back</button>
+        <button id="wc-next" class="${btnP} flex-1">Continue →</button>
+      </div>`;
+  }
+
+  function readyStep() {
+    const hi = S.name ? `, ${esc(S.name)}` : "";
+    const stepRow = (n, icon, title, body) => `
+      <div class="flex gap-3">
+        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-reddit text-xs font-bold text-white">${n}</span>
+        <div><div class="text-sm font-semibold text-zinc-900 dark:text-white"><i data-lucide="${icon}" class="mr-1 inline h-4 w-4 align-[-2px] text-reddit"></i>${title}</div>
+          <div class="text-sm text-zinc-500 dark:text-zinc-400">${body}</div></div>
+      </div>`;
+    return `
+      <div class="text-center">
+        <div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500"><i data-lucide="check" class="h-7 w-7"></i></div>
+        <h1 class="text-xl font-bold text-zinc-900 dark:text-white">You're all set${hi} 🎉</h1>
+        <p class="text-sm text-zinc-500 dark:text-zinc-400">Here's how to get your first reply out the door:</p>
+      </div>
+      <div class="space-y-4">
+        ${stepRow(1, "bot", "Create an agent", "Give it your brand, product &amp; voice. The agent represents one product or persona.")}
+        ${stepRow(2, "radar", "It finds opportunities", "OpenReply scans your sources and surfaces posts worth replying to — ranked by fit.")}
+        ${stepRow(3, "send", "Review &amp; post", "Open a draft, tweak it if you like, then copy or post. Track what lands in Analytics.")}
+      </div>
+      <button id="wc-create" class="${btnP} w-full">Create my first agent →</button>
+      <button id="wc-explore" class="${btn} w-full">Skip — explore the app first</button>`;
+  }
+
+  // ── shared helpers ───────────────────────────────────────────────
+  const setMsg = (t, cls) => { const m = view.querySelector("#wc-msg"); if (m) m.innerHTML = `<span class="${cls}">${esc(t)}</span>`; };
+  const envKeyFor = (p) => LLM_PROVIDERS.find(x => x[0] === p)?.[2];
+
+  function paintKeyField() {
+    const keyWrap = view.querySelector("#wc-keywrap");
+    if (!keyWrap) return;
+    const isOllama = S.provider === "ollama";
+    const ph = LLM_PROVIDERS.find(x => x[0] === S.provider)?.[3] || "";
+    keyWrap.innerHTML = `<span class="text-zinc-500 dark:text-zinc-400">${isOllama ? "Base URL" : "API key"}${isOllama ? "" : ' <span class="text-rose-500">· required</span>'}</span>
+      <input id="wc-key" type="${isOllama ? "text" : "password"}" value="${esc(S.key)}" placeholder="${esc(ph)}"
+        class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2">`;
+    const ki = view.querySelector("#wc-key");
+    if (ki) ki.oninput = () => { S.key = ki.value; S.tested = null; setMsg("", ""); };
+  }
+
+  // Persist the chosen provider + key to the local .env via byok. Throws if a
+  // cloud provider has no key entered (Ollama is allowed to use its default URL).
   async function saveProvider() {
-    const p = provSel.value;
-    const envKey = LLM_PROVIDERS.find(x => x[0] === p)?.[2];
-    const keyVal = (view.querySelector("#wc-key")?.value || "").trim();
+    const p = S.provider;
+    const keyVal = (S.key || "").trim();
     if (p === "ollama") { await api.byokSet("OLLAMA_BASE_URL", keyVal || "http://localhost:11434"); }
-    else { if (!keyVal) throw new Error("Enter your API key to continue."); await api.byokSet(envKey, keyVal); }
+    else { if (!keyVal) throw new Error("Enter your API key to continue."); await api.byokSet(envKeyFor(p), keyVal); }
     await api.byokSet("LLM_PROVIDER", p);
   }
-  view.querySelector("#wc-test").onclick = async (e) => {
-    e.target.disabled = true; setMsg("Testing…", "text-zinc-500");
-    try {
-      await saveProvider();
-      const r = (await api.testLlm(provSel.value, "")) || {};
-      setMsg(r.ok ? `✓ ${r.provider || provSel.value}${r.model ? " · " + r.model : ""}` : `✗ ${r.error || "failed"}`, r.ok ? "text-emerald-500" : "text-rose-500");
-    } catch (err) { setMsg(String(err.message || err), "text-rose-500"); }
-    e.target.disabled = false;
-  };
-  view.querySelector("#wc-finish").onclick = async (e) => {
-    e.target.disabled = true; setMsg("Saving…", "text-zinc-500");
-    try {
-      localStorage.setItem("or-user-name", view.querySelector("#wc-name").value.trim());
-      await saveProvider();
-      localStorage.setItem("or-onboarded", "1");
-      toast("You're all set"); location.hash = "#/agents";
-    } catch (err) { setMsg(String(err.message || err), "text-rose-500"); e.target.disabled = false; }
-  };
-  icons();
+
+  // ── event wiring (re-bound on every paint) ───────────────────────
+  function wire() {
+    const back = view.querySelector("#wc-back");
+    if (back) back.onclick = () => { S.step = Math.max(0, S.step - 1); paint(); };
+
+    if (S.step === 1) {
+      const ni = view.querySelector("#wc-name");
+      if (ni) { ni.oninput = () => { S.name = ni.value; }; ni.focus(); }
+    }
+
+    if (S.step === 2) {
+      paintKeyField();
+      const provSel = view.querySelector("#wc-prov");
+      if (provSel) provSel.onchange = () => { S.provider = provSel.value; S.tested = null; setMsg("", ""); paintKeyField(); };
+      const testBtn = view.querySelector("#wc-test");
+      if (testBtn) testBtn.onclick = async () => {
+        testBtn.disabled = true; setMsg("Testing…", "text-zinc-500");
+        try {
+          await saveProvider();
+          const r = (await api.testLlm(S.provider, "")) || {};
+          S.tested = !!r.ok;
+          setMsg(r.ok ? `✓ Connected · ${r.provider || S.provider}${r.model ? " · " + r.model : ""}` : `✗ ${r.error || "failed"}`,
+            r.ok ? "text-emerald-500" : "text-rose-500");
+        } catch (err) { S.tested = false; setMsg(String(err.message || err), "text-rose-500"); }
+        testBtn.disabled = false;
+      };
+    }
+
+    const next = view.querySelector("#wc-next");
+    if (next) next.onclick = async () => {
+      if (S.step === 1) { localStorage.setItem("or-user-name", (S.name || "").trim()); S.step = 2; paint(); return; }
+      if (S.step === 2) {
+        // Validate + persist the provider before advancing to the ready screen.
+        next.disabled = true; setMsg("Saving…", "text-zinc-500");
+        try { await saveProvider(); localStorage.setItem("or-onboarded", "1"); S.step = 3; paint(); }
+        catch (err) { setMsg(String(err.message || err), "text-rose-500"); next.disabled = false; }
+        return;
+      }
+      S.step = Math.min(TOTAL - 1, S.step + 1); paint(); // step 0 → 1
+    };
+
+    if (S.step === 3) {
+      const create = view.querySelector("#wc-create");
+      if (create) create.onclick = () => { toast("Let's build your first agent"); location.hash = "#/onboarding"; };
+      const explore = view.querySelector("#wc-explore");
+      if (explore) explore.onclick = () => { location.hash = "#/agents"; };
+    }
+  }
+
+  paint();
 }
 
 // ── Subreddit Intelligence (full) ───────────────────────────────────────────
@@ -3102,28 +3759,91 @@ const BRAIN_COLORS = {
 };
 const _bc = (g) => BRAIN_COLORS[g] || BRAIN_COLORS.concept;
 
-// Canvas force-directed graph. Returns a stop() fn. onPick(node|null) on click.
+// Canvas force-directed graph with zoom + pan. Returns a stop() fn. onPick(node|null) on click.
+// Physics is bounded (max ticks / max time / node cap) so large brains never hang the UI.
 function forceGraph(canvas, graph, onPick) {
+  if (!canvas || !graph || !graph.nodes) {
+    return { stop: () => {}, zoomIn: () => {}, zoomOut: () => {}, resetZoom: () => {} };
+  }
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth || 800, H = canvas.clientHeight || 520;
-  canvas.width = W * dpr; canvas.height = H * dpr;
-  const ctx = canvas.getContext("2d"); ctx.scale(dpr, dpr);
+  canvas.width = Math.max(1, Math.floor(W * dpr));
+  canvas.height = Math.max(1, Math.floor(H * dpr));
+  const ctx = canvas.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
   const deg = {};
-  graph.edges.forEach((e) => { deg[e.src] = (deg[e.src] || 0) + 1; deg[e.dst] = (deg[e.dst] || 0) + 1; });
+  (graph.edges || []).forEach((e) => { deg[e.src] = (deg[e.src] || 0) + 1; deg[e.dst] = (deg[e.dst] || 0) + 1; });
+  const idx = {};
   const N = graph.nodes.map((n, i) => {
-    const ang = (i / graph.nodes.length) * Math.PI * 2;
+    idx[n.id] = i;
+    const ang = (i / Math.max(1, graph.nodes.length)) * Math.PI * 2;
     return { ...n, x: W / 2 + Math.cos(ang) * 180 + (i % 7) * 3, y: H / 2 + Math.sin(ang) * 180 + (i % 5) * 3,
       vx: 0, vy: 0, r: 4 + Math.min(10, (deg[n.id] || 0) * 0.7) };
   });
-  const idx = {}; N.forEach((n, i) => idx[n.id] = i);
-  const E = graph.edges.map((e) => ({ a: idx[e.src], b: idx[e.dst], kind: e.kind, w: e.weight }))
+  const E = (graph.edges || []).map((e) => ({ a: idx[e.src], b: idx[e.dst], kind: e.kind, w: e.weight }))
     .filter((e) => e.a != null && e.b != null);
   const nbrs = {};
   E.forEach((e) => { (nbrs[e.a] = nbrs[e.a] || new Set()).add(e.b); (nbrs[e.b] = nbrs[e.b] || new Set()).add(e.a); });
-  let alpha = 1, raf = 0, drag = null, sel = null, hover = null;
+
+  // Large graphs skip the expensive force simulation; a deterministic spiral is
+  // instant and still lets the user pan/zoom/inspect nodes.
+  const HEAVY_NODE_LIMIT = 350;
+  const skipPhysics = N.length > HEAVY_NODE_LIMIT;
+
+  let alpha = 1, raf = 0, ticks = 0, simulating = true;
+  const DECAY = 0.93;
+  const MAX_TICKS = 80; // ~1.3 s at 60 fps
+  const MAX_TIME_MS = 2500;
+  const startTime = performance.now();
+  let dragNode = null, panDrag = null, sel = null, hover = null;
+  let scale = 1, panX = 0, panY = 0;
+  let disposed = false;
+
   const isNeighbor = (n) => sel && nbrs[idx[sel.id]] && nbrs[idx[sel.id]].has(idx[n.id]);
-  const tick = () => {
-    alpha *= 0.985;
+  const toScreen = (x, y) => [x * scale + panX, y * scale + panY];
+  const fromScreen = (sx, sy) => [(sx - panX) / scale, (sy - panY) / scale];
+  const clampScale = () => { scale = Math.max(0.25, Math.min(4, scale)); };
+  const fit = () => {
+    if (!N.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of N) { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y); }
+    const pad = 40, gw = Math.max(1, maxX - minX), gh = Math.max(1, maxY - minY);
+    scale = Math.min((W - pad * 2) / gw, (H - pad * 2) / gh, 1);
+    panX = (W - (minX + maxX) * scale) / 2;
+    panY = (H - (minY + maxY) * scale) / 2;
+  };
+
+  const draw = () => {
+    if (disposed) return;
+    ctx.clearRect(0, 0, W, H);
+    const isDark = document.documentElement.classList.contains("dark");
+    for (const e of E) {
+      const a = N[e.a], b = N[e.b]; const cross = e.kind === "grounds" || e.kind === "about" || e.kind === "concludes";
+      const [ax, ay] = toScreen(a.x, a.y), [bx, by] = toScreen(b.x, b.y);
+      ctx.strokeStyle = cross ? "rgba(168,85,247,0.35)" : (isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.06)");
+      ctx.lineWidth = cross ? 1.2 : 0.7; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+    for (const n of N) {
+      const [sx, sy] = toScreen(n.x, n.y);
+      const sr = Math.max(2, n.r * scale);
+      ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fillStyle = _bc(n.group); ctx.globalAlpha = (sel && sel !== n && !isNeighbor(n)) ? 0.25 : 1;
+      ctx.fill();
+      if (n === sel || n === hover) { ctx.lineWidth = 2; ctx.strokeStyle = isDark ? "#fff" : "#111"; ctx.stroke(); }
+      ctx.globalAlpha = 1;
+      if (n.r >= 8 || n === sel || n === hover) {
+        ctx.fillStyle = isDark ? "#d4d4d8" : "#3f3f46"; ctx.font = `${Math.max(9, Math.round(11 * scale))}px ui-sans-serif, system-ui`;
+        ctx.fillText((n.label || "").slice(0, 22), sx + sr + 3, sy + 3);
+      }
+    }
+  };
+
+  const physicsStep = () => {
+    if (disposed || skipPhysics) return;
+    alpha *= DECAY; ticks++;
+    if (alpha <= 0.02 || ticks >= MAX_TICKS || performance.now() - startTime > MAX_TIME_MS) {
+      simulating = false; return;
+    }
     for (let i = 0; i < N.length; i++) {
       const a = N[i];
       for (let j = i + 1; j < N.length; j++) {
@@ -3140,50 +3860,103 @@ function forceGraph(canvas, graph, onPick) {
       a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
     }
     for (const a of N) {
-      if (a === drag) continue;
+      if (a === dragNode) continue;
       a.vx *= 0.85; a.vy *= 0.85; a.x += a.vx; a.y += a.vy;
       a.x = Math.max(a.r, Math.min(W - a.r, a.x)); a.y = Math.max(a.r, Math.min(H - a.r, a.y));
     }
+  };
+
+  const tick = () => {
+    if (disposed) return;
+    physicsStep();
     draw();
-    if (alpha > 0.02 || drag) raf = requestAnimationFrame(tick);
+    if (simulating) raf = requestAnimationFrame(tick);
+    else raf = 0;
   };
-  const draw = () => {
-    ctx.clearRect(0, 0, W, H);
-    const isDark = document.documentElement.classList.contains("dark");
-    for (const e of E) {
-      const a = N[e.a], b = N[e.b]; const cross = e.kind === "grounds" || e.kind === "about" || e.kind === "concludes";
-      ctx.strokeStyle = cross ? "rgba(168,85,247,0.35)" : (isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.06)");
-      ctx.lineWidth = cross ? 1.2 : 0.7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-    }
-    for (const n of N) {
-      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-      ctx.fillStyle = _bc(n.group); ctx.globalAlpha = (sel && sel !== n && !isNeighbor(n)) ? 0.25 : 1;
-      ctx.fill();
-      if (n === sel || n === hover) { ctx.lineWidth = 2; ctx.strokeStyle = isDark ? "#fff" : "#111"; ctx.stroke(); }
-      ctx.globalAlpha = 1;
-      if (n.r >= 8 || n === sel || n === hover) {
-        ctx.fillStyle = isDark ? "#d4d4d8" : "#3f3f46"; ctx.font = "11px ui-sans-serif, system-ui";
-        ctx.fillText((n.label || "").slice(0, 22), n.x + n.r + 3, n.y + 3);
-      }
-    }
-  };
-  const at = (mx, my) => { for (let i = N.length - 1; i >= 0; i--) { const n = N[i]; if ((mx - n.x) ** 2 + (my - n.y) ** 2 <= (n.r + 3) ** 2) return n; } return null; };
+
+  const redraw = () => { if (!disposed) draw(); };
+
+  const at = (mx, my) => { const [wx, wy] = fromScreen(mx, my); for (let i = N.length - 1; i >= 0; i--) { const n = N[i]; if ((wx - n.x) ** 2 + (wy - n.y) ** 2 <= (n.r + 3) ** 2) return n; } return null; };
   const pos = (ev) => { const r = canvas.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
-  canvas.onmousedown = (ev) => { const [x, y] = pos(ev); drag = at(x, y); if (drag) { sel = drag; onPick && onPick(sel); alpha = Math.max(alpha, 0.3); if (!raf) raf = requestAnimationFrame(tick); } };
-  canvas.onmousemove = (ev) => { const [x, y] = pos(ev); if (drag) { drag.x = x; drag.y = y; drag.vx = drag.vy = 0; } else { const h = at(x, y); if (h !== hover) { hover = h; canvas.style.cursor = h ? "pointer" : "default"; draw(); } } };
-  window.addEventListener("mouseup", () => { drag = null; });
-  canvas.onclick = (ev) => { const [x, y] = pos(ev); const n = at(x, y); if (!n) { sel = null; onPick && onPick(null); draw(); } };
-  raf = requestAnimationFrame(tick);
-  return () => cancelAnimationFrame(raf);
+
+  const onMouseDown = (ev) => {
+    const [x, y] = pos(ev); const n = at(x, y);
+    if (n) { dragNode = n; sel = n; onPick && onPick(sel); alpha = Math.max(alpha, 0.3); }
+    else { panDrag = { x, y, px: panX, py: panY }; }
+  };
+  const onMouseMove = (ev) => {
+    const [x, y] = pos(ev);
+    if (dragNode) { dragNode.x = (x - panX) / scale; dragNode.y = (y - panY) / scale; dragNode.vx = dragNode.vy = 0; redraw(); }
+    else if (panDrag) { panX = panDrag.px + (x - panDrag.x); panY = panDrag.py + (y - panDrag.y); redraw(); }
+    else { const h = at(x, y); if (h !== hover) { hover = h; canvas.style.cursor = h ? "pointer" : "default"; redraw(); } }
+  };
+  const onMouseUp = () => { dragNode = null; panDrag = null; };
+  const onClick = (ev) => { const [x, y] = pos(ev); const n = at(x, y); if (!n) { sel = null; onPick && onPick(null); redraw(); } };
+  const onWheel = (ev) => {
+    ev.preventDefault();
+    const [x, y] = pos(ev); const [wx, wy] = fromScreen(x, y);
+    const factor = ev.deltaY < 0 ? 1.15 : 0.87;
+    scale *= factor; clampScale();
+    panX = x - wx * scale; panY = y - wy * scale;
+    redraw();
+  };
+
+  canvas.addEventListener("mousedown", onMouseDown);
+  canvas.addEventListener("mousemove", onMouseMove);
+  canvas.addEventListener("click", onClick);
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  window.addEventListener("mouseup", onMouseUp);
+
+  fit();
+  if (skipPhysics) {
+    simulating = false;
+    draw();
+  } else {
+    raf = requestAnimationFrame(tick);
+  }
+
+  return {
+    stop: () => {
+      disposed = true;
+      cancelAnimationFrame(raf); raf = 0;
+      canvas.removeEventListener("mousedown", onMouseDown);
+      canvas.removeEventListener("mousemove", onMouseMove);
+      canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("wheel", onWheel);
+      window.removeEventListener("mouseup", onMouseUp);
+    },
+    zoomIn: () => { scale *= 1.25; clampScale(); redraw(); },
+    zoomOut: () => { scale *= 0.8; clampScale(); redraw(); },
+    resetZoom: () => { fit(); redraw(); },
+  };
+}
+
+// Parse /brain/:sub/:param? from the current hash.
+function _brainPath() {
+  const h = (location.hash || "").replace(/^#\/?/, "");
+  const path = h.split("?")[0].split("/").filter(Boolean);
+  return path;
 }
 
 export async function renderBrain(view) {
-  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  // Flex column so the graph/tree area fills the available scroll-port height
+  // instead of using 100vh (which caused overflow inside #main-content).
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7 flex flex-col h-full min-h-0";
+  let a = null; try { a = await api.agentGet(); } catch (e) {}
+  const path = _brainPath();
+  const sub = path[1];
+  const param = path[2] ? decodeURIComponent(path[2]) : "";
+
   view.innerHTML = head("Brain", "Loading the unified brain…") + `<div id="br">Loading…</div>`;
   let b = null; try { b = await api.agentBrain(); } catch (e) {}
   const wrap = document.getElementById("br");
   if (b === null) { wrap.outerHTML = `<div class="${card} text-zinc-500">Run inside the app to see the brain.</div>`; return; }
   if (b.error) { wrap.outerHTML = `<div class="${card} text-zinc-500">${esc(b.error)} <a class="text-reddit underline" href="#/agents">Agents →</a></div>`; return; }
+
+  // Sub-routes: angle detail or article view.
+  if (sub === "angle" && param) { renderBrainAngle(view, b, param); return; }
+  if (sub === "article") { renderBrainArticle(view, b, param); return; }
+
   const s = b.stats || { nodes: 0, edges: 0, cross_links: 0, personas: 0, by_group: {} };
   let stop = null;
   view.innerHTML =
@@ -3197,27 +3970,133 @@ export async function renderBrain(view) {
     `<div class="mb-3 flex flex-wrap gap-3 text-xs text-zinc-500">${Object.entries(s.by_group || {}).map(([g, n]) =>
       `<span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full" style="background:${_bc(g)}"></span>${esc(g)} ${n}</span>`).join("")}
       <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-fuchsia-500"></span>cross-links ${s.cross_links}</span></div>
-     <div id="br-body"></div>`;
+     <div id="br-body" class="flex flex-col flex-1 min-h-0"></div>`;
   icons();
 
   const body = document.getElementById("br-body");
+  // Build a node lookup + adjacency so the detail panel can show "Related".
+  const _nodeById = {};
+  (b.graph?.nodes || []).forEach((n) => { _nodeById[n.id] = n; });
+  const _adj = {};
+  (b.graph?.edges || []).forEach((e) => {
+    (_adj[e.src] = _adj[e.src] || []).push(e.dst);
+    (_adj[e.dst] = _adj[e.dst] || []).push(e.src);
+  });
+  const relatedOf = (n) => {
+    const seen = new Set();
+    return (_adj[n.id] || []).map((id) => _nodeById[id]).filter((x) => {
+      if (!x || x.id === n.id || seen.has(x.id)) return false; seen.add(x.id); return true;
+    }).slice(0, 6);
+  };
+  const findNode = (idOrLabel) => {
+    if (_nodeById[idOrLabel]) return _nodeById[idOrLabel];
+    const t = (idOrLabel || "").toLowerCase();
+    return (b.graph?.nodes || []).find((n) => (n.label || "").toLowerCase() === t || String(n.id).toLowerCase() === t);
+  };
+  // Seed a Tasks-board task from a Brain node, then confirm.
+  async function brainTask(n, kind, target, payload, label) {
+    try {
+      const r = await api.taskCreate({
+        title: label + ": " + (n.label || "").slice(0, 80),
+        kind, target, source: "brain", source_ref: String(n.id || ""), payload,
+      });
+      if (r?.error) { toast(r.error); return; }
+      toast("Added to Tasks");
+    } catch (e) { toast("Couldn’t add task: " + e); }
+  }
   const setMode = (m) => {
-    document.getElementById("br-g").className = `rounded-full px-3 py-1.5 ${m === "g" ? "bg-reddit text-white" : "text-zinc-500"}`;
-    document.getElementById("br-t").className = `rounded-full px-3 py-1.5 ${m === "t" ? "bg-reddit text-white" : "text-zinc-500"}`;
+    const gBtn = document.getElementById("br-g");
+    const tBtn = document.getElementById("br-t");
+    if (gBtn) gBtn.className = `rounded-full px-3 py-1.5 ${m === "g" ? "bg-reddit text-white" : "text-zinc-500"}`;
+    if (tBtn) tBtn.className = `rounded-full px-3 py-1.5 ${m === "t" ? "bg-reddit text-white" : "text-zinc-500"}`;
     if (stop) { stop(); stop = null; }
     if (m === "g") {
-      body.innerHTML = `<div class="grid gap-4 lg:grid-cols-[1fr,18rem]">
-        <div class="${card} !p-0 overflow-hidden"><canvas id="br-canvas" class="block h-[520px] w-full"></canvas></div>
-        <div id="br-detail" class="${card} text-sm text-zinc-500">Click a node to inspect it.</div></div>`;
-      const detail = document.getElementById("br-detail");
-      stop = forceGraph(document.getElementById("br-canvas"), b.graph, (n) => {
-        if (!n) { detail.innerHTML = "Click a node to inspect it."; return; }
-        detail.innerHTML = `<div class="flex items-center gap-2"><span class="h-3 w-3 rounded-full" style="background:${_bc(n.group)}"></span><b class="text-zinc-900 dark:text-white">${esc(n.group)}</b>${n.lens ? `<span class="text-xs">· ${esc(n.lens)} lens</span>` : ""}</div>
+      body.innerHTML = `<div class="grid gap-4 lg:grid-cols-[1fr,20rem] flex-1 min-h-0">
+        <div class="${card} !p-0 overflow-hidden relative h-full min-h-0">
+          <canvas id="br-canvas" class="block h-full w-full min-h-[320px]"></canvas>
+          <div class="pointer-events-none absolute bottom-3 left-3 flex gap-1">
+            <button id="br-zoomin" class="pointer-events-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/90 px-2 py-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200 shadow hover:border-reddit">+</button>
+            <button id="br-zoomout" class="pointer-events-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/90 px-2 py-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200 shadow hover:border-reddit">−</button>
+            <button id="br-zoomfit" class="pointer-events-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/90 px-2 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-200 shadow hover:border-reddit">Fit</button>
+          </div>
+        </div>
+        <div id="br-side" class="${card} flex flex-col h-full min-h-0 text-sm text-zinc-500">
+          <div class="mb-2 flex gap-1 border-b border-zinc-200 dark:border-zinc-800 pb-2">
+            <button id="br-tab-node" class="rounded-full px-3 py-1 text-xs font-semibold bg-reddit text-white">Node</button>
+            <button id="br-tab-chat" class="rounded-full px-3 py-1 text-xs font-semibold border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-reddit hover:text-reddit">Chat</button>
+          </div>
+          <div id="br-node-panel" class="flex-1 overflow-y-auto transition-opacity duration-200">Click a node to inspect it.</div>
+          <div id="br-chat-panel" class="hidden flex-1 flex-col min-h-0"><div class="chat-card-host h-full"></div></div>
+        </div>
+      </div>`;
+      const nodePanel = document.getElementById("br-node-panel");
+      const chatPanel = document.getElementById("br-chat-panel");
+      let chatCtrl = null;
+      const aBtn = "rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-semibold transition hover:border-zinc-400 hover:-translate-y-0.5";
+      const graph = forceGraph(document.getElementById("br-canvas"), b.graph, (n) => {
+        if (!n) { nodePanel.innerHTML = "Click a node to inspect it."; return; }
+        const rel = relatedOf(n);
+        const ctx = (n.excerpt || n.label || "").slice(0, 280);
+        nodePanel.innerHTML = `<div class="flex items-center gap-2"><span class="h-3 w-3 rounded-full" style="background:${_bc(n.group)}"></span><b class="text-zinc-900 dark:text-white">${esc(n.group)}</b>${n.lens ? `<span class="text-xs">· ${esc(n.lens)} lens</span>` : ""}</div>
           <p class="mt-2 text-zinc-700 dark:text-zinc-200">${esc(n.label)}</p>
           ${n.excerpt ? `<p class="mt-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 p-2 text-xs">${esc(n.excerpt)}</p>` : ""}
           ${n.confidence != null ? `<div class="mt-2 text-xs">confidence ${(n.confidence).toFixed(2)}</div>` : ""}
-          ${n.importance ? `<div class="mt-1 text-xs">importance ${(n.importance).toFixed(2)}</div>` : ""}`;
+          ${n.importance ? `<div class="mt-1 text-xs">importance ${(n.importance).toFixed(2)}</div>` : ""}
+          ${rel.length ? `<div class="mt-3"><div class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Related</div>
+            <div class="mt-1 flex flex-wrap gap-1.5">${rel.map((r) => `<a href="#/brain/angle/${encodeURIComponent(r.id || r.label || "")}" class="inline-flex items-center gap-1 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 hover:border-reddit hover:text-reddit border border-transparent"><span class="h-2 w-2 rounded-full" style="background:${_bc(r.group)}"></span>${esc((r.label || "").slice(0, 28))}</a>`).join("")}</div></div>` : ""}
+          <div class="mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Act on this</div>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <button data-bt="post" class="${aBtn} text-indigo-500">Draft post</button>
+              <button data-bt="article" class="${aBtn} text-violet-500">Draft article</button>
+              <button data-bt="chatnode" class="${aBtn} text-sky-500">Chat about this</button>
+              <button data-bt="replies" class="${aBtn} text-amber-500">Find replies</button>
+              <button data-bt="whatsnew" class="${aBtn} text-emerald-500">What's new</button>
+            </div></div>`;
+        nodePanel.querySelectorAll("[data-bt]").forEach((el) => el.onclick = () => {
+          const act = el.getAttribute("data-bt");
+          const angle = encodeURIComponent(n.label || "");
+          const ctxParam = encodeURIComponent(ctx || "");
+          if (act === "post") location.hash = `#/compose?kind=post&angle=${angle}&context=${ctxParam}`;
+          else if (act === "article") location.hash = `#/compose?kind=article&angle=${angle}&context=${ctxParam}`;
+          else if (act === "chatnode") switchSideTab("chat", n.label, ctx);
+          else if (act === "replies") brainTask(n, "find_replies", "inbox", { query: n.label }, "Find replies");
+          else if (act === "whatsnew") location.hash = `#/compose?kind=post&angle=${encodeURIComponent("What’s new: " + (n.label || ""))}&context=${ctxParam}`;
+        });
       });
+      stop = graph.stop;
+      view.__orCleanup = () => {
+        if (stop) { stop(); stop = null; }
+        if (chatCtrl) { chatCtrl.destroy(); chatCtrl = null; }
+      };
+      document.getElementById("br-zoomin").onclick = () => graph.zoomIn();
+      document.getElementById("br-zoomout").onclick = () => graph.zoomOut();
+      document.getElementById("br-zoomfit").onclick = () => graph.resetZoom();
+
+      // Node / Chat tabs in the side panel.
+      function switchSideTab(tab, angle, context) {
+        const nodeTab = document.getElementById("br-tab-node");
+        const chatTab = document.getElementById("br-tab-chat");
+        if (tab === "chat") {
+          nodePanel.classList.add("hidden"); nodePanel.classList.remove("opacity-100"); nodePanel.classList.add("opacity-0");
+          chatPanel.classList.remove("hidden"); chatPanel.classList.add("flex");
+          nodeTab.className = "rounded-full px-3 py-1 text-xs font-semibold border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-reddit hover:text-reddit";
+          chatTab.className = "rounded-full px-3 py-1 text-xs font-semibold bg-reddit text-white";
+          if (!chatCtrl) {
+            chatCtrl = mountChatCard(chatPanel.querySelector(".chat-card-host"), a?.name, "", "");
+          }
+          if (angle) chatCtrl.seed(angle, context);
+          chatCtrl.focus();
+        } else {
+          chatPanel.classList.add("hidden"); chatPanel.classList.remove("flex");
+          nodePanel.classList.remove("hidden");
+          requestAnimationFrame(() => { nodePanel.classList.remove("opacity-0"); nodePanel.classList.add("opacity-100"); });
+          nodeTab.className = "rounded-full px-3 py-1 text-xs font-semibold bg-reddit text-white";
+          chatTab.className = "rounded-full px-3 py-1 text-xs font-semibold border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-reddit hover:text-reddit";
+        }
+      }
+      document.getElementById("br-tab-node").onclick = () => switchSideTab("node");
+      document.getElementById("br-tab-chat").onclick = () => switchSideTab("chat");
     } else {
       const t = b.tree || { personas: [], structural: [] };
       body.innerHTML = `<div class="grid gap-4 lg:grid-cols-2">
@@ -3226,19 +4105,107 @@ export async function renderBrain(view) {
             <summary class="cursor-pointer font-semibold text-indigo-500">${esc(p.lens)} <span class="text-xs font-normal text-zinc-400">· ${p.memories} memories · ${p.beliefs} beliefs</span></summary>
             <ul class="mt-1 space-y-1 pl-4">${(p.top_beliefs || []).map((bl) => `<li class="text-sm text-zinc-600 dark:text-zinc-300">• ${esc(bl.statement)} <span class="text-xs text-zinc-400">(conf ${(bl.confidence || 0).toFixed(2)}, ${bl.evidence} mem)</span></li>`).join("") || '<li class="text-xs text-zinc-400">No beliefs yet — run Learn.</li>'}</ul></details>`).join("") || '<div class="text-sm text-zinc-500">No linked personas. Link one in Agents.</div>'}</div></div>
         <div class="${card}"><b class="text-zinc-900 dark:text-white">Structural concepts (by connections)</b>
-          <div class="mt-3 space-y-1.5">${(t.structural || []).map((n) => `<div class="flex items-center justify-between text-sm">
+          <div class="mt-3 space-y-1.5">${(t.structural || []).map((n) => `<a href="#/brain/angle/${encodeURIComponent(n.id || n.label || "")}" class="flex items-center justify-between text-sm hover:text-reddit">
             <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full" style="background:${_bc(BRAIN_COLORS[n.kind] ? n.kind : 'concept')}"></span>${esc(n.label)}</span>
-            <span class="text-xs text-zinc-400">${esc(n.kind)} · ${n.degree}</span></div>`).join("") || '<div class="text-sm text-zinc-500">No concepts yet — run Build brain in Knowledge.</div>'}</div></div></div>`;
+            <span class="text-xs text-zinc-400">${esc(n.kind)} · ${n.degree}</span></a>`).join("") || '<div class="text-sm text-zinc-500">No concepts yet — run Build brain in Knowledge.</div>'}</div></div></div>`;
     }
   };
-  document.getElementById("br-g").onclick = () => setMode("g");
-  document.getElementById("br-t").onclick = () => setMode("t");
+  const gBtn = document.getElementById("br-g");
+  const tBtn = document.getElementById("br-t");
+  if (gBtn) gBtn.onclick = () => setMode("g");
+  if (tBtn) tBtn.onclick = () => setMode("t");
   document.getElementById("br-relink").onclick = async () => {
     const btn = document.getElementById("br-relink"); const prev = btn.textContent; btn.textContent = "Rebuilding…"; btn.disabled = true;
     try { const r = await api.agentBrainRelink(); if (r === null) toast("Run inside the app"); else toast(`Merged: ${r.links} cross-links (${r.about || 0} semantic)`); renderBrain(view); }
     catch (e) { toast("Rebuild failed"); btn.textContent = prev; btn.disabled = false; }
   };
   setMode("g");
+}
+
+// Render a focused angle/concept view with compose/chat/actions.
+function renderBrainAngle(view, b, idOrLabel) {
+  const n = (() => {
+    if (b.graph?.nodes) {
+      const byId = b.graph.nodes.find((x) => String(x.id) === idOrLabel);
+      if (byId) return byId;
+      const t = idOrLabel.toLowerCase();
+      return b.graph.nodes.find((x) => (x.label || "").toLowerCase() === t || String(x.id).toLowerCase() === t);
+    }
+    return null;
+  })();
+  const aBtn = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold hover:border-zinc-400";
+  const label = n ? n.label : idOrLabel;
+  const ctx = (n?.excerpt || label || "").slice(0, 360);
+  const related = [];
+  if (n && b.graph?.edges) {
+    const ids = new Set();
+    b.graph.edges.forEach((e) => {
+      if (e.src === n.id) ids.add(e.dst);
+      if (e.dst === n.id) ids.add(e.src);
+    });
+    ids.forEach((id) => {
+      const r = b.graph.nodes.find((x) => x.id === id);
+      if (r) related.push(r);
+    });
+  }
+  view.innerHTML =
+    head(`Angle: ${label}`,
+      n ? `${esc(n.group)}${n.lens ? ` · ${esc(n.lens)} lens` : ""}` : "Concept from your agent's brain.",
+      `<a href="#/brain" class="${btn}">← Back to Brain</a>`) +
+    `<div class="space-y-4">
+      ${n?.excerpt ? `<div class="${card}"><p class="text-zinc-700 dark:text-zinc-200">${esc(n.excerpt)}</p></div>` : ""}
+      <div class="${card}">
+        <div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Act on this angle</div>
+        <div class="flex flex-wrap gap-2">
+          <a href="#/compose?kind=post&angle=${encodeURIComponent(label)}&context=${encodeURIComponent(ctx)}" class="${aBtn} text-indigo-500">Draft post</a>
+          <a href="#/compose?kind=article&angle=${encodeURIComponent(label)}&context=${encodeURIComponent(ctx)}" class="${aBtn} text-violet-500">Draft article</a>
+          <a href="#/chat?angle=${encodeURIComponent(label)}&context=${encodeURIComponent(ctx)}" class="${aBtn} text-sky-500">Chat about this</a>
+          <a href="#/opportunities" class="${aBtn} text-amber-500">Find replies</a>
+          <a href="#/compose?kind=post&angle=${encodeURIComponent("What’s new: " + label)}&context=${encodeURIComponent(ctx)}" class="${aBtn} text-emerald-500">What's new</a>
+        </div></div>
+      ${related.length ? `<div class="${card}"><div class="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">Related</div>
+        <div class="flex flex-wrap gap-2">${related.slice(0, 12).map((r) =>
+          `<a href="#/brain/angle/${encodeURIComponent(r.id || r.label || "")}" class="${aBtn}"><span class="h-2 w-2 rounded-full inline-block mr-1" style="background:${_bc(r.group)}"></span>${esc(r.label)}</a>`).join("")}</div></div>` : ""}
+      ${!n ? `<div class="${card} text-zinc-500">No matching node found in the brain graph. <a class="text-reddit underline" href="#/brain">Back to Brain →</a></div>` : ""}
+    </div>`;
+  icons();
+}
+
+// Render a generated-article view from the brain's top angle or a saved content id.
+async function renderBrainArticle(view, b, idOrAngle) {
+  const aBtn = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold hover:border-zinc-400";
+  let title = idOrAngle || "Article from Brain";
+  let body = "";
+  let fromId = "";
+  // If the param looks like a content id, try to load that content item.
+  if (idOrAngle && idOrAngle.startsWith("c-")) {
+    try {
+      const r = await api.contentList(null, null, 200);
+      const c = (r?.content || []).find((x) => String(x.id) === idOrAngle);
+      if (c) { title = c.title || title; body = c.body || ""; fromId = idOrAngle; }
+    } catch (e) {}
+  }
+  if (!body) {
+    // Fallback: use the first tree persona belief / structural concept as a stub.
+    const t = b.tree || {};
+    const belief = (t.personas || [])[0]?.top_beliefs?.[0]?.statement;
+    const concept = (t.structural || [])[0]?.label;
+    body = belief || concept
+      ? `${belief || concept}\n\nThis article draft was generated from your agent's brain. Open it in Compose to expand and publish.`
+      : "No article draft yet. Pick an angle in the Brain and click “Draft article” to generate one.";
+  }
+  view.innerHTML =
+    head(title,
+      "Generated article draft from your agent’s brain.",
+      `<a href="#/brain" class="${btn}">← Back to Brain</a>
+       <a href="#/compose?kind=article&angle=${encodeURIComponent(title)}" class="${btnP}">Open in Compose</a>`) +
+    `<div class="${card}">
+      <div class="prose dark:prose-invert max-w-none text-sm text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap">${esc(body)}</div>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <a href="#/compose?kind=article&angle=${encodeURIComponent(title)}${fromId ? `&id=${encodeURIComponent(fromId)}` : ""}" class="${aBtn} text-violet-500">Edit in Compose</a>
+        <a href="#/queue" class="${aBtn}">View in Queue</a>
+      </div></div>`;
+  icons();
 }
 
 export async function renderLibrary(view) {
@@ -3553,7 +4520,7 @@ export async function renderXAccount(view) {
         </div>
         <div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
           <label class="flex items-center gap-2 text-zinc-600 dark:text-zinc-300">
-            <input id="xa-with-threads" type="checkbox" ${withThreads ? "checked" : ""}> Include reply threads
+            <input id="xa-with-threads" type="checkbox" class="accent-reddit" ${withThreads ? "checked" : ""}> Include reply threads
           </label>
           <button id="xa-reload" class="${btn}">Reload</button>
           <button id="xa-save-lib" class="${btnP}">Save to Library</button>
@@ -3685,6 +4652,137 @@ export async function renderXAccount(view) {
   icons();
 }
 
+// ── Tasks board (knowledge → action → sections) ───────────────────────────
+const TASK_KINDS = {
+  draft_post: ["Draft post", "bg-indigo-500/15 text-indigo-400"],
+  draft_article: ["Article", "bg-violet-500/15 text-violet-400"],
+  draft_thread: ["Thread", "bg-sky-500/15 text-sky-400"],
+  find_replies: ["Find replies", "bg-amber-500/15 text-amber-500"],
+  whats_new: ["What's new", "bg-emerald-500/15 text-emerald-500"],
+  custom: ["Task", "bg-zinc-500/15 text-zinc-400"],
+};
+const TASK_COLS = [["todo", "To-do"], ["in_progress", "In progress"], ["done", "Done"]];
+const TASK_NEXT = { todo: "in_progress", in_progress: "done", done: "todo" };
+const TASK_NEXT_LABEL = { todo: "Start", in_progress: "✓ Done", done: "↺ Reopen" };
+
+// Hand a task's payload to the section it targets, then mark it in progress.
+// Uses the same sessionStorage handoff Compose already reads for repurpose.
+async function openTask(t) {
+  const p = t.payload || {};
+  try {
+    if (t.target === "compose") {
+      sessionStorage.setItem("or-task-compose", JSON.stringify({
+        compose_kind: p.compose_kind || "post", angle: p.angle || "",
+        context: p.context || "", title: t.title || "",
+      }));
+      if (t.status === "todo") { try { await api.taskUpdate(t.id, { status: "in_progress" }); } catch (e) {} }
+      location.hash = "#/compose";
+    } else if (t.target === "inbox") {
+      sessionStorage.setItem("or-task-inbox", JSON.stringify({ query: p.query || p.node_label || t.title || "" }));
+      if (t.status === "todo") { try { await api.taskUpdate(t.id, { status: "in_progress" }); } catch (e) {} }
+      location.hash = "#/inbox";
+    } else if (t.target === "queue") {
+      location.hash = "#/queue";
+    } else {
+      toast("No section linked to this task");
+    }
+  } catch (e) { toast("Couldn’t open: " + e); }
+}
+
+export async function renderTasks(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  view.innerHTML = head("Tasks",
+    "Turn what you know into what you’ll do — drafts, replies &amp; ideas, captured from the Brain graph, the Daily Update, or by hand.",
+    `<button id="tk-new" class="${btnP}">+ New task</button>`) +
+    `<div id="tk-board" class="grid gap-4 md:grid-cols-3">Loading…</div>`;
+
+  const board = () => document.getElementById("tk-board");
+  let tasks = [];
+
+  async function load() {
+    if (!api.isTauri()) { board().innerHTML = `<div class="${card} text-zinc-500 md:col-span-3">Tasks need the desktop app.</div>`; return; }
+    try { tasks = (await api.taskList())?.tasks || []; }
+    catch (e) { board().innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500 md:col-span-3">Couldn’t load tasks — ${esc(e)} <button id="tk-retry" class="ml-2 underline">Retry</button></div>`; const r = document.getElementById("tk-retry"); if (r) r.onclick = load; return; }
+    paint();
+  }
+
+  function taskCard(t) {
+    const [klabel, kcls] = TASK_KINDS[t.kind] || TASK_KINDS.custom;
+    const bd = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold hover:border-zinc-400";
+    const openBtn = t.target
+      ? `<button data-act="open" data-id="${esc(t.id)}" class="${bd} text-reddit">Open in ${esc(t.target)} →</button>`
+      : "";
+    return `<div class="${card} !p-4" data-row="${esc(t.id)}">
+      <div class="flex items-center gap-2">
+        <span class="rounded px-2 py-0.5 text-xs font-bold ${kcls}">${esc(klabel)}</span>
+        ${t.source && t.source !== "manual" ? `<span class="text-[11px] text-zinc-400">from ${esc(t.source)}</span>` : ""}
+      </div>
+      <p class="mt-2 text-sm font-semibold text-zinc-900 dark:text-white">${esc(t.title)}</p>
+      ${t.note ? `<p class="mt-1 text-xs text-zinc-500">${esc(t.note)}</p>` : ""}
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button data-act="advance" data-id="${esc(t.id)}" class="${bd}">${TASK_NEXT_LABEL[t.status] || "Next"}</button>
+        ${openBtn}
+        <button data-act="delete" data-id="${esc(t.id)}" class="${bd} text-rose-500">Delete</button>
+      </div></div>`;
+  }
+
+  function paint() {
+    const cols = TASK_COLS.map(([st, label]) => {
+      const list = tasks.filter(t => (t.status || "todo") === st);
+      const cards = list.length
+        ? list.map(taskCard).join("")
+        : `<div class="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 p-4 text-center text-xs text-zinc-400">Nothing here</div>`;
+      return `<div>
+        <div class="mb-2 flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-200">${label}
+          <span class="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 text-xs text-zinc-500">${list.length}</span></div>
+        <div class="space-y-3">${cards}</div></div>`;
+    }).join("");
+    board().innerHTML = cols;
+    board().querySelectorAll("[data-act]").forEach(b => b.onclick = () => tkAction(b));
+    icons();
+  }
+
+  async function tkAction(b) {
+    const act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
+    const t = tasks.find(x => String(x.id) === id) || {};
+    if (act === "open") { openTask(t); return; }
+    if (act === "delete") {
+      try { await api.taskDelete(id); toast("Deleted"); load(); } catch (e) { toast("Delete failed: " + e); }
+      return;
+    }
+    if (act === "advance") {
+      const next = TASK_NEXT[t.status || "todo"];
+      b.disabled = true;
+      try { await api.taskUpdate(id, { status: next }); load(); }
+      catch (e) { toast("Failed: " + e); b.disabled = false; }
+    }
+  }
+
+  const newBtn = document.getElementById("tk-new");
+  if (newBtn) newBtn.onclick = () => {
+    const kopts = Object.entries(TASK_KINDS).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join("");
+    window.orModal({
+      title: "New task", okText: "Create",
+      body: `<input id="tk-title" placeholder="What needs doing?" class="mb-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">
+        <div class="flex gap-2">
+          <select id="tk-kind" class="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${kopts}</select>
+          <select id="tk-target" class="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">
+            <option value="">No section</option><option value="compose">Compose</option><option value="inbox">Inbox</option><option value="queue">Queue</option></select>
+        </div>`,
+      onOk: async (ov) => {
+        const title = ov.querySelector("#tk-title")?.value?.trim();
+        if (!title) { toast("Give the task a title"); return; }
+        const kind = ov.querySelector("#tk-kind")?.value || "custom";
+        const target = ov.querySelector("#tk-target")?.value || "";
+        try { await api.taskCreate({ title, kind, target, source: "manual", payload: { compose_kind: kind === "draft_article" ? "article" : kind === "draft_thread" ? "thread" : "post", angle: title } }); toast("Task created"); load(); }
+        catch (e) { toast("Create failed: " + e); }
+      },
+    });
+  };
+
+  load();
+}
+
 export const DYN = {
   "x-account": renderXAccount,
   watch: renderWatch,
@@ -3704,6 +4802,8 @@ export const DYN = {
   inbox: renderInbox,
   analytics: renderAnalytics,
   queue: renderQueue,
+  chat: renderChat,
+  tasks: renderTasks,
   keywords: renderKeywords,
   subreddit: renderSubredditFull,
   onboarding: renderOnboarding,

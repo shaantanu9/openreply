@@ -6,9 +6,9 @@
 <script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
 </head>
 <body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
-<div class="flex min-h-screen">
+<div class="flex h-screen overflow-hidden">
   <aside id="side"></aside>
-  <main class="w-full max-w-6xl flex-1 px-8 py-7">
+  <main class="w-full max-w-6xl flex-1 overflow-auto px-8 py-7">
     <div class="mb-6 flex items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Acme Notes</h1>
         <p class="text-zinc-500 dark:text-zinc-400">AI note-taking for students · watching Reddit, HN, Dev.to</p></div>
@@ -41,9 +41,9 @@
         <div class="flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Fresh angles</b><a href="compose.html" class="text-sm text-zinc-500 hover:text-reddit">Write one →</a></div>
         <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">What your niche is talking about right now.</p>
         <div class="space-y-2.5 text-sm">
-          <div class="flex items-center justify-between"><span>"People hate manual tagging of notes"</span><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">pain · 38</span></div>
-          <div class="flex items-center justify-between"><span>"Obsidian sync is too fiddly for students"</span><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">complaint · 27</span></div>
-          <div class="flex items-center justify-between"><span>"Wish notes auto-linked to lecture slides"</span><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">feature · 21</span></div>
+          <div class="flex items-center justify-between"><a href="compose.html?angle=People%20hate%20manual%20tagging%20of%20notes" class="hover:text-reddit hover:underline">"People hate manual tagging of notes"</a><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">pain · 38</span></div>
+          <div class="flex items-center justify-between"><a href="compose.html?angle=Obsidian%20sync%20is%20too%20fiddly%20for%20students" class="hover:text-reddit hover:underline">"Obsidian sync is too fiddly for students"</a><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">complaint · 27</span></div>
+          <div class="flex items-center justify-between"><a href="compose.html?angle=Wish%20notes%20auto-linked%20to%20lecture%20slides" class="hover:text-reddit hover:underline">"Wish notes auto-linked to lecture slides"</a><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">feature · 21</span></div>
         </div>
       </div>
       <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">

@@ -1172,6 +1172,109 @@ def cmd_info(
     console.print_json(data=stats)
 
 
+# ── LLM connection test + model listing ──────────────────────────────────────
+# Used by the onboarding wizard ("Test connection") and Settings → AI provider.
+# Implemented against the live provider layer (openreply.analyze.providers); the
+# old research.chat.test_provider helper was removed with the research surface.
+
+
+@app.command("test-llm")
+def cmd_test_llm(
+    provider: Optional[str] = typer.Option(None, "--provider"),
+    model: Optional[str] = typer.Option(None, "--model"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Ping the configured (or chosen) LLM and report latency + reply."""
+    import time
+
+    from ..analyze.providers.base import get_provider, resolve_provider
+
+    result: dict[str, Any] = {"ok": False}
+    try:
+        name = resolve_provider(provider) if provider else resolve_provider(None)
+        prov = get_provider(provider or None)
+        used = getattr(prov, "name", None) or name
+        used_model = (
+            model
+            or getattr(prov, "_model", None)
+            or os.getenv("LLM_MODEL")
+            or ""
+        )
+        t0 = time.monotonic()
+        reply = prov.complete(
+            "Reply with exactly the word: OK",
+            system="You are a connection test. Reply with a single short word.",
+            max_tokens=16,
+            temperature=0.0,
+        )
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        result = {
+            "ok": True,
+            "provider": used,
+            "model": used_model,
+            "latency_ms": latency_ms,
+            "reply": (reply or "").strip()[:200],
+        }
+    except Exception as exc:  # noqa: BLE001 — surface any provider/key/network error
+        result = {
+            "ok": False,
+            "provider": (provider or os.getenv("LLM_PROVIDER") or "?"),
+            "error": str(exc),
+        }
+
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+    elif result.get("ok"):
+        typer.echo(f"✓ {result['provider']} · {result.get('model') or '?'} · {result['latency_ms']}ms")
+        typer.echo(f"  reply: {result['reply']}")
+    else:
+        typer.echo(f"✗ {result.get('provider', '?')}: {result.get('error', 'unknown')}")
+        raise typer.Exit(1)
+
+
+@app.command("list-models")
+def cmd_list_models(
+    provider: str = typer.Option("ollama", "--provider"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List available models for a provider (currently Ollama only)."""
+    import urllib.request
+
+    if provider.lower() != "ollama":
+        msg = {"ok": False, "error": f"list-models is only implemented for ollama (got {provider})"}
+        typer.echo(json.dumps(msg) if as_json else f"✗ {msg['error']}")
+        raise typer.Exit(1)
+
+    base = (os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+    url = f"{base}/api/tags"
+    try:
+        with urllib.request.urlopen(url, timeout=4) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        result = {"ok": False, "url": base, "error": str(exc)}
+        if as_json:
+            typer.echo(json.dumps(result))
+        else:
+            typer.echo(f"✗ Can't reach Ollama at {base}: {exc}")
+        return
+
+    models = []
+    for m in payload.get("models", []) or []:
+        details = m.get("details") or {}
+        models.append({
+            "name": m.get("name") or m.get("model") or "",
+            "size_mb": round((m.get("size") or 0) / (1024 * 1024)),
+            "param_size": details.get("parameter_size") or "",
+        })
+    result = {"ok": True, "url": base, "models": models}
+    if as_json:
+        typer.echo(json.dumps(result, default=str))
+    else:
+        for m in models:
+            params = f" ({m['param_size']})" if m["param_size"] else ""
+            typer.echo(f"  {m['name']:<50} {m['size_mb']} MB{params}")
+
+
 # ── AG-E: prompt overrides (T3.7) ──────────────────────────────────────
 
 

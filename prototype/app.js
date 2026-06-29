@@ -9,6 +9,7 @@
       ['opportunities.html', 'target', 'Opportunities', '12'],
       ['compose.html', 'pen-line', 'Compose'],
       ['queue.html', 'calendar-clock', 'Queue'],
+      ['chat.html', 'message-square', 'Chat'],
     ]},
     { sec: 'Intelligence', items: [
       ['keywords.html', 'key-round', 'Keywords'],
@@ -55,6 +56,22 @@
     const f = ov.querySelector('input,textarea'); if (f) f.focus();
     return ov;
   };
+
+  // Seed sample drafts once per browser so Queue / Compose share one source of truth.
+  (function seedDrafts() {
+    if (localStorage.getItem('or-drafts-seeded')) return;
+    const sample = [
+      {id:'q-1', type:'thread', status:'scheduled', content:'1/ The 3 reasons students abandon note apps…', platform:'X', date:'2026-07-29T09:00:00', meta:'Tomorrow 9:00', body:'1/ The 3 reasons students abandon note apps (and the fix)…'},
+      {id:'q-2', type:'post', status:'scheduled', content:'Manual note tagging is where note apps go to die…', platform:'X', date:'2026-08-01T12:30:00', meta:'Fri 12:30', body:"Manual note tagging is where note apps go to die.\n\nStudents don't quit because they lack folders — they quit because filing is work.\n\nThe fix: capture in plain text, let the app auto-link by topic. Zero upkeep, full recall.\n\nThat's the whole bet behind how we built Acme Notes."},
+      {id:'q-3', type:'reply', status:'draft', content:'For messy lecture notes, the trick is auto-tagging…', platform:'Reddit', date:'2026-07-28T10:00:00', meta:'r/GetStudying', body:"For messy lecture notes, the trick is auto-tagging so you don't file things manually. I take notes in plain markdown, then let an app surface links between them by topic — way less upkeep than folders. (Full disclosure: I build Acme Notes, which does this for students, but the markdown + auto-link idea works in any tool.)"},
+      {id:'q-4', type:'article', status:'draft', content:'Why folders fail for lecture notes — and what replaces them', platform:'LinkedIn', date:'2026-04-12T00:00:00', meta:'', body:"Why folders fail for lecture notes — and what replaces them\n\nFor decades, the default way to organize notes has been folders. Biology > Week 3 > Lecture Slides. It looks clean on day one. By week six, it is a graveyard of half-remembered file names.\n\nThe problem isn't the student. It's the model.\n\nFolders assume you already know where a note belongs before you need it. In practice, a single lecture touches synthesis, a recurring concept from last month, and a method you will not fully understand until the exam. A folder forces you to pick one home. Your future self loses the others.\n\nThe alternative is topic-based auto-linking. Capture notes in plain text, and let the surface surface connections by concept, not by location. The result: zero filing tax, full recall.\n\nAt Acme Notes, that is the bet we are building on. Not more organization. Less."},
+      {id:'q-5', type:'post', status:'posted', content:"Plain text + auto-link beats folders. Here's why…", platform:'LinkedIn', date:'2026-04-10T00:00:00', meta:'412 views', body:"Plain text + auto-link beats folders. Here's why…"}
+    ];
+    try {
+      localStorage.setItem('or-drafts', JSON.stringify(sample));
+      localStorage.setItem('or-drafts-seeded', '1');
+    } catch (e) {}
+  })();
 
   // Generic feedback for otherwise-inert prototype buttons, so the flow feels live.
   document.addEventListener('click', (e) => {
@@ -117,7 +134,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     const side = document.getElementById('side');
     if (side) {
-      side.className = 'w-60 shrink-0 border-r border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 flex flex-col gap-3 sticky top-0 h-screen overflow-auto';
+      side.className = 'w-60 shrink-0 border-r border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 flex flex-col gap-3 h-full overflow-y-auto';
       side.innerHTML = sidebar();
     }
     syncKnob();

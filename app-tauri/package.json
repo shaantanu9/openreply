@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "bash scripts/dev.sh",
-    "test": "echo \"(OpenReply UI port \u2014 tests TBD)\"",
+    "test": "node tests/profile-card.test.mjs",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture"
   },
   "dependencies": {
@@ -25,6 +25,9 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
+    "autoprefixer": "^10.5.2",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^3.4.19",
     "vite": "^6.0.0"
   }
 }

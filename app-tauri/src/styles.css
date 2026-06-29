@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── App scroll container ──────────────────────────────────────────────────
+   #main-content is the single scroll area inside the `flex h-screen
+   overflow-hidden` shell. Every view re-sets its className (w-full max-w-6xl
+   flex-1 px-8 py-7) which carries NO overflow utility, so the bundled HTML's
+   `overflow-auto` gets wiped on first render and any view taller than the
+   viewport can't scroll. Pin it here on the id (className never sets overflow,
+   so this always wins) — fixes scrolling for ALL views in one place. */
+#main-content {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* ── App-wide form-control polish ─────────────────────────────────────────
+   Moved here from the inline <style> in index.html so it ships in the bundled
+   stylesheet (works offline / in the packaged app). Consistent, comfortable
+   padding for every input / select / textarea (page bodies AND injected
+   modals). */
+input:not([type=checkbox]):not([type=radio]):not([type=range]),
+select, textarea {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+  line-height: 1.4;
+  min-height: 2.6rem;
+  box-sizing: border-box;
+}
+textarea { min-height: unset; }
+
+/* Native <select> arrow crowds the text — swap it for a custom chevron and
+   reserve right padding so the value never overlaps the icon. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.25rem !important;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 1rem 1rem;
+}
+
+/* Consistent focus ring (brand orange) on anything not already given one. */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: #ff4500;
+  box-shadow: 0 0 0 2px rgba(255, 69, 0, 0.35);
+}
+input::placeholder, textarea::placeholder { color: #a1a1aa; }
+
+/* Nav search keeps room for its leading magnifier icon (other search inputs
+   use normal padding). */
+#navSearch { padding-left: 2rem; }
+
+/* ── Sidebar collapse (rail mode) ──────────────────────────────────────────
+   Driven by `body[data-sidebar="rail"]` (set in or/shell.js). The sidebar
+   shrinks to an icon-only rail: labels, the agent picker, search, section
+   headers and the footer name are hidden; nav icons centre. `full` (default)
+   needs no rules — it's the shell's normal Tailwind layout.
+   Selectors use #side (id) so they outrank Tailwind's utility classes. */
+#side { transition: width 0.15s ease; }
+
+body[data-sidebar="rail"] #side {
+  width: 4rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+/* Brand row: stack the logo dot above the (expand) toggle, centred. */
+body[data-sidebar="rail"] #side > div:first-child {
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-left: 0;
+  padding-right: 0;
+}
+body[data-sidebar="rail"] #side > div:first-child > a { flex: none; }
+body[data-sidebar="rail"] #side .brand-text { display: none; }
+/* Hide the "Active agent" card (2nd child) and the search box (3rd child). */
+body[data-sidebar="rail"] #side > div:nth-child(2),
+body[data-sidebar="rail"] #side > div:nth-child(3) { display: none; }
+/* Nav: drop section headers and labels, centre each icon. */
+body[data-sidebar="rail"] #side nav > div { display: none; }
+body[data-sidebar="rail"] #side .nav-label { display: none; }
+body[data-sidebar="rail"] #side nav a {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+/* Hide inbox-count badge / tag pills in rail (anchor spans that aren't labels). */
+body[data-sidebar="rail"] #side nav a > span:not(.nav-label) { display: none; }
+/* Footer account button: keep the avatar, drop name + chevron, centre it. */
+body[data-sidebar="rail"] #side #accountMenu {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+body[data-sidebar="rail"] #side #accountMenu [data-user-name],
+body[data-sidebar="rail"] #side #accountMenu i[data-lucide="chevron-up"] { display: none; }
+
+/* Sidebar "Active agent" selector is a compact, borderless control — opt it
+   out of the comfortable form sizing so the card doesn't grow tall. */
+#agentSel {
+  min-height: 0;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+  padding-left: 0;
+  padding-right: 1.4rem !important;
+  background-position: right 0.25rem center;
+  background-size: 0.85rem 0.85rem;
+}
+
+/* Daily Update feed — thin internal scrollbar so the card height stays bounded */
+.feed-scroll::-webkit-scrollbar { width: 8px; }
+.feed-scroll::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 128, 0.35);
+  border-radius: 8px;
+}
+.dark .feed-scroll::-webkit-scrollbar-thumb {
+  background: rgba(160, 160, 170, 0.25);
+}
+
+/* ── View / chat / card animations ───────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 260ms ease-out forwards; }
+.animate-fade-in-up { animation: fade-in-up 260ms ease-out forwards; }

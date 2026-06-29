@@ -16,7 +16,12 @@ You already have:
 Confirm your Apple Developer Program is current at
 <https://developer.apple.com/account/> (renews yearly, $99).
 
-## 2. Create a **Developer ID Application** cert
+## 2. Create a **Developer ID Application** cert — ✅ DONE (2026-06-29)
+
+The `Developer ID Application: Shantanu Bombatkar (263A33H6P5)` cert is now
+installed in the login keychain, and the ASC API key `GP8F78A74R` is wired into
+`scripts/publish-mac.sh --sign` via `.env.publish`. Steps 2–6 below are already
+satisfied for local builds; they remain as reference and for CI secret setup.
 
 This is the cert specifically for distributing macOS apps OUTSIDE the App
 Store (signed + notarized DMG). The certs you have today are not this one.

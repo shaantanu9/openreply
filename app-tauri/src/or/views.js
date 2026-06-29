@@ -5,7 +5,7 @@ export const VIEWS = {
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-6 flex items-start justify-between gap-4">
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Agents</h1>
         <p class="text-zinc-500 dark:text-zinc-400">Each agent is a brand/niche persona with its own knowledge &amp; voice.</p></div>
       <a href="#/onboarding" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi">+ New agent</a>
@@ -60,7 +60,7 @@ export const VIEWS = {
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-6 flex items-start justify-between gap-4">
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Acme Notes</h1>
         <p class="text-zinc-500 dark:text-zinc-400">AI note-taking for students · watching Reddit, HN, Dev.to</p></div>
       <div class="flex gap-2">
@@ -113,7 +113,7 @@ export const VIEWS = {
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Inbox</h1>
         <p class="text-zinc-500 dark:text-zinc-400">Live mentions of your keywords — newest first. Real-time alerts, noise filtered.</p></div>
       <div class="flex gap-2"><a href="#/alerts" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold"><i data-lucide="bell" class="inline-block h-4 w-4 align-[-2px]"></i> Alerts</a>
@@ -141,7 +141,7 @@ const M=[
 const pfb=p=>p==='hn'?'bg-amber-500/15 text-amber-500':p==='x'?'bg-brand/15 text-brand':'bg-reddit/15 text-reddit';
 const tg={emerald:'bg-emerald-500/15 text-emerald-500',indigo:'bg-indigo-500/15 text-indigo-400',amber:'bg-amber-500/15 text-amber-500',rose:'bg-rose-500/15 text-rose-500',zinc:'bg-zinc-500/15 text-zinc-400'};
 document.getElementById('list').innerHTML=M.map(m=>`
- <div class="flex items-start justify-between gap-4 p-4">
+ <div class="flex flex-wrap items-start justify-between gap-4 p-4">
    <div class="min-w-0">
      <div class="flex flex-wrap items-center gap-2 text-sm">
        <span class="rounded ${pfb(m.pf)} px-2 py-0.5 text-xs font-bold">${m.pf}</span>
@@ -161,7 +161,7 @@ document.getElementById('list').innerHTML=M.map(m=>`
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Opportunities</h1>
         <p class="text-zinc-500 dark:text-zinc-400">Conversations worth replying to for <b>Acme Notes</b>.</p></div>
       <button onclick="document.getElementById('scan').textContent='Scanning reddit, hn, dev.to… ✓ 12 found'" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi"><i data-lucide="zap" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</button>
@@ -261,7 +261,7 @@ document.getElementById('kinds').addEventListener('click',e=>{const b=e.target.c
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Queue</h1>
         <p class="text-zinc-500 dark:text-zinc-400">Drafts &amp; scheduled content. Publishing is manual now (auto-publish later).</p></div>
       <a href="#/compose" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold">+ New content</a>
@@ -287,11 +287,104 @@ document.getElementById('kinds').addEventListener('click',e=>{const b=e.target.c
     </div>
   `,
   },
+  'chat': {
+    main: 'w-full max-w-6xl flex-1 px-8 py-7',
+    full: false,
+    html: `
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
+      <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Chat</h1>
+        <p class="text-zinc-500 dark:text-zinc-400">Ask your agent anything about its niche, angles, or drafts.</p></div>
+      <a href="#/compose" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi"><i data-lucide="pen-line" class="inline-block h-4 w-4 align-[-2px]"></i> New draft</a>
+    </div>
+    <div class="flex h-[calc(100vh-160px)] flex-col rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <div id="messages" class="flex-1 overflow-y-auto p-5 space-y-4">
+        <div class="flex gap-3">
+          <div class="h-8 w-8 shrink-0 rounded-full bg-reddit"></div>
+          <div class="max-w-[80%]">
+            <div class="rounded-2xl rounded-tl-sm bg-zinc-100 px-4 py-2.5 text-sm dark:bg-zinc-800">Hi — I'm your research assistant. Ask me about the latest angles, competitor mentions, or what to write today.</div>
+            <div class="mt-1 text-xs text-zinc-400">Agent</div>
+          </div>
+        </div>
+      </div>
+      <div class="border-t border-zinc-200 dark:border-zinc-800 p-4">
+        <form id="chatForm" class="flex gap-2">
+          <input id="chatInput" autocomplete="off" placeholder="Ask about an angle, competitor, or draft idea…" class="flex-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reddit/50">
+          <button type="submit" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi"><i data-lucide="send" class="inline-block h-4 w-4 align-[-2px]"></i></button>
+        </form>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button type="button" class="ch-quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:border-reddit hover:text-reddit">Top angle today?</button>
+          <button type="button" class="ch-quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:border-reddit hover:text-reddit">Draft a reply</button>
+          <button type="button" class="ch-quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:border-reddit hover:text-reddit">What are competitors missing?</button>
+        </div>
+      </div>
+    </div>
+    `,
+    init() {
+      const replies = {
+        'top angle today': 'The strongest angle right now is “People hate manual tagging of notes.” It came up 38 times in the last 30 days and has high buying intent.',
+        'angle': 'The strongest angle right now is “People hate manual tagging of notes.” It came up 38 times in the last 30 days and has high buying intent.',
+        'competitor': 'Competitors like Notion and Obsidian are praised for power but criticized for setup friction. The gap to own: “capture now, organize automatically.”',
+        'obsidian': 'Obsidian is powerful but students call the sync “fiddly.” That complaint has 27 mentions and is a great contrast angle.',
+        'draft': 'I can draft a post, thread, or article. Pick a type in Compose or tell me the platform and angle here.',
+        'reddit': 'For Reddit, value-first replies work best. I can draft one from any opportunity in the Opportunities page, or write a standalone post if you give me an angle.',
+        'default': 'Good question. I can help with angles, competitors, reply drafts, or content ideas. Try asking “Top angle today?” or “Draft a Reddit reply.”'
+      };
+      function pickReply(text) { const t = text.toLowerCase(); for (const k in replies) if (t.includes(k)) return replies[k]; return replies.default; }
+      function appendBubble(who, text) {
+        const m = document.getElementById('messages'); const isUser = who === 'user';
+        const div = document.createElement('div'); div.className = `flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`;
+        div.innerHTML = `<div class="h-8 w-8 shrink-0 rounded-full ${isUser ? 'bg-brand' : 'bg-reddit'}"></div><div class="max-w-[80%]"><div class="rounded-2xl ${isUser ? 'rounded-tr-sm bg-reddit text-white' : 'rounded-tl-sm bg-zinc-100 dark:bg-zinc-800'} px-4 py-2.5 text-sm">${text}</div><div class="mt-1 text-xs text-zinc-400 ${isUser ? 'text-right' : ''}">${isUser ? 'You' : 'Agent'}</div></div>`;
+        m.appendChild(div); m.scrollTop = m.scrollHeight;
+      }
+      function send(text) { if (!text.trim()) return; appendBubble('user', text); document.getElementById('chatInput').value = ''; setTimeout(() => appendBubble('agent', pickReply(text)), 600); }
+      document.getElementById('chatForm').addEventListener('submit', e => { e.preventDefault(); send(document.getElementById('chatInput').value); });
+      document.querySelectorAll('.ch-quick').forEach(b => b.addEventListener('click', () => send(b.textContent)));
+    },
+  },
+  'brain': {
+    main: 'w-full max-w-6xl flex-1 px-8 py-7',
+    full: false,
+    html: `
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
+      <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Brain <span class="text-base font-normal text-zinc-400">(unified)</span></h1>
+        <p class="text-zinc-500 dark:text-zinc-400">One connected mind: structural graph + persona brains + beliefs, merged.</p></div>
+      <div class="flex gap-2">
+        <div class="inline-flex rounded-full border border-zinc-200 dark:border-zinc-700 p-0.5 text-sm font-semibold">
+          <button class="rounded-full px-3 py-1.5 bg-reddit text-white">Graph</button>
+          <button class="rounded-full px-3 py-1.5 text-zinc-500">Tree</button></div>
+        <button class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi">Rebuild</button></div>
+    </div>
+    <div class="mb-3 flex flex-wrap gap-3 text-xs text-zinc-500">
+      <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-reddit"></span>painpoint 12</span>
+      <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>product 8</span>
+      <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-fuchsia-500"></span>cross-links 34</span>
+    </div>
+    <div class="grid gap-4 lg:grid-cols-[1fr,18rem] flex-1 min-h-0">
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 overflow-hidden relative h-96">
+        <div class="flex h-full items-center justify-center text-sm text-zinc-400">
+          <div class="text-center">
+            <i data-lucide="network" class="mx-auto mb-2 h-10 w-10 text-zinc-300"></i>
+            <p>Graph view loads in the Tauri app.</p>
+            <a href="#/compose" class="mt-2 inline-block text-reddit underline">Draft from an angle →</a>
+          </div>
+        </div>
+      </div>
+      <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 text-sm text-zinc-500">
+        <p>Click a node to inspect it.</p>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <a href="#/compose?kind=post&angle=People%20hate%20manual%20tagging%20of%20notes" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-semibold text-indigo-500">Draft post</a>
+          <a href="#/compose?kind=article&angle=People%20hate%20manual%20tagging%20of%20notes" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-semibold text-violet-500">Draft article</a>
+          <a href="#/chat?angle=People%20hate%20manual%20tagging%20of%20notes" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-semibold text-sky-500">Chat about this</a>
+        </div>
+      </div>
+    </div>
+  `,
+  },
   'keywords': {
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Keywords &amp; subreddits</h1>
         <p class="text-zinc-500 dark:text-zinc-400">What this agent watches. AI suggests the rest from your site &amp; niche.</p></div>
       <div class="flex gap-2"><button class="rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> AI-suggest</button>
@@ -372,7 +465,7 @@ document.getElementById('kinds').addEventListener('click',e=>{const b=e.target.c
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Knowledge</h1>
         <p class="text-zinc-500 dark:text-zinc-400">What's happening in your niche — refreshed automatically.</p></div>
       <div class="flex items-center gap-2"><span class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500">last refresh: 2h ago</span>
@@ -414,7 +507,7 @@ document.getElementById('kinds').addEventListener('click',e=>{const b=e.target.c
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Analytics</h1><p class="text-zinc-500 dark:text-zinc-400">Acme Notes · last 30 days</p></div>
       <div class="flex gap-1.5"><span class="rounded-full bg-reddit/10 px-3 py-1 text-sm font-semibold text-reddit">30d</span><span class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-sm text-zinc-500">7d</span><span class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-sm text-zinc-500">all</span></div>
     </div>
@@ -457,7 +550,7 @@ document.getElementById('spark').innerHTML=[30,55,40,70,60,85,50,95,65,80,45,100
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">AI Visibility <span class="text-base font-normal text-zinc-400">(GEO)</span></h1>
         <p class="text-zinc-500 dark:text-zinc-400">Reddit is the #1 cited source in AI answers. Track whether your brand shows up in Google &amp; LLM responses — and turn replies into citations.</p></div>
       <button onclick="trackQuery()" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi">+ Track a query</button>
@@ -579,7 +672,7 @@ document.getElementById('conn').innerHTML=C.map(([n,d,[t,c],btn,pri])=>`
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-4 flex items-start justify-between gap-4">
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Plans</h1><p class="text-zinc-500 dark:text-zinc-400">Open-source &amp; self-host free. Hosted plans add convenience — never caps.</p></div>
       <div class="flex gap-1.5"><span class="rounded-full bg-reddit/10 px-3 py-1 text-sm font-semibold text-reddit">Monthly</span><span class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-sm text-zinc-500">Lifetime</span></div>
     </div>
@@ -623,7 +716,7 @@ document.getElementById('conn').innerHTML=C.map(([n,d,[t,c],btn,pri])=>`
     main: 'w-full max-w-6xl flex-1 px-8 py-7',
     full: false,
     html: `
-    <div class="mb-5 flex items-start justify-between gap-4">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Alert rules</h1>
         <p class="text-zinc-500 dark:text-zinc-400">Get pinged the moment a high-value conversation appears (sub-minute).</p></div>
       <button class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi">+ New rule</button>

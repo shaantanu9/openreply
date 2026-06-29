@@ -1,6 +1,14 @@
 # Developer ID signing + notarization runbook
 
-**Status:** required before shipping a DMG that works cleanly on macOS 26.5+ (Tahoe).
+**Status:** ✅ DONE as of 2026-06-29. Developer ID cert is in the keychain, the
+ASC API key (`GP8F78A74R`) is verified for notarization, and credentials are
+wired into `scripts/publish-mac.sh --sign` via the gitignored `.env.publish`.
+A notarized + stapled DMG/ZIP for 0.1.23 has been produced and passes
+`spctl -a -vvv` (`accepted / source=Notarized Developer ID`).
+
+To rebuild a notarized release: `scripts/publish-mac.sh --sign` (auto-sources
+`.env.publish`). The sections below are kept for reference / disaster recovery.
+
 **Substitute today:** ship the `.zip` produced by `scripts/publish-mac.sh` — covered
 in BETA.md.
 

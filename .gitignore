@@ -73,9 +73,11 @@ act_suit/html_site copy/
 # Per-worktree venv symlink (ui-redesign worktree)
 /.venv
 
-# Code-signing artefacts (private keys, .p12, CSR). Never commit.
+# Code-signing artefacts (private keys, .p12, CSR, ASC API keys). Never commit.
 .secrets/
 .env.publish
+*.p8
+AuthKey_*.p8
 
 # Claude Code session state (per-session, not source of truth)
 .claude/

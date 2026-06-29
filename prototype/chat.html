@@ -1,0 +1,84 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chat — OpenReply</title>
+<script>try{if((localStorage.getItem('or-theme')||'dark')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{reddit:{DEFAULT:'#ff4500',hi:'#ff5700'},brand:'#0079d3'}}}}</script>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased">
+<div class="flex h-screen overflow-hidden">
+  <aside id="side"></aside>
+  <main class="w-full max-w-6xl flex-1 overflow-auto px-8 py-7">
+    <div class="mb-5 flex items-start justify-between gap-4">
+      <div><h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Chat</h1>
+        <p class="text-zinc-500 dark:text-zinc-400">Ask your agent anything about its niche, angles, or drafts.</p></div>
+      <a href="compose.html" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi"><i data-lucide="pen-line" class="inline-block h-4 w-4 align-[-2px]"></i> New draft</a>
+    </div>
+
+    <div class="flex h-[calc(100vh-160px)] flex-col rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <div id="messages" class="flex-1 overflow-y-auto p-5 space-y-4">
+        <div class="flex gap-3">
+          <div class="h-8 w-8 shrink-0 rounded-full bg-reddit"></div>
+          <div class="max-w-[80%]">
+            <div class="rounded-2xl rounded-tl-sm bg-zinc-100 px-4 py-2.5 text-sm dark:bg-zinc-800">Hi — I'm your Acme Notes research assistant. Ask me about the latest angles, competitor mentions, or what to write today.</div>
+            <div class="mt-1 text-xs text-zinc-400">Agent</div>
+          </div>
+        </div>
+      </div>
+      <div class="border-t border-zinc-200 dark:border-zinc-800 p-4">
+        <form id="chatForm" class="flex gap-2">
+          <input id="chatInput" autocomplete="off" placeholder="Ask about an angle, competitor, or draft idea…" class="flex-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reddit/50">
+          <button type="submit" class="rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi"><i data-lucide="send" class="inline-block h-4 w-4 align-[-2px]"></i></button>
+        </form>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button type="button" class="quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:border-reddit hover:text-reddit">Top angle today?</button>
+          <button type="button" class="quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:border-reddit hover:text-reddit">Draft a Reddit reply</button>
+          <button type="button" class="quick rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:border-reddit hover:text-reddit">What are competitors missing?</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app.js"></script>
+<script>
+const replies = {
+  'top angle today': 'The strongest angle right now is “People hate manual tagging of notes.” It came up 38 times in the last 30 days and has high buying intent. Want me to draft a post or thread?',
+  'angle': 'The strongest angle right now is “People hate manual tagging of notes.” It came up 38 times in the last 30 days and has high buying intent.',
+  'competitor': 'Competitors like Notion and Obsidian are praised for power but criticized for setup friction. The gap to own: “capture now, organize automatically.”',
+  'obsidian': 'Obsidian is powerful but students call the sync “fiddly.” That complaint has 27 mentions and is a great contrast angle.',
+  'draft': 'I can draft a post, thread, or article. Pick a type in Compose or tell me the platform and angle here.',
+  'reddit': 'For Reddit, value-first replies work best. I can draft one from any opportunity in the Opportunities page, or write a standalone post if you give me an angle.',
+  'default': 'Good question. I can help with angles, competitors, reply drafts, or content ideas. Try asking “Top angle today?” or “Draft a Reddit reply.”'
+};
+function pickReply(text) {
+  const t = text.toLowerCase();
+  for (const key in replies) if (t.includes(key)) return replies[key];
+  return replies.default;
+}
+function appendBubble(who, text) {
+  const m = document.getElementById('messages');
+  const isUser = who === 'user';
+  const div = document.createElement('div');
+  div.className = `flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`;
+  div.innerHTML = `
+    <div class="h-8 w-8 shrink-0 rounded-full ${isUser ? 'bg-brand' : 'bg-reddit'}"></div>
+    <div class="max-w-[80%]">
+      <div class="rounded-2xl ${isUser ? 'rounded-tr-sm bg-reddit text-white' : 'rounded-tl-sm bg-zinc-100 dark:bg-zinc-800'} px-4 py-2.5 text-sm">${text}</div>
+      <div class="mt-1 text-xs text-zinc-400 ${isUser ? 'text-right' : ''}">${isUser ? 'You' : 'Agent'}</div>
+    </div>`;
+  m.appendChild(div);
+  m.scrollTop = m.scrollHeight;
+}
+function send(text) {
+  if (!text.trim()) return;
+  appendBubble('user', text);
+  document.getElementById('chatInput').value = '';
+  setTimeout(() => appendBubble('agent', pickReply(text)), 600);
+}
+document.getElementById('chatForm').addEventListener('submit', e => {
+  e.preventDefault();
+  send(document.getElementById('chatInput').value);
+});
+document.querySelectorAll('.quick').forEach(b => b.addEventListener('click', () => send(b.textContent)));
+</script>
+</body></html>

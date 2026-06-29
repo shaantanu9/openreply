@@ -26,9 +26,9 @@ App (shared sidebar, theme toggle):
   inbox.html ........ live mentions feed — intent/sentiment filters, real-time alerts  ★ new
   opportunities.html  find → score (relevance×intent×fit) → Draft reply (+ compliance)
   keywords.html ..... tracked keywords + subreddits, AI-suggest, negative keywords  ★ new
-  compose.html ...... generate post / thread / script / article
-  queue.html ........ drafts · scheduled · posted
-  keywords.html ..... tracked keywords + subreddits, AI-suggest, negative keywords
+  compose.html ...... generate post / thread / script / article, save drafts, schedule
+  queue.html ........ drafts · scheduled · posted (shares localStorage with Compose)
+  chat.html ......... AI research assistant for angles, competitors, and drafts  ★ new
   subreddit.html .... Subreddit Intelligence — rules, strictness, timing, account eligibility  ★ new
   knowledge.html .... niche knowledge map + refresh cadence + angles
   analytics.html .... replies/leads KPIs · momentum · by-platform · top subs · best content
@@ -39,8 +39,9 @@ App (shared sidebar, theme toggle):
   pricing.html ...... open-source/BYOK-no-caps positioning + competitor comparison
 ```
 
-Nav is grouped: **Agents** · per-agent (Overview/Inbox/Opportunities/Compose/Queue) ·
+Nav is grouped: **Agents** · per-agent (Overview/Inbox/Opportunities/Compose/Queue/Chat) ·
 **Intelligence** (Keywords/Subreddit Intel/Knowledge/Analytics/AI Visibility) · **Account**.
+Compose/Queue/Chat share one `localStorage` draft list so edits and saves flow between screens.
 Landing, onboarding (proven 5-step flow), and Plans encode the competitor findings from
 `docs/research/COMPETITOR_LANDSCAPE.md`.
 
@@ -52,6 +53,10 @@ Landing, onboarding (proven 5-step flow), and Plans encode the competitor findin
 - **Alert rules** (Slack/email, intent/score thresholds, sub-minute latency framing).
 - **Daily goal + momentum + account safety** on the agent overview.
 - **Plans** page (ReplyDaddy-style tiers + lifetime, BYOK note).
+- **App-shell scroll fix**: sidebar stays fixed, main content scrolls independently on every page.
+- **Chat** page with a working AI-assistant message flow.
+- **Compose + Queue wiring**: kind buttons generate correct Post/Thread/Video script/Article samples, Save draft persists, Schedule → Queue, and drafts are editable from both screens.
+- **Knowledge map** is taller; angle links prefill Compose with the selected angle.
 
 ## Iterate
 Edit HTML directly. Sidebar/nav is defined once in `app.js` (the `NAV` array). When the

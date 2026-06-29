@@ -131,4 +131,34 @@ def init_reply_schema(db: Database | None = None) -> Database:
         )
         db["content_publish_log"].create_index(["content_id"])
 
+    if "reply_digest" not in names:
+        # Daily Update digest — one row per agent per day. A goal-framed LLM
+        # briefing + a ranked feed of the freshest news/knowledge. Built on the
+        # first Overview open each day and cached for the rest of the day.
+        db["reply_digest"].create(
+            {
+                "id": str, "agent_id": str, "day": str,
+                "briefing_json": str, "feed_json": str, "sources_json": str,
+                "created_at": int,
+            },
+            pk="id",
+        )
+        db["reply_digest"].create_index(["agent_id", "day"])
+
+    if "reply_tasks" not in names:
+        # Assignable tasks that connect knowledge → action → a working section.
+        # Created from a Brain graph node, a Daily Update digest item, or by hand;
+        # each task can "open" the section it targets (compose/inbox/queue) with
+        # its payload seeding that surface. status: todo | in_progress | done.
+        db["reply_tasks"].create(
+            {
+                "id": str, "agent_id": str, "title": str, "kind": str,
+                "status": str, "target": str, "payload_json": str,
+                "source": str, "source_ref": str, "note": str,
+                "created_at": int, "updated_at": int, "done_at": int,
+            },
+            pk="id",
+        )
+        db["reply_tasks"].create_index(["agent_id", "status"])
+
     return db

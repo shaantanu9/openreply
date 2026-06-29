@@ -3,6 +3,18 @@
 // command bridge (or/dynamic.js → or/api.js → commands.rs → openreply reply/agent/content).
 // The rest render the static prototype views (or/views.js). In a plain browser (no Tauri)
 // everything falls back to the static views.
+
+// Bundled styling + icons. Previously Tailwind and Lucide loaded from public
+// CDNs (cdn.tailwindcss.com / unpkg.com) at runtime — that left the packaged
+// app completely unstyled (no CSS, no icons) on any machine where the webview
+// couldn't reach those CDNs. Both are now bundled locally so the app renders
+// identically offline and in the signed build.
+import "./styles.css";
+import { createIcons, icons } from "lucide";
+// Re-expose the global the existing call sites (shell.js drawIcons, dynamic.js)
+// already use, so no other file needs to change how it requests icons.
+window.lucide = { createIcons: (opts = {}) => createIcons({ icons, ...opts }) };
+
 import { VIEWS } from "./or/views.js";
 import { mountShell, drawIcons } from "./or/shell.js";
 import { api, esc } from "./or/api.js";
@@ -34,6 +46,9 @@ async function render() {
   const useDyn = api.isTauri() && DYN[key];
   const effKey = useDyn ? key : (VIEWS[key] ? key : "agents");
   const view = document.getElementById("main-content");
+
+  // Tear down any live view hooks (e.g. Brain graph RAF loop) before replacing DOM.
+  if (view && view.__orCleanup) { try { view.__orCleanup(); } catch (e) { console.error("[cleanup]", e); } view.__orCleanup = null; }
 
   if (useDyn) {
     mountShell(effKey, full);

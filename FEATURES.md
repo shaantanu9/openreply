@@ -958,6 +958,82 @@ PC") (P2). Live send not yet exercised against a real token/webhook in this buil
 (P1 — verify on first real configure). Headless launchd ticks fire one-way
 notifications (no button handling) since the poller needs the open window (P2).
 
+### Tasks board — knowledge → task → sections ✅ NEW (2026-06-29)
+**Status:** ✅ Complete (board + Brain/digest seeding + section handoff)
+**Entry points:** Tauri *Tasks* screen (sidebar AGENT section, `#/tasks`) · "+ New
+task" modal · Brain node detail "Act on this" buttons · Overview Daily Update
+"+ Task" buttons · CLI `openreply reply task-list/create/update/delete` · Rust
+`agent_task_list/create/update/delete`.
+**User flow:**
+- **Tasks board** — three columns **To-do · In progress · Done**. Each card shows a
+  kind badge (Draft post / Article / Thread / Find replies / What's new / Task), an
+  optional `from <source>` chip, advance (Start → ✓ Done → ↺ Reopen), **Open in
+  <section> →**, and Delete. "+ New task" modal sets title, kind, and target section.
+- **Brain → task** — clicking a graph node shows a **Related** neighbour list (from
+  `graph.edges`) and an **Act on this** row: Draft post / Draft article / Find replies
+  / What's new. Each seeds a task from the node (`source: brain`, `source_ref: node.id`)
+  with the node label as the angle and excerpt as context.
+- **Daily Update → task** — each briefing section and feed item in the Overview digest
+  has a **+ Task** button that creates a `whats_new` Compose task (`source: digest`)
+  seeded with the item's headline/snippet/url.
+- **Section handoff** — opening a task writes its payload to `sessionStorage`
+  (`or-task-compose` / `or-task-inbox`) and flips it to `in_progress`. Compose reads
+  it on mount, preselects the matching kind button and prefills the angle; Inbox
+  prefills the search query.
+**Implementation:** `reply/tasks.py` (`create_task`/`list_tasks`/`update_task`/
+`delete_task`, `_row_to_dict`) · `reply/schema.py` (`reply_tasks` table + index) ·
+`cli/reply_cmds.py` (task-list/create/update/delete + `_parse_payload`) ·
+`src-tauri/src/commands.rs` (`agent_task_*`) + `main.rs` (register) · `or/api.js`
+(`taskList`/`taskCreate`/`taskUpdate`/`taskDelete`) · `or/shell.js` (Tasks nav) ·
+`or/dynamic.js` (`renderTasks`, `openTask`, `TASK_KINDS`/`TASK_COLS`/`TASK_NEXT`;
+Compose & Inbox seed-reads; `renderBrain` Related + `brainTask`; Overview `digestTask`).
+**Data:** `reply_tasks` (id, agent_id, title, kind, status ∈ todo/in_progress/done,
+target ∈ ""/compose/inbox/queue, payload_json, source, source_ref, note, created_at,
+updated_at, done_at) · index on (agent_id, status). Section handoff via sessionStorage
+keys `or-task-compose` / `or-task-inbox`.
+**Dependencies:** Compose (§21), Inbox (§21), Brain (§5), Overview Daily Update digest.
+**Known gaps:** task↔agent scoping uses the active agent; no per-task due dates or
+reminders yet (P2). Queue target only navigates (no payload seed — Queue has no seed
+slot) (P2).
+
+---
+
+### Daily Update — multi-source learning feed 🟡 UPGRADED (2026-06-29)
+**Status:** 🟡 Partial (works end-to-end; gaps below)
+**Entry points:** Overview page top card (`#ov-digest`) · CLI `openreply reply
+digest` / `reply digest-search` · Rust `agent_digest` / `agent_digest_search`.
+**User flow:**
+1. On first open each day the server collects fresh items across **News /
+   Articles / Community / Research**, learns them into the agent's brain, and
+   synthesizes a goal-framed briefing; later opens hit the cached row (SWR paints
+   the localStorage copy instantly).
+2. The card is two columns — **Briefing · your goal lens** (LLM themes + "why it
+   matters", each with a + Task) on the left; a **scrollable categorized feed**
+   on the right with All/News/Articles/Community/Research pills (client-side
+   filter) and per-item + Task.
+3. **Search news** box (header) → free Google News + DuckDuckGo search, results
+   replace the feed under a "Search: «query»" header with Clear.
+4. **Refresh now** forces a rebuild (re-collect + re-learn + re-synthesize).
+**Implementation:** `reply/digest.py` — `CATEGORY_SOURCES`/`DIGEST_SOURCES`,
+`_category_of` (`digest.py:~40`), `_fresh_items` balanced/categorized
+(`digest.py:~95`), `build_digest` with learn pass (`digest.py:~190`),
+`search_news` (`digest.py:~270`) · `cli/reply_cmds.py:335` (`digest` +
+`digest-search`) · `src-tauri/src/commands.rs` (`agent_digest`,
+`agent_digest_search`) + `main.rs` (register) · `or/api.js` (`agentDigest`,
+`agentDigestSearch`) · `or/dynamic.js` (`renderOverview` → `digestPaint`/
+`digestShell`/`wireDigest`/`renderDigest`, `DIGEST_CATS`).
+**Data:** `reply_digest` (id, agent_id, day, briefing_json, feed_json,
+sources_json {by_source, by_category, item_count, llm, collected, learned},
+created_at) — one row/agent/day · localStorage `or.digest.<agentId>` (SWR).
+Feed items learned into corpus + memories via `learn_for_agent`.
+**Known gaps:** Community is Lemmy+Mastodon only — no read-only Reddit-hot pull
+yet (P2). Daily build is on-open/manual only; not tied to the autopilot tick
+(P2, by design). Search results aren't persisted to the corpus (read-only) (P2).
+"Brain nodes" KPI reflects the graph build, not the digest's memory learn pass
+(P2).
+**Dependencies:** `research.collect`, `reply.learn`, `reply.library.list_corpus`,
+LLM provider (briefing only; feed works without one).
+
 ---
 
 ## Update protocol

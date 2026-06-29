@@ -80,7 +80,7 @@ const LONG_TIMEOUT_MS = 360_000;
 const LONG_COMMANDS = new Set([
   "agent_learn", "agent_refresh", "agent_build_graph", "agent_brain_relink",
   "agent_evolve", "agent_teach_video", "agent_ideas", "agent_idea_draft",
-  "agent_corpus_check", "agent_autopilot_run",
+  "agent_digest", "agent_digest_search", "agent_corpus_check", "agent_autopilot_run",
   "content_generate", "reply_find", "reply_post_due", "reply_growth_plan",
   "sub_intel", "sub_discover", "account_fetch",
   "x_account_fetch_posts", "x_account_fetch_thread", "x_account_save_to_library",
@@ -182,6 +182,17 @@ export const api = {
   agentPlaybook: () => call("agent_playbook_get"),
   agentEvolve: () => call("agent_evolve"),
   agentIdeas: (suggest, n) => call("agent_ideas", { suggest: !!suggest, n: n || 5 }),
+  agentDigest: (rebuild) => call("agent_digest", { rebuild: !!rebuild }),
+  agentDigestSearch: (query) => call("agent_digest_search", { query: query || "" }),
+  // tasks (knowledge → action → sections)
+  taskList: (status) => call("agent_task_list", { status: status || null }),
+  taskCreate: (o) => call("agent_task_create", {
+    title: o.title, kind: o.kind || "custom", target: o.target || "",
+    payload: o.payload || null, source: o.source || "manual",
+    sourceRef: o.source_ref || o.sourceRef || "", note: o.note || "",
+  }),
+  taskUpdate: (id, fields) => call("agent_task_update", { task: id, ...(fields || {}) }),
+  taskDelete: (id) => call("agent_task_delete", { task: id }),
   agentIdeaDraft: (idea, kind, platform) =>
     call("agent_idea_draft", { idea, kind: kind || "", platform: platform || "" }),
   agentIdeaStatus: (idea, status) => call("agent_idea_status", { idea, status }),
