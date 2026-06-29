@@ -1,19 +1,18 @@
 # OpenReply (openreply) — Features & Flows
 
-> **Updated:** 2026-06-27 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · §21 Opportunity lifecycle (save/draft/replied/dismiss + filter chips + social badges; Inbox=saved; Analytics funnel) · §21 Self-learning loop (auto ingest→memories→beliefs after fetch/schedule/manual + save/dismiss feedback + Learning screen) · journey/flow audit (command triangle 100% wired, no onboarding blockers) + completed Queue (edit/status/delete), Agents edit/delete, live Pricing, onboarding clarity · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/openreply`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
+> **Updated:** 2026-06-29 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · §21 Opportunity lifecycle (save/draft/replied/dismiss + filter chips + social badges; Inbox=saved; Analytics funnel) · §21 Self-learning loop (auto ingest→memories→beliefs after fetch/schedule/manual + save/dismiss feedback + Learning screen) · journey/flow audit (command triangle 100% wired, no onboarding blockers) + completed Queue (edit/status/delete), Agents edit/delete, live Pricing, onboarding clarity · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/openreply`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). 🟡 = the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
 > - **Reddit** — anon `.json` is 403-blocked in 2026; added **RSS** (free, no-auth) + **read-only OAuth** (client_id+secret → full JSON, 100/min) + 3-yr PullPush history. ✅
 > - **New sources** — **Stack Exchange network ×8**, **Europe PMC**, **DBLP**, **Steam reviews**, **Bluesky** (app-password fix). Lemmy + GitHub Issues now default-on. ✅
 > - **Paper full-text** — auto-prefetch (download+extract PDF, no LLM) of top-15 papers after collect → chat grounds on intro+conclusions, not just abstracts. ✅
-> - **Prioritize tab** (NEW) — ranked opportunity list (RICE + Kano + MoSCoW + painpoint). Closes the cat-14 🟡 for RICE/Kano/MoSCoW. ✅
+> - **Prioritize tab** (NEW) — ranked opportunity list (RICE + Kano + MoSCoW). Closes the cat-14 🟡 for RICE/Kano/MoSCoW. ✅
 > - **Docs** — `CHANGES-2026-06.md`, `docs/USER-FEEDBACK-SOURCES.md`.
-> - **Strategy frameworks (NEW, cat 17)** — TAM/SAM/SOM market sizing, Porter, SWOT, Lean Canvas, Value-Prop, North-Star. ✅
 > - **Cat-14 fully closed** — Why root-cause, Sentiment charts, Tactics, Hypothesis-tracker screen shipped; PERT + idea-scan exposed as MCP tools. ✅
 > - **All cat-15 screens done** — consensus tiers, OST 2×2 matrix, Global-Competitors detail, Personas enrichment, Bets polish, and Map clickable-legend faceted filtering all shipped. **0 🟡 remain (196/196 ✅).**
 
-OpenReply is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-source product/market research. The same Python core (`src/openreply/`) powers all three surfaces: the MCP server exposes 165 tools to Claude Code (incl. PERT, idea-scan, the 6 strategy frameworks + root-cause + tactics, and the research-writing chain: connections / paper-knowledge-build / paper-gaps / paper-relations + outline/draft/export, added 2026-06), the Typer CLI exposes the equivalent command tree, and the Tauri desktop app drives the CLI as a sidecar.
+OpenReply is a **Tauri 2 desktop app + FastMCP server + Python CLI** — an open-source social marketing reply & content co-pilot. The same Python core (`src/openreply/`) powers all three surfaces: the MCP server exposes 120 tools to Claude Code, the Typer CLI exposes the equivalent command tree, and the Tauri desktop app drives the CLI as a sidecar.
 
 ## Legend
 - ✅ **Complete** — works end-to-end, no known half-done parts
@@ -42,14 +41,13 @@ OpenReply is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-s
 | 14. Advanced analysis modules | 18 | 18 | 0 | 0 | 0 |
 | 15. Tauri desktop app | 25 | 25 | 0 | 0 | 0 |
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
-| 17. Pre-build strategy frameworks | 6 | 6 | 0 | 0 | 0 |
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
-| 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
-| 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
 | 21. OpenReply — content, analytics, visibility & brain | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **229** | **228** | **1** | **0** | **0** |
+| **Total** | **208** | **207** | **1** | **0** | **0** |
 
-**Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
+> Category numbering 17, 19 and 20 are intentionally retired (legacy research-only suites — strategy frameworks, Research Mode, and intelligence monitoring — were removed when this repo became OpenReply); the gaps in numbering are expected.
+
+Nearly the whole surface is ✅: MCP (cats 1–13, 16), advanced analysis (14), and the Tauri desktop app (15). The only 🟡 is the planned student-PDF entry surface in category 18. The reply/content co-pilot is driveable both in-app and via the 120 MCP tools.
 
 ---
 
@@ -536,7 +534,7 @@ The MCP tools live in a dedicated **sub-server** — `src/openreply/mcp/tools/pe
 | Cancel job | ✅ | `openreply_jobs_cancel:2498` | `research/jobs.py` | `jobs` (state) |
 | Sub-server composition | ✅ | `server.py:3441` (`mcp.mount`) | `mcp/tools/persona_tools.py` | — |
 
-**Architecture note:** the server exposes 131 `reddit_*` tools defined directly in `mcp/server.py` plus 16 `openreply_persona_*` tools from the mounted persona sub-server = **147 MCP tools**. New domains should get their own sub-server file under `mcp/tools/` and a `mcp.mount()` call — the pattern established 2026-05-17.
+**Architecture note:** the server exposes **120 `openreply_*` tools** defined in `mcp/server.py`, plus the `openreply_persona_*` tools from the mounted persona sub-server (`mcp/tools/persona_tools.py`). New domains should get their own sub-server file under `mcp/tools/` and a `mcp.mount()` call — the pattern established 2026-05-17.
 **Known gaps:** none.
 
 ---
@@ -579,7 +577,7 @@ Every module now has its surfacing complete — a Tauri screen and/or an MCP too
 | Coverage / saturation | Corpus coverage metrics | `research/coverage.py:47` · `research/saturation.py:25` | ✅ | wired into clean-corpus |
 | Cross-topic opportunities | Top opportunities across topics | `research/cross_topic.py:47` | ✅ | wired into competitors |
 
-**Known gaps:** none half-done. **MCP exposure DONE** for Why root-cause + Tactics (and all 6 cat-17 strategy frameworks) — headless Claude Code now drives the whole funnel via `openreply_market_sizing / porter / swot / lean_canvas / value_prop / north_star / root_cause / tactics` + `openreply_pert_* / idea_scan_*`. P2 only: a few legacy Tauri-only modules (OST, Kano/MoSCoW/RICE, PMF, Pricing, PRD, Empathy, Intents, Iterate, Interviews) still lack their own MCP tool — most are reachable via the synthesis/pipeline tools.
+**Known gaps:** none half-done. P2 only: a few legacy Tauri-only modules (OST, Kano/MoSCoW/RICE, PMF, Pricing, PRD, Empathy, Intents, Iterate, Interviews) still lack their own MCP tool — most are reachable via the synthesis/pipeline tools.
 
 ---
 
@@ -640,34 +638,6 @@ Recorded feedback is fed back into synthesis prompts via `research/feedback.py:7
 
 ---
 
-## 17. Pre-build strategy frameworks ✅
-
-The full "before you build" PM toolkit — assess the market, the strategy, and the
-business model, all grounded in the topic's collected evidence (painpoints,
-feature-wishes, complaints, competitors, corpus mix). Each framework is a topic-level
-artifact: cheap cached read (`<name>_get`) + on-demand LLM synthesis (`<name>_compute`,
-~30–60s) persisted to `strategy_artifacts`. Shared base: `research/strategy_common.py`
-(store + `run_llm_json` + `topic_context`/`context_brief` evidence bundler). Tabs live
-on the topic page between **Prioritize** and **Bets**. Needs an LLM key + a built gap
-map for the topic.
-
-| Feature | Status | CLI | Core (`research/`) | Screen / Tab | Data |
-|---|---|---|---|---|---|
-| TAM/SAM/SOM market sizing (+ market value) | ✅ | `research market-sizing [--compute]` | `market_sizing.py` (`market_sizing_get/_compute`) | `market.js` → **Market** | `strategy_artifacts` (kind `market_sizing`) |
-| Porter's Five Forces | ✅ | `research porter [--compute]` | `porter.py` (`porter_get/_compute`) | `porter.js` → **Five Forces** | kind `porter` |
-| SWOT | ✅ | `research swot [--compute]` | `swot.py` (`swot_get/_compute`) | `swot.js` → **SWOT** | kind `swot` |
-| Lean Canvas (9 blocks) | ✅ | `research lean-canvas [--compute]` | `lean_canvas.py` (`lean_canvas_get/_compute`) | `lean_canvas.js` → **Lean Canvas** | kind `lean_canvas` |
-| Value Proposition Canvas | ✅ | `research value-prop [--compute]` | `value_prop.py` (`value_prop_get/_compute`) | `value_prop.js` → **Value Prop** | kind `value_prop` |
-| North-Star metric | ✅ | `research north-star [--compute]` | `north_star.py` (`north_star_get/_compute`) | `north_star.js` → **North Star** | kind `north_star` |
-
-Rust commands: `market_get/_compute`, `porter_forces_get/_compute` (renamed to avoid the
-product-level `porter_get`), `swot_*`, `lean_canvas_*`, `value_prop_*`, `north_star_*`
-(`commands.rs`, registered in `main.rs`). api.js: `marketGet/marketCompute`, `porterGet/…`,
-etc. Build-verified: python CLI returns JSON · vite 1797 modules · cargo 0 errors.
-**Known gaps:** none — all 6 now have MCP tools (`openreply_market_sizing/porter/swot/lean_canvas/value_prop/north_star`). P2 only: each compute is a single LLM pass (no multi-round refinement).
-
----
-
 ## 18. Research & paper-writing assistant 🟡
 
 Turns OpenReply into a tool for researchers / paper-writers / PDF-reading students:
@@ -694,77 +664,9 @@ community-bridge connection detection.
 
 ---
 
-## 19. Research Mode — researcher / PhD workspace ✅ NEW
-
-A Settings-selected **App Mode** (`product` | `research`) reconfigures OpenReply
-into a guided literature workspace: **Gather → Read → Synthesize → Write**, with
-"Topic" relabelled "Project". Built 2026-06-07 in 5 additive phases on top of
-release v0.1.22 (commits 730c721 · d136f07 · 97d4605 · 20f8b16 · 2af119f ·
-b2d4a01). Frontend mode flag (localStorage) — no backend rebuild. Verified
-backend end-to-end on a real corpus; cargo + node checks clean each phase.
-
-| Feature | Status | Surface | Implementation |
-|---|---|---|---|
-| **App Mode** (product/research) + Research Home + mode-aware nav + stage-bar | ✅ | Settings card · `#/research-home` · sidebar (`data-nav-mode`) · stage-bar above topic tabs | `labels.js`, `screens/research_home.js`, `main.js`, `index.html`, `screens/topic.js` |
-| **Reading status** (to_read/reading/read) + to-read queue + counts | ✅ | Reader pills · CLI `research paper-reading-status`/`reading-queue` · MCP `openreply_paper_reading_*` · Tauri | `research/paper_reading.py` |
-| **Highlights + notes** (select→highlight, colour, note, delete) | ✅ | Reader margin · CLI `research paper-highlight` · MCP `openreply_paper_highlight` · Tauri | `research/paper_reading.py` (`paper_highlights` table) |
-| **Paper Reader** — full text by section, re-marked highlights, status, per-paper cited Q&A | ✅ | `#/reader/<post_id>` · "Read & annotate" from Papers tab | `screens/reader.js`, `paper_reading.read_view`, CLI `research paper-read` |
-| **Literature-review matrix** (method·dataset·sample·findings·limitations·metric, sortable/filterable/CSV) | ✅ | `#/lit-matrix/<topic>` · CLI `research lit-matrix` · MCP `openreply_lit_matrix` · Tauri | `research/lit_matrix.py` (`lit_matrix` table), `screens/lit_matrix.js` |
-| **Write surface** (outline → draft → 4-format citation export, one screen) | ✅ | `#/write/<topic>` · Papers-tab "Write" link | `screens/write.js` (reuses `paper_pipeline.py` + `paper_export.py`) |
-| **Library + collections** (cross-project papers, named collections, status filters, search) | ✅ | `#/library` · sidebar entry · CLI `research library`/`collections` · MCP `openreply_paper_library`/`openreply_paper_collections` · Tauri | `research/paper_library.py` (`paper_collections`, `paper_collection_items` tables), `screens/library.js` |
-| **Cited paper Q&A** (grounded on full-text chunks, section-level citations, honest refusal) | ✅ | "Ask the papers" (Papers tab) · Reader · CLI `research paper-ask` · MCP `openreply_paper_ask` · Tauri | `research/paper_chat.py` |
-
-**Daily PhD loop:** Settings → Research mode → Research Home → start a project
-(academic gather) → open a paper in the **Reader** (read · highlight · note ·
-mark status · ask) → **Lit-matrix** + connect-the-dots + gaps + ask-the-papers →
-**Write** (outline → draft → export) → **Library** across projects.
-
-**Known gaps (P2):** Reader highlight anchoring is by quoted-text match (re-marks
-first occurrence) rather than exact DOM range; lit-matrix build is sequential
-(no parallel fan-out); Library "add to collection" is per-paper (no multi-select);
-in-app UI not yet smoke-tested in a running build (backend + CLI verified).
-
----
-
-## 20. Gap intelligence & monitoring ✅ NEW
-
-Seven competitive features added 2026-06-07 to match/beat the Reddit-research
-and idea-validation tools (GummySearch, PainOnSocial, WorthBuild, Consensus,
-Exploding Topics, IdeaBrowser) — see `docs/COMPETITIVE_ANALYSIS.md` and the
-build sequence in `docs/IMPLEMENTATION_FLOW.md`. Each is wired across all four
-surfaces (Python core → CLI → MCP → Tauri) with unit tests (33 total, all
-passing); `cargo check` + `node --check` clean. Verified on the real
-"calari tracking app" corpus.
-
-| Feature | Status | Surface | Implementation |
-|---|---|---|---|
-| **Pain score (0-100)** — rank each gap by frequency × intensity × recency | ✅ | `#/pain-scores/<topic>` (Gap-intel bar) · CLI `research gap-pain-scores` · MCP `openreply_gap_pain_scores` · Tauri | `research/pain_scoring.py` (`gap_scores` table), `screens/pain_scores.js`, `tests/test_pain_scoring.py` |
-| **People to reach** — real authors + permalinks per gap, persona-tagged, CSV | ✅ | `#/people/<topic>` · CLI `research gap-audience` · MCP `openreply_gap_audience` · Tauri | `research/gap_audience.py` (`gap_evidence_users` table), `screens/gap_audience.js`, `tests/test_gap_audience.py` |
-| **Trend velocity** — rising/falling/new per gap + topic (recent vs prior window) | ✅ | Trend column on Pain board · CLI `research gap-velocity` · MCP `openreply_gap_velocity` · Tauri | `research/trend_velocity.py`, `tests/test_trend_velocity.py` |
-| **Saved alerts / monitoring** — fire on spike / new / score-threshold, event feed | ✅ | `#/alerts/<topic>` · CLI `research gap-alerts` · MCP `openreply_gap_alerts` · Tauri | `research/gap_alerts.py` (`gap_alerts`, `gap_alert_events` tables), `screens/gap_alerts.js`, `tests/test_gap_alerts.py` |
-| **Evidence-weighted answers** — supported/contradicted/mixed verdict + counts + source breakdown | ✅ | `#/verdict/<topic>` · CLI `research gap-verdict` · MCP `openreply_gap_verdict` · Tauri | `research/evidence_verdicts.py` (`evidence_verdicts` table), `screens/gap_verdict.js`, `tests/test_evidence_verdicts.py` |
-| **Idea digest** — daily/weekly markdown brief (top gaps + rising + people + alerts) | ✅ | `#/digest/<topic>` · CLI `research gap-digest` · MCP `openreply_gap_digest` · Tauri | `research/gap_digest.py`, `screens/gap_digest.js`, `tests/test_gap_digest.py` |
-| **GummySearch import + presets** — import audiences (JSON/CSV) + 8 curated bundles | ✅ | `#/audiences` · CLI `research import-gummysearch` / `audiences` · MCP `openreply_import_gummysearch` / `openreply_audiences` · Tauri | `sources/gummysearch_import.py` (`audiences` table), `screens/audiences.js`, `tests/test_gummysearch_import.py` |
-
-**Entry points:** all six per-topic tools surface in the **"Gap intel" toolkit
-bar** above the topic tabs (`screens/topic.js::gapToolkitBar`); audiences is also
-reachable globally at `#/audiences`.
-
-**Flow:** build pain scores → people-to-reach + velocity layer on top → save
-alerts to monitor movement → ask evidence verdicts on claims → roll it all into
-a digest. GummySearch import seeds the corpus for new/migrating users.
-
-**Known gaps (P2):** alert checks need an external scheduler for unattended runs
-(launchd/cron recipes in `docs/manual-todo/gap-alerts-scheduling.md`; in-app
-jobs-queue wiring is future scope); per-gap velocity matches by title keywords
-(best-effort, since gaps are LLM-named); new screens are route-reachable +
-toolkit-linked but not yet smoke-tested in a running desktop build.
-
----
-
 ## Data persistence summary
 
-**SQLite (`core/db.py`)** — `posts`, `comments`, `users`, `subreddits`, `topic_posts`, `topic_prefs`, `topic_insights`, `mcp_analyses`, `graph_nodes`, `graph_edges`, `personas`, `persona_memories`, `persona_conclusions`, `persona_edges`, `paper_full_texts`, `paper_sections`, `paper_chunks`, `paper_analyses`, `paper_references`, `finding_research_links`, `products`, `product_signals`, `sweeps`, `hypothesis_tests`, `audience_personas`, `launch_briefs`, `jobs`, `feedback`, `saved_views`, `prompt_overrides`. **Research Mode (2026-06-07):** `paper_reading_status`, `paper_highlights`, `lit_matrix`, `paper_collections`, `paper_collection_items`. **Gap intelligence (2026-06-07):** `gap_scores`, `gap_evidence_users`, `gap_alerts`, `gap_alert_events`, `evidence_verdicts`, `audiences`.
+**SQLite (`core/db.py`)** — `posts`, `comments`, `users`, `subreddits`, `topic_posts`, `topic_prefs`, `topic_insights`, `mcp_analyses`, `graph_nodes`, `graph_edges`, `personas`, `persona_memories`, `persona_conclusions`, `persona_edges`, `paper_full_texts`, `paper_sections`, `paper_chunks`, `paper_analyses`, `paper_references`, `finding_research_links`, `jobs`, `feedback`, `saved_views`, `prompt_overrides`, plus the OpenReply reply/content tables (`reply_opportunities`, `reply_drafts`, `content_items`, `geo_queries`, `geo_checks`, `reply_feedback`, `reply_notify`, `source_credentials`).
 
 **Vector index (Mempalace / ChromaDB, ONNX MiniLM)** — `posts` collection (semantic search) and `paper_chunks` collection (RAG over paper sections). Cache at `~/.cache/mempalace/`.
 
@@ -780,9 +682,7 @@ toolkit-linked but not yet smoke-tested in a running desktop build.
 | ✅ resolved | Developer ID cert + notarization — v0.1.21 ships **signed + notarized** via CI | `.github/workflows/release-mac.yml` |
 | **deferred** | Auto-update not configured (users manually download `.dmg`) | `docs/manual-todo/` |
 | ✅ resolved | **Advanced-analysis completion punch-list — DONE.** All 14 cat-14 🟡 now ✅: RICE/Kano/MoSCoW (Prioritize tab) · OST/PMF/Pricing/PRD/Empathy/Intents/Iterate/Interviews (screen-completion workflow) · **Why root-cause** (new `root_cause` module+screen+tab) · **Sentiment-by-source** (charts) · **Tactic library** (`tactics_for_topic`+screen) · **Hypothesis tracker** (dedicated screen) · **PERT + Idea-scan** (MCP tools). | category 14 |
-| ✅ resolved | **NEW strategy frameworks** (product-strategy coverage): TAM/SAM/SOM market sizing (+market value), Porter, SWOT, Lean Canvas, Value-Prop, North-Star — **all shipped** end-to-end (cat 17). | category 17 |
 | ✅ resolved | **All cat-15 Tauri screens done** — consensus tiers, OST 2×2 matrix, Global-Competitors detail, Personas enrichment, Bets polish, Map clickable-legend faceted filtering. cat-15 now 25/25. | category 15 |
-| ✅ resolved | **cat-17 strategy frameworks + root-cause + tactics now have MCP tools** (`openreply_market_sizing/porter/swot/lean_canvas/value_prop/north_star/root_cause/tactics`). | category 17 |
 | **P2** | New collect-only sources (Stack Exchange, Europe PMC, DBLP, Steam) lack their own MCP tool (reachable via `openreply_collect`) | category 1 |
 | **P2** | No automated test coverage for the `persona/` module | `tests/` |
 | **P2** | Deliberation tiers not rendered in the Tauri *Insights* screen | category 15 |
@@ -790,10 +690,8 @@ toolkit-linked but not yet smoke-tested in a running desktop build.
 
 ### 🛠️ Completion roadmap (next, to drive each 🟡 → ✅)
 - ✅ **Done this session:** Prioritize tab (RICE/Kano/MoSCoW) + screen-completion workflow (OST, PMF, Pricing, PRD, Empathy, Intents, Iterate, Interviews).
-- **Phase E — Market (NEW, P0):** TAM/SAM/SOM market sizing + market value/cap — the headline missing framework. See `docs/PRODUCT-DISCOVERY-COVERAGE.md`.
-- **Phase F — Strategy (NEW):** Porter's Five Forces + SWOT (auto-synthesised from the gap map + competitors); surface Blue-Ocean.
-- **Phase G — Business framing (NEW):** Lean Canvas + Value-Proposition Canvas + North-Star metric.
 - ✅ **Remaining cat-14 🟡 — DONE:** Why root-cause, Sentiment-by-source charts, Tactic library, Hypothesis-tracker screen, PERT + Idea-scan MCP.
+- **R4 — student PDF surface (category 18 🟡):** a topic-optional "drop a PDF → cited Q&A" entry screen on top of the existing chat + RAG + ingest.
 - **Cross-cutting:** expose cat-14 modules + new sources as MCP tools so Claude Code drives the whole funnel headlessly; add persona tests.
 
 ---
