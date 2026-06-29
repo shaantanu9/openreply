@@ -119,4 +119,16 @@ def init_reply_schema(db: Database | None = None) -> Database:
         )
         db["reply_ideas"].create_index(["agent_id", "status"])
 
+    if "content_publish_log" not in names:
+        # One row per (content, platform) publish attempt for idempotency + metrics.
+        db["content_publish_log"].create(
+            {
+                "id": str, "content_id": str, "platform": str,
+                "attempted_at": int, "status": str, "remote_id": str,
+                "remote_url": str, "error": str, "metrics_json": str,
+            },
+            pk="id",
+        )
+        db["content_publish_log"].create_index(["content_id"])
+
     return db

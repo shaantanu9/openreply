@@ -192,6 +192,18 @@ def post_due_cmd(
     _out(_poster.process_due(notify=notify), json_)
 
 
+@reply_app.command("content-due")
+def content_due_cmd(
+    notify: bool = typer.Option(False, "--notify", help="Fire a desktop reminder for due content"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Process scheduled content_items whose time is due — auto-post where a
+    publisher + creds exist, otherwise surface a Telegram reminder (used by the
+    scheduler)."""
+    from ..reply import content_poster as _content_poster
+    _out(_content_poster.process_due_content(notify=notify), json_)
+
+
 @reply_app.command("growth-plan")
 def growth_plan_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),
@@ -466,6 +478,7 @@ def notify_set_cmd(
     ev_opportunity: Optional[bool] = typer.Option(None, "--opp/--no-opp"),
     ev_article: Optional[bool] = typer.Option(None, "--article/--no-article"),
     ev_reply: Optional[bool] = typer.Option(None, "--reply/--no-reply"),
+    ev_content_item: Optional[bool] = typer.Option(None, "--content/--no-content", help="Compose draft notifications"),
     ev_digest: Optional[bool] = typer.Option(None, "--digest/--no-digest"),
     ev_geo: Optional[bool] = typer.Option(None, "--geo/--no-geo"),
     json_: bool = typer.Option(True, "--json/--no-json"),
@@ -475,7 +488,8 @@ def notify_set_cmd(
     from ..reply import notify as _n
     events = {}
     for key, val in (("opportunity", ev_opportunity), ("article", ev_article),
-                     ("reply", ev_reply), ("digest", ev_digest), ("geo", ev_geo)):
+                     ("reply", ev_reply), ("content_item", ev_content_item),
+                     ("digest", ev_digest), ("geo", ev_geo)):
         if val is not None:
             events[key] = val
     fields: dict = {}

@@ -1,9 +1,13 @@
 """Two-way Telegram bot — long-poll loop for OpenReply.
 
 The notifications in `notify.py` carry inline buttons (Draft / Skip / Mark posted
-/ Regenerate). This poller is what makes those buttons do something: it long-polls
-Telegram's `getUpdates`, and when a button is tapped it runs the matching action
-against the opportunity store and replies with the result.
+/ Regenerate / Copy text / Reschedule). This poller is what makes those buttons do
+something: it long-polls Telegram's `getUpdates`, and when a button is tapped it
+runs the matching action against the opportunity or content store and replies with
+the result.
+
+It also handles the `/draft` command so a user can chat-style generate a platform
+native post from Telegram.
 
 It is meant to run **only while the desktop app is open** — the Tauri side spawns
 `openreply reply bot-poll` on launch and kills it on quit, so there's no always-on
@@ -62,8 +66,59 @@ def _send(token: str, chat: str, text: str, buttons: list | None = None) -> None
         pass
 
 
-def _handle_action(action: str, oid: str) -> tuple[str, str, list]:
-    """Run a button action. Returns (toast, message_html, buttons)."""
+def _load_content_item(cid: str) -> dict | None:
+    """Fetch a content_items row by id, or None."""
+    try:
+        row = notify.init_reply_schema()["content_items"].get(cid)
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+
+def _handle_content_action(action: str, cid: str, platform: str) -> tuple[str, str, list]:
+    """Run a content_items button action. Returns (toast, message_html, buttons)."""
+    from . import content as _content
+    item = _load_content_item(cid)
+    if not item:
+        return "Not found", f"⚠️ No draft found for <code>{notify._esc(cid)}</code>.", []
+
+    if action == "copy":
+        body = (item.get("body") or "").strip()
+        return "Copied 📋", f"<code>{notify._esc(body[:3000])}</code>", []
+
+    if action == "posted":
+        _content.update_content(cid, status="posted")
+        return "Marked posted ✅", "✅ <b>Marked as posted.</b>", []
+
+    if action == "schedule":
+        import time
+        # Default: schedule 1 hour from now.
+        at = int(time.time()) + 3600
+        _content.update_content(cid, status="scheduled", scheduled_at=at)
+        when = time.strftime("%H:%M", time.localtime(at))
+        return f"Scheduled 🗓 {when}", f"🗓 <b>Scheduled for {when}</b>.", []
+
+    if action == "regen":
+        try:
+            res = _content.generate_content(
+                item.get("kind") or "post",
+                agent_id=item.get("agent_id"),
+                platform=platform or item.get("platform"),
+                angle=item.get("angle") or "",
+            )
+        except Exception as e:
+            return "Couldn't regenerate", f"⚠️ {notify._esc(str(e))}", []
+        if res.get("error"):
+            return "Couldn't regenerate", f"⚠️ {notify._esc(res['error'])}", []
+        new_item = _load_content_item(res.get("id")) or res
+        tg, _sk, buttons = notify._fmt_content_item(new_item, platform or item.get("platform"))
+        return "Regenerated 🔄", tg, buttons
+
+    return "Unknown", "🤷 Unknown action.", []
+
+
+def _handle_opportunity_action(action: str, oid: str) -> tuple[str, str, list]:
+    """Run a reply_opportunity button action. Returns (toast, message_html, buttons)."""
     from . import opportunity as _opp
     if action == "skip":
         _opp.set_status(oid, "skipped")
@@ -88,6 +143,59 @@ def _handle_action(action: str, oid: str) -> tuple[str, str, list]:
         toast = "Drafted ✍️" if action == "draft" else "Regenerated 🔄"
         return toast, tg, buttons
     return "Unknown", "🤷 Unknown action.", []
+
+
+def _handle_action(action: str, oid: str) -> tuple[str, str, list]:
+    """Run a button action. Returns (toast, message_html, buttons).
+
+    Callback data is `action:oid` or `action:oid:platform`. Content-item actions
+    (copy, schedule) and shared actions (posted, regen) are tried on content_items
+    first; if the id isn't a content item we fall back to reply_opportunities.
+    """
+    raw = oid
+    platform = ""
+    if ":" in raw:
+        oid, platform = raw.split(":", 1)
+
+    # Content-item-first actions always hit content_items.
+    if action in ("copy", "schedule"):
+        return _handle_content_action(action, oid, platform)
+
+    # Shared actions: try content item first, then opportunity.
+    if action in ("posted", "regen"):
+        if _load_content_item(oid):
+            return _handle_content_action(action, oid, platform)
+        return _handle_opportunity_action(action, oid)
+
+    # Opportunity-only actions.
+    return _handle_opportunity_action(action, oid)
+
+
+def _handle_draft_command(text: str) -> tuple[str, list]:
+    """Parse `/draft <platform> <angle>` and generate a content draft.
+
+    Returns (message_html, buttons). Platform defaults to linkedin.
+    """
+    from . import content as _content
+    parts = text.strip().split(None, 2)
+    if len(parts) < 2:
+        return (
+            "<b>Usage:</b> <code>/draft &lt;platform&gt; &lt;angle&gt;</code>\n"
+            "Example: <code>/draft linkedin Why manual tagging fails for students</code>",
+            [],
+        )
+    platform = parts[1].lower()
+    angle = parts[2] if len(parts) > 2 else ""
+    kind = "post"
+    try:
+        res = _content.generate_content(kind, platform=platform, angle=angle)
+    except Exception as e:
+        return f"⚠️ Couldn't draft: {notify._esc(str(e))}", []
+    if res.get("error"):
+        return f"⚠️ {notify._esc(res['error'])}", []
+    item = _load_content_item(res.get("id")) or res
+    tg, _sk, buttons = notify._fmt_content_item(item, platform)
+    return tg, buttons
 
 
 def poll(once: bool = False) -> dict:
@@ -119,7 +227,7 @@ def poll(once: bool = False) -> dict:
         if stop_file is not None and stop_file.exists():
             break
         try:
-            params = {"timeout": 0 if once else 25, "allowed_updates": ["callback_query"]}
+            params = {"timeout": 0 if once else 25, "allowed_updates": ["callback_query", "message"]}
             if offset is not None:
                 params["offset"] = offset
             resp = _call(token, "getUpdates", params, timeout=(10 if once else 35))
@@ -134,23 +242,38 @@ def poll(once: bool = False) -> dict:
         for upd in resp.get("result", []):
             offset = upd["update_id"] + 1
             cq = upd.get("callback_query")
-            if not cq:
+            msg_obj = upd.get("message")
+
+            if cq:
+                data = cq.get("data") or ""
+                chat = str((cq.get("message") or {}).get("chat", {}).get("id") or c.get("telegram_chat") or "")
+                cb_id = cq.get("id") or ""
+                if ":" not in data:
+                    _answer(token, cb_id)
+                    continue
+                action, oid = data.split(":", 1)
+                try:
+                    toast, msg_html, buttons = _handle_action(action, oid)
+                except Exception as e:
+                    toast, msg_html, buttons = "Error", f"⚠️ {notify._esc(str(e))}", []
+                _answer(token, cb_id, toast)
+                if chat and msg_html:
+                    _send(token, chat, msg_html, buttons)
+                handled += 1
                 continue
-            data = cq.get("data") or ""
-            chat = str((cq.get("message") or {}).get("chat", {}).get("id") or c.get("telegram_chat") or "")
-            cb_id = cq.get("id") or ""
-            if ":" not in data:
-                _answer(token, cb_id)
+
+            if msg_obj:
+                chat = str(msg_obj.get("chat", {}).get("id") or c.get("telegram_chat") or "")
+                text = msg_obj.get("text") or ""
+                if text.strip().lower().startswith("/draft"):
+                    try:
+                        msg_html, buttons = _handle_draft_command(text)
+                    except Exception as e:
+                        msg_html, buttons = f"⚠️ {notify._esc(str(e))}", []
+                    if chat and msg_html:
+                        _send(token, chat, msg_html, buttons)
+                    handled += 1
                 continue
-            action, oid = data.split(":", 1)
-            try:
-                toast, msg, buttons = _handle_action(action, oid)
-            except Exception as e:
-                toast, msg, buttons = "Error", f"⚠️ {notify._esc(str(e))}", []
-            _answer(token, cb_id, toast)
-            if chat and msg:
-                _send(token, chat, msg, buttons)
-            handled += 1
 
         if once:
             break
