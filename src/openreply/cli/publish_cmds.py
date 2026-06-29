@@ -1,7 +1,7 @@
 """`openreply publish ...` — post generated content_items to social platforms.
 
 Outbound, opt-in, and credential-gated: nothing is posted without stored
-credentials, and `--dry-run` previews the exact tweets first. On success the
+credentials, and `--dry-run` previews the exact post first. On success the
 content_items row is flipped to `posted` with its remote URL recorded.
 """
 from __future__ import annotations
@@ -12,9 +12,10 @@ import time
 import typer
 
 from ..core.credentials import delete_credential, get_credential, set_credential
+from ..publish import linkedin as _linkedin
 from ..publish import x as _x
 
-publish_app = typer.Typer(help="Publish content to social platforms (X, …).")
+publish_app = typer.Typer(help="Publish content to social platforms (X, LinkedIn, …).")
 
 
 def _out(obj, as_json: bool) -> None:
@@ -32,7 +33,10 @@ def _load_content(content_id: str) -> dict | None:
 @publish_app.command("status")
 def status_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
     """Which platforms have publish credentials stored."""
-    _out({"x": get_credential("x_publish") is not None}, json_)
+    _out({
+        "x": get_credential("x_publish") is not None,
+        "linkedin": get_credential("linkedin_publish") is not None,
+    }, json_)
 
 
 @publish_app.command("set-creds")
@@ -55,9 +59,24 @@ def set_creds_cmd(
     _out({"ok": True, "source": "x_publish", "stored": True}, json_)
 
 
+@publish_app.command("set-creds-linkedin")
+def set_creds_linkedin_cmd(
+    access_token: str = typer.Option(..., help="LinkedIn OAuth 2 access token (w_member_social)"),
+    author_urn: str = typer.Option(..., help="Author URN, e.g. urn:li:person:abc123"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Store LinkedIn OAuth 2 write credentials (access token + author URN)."""
+    set_credential(
+        "linkedin_publish",
+        {"access_token": access_token, "author_urn": author_urn},
+        kind="api_key",
+    )
+    _out({"ok": True, "source": "linkedin_publish", "stored": True}, json_)
+
+
 @publish_app.command("clear-creds")
 def clear_creds_cmd(
-    platform: str = typer.Argument("x", help="Platform: x"),
+    platform: str = typer.Argument("x", help="Platform: x | linkedin"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Remove stored publish credentials for a platform."""
@@ -131,4 +150,36 @@ def x_reply_cmd(
         _out({**_x.plan(body), "reply_to_tweet_id": tweet_id, "dry_run": True}, json_)
         return
     res = _x.publish_reply(body, tweet_id, dry_run=False).to_dict()
+    _out(res, json_)
+
+
+@publish_app.command("linkedin")
+def linkedin_cmd(
+    content_id: str = typer.Option(..., "--content-id", help="content_items id to post"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview the LinkedIn post without posting"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Post a content_items draft to LinkedIn as a text share."""
+    item = _load_content(content_id)
+    if not item:
+        _out({"error": f"no content '{content_id}'"}, json_)
+        raise typer.Exit(1)
+    body = item.get("body") or ""
+    if dry_run:
+        _out({**_linkedin.plan(body), "dry_run": True}, json_)
+        return
+    res = _linkedin.publish(body, dry_run=False).to_dict()
+    if res.get("ok"):
+        from ..reply.schema import init_reply_schema
+
+        db = init_reply_schema()
+        now = int(time.time())
+        try:
+            db["content_items"].update(
+                content_id,
+                {"status": "posted", "posted_at": now,
+                 "remote_url": res.get("url", ""), "updated_at": now},
+            )
+        except Exception:
+            pass
     _out(res, json_)
