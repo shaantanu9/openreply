@@ -149,4 +149,13 @@ def run_autopilot_if_due(agent_id: str | None = None, provider: str | None = Non
         out["opportunity"] = {"drafted": drafted}
 
     _save(cfg)
+
+    # 3) Fire any scheduled Compose drafts whose time has come. Runs every tick
+    #    (not throttled) so scheduled posts publish on time.
+    try:
+        from . import content_poster as _content_poster
+        out["scheduled_content"] = _content_poster.process_due_content(now=now)
+    except Exception as e:
+        out["scheduled_content"] = {"error": str(e)}
+
     return out
