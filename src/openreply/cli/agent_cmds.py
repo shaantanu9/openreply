@@ -313,6 +313,52 @@ def watch_fetch_cmd(
     _out(res, json_)
 
 
+@agent_app.command("watch-inbox")
+def watch_inbox_cmd(
+    handle: str = typer.Argument(..., help="X handle to fetch and save to Inbox"),
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    limit: int = typer.Option(25),
+    post_id: str = typer.Option("", "--post-id", help="Save only the post with this id (numeric status id)."),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Fetch a tracked X account's recent posts and create Inbox opportunities
+    for each so you can reply from the Inbox workspace."""
+    from ..reply.accounts import fetch_account
+    from ..reply.opportunity import save_posts_to_inbox
+    res = fetch_account(handle, limit=limit, agent_id=id, learn=False)
+    rows = []
+    if res.get("fetched"):
+        # Re-fetch full rows from the corpus we just tagged so the opportunity
+        # shape has title/body/url/created_utc/etc.
+        try:
+            from ..core.db import get_db
+            from ..reply.agent import active_id, get_agent
+            aid = id or active_id() or "default"
+            topic = (get_agent(aid) or {}).get("topic") or (get_agent(aid) or {}).get("name")
+            if topic:
+                db = get_db()
+                rows = [dict(r) for r in db.execute(
+                    "SELECT p.* FROM posts p JOIN topic_posts tp ON p.id = tp.post_id "
+                    "WHERE tp.topic = ? AND tp.source LIKE ? ORDER BY p.created_utc DESC LIMIT ?",
+                    [topic, f"watch:x:%{handle}%", limit],
+                ).fetchall()]
+        except Exception:
+            rows = []
+    if not rows and res.get("sample"):
+        # Fallback: build opportunities from the returned sample.
+        rows = res["sample"]
+    if post_id:
+        # Accept both bare tweet ids and corpus-prefixed "x_<id>" rows.
+        target = post_id[2:] if post_id.startswith("x_") else post_id
+        rows = [r for r in rows if (
+            str(r.get("post_id") or "") == post_id
+            or str(r.get("id") or "") == post_id
+            or str(r.get("id") or "") == f"x_{target}"
+        )]
+    inbox_res = save_posts_to_inbox(rows, platform="x")
+    _out({"handle": handle, "fetched": res.get("fetched", 0), **inbox_res}, json_)
+
+
 @agent_app.command("refresh")
 def refresh_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),

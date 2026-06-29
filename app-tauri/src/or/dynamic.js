@@ -3924,9 +3924,424 @@ export async function renderXAccount(view) {
   icons();
 }
 
+// ── Merged X Accounts screen (connected + watched) ─────────────────────────
+// Replaces the separate X Account and Watch accounts screens. Every handle is
+// shown in one list; posts fetched for an account render inline under that card
+// and are sorted newest-first.
+
+function _postDate(post) {
+  const raw = post.created_at || post.createdAt || post.created_utc || post.createdUtc;
+  if (!raw) return 0;
+  if (typeof raw === "number") return raw;
+  const s = String(raw).trim();
+  if (!s) return 0;
+  // ISO, e.g. 2024-01-15T12:34:56.000Z or 2024-01-15T12:34:56Z
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    try { return new Date(s).getTime() / 1000; } catch (e) { return 0; }
+  }
+  // Twitter legacy date, e.g. "Wed Oct 10 20:19:24 +0000 2018"
+  if (/^\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+[+-]\d{4}\s+\d{4}$/.test(s)) {
+    try { return new Date(s).getTime() / 1000; } catch (e) { return 0; }
+  }
+  // Plain date, e.g. "2024-01-15"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    try { return new Date(s + "T00:00:00Z").getTime() / 1000; } catch (e) { return 0; }
+  }
+  try { const n = Date.parse(s); return isNaN(n) ? 0 : n / 1000; } catch (e) { return 0; }
+}
+
+function _sortPosts(posts) {
+  return [...(posts || [])].sort((a, b) => _postDate(b) - _postDate(a));
+}
+
+function _formatDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" });
+}
+
+export async function renderXAccounts(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+  let agent = null;
+  try { agent = await api.agentGet(); } catch (e) { console.error(e); }
+  view.innerHTML = head("X Accounts",
+    `Manage connected X accounts and watch creators or competitors. Fetched posts appear per account below, newest first.`,
+    `<button id="xa-fetch-all" class="${btnP}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all watched</button>
+     <a href="#/library" class="${btn}">See all in Library →</a>`) +
+    `<div class="mb-5 ${card}">
+       <h3 class="mb-3 font-semibold text-zinc-900 dark:text-white">Add an X account</h3>
+       <div class="flex flex-wrap items-end gap-3">
+         <label class="flex-1 min-w-[200px] text-sm text-zinc-500">Handle<input id="xa-handle" placeholder="@naval or x.com/naval" class="mt-1 block w-full ${inputCls}"></label>
+         <label class="flex-1 min-w-[200px] text-sm text-zinc-500">Note<input id="xa-note" placeholder="Why this account (optional)" class="mt-1 block w-full ${inputCls}"></label>
+       </div>
+       <div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-zinc-600 dark:text-zinc-300">
+         <label class="flex items-center gap-2"><input id="xa-watch" type="checkbox" checked class="h-4 w-4 rounded border-zinc-300 text-reddit focus:ring-reddit"> Watch (save posts to Library)</label>
+         <label class="flex items-center gap-2"><input id="xa-connect" type="checkbox" class="h-4 w-4 rounded border-zinc-300 text-reddit focus:ring-reddit"> Connect (post / reply as this account)</label>
+       </div>
+       <div class="mt-4 flex items-center gap-3">
+         <button id="xa-add" class="${btnP}">Add account</button>
+         <button id="xa-import" class="${btn}">Import browser cookies</button>
+         <span id="xa-msg" class="text-sm"></span>
+       </div>
+       <p class="mt-3 text-xs text-zinc-400">Connecting needs an X login. Watching only needs the handle; it pulls public posts into <b>${esc(agent?.name || "this agent")}</b>'s Library corpus.</p>
+     </div>
+     <div id="xa-list" class="space-y-3">Loading accounts…</div>`;
+
+  const list = view.querySelector("#xa-list");
+  const msg = view.querySelector("#xa-msg");
+  const fetchState = {}; // handle -> { count, posts }
+
+  async function load() {
+    let connected = [], watched = [];
+    try { connected = (await api.xAccountList())?.accounts || []; } catch (e) { console.error(e); }
+    try { watched = (await api.accountList())?.accounts || []; } catch (e) { console.error(e); }
+
+    const byHandle = new Map();
+    for (const a of connected) {
+      const h = String(a.handle || "").replace(/^@/, "").toLowerCase();
+      if (!h) continue;
+      byHandle.set(h, { handle: h, connected: a, watched: null });
+    }
+    for (const a of watched) {
+      const h = String(a.handle || "").replace(/^@/, "").toLowerCase();
+      if (!h) continue;
+      const existing = byHandle.get(h);
+      if (existing) existing.watched = a;
+      else byHandle.set(h, { handle: h, connected: null, watched: a });
+    }
+    const accounts = [...byHandle.values()].sort((a, b) => {
+      const lastA = (a.watched?.last_fetched_at || 0);
+      const lastB = (b.watched?.last_fetched_at || 0);
+      return lastB - lastA;
+    });
+
+    if (!accounts.length) {
+      list.innerHTML = `<div class="${card} text-zinc-500">No X accounts yet. Add a handle above to connect your account or watch someone else.</div>`;
+      icons(); return;
+    }
+
+    list.innerHTML = accounts.map((a) => {
+      const h = esc(a.handle);
+      const badges = [];
+      if (a.connected) badges.push(`<span class="${chip} border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400">Connected</span>`);
+      if (a.watched) badges.push(`<span class="${chip} border-sky-200 text-sky-600 dark:border-sky-800 dark:text-sky-400">Watched</span>`);
+      const note = a.watched?.note ? `<span class="ml-2 text-xs text-zinc-400">${esc(a.watched.note)}</span>` : "";
+      const fetched = a.watched?.posts_count || 0;
+      const last = a.watched?.last_fetched_at ? ` · last fetched ${_ago(a.watched.last_fetched_at)}` : "";
+      const actions = [];
+      const countSel = `<select data-fetch-count="${h}" class="rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-xs">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>`;
+      actions.push(`<div class="flex items-center gap-1">${countSel}<button data-act="fetch" data-h="${h}" class="${btn}">Fetch</button></div>`);
+      actions.push(`<button data-act="save-inbox" data-h="${h}" data-connected="${a.connected ? "1" : ""}" class="${btn}">Save all to Inbox</button>`);
+      if (a.watched) actions.push(`<button data-act="save-lib" data-h="${h}" class="${btn}">Save to Library</button>`);
+      if (a.connected) actions.push(`<button data-act="reply" data-h="${h}" class="${btn}">Reply to post…</button>`);
+      if (!a.watched) actions.push(`<button data-act="watch" data-h="${h}" class="${btn}">Watch</button>`);
+      if (a.watched) actions.push(`<button data-act="untrack" data-h="${h}" class="${btn} text-rose-500">Untrack</button>`);
+      if (!a.connected) actions.push(`<button data-act="connect" data-h="${h}" class="${btn}">Connect</button>`);
+      if (a.connected) actions.push(`<button data-act="remove" data-h="${h}" class="${btn} text-rose-500">Remove connection</button>`);
+      return `<div class="${card}" data-row="${h}">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <a href="https://x.com/${h}" target="_blank" class="font-semibold text-zinc-900 dark:text-white hover:text-reddit">@${h}</a>
+              ${badges.join("")}${note}
+            </div>
+            <div class="mt-0.5 text-xs text-zinc-400">${fetched ? `${fetched} posts pulled` : "not fetched yet"}${last}</div>
+          </div>
+          <div class="flex flex-wrap gap-2">${actions.join("")}</div>
+        </div>
+        <div data-posts="${h}" class="mt-3 hidden space-y-3"></div>
+      </div>`;
+    }).join("");
+
+    list.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => accountAction(b));
+    icons();
+  }
+
+  async function accountAction(b) {
+    const act = b.getAttribute("data-act"), h = b.getAttribute("data-h");
+    const postsContainer = list.querySelector(`[data-posts="${CSS.escape(h)}"]`);
+    if (act === "untrack") {
+      try { await api.accountUntrack(h); toast("Untracked @" + h); load(); } catch (e) { toast("Failed"); }
+      return;
+    }
+    if (act === "remove") {
+      try { await api.xAccountRemove(h); toast("Removed connection for @" + h); load(); } catch (e) { toast("Remove failed: " + e); }
+      return;
+    }
+    if (act === "watch") {
+      try { await api.accountTrack(h); toast("Now watching @" + h); load(); } catch (e) { toast("Failed"); }
+      return;
+    }
+    if (act === "connect") {
+      try {
+        await api.xAccountAdd(h);
+        toast("Connected @" + h);
+        load();
+      } catch (e) { toast("Failed: " + e); }
+      return;
+    }
+    if (act === "save-lib") {
+      b.disabled = true; const t = b.textContent; b.textContent = "Saving…";
+      try {
+        const r = await api.xAccountSaveToLibrary(h, 25, false);
+        toast(r?.message || `Saved ${r?.saved || 0} post(s)`);
+      } catch (e) { toast("Save failed: " + e); }
+      b.disabled = false; b.textContent = t;
+      return;
+    }
+    if (act === "save-inbox") {
+      b.disabled = true; const t = b.textContent; b.textContent = "Saving…";
+      try {
+        const connected = b.getAttribute("data-connected") === "1";
+        const sel = list.querySelector(`[data-fetch-count="${CSS.escape(h)}"]`);
+        const count = Math.min(200, Math.max(1, parseInt(sel?.value || "25", 10) || 25));
+        const r = connected
+          ? await api.xAccountSaveToInbox(h, count, false)
+          : await api.accountSaveInbox(h, null, count);
+        if (r?.error) { toast("Save failed: " + r.error); }
+        else {
+          toast(`Saved ${r?.saved || 0} post(s) to Inbox`);
+          window.dispatchEvent(new CustomEvent("or-inbox-changed"));
+        }
+      } catch (e) { toast("Save failed: " + e); }
+      b.disabled = false; b.textContent = t;
+      return;
+    }
+    if (act === "reply") {
+      // Open the posts panel so the user can pick a tweet to reply to.
+      if (postsContainer) {
+        postsContainer.classList.remove("hidden");
+        if (!fetchState[h]) await doFetch(h, postsContainer);
+        postsContainer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      return;
+    }
+    if (act === "fetch") {
+      const sel = list.querySelector(`[data-fetch-count="${CSS.escape(h)}"]`);
+      const count = Math.min(200, Math.max(1, parseInt(sel?.value || "25", 10) || 25));
+      await doFetch(h, postsContainer, count);
+      return;
+    }
+    if (act === "load-more") {
+      const current = fetchState[h]?.count || 25;
+      const count = Math.min(200, current + 25);
+      const sel = list.querySelector(`[data-fetch-count="${CSS.escape(h)}"]`);
+      if (sel) sel.value = String(count);
+      await doFetch(h, postsContainer, count, true);
+    }
+  }
+
+  async function doFetch(h, container, count, loadMore = false) {
+    if (!container) return;
+    container.classList.remove("hidden");
+    container.innerHTML = `<div class="text-sm text-zinc-500">Loading @${esc(h)}…</div>`;
+    try {
+      const account = (await api.xAccountList())?.accounts?.find((a) => a.handle?.toLowerCase() === h.toLowerCase());
+      const connected = !!account;
+      let posts = [];
+      let profile = null;
+      if (connected) {
+        const [pRes, postsRes] = await Promise.all([api.xAccountProfile(h), api.xAccountFetchPosts(h, count, false)]);
+        profile = pRes?.profile;
+        posts = postsRes?.posts || [];
+      } else {
+        const r = await api.accountFetch(h, false, count);
+        if (r?.error) { container.innerHTML = `<div class="text-sm text-rose-500">${esc(r.error)}</div>`; return; }
+        if (!r?.fetched) { container.innerHTML = `<div class="text-sm text-amber-600">${esc(r.message || "No posts returned")}</div>`; return; }
+        posts = (r.sample || []).map((s) => ({ text: s.text || s.title, title: s.title, url: s.url, created_at: s.created_at, created_utc: s.created_utc, likes: s.likes, replies: s.replies, retweets: s.retweets, id: s.id }));
+        toast(r.message || `Pulled ${r.fetched || 0} posts`);
+      }
+      const existing = loadMore ? (fetchState[h]?.posts || []) : [];
+      const mergedById = new Map();
+      for (const p of existing) mergedById.set(p.id || p.url, p);
+      for (const p of posts) mergedById.set(p.id || p.url, p);
+      const merged = _sortPosts([...mergedById.values()]);
+      fetchState[h] = { count, posts: merged };
+      renderAccountPosts(h, merged, connected, profile, container, count >= 200);
+    } catch (e) { container.innerHTML = `<div class="text-sm text-rose-500">${esc(e)}</div>`; }
+  }
+
+  function renderAccountPosts(h, posts, connected, profile, container, atMax = false) {
+    const sorted = _sortPosts(posts);
+    if (!sorted.length) {
+      container.innerHTML = `<div class="text-sm text-zinc-500">No posts found for @${esc(h)}.</div>`;
+      return;
+    }
+    const loadMoreBtn = atMax
+      ? `<div class="text-xs text-zinc-400">Max 200 posts per fetch to avoid rate limits.</div>`
+      : `<button data-act="load-more" data-h="${esc(h)}" class="${btn}">Load older (+25)</button>`;
+    const profileHtml = profile ? `
+      <div class="mb-3 rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
+        <div class="font-semibold text-zinc-900 dark:text-white">@${esc(profile.handle || h)}</div>
+        <div class="text-sm text-zinc-500">${esc(profile.name || "")}</div>
+        <div class="mt-1 text-xs text-zinc-500">${esc(profile.bio || "")}</div>
+        <div class="mt-2 flex gap-4 text-xs">
+          <span><b>${(profile.followers || 0).toLocaleString()}</b> followers</span>
+          <span><b>${(profile.following || 0).toLocaleString()}</b> following</span>
+          <span><b>${(profile.tweets || 0).toLocaleString()}</b> tweets</span>
+        </div>
+      </div>` : "";
+
+    const listHtml = sorted.map((t) => {
+      const ts = _postDate(t);
+      const dateLabel = ts ? _formatDate(ts) : "";
+      const text = esc(t.text || t.title || "");
+      const isReply = t.is_reply;
+      const isRetweet = t.is_retweet;
+      const url = esc(t.url || `https://x.com/${h}/status/${t.id || ""}`);
+      const id = esc(t.id || "");
+      return `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 ${isReply ? "border-l-4 border-l-reddit" : ""}" data-tweet-id="${id}">
+        <div class="text-sm text-zinc-900 dark:text-white whitespace-pre-wrap">${text}</div>
+        <div class="mt-2 flex flex-wrap items-center gap-4 text-xs text-zinc-500">
+          ${dateLabel ? `<span title="${new Date(ts * 1000).toLocaleString()}">${dateLabel}</span>` : ""}
+          <span>♥ ${t.likes || 0}</span>
+          <span>↻ ${t.retweets || 0}</span>
+          <span>💬 ${t.replies || 0}</span>
+          ${isReply ? "<span>reply</span>" : ""}
+          ${isRetweet ? "<span>retweet</span>" : ""}
+          <a href="${url}" target="_blank" class="hover:text-reddit">open →</a>
+          ${id ? `<button data-save-inbox="${id}" data-h="${esc(h)}" data-connected="${connected ? "1" : ""}" class="text-reddit hover:underline font-semibold">Save to Inbox</button>` : ""}
+          ${connected && id ? `<button data-reply="${id}" class="text-reddit hover:underline font-semibold">Reply</button>` : ""}
+        </div>
+        ${connected && id ? `
+        <div data-reply-form="${id}" class="hidden mt-3 rounded-lg bg-zinc-50 dark:bg-zinc-800 p-3">
+          <label class="mb-1 block text-xs font-semibold text-zinc-500">Your reply as @${esc(h)}</label>
+          <textarea data-reply-text="${id}" rows="3" class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-1 focus:ring-reddit dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" placeholder="Write your reply…"></textarea>
+          <div class="mt-2 flex gap-2">
+            <button data-reply-post="${id}" class="${btnP}">Post reply</button>
+            <button data-reply-preview="${id}" class="${btn}">Preview</button>
+            <button data-reply-cancel="${id}" class="${btn}">Cancel</button>
+          </div>
+          <div data-reply-msg="${id}" class="mt-2 text-sm"></div>
+        </div>` : ""}
+      </div>`;
+    }).join("");
+
+    container.innerHTML = profileHtml + listHtml +
+      `<div class="mt-3 flex flex-wrap items-center gap-3">
+        ${loadMoreBtn}
+        <span class="text-xs text-zinc-400">${sorted.length} post(s) shown. Larger fetches increase rate-limit risk.</span>
+      </div>`;
+
+    // Load-more lives inside the container; wire it up.
+    const loadMore = container.querySelector("[data-act=\"load-more\"]");
+    if (loadMore) loadMore.onclick = () => accountAction(loadMore);
+
+    // Save a single post to the Inbox reply workspace.
+    container.querySelectorAll("[data-save-inbox]").forEach((btn) => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute("data-save-inbox");
+        const h = btn.getAttribute("data-h");
+        const connected = btn.getAttribute("data-connected") === "1";
+        if (!id || !h) return;
+        btn.disabled = true; const t = btn.textContent; btn.textContent = "Saving…";
+        try {
+          const r = connected
+            ? await api.xAccountSaveToInbox(h, 25, false, id)
+            : await api.accountSaveInbox(h, id);
+          if (r?.error) { toast("Save failed: " + r.error); btn.textContent = t; }
+          else { toast(`Saved ${r?.saved || 0} post(s) to Inbox`); btn.textContent = "Saved ✓"; window.dispatchEvent(new CustomEvent("or-inbox-changed")); }
+        } catch (e) { toast("Save failed: " + e); btn.textContent = t; }
+        finally { btn.disabled = false; }
+      };
+    });
+
+    // Reply toggles
+    container.querySelectorAll("[data-reply]").forEach((btn) => {
+      const id = btn.getAttribute("data-reply");
+      btn.onclick = () => container.querySelector(`[data-reply-form="${CSS.escape(id)}"]`)?.classList.toggle("hidden");
+    });
+    container.querySelectorAll("[data-reply-cancel]").forEach((btn) => {
+      const id = btn.getAttribute("data-reply-cancel");
+      btn.onclick = () => container.querySelector(`[data-reply-form="${CSS.escape(id)}"]`)?.classList.add("hidden");
+    });
+    container.querySelectorAll("[data-reply-preview], [data-reply-post]").forEach((btn) => {
+      const id = btn.getAttribute("data-reply-preview") || btn.getAttribute("data-reply-post");
+      const dryRun = btn.hasAttribute("data-reply-preview");
+      btn.onclick = async () => {
+        const ta = container.querySelector(`[data-reply-text="${CSS.escape(id)}"]`);
+        const messageEl = container.querySelector(`[data-reply-msg="${CSS.escape(id)}"]`);
+        const text = (ta?.value || "").trim();
+        if (!text) { if (messageEl) messageEl.innerHTML = `<span class="text-amber-500">Enter reply text.</span>`; return; }
+        btn.disabled = true; const prev = btn.textContent; btn.textContent = dryRun ? "Previewing…" : "Posting…";
+        try {
+          const r = await api.contentPublishXReply(id, text, dryRun);
+          if (r?.ok) {
+            if (dryRun) {
+              const parts = (r?.tweets || [text]).map((s) => `<li class="mt-1">${esc(s)}</li>`).join("");
+              if (messageEl) messageEl.innerHTML = `<div class="text-emerald-600">Preview (${r?.parts || 1} tweet(s)):</div><ul class="list-disc pl-4 text-zinc-600 dark:text-zinc-300">${parts}</ul>`;
+            } else {
+              if (messageEl) messageEl.innerHTML = `<div class="text-emerald-600">Posted! <a href="${esc(r?.url || "")}" target="_blank" class="underline">View reply →</a></div>`;
+              ta.value = "";
+            }
+          } else {
+            if (messageEl) messageEl.innerHTML = `<div class="text-rose-500">${esc(r?.error || "Post failed")}</div>`;
+          }
+        } catch (e) { if (messageEl) messageEl.innerHTML = `<div class="text-rose-500">${esc(e)}</div>`; }
+        finally { btn.disabled = false; btn.textContent = prev; }
+      };
+    });
+  }
+
+  view.querySelector("#xa-add").onclick = async () => {
+    const handleInp = view.querySelector("#xa-handle");
+    const noteInp = view.querySelector("#xa-note");
+    const watch = view.querySelector("#xa-watch").checked;
+    const connect = view.querySelector("#xa-connect").checked;
+    const h = (handleInp.value || "").trim().replace(/^@/, "").split("/").pop();
+    if (!h) { msg.innerHTML = `<span class="text-amber-500">Enter a handle.</span>`; return; }
+    if (!watch && !connect) { msg.innerHTML = `<span class="text-amber-500">Choose Watch, Connect, or both.</span>`; return; }
+    msg.textContent = "Adding…";
+    try {
+      if (connect) await api.xAccountAdd(h);
+      if (watch) await api.accountTrack(h, noteInp.value.trim());
+      toast(`Added @${h}`);
+      handleInp.value = ""; noteInp.value = ""; view.querySelector("#xa-watch").checked = true; view.querySelector("#xa-connect").checked = false;
+      msg.textContent = "";
+      load();
+    } catch (e) { msg.innerHTML = `<span class="text-rose-500">${esc(e)}</span>`; }
+  };
+
+  view.querySelector("#xa-import").onclick = async () => {
+    const handleInp = view.querySelector("#xa-handle");
+    const h = (handleInp.value || "").trim().replace(/^@/, "").split("/").pop();
+    if (!h) { msg.innerHTML = `<span class="text-amber-500">Enter a handle first.</span>`; return; }
+    msg.textContent = "Importing cookies…";
+    try {
+      await api.xAccountImportBrowser(h);
+      toast("Cookies imported for @" + h);
+      msg.textContent = "";
+      load();
+    } catch (e) { msg.innerHTML = `<span class="text-rose-500">Import failed: ${esc(e)}</span>`; }
+  };
+
+  view.querySelector("#xa-fetch-all").onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Fetching all…";
+    try {
+      const r = await api.accountFetch(null, true);
+      toast(`Pulled ${r.fetched || 0} posts from ${r.accounts || 0} watched accounts`);
+      load();
+    } catch (err) { toast("Fetch failed"); }
+    b.disabled = false; b.innerHTML = html; icons();
+  };
+
+  load();
+  icons();
+}
+
 export const DYN = {
-  "x-account": renderXAccount,
-  watch: renderWatch,
+  "x-account": renderXAccounts,
+  "x-accounts": renderXAccounts,
+  watch: renderXAccounts,
   growth: renderGrowth,
   library: renderLibrary,
   pricing: renderPricing,
