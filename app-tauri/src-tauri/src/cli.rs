@@ -830,7 +830,7 @@ pub struct ActiveEnrichPid(pub Arc<Mutex<Option<u32>>>);
 /// with `{already_running: true}` instead of spawning a duplicate Python
 /// process. Duplicates compound until Ollama's inference queue + SQLite
 /// write-lock starves everything else (observed: 11 stacked enrichments
-/// blocking "Build gap map" indefinitely).
+/// blocking "Build opportunity map" indefinitely).
 ///
 /// Key format: `"<op>:<topic>"`, e.g. `"enrich:calari tracking app"`. Same
 /// topic under different ops (build vs enrich) runs concurrently, which is

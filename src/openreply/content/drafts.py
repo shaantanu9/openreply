@@ -6,7 +6,6 @@ one or more reviewable post/thread drafts and saves them to `content_queue`.
 from __future__ import annotations
 
 import json
-import time
 import uuid
 from typing import Any
 

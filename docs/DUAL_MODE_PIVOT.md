@@ -5,7 +5,7 @@
 **Version:** 1.0
 **Last updated:** April 20, 2026
 **Status:** Strategic direction document — precedes implementation spec
-**Related:** `docs/specs/2026-04-20-insight-engine.md`, `docs/GAP_MAP_METHODOLOGY.md`, `PROJECT_STATUS.md`
+**Related:** `docs/specs/2026-04-20-insight-engine.md`, `docs/RESEARCH_METHODOLOGY.md`, `PROJECT_STATUS.md`
 
 ---
 
@@ -681,7 +681,7 @@ Keeping this list visible to prevent re-litigation.
 
 ## Appendix A — How this document relates to prior docs
 
-- **`docs/GAP_MAP_METHODOLOGY.md`** — theoretical basis for the research engine. Still accurate; still the foundation for synthesis logic in both modes.
+- **`docs/RESEARCH_METHODOLOGY.md`** — theoretical basis for the research engine. Still accurate; still the foundation for synthesis logic in both modes.
 - **`PROJECT_STATUS.md`** — records what Phase 1 + Phase 2 shipped. This document extends that into Phase 3+ with a new modal dimension.
 - **`docs/specs/2026-04-20-insight-engine.md`** — the implementation spec for the synthesis engine used by both modes.
 

@@ -204,7 +204,7 @@ ARCHITECTURE.md   — system design, data flow, component map
 MCP_TOOLS.md      — all 90+ MCP tools with parameters
 CLI_REFERENCE.md  — all CLI commands
 docs/
-  GAP_MAP_GUIDE.md      — end-user desktop app guide
+  OPENREPLY_GUIDE.md    — end-user desktop app guide
   MCP_INFRA.md          — MCP transport, job queue, operating playbook
   FEATURES.md           — feature coverage and status
   manual-todo/          — manual steps (certs, secrets, store setup)

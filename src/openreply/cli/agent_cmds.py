@@ -85,18 +85,36 @@ def update_cmd(
     persona: str = typer.Option(None), tone: str = typer.Option(None),
     audience: str = typer.Option(None), keywords: str = typer.Option(None),
     platforms: str = typer.Option(None), cadence: str = typer.Option(None),
+    style_rules: str = typer.Option(None, "--style-rules",
+                                    help="Free-text writing-style rules (the agent's voice)"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Update fields on an agent."""
     aid = id or _agent.active_id()
     a = _agent.update_agent(
         aid, name=name, niche=niche, website=website, goal=goal, product=product,
-        persona=persona, tone=tone, audience=audience,
+        persona=persona, tone=tone, audience=audience, style_rules=style_rules,
         keywords=_csv(keywords) if keywords is not None else None,
         platforms=_csv(platforms) if platforms is not None else None,
         refresh_cadence=cadence,
     )
     _out(a or {"error": "no such agent"}, json_)
+
+
+@agent_app.command("style-get")
+def style_get_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
+    """Get the global writing-style rules (the default applied to every agent)."""
+    _out({"style_rules": _agent.get_global_style_rules()}, json_)
+
+
+@agent_app.command("style-set")
+def style_set_cmd(
+    text: str = typer.Option("", "--text", help="Global writing-style rules"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Set the global writing-style rules (used when an agent has no own rules)."""
+    saved = _agent.set_global_style_rules(text)
+    _out({"ok": True, "style_rules": saved}, json_)
 
 
 @agent_app.command("delete")

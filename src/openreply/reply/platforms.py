@@ -25,6 +25,7 @@ PLATFORMS: list[dict] = [
     {"key": "discourse",    "label": "Discourse forums","category": "community", "can_reply": True,  "needs_auth": None},
     {"key": "devto",        "label": "Dev.to",          "category": "community", "can_reply": True,  "needs_auth": None},
     {"key": "producthunt",  "label": "Product Hunt",    "category": "community", "can_reply": True,  "needs_auth": None},
+    {"key": "github",       "label": "GitHub",          "category": "community", "can_reply": True,  "needs_auth": None},
     {"key": "instagram",    "label": "Instagram",       "category": "social",    "can_reply": True,  "needs_auth": "cookie"},
     {"key": "tiktok",       "label": "TikTok",          "category": "social",    "can_reply": True,  "needs_auth": "cookie"},
     {"key": "truthsocial",  "label": "Truth Social",    "category": "social",    "can_reply": True,  "needs_auth": None},

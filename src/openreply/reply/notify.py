@@ -55,6 +55,15 @@ _DEFAULTS = {
     "updated_at": 0,
 }
 
+_TARGET_DEFAULTS = {
+    "chat_id": "",
+    "type": "chat",
+    "label": "",
+    "enabled": 1,
+    "added_at": 0,
+}
+_VALID_TARGET_TYPES = {"user", "group", "channel", "chat"}
+
 
 # ───────────────────────── config store ─────────────────────────
 
@@ -73,6 +82,23 @@ def _ensure(db):
     return db
 
 
+def _migrate_legacy_targets(db, cfg: dict) -> None:
+    """Move the legacy single telegram_chat into the targets table once."""
+    chat = (cfg.get("telegram_chat") or "").strip()
+    if not chat:
+        return
+    existing = {r["chat_id"] for r in db["reply_telegram_targets"].rows}
+    for cid in [c.strip() for c in chat.split(",") if c.strip()]:
+        if cid in existing:
+            continue
+        now = int(time.time())
+        db["reply_telegram_targets"].upsert(
+            {"chat_id": cid, "type": "chat", "label": "Legacy",
+             "enabled": 1, "added_at": now},
+            pk="chat_id",
+        )
+
+
 def _raw_config() -> dict:
     """Full config including secrets — for internal senders only."""
     db = _ensure(init_reply_schema())
@@ -85,15 +111,75 @@ def _raw_config() -> dict:
     return cfg
 
 
+def get_targets(enabled_only: bool = False) -> list[dict]:
+    """Return configured Telegram targets. Lazy-migrates legacy telegram_chat."""
+    db = _ensure(init_reply_schema())
+    cfg = _raw_config()
+    _migrate_legacy_targets(db, cfg)
+    rows = [dict(r) for r in db["reply_telegram_targets"].rows]
+    for r in rows:
+        r["enabled"] = bool(r.get("enabled"))
+    if enabled_only:
+        rows = [r for r in rows if r["enabled"]]
+    return rows
+
+
+def set_target(chat_id: str, type_: str | None = None,
+               label: str | None = None, enabled: bool | None = None) -> dict:
+    """Upsert a single Telegram target."""
+    db = _ensure(init_reply_schema())
+    chat_id = (chat_id or "").strip()
+    if not chat_id:
+        return {"error": "chat_id required"}
+    try:
+        row = dict(db["reply_telegram_targets"].get(chat_id))
+    except Exception:
+        row = {}
+    rec = dict(_TARGET_DEFAULTS)
+    rec.update(row)
+    rec["chat_id"] = chat_id
+    if type_ is not None:
+        t = (type_ or "chat").strip().lower()
+        rec["type"] = t if t in _VALID_TARGET_TYPES else "chat"
+    if label is not None:
+        rec["label"] = (label or "")[:80]
+    if enabled is not None:
+        rec["enabled"] = 1 if enabled else 0
+    if not row:
+        rec["added_at"] = int(time.time())
+    db["reply_telegram_targets"].upsert(rec, pk="chat_id")
+    return {k: v for k, v in rec.items() if k != "added_at"}
+
+
+def remove_target(chat_id: str) -> dict:
+    db = _ensure(init_reply_schema())
+    try:
+        db["reply_telegram_targets"].delete(chat_id)
+        return {"ok": True, "deleted": chat_id}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def clear_targets() -> dict:
+    db = _ensure(init_reply_schema())
+    try:
+        db["reply_telegram_targets"].delete_where("1=1")
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def get_config() -> dict:
     """Public config for the UI — secrets masked to presence + last 4 chars."""
     c = _raw_config()
     tok = c.get("telegram_token") or ""
     hook = c.get("slack_webhook") or ""
+    targets = get_targets()
     return {
         "enabled": bool(c["enabled"]),
         "two_way": bool(c["two_way"]),
         "telegram_chat": c.get("telegram_chat") or "",
+        "telegram_targets": targets,
         "has_telegram": bool(tok),
         "telegram_hint": ("…" + tok[-4:]) if tok else "",
         "has_slack": bool(hook),
@@ -112,11 +198,26 @@ def get_config() -> dict:
 def set_config(**fields) -> dict:
     """Upsert config. Only known columns are written. Empty-string tokens are
     kept as-is (caller passes them explicitly to clear); pass None to leave a
-    field unchanged."""
+    field unchanged. Supports `targets` list and `clear_targets` bool for
+    company-mode multi-chat setup."""
     db = _ensure(init_reply_schema())
     cur = _raw_config()
     patch = {"id": "config", "updated_at": int(time.time())}
     cols = set(_DEFAULTS) - {"id"}
+
+    # Target management is applied before the main config loop so that
+    # telegram_chat can be migrated immediately.
+    if fields.get("clear_targets"):
+        clear_targets()
+    if "targets" in fields:
+        for t in fields.pop("targets") or []:
+            set_target(
+                chat_id=t.get("chat_id"),
+                type_=t.get("type"),
+                label=t.get("label"),
+                enabled=t.get("enabled"),
+            )
+
     for k, v in fields.items():
         if k == "events" and isinstance(v, dict):
             for ek, flag in _EVENT_FLAG.items():
@@ -130,6 +231,12 @@ def set_config(**fields) -> dict:
                 patch[k] = float(v)
             else:
                 patch[k] = v
+
+    # If telegram_chat was just set to a comma-separated list, migrate it into
+    # targets so company-mode works from the legacy field too.
+    if patch.get("telegram_chat"):
+        _migrate_legacy_targets(db, patch)
+
     merged = {**cur, **patch}
     db["reply_notify"].upsert(merged, pk="id")
     return get_config()
@@ -137,7 +244,11 @@ def set_config(**fields) -> dict:
 
 def is_configured() -> bool:
     c = _raw_config()
-    return bool(c["enabled"]) and bool(c.get("telegram_token") or c.get("slack_webhook"))
+    has_tg = bool(c.get("telegram_token")) and (
+        bool(c.get("telegram_chat")) or bool(get_targets(enabled_only=True))
+    )
+    has_slack = bool(c.get("slack_webhook"))
+    return bool(c["enabled"]) and (has_tg or has_slack)
 
 
 # ───────────────────────── dedup ─────────────────────────
@@ -211,50 +322,98 @@ def _strip_html(s: str) -> str:
     return (s.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
 
 
+def _operator_footer(operator: str | None) -> str:
+    if not operator:
+        return ""
+    return f"\n\n<em>via {operator}</em>"
+
+
+def _send_one(token: str, chat_id: str, text: str, html: bool,
+              markup: dict | None) -> tuple[bool, str]:
+    payload: dict = {"chat_id": chat_id, "text": text,
+                     "disable_web_page_preview": False}
+    if html:
+        payload["parse_mode"] = "HTML"
+    if markup:
+        payload["reply_markup"] = markup
+    ok, raw = _post_json(_TG_API.format(token=token, method="sendMessage"), payload)
+    if ok:
+        try:
+            if not json.loads(raw).get("ok", False):
+                return False, raw[:200]
+        except Exception:
+            pass
+    return ok, raw[:200]
+
+
 def send_telegram(text: str, buttons: list | None = None,
-                  token: str | None = None, chat: str | None = None) -> tuple[bool, str]:
-    """Send an HTML message to Telegram. `buttons` is a list of
-    [{"text","data"}] rows rendered as a one-per-row inline keyboard.
+                  token: str | None = None, chat: str | None = None,
+                  operator: str | None = None) -> tuple[bool, str]:
+    """Send an HTML message to Telegram.
+
+    - If `chat` is given, send only to that chat (used by bot.py replies).
+    - Otherwise broadcast to every enabled target in `reply_telegram_targets`.
+    - Channels receive button-free messages because Telegram does not deliver
+      callback queries from channels.
+    - `operator` is appended as a small footer so a shared group knows who acted.
 
     Hardened (lessons from a heavier bot framework, kept stdlib-only): the body is
-    capped to Telegram's length ceiling, and if HTML entity parsing fails (a stray
-    tag in user content) we retry once as plain text rather than dropping the
-    message — a notification with imperfect formatting beats no notification."""
+    capped to Telegram's length ceiling, and if HTML entity parsing fails we retry
+    once as plain text rather than dropping the message."""
     c = _raw_config()
     token = token or c.get("telegram_token") or ""
-    chat = chat or c.get("telegram_chat") or ""
-    if not token or not chat:
-        return False, "telegram not configured (token + chat id)"
-    text = text or ""
+    text = (text or "") + _operator_footer(operator)
     if len(text) > _TG_LIMIT:
         text = text[:_TG_LIMIT - 1] + "…"
+
     markup = None
     if buttons:
         markup = {
             "inline_keyboard": [[{"text": b["text"], "callback_data": b["data"]}] for b in buttons]
         }
 
-    def _attempt(body_text: str, html: bool) -> tuple[bool, str]:
-        payload: dict = {"chat_id": chat, "text": body_text,
-                         "disable_web_page_preview": False}
-        if html:
-            payload["parse_mode"] = "HTML"
-        if markup:
-            payload["reply_markup"] = markup
-        ok, raw = _post_json(_TG_API.format(token=token, method="sendMessage"), payload)
-        if ok:
-            try:
-                if not json.loads(raw).get("ok", False):
-                    return False, raw[:200]
-            except Exception:
-                pass
-        return ok, raw[:200]
+    targets: list[dict] = []
+    if chat:
+        targets = [{"chat_id": chat, "type": "chat"}]
+    else:
+        targets = get_targets(enabled_only=True)
+    if not token or not targets:
+        return False, "telegram not configured (token + chat id/targets)"
 
-    ok, body = _attempt(text, html=True)
-    # 400 "can't parse entities" → retry once as plain text (tags stripped).
-    if not ok and ("parse" in body.lower() or "entit" in body.lower()):
-        return _attempt(_strip_html(text)[:_TG_LIMIT], html=False)
-    return ok, body
+    def _attempt(chat_id: str, body_text: str, html: bool,
+                 use_buttons: bool) -> tuple[bool, str]:
+        m = markup if use_buttons else None
+        ok, raw = _send_one(token, chat_id, body_text, html, m)
+        # Channel / bot_privacy / discussion-group errors that mention buttons
+        # or channels: retry once without the inline keyboard.
+        if not ok and use_buttons and (
+            "button" in raw.lower() or "channel" in raw.lower()
+            or "callback" in raw.lower() or "not enough rights" in raw.lower()
+        ):
+            return _send_one(token, chat_id, body_text, html, None)
+        return ok, raw
+
+    results: list[tuple[bool, str]] = []
+    for t in targets:
+        chat_id = str(t.get("chat_id") or "")
+        if not chat_id:
+            continue
+        is_channel = (t.get("type") or "").lower() == "channel"
+        use_buttons = bool(buttons and not is_channel)
+
+        ok, body = _attempt(chat_id, text, html=True, use_buttons=use_buttons)
+        # 400 "can't parse entities" → retry once as plain text.
+        if not ok and ("parse" in body.lower() or "entit" in body.lower()):
+            plain = _strip_html(text)[:_TG_LIMIT]
+            ok, body = _attempt(chat_id, plain, html=False,
+                                use_buttons=use_buttons)
+        results.append((ok, body))
+
+    if not results:
+        return False, "no targets to send to"
+    ok_all = all(r[0] for r in results)
+    summary = "; ".join(f"{i+1}: {r[1]}" for i, r in enumerate(results) if not r[0])
+    return ok_all, ("ok" if ok_all else summary)
 
 
 def send_slack(text: str, webhook: str | None = None) -> tuple[bool, str]:
@@ -381,7 +540,10 @@ def dispatch(event: str, payload: dict) -> dict:
         return {"error": f"format failed: {e}"}
 
     out: dict = {}
-    if c.get("telegram_token") and c.get("telegram_chat"):
+    has_tg = bool(c.get("telegram_token")) and (
+        bool(c.get("telegram_chat")) or bool(get_targets(enabled_only=True))
+    )
+    if has_tg:
         ok, msg = send_telegram(tg_text, buttons if c.get("two_way") else None)
         out["telegram"] = {"ok": ok, "msg": msg}
     if c.get("slack_webhook"):
@@ -399,7 +561,10 @@ def send_test() -> dict:
                "drafted posts, and reply reminders here.")
     text_sk = ("✅ *OpenReply connected*\nYou'll get new opportunities, drafted "
                "posts, and reply reminders here.")
-    if c.get("telegram_token") and c.get("telegram_chat"):
+    has_tg = bool(c.get("telegram_token")) and (
+        bool(c.get("telegram_chat")) or bool(get_targets(enabled_only=True))
+    )
+    if has_tg:
         ok, msg = send_telegram(text_tg)
         tg = {"ok": ok, "msg": msg}
     if c.get("slack_webhook"):

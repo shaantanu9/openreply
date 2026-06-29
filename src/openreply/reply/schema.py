@@ -119,4 +119,44 @@ def init_reply_schema(db: Database | None = None) -> Database:
         )
         db["reply_ideas"].create_index(["agent_id", "status"])
 
+    if "reply_digest" not in names:
+        # Daily Update — one cached row per agent per day. A goal-framed LLM
+        # briefing + a ranked feed of the freshest niche news/knowledge, built
+        # from the shared corpus. Surfaced on the Overview page.
+        db["reply_digest"].create(
+            {
+                "id": str, "agent_id": str, "day": str,
+                "briefing_json": str, "feed_json": str, "sources_json": str,
+                "created_at": int,
+            },
+            pk="id",
+        )
+        db["reply_digest"].create_index(["agent_id", "day"])
+
+    if "reply_telegram_targets" not in names:
+        # Company-mode Telegram delivery: one row per group/channel/user chat.
+        # Replaces the single telegram_chat string so multiple teams can receive
+        # the same notifications and act from a shared group.
+        db["reply_telegram_targets"].create(
+            {
+                "chat_id": str, "type": str, "label": str,
+                "enabled": int, "added_at": int,
+            },
+            pk="chat_id",
+        )
+
+    # Forward-compat: operator attribution for company-mode actions.
+    for table in ("reply_opportunities", "reply_drafts"):
+        if table not in names:
+            continue
+        t = db[table]
+        existing = {c.name for c in t.columns}
+        if "operator" not in existing:
+            t.add_column("operator", str)
+    if "reply_opportunities" in names:
+        t = db["reply_opportunities"]
+        existing = {c.name for c in t.columns}
+        if "operator_actioned_at" not in existing:
+            t.add_column("operator_actioned_at", int)
+
     return db

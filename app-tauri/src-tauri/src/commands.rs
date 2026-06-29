@@ -768,6 +768,7 @@ pub async fn agent_update(
     keywords: Option<String>,
     platforms: Option<String>,
     cadence: Option<String>,
+    style_rules: Option<String>,
 ) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "update".to_string(), "--json".to_string()];
     let mut push = |flag: &str, v: Option<String>| {
@@ -785,8 +786,30 @@ pub async fn agent_update(
     push("--keywords", keywords);
     push("--platforms", platforms);
     push("--cadence", cadence);
+    // style_rules is special: an explicit empty string must CLEAR the per-agent
+    // override (so the agent falls back to the global style), so we don't skip it.
+    if let Some(s) = style_rules {
+        args.push("--style-rules".to_string());
+        args.push(s);
+    }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply agent style-get` — the global writing-style rules (default voice).
+#[tauri::command]
+pub async fn style_rules_get(app: AppHandle) -> Result<Value, String> {
+    run_cli(&app, vec!["agent", "style-get", "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// `openreply agent style-set --text …` — set the global writing-style rules.
+#[tauri::command]
+pub async fn style_rules_set(app: AppHandle, text: String) -> Result<Value, String> {
+    run_cli(&app, vec!["agent", "style-set", "--text", &text, "--json"])
+        .await
+        .map_err(err_to_string)
 }
 
 /// `openreply agent personas` — list personas linked to this agent (with blend weights).
@@ -9342,6 +9365,18 @@ pub async fn agent_ideas(app: AppHandle, suggest: Option<bool>, n: Option<u32>) 
                         "--n".to_string(), nn, "--json".to_string()];
     if suggest.unwrap_or(false) {
         args.push("--suggest".into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Daily Update: goal-framed briefing + ranked feed of fresh niche news.
+/// First call each day builds + caches; `rebuild` forces a fresh build.
+#[tauri::command]
+pub async fn agent_digest(app: AppHandle, rebuild: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "digest".to_string(), "--json".to_string()];
+    if rebuild.unwrap_or(false) {
+        args.push("--rebuild".into());
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)

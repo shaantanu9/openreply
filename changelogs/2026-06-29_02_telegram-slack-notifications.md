@@ -48,6 +48,34 @@ tick.
   Send test); `ensureBotPoller` runs a 4s `bot-poll --once` interval while the
   window is open (self-gates on enabled + two_way + token; stops on unload).
 
+## Hardening (lessons adapted from the `openclaw` bot framework)
+
+Reviewed openclaw's (TypeScript/grammY + `@slack/bolt`) Telegram/Slack stack and
+adopted the parts that fit OpenReply's deliberately minimal, stdlib-only,
+frontend-poll design (skipped the heavy bits: grammY/Bolt SDKs, webhook/Socket
+modes, multi-account, pinned-IP network fallback — all need always-on/public
+infra OpenReply intentionally avoids):
+
+- **getUpdates offset persistence (real bug fix).** The `--once` poller runs as a
+  fresh process every ~4s; Telegram only drops an update once a *later* getUpdates
+  carries `offset = update_id + 1`. Without persisting that watermark, each pass
+  re-fetched the same `callback_query` and **the same button tap fired every
+  tick**. Now persisted to `bot.offset` in the data dir and resumed each pass
+  (`bot.py` `_offset_path`/`_load_offset`/`_save_offset`, saved before acting =
+  crash-safe). This is the single tiny-file version of openclaw's watermark
+  tracking.
+- **HTML→plain-text fallback.** If Telegram rejects a message with a parse-entity
+  error, `send_telegram` retries once as plain text (tags stripped) instead of
+  dropping it — a notification with imperfect formatting beats none.
+- **Length cap.** Body capped to Telegram's 4096 ceiling (`_TG_LIMIT = 4000`).
+- **Single send path.** `bot._send` now delegates to `notify.send_telegram`, so the
+  cap + fallback live in one place.
+- **Frontend re-entrancy guard.** `ensureBotPoller` skips a beat if the previous
+  `--once` pass is still in flight, so a slow pass can't overlap and double-process.
+
+Validated openclaw's design choice that **Slack interactive buttons require a
+public endpoint / Socket Mode** — confirms keeping Slack notify-only here.
+
 ## Files Created
 
 - `src/openreply/reply/notify.py` — Telegram/Slack transport + config + dedup

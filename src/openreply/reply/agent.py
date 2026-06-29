@@ -28,6 +28,10 @@ def _ensure(db):
                 "id": str, "name": str, "brand": str, "niche": str,
                 "persona": str, "tone": str, "audience": str, "topic": str,
                 "website": str, "goal": str, "product": str,
+                # Free-text writing-style rules — the human voice of this agent's
+                # replies (e.g. "short sentences, no em-dashes, never say 'delve'").
+                # Empty → fall back to the global style rules (reply_state kv).
+                "style_rules": str,
                 # Structured goal (the thing the self-evolving engine optimizes toward).
                 "objective": str, "win_signal": str, "guardrails": str,
                 # Self-evolution bookkeeping.
@@ -62,6 +66,13 @@ def _ensure(db):
                     db["agents"].add_column(_pc, str)
                 except Exception:
                     pass
+        # Migration: per-agent writing-style rules (free text). Overrides the
+        # global style rules when set; empty falls back to the global default.
+        if "style_rules" not in cols:
+            try:
+                db["agents"].add_column("style_rules", str)
+            except Exception:
+                pass
         # Migration: structured goal (objective/win_signal/guardrails — audience
         # already exists) + self-evolution bookkeeping (last_evolve_at epoch,
         # feedback_since_evolve counter). Drive the Goal Playbook engine.
@@ -135,6 +146,35 @@ def set_active(aid: str) -> None:
     db["reply_state"].upsert({"key": "active_agent", "value": aid}, pk="key")
 
 
+# ---- writing-style rules -------------------------------------------------
+# Global default lives in reply_state kv; each agent may override it via its
+# `style_rules` column. The reply generator injects the *effective* rules.
+
+_STYLE_KEY = "global_style_rules"
+
+
+def get_global_style_rules() -> str:
+    db = _ensure(init_reply_schema())
+    try:
+        return (dict(db["reply_state"].get(_STYLE_KEY)).get("value") or "").strip()
+    except Exception:
+        return ""
+
+
+def set_global_style_rules(text: str) -> str:
+    db = _ensure(init_reply_schema())
+    text = (text or "").strip()
+    db["reply_state"].upsert({"key": _STYLE_KEY, "value": text}, pk="key")
+    return text
+
+
+def effective_style_rules(agent: dict | None) -> str:
+    """The style rules that actually apply to a draft: the agent's own rules if
+    set, otherwise the global default."""
+    own = ((agent or {}).get("style_rules") or "").strip()
+    return own or get_global_style_rules()
+
+
 # ---- CRUD ----------------------------------------------------------------
 
 def create_agent(
@@ -185,7 +225,7 @@ def update_agent(aid: str, **fields) -> dict | None:
         return None
     patch: dict = {}
     for k in ("name", "brand", "niche", "website", "goal", "product", "persona",
-              "tone", "audience", "refresh_cadence",
+              "tone", "audience", "refresh_cadence", "style_rules",
               "objective", "win_signal", "guardrails"):
         if k in fields and fields[k] is not None:
             patch[k] = fields[k]
@@ -216,10 +256,24 @@ def get_active_agent() -> dict | None:
 def list_agents() -> list[dict]:
     db = _ensure(init_reply_schema())
     act = active_id()
+
+    def _count(sql, args):
+        try:
+            return db.execute(sql, args).fetchone()[0]
+        except Exception:
+            return 0
+
     out = []
     for r in db["agents"].rows_where(order_by="created_at asc"):
         a = _hydrate(r)
         a["active"] = a["id"] == act
+        # Per-agent knowledge counts for the agent card (posts / brain nodes /
+        # opportunities). Posts + nodes are topic-scoped; opps are brand-scoped
+        # and the active agent IS the brand, so brand_id == agent id.
+        topic = a.get("topic")
+        a["posts"] = _count("SELECT COUNT(*) FROM topic_posts WHERE topic=?", [topic])
+        a["graph_nodes"] = _count("SELECT COUNT(*) FROM graph_nodes WHERE topic=?", [topic])
+        a["opps"] = _count("SELECT COUNT(*) FROM reply_opportunities WHERE brand_id=?", [a["id"]])
         out.append(a)
     return out
 

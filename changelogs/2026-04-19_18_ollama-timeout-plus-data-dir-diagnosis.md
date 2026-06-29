@@ -42,7 +42,7 @@ export REDDIT_MYIND_DATA_DIR="$HOME/Library/Application Support/com.shantanu.ope
 reddit-cli info
 ```
 
-Added to `docs/GAP_MAP_GUIDE.md` troubleshooting section + `docs/HOW_TO_USE.md`.
+Added to `docs/OPENREPLY_GUIDE.md` troubleshooting section + `docs/HOW_TO_USE.md`.
 
 ## Verification
 

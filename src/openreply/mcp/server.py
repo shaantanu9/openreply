@@ -3965,7 +3965,7 @@ def openreply_idea_scan_list(limit: int = 50) -> list[dict]:
 # the strategy, and the business model — each grounded in the topic's collected
 # evidence. `compute=False` reads the cached artifact (instant); `compute=True`
 # runs the LLM synthesis under the timeout guard (needs an LLM key + a built
-# gap map for the topic). All persist to strategy_artifacts so the desktop
+# opportunity map for the topic). All persist to strategy_artifacts so the desktop
 # tabs and these tools share one source of truth.
 
 def _strategy_tool(get_fn, compute_fn, topic: str, compute: bool, hint: str):
@@ -3994,7 +3994,7 @@ def openreply_porter(topic: str, compute: bool = False) -> dict:
 
 @mcp.tool()
 def openreply_swot(topic: str, compute: bool = False) -> dict:
-    """SWOT synthesised from the gap map + competitors for a topic."""
+    """SWOT synthesised from the opportunity map + competitors for a topic."""
     from ..research.swot import swot_get, swot_compute
     return _strategy_tool(swot_get, swot_compute, topic, compute, "openreply_swot")
 

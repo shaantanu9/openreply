@@ -1,6 +1,7 @@
 // OpenReply dynamic screens — real data via the Rust command bridge (or/api.js).
 // Tailwind markup mirrors the prototype; content + handlers are live.
 import { api, esc } from "./api.js";
+import { renderMarkdown, mdWrap } from "./markdown.js";
 
 const icons = () => window.lucide && window.lucide.createIcons();
 const toast = (m) => window.orToast && window.orToast(m);
@@ -83,17 +84,12 @@ export async function renderAgents(view) {
       grid.querySelectorAll("[data-use]").forEach(b => b.onclick = async () => {
         await api.agentUse(b.getAttribute("data-use")); toast("Switched agent"); load();
       });
-      grid.querySelectorAll("[data-edit]").forEach(b => b.onclick = async () => {
-        try { await api.agentUse(b.getAttribute("data-edit")); location.hash = "#/keywords"; }
+      // Find replies / Create content / Open → make the card's agent active, then
+      // jump to its screen (these screens all act on the active agent).
+      grid.querySelectorAll("[data-go]").forEach(b => b.onclick = async () => {
+        const route = b.getAttribute("data-go"), id = b.getAttribute("data-id");
+        try { await api.agentUse(id); location.hash = "#/" + route; }
         catch (e) { toast("Failed: " + e); }
-      });
-      grid.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
-        const id = b.getAttribute("data-del"), name = b.getAttribute("data-name") || "this agent";
-        window.orModal({
-          title: `Delete ${name}?`, okText: "Delete",
-          body: `<p class="text-sm text-zinc-500">Removes the agent and its settings. Collected posts/knowledge stay. This can’t be undone.</p>`,
-          onOk: async () => { try { await api.agentDelete(id); toast("Deleted " + name); load(); } catch (e) { toast("Delete failed: " + e); } },
-        });
       });
       icons();
     } catch (e) { grid.innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${esc(e)}</div>`; }
@@ -105,21 +101,50 @@ function field(id, label, ph) {
   return `<label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">${label}</span>
     <input id="${id}" placeholder="${esc(ph)}" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>`;
 }
+// Human-readable source labels for the raw platform keys stored on an agent.
+const SOURCE_LABELS = {
+  reddit: "Reddit", reddit_free: "Reddit", hn: "Hacker News", hackernews: "Hacker News",
+  devto: "Dev.to", stackoverflow: "Stack Overflow", producthunt: "Product Hunt",
+  lemmy: "Lemmy", mastodon: "Mastodon", bluesky: "Bluesky", threads: "Threads",
+  linkedin: "LinkedIn", youtube: "YouTube", duckduckgo: "DuckDuckGo", x: "X",
+};
+const _srcLabel = (p) => SOURCE_LABELS[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : p);
+// Compact post/node counts: 5800 → "5.8k", 142 → "142", 12000 → "12k".
+function _compact(n) {
+  n = Number(n) || 0;
+  if (n < 1000) return String(n);
+  const v = n / 1000;
+  return (v >= 10 ? Math.round(v) : v.toFixed(1)).toString().replace(/\.0$/, "") + "k";
+}
+
 function agentCard(a) {
   const kws = (a.keywords || []).slice(0, 5).map(k => `<span class="${chip}">${esc(k)}</span>`).join("");
-  const pfs = (a.platforms || []).map(p => `<span class="${chip}">${esc(p)}</span>`).join("");
+  const pfs = (a.platforms || []).map(p => {
+    const primary = p === "reddit" || p === "reddit_free";
+    const cls = primary
+      ? "rounded-full bg-reddit/10 px-2.5 py-0.5 text-reddit"
+      : "rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-0.5";
+    return `<span class="${cls}">${esc(_srcLabel(p))}</span>`;
+  }).join("");
+  const stat = (icon, label) =>
+    `<span><i data-lucide="${icon}" class="inline-block h-4 w-4 align-[-2px]"></i> ${label}</span>`;
+  const stats = `<div class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+      ${stat("database", `${_compact(a.posts)} posts`)}
+      ${stat("share-2", `${_compact(a.graph_nodes)} nodes`)}
+      ${stat("target", `${_compact(a.opps)} opps`)}</div>`;
   return `<div class="${card}">
     <div class="flex items-center gap-2"><b class="text-lg text-zinc-900 dark:text-white">${esc(a.name)}</b>
       ${a.active ? '<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">active</span>' : ""}</div>
     <p class="text-sm text-zinc-500 dark:text-zinc-400">${esc(a.niche || a.brand || "")}</p>
     <div class="mt-3 flex flex-wrap gap-1.5">${kws}</div>
-    <div class="mt-2 flex flex-wrap gap-1.5">${pfs}</div>
+    ${pfs ? `<div class="mt-3 flex flex-wrap gap-1.5 text-xs text-zinc-500">${pfs}</div>` : ""}
     <div class="my-4 border-t border-zinc-200 dark:border-zinc-800"></div>
-    <div class="flex flex-wrap gap-2">
+    ${stats}
+    <div class="mt-4 flex flex-wrap gap-2">
       ${a.active ? "" : `<button data-use="${esc(a.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Make active</button>`}
-      <a href="#/opportunities" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Find replies</a>
-      <button data-edit="${esc(a.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Edit</button>
-      <button data-del="${esc(a.id)}" data-name="${esc(a.name)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-rose-500">Delete</button></div>
+      <button data-go="opportunities" data-id="${esc(a.id)}" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white hover:bg-reddit-hi">Find replies</button>
+      <button data-go="compose" data-id="${esc(a.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Create content</button>
+      <button data-go="agent" data-id="${esc(a.id)}" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open →</button></div>
   </div>`;
 }
 
@@ -145,14 +170,19 @@ export async function renderOverview(view) {
       <div class="min-w-0"><div class="font-semibold text-zinc-900 dark:text-white">${title}</div>
         <div class="text-xs text-zinc-500 dark:text-zinc-400">${desc}</div></div></a>`;
 
+  // Secondary actions collapse to icon-only buttons (with hover tooltips) so the
+  // header stays clean; only the primary "Find opportunities" CTA keeps its label.
+  const btnIcon = "grid h-9 w-9 place-items-center rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 hover:text-reddit transition";
   document.getElementById("ov").outerHTML =
     head(esc(a.name), `${esc(a.niche || "—")} · watching ${(a.platforms || []).join(", ") || "no sources yet"}`,
-      `<button id="ov-refresh" class="${btn}"><i data-lucide="refresh-cw" class="inline-block h-4 w-4 align-[-2px]"></i> Refresh + learn</button>
-       <button id="ov-evolve" class="${btn}"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> Evolve now</button>
-       <button id="ov-suggest" class="${btn}"><i data-lucide="lightbulb" class="inline-block h-4 w-4 align-[-2px]"></i> Suggest ideas</button>
-       <a href="#/opportunities" class="${btnP}"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</a>`) +
+      `<button id="ov-refresh" class="${btnIcon}" title="Refresh + learn — fetch fresh posts for your niche and rebuild the agent's brain" aria-label="Refresh + learn"><i data-lucide="refresh-cw" class="h-4 w-4"></i></button>
+       <button id="ov-evolve" class="${btnIcon}" title="Evolve now — improve the agent's reply strategy from recent feedback" aria-label="Evolve now"><i data-lucide="sparkles" class="h-4 w-4"></i></button>
+       <button id="ov-suggest" class="${btnIcon}" title="Suggest ideas — generate content & reply ideas from your knowledge" aria-label="Suggest ideas"><i data-lucide="lightbulb" class="h-4 w-4"></i></button>
+       <a href="#/opportunities" class="${btnP}"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</a>
+       <button id="ov-delete" class="grid h-9 w-9 place-items-center rounded-full border border-rose-500/60 text-rose-500 hover:bg-rose-500/10 transition" title="Delete agent" aria-label="Delete agent"><i data-lucide="trash-2" class="h-4 w-4"></i></button>`) +
     freshBanner +
     `<div id="ov-strategy" class="mb-5"></div>` +
+    `<div id="ov-digest" class="mb-5"></div>` +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
        ${kpi("Posts collected", (k && k.posts) || 0, "#/knowledge", "database")}
        ${kpi("Brain nodes", (k && k.graph_nodes) || 0, "#/knowledge", "brain")}
@@ -193,22 +223,36 @@ export async function renderOverview(view) {
      </div>`;
 
   document.getElementById("ov-refresh").onclick = async (e) => {
-    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Refreshing + learning…";
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
+    b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
     catch (err) { toast("Refresh failed"); b.disabled = false; b.innerHTML = html; icons(); }
+  };
+
+  // Per-agent delete moved here from the Agents card (the card now matches the
+  // compact design). Removes this agent + its settings; collected knowledge stays.
+  document.getElementById("ov-delete").onclick = () => {
+    window.orModal({
+      title: `Delete ${a.name}?`, okText: "Delete",
+      body: `<p class="text-sm text-zinc-500 dark:text-zinc-400">Removes the agent and its settings. Collected posts/knowledge stay. This can’t be undone.</p>`,
+      onOk: async () => {
+        try { await api.agentDelete(a.id); toast("Deleted " + a.name); location.hash = "#/agents"; }
+        catch (e) { toast("Delete failed: " + e); }
+      },
+    });
   };
 
   // Evolve the Goal Playbook from here (mirrors the Learning screen's button).
   document.getElementById("ov-evolve").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
-    b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Evolving…`; icons();
+    b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { const r = await api.agentEvolve(); toast(r?.skipped ? (r.reason || "Skipped") : (r?.summary || "Evolved ✓")); }
     catch (err) { toast("Evolve failed: " + err); }
     b.disabled = false; b.innerHTML = html; icons(); loadStrategyStrip();
   };
   document.getElementById("ov-suggest").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
-    b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Thinking…`; icons();
+    b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { const r = await api.agentIdeas(true); toast(r?.skipped ? (r.reason || "Skipped") : `Suggested ${(r?.ideas || []).length} idea(s) — see Learning`); }
     catch (err) { toast("Suggest failed: " + err); }
     b.disabled = false; b.innerHTML = html; icons();
@@ -239,6 +283,99 @@ export async function renderOverview(view) {
     icons();
   }
   loadStrategyStrip();
+
+  // ── Daily Update (digest) ─────────────────────────────────────────────────
+  // Goal-framed briefing + ranked feed of the freshest niche news/knowledge.
+  // Auto-builds on the first open each day (cached server-side), instant-paints
+  // the last build from localStorage meanwhile, and rebuilds on demand.
+  const DIGEST_KEY = `or.digest.${a.id}`;
+  const ago = (ts) => {
+    if (!ts) return "";
+    const s = Math.max(0, Date.now() / 1000 - ts);
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+  };
+  function digestSkeleton(msg) {
+    return `<div class="${card}">
+      <div class="mb-3 flex items-center justify-between">
+        <b class="text-zinc-900 dark:text-white"><i data-lucide="newspaper" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> Daily Update</b></div>
+      <div class="flex items-center gap-2 text-sm text-zinc-500"><i data-lucide="loader" class="inline-block h-4 w-4 animate-spin"></i> ${esc(msg || "Building today's update…")}</div></div>`;
+  }
+  function renderDigest(d, building) {
+    const host = document.getElementById("ov-digest");
+    if (!host) return;
+    const feed = (d && d.feed) || [];
+    const br = d && d.briefing;
+    if (!d || (!feed.length && !br)) {
+      host.innerHTML = `<div class="${card}">
+        <div class="mb-2 flex items-center justify-between">
+          <b class="text-zinc-900 dark:text-white"><i data-lucide="newspaper" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> Daily Update</b>
+          <button id="ov-digest-refresh" class="text-xs font-semibold text-reddit">Refresh now</button></div>
+        <div class="text-sm text-zinc-400">Nothing new yet — hit <b>Refresh + learn</b> to fetch niche news, then <b>Refresh now</b> here.</div></div>`;
+      icons(); wireDigestRefresh(); return;
+    }
+    const when = d.generated_at ? ago(d.generated_at) : (d.cached ? "today" : "just now");
+    const sections = (br && br.sections) || [];
+    const sectionsHtml = sections.slice(0, 4).map((s) => `
+      <div class="rounded-lg border border-zinc-100 dark:border-zinc-800 p-3">
+        <div class="font-semibold text-zinc-800 dark:text-zinc-100">${esc(s.headline || "")}</div>
+        ${s.why ? `<div class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">${mdWrap(renderMarkdown(s.why))}</div>` : ""}
+        ${(s.links || []).length ? `<div class="mt-1.5 flex flex-wrap gap-1.5">${(s.links || []).slice(0, 4).map((l) =>
+          `<a href="${esc(l.url || "#")}" target="_blank" rel="noreferrer" class="rounded-full ${platformBadge(l.source)} px-2 py-0.5 text-[11px] font-semibold">${esc((l.title || l.source || "link").slice(0, 40))}</a>`).join("")}</div>` : ""}
+      </div>`).join("");
+    const feedHtml = feed.slice(0, 6).map((it) => `
+      <a href="${esc(it.url || "#")}" target="_blank" rel="noreferrer" class="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-3 py-2 hover:border-reddit/40">
+        <div class="flex items-center gap-2">
+          <span class="rounded ${platformBadge(it.source)} px-1.5 py-0.5 text-[11px] font-bold">${esc(it.source || "")}</span>
+          <span class="text-[11px] text-zinc-400">${esc(ago(it.created_utc))}</span></div>
+        <div class="mt-1 truncate text-sm text-zinc-700 dark:text-zinc-300">${esc(it.title || "(untitled)")}</div></a>`).join("");
+    host.innerHTML = `<div class="${card}">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <b class="text-zinc-900 dark:text-white"><i data-lucide="newspaper" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> Daily Update <span class="text-xs font-normal text-zinc-400">${building ? "· refreshing…" : (when ? "· " + esc(when) : "")}</span></b>
+        <button id="ov-digest-refresh" class="text-xs font-semibold text-reddit"${building ? " disabled" : ""}>${building ? "Refreshing…" : "Refresh now"}</button></div>
+      ${br && br.summary ? `<div class="mb-3 text-sm text-zinc-600 dark:text-zinc-300">${mdWrap(renderMarkdown(br.summary))}</div>` : ""}
+      ${sectionsHtml ? `<div class="grid gap-2 sm:grid-cols-2">${sectionsHtml}</div>` : ""}
+      ${!br ? `<div class="mb-2 text-xs text-zinc-400">Add an AI provider in <a href="#/settings" class="text-reddit">Settings</a> for a daily briefing.</div>` : ""}
+      ${feedHtml ? `<div class="mt-3"><div class="mb-1.5 text-xs font-bold uppercase tracking-wider text-zinc-400">Fresh from your sources</div><div class="grid gap-2 sm:grid-cols-2">${feedHtml}</div></div>` : ""}
+    </div>`;
+    icons(); wireDigestRefresh();
+  }
+  function wireDigestRefresh() {
+    const b = document.getElementById("ov-digest-refresh");
+    if (!b) return;
+    b.onclick = async () => {
+      const host = document.getElementById("ov-digest");
+      const prev = host ? host.innerHTML : "";
+      if (host) host.innerHTML = digestSkeleton("Fetching fresh news + synthesizing…");
+      icons();
+      try {
+        const d = await api.agentDigest(true);
+        if ((d.feed || []).length || d.briefing) { try { localStorage.setItem(DIGEST_KEY, JSON.stringify(d)); } catch (e) {} }
+        renderDigest(d, false); toast("Daily update refreshed");
+      } catch (err) {
+        if (host) host.innerHTML = prev; icons();
+        toast("Update failed: " + err);
+      }
+    };
+  }
+  (async () => {
+    // 1) instant paint from cache (if any)
+    let painted = false;
+    try {
+      const c = JSON.parse(localStorage.getItem(DIGEST_KEY) || "null");
+      if (c && ((c.feed || []).length || c.briefing)) { renderDigest(c, true); painted = true; }
+    } catch (e) {}
+    if (!painted) { const h = document.getElementById("ov-digest"); if (h) { h.innerHTML = digestSkeleton(); icons(); } }
+    // 2) build/return today's (server caches; only the first open each day is slow)
+    try {
+      const d = await api.agentDigest(false);
+      if ((d.feed || []).length || d.briefing) { try { localStorage.setItem(DIGEST_KEY, JSON.stringify(d)); } catch (e) {} }
+      renderDigest(d, false);
+    } catch (e) {
+      if (!painted) { const h = document.getElementById("ov-digest"); if (h) { renderDigest(null, false); } }
+    }
+  })();
 
   // Live counts + snippets (best-effort; never block the page).
   (async () => {
@@ -469,7 +606,7 @@ export async function renderOpportunities(view) {
               ${subLabel(o)}${statusPill(o.status || "new")}${postWhen(o)}</div>
             <span class="text-2xl font-extrabold ${scoreCls(o.score || 0)}" title="rel ${o.relevance} · intent ${o.intent} · fit ${o.fit} · eng ${o.engagement} · fresh ${o.freshness}">${s}</span></div>
           <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
-          ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}
+          ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${mdWrap(renderMarkdown(o.reason))}</div>` : ""}
           <div class="mt-3 flex flex-wrap items-center gap-2">
             ${o.url ? `<a href="${esc(o.url)}" target="_blank" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open ↗</a>` : ""}
             ${triageBtns(o)}</div>
@@ -750,12 +887,32 @@ export async function renderCompose(view) {
     } catch (e) { status.textContent = "Failed: " + e; out.innerHTML = ""; }
   };
 
+  // Toggle Edit / Markdown Preview on content cards.
+  view.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-cm-tab]"); if (!b) return;
+    const wrap = b.closest("[data-cid]"); if (!wrap) return;
+    const mode = b.getAttribute("data-cm-tab");
+    const ta = wrap.querySelector("[data-cm-edit]");
+    const pv = wrap.querySelector("[data-cm-preview]");
+    if (!ta || !pv) return;
+    const editing = mode === "edit";
+    ta.classList.toggle("hidden", !editing);
+    pv.classList.toggle("hidden", editing);
+    wrap.querySelectorAll("[data-cm-tab]").forEach(btn => {
+      const on = btn.getAttribute("data-cm-tab") === mode;
+      btn.className = on
+        ? "rounded-full bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-900 dark:bg-zinc-800 dark:text-white"
+        : "rounded-full px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800";
+    });
+    if (!editing) pv.innerHTML = mdWrap(renderMarkdown(ta.value));
+  });
+
   // One delegated handler for Save / Schedule on every card (output + recent).
   view.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-cm-act]"); if (!b) return;
     const wrap = b.closest("[data-cid]"); if (!wrap) return;
     const id = wrap.getAttribute("data-cid");
-    const ta = wrap.querySelector("textarea");
+    const ta = wrap.querySelector("[data-cm-edit]");
     const msg = wrap.querySelector("[data-cm-msg]");
     const act = b.getAttribute("data-cm-act");
     try {
@@ -838,11 +995,20 @@ export async function renderCompose(view) {
 function contentCard(c, big) {
   const statusColor = c.status === "scheduled" ? "bg-emerald-500/15 text-emerald-500"
     : c.status === "posted" ? "bg-sky-500/15 text-sky-500" : "bg-amber-500/15 text-amber-500";
-  return `<div class="${card}" data-cid="${esc(c.id)}">
+  const id = esc(c.id);
+  const body = c.body || "";
+  return `<div class="${card}" data-cid="${id}">
     <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc((c.kind || "").replace("_", " "))}</span>
       <span class="text-xs text-zinc-500">${esc(c.platform || "")}</span>
       <span class="rounded ${statusColor} px-2 py-0.5 text-xs font-bold">${esc(c.status || "draft")}</span></div>
-    <textarea rows="${big ? 8 : 4}" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(c.body || "")}</textarea>
+    <div class="mt-2">
+      <div class="mb-2 flex gap-2">
+        <button data-cm-tab="edit" data-cm-id="${id}" class="rounded-full bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-900 dark:bg-zinc-800 dark:text-white">Edit</button>
+        <button data-cm-tab="preview" data-cm-id="${id}" class="rounded-full px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">Preview</button>
+      </div>
+      <textarea data-cm-edit rows="${big ? 8 : 4}" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(body)}</textarea>
+      <div data-cm-preview class="hidden">${mdWrap(renderMarkdown(body))}</div>
+    </div>
     <div class="mt-2 flex items-center gap-2">
       <button data-cm-act="save" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save draft</button>
       <button data-cm-act="schedule" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule</button>
@@ -1141,6 +1307,7 @@ export async function renderSettings(view) {
      <div id="set-grid" class="grid gap-4 lg:grid-cols-2">
        <div id="st-profile" data-skw="profile name avatar account you identity" class="${card}"><div class="text-zinc-500">Loading profile…</div></div>
        <div id="st-llm" data-skw="ai provider llm api key model anthropic openai gemini ollama byok draft" class="${card}"><div class="text-zinc-500">Loading provider…</div></div>
+       <div id="st-style" data-skw="writing style voice rules tone reply draft my own style human persona" class="${card}"><div class="text-zinc-500">Loading writing style…</div></div>
        <div id="st-appear" data-skw="appearance theme dark light mode display" class="${card}"></div>
        <div id="st-auto" data-skw="automation schedule auto refresh learn cadence daily weekly launchd cron background" class="${card}"><div class="text-zinc-500">Loading automation…</div></div>
        <div id="st-mcp" data-skw="mcp connect claude code cursor windsurf desktop integration tools agent client" class="${card}"><div class="text-zinc-500">Loading MCP…</div></div>
@@ -1155,6 +1322,7 @@ export async function renderSettings(view) {
      </div>`;
   buildProfileCard(document.getElementById("st-profile"));
   buildLlmCard(document.getElementById("st-llm"));
+  buildStyleCard(document.getElementById("st-style"));
   buildAppearanceCard(document.getElementById("st-appear"));
   buildAutomationCard(document.getElementById("st-auto"));
   buildMcpCard(document.getElementById("st-mcp"));
@@ -1182,17 +1350,48 @@ export async function renderSettings(view) {
   icons();
 }
 
+// ── Writing style (global default voice for every reply draft) ──────────────
+async function buildStyleCard(el) {
+  let rules = "";
+  try { rules = ((await api.styleRulesGet()) || {}).style_rules || ""; }
+  catch (e) {
+    el.innerHTML = `<b class="text-zinc-900 dark:text-white">Writing style</b><p class="mt-1 text-sm text-rose-500">Unavailable: ${esc(e)}</p>`;
+    return;
+  }
+  el.innerHTML = `
+    <b class="text-zinc-900 dark:text-white">Writing style <span class="text-xs font-normal text-zinc-400">— your default voice</span></b>
+    <p class="mb-2 mt-1 text-sm text-zinc-500">Rules every reply draft follows so it sounds like <b>you</b>. One rule per line. These merge with the system prompt at generation time. An agent with its own writing-style rules (Keywords &amp; platforms) overrides this default.</p>
+    <textarea id="sty-rules" rows="6" placeholder="lowercase, casual&#10;short punchy sentences&#10;no emojis, no hashtags&#10;no em-dashes&#10;never start with 'Great question'&#10;never use the word 'delve'" class="${inputCls} w-full">${esc(rules)}</textarea>
+    <div class="mt-2 flex items-center gap-3">
+      <button id="sty-save" class="${btnP}">Save</button>
+      <span id="sty-msg" class="text-sm text-zinc-500"></span>
+    </div>`;
+  el.querySelector("#sty-save").onclick = async () => {
+    const msg = el.querySelector("#sty-msg");
+    msg.textContent = "Saving…";
+    try {
+      await api.styleRulesSet(el.querySelector("#sty-rules").value.trim());
+      msg.textContent = "Saved ✓"; toast("Writing style saved");
+    } catch (e) { msg.textContent = "Failed: " + e; }
+  };
+}
+
 // ── Telegram / Slack notifications ──────────────────────────────────────────
 // The two-way Telegram poller runs only while the app is open: a module-level
 // interval calls bot-poll --once, so button taps (Approve/Regenerate/Skip) are
 // handled live, and it stops the moment the window closes. No always-on server.
 let _botTimer = null;
+let _botBusy = false;  // re-entrancy guard: never overlap two --once passes
 export async function ensureBotPoller() {
   try {
     const c = await api.notifyGet();
     const want = c && c.enabled && c.two_way && c.has_telegram;
     if (want && !_botTimer) {
-      const tick = async () => { try { await api.botPollOnce(); } catch (e) { console.error(e); } };
+      const tick = async () => {
+        if (_botBusy) return;        // previous pass still in flight — skip this beat
+        _botBusy = true;
+        try { await api.botPollOnce(); } catch (e) { console.error(e); } finally { _botBusy = false; }
+      };
       _botTimer = setInterval(tick, 4000);
       tick();
     } else if (!want && _botTimer) {
@@ -1840,7 +2039,7 @@ export async function renderInbox(view) {
             <span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
             ${subLabel(o)}${statusPill(o.status || "saved")}${postWhen(o)}${sched}</div>
           <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
-          ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}</div>
+          ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${mdWrap(renderMarkdown(o.reason))}</div>` : ""}</div>
         <span class="shrink-0 text-xl font-extrabold ${scoreCls(o.score || 0)}">${s}</span></div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
         ${o.url ? `<a href="${esc(o.url)}" target="_blank" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open thread ↗</a>` : ""}
@@ -1855,6 +2054,8 @@ export async function renderInbox(view) {
     let out = `<button data-do="save" class="${bP}">💾 Save</button>`;
     out += `<button data-do="regen" class="${bO}">↻ Re-generate</button>`;
     out += `<button data-do="copy" class="${bO}">📋 Copy</button>`;
+    // One click: copy the draft AND open the original post so you can paste & reply.
+    if (o.url) out += `<button data-do="copyopen" class="${bO}">📋↗ Copy &amp; open</button>`;
     if (st === "saved" || st === "drafted") out += `<button data-do="approve" class="${bO} text-violet-500">✓ Approve</button>`;
     if (st === "ready" || st === "queued") {
       out += `<button data-do="queue" class="${bO} text-indigo-500">📅 Queue</button>`;
@@ -1873,7 +2074,12 @@ export async function renderInbox(view) {
             `<button data-ver="${esc(d.id)}" class="block w-full truncate rounded px-2 py-1 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800">v${d.version || "?"} · ${esc(d.source || "")} · ${esc((d.text || "").slice(0, 70))}</button>`).join("")}</div></details>`
       : "";
     box.innerHTML = `${comp}
+      <div class="mb-2 flex gap-2">
+        <button data-tab="edit" data-edit-tab="${esc(id)}" class="rounded-full bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-900 dark:bg-zinc-800 dark:text-white">Edit</button>
+        <button data-tab="preview" data-edit-tab="${esc(id)}" class="rounded-full px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">Preview</button>
+      </div>
       <textarea data-edit="${esc(id)}" rows="6" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(cur.text || "")}</textarea>
+      <div data-preview="${esc(id)}" class="hidden">${mdWrap(renderMarkdown(cur.text || ""))}</div>
       <div class="mt-2 flex flex-wrap items-center gap-2">${actionsHTML(o)}</div>
       <div data-msg="${esc(id)}" class="mt-1 text-xs text-zinc-400"></div>${versions}`;
     wireEditor(box, id, o, drafts);
@@ -1881,15 +2087,34 @@ export async function renderInbox(view) {
 
   function wireEditor(box, id, o, drafts) {
     const ta = box.querySelector(`[data-edit="${CSS.escape(id)}"]`);
+    const pv = box.querySelector(`[data-preview="${CSS.escape(id)}"]`);
     const msg = box.querySelector(`[data-msg="${CSS.escape(id)}"]`);
     const setMsg = (t, cls = "text-zinc-400") => { if (msg) msg.innerHTML = `<span class="${cls}">${esc(t)}</span>`; };
+    box.querySelectorAll("[data-edit-tab]").forEach(b => b.onclick = () => {
+      const mode = b.getAttribute("data-tab");
+      const editing = mode === "edit";
+      if (ta) ta.classList.toggle("hidden", !editing);
+      if (pv) { pv.classList.toggle("hidden", editing); if (!editing) pv.innerHTML = mdWrap(renderMarkdown(ta.value)); }
+      box.querySelectorAll("[data-edit-tab]").forEach(btn => {
+        const on = btn.getAttribute("data-tab") === mode;
+        btn.className = on
+          ? "rounded-full bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-900 dark:bg-zinc-800 dark:text-white"
+          : "rounded-full px-2 py-1 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800";
+      });
+    });
     box.querySelectorAll("[data-ver]").forEach(b => b.onclick = () => {
       const d = drafts.find(x => x.id === b.getAttribute("data-ver"));
-      if (d) { ta.value = d.text || ""; setMsg("Loaded v" + (d.version || "?") + " — Save to keep it as the latest."); }
+      if (d) { ta.value = d.text || ""; if (pv && pv.classList.contains("hidden") === false) pv.innerHTML = mdWrap(renderMarkdown(ta.value)); setMsg("Loaded v" + (d.version || "?") + " — Save to keep it as the latest."); }
     });
     box.querySelectorAll("[data-do]").forEach(b => b.onclick = async () => {
       const act = b.getAttribute("data-do");
       if (act === "copy") { try { await navigator.clipboard.writeText(ta.value); toast("Copied"); } catch (e) { toast("Copy failed"); } return; }
+      if (act === "copyopen") {
+        try { await navigator.clipboard.writeText(ta.value); } catch (e) { toast("Copy failed"); }
+        try { if (o.url) await api.openUrl(o.url); toast("Copied · opening post"); }
+        catch (e) { toast("Copied — couldn't open link"); }
+        return;
+      }
       if (act === "queue") return queueModal(id);
       b.disabled = true;
       try {
@@ -2090,7 +2315,7 @@ export async function renderLearning(view) {
       ? `<div class="text-sm text-zinc-500">No strategy yet — set a goal (Agents → Edit) then hit <b>Evolve now</b>.</div>`
       : `<div class="grid gap-4 lg:grid-cols-3">
            <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Winning angles</div>
-             ${list(pb.winning_angles, (a) => `<div class="mb-1.5 text-sm"><b class="text-zinc-800 dark:text-zinc-100">${esc(a.angle || a)}</b>${a.why ? `<div class="text-xs text-zinc-500">${esc(a.why)}</div>` : ""}</div>`)}</div>
+             ${list(pb.winning_angles, (a) => `<div class="mb-1.5 text-sm"><b class="text-zinc-800 dark:text-zinc-100">${esc(a.angle || a)}</b>${a.why ? `<div class="text-xs text-zinc-500">${mdWrap(renderMarkdown(a.why))}</div>` : ""}</div>`)}</div>
            <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Avoid</div>
              ${list(pb.avoid, (x) => `<div class="mb-1 text-sm text-zinc-600 dark:text-zinc-300">• ${esc(x)}</div>`)}</div>
            <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-zinc-400">Next experiments</div>
@@ -2282,7 +2507,7 @@ export async function renderQueue(view) {
         <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc((c.kind || "").replace(/_/g, " "))}</span>
           ${c.platform ? `<span class="text-xs text-zinc-500">${esc(c.platform)}</span>` : ""}
           <span class="rounded ${stCls} px-2 py-0.5 text-xs font-bold">${esc(st)}${esc(when)}</span></div>
-        <div class="mt-1.5 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-200">${esc((c.body || "").slice(0, 300))}${(c.body || "").length > 300 ? "…" : ""}</div>
+        <div class="mt-1.5 text-sm text-zinc-700 dark:text-zinc-200">${mdWrap(renderMarkdown((c.body || "").slice(0, 500)))}${(c.body || "").length > 500 ? "…" : ""}</div>
         <div class="mt-3 flex flex-wrap gap-2">
           <button data-act="copy" data-id="${id}" class="${bd}"><i data-lucide="copy" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Copy</button>
           <button data-act="edit" data-id="${id}" class="${bd}">Edit</button>
@@ -2378,6 +2603,9 @@ export async function renderKeywords(view) {
            <input id="kw-persona" value="${esc(a.persona || "")}" placeholder="ex-teacher, founder of the product" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div>
          <div class="mt-3"><b class="text-zinc-900 dark:text-white">Tone</b>
            <input id="kw-tone" value="${esc(a.tone || "")}" placeholder="helpful, concise, non-salesy" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div>
+         <div class="mt-3"><b class="text-zinc-900 dark:text-white">Writing-style rules</b>
+           <p class="mb-1 mt-0.5 text-xs text-zinc-500">How <b>this agent</b> writes — one rule per line (e.g. "short sentences", "no em-dashes", "never say 'delve'"). Overrides the global style in Settings. Leave blank to use the global default.</p>
+           <textarea id="kw-style" rows="4" placeholder="lowercase, casual&#10;short punchy sentences&#10;no emojis, no hashtags&#10;never start with 'Great question'" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(a.style_rules || "")}</textarea></div>
          <div class="mt-3"><b class="text-zinc-900 dark:text-white">Website</b>
            <p class="mb-1 mt-0.5 text-xs text-zinc-500">Your brand domain — used to detect citations in AI Visibility.</p>
            <input id="kw-website" value="${esc(a.website || "")}" placeholder="acme-notes.com" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm"></div></div>
@@ -2398,10 +2626,13 @@ export async function renderKeywords(view) {
     const persona = document.getElementById("kw-persona").value.trim();
     const product = document.getElementById("kw-product").value.trim();
     const tone = document.getElementById("kw-tone").value.trim();
+    const style = document.getElementById("kw-style").value.trim();
     const website = document.getElementById("kw-website").value.trim();
     const pfs = [...document.querySelectorAll("#kw input[type=checkbox]:checked")].map((c) => c.value);
     msg.textContent = "Saving…";
-    const patch = { keywords: kws, persona, tone, website, platforms: pfs.join(",") };
+    // styleRules → snake_case style_rules on the Rust side. Sent even when empty
+    // so clearing the box falls the agent back to the global style default.
+    const patch = { keywords: kws, persona, tone, styleRules: style, website, platforms: pfs.join(",") };
     // Product → the `brand` field the draft generator promotes from. Only set
     // when non-empty so we never clobber an existing description with a blank.
     if (product) patch.brand = product;
@@ -2700,7 +2931,7 @@ export async function renderGeo(view) {
           <div class="mt-1 flex flex-wrap gap-1.5">${cites.map((u) => `<a data-openurl="${esc(u)}" href="#" class="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400">${esc(_host(u))}</a>`).join("")}</div></div>` : "";
         const detail = (q.answer || comps.length || cites.length) ? `<details class="mt-3 text-sm">
           <summary class="cursor-pointer text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">What the AI answered</summary>
-          ${q.answer ? `<p class="mt-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 p-3 text-zinc-600 dark:text-zinc-300">${esc(q.answer)}</p>` : ""}
+          ${q.answer ? `<div class="mt-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 p-3 text-zinc-600 dark:text-zinc-300">${mdWrap(renderMarkdown(q.answer))}</div>` : ""}
           ${srcRow}
           ${comps.length ? `<div class="mt-2"><div class="text-xs font-semibold text-zinc-500">Competitors named</div><div class="mt-1 flex flex-wrap gap-1.5">${comps.map((c) => `<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">${esc(c)}</span>`).join("")}</div></div>` : ""}</details>` : "";
         return `<div class="${card}">
@@ -3348,10 +3579,10 @@ export async function renderGrowth(view) {
       return;
     }
     const comm = (plan.target_communities || []).map((c) =>
-      `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2"><b class="text-zinc-900 dark:text-white">${esc(c.sub ? "r/" + c.sub : "")}</b><div class="text-sm text-zinc-500">${esc(c.why || "")}</div></div>`).join("");
+      `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2"><b class="text-zinc-900 dark:text-white">${esc(c.sub ? "r/" + c.sub : "")}</b><div class="text-sm text-zinc-500">${mdWrap(renderMarkdown(c.why || ""))}</div></div>`).join("");
     const sect = (t, inner) => inner ? `<div class="${card}"><div class="mb-1 text-sm font-semibold text-zinc-900 dark:text-white">${t}</div>${inner}</div>` : "";
     body.innerHTML =
-      (plan.summary ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Strategy</div><p class="mt-1 text-zinc-600 dark:text-zinc-300">${esc(plan.summary)}</p></div>` : "") +
+      (plan.summary ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Strategy</div><div class="mt-1 text-zinc-600 dark:text-zinc-300">${mdWrap(renderMarkdown(plan.summary))}</div></div>` : "") +
       sect("Target communities", comm ? `<div class="grid gap-2 sm:grid-cols-2">${comm}</div>` : "") +
       sect("Messaging angles", plan.angles?.length ? `<ul class="ml-4 list-disc space-y-1 text-zinc-600 dark:text-zinc-300">${li(plan.angles)}</ul>` : "") +
       (plan.cadence ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Cadence</div><p class="mt-1 text-zinc-600 dark:text-zinc-300">${esc(plan.cadence)}</p></div>` : "") +

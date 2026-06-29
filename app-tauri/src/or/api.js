@@ -165,6 +165,9 @@ export const api = {
   agentBrainRelink: (id, semantic) => call("agent_brain_relink", { id: id || null, semantic: semantic !== false }),
   agentTeachVideo: (url, id, comments) => call("agent_teach_video", { url, id: id || null, comments: comments || 100 }),
   agentUpdate: (p) => call("agent_update", p),
+  // Global writing-style rules (default voice; per-agent style_rules overrides it).
+  styleRulesGet: () => call("style_rules_get"),
+  styleRulesSet: (text) => call("style_rules_set", { text }),
   agentDelete: (id) => call("agent_delete", { id }),
   // agent ↔ persona links (blend a persona's knowledge into this agent's replies)
   agentPersonas: (id) => call("agent_personas", { id: id || null }),
@@ -182,6 +185,8 @@ export const api = {
   agentPlaybook: () => call("agent_playbook_get"),
   agentEvolve: () => call("agent_evolve"),
   agentIdeas: (suggest, n) => call("agent_ideas", { suggest: !!suggest, n: n || 5 }),
+  // daily update (digest): goal-framed briefing + ranked fresh-news feed
+  agentDigest: (rebuild) => call("agent_digest", { rebuild: !!rebuild }),
   agentIdeaDraft: (idea, kind, platform) =>
     call("agent_idea_draft", { idea, kind: kind || "", platform: platform || "" }),
   agentIdeaStatus: (idea, status) => call("agent_idea_status", { idea, status }),

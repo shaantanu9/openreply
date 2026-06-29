@@ -446,6 +446,21 @@ def idea_status_cmd(
     _out(set_idea_status(idea, status), json_)
 
 
+@reply_app.command("digest")
+def digest_cmd(
+    rebuild: bool = typer.Option(False, "--rebuild", help="Force a fresh build (else return today's cached)"),
+    collect: bool = typer.Option(True, "--collect/--no-collect", help="Light news fetch before synthesizing"),
+    n: int = typer.Option(12, "--n", help="Max feed items"),
+    provider: str = typer.Option(None, help="Pin an LLM provider (else auto-resolved)"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Daily Update: goal-framed briefing + ranked feed of fresh niche news.
+    First call each day builds + caches; --rebuild forces a fresh build."""
+    from ..reply.digest import build_digest
+    _out(build_digest(rebuild=rebuild, collect_fresh=collect, n=n,
+                      provider=provider, progress=lambda m: typer.echo(m, err=True)), json_)
+
+
 # ───────────────────────── Telegram / Slack notifications ─────────────────────
 
 @reply_app.command("notify-get")
@@ -461,6 +476,10 @@ def notify_set_cmd(
     two_way: Optional[bool] = typer.Option(None, "--two-way/--one-way"),
     telegram_token: Optional[str] = typer.Option(None, "--telegram-token"),
     telegram_chat: Optional[str] = typer.Option(None, "--telegram-chat"),
+    telegram_target: Optional[list[str]] = typer.Option(None, "--telegram-target",
+                                                        help="JSON target, repeatable: '{\"chat_id\":\"-123\",\"type\":\"group\",\"label\":\"Team\"}'"),
+    telegram_clear_targets: bool = typer.Option(False, "--telegram-clear-targets",
+                                                help="Remove all Telegram targets before adding new ones"),
     slack_webhook: Optional[str] = typer.Option(None, "--slack-webhook"),
     min_score: Optional[float] = typer.Option(None, "--min-score"),
     ev_opportunity: Optional[bool] = typer.Option(None, "--opp/--no-opp"),
@@ -471,7 +490,7 @@ def notify_set_cmd(
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Update notification config. Only passed flags change; pass --telegram-token ''
-    to clear a secret."""
+    to clear a secret. --telegram-chat accepts a comma-separated list of chat ids."""
     from ..reply import notify as _n
     events = {}
     for key, val in (("opportunity", ev_opportunity), ("article", ev_article),
@@ -487,6 +506,21 @@ def notify_set_cmd(
         fields["telegram_token"] = telegram_token
     if telegram_chat is not None:
         fields["telegram_chat"] = telegram_chat
+    if telegram_clear_targets:
+        fields["clear_targets"] = True
+    if telegram_target:
+        targets = []
+        for raw in telegram_target:
+            try:
+                t = json.loads(raw)
+            except Exception as e:
+                _out({"error": f"invalid --telegram-target JSON '{raw}': {e}"}, json_)
+                raise typer.Exit(1)
+            if not t.get("chat_id"):
+                _out({"error": f"--telegram-target missing chat_id: {raw}"}, json_)
+                raise typer.Exit(1)
+            targets.append(t)
+        fields["targets"] = targets
     if slack_webhook is not None:
         fields["slack_webhook"] = slack_webhook
     if min_score is not None:

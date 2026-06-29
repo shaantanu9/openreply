@@ -464,9 +464,11 @@ def _resurface_snoozed(db, brand_id: str, now: int) -> None:
         pass
 
 
-def set_status(opportunity_id: str, status: str) -> dict:
+def set_status(opportunity_id: str, status: str, operator: str | None = None) -> dict:
     """Move an opportunity to a new lifecycle status. Returns the updated row,
-    or an {"error": …} dict on a bad id / status. Never raises."""
+    or an {"error": …} dict on a bad id / status. Never raises.
+    `operator` is an optional attribution string (e.g. Telegram @username) for
+    company-mode audit trails."""
     status = (status or "").strip().lower()
     if status not in OPPORTUNITY_STATUSES:
         return {"error": f"invalid status '{status}'. "
@@ -476,6 +478,9 @@ def set_status(opportunity_id: str, status: str) -> dict:
     fields: dict = {"status": status, "updated_at": now}
     if status == "posted":
         fields["posted_at"] = now
+    if operator:
+        fields["operator"] = operator
+        fields["operator_actioned_at"] = now
     try:
         db["reply_opportunities"].update(opportunity_id, fields)
     except Exception as e:
@@ -494,50 +499,56 @@ def set_status(opportunity_id: str, status: str) -> dict:
     except Exception:
         row = {"id": opportunity_id, "status": status}
     return {"ok": True, "id": opportunity_id, "status": status,
-            "opportunity": row}
+            "operator": operator, "opportunity": row}
 
 
-def snooze(opportunity_id: str, hours: float = 24.0) -> dict:
+def snooze(opportunity_id: str, hours: float = 24.0,
+           operator: str | None = None) -> dict:
     """Defer an opportunity for `hours`. It auto-resurfaces to `new` once the
     window elapses (see `_resurface_snoozed`)."""
     db = init_reply_schema()
     now = int(time.time())
     until = now + int(max(0.0, hours) * 3600)
+    fields = {"status": "snoozed", "snooze_until": until, "updated_at": now}
+    if operator:
+        fields["operator"] = operator
+        fields["operator_actioned_at"] = now
     try:
-        db["reply_opportunities"].update(
-            opportunity_id,
-            {"status": "snoozed", "snooze_until": until, "updated_at": now},
-        )
+        db["reply_opportunities"].update(opportunity_id, fields)
     except Exception as e:
         return {"error": f"no opportunity '{opportunity_id}': {e}"}
-    return {"ok": True, "id": opportunity_id, "status": "snoozed", "snooze_until": until}
+    return {"ok": True, "id": opportunity_id, "status": "snoozed",
+            "snooze_until": until, "operator": operator}
 
 
-def approve(opportunity_id: str) -> dict:
+def approve(opportunity_id: str, operator: str | None = None) -> dict:
     """Approve the current draft — moves the opportunity to `ready` (awaiting
     post or queue)."""
-    return set_status(opportunity_id, "ready")
+    return set_status(opportunity_id, "ready", operator=operator)
 
 
-def queue(opportunity_id: str, scheduled_at: int | None = None) -> dict:
+def queue(opportunity_id: str, scheduled_at: int | None = None,
+          operator: str | None = None) -> dict:
     """Queue the approved reply for posting. `scheduled_at` is an epoch second;
     when omitted the reply is queued for immediate/next-cycle posting."""
     db = init_reply_schema()
     now = int(time.time())
     sched = int(scheduled_at) if scheduled_at else now
+    fields = {"status": "queued", "scheduled_at": sched, "updated_at": now}
+    if operator:
+        fields["operator"] = operator
+        fields["operator_actioned_at"] = now
     try:
-        db["reply_opportunities"].update(
-            opportunity_id,
-            {"status": "queued", "scheduled_at": sched, "updated_at": now},
-        )
+        db["reply_opportunities"].update(opportunity_id, fields)
     except Exception as e:
         return {"error": f"no opportunity '{opportunity_id}': {e}"}
-    return {"ok": True, "id": opportunity_id, "status": "queued", "scheduled_at": sched}
+    return {"ok": True, "id": opportunity_id, "status": "queued",
+            "scheduled_at": sched, "operator": operator}
 
 
-def mark_posted(opportunity_id: str) -> dict:
+def mark_posted(opportunity_id: str, operator: str | None = None) -> dict:
     """Mark a reply as posted (manual-assisted flow)."""
-    return set_status(opportunity_id, "posted")
+    return set_status(opportunity_id, "posted", operator=operator)
 
 
 def _search_clause(query: str | None, args: list) -> str:

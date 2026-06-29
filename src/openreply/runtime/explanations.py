@@ -62,7 +62,7 @@ EXPLANATIONS: list[dict[str, Any]] = [
         "title": "Topic",
         "simple": "Everything about one subject in one place — what people complain about, what they want, and what research says.",
         "do": ["Read the main problems (Insights)", "See who the users are (Audience)", "Use the tabs to go deeper"],
-        "purpose": "Everything about one topic in one place — gap map, painpoints, papers, solutions, sentiment, sources, raw posts.",
+        "purpose": "Everything about one topic in one place — opportunity map, painpoints, papers, solutions, sentiment, sources, raw posts.",
         "science": "Multi-source triangulation (Denzin 1978) — no single platform's bias dominates.",
         "data_source": "Gathered from many sources during a collect, then synthesised locally. Every claim links back to the exact post.",
         "frameworks": ["Triangulation (Denzin)", "Saturation (Guest et al.)"],

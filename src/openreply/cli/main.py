@@ -33,7 +33,7 @@ research_app.add_typer(graph_app, name="graph")
 brief_app = typer.Typer(help="Clarified-brief: set/get per-topic research scope.")
 research_app.add_typer(brief_app, name="brief")
 
-ingest_app = typer.Typer(help="Ingest local files (CSV / JSON / TXT / VTT / SRT / MD / PDF) into a topic.")
+ingest_app = typer.Typer(help="Ingest local files or web URLs into a topic's corpus.")
 app.add_typer(ingest_app, name="ingest")
 
 feeds_app = typer.Typer(help="Manage user-added custom RSS feeds (swept on every collect).")
@@ -139,6 +139,37 @@ def cmd_ingest_file(
     console.print(f"[green]ingested {n} rows[/green] from {path} as source_type={source_type!r}")
 
 
+@ingest_app.command("url")
+def cmd_ingest_url(
+    url: str = typer.Option(..., "--url", "-u", help="Web page URL to fetch."),
+    topic: str = typer.Option(..., "--topic", "-t", help="Topic to tag the page under."),
+) -> None:
+    """Fetch any URL via Jina Reader and upsert it into a topic's corpus.
+
+    The page content becomes part of the agent's knowledge scope for that topic,
+    so reply drafting and insight extraction can cite it.
+
+    Example:
+      openreply ingest url --url https://example.com/post --topic "my product"
+    """
+    from ..sources.web_reader import fetch_web_reader
+    from ..core.db import upsert_posts
+    from ..research.collect import _tag_posts
+
+    rows = fetch_web_reader(url)
+    if not rows:
+        console.print("[yellow]no rows fetched[/yellow] — check the URL or try again")
+        raise typer.Exit(1)
+    upsert_posts(rows)
+    # Tag as user-curated (`local:` prefix) so the relevance gate does not drop
+    # an explicitly pasted URL whose topic match might be borderline.
+    tagged = _tag_posts(topic, [r["id"] for r in rows], source="local:web:url")
+    console.print(
+        f"[green]ingested {len(rows)} row(s)[/green] from {url} "
+        f"under topic={topic!r} (tagged {tagged})"
+    )
+
+
 # Files we support — kept in sync with `local_file.py`. Used by the folder
 # walker to decide what to ingest. Anything else (binaries, .DS_Store, source
 # code) is silently skipped so users can drop a whole repo subdir without
@@ -174,7 +205,7 @@ def cmd_ingest_folder(
 
     Skips hidden dirs, .git, node_modules, build/dist artifacts, and binaries
     by extension. Each file goes through the same parser as `ingest file`,
-    queues for LLM extraction, and surfaces in the same gap map as Reddit
+    queues for LLM extraction, and surfaces in the same opportunity map as Reddit
     posts — so dropping a `learnings/` folder full of design docs and test
     notes makes them grist for painpoint extraction without any extra setup.
 
@@ -3059,7 +3090,7 @@ def cmd_research_swot(
     provider: Optional[str] = typer.Option(None, "--provider"),
     as_json: bool = typer.Option(True, "--json"),
 ) -> None:
-    """SWOT synthesised from the gap map + competitors. --compute to build."""
+    """SWOT synthesised from the opportunity map + competitors. --compute to build."""
     from ..research.swot import swot_get, swot_compute
     _emit(swot_compute(topic=topic, provider=provider) if compute
           else swot_get(topic=topic), as_json)
