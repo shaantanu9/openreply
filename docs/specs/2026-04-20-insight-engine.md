@@ -173,7 +173,7 @@ the entire relevant corpus at once and produces a **structured market report**:
 
 ### Phase 2 — Methodology-grade rigor layer (this week)
 
-**Informed by `docs/RESEARCH_METHODOLOGY.md` review.** Ships 6 concrete
+**Informed by `docs/GAP_MAP_METHODOLOGY.md` review.** Ships 6 concrete
 additions that transform Insights from an "opportunity list" into a
 **consulting-grade research brief** — Minto-structured, hypothesis-anchored,
 credibility-honest. Builds on the Phase-1 synthesis; same provider-agnostic

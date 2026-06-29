@@ -29,44 +29,11 @@ function writeStderr(text) {
   if (text) process.stderr.write(text);
 }
 
-function tweetTime(t) {
-  const raw = t && (t.createdAt || t.created_at);
-  if (!raw) return 0;
-  const n = Date.parse(raw);
-  return isNaN(n) ? 0 : n;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-const PAGE_DELAY_MS = Number(process.env.BIRD_PAGE_DELAY_MS || 400);
-
-// Full user timeline via the UserTweets GraphQL op, merged with a `from:<handle>`
-// search for recency. With placeholder/public credentials the UserTweets endpoint
-// can return stale/old popular tweets, while the search endpoint still returns the
-// latest posts. We fetch both, dedupe by id, and return the newest `count` tweets.
+// Full user timeline via the UserTweets GraphQL op (mirrors the search client's
+// request mechanism), with a deep `from:<handle>` search fallback. Returns an
+// array of parsed tweets; never throws — on any failure it degrades to search.
 async function fetchUserTimeline(client, handle, count) {
-  const merged = new Map();
-  const add = (t) => {
-    const id = t?.id || t?.url;
-    if (!id) return;
-    const existing = merged.get(id);
-    if (!existing || tweetTime(t) > tweetTime(existing)) {
-      merged.set(id, t);
-    }
-  };
-
-  // 1) Always fetch `from:<handle>` search — this is the reliable source for the
-  // latest posts even with weak credentials.
-  try {
-    const result = await client.search(`from:${handle}`, count);
-    for (const t of (result && result.tweets) || []) add(t);
-  } catch (_) {
-    // continue to UserTweets
-  }
-
-  // 2) Also page UserTweets for additional coverage / deeper history.
+  // 1) resolve the user's numeric id from a 1-result `from:` search.
   let userId = null;
   try {
     const seed = await client.search(`from:${handle}`, 1);
@@ -75,12 +42,14 @@ async function fetchUserTimeline(client, handle, count) {
     userId = null;
   }
 
+  // 2) page UserTweets.
   if (userId) {
     try {
       const features = buildUserTweetsFeatures();
+      const seen = new Set();
+      const out = [];
       let cursor = null;
-      for (let page = 0; page < 20 && merged.size < count * 2; page++) {
-        if (page > 0) await sleep(PAGE_DELAY_MS);
+      for (let page = 0; page < 20 && out.length < count; page++) {
         const queryId = await client.getQueryId('UserTweets');
         const variables = {
           userId,
@@ -111,21 +80,28 @@ async function fetchUserTimeline(client, handle, count) {
         const next = extractCursorFromInstructions(instr, 'Bottom');
         let added = 0;
         for (const t of pageTweets) {
-          add(t);
+          const id = t.id || t.url;
+          if (id && seen.has(id)) continue;
+          if (id) seen.add(id);
+          out.push(t);
           added++;
         }
         if (!next || next === cursor || added === 0) break;
         cursor = next;
       }
+      if (out.length) return out.slice(0, count);
     } catch (_) {
-      // search results already collected above are enough
+      // fall through to the search fallback
     }
   }
 
-  const sorted = [...merged.values()]
-    .sort((a, b) => tweetTime(b) - tweetTime(a))
-    .slice(0, count);
-  return sorted;
+  // 3) fallback — deep `from:` search (the proven path).
+  try {
+    const result = await client.search(`from:${handle}`, count);
+    return (result && result.tweets) || [];
+  } catch (_) {
+    return [];
+  }
 }
 
 async function main() {

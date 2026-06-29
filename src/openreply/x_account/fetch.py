@@ -348,31 +348,17 @@ def _parse_tweet_legacy(legacy: dict[str, Any], handle: str) -> dict[str, Any] |
     }
 
 
-def _post_ts(tweet: dict[str, Any]) -> float:
-    """Best-effort unix timestamp from a canonical tweet's `created_at`."""
-    raw = tweet.get("created_at") or ""
-    if not raw:
-        return 0.0
-    try:
-        s = str(raw)
-        if len(s) > 10 and s[10] == "T":
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
-        return datetime.strptime(s, "%a %b %d %H:%M:%S %z %Y").timestamp()
-    except Exception:
-        return 0.0
-
-
 def fetch_posts(account: XAccount, count: int = 10, with_threads: bool = False) -> list[dict[str, Any]]:
     """Fetch recent tweets from the account's own timeline.
 
     Tries the vendored bird client first, then falls back to direct GraphQL.
     If `with_threads` is True, also fetch the full reply thread for any tweet
-    that is itself a reply. Results are sorted newest-first by `created_at`.
+    that is itself a reply.
     """
-
-    def _collect(raw_tweets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for t in raw_tweets:
+    if _bird_available():
+        raw = _run_bird(account, ["--user", account.handle, "--count", str(count)])
+        results = []
+        for t in raw:
             parsed = _parse_bird_tweet(t)
             if not parsed:
                 continue
@@ -381,14 +367,9 @@ def fetch_posts(account: XAccount, count: int = 10, with_threads: bool = False) 
                     parsed["thread"] = fetch_thread(account, parsed["in_reply_to_status_id"])
                 except Exception:
                     parsed["thread"] = []
-            out.append(parsed)
-        return out
-
-    if _bird_available():
-        raw = _run_bird(account, ["--user", account.handle, "--count", str(count)])
-        results = _collect(raw)
+            results.append(parsed)
         if results:
-            return sorted(results, key=_post_ts, reverse=True)
+            return results
 
     profile = fetch_profile(account)
     user_id = profile.get("id")
@@ -450,7 +431,7 @@ def fetch_posts(account: XAccount, count: int = 10, with_threads: bool = False) 
                 except Exception:
                     parsed["thread"] = []
             results.append(parsed)
-    return sorted(results, key=_post_ts, reverse=True)
+    return results
 
 
 def _extract_tweet_id(value: str) -> str:

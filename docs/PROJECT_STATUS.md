@@ -74,7 +74,7 @@ Built as two Phases of the same spec (`docs/specs/2026-04-20-insight-engine.md`)
 
 ## 2. What we explicitly did NOT build — and why
 
-These were evaluated during this session (many from `docs/RESEARCH_METHODOLOGY.md`) and rejected as **noise, scope creep, or premature**. Keeping a record so we don't re-litigate each one.
+These were evaluated during this session (many from `docs/GAP_MAP_METHODOLOGY.md`) and rejected as **noise, scope creep, or premature**. Keeping a record so we don't re-litigate each one.
 
 | Feature / idea | Rejected because | When it might matter |
 |---|---|---|
@@ -156,7 +156,7 @@ Everything in Phase 2 shares the same LLM call and output schema. Phase 1 ships 
 ## 7. Related docs
 
 - `docs/specs/2026-04-20-insight-engine.md` — the implementation spec (what and how)
-- `docs/RESEARCH_METHODOLOGY.md` — external methodology reference (theoretical basis; not a build list)
+- `docs/GAP_MAP_METHODOLOGY.md` — external methodology reference (theoretical basis; not a build list)
 - `changelogs/2026-04-19_*` through `2026-04-20_07_*` — per-change log entries
 - `~/.claude/skills/tauri-python-sidecar-app/SKILL.md` — battle-tested Tauri+Python patterns
 - `~/.claude/skills/tauri-app-icon/SKILL.md` — icon generation + dev-mode gotcha

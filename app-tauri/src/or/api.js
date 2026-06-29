@@ -144,8 +144,7 @@ export const api = {
   accountTrack: (handle, note) => call("account_track", { handle, note: note || null, id: null }),
   accountList: () => call("account_list", { id: null }),
   accountUntrack: (handle) => call("account_untrack", { handle, id: null }),
-  accountFetch: (handle, learn, limit) => call("account_fetch", { handle: handle || null, learn: !!learn, id: null, limit: limit || 25 }),
-  accountSaveInbox: (handle, postId, limit) => call("account_save_inbox", { handle, id: null, post_id: postId || null, limit: limit || 25 }),
+  accountFetch: (handle, learn) => call("account_fetch", { handle: handle || null, learn: !!learn, id: null }),
   agentCorpus: (source, query, limit, offset, relevance) => call("agent_corpus", { id: null, source: source || null, query: query || null, relevance: relevance || null, limit: limit || 60, offset: offset || 0 }),
   agentCorpusCheck: (limit) => call("agent_corpus_check", { id: null, limit: limit || 60 }),
   agentAutopilot: (id) => call("agent_autopilot", { id: id || null }),
@@ -166,9 +165,6 @@ export const api = {
   agentBrainRelink: (id, semantic) => call("agent_brain_relink", { id: id || null, semantic: semantic !== false }),
   agentTeachVideo: (url, id, comments) => call("agent_teach_video", { url, id: id || null, comments: comments || 100 }),
   agentUpdate: (p) => call("agent_update", p),
-  // Global writing-style rules (default voice; per-agent style_rules overrides it).
-  styleRulesGet: () => call("style_rules_get"),
-  styleRulesSet: (text) => call("style_rules_set", { text }),
   agentDelete: (id) => call("agent_delete", { id }),
   // agent ↔ persona links (blend a persona's knowledge into this agent's replies)
   agentPersonas: (id) => call("agent_personas", { id: id || null }),
@@ -186,8 +182,6 @@ export const api = {
   agentPlaybook: () => call("agent_playbook_get"),
   agentEvolve: () => call("agent_evolve"),
   agentIdeas: (suggest, n) => call("agent_ideas", { suggest: !!suggest, n: n || 5 }),
-  // daily update (digest): goal-framed briefing + ranked fresh-news feed
-  agentDigest: (rebuild) => call("agent_digest", { rebuild: !!rebuild }),
   agentIdeaDraft: (idea, kind, platform) =>
     call("agent_idea_draft", { idea, kind: kind || "", platform: platform || "" }),
   agentIdeaStatus: (idea, status) => call("agent_idea_status", { idea, status }),
@@ -289,7 +283,6 @@ export const api = {
   // ── Minimal X-account worktree (MVP) ──
   xAccountAdd: (handle, authToken, ct0) =>
     call("x_account_add", { handle, authToken: authToken || null, ct0: ct0 || null }),
-  xAccountRemove: (handle) => call("x_account_remove", { handle }),
   xAccountImportBrowser: (handle) => call("x_account_import_browser", { handle }),
   xAccountList: () => call("x_account_list"),
   xAccountProfile: (handle) => call("x_account_profile", { handle }),
@@ -299,8 +292,6 @@ export const api = {
     call("x_account_fetch_thread", { handle, tweetIdOrUrl, limit: limit || 50 }),
   xAccountSaveToLibrary: (handle, count, withThreads) =>
     call("x_account_save_to_library", { handle, count: count || 25, withThreads: !!withThreads }),
-  xAccountSaveToInbox: (handle, count, withThreads, postId) =>
-    call("x_account_save_to_inbox", { handle, count: count || 25, withThreads: !!withThreads, post_id: postId || null }),
   // ── Connections (Reach credentials) — creds_* return a JSON array; the
   // single-result ops return a 1-element array, so callers take [0]. ──
   credsList: () => call("creds_list"),

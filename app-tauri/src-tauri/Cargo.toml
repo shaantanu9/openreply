@@ -1,7 +1,7 @@
 [package]
 name = "openreply"
 version = "0.1.23"
-description = "OpenReply — open-source social marketing reply & content co-pilot"
+description = "OpenReply — Multi-source research gap finder"
 authors = ["Shantanu Bombatkar"]
 homepage = "https://openreply.myind.ai/"
 repository = "https://github.com/myind-ai/openreply"

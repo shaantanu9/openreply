@@ -155,29 +155,3 @@ def cmd_save_to_library(
     except Exception as e:
         _print_json({"ok": False, "error": f"Save failed: {e}"})
         raise typer.Exit(1)
-
-
-@app.command("save-to-inbox")
-def cmd_save_to_inbox(
-    handle: str = typer.Argument(..., help="X handle without @."),
-    count: int = typer.Option(25, "--count", "-n", help="Number of tweets to fetch and save."),
-    with_threads: bool = typer.Option(False, "--with-threads", help="Also save reply threads for reply tweets."),
-    post_id: str = typer.Option("", "--post-id", help="Save only the tweet with this id (numeric status id)."),
-    as_json: bool = typer.Option(False, "--json", hidden=True),
-) -> None:
-    """Fetch an X account's recent posts and create Inbox opportunities for each
-    so you can draft, approve, and reply from the Inbox workspace."""
-    account = get_account(handle)
-    if not account:
-        _print_json({"ok": False, "error": f"Account @{handle} not found"})
-        raise typer.Exit(1)
-    try:
-        posts = fetch_posts(account, count=count, with_threads=with_threads)
-        if post_id:
-            posts = [p for p in posts if str(p.get("id") or "") == post_id]
-        from ..reply.opportunity import save_posts_to_inbox
-        result = save_posts_to_inbox(posts, platform="x")
-        _print_json({"ok": True, "handle": handle, "fetched": len(posts), **result})
-    except Exception as e:
-        _print_json({"ok": False, "error": f"Save to inbox failed: {e}"})
-        raise typer.Exit(1)

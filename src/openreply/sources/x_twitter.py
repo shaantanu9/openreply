@@ -486,7 +486,6 @@ def fetch_x_user(handle: str, limit: int = 50) -> list[dict]:
                 if n:
                     items.append(n)
         rows = [_row(t) for t in items[:limit]]
-        rows = sorted(rows, key=lambda r: (r.get("created_utc") or 0), reverse=True)
         return rows if rows else fetch_x(f"from:{h}", limit)
     except Exception:
         return fetch_x(f"from:{h}", limit)

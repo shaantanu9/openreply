@@ -362,6 +362,137 @@ def openreply_query_db(sql: str) -> list[dict[str, Any]]:
 
 
 @mcp.tool()
+def openreply_checks_list(topic: str, limit: int = 200) -> list[dict[str, Any]]:
+    """Return recent quality-gate entries from checks_ledger for a topic.
+
+    Each row records one gate evaluation (e.g. gate='llm_call',
+    operation='enrich') with pass/fail, provider, model, and a detail
+    snippet. Useful for auditing why enrichment succeeded or was skipped.
+
+    Args:
+        topic: topic tag to filter by.
+        limit: max rows to return (default 200, newest first).
+    """
+    return list(get_db().query(
+        "SELECT * FROM checks_ledger WHERE topic = :topic ORDER BY id DESC LIMIT :limit",
+        {"topic": topic, "limit": limit},
+    ))
+
+
+@mcp.tool()
+def openreply_lineage_get(artifact_id: str) -> list[dict[str, Any]]:
+    """Return lineage rows for an artifact — which posts and run produced it.
+
+    Each row links one graph-node or derived artifact back to the post_ids
+    and run_id that generated it. Use this to verify provenance or to
+    re-trace which corpus rows fed a specific finding.
+
+    Args:
+        artifact_id: the graph_nodes.id (or other artifact key) to look up.
+    """
+    return list(get_db().query(
+        "SELECT * FROM lineage WHERE artifact_id = :artifact_id ORDER BY id DESC",
+        {"artifact_id": artifact_id},
+    ))
+
+
+@mcp.tool()
+def openreply_brief_get(topic: str) -> dict:
+    """Return the clarified research brief for a topic.
+
+    Returns a dict with keys: goal, constraints, success, audience.
+    All values are empty strings when no brief has been set.
+
+    Args:
+        topic: topic name to retrieve the brief for.
+    """
+    from ..research.brief import get_brief
+    b = get_brief(topic)
+    return {"ok": True, "topic": topic, "brief": b}
+
+
+@mcp.tool()
+def openreply_brief_set(
+    topic: str,
+    goal: str = "",
+    constraints: str = "",
+    success: str = "",
+    audience: str = "",
+) -> dict:
+    """Set (upsert) the clarified research brief for a topic.
+
+    The brief is prepended to synthesis prompts so LLM output is scoped to
+    the user's stated goal, constraints, success criteria, and audience.
+
+    Args:
+        topic:       topic name.
+        goal:        what the researcher wants to find out.
+        constraints: budget / time / scope constraints.
+        success:     what a good output looks like.
+        audience:    target audience for the analysis.
+    """
+    from ..research.brief import set_brief, get_brief
+    set_brief(topic, goal=goal, constraints=constraints, success=success, audience=audience)
+    return {"ok": True, "topic": topic, "brief": get_brief(topic)}
+
+
+@mcp.tool()
+def openreply_traceability(artifact_id: str) -> list[dict[str, Any]]:
+    """Return the source posts that produced a specific artifact (gap → sources).
+
+    Joins ``lineage.from_post_ids`` (a JSON array) with the ``posts`` table to
+    surface the human-readable posts that fed the given graph node or finding.
+    Useful for understanding *why* a painpoint or feature-wish was surfaced and
+    for linking findings back to original community discussions.
+
+    Args:
+        artifact_id: the graph_nodes.id (or other artifact key) to trace.
+
+    Returns:
+        List of post dicts (id, title, url, permalink, source_type, author,
+        score). Returns ``[]`` when the artifact has no lineage row or its
+        source posts have been pruned.
+    """
+    from ..research.traceability import traceability_for_artifact
+    return traceability_for_artifact(artifact_id)
+
+
+@mcp.tool()
+def openreply_runs_list(topic: str = "") -> list[dict[str, Any]]:
+    """List provenance runs recorded in checks_ledger, grouped by run_id.
+
+    Returns up to 50 runs ordered by most-recent first. Each entry has:
+    run_id, topic, n_checks, n_passed, last_ts.
+
+    Args:
+        topic: optional topic filter (empty string = all topics).
+
+    Returns:
+        List of run summary dicts. Returns ``[]`` on any error.
+    """
+    from ..research.replay import list_runs
+    return list_runs(topic or None)
+
+
+@mcp.tool()
+def openreply_run_get(run_id: str) -> dict[str, Any]:
+    """Return all checks and lineage entries for a specific run_id.
+
+    Useful for auditing what a particular pipeline run validated and what
+    artifacts it produced, without re-executing anything.
+
+    Args:
+        run_id: the run identifier (from checks_ledger / lineage.produced_by).
+
+    Returns:
+        Dict with keys ``run_id``, ``checks`` (list), ``lineage`` (list).
+        Never raises — returns empty lists on error.
+    """
+    from ..research.replay import get_run
+    return get_run(run_id)
+
+
+@mcp.tool()
 def openreply_describe_schema(table: str | None = None) -> dict[str, Any]:
     """Return live SQLite schema — either every table, or one table.
 
@@ -861,6 +992,25 @@ def openreply_fetch_semantic_scholar(
 
 
 @mcp.tool()
+def openreply_paper_citations(paper_id: str, limit: int = 30) -> list[dict]:
+    """Papers that cite `paper_id`. Accepts S2 paper_id, DOI (raw '10.xxxx/yy'),
+    or arXiv id. Returns row-shaped results ready for upsert. Core
+    literature-review move — 'what was built on this?'
+    """
+    from ..sources.semantic_scholar import fetch_citations
+    return fetch_citations(paper_id=paper_id, limit=limit)
+
+
+@mcp.tool()
+def openreply_paper_references(paper_id: str, limit: int = 30) -> list[dict]:
+    """Reference list of `paper_id` — papers this one cites. Walk backwards
+    through the literature to find foundational work. DOI / S2 / arXiv ids all accepted.
+    """
+    from ..sources.semantic_scholar import fetch_references
+    return fetch_references(paper_id=paper_id, limit=limit)
+
+
+@mcp.tool()
 def openreply_fetch_crossref(
     query: str,
     limit: int = 30,
@@ -889,7 +1039,347 @@ def openreply_fetch_by_doi(doi: str) -> dict | None:
     return fetch_by_doi(doi)
 
 
+@mcp.tool()
+def openreply_papers(
+    query: str,
+    topic: str | None = None,
+    limit_per_source: int = 20,
+    sources: list[str] | None = None,
+    year_from: int | None = None,
+    persist: bool = True,
+) -> dict:
+    """Multi-source paper search across arXiv, PubMed, OpenAlex, Semantic
+    Scholar, Crossref, Scholar in parallel. Deduplicated, persisted (unless
+    `persist=False`), tagged to `topic` if provided, and indexed into Palace.
+
+    The paper-research counterpart of `openreply_collect`. Use this
+    as the first step of any literature review — Claude gets a merged,
+    ranked list of papers from every major open source in one call.
+
+    Args:
+        query: free-text topic / question.
+        topic: optional tag so later tools (semantic_search, graph_build,
+            analyze_papers_bulk) can filter to just this slice.
+        limit_per_source: papers per source (total ≤ 6× this).
+        sources: subset of ['arxiv','pubmed','openalex','semantic_scholar',
+            'crossref','scholar']. Defaults to all six.
+        year_from: year lower-bound where the source supports it.
+        persist: upsert into `posts` + `topic_posts`. Turn off for
+            exploratory/read-only previews.
+
+    Returns {ok, query, topic, total, by_source, sample, persisted}.
+    """
+    from ..sources.arxiv import fetch_arxiv
+    from ..sources.pubmed import fetch_pubmed
+    from ..sources.openalex import fetch_openalex
+    from ..sources.semantic_scholar import fetch_semantic_scholar
+    from ..sources.crossref import fetch_crossref
+    from ..sources.scholar import fetch_scholar
+    from ..core.db import upsert_posts, get_db
+
+    runners = {
+        "arxiv":            lambda: fetch_arxiv(query=query, limit=limit_per_source),
+        "pubmed":           lambda: fetch_pubmed(query=query, limit=limit_per_source),
+        "openalex":         lambda: fetch_openalex(query=query, limit=limit_per_source, year_from=year_from),
+        "semantic_scholar": lambda: fetch_semantic_scholar(query=query, limit=limit_per_source, year_from=year_from),
+        "crossref":         lambda: fetch_crossref(query=query, limit=limit_per_source, year_from=year_from),
+        "scholar":          lambda: fetch_scholar(query=query, limit=limit_per_source, year_from=year_from),
+    }
+    wanted = [s for s in (sources or list(runners.keys())) if s in runners]
+
+    by_source: dict[str, int] = {}
+    all_rows: list[dict] = []
+    errors: dict[str, str] = {}
+    for src in wanted:
+        try:
+            rows = runners[src]() or []
+            by_source[src] = len(rows)
+            all_rows.extend(rows)
+        except Exception as e:  # noqa: BLE001
+            errors[src] = str(e)[:200]
+            by_source[src] = 0
+
+    # Dedupe by id — cross-source overlaps (e.g. arXiv + OpenAlex both
+    # indexing the same preprint) keep the first occurrence.
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for r in all_rows:
+        pid = r.get("id")
+        if pid and pid not in seen:
+            seen.add(pid)
+            unique.append(r)
+
+    persisted = 0
+    if persist and unique:
+        persisted = upsert_posts(unique)
+        if topic:
+            db = get_db()
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            db["topic_posts"].insert_all(
+                [{"topic": topic, "post_id": r["id"], "source": r.get("source_type", ""),
+                  "added_at": now} for r in unique],
+                pk=("topic", "post_id"), replace=True,
+            )
+
+    sample = [
+        {"id": r["id"], "title": r.get("title", "")[:140],
+         "source_type": r.get("source_type"), "score": r.get("score"),
+         "url": r.get("url")}
+        for r in sorted(unique, key=lambda r: r.get("score") or 0, reverse=True)[:10]
+    ]
+    return {
+        "ok": True,
+        "query": query,
+        "topic": topic,
+        "total": len(unique),
+        "by_source": by_source,
+        "errors": errors,
+        "persisted": persisted,
+        "sample": sample,
+    }
+
+
+@mcp.tool()
+def openreply_paper_fulltext(post_id: str, force: bool = False, max_chars: int = 30000) -> dict:
+    """Fetch + cache the full PDF text for a paper post (arxiv / openalex /
+    semantic_scholar / scholar). Returns the extracted text alongside its
+    char_count, source, and cache status.
+
+    Use this when the user asks for actual content from a paper — the post
+    row's `selftext` only ever holds the abstract (max 2000 chars). The
+    full text comes from downloading the OA PDF and running pypdf, cached
+    on disk so repeat calls are free.
+
+    Returns:
+      {ok, status, text, char_count, source, pdf_url, cached}
+    Status values:
+      ok / empty / not_oa / download_failed / parse_failed / unsupported.
+    """
+    from ..research.paper_fulltext import get_full_text
+    from . import jobs as _jobs
+    _log = _jobs.make_progress_logger(prefix="[fulltext] ")
+    _log(f"fetch {post_id} (force={force})")
+    r = get_full_text(post_id, force=force)
+    _log(
+        f"done status={r.get('status', 'unknown')} "
+        f"chars={r.get('char_count', 0)}"
+    )
+    # Truncate text to fit the requested budget so a 200 KB paper doesn't
+    # blow the MCP message size limit on small clients.
+    if r.get("ok") and r.get("text") and max_chars > 0:
+        if len(r["text"]) > max_chars:
+            r = dict(r)
+            r["text"] = r["text"][:max_chars] + "\n\n[truncated]"
+            r["truncated"] = True
+    return r
+
+
+@mcp.tool()
+def openreply_paper_fulltext_status(topic: str | None = None) -> dict:
+    """Aggregate status counts from `paper_full_texts`. Tells the caller
+    which papers in a topic still need their PDF downloaded vs. which
+    failed permanently (not_oa / download_failed)."""
+    from ..research.paper_fulltext import get_status_summary
+    return get_status_summary(topic=topic)
+
+
 # ─── Paper sections + chunks + citations (gap-finding stack) ────────────────
+
+
+@mcp.tool()
+def openreply_paper_sections(post_id: str, force: bool = False) -> dict:
+    """Parse the cached full text into named sections (Abstract /
+    Introduction / Methods / Results / Limitations / Discussion / etc.).
+
+    Idempotent — re-runs are cheap. Sections persist into `paper_sections`
+    so subsequent chunk and citation calls don't re-parse. Requires the
+    paper to have already been downloaded via `openreply_paper_fulltext`.
+
+    Returns: {ok, post_id, sections: [{name, ord, char_count, raw_heading}]}.
+    Falls back to a single `body` section when no recognised heading is
+    found in the PDF (image-only papers, unusual layouts).
+    """
+    from ..research.paper_sections import parse_sections_for
+    return parse_sections_for(post_id, force=force)
+
+
+@mcp.tool()
+def openreply_paper_section_get(post_id: str, section: str) -> dict:
+    """Return the verbatim text of a named section (e.g. 'limitations',
+    'results', 'methods'). Useful when you want just the methodology or
+    just the limitations without the rest of the paper.
+
+    Section names are canonical — see CANONICAL_SECTIONS in
+    paper_sections.py: abstract / introduction / background / related_work /
+    methods / experiments / results / evaluation / discussion /
+    limitations / future_work / conclusion / acknowledgments / references /
+    appendix.
+    """
+    from ..research.paper_sections import get_section_text
+    txt = get_section_text(post_id, section)
+    if txt is None:
+        return {"ok": False, "post_id": post_id, "section": section,
+                "error": f"section {section!r} not found for {post_id}"}
+    return {"ok": True, "post_id": post_id, "section": section,
+            "char_count": len(txt), "text": txt}
+
+
+@mcp.tool()
+def openreply_paper_chunk(post_id: str, force: bool = False) -> dict:
+    """Chunk a paper's full text into embedding-friendly windows and push
+    new chunks into Mempalace's `paper_chunks` collection.
+
+    Section-aware: chunks never cross Methods/Results/Limitations
+    boundaries, so semantic search by section stays clean. Idempotent —
+    unchanged chunk hashes skip re-embedding. Requires the paper to have
+    been downloaded first via `openreply_paper_fulltext`.
+
+    Returns: {ok, n_chunks, n_new, n_unchanged, embedded}.
+    """
+    from ..research.paper_chunks import chunk_paper
+    return chunk_paper(post_id, force=force, embed=True)
+
+
+@mcp.tool()
+def openreply_paper_chunk_search(
+    query: str,
+    k: int = 12,
+    topic: str | None = None,
+    sections: list[str] | None = None,
+) -> dict:
+    """Semantic + BM25 search over paper chunks (one vector per ~1500-char
+    section-aware window).
+
+    Use this when you want passage-level evidence across many papers —
+    e.g. "what limitations have papers identified about RAG?". Filter
+    `sections=['limitations']` to retrieve only Limitations sections;
+    'methods' for methodology comparison; 'results' for findings.
+
+    Returns: {ok, results: [{chunk_id, post_id, section, ord, text,
+    score, vector_score, bm25_score}]}.
+    """
+    from ..retrieval import palace
+    return palace.search_paper_chunks(
+        query, k=k, topic=topic, section_filter=sections,
+    )
+
+
+@mcp.tool()
+def openreply_paper_search_papers(
+    query: str,
+    k: int = 8,
+    topic: str | None = None,
+    sections: list[str] | None = None,
+    max_chunks_per_paper: int = 3,
+) -> dict:
+    """Chunk-level retrieval rolled up to paper level — the "which papers
+    discuss X" query.
+
+    Pulls top chunks across the corpus and groups by paper so a single
+    verbose paper doesn't monopolise the result set. Each result row
+    includes the matching chunks (up to `max_chunks_per_paper`) so the
+    caller can quote exact passages with provenance.
+
+    Returns: {ok, results: [{post_id, title, source_type, url, best_score,
+    sections_hit: [...], chunks: [{section, ord, text, score}]}]}.
+    """
+    from ..retrieval import palace
+    return palace.search_papers(
+        query, k=k, topic=topic,
+        section_filter=sections,
+        max_chunks_per_paper=max_chunks_per_paper,
+    )
+
+
+@mcp.tool()
+def openreply_paper_ask(
+    question: str,
+    topic: str | None = None,
+    sections: list[str] | None = None,
+    post_id: str | None = None,
+    k: int = 10,
+    provider: str | None = None,
+) -> dict:
+    """Cited Q&A over the full text of the papers (not just abstracts).
+
+    Retrieves the most relevant section-aware paper chunks, grounds an LLM on
+    them, and returns an answer with deterministic numbered citations that name
+    the paper AND the section a claim came from. Answers honestly when the
+    papers don't cover the question instead of inventing facts.
+
+    Scope with `topic` (a topic's papers), `post_id` (one paper), or `sections`
+    (e.g. ['methods','results']). Build paper knowledge first (fetch full text +
+    chunk) so there are chunks to ground on.
+
+    Returns: {ok, answer, citations: [{n, post_id, title, author, year, url,
+    sections}], used_chunks, provider, model, sources_markdown}.
+    """
+    from ..research.paper_chat import paper_qa
+    return paper_qa(
+        topic or "", question, provider=provider, k=k,
+        section_filter=sections, post_id=post_id,
+    )
+
+
+@mcp.tool()
+def openreply_paper_reading_status(post_id: str, status: str | None = None) -> dict:
+    """Get or set a paper's reading status. status ∈ to_read|reading|read.
+    Omit `status` to read the current value (defaults to 'to_read')."""
+    from ..research import paper_reading
+    if status:
+        return paper_reading.set_status(post_id, status)
+    return paper_reading.get_status(post_id)
+
+
+@mcp.tool()
+def openreply_paper_reading_queue(topic: str | None = None, limit: int = 50,
+                               counts: bool = False) -> dict:
+    """The to-read queue for a topic's papers (or globally). Pass counts=True for
+    {to_read, reading, read} totals instead of the list."""
+    from ..research import paper_reading
+    if counts:
+        return paper_reading.status_counts(topic)
+    return paper_reading.reading_queue(topic, limit=limit)
+
+
+@mcp.tool()
+def openreply_paper_highlight(
+    action: str,
+    post_id: str | None = None,
+    highlight_id: str | None = None,
+    section: str = "",
+    char_start: int = 0,
+    char_end: int = 0,
+    quote: str = "",
+    note: str | None = None,
+    color: str | None = None,
+) -> dict:
+    """Highlights + notes on a paper. action ∈ add|list|update|delete.
+    - add:    needs post_id (+ section/char_start/char_end/quote/note/color)
+    - list:   needs post_id
+    - update: needs highlight_id (+ note and/or color)
+    - delete: needs highlight_id
+    """
+    from ..research import paper_reading
+    if action == "add":
+        return paper_reading.add_highlight(
+            post_id or "", section=section, char_start=char_start,
+            char_end=char_end, quote=quote, note=note or "", color=color or "yellow")
+    if action == "list":
+        return paper_reading.list_highlights(post_id or "")
+    if action == "update":
+        return paper_reading.update_highlight(highlight_id or "", note=note, color=color)
+    if action == "delete":
+        return paper_reading.delete_highlight(highlight_id or "")
+    return {"ok": False, "error": "action must be add|list|update|delete"}
+
+
+@mcp.tool()
+def openreply_paper_notes(topic: str) -> dict:
+    """Every highlight + note across a topic's papers — the project notebook."""
+    from ..research import paper_reading
+    return paper_reading.topic_notes(topic)
 
 
 @mcp.tool()
@@ -902,12 +1392,724 @@ def openreply_flow_status(topic: str) -> dict:
 
 
 @mcp.tool()
+def openreply_paper_library(collection_id: str | None = None, status: str | None = None,
+                         q: str | None = None, limit: int = 300) -> dict:
+    """Cross-project paper library — every academic paper with its reading status
+    and collection membership. Filter by collection_id, status, or q (title)."""
+    from ..research import paper_library
+    return paper_library.library(collection_id, status, q, limit)
+
+
+@mcp.tool()
+def openreply_paper_collections(action: str = "list", name: str | None = None,
+                             collection_id: str | None = None, post_id: str | None = None) -> dict:
+    """Manage paper collections. action ∈ list|create|rename|delete|add|remove."""
+    from ..research import paper_library as pl
+    if action == "list":     return pl.list_collections()
+    if action == "create":   return pl.create_collection(name or "")
+    if action == "rename":   return pl.rename_collection(collection_id or "", name or "")
+    if action == "delete":   return pl.delete_collection(collection_id or "")
+    if action == "add":      return pl.add_to_collection(collection_id or "", post_id or "")
+    if action == "remove":   return pl.remove_from_collection(collection_id or "", post_id or "")
+    return {"ok": False, "error": "unknown action"}
+
+
+@mcp.tool()
+def openreply_lit_matrix(topic: str, build: bool = False, limit: int | None = None,
+                      force: bool = False) -> dict:
+    """Literature-review matrix for a topic's papers — one structured row per
+    paper (method, dataset, sample, findings, limitations, metric).
+
+    build=True extracts rows (LLM) for papers that don't have one yet; default
+    reads the cached matrix. Returns {ok, count, fields, rows} (read) or
+    {ok, built, cached, errored, total} (build)."""
+    from ..research import lit_matrix
+    if build:
+        return lit_matrix.build(topic, limit=limit, force=force)
+    return lit_matrix.get(topic)
+
+
+@mcp.tool()
+def openreply_gap_pain_scores(topic: str, build: bool = False,
+                           limit: int | None = None, force: bool = False) -> dict:
+    """0-100 pain score per gap for a topic — frequency × intensity × recency.
+
+    Ranks painpoints so users know what to build first (PainOnSocial-style).
+    build=True (re)computes scores from the corpus via the painpoint extractor
+    (LLM); default reads the cached scores (LLM-free). Returns
+    {ok, scored, top_score, rows} (build) or {ok, count, rows} (read)."""
+    from ..research import pain_scoring
+    if build:
+        return pain_scoring.score_gaps(topic, corpus_limit=(limit or 120), force=force)
+    return pain_scoring.get(topic)
+
+
+@mcp.tool()
+def openreply_gap_audience(topic: str, gap_id: str | None = None,
+                        build: bool = False, limit: int = 50) -> dict:
+    """Real people to reach for a topic's gaps — authors + permalinks pulled
+    from each gap's evidence posts, enriched with engagement + persona.
+
+    build=True rolls up the evidence authors from the scored gaps (run
+    openreply_gap_pain_scores build first). Without build: pass gap_id for one
+    gap's people, or omit it for the deduped topic-wide outreach list."""
+    from ..research import gap_audience
+    if build:
+        return gap_audience.build(topic)
+    if gap_id:
+        return gap_audience.get_gap_users(topic, gap_id, limit=limit)
+    return gap_audience.get_topic_reachout(topic, limit=limit)
+
+
+@mcp.tool()
 def openreply_import_gummysearch(path: str) -> dict:
     """Import a GummySearch export (JSON or CSV of saved subreddits/audiences)
     so users keep their curated audiences after GummySearch shuts down (Nov
     2026). Returns {ok, imported, audiences}."""
     from ..sources import gummysearch_import
     return gummysearch_import.import_file(path)
+
+
+@mcp.tool()
+def openreply_audiences(action: str = "list", preset: str | None = None) -> dict:
+    """Saved audiences (subreddit collections) + curated discovery presets.
+
+    action: list (imported/saved audiences) | presets (curated bundles) |
+    add_preset (save a preset bundle as an audience — needs `preset`)."""
+    from ..sources import gummysearch_import
+    if action == "presets":
+        return gummysearch_import.presets()
+    if action == "add_preset":
+        return gummysearch_import.import_preset(preset or "")
+    return gummysearch_import.list_audiences()
+
+
+@mcp.tool()
+def openreply_gap_digest(topic: str, period: str = "daily") -> dict:
+    """A scheduled brief for a topic (IdeaBrowser-style) — composes top pain
+    scores, rising/new gaps, the people to reach, and fired alerts into one
+    markdown digest. period: daily|weekly. Pure assembly, no LLM. Returns
+    {ok, markdown, sections}."""
+    from ..research import gap_digest
+    return gap_digest.build_digest(topic, period=period)
+
+
+@mcp.tool()
+def openreply_gap_verdict(topic: str, claim: str | None = None, limit: int = 30) -> dict:
+    """Evidence-weighted answer on a claim (Consensus-style) — retrieves
+    matching posts, classifies each as support/contradict/neutral, and returns a
+    verdict (supported|contradicted|mixed|insufficient) with counts, confidence,
+    and a per-source breakdown (what users say vs what papers say).
+
+    Pass a claim to adjudicate (LLM); omit it to list the topic's cached verdicts."""
+    from ..research import evidence_verdicts
+    if claim:
+        return evidence_verdicts.answer(topic, claim, limit=limit)
+    return evidence_verdicts.get(topic)
+
+
+@mcp.tool()
+def openreply_gap_alerts(action: str = "list", topic: str | None = None,
+                      alert_type: str = "spike", gap_id: str | None = None,
+                      threshold: float | None = None, window_days: int = 7,
+                      alert_id: str | None = None,
+                      enabled: bool | None = None) -> dict:
+    """Saved monitoring for gaps — notify when a gap spikes, goes new, or
+    crosses a pain-score threshold.
+
+    action one of: list | create | update | delete | check | events.
+    create needs topic + alert_type (spike|new|score_threshold); update/delete
+    need alert_id; check evaluates all enabled alerts and records fired events."""
+    from ..research import gap_alerts
+    if action == "create":
+        if not topic:
+            return {"ok": False, "error": "topic required for create"}
+        return gap_alerts.create_alert(topic, alert_type, gap_id=gap_id,
+                                       threshold=threshold, window_days=window_days)
+    if action == "update":
+        return gap_alerts.update_alert(alert_id, enabled=enabled, threshold=threshold)
+    if action == "delete":
+        return gap_alerts.delete_alert(alert_id)
+    if action == "check":
+        return gap_alerts.check_alerts(topic)
+    if action == "events":
+        return gap_alerts.list_events(topic)
+    return gap_alerts.list_alerts(topic)
+
+
+@mcp.tool()
+def openreply_gap_velocity(topic: str, gap_id: str | None = None,
+                        window_days: int = 7, topic_level: bool = False) -> dict:
+    """Trend velocity for a topic's gaps — recent vs prior posting rate, so you
+    see which gaps are rising/new vs fading (Exploding-Topics style).
+
+    Per gap by default (matches the gap title's keywords against the topic's
+    posts; needs pain scores built). topic_level=True returns the whole topic's
+    posting velocity instead. No LLM."""
+    from ..research import trend_velocity
+    if topic_level:
+        return trend_velocity.compute_topic_velocity(topic, window_days=window_days)
+    return trend_velocity.compute_gap_velocity(topic, gap_id=gap_id, window_days=window_days)
+
+
+@mcp.tool()
+def openreply_paper_chunk_topic(
+    topic: str | None = None,
+    force: bool = False,
+    limit: int | None = None,
+) -> dict:
+    """Bulk-chunk every cached paper for a topic. Section-parses + chunks
+    + embeds each one. Skips papers whose chunks are already up-to-date.
+
+    Run after `openreply_paper_fulltext` finishes for a topic to make all
+    chunk-search tools return useful results.
+    """
+    from ..research.paper_chunks import chunk_topic
+    return chunk_topic(topic=topic, embed=True, limit=limit, force=force)
+
+
+@mcp.tool()
+def openreply_paper_chunk_abstracts(
+    topic: str | None = None,
+    force: bool = False,
+    limit: int | None = None,
+) -> dict:
+    """Abstract-fallback embedding: embed the title+abstract of every paper
+    that has NO open-access full text as a single chunk, so the WHOLE corpus
+    becomes chat-able (`openreply_paper_ask`) and relatable (paper map /
+    `relates_to` edges) — not just the few papers with full text (90%+ are
+    paywalled). Topic-scoped when `topic` is given, else the whole library.
+    Local-CPU, idempotent, skips papers that already have full-text chunks.
+
+    Returns: {ok, topic, total, embedded, skipped, errors}.
+    """
+    from ..research.paper_chunks import chunk_abstracts_all
+    return chunk_abstracts_all(topic=topic, embed=True, limit=limit, force=force)
+
+
+@mcp.tool()
+def openreply_paper_enrich_abstracts(
+    topic: str | None = None,
+    limit: int | None = None,
+    chunk: bool = True,
+) -> dict:
+    """Backfill missing abstracts for title-only papers (PubMed search carries
+    no abstract; some OpenAlex/Crossref/Scholar rows are metadata-only), then
+    embed them so they become chat-able + relatable. Fetches each paper's
+    abstract from its source with an OpenAlex-by-DOI fallback, writes it to
+    posts.selftext, and (chunk=True) chunk-embeds the newly-enriched papers.
+    Network-bound. Omit `topic` for the whole library.
+
+    Returns: {ok, topic, total, enriched, no_abstract, chunked, errors}.
+    """
+    from ..research.paper_abstract_enrich import enrich_topic_abstracts
+    return enrich_topic_abstracts(topic=topic, limit=limit, chunk=chunk)
+
+
+@mcp.tool()
+def openreply_paper_citation_graph(
+    topic: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    """Build paper→paper `cites` edges from the Semantic Scholar references API:
+    fetch each paper's reference list and match references to in-corpus papers by
+    exact DOI / arXiv / PMID, then materialize `paper_cites` edges for the paper
+    map. NOTE: S2's unauthenticated rate limit is small — set S2_API_KEY for runs
+    over a few dozen papers and pass `limit` (most-cited papers first).
+
+    Returns: {ok, topic, papers, fetched, links, edges, errors}.
+    """
+    from ..research.paper_citations import build_citations
+    return build_citations(topic=topic, limit=limit)
+
+
+@mcp.tool()
+def openreply_paper_extract_refs(post_id: str, force: bool = False) -> dict:
+    """Extract the references / bibliography section from a paper's
+    cached full-text PDF into structured rows (DOI / arxiv id / title /
+    year). Tries OpenFileLoader when installed; falls back to a regex
+    extractor. Note: distinct from the S2-API-backed
+    `openreply_paper_references` — this one works on the local PDF, no
+    network required.
+
+    After extraction, `paper_references` rows are auto-resolved against
+    existing `posts` rows where possible (arxiv id match, DOI match in
+    metadata_json). Unresolved refs stay as raw strings for a future
+    Crossref/OpenAlex pass to fill in.
+
+    Returns: {ok, n_refs, by_status, extractor}.
+    """
+    from ..research.paper_references import (
+        extract_references_for, resolve_to_existing_posts,
+    )
+    r = extract_references_for(post_id, force=force)
+    if r.get("ok") and r.get("n_refs", 0) > 0:
+        link = resolve_to_existing_posts(post_id)
+        r["linked_via_arxiv"] = link.get("linked_via_arxiv", 0)
+        r["linked_via_doi"] = link.get("linked_via_doi", 0)
+    return r
+
+
+@mcp.tool()
+def openreply_paper_local_refs(post_id: str) -> dict:
+    """List the references extracted from this paper's local PDF cache.
+    Each row has the parsed DOI/arxiv id/title plus a `dst_post_id` if we
+    already have the cited work in our corpus.
+
+    Distinct from `openreply_paper_references` (which hits Semantic Scholar
+    over the network) — this one is the local-corpus equivalent built
+    from the PDF references section.
+    """
+    from ..research.paper_references import get_references
+    refs = get_references(post_id)
+    return {"ok": True, "post_id": post_id, "count": len(refs), "refs": refs}
+
+
+@mcp.tool()
+def openreply_paper_cited_by(post_id: str) -> dict:
+    """List the papers in our corpus that cite this paper. Counts only
+    references that have been resolved to an existing `posts` row via
+    `openreply_paper_extract_refs`."""
+    from ..research.paper_references import get_cited_by
+    refs = get_cited_by(post_id)
+    return {"ok": True, "post_id": post_id, "count": len(refs), "refs": refs}
+
+
+@mcp.tool()
+def openreply_paper_chunks_stats() -> dict:
+    """Mempalace stats for the paper_chunks collection — total chunks,
+    unique papers indexed, distribution by section. Useful to verify a
+    bulk chunk job actually populated the index."""
+    from ..retrieval import palace
+    return palace.paper_chunks_stats()
+
+
+@mcp.tool()
+def openreply_analyze_paper(topic: str, post_id: str, force: bool = False) -> dict:
+    """LLM analysis of one paper — summary, claims, methods, tier, applicability.
+
+    Reads the paper row from `posts` (any academic source_type works) and
+    asks the configured LLM to extract:
+      - one-paragraph summary
+      - key claims (bulleted)
+      - methods + sample size
+      - evidence tier (meta-analysis / peer-reviewed / expert / anecdote)
+      - relevance to `topic`
+      - caveats + counter-evidence
+
+    Cached in `paper_analyses` table; pass `force=True` to re-run. Requires
+    a configured LLM provider (BYOK). Skip-stub if none configured.
+    """
+    from ..research.paper_analyze import analyze_paper
+    res = analyze_paper(topic=topic, post_id=post_id, force=force)
+    # Mirror a compact markdown card into mcp_analyses so the GUI surfaces
+    # this analysis without having to join paper_analyses every render.
+    try:
+        if isinstance(res, dict) and res.get("ok") and not res.get("skipped"):
+            from ..core.db import save_mcp_analysis
+            md = (
+                f"**Summary.** {res.get('summary','').strip()}\n\n"
+                f"**Relevance.** {res.get('relevance','').strip()}\n\n"
+                f"**Takeaway.** {res.get('takeaway','').strip()}"
+            )
+            save_mcp_analysis(
+                topic=topic,
+                kind="paper_analysis",
+                tool="openreply_analyze_paper",
+                source="mcp",
+                content=md,
+                params={"topic": topic, "post_id": post_id, "force": force},
+                provider=res.get("provider", ""),
+                model=res.get("model", ""),
+            )
+    except Exception:
+        pass
+    return res
+
+
+@mcp.tool()
+def openreply_analyze_papers_bulk(topic: str, limit: int | None = None, force: bool = False) -> dict:
+    """Analyze every academic-source paper tagged to `topic` that doesn't
+    already have an analysis. Returns {ok, analyzed, skipped, errored, total}.
+    Ordered by citation/score desc so the highest-signal papers go first.
+    """
+    from ..research.paper_analyze import analyze_papers_bulk
+    from . import jobs as _jobs
+    res = analyze_papers_bulk(
+        topic=topic, limit=limit, force=force,
+        progress=_jobs.make_progress_logger(prefix="[paper-bulk] "),
+    )
+    # One rollup row, not one per paper — individual paper rows already
+    # land via analyze_paper() if the bulk path calls it. This keeps the
+    # "AI Analyses" GUI list readable.
+    try:
+        if isinstance(res, dict) and res.get("ok"):
+            from ..core.db import save_mcp_analysis
+            md = (
+                f"Bulk paper analysis for **{topic}** — "
+                f"{res.get('analyzed', 0)} analyzed, "
+                f"{res.get('skipped', 0)} skipped, "
+                f"{res.get('errored', 0)} errored "
+                f"(of {res.get('total', 0)} total)."
+            )
+            save_mcp_analysis(
+                topic=topic,
+                kind="conclusion",
+                tool="openreply_analyze_papers_bulk",
+                source="mcp",
+                content=md,
+                params={"topic": topic, "limit": limit, "force": force},
+            )
+    except Exception:
+        pass
+    return res
+
+
+@mcp.tool()
+def openreply_paper_analyses(topic: str, limit: int = 50) -> list[dict]:
+    """Return cached LLM analyses for all papers on `topic`. Fast read —
+    no LLM call. Use to pull your growing evidence base into a summary.
+    """
+    from ..core.db import get_db
+    sql = """
+        SELECT pa.*, p.title, p.url, p.source_type, p.score
+        FROM paper_analyses pa
+        JOIN posts p ON p.id = pa.post_id
+        WHERE pa.topic = :topic
+        ORDER BY coalesce(p.score, 0) DESC
+        LIMIT :lim
+    """
+    return list(get_db().query(sql, {"topic": topic, "lim": limit}))
+
+
+@mcp.tool()
+def openreply_synthesize_insights(
+    topic: str,
+    min_score: int = 0,
+    provider: str | None = None,
+    deliberate: bool = False,
+    deliberate_rounds: int = 1,
+) -> dict:
+    """Run the insight synthesis pipeline on the topic's corpus and return
+    the parsed report. Persists to both `topic_insights` (primary) and
+    `mcp_analyses` (GUI surface). LLM-backed — uses the app's configured
+    provider chain. Returns {ok, skipped?, report?, error?}.
+
+    Use AFTER fetching enough corpus (≥100 posts recommended). This is the
+    "conclusions at the end" step from the GUI's app-mode perspective —
+    MCP clients can call it on demand instead of waiting for the app's
+    enrichment worker.
+    """
+    from ..research.insights import synthesize_insights
+    import json as _json
+    try:
+        res = _run_with_timeout(
+            synthesize_insights,
+            timeout=_DEFAULT_TOOL_TIMEOUT_S,
+            async_hint="openreply_synthesize_insights",
+            kwargs={
+                "topic": topic, "provider": provider,
+                "persist": True, "min_score": min_score,
+                "deliberate": deliberate,
+                "deliberate_rounds": deliberate_rounds,
+            },
+        )
+        # Timeout → structured dict, propagate as-is.
+        if isinstance(res, dict) and res.get("timed_out"):
+            res.setdefault("topic", topic)
+            res.setdefault("findings", [])
+            return res
+    except Exception as e:
+        return {
+            "ok": False, "error": str(e)[:500], "topic": topic,
+            "findings": [], "report": {},
+        }
+    # Normalize so MCP schema validation always passes: top-level shape
+    # is `{ok, topic, ...}` whether the LLM returned the report inline
+    # or wrapped it under "report".
+    if not isinstance(res, dict):
+        return {
+            "ok": False, "error": f"unexpected return type: {type(res).__name__}",
+            "topic": topic, "findings": [], "report": {},
+        }
+    res.setdefault("ok", True)
+    res.setdefault("topic", topic)
+    # `findings` may live at top level (one-shot path) or nested under
+    # `report` (chunked path). Hoist for the GUI / MCP client.
+    if "findings" not in res and isinstance(res.get("report"), dict):
+        nested = res.get("report") or {}
+        if "findings" in nested:
+            res["findings"] = nested.get("findings") or []
+    res.setdefault("findings", [])
+    try:
+        if res.get("ok") is not False:
+            from ..core.db import save_mcp_analysis
+            report = res if "findings" in res else res.get("report") or {}
+            save_mcp_analysis(
+                topic=topic,
+                kind="insights",
+                tool="openreply_synthesize_insights",
+                source="mcp",
+                content_type="json",
+                content=_json.dumps(report, default=str),
+                params={"topic": topic, "min_score": min_score, "provider": provider},
+                provider=res.get("provider", "") or "",
+                model=res.get("model", "") or "",
+            )
+    except Exception:
+        pass
+    return res
+
+
+@mcp.tool()
+def openreply_paper_outline_generate(topic: str, provider: str | None = None) -> dict:
+    """Generate a structured research-paper outline from topic insights."""
+    from ..research.paper_pipeline import paper_outline_generate
+    return paper_outline_generate(topic=topic, provider=provider)
+
+
+@mcp.tool()
+def openreply_paper_draft_generate(
+    topic: str,
+    provider: str | None = None,
+    style: str = "IMRaD",
+) -> dict:
+    """Generate a markdown research paper draft (default IMRaD style)."""
+    from ..research.paper_pipeline import paper_draft_generate
+    from . import jobs as _jobs
+    _log = _jobs.make_progress_logger(prefix="[paper-draft] ")
+    _log(f"start topic='{topic}' style={style}")
+    r = paper_draft_generate(topic=topic, provider=provider, style=style)
+    _log(f"done ok={r.get('ok')} chars={len(r.get('markdown') or '')}")
+    return r
+
+
+@mcp.tool()
+def openreply_experiment_plan_generate(topic: str, provider: str | None = None) -> dict:
+    """Generate testable experiment plan from topic hypotheses/findings."""
+    from ..research.paper_pipeline import experiment_plan_generate
+    return experiment_plan_generate(topic=topic, provider=provider)
+
+
+@mcp.tool()
+def openreply_paper_knowledge_build(
+    topic: str, scope: str = "all", force: bool = False,
+) -> dict:
+    """Run the full paper-knowledge pipeline for a topic — the headless one-shot.
+
+    Downloads + extracts paper full text, sections + chunks it, detects
+    cross-paper gaps, and synthesises insights — the prerequisite for
+    openreply_connections / outline / draft. scope ∈ {all, top50, top25, abstracts}
+    ('abstracts' skips full-text download — cheapest). Runs under the timeout
+    guard with a jobs-queue fallback for large corpora.
+    """
+    from ..research.paper_workflow import build_paper_knowledge
+    return _run_with_timeout(
+        build_paper_knowledge, timeout=120.0,
+        async_hint="openreply_paper_knowledge_build",
+        kwargs={"topic": topic, "scope": scope, "force": force},
+    )
+
+
+@mcp.tool()
+def openreply_academic_brief(
+    topic: str,
+    query: str | None = None,
+    provider: str | None = None,
+    level: str = "L3",
+    approved: bool = False,
+    rounds: int = 1,
+    dynamic_roles: bool = True,
+    style: str = "IMRaD",
+    export_format: str = "markdown",
+) -> dict:
+    """Academic Mode — turn a topic into a grounded, cited research brief.
+
+    Runs research → synthesize → [grounding gate] → peer_review (multi-reviewer
+    panel: EIC + methodology + domain + perspective + devil's-advocate, scored
+    0–100 → editorial decision) → finalize → [integrity gate: 7-mode AI-failure
+    checklist] → [citation-existence gate: DOI verification]. Hard-blocks finalize
+    if fewer than 2 academic papers are grounded (returns gate='coverage'); a
+    blocking integrity finding sets gate='integrity'/gate_status='blocked'. Every
+    stage appends a hash-chained Material Passport entry for provenance.
+
+    Governance: level ∈ {L1 suggest, L2 gated, L3 auto}; L2 pauses for approval
+    (re-call with approved=True). Citations are restricted to academic papers
+    actually committed to the corpus — no fabricated references. Returns include
+    peer_review (decision/reviewers), integrity (verdict/findings), citations_check,
+    and passport (length/verified/head_hash). Runs under the timeout guard with a
+    jobs-queue fallback for slow corpora.
+    """
+    from ..research.academic_mode import run_academic_brief
+    return _run_with_timeout(
+        run_academic_brief, timeout=120.0,
+        async_hint="openreply_academic_brief",
+        kwargs={
+            "topic": topic, "query": query, "provider": provider, "level": level,
+            "approved": approved, "rounds": rounds, "dynamic_roles": dynamic_roles,
+            "style": style, "export_format": export_format,
+        },
+    )
+
+
+@mcp.tool()
+def openreply_academic_brief_get(topic: str) -> dict:
+    """Read the latest stored Academic Mode research brief for a topic.
+
+    Returns {ok, topic, level, gate_status, grounded_count, markdown, citations,
+    limitations, stages, generated_at} or {ok: False} when none exists yet.
+    """
+    from ..research.academic_mode import get_academic_brief
+    return get_academic_brief(topic)
+
+
+@mcp.tool()
+def openreply_academic_passport(topic: str | None = None, run_id: str | None = None) -> dict:
+    """Read the append-only, hash-chained Material Passport for an Academic Mode run.
+
+    Pass run_id for a specific run, or topic for that topic's latest run. Returns
+    {ok, run_id, entries:[{seq, stage, payload, prev_hash, entry_hash, ts}],
+    verified} — verified=True means the SHA-256 chain recomputes intact (no
+    tampering / no dropped stage). Use this to audit provenance or resume.
+    """
+    from ..research.academic_passport import get_passport
+    return get_passport(topic=topic, run_id=run_id)
+
+
+@mcp.tool()
+def openreply_paper_gaps(topic: str, compute: bool = False, force: bool = False) -> dict:
+    """Cross-paper gaps for a topic: understudied intersections, contradictions,
+    under-replicated methods. compute=False reads persisted gaps; compute=True
+    runs the LLM detection pass (needs paper full text — run
+    openreply_paper_knowledge_build first). Feeds openreply_connections.
+    """
+    if compute:
+        from ..research.paper_gaps import detect_gaps
+        return _run_with_timeout(
+            detect_gaps, timeout=90.0, async_hint="openreply_paper_gaps",
+            kwargs={"topic": topic, "force": force})
+    from ..research.paper_gaps import list_gaps
+    return list_gaps(topic)
+
+
+@mcp.tool()
+def openreply_paper_relations_build(topic: str | None = None, force: bool = False) -> dict:
+    """Materialise paper↔paper edges (relates_to / cites / shared_finding /
+    same_author) into the graph. Run before openreply_connections so the
+    shared-but-uncited signal has data to work with.
+    """
+    from ..research.paper_relations import build as _build
+    return _run_with_timeout(
+        _build, timeout=90.0, async_hint="openreply_paper_relations_build",
+        kwargs={"topic": topic, "force": force})
+
+
+@mcp.tool()
+def openreply_paper_export_with_citations(
+    topic: str,
+    provider: str | None = None,
+    format: str = "markdown",
+    style: str = "IMRaD",
+) -> dict:
+    """Export paper draft with citation appendix (markdown)."""
+    from ..research.paper_pipeline import paper_export_with_citations
+    return paper_export_with_citations(
+        topic=topic,
+        provider=provider,
+        format=format,
+        style=style,
+    )
+
+
+@mcp.tool()
+def openreply_find_gaps(
+    topic: str,
+    corpus_limit: int = 120,
+    min_score: int = 1,
+    provider: str | None = None,
+) -> dict:
+    """Extract painpoints / feature wishes / product complaints / DIY workarounds
+    from the topic's corpus. LLM-backed via the app's configured provider.
+    Persists the four-part report to `mcp_analyses` so the GUI can show it.
+    """
+    from ..research.gaps import find_gaps
+    from . import jobs as _jobs
+    import json as _json
+    res = find_gaps(
+        topic=topic, provider=provider,
+        corpus_limit=corpus_limit, min_score=min_score,
+        progress_cb=_jobs.make_progress_logger(prefix="[gaps] "),
+    )
+    try:
+        if isinstance(res, dict) and not res.get("error"):
+            from ..core.db import save_mcp_analysis
+            save_mcp_analysis(
+                topic=topic,
+                kind="gaps",
+                tool="openreply_find_gaps",
+                source="mcp",
+                content_type="json",
+                content=_json.dumps({
+                    "painpoints": res.get("painpoints"),
+                    "feature_wishes": res.get("feature_wishes"),
+                    "product_complaints": res.get("product_complaints"),
+                    "diy_workarounds": res.get("diy_workarounds"),
+                    "corpus_size": res.get("corpus_size"),
+                }),
+                params={"topic": topic, "corpus_limit": corpus_limit, "min_score": min_score},
+                provider=res.get("provider", "") or "",
+            )
+    except Exception:
+        pass
+    return res
+
+
+@mcp.tool()
+def openreply_mcp_analyses_list(
+    topic: str | None = None,
+    kind: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """List recent entries from `mcp_analyses` — the unified log of
+    LLM-driven intelligence across MCP tools and the app's pipelines.
+
+    Use this to show a client LLM (or the GUI) what's already been
+    concluded on a topic before running a fresh synthesis. Filter by
+    `topic` and/or `kind` ∈ {summary, synthesis, cluster_note, conclusion,
+    paper_analysis, subreddit_ranking, insights, gaps}.
+    """
+    from ..core.db import get_db
+    clauses: list[str] = []
+    params: dict[str, Any] = {"lim": max(1, min(int(limit), 500))}
+    if topic:
+        clauses.append("topic = :topic")
+        params["topic"] = topic
+    if kind:
+        clauses.append("kind = :kind")
+        params["kind"] = kind
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"""
+        SELECT id, topic, kind, source, tool, content_type, content,
+               provider, model, tokens_in, tokens_out, created_at
+        FROM mcp_analyses
+        {where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT :lim
+    """
+    return list(get_db().query(sql, params))
+
+
+@mcp.tool()
+def openreply_papers_export(topic: str, fmt: str = "bibtex", limit: int | None = None) -> dict:
+    """Export a topic's academic papers as BibTeX / RIS / APA / Markdown.
+
+    Perfect for students + researchers: paste the result straight into
+    LaTeX (BibTeX), Zotero/Mendeley (RIS), a blog post (APA), or a
+    comparison table (Markdown). Reads from `posts` — no LLM call, no
+    network. Returns {ok, fmt, topic, count, text}.
+    """
+    from ..research.paper_export import export_topic
+    return export_topic(topic=topic, fmt=fmt, limit=limit)
 
 
 @mcp.tool()
@@ -1347,6 +2549,107 @@ def openreply_fetch_package_stats(
 # ── Paper research pipeline ──────────────────────────────────────────────────
 
 
+@mcp.tool()
+def openreply_paper_research_pipeline(
+    topic: str,
+    query: str | None = None,
+    limit_per_source: int = 5,
+    max_fulltext: int = 3,
+    year_from: int | None = None,
+    provider: str | None = None,
+    sources: list[str] | None = None,
+) -> dict:
+    """Full paper research pipeline: search → rank → fulltext → analyze → store.
+
+    One call to do everything: searches all 6 academic sources, fetches full
+    PDF text for the highest-cited papers, runs LLM analysis on each, and
+    persists everything to SQLite so the Insights tab and future MCP calls
+    can use the results immediately.
+
+    Args:
+        topic: The research topic tag (used for DB tagging and analysis context).
+        query: Search query string. Defaults to `topic` if not provided.
+        limit_per_source: Papers to fetch per source (total ≤ 6× this).
+        sources: Which sources to use. Defaults to all six:
+            ['arxiv','pubmed','openalex','semantic_scholar','crossref','scholar'].
+        max_fulltext: How many top-cited papers to attempt full-text fetch for.
+            Ranked by citation count descending before fulltext fetch.
+        year_from: Optional year lower-bound for sources that support it.
+        provider: LLM provider for paper analysis. Auto-resolved if not given.
+
+    Returns:
+        {ok, topic, query, search_total, by_source, fulltext_fetched,
+         fulltext_ok, papers_chunked, analyzed, analyses: [{post_id, title, url,
+         source_type, citation_count, summary, relevance, takeaway}],
+         errors}
+    """
+    # Pipeline body lives in research.paper_pipeline.run_paper_research so the
+    # chat agent's `fetch_more_papers` tool shares one code path with this MCP
+    # tool. We only own the wall-clock ceiling + async-hint here.
+    from ..research.paper_pipeline import run_paper_research
+
+    return _run_with_timeout(
+        run_paper_research,
+        timeout=120.0,
+        async_hint="openreply_paper_research_pipeline",
+        kwargs={
+            "topic": topic,
+            "query": query,
+            "limit_per_source": limit_per_source,
+            "max_fulltext": max_fulltext,
+            "year_from": year_from,
+            "provider": provider,
+            "sources": sources,
+        },
+    )
+
+
+@mcp.tool()
+def openreply_papers_for_topic(topic: str, limit: int = 50) -> dict:
+    """Return all analyzed academic papers for a topic, ranked by citation count.
+
+    Fast read — no LLM call, no network. Returns papers that have been
+    both fetched (in `posts` table) and analyzed (in `paper_analyses` table),
+    with their full metadata merged. Use after `openreply_paper_research_pipeline`
+    or `openreply_analyze_papers_bulk` to pull the evidence base.
+
+    Returns:
+        {ok, topic, count, papers: [{post_id, title, url, source_type,
+         citation_count, year, summary, relevance, takeaway,
+         provider, model, ts}]}
+    """
+    from ..core.db import get_db
+    db = get_db()
+    sql = """
+        SELECT
+            pa.post_id,
+            p.title,
+            p.url,
+            p.source_type,
+            coalesce(p.score, 0) AS citation_count,
+            strftime('%Y', datetime(p.created_utc, 'unixepoch')) AS year,
+            p.created_utc,
+            pa.summary,
+            pa.relevance,
+            pa.takeaway,
+            pa.provider,
+            pa.model,
+            pa.ts
+        FROM paper_analyses pa
+        JOIN posts p ON p.id = pa.post_id
+        WHERE pa.topic = :topic
+        ORDER BY coalesce(p.score, 0) DESC
+        LIMIT :lim
+    """
+    rows = list(db.query(sql, {"topic": topic, "lim": limit}))
+    return {
+        "ok": True,
+        "topic": topic,
+        "count": len(rows),
+        "papers": rows,
+    }
+
+
 # ── graph analysis (NetworkX) ────────────────────────────────────────────────
 
 
@@ -1483,6 +2786,185 @@ def openreply_related_posts(post_id: str, k: int = 10, topic: str | None = None)
     """
     from ..retrieval import palace
     return palace.related_posts(post_id, k=k, topic=topic)
+
+
+@mcp.tool()
+def openreply_deliberate(
+    topic: str,
+    items: list[dict] | None = None,
+    rounds: int = 1,
+    provider: str | None = None,
+    use_llm: bool = True,
+) -> dict:
+    """Run the 5-persona deliberation engine over a list of findings (or
+    any structured items with title/evidence/mention_count).
+
+    When `items` is None, the engine pulls the most-recent findings for
+    `topic` from `topic_insights` and runs the debate over them
+    in-place — useful for "tier the existing report without
+    re-synthesizing."
+
+    Personas: Synthesizer (de-dupe / taxonomy), Skeptic (evidence),
+    Quantifier (numbers), Risk Officer (actionability), Devil's
+    Advocate (≥50% disputes, must propose alternatives). When the topic
+    has audience clusters (built via openreply_audience_personas), each
+    cluster also casts an endorsement vote so consensus is citation-
+    grounded, not just LLM-vs-itself.
+
+    Returns: `{ok, topic, n_input, rounds, personas_used,
+    audience_grounded, tiers: {confirmed, probable, minority,
+    discarded}, transcripts, ...}`. Always returns a usable dict —
+    LLM failures degrade to a heuristic fallback that uses evidence
+    presence + audience endorsements only.
+    """
+    from ..research.deliberate import deliberate as _run
+    if items is None:
+        # Pull the latest cached findings for the topic.
+        try:
+            from ..core.db import get_db
+            db = get_db()
+            row = db.execute(
+                "SELECT report_json FROM topic_insights WHERE topic = ?",
+                [topic],
+            ).fetchone()
+            if not row:
+                return {
+                    "ok": False, "topic": topic,
+                    "error": "no cached insights — run openreply_synthesize_insights first",
+                    "tiers": {"confirmed": [], "probable": [], "minority": [], "discarded": []},
+                }
+            import json as _json
+            report = _json.loads(row[0]) if row[0] else {}
+            items = report.get("findings") or []
+        except Exception as e:
+            return {
+                "ok": False, "topic": topic, "error": str(e)[:200],
+                "tiers": {"confirmed": [], "probable": [], "minority": [], "discarded": []},
+            }
+    res = _run_with_timeout(
+        _run,
+        timeout=_DEFAULT_TOOL_TIMEOUT_S,
+        async_hint="openreply_deliberate",
+        kwargs={
+            "items": items, "topic": topic,
+            "rounds": rounds, "provider": provider,
+            "use_llm": use_llm, "persist_log": True,
+        },
+    )
+    if isinstance(res, dict) and res.get("timed_out"):
+        res.setdefault("topic", topic)
+        return res
+    if not isinstance(res, dict):
+        return {"ok": False, "topic": topic, "error": f"unexpected return: {type(res).__name__}"}
+    return res
+
+
+@mcp.tool()
+def openreply_audience_personas(
+    topic: str,
+    llm: bool = True,
+    provider: str | None = None,
+    min_posts_per_author: int = 3,
+) -> dict:
+    """Cluster the topic's real authors into ICP personas backed by
+    their actual posts. Produces a citation-grounded persona per
+    cluster with: members, exemplar post, top subs, vocab signatures,
+    says/wants/hates clauses, demographics keyword scan, 7×24 activity
+    heatmap, silhouette tightness. Optional LLM augmentation (one call
+    per cluster) adds a label + 2000-char narrative + structured
+    demographics + personal_memory bullets that cite specific post_ids.
+
+    Persists to `audience_personas(topic, cluster_id)` so reads are
+    instant. Pairs with `openreply_audience_personas_get(topic)` for cached
+    reads and feeds the GUI's Audience screen + Launch Brief.
+    """
+    from ..research.audience import build_audience_personas
+    res = _run_with_timeout(
+        build_audience_personas,
+        timeout=_DEFAULT_TOOL_TIMEOUT_S,
+        async_hint="openreply_audience_personas",
+        kwargs={
+            "topic": topic, "llm": llm, "provider": provider,
+            "persist": True, "min_posts_per_author": min_posts_per_author,
+        },
+    )
+    if isinstance(res, dict) and res.get("timed_out"):
+        res.setdefault("topic", topic)
+        return res
+    if not isinstance(res, dict):
+        return {"ok": False, "topic": topic, "error": f"unexpected return type: {type(res).__name__}"}
+    res.setdefault("ok", True)
+    res.setdefault("topic", topic)
+    return res
+
+
+@mcp.tool()
+def openreply_audience_personas_get(topic: str) -> dict:
+    """Read cached audience personas for a topic. Returns
+    `{ok, topic, personas: [...], cached, count}`. Call
+    `openreply_audience_personas(topic)` first if no personas exist."""
+    from ..research.audience import get_audience_personas
+    try:
+        return get_audience_personas(topic)
+    except Exception as e:
+        return {"ok": False, "topic": topic, "error": str(e)[:200], "personas": []}
+
+
+@mcp.tool()
+def openreply_launch_brief(
+    topic: str,
+    llm: bool = True,
+    provider: str | None = None,
+) -> dict:
+    """Build a complete go-to-market Launch Brief for `topic`. Combines
+    deterministic signal-extraction (channels, post timing, top authors,
+    MVP features by RICE, pricing/PMF/NPS aggregates, persona shapes
+    from empathy_maps + interviews) with optional LLM augmentation
+    (refined ICP personas, demographics inference, channel fit re-rank,
+    external channel suggestions, positioning statement, 3-step launch
+    sequence).
+
+    Always returns a usable dict — LLM failures degrade silently to the
+    deterministic-only sections. Persists to `launch_briefs(topic)` so
+    `openreply_launch_brief_get(topic)` can serve cached reads.
+
+    Args:
+        topic: which topic to brief.
+        llm: if True (default), run the LLM augmentation pass. Disable
+             for offline / no-key environments to get the deterministic
+             slice only.
+        provider: override provider chain (anthropic / openai / etc.).
+
+    Returns: full brief shape — see `research/launch.py` docstring.
+    """
+    from ..research.launch import build_launch_brief
+    res = _run_with_timeout(
+        build_launch_brief,
+        timeout=_DEFAULT_TOOL_TIMEOUT_S,
+        async_hint="openreply_launch_brief",
+        kwargs={"topic": topic, "llm": llm, "provider": provider, "persist": True},
+    )
+    if isinstance(res, dict) and res.get("timed_out"):
+        res.setdefault("topic", topic)
+        return res
+    if not isinstance(res, dict):
+        return {"ok": False, "topic": topic, "error": f"unexpected return type: {type(res).__name__}"}
+    res.setdefault("ok", True)
+    res.setdefault("topic", topic)
+    return res
+
+
+@mcp.tool()
+def openreply_launch_brief_get(topic: str) -> dict:
+    """Read the most-recent cached Launch Brief for `topic`. Use this
+    when the brief was already generated (e.g. by the GUI) and you only
+    need to read it. Returns `{ok: False, error}` if no brief exists —
+    call `openreply_launch_brief(topic)` first."""
+    from ..research.launch import get_launch_brief
+    try:
+        return get_launch_brief(topic)
+    except Exception as e:
+        return {"ok": False, "topic": topic, "error": str(e)[:200]}
 
 
 @mcp.tool()
@@ -1700,7 +3182,7 @@ def openreply_jobs_submit(tool_name: str, args: dict | None = None) -> dict:
         args: kwargs forwarded to the tool. Pass {} for no-arg tools.
 
     Use this for anything that runs >5s — `openreply_collect` on
-    a big topic, `openreply_palace_reindex`,
+    a big topic, `openreply_palace_reindex`, bulk `openreply_paper_fulltext`,
     `openreply_graph_build_relations`, anything LLM-heavy. Sub-5s tools
     don't benefit from queueing — call them synchronously.
 
@@ -1858,6 +3340,49 @@ def openreply_collect_quality_check(topic: str) -> dict:
 
 
 @mcp.tool()
+def openreply_global_competitors(min_topics: int = 2, threshold: float = 0.80) -> dict:
+    """T2.5 — Unify competitor mentions across ALL topics. Clusters
+    graph_nodes WHERE kind='product' by embedding cosine ≥ threshold.
+
+    Returns `{ok, skipped?, total_products_seen, clusters_returned,
+    threshold, min_topics, competitors: [{canonical_name, aliases[],
+    topics[], total_mentions}, ...]}`. The wrapper always coerces the
+    return into a stable dict shape so MCP schema validation passes
+    even when the implementation changes (e.g. returns a bare list,
+    raises, or is missing chromadb)."""
+    from ..research.competitors import global_competitors
+    try:
+        try:
+            res = global_competitors(min_topics=min_topics, threshold=threshold)
+        except TypeError:
+            res = global_competitors(min_topics=min_topics)
+    except Exception as e:
+        return {
+            "ok": False, "error": str(e)[:300],
+            "competitors": [], "clusters_returned": 0,
+            "min_topics": min_topics, "threshold": threshold,
+        }
+    # Normalize: implementation may return bare list (legacy) or dict.
+    if isinstance(res, list):
+        return {
+            "ok": True, "competitors": res,
+            "clusters_returned": len(res),
+            "min_topics": min_topics, "threshold": threshold,
+        }
+    if not isinstance(res, dict):
+        return {
+            "ok": False, "error": f"unexpected return type: {type(res).__name__}",
+            "competitors": [], "clusters_returned": 0,
+        }
+    res.setdefault("ok", True)
+    res.setdefault("competitors", [])
+    res.setdefault("clusters_returned", len(res.get("competitors") or []))
+    res.setdefault("min_topics", min_topics)
+    res.setdefault("threshold", threshold)
+    return res
+
+
+@mcp.tool()
 def openreply_feedback_record(
     topic: str,
     finding_title: str,
@@ -1971,6 +3496,113 @@ def openreply_ingest_csv(path: str, topic: str, source_type: str = "csv") -> dic
 # The desktop UI is the primary surface but MCP clients (Claude Code,
 # Cursor) should also be able to register products, run sweeps, and read
 # the daily dashboard programmatically. This adds the most-used endpoints.
+
+@mcp.tool()
+def openreply_product_create(
+    name: str,
+    one_liner: str = "",
+    category: str = "",
+    topic: str = "",
+    competitors: list[dict] | None = None,
+) -> dict:
+    """Register a Product (your app + competitors)."""
+    from ..research.product import create_product
+    return create_product(
+        name=name, one_liner=one_liner, category=category, topic=topic,
+        competitors=competitors or [],
+    )
+
+
+@mcp.tool()
+def openreply_product_list(active_only: bool = True) -> list[dict]:
+    from ..research.product import list_products
+    return list_products(active_only=active_only)
+
+
+@mcp.tool()
+def openreply_product_sweep(
+    product_id: str,
+    trigger: str = "manual",
+    skip_collect: bool = True,
+) -> dict:
+    """Run the daily sweep for a product. Returns signals generated."""
+    from ..research.product_sweep import run_product_sweep
+    return run_product_sweep(
+        product_id=product_id, trigger=trigger, skip_collect=skip_collect,
+    )
+
+
+@mcp.tool()
+def openreply_product_signals(
+    product_id: str,
+    since_days: int = 7,
+    include_resolved: bool = False,
+    limit: int = 50,
+) -> list[dict]:
+    """List open signals for a product, ranked by severity × confidence."""
+    from ..research.product_sweep import list_signals
+    return list_signals(
+        product_id, since_days=since_days,
+        include_resolved=include_resolved, limit=limit,
+    )
+
+
+@mcp.tool()
+def openreply_product_signal_action(
+    signal_id: str,
+    action: str,
+    notes: str = "",
+    snooze_days: int = 7,
+) -> dict:
+    """Apply a user action to a signal. action ∈ dismissed | acted |
+    snoozed | hypothesis. 'hypothesis' seeds a hypothesis_tests row."""
+    from ..research.product_sweep import signal_action
+    return signal_action(signal_id, action, notes, snooze_days)
+
+
+@mcp.tool()
+def openreply_product_dashboard(product_id: str, days: int = 7) -> dict:
+    """One-call fetch for the full product dashboard — product metadata,
+    mirror / lens / field sections, recent sweeps, open signals."""
+    from ..research.product import get_product
+    from ..research.product_digest import (
+        build_mirror_section, build_lens_section, build_field_section,
+    )
+    from ..research.product_sweep import list_signals
+    pinfo = get_product(product_id)
+    if not pinfo.get("ok"):
+        return pinfo
+    return {
+        "ok": True,
+        "product": pinfo["product"],
+        "competitors": pinfo["competitors"],
+        "recent_sweeps": pinfo["recent_sweeps"],
+        "mirror": build_mirror_section(product_id, days=days),
+        "lens": build_lens_section(product_id, days=days),
+        "field": build_field_section(product_id, days=days),
+        "signals": list_signals(product_id, since_days=days,
+                                include_resolved=False, limit=50),
+    }
+
+
+@mcp.tool()
+def openreply_product_digest(product_id: str, days: int = 7) -> str:
+    """Weekly markdown digest for Slack/Notion. Returns plain markdown."""
+    from ..research.product_digest import build_digest
+    return build_digest(product_id, days=days)
+
+
+@mcp.tool()
+def openreply_product_convert_topic(
+    topic: str,
+    name: str | None = None,
+    one_liner: str = "",
+) -> dict:
+    """Seed a Product from an existing Topic's graph. Competitors
+    auto-extracted from graph_nodes kind in (product, company, competitor)."""
+    from ..research.product import convert_topic_to_product
+    return convert_topic_to_product(topic=topic, name=name, one_liner=one_liner)
+
 
 # ─── Graph densification + research linking (2026-04-20 / 04-21) ──────
 @mcp.tool()
@@ -2100,6 +3732,63 @@ def openreply_export_pptx(
 
 
 @mcp.tool()
+def openreply_doc_design_prompt() -> dict:
+    """Return the strict design-system prompt + JSON layout-plan schema.
+
+    Pass this to an LLM before asking it to design a brief — the
+    renderer enforces every rule below, so the model can't drift on
+    typography, color, or section structure.
+
+    Returns: {prompt, kinds: [...]}
+    """
+    from ..research.export_deck import get_design_system_prompt
+    return {
+        "prompt": get_design_system_prompt(),
+        "kinds": [
+            "executive_summary", "corpus_table", "painpoint_cards",
+            "competitor_matrix", "quote_wall", "feature_roadmap",
+            "citation_index",
+        ],
+    }
+
+
+@mcp.tool()
+def openreply_plan_doc_layout(
+    topic: str,
+    extra_topics: list[str] | None = None,
+    title: str | None = None,
+    subtitle: str | None = None,
+    tagline: str | None = None,
+    max_painpoints: int = 12,
+) -> dict:
+    """Build a JSON layout plan for a topic — without rendering bytes.
+
+    Use this to inspect / hand-edit the plan before calling
+    `openreply_render_planned_docx`. The plan shape matches
+    `openreply_doc_design_prompt`.
+
+    Returns: {topic, cover, sections: [...], data_summary}
+    """
+    from ..research.export_deck import plan_layout
+    return plan_layout(
+        topic=topic, extra_topics=extra_topics,
+        title=title, subtitle=subtitle, tagline=tagline,
+        max_painpoints=max_painpoints,
+    )
+
+
+@mcp.tool()
+def openreply_render_planned_docx(plan: dict, out_path: str) -> dict:
+    """Render a layout plan (from `openreply_plan_doc_layout` or LLM-generated)
+    to a brand-styled DOCX.
+
+    Returns: {ok, path, section_count, output_bytes}
+    """
+    from ..research.export_deck import render_planned_docx
+    return render_planned_docx(plan, out_path)
+
+
+@mcp.tool()
 def openreply_export_pdf_from_markdown(
     md_path: str,
     out_path: str,
@@ -2163,10 +3852,187 @@ def openreply_export_docx_from_markdown(
 # estimate. E = (O + 4M + P) / 6, SD = (P - O) / 6; rollup applies a
 # McConnell overhead multiplier across a tier's tasks.
 
+@mcp.tool()
+def openreply_pert_list(product_id: str, tier: str = "") -> list[dict]:
+    """List PERT estimation tasks for a product (optionally filtered by tier).
+
+    Args:
+        product_id: the product slug the tasks belong to.
+        tier: '' (all) | 'mvp' | 'standard' | 'full'.
+    Returns each task decorated with its expected days (E) and std-dev.
+    """
+    from ..research.pert import list_tasks
+    return list_tasks(product_id=product_id, tier=tier)
+
+
+@mcp.tool()
+def openreply_pert_add_task(
+    product_id: str,
+    label: str,
+    optimistic: float = 0,
+    most_likely: float = 0,
+    pessimistic: float = 0,
+    role: str = "eng",
+    tier: str = "mvp",
+    notes: str = "",
+) -> dict:
+    """Add (or upsert) a three-point PERT task.
+
+    Args:
+        product_id: owning product slug.
+        label: task name.
+        optimistic / most_likely / pessimistic: estimates in days.
+        role: eng | design | qa | pm.
+        tier: mvp | standard | full.
+    Returns {ok, task} with the computed expected value + std-dev.
+    """
+    from ..research.pert import add_task
+    return add_task(
+        product_id=product_id, label=label,
+        optimistic=optimistic, most_likely=most_likely, pessimistic=pessimistic,
+        role=role, tier=tier, notes=notes,
+    )
+
+
+@mcp.tool()
+def openreply_pert_rollup(product_id: str, multiplier: float = 1.75) -> dict:
+    """Roll up a product's PERT tasks into a total estimate with confidence band.
+
+    Args:
+        product_id: owning product slug.
+        multiplier: McConnell overhead multiplier applied to raw expected days
+            (default 1.75 — accounts for meetings, integration, rework).
+    Returns total expected days, the 1-sigma confidence band, and per-tier
+    + per-role breakdowns.
+    """
+    from ..research.pert import rollup
+    return rollup(product_id=product_id, multiplier=multiplier)
+
+
 # ─── Idea scan (fast 2-word discovery) ──────────────────────────────────────
 # Wraps research/idea_scan.py — a fast fan-out across enabled sources that
 # halts at a corpus threshold, then clusters. start is potentially long, so
 # it runs under the timeout guard with the jobs-queue fallback recommendation.
+
+@mcp.tool()
+def openreply_idea_scan_start(
+    seed: str,
+    sources: list[str] | None = None,
+    halt_threshold: int = 200,
+    max_seconds: int = 90,
+) -> dict:
+    """Start a fast idea scan from a short seed (e.g. 'sleep tracking').
+
+    Fans out across enabled sources, halts once ~halt_threshold items are
+    collected, then clusters into candidate opportunity themes.
+
+    Args:
+        seed: the 2-3 word idea seed.
+        sources: optional explicit source list; None = enabled defaults.
+        halt_threshold: stop fetching once this many items are collected.
+        max_seconds: soft wall-clock cap for the synchronous fetch phase.
+    Returns the scan row (id, status, total_items, clusters). On timeout,
+    returns a structured dict recommending openreply_jobs_submit.
+    """
+    from ..research.idea_scan import start_scan
+    return _run_with_timeout(
+        start_scan,
+        timeout=float(max_seconds) + 15.0,
+        async_hint="openreply_idea_scan_start",
+        kwargs={
+            "seed": seed, "sources": sources,
+            "halt_threshold": halt_threshold, "max_seconds": max_seconds,
+        },
+    )
+
+
+@mcp.tool()
+def openreply_idea_scan_get(scan_id: str) -> dict:
+    """Get one idea scan by id (status, source counts, clusters)."""
+    from ..research.idea_scan import get_scan
+    return get_scan(scan_id)
+
+
+@mcp.tool()
+def openreply_idea_scan_list(limit: int = 50) -> list[dict]:
+    """List recent idea scans, newest first."""
+    from ..research.idea_scan import list_scans
+    return list_scans(limit=limit)
+
+
+# ─── Pre-build strategy frameworks (read cached / compute via LLM) ──────────
+# Lets headless Claude Code drive the full discovery funnel: assess the market,
+# the strategy, and the business model — each grounded in the topic's collected
+# evidence. `compute=False` reads the cached artifact (instant); `compute=True`
+# runs the LLM synthesis under the timeout guard (needs an LLM key + a built
+# gap map for the topic). All persist to strategy_artifacts so the desktop
+# tabs and these tools share one source of truth.
+
+def _strategy_tool(get_fn, compute_fn, topic: str, compute: bool, hint: str):
+    if compute:
+        return _run_with_timeout(
+            compute_fn, timeout=90.0, async_hint=hint, kwargs={"topic": topic})
+    return get_fn(topic)
+
+
+@mcp.tool()
+def openreply_market_sizing(topic: str, compute: bool = False) -> dict:
+    """TAM/SAM/SOM market sizing (+ market value) for a topic.
+
+    compute=False reads the cached artifact; compute=True (re)builds it via LLM.
+    """
+    from ..research.market_sizing import market_sizing_get, market_sizing_compute
+    return _strategy_tool(market_sizing_get, market_sizing_compute, topic, compute, "openreply_market_sizing")
+
+
+@mcp.tool()
+def openreply_porter(topic: str, compute: bool = False) -> dict:
+    """Porter's Five Forces (market structural attractiveness) for a topic."""
+    from ..research.porter import porter_get, porter_compute
+    return _strategy_tool(porter_get, porter_compute, topic, compute, "openreply_porter")
+
+
+@mcp.tool()
+def openreply_swot(topic: str, compute: bool = False) -> dict:
+    """SWOT synthesised from the gap map + competitors for a topic."""
+    from ..research.swot import swot_get, swot_compute
+    return _strategy_tool(swot_get, swot_compute, topic, compute, "openreply_swot")
+
+
+@mcp.tool()
+def openreply_lean_canvas(topic: str, compute: bool = False) -> dict:
+    """Lean Canvas (9 blocks) seeded from the topic's painpoints/competitors."""
+    from ..research.lean_canvas import lean_canvas_get, lean_canvas_compute
+    return _strategy_tool(lean_canvas_get, lean_canvas_compute, topic, compute, "openreply_lean_canvas")
+
+
+@mcp.tool()
+def openreply_value_prop(topic: str, compute: bool = False) -> dict:
+    """Value Proposition Canvas (customer profile ↔ value map) for a topic."""
+    from ..research.value_prop import value_prop_get, value_prop_compute
+    return _strategy_tool(value_prop_get, value_prop_compute, topic, compute, "openreply_value_prop")
+
+
+@mcp.tool()
+def openreply_north_star(topic: str, compute: bool = False) -> dict:
+    """North-Star metric + input metrics for the topic's chosen opportunity."""
+    from ..research.north_star import north_star_get, north_star_compute
+    return _strategy_tool(north_star_get, north_star_compute, topic, compute, "openreply_north_star")
+
+
+@mcp.tool()
+def openreply_root_cause(topic: str, compute: bool = False) -> dict:
+    """5-Whys root-cause analysis of the topic's top painpoints."""
+    from ..research.root_cause import root_cause_get, root_cause_compute
+    return _strategy_tool(root_cause_get, root_cause_compute, topic, compute, "openreply_root_cause")
+
+
+@mcp.tool()
+def openreply_tactics(topic: str, k: int = 5) -> dict:
+    """Tactics from the curated library matched to the topic's painpoints (read-only)."""
+    from ..research.tactic_library import tactics_for_topic
+    return tactics_for_topic(topic=topic, k=k)
+
 
 @mcp.tool()
 def openreply_connections(topic: str, compute: bool = False) -> dict:
@@ -2184,6 +4050,25 @@ def openreply_connections(topic: str, compute: bool = False) -> dict:
             connections_compute, timeout=90.0,
             async_hint="openreply_connections", kwargs={"topic": topic})
     return connections_get(topic)
+
+
+@mcp.tool()
+def openreply_research_conclusions(topic: str, compute: bool = False) -> dict:
+    """Real research conclusions — evidence-grounded synthesis for a topic's
+    literature: thesis, key findings, novel contributions (the links found),
+    defensible conclusions, open questions, and a suggested research direction.
+
+    compute=False reads the cached synthesis; compute=True runs the LLM pass over
+    the papers + connections + gaps (run openreply_paper_knowledge_build +
+    openreply_connections first for the richest result). The PhD-student payoff.
+    """
+    from ..research.research_synthesis import (
+        research_conclusions_get, research_conclusions_compute)
+    if compute:
+        return _run_with_timeout(
+            research_conclusions_compute, timeout=120.0,
+            async_hint="openreply_research_conclusions", kwargs={"topic": topic})
+    return research_conclusions_get(topic)
 
 
 # ─── Production guards — prevents the "18 zombie MCP servers" bug ───

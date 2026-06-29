@@ -85,36 +85,18 @@ def update_cmd(
     persona: str = typer.Option(None), tone: str = typer.Option(None),
     audience: str = typer.Option(None), keywords: str = typer.Option(None),
     platforms: str = typer.Option(None), cadence: str = typer.Option(None),
-    style_rules: str = typer.Option(None, "--style-rules",
-                                    help="Free-text writing-style rules (the agent's voice)"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Update fields on an agent."""
     aid = id or _agent.active_id()
     a = _agent.update_agent(
         aid, name=name, niche=niche, website=website, goal=goal, product=product,
-        persona=persona, tone=tone, audience=audience, style_rules=style_rules,
+        persona=persona, tone=tone, audience=audience,
         keywords=_csv(keywords) if keywords is not None else None,
         platforms=_csv(platforms) if platforms is not None else None,
         refresh_cadence=cadence,
     )
     _out(a or {"error": "no such agent"}, json_)
-
-
-@agent_app.command("style-get")
-def style_get_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
-    """Get the global writing-style rules (the default applied to every agent)."""
-    _out({"style_rules": _agent.get_global_style_rules()}, json_)
-
-
-@agent_app.command("style-set")
-def style_set_cmd(
-    text: str = typer.Option("", "--text", help="Global writing-style rules"),
-    json_: bool = typer.Option(True, "--json/--no-json"),
-):
-    """Set the global writing-style rules (used when an agent has no own rules)."""
-    saved = _agent.set_global_style_rules(text)
-    _out({"ok": True, "style_rules": saved}, json_)
 
 
 @agent_app.command("delete")
@@ -311,52 +293,6 @@ def watch_fetch_cmd(
     res = (fetch_account(handle, limit=limit, agent_id=id, learn=learn) if handle
            else fetch_tracked(limit=limit, agent_id=id, learn=learn))
     _out(res, json_)
-
-
-@agent_app.command("watch-inbox")
-def watch_inbox_cmd(
-    handle: str = typer.Argument(..., help="X handle to fetch and save to Inbox"),
-    id: str = typer.Option(None, help="Agent id (default: active)"),
-    limit: int = typer.Option(25),
-    post_id: str = typer.Option("", "--post-id", help="Save only the post with this id (numeric status id)."),
-    json_: bool = typer.Option(True, "--json/--no-json"),
-):
-    """Fetch a tracked X account's recent posts and create Inbox opportunities
-    for each so you can reply from the Inbox workspace."""
-    from ..reply.accounts import fetch_account
-    from ..reply.opportunity import save_posts_to_inbox
-    res = fetch_account(handle, limit=limit, agent_id=id, learn=False)
-    rows = []
-    if res.get("fetched"):
-        # Re-fetch full rows from the corpus we just tagged so the opportunity
-        # shape has title/body/url/created_utc/etc.
-        try:
-            from ..core.db import get_db
-            from ..reply.agent import active_id, get_agent
-            aid = id or active_id() or "default"
-            topic = (get_agent(aid) or {}).get("topic") or (get_agent(aid) or {}).get("name")
-            if topic:
-                db = get_db()
-                rows = [dict(r) for r in db.execute(
-                    "SELECT p.* FROM posts p JOIN topic_posts tp ON p.id = tp.post_id "
-                    "WHERE tp.topic = ? AND tp.source LIKE ? ORDER BY p.created_utc DESC LIMIT ?",
-                    [topic, f"watch:x:%{handle}%", limit],
-                ).fetchall()]
-        except Exception:
-            rows = []
-    if not rows and res.get("sample"):
-        # Fallback: build opportunities from the returned sample.
-        rows = res["sample"]
-    if post_id:
-        # Accept both bare tweet ids and corpus-prefixed "x_<id>" rows.
-        target = post_id[2:] if post_id.startswith("x_") else post_id
-        rows = [r for r in rows if (
-            str(r.get("post_id") or "") == post_id
-            or str(r.get("id") or "") == post_id
-            or str(r.get("id") or "") == f"x_{target}"
-        )]
-    inbox_res = save_posts_to_inbox(rows, platform="x")
-    _out({"handle": handle, "fetched": res.get("fetched", 0), **inbox_res}, json_)
 
 
 @agent_app.command("refresh")

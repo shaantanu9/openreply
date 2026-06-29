@@ -40,7 +40,7 @@ _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
 ) if not _os.getenv("TRUSTPILOT_HONEST_UA") else (
-    "OpenReply-Research/0.1 (+https://github.com/shaantanu9/openreply)"
+    "Gap-Map-Research/0.1 (+https://github.com/shaantanu9/openreply)"
 )
 
 _SLEEP_PER_PAGE = 1.2

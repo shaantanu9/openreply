@@ -10,7 +10,7 @@ import hashlib
 import time
 
 from ..analyze.providers.base import get_provider
-from .agent import effective_style_rules, get_agent
+from .agent import get_agent
 from .brand import get_brand
 from .knowledge import build_knowledge_context
 from .schema import init_reply_schema
@@ -100,7 +100,7 @@ def _next_version(db, opportunity_id: str) -> int:
 
 
 def _persist_draft(db, opp: dict, brand_id: str, text: str, source: str,
-                   provider: str | None, operator: str | None = None) -> dict:
+                   provider: str | None) -> dict:
     """Write a new draft version, run compliance, flip the opportunity to
     `drafted`. Shared by generate_reply (source='generated') and save_draft
     (source='edited')."""
@@ -116,23 +116,18 @@ def _persist_draft(db, opp: dict, brand_id: str, text: str, source: str,
         "compliant": 1 if comp["compliant"] else 0,
         "compliance_notes": comp["notes"],
         "version": version, "source": source,
-        "operator": operator,
         "created_at": now, "updated_at": now,
     }
     db["reply_drafts"].upsert(rec, pk="id")
-    opp_fields = {"status": "drafted", "updated_at": now}
-    if operator:
-        opp_fields["operator"] = operator
-        opp_fields["operator_actioned_at"] = now
     try:
-        db["reply_opportunities"].update(opportunity_id, opp_fields)
+        db["reply_opportunities"].update(
+            opportunity_id, {"status": "drafted", "updated_at": now})
     except Exception:
         pass
     return rec
 
 
-def generate_reply(opportunity_id: str, provider: str | None = None,
-                   tone: str | None = None, operator: str | None = None) -> dict:
+def generate_reply(opportunity_id: str, provider: str | None = None, tone: str | None = None) -> dict:
     db = init_reply_schema()
     opp = dict(db["reply_opportunities"].get(opportunity_id))  # raises if missing
     brand = get_brand() or {}
@@ -163,16 +158,6 @@ def generate_reply(opportunity_id: str, provider: str | None = None,
         if goal else ""
     )
 
-    # The user's own writing-style rules (per-agent override, else the global
-    # default). These define the *human voice* of the reply and override generic
-    # phrasing — so drafts read like the user wrote them.
-    style_rules = effective_style_rules(agent)
-    style_block = (
-        f"YOUR WRITING STYLE — match these rules exactly; they define the human "
-        f"voice of this reply and override generic phrasing:\n{style_rules}\n"
-        if style_rules else ""
-    )
-
     prompt = (
         f"You are replying as: {brand.get('name')} — "
         f"{brand.get('persona') or brand.get('description')}\n"
@@ -180,7 +165,6 @@ def generate_reply(opportunity_id: str, provider: str | None = None,
         f"{product or '—'}\n"
         f"{goal_block}"
         f"{pb_block}"
-        f"{style_block}"
         f"Tone: {tone or brand.get('tone')}\n"
         f"Platform: {platform}. {_length_hint(platform)}\n"
         f"{rules_block}\n"
@@ -198,11 +182,10 @@ def generate_reply(opportunity_id: str, provider: str | None = None,
     if os.getenv("OR_SELF_CRITIQUE", "1") == "1":
         try:
             crit = (
-                f"{goal_block}{pb_block}{style_block}{rules_block}\n"
+                f"{goal_block}{pb_block}{rules_block}\n"
                 f'Draft reply:\n"""{text}"""\n\n'
-                "If this is salesy, breaks a rule, sounds like a bot, ignores the "
-                "strategy, or doesn't match the writing-style rules above, rewrite it "
-                "ONCE to fix that while keeping it genuinely helpful. "
+                "If this is salesy, breaks a rule, sounds like a bot, or ignores the "
+                "strategy, rewrite it ONCE to fix that while keeping it genuinely helpful. "
                 "Return ONLY the final reply text (no preamble)."
             )
             revised = get_provider(provider).complete(
@@ -211,11 +194,10 @@ def generate_reply(opportunity_id: str, provider: str | None = None,
                 text = revised
         except Exception:
             pass
-    return _persist_draft(db, opp, brand.get("id", "default"), text, "generated", provider, operator=operator)
+    return _persist_draft(db, opp, brand.get("id", "default"), text, "generated", provider)
 
 
-def save_draft(opportunity_id: str, text: str, provider: str | None = None,
-               operator: str | None = None) -> dict:
+def save_draft(opportunity_id: str, text: str, provider: str | None = None) -> dict:
     """Persist a user-edited reply as a new draft version (gap #1). Re-runs
     compliance on the edited text and keeps the opportunity in `drafted`."""
     text = (text or "").strip()
@@ -227,7 +209,7 @@ def save_draft(opportunity_id: str, text: str, provider: str | None = None,
     except Exception as e:
         return {"error": f"no opportunity '{opportunity_id}': {e}"}
     brand = get_brand() or {}
-    return _persist_draft(db, opp, brand.get("id", "default"), text, "edited", provider, operator=operator)
+    return _persist_draft(db, opp, brand.get("id", "default"), text, "edited", provider)
 
 
 def list_drafts(opportunity_id: str) -> list[dict]:

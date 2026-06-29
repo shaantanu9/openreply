@@ -6,7 +6,7 @@
 ## Summary
 
 Ships Phase 2 of the Insight Engine, informed by review of
-`docs/RESEARCH_METHODOLOGY.md`. Adds six concrete upgrades that transform
+`docs/GAP_MAP_METHODOLOGY.md`. Adds six concrete upgrades that transform
 Insights from "opportunity list" into a consulting-grade research brief:
 Minto pyramid header, falsifiable hypothesis cards, counter-evidence
 surfacing, Ulwick Opportunity Scoring, triangulation badges, and Bayesian

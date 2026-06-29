@@ -83,8 +83,7 @@ def _as_epoch(v) -> int | None:
     """Normalize a source post's created_utc to int epoch SECONDS, or None.
 
     Sources vary: reddit gives float epoch seconds, some give milliseconds, a few
-    give ISO-8601 strings, and X returns Twitter legacy date strings. Be tolerant
-    so the UI always gets a usable timestamp."""
+    give ISO-8601 strings. Be tolerant so the UI always gets a usable timestamp."""
     if v is None or v == "":
         return None
     try:
@@ -96,11 +95,7 @@ def _as_epoch(v) -> int | None:
         pass
     try:
         from datetime import datetime
-        s = str(v)
-        if len(s) > 10 and s[10] == "T":
-            return int(datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp())
-        # Twitter legacy: "Mon Jun 29 02:36:08 +0000 2026"
-        return int(datetime.strptime(s, "%a %b %d %H:%M:%S %z %Y").timestamp())
+        return int(datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp())
     except Exception:
         return None
 
@@ -438,89 +433,6 @@ def _notify_new_opportunities(opps: list[dict], cap: int = 5) -> None:
         sent += 1
 
 
-def save_posts_to_inbox(posts: list[dict], platform: str = "x") -> dict:
-    """Create saved opportunities from a list of fetched posts so they appear in
-    the Inbox workspace. The posts can be in x_account canonical shape or corpus
-    rows; they are normalised before inserting. Returns the count saved and ids.
-    """
-    brand = get_brand()
-    if not brand:
-        return {"error": "no brand configured"}
-    db = init_reply_schema()
-    now = int(time.time())
-    bid = brand["id"]
-    saved = []
-    skipped = 0
-    for post in posts or []:
-        pid = str(post.get("id") or "")
-        # Watched-account corpus rows prefix X tweet ids with "x_" to keep them
-        # distinct from other sources. For reply opportunities we want the bare
-        # tweet id so connected and watched saves dedupe against each other.
-        if pid.startswith("x_"):
-            pid = pid[2:]
-        if not pid:
-            skipped += 1
-            continue
-        # Normalise text/body.
-        text = str(post.get("text") or post.get("title") or post.get("selftext") or "").strip()
-        body = str(post.get("selftext") or post.get("body") or post.get("text") or "").strip()
-        if not text and not body:
-            skipped += 1
-            continue
-        # Use the full text as title if it's short, otherwise keep title short.
-        title = text[:300] if len(text) <= 300 else (text[:297] + "...")
-        url = post.get("url") or post.get("permalink") or ""
-        author = str(post.get("author") or post.get("author_handle") or "").lstrip("@")
-        if not author and url:
-            try:
-                # https://x.com/handle/status/123... -> handle
-                author = url.split("/")[3].lstrip("@") if url.startswith("http") else ""
-            except Exception:
-                author = ""
-        created = _as_epoch(post.get("created_utc") or post.get("created_at"))
-        # Pass the normalised timestamp into a mutable copy so freshness/engagement
-        # scoring sees it even when the source only provided created_at.
-        scoring_post = dict(post)
-        if created:
-            scoring_post["created_utc"] = created
-        # Engagement proxy: likes/comments/retweets or score/num_comments.
-        eng_score = _rank.engagement_score(scoring_post)
-        fresh_score = _rank.freshness(scoring_post, now)
-        opp_id = _oid(bid, platform, pid)
-        base = 0.5
-        rec = {
-            "id": opp_id,
-            "brand_id": bid,
-            "platform": platform,
-            "post_id": pid,
-            "title": title,
-            "body": body[:2000],
-            "url": url,
-            "author": author,
-            "sub": author if author else "",
-            "relevance": base,
-            "intent": base,
-            "fit": base,
-            "reason": f"Saved from {platform} account fetch",
-            "status": "saved",
-            "found_at": now,
-            "created_utc": created,
-            "engagement": eng_score,
-            "freshness": fresh_score,
-            "score": 0.0,
-            "updated_at": now,
-        }
-        # Fuse a final score (mirror find_opportunities weights).
-        rec["score"] = round(0.55 * base + 0.20 * _rank.platform_weight(platform)
-                              + 0.15 * eng_score + 0.10 * fresh_score, 4)
-        try:
-            db["reply_opportunities"].upsert(rec, pk="id")
-            saved.append(opp_id)
-        except Exception:
-            skipped += 1
-    return {"saved": len(saved), "skipped": skipped, "opportunity_ids": saved}
-
-
 # Lifecycle states an opportunity can move through.
 #   new      → freshly found (discovery feed)
 #   saved    → user bookmarked it (enters the Inbox workspace)
@@ -552,11 +464,9 @@ def _resurface_snoozed(db, brand_id: str, now: int) -> None:
         pass
 
 
-def set_status(opportunity_id: str, status: str, operator: str | None = None) -> dict:
+def set_status(opportunity_id: str, status: str) -> dict:
     """Move an opportunity to a new lifecycle status. Returns the updated row,
-    or an {"error": …} dict on a bad id / status. Never raises.
-    `operator` is an optional attribution string (e.g. Telegram @username) for
-    company-mode audit trails."""
+    or an {"error": …} dict on a bad id / status. Never raises."""
     status = (status or "").strip().lower()
     if status not in OPPORTUNITY_STATUSES:
         return {"error": f"invalid status '{status}'. "
@@ -566,9 +476,6 @@ def set_status(opportunity_id: str, status: str, operator: str | None = None) ->
     fields: dict = {"status": status, "updated_at": now}
     if status == "posted":
         fields["posted_at"] = now
-    if operator:
-        fields["operator"] = operator
-        fields["operator_actioned_at"] = now
     try:
         db["reply_opportunities"].update(opportunity_id, fields)
     except Exception as e:
@@ -587,56 +494,50 @@ def set_status(opportunity_id: str, status: str, operator: str | None = None) ->
     except Exception:
         row = {"id": opportunity_id, "status": status}
     return {"ok": True, "id": opportunity_id, "status": status,
-            "operator": operator, "opportunity": row}
+            "opportunity": row}
 
 
-def snooze(opportunity_id: str, hours: float = 24.0,
-           operator: str | None = None) -> dict:
+def snooze(opportunity_id: str, hours: float = 24.0) -> dict:
     """Defer an opportunity for `hours`. It auto-resurfaces to `new` once the
     window elapses (see `_resurface_snoozed`)."""
     db = init_reply_schema()
     now = int(time.time())
     until = now + int(max(0.0, hours) * 3600)
-    fields = {"status": "snoozed", "snooze_until": until, "updated_at": now}
-    if operator:
-        fields["operator"] = operator
-        fields["operator_actioned_at"] = now
     try:
-        db["reply_opportunities"].update(opportunity_id, fields)
+        db["reply_opportunities"].update(
+            opportunity_id,
+            {"status": "snoozed", "snooze_until": until, "updated_at": now},
+        )
     except Exception as e:
         return {"error": f"no opportunity '{opportunity_id}': {e}"}
-    return {"ok": True, "id": opportunity_id, "status": "snoozed",
-            "snooze_until": until, "operator": operator}
+    return {"ok": True, "id": opportunity_id, "status": "snoozed", "snooze_until": until}
 
 
-def approve(opportunity_id: str, operator: str | None = None) -> dict:
+def approve(opportunity_id: str) -> dict:
     """Approve the current draft — moves the opportunity to `ready` (awaiting
     post or queue)."""
-    return set_status(opportunity_id, "ready", operator=operator)
+    return set_status(opportunity_id, "ready")
 
 
-def queue(opportunity_id: str, scheduled_at: int | None = None,
-          operator: str | None = None) -> dict:
+def queue(opportunity_id: str, scheduled_at: int | None = None) -> dict:
     """Queue the approved reply for posting. `scheduled_at` is an epoch second;
     when omitted the reply is queued for immediate/next-cycle posting."""
     db = init_reply_schema()
     now = int(time.time())
     sched = int(scheduled_at) if scheduled_at else now
-    fields = {"status": "queued", "scheduled_at": sched, "updated_at": now}
-    if operator:
-        fields["operator"] = operator
-        fields["operator_actioned_at"] = now
     try:
-        db["reply_opportunities"].update(opportunity_id, fields)
+        db["reply_opportunities"].update(
+            opportunity_id,
+            {"status": "queued", "scheduled_at": sched, "updated_at": now},
+        )
     except Exception as e:
         return {"error": f"no opportunity '{opportunity_id}': {e}"}
-    return {"ok": True, "id": opportunity_id, "status": "queued",
-            "scheduled_at": sched, "operator": operator}
+    return {"ok": True, "id": opportunity_id, "status": "queued", "scheduled_at": sched}
 
 
-def mark_posted(opportunity_id: str, operator: str | None = None) -> dict:
+def mark_posted(opportunity_id: str) -> dict:
     """Mark a reply as posted (manual-assisted flow)."""
-    return set_status(opportunity_id, "posted", operator=operator)
+    return set_status(opportunity_id, "posted")
 
 
 def _search_clause(query: str | None, args: list) -> str:

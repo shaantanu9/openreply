@@ -64,20 +64,14 @@ def _video_id(url: str, yt_info: dict) -> str:
 
 
 def _parse_upload_date(s: str | None) -> float:
-    """yt-dlp returns ``upload_date`` as 'YYYYMMDD' (or None).
-
-    Returns 0.0 (unknown) when the date is missing or unparseable — NEVER
-    the fetch time. Stamping `now` here makes the video look like it was
-    posted the moment we collected it; the UI reads `created_utc` as the
-    real publish time and hides the age chip when it's 0.
-    """
+    """yt-dlp returns ``upload_date`` as 'YYYYMMDD' (or None)."""
     if not s or len(s) != 8 or not s.isdigit():
-        return 0.0
+        return datetime.now(timezone.utc).timestamp()
     try:
         return datetime(int(s[0:4]), int(s[4:6]), int(s[6:8]),
                         tzinfo=timezone.utc).timestamp()
     except ValueError:
-        return 0.0
+        return datetime.now(timezone.utc).timestamp()
 
 
 def _ffmpeg_location() -> str | None:

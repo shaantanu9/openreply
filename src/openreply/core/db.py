@@ -11,6 +11,7 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Iterable, TypeVar
 
 from sqlite_utils import Database

@@ -160,16 +160,12 @@ def fetch_account(handle: str, *, platform: str = "x", limit: int = 25,
         except Exception:
             learned = None
 
-    sample_rows = sorted(rows, key=lambda r: (r.get("created_utc") or 0), reverse=True)[:5]
     return {
         "handle": h, "platform": platform, "fetched": len(rows), "tagged": tagged,
-        "sample": [{"id": r.get("id"),
-                    "title": (r.get("title") or "")[:120],
+        "sample": [{"title": (r.get("title") or "")[:120],
                     "text": (r.get("selftext") or r.get("body") or r.get("title") or "")[:500],
-                    "url": r.get("url"),
-                    "created_utc": r.get("created_utc") or 0,
-                    "created_at": r.get("created_at") or ""}
-                   for r in sample_rows],
+                    "url": r.get("url")}
+                   for r in rows[:5]],
         "learned": learned,
         "message": f"Pulled {len(rows)} post(s) from @{h} into your corpus"
                    + (" and learned from them." if learn else " — open Library or Compose to use them."),

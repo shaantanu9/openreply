@@ -761,6 +761,7 @@ def run_oc_bluesky(
     fid = log_fetch_start("oc_bluesky", {"keywords": kws, "limit": limit})
     total = 0
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    now_ts = time.time()
     try:
         for i, kw in enumerate(kws):
             data = opencli_bridge.run(
@@ -790,9 +791,7 @@ def run_oc_bluesky(
                     "score": score,
                     "upvote_ratio": None,
                     "num_comments": 0,
-                    # Profile rows have no post date — 0.0 (unknown), not the
-                    # fetch time, so the UI doesn't render them as just-posted.
-                    "created_utc": 0.0,
+                    "created_utc": now_ts,
                     "is_self": 1,
                     "over_18": 0,
                     "flair": None,
@@ -834,12 +833,10 @@ def run_oc_substack(
                 if not url or not title:
                     return None
                 date_str = (item.get("date") or "").strip()
-                # 0.0 (unknown) when the post date is missing/unparseable —
-                # never the fetch time, or the post looks freshly posted.
                 try:
-                    created = time.mktime(time.strptime(date_str, "%Y-%m-%d")) if date_str else 0.0
+                    created = time.mktime(time.strptime(date_str, "%Y-%m-%d")) if date_str else time.time()
                 except ValueError:
-                    created = 0.0
+                    created = time.time()
                 return {
                     "id": f"oc_substack_{abs(hash(url))}",
                     "sub": "substack",
@@ -887,6 +884,7 @@ def run_oc_producthunt_today(
 
     fid = log_fetch_start("oc_producthunt_today", {"topic": stopic, "limit": limit})
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    now_ts = time.time()
     try:
         data = opencli_bridge.run(
             "producthunt", "today", ["--limit", str(limit)]
@@ -908,9 +906,7 @@ def run_oc_producthunt_today(
                 "score": 0,
                 "upvote_ratio": None,
                 "num_comments": 0,
-                # Product Hunt's `today` feed gives no per-item post date —
-                # 0.0 (unknown), never the fetch time.
-                "created_utc": 0.0,
+                "created_utc": now_ts,
                 "is_self": 0,
                 "over_18": 0,
                 "flair": None,

@@ -1,6 +1,6 @@
 # OpenReply (openreply) — Features & Flows
 
-> **Updated:** 2026-06-29 by Claude · **§21 Daily Update (Overview digest)** — goal-framed briefing + ranked fresh-news feed, auto-built once/day + cached, `reply/digest.py` + `reply_digest` table + `agent_digest`/`agentDigest` + Overview card · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · §21 Opportunity lifecycle (save/draft/replied/dismiss + filter chips + social badges; Inbox=saved; Analytics funnel) · §21 Self-learning loop (auto ingest→memories→beliefs after fetch/schedule/manual + save/dismiss feedback + Learning screen) · journey/flow audit (command triangle 100% wired, no onboarding blockers) + completed Queue (edit/status/delete), Agents edit/delete, live Pricing, onboarding clarity · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/openreply`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
+> **Updated:** 2026-06-27 by Claude · **§21 OpenReply content engine** (7 structured kinds — post/thread/article/short-script/youtube/follow-up-reply/follow-up-sequence + edit/save/schedule, verified end-to-end) · §1.8 social fetch end-to-end (Connect = enabled; ScrapeCreators/TruthSocial/Bluesky wired through Connections) · §21 Opportunity lifecycle (save/draft/replied/dismiss + filter chips + social badges; Inbox=saved; Analytics funnel) · §21 Self-learning loop (auto ingest→memories→beliefs after fetch/schedule/manual + save/dismiss feedback + Learning screen) · journey/flow audit (command triangle 100% wired, no onboarding blockers) + completed Queue (edit/status/delete), Agents edit/delete, live Pricing, onboarding clarity · **Build state:** v0.1.23 shipped (signed+notarized → `myind-ai/openreply`, Apple Silicon) — adds **§1.7 International platforms + Reach Connections** (9 Agent-Reach-ported sources: v2ex · bilibili · xueqiu · xiaohongshu · exa · reddit_free · web/linkedin readers · xiaoyuzhou) + the in-app browser-login → cookie-capture credential flow + the tiered Reddit fetch cascade (praw→cookie→proxy→rss). Prior: the **Gap intelligence & monitoring** suite (cat 20) and **Research Mode** workspace (cat 19). 🟡 = planned student Reading surface (R4) + the §1.7 partials (xiaohongshu/linkedin-deep/xiaoyuzhou-transcription, P2) · branch `multi-source`
 > Source of truth for every user-facing feature, its flow, code location, completeness, and known gaps. Update after every feature change. Re-run `codegraph sync` / `graphify update .` before editing to keep file:line citations fresh.
 
 > ### 🗓️ 2026-06 session changes (what moved)
@@ -46,8 +46,8 @@ OpenReply is a **Tauri 2 desktop app + FastMCP server + Python CLI** for multi-s
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
 | 19. Research Mode — researcher workspace | 8 | 8 | 0 | 0 | 0 |
 | 20. Gap intelligence & monitoring | 7 | 7 | 0 | 0 | 0 |
-| 21. OpenReply — content, analytics, visibility & brain | 8 | 8 | 0 | 0 | 0 |
-| **Total** | **230** | **229** | **1** | **0** | **0** |
+| 21. OpenReply — content, analytics, visibility & brain | 7 | 7 | 0 | 0 | 0 |
+| **Total** | **229** | **228** | **1** | **0** | **0** |
 
 **Every category is now ✅ — 196/196.** The full surface is complete: MCP (cats 1–13, 16), advanced analysis (14), the Tauri desktop app (15), and the pre-build strategy frameworks (17). No 🟡 remain. The whole pre-build discovery funnel works end-to-end (proven on real data) and is driveable both in-app and via 161 MCP tools.
 
@@ -1059,35 +1059,6 @@ window is open** (the poller is frontend-driven by design — "while running on 
 PC") (P2). Live send not yet exercised against a real token/webhook in this build
 (P1 — verify on first real configure). Headless launchd ticks fire one-way
 notifications (no button handling) since the poller needs the open window (P2).
-
-### Daily Update (Overview digest) — learning surface ✅ NEW (2026-06-29)
-**Status:** ✅ Complete — engine + schema + CLI + command triangle + Overview
-card, verified via unit tests + live CLI (real NVIDIA briefing) + cargo check.
-**Entry points:** Overview page → **Daily Update** card (auto-builds on first
-open each day) + its **Refresh now** button · CLI `openreply reply digest
-[--rebuild] [--no-collect] [--n N]` · Rust `agent_digest(rebuild)`.
-**User flow:** open Overview → the Daily Update card instant-paints the last
-build from localStorage, then builds/returns today's digest → a goal-framed
-briefing (2–4 themes, each with a why-it-matters tied to the agent's goal +
-source links) sits above a ranked feed of the freshest niche news/knowledge from
-all the agent's sources → tap **Refresh now** to force a fresh build. Doubles as
-a daily learning surface for the user.
-**Implementation:** `reply/digest.py` (`build_digest` reuses `research.collect`
-for a light news-only top-up via `NEWS_SOURCES`, `library.list_corpus` for the
-freshest corpus items, `reply.rank` `freshness`×`engagement`×`platform_weight`
-to rank the feed, and one `get_provider`+`loads_json` LLM call to synthesize the
-briefing; `current_digest` reads the cached row) · `reply/schema.py`
-(`reply_digest` table + `(agent_id, day)` index) · `cli/reply_cmds.py`
-(`digest` command) · `commands.rs`/`main.rs` (`agent_digest`) · `or/api.js`
-(`agentDigest`) · `or/dynamic.js` (`renderOverview` Daily Update card +
-`renderDigest`/`wireDigestRefresh` + `or.digest.<agentId>` localStorage SWR).
-**Data:** `reply_digest` — one cached row per agent per day
-(`id=sha1(agent|day)`, `briefing_json`/`feed_json`/`sources_json`); localStorage
-`or.digest.<agentId>` for instant repaint. Scope = `niche` + `keywords[]` framed
-by `goal`/`objective`.
-**Known gaps:** the first Overview open each day pays a ~10–20s build (light
-fetch + LLM); cached the rest of the day (P2). No LLM configured → feed-only,
-briefing hidden with a Settings nudge (by design, fail-soft).
 
 ---
 
