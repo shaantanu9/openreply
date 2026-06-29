@@ -17,7 +17,7 @@ from ..core.db import get_db
 from ..core.exporters import export_rows
 
 app = typer.Typer(
-    help="OpenReply — multi-source product gap finder. Fuse Reddit, HN, arXiv, GitHub, and 10+ sources into one searchable corpus, then surface gaps via LLM analysis.",
+    help="OpenReply — open-source social marketing reply & content co-pilot. Find conversations across Reddit, HN, X and 20+ sources, then draft on-brand replies & posts with your own AI agents (bring-your-own-LLM).",
     no_args_is_help=True,
     add_completion=False,
 )

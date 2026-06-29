@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openreply"
 version = "0.1.23"
-description = "OpenReply — multi-source product gap finder. CLI + MCP server fusing Reddit, HN, arXiv, GitHub, App Store, and 10+ more sources into a single corpus, with pluggable LLM analysis."
+description = "OpenReply — open-source social marketing reply & content co-pilot. Find conversations across Reddit, HN, X and 20+ sources, score reply opportunities, and draft on-brand replies & posts with your own AI agents (bring-your-own-LLM). Desktop app + CLI + MCP server."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

@@ -1,15 +1,15 @@
 # OpenReply
 
-**Multi-source product research — desktop app, MCP server, and CLI.**
+**Open-source social marketing reply & content co-pilot — desktop app, MCP server, and CLI.**
 
-OpenReply collects signals from 23+ sources (Reddit, Hacker News, arXiv, PubMed, GitHub, App Store, YouTube, and more), runs LLM synthesis across 8 providers, and surfaces the gaps competitors haven't filled.
+OpenReply listens across 20+ sources (Reddit, Hacker News, X, Mastodon, Bluesky, Dev.to, Stack Overflow, Product Hunt, and more), surfaces the conversations worth joining, and drafts on-brand replies & content with your own AI agents — bring-your-own-LLM across 8 providers.
 
 Three surfaces, one SQLite store:
 
 | Surface | Use it when |
 |---|---|
-| **Desktop app** (`OpenReply.app`) | GUI research — collect, synthesize, graph, export |
-| **MCP server** (90+ tools) | Claude Code / Cursor integration — research inside your IDE |
+| **Desktop app** (`OpenReply.app`) | GUI — find opportunities, manage agents, draft replies & posts |
+| **MCP server** | Claude Code / Cursor integration — research & drafting inside your IDE |
 | **CLI** (`openreply`) | Automation, scripting, headless pipelines |
 
 ---
