@@ -53,23 +53,94 @@ def _is_locked_err(e: BaseException) -> bool:
     return "database is locked" in msg or "database table is locked" in msg
 
 
+# Re-entrancy guard. Once the sqlite-utils write methods are monkeypatched
+# (see _install_write_retry below), a single logical write can funnel through
+# several wrapped layers — e.g. `upsert` → `upsert_all` → `insert_all`, or an
+# explicit `_retry_on_locked(db["x"].insert_all, …)` call site whose target is
+# itself the wrapped method. Without a guard, each layer would open its own
+# retry loop and the worst-case attempt count would multiply (5 × 5 × …). The
+# thread-local flag makes only the OUTERMOST call own the retry loop; every
+# nested call passes straight through to the underlying function exactly once.
+_retry_active = threading.local()
+
+
 def _retry_on_locked(fn: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
     """Run a DB write, retrying with exponential backoff on transient locks.
 
     Re-raises any non-lock error immediately, and re-raises the lock error
     itself once attempts are exhausted (so a genuinely stuck DB still surfaces
     a real, debuggable error rather than silently dropping the write).
+
+    Re-entrant: a nested call (one already running inside another
+    `_retry_on_locked`) executes the function once with no retry loop of its
+    own, leaving the outermost call in sole charge of backoff/retry.
     """
-    last: BaseException | None = None
-    for attempt in range(_DB_RETRY_ATTEMPTS):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as e:  # noqa: BLE001 — re-raised below unless retryable
-            if not _is_locked_err(e) or attempt == _DB_RETRY_ATTEMPTS - 1:
-                raise
-            last = e
-            time.sleep(min(_DB_RETRY_BASE_SLEEP * (2 ** attempt), _DB_RETRY_MAX_SLEEP))
-    raise last  # pragma: no cover — loop always returns or raises above
+    if getattr(_retry_active, "on", False):
+        return fn(*args, **kwargs)
+    _retry_active.on = True
+    try:
+        last: BaseException | None = None
+        for attempt in range(_DB_RETRY_ATTEMPTS):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as e:  # noqa: BLE001 — re-raised below unless retryable
+                if not _is_locked_err(e) or attempt == _DB_RETRY_ATTEMPTS - 1:
+                    raise
+                last = e
+                time.sleep(min(_DB_RETRY_BASE_SLEEP * (2 ** attempt), _DB_RETRY_MAX_SLEEP))
+        raise last  # pragma: no cover — loop always returns or raises above
+    finally:
+        _retry_active.on = False
+
+
+# ── App-wide write-retry installation ───────────────────────────────────────
+# The core layer (collect/posts/comments/graph) already wraps its writes in
+# `_retry_on_locked` explicitly. The reply/agent layer (~40 call sites across
+# agent/opportunity/generate/notify/digest/relevance/…) did NOT — every one of
+# its `db["x"].upsert/insert/update/delete(...)` calls hit SQLite raw. With the
+# Telegram bot poller and the schedule-tick daemon now writing concurrently
+# alongside the Tauri sidecar + enrich worker, those unwrapped writes are the
+# realistic source of "database is locked". Rather than touch every call site,
+# wrap the sqlite-utils Table write PRIMITIVES once, so every write in the app
+# (present and future, core and reply) inherits the same retry safety net.
+#
+# Only the non-delegating leaves are wrapped:
+#   • insert_all  — the real bulk-write worker that insert/upsert/upsert_all
+#                   all funnel through, so wrapping it alone covers them with a
+#                   single retry layer (no nesting).
+#   • update / delete / delete_where — these go straight to db.execute(), not
+#                   through insert_all, so they need their own wrap.
+# The re-entrancy guard above guarantees these never multiply attempts even
+# when an explicit `_retry_on_locked(...)` call site targets a wrapped method.
+_write_retry_installed = False
+
+
+def _install_write_retry() -> None:
+    global _write_retry_installed
+    if _write_retry_installed:
+        return
+    try:
+        import functools
+        from sqlite_utils.db import Table
+    except Exception:
+        return
+    for _name in ("insert_all", "update", "delete", "delete_where"):
+        _orig = getattr(Table, _name, None)
+        if _orig is None or getattr(_orig, "_openreply_retry", False):
+            continue
+
+        def _make(orig):
+            @functools.wraps(orig)
+            def _wrapped(self, *args, **kwargs):
+                return _retry_on_locked(orig, self, *args, **kwargs)
+            _wrapped._openreply_retry = True  # type: ignore[attr-defined]
+            return _wrapped
+
+        setattr(Table, _name, _make(_orig))
+    _write_retry_installed = True
+
+
+_install_write_retry()
 
 
 # Per-thread Database instance. sqlite3 connections are NOT safe to share
