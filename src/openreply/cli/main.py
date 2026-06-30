@@ -294,6 +294,10 @@ from .agent_cmds import agent_app, content_app  # noqa: E402
 app.add_typer(agent_app, name="agent")
 app.add_typer(content_app, name="content")
 
+# Persistent chat conversations.
+from .chat_cmds import chat_app  # noqa: E402
+app.add_typer(chat_app, name="chat")
+
 # Outbound publishing (X / social) — credential-gated, opt-in.
 from .publish_cmds import publish_app  # noqa: E402
 app.add_typer(publish_app, name="publish")
