@@ -1,5 +1,5 @@
 //! Scheduled-run support — installs a macOS launchd agent that invokes
-//! `openreply research schedule-tick` on an interval. Linux / Windows
+//! `openreply schedule-tick` on an interval. Linux / Windows
 //! return a "not supported" status response.
 //!
 //! The sidecar binary path is resolved dynamically at install time so the
@@ -58,7 +58,6 @@ fn plist_body(interval_secs: u32, sidecar: &str, data_dir: &str) -> String {
   <key>ProgramArguments</key>
   <array>
     <string>{sidecar}</string>
-    <string>research</string>
     <string>schedule-tick</string>
     <string>--json</string>
   </array>

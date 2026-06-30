@@ -151,11 +151,132 @@ def run_autopilot_if_due(agent_id: str | None = None, provider: str | None = Non
     _save(cfg)
 
     # 3) Fire any scheduled Compose drafts whose time has come. Runs every tick
-    #    (not throttled) so scheduled posts publish on time.
+    #    (not throttled) so scheduled posts publish on time. notify=True so an
+    #    item that can't auto-post surfaces a Telegram reminder.
     try:
         from . import content_poster as _content_poster
-        out["scheduled_content"] = _content_poster.process_due_content(now=now)
+        out["scheduled_content"] = _content_poster.process_due_content(now=now, notify=True)
     except Exception as e:
         out["scheduled_content"] = {"error": str(e)}
+
+    return out
+
+
+# ───────────────────────── daily update (digest) push ─────────────────────────
+
+def _format_digest_md(res: dict) -> str:
+    """Render a built digest into lightweight markdown for Telegram/Slack.
+
+    Uses the LLM briefing (summary + themes + per-theme source links) when one
+    exists; falls back to the top feed links when no LLM is configured. The
+    notify `digest` formatter runs this through `_md_to_html`, so `**bold**` and
+    `[title](url)` render correctly on Telegram."""
+    b = (res.get("briefing") or {}) if isinstance(res.get("briefing"), dict) else {}
+    lines: list[str] = ["📰 **Daily Update** — what's new for your goal"]
+    summary = (b.get("summary") or "").strip()
+    if summary:
+        lines += ["", summary]
+    sections = b.get("sections") or []
+    for s in sections[:4]:
+        if not isinstance(s, dict):
+            continue
+        head = (s.get("headline") or "").strip()
+        why = (s.get("why") or "").strip()
+        lines.append("")
+        if head:
+            lines.append(f"**{head}**")
+        if why:
+            lines.append(why)
+        for lk in (s.get("links") or [])[:3]:
+            t = (lk.get("title") or "link").strip()[:120]
+            u = (lk.get("url") or "").strip()
+            if u:
+                lines.append(f"• [{t}]({u})")
+    # No briefing (no LLM / synth failed) → fall back to the freshest feed items.
+    if not sections:
+        feed = res.get("feed") or []
+        if feed:
+            lines += ["", "**Top items today**"]
+            for it in feed[:8]:
+                t = (it.get("title") or "link").strip()[:120]
+                u = (it.get("url") or "").strip()
+                if u:
+                    lines.append(f"• [{t}]({u})")
+    return "\n".join(lines)
+
+
+def send_daily_update_if_enabled(agent_id: str | None = None,
+                                 provider: str | None = None) -> dict:
+    """Build today's daily update and push it to Telegram/Slack — once per
+    agent per day. Gated on notifications being configured + the `digest` event
+    toggle being on (opt-in; default off). Best-effort: never raises.
+
+    The build is cached one row/agent/day, so the first tick of the day does the
+    ~10-20s fetch+synthesis and later ticks return the cached row instantly;
+    `notify_once` then guarantees a single delivery per day regardless of how
+    many ticks fire."""
+    try:
+        from . import notify as _n
+    except Exception as e:
+        return {"skipped": f"notify import failed: {e}"}
+    if not _n.is_configured():
+        return {"skipped": "notifications not configured"}
+    if not _n.get_config()["events"].get("digest"):
+        return {"skipped": "daily-update event off"}
+
+    a = get_agent(agent_id)
+    if not a:
+        return {"skipped": "no active agent"}
+    try:
+        from . import digest as _digest
+        res = _digest.build_digest(agent_id=a["id"], provider=provider)
+    except Exception as e:
+        return {"error": f"build_digest failed: {e}"}
+    if not res or not res.get("ok"):
+        return {"skipped": "digest unavailable", "detail": res}
+    if not (res.get("briefing") or res.get("feed")):
+        return {"skipped": "digest empty (nothing fresh)"}
+
+    text = _format_digest_md(res)
+    key = f"digest:{a['id']}:{res.get('day') or ''}"
+    return _n.notify_once(key, "digest", {"text": text})
+
+
+# ───────────────────────── OS scheduler heartbeat ─────────────────────────
+
+def run_scheduled_tick(provider: str | None = None) -> dict:
+    """The full daily heartbeat the OS scheduler (launchd) fires on its interval.
+
+    One entry point that runs the whole hands-free product, each leg independently
+    guarded so one failure can't block the rest:
+      1. autopilot — daily content + opportunity discovery/drafting (this is what
+         fires the new-opportunity / new-draft Telegram alerts),
+      2. due reply reminders (auto-post where possible, else Telegram reminder),
+      3. AI-visibility (geo) checks, throttled to their own cadence,
+      4. the daily update digest → Telegram/Slack (opt-in).
+    """
+    out: dict = {"ran": True}
+
+    try:
+        out["autopilot"] = run_autopilot_if_due(provider=provider)
+    except Exception as e:
+        out["autopilot"] = {"error": str(e)}
+
+    try:
+        from . import poster as _poster
+        out["due_replies"] = _poster.process_due(notify=True)
+    except Exception as e:
+        out["due_replies"] = {"error": str(e)}
+
+    try:
+        from . import geo as _geo
+        out["geo"] = _geo.check_all_if_due(provider=provider)
+    except Exception as e:
+        out["geo"] = {"error": str(e)}
+
+    try:
+        out["daily_update"] = send_daily_update_if_enabled(provider=provider)
+    except Exception as e:
+        out["daily_update"] = {"error": str(e)}
 
     return out

@@ -1153,6 +1153,25 @@ def cmd_health(
     console.print_json(data=payload)
 
 
+@app.command("schedule-tick")
+def cmd_schedule_tick(
+    provider: Optional[str] = typer.Option(None, help="Pin an LLM provider (else auto-resolved)."),
+    as_json: bool = typer.Option(False, "--json", hidden=True,
+                                 help="Accept --json from the OS scheduler wrapper (always JSON)."),
+) -> None:
+    """The daily heartbeat fired by the OS scheduler (launchd `StartInterval`).
+
+    Runs the whole hands-free pipeline in one shot — autopilot (daily content +
+    opportunity discovery → the new-opportunity / new-draft Telegram alerts),
+    due reply reminders, AI-visibility checks, and the opt-in daily update
+    digest pushed to Telegram/Slack. Each leg is independently guarded and the
+    exit code is always 0 so the wrapper can parse the payload."""
+    _ = as_json
+    from ..reply.scheduler import run_scheduled_tick
+    out = run_scheduled_tick(provider=provider)
+    console.print_json(data=out)
+
+
 @app.command("info")
 def cmd_info(
     as_json: bool = typer.Option(False, "--json", help="Output JSON (default is pretty-print JSON)."),
