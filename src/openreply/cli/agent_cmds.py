@@ -55,6 +55,16 @@ def create_cmd(
     _out(a, json_)
 
 
+@agent_app.command("parse-url")
+def parse_url_cmd(
+    url: str = typer.Argument(..., help="App Store, Play Store, or website URL"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Fetch a URL and suggest agent-form fields via LLM (editable before save)."""
+    from ..reply.app_url import parse_app_url
+    _out(parse_app_url(url), json_)
+
+
 @agent_app.command("list")
 def list_cmd(json_: bool = typer.Option(True, "--json/--no-json")):
     """List all agents (active flagged)."""
@@ -109,6 +119,25 @@ def delete_cmd(id: str = typer.Argument(...), json_: bool = typer.Option(True, "
 def knowledge_cmd(id: str = typer.Option(None), json_: bool = typer.Option(True, "--json/--no-json")):
     """Knowledge summary (posts / graph nodes / findings) for an agent."""
     _out(_agent.knowledge_summary(id), json_)
+
+
+@agent_app.command("chat")
+def chat_cmd(
+    question: str = typer.Argument(..., help="Question to ask the agent"),
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    k_corpus: int = typer.Option(6, "--k-corpus", help="Corpus rows to retrieve"),
+    k_graph: int = typer.Option(6, "--k-graph", help="Graph findings to retrieve"),
+    provider: str = typer.Option(None, "--provider", help="Pin an LLM provider"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Ask the selected agent a question grounded in its knowledge + data sources."""
+    from ..reply import chat as _chat
+    _out(
+        _chat.chat_with_agent(
+            question, agent_id=id, k_corpus=k_corpus, k_graph=k_graph, provider=provider
+        ),
+        json_,
+    )
 
 
 @agent_app.command("learn")

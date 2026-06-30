@@ -2315,6 +2315,148 @@ def set_user_feed_enabled(url: str, enabled: bool) -> bool:
         return False
 
 
+# ── Persistent chat conversations ────────────────────────────────────────────
+# ChatGPT-style threads stored per topic. The desktop UI keeps an in-memory
+# message array and persists it here via the sidecar so conversations survive
+# app restarts and can be revisited or renamed.
+
+MAX_CHAT_TITLE_LEN = 80
+
+
+def _chat_title_from_messages(messages: list[dict]) -> str:
+    """Auto-title from the first user message, truncated."""
+    for m in messages or []:
+        if m.get("role") == "user":
+            text = (m.get("content") or "").strip().replace("\n", " ")
+            if text:
+                if len(text) > MAX_CHAT_TITLE_LEN:
+                    text = text[: MAX_CHAT_TITLE_LEN - 1].rstrip() + "…"
+                return text
+    return "New conversation"
+
+
+def list_chat_conversations(topic: str | None = None, limit: int = 200) -> list[dict]:
+    """List conversation metadata (no messages_json body) newest first."""
+    db = get_db()
+    if "chat_conversations" not in db.table_names():
+        return []
+    params: list = []
+    where = ""
+    if topic:
+        where = " WHERE topic = ?"
+        params.append(topic)
+    rows = db.execute(
+        f"SELECT id, topic, title, msg_count, created_at, updated_at "
+        f"FROM chat_conversations{where} ORDER BY updated_at DESC LIMIT ?",
+        params + [max(1, limit)],
+    ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "topic": r[1],
+            "title": r[2],
+            "msg_count": r[3],
+            "created_at": r[4],
+            "updated_at": r[5],
+        }
+        for r in rows
+    ]
+
+
+def get_chat_conversation(conv_id: str) -> dict | None:
+    """Fetch one conversation including its full message array."""
+    db = get_db()
+    if "chat_conversations" not in db.table_names():
+        return None
+    row = db.execute(
+        "SELECT id, topic, title, messages_json, msg_count, created_at, updated_at "
+        "FROM chat_conversations WHERE id = ?",
+        [conv_id],
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "topic": row[1],
+        "title": row[2],
+        "messages": json.loads(row[3] or "[]"),
+        "msg_count": row[4],
+        "created_at": row[5],
+        "updated_at": row[6],
+    }
+
+
+def save_chat_conversation(
+    conv_id: str,
+    topic: str,
+    messages: list[dict],
+    title: str | None = None,
+) -> dict:
+    """Upsert a conversation. Auto-titles from the first user message if title
+    is blank. Returns the stored conversation metadata."""
+    conv_id = (conv_id or "").strip()
+    if not conv_id:
+        raise ValueError("conversation id is required")
+    db = get_db()
+    if "chat_conversations" not in db.table_names():
+        init_schema(db)
+
+    now = int(time.time() * 1000)
+    messages = messages or []
+    title = (title or "").strip() or _chat_title_from_messages(messages)
+    if len(title) > MAX_CHAT_TITLE_LEN:
+        title = title[: MAX_CHAT_TITLE_LEN - 1].rstrip() + "…"
+
+    existing = db.execute(
+        "SELECT created_at FROM chat_conversations WHERE id = ?", [conv_id]
+    ).fetchone()
+    created_at = int(existing[0]) if existing else now
+
+    row = {
+        "id": conv_id,
+        "topic": (topic or "").strip(),
+        "title": title,
+        "messages_json": json.dumps(messages, ensure_ascii=False),
+        "msg_count": len(messages),
+        "created_at": created_at,
+        "updated_at": now,
+    }
+    db["chat_conversations"].upsert(row, pk="id")
+    return {**row, "messages": messages}
+
+
+def rename_chat_conversation(conv_id: str, title: str) -> dict | None:
+    """Rename a conversation. Returns the updated metadata or None if missing."""
+    title = (title or "").strip()
+    if not title:
+        raise ValueError("title is required")
+    db = get_db()
+    if "chat_conversations" not in db.table_names():
+        return None
+    existing = db.execute(
+        "SELECT id FROM chat_conversations WHERE id = ?", [conv_id]
+    ).fetchone()
+    if not existing:
+        return None
+    if len(title) > MAX_CHAT_TITLE_LEN:
+        title = title[: MAX_CHAT_TITLE_LEN - 1].rstrip() + "…"
+    now = int(time.time() * 1000)
+    db["chat_conversations"].update(conv_id, {"title": title, "updated_at": now})
+    return get_chat_conversation(conv_id)
+
+
+def delete_chat_conversation(conv_id: str) -> bool:
+    """Delete a conversation permanently."""
+    db = get_db()
+    if "chat_conversations" not in db.table_names():
+        return False
+    try:
+        db["chat_conversations"].delete(conv_id)
+        return True
+    except Exception:
+        return False
+
+
 __all__ = [
     "get_db",
     "init_schema",
@@ -2343,4 +2485,9 @@ __all__ = [
     "add_user_feed",
     "remove_user_feed",
     "set_user_feed_enabled",
+    "list_chat_conversations",
+    "get_chat_conversation",
+    "save_chat_conversation",
+    "rename_chat_conversation",
+    "delete_chat_conversation",
 ]

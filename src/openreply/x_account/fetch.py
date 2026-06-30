@@ -348,10 +348,32 @@ def _parse_tweet_legacy(legacy: dict[str, Any], handle: str) -> dict[str, Any] |
     }
 
 
+def _order_latest(results: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+    """Return the newest `count` tweets, newest first.
+
+    Sorts by the numeric snowflake tweet id (monotonically increasing with
+    creation time) rather than the `created_at` string — the string is in
+    Twitter's "Wed Oct 10 20:19:24 +0000 2018" format, which does NOT sort
+    chronologically, and neither the bird client nor the GraphQL UserTweets
+    timeline guarantee newest-first order (a pinned tweet can lead). Sorting by
+    id desc + truncating is the robust way to always surface the latest posts.
+    """
+    def _key(t: dict[str, Any]) -> int:
+        try:
+            return int(t.get("id") or 0)
+        except (TypeError, ValueError):
+            return 0
+    ordered = sorted(results, key=_key, reverse=True)
+    return ordered[:count] if count and count > 0 else ordered
+
+
 def fetch_posts(account: XAccount, count: int = 10, with_threads: bool = False) -> list[dict[str, Any]]:
-    """Fetch recent tweets from the account's own timeline.
+    """Fetch the account's latest tweets, newest first.
 
     Tries the vendored bird client first, then falls back to direct GraphQL.
+    Results are always ordered newest-first and capped to `count` (see
+    `_order_latest`) so the "latest posts" promise holds regardless of source
+    order or a pinned tweet.
     If `with_threads` is True, also fetch the full reply thread for any tweet
     that is itself a reply.
     """
@@ -369,7 +391,7 @@ def fetch_posts(account: XAccount, count: int = 10, with_threads: bool = False) 
                     parsed["thread"] = []
             results.append(parsed)
         if results:
-            return results
+            return _order_latest(results, count)
 
     profile = fetch_profile(account)
     user_id = profile.get("id")
@@ -431,7 +453,7 @@ def fetch_posts(account: XAccount, count: int = 10, with_threads: bool = False) 
                 except Exception:
                     parsed["thread"] = []
             results.append(parsed)
-    return results
+    return _order_latest(results, count)
 
 
 def _extract_tweet_id(value: str) -> str:

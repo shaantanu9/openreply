@@ -335,6 +335,7 @@ def collect(
     sources: list[str] | None = None,  # extra sources: hn/appstore/playstore/scholar/stackoverflow/trends
     skip_reddit: bool = False,  # skip Reddit fetch stages (2+3); useful for external-only reruns
     skip_extraction: bool = False,  # skip inline LLM extraction at end of collect
+    extra_keywords: list[str] | None = None,  # extra query terms merged into source fan-out
     progress=None,  # optional callable(message: str) for CLI progress
 ) -> CollectResult:
     """Run the full collection for a topic.
@@ -651,6 +652,14 @@ def collect(
         _rss_kw_cap = max(1, _rss_kw_cap)
         _dedup = list(dict.fromkeys([*search_keywords, *_all_canon_keywords, *fallback_keywords, search_topic]))
         search_keywords = _dedup[: max(len(search_keywords), _rss_kw_cap)]
+
+    # Caller-supplied extra terms (e.g. product/persona/brand keywords from a
+    # Daily Update digest) are merged last so they always reach the source
+    # fan-out without interfering with canonical topic discovery.
+    if extra_keywords:
+        _extra = [k.strip() for k in extra_keywords if k and k.strip()]
+        _dedup_extra = list(dict.fromkeys([*search_keywords, *_extra, search_topic]))
+        search_keywords = _dedup_extra[: max(len(search_keywords), len(_dedup_extra))]
 
     # Thread-safe log — prevents interleaved stdout writes when the parallel
     # stage has multiple workers emitting progress at once. Also guards

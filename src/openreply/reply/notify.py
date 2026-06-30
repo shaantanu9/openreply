@@ -22,6 +22,7 @@ Design:
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -254,6 +255,53 @@ def _esc(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _md_to_html(text: str) -> str:
+    """Convert lightweight markdown to Telegram-safe HTML.
+
+    Telegram's HTML parse_mode supports <b> <i> <u> <s> <code> <pre> <a>. We
+    escape &<> first, then translate markdown — each rule requires matched
+    delimiters, so a truncated/unbalanced `**` is left as literal text rather
+    than producing a malformed tag that Telegram would 400 on.
+
+    Used for read-only briefings/previews. The tap-to-copy <code> blocks
+    (reply draft, "Copy text") intentionally keep the RAW markdown source so it
+    pastes into Reddit (which renders markdown) unchanged.
+    """
+    s = text or ""
+    # Pull code spans out first so markdown inside them isn't reformatted.
+    code_spans: list[str] = []
+
+    def _stash(m):
+        code_spans.append(m.group(1))
+        return f"\x00C{len(code_spans) - 1}\x00"
+
+    s = re.sub(r"```([\s\S]*?)```", _stash, s)
+    s = re.sub(r"`([^`\n]+)`", _stash, s)
+    s = _esc(s)
+    # Markdown links → <a>. Only http(s)/mailto; others render as plain text.
+    def _link(m):
+        txt, url = m.group(1), m.group(2).strip()
+        if url.lower().startswith(("http://", "https://", "mailto:")):
+            return f'<a href="{url.replace(chr(34), "%22")}">{txt}</a>'
+        return txt
+
+    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", _link, s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"__([^_]+)__", r"<b>\1</b>", s)
+    s = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<i>\1</i>", s)
+    # Headings → bold line (Telegram has no headings).
+    s = re.sub(r"(?m)^\s{0,3}#{1,6}\s+(.*)$", r"<b>\1</b>", s)
+    # Horizontal rules → drop.
+    s = re.sub(r"(?m)^\s*([-*_])\1{2,}\s*$", "", s)
+    # List bullets → •
+    s = re.sub(r"(?m)^\s*[-*]\s+", "• ", s)
+
+    def _restore(m):
+        return f"<code>{_esc(code_spans[int(m.group(1))])}</code>"
+
+    return re.sub(r"\x00C(\d+)\x00", _restore, s)
+
+
 def _pct(x) -> str:
     try:
         return f"{round(float(x) * 100)}%"
@@ -292,7 +340,8 @@ def _fmt_opportunity(opp: dict) -> tuple[str, str, list]:
 def _fmt_article(art: dict) -> tuple[str, str, list]:
     kind = _esc(art.get("kind") or "post")
     title = _esc((art.get("title") or art.get("preview") or "New draft")[:200])
-    body = _esc((art.get("preview") or art.get("text") or "")[:400])
+    raw_body = (art.get("preview") or art.get("text") or "")[:400]
+    body = _md_to_html(raw_body)
     tg = (
         f"📝 <b>New {kind} drafted</b>\n"
         f"<b>{title}</b>\n\n"
@@ -348,11 +397,11 @@ def _fmt_content_item(item: dict, platform: str | None = None) -> tuple[str, str
                 body = variants[platform].strip()
         except Exception:
             pass
-    body_preview = _esc(body[:1200])
+    body_preview = _md_to_html(body[:1200])
     tg = (
         f"📝 <b>{title}</b>\n"
         f"Platform: <b>{_esc(platform)}</b>\n\n"
-        f"<code>{body_preview}</code>"
+        f"{body_preview}"
     )
     sk = (
         f"📝 *{title}*\n"
@@ -374,8 +423,8 @@ _FORMATTERS = {
     "article": lambda p: _fmt_article(p["art"]),
     "reply": lambda p: _fmt_reply(p["opp"], p.get("draft", "")),
     "content_item": lambda p: _fmt_content_item(p.get("item", {}), p.get("platform")),
-    "digest": lambda p: (p.get("text", ""), p.get("text", ""), []),
-    "geo": lambda p: (p.get("text", ""), p.get("text", ""), []),
+    "digest": lambda p: (_md_to_html(p.get("text", "")), p.get("text", ""), []),
+    "geo": lambda p: (_md_to_html(p.get("text", "")), p.get("text", ""), []),
 }
 
 

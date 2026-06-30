@@ -216,10 +216,26 @@ def get_active_agent() -> dict | None:
 def list_agents() -> list[dict]:
     db = _ensure(init_reply_schema())
     act = active_id()
+
+    def _count(sql, args):
+        try:
+            return db.execute(sql, args).fetchone()[0]
+        except Exception:
+            return 0
+
     out = []
     for r in db["agents"].rows_where(order_by="created_at asc"):
         a = _hydrate(r)
         a["active"] = a["id"] == act
+        # Per-agent stats for the Agents card (posts collected / brain nodes /
+        # open opportunities). Topic-scoped like knowledge_summary; opps are
+        # brand-scoped (brand_id == agent id).
+        topic = a.get("topic")
+        a["posts"] = _count("SELECT COUNT(*) FROM topic_posts WHERE topic=?", [topic])
+        a["graph_nodes"] = _count("SELECT COUNT(*) FROM graph_nodes WHERE topic=?", [topic])
+        a["opps"] = _count(
+            "SELECT COUNT(*) FROM reply_opportunities WHERE brand_id=? AND status='new'",
+            [a["id"]])
         out.append(a)
     return out
 

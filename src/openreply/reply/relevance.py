@@ -89,11 +89,21 @@ def check_relevance(agent_id: str | None = None, *, limit: int = 60, provider: s
     if not rows:
         return {"checked": 0, "relevant": 0, "off_topic": 0, "message": "all caught up"}
 
+    goal = (a.get("goal") or a.get("objective") or "").strip()
+    product = (a.get("product") or a.get("brand") or "").strip()
+    persona = (a.get("persona") or a.get("tone") or "").strip()
+    kws = ", ".join(a.get("keywords") or [])[:200]
     sys = (
-        "You judge whether a fetched post is actually about a given topic/niche. "
-        "Be strict: a keyword can appear without the post being on-topic. "
+        "You judge whether a fetched post is actually relevant to the agent below. "
+        "A post can mention a keyword without being useful. Be strict. "
         "Output ONLY a JSON array, one object per post in order: "
-        '[{"i": <1-based index>, "relevant": true|false, "score": 0..1, "reason": "<=8 words"}]'
+        '[{"i": <1-based index>, "relevant": true|false, "score": 0..1, "reason": "<=8 words"}]\n\n'
+        f"Topic: {topic}\n"
+        f"Niche: {niche}\n"
+        f"Product/brand: {product or '-'}\n"
+        f"Goal: {goal or '-'}\n"
+        f"Persona/voice: {persona or '-'}\n"
+        f"Keywords: {kws or '-'}"
     )
     now = int(time.time())
     checked = relevant = off = 0

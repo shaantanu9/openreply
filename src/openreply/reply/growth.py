@@ -73,6 +73,13 @@ def generate_growth_plan(agent_id: str | None = None, provider: str | None = Non
         return {"error": f"growth plan failed (is an LLM provider configured?): {e}"}
     if not plan:
         return {"error": "could not parse a plan (the model returned no JSON)"}
+    # Some models return cadence as an object; coerce to the expected string.
+    cad = plan.get("cadence")
+    if isinstance(cad, dict):
+        cad = cad.get("text") or cad.get("summary") or cad.get("cadence") or json.dumps(cad)
+    if not isinstance(cad, str):
+        cad = str(cad) if cad is not None else ""
+    plan["cadence"] = cad
     db = _ensure(init_reply_schema())
     now = int(time.time())
     db["reply_growth"].upsert(
