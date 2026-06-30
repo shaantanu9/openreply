@@ -7,14 +7,17 @@ import { skeletonBody, skelCardsN, skelRows, skelCardBody, skelKpiRow } from "./
 const icons = () => window.lucide && window.lucide.createIcons();
 const toast = (m) => window.orToast && window.orToast(m);
 const card = "rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5";
-const btn = "rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-zinc-400";
-const btnP = "rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi";
+const btn = "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-zinc-400";
+const btnP = "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-reddit px-4 py-2 text-sm font-semibold text-white hover:bg-reddit-hi";
 const chip = "rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-0.5 text-xs text-zinc-500";
+// `t` (title) and `sub` (subtitle) are developer-authored strings that may
+// contain inline HTML (e.g. a dimmed `<span>` parenthetical) — rendered as
+// markup, not escaped. Never pass un-escaped user data here; wrap it in esc().
 const head = (t, sub, actions = "") =>
   `<div class="mb-6 flex items-start justify-between gap-4"><div>
-     <h1 class="text-2xl font-bold text-zinc-900 dark:text-white">${esc(t)}</h1>
+     <h1 class="text-2xl font-bold text-zinc-900 dark:text-white">${t}</h1>
      <p class="text-zinc-500 dark:text-zinc-400">${sub}</p></div>
-     <div class="flex flex-wrap gap-2">${actions}</div></div>`;
+     <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">${actions}</div></div>`;
 const scoreCls = (s) => (s >= 0.7 ? "text-emerald-500" : s >= 0.45 ? "text-amber-500" : "text-reddit");
 
 // ── Agents dashboard ──────────────────────────────────────────────────────
