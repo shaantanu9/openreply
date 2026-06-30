@@ -55,6 +55,22 @@ def init_reply_schema(db: Database | None = None) -> Database:
             if col not in existing:
                 db["reply_opportunities"].add_column(col, int)
 
+    # LLM score cache — lets a warm "Find opportunities" re-run reuse per-post
+    # scores instead of paying ~1 LLM call per post again. Keyed by the same oid
+    # as the opportunity; `content_hash` guards against an edited post and
+    # `brand_sig` against a changed agent identity (name/description/keywords),
+    # so a stale cache entry simply misses and re-scores.
+    if "reply_score_cache" not in names:
+        db["reply_score_cache"].create(
+            {
+                "id": str, "brand_id": str, "platform": str, "post_id": str,
+                "score": float, "relevance": float, "intent": float, "fit": float,
+                "reason": str, "content_hash": str, "brand_sig": str, "scored_at": int,
+            },
+            pk="id",
+        )
+        db["reply_score_cache"].create_index(["brand_id"])
+
     if "reply_drafts" not in names:
         db["reply_drafts"].create(
             {

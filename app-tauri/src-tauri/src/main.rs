@@ -352,6 +352,7 @@ fn main() {
             commands::agent_brain_relink,
             commands::agent_teach_video,
             commands::reply_find,
+            commands::reply_find_stream,
             commands::reply_list,
             commands::reply_source_counts,
             commands::reply_draft,

@@ -69,10 +69,29 @@ def find_cmd(
     limit: int = typer.Option(15, help="Candidates per platform"),
     no_score: bool = typer.Option(False, "--no-score", help="Skip LLM scoring (faster, ranks 0)"),
     provider: str = typer.Option(None, help="Pin an LLM provider (else auto-resolved)"),
+    stream: bool = typer.Option(False, "--stream", help="Emit NDJSON progress events to stdout (one per line) for the live scan UI"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
     """Scan picked platforms for opportunities and score them."""
     pfs = [p.strip() for p in platforms.split(",") if p.strip()] or None
+    if stream:
+        # NDJSON progress to stdout (run_cli_streaming re-emits each line as a
+        # `reply_find:progress` Tauri event). The frontend reloads the
+        # authoritative list from the DB on `reply_find:done`, so we only stream
+        # progress + a final lightweight `result` event — never the full blob.
+        def _emit(m):
+            try:
+                line = json.dumps(m, default=str) if isinstance(m, (dict, list)) \
+                    else json.dumps({"event": "log", "msg": str(m)})
+                typer.echo(line)
+            except Exception:
+                pass
+        res = _opp.find_opportunities(
+            platforms=pfs, limit_per_platform=limit, score=not no_score,
+            provider=provider, progress=_emit,
+        )
+        _emit({"event": "result", "found": res.get("found", 0), "error": res.get("error")})
+        return
     res = _opp.find_opportunities(
         platforms=pfs, limit_per_platform=limit, score=not no_score,
         provider=provider, progress=lambda m: typer.echo(m, err=True),

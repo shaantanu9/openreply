@@ -366,6 +366,25 @@ pub async fn reply_find(app: AppHandle, platforms: Option<String>, limit: Option
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// Streaming variant of `reply_find`. Spawns the scan via `run_cli_streaming`,
+/// which re-emits each NDJSON line the sidecar prints as a `reply_find:progress`
+/// Tauri event and a final `reply_find:done` ({code, error_class, hint}) on exit.
+/// Returns as soon as the job is spawned — progress arrives via events, and the
+/// frontend reloads the authoritative opportunity list from the DB on `done`.
+#[tauri::command]
+pub async fn reply_find_stream(app: AppHandle, platforms: Option<String>, limit: Option<u32>) -> Result<(), String> {
+    let lim = limit.unwrap_or(15).to_string();
+    let mut args = vec![
+        "reply".to_string(), "find".to_string(),
+        "--limit".to_string(), lim, "--stream".to_string(),
+    ];
+    if let Some(p) = platforms { if !p.is_empty() { args.push("--platforms".into()); args.push(p); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    crate::cli::run_cli_streaming(&app, refs, "reply_find:progress", "reply_find:done")
+        .await
+        .map_err(err_to_string)
+}
+
 /// `openreply reply list …` — stored opportunities with search/sort/pagination.
 #[tauri::command]
 pub async fn reply_list(

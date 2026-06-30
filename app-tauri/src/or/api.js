@@ -2,6 +2,7 @@
 // here → commands.rs → openreply CLI → reply/agent/content engine → reply_* SQLite).
 // In a plain browser (no Tauri) calls return null so the static prototype still renders.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 const TAURI = typeof window !== "undefined" &&
   !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
@@ -245,6 +246,17 @@ export const api = {
   replyPlatforms: () => call("reply_platforms"),
   replyFind: (platforms, limit, noScore) =>
     call("reply_find", { platforms: platforms || null, limit: limit || 15, noScore: !!noScore }),
+  // Streaming scan: spawns the job (resolves immediately) and drives the live
+  // scan UI through `reply_find:progress` / `reply_find:done` Tauri events.
+  // Use `onEvent` to subscribe before calling this.
+  replyFindStream: (platforms, limit) =>
+    call("reply_find_stream", { platforms: platforms || null, limit: limit || 15 }),
+  // Subscribe to a Tauri event. Returns a Promise<unlisten>; the callback gets
+  // the raw payload. No-op (returns a no-op unlisten) outside the Tauri shell.
+  onEvent: async (name, cb) => {
+    if (!TAURI) return () => {};
+    try { return await listen(name, (e) => cb(e.payload)); } catch (e) { return () => {}; }
+  },
   replyList: (status, minScore, limit, opts) =>
     call("reply_list", {
       status: status || null, minScore: minScore || 0, limit: limit || 30,

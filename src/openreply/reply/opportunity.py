@@ -40,12 +40,16 @@ SCORE_BUDGET = 40.0    # total time to LLM-score the capped candidate set
 SCORE_CAP = 30         # max posts LLM-scored (top-ranked by a cheap pre-rank)
 
 
-def _bounded(thunks: list, budget: float, workers: int) -> list:
+def _bounded(thunks: list, budget: float, workers: int, on_result=None) -> list:
     """Run each 0-arg `thunk` in a DAEMON thread (bounded concurrency) and return
     the results that finish within `budget` seconds total. Daemon threads are the
     crux: a slow adapter (yt-dlp / X-bird, minutes long) is simply abandoned — it
     can't block the process at exit the way ThreadPoolExecutor's non-daemon worker
-    threads do (that join-at-exit was turning a fast result into a 4-minute hang)."""
+    threads do (that join-at-exit was turning a fast result into a 4-minute hang).
+
+    `on_result(value, count_so_far)` — if given, called on the consuming thread for
+    each thunk that finishes in time, so callers can stream live progress as
+    candidates/scores land instead of only seeing the final list."""
     if not thunks:
         return []
     out: list = []
@@ -72,11 +76,36 @@ def _bounded(thunks: list, budget: float, workers: int) -> list:
             break
         if ok:
             out.append(val)
+            if on_result:
+                try:
+                    on_result(val, len(out))
+                except Exception:
+                    pass
     return out
 
 
 def _oid(brand_id: str, platform: str, post_id: str) -> str:
     return hashlib.sha1(f"{brand_id}|{platform}|{post_id}".encode()).hexdigest()[:16]
+
+
+def _content_hash(post: dict) -> str:
+    """Fingerprint of the exact text `_score` sees, so a cached score is reused
+    only while the post's title/body are unchanged."""
+    t = post.get("title") or ""
+    b = post.get("selftext") or post.get("body") or ""
+    return hashlib.sha1(f"{t}\n{b}".encode()).hexdigest()[:16]
+
+
+def _brand_sig(brand: dict) -> str:
+    """Fingerprint of the brand fields `_score` feeds the LLM (name, description,
+    keywords). Changing the agent's identity busts every cached score for it."""
+    kws = brand.get("keywords") or []
+    base = "|".join([
+        str(brand.get("name") or ""),
+        str(brand.get("description") or ""),
+        ",".join(sorted(str(k) for k in kws)),
+    ])
+    return hashlib.sha1(base.encode()).hexdigest()[:16]
 
 
 def _as_epoch(v) -> int | None:
@@ -310,7 +339,7 @@ def find_opportunities(
     #    Reddit sweep can no longer stall the whole scan — we stop waiting at
     #    PLATFORM_TIMEOUT. (Timed-out worker threads die with this one-shot CLI.)
     if progress:
-        progress(f"scanning {len(platforms)} platforms…")
+        progress({"event": "scan", "platforms": len(platforms), "names": list(platforms)})
     seen_pids: set[str] = set()
     cand_pairs: list[tuple[str, dict]] = []
     # ONE overall deadline for the whole fan-out (daemon threads) — a slow platform
@@ -320,8 +349,15 @@ def find_opportunities(
             return (pf, _candidates(pf, keywords, limit_per_platform) or [])
         except Exception:
             return (pf, [])
+    # Emit a per-platform tick the instant each fetch lands so the UI can fill in
+    # "✓ Reddit · 15 found" live instead of staring at a frozen spinner.
+    def _on_gather(res, _n):
+        if progress:
+            pf, cands = res
+            progress({"event": "platform", "name": pf, "count": len(cands or [])})
     for pf, cands in _bounded([(lambda pf=pf: _gather(pf)) for pf in platforms],
-                              budget=GATHER_BUDGET, workers=min(8, max(1, len(platforms)))):
+                              budget=GATHER_BUDGET, workers=min(8, max(1, len(platforms))),
+                              on_result=_on_gather):
         for post in cands:
             pid = str(post.get("id") or post.get("url") or "")
             if not pid or pid in _dismissed or pid in seen_pids:
@@ -334,16 +370,54 @@ def find_opportunities(
     #    other half of the hang (N blocking round-trips).
     cand_pairs.sort(key=lambda pp: _rank.engagement_score(pp[1]) + _rank.freshness(pp[1], now), reverse=True)
     cand_pairs = cand_pairs[:SCORE_CAP]
+
+    # Warm-cache: pre-load any LLM scores we already computed for this exact
+    # candidate set + brand identity, so a re-run reuses them instead of paying
+    # ~1 LLM round-trip per post again. DB access stays on THIS (main) thread —
+    # `_build` runs in parallel daemon threads and only reads the dict below.
+    bsig = _brand_sig(brand)
+    score_cache: dict[str, dict] = {}
+    if score and cand_pairs:
+        _oids = [_oid(brand["id"], pf, str(post.get("id") or post.get("url") or ""))
+                 for pf, post in cand_pairs]
+        try:
+            qm = ",".join("?" * len(_oids))
+            for row in db.execute(
+                "SELECT id, score, relevance, intent, fit, reason, content_hash "
+                f"FROM reply_score_cache WHERE brand_sig=? AND id IN ({qm})",
+                [bsig, *_oids]).fetchall():
+                score_cache[row[0]] = {
+                    "score": row[1], "relevance": row[2], "intent": row[3],
+                    "fit": row[4], "reason": row[5], "content_hash": row[6],
+                }
+        except Exception:
+            score_cache = {}
+    cached_n = 0
+    if score:
+        for pf, post in cand_pairs:
+            oid = _oid(brand["id"], pf, str(post.get("id") or post.get("url") or ""))
+            c = score_cache.get(oid)
+            if c and c.get("content_hash") == _content_hash(post):
+                cached_n += 1
     if progress:
-        progress(f"scoring {len(cand_pairs)} posts…")
+        progress({"event": "scoring", "total": len(cand_pairs), "cached": cached_n})
 
     def _build(pf: str, post: dict) -> dict:
         pid = str(post.get("id") or post.get("url") or "")
-        sc = _score(brand, post, provider) if score else {
-            "score": 0.0, "relevance": 0.0, "intent": 0.0, "fit": 0.0, "reason": ""
-        }
+        oid = _oid(brand["id"], pf, pid)
+        chash = _content_hash(post)
+        cached = score_cache.get(oid)
+        if not score:
+            sc = {"score": 0.0, "relevance": 0.0, "intent": 0.0, "fit": 0.0, "reason": ""}
+            from_cache = True  # nothing to persist
+        elif cached and cached.get("content_hash") == chash:
+            sc = cached
+            from_cache = True
+        else:
+            sc = _score(brand, post, provider)
+            from_cache = False
         return {
-            "id": _oid(brand["id"], pf, pid),
+            "id": oid,
             "brand_id": brand["id"], "platform": pf, "post_id": pid,
             "title": (post.get("title") or "")[:300],
             "body": (post.get("selftext") or post.get("body") or "")[:2000],
@@ -355,11 +429,39 @@ def find_opportunities(
             "base": sc["score"],
             "eng": _rank.engagement_score(post),
             "fresh": _rank.freshness(post, now),
+            "_chash": chash, "_cached": from_cache,
         }
 
+    # Stream each scored post as it lands: a live count ("18 / 42") plus a light
+    # preview card (platform · title · LLM score) so results visibly fill in.
+    _ntot = len(cand_pairs)
+    def _on_score(rec, n):
+        if progress:
+            progress({"event": "scored", "done": n, "total": _ntot, "opp": {
+                "platform": rec.get("platform", ""),
+                "title": (rec.get("title") or "")[:140],
+                "score": rec.get("base", 0.0),
+            }})
     found: list[dict] = _bounded(
         [(lambda pf=pf, post=post: _build(pf, post)) for pf, post in cand_pairs],
-        budget=SCORE_BUDGET, workers=6)
+        budget=SCORE_BUDGET, workers=6, on_result=_on_score)
+
+    # Persist freshly-computed LLM scores to the warm cache (main thread only).
+    # Cached entries (`_cached`) are skipped — they're already there.
+    if score:
+        scored_at = int(time.time())
+        for r in found:
+            if r.get("_cached"):
+                continue
+            try:
+                db["reply_score_cache"].upsert({
+                    "id": r["id"], "brand_id": brand["id"], "platform": r["platform"],
+                    "post_id": r["post_id"], "score": r["base"], "relevance": r["relevance"],
+                    "intent": r["intent"], "fit": r["fit"], "reason": r["reason"],
+                    "content_hash": r.get("_chash", ""), "brand_sig": bsig, "scored_at": scored_at,
+                }, pk="id")
+            except Exception:
+                pass
 
     # Engagement-weighted RRF fusion across the picked platforms.
     _rank.fuse_and_rank(found)
@@ -368,6 +470,8 @@ def find_opportunities(
         rec["freshness"] = rec.pop("fresh")
         rec["score"] = rec.pop("final")  # `score` = fused final (kept for back-compat/sort)
         rec.pop("base", None)
+        rec.pop("_chash", None)
+        rec.pop("_cached", None)
         db["reply_opportunities"].upsert(rec, pk="id")
 
     return {

@@ -851,18 +851,110 @@ export async function renderOpportunities(view) {
   moreWrap.querySelector("button").onclick = () => { S.offset += PAGE; load(false); };
   document.addEventListener("click", () => list.querySelectorAll("[data-menu]").forEach(m => m.classList.add("hidden")), { once: false });
 
+  // Live scan panel — fills in per-platform ticks + a scoring bar + preview
+  // cards as `reply_find:progress` events arrive, so the wait reads as work
+  // happening for the user rather than a frozen spinner.
+  function scanPanel(p) {
+    const names = p.names || [];
+    const rows = names.map((n) => {
+      const has = Object.prototype.hasOwnProperty.call(p.done, n);
+      const lbl = esc(_srcLabelOf[n] || n);
+      return `<div class="flex items-center gap-2 text-sm">${has
+        ? `<span class="text-emerald-500">✓</span><span class="text-zinc-600 dark:text-zinc-300">${lbl}</span><span class="ml-auto text-xs text-zinc-400">${p.done[n]} found</span>`
+        : `<i data-lucide="loader" class="h-3.5 w-3.5 animate-spin text-zinc-400"></i><span class="text-zinc-500">${lbl}</span><span class="ml-auto text-xs text-zinc-300">scanning…</span>`}</div>`;
+    }).join("");
+    const scanned = Object.keys(p.done).length;
+    const pct = p.total ? Math.min(100, Math.round((p.scored / p.total) * 100)) : 0;
+    const scoring = p.total > 0
+      ? `<div class="mt-4">
+           <div class="mb-1 flex items-center justify-between text-sm">
+             <span class="font-semibold text-zinc-900 dark:text-white">Scoring the best matches${p.cached ? ` <span class="font-normal text-emerald-500">· ${p.cached} reused</span>` : ""}</span>
+             <span class="text-zinc-400">${p.scored} / ${p.total}</span></div>
+           <div class="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+             <div class="h-full rounded-full bg-reddit transition-all" style="width:${pct}%"></div></div></div>`
+      : "";
+    const previews = (p.previews || []).slice(0, 8).map((o) =>
+      `<div class="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800">
+        <span class="rounded ${platformBadge(o.platform)} px-2 py-0.5 text-xs font-bold">${esc(o.platform || "")}</span>
+        <span class="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-200">${esc(o.title || "")}</span>
+        <span class="font-bold ${scoreCls(o.score || 0)}">${Math.round((o.score || 0) * 100)}</span></div>`).join("");
+    return `<div class="${card}">
+      <div class="mb-3 flex items-center gap-2">
+        <i data-lucide="target" class="h-4 w-4 text-reddit"></i>
+        <span class="font-semibold text-zinc-900 dark:text-white">Finding the best conversations for you…</span>
+        <span class="ml-auto text-xs text-zinc-400">${scanned}/${names.length || "…"} sources</span></div>
+      <div class="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">${rows || `<span class="text-sm text-zinc-400">starting…</span>`}</div>
+      ${scoring}
+      ${previews ? `<div class="mt-4 space-y-2">${previews}</div>` : ""}</div>`;
+  }
+
   document.getElementById("op-find").onclick = async () => {
     const pf = document.getElementById("op-pf").value.trim();
     const lim = parseInt(document.getElementById("op-lim").value, 10) || 15;
-    statusEl.textContent = "Scanning + scoring… (may take a minute)";
-    list.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Scanning ${esc(pf)}…</div>`;
+    const btnEl = document.getElementById("op-find");
+
+    // No streaming (plain browser / older shell): fall back to one blocking call.
+    if (!api.replyFindStream || !api.onEvent) {
+      statusEl.textContent = "Scanning + scoring… (may take a minute)";
+      list.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Scanning ${esc(pf)}…</div>`;
+      try {
+        const r = await api.replyFind(pf, lim, false);
+        if (r?.error) { statusEl.textContent = r.error; return; }
+        statusEl.textContent = `Found ${r?.found ?? 0}.`;
+        S.filter = "new"; view.querySelectorAll("[data-filter]").forEach(x => x.className = _chip(x.getAttribute("data-filter") === "new"));
+        load(true);
+      } catch (e) { statusEl.textContent = "Failed: " + e; }
+      return;
+    }
+
+    btnEl.disabled = true;
+    const prog = { names: [], done: {}, total: 0, scored: 0, previews: [], resultError: null };
+    const repaint = () => { list.innerHTML = scanPanel(prog); icons(); };
+    let unP = null, unD = null;
+    const cleanup = () => { try { unP && unP(); } catch (e) {} try { unD && unD(); } catch (e) {} unP = unD = null; };
+    statusEl.textContent = "Scanning…";
+    repaint();
     try {
-      const r = await api.replyFind(pf, lim, false);
-      if (r?.error) { statusEl.textContent = r.error; return; }
-      statusEl.textContent = `Found ${r?.found ?? 0}.`;
-      S.filter = "new"; view.querySelectorAll("[data-filter]").forEach(x => x.className = _chip(x.getAttribute("data-filter") === "new"));
-      load(true);
-    } catch (e) { statusEl.textContent = "Failed: " + e; }
+      unP = await api.onEvent("reply_find:progress", (payload) => {
+        let ev; try { ev = typeof payload === "string" ? JSON.parse(payload) : payload; } catch (e) { return; }
+        if (!ev || !ev.event) return;
+        if (ev.event === "scan") prog.names = ev.names || [];
+        else if (ev.event === "platform") prog.done[ev.name] = ev.count || 0;
+        else if (ev.event === "scoring") { prog.total = ev.total || 0; prog.cached = ev.cached || 0; }
+        else if (ev.event === "scored") {
+          prog.scored = ev.done || prog.scored; prog.total = ev.total || prog.total;
+          if (ev.opp) prog.previews.unshift(ev.opp);
+        } else if (ev.event === "result") {
+          prog.found = ev.found || 0; prog.resultError = ev.error || null;
+        } else return;
+        statusEl.textContent = prog.total ? `Scoring ${prog.scored}/${prog.total}…`
+          : `Scanned ${Object.keys(prog.done).length} sources…`;
+        repaint();
+      });
+      unD = await api.onEvent("reply_find:done", async (payload) => {
+        let d = {}; try { d = typeof payload === "string" ? JSON.parse(payload) : (payload || {}); } catch (e) {}
+        cleanup();
+        btnEl.disabled = false;
+        const errMsg = (d.code && d.code !== 0) ? (d.hint || `Find failed (${d.code}).`) : prog.resultError;
+        if (errMsg) {
+          statusEl.textContent = errMsg;
+          list.innerHTML = `<div class="${card} border-amber-500/40 text-amber-600 dark:text-amber-400">${esc(errMsg)}
+            <div class="mt-2"><button id="op-retry2" class="${btn}">Try again</button></div></div>`;
+          const rt = view.querySelector("#op-retry2"); if (rt) rt.onclick = () => document.getElementById("op-find").click();
+          return;
+        }
+        S.filter = "new"; view.querySelectorAll("[data-filter]").forEach(x => x.className = _chip(x.getAttribute("data-filter") === "new"));
+        await load(true);
+      });
+      await api.replyFindStream(pf, lim);
+    } catch (e) {
+      cleanup();
+      btnEl.disabled = false;
+      statusEl.textContent = "Failed: " + e;
+      list.innerHTML = `<div class="${card} border-rose-500/40 text-rose-500">${esc(String(e))}
+        <div class="mt-2"><button id="op-retry2" class="${btn}">Try again</button></div></div>`;
+      const rt = view.querySelector("#op-retry2"); if (rt) rt.onclick = () => document.getElementById("op-find").click();
+    }
   };
   load(true);
 }
