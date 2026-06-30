@@ -17,7 +17,6 @@ const NAV = [
   { sec: 'Intelligence', items: [
     ['keywords', 'key-round', 'Keywords'],
     ['subreddit', 'shield-check', 'Subreddit Intel'],
-    ['watch', 'users', 'Watch accounts'],
     ['knowledge', 'brain', 'Knowledge'],
     ['library', 'library', 'Library'],
     ['learning', 'brain-circuit', 'Learning'],
@@ -141,7 +140,7 @@ function sidebarHTML(routeKey) {
   let h = `
     <div class="flex items-center gap-2 px-1.5 pb-1">
       <a href="#/agents" class="flex min-w-0 flex-1 items-center gap-2 text-lg font-extrabold text-zinc-900 dark:text-white">
-        <span class="h-5 w-5 shrink-0 rounded-full bg-reddit"></span>
+        <img src="/icon.png" alt="" class="h-5 w-5 shrink-0 rounded-md object-contain" />
         <span class="brand-text truncate">OpenReply</span></a>
       <button id="side-collapse" type="button" title="Collapse sidebar (⌘B)" aria-label="Collapse sidebar"
         class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">

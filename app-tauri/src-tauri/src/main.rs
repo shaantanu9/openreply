@@ -330,8 +330,10 @@ fn main() {
             commands::agent_list,
             commands::agent_get,
             commands::agent_create,
+            commands::agent_parse_url,
             commands::agent_use,
             commands::agent_knowledge,
+            commands::agent_chat,
             commands::agent_refresh,
             commands::agent_learn,
             commands::agent_learn_status,
@@ -465,8 +467,11 @@ fn main() {
             // Van Westendorp / NPS / MaxDiff, PERT estimation, PRD export.
             commands::cost_model_get,
             // Persistent topic AI chat conversations (ChatGPT-style history)
-            // Native fast-paths to bypass the Python sidecar for hot reads
-            // — turns 50–2000 ms IPC into ~1 ms direct rusqlite.
+            commands::chat_conv_list,
+            commands::chat_conv_get,
+            commands::chat_conv_save,
+            commands::chat_conv_rename,
+            commands::chat_conv_delete,
             // MCP ↔ App integration (one-click connect to any MCP client)
             commands::mcp_clients,
             commands::mcp_status,
@@ -523,6 +528,7 @@ fn main() {
             commands::x_account_fetch_posts,
             commands::x_account_fetch_thread,
             commands::x_account_save_to_library,
+            commands::x_account_remove,
         ])
         .build(tauri::generate_context!())
         .expect("error while building openreply");

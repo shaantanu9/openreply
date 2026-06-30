@@ -15,11 +15,23 @@ const TAURI = typeof window !== "undefined" &&
 // covers that one-time gap.
 const SWR_READS = new Set([
   "agent_list", "agent_get", "agent_knowledge", "agent_personas", "agent_brain", "agent_graph",
-  "reply_platforms", "reply_list", "reply_drafts", "content_list",
+  "agent_corpus", "agent_task_list", "agent_playbook_get",
+  "reply_platforms", "reply_list", "reply_drafts", "reply_source_counts", "content_list",
   "persona_agent_list", "sub_list", "geo_list", "geo_history", "analytics_summary",
   "alerts_list", "feeds_list",
   "byok_status",
   "reddit_account_status", "app_data_dir", "agent_learn_status",
+  // Settings sub-cards + secondary screens — each previously re-spawned the
+  // sidecar on every visit, so navigating away and back felt as slow as the
+  // first load. Their write families (creds_/x_account_/schedule_/mcp_/
+  // publish_/notify_/palace_/export_/extraction_) all match these read
+  // families, so `_invalidateForWrite` busts them automatically — no staleness.
+  "creds_list", "x_account_list",
+  "schedule_status", "mcp_clients", "mcp_status",
+  "publish_status", "notify_get",
+  "palace_model_status", "palace_stats",
+  "export_prefs_get", "extraction_prefs_get",
+  "cli_info", "cost_model_get",
 ]);
 const SWR_PREFIX = "or-swr:";
 const _mem = new Map();
@@ -81,6 +93,7 @@ const LONG_COMMANDS = new Set([
   "agent_learn", "agent_refresh", "agent_build_graph", "agent_brain_relink",
   "agent_evolve", "agent_teach_video", "agent_ideas", "agent_idea_draft",
   "agent_digest", "agent_digest_search", "agent_corpus_check", "agent_autopilot_run",
+  "agent_chat", "agent_parse_url",
   "content_generate", "reply_find", "reply_post_due", "reply_growth_plan",
   "sub_intel", "sub_discover", "account_fetch",
   "x_account_fetch_posts", "x_account_fetch_thread", "x_account_save_to_library",
@@ -129,16 +142,48 @@ async function call(cmd, args) {
   return res;
 }
 
+// Cache-busting read: always hit the backend, then write-through to the SWR
+// cache so later cached reads are current. Used when a screen must show the
+// freshest data (e.g. Agents card stats) regardless of a stale cached shape.
+async function _freshRead(cmd, args) {
+  if (!TAURI) return null;
+  const v = await _invoke(cmd, args);
+  if (SWR_READS.has(cmd)) _writeCache(_key(cmd, args), v);
+  return v;
+}
+
 export const api = {
   isTauri: () => TAURI,
   clearCache: _clearAll,   // drop SWR caches (Settings reset / force refresh)
   // agents
-  agentList: () => call("agent_list"),
+  agentList: (fresh) => fresh ? _freshRead("agent_list") : call("agent_list"),
   agentGet: (id) => call("agent_get", { id: id || null }),
   agentCreate: (p) => call("agent_create", p),
+  agentParseUrl: (url) => call("agent_parse_url", { url }),
   agentUse: (id) => call("agent_use", { id }),
   agentRefresh: (id, deep) => call("agent_refresh", { id: id || null, deep: !!deep }),
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
+  agentChat: (question, id, kCorpus, kGraph, conversationId, history) =>
+    call("agent_chat", {
+      question,
+      id: id || null,
+      k_corpus: kCorpus || 6,
+      k_graph: kGraph || 6,
+      conversation_id: conversationId || null,
+      history_json: history && history.length ? JSON.stringify(history) : null,
+    }),
+  // chat conversation persistence
+  chatConvList: (topic, limit) => call("chat_conv_list", { topic: topic || null, limit: limit || 200 }),
+  chatConvGet: (id) => call("chat_conv_get", { id }),
+  chatConvSave: (id, topic, title, messages) =>
+    call("chat_conv_save", {
+      id,
+      topic: topic || null,
+      title: title || null,
+      messages_json: JSON.stringify(messages || []),
+    }),
+  chatConvRename: (id, title) => call("chat_conv_rename", { id, title }),
+  chatConvDelete: (id) => call("chat_conv_delete", { id }),
   agentLearn: (id, limit) => call("agent_learn", { id: id || null, limit: limit || 30 }),
   agentLearnStatus: (id) => call("agent_learn_status", { id: id || null }),
   accountTrack: (handle, note) => call("account_track", { handle, note: note || null, id: null }),
@@ -303,6 +348,7 @@ export const api = {
     call("x_account_fetch_thread", { handle, tweetIdOrUrl, limit: limit || 50 }),
   xAccountSaveToLibrary: (handle, count, withThreads) =>
     call("x_account_save_to_library", { handle, count: count || 25, withThreads: !!withThreads }),
+  xAccountRemove: (handle) => call("x_account_remove", { handle }),
   // ── Connections (Reach credentials) — creds_* return a JSON array; the
   // single-result ops return a 1-element array, so callers take [0]. ──
   credsList: () => call("creds_list"),

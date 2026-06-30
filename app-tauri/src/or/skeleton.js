@@ -13,10 +13,28 @@ export function skelHead(action = true) {
     ${action ? blk("2.25rem", "10rem", "rounded-full") : ""}</div>`;
 }
 
-// A single content card (title line + a few body lines).
+// Card body (title line + a few body lines), NO card wrapper — drop INSIDE an
+// element that already owns the card border (e.g. a `${card}` container).
+export function skelCardBody(lines = 3) {
+  return `<div class="space-y-3">${blk("1rem", "40%")}
+    ${Array.from({ length: lines }, (_, i) => blk("0.8rem", `${88 - i * 9}%`)).join("")}</div>`;
+}
+
+// A single content card (wrapper + body).
 export function skelCard(lines = 3) {
-  return `<div class="${CARD} space-y-3">${blk("1rem", "40%")}
-    ${Array.from({ length: lines }, () => blk("0.8rem", `${70 + Math.round(20)}%`)).join("")}</div>`;
+  return `<div class="${CARD}">${skelCardBody(lines)}</div>`;
+}
+
+// N standalone cards joined, NO outer wrapper — fills a container that already
+// sets its own layout (a `grid …` or `space-y-3` div) while its data loads.
+export function skelCardsN(n = 3, lines = 2) {
+  return Array.from({ length: n }, () => skelCard(lines)).join("");
+}
+
+// N compact text-line rows — for a small list rendered inside a card (no
+// per-row border), e.g. the Overview "Top opportunities" / "Recent drafts" lists.
+export function skelRows(n = 3) {
+  return `<div class="space-y-2.5">${Array.from({ length: n }, (_, i) => blk("0.85rem", `${92 - i * 12}%`)).join("")}</div>`;
 }
 
 // A KPI tile (label + big number).
@@ -36,7 +54,7 @@ function skelGrid(n = 4) {
   return `<div class="grid gap-5 sm:grid-cols-2">${Array.from({ length: n }, () => skelCard(2)).join("")}</div>`;
 }
 
-function skelKpiRow(n = 4) {
+export function skelKpiRow(n = 4) {
   return `<div class="grid grid-cols-2 gap-4 lg:grid-cols-${n}">${Array.from({ length: n }, skelKpi).join("")}</div>`;
 }
 

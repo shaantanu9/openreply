@@ -126,6 +126,12 @@ pub async fn agent_create(
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// `openreply agent parse-url <url>` — fetch URL + LLM-suggest agent fields.
+#[tauri::command]
+pub async fn agent_parse_url(app: AppHandle, url: String) -> Result<Value, String> {
+    run_cli(&app, vec!["agent", "parse-url", &url, "--json"]).await.map_err(err_to_string)
+}
+
 /// `openreply agent use <id>` — switch active agent.
 #[tauri::command]
 pub async fn agent_use(app: AppHandle, id: String) -> Result<Value, String> {
@@ -137,6 +143,38 @@ pub async fn agent_use(app: AppHandle, id: String) -> Result<Value, String> {
 pub async fn agent_knowledge(app: AppHandle, id: Option<String>) -> Result<Value, String> {
     let mut args = vec!["agent".to_string(), "knowledge".to_string(), "--json".to_string()];
     if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Ask the selected agent a question grounded in its knowledge + data sources.
+///
+/// When `conversation_id` is provided the turn is saved to a persistent thread
+/// (`openreply chat ask`), and `history_json` supplies the prior messages so
+/// follow-ups keep context. Without a conversation id it falls back to the
+/// ephemeral `openreply agent chat` path.
+#[tauri::command]
+pub async fn agent_chat(
+    app: AppHandle,
+    question: String,
+    id: Option<String>,
+    k_corpus: Option<u32>,
+    k_graph: Option<u32>,
+    conversation_id: Option<String>,
+    history_json: Option<String>,
+) -> Result<Value, String> {
+    let mut args: Vec<String>;
+    if let Some(conv) = conversation_id.filter(|s| !s.is_empty()) {
+        args = vec!["chat".to_string(), "ask".to_string(), question, "--json".to_string()];
+        args.push("--id".into());
+        args.push(conv);
+        if let Some(h) = history_json { if !h.is_empty() { args.push("--messages".into()); args.push(h); } }
+    } else {
+        args = vec!["agent".to_string(), "chat".to_string(), question, "--json".to_string()];
+    }
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if let Some(k) = k_corpus { args.push("--k-corpus".into()); args.push(k.to_string()); }
+    if let Some(k) = k_graph { args.push("--k-graph".into()); args.push(k.to_string()); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)
 }
@@ -1248,14 +1286,73 @@ pub async fn creds_preview(app: AppHandle, source: String, query: Option<String>
 // (LLM-proposed, paper-grounded) experiment concept.
 // ── Persistent topic AI chat conversations (2026-05-31) ──────────────────
 //
-// ChatGPT-style saved threads per topic. Native read-WRITE rusqlite
-// (db.rs chat_conv_*) — no Python sidecar spawn on the hot path. The UI
-// stores its in-memory message array as a JSON blob per conversation.
+// ChatGPT-style saved threads per topic. The UI stores its in-memory message
+// array as a JSON blob per conversation. Reads and writes go through the
+// Python sidecar so Python remains the sole writer to `openreply.db`.
 
 /// List conversation metadata. `topic` omitted → every conversation
 /// across all topics (the global Chats view).
+#[tauri::command]
+pub async fn chat_conv_list(
+    app: AppHandle,
+    topic: Option<String>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let mut args = vec!["chat".to_string(), "list".to_string(), "--json".to_string()];
+    if let Some(t) = topic { if !t.is_empty() { args.push("--topic".into()); args.push(t); } }
+    if let Some(l) = limit { args.push("--limit".into()); args.push(l.to_string()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// Fetch one conversation with its full message array.
+#[tauri::command]
+pub async fn chat_conv_get(app: AppHandle, id: String) -> Result<Value, String> {
+    let args = vec!["chat".to_string(), "get".to_string(), id, "--json".to_string()];
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 /// Upsert a conversation (create on first save, update thereafter).
+#[tauri::command]
+pub async fn chat_conv_save(
+    app: AppHandle,
+    id: String,
+    topic: Option<String>,
+    title: Option<String>,
+    messages_json: String,
+) -> Result<Value, String> {
+    let mut args = vec!["chat".to_string(), "save".to_string(), id, "--json".to_string()];
+    args.push("--messages".into());
+    args.push(messages_json);
+    if let Some(t) = topic { if !t.is_empty() { args.push("--topic".into()); args.push(t); } }
+    if let Some(t) = title { if !t.is_empty() { args.push("--title".into()); args.push(t); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Rename a conversation.
+#[tauri::command]
+pub async fn chat_conv_rename(app: AppHandle, id: String, title: String) -> Result<Value, String> {
+    let args = vec![
+        "chat".to_string(),
+        "rename".to_string(),
+        id,
+        title,
+        "--json".to_string(),
+    ];
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Delete a conversation.
+#[tauri::command]
+pub async fn chat_conv_delete(app: AppHandle, id: String) -> Result<Value, String> {
+    let args = vec!["chat".to_string(), "delete".to_string(), id, "--json".to_string()];
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
 // ── Native rusqlite readers for the products-table JSON-blob getters ──────
 //
 // four_risks / value_curve / tam_sam_som / porter / positioning / cost_model
@@ -3944,4 +4041,10 @@ pub async fn x_account_save_to_library(
     }
     args.push("--json");
     run_cli(&app, args).await.map_err(err_to_string)
+}
+
+/// `openreply x-account remove <handle>`
+#[tauri::command]
+pub async fn x_account_remove(app: AppHandle, handle: String) -> Result<Value, String> {
+    run_cli(&app, vec!["x-account", "remove", &handle, "--json"]).await.map_err(err_to_string)
 }

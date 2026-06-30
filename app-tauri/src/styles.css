@@ -3,16 +3,19 @@
 @tailwind utilities;
 
 /* ── App scroll container ──────────────────────────────────────────────────
-   #main-content is the single scroll area inside the `flex h-screen
-   overflow-hidden` shell. Every view re-sets its className (w-full max-w-6xl
-   flex-1 px-8 py-7) which carries NO overflow utility, so the bundled HTML's
-   `overflow-auto` gets wiped on first render and any view taller than the
-   viewport can't scroll. Pin it here on the id (className never sets overflow,
-   so this always wins) — fixes scrolling for ALL views in one place. */
+   #main-content is now a persistent host for per-tab portals. Each portal
+   (.tab-view) is its own scroll area so switching tabs keeps the inactive
+   tab's DOM alive and any ongoing work running in the background. */
 #main-content {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+.tab-view {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  height: 100%;
 }
 
 /* ── App-wide form-control polish ─────────────────────────────────────────
@@ -121,6 +124,34 @@ body[data-sidebar="rail"] #side #accountMenu i[data-lucide="chevron-up"] { displ
   background: rgba(160, 160, 170, 0.25);
 }
 
+/* ── Rendered markdown (.or-md) ─────────────────────────────────────────────
+   Shared container for LLM-generated text rendered via or/markdown.js
+   (renderMarkdown → mdWrap). Theme-aware; tuned for comfortable reading inside
+   cards. Keep spacing tight so short drafts don't get airy. */
+.or-md { font-size: 0.875rem; line-height: 1.6; color: #3f3f46; word-break: break-word; }
+.dark .or-md { color: #d4d4d8; }
+.or-md > :first-child { margin-top: 0; }
+.or-md > :last-child { margin-bottom: 0; }
+.or-md p { margin: 0 0 0.7rem; }
+.or-md h1 { font-size: 1.25rem; font-weight: 700; margin: 1.1rem 0 0.5rem; color: #18181b; }
+.or-md h2 { font-size: 1.1rem; font-weight: 700; margin: 1rem 0 0.45rem; color: #18181b; }
+.or-md h3 { font-size: 0.98rem; font-weight: 600; margin: 0.85rem 0 0.4rem; color: #18181b; }
+.dark .or-md h1, .dark .or-md h2, .dark .or-md h3 { color: #fafafa; }
+.or-md ul, .or-md ol { margin: 0 0 0.7rem; padding-left: 1.35rem; }
+.or-md ul { list-style: disc; }
+.or-md ol { list-style: decimal; }
+.or-md li { margin: 0.15rem 0; }
+.or-md strong { font-weight: 700; color: #18181b; }
+.dark .or-md strong { color: #fafafa; }
+.or-md em { font-style: italic; }
+.or-md a { color: #ff4500; text-decoration: underline; }
+.or-md code { background: rgba(120,120,128,0.14); border-radius: 0.3rem; padding: 0.08rem 0.35rem; font-size: 0.85em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.or-md pre { background: rgba(120,120,128,0.12); border-radius: 0.5rem; padding: 0.75rem 0.9rem; overflow-x: auto; margin: 0 0 0.7rem; }
+.or-md pre code { background: none; padding: 0; font-size: 0.82rem; }
+.or-md blockquote { border-left: 3px solid rgba(255,69,0,0.5); padding-left: 0.85rem; margin: 0 0 0.7rem; color: #71717a; }
+.dark .or-md blockquote { color: #a1a1aa; }
+.or-md hr { border: none; border-top: 1px solid rgba(120,120,128,0.25); margin: 0.9rem 0; }
+
 /* ── View / chat / card animations ───────────────────────────────────────── */
 @keyframes fade-in {
   from { opacity: 0; }
@@ -132,3 +163,97 @@ body[data-sidebar="rail"] #side #accountMenu i[data-lucide="chevron-up"] { displ
 }
 .animate-fade-in { animation: fade-in 260ms ease-out forwards; }
 .animate-fade-in-up { animation: fade-in-up 260ms ease-out forwards; }
+
+/* ── Chrome-style tab strip + context menu ───────────────────────────────── */
+#tab-strip { flex-shrink: 0; }
+.tab-strip {
+  display: flex; align-items: flex-end; gap: 2px;
+  padding: 6px 10px 0;
+  background: #fafafa;
+  border-bottom: 1px solid #e4e4e7;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.dark .tab-strip {
+  background: #09090b;
+  border-bottom-color: #27272a;
+}
+.tab-pill {
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  min-width: 110px; max-width: 220px;
+  border: 1px solid #e4e4e7; border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: #f4f4f5;
+  color: #3f3f46;
+  font-size: 12.5px; cursor: pointer; user-select: none;
+  white-space: nowrap; flex-shrink: 0;
+}
+.dark .tab-pill {
+  background: #18181b;
+  border-color: #27272a;
+  color: #a1a1aa;
+}
+.tab-pill:hover { background: #ffffff; }
+.dark .tab-pill:hover { background: #27272a; }
+.tab-pill.active {
+  background: #ffffff;
+  color: #18181b;
+  font-weight: 600;
+}
+.dark .tab-pill.active {
+  background: #27272a;
+  color: #fafafa;
+}
+.tab-pill.active::after {
+  content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px;
+  height: 2px; background: #ff4500;
+}
+.tab-pill svg { width: 14px; height: 14px; flex-shrink: 0; }
+.tab-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab-close {
+  opacity: 0; width: 16px; height: 16px; border-radius: 4px;
+  display: inline-grid; place-items: center; cursor: pointer; flex-shrink: 0;
+}
+.tab-pill:hover .tab-close, .tab-pill.active .tab-close { opacity: 1; }
+.tab-close:hover { background: rgba(0,0,0,.08); }
+.dark .tab-close:hover { background: rgba(255,255,255,.12); }
+.tab-close svg { width: 12px; height: 12px; }
+.tab-new {
+  display: grid; place-items: center; padding: 6px 8px;
+  opacity: 0.5; cursor: pointer; border-radius: 6px;
+  color: #3f3f46;
+}
+.dark .tab-new { color: #a1a1aa; }
+.tab-new:hover { opacity: 1; background: rgba(0,0,0,.04); }
+.dark .tab-new:hover { background: rgba(255,255,255,.08); }
+
+.context-menu {
+  position: fixed; z-index: 200;
+  background: #ffffff; border: 1px solid #e4e4e7;
+  border-radius: 8px; padding: 4px; min-width: 180px;
+  box-shadow: 0 12px 28px rgba(24,24,27,.18);
+  font-size: 13px; color: #18181b;
+}
+.dark .context-menu {
+  background: #18181b;
+  border-color: #27272a;
+  color: #fafafa;
+  box-shadow: 0 12px 28px rgba(0,0,0,.4);
+}
+.context-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; border-radius: 6px; cursor: pointer;
+}
+.context-menu-item:hover:not(.disabled) { background: #f4f4f5; }
+.dark .context-menu-item:hover:not(.disabled) { background: #27272a; }
+.context-menu-item.disabled { opacity: 0.4; cursor: not-allowed; }
+.context-menu-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.context-menu-separator { height: 1px; background: #e4e4e7; margin: 4px 0; }
+.dark .context-menu-separator { background: #27272a; }
+
+@media (max-width: 680px) {
+  .tab-pill:not(.active) .tab-close { display: none; }
+  .tab-pill { min-width: 80px; max-width: 140px; padding: 5px 8px; }
+}

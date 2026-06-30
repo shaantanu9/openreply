@@ -1,6 +1,8 @@
 // OpenReply dynamic screens — real data via the Rust command bridge (or/api.js).
 // Tailwind markup mirrors the prototype; content + handlers are live.
 import { api, esc } from "./api.js";
+import { renderMarkdown, mdWrap, inlineMdMultiline } from "./markdown.js";
+import { skeletonBody, skelCardsN, skelRows, skelCardBody, skelKpiRow } from "./skeleton.js";
 
 const icons = () => window.lucide && window.lucide.createIcons();
 const toast = (m) => window.orToast && window.orToast(m);
@@ -22,7 +24,7 @@ export async function renderAgents(view) {
     "Each agent is a brand/niche persona with its own knowledge &amp; voice.",
     `<button id="ag-new" class="${btnP}">+ New agent</button>`) +
     `<div id="ag-form" class="hidden mb-5 ${card}"></div>
-     <div id="ag-grid" class="grid gap-5 sm:grid-cols-2"><div class="text-zinc-500">Loading agents…</div></div>`;
+     <div id="ag-grid" class="grid gap-5 sm:grid-cols-2">${skelCardsN(2)}</div>`;
 
   let platforms = [];
   try { platforms = (await api.replyPlatforms())?.platforms || []; } catch (e) {}
@@ -34,11 +36,14 @@ export async function renderAgents(view) {
     if (!f.innerHTML) {
       f.innerHTML = `
         <h3 class="mb-3 font-semibold text-zinc-900 dark:text-white">New agent</h3>
+        <div class="mb-4">${urlFetchRow("ag-url", "ag-fetch", "ag-fetch-msg")}</div>
         <div class="grid gap-3 sm:grid-cols-2">
           ${field("ag-name", "Name", "Acme Notes")}
           ${field("ag-niche", "Niche", "AI note-taking for students")}
+          ${field("ag-website", "Website", "acmenotes.com")}
           ${field("ag-persona", "Voice / persona", "ex-teacher, founder")}
           ${field("ag-keywords", "Keywords (comma-sep)", "note taking app, obsidian alternative")}
+          ${field("ag-product", "Product", "AI notes that summarize lectures into study guides")}
         </div>
         <div class="mt-3 text-sm text-zinc-500">Platforms</div>
         <div class="mt-1 grid grid-cols-3 gap-2 text-sm">${platforms.filter(p => p.can_reply).map(p =>
@@ -46,8 +51,24 @@ export async function renderAgents(view) {
              <input type="checkbox" class="accent-reddit" value="${esc(p.key)}" ${OR_DEFAULT_PICK.has(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("")}</div>
         <button id="ag-create" class="mt-4 ${btnP}">Create agent</button> <span id="ag-msg" class="text-sm text-zinc-500"></span>`;
       document.getElementById("ag-create").onclick = createAgent;
+      document.getElementById("ag-fetch").onclick = () => runUrlFetch("ag-url", "ag-fetch-msg", fillAgentForm);
     }
   };
+
+  function fillAgentForm(fields) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+    set("ag-name", fields.name);
+    set("ag-niche", fields.niche);
+    set("ag-website", fields.website);
+    set("ag-persona", fields.persona);
+    set("ag-keywords", Array.isArray(fields.keywords) ? fields.keywords.join(", ") : fields.keywords);
+    set("ag-product", fields.product);
+    if (fields.platforms && Array.isArray(fields.platforms)) {
+      document.querySelectorAll("#ag-form input[type=checkbox]").forEach((cb) => {
+        cb.checked = fields.platforms.includes(cb.value);
+      });
+    }
+  }
 
   async function createAgent() {
     const name = document.getElementById("ag-name").value.trim();
@@ -59,8 +80,10 @@ export async function renderAgents(view) {
       await api.agentCreate({
         name,
         niche: document.getElementById("ag-niche").value.trim(),
+        website: document.getElementById("ag-website").value.trim(),
         persona: document.getElementById("ag-persona").value.trim(),
         keywords: document.getElementById("ag-keywords").value.trim(),
+        product: document.getElementById("ag-product").value.trim(),
         platforms: pfs.join(","),
       });
       toast("Agent created");
@@ -69,33 +92,51 @@ export async function renderAgents(view) {
     } catch (e) { msg.textContent = "Failed: " + e; }
   }
 
+  function paintAgents(agents) {
+    const grid = document.getElementById("ag-grid");
+    if (!grid) return;
+    grid.innerHTML = agents.length ? agents.map(agentCard).join("") +
+      `<a href="#/onboarding" class="flex min-h-[170px] items-center justify-center rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:border-reddit hover:text-reddit"><div class="text-center"><div class="text-3xl text-reddit">＋</div>New agent</div></a>`
+      : `<div class="${card} sm:col-span-2 text-center">
+           <p class="text-zinc-500">No agents yet. Set up your first brand persona to start finding conversations worth joining.</p>
+           <a href="#/onboarding" class="mt-3 inline-block ${btnP}">Set up your first agent</a>
+         </div>`;
+    grid.querySelectorAll("[data-use]").forEach(b => b.onclick = async () => {
+      await api.agentUse(b.getAttribute("data-use")); toast("Switched agent"); load();
+    });
+    // Find replies / Create content / Open → first make this card's agent
+    // active (so the destination screen acts on the right agent), then navigate.
+    grid.querySelectorAll("[data-go]").forEach(b => b.onclick = async () => {
+      const id = b.getAttribute("data-go"), to = b.getAttribute("data-to") || "#/agent";
+      try { await api.agentUse(id); location.hash = to; }
+      catch (e) { toast("Failed: " + e); }
+    });
+    grid.querySelectorAll("[data-edit]").forEach(b => b.onclick = async () => {
+      try { await api.agentUse(b.getAttribute("data-edit")); location.hash = "#/keywords"; }
+      catch (e) { toast("Failed: " + e); }
+    });
+    grid.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+      const id = b.getAttribute("data-del"), name = b.getAttribute("data-name") || "this agent";
+      window.orModal({
+        title: `Delete ${name}?`, okText: "Delete",
+        body: `<p class="text-sm text-zinc-500">Removes the agent and its settings. Collected posts/knowledge stay. This can’t be undone.</p>`,
+        onOk: async () => { try { await api.agentDelete(id); toast("Deleted " + name); load(); } catch (e) { toast("Delete failed: " + e); } },
+      });
+    });
+    icons();
+  }
+
   async function load() {
     const grid = document.getElementById("ag-grid");
     try {
+      // SWR: paint the cached list instantly, then repaint with a cache-busting
+      // fresh fetch so the per-agent stats (posts/nodes/opps) are always current
+      // even when the cached shape predates them.
       const res = await api.agentList();
-      const agents = res?.agents || [];
-      grid.innerHTML = agents.length ? agents.map(agentCard).join("") +
-        `<a href="#/onboarding" class="flex min-h-[170px] items-center justify-center rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:border-reddit hover:text-reddit"><div class="text-center"><div class="text-3xl text-reddit">＋</div>New agent</div></a>`
-        : `<div class="${card} sm:col-span-2 text-center">
-             <p class="text-zinc-500">No agents yet. Set up your first brand persona to start finding conversations worth joining.</p>
-             <a href="#/onboarding" class="mt-3 inline-block ${btnP}">Set up your first agent</a>
-           </div>`;
-      grid.querySelectorAll("[data-use]").forEach(b => b.onclick = async () => {
-        await api.agentUse(b.getAttribute("data-use")); toast("Switched agent"); load();
-      });
-      grid.querySelectorAll("[data-edit]").forEach(b => b.onclick = async () => {
-        try { await api.agentUse(b.getAttribute("data-edit")); location.hash = "#/keywords"; }
-        catch (e) { toast("Failed: " + e); }
-      });
-      grid.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
-        const id = b.getAttribute("data-del"), name = b.getAttribute("data-name") || "this agent";
-        window.orModal({
-          title: `Delete ${name}?`, okText: "Delete",
-          body: `<p class="text-sm text-zinc-500">Removes the agent and its settings. Collected posts/knowledge stay. This can’t be undone.</p>`,
-          onOk: async () => { try { await api.agentDelete(id); toast("Deleted " + name); load(); } catch (e) { toast("Delete failed: " + e); } },
-        });
-      });
-      icons();
+      paintAgents(res?.agents || []);
+      api.agentList(true)
+        .then(fr => { if (fr && fr.agents) paintAgents(fr.agents); })
+        .catch(() => {});
     } catch (e) { grid.innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${esc(e)}</div>`; }
   }
   load();
@@ -105,28 +146,80 @@ function field(id, label, ph) {
   return `<label class="block text-sm"><span class="text-zinc-500 dark:text-zinc-400">${label}</span>
     <input id="${id}" placeholder="${esc(ph)}" class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>`;
 }
+
+// Shared "Fetch from URL" row for agent forms. Callers provide the input id
+// and a callback that receives the parsed { fields } object.
+function urlFetchRow(inputId, buttonId, msgId, onFill) {
+  return `<div class="flex items-end gap-2">
+    <label class="block flex-1 text-sm"><span class="text-zinc-500 dark:text-zinc-400">App or website URL</span>
+      <input id="${inputId}" placeholder="acmenotes.com or apps.apple.com/app/..." class="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
+    <button id="${buttonId}" type="button" class="${btn}">Fetch & fill</button>
+  </div>
+  <p id="${msgId}" class="text-sm text-zinc-500"></p>`;
+}
+
+async function runUrlFetch(inputId, msgId, onFill) {
+  const url = document.getElementById(inputId).value.trim();
+  const msg = document.getElementById(msgId);
+  if (!url) { msg.textContent = "Enter a URL first."; msg.className = "text-sm text-rose-500"; return; }
+  msg.className = "text-sm text-zinc-500"; msg.textContent = "Fetching & analysing…";
+  try {
+    const res = await api.agentParseUrl(url);
+    if (!res || !res.ok) {
+      msg.className = "text-sm text-rose-500";
+      msg.textContent = "Failed: " + (res?.error || "unknown error");
+      return;
+    }
+    onFill(res.fields || {});
+    msg.className = "text-sm text-emerald-600";
+    msg.textContent = "Filled ✓ — review and edit before saving.";
+  } catch (e) {
+    msg.className = "text-sm text-rose-500";
+    msg.textContent = "Failed: " + e;
+  }
+}
+function fmtCount(n) {
+  n = +n || 0;
+  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
 function agentCard(a) {
   const kws = (a.keywords || []).slice(0, 5).map(k => `<span class="${chip}">${esc(k)}</span>`).join("");
   const pfs = (a.platforms || []).map(p => `<span class="${chip}">${esc(p)}</span>`).join("");
+  const stat = (icon, val, label) => `<span class="inline-flex items-center gap-1"><i data-lucide="${icon}" class="h-3.5 w-3.5 text-zinc-400"></i><b class="font-semibold text-zinc-700 dark:text-zinc-300">${fmtCount(val)}</b> ${label}</span>`;
+  const ibtn = "grid h-7 w-7 place-items-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-reddit/50 hover:text-reddit";
+  const navBtn = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold hover:border-zinc-400";
   return `<div class="${card}">
-    <div class="flex items-center gap-2"><b class="text-lg text-zinc-900 dark:text-white">${esc(a.name)}</b>
-      ${a.active ? '<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">active</span>' : ""}</div>
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex items-center gap-2"><b class="text-lg text-zinc-900 dark:text-white">${esc(a.name)}</b>
+        ${a.active ? '<span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-500">active</span>' : ""}</div>
+      <div class="flex shrink-0 gap-1.5">
+        <button data-edit="${esc(a.id)}" title="Edit keywords & targeting" class="${ibtn}"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+        <button data-del="${esc(a.id)}" data-name="${esc(a.name)}" title="Delete agent" class="${ibtn} hover:border-rose-500/50 hover:text-rose-500"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>
+      </div>
+    </div>
     <p class="text-sm text-zinc-500 dark:text-zinc-400">${esc(a.niche || a.brand || "")}</p>
     <div class="mt-3 flex flex-wrap gap-1.5">${kws}</div>
     <div class="mt-2 flex flex-wrap gap-1.5">${pfs}</div>
     <div class="my-4 border-t border-zinc-200 dark:border-zinc-800"></div>
-    <div class="flex flex-wrap gap-2">
-      ${a.active ? "" : `<button data-use="${esc(a.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Make active</button>`}
-      <a href="#/opportunities" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Find replies</a>
-      <button data-edit="${esc(a.id)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Edit</button>
-      <button data-del="${esc(a.id)}" data-name="${esc(a.name)}" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-rose-500">Delete</button></div>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+      ${stat("database", a.posts, "posts")}
+      ${stat("share-2", a.graph_nodes, "nodes")}
+      ${stat("target", a.opps, "opps")}
+    </div>
+    <div class="mt-4 flex flex-wrap gap-2">
+      ${a.active ? "" : `<button data-use="${esc(a.id)}" class="${navBtn}">Make active</button>`}
+      <button data-go="${esc(a.id)}" data-to="#/opportunities" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white hover:bg-reddit-hi">Find replies</button>
+      <button data-go="${esc(a.id)}" data-to="#/compose" class="${navBtn}">Create content</button>
+      <button data-go="${esc(a.id)}" data-to="#/agent" class="${navBtn}">Open →</button>
+    </div>
   </div>`;
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────
 export async function renderOverview(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  view.innerHTML = `<div id="ov">Loading…</div>`;
+  view.innerHTML = `<div id="ov">${skeletonBody("agent")}</div>`;
   let a = null, k = null;
   try { a = await api.agentGet(); } catch (e) {}
   if (!a) { document.getElementById("ov").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
@@ -144,12 +237,15 @@ export async function renderOverview(view) {
       <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-reddit/10 text-reddit"><i data-lucide="${icon}" class="h-4 w-4"></i></span>
       <div class="min-w-0"><div class="font-semibold text-zinc-900 dark:text-white">${title}</div>
         <div class="text-xs text-zinc-500 dark:text-zinc-400">${desc}</div></div></a>`;
+  const btnIcon = "grid h-9 w-9 place-items-center rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 hover:text-reddit transition";
 
   document.getElementById("ov").outerHTML =
     head(esc(a.name), `${esc(a.niche || "—")} · watching ${(a.platforms || []).join(", ") || "no sources yet"}`,
-      `<button id="ov-refresh" class="${btn}"><i data-lucide="refresh-cw" class="inline-block h-4 w-4 align-[-2px]"></i> Refresh + learn</button>
-       <button id="ov-evolve" class="${btn}"><i data-lucide="sparkles" class="inline-block h-4 w-4 align-[-2px]"></i> Evolve now</button>
-       <button id="ov-suggest" class="${btn}"><i data-lucide="lightbulb" class="inline-block h-4 w-4 align-[-2px]"></i> Suggest ideas</button>
+      // Secondary actions are compact icon-only buttons (tooltips via title +
+      // aria-label) so the header stays clean; only the primary CTA keeps its label.
+      `<button id="ov-refresh" class="${btnIcon}" title="Refresh + learn — fetch fresh posts for your niche and rebuild the agent's brain" aria-label="Refresh + learn"><i data-lucide="refresh-cw" class="h-4 w-4"></i></button>
+       <button id="ov-evolve" class="${btnIcon}" title="Evolve now — improve the agent's reply strategy from recent feedback" aria-label="Evolve now"><i data-lucide="sparkles" class="h-4 w-4"></i></button>
+       <button id="ov-suggest" class="${btnIcon}" title="Suggest ideas — generate content & reply ideas from your knowledge" aria-label="Suggest ideas"><i data-lucide="lightbulb" class="h-4 w-4"></i></button>
        <a href="#/opportunities" class="${btnP}"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</a>`) +
     freshBanner +
     `<div id="ov-strategy" class="mb-5"></div>` +
@@ -184,17 +280,18 @@ export async function renderOverview(view) {
      </div>` +
     `<div class="mt-7 grid gap-4 lg:grid-cols-2">
        <div class="${card}"><div class="mb-2 flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Top opportunities</b><a href="#/opportunities" class="text-xs font-semibold text-reddit">View all →</a></div>
-         <div id="ov-opps" class="space-y-2 text-sm text-zinc-500">Loading…</div></div>
+         <div id="ov-opps" class="space-y-2 text-sm text-zinc-500">${skelRows(3)}</div></div>
        <div class="${card}"><div class="mb-2 flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Recent drafts</b><a href="#/compose" class="text-xs font-semibold text-reddit">Compose →</a></div>
-         <div id="ov-drafts" class="space-y-2 text-sm text-zinc-500">Loading…</div></div>
+         <div id="ov-drafts" class="space-y-2 text-sm text-zinc-500">${skelRows(3)}</div></div>
      </div>` +
     `<div class="mt-5 grid gap-4 lg:grid-cols-2">
        <div class="${card}"><b class="text-zinc-900 dark:text-white">Voice</b><p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">${esc(a.persona || "—")}</p><p class="mt-1 text-sm text-zinc-500">Tone: ${esc(a.tone || "")}</p></div>
-       <div id="ov-personas" class="${card}"><div class="text-sm text-zinc-500">Loading personas…</div></div>
+       <div id="ov-personas" class="${card}">${skelCardBody(3)}</div>
      </div>`;
 
   document.getElementById("ov-refresh").onclick = async (e) => {
-    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Refreshing + learning…";
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
+    b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
     catch (err) { toast("Refresh failed"); b.disabled = false; b.innerHTML = html; icons(); }
   };
@@ -202,14 +299,14 @@ export async function renderOverview(view) {
   // Evolve the Goal Playbook from here (mirrors the Learning screen's button).
   document.getElementById("ov-evolve").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
-    b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Evolving…`; icons();
+    b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { const r = await api.agentEvolve(); toast(r?.skipped ? (r.reason || "Skipped") : (r?.summary || "Evolved ✓")); }
     catch (err) { toast("Evolve failed: " + err); }
     b.disabled = false; b.innerHTML = html; icons(); loadStrategyStrip();
   };
   document.getElementById("ov-suggest").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
-    b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Thinking…`; icons();
+    b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { const r = await api.agentIdeas(true); toast(r?.skipped ? (r.reason || "Skipped") : `Suggested ${(r?.ideas || []).length} idea(s) — see Learning`); }
     catch (err) { toast("Suggest failed: " + err); }
     b.disabled = false; b.innerHTML = html; icons();
@@ -395,7 +492,12 @@ export async function renderOverview(view) {
     };
   }
   function loadCachedDigest() {
-    try { return JSON.parse(localStorage.getItem(DIGEST_KEY) || "null"); } catch (e) { return null; }
+    try {
+      const d = JSON.parse(localStorage.getItem(DIGEST_KEY) || "null");
+      const today = new Date().toLocaleDateString("sv-SE");
+      if (d && d.day === today) return d;
+    } catch (e) {}
+    return null;
   }
   (async () => {
     const cached = loadCachedDigest();
@@ -554,10 +656,9 @@ const PAGE = 25;
 const _chip = (on) => `rounded-full px-3 py-1.5 text-xs font-semibold ${on
   ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700 text-zinc-500"}`;
 const inputCls = "rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm";
-const skeleton = (n = 3) => Array.from({ length: n }, () =>
-  `<div class="${card}"><div class="h-4 w-24 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div>
-     <div class="mt-3 h-4 w-3/4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div>
-     <div class="mt-2 h-3 w-1/2 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800"></div></div>`).join("");
+// Stacked-card skeleton for list regions (opportunities, inbox, library …).
+// Delegates to the shared utility so every list loads with the same look.
+const skeleton = (n = 3) => skelCardsN(n);
 const debounce = (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
 export async function renderOpportunities(view) {
@@ -949,6 +1050,20 @@ export async function renderCompose(view) {
     const act = b.getAttribute("data-cm-act");
     try {
       let r;
+      if (act === "preview" || act === "write") {
+        const pv = wrap.querySelector("[data-cm-preview]");
+        const showPreview = act === "preview";
+        if (pv && ta) {
+          if (showPreview) pv.innerHTML = renderMarkdown(ta.value);
+          pv.classList.toggle("hidden", !showPreview);
+          ta.classList.toggle("hidden", showPreview);
+        }
+        wrap.querySelectorAll("[data-cm-tab]").forEach((t) => {
+          const on = t.getAttribute("data-cm-tab") === act;
+          t.className = `rounded-md px-2 py-0.5 text-xs font-semibold ${on ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"}`;
+        });
+        return;
+      }
       if (act === "copy") {
         try { await navigator.clipboard.writeText(ta ? ta.value : ""); toast("Copied"); } catch (e) { toast("Copy failed"); }
         return;
@@ -1072,11 +1187,14 @@ function contentCard(c, big) {
   const kind = (c.kind || "").replace("_", " ");
   const isArticle = /article/i.test(kind);
   const angle = (c.angle || c.title || "").slice(0, 120);
+  const tab = (act, label, on) => `<button data-cm-act="${act}" data-cm-tab="${act}" class="rounded-md px-2 py-0.5 text-xs font-semibold ${on ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"}">${label}</button>`;
   return `<div class="${card}" data-cid="${esc(c.id)}" data-kind="${esc(c.kind || "")}">
     <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc(kind)}</span>
       <span class="text-xs text-zinc-500">${esc(c.platform || "")}</span>
-      <span class="rounded ${statusColor} px-2 py-0.5 text-xs font-bold">${esc(c.status || "draft")}</span></div>
-    <textarea rows="${big ? 8 : 4}" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(c.body || "")}</textarea>
+      <span class="rounded ${statusColor} px-2 py-0.5 text-xs font-bold">${esc(c.status || "draft")}</span>
+      <div class="ml-auto inline-flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">${tab("write", "Write", true)}${tab("preview", "Preview", false)}</div></div>
+    <textarea data-cm-edit rows="${big ? 8 : 4}" class="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(c.body || "")}</textarea>
+    <div data-cm-preview class="or-md mt-2 hidden max-h-[420px] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 px-3 py-2 dark:bg-zinc-800"></div>
     <div class="mt-2 flex flex-wrap items-center gap-2">
       <button data-cm-act="save" class="rounded-full bg-reddit px-3 py-1.5 text-xs font-semibold text-white">Save draft</button>
       <button data-cm-act="schedule" class="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold">Schedule</button>
@@ -1122,7 +1240,7 @@ export async function renderConnections(view) {
     `<button id="cn-test-all" class="${btnP}">⚡ Test all</button>`) +
     `<p class="mb-5 rounded-lg bg-reddit/10 px-3 py-2 text-sm text-reddit"><i data-lucide="lock" class="inline-block h-4 w-4 align-[-2px]"></i> Credentials are stored locally on this machine only. Connect a platform and it's automatically pulled into your collection runs — toggle "Used in collection" to opt out. Public sources (Hacker News, Dev.to, Mastodon, YouTube) need no login.</p>
      <div id="cn-summary" class="mb-5"></div>
-     <div id="cn-grid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><div class="text-zinc-500">Loading connections…</div></div>`;
+     <div id="cn-grid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${skelCardsN(6)}</div>`;
 
   const grid = document.getElementById("cn-grid");
 
@@ -1376,19 +1494,19 @@ export async function renderSettings(view) {
        <input id="set-search" type="search" autocomplete="off" placeholder="Search settings…" class="${inputCls} w-full pl-9">
        <p id="set-empty" class="mt-2 hidden text-sm text-zinc-400">No settings match.</p></div>
      <div id="set-grid" class="grid gap-4 lg:grid-cols-2">
-       <div id="st-profile" data-skw="profile name avatar account you identity" class="${card}"><div class="text-zinc-500">Loading profile…</div></div>
-       <div id="st-llm" data-skw="ai provider llm api key model anthropic openai gemini ollama byok draft" class="${card}"><div class="text-zinc-500">Loading provider…</div></div>
+       <div id="st-profile" data-skw="profile name avatar account you identity" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-llm" data-skw="ai provider llm api key model anthropic openai gemini ollama byok draft" class="${card}">${skelCardBody(4)}</div>
        <div id="st-appear" data-skw="appearance theme dark light mode display" class="${card}"></div>
-       <div id="st-auto" data-skw="automation schedule auto refresh learn cadence daily weekly launchd cron background" class="${card}"><div class="text-zinc-500">Loading automation…</div></div>
-       <div id="st-mcp" data-skw="mcp connect claude code cursor windsurf desktop integration tools agent client" class="${card}"><div class="text-zinc-500">Loading MCP…</div></div>
-       <div id="st-usage" data-skw="usage limits token cap spend cost budget today" class="${card}"><div class="text-zinc-500">Loading usage…</div></div>
-       <div id="st-semantic" data-skw="semantic memory embeddings palace vector graph model reindex learning" class="${card}"><div class="text-zinc-500">Loading…</div></div>
-       <div id="st-feeds" data-skw="feeds rss custom sources news add url" class="${card}"><div class="text-zinc-500">Loading feeds…</div></div>
-       <div id="st-publish" data-skw="publish x twitter post tweet thread api key oauth social outbound connect" class="${card}"><div class="text-zinc-500">Loading publishing…</div></div>
-       <div id="st-notify" data-skw="notifications telegram slack bot alerts opportunity reminder reply article webhook chat push mobile two-way" class="${card}"><div class="text-zinc-500">Loading notifications…</div></div>
-       <div id="st-power" data-skw="cli terminal install symlink export folder power tools" class="${card}"><div class="text-zinc-500">Loading…</div></div>
-       <div id="st-data" data-skw="data export reset delete local database backup storage wipe" class="${card}"><div class="text-zinc-500">Loading data…</div></div>
-       <div id="st-about" data-skw="about version support feedback email github issue logs help" class="${card}"><div class="text-zinc-500">Loading…</div></div>
+       <div id="st-auto" data-skw="automation schedule auto refresh learn cadence daily weekly launchd cron background" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-mcp" data-skw="mcp connect claude code cursor windsurf desktop integration tools agent client" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-usage" data-skw="usage limits token cap spend cost budget today" class="${card}">${skelCardBody(2)}</div>
+       <div id="st-semantic" data-skw="semantic memory embeddings palace vector graph model reindex learning" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-feeds" data-skw="feeds rss custom sources news add url" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-publish" data-skw="publish x twitter post tweet thread api key oauth social outbound connect" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-notify" data-skw="notifications telegram slack bot alerts opportunity reminder reply article webhook chat push mobile two-way" class="${card}">${skelCardBody(4)}</div>
+       <div id="st-power" data-skw="cli terminal install symlink export folder power tools" class="${card}">${skelCardBody(2)}</div>
+       <div id="st-data" data-skw="data export reset delete local database backup storage wipe" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-about" data-skw="about version support feedback email github issue logs help" class="${card}">${skelCardBody(2)}</div>
      </div>`;
   buildProfileCard(document.getElementById("st-profile"));
   buildLlmCard(document.getElementById("st-llm"));
@@ -1994,7 +2112,7 @@ async function buildDataCard(el) {
 // ── Knowledge ─────────────────────────────────────────────────────────────
 export async function renderKnowledge(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  view.innerHTML = `<div id="kn">Loading…</div>`;
+  view.innerHTML = `<div id="kn">${skeletonBody("knowledge")}</div>`;
   let a = null, k = null;
   try { a = await api.agentGet(); } catch (e) {}
   if (!a) { document.getElementById("kn").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
@@ -2022,7 +2140,7 @@ export async function renderKnowledge(view) {
          <b class="text-zinc-900 dark:text-white"><i data-lucide="brain" class="inline-block h-4 w-4 align-[-3px] text-reddit"></i> Brain &amp; knowledge graph</b>
          <button id="kn-build" class="${btn}"><i data-lucide="workflow" class="inline-block h-4 w-4 align-[-2px]"></i> Build brain (deep)</button></div>
        <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">The agent's content mapped into a graph \u2014 posts, people, sources and the niche's painpoints/wishes/workarounds, connected by meaning (embeddings).</p>
-       <div id="kn-graph" class="text-sm text-zinc-500">Loading graph\u2026</div>
+       <div id="kn-graph" class="text-sm text-zinc-500">${skelRows(4)}</div>
        <div id="kn-build-msg" class="mt-2 text-xs"></div></div>`;
   document.getElementById("kn-refresh").onclick = async (e) => {
     e.target.textContent = "Refreshing…"; e.target.disabled = true;
@@ -2163,8 +2281,11 @@ export async function renderInbox(view) {
           <div class="mt-1 space-y-1">${drafts.map(d =>
             `<button data-ver="${esc(d.id)}" class="block w-full truncate rounded px-2 py-1 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800">v${d.version || "?"} · ${esc(d.source || "")} · ${esc((d.text || "").slice(0, 70))}</button>`).join("")}</div></details>`
       : "";
+    const tab = (act, label, on) => `<button data-do="${act}" data-ed-tab="${act}" class="rounded-md px-2 py-0.5 text-xs font-semibold ${on ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"}">${label}</button>`;
     box.innerHTML = `${comp}
+      <div class="mb-1.5 flex justify-end"><div class="inline-flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">${tab("write", "Write", true)}${tab("preview", "Preview", false)}</div></div>
       <textarea data-edit="${esc(id)}" rows="6" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc(cur.text || "")}</textarea>
+      <div data-ed-preview class="or-md mt-1 hidden max-h-[420px] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 px-3 py-2 dark:bg-zinc-800"></div>
       <div class="mt-2 flex flex-wrap items-center gap-2">${actionsHTML(o)}</div>
       <div data-msg="${esc(id)}" class="mt-1 text-xs text-zinc-400"></div>${versions}`;
     wireEditor(box, id, o, drafts);
@@ -2180,6 +2301,20 @@ export async function renderInbox(view) {
     });
     box.querySelectorAll("[data-do]").forEach(b => b.onclick = async () => {
       const act = b.getAttribute("data-do");
+      if (act === "preview" || act === "write") {
+        const pv = box.querySelector("[data-ed-preview]");
+        const showPreview = act === "preview";
+        if (pv && ta) {
+          if (showPreview) pv.innerHTML = renderMarkdown(ta.value);
+          pv.classList.toggle("hidden", !showPreview);
+          ta.classList.toggle("hidden", showPreview);
+        }
+        box.querySelectorAll("[data-ed-tab]").forEach((t) => {
+          const on = t.getAttribute("data-ed-tab") === act;
+          t.className = `rounded-md px-2 py-0.5 text-xs font-semibold ${on ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-white" : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"}`;
+        });
+        return;
+      }
       if (act === "copy") { try { await navigator.clipboard.writeText(ta.value); toast("Copied"); } catch (e) { toast("Copy failed"); } return; }
       if (act === "queue") return queueModal(id);
       b.disabled = true;
@@ -2243,7 +2378,7 @@ export async function renderInbox(view) {
     const box = list.querySelector(`[data-draft="${CSS.escape(id)}"]`);
     if (!box) return;
     box.classList.remove("hidden");
-    box.innerHTML = `<div class="text-sm text-zinc-400">Loading draft…</div>`;
+    box.innerHTML = skelRows(3);
     let drafts = [];
     try { drafts = (await api.replyDrafts(id))?.drafts || []; } catch (e) {}
     if (!drafts.length) {
@@ -2334,7 +2469,7 @@ export async function renderLearning(view) {
   view.innerHTML = head("Learning",
     "What this agent has learned from the data it fetches. It distills posts into memories, links them into beliefs, and writes from them.",
     `<button id="ln-learn" class="${btnP}"><i data-lucide="brain-circuit" class="inline-block h-4 w-4 align-[-2px]"></i> Learn now</button>`) +
-    `<div id="ln-body"><div class="${card} text-zinc-500">Loading…</div></div>`;
+    `<div id="ln-body" class="space-y-3">${skelCardsN(2, 3)}</div>`;
   const body = document.getElementById("ln-body");
   const kpi = (l, v, sub) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div>${sub ? `<div class="text-xs text-zinc-400 mt-0.5">${sub}</div>` : ""}</div>`;
   // De-duplicate insights by normalized text (defensive — the backend dedups too).
@@ -2506,7 +2641,8 @@ function sparkChart(series, palette) {
 
 export async function renderAnalytics(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  view.innerHTML = head("Analytics", "Activity for the active agent — last 30 days.") + `<div id="an">Loading…</div>`;
+  view.innerHTML = head("Analytics", "Activity for the active agent — last 30 days.") +
+    `<div id="an">${skelKpiRow(4)}<div class="mt-5">${skelCardsN(2, 4)}</div></div>`;
   let s = null;
   try { s = await api.analyticsSummary(30); } catch (e) {}
   const wrap = document.getElementById("an");
@@ -2551,7 +2687,7 @@ export async function renderQueue(view) {
   let tab = "all";
   view.innerHTML = head("Queue", "Drafts, scheduled &amp; posted content. Publishing is manual — copy, post, then mark it posted.",
     `<a href="#/compose" class="${btnP}">+ New content</a>`) +
-    `<div id="q-tabs" class="mb-4 flex flex-wrap gap-2"></div><div id="q">Loading…</div>`;
+    `<div id="q-tabs" class="mb-4 flex flex-wrap gap-2"></div><div id="q" class="space-y-3">${skelCardsN(4)}</div>`;
   const wrap = () => document.getElementById("q");
   const tabsEl = document.getElementById("q-tabs");
   const chip = (on) => `q-tab rounded-full px-3 py-1.5 text-xs font-semibold ${on ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700 text-zinc-500"}`;
@@ -2564,7 +2700,7 @@ export async function renderQueue(view) {
   }
 
   async function load() {
-    const el = wrap(); if (el) el.innerHTML = `<div class="${card} animate-pulse text-zinc-500">Loading…</div>`;
+    const el = wrap(); if (el) el.innerHTML = skeleton(4);
     let content;
     try { content = (await api.contentList(null, null, 200))?.content; }
     catch (e) { if (wrap()) wrap().innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">Couldn’t load content — ${esc(e)} <button id="q-retry" class="ml-2 underline">Retry</button></div>`; const r = document.getElementById("q-retry"); if (r) r.onclick = load; return; }
@@ -2589,7 +2725,7 @@ export async function renderQueue(view) {
         <div class="flex items-center gap-2"><span class="rounded bg-indigo-500/15 px-2 py-0.5 text-xs font-bold text-indigo-400">${esc((c.kind || "").replace(/_/g, " "))}</span>
           ${c.platform ? `<span class="text-xs text-zinc-500">${esc(c.platform)}</span>` : ""}
           <span class="rounded ${stCls} px-2 py-0.5 text-xs font-bold">${esc(st)}${esc(when)}</span></div>
-        <div class="mt-1.5 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-200">${esc((c.body || "").slice(0, 300))}${(c.body || "").length > 300 ? "…" : ""}</div>
+        <div class="mt-1.5">${mdWrap(renderMarkdown((c.body || "").slice(0, 300) + ((c.body || "").length > 300 ? "…" : "")))}</div>
         <div class="mt-3 flex flex-wrap gap-2">
           <button data-act="copy" data-id="${id}" class="${bd}"><i data-lucide="copy" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Copy</button>
           <a href="#/compose?id=${encodeURIComponent(rawId)}" class="${bd} text-reddit hover:border-reddit">Open in Compose</a>
@@ -2664,10 +2800,24 @@ export async function renderQueue(view) {
 }
 
 // ── Chat helpers (used by full Chat page + Brain side-panel) ────────────────
-function chatCardHTML() {
-  return `<div class="chat-card-host ${card} flex flex-col h-full min-h-0 opacity-0 animate-fade-in">
-     <div id="ch-msgs" class="flex-1 overflow-y-auto space-y-4 p-1"></div>
-     <div id="ch-typing" class="hidden px-1 py-2">
+function chatCardHTML(title) {
+  return `<div class="chat-card-host ${card} flex flex-col h-full min-h-0 overflow-hidden p-0 opacity-0 animate-fade-in">
+     <div class="flex items-center justify-between gap-3 border-b border-zinc-200 dark:border-zinc-800 px-4 py-3">
+       <div class="flex min-w-0 items-center gap-2">
+         <button id="ch-menu" type="button" class="md:hidden rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" title="Conversations">
+           <i data-lucide="panel-left" class="h-4 w-4"></i>
+         </button>
+         <div class="min-w-0">
+           <div id="ch-title" class="truncate text-sm font-semibold text-zinc-900 dark:text-white" title="${esc(title)}">${esc(title || "New conversation")}</div>
+           <div class="text-[11px] text-zinc-400">${esc(title ? "Saved conversation" : "Start a new chat")}</div>
+         </div>
+       </div>
+       <button id="ch-rename-title" type="button" class="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title="Rename conversation">
+         <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+       </button>
+     </div>
+     <div id="ch-msgs" class="flex-1 overflow-y-auto space-y-4 p-3"></div>
+     <div id="ch-typing" class="hidden px-3 py-2">
        <div class="flex items-center gap-2 text-xs text-zinc-400">
          <span class="h-2 w-2 animate-pulse rounded-full bg-reddit"></span>
          <span class="h-2 w-2 animate-pulse rounded-full bg-reddit" style="animation-delay:0.15s"></span>
@@ -2675,7 +2825,7 @@ function chatCardHTML() {
          <span>Agent is thinking…</span>
        </div>
      </div>
-     <div class="border-t border-zinc-200 dark:border-zinc-800 pt-4">
+     <div class="border-t border-zinc-200 dark:border-zinc-800 p-4">
        <form id="ch-form" class="flex gap-2">
          <input id="ch-input" autocomplete="off" placeholder="Ask about an angle, competitor, or draft idea…" class="${inputCls} flex-1 rounded-full transition-all focus:ring-2 focus:ring-reddit/30">
          <button type="submit" class="${btnP} transition-transform active:scale-95"><i data-lucide="send" class="inline-block h-4 w-4 align-[-2px]"></i></button>
@@ -2699,26 +2849,68 @@ function chatAngleActions(angle, context) {
     <a href="#/opportunities" class="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600 hover:underline dark:text-amber-400">Find replies</a>
   </div>`;
 }
-// Lightweight markdown-ish formatting for chat replies.
+// Markdown formatting for chat replies. The chat answer text may carry a
+// trailing block of *trusted* action-button HTML (see chatAngleActions) — that
+// part must NOT be markdown-escaped, so split it off and only format the text.
 function formatChatReply(text) {
   if (!text) return "";
-  let h = esc(text);
-  // Bold / italic
-  h = h.replace(/\*\*(.+?)\*\*/g, "<b class=\"font-semibold\">$1</b>");
-  h = h.replace(/\*(.+?)\*/g, "<i>$1</i>");
-  // Code inline
-  h = h.replace(/`([^`]+)`/g, "<code class=\"rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800\">$1</code>");
-  // URLs
-  h = h.replace(/(https?:\/\/[^\s<>"{}|\^`\[\]]+)/g, '<a href="$1" target="_blank" rel="noopener" class="text-reddit underline break-all">$1</a>');
-  // Line breaks
-  h = h.replace(/\n/g, "<br>");
-  return h;
+  const s = String(text);
+  const cut = s.indexOf('<div class="mt-2');
+  const md = cut >= 0 ? s.slice(0, cut) : s;
+  const trustedHtml = cut >= 0 ? s.slice(cut) : "";
+  // inlineMdMultiline handles **bold**, *italic*, `code`, [links](url), bare
+  // URLs and `•/-` bullets, with newlines → <br> (chat-bubble friendly).
+  return `<div class="or-md">${inlineMdMultiline(md)}</div>${trustedHtml}`;
+}
+function chatTextOnly(text) {
+  if (!text) return "";
+  const s = String(text);
+  const cut = s.indexOf('<div class="mt-2');
+  return cut >= 0 ? s.slice(0, cut).trim() : s;
+}
+function newUUID() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
 }
 // Grounded chat answer. Uses real agent data when inside Tauri; falls back to
 // helpful canned answers in the browser preview.
-async function chatAnswer(text, agent) {
+async function chatAnswer(text, agent, convId, history) {
   const t = text.toLowerCase();
   const fallback = (fn) => { try { return fn(); } catch (e) { return null; } };
+
+  // Primary path: grounded LLM chat over the agent's knowledge + all data sources.
+  if (api.isTauri()) {
+    try {
+      const r = await api.agentChat(text, null, 6, 6, convId, history);
+      if (r && r.ok && r.answer) {
+        // Append action buttons for common creative intents.
+        const wantsDraft = t.includes("draft") || t.includes("write") || t.includes("post") || t.includes("article");
+        const wantsAngle = t.includes("angle") || t.includes("topic") || t.includes("about");
+        let actions = "";
+        if (wantsDraft) {
+          actions = `<div class="mt-2 flex flex-wrap gap-1.5 opacity-0 animate-fade-in" style="animation-delay:80ms">
+            <a href="#/compose" class="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">Draft post</a>
+            <a href="#/compose?kind=article" class="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-400">Draft article</a>
+          </div>`;
+        } else if (wantsAngle) {
+          actions = `<div class="mt-2 flex flex-wrap gap-1.5 opacity-0 animate-fade-in" style="animation-delay:80ms">
+            <a href="#/compose?kind=post&angle=${encodeURIComponent(text)}" class="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">Draft post</a>
+            <a href="#/compose?kind=article&angle=${encodeURIComponent(text)}" class="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-600 hover:underline dark:text-violet-400">Draft article</a>
+            <a href="#/opportunities" class="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600 hover:underline dark:text-amber-400">Find replies</a>
+          </div>`;
+        }
+        return r.answer + actions;
+      }
+      if (r && !r.ok && r.error) {
+        return `I couldn't answer that: ${esc(r.error)}. Try again, or rephrase your question.`;
+      }
+    } catch (e) {
+      // Fall through to the faster keyword-specific paths / canned answers.
+    }
+  }
 
   // ── Top angle today ──
   if (t.includes("top angle") || t.includes("angle today") || t.includes("strongest angle")) {
@@ -2745,7 +2937,7 @@ async function chatAnswer(text, agent) {
         if (d && (d.briefing || (d.feed || []).length)) {
           const b = d.briefing || {};
           const themes = (b.sections || []).slice(0, 3).map((s) => `• **${s.headline}**${s.why ? " — " + s.why : ""}`).join("\n");
-          const feed = (d.feed || []).slice(0, 4).map((it) => `• [${it.title || "link"}](${it.url || ""}) _${it.source || ""}_`).join("\n");
+          const feed = (d.feed || []).slice(0, 4).map((it) => `• [${it.title || "link"}](${it.url || ""}) *${it.source || ""}*`).join("\n");
           return `**Daily update for ${esc(agent?.name || "your agent")}**\n\n${b.summary || "Here’s what’s moving in your niche today:"}\n\n${themes}\n\n**Top sources**\n${feed || "No links yet."}`;
         }
       } catch (e) {}
@@ -2799,43 +2991,101 @@ async function chatAnswer(text, agent) {
 }
 
 // Mount a chat card inside `host`. Returns a controller for sending / seeding.
-function mountChatCard(host, agentName, seedAngle, seedContext) {
-  host.innerHTML = chatCardHTML();
+function mountChatCard(host, agentName, conv, seedAngle, seedContext, callbacks) {
+  const cb = callbacks || {};
+  let currentTitle = conv?.title || "";
+  host.innerHTML = chatCardHTML(currentTitle);
   const msgs = host.querySelector("#ch-msgs");
   const typing = host.querySelector("#ch-typing");
   const input = host.querySelector("#ch-input");
   const form = host.querySelector("#ch-form");
+  const titleEl = host.querySelector("#ch-title");
+  const subtitleEl = host.querySelector("#ch-title + div");
   let busy = false;
   let mounted = true;
 
-  function bubble(who, text, { delay = 0 } = {}) {
+  // Conversation state.
+  const convId = conv?.id || newUUID();
+  const topic = conv?.topic || "";
+  const messages = Array.isArray(conv?.messages) ? conv.messages.slice() : [];
+
+  function updateTitle(t) {
+    currentTitle = t || currentTitle || "New conversation";
+    if (titleEl) { titleEl.textContent = currentTitle; titleEl.setAttribute("title", currentTitle); }
+    if (subtitleEl) subtitleEl.textContent = t ? "Saved conversation" : "Start a new chat";
+  }
+
+  function formatTime(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "";
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (sameDay) return time;
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
+    return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+  }
+
+  function bubble(who, text, { delay = 0, ts = 0 } = {}) {
     const isUser = who === "user";
     const div = document.createElement("div");
     div.className = `flex gap-3 opacity-0 translate-y-2 ${isUser ? "flex-row-reverse" : ""}`;
     div.style.animation = "fade-in-up 240ms ease-out forwards";
     if (delay) div.style.animationDelay = `${delay}ms`;
+    const time = ts ? `<span class="time-label opacity-0 transition-opacity duration-300 text-[10px] text-zinc-400 ${isUser ? "mr-2" : "ml-2"}">${esc(formatTime(ts))}</span>` : "";
     div.innerHTML = `
       <div class="h-8 w-8 shrink-0 rounded-full ${isUser ? "bg-brand" : "bg-reddit"}"></div>
-      <div class="max-w-[80%]">
+      <div class="group flex max-w-[80%] items-end gap-1 ${isUser ? "flex-row-reverse" : ""}">
         <div class="rounded-2xl ${isUser ? "rounded-tr-sm bg-reddit text-white" : "rounded-tl-sm bg-zinc-100 dark:bg-zinc-800"} px-4 py-2.5 text-sm leading-relaxed">${formatChatReply(text)}</div>
-        <div class="mt-1 text-xs text-zinc-400 ${isUser ? "text-right" : ""}">${isUser ? "You" : "Agent"}</div>
+        ${time}
       </div>`;
     msgs.appendChild(div);
+    // Fade in the timestamp after the bubble animation.
+    requestAnimationFrame(() => {
+      const tl = div.querySelector(".time-label");
+      if (tl) tl.classList.remove("opacity-0");
+    });
     msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
     return div;
+  }
+
+  async function saveConv(silent) {
+    if (!api.isTauri()) return;
+    try {
+      await api.chatConvSave(convId, topic, currentTitle || null, messages);
+      if (!silent) {
+        try { window.dispatchEvent(new CustomEvent("or-chat-saved", { detail: { id: convId } })); } catch (e) {}
+      }
+    } catch (e) { console.error("[chat save failed]", e); }
   }
 
   async function send(text) {
     if (!mounted || !text.trim() || busy) return;
     busy = true;
-    bubble("user", text);
+    const now = Date.now();
+    messages.push({ role: "user", content: text.trim(), ts: now });
+    bubble("user", text, { ts: now });
     input.value = "";
     typing.classList.remove("hidden");
     msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
     try {
-      const reply = await chatAnswer(text, { name: agentName });
+      const history = messages.slice(0, -1); // prior turns only; backend appends current turn
+      const reply = await chatAnswer(text, { name: agentName }, convId, history);
+      const replyText = chatTextOnly(reply);
+      const replyTs = Date.now();
+      messages.push({ role: "assistant", content: replyText, ts: replyTs });
       typing.classList.add("hidden");
-      bubble("agent", reply);
+      bubble("agent", reply, { ts: replyTs });
+      saveConv();
+      // First user message just gave us a title from the backend — refresh header.
+      if (!currentTitle && messages.length === 2) {
+        try {
+          const r = await api.chatConvGet(convId);
+          if (r?.ok && r.conversation?.title) updateTitle(r.conversation.title);
+        } catch (e) {}
+      }
     } catch (e) {
       typing.classList.add("hidden");
       bubble("agent", `Sorry, I hit an error: ${e.message || e}. Try again in a moment.`);
@@ -2847,11 +3097,26 @@ function mountChatCard(host, agentName, seedAngle, seedContext) {
 
   function seed(angle, context) {
     if (!angle) return;
-    bubble("user", `Tell me about the angle “${angle}”`);
+    const now = Date.now();
+    const userText = `Tell me about the angle “${angle}”`;
+    messages.push({ role: "user", content: userText, ts: now });
+    bubble("user", userText, { ts: now });
     const reply = `Here’s what I know about **“${angle}”**${context ? ": " + context : "."}${chatAngleActions(angle, context)}`;
-    bubble("agent", reply, { delay: 120 });
+    messages.push({ role: "assistant", content: chatTextOnly(reply), ts: now });
+    bubble("agent", reply, { delay: 120, ts: now });
+    saveConv();
     icons();
   }
+
+  // Render existing messages (no welcome bubble for loaded conversations).
+  if (messages.length) {
+    for (const m of messages) {
+      bubble(m.role === "user" ? "user" : "agent", m.content || "", { ts: m.ts });
+    }
+  } else {
+    bubble("agent", `Hi — I'm your **${esc(agentName || "agent")}** research assistant. Ask me about the latest angles, competitor mentions, or what to write today.`);
+  }
+  if (seedAngle) seed(seedAngle, seedContext);
 
   function onSubmit(e) { e.preventDefault(); send(input.value); }
   form.addEventListener("submit", onSubmit);
@@ -2860,13 +3125,15 @@ function mountChatCard(host, agentName, seedAngle, seedContext) {
   const quickHandlers = [];
   quicks.forEach((b) => { const fn = quickClick(b); b.addEventListener("click", fn); quickHandlers.push({ el: b, fn }); });
 
-  bubble("agent", `Hi — I'm your **${esc(agentName || "agent")}** research assistant. Ask me about the latest angles, competitor mentions, or what to write today.`);
-  if (seedAngle) seed(seedAngle, seedContext);
+  host.querySelector("#ch-menu")?.addEventListener("click", () => { if (cb.onMenuToggle) cb.onMenuToggle(); });
+  host.querySelector("#ch-rename-title")?.addEventListener("click", () => { if (cb.onRename) cb.onRename(currentTitle); });
 
   return {
     send,
     seed,
     focus: () => { if (mounted) input.focus(); },
+    convId,
+    updateTitle,
     destroy: () => {
       mounted = false;
       form.removeEventListener("submit", onSubmit);
@@ -2881,31 +3148,222 @@ export async function renderChat(view) {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const seedAngle = decodeURIComponent(params.get("angle") || "");
   const seedContext = decodeURIComponent(params.get("context") || "");
+  const convParam = decodeURIComponent(params.get("conv") || "");
+  const topic = (a?.topic || a?.name || "").trim();
 
-  view.className = "w-full max-w-6xl flex-1 px-8 py-7 opacity-0 animate-fade-in";
-  view.innerHTML = head("Chat", `Ask ${esc(a?.name || "your agent")} anything about its niche, angles, or drafts.`,
+  if (!a) {
+    view.className = "w-full max-w-6xl flex-1 px-8 py-7 opacity-0 animate-fade-in";
+    view.innerHTML = head("Chat", "Ask your agent anything about its niche, angles, or drafts.") +
+      `<div class="${card} text-center">
+        <p class="text-zinc-500">No active agent. Create one to start chatting with your research assistant.</p>
+        <a href="#/agents" class="mt-4 inline-block ${btnP}">Create an agent →</a>
+       </div>`;
+    icons();
+    return;
+  }
+
+  view.className = "w-full max-w-7xl flex-1 px-4 py-5 lg:px-8 lg:py-7 opacity-0 animate-fade-in";
+  view.innerHTML = head("Chat", `Ask ${esc(a.name)} anything about its niche, angles, or drafts.`,
     `<a href="#/compose" class="${btnP}"><i data-lucide="pen-line" class="inline-block h-4 w-4 align-[-2px]"></i> New draft</a>`) +
-    `<div style="height:calc(100vh - 160px)"><div class="chat-card-host h-full"></div></div>`;
+    `<div id="chat-layout" class="relative flex gap-4" style="height:calc(100vh - 160px)">
+       <!-- Sidebar: hidden on mobile, drawer when toggled -->
+       <div id="chat-sidebar" class="absolute inset-y-0 left-0 z-20 hidden w-72 flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900 md:static md:z-auto md:flex md:w-64 md:rounded-none md:border-0 md:border-r md:bg-transparent md:p-0 md:shadow-none">
+         <div class="flex items-center justify-between">
+           <b class="text-sm font-semibold text-zinc-900 dark:text-white">Conversations</b>
+           <div class="flex items-center gap-1">
+             <button id="ch-new" class="rounded p-1 text-reddit hover:bg-reddit/10" title="New conversation"><i data-lucide="plus" class="h-4 w-4"></i></button>
+             <button id="ch-close" type="button" class="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 md:hidden" title="Close"><i data-lucide="x" class="h-4 w-4"></i></button>
+           </div>
+         </div>
+         <div class="relative">
+           <i data-lucide="search" class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"></i>
+           <input id="ch-search" type="search" placeholder="Search conversations…" autocomplete="off" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 py-1.5 pl-8 pr-2 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-reddit">
+         </div>
+         <div id="ch-list" class="flex-1 overflow-y-auto space-y-1"></div>
+       </div>
+       <!-- Mobile overlay -->
+       <div id="chat-overlay" class="fixed inset-0 z-10 hidden bg-black/20 md:hidden"></div>
+       <div class="chat-card-host flex-1 h-full min-w-0"></div>
+     </div>`;
   icons();
-  const ctrl = mountChatCard(view.querySelector(".chat-card-host"), a?.name, seedAngle, seedContext);
-  view.__orCleanup = () => { if (ctrl) { ctrl.destroy(); view.__orCleanup = null; } };
+
+  const sidebar = document.getElementById("chat-sidebar");
+  const overlay = document.getElementById("chat-overlay");
+  let conversations = [];
+  let activeConv = null;
+  let chatCtrl = null;
+
+  function openSidebar() {
+    sidebar.classList.remove("hidden");
+    sidebar.classList.add("flex");
+    overlay.classList.remove("hidden");
+  }
+  function closeSidebar() {
+    sidebar.classList.add("hidden");
+    sidebar.classList.remove("flex");
+    overlay.classList.add("hidden");
+  }
+
+  async function loadConversations() {
+    const list = document.getElementById("ch-list");
+    if (list) list.innerHTML = `<div class="py-4 text-center text-xs text-zinc-400"><span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-reddit"></span></div>`;
+    try {
+      const r = await api.chatConvList(topic || null, 200);
+      conversations = (r && r.conversations) || [];
+      paintList();
+    } catch (e) { console.error("[chat list failed]", e); if (list) list.innerHTML = `<div class="text-xs text-rose-500 px-1">Failed to load</div>`; }
+  }
+
+  function formatUpdated(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "";
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  function paintList(filterText = "") {
+    const list = document.getElementById("ch-list");
+    if (!list) return;
+    const q = filterText.toLowerCase();
+    const filtered = conversations.filter((c) => (c.title || "").toLowerCase().includes(q));
+    if (!filtered.length) {
+      list.innerHTML = `<div class="px-1 py-2 text-xs text-zinc-400">${q ? "No matches." : "No saved conversations yet."}</div>`;
+      return;
+    }
+    list.innerHTML = filtered.map((c) => {
+      const isActive = activeConv && activeConv.id === c.id;
+      return `<div class="group relative rounded-lg px-2.5 py-2 text-sm ${isActive ? "bg-reddit/10 text-reddit" : "text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"} cursor-pointer" data-conv="${esc(c.id)}">
+        <div class="flex items-center justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="truncate pr-6 font-medium" title="${esc(c.title)}">${esc(c.title || "Untitled")}</div>
+            <div class="mt-0.5 flex items-center gap-2 text-[11px] ${isActive ? "text-reddit/70" : "text-zinc-400"}">
+              <span>${c.msg_count || 0} message${(c.msg_count || 0) === 1 ? "" : "s"}</span>
+              <span>•</span>
+              <span>${formatUpdated(c.updated_at)}</span>
+            </div>
+          </div>
+          <div class="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <button data-rename="${esc(c.id)}" title="Rename" class="rounded p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700"><i data-lucide="pencil" class="h-3 w-3"></i></button>
+            <button data-delete="${esc(c.id)}" title="Delete" class="rounded p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700"><i data-lucide="trash-2" class="h-3 w-3"></i></button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+    list.querySelectorAll("[data-conv]").forEach((el) => {
+      el.onclick = (e) => {
+        if (e.target.closest("[data-rename], [data-delete]")) return;
+        closeSidebar();
+        location.hash = `#/chat?conv=${encodeURIComponent(el.getAttribute("data-conv"))}`;
+      };
+    });
+    list.querySelectorAll("[data-rename]").forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const id = b.getAttribute("data-rename");
+        const c = conversations.find((x) => x.id === id);
+        window.orModal({
+          title: "Rename conversation",
+          body: `<input id="ch-rename" value="${esc(c?.title || "")}" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm" placeholder="Conversation name">`,
+          onOk: async () => {
+            const t2 = document.getElementById("ch-rename").value.trim();
+            if (!t2) return;
+            try {
+              await api.chatConvRename(id, t2);
+              toast("Renamed");
+              if (activeConv && activeConv.id === id && chatCtrl) chatCtrl.updateTitle(t2);
+              loadConversations();
+            } catch (err) { toast("Rename failed: " + err); }
+          },
+        });
+      };
+    });
+    list.querySelectorAll("[data-delete]").forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const id = b.getAttribute("data-delete");
+        const c = conversations.find((x) => x.id === id);
+        window.orModal({
+          title: `Delete “${esc(c?.title || "conversation")}”?`,
+          body: `<p class="text-sm text-zinc-500">This permanently removes the conversation. It cannot be undone.</p>`,
+          okText: "Delete",
+          onOk: async () => {
+            try {
+              await api.chatConvDelete(id);
+              toast("Deleted");
+              if (activeConv && activeConv.id === id) location.hash = "#/chat";
+              else loadConversations();
+            } catch (err) { toast("Delete failed: " + err); }
+          },
+        });
+      };
+    });
+    icons();
+  }
+
+  document.getElementById("ch-new").onclick = () => { location.hash = "#/chat"; };
+  document.getElementById("ch-close").onclick = closeSidebar;
+  overlay.onclick = closeSidebar;
+  document.getElementById("ch-search").addEventListener("input", (e) => paintList(e.target.value));
+
+  async function init() {
+    if (convParam) {
+      try {
+        const r = await api.chatConvGet(convParam);
+        if (r && r.ok && r.conversation) activeConv = r.conversation;
+      } catch (e) { console.error("[chat get failed]", e); }
+    }
+    if (!activeConv) activeConv = { id: newUUID(), topic, title: "", messages: [] };
+    chatCtrl = mountChatCard(view.querySelector(".chat-card-host"), a.name, activeConv, seedAngle, seedContext, {
+      onMenuToggle: openSidebar,
+      onRename: (currentTitle) => {
+        window.orModal({
+          title: "Rename conversation",
+          body: `<input id="ch-rename" value="${esc(currentTitle)}" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm" placeholder="Conversation name">`,
+          onOk: async () => {
+            const t2 = document.getElementById("ch-rename").value.trim();
+            if (!t2) return;
+            try {
+              await api.chatConvRename(chatCtrl.convId, t2);
+              chatCtrl.updateTitle(t2);
+              toast("Renamed");
+              loadConversations();
+            } catch (err) { toast("Rename failed: " + err); }
+          },
+        });
+      },
+    });
+    view.__orCleanup = () => { if (chatCtrl) { chatCtrl.destroy(); chatCtrl = null; view.__orCleanup = null; } };
+    loadConversations();
+  }
+
+  init();
 }
 
 // ── Keywords (edit the agent's tracked keywords + platforms) ────────────────
 export async function renderKeywords(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  view.innerHTML = `<div id="kw">Loading…</div>`;
+  view.innerHTML = `<div id="kw">${skeletonBody("keywords")}</div>`;
+  const kw = document.getElementById("kw");
   let a = null, platforms = [];
   try { a = await api.agentGet(); } catch (e) {}
-  if (!a) { document.getElementById("kw").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
+  if (!kw || !view.contains(kw)) return;
+  if (!a) { kw.innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
   try { platforms = (await api.replyPlatforms())?.platforms || []; } catch (e) {}
+  if (!view.contains(kw)) return;
   const checks = platforms.filter((p) => p.can_reply).map((p) =>
     `<label class="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 text-sm">
        <input type="checkbox" class="accent-reddit" value="${esc(p.key)}" ${(a.platforms || []).includes(p.key) ? "checked" : ""}> ${esc(p.label)}</label>`).join("");
-  document.getElementById("kw").outerHTML =
+  kw.innerHTML =
     head("Keywords &amp; platforms", `What <b>${esc(a.name)}</b> watches.`,
       `<button id="kw-save" class="${btnP}">Save</button>`) +
-    `<div class="grid gap-5 lg:grid-cols-2">
+    `<div class="mb-5 ${card}"><b class="text-zinc-900 dark:text-white">Auto-fill from URL</b>
+       <p class="mb-2 mt-1 text-sm text-zinc-500">Paste an App Store, Play Store, or website URL to suggest refreshed fields.</p>
+       ${urlFetchRow("kw-url", "kw-fetch", "kw-fetch-msg")}</div>
+     <div class="grid gap-5 lg:grid-cols-2">
        <div class="${card}"><b class="text-zinc-900 dark:text-white">Keywords</b>
          <p class="mb-2 mt-1 text-sm text-zinc-500">Comma-separated topics to scan for.</p>
          <textarea id="kw-list" rows="4" class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm">${esc((a.keywords || []).join(", "))}</textarea>
@@ -2930,6 +3388,20 @@ export async function renderKeywords(view) {
          <label class="block text-sm text-zinc-500">Guardrails<input id="kw-guardrails" value="${esc(a.guardrails || "")}" placeholder="never spam; disclose; obey sub rules" class="mt-1 block w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2"></label>
        </div></div>
      <span id="kw-msg" class="mt-3 inline-block text-sm text-zinc-500"></span>`;
+  document.getElementById("kw-fetch").onclick = () => runUrlFetch("kw-url", "kw-fetch-msg", (fields) => {
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+    set("kw-list", Array.isArray(fields.keywords) ? fields.keywords.join(", ") : fields.keywords);
+    set("kw-product", fields.product || fields.brand || "");
+    set("kw-persona", fields.persona);
+    set("kw-tone", fields.tone);
+    set("kw-website", fields.website);
+    if (fields.platforms && Array.isArray(fields.platforms)) {
+      kw.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+        cb.checked = fields.platforms.includes(cb.value);
+      });
+    }
+  });
+
   document.getElementById("kw-save").onclick = async () => {
     const msg = document.getElementById("kw-msg");
     const kws = document.getElementById("kw-list").value;
@@ -2937,7 +3409,7 @@ export async function renderKeywords(view) {
     const product = document.getElementById("kw-product").value.trim();
     const tone = document.getElementById("kw-tone").value.trim();
     const website = document.getElementById("kw-website").value.trim();
-    const pfs = [...document.querySelectorAll("#kw input[type=checkbox]:checked")].map((c) => c.value);
+    const pfs = [...kw.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
     msg.textContent = "Saving…";
     const patch = { keywords: kws, persona, tone, website, platforms: pfs.join(",") };
     // Product → the `brand` field the draft generator promotes from. Only set
@@ -3004,6 +3476,10 @@ export async function renderOnboarding(view) {
     <p class="text-zinc-500 dark:text-zinc-400">A brand/niche persona with its own purpose, knowledge, voice &amp; platforms.</p>
 
     <div class="mt-5 ${card} space-y-5">
+      <div>${sec("0 · Auto-fill from URL")}
+        <p class="mb-2 -mt-1 text-xs text-zinc-400">Paste an App Store, Play Store, or website URL to pre-fill the form.</p>
+        ${urlFetchRow("ob-url", "ob-fetch", "ob-fetch-msg")}</div>
+
       <div>${sec("1 · Identity")}
         <div class="space-y-3">
           ${field("ob-name", "Name *", "Acme Notes")}
@@ -3053,6 +3529,25 @@ export async function renderOnboarding(view) {
   tileEls.forEach((t) => t.querySelector("input").addEventListener("change", paint));
   paint();
 
+  view.querySelector("#ob-fetch").onclick = () => runUrlFetch("ob-url", "ob-fetch-msg", (fields) => {
+    const set = (id, v) => { const el = view.querySelector(id); if (el && v != null) el.value = v; };
+    set("#ob-name", fields.name);
+    set("#ob-website", fields.website);
+    set("#ob-niche", fields.niche);
+    set("#ob-goal", fields.goal);
+    set("#ob-product", fields.product);
+    set("#ob-persona", fields.persona);
+    set("#ob-tone", fields.tone);
+    set("#ob-keywords", Array.isArray(fields.keywords) ? fields.keywords.join(", ") : fields.keywords);
+    if (fields.platforms && Array.isArray(fields.platforms)) {
+      tileEls.forEach((t) => {
+        const cb = t.querySelector("input");
+        cb.checked = fields.platforms.includes(cb.value);
+      });
+      paint();
+    }
+  });
+
   view.querySelector("#ob-create").onclick = async () => {
     const msg = view.querySelector("#ob-msg");
     const nameEl = view.querySelector("#ob-name");
@@ -3084,7 +3579,7 @@ export async function renderAlerts(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("Alert rules", "Get pinged when a high-value conversation appears.",
     `<button id="al-new" class="${btnP}">+ New rule</button>`) +
-    `<div id="al-form" class="hidden mb-5 ${card}"></div><div id="al-list" class="space-y-3">Loading…</div>`;
+    `<div id="al-form" class="hidden mb-5 ${card}"></div><div id="al-list" class="space-y-3">${skelCardsN(3)}</div>`;
   document.getElementById("al-new").onclick = () => {
     const f = document.getElementById("al-form");
     f.classList.toggle("hidden");
@@ -3156,7 +3651,7 @@ export async function renderGeo(view) {
     `<div id="geo-kpi" class="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4"></div>
      <div id="geo-trend" class="mb-5"></div>
      <div id="geo-engine" class="mb-5"></div>
-     <div id="geo-form" class="hidden mb-5 ${card}"></div><div id="geo-list" class="space-y-3">Loading…</div>`;
+     <div id="geo-form" class="hidden mb-5 ${card}"></div><div id="geo-list" class="space-y-3">${skelCardsN(3)}</div>`;
 
   // Real-check engine status + connect Perplexity for live-web citations.
   (async () => {
@@ -3272,7 +3767,7 @@ export async function renderGeo(view) {
         if (!box) return;
         if (!box.classList.contains("hidden")) { box.classList.add("hidden"); return; }
         box.classList.remove("hidden");
-        box.innerHTML = `<div class="text-xs text-zinc-400">Loading trend…</div>`;
+        box.innerHTML = skelRows(2);
         try { const h = await api.geoHistory(id); box.innerHTML = geoTrendDots(h?.checks || []); }
         catch (e) { box.innerHTML = `<div class="text-xs text-rose-500">${esc(e)}</div>`; }
       });
@@ -3305,7 +3800,7 @@ export async function renderWelcome(view) {
   const TOTAL = 4;
 
   const brandBar = `<div class="mb-6 flex items-center gap-2 text-xl font-extrabold text-zinc-900 dark:text-white">
-    <span class="h-6 w-6 rounded-full bg-reddit"></span> OpenReply</div>`;
+    <img src="/icon.png" alt="" class="h-6 w-6 rounded-md object-contain" /> OpenReply</div>`;
   const dots = () => `<div class="mt-5 flex items-center justify-center gap-1.5">${
     Array.from({ length: TOTAL }, (_, i) =>
       `<span class="h-1.5 rounded-full transition-all ${i === S.step ? "w-6 bg-reddit" : i < S.step ? "w-1.5 bg-reddit/50" : "w-1.5 bg-zinc-300 dark:bg-zinc-700"}"></span>`
@@ -3947,7 +4442,7 @@ export async function renderBrain(view) {
   const sub = path[1];
   const param = path[2] ? decodeURIComponent(path[2]) : "";
 
-  view.innerHTML = head("Brain", "Loading the unified brain…") + `<div id="br">Loading…</div>`;
+  view.innerHTML = `<div id="br">${skeletonBody("brain")}</div>`;
   let b = null; try { b = await api.agentBrain(); } catch (e) {}
   const wrap = document.getElementById("br");
   if (b === null) { wrap.outerHTML = `<div class="${card} text-zinc-500">Run inside the app to see the brain.</div>`; return; }
@@ -4200,7 +4695,7 @@ async function renderBrainArticle(view, b, idOrAngle) {
       `<a href="#/brain" class="${btn}">← Back to Brain</a>
        <a href="#/compose?kind=article&angle=${encodeURIComponent(title)}" class="${btnP}">Open in Compose</a>`) +
     `<div class="${card}">
-      <div class="prose dark:prose-invert max-w-none text-sm text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap">${esc(body)}</div>
+      ${mdWrap(renderMarkdown(body))}
       <div class="mt-4 flex flex-wrap gap-2">
         <a href="#/compose?kind=article&angle=${encodeURIComponent(title)}${fromId ? `&id=${encodeURIComponent(fromId)}` : ""}" class="${aBtn} text-violet-500">Edit in Compose</a>
         <a href="#/queue" class="${aBtn}">View in Queue</a>
@@ -4219,7 +4714,7 @@ export async function renderLibrary(view) {
     `<div class="mb-3 flex flex-wrap items-center gap-2"><input id="lib-q" placeholder="Search collected content…" class="${inputCls} w-64"></div>
      <div id="lib-srcs" class="mb-3 flex flex-wrap gap-2"></div>
      <div id="lib-rel" class="mb-3"></div>
-     <div id="lib-list" class="space-y-3">Loading…</div>
+     <div id="lib-list" class="space-y-3">${skelCardsN(3)}</div>
      <div id="lib-more" class="mt-4 hidden text-center"><button class="${btn}">Load more</button></div>`;
   const list = view.querySelector("#lib-list");
   const srcsBox = view.querySelector("#lib-srcs");
@@ -4301,6 +4796,18 @@ export async function renderGrowth(view) {
     `<div id="gp-body" class="space-y-4"></div>`;
   const body = view.querySelector("#gp-body");
   const li = (arr) => (arr || []).map((x) => `<li>${esc(typeof x === "string" ? x : (x.text || JSON.stringify(x)))}</li>`).join("");
+  function fmtCadence(c) {
+    if (c == null) return "";
+    if (typeof c === "string") return c;
+    if (Array.isArray(c)) return c.map(fmtCadence).join("; ");
+    if (typeof c === "object") {
+      if (typeof c.text === "string") return c.text;
+      if (typeof c.summary === "string") return c.summary;
+      if (typeof c.cadence === "string") return c.cadence;
+      return Object.entries(c).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
+    }
+    return String(c);
+  }
   function render(plan) {
     if (!plan) {
       body.innerHTML = `<div class="${card} text-zinc-500">No plan yet. Give this agent a <b>Goal</b> + <b>Product</b> (create or edit the agent), then click <b>Generate plan</b>.</div>`;
@@ -4313,13 +4820,13 @@ export async function renderGrowth(view) {
       (plan.summary ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Strategy</div><p class="mt-1 text-zinc-600 dark:text-zinc-300">${esc(plan.summary)}</p></div>` : "") +
       sect("Target communities", comm ? `<div class="grid gap-2 sm:grid-cols-2">${comm}</div>` : "") +
       sect("Messaging angles", plan.angles?.length ? `<ul class="ml-4 list-disc space-y-1 text-zinc-600 dark:text-zinc-300">${li(plan.angles)}</ul>` : "") +
-      (plan.cadence ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Cadence</div><p class="mt-1 text-zinc-600 dark:text-zinc-300">${esc(plan.cadence)}</p></div>` : "") +
+      (plan.cadence ? `<div class="${card}"><div class="text-sm font-semibold text-zinc-900 dark:text-white">Cadence</div><p class="mt-1 text-zinc-600 dark:text-zinc-300">${esc(fmtCadence(plan.cadence))}</p></div>` : "") +
       sect("KPIs", plan.kpis?.length ? `<ul class="ml-4 list-disc space-y-1 text-zinc-600 dark:text-zinc-300">${li(plan.kpis)}</ul>` : "") +
       sect("First steps", plan.first_steps?.length ? `<ol class="ml-4 list-decimal space-y-1 text-zinc-600 dark:text-zinc-300">${li(plan.first_steps)}</ol>` : "");
     icons();
   }
   async function load() {
-    body.innerHTML = `<div class="${card} text-zinc-500">Loading…</div>`;
+    body.innerHTML = skelCardsN(2);
     try { const r = await api.replyGrowthGet(); render(r?.plan); }
     catch (e) { body.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
   }
@@ -4332,104 +4839,25 @@ export async function renderGrowth(view) {
   load();
 }
 
+// "Watch accounts" merged into the unified X Account screen (2026-06-30).
+// Kept as a redirect so any saved/in-app #/watch link still resolves.
 export async function renderWatch(view) {
-  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
-  let a = null; try { a = await api.agentGet(); } catch (e) {}
-  if (!a) { view.innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
-  view.innerHTML = head("Watch accounts",
-    `Track creators & competitors on X — their posts are automatically saved to <b>${esc(a.name)}</b>'s Library corpus so you can learn, search, and repurpose.`,
-    `<button id="wa-all" class="${btnP}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all + learn</button>
-     <a href="#/library" class="${btn}">See all in Library →</a>`) +
-    `<div class="mb-4 ${card}"><div class="flex flex-wrap items-end gap-3">
-       <label class="flex-1 text-sm text-zinc-500">Add an X account<input id="wa-handle" placeholder="@naval  or  x.com/naval" class="mt-1 block w-full ${inputCls}"></label>
-       <button id="wa-add" class="${btnP}">Track</button></div>
-       <p class="mt-2 text-xs text-zinc-400"><b>What this is:</b> competitor/creator tracking. Add any X handle and we pull their recent posts into this agent's Library corpus. You can see everything in <a href="#/library" class="text-reddit">Library</a>. Needs an X connection in <a href="#/connections" class="text-reddit">Connections</a>.</p>
-       <div id="wa-msg" class="mt-2 text-sm"></div></div>
-     <div id="wa-list" class="space-y-3">Loading…</div>`;
-  const list = view.querySelector("#wa-list");
-  async function load() {
-    try {
-      const accts = (await api.accountList())?.accounts || [];
-      list.innerHTML = accts.length ? accts.map((c) => `<div class="${card}" data-row="${esc(c.handle)}">
-        <div class="flex items-center justify-between gap-3">
-          <div><a href="https://x.com/${esc(c.handle)}" target="_blank" class="font-semibold text-zinc-900 dark:text-white">@${esc(c.handle)}</a>
-            ${c.note ? `<span class="ml-2 text-xs text-zinc-400">${esc(c.note)}</span>` : ""}
-            <div class="text-xs text-zinc-400">${c.posts_count ? `${c.posts_count} posts pulled` : "not fetched yet"}${c.last_fetched_at ? ` · ${_ago(c.last_fetched_at)}` : ""}</div></div>
-          <div class="flex gap-2">
-            <button data-act="fetch" data-h="${esc(c.handle)}" class="${btn}">Fetch posts</button>
-            <button data-act="untrack" data-h="${esc(c.handle)}" class="${btn} text-rose-500">Untrack</button></div></div>
-        <div data-samp="${esc(c.handle)}" class="mt-2 space-y-1"></div></div>`).join("")
-        : `<div class="${card} text-zinc-500">No accounts tracked yet — add an X handle above.</div>`;
-      list.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => waAction(b));
-      icons();
-    } catch (e) { list.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
-  }
-  async function waAction(b) {
-    const act = b.getAttribute("data-act"), h = b.getAttribute("data-h");
-    if (act === "untrack") { try { await api.accountUntrack(h); toast("Untracked @" + h); load(); } catch (e) { toast("Failed"); } return; }
-    if (act === "fetch") {
-      b.disabled = true; const t = b.textContent; b.textContent = "Fetching…";
-      try {
-        const r = await api.accountFetch(h, false);
-        const samp = list.querySelector(`[data-samp="${CSS.escape(h)}"]`);
-        if (r?.error) { if (samp) samp.innerHTML = `<div class="text-xs text-rose-500">${esc(r.error)}</div>`; }
-        else if (!r?.fetched) {
-          if (samp) samp.innerHTML = `<div class="text-xs text-amber-600">${esc(r.message || "No posts returned")} — <a href="#/connections" class="underline">Connect X →</a></div>`;
-        } else {
-          toast(r.message || `Pulled ${r.fetched || 0}`);
-          const _rp = (s) => { sessionStorage.setItem("or-repurpose-ctx", JSON.stringify({title: s.title, text: s.text || s.title})); location.hash = "#/compose"; };
-          if (samp) {
-            samp.innerHTML = (r.sample || []).map((s, i) =>
-              `<div class="flex items-start gap-2 text-sm text-zinc-500">
-                 <span class="shrink-0">•</span>
-                 <span class="flex-1 min-w-0">${esc(s.title)}${s.url ? ` <a href="${esc(s.url)}" target="_blank" class="text-reddit">↗</a>` : ""}</span>
-                 <button data-rp="${i}" class="shrink-0 text-xs font-semibold text-reddit hover:underline">Create post →</button>
-               </div>`).join("")
-              + `<div class="mt-2 flex gap-3"><button data-rp-all="1" class="text-xs font-semibold text-reddit hover:underline">Open Compose (repurpose all) →</button><a href="#/library" class="text-xs font-semibold text-reddit hover:underline">See all in Library →</a></div>`;
-            samp.querySelectorAll("[data-rp]").forEach((btn) => {
-              const idx = Number(btn.getAttribute("data-rp"));
-              const s = (r.sample || [])[idx] || {};
-              btn.onclick = () => _rp(s);
-            });
-            samp.querySelector("[data-rp-all]")?.addEventListener("click", () => {
-              const allText = (r.sample || []).map(s => s.title).join("\n");
-              _rp({title: `Posts from @${h}`, text: allText});
-            });
-          }
-        }
-        load();
-      } catch (e) { toast("Fetch failed"); }
-      b.disabled = false; b.textContent = t;
-    }
-  }
-  view.querySelector("#wa-add").onclick = async () => {
-    const inp = view.querySelector("#wa-handle"); const msg = view.querySelector("#wa-msg");
-    const h = (inp.value || "").trim();
-    if (!h) { msg.innerHTML = `<span class="text-amber-500">Enter a handle.</span>`; return; }
-    try { await api.accountTrack(h); inp.value = ""; toast("Tracking " + h); load(); }
-    catch (e) { msg.innerHTML = `<span class="text-rose-500">${esc(e)}</span>`; }
-  };
-  view.querySelector("#wa-all").onclick = async (e) => {
-    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Fetching all…";
-    try { const r = await api.accountFetch(null, true); toast(`Pulled ${r.fetched || 0} posts from ${r.accounts || 0} accounts`); }
-    catch (err) { toast("Fetch failed"); }
-    b.disabled = false; b.innerHTML = html; icons(); load();
-  };
-  load();
+  location.hash = "#/x-account";
 }
 
 // ── Minimal X-account worktree screen ─────────────────────────────────────
 export async function renderXAccount(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("X Account",
-    `Connect an X account to browse its timeline and threads. Posts stay private here unless you click <b>Save to Library</b> — then they appear in <a href="#/library" class="text-reddit underline">Library</a> for search, learning, and repurpose.`,
+    `Track creators & competitors on X. Pull their recent posts into your active agent's <a href="#/library" class="text-reddit underline">Library</a> corpus — to search, learn from, and repurpose — or browse any account's timeline and threads and reply right here. Posts only enter the Library when you click <b>Save to Library</b> (or <b>Fetch all</b>).`,
     `<button id="xa-add-btn" class="${btnP}">+ Add account</button>
      <button id="xa-import-btn" class="ml-2 ${btn}">Import from browser</button>
+     <button id="xa-all-btn" class="ml-2 ${btn}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all → Library + learn</button>
      <a href="#/library" class="ml-2 ${btn}">See all in Library →</a>`) +
     `<div id="xa-form" class="hidden mb-5 ${card}"></div>
      <div id="xa-import-msg" class="hidden mb-2 text-sm text-zinc-500"></div>
-     <div id="xa-accounts" class="${card} mb-5"><div class="text-zinc-500">Loading accounts…</div></div>
-     <div id="xa-output" class="${card}"><div class="text-zinc-500">Select an account to see profile/posts.</div></div>`;
+     <div id="xa-accounts" class="mb-5 space-y-3">${skelCardsN(2)}</div>
+     <div id="xa-output" class="${card}"><div class="text-zinc-500">Select an account to browse its profile, posts & threads.</div></div>`;
 
   const form = document.getElementById("xa-form");
   document.getElementById("xa-add-btn").onclick = () => {
@@ -4444,13 +4872,36 @@ export async function renderXAccount(view) {
     msg.classList.remove("hidden");
     msg.textContent = "Importing cookies from browser…";
     try {
-      await api.xAccountImportBrowser(handle);
+      await api.xAccountImportBrowser(handle.trim().replace(/^@/, ""));
       toast("Cookies imported");
       msg.textContent = "";
       loadAccounts();
     } catch (e) {
       msg.textContent = "Import failed: " + e;
     }
+  };
+
+  // Fetch every tracked account's recent posts into the Library, then run a
+  // learn pass so the active agent's brain incorporates them (mirrors the old
+  // "Watch accounts → Fetch all + learn" flow on the x_account backend).
+  document.getElementById("xa-all-btn").onclick = async (e) => {
+    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
+    b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Fetching…`; icons();
+    try {
+      const accounts = (await api.xAccountList())?.accounts || [];
+      if (!accounts.length) { toast("No accounts yet — add one first"); }
+      else {
+        let saved = 0;
+        for (const a of accounts) {
+          try { const r = await api.xAccountSaveToLibrary(a.handle, 25, false); saved += (r?.saved || 0); }
+          catch (err) {}
+        }
+        b.innerHTML = `<i data-lucide="loader" class="inline-block h-4 w-4 align-[-2px] animate-spin"></i> Learning…`; icons();
+        try { await api.agentLearn(); } catch (err) {}
+        toast(`Saved ${saved} post(s) from ${accounts.length} account(s) → Library + learned`);
+      }
+    } catch (err) { toast("Fetch all failed: " + err); }
+    finally { b.disabled = false; b.innerHTML = html; icons(); }
   };
 
   function field(id, label, placeholder) {
@@ -4486,20 +4937,50 @@ export async function renderXAccount(view) {
       const res = await api.xAccountList();
       const accounts = res?.accounts || [];
       if (!accounts.length) {
-        el.innerHTML = `<div class="text-zinc-500">No accounts. Click “+ Add account” or “Import from browser”.</div>`;
+        el.innerHTML = `<div class="${card} text-zinc-500">No accounts tracked yet — click “+ Add account” or “Import from browser” to track a creator or competitor on X.</div>`;
         return;
       }
-      el.innerHTML = `<div class="mb-2 text-sm font-semibold text-zinc-500">Stored accounts</div>
-        <div class="flex flex-wrap gap-2">${accounts.map(a =>
-          `<button data-handle="${esc(a.handle)}" class="xa-acct rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-sm hover:border-reddit hover:text-reddit">@${esc(a.handle)}</button>`
-        ).join("")}</div>`;
-      el.querySelectorAll(".xa-acct").forEach(b => b.onclick = () => loadAccount(b.dataset.handle));
-    } catch (e) { el.innerHTML = `<div class="text-rose-500">${esc(e)}</div>`; }
+      el.innerHTML = accounts.map(a => `
+        <div class="${card}" data-row="${esc(a.handle)}">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <a href="https://x.com/${esc(a.handle)}" target="_blank" class="font-semibold text-zinc-900 dark:text-white">@${esc(a.handle)}</a>
+              ${a.name ? `<span class="ml-2 text-sm text-zinc-500">${esc(a.name)}</span>` : ""}
+            </div>
+            <div class="flex shrink-0 flex-wrap gap-2">
+              <button data-act="browse" data-h="${esc(a.handle)}" class="${btn}">Browse</button>
+              <button data-act="save" data-h="${esc(a.handle)}" class="${btnP}">Save to Library</button>
+              <button data-act="remove" data-h="${esc(a.handle)}" class="${btn} text-rose-500">Remove</button>
+            </div>
+          </div>
+        </div>`).join("");
+      el.querySelectorAll("[data-act]").forEach(b => b.onclick = () => acctAction(b));
+      icons();
+    } catch (e) { el.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+  }
+
+  async function acctAction(b) {
+    const act = b.getAttribute("data-act"), h = b.getAttribute("data-h");
+    if (act === "browse") { loadAccount(h); return; }
+    if (act === "remove") {
+      window.orModal({
+        title: `Remove @${h}?`, okText: "Remove",
+        body: `<p class="text-sm text-zinc-500">Stops tracking this account. Posts already saved to your Library stay.</p>`,
+        onOk: async () => { try { await api.xAccountRemove(h); toast("Removed @" + h); loadAccounts(); } catch (e) { toast("Remove failed: " + e); } },
+      });
+      return;
+    }
+    if (act === "save") {
+      b.disabled = true; const t = b.textContent; b.textContent = "Saving…";
+      try { const r = await api.xAccountSaveToLibrary(h, 25, false); toast(r?.message || `Saved ${r?.saved || 0} post(s) → Library`); }
+      catch (e) { toast("Save failed: " + e); }
+      finally { b.disabled = false; b.textContent = t; }
+    }
   }
 
   async function loadAccount(handle) {
     const out = document.getElementById("xa-output");
-    out.innerHTML = `<div class="text-zinc-500">Loading @${esc(handle)}…</div>`;
+    out.innerHTML = `${skelCardBody(2)}<div class="mt-4">${skelRows(6)}</div>`;
     try {
       const withThreads = !!document.getElementById("xa-with-threads")?.checked;
       const [profile, posts] = await Promise.all([
@@ -4579,6 +5060,7 @@ export async function renderXAccount(view) {
             ${t.is_retweet ? "<span>retweet</span>" : ""}
             <a href="${esc(t.url)}" target="_blank" class="hover:text-reddit">open →</a>
             <button data-reply="${esc(t.id)}" class="text-reddit hover:underline font-semibold">Reply</button>
+            <button data-rp="${esc(t.id)}" class="text-reddit hover:underline font-semibold">Create post →</button>
           </div>
           <div data-reply-form="${esc(t.id)}" class="hidden mt-3 rounded-lg bg-zinc-50 dark:bg-zinc-800 p-3">
             <label class="mb-1 block text-xs font-semibold text-zinc-500">Your reply as @${esc(accountHandle || "")}</label>
@@ -4607,6 +5089,18 @@ export async function renderXAccount(view) {
       btn.onclick = () => {
         const form = container.querySelector(`[data-reply-form="${CSS.escape(id)}"]`);
         if (form) form.classList.toggle("hidden");
+      };
+    });
+
+    // Repurpose → Compose (same sessionStorage handoff Compose reads).
+    container.querySelectorAll("[data-rp]").forEach((btn) => {
+      const id = btn.getAttribute("data-rp");
+      const t = posts.find(p => String(p.id) === String(id)) || {};
+      btn.onclick = () => {
+        sessionStorage.setItem("or-repurpose-ctx", JSON.stringify({
+          title: (t.text || "").slice(0, 80), text: t.text || "",
+        }));
+        location.hash = "#/compose";
       };
     });
 
@@ -4694,7 +5188,7 @@ export async function renderTasks(view) {
   view.innerHTML = head("Tasks",
     "Turn what you know into what you’ll do — drafts, replies &amp; ideas, captured from the Brain graph, the Daily Update, or by hand.",
     `<button id="tk-new" class="${btnP}">+ New task</button>`) +
-    `<div id="tk-board" class="grid gap-4 md:grid-cols-3">Loading…</div>`;
+    `<div id="tk-board" class="grid gap-4 md:grid-cols-3">${skelCardsN(3)}</div>`;
 
   const board = () => document.getElementById("tk-board");
   let tasks = [];

@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>OpenReply</title>
+<link rel="icon" type="image/png" href="/icon.png" />
 <script>try{var t=localStorage.getItem('or-theme')||'dark';var d=t==='dark'||(t==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}</script>
 <!-- Tailwind, the theme config, Lucide icons, and the form-control CSS are now
      bundled locally via src/main.js → src/styles.css + tailwind.config.js.
@@ -14,7 +15,12 @@
 <body class="bg-zinc-50 font-sans text-zinc-800 antialiased dark:bg-zinc-950 dark:text-zinc-200">
   <div class="flex h-screen overflow-hidden">
     <aside id="side"></aside>
-    <main id="main-content" class="w-full min-w-0 max-w-6xl flex-1 overflow-auto px-8 py-7"></main>
+    <div class="main-col flex min-w-0 flex-1 flex-col">
+      <div id="tab-strip" aria-label="Open screens"></div>
+      <main id="main-content" class="relative w-full min-w-0 flex-1 overflow-hidden">
+        <!-- per-tab portals are injected here by main.js -->
+      </main>
+    </div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>
