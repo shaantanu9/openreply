@@ -222,18 +222,34 @@ fn main() {
                 let mut prev_orphan = false;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(20)).await;
-                    let map_empty = match app_handle_sweeper
+                    // A held slot is an orphan only if NO fresh streaming job is
+                    // registered in `ActiveCollects`. `run_cli_streaming` records
+                    // a start timestamp for the in-flight job and clears it on
+                    // exit, so a healthy long-running job (multi-minute `reply
+                    // find` with LLM scoring) keeps a fresh entry and is never
+                    // reaped. We still reclaim a slot whose entry has gone stale
+                    // (> 30 min ⇒ a process that died without a `Terminated`
+                    // event) so the mutual-exclusion guard can't strand the user.
+                    // Previously this checked plain `is_empty()`, but the map was
+                    // never populated after the Gap Map decoupling, so EVERY job
+                    // looked orphaned and got killed after ~40s ("Collect -1").
+                    const STALE_SECS: u64 = 30 * 60;
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let no_fresh_job = match app_handle_sweeper
                         .try_state::<ActiveCollects>()
                     {
                         Some(s) => s
                             .0
                             .lock()
                             .ok()
-                            .map(|g| g.is_empty())
+                            .map(|g| g.values().all(|&started| now.saturating_sub(started) > STALE_SECS))
                             .unwrap_or(true),
                         None => true,
                     };
-                    if !map_empty {
+                    if !no_fresh_job {
                         prev_orphan = false;
                         continue;
                     }

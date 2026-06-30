@@ -871,6 +871,42 @@ pub struct CollectCancelMarker(pub Arc<Mutex<bool>>);
 #[derive(Default, Clone)]
 pub struct ActiveCollects(pub Arc<Mutex<std::collections::HashMap<String, u64>>>);
 
+/// Sentinel key for the single in-flight `run_cli_streaming` job (find/collect).
+/// Only one such job runs at a time (the `ActiveJob`/`ActiveJobPid` mutual-
+/// exclusion guard enforces this), so one well-known key is enough.
+pub const STREAMING_JOB_KEY: &str = "__streaming_job__";
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Register the in-flight streaming job so the orphan-sweeper can tell a healthy
+/// long-running job (e.g. a multi-minute `reply find` with per-post LLM scoring)
+/// from a genuinely stuck slot. `ActiveCollects` was never populated after the
+/// Gap Map → OpenReply decoupling, so the sweeper's "slot held + empty map =
+/// orphan" check fired on EVERY job after ~40s and silently killed it — which
+/// surfaced to the user as "Collect exited -1". Stores the start time so the
+/// sweeper can still reclaim a slot whose entry has gone stale.
+pub fn mark_streaming_job_active(app: &AppHandle) {
+    if let Some(s) = app.try_state::<ActiveCollects>() {
+        if let Ok(mut g) = s.0.lock() {
+            g.clear(); // single slot ⇒ at most one job; drop any stale leftover
+            g.insert(STREAMING_JOB_KEY.to_string(), now_secs());
+        }
+    }
+}
+
+/// Clear the streaming-job marker on exit (normal, error, or cancel). Called
+/// from both the prod `Terminated` handler and the dev `child.wait()` task.
+pub fn clear_streaming_job(app: &AppHandle) {
+    if let Some(s) = app.try_state::<ActiveCollects>() {
+        if let Ok(mut g) = s.0.lock() { g.remove(STREAMING_JOB_KEY); }
+    }
+}
+
 /// One pending entry in the collect queue. Stored as a string-args vector so
 /// it can replay via the same code path as a fresh `start_collect`.
 #[derive(Clone, Debug)]
@@ -1155,6 +1191,7 @@ async fn run_dev_python_streaming(
     tokio::spawn(async move {
         let status = child.wait().await;
         *pid_slot_c.lock().unwrap() = None;
+        clear_streaming_job(&app_c);
         let code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
         let r = recent.lock().unwrap();
         let payload = on_exit(code, &r);
@@ -1192,6 +1229,11 @@ pub async fn run_cli_streaming(
             ));
         }
     }
+
+    // Register this job so the orphan-sweeper won't reap it mid-run (see
+    // `mark_streaming_job_active`). Covers BOTH the dev and prod paths below;
+    // each path clears it again when the process exits.
+    mark_streaming_job_active(app);
 
     let data = data_dir(app)?;
     let data_str = data.to_string_lossy().to_string();
@@ -1264,6 +1306,7 @@ pub async fn run_cli_streaming(
                     if let Some(state) = app_clone.try_state::<ActiveJob>() {
                         *state.0.lock().unwrap() = None;
                     }
+                    clear_streaming_job(&app_clone);
                     let code = payload.code.unwrap_or(-1);
                     let was_cancelled = take_cancel_marker(&app_clone);
                     let (class, hint) = if was_cancelled && code != 0 {
