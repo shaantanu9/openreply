@@ -39,11 +39,16 @@ git ls-files -m --exclude-standard > "$DIR/MODIFIED-tracked.txt" 2>/dev/null || 
 git ls-files -o --exclude-standard > "$DIR/UNTRACKED.txt"        2>/dev/null || true
 git rev-parse HEAD          > "$DIR/HEAD-was.txt" 2>/dev/null || true
 
-# 3. permanent git branch via a stash round-trip that leaves the tree untouched
-if git stash push -u -q -m "wip-safety-$TS" 2>/dev/null; then
-  git stash apply -q 2>/dev/null || true
-  git branch "wip-safety-$TS" "stash@{0}" 2>/dev/null || true
-  git stash drop -q 2>/dev/null || true
+# 3. permanent git branch via `git stash create` — builds a snapshot commit
+#    object WITHOUT touching the index or working tree. The old
+#    `stash push -u` / `apply` round-trip cleared the index, so when this hook
+#    ran during `git commit` it stripped every staged change from the in-flight
+#    commit (commits silently captured nothing but untracked files). `create`
+#    has no such side effect. Untracked files are already preserved by the
+#    patch + filesystem copy above.
+_wip_sha="$(git stash create "wip-safety-$TS" 2>/dev/null || true)"
+if [ -n "$_wip_sha" ]; then
+  git branch "wip-safety-$TS" "$_wip_sha" 2>/dev/null || true
 fi
 
 # prune old backups (dirs + branches), keep the newest $KEEP
