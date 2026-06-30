@@ -104,18 +104,25 @@ export async function renderAgents(view) {
            <p class="text-zinc-500">No agents yet. Set up your first brand persona to start finding conversations worth joining.</p>
            <a href="#/onboarding" class="mt-3 inline-block ${btnP}">Set up your first agent</a>
          </div>`;
+    // `or-agent-switched` (handled in main.js) invalidates every cached screen
+    // and re-renders the visible one for the now-active agent, and re-hydrates
+    // the sidebar dropdown/label — so switching from this grid stays in lockstep
+    // with switching from the sidebar dropdown.
     grid.querySelectorAll("[data-use]").forEach(b => b.onclick = async () => {
-      await api.agentUse(b.getAttribute("data-use")); toast("Switched agent"); load();
+      try { await api.agentUse(b.getAttribute("data-use")); }
+      catch (e) { toast("Failed: " + e); return; }
+      toast("Switched agent");
+      window.dispatchEvent(new CustomEvent("or-agent-switched"));
     });
     // Find replies / Create content / Open → first make this card's agent
     // active (so the destination screen acts on the right agent), then navigate.
     grid.querySelectorAll("[data-go]").forEach(b => b.onclick = async () => {
       const id = b.getAttribute("data-go"), to = b.getAttribute("data-to") || "#/agent";
-      try { await api.agentUse(id); location.hash = to; }
+      try { await api.agentUse(id); window.dispatchEvent(new CustomEvent("or-agent-switched")); location.hash = to; }
       catch (e) { toast("Failed: " + e); }
     });
     grid.querySelectorAll("[data-edit]").forEach(b => b.onclick = async () => {
-      try { await api.agentUse(b.getAttribute("data-edit")); location.hash = "#/keywords"; }
+      try { await api.agentUse(b.getAttribute("data-edit")); window.dispatchEvent(new CustomEvent("or-agent-switched")); location.hash = "#/keywords"; }
       catch (e) { toast("Failed: " + e); }
     });
     grid.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {

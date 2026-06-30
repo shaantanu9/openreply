@@ -46,29 +46,44 @@ async function gateCheck(reqKey) {
 // Per-tab render bookkeeping. Each tab gets its own persistent portal element
 // inside #main-content; switching tabs shows/hides portals instead of destroying
 // DOM, so background work (commands, polling, timers) keeps running.
+// We keep one portal per (tab, hash) so navigating back to a recently-viewed
+// screen is instant — like a browser's back/forward cache.
 const tabRenderQueue = new Map();
+const MAX_PORTALS_PER_TAB = 5;
 
-function getTabPortal(tabId) {
+function getPortal(tabId, hash) {
   const host = document.getElementById("main-content");
   if (!host) return null;
-  let el = host.querySelector(`div[data-tab-id="${CSS.escape(tabId)}"]`);
+  let el = host.querySelector(`div[data-tab-id="${CSS.escape(tabId)}"][data-hash="${CSS.escape(hash)}"]`);
   if (!el) {
     el = document.createElement("div");
     el.className = "tab-view w-full max-w-6xl flex-1 px-8 py-7";
     el.dataset.tabId = tabId;
+    el.dataset.hash = hash;
     host.appendChild(el);
   }
   return el;
 }
 
-function cleanupTabPortal(tabId) {
+function cleanupTabPortals(tabId) {
   const host = document.getElementById("main-content");
-  const el = host?.querySelector(`div[data-tab-id="${CSS.escape(tabId)}"]`);
-  if (el) {
+  host?.querySelectorAll(`div[data-tab-id="${CSS.escape(tabId)}"]`).forEach((el) => {
+    if (el.__orCleanup) { try { el.__orCleanup(); } catch (e) { console.error("[cleanup]", e); } }
+    el.remove();
+  });
+  tabRenderQueue.delete(tabId);
+}
+
+function prunePortals(tabId, keepHash) {
+  const host = document.getElementById("main-content");
+  const portals = [...(host?.querySelectorAll(`div[data-tab-id="${CSS.escape(tabId)}"]`) || [])]
+    .filter((el) => el.dataset.hash !== keepHash)
+    .sort((a, b) => Number(a.dataset.lastShown || 0) - Number(b.dataset.lastShown || 0));
+  while (portals.length > MAX_PORTALS_PER_TAB - 1) {
+    const el = portals.shift();
     if (el.__orCleanup) { try { el.__orCleanup(); } catch (e) { console.error("[cleanup]", e); } }
     el.remove();
   }
-  tabRenderQueue.delete(tabId);
 }
 
 async function render() {
@@ -92,7 +107,7 @@ async function render() {
   }
 
   const tabId = active.id;
-  const portal = getTabPortal(tabId);
+  const portal = getPortal(tabId, hash);
   if (!portal) return;
 
   // Serialize renders per tab so two rapid navigations on the same tab don't
@@ -111,21 +126,23 @@ async function render() {
     if (stillActive) {
       mountShell(effKey, full);
 
-      // Show this tab's portal, hide the others.
+      // Show this tab's portal for this hash, hide the others.
       const host = document.getElementById("main-content");
       host.querySelectorAll("div[data-tab-id]").forEach((el) => {
-        el.style.display = el.dataset.tabId === tabId ? "" : "none";
+        const matches = el.dataset.tabId === tabId && el.dataset.hash === hash;
+        el.style.display = matches ? "" : "none";
+        if (matches) el.dataset.lastShown = String(Date.now());
       });
+      prunePortals(tabId, hash);
     }
 
-    const needsRender = !portal.dataset.loaded || portal.dataset.hash !== hash || String(active.reloadTs || "") !== (portal.dataset.reloadTs || "");
+    const needsRender = !portal.dataset.loaded || String(active.reloadTs || "") !== (portal.dataset.reloadTs || "");
 
     if (needsRender) {
       // Tear down live hooks for the old content before replacing it.
       if (portal.__orCleanup) { try { portal.__orCleanup(); } catch (e) { console.error("[cleanup]", e); } portal.__orCleanup = null; }
       portal.innerHTML = "";
       delete portal.dataset.loaded;
-      portal.dataset.hash = hash;
       portal.dataset.reloadTs = String(active.reloadTs || "");
 
       if (useDyn) {
@@ -217,6 +234,7 @@ function isOnboarding() {
 let tabsInitialized = false;
 let keyboardWired = false;
 let linksWired = false;
+let refreshWired = false;
 
 function initTabs() {
   if (tabsInitialized) return;
@@ -239,7 +257,7 @@ function initTabs() {
     // Clean up portals for tabs that have been closed.
     const currentIds = new Set(tabStore.getAll().map((t) => t.id));
     for (const id of knownTabIds) {
-      if (!currentIds.has(id)) cleanupTabPortal(id);
+      if (!currentIds.has(id)) cleanupTabPortals(id);
     }
     knownTabIds = currentIds;
   });
@@ -283,6 +301,26 @@ function wireTabKeyboard() {
   });
 }
 
+// Chrome-style refresh: F5 or Cmd/Ctrl+R reloads the current tab and busts
+// the SWR cache so the next render pulls fresh data.
+function wireRefreshKeyboard() {
+  if (refreshWired) return;
+  refreshWired = true;
+  document.addEventListener("keydown", (e) => {
+    const meta = e.metaKey || e.ctrlKey;
+    const isRefresh = e.key === "F5" || (meta && (e.key === "r" || e.key === "R"));
+    if (!isRefresh) return;
+    // Don't reload while the user is typing in a form.
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+    e.preventDefault();
+    const active = tabStore.getActive();
+    if (!active) return;
+    api.clearCache();
+    tabStore.reload(active.id);
+  });
+}
+
 // Intercept cmd/middle/right-click on any internal route link so users can open
 // screens in new tabs just like a browser.
 function wireLinkInterception() {
@@ -320,15 +358,29 @@ function wireLinkInterception() {
 }
 
 window.addEventListener("hashchange", render);
+
+// Switching the active agent (sidebar dropdown) must re-fetch every screen's
+// data — all screens are scoped to the active agent. The hash doesn't change on
+// a switch, so the normal `needsRender` guard would skip the refresh. Mark every
+// open tab's portal stale (so it re-renders with the new agent's data when next
+// shown) and re-render the visible one now. `agent_use` already busted the SWR
+// cache, so these renders fetch authoritative per-agent data.
+window.addEventListener("or-agent-switched", () => {
+  const host = document.getElementById("main-content");
+  if (host) host.querySelectorAll("div[data-tab-id]").forEach((el) => { delete el.dataset.loaded; });
+  render();
+});
 window.addEventListener("DOMContentLoaded", () => {
   initTabs();
   wireTabKeyboard();
+  wireRefreshKeyboard();
   wireLinkInterception();
   render();
 });
 if (document.readyState !== "loading") {
   initTabs();
   wireTabKeyboard();
+  wireRefreshKeyboard();
   wireLinkInterception();
   render();
 }

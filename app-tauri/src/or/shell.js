@@ -365,11 +365,24 @@ async function hydrateAgents(routeKey) {
     sel.innerHTML = agents.map((a) =>
       `<option value="${a.id}"${a.id === active.id ? ' selected' : ''}>${a.name}</option>`).join('') +
       '<option value="__new">+ New agent…</option>';
-    sel.onchange = async () => {
+    sel.onchange = () => {
       if (sel.value === '__new') { location.hash = '#/onboarding'; return; }
-      try { await api.agentUse(sel.value); } catch (e) {}
-      window.orToast('Switched agent');
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      const id = sel.value;
+      // Lock the picker for instant feedback and to swallow rapid re-selection.
+      sel.disabled = true;
+      // Defer ALL backend work + DOM rebuilds past the native <select> popup
+      // dismissal. Doing `await api.agentUse()` + a full re-render (which
+      // rebuilds the sidebar and destroys this very <select>) synchronously
+      // inside the change handler wedges the macOS WKWebView native menu — the
+      // app appears frozen. A 0ms timeout lets the popup fully close first.
+      setTimeout(async () => {
+        try { await api.agentUse(id); } catch (e) {}
+        try { sel.disabled = false; } catch (e) {}
+        window.orToast('Switched agent');
+        // Every screen is scoped to the active agent, so re-fetch the visible
+        // screen now and mark the rest stale. main.js owns the tab/render loop.
+        window.dispatchEvent(new CustomEvent('or-agent-switched', { detail: { id } }));
+      }, 0);
     };
   }
   const lab = document.querySelector('#side [data-agent-label]');
