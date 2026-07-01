@@ -95,7 +95,7 @@ def run_competitor_sweep(
     if not comp:
         return {"ok": False, "error": "competitor not found"}
     topic = comp["topic"]
-    src = sources or (comp["source_config"].get("enabled_adapters") or registry.DEFAULT_SOURCE_PACK)
+    src = sources or (comp.get("source_config", {}).get("enabled_adapters") or registry.DEFAULT_SOURCE_PACK)
     keywords = [competitor_name, *comp.get("aliases", [])]
 
     fetched = _collect(topic, src, keywords, provider, progress)
@@ -108,7 +108,7 @@ def run_competitor_sweep(
         signals.write_signal(
             product_id, competitor_name, signal_type="complaint",
             title=pp.get("label", "")[:200], description=pp.get("summary", ""),
-            severity=float(pp.get("severity", 0.5) or 0.5),
+            severity=float(pp.get("severity") if pp.get("severity") is not None else 0.5),
             evidence_post_ids=pp.get("evidence_post_ids", []),
         )
         n_find += 1
@@ -117,8 +117,8 @@ def run_competitor_sweep(
             product_id, competitor_name, signal_type=signals.OPPORTUNITY_KIND,
             title=fw.get("label", "")[:200],
             description=fw.get("summary", ""),
-            suggested_action="Build what this competitor lacks.",
-            severity=float(fw.get("severity", 0.5) or 0.5),
+            suggested_action=f"Build what this competitor lacks: {fw.get('label', '')}".strip().rstrip(':'),
+            severity=float(fw.get("severity") if fw.get("severity") is not None else 0.5),
             evidence_post_ids=fw.get("evidence_post_ids", []),
         )
         n_opp += 1
@@ -159,7 +159,10 @@ def run_competitor_sweep(
         }
     ).last_pk
 
-    registry.update_competitor(product_id, competitor_name)  # bump updated_at
+    try:
+        registry.update_competitor(product_id, competitor_name)  # bump updated_at
+    except Exception:
+        pass
     return {
         "ok": True,
         "competitor": competitor_name,
