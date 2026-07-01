@@ -41,3 +41,13 @@ def test_remove_competitor():
     R.add_competitor("prodR", "Y")
     assert R.remove_competitor("prodR", "Y") is True
     assert R.get_competitor("prodR", "Y") is None
+
+def test_update_competitor_returns_none_when_missing():
+    assert R.update_competitor("nope-prod", "nope-name", notes="x") is None
+
+def test_update_competitor_bumps_updated_at():
+    R.add_competitor("prodUA", "Z")
+    before = R.get_competitor("prodUA", "Z")["updated_at"]
+    out = R.update_competitor("prodUA", "Z", notes="changed")
+    assert out["updated_at"] >= before
+    assert out["notes"] == "changed"

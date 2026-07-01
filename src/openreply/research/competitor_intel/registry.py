@@ -142,12 +142,12 @@ _PLAIN_FIELDS = {"category", "status", "notes"}
 
 def update_competitor(product_id: str, name: str, **fields: Any) -> dict[str, Any] | None:
     db = get_db()
-    if not get_competitor(product_id, name):
+    cur = get_competitor(product_id, name)
+    if not cur:
         return None
     patch: dict[str, Any] = {"updated_at": _now()}
     for k, v in fields.items():
         if k == "website":
-            cur = get_competitor(product_id, name)
             urls = dict(cur["urls"]) if cur else {}
             urls["website"] = v
             patch["urls_json"] = json.dumps(urls)
