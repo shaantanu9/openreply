@@ -95,7 +95,7 @@ def learn_for_agent(
     from ..persona.ingest import ingest_persona
     from ..persona.conclude import synthesize_conclusions
 
-    topic = a.get("topic") or a.get("name")
+    topic = _agent.agent_corpus_topic(a)
     per_persona: list[dict] = []
     total_learned = 0
     total_beliefs = 0

@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 
-from .agent import active_id, get_agent, list_linked_personas
+from .agent import active_id, agent_corpus_topic, get_agent, list_linked_personas
 from .knowledge import build_knowledge_context
 from .schema import init_reply_schema
 
@@ -67,8 +67,8 @@ def _fetch_corpus_rows(agent_id: str, question: str, limit: int = 6) -> list[dic
     words = _search_words(question)
     if not words:
         return []
-    topic = a.get("topic") or a.get("name")
     db = init_reply_schema()
+    topic = agent_corpus_topic(a, db)
 
     word_conds = []
     args: list = [topic]
@@ -110,8 +110,8 @@ def _fetch_graph_findings(
     words = _search_words(question)
     if not words:
         return [], []
-    topic = a.get("topic") or a.get("name")
     db = init_reply_schema()
+    topic = agent_corpus_topic(a, db)
     kinds = ("painpoint", "feature_wish", "workaround", "product")
     ph = ",".join(["?"] * len(kinds))
 
@@ -183,7 +183,7 @@ def chat_with_agent(
     search_q = _clean_query(question)
 
     # Core blend: persona beliefs/memories + topic corpus excerpts.
-    knowledge_block = build_knowledge_context(a["id"], search_q, corpus_topic=a.get("topic"))
+    knowledge_block = build_knowledge_context(a["id"], search_q, corpus_topic=agent_corpus_topic(a))
 
     # Live corpus rows across all sources.
     corpus_rows = _fetch_corpus_rows(a["id"], search_q, limit=k_corpus)

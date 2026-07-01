@@ -53,7 +53,7 @@ def build_brain_for_agent(
     a = _agent.get_agent(agent_id)
     if not a:
         return {"error": "no such agent"}
-    topic = a.get("topic") or a.get("name")
+    topic = _agent.agent_corpus_topic(a)
     if not topic:
         return {"agent": a.get("name"), "error": "agent has no topic to build a graph for"}
 
@@ -133,7 +133,7 @@ def graph_overview(agent_id: str | None = None, *, limit: int = 40) -> dict:
     a = _agent.get_agent(agent_id)
     if not a:
         return {"error": "no such agent"}
-    topic = a.get("topic") or a.get("name")
+    topic = _agent.agent_corpus_topic(a)
     try:
         from ..graph.schema import get_db
         db = get_db()

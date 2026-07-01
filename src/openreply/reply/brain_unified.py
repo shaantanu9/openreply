@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import time
 
-from .agent import get_agent, list_linked_personas
+from .agent import agent_corpus_topic, get_agent, list_linked_personas
 from .schema import init_reply_schema
 
 _ABOUT_THRESHOLD = 0.42       # cosine for memory↔concept semantic cross-links
@@ -71,7 +71,7 @@ def relink(agent_id: str | None = None, *, semantic: bool = True) -> dict:
     a = get_agent(agent_id)
     if not a:
         return {"error": "no active agent"}
-    aid, topic = a["id"], a.get("topic") or a["id"]
+    aid, topic = a["id"], agent_corpus_topic(a) or a["id"]
     personas = _linked(a)
     pids = [int(p["persona_id"]) for p in personas]
 
@@ -184,7 +184,7 @@ def unified_brain(agent_id: str | None = None, *, node_cap: int = 400,
     a = get_agent(agent_id)
     if not a:
         return {"error": "no active agent — create one first"}
-    aid, topic = a["id"], a.get("topic") or a["id"]
+    aid, topic = a["id"], agent_corpus_topic(a) or a["id"]
     personas = _linked(a)
     lens_of = {int(p["persona_id"]): (p.get("lens") or p.get("name") or f"p{p['persona_id']}") for p in personas}
     pids = list(lens_of)

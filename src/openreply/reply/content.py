@@ -114,6 +114,11 @@ def _ensure(db):
 def _corpus_excerpts(topic: str, limit: int = 12) -> str:
     db = init_reply_schema()
     try:
+        from ..research.topic_resolver import resolve_topic
+        topic = resolve_topic(topic, register=False) or topic
+    except Exception:
+        pass
+    try:
         rows = db.execute(
             "SELECT p.title, p.selftext FROM posts p "
             "JOIN topic_posts tp ON p.id = tp.post_id "

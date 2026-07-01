@@ -120,6 +120,28 @@ def _digest_sources_for_agent(a: dict) -> list[str]:
     return out
 
 
+def _corpus_nonempty(db, a: dict) -> bool:
+    """Whether the agent has any collected posts under its (resolved) topic."""
+    from .agent import agent_corpus_topic
+    topic = agent_corpus_topic(a, db)
+    try:
+        rows = list(db.query(
+            "SELECT 1 FROM topic_posts WHERE topic = ? LIMIT 1", [topic]))
+        return bool(rows)
+    except Exception:
+        return False
+
+
+def _cache_serviceable(cached: dict, db, a: dict) -> bool:
+    """A cached digest row is serviceable when it has content, OR when the corpus
+    is genuinely empty (nothing better could be built). An EMPTY feed while the
+    corpus HAS posts is the topic-resolution bug signature → not serviceable, so
+    the caller rebuilds instead of serving a permanently-blank Daily Update."""
+    if (cached.get("feed") or []) or cached.get("briefing"):
+        return True
+    return not _corpus_nonempty(db, a)
+
+
 def current_digest(agent_id: str | None = None, day: str | None = None) -> dict | None:
     """The agent's digest row for `day` (default today), parsed, or None."""
     db = init_reply_schema()
@@ -447,9 +469,12 @@ def quick_digest(agent_id: str | None = None, *, n: int = 40) -> dict:
                 "quick": True, "briefing": None, "feed": [], "sources": {},
                 "competitor_moves": []}
     day = _today()
-    # If today's full digest already exists, there's nothing to rush — hand it back.
+    # If today's full digest already exists AND is serviceable, hand it back. An
+    # empty cached row while the corpus has posts (the topic-resolution bug, or a
+    # failed build) is treated as a miss so we re-rank fresh instead of serving a
+    # permanently-blank Daily Update.
     cached = current_digest(a["id"], day)
-    if cached:
+    if cached and _cache_serviceable(cached, db, a):
         return cached
     prev_row, exclude_ids, since_utc = _prev_delta(db, a["id"], day)
     feed = _fresh_items(a["id"], limit=n, since_utc=since_utc,
@@ -495,7 +520,9 @@ def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
 
     if not rebuild:
         cached = current_digest(a["id"], day)
-        if cached:
+        # Serviceable cache → return it. An empty feed while the corpus has posts
+        # self-heals (rebuild) instead of being served from a broken cache all day.
+        if cached and _cache_serviceable(cached, db, a):
             return cached
 
     def _p(msg: str) -> None:

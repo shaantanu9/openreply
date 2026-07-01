@@ -503,11 +503,15 @@ export async function renderOverview(view) {
     if (b) b.onclick = () => { if (D.updating) return; digestSearch = null; refreshDigest({ force: true }); };
   }
   // today-only cache: what we can trust as "already today's" (skip the rebuild).
+  // An empty-feed row is NOT trusted — otherwise a digest cached blank (e.g. the
+  // topic-resolution bug) pins the page to an empty state all day. Falling
+  // through routes to the quick corpus rank, which now returns real content.
   function loadCachedDigest() {
     try {
       const d = JSON.parse(localStorage.getItem(DIGEST_KEY) || "null");
       const today = new Date().toLocaleDateString("sv-SE");
-      if (d && d.day === today) return d;
+      const hasContent = d && ((d.feed && d.feed.length) || d.briefing);
+      if (d && d.day === today && hasContent) return d;
     } catch (e) {}
     return null;
   }

@@ -20,6 +20,46 @@ from .schema import init_reply_schema
 _HYDRATE = ("keywords", "platforms", "accounts")
 
 
+def agent_corpus_topic(agent: dict, db=None) -> str:
+    """Topic string the agent's posts are actually tagged under.
+
+    Collection tags every post via `research.collect._tag_posts`, which runs the
+    topic through `resolve_topic` (LLM canonicalization + alias index) BEFORE
+    writing the `topic_posts` row. The agent record, however, stores the ORIGINAL
+    typed topic. So an agent whose topic canonicalized (e.g. "AI-powered software
+    development and engineering services" → "AI-powered software development
+    services") has all its posts under the canonical, and any read that does
+    `WHERE tp.topic = agent.topic` with the RAW topic matches zero rows — which
+    silently empties the Daily Update, Library, chat knowledge, content sourcing,
+    post counts, and the brain build.
+
+    Resolve to the canonical. When a `db` is given, fall back to the raw topic if
+    the resolved one has no posts but the raw one does (defensive against any
+    historical rows tagged under the original string).
+    """
+    raw = (agent.get("topic") or agent.get("name") or "").strip()
+    if not raw:
+        return raw
+    try:
+        from ..research.topic_resolver import resolve_topic
+        resolved = resolve_topic(raw, register=False) or raw
+    except Exception:
+        return raw
+    if resolved == raw or db is None:
+        return resolved
+
+    def _count(t: str) -> int:
+        try:
+            return list(db.query(
+                "SELECT COUNT(*) c FROM topic_posts WHERE topic = ?", [t]))[0]["c"]
+        except Exception:
+            return 0
+
+    if _count(resolved) == 0 and _count(raw) > 0:
+        return raw
+    return resolved
+
+
 def _ensure(db):
     names = set(db.table_names())
     if "agents" not in names:
@@ -230,7 +270,7 @@ def list_agents() -> list[dict]:
         # Per-agent stats for the Agents card (posts collected / brain nodes /
         # open opportunities). Topic-scoped like knowledge_summary; opps are
         # brand-scoped (brand_id == agent id).
-        topic = a.get("topic")
+        topic = agent_corpus_topic(a, db)
         a["posts"] = _count("SELECT COUNT(*) FROM topic_posts WHERE topic=?", [topic])
         a["graph_nodes"] = _count("SELECT COUNT(*) FROM graph_nodes WHERE topic=?", [topic])
         a["opps"] = _count(
@@ -319,7 +359,7 @@ def knowledge_summary(aid: str | None = None) -> dict:
     if not a:
         return {"error": "no agent"}
     db = init_reply_schema()
-    topic = a["topic"]
+    topic = agent_corpus_topic(a, db)
 
     def _count(sql, args):
         try:
