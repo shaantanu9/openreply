@@ -324,10 +324,13 @@ export async function renderOverview(view) {
       : "";
     if (window.refreshIcons) window.refreshIcons();
   });
-  view.addEventListener("or:teardown", () => { try { unsubFetch(); } catch (e) {} }, { once: true });
-
   const onFetchDone = () => renderOverview(view);
   window.addEventListener("openreply:fetch-done", onFetchDone, { once: true });
+
+  view.__orCleanup = () => {
+    try { unsubFetch(); } catch (e) {}
+    try { window.removeEventListener("openreply:fetch-done", onFetchDone); } catch (e) {}
+  };
 
   view.querySelector("#ov-refresh").onclick = async () => {
     if (fetchStore.getState().running) { toast("A fetch is already running"); return; }
