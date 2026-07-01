@@ -1625,6 +1625,129 @@ const LLM_PROVIDERS = [
   ["ollama", "Local Ollama", "OLLAMA_BASE_URL", "http://localhost:11434"],
 ];
 
+async function buildCompetitorsCard(el) {
+  // Resolve the active agent/product id — same pattern as renderCompetitors.
+  let a = null;
+  try { a = await api.agentGet(); } catch (e) {}
+  const pid = a?.id ?? null;
+
+  async function load() {
+    // State: loading
+    el.innerHTML = skelCardBody(3);
+    // State: no active agent
+    if (!pid) {
+      el.innerHTML = `<b class="text-zinc-900 dark:text-white">Competitors</b>
+        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">No active agent. <a href="#/agents" class="text-reddit underline">Create one</a> to track competitors.</p>`;
+      return;
+    }
+    let competitors = [];
+    try {
+      competitors = (await api.competitorList(pid))?.competitors || [];
+    } catch (e) {
+      // State: error
+      el.innerHTML = `<b class="text-zinc-900 dark:text-white">Competitors</b>
+        <p class="mt-2 text-sm text-rose-500">Couldn't load — ${esc(String(e))}</p>
+        <button id="st-comp-retry" class="mt-2 ${btn}">Retry</button>`;
+      el.querySelector("#st-comp-retry")?.addEventListener("click", load);
+      return;
+    }
+
+    // State: data (or empty)
+    el.innerHTML = `
+      <b class="text-zinc-900 dark:text-white">Competitors</b>
+      <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Track competitor activity — complaints, gaps, and opportunities.</p>
+      <div id="st-comp-list" class="space-y-2 text-sm">
+        ${competitors.length ? competitors.map((c) => `
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2" data-comp-name="${esc(c.name)}">
+            <div class="min-w-0">
+              <div class="truncate font-semibold text-zinc-900 dark:text-white">${esc(c.name)}</div>
+              ${c.website ? `<div class="truncate text-xs text-zinc-400">${esc(c.website)}</div>` : ""}
+            </div>
+            <div class="flex shrink-0 items-center gap-1.5">
+              <button data-run="${esc(c.name)}" class="${btn} py-1 px-3 text-xs">Run now</button>
+              <button data-rm="${esc(c.name)}" class="text-zinc-400 hover:text-rose-500"><i data-lucide="x" class="h-4 w-4"></i></button>
+            </div>
+          </div>`).join("") : `<div class="text-zinc-500 dark:text-zinc-400 text-sm">No competitors tracked yet.</div>`}
+      </div>
+      <div class="mt-4 space-y-2">
+        <div class="flex flex-wrap items-end gap-2">
+          <input id="st-comp-name" placeholder="Competitor name" class="flex-1 min-w-0 ${inputCls}">
+          <input id="st-comp-website" placeholder="Website (optional)" class="flex-1 min-w-0 ${inputCls}">
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-400 cursor-pointer">
+            <input id="st-comp-daily" type="checkbox" class="rounded" checked>
+            Daily fetch
+          </label>
+          <button id="st-comp-enrich" class="${btn}"><i data-lucide="sparkles" class="inline-block h-3.5 w-3.5 align-[-2px]"></i> Enrich</button>
+          <button id="st-comp-add" class="${btnP}">+ Add</button>
+        </div>
+      </div>
+      <div id="st-comp-enrich-preview" class="mt-3 hidden rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 px-3 py-2 text-xs text-zinc-500"></div>
+      <!-- v1: enrich preview is informational; aliases not yet persisted via add -->
+      <div id="st-comp-msg" class="mt-2 text-xs"></div>`;
+
+    // Wire run buttons
+    el.querySelectorAll("[data-run]").forEach((b) => b.onclick = async () => {
+      const name = b.getAttribute("data-run");
+      b.disabled = true; b.textContent = "Running…";
+      try { await api.competitorRun(pid, name); toast(`Ran ${name}`); load(); }
+      catch (e) { toast("Run failed: " + e); b.disabled = false; b.textContent = "Run now"; }
+    });
+
+    // Wire remove buttons
+    el.querySelectorAll("[data-rm]").forEach((b) => b.onclick = async () => {
+      const name = b.getAttribute("data-rm");
+      try { await api.competitorRemove(pid, name); toast(`Removed ${name}`); load(); }
+      catch (e) { toast("Remove failed: " + e); }
+    });
+
+    // Wire enrich button
+    el.querySelector("#st-comp-enrich").onclick = async () => {
+      const name = (el.querySelector("#st-comp-name")?.value || "").trim();
+      const website = (el.querySelector("#st-comp-website")?.value || "").trim();
+      const preview = el.querySelector("#st-comp-enrich-preview");
+      const msg = el.querySelector("#st-comp-msg");
+      if (!name) { msg.innerHTML = `<span class="text-rose-500">Enter a competitor name first.</span>`; return; }
+      msg.innerHTML = `<span class="text-zinc-500">Enriching…</span>`;
+      preview.classList.add("hidden");
+      try {
+        const r = await api.competitorEnrich(name, website);
+        msg.innerHTML = "";
+        if (r && (r.aliases || r.subreddits || r.urls)) {
+          const lines = [];
+          if (r.aliases?.length) lines.push(`<b>Aliases:</b> ${r.aliases.map(esc).join(", ")}`);
+          if (r.subreddits?.length) lines.push(`<b>Subreddits:</b> ${r.subreddits.map(esc).join(", ")}`);
+          if (r.urls?.length) lines.push(`<b>URLs:</b> ${r.urls.map(esc).join(", ")}`);
+          preview.innerHTML = lines.join("<br>");
+          preview.classList.remove("hidden");
+        } else {
+          msg.innerHTML = `<span class="text-zinc-500">No extra info found for "${esc(name)}".</span>`;
+        }
+      } catch (e) { msg.innerHTML = `<span class="text-rose-500">Enrich failed: ${esc(String(e))}</span>`; }
+    };
+
+    // Wire add button
+    el.querySelector("#st-comp-add").onclick = async () => {
+      const name = (el.querySelector("#st-comp-name")?.value || "").trim();
+      const website = (el.querySelector("#st-comp-website")?.value || "").trim();
+      const dailyFetch = el.querySelector("#st-comp-daily")?.checked ?? true;
+      const msg = el.querySelector("#st-comp-msg");
+      if (!name) { msg.innerHTML = `<span class="text-rose-500">Enter a competitor name.</span>`; return; }
+      msg.innerHTML = `<span class="text-zinc-500">Adding…</span>`;
+      try {
+        await api.competitorAdd(pid, name, website, dailyFetch);
+        toast(`Added ${name}`);
+        load();
+      } catch (e) { msg.innerHTML = `<span class="text-rose-500">Add failed: ${esc(String(e))}</span>`; }
+    };
+
+    icons();
+  }
+
+  load();
+}
+
 export async function renderSettings(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("Settings", "AI provider, appearance, custom feeds, and your local data.") +
@@ -1640,6 +1763,7 @@ export async function renderSettings(view) {
        <div id="st-mcp" data-skw="mcp connect claude code cursor windsurf desktop integration tools agent client" class="${card}">${skelCardBody(3)}</div>
        <div id="st-usage" data-skw="usage limits token cap spend cost budget today" class="${card}">${skelCardBody(2)}</div>
        <div id="st-semantic" data-skw="semantic memory embeddings palace vector graph model reindex learning" class="${card}">${skelCardBody(3)}</div>
+       <div id="st-competitors" data-skw="competitors track analyze monitor brands pricing complaints" class="${card}">${skelCardBody(3)}</div>
        <div id="st-feeds" data-skw="feeds rss custom sources news add url" class="${card}">${skelCardBody(3)}</div>
        <div id="st-publish" data-skw="publish x twitter post tweet thread api key oauth social outbound connect" class="${card}">${skelCardBody(3)}</div>
        <div id="st-notify" data-skw="notifications telegram slack bot alerts opportunity reminder reply article webhook chat push mobile two-way" class="${card}">${skelCardBody(4)}</div>
@@ -1654,6 +1778,7 @@ export async function renderSettings(view) {
   buildMcpCard(document.getElementById("st-mcp"));
   buildUsageCard(document.getElementById("st-usage"));
   buildSemanticCard(document.getElementById("st-semantic"));
+  buildCompetitorsCard(document.getElementById("st-competitors"));
   buildFeedsCard(document.getElementById("st-feeds"));
   buildPublishCard(document.getElementById("st-publish"));
   buildNotifyCard(document.getElementById("st-notify"));
