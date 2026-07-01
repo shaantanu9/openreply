@@ -84,6 +84,20 @@ def _bounded(thunks: list, budget: float, workers: int, on_result=None) -> list:
     return out
 
 
+def _display_title(post: dict) -> str:
+    """A usable title for the opportunity card. Microblog / review sources
+    (Mastodon toots, Play Store / Steam reviews) legitimately have no title —
+    fall back to a trimmed first line of the body so the card never renders
+    blank (was showing an empty title for e.g. mastodon:mastodon.social posts)."""
+    t = (post.get("title") or "").strip()
+    if t:
+        return t[:300]
+    body = " ".join((post.get("selftext") or post.get("body") or "").split())
+    if not body:
+        return "(untitled post)"
+    return (body[:80] + "…") if len(body) > 80 else body
+
+
 def _oid(brand_id: str, platform: str, post_id: str) -> str:
     return hashlib.sha1(f"{brand_id}|{platform}|{post_id}".encode()).hexdigest()[:16]
 
@@ -419,7 +433,7 @@ def find_opportunities(
         return {
             "id": oid,
             "brand_id": brand["id"], "platform": pf, "post_id": pid,
-            "title": (post.get("title") or "")[:300],
+            "title": _display_title(post),
             "body": (post.get("selftext") or post.get("body") or "")[:2000],
             "url": post.get("url") or post.get("permalink") or "",
             "author": post.get("author") or "", "sub": post.get("sub") or "",

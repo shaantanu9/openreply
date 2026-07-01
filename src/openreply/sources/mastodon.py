@@ -32,7 +32,9 @@ def _row(p: dict[str, Any], instance: str) -> dict[str, Any]:
         "sub": f"mastodon:{instance}",
         "source_type": "mastodon",
         "author": acct.get("acct") or acct.get("username") or "[anon]",
-        "title": "",
+        # Toots have no title — derive a short one from the content so the
+        # post never surfaces with a blank title in the UI / opportunities.
+        "title": (lambda s: (s[:80] + "…") if len(s) > 80 else s)(" ".join(_strip_html(p.get("content") or "").split())),
         "selftext": _strip_html(p.get("content") or "")[:2000],
         "url": p.get("url") or "",
         "score": int(p.get("favourites_count") or 0),
