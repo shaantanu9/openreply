@@ -342,16 +342,17 @@ def refresh_cmd(
         # NDJSON progress to stdout — run_cli_streaming re-emits each line as an
         # `agent_refresh:progress` Tauri event; the UI reloads the authoritative
         # stats from the DB on `agent_refresh:done`. Collect/learn already push
-        # human-readable progress strings, wrapped here as {"event":"log"}.
+        # human-readable progress strings, wrapped here as structured events.
+        from ._progress import to_structured_event
         def _emit(m):
             try:
-                line = json.dumps(m, default=str) if isinstance(m, (dict, list)) \
-                    else json.dumps({"event": "log", "msg": str(m)})
-                typer.echo(line)
+                ev = m if isinstance(m, (dict, list)) else to_structured_event(m)
+                typer.echo(json.dumps(ev, default=str))
             except Exception:
                 pass
         res = _agent.refresh_agent(id, light=not deep, progress=_emit)
-        _emit({"event": "result", "posts_fetched": res.get("posts_fetched"), "error": res.get("error")})
+        _emit({"event": "result", "posts_fetched": res.get("posts_fetched"),
+               "by_source": res.get("by_source"), "error": res.get("error")})
         return
     res = _agent.refresh_agent(id, light=not deep, progress=lambda m: typer.echo(m, err=True))
     _out(res, json_)
