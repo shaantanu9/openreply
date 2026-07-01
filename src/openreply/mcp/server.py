@@ -2505,6 +2505,13 @@ except Exception as _e:  # pragma: no cover
     import warnings
     warnings.warn(f"persona_tools sub-server failed to mount: {_e}", stacklevel=1)
 
+try:
+    from .tools.competitor_tools import competitor_server as _competitor_server
+    mcp.mount(_competitor_server)
+except Exception as _e:  # pragma: no cover
+    import warnings
+    warnings.warn(f"competitor_tools sub-server failed to mount: {_e}", stacklevel=1)
+
 
 def run(
     transport: str = "stdio",
