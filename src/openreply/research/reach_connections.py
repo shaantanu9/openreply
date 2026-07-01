@@ -58,6 +58,12 @@ GATED: dict[str, dict] = {
                     "label": "Truth Social", "query": "news", "unlocks": ["truthsocial"],
                     "note": "Paste the bearer token from truthsocial.com → DevTools → "
                             "Network tab (Authorization header)."},
+    "producthunt": {"login_url": "https://api.producthunt.com/v2/oauth/applications",
+                    "kind": "api_key", "label": "Product Hunt", "query": "ai",
+                    "unlocks": ["producthunt"],
+                    "note": "Register an app → paste its Developer Token (no expiry). "
+                            "Power users: set PH_CLIENT_ID + PH_CLIENT_SECRET in env "
+                            "instead and it auto-mints a token."},
     # ── Login-pair (two fields: identifier + secret) ──
     "bluesky": {"login_url": "https://bsky.app/settings/app-passwords", "kind": "login_pair",
                 "label": "Bluesky", "query": "ai", "unlocks": ["bluesky"],
@@ -91,6 +97,7 @@ USES: dict[str, str] = {
     "exa_search": "Higher-quality web & news search for discovery.",
     "scrapecreators": "Unlocks TikTok, Instagram, Threads & Pinterest fetching with one key.",
     "truthsocial": "Fetch Truth Social posts into your corpus.",
+    "producthunt": "Pulls Product Hunt launches & early-adopter reactions into your corpus + competitor sweeps.",
     "bluesky": "Search Bluesky and pull posts into your corpus + opportunities.",
     "hackernews": "Always on — pulls Hacker News discussions into your corpus.",
     "devto": "Always on — pulls Dev.to articles into your corpus.",
@@ -147,6 +154,9 @@ def _fetch_rows(source: str, query: str, limit: int) -> list[dict]:
         elif source == "devto":
             from ..sources.devto import fetch_devto
             rows = fetch_devto(query, limit=limit)
+        elif source == "producthunt":
+            from ..sources.producthunt import fetch_producthunt
+            rows = fetch_producthunt(query, limit=limit)
         elif source == "bluesky":
             from ..sources.bluesky import fetch_bluesky
             rows = fetch_bluesky(query, limit=limit)

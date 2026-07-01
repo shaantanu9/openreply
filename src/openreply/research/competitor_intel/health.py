@@ -44,14 +44,41 @@ _CREDENTIAL_ENV: dict[str, tuple[str, ...]] = {
 _KNOWN_BLOCKED = {"alternativeto", "trustpilot", "scholar"}
 
 
+def _has_connected_key(src: str) -> bool:
+    """True if a key for `src` is stored via the in-app Connections flow."""
+    try:
+        from ...core import credentials as _creds
+        return bool(_creds.api_key(src))
+    except Exception:
+        return False
+
+
 def _credential_note(src: str) -> str | None:
-    """Return a note if `src` needs an env var that is currently unset."""
+    """Return a note if `src` needs a credential that is currently unset.
+
+    Honors three satisfaction paths: an env var, a key connected in the app's
+    Connections UI, or (Product Hunt) a client_id/secret pair for auto-mint.
+    """
     envs = _CREDENTIAL_ENV.get(src)
     if not envs:
         return None
     if any(os.getenv(e) for e in envs):
         return None
-    return f"set {' or '.join(envs)}"
+    if _has_connected_key(src):
+        return None
+    if src == "producthunt":
+        # client_credentials path — env or stored login-pair also satisfies it.
+        if (os.getenv("PH_CLIENT_ID") and os.getenv("PH_CLIENT_SECRET")):
+            return None
+        try:
+            from ...sources.producthunt import _client_pair
+            cid, csec = _client_pair()
+            if cid and csec:
+                return None
+        except Exception:
+            pass
+        return "set PH_TOKEN, or PH_CLIENT_ID + PH_CLIENT_SECRET, or connect in Settings → Connections"
+    return f"set {' or '.join(envs)} (or connect in Settings → Connections)"
 
 
 def check_source(src: str, keyword: str, *, timeout: float = 45.0) -> dict[str, Any]:
