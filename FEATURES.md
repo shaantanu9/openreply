@@ -719,6 +719,14 @@ find/list/draft/save-draft/drafts/approve/queue/snooze/set-status` · Rust
   **✕ Skip**. Text search · sort (score/recent/engagement) · min-score filter ·
   New/Snoozed/Dismissed/All · bulk select + bulk Save/Skip · Load-more · skeleton/
   empty/error states.
+- **Skip learns + Dismissed view (NEW 2026-07-01).** Skip stays one-click; the
+  agent then lazily infers a short, *generalizable* reason for the skip (batched
+  LLM, capped per open). The **Dismissed** tab shows each skip's post text + the
+  learned reason, editable ("agent learned" → "your correction"). Corrections
+  (`reason_source='user'`) count double and trigger a playbook re-distill. Learned
+  taste **re-ranks future finds** (`preference_delta` bonus/penalty on repeatedly
+  engaged/dismissed subs & authors, bounded [-0.35,+0.20]) — not just an exact-post
+  block. Per dismissed card: **↩ Restore** (clears the dismissal + status → `new`).
 - **Inbox = reply workspace.** Tabs **Saved · Drafting · Ready · Posted**. Per card,
   a lazy draft editor: generate → **edit → 💾 Save (versioned, gap #1)** → **✓ Approve**
   (→ ready) → **📅 Queue** (schedule; auto-post where creds exist, else remind) or
@@ -727,16 +735,22 @@ find/list/draft/save-draft/drafts/approve/queue/snooze/set-status` · Rust
   search/sort/paginate, states.
 **Lifecycle:** `new →(Save) saved →(Draft) drafted →(Approve) ready →(Queue) queued
 →(post) posted`; `→(Skip) skipped`; `→(Snooze) snoozed →(elapsed) new`.
-**Implementation:** `reply/opportunity.py` (`find_opportunities`, `set_status`,
-`snooze`/`approve`/`queue`/`mark_posted`, `_resurface_snoozed`, `list_opportunities`
-w/ query/sort/offset, `count_opportunities`) · `reply/generate.py` (`save_draft`,
+**Implementation:** `reply/opportunity.py` (`find_opportunities` w/ `preference_delta`
+re-rank, `set_status`, `snooze`/`approve`/`queue`/`mark_posted`, `_resurface_snoozed`,
+`list_opportunities` w/ query/sort/offset + dismiss-reason enrichment,
+`count_opportunities`) · `reply/feedback.py` (`infer_dismiss_reason`,
+`learn_pending_dismissals`, `set_dismiss_reason`, `un_dismiss`, `dismissed_reasons`,
+`learned_examples`, `learned_preferences`, `preference_delta`) · `reply/playbook.py`
+(`evolve_playbook` distills from real examples+reasons) · `reply/generate.py` (`save_draft`,
 `_persist_draft`, `_platform_compliance`, `list_drafts`/`current_draft`) ·
 `reply/rank.py` (RRF) · `cli/reply_cmds.py` · `src-tauri/src/commands.rs` (+`main.rs`
 register) · `or/api.js` · `or/dynamic.js` (`renderOpportunities`, `renderInbox`;
 shared `platformBadge`/`statusPill`/`skeleton`/`debounce`).
 **Data:** `reply_opportunities` (status ∈ new/saved/drafted/ready/queued/posted/
 skipped/snoozed; + `snooze_until`/`scheduled_at`/`posted_at`/`updated_at`) ·
-`reply_drafts` (+ `version`/`source`/`updated_at` — full draft history).
+`reply_drafts` (+ `version`/`source`/`updated_at` — full draft history) ·
+`reply_feedback` (+ `sub`/`author`/`reason`/`reason_source` — the learned "why I
+skipped", inferred or user-corrected) · `reply_playbook` (self-evolving strategy).
 **Known gaps:** Social opportunities surface only what's been collected/connected
 (see §1.8 social fetch).
 

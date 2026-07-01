@@ -101,15 +101,26 @@ def init_reply_schema(db: Database | None = None) -> Database:
         # Lifecycle signal fed back into learning: `engaged` (saved/replied — a
         # post worth learning from) or `dismissed` (skipped — suppress from
         # future opportunity lists). One row per opportunity (latest signal wins).
+        #   reason        — short, generalized "why this wasn't worth it" the agent
+        #                   infers from a dismissal (the thing it *learns*).
+        #   reason_source — 'inferred' (agent wrote it) | 'user' (human corrected
+        #                   it → a stronger training signal, weighted higher).
         db["reply_feedback"].create(
             {
                 "opportunity_id": str, "agent_id": str, "post_id": str,
                 "platform": str, "signal": str, "title": str, "excerpt": str,
+                "sub": str, "author": str, "reason": str, "reason_source": str,
                 "created_at": int,
             },
             pk="opportunity_id",
         )
         db["reply_feedback"].create_index(["agent_id", "signal"])
+    else:
+        # forward-compat: learning columns on older feedback tables.
+        _fexisting = {c.name for c in db["reply_feedback"].columns}
+        for _c in ("sub", "author", "reason", "reason_source"):
+            if _c not in _fexisting:
+                db["reply_feedback"].add_column(_c, str)
 
     if "reply_playbook" not in names:
         # Versioned Goal Playbook — the agent's self-evolving promotion strategy.

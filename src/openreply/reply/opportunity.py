@@ -342,12 +342,16 @@ def find_opportunities(
 
     db = init_reply_schema()
     now = int(time.time())
-    # Feedback: never resurface a post the user already dismissed.
+    # Feedback: never resurface a post the user already dismissed, and load the
+    # learned taste signals so we can RE-RANK similar posts (not just block exact
+    # ones) — a skip in a community downweights that community's future finds.
     try:
-        from .feedback import dismissed_post_ids
+        from .feedback import dismissed_post_ids, learned_preferences
         _dismissed = dismissed_post_ids(brand["id"])
+        _pref = learned_preferences(brand["id"])
     except Exception:
         _dismissed = set()
+        _pref = {}
     # 1) Gather candidates from every platform IN PARALLEL, each time-boxed. A
     #    credential-less adapter (e.g. X's cookie/bird/xAI chain ~85s) or a slow
     #    Reddit sweep can no longer stall the whole scan — we stop waiting at
@@ -479,14 +483,26 @@ def find_opportunities(
 
     # Engagement-weighted RRF fusion across the picked platforms.
     _rank.fuse_and_rank(found)
+    try:
+        from .feedback import preference_delta
+    except Exception:
+        preference_delta = None
     for rec in found:
         rec["engagement"] = rec.pop("eng")
         rec["freshness"] = rec.pop("fresh")
         rec["score"] = rec.pop("final")  # `score` = fused final (kept for back-compat/sort)
+        # Learned-taste nudge: bump communities/authors the user engages, sink the
+        # ones they keep skipping — so the agent's finds bend toward your taste.
+        if preference_delta and _pref:
+            _d = preference_delta(rec, _pref)
+            if _d:
+                rec["score"] = max(0.0, min(1.0, rec["score"] * (1.0 + _d)))
         rec.pop("base", None)
         rec.pop("_chash", None)
         rec.pop("_cached", None)
         db["reply_opportunities"].upsert(rec, pk="id")
+    # Re-sort so the taste-adjusted scores drive the returned order too.
+    found.sort(key=lambda r: float(r.get("score") or 0), reverse=True)
 
     return {
         "brand": brand["name"], "platforms": platforms,
@@ -710,8 +726,23 @@ def list_opportunities(
     _resurface_snoozed(db, _active_brand_id(), int(time.time()))
     where, args = _list_where(status, min_score, query, platform)
     order_by = _SORTS.get((sort or "score").lower(), _SORTS["score"])
-    return [dict(r) for r in db["reply_opportunities"].rows_where(
+    rows = [dict(r) for r in db["reply_opportunities"].rows_where(
         where, args, order_by=order_by, limit=limit, offset=max(0, offset))]
+    # Dismissed view: attach what the agent LEARNED from each skip so the UI can
+    # show (and let the user correct) the reason. `dismiss_reason_source` is
+    # '' when not yet learned, 'inferred' (agent), or 'user' (human-corrected).
+    if rows and (status == "skipped" or any(r.get("status") == "skipped" for r in rows)):
+        try:
+            from .feedback import dismissed_reasons
+            reasons = dismissed_reasons(_active_brand_id())
+            for r in rows:
+                if r.get("status") == "skipped":
+                    m = reasons.get(r.get("id")) or {}
+                    r["dismiss_reason"] = m.get("reason") or ""
+                    r["dismiss_reason_source"] = m.get("reason_source") or ""
+        except Exception:
+            pass
+    return rows
 
 
 def count_opportunities(

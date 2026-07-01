@@ -766,7 +766,7 @@ export async function renderOpportunities(view) {
   };
   const _allSrcLabel = `All sources${_cnt.total_opportunities ? ` (${_cnt.total_opportunities} opp · ${_cnt.total_posts || 0} posts)` : ""}`;
   const pfs = (a?.platforms || ["reddit_free"]).join(", ");
-  const S = { filter: "new", query: "", sort: "recent", minScore: 0, source: "", offset: 0, items: [], total: 0, sel: new Set() };
+  const S = { filter: "new", query: "", sort: "recent", minScore: 0, source: "", offset: 0, items: [], total: 0, sel: new Set(), _learnedOnce: false };
 
   view.innerHTML = head("Opportunities",
     `Discover conversations worth replying to for <b>${esc(a?.name || "—")}</b> — Save the good ones to your Inbox.`,
@@ -805,6 +805,9 @@ export async function renderOpportunities(view) {
   function triageBtns(o) {
     const id = esc(o.id), st0 = o.status || "new";
     const c = "rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold";
+    // A dismissed card's only triage action is to add it back.
+    if (st0 === "skipped")
+      return `<button data-act="restore" data-id="${id}" class="${c} text-emerald-500">↩ Restore</button>`;
     let out = st0 === "saved"
       ? `<a href="#/inbox" class="${c} text-sky-500">★ In Inbox →</a>`
       : `<button data-act="save" data-id="${id}" class="${c} text-sky-500">☆ Save to Inbox</button>`;
@@ -813,6 +816,30 @@ export async function renderOpportunities(view) {
         ${SNOOZE_OPTS.map(([h, l]) => `<button data-act="snooze" data-id="${id}" data-h="${h}" class="block w-full rounded px-2 py-1 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800">${l}</button>`).join("")}</span></span>`;
     if (st0 !== "skipped") out += `<button data-act="skip" data-id="${id}" class="${c} text-rose-500">✕ Skip</button>`;
     return out;
+  }
+
+  // Dismissed cards surface WHAT the agent learned from the skip: the post's own
+  // text + the inferred "why", editable so the user can correct it (a stronger
+  // signal that re-ranks similar finds and re-distills the playbook).
+  function dismissLearnBlock(o) {
+    if ((o.status || "") !== "skipped") return "";
+    const id = esc(o.id);
+    const body = (o.body || "").trim();
+    const reason = o.dismiss_reason || "";
+    const src = o.dismiss_reason_source || "";
+    const badge = src === "user"
+      ? `<span class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-500">your correction</span>`
+      : src === "inferred"
+        ? `<span class="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-500">agent learned</span>`
+        : `<span class="inline-flex items-center gap-1 text-[10px] text-zinc-400"><i data-lucide="loader" class="h-3 w-3 animate-spin"></i>learning…</span>`;
+    return `${body ? `<div class="mt-2 max-h-24 overflow-hidden rounded-lg bg-zinc-50 px-3 py-2 text-sm text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300">${esc(body.slice(0, 320))}${body.length > 320 ? "…" : ""}</div>` : ""}
+      <div class="mt-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2">
+        <div class="mb-1.5 flex items-center gap-2 text-xs font-semibold text-zinc-500">
+          <i data-lucide="brain" class="h-3.5 w-3.5 text-violet-500"></i>Why the agent skipped this ${badge}</div>
+        <div class="flex items-center gap-2">
+          <input data-reason="${id}" value="${esc(reason)}" placeholder="Learning why…" class="${inputCls} min-w-0 flex-1">
+          <button data-act="save-reason" data-id="${id}" class="rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-violet-500 dark:border-zinc-700">Save</button></div>
+        <div class="mt-1 text-[11px] text-zinc-400">Correcting this teaches the agent — it down-ranks similar finds and re-distills its playbook.</div></div>`;
   }
 
   function cardHTML(o) {
@@ -827,6 +854,7 @@ export async function renderOpportunities(view) {
             <span class="text-2xl font-extrabold ${scoreCls(o.score || 0)}" title="rel ${o.relevance} · intent ${o.intent} · fit ${o.fit} · eng ${o.engagement} · fresh ${o.freshness}">${s}</span></div>
           <div class="mt-1 font-semibold text-zinc-900 dark:text-white">${esc(o.title || "(no title)")}</div>
           ${o.reason ? `<div class="text-sm text-zinc-500 dark:text-zinc-400">${esc(o.reason)}</div>` : ""}
+          ${dismissLearnBlock(o)}
           <div class="mt-3 flex flex-wrap items-center gap-2">
             ${o.url ? `<a href="${esc(o.url)}" target="_blank" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Open ↗</a>` : ""}
             ${triageBtns(o)}</div>
@@ -871,6 +899,14 @@ export async function renderOpportunities(view) {
       list.innerHTML = S.items.length ? S.items.map(cardHTML).join("")
         : `<div class="${card} text-zinc-500">${emptyMsg()}</div>`;
       paint();
+      // On the Dismissed tab, have the agent learn a reason for any skips that
+      // don't have one yet (once per entry), then repaint to reveal what it learned.
+      if (S.filter === "skipped" && !S._learnedOnce &&
+          S.items.some(o => o.status === "skipped" && !o.dismiss_reason)) {
+        S._learnedOnce = true;
+        statusEl.textContent = "Learning from your skips…";
+        api.replyLearnDismissals().then((r) => { if (r && r.learned) load(true); }).catch(() => {});
+      }
     } catch (e) {
       list.innerHTML = `<div class="${card} border-rose-500/40 text-rose-500">Couldn't load opportunities — ${esc(e)}
         <div class="mt-2"><button id="op-retry" class="${btn}">Retry</button></div></div>`;
@@ -888,14 +924,34 @@ export async function renderOpportunities(view) {
       m.classList.toggle("hidden");
       return;
     }
+    // Correct the agent's learned dismiss reason — stays on the card (no reload)
+    // so the user sees their correction stick.
+    if (act === "save-reason") {
+      const inp = list.querySelector(`[data-reason="${CSS.escape(id)}"]`);
+      const val = (inp?.value || "").trim();
+      if (!val) { toast("Write a reason first"); return; }
+      b.disabled = true;
+      try {
+        const rr = await api.replySetDismissReason(id, val);
+        if (rr?.error) { toast(rr.error); b.disabled = false; return; }
+        toast("Saved — the agent is learning from this");
+        const it = S.items.find(o => o.id === id);
+        if (it) { it.dismiss_reason = val; it.dismiss_reason_source = "user"; }
+        const cardEl = list.querySelector(`[data-card="${CSS.escape(id)}"]`);
+        if (cardEl) { cardEl.outerHTML = cardHTML(S.items.find(o => o.id === id) || {}); paint(); }
+      } catch (e3) { toast("Failed: " + e3); b.disabled = false; }
+      return;
+    }
     b.disabled = true;
     try {
       let r;
       if (act === "save") r = await api.replySetStatus(id, "saved");
       else if (act === "skip") r = await api.replySetStatus(id, "skipped");
+      else if (act === "restore") r = await api.replyRestore(id);
       else if (act === "snooze") r = await api.replySnooze(id, parseInt(b.getAttribute("data-h"), 10));
       if (r?.error) { toast(r.error); b.disabled = false; return; }
-      toast(act === "save" ? "Saved to Inbox" : act === "skip" ? "Dismissed" : "Snoozed");
+      toast(act === "save" ? "Saved to Inbox" : act === "skip" ? "Dismissed"
+        : act === "restore" ? "Restored — back in New" : "Snoozed");
       S.sel.delete(id); syncBulk();
       // drop the card in place; it leaves the current filter
       const cardEl = list.querySelector(`[data-card="${CSS.escape(id)}"]`);
@@ -919,7 +975,7 @@ export async function renderOpportunities(view) {
   view.querySelectorAll("[data-filter]").forEach(c => c.onclick = () => {
     S.filter = c.getAttribute("data-filter");
     view.querySelectorAll("[data-filter]").forEach(x => x.className = _chip(x === c));
-    S.sel.clear(); syncBulk(); load(true);
+    S.sel.clear(); S._learnedOnce = false; syncBulk(); load(true);
   });
   view.querySelector("#op-q").oninput = debounce((e) => { S.query = e.target.value.trim(); load(true); });
   view.querySelector("#op-sort").onchange = (e) => { S.sort = e.target.value; load(true); };
