@@ -34,7 +34,7 @@ OpenReply is a **Tauri 2 desktop app + FastMCP server + Python CLI** — an open
 | 7. Persona agents | 10 | 10 | 0 | 0 | 0 |
 | 8. Paper research pipeline | 25 | 25 | 0 | 0 | 0 |
 | 9. Product tracking | 9 | 9 | 0 | 0 | 0 |
-| 10. Audience & competitors | 3 | 3 | 0 | 0 | 0 |
+| 10. Audience & competitors | 4 | 3 | 1 | 0 | 0 |
 | 11. Export & documentation | 8 | 8 | 0 | 0 | 0 |
 | 12. MCP server & jobs queue | 6 | 6 | 0 | 0 | 0 |
 | 13. CLI | 1 | 1 | 0 | 0 | 0 |
@@ -43,7 +43,7 @@ OpenReply is a **Tauri 2 desktop app + FastMCP server + Python CLI** — an open
 | 16. Customization & feedback | 7 | 7 | 0 | 0 | 0 |
 | 18. Research & paper-writing assistant | 8 | 7 | 1 | 0 | 0 |
 | 21. OpenReply — content, analytics, visibility & brain | 7 | 7 | 0 | 0 | 0 |
-| **Total** | **208** | **207** | **1** | **0** | **0** |
+| **Total** | **209** | **207** | **2** | **0** | **0** |
 
 > Category numbering 17, 19 and 20 are intentionally retired (legacy research-only suites — strategy frameworks, Research Mode, and intelligence monitoring — were removed when this repo became OpenReply); the gaps in numbering are expected.
 
@@ -483,7 +483,7 @@ The MCP tools live in a dedicated **sub-server** — `src/openreply/mcp/tools/pe
 
 ---
 
-## 10. Audience & competitors ✅
+## 10. Audience & competitors 🟡
 
 ### Build audience personas (citation-grounded) ✅
 **Entry:** `openreply_audience_personas` · Tauri *Personas* screen
@@ -503,6 +503,51 @@ The MCP tools live in a dedicated **sub-server** — `src/openreply/mcp/tools/pe
 **Data:** computed from `graph_nodes`.
 
 **Known gaps:** none on the data side; the Tauri *Personas* / *Global Competitors* screens need UI polish (category 15).
+
+### Competitor Intelligence (seed-driven tracking & sweep) 🟡
+**Status:** 🟡 Partial — backend, CLI, MCP, and Tauri screen are fully wired; end-to-end manual smoke in a packaged app has NOT been performed yet.
+**Entry points:**
+- Tauri *Competitors* screen (nav `shell.js:18`, routed via `renderCompetitors` in `app-tauri/src/or/dynamic.js:5586`)
+- Settings "Competitors" card (`dynamic.js:1628` `buildCompetitorsCard`)
+- MCP sub-server: 10 `openreply_competitor_*` tools (`mcp/tools/competitor_tools.py:15–89`, mounted at `mcp/server.py:2510`)
+- CLI group `openreply competitor` (`cli/competitor_cmds.py:22–108`, registered `cli/main.py:1711`)
+
+**User flow:**
+1. User opens Settings → Competitors card → types a competitor name → clicks Add (calls `competitorAdd` via `api.js:425`).
+2. Optional: click Enrich to get LLM-suggested aliases/subreddits (`enrich.py:29` `enrich_seed`); suggestions are informational in v1 (not auto-persisted).
+3. User opens the *Competitors* screen → 3 tabs: Opportunities / Complaints / Comparison.
+4. **Opportunities tab** — calls `competitorOpportunities` (`api.js:430`) → backend `signals.py:83` (`list_opportunities`) — lists signals from `product_signals` ranked by severity; "Draft reply" / "Build this" buttons are v1 placeholders.
+5. **Complaints tab** — calls `competitorFindings` (`api.js:429`) → `signals.py:66` (`list_findings`) — per-competitor finding feed with source links; competitor switcher dropdown.
+6. **Comparison tab** — calls `competitorCompare` (`api.js:431`) → `compare.py:32` (`build_comparison`) — head-to-head metrics + sentiment pulled via `analyze/sentiment.py:47` (`sentiment_by_source`).
+7. **Run sweep** — "Refresh" button calls `competitorRun` → backend `sweep.py:84` (`run_competitor_sweep`): collect posts → gap analysis → sentiment → 6-detector signal generation → snapshot / delta → latest snapshot persisted to `competitor_snapshots`.
+8. Daily Update digest: `reply/digest.py:568` imports `competitor_moves` (`digest_hook.py:15`) and includes "Competitor moves" section in the digest payload (no digest UI renders it yet — P2).
+
+**Implementation:**
+- Registry CRUD: `research/competitor_intel/registry.py:61` (`add_competitor`) · `:108` (`get_competitor`) · `:118` (`list_competitors`) · `:143` (`update_competitor`) · `:164` (`remove_competitor`)
+- LLM seed enricher: `research/competitor_intel/enrich.py:29` (`enrich_seed`)
+- Sweep orchestrator: `research/competitor_intel/sweep.py:84` (`run_competitor_sweep`) · `:47` (`latest_snapshot`) · `:69` (`_compute_delta`)
+- Signal detectors: `research/competitor_intel/signals.py:29` (`write_signal`) · `:66` (`list_findings`) · `:83` (`list_opportunities`) · `:97` (`set_signal_action`)
+- Head-to-head compare: `research/competitor_intel/compare.py:32` (`build_comparison`)
+- Digest hook: `research/competitor_intel/digest_hook.py:15` (`competitor_moves`)
+- Sentiment: `analyze/sentiment.py:47` (`sentiment_by_source`) · `:27` (`classify_batch`)
+- Schema: `core/db.py:978` (`product_competitors` create) · `:1036` (extend columns: slug/topic/aliases/subreddits/daily_fetch/…) · `:1057` (`competitor_snapshots` create)
+- MCP tools: `mcp/tools/competitor_tools.py:15–89` (10 tools: add/list/get/enrich/run/findings/opportunities/compare/set-action/remove) · mount `mcp/server.py:2510`
+- Tauri Rust bridge: `app-tauri/src-tauri/src/commands.rs:4091–4172` (10 `#[tauri::command]` fns) · registered `main.rs:550–560`
+- Tauri JS: `api.js:423–434` (11 `competitor*` wrappers) · `dynamic.js:5582–5894` (`renderCompetitors`, 3-tab screen) · `dynamic.js:1628` (`buildCompetitorsCard`)
+
+**Data:**
+- `product_competitors` — registry (product_id, competitor_name, urls_json, category, slug, topic, aliases_json, subreddits_json, daily_fetch, in_opp_scan, status, notes, updated_at)
+- `competitor_snapshots` — per-sweep snapshot (id, product_id, competitor_name, sweep_id, created_at, metrics_json, summary, delta_json)
+- `product_signals` — detected signals (id, product_id, signal_type, severity, confidence, title, description, evidence_post_ids, related_competitor, suggested_action, user_action, snoozed_until, resolution_notes)
+
+**Known gaps:**
+- P1: End-to-end manual app smoke in a packaged build not yet performed — screen and settings card render, but runtime correctness against the real sidecar is unverified.
+- P2: Settings "Enrich" preview is informational — suggested aliases/subreddits from `enrich_seed` are NOT auto-persisted back through `competitor add` in v1; sweep keyword search uses the competitor name only.
+- P2: "Draft reply" / "Build this" buttons on the Opportunities tab are v1 placeholders (toast + TODO) — not yet wired to the compose/content flow.
+- P2: Root-cause/5-Whys and full RICE/Kano/MoSCoW ranking were descoped; signal ranking uses severity score only.
+- P2: "Competitor moves" digest section is computed in `reply/digest.py:568–575` but no Daily Update UI panel renders it yet.
+
+**Dependencies:** category 9 (Product tracking — `product_signals` / `product_sweeps` tables) · category 4 (Gap finding — `_find_gaps` step in sweep) · category 14 (Sentiment — `sentiment_by_source`) · category 21 (Daily Update digest wiring)
 
 ---
 
