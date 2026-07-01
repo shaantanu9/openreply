@@ -22,6 +22,7 @@ import { DYN, ensureBotPoller } from "./or/dynamic.js";
 import { skeletonFor } from "./or/skeleton.js";
 import { tabStore, titleForHash, renderTabStrip } from "./lib/tabs.js";
 import * as contextMenu from "./lib/contextMenu.js";
+import { store as fetchStore } from "./or/fetchStatus.js";
 
 const HOME_HASH = '#/agents';
 
@@ -209,6 +210,23 @@ function showHealthBanner(level, msg) {
     `<button id="or-health-x" class="shrink-0 rounded px-2 py-0.5 text-xs font-semibold underline-offset-2 hover:underline">Dismiss</button>`;
   const x = document.getElementById("or-health-x");
   if (x) x.onclick = () => el.remove();
+}
+
+// App-level listener for `agent refresh --stream` progress events, wired once
+// at boot so the fetch-status store stays live regardless of which screen the
+// user is on. Overview and the global chip subscribe to the store; this is
+// the only place that feeds it.
+async function wireFetchStatus() {
+  if (!api.isTauri || !api.isTauri()) return;
+  const parse = (p) => { try { return typeof p === "string" ? JSON.parse(p) : p; } catch (e) { return null; } };
+  await api.onEvent("agent_refresh:progress", (payload) => {
+    const ev = parse(payload); if (ev) fetchStore.apply(ev);
+  });
+  await api.onEvent("agent_refresh:done", (payload) => {
+    fetchStore.finish(parse(payload) || {});
+    // Let the active view (e.g. Overview) reload its data now that the fetch landed.
+    window.dispatchEvent(new CustomEvent("openreply:fetch-done"));
+  });
 }
 
 async function healthBanner() {
@@ -405,6 +423,7 @@ if (document.readyState !== "loading") {
   render();
 }
 prewarm();
+wireFetchStatus();
 if (api.isTauri()) setTimeout(() => { healthBanner().catch(() => {}); }, 800);
 
 // Two-way Telegram bot: poll for inline-button taps only while the app is open.
