@@ -369,19 +369,25 @@ export async function renderOverview(view) {
   };
   const digestCatOf = (it) => (it && DIGEST_CATS[it.category]) ? it.category : "news";
   // View state: server data + the active category pill + an optional live search.
-  const D = { data: null, cat: "all" };
+  const D = { data: null, cat: "all", updating: false };
   let digestSearch = null; // { query, results } when in search mode
 
-  function digestShell(inner, { busy = false } = {}) {
+  function digestShell(inner, { busy = false, updating = false } = {}) {
+    const spinning = busy || updating;
+    // A small pulsing dot next to the title signals "latest is on its way" and
+    // stays lit until the full background refresh + learn pass both complete.
+    const dot = updating
+      ? ` <span class="ml-1 inline-flex items-center gap-1 align-[1px] text-[11px] font-semibold text-reddit"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-reddit"></span>updating…</span>`
+      : "";
     return `<div class="${card}">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <b class="text-zinc-900 dark:text-white"><i data-lucide="newspaper" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> Daily Update <span class="text-xs font-normal text-zinc-400">what's new for your goal · today</span></b>
+        <b class="text-zinc-900 dark:text-white"><i data-lucide="newspaper" class="inline-block h-4 w-4 align-[-2px] text-reddit"></i> Daily Update <span class="text-xs font-normal text-zinc-400">what's new for your goal · today</span>${dot}</b>
         <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-700 px-2 py-1">
-            <i data-lucide="search" class="h-3.5 w-3.5 text-zinc-400"></i>
-            <input id="ov-digest-search" placeholder="search news…" value="${esc(digestSearch ? digestSearch.query : "")}" class="w-28 bg-transparent text-xs outline-none placeholder:text-zinc-400 transition-all focus:w-44"/>
+          <div class="relative h-9 rounded-full border border-zinc-200 dark:border-zinc-700">
+            <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"></i>
+            <input id="ov-digest-search" placeholder="search news…" value="${esc(digestSearch ? digestSearch.query : "")}" class="h-full !min-h-0 w-28 rounded-full bg-transparent !py-0 pl-8 pr-3 text-xs outline-none placeholder:text-zinc-400 transition-all focus:w-44"/>
           </div>
-          <button id="ov-digest-refresh" class="${btn}" ${busy ? "disabled" : ""}><i data-lucide="${busy ? "loader" : "refresh-cw"}" class="inline-block h-3.5 w-3.5 align-[-2px] ${busy ? "animate-spin" : ""}"></i> ${busy ? "Building…" : "Refresh now"}</button>
+          <button id="ov-digest-refresh" class="${btn}" ${spinning ? "disabled" : ""}><i data-lucide="${spinning ? "loader" : "refresh-cw"}" class="inline-block h-3.5 w-3.5 align-[-2px] ${spinning ? "animate-spin" : ""}"></i> ${busy ? "Building…" : updating ? "Updating…" : "Refresh now"}</button>
         </div>
       </div>${inner}</div>`;
   }
@@ -399,19 +405,24 @@ export async function renderOverview(view) {
     } catch (e) { toast("Couldn’t add task: " + e); }
   }
 
-  function digestPaint({ building = false } = {}) {
+  function digestPaint() {
     const host = document.getElementById("ov-digest");
     if (!host) return;
     const d = D.data;
     const briefing = d && d.briefing;
     const allFeed = (d && d.feed) || [];
-    if (building && !digestSearch) {
+    const hasData = !!(briefing || allFeed.length);
+    const updating = !!D.updating;
+    // Only the truly-cold first build (no cache, no quick feed yet) gets the
+    // big spinner. Once ANY content exists we paint it and let the pulsing
+    // "updating…" dot signal the background refresh — never a blank spinner.
+    if (!hasData && updating && !digestSearch) {
       host.innerHTML = digestShell(
-        `<div class="flex items-center gap-2 text-sm text-zinc-500"><i data-lucide="loader" class="inline-block h-4 w-4 animate-spin"></i> Building today's update — fetching news, articles, community &amp; research, then learning…</div>`,
+        `<div class="flex items-center gap-2 text-sm text-zinc-500"><i data-lucide="loader" class="inline-block h-4 w-4 animate-spin"></i> Building today's update — fetching news, articles, community &amp; research…</div>`,
         { busy: true });
       wireDigest(); icons(); return;
     }
-    if (!digestSearch && !briefing && !allFeed.length) {
+    if (!digestSearch && !hasData) {
       host.innerHTML = digestShell(
         `<div class="text-sm text-zinc-400">Nothing new yet — hit <b>Refresh now</b>, search news above, or <a href="#/knowledge" class="text-reddit">Refresh + learn</a>.</div>`);
       wireDigest(); icons(); return;
@@ -459,7 +470,7 @@ export async function renderOverview(view) {
       <div><div class="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-400">Briefing · your goal lens</div>${briefingHtml}</div>
       <div class="lg:border-l lg:border-zinc-100 lg:pl-5 dark:lg:border-zinc-800">${feedHeader}${feedRows}</div>
     </div>`;
-    host.innerHTML = digestShell(grid);
+    host.innerHTML = digestShell(grid, { updating });
 
     host.querySelectorAll("[data-ov-url]").forEach((el) => el.onclick = (e) => {
       e.preventDefault();
@@ -479,9 +490,6 @@ export async function renderOverview(view) {
     wireDigest(); icons();
   }
 
-  // Re-entry used by SWR + refresh: store new server data (if any), then paint.
-  function renderDigest(d, opts) { if (d !== undefined) D.data = d; digestPaint(opts || {}); }
-
   function wireDigest() {
     const s = document.getElementById("ov-digest-search");
     if (s) s.onkeydown = async (e) => {
@@ -492,15 +500,9 @@ export async function renderOverview(view) {
       catch (err) { toast("Search failed: " + err); }
     };
     const b = document.getElementById("ov-digest-refresh");
-    if (b) b.onclick = async () => {
-      digestSearch = null; digestPaint({ building: true });
-      try {
-        const d = await api.agentDigest(true);
-        if (d && (d.briefing || (d.feed || []).length)) localStorage.setItem(DIGEST_KEY, JSON.stringify(d));
-        renderDigest(d);
-      } catch (err) { toast("Update failed: " + err); renderDigest(loadCachedDigest()); }
-    };
+    if (b) b.onclick = () => { if (D.updating) return; digestSearch = null; refreshDigest({ force: true }); };
   }
+  // today-only cache: what we can trust as "already today's" (skip the rebuild).
   function loadCachedDigest() {
     try {
       const d = JSON.parse(localStorage.getItem(DIGEST_KEY) || "null");
@@ -509,18 +511,53 @@ export async function renderOverview(view) {
     } catch (e) {}
     return null;
   }
-  (async () => {
-    const cached = loadCachedDigest();
-    renderDigest(cached, { building: !cached });
+  // any cache (even yesterday's) — a stale placeholder so first paint is never
+  // a blank spinner after day one.
+  function loadAnyCachedDigest() {
+    try { return JSON.parse(localStorage.getItem(DIGEST_KEY) || "null"); }
+    catch (e) { return null; }
+  }
+  // Full background refresh: fresh collect + briefing (learn deferred off the
+  // display path), then a fire-and-forget learn pass. The "updating…" dot stays
+  // lit until fetch → briefing → learn all finish, so the user knows the latest
+  // is on its way and doesn't stare at a frozen spinner.
+  async function refreshDigest({ force = false } = {}) {
+    D.updating = true; digestPaint();
     try {
-      const d = await api.agentDigest(false);
+      const d = await api.agentDigest(force, /* noLearn */ true);
       if (d && (d.briefing || (d.feed || []).length)) {
         localStorage.setItem(DIGEST_KEY, JSON.stringify(d));
-        renderDigest(d);
-      } else if (!cached) {
-        renderDigest(d || null);
+        D.data = d;
       }
-    } catch (e) { if (!cached) renderDigest(null); }
+    } catch (err) { if (force) toast("Update failed: " + err); }
+    digestPaint();
+    // Deferred learn — updates the brain, not the on-screen digest. Kept last so
+    // the fresh feed + briefing paint first; the dot clears once it returns.
+    try { await api.agentLearn(); } catch (e) {}
+    D.updating = false; digestPaint();
+  }
+  (async () => {
+    // 1. Instant paint. Today's cache → trust it, do a cheap revalidate, done.
+    const today = loadCachedDigest();
+    if (today) {
+      D.data = today; digestPaint();
+      try {
+        const d = await api.agentDigest(false, true); // returns today's cached row instantly
+        if (d && (d.briefing || (d.feed || []).length)) { localStorage.setItem(DIGEST_KEY, JSON.stringify(d)); D.data = d; digestPaint(); }
+      } catch (e) {}
+      return;
+    }
+    // 2. No today cache: paint yesterday's as a placeholder (or a brief spinner
+    //    if truly cold), then a quick corpus-only feed (~1-3s) for real content.
+    const stale = loadAnyCachedDigest();
+    if (stale && (stale.briefing || (stale.feed || []).length)) D.data = stale;
+    D.updating = true; digestPaint();
+    try {
+      const q = await api.agentDigestQuick();
+      if (q && (q.briefing || (q.feed || []).length)) { D.data = q; digestPaint(); }
+    } catch (e) {}
+    // 3. Full rebuild (collect + briefing) + deferred learn in the background.
+    await refreshDigest();
   })();
 
   // Live counts + snippets (best-effort; never block the page).

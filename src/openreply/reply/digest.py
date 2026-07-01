@@ -404,6 +404,72 @@ def _synthesize(a: dict, feed: list[dict], provider: str | None) -> dict | None:
     return {"summary": str(data.get("summary", ""))[:300], "sections": out_sections}
 
 
+def _prev_delta(db, agent_id: str, day: str):
+    """Yesterday's digest → (prev_row, exclude_ids, since_utc) for daily-delta
+    scoping. "New and fresh since yesterday" means since the previous day's
+    build (if one exists) or yesterday 00:00 local when there's no prior digest.
+    Shared by build_digest (fresh) and quick_digest (instant) so both rank the
+    same window."""
+    prev_day = _previous_day(day)
+    prev_row = None
+    try:
+        prev_row = db["reply_digest"].get(_digest_id(agent_id, prev_day))
+    except Exception:
+        pass
+    exclude_ids: set = set()
+    if prev_row:
+        for it in json.loads(prev_row.get("feed_json") or "[]"):
+            iid = it.get("id") or it.get("url")
+            if iid:
+                exclude_ids.add(iid)
+        since_utc = int(prev_row.get("created_at") or _day_start_utc(prev_day))
+    else:
+        since_utc = _day_start_utc(prev_day)
+    return prev_row, exclude_ids, since_utc
+
+
+def quick_digest(agent_id: str | None = None, *, n: int = 40) -> dict:
+    """Instant, read-only digest for first paint.
+
+    Ranks the feed straight from the corpus already on disk — NO network
+    collect, NO learn pass, NO LLM synthesis — so it returns in ~1-3s instead
+    of the 15-35s a full build costs. Reuses the most recent cached briefing
+    (today's partial if one exists, else yesterday's) so the briefing column
+    shows content rather than an empty state while the full build runs in the
+    background. Never persists — the full `build_digest` still runs and
+    overwrites the daily row. Fail-soft.
+    """
+    db = init_reply_schema()
+    a = get_agent(agent_id)
+    if not a:
+        return {"ok": False, "skipped": True, "reason": "no active agent",
+                "quick": True, "briefing": None, "feed": [], "sources": {}}
+    day = _today()
+    # If today's full digest already exists, there's nothing to rush — hand it back.
+    cached = current_digest(a["id"], day)
+    if cached:
+        return cached
+    prev_row, exclude_ids, since_utc = _prev_delta(db, a["id"], day)
+    feed = _fresh_items(a["id"], limit=n, since_utc=since_utc,
+                        exclude_ids=exclude_ids)
+    # Reuse the last briefing on file so the column isn't empty until the fresh
+    # one lands. Flagged stale so the UI can treat it as provisional.
+    briefing = None
+    if prev_row:
+        try:
+            briefing = json.loads(prev_row.get("briefing_json") or "null")
+        except Exception:
+            briefing = None
+    by_category: dict = {}
+    for it in feed:
+        by_category[it["category"]] = by_category.get(it["category"], 0) + 1
+    return {"ok": True, "quick": True, "day": day, "briefing": briefing,
+            "feed": feed,
+            "sources": {"by_category": by_category, "item_count": len(feed),
+                        "llm": bool(briefing), "collected": False,
+                        "stale_briefing": bool(briefing)}}
+
+
 def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
                  collect_fresh: bool = True, learn: bool = True, n: int = 40,
                  provider: str | None = None, progress=None) -> dict:
@@ -437,21 +503,7 @@ def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
 
     # Daily-delta bookkeeping: "new and fresh since yesterday" means since the
     # previous day's digest build (if one exists) or since yesterday 00:00 local.
-    prev_day = _previous_day(day)
-    prev_row = None
-    try:
-        prev_row = db["reply_digest"].get(_digest_id(a["id"], prev_day))
-    except Exception:
-        pass
-    exclude_ids: set = set()
-    if prev_row:
-        for it in json.loads(prev_row.get("feed_json") or "[]"):
-            iid = it.get("id") or it.get("url")
-            if iid:
-                exclude_ids.add(iid)
-        since_utc = int(prev_row.get("created_at") or _day_start_utc(prev_day))
-    else:
-        since_utc = _day_start_utc(prev_day)
+    _prev_row, exclude_ids, since_utc = _prev_delta(db, a["id"], day)
 
     collected = False
     by_source: dict = {}

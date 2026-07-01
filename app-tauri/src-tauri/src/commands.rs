@@ -3846,10 +3846,30 @@ pub async fn agent_ideas(app: AppHandle, suggest: Option<bool>, n: Option<u32>) 
 /// Today's Daily Update digest (goal-framed briefing + fresh feed). Cached one
 /// row per agent per day; `rebuild` forces a fresh build (light fetch + LLM).
 #[tauri::command]
-pub async fn agent_digest(app: AppHandle, rebuild: Option<bool>) -> Result<Value, String> {
+pub async fn agent_digest(app: AppHandle, rebuild: Option<bool>, no_learn: Option<bool>) -> Result<Value, String> {
     let mut args = vec!["reply".to_string(), "digest".to_string(), "--json".to_string()];
     if rebuild.unwrap_or(false) {
         args.push("--rebuild".into());
+    }
+    // The UI defers the brain-learn pass to a separate fire-and-forget
+    // `agent_learn` call so the fresh feed + briefing land as soon as they're
+    // built; scheduled/background builds still learn inline (no_learn unset).
+    if no_learn.unwrap_or(false) {
+        args.push("--no-learn".into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// Instant read-only Daily Update: feed ranked from the existing corpus, no
+/// news fetch / learn / LLM. Returns in ~1-3s so the UI paints real content
+/// while `agent_digest` rebuilds fresh in the background.
+#[tauri::command]
+pub async fn agent_digest_quick(app: AppHandle, n: Option<u32>) -> Result<Value, String> {
+    let mut args = vec!["reply".to_string(), "digest-quick".to_string(), "--json".to_string()];
+    if let Some(v) = n {
+        args.push("--n".into());
+        args.push(v.to_string());
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_cli(&app, refs).await.map_err(err_to_string)

@@ -998,39 +998,53 @@ slot) (P2).
 
 ---
 
-### Daily Update — multi-source learning feed 🟡 UPGRADED (2026-06-29)
+### Daily Update — multi-source learning feed 🟡 UPGRADED (2026-07-01: instant first paint)
 **Status:** 🟡 Partial (works end-to-end; gaps below)
 **Entry points:** Overview page top card (`#ov-digest`) · CLI `openreply reply
-digest` / `reply digest-search` · Rust `agent_digest` / `agent_digest_search`.
+digest` / `reply digest-quick` / `reply digest-search` · Rust `agent_digest` /
+`agent_digest_quick` / `agent_digest_search`.
 **User flow:**
-1. On first open each day the server collects fresh items across **News /
-   Articles / Community / Research**, learns them into the agent's brain, and
-   synthesizes a goal-framed briefing; later opens hit the cached row (SWR paints
-   the localStorage copy instantly).
-2. The card is two columns — **Briefing · your goal lens** (LLM themes + "why it
+1. **Instant first paint (2026-07-01):** on open the card paints immediately from
+   the localStorage copy — today's if present, else **yesterday's as a
+   placeholder** (never a blank spinner after day one). A small pulsing
+   **"updating…"** dot in the header stays lit until the background refresh is done.
+2. **Quick feed** — when there's no today cache, `quick_digest` ranks the feed
+   straight from the existing corpus (no fetch/learn/LLM, ~1–3s) and reuses the
+   last briefing, so real content shows fast.
+3. **Progressive background rebuild** — the full `build_digest` (collect fresh +
+   re-synthesize briefing) runs in the background with the **brain-learn pass
+   deferred** to a separate fire-and-forget `agent_learn` call, so the fresh feed
+   + briefing land as soon as built; the dot clears once fetch → briefing → learn
+   all finish. Second+ opens the same day are a <10ms cache hit.
+4. The card is two columns — **Briefing · your goal lens** (LLM themes + "why it
    matters", each with a + Task) on the left; a **scrollable categorized feed**
    on the right with All/News/Articles/Community/Research pills (client-side
    filter) and per-item + Task.
-3. **Search news** box (header) → free Google News + DuckDuckGo search, results
+5. **Search news** box (header) → free Google News + DuckDuckGo search, results
    replace the feed under a "Search: «query»" header with Clear.
-4. **Refresh now** forces a rebuild (re-collect + re-learn + re-synthesize).
+6. **Refresh now** forces a rebuild (re-collect + re-synthesize + deferred learn).
 **Implementation:** `reply/digest.py` — `CATEGORY_SOURCES`/`DIGEST_SOURCES`,
 `_category_of` (`digest.py:~40`), `_fresh_items` balanced/categorized
-(`digest.py:~95`), `build_digest` with learn pass (`digest.py:~190`),
-`search_news` (`digest.py:~270`) · `cli/reply_cmds.py:335` (`digest` +
-`digest-search`) · `src-tauri/src/commands.rs` (`agent_digest`,
-`agent_digest_search`) + `main.rs` (register) · `or/api.js` (`agentDigest`,
-`agentDigestSearch`) · `or/dynamic.js` (`renderOverview` → `digestPaint`/
-`digestShell`/`wireDigest`/`renderDigest`, `DIGEST_CATS`).
+(`digest.py:~95`), `_prev_delta` shared daily-delta helper, `quick_digest`
+(instant corpus-only feed, no persist), `build_digest` with learn pass,
+`search_news` · `cli/reply_cmds.py` (`digest` + `digest-quick` + `digest-search`)
+· `src-tauri/src/commands.rs` (`agent_digest` + `no_learn` flag,
+`agent_digest_quick`, `agent_digest_search`) + `main.rs` (register) · `or/api.js`
+(`agentDigest(rebuild,noLearn)`, `agentDigestQuick`, `agentDigestSearch`) ·
+`or/dynamic.js` (`renderOverview` → boot IIFE: instant-paint → quick → `refreshDigest`
++ deferred `agentLearn`; `digestPaint`/`digestShell` with `updating` dot;
+`loadCachedDigest`/`loadAnyCachedDigest`, `DIGEST_CATS`).
 **Data:** `reply_digest` (id, agent_id, day, briefing_json, feed_json,
 sources_json {by_source, by_category, item_count, llm, collected, learned},
 created_at) — one row/agent/day · localStorage `or.digest.<agentId>` (SWR).
-Feed items learned into corpus + memories via `learn_for_agent`.
+`quick_digest` never persists (full build owns the daily row). Feed items learned
+into corpus + memories via `learn_for_agent` (deferred, post-paint).
 **Known gaps:** Community is Lemmy+Mastodon only — no read-only Reddit-hot pull
 yet (P2). Daily build is on-open/manual only; not tied to the autopilot tick
 (P2, by design). Search results aren't persisted to the corpus (read-only) (P2).
 "Brain nodes" KPI reflects the graph build, not the digest's memory learn pass
-(P2).
+(P2). Deferred `agent_learn` runs after the digest persists, so `reply_digest`'s
+`sources_json.learned` counts stay empty on the interactive path (P2, cosmetic).
 **Dependencies:** `research.collect`, `reply.learn`, `reply.library.list_corpus`,
 LLM provider (briefing only; feed works without one).
 

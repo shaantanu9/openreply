@@ -421,6 +421,7 @@ fn main() {
             commands::agent_evolve,
             commands::agent_ideas,
             commands::agent_digest,
+            commands::agent_digest_quick,
             commands::agent_digest_search,
             commands::agent_task_list,
             commands::agent_task_create,

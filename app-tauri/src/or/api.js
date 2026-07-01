@@ -228,7 +228,8 @@ export const api = {
   agentPlaybook: () => call("agent_playbook_get"),
   agentEvolve: () => call("agent_evolve"),
   agentIdeas: (suggest, n) => call("agent_ideas", { suggest: !!suggest, n: n || 5 }),
-  agentDigest: (rebuild) => call("agent_digest", { rebuild: !!rebuild }),
+  agentDigest: (rebuild, noLearn) => call("agent_digest", { rebuild: !!rebuild, noLearn: !!noLearn }),
+  agentDigestQuick: (n) => call("agent_digest_quick", { n: n || 40 }),
   agentDigestSearch: (query) => call("agent_digest_search", { query: query || "" }),
   // tasks (knowledge → action → sections)
   taskList: (status) => call("agent_task_list", { status: status || null }),

@@ -369,6 +369,19 @@ def digest_cmd(
                               progress=lambda m: typer.echo(m, err=True)), json_)
 
 
+@reply_app.command("digest-quick")
+def digest_quick_cmd(
+    id: str = typer.Option(None, help="Agent id (default: active)"),
+    n: int = typer.Option(40, "--n", help="Max feed items"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Instant read-only digest for first paint: ranks the feed from the corpus
+    already on disk (no news fetch, no learn pass, no LLM). Returns fast so the
+    UI paints real content while the full `digest` build runs in the background."""
+    from ..reply import digest as _digest
+    _out(_digest.quick_digest(agent_id=id, n=n), json_)
+
+
 @reply_app.command("digest-search")
 def digest_search_cmd(
     query: str = typer.Argument(..., help="Search query"),
