@@ -5454,6 +5454,292 @@ export async function renderTasks(view) {
   load();
 }
 
+// ── Competitor Intelligence ───────────────────────────────────────────────────
+// Three tabs: Opportunities / Complaints / Comparison.
+// Product id comes from api.agentGet() → a.id (agents ARE products in this app).
+// Each tab implements four states: loading skeleton, empty, error+retry, data.
+export async function renderCompetitors(view) {
+  view.className = "w-full max-w-6xl flex-1 px-8 py-7";
+
+  // Resolve the active agent/product id upfront.
+  let a = null;
+  try { a = await api.agentGet(); } catch (e) {}
+  const pid = a?.id ?? null;
+
+  const COMP_TABS = [
+    ["opportunities", "Opportunities"],
+    ["complaints", "Complaints"],
+    ["comparison", "Comparison"],
+  ];
+  let activeTab = "opportunities";
+
+  // Tab chip classes (reuse existing _chip helper from outer scope).
+  // _chip is defined at module level near renderOpportunities.
+  const chip = (on) => `rounded-full px-3 py-1.5 text-xs font-semibold ${on
+    ? "bg-reddit text-white" : "border border-zinc-200 dark:border-zinc-700 text-zinc-500"}`;
+
+  view.innerHTML = head(
+    "Competitors",
+    `Track competitor complaints &amp; opportunities for <b>${esc(a?.name || "—")}</b>.`,
+    `<button id="ci-run-all" class="${btn}"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i> Refresh all</button>`
+  ) +
+    `<div id="ci-tabs" class="mb-5 flex flex-wrap gap-2">` +
+    COMP_TABS.map(([v, l]) => `<button data-ci-tab="${v}" class="${chip(v === activeTab)}">${l}</button>`).join("") +
+    `</div>` +
+    `<div id="ci-body">${skelCardsN(3)}</div>`;
+
+  const body = () => document.getElementById("ci-body");
+
+  // ── tab switcher ──────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    activeTab = tab;
+    view.querySelectorAll("[data-ci-tab]").forEach(
+      (b) => { b.className = chip(b.getAttribute("data-ci-tab") === tab); }
+    );
+    if (tab === "opportunities") loadOpps();
+    else if (tab === "complaints") loadComplaints();
+    else loadCompare();
+  }
+
+  view.querySelectorAll("[data-ci-tab]").forEach((b) =>
+    b.onclick = () => switchTab(b.getAttribute("data-ci-tab"))
+  );
+
+  // Wire Refresh-all button: re-run every known competitor then reload current tab.
+  view.querySelector("#ci-run-all").onclick = async () => {
+    if (!pid) { toast("No active agent"); return; }
+    toast("Refreshing competitors…");
+    try {
+      const list = (await api.competitorList(pid))?.competitors || [];
+      await Promise.allSettled(list.map((c) => api.competitorRun(pid, c.name)));
+      toast("Refresh done");
+    } catch (e) { toast("Refresh failed: " + e); }
+    switchTab(activeTab);
+  };
+
+  // ── severity badge ────────────────────────────────────────────────────────
+  const sevBadge = (s) => {
+    const v = (s || "").toLowerCase();
+    const cls = v === "high"
+      ? "bg-rose-500/15 text-rose-500"
+      : v === "medium"
+        ? "bg-amber-500/15 text-amber-500"
+        : "bg-zinc-500/15 text-zinc-400";
+    return `<span class="rounded ${cls} px-2 py-0.5 text-xs font-bold">${esc(s || "—")}</span>`;
+  };
+
+  // ── evidence citations row ────────────────────────────────────────────────
+  const evidenceRow = (ids) => {
+    if (!ids || !ids.length) return "";
+    return `<div class="mt-2 flex flex-wrap gap-1.5">${ids.slice(0, 5).map((id) =>
+      `<span class="rounded bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-500 font-mono">${esc(String(id))}</span>`
+    ).join("")}${ids.length > 5 ? `<span class="text-xs text-zinc-400">+${ids.length - 5} more</span>` : ""}</div>`;
+  };
+
+  // ── Tab 1: Opportunities ──────────────────────────────────────────────────
+  async function loadOpps() {
+    const el = body(); if (el) el.innerHTML = skelCardsN(3);
+    if (!pid) { if (body()) body().innerHTML = emptyAgentMsg(); return; }
+    let opps;
+    try { opps = (await api.competitorOpportunities(pid))?.opportunities || []; }
+    catch (e) { paintError(body(), String(e), loadOpps); return; }
+    paintOpps(opps);
+  }
+
+  function paintOpps(opps) {
+    const el = body(); if (!el) return;
+    if (!opps.length) {
+      el.innerHTML = `<div class="${card} text-center">
+        <i data-lucide="target" class="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-700"></i>
+        <p class="text-zinc-500">No competitor opportunities found yet.</p>
+        <p class="mt-1 text-sm text-zinc-400">Add competitors in Settings, then run a refresh.</p></div>`;
+      icons(); return;
+    }
+    el.innerHTML = `<div class="space-y-4">${opps.map((o) => `
+      <div class="${card}">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2 mb-1">
+              ${sevBadge(o.severity)}
+              ${o.competitor ? `<span class="text-xs text-zinc-400">${esc(o.competitor)}</span>` : ""}
+            </div>
+            <div class="font-semibold text-zinc-900 dark:text-white">${esc(o.title || o.topic || "(no title)")}</div>
+            ${o.suggested_action ? `<p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">${esc(o.suggested_action)}</p>` : ""}
+            ${evidenceRow(o.evidence_post_ids || o.post_ids || [])}
+          </div>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button class="${btnP}" onclick="window.orToast('Draft reply — wire to Inbox in a future task'); /* TODO: navigate to #/compose with context */">Draft reply</button>
+          <button class="${btn}" onclick="window.orToast('Build this — wire to content pipeline in a future task'); /* TODO: navigate to #/compose?kind=article */">Build this</button>
+        </div>
+      </div>`).join("")}</div>`;
+    icons();
+  }
+
+  // ── Tab 2: Complaints ─────────────────────────────────────────────────────
+  let complaintsCompetitors = [];
+  let activeCompetitor = "";
+
+  async function loadComplaints() {
+    const el = body(); if (el) el.innerHTML = skelCardsN(3);
+    if (!pid) { if (body()) body().innerHTML = emptyAgentMsg(); return; }
+    // Fetch competitor list for the switcher.
+    try { complaintsCompetitors = (await api.competitorList(pid))?.competitors || []; }
+    catch (e) { paintError(body(), String(e), loadComplaints); return; }
+    if (!complaintsCompetitors.length) {
+      if (body()) body().innerHTML = `<div class="${card} text-center">
+        <i data-lucide="users" class="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-700"></i>
+        <p class="text-zinc-500">No competitors tracked yet.</p>
+        <p class="mt-1 text-sm text-zinc-400">Add competitors in <a href="#/settings" class="text-reddit underline">Settings</a>.</p></div>`;
+      icons(); return;
+    }
+    if (!activeCompetitor) activeCompetitor = complaintsCompetitors[0]?.name || "";
+    renderComplaintsShell();
+    loadFindingsForCompetitor(activeCompetitor);
+  }
+
+  function renderComplaintsShell() {
+    const el = body(); if (!el) return;
+    const switcherOpts = complaintsCompetitors.map((c) =>
+      `<option value="${esc(c.name)}"${c.name === activeCompetitor ? " selected" : ""}>${esc(c.name)}</option>`
+    ).join("");
+    el.innerHTML = `
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <label class="text-sm text-zinc-500 dark:text-zinc-400">Competitor
+          <select id="ci-comp-sel" class="ml-2 ${inputCls}">${switcherOpts}</select></label>
+        <button id="ci-comp-run" class="${btn}"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i> Refresh</button>
+      </div>
+      <div id="ci-findings">${skelCardsN(2)}</div>`;
+    icons();
+    const sel = document.getElementById("ci-comp-sel");
+    if (sel) sel.onchange = () => {
+      activeCompetitor = sel.value;
+      loadFindingsForCompetitor(activeCompetitor);
+    };
+    const runBtn = document.getElementById("ci-comp-run");
+    if (runBtn) runBtn.onclick = async () => {
+      if (!activeCompetitor) return;
+      toast("Running analysis for " + activeCompetitor + "…");
+      try { await api.competitorRun(pid, activeCompetitor); toast("Done"); }
+      catch (e) { toast("Failed: " + e); }
+      loadFindingsForCompetitor(activeCompetitor);
+    };
+  }
+
+  async function loadFindingsForCompetitor(name) {
+    const el = document.getElementById("ci-findings");
+    if (el) el.innerHTML = skelCardsN(2);
+    let findings;
+    try { findings = (await api.competitorFindings(pid, name))?.findings || []; }
+    catch (e) {
+      const f = document.getElementById("ci-findings");
+      if (f) paintError(f, String(e), () => loadFindingsForCompetitor(name));
+      return;
+    }
+    paintComplaints(findings);
+  }
+
+  function paintComplaints(findings) {
+    const el = document.getElementById("ci-findings"); if (!el) return;
+    if (!findings.length) {
+      el.innerHTML = `<div class="${card} text-zinc-500">No complaints found for <b>${esc(activeCompetitor)}</b> yet. Try refreshing.</div>`;
+      return;
+    }
+    // Group by cluster/topic if available, else show flat list.
+    const byTopic = {};
+    findings.forEach((f) => {
+      const t = f.topic || f.cluster || "General";
+      (byTopic[t] = byTopic[t] || []).push(f);
+    });
+    el.innerHTML = Object.entries(byTopic).map(([topic, items]) => `
+      <div class="mb-4">
+        <div class="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-400">${esc(topic)} <span class="opacity-60">${items.length}</span></div>
+        <div class="space-y-3">${items.map((f) => `
+          <div class="${card}">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                  ${sevBadge(f.severity)}
+                  ${f.delta != null ? `<span class="text-xs ${f.delta > 0 ? "text-rose-400" : "text-emerald-400"}">
+                    ${f.delta > 0 ? "▲" : "▼"} ${Math.abs(f.delta)}% vs last</span>` : ""}
+                </div>
+                <div class="font-semibold text-zinc-900 dark:text-white">${esc(f.title || f.complaint || "(no title)")}</div>
+                ${f.summary ? `<p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">${esc(f.summary)}</p>` : ""}
+                ${evidenceRow(f.evidence_post_ids || f.post_ids || [])}
+              </div>
+            </div>
+          </div>`).join("")}</div>
+      </div>`).join("");
+  }
+
+  // ── Tab 3: Comparison ─────────────────────────────────────────────────────
+  async function loadCompare() {
+    const el = body(); if (el) el.innerHTML = skelCardsN(2);
+    if (!pid) { if (body()) body().innerHTML = emptyAgentMsg(); return; }
+    let cmp;
+    try { cmp = (await api.competitorCompare(pid))?.comparison || []; }
+    catch (e) { paintError(body(), String(e), loadCompare); return; }
+    paintCompare(cmp);
+  }
+
+  function paintCompare(rows) {
+    const el = body(); if (!el) return;
+    if (!rows.length) {
+      el.innerHTML = `<div class="${card} text-center">
+        <i data-lucide="bar-chart-2" class="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-700"></i>
+        <p class="text-zinc-500">No comparison data yet.</p>
+        <p class="mt-1 text-sm text-zinc-400">Add competitors and run a refresh to populate this view.</p></div>`;
+      icons(); return;
+    }
+    const sentCol = (s) => {
+      const v = (s || "").toLowerCase();
+      return v === "positive" ? "text-emerald-500" : v === "negative" ? "text-rose-500" : "text-zinc-500";
+    };
+    // "You" row (agent itself) may be first; competitors follow.
+    const thead = `<tr class="text-left text-xs uppercase tracking-wider text-zinc-400">
+      <th class="pb-2 pr-4 font-semibold">Product</th>
+      <th class="pb-2 pr-4 font-semibold">Sentiment</th>
+      <th class="pb-2 pr-4 font-semibold">Complaints</th>
+      <th class="pb-2 font-semibold">Share of Voice</th></tr>`;
+    const trows = rows.map((r) => {
+      const isYou = r.is_self || r.name === (a?.name || "");
+      return `<tr class="${isYou ? "font-semibold" : ""} border-t border-zinc-100 dark:border-zinc-800">
+        <td class="py-2.5 pr-4">
+          ${isYou ? `<span class="mr-1.5 rounded bg-reddit/15 px-1.5 py-0.5 text-xs font-bold text-reddit">You</span>` : ""}
+          ${esc(r.name || "—")}
+        </td>
+        <td class="py-2.5 pr-4 ${sentCol(r.sentiment)}">${esc(r.sentiment || "—")}</td>
+        <td class="py-2.5 pr-4 text-zinc-700 dark:text-zinc-300">${r.complaint_count != null ? esc(String(r.complaint_count)) : "—"}</td>
+        <td class="py-2.5 text-zinc-700 dark:text-zinc-300">${r.share_of_voice != null ? `${Math.round(r.share_of_voice * 100)}%` : "—"}</td>
+      </tr>`;
+    }).join("");
+    el.innerHTML = `<div class="${card} overflow-x-auto">
+      <table class="w-full min-w-[480px] border-collapse text-sm">
+        <thead>${thead}</thead>
+        <tbody>${trows}</tbody>
+      </table></div>`;
+  }
+
+  // ── shared helpers ────────────────────────────────────────────────────────
+  function emptyAgentMsg() {
+    return `<div class="${card} text-center">
+      <p class="text-zinc-500">No active agent. <a href="#/agents" class="text-reddit underline">Create one</a> to start tracking competitors.</p></div>`;
+  }
+
+  function paintError(el, msg, retryFn) {
+    if (!el) return;
+    el.innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">
+      Couldn't load — ${esc(msg)}
+      <button id="ci-retry" class="ml-2 underline text-rose-400">Retry</button></div>`;
+    const r = document.getElementById("ci-retry");
+    if (r) r.onclick = retryFn;
+  }
+
+  // Initial load.
+  loadOpps();
+  icons();
+}
+
 export const DYN = {
   "x-account": renderXAccount,
   watch: renderWatch,
@@ -5480,4 +5766,5 @@ export const DYN = {
   onboarding: renderOnboarding,
   alerts: renderAlerts,
   geo: renderGeo,
+  competitors: renderCompetitors,
 };

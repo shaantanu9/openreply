@@ -15,6 +15,7 @@ const NAV = [
     ['growth', 'trending-up', 'Growth'],
   ]},
   { sec: 'Intelligence', items: [
+    ['competitors', 'target', 'Competitors'],
     ['keywords', 'key-round', 'Keywords'],
     ['subreddit', 'shield-check', 'Subreddit Intel'],
     ['knowledge', 'brain', 'Knowledge'],
