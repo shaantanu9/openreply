@@ -5374,13 +5374,16 @@ export async function renderTasks(view) {
     board().querySelectorAll("[data-act]").forEach(b => b.onclick = () => tkAction(b));
 
     // Drag-and-drop tasks between columns.
+    let draggedId = null;
     board().querySelectorAll("[data-task-id]").forEach((card) => {
       card.addEventListener("dragstart", (e) => {
+        draggedId = card.dataset.taskId;
         e.dataTransfer.setData("text/plain", card.dataset.taskId);
         e.dataTransfer.effectAllowed = "move";
         card.classList.add("opacity-50");
       });
       card.addEventListener("dragend", () => {
+        draggedId = null;
         card.classList.remove("opacity-50");
         board().querySelectorAll(".tk-dropzone").forEach((dz) => dz.classList.remove("bg-reddit/10", "ring-2", "ring-reddit/30"));
       });
@@ -5397,15 +5400,21 @@ export async function renderTasks(view) {
       dz.addEventListener("drop", async (e) => {
         e.preventDefault();
         dz.classList.remove("bg-reddit/10", "ring-2", "ring-reddit/30");
-        const id = e.dataTransfer.getData("text/plain");
+        const id = e.dataTransfer.getData("text/plain") || draggedId;
         const status = dz.closest("[data-status]")?.dataset.status;
         if (!id || !status) return;
         const t = tasks.find((x) => String(x.id) === id);
         if (!t || t.status === status) return;
-        // Optimistically move locally, then persist.
+        // Optimistically move locally, then persist and reload from the server
+        // so the board always reflects the authoritative state.
         t.status = status;
         paint();
-        try { await api.taskUpdate(id, { status }); }
+        try {
+          await api.taskUpdate(id, { status });
+          // Bust cached Tasks portals so other tabs / revisits see the new status.
+          document.getElementById("main-content")?.querySelectorAll('div[data-hash="#/tasks"]').forEach((p) => delete p.dataset.loaded);
+          load();
+        }
         catch (err) { toast("Move failed: " + err); load(); }
       });
     });
