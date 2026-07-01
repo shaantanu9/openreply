@@ -328,9 +328,31 @@ def watch_fetch_cmd(
 def refresh_cmd(
     id: str = typer.Option(None, help="Agent id (default: active)"),
     deep: bool = typer.Option(False, help="Aggressive sweep instead of light"),
+    stream: bool = typer.Option(False, "--stream", help="Emit NDJSON progress to stdout (one per line) for the live refresh UI"),
     json_: bool = typer.Option(True, "--json/--no-json"),
 ):
-    """Re-fetch the latest niche knowledge (reuses research.collect)."""
+    """Re-fetch the latest niche knowledge (reuses research.collect).
+
+    Refresh fans out a multi-source collect (each source can be 30-240s) plus a
+    learning pass — well past any blocking IPC timeout. `--stream` emits NDJSON
+    progress lines so the desktop app can drive it via `run_cli_streaming`
+    (unbounded, live progress) instead of a 120s-capped blocking call that would
+    always time out and leave the user staring at a dead spinner."""
+    if stream:
+        # NDJSON progress to stdout — run_cli_streaming re-emits each line as an
+        # `agent_refresh:progress` Tauri event; the UI reloads the authoritative
+        # stats from the DB on `agent_refresh:done`. Collect/learn already push
+        # human-readable progress strings, wrapped here as {"event":"log"}.
+        def _emit(m):
+            try:
+                line = json.dumps(m, default=str) if isinstance(m, (dict, list)) \
+                    else json.dumps({"event": "log", "msg": str(m)})
+                typer.echo(line)
+            except Exception:
+                pass
+        res = _agent.refresh_agent(id, light=not deep, progress=_emit)
+        _emit({"event": "result", "posts_fetched": res.get("posts_fetched"), "error": res.get("error")})
+        return
     res = _agent.refresh_agent(id, light=not deep, progress=lambda m: typer.echo(m, err=True))
     _out(res, json_)
 

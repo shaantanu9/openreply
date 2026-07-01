@@ -189,6 +189,24 @@ pub async fn agent_refresh(app: AppHandle, id: Option<String>, deep: Option<bool
     run_cli(&app, refs).await.map_err(err_to_string)
 }
 
+/// Streaming variant of `agent_refresh`. A refresh fans out a multi-source
+/// collect (each source 30-240s) + a learning pass — minutes of work, far past
+/// the 120s blocking-IPC ceiling that `agent_refresh` was capped by (it always
+/// timed out → dead spinner, "nothing new"). This spawns the job via
+/// `run_cli_streaming` (unbounded) and re-emits each NDJSON line as an
+/// `agent_refresh:progress` event, with a final `agent_refresh:done` on exit.
+/// The frontend reloads the Overview from the DB on `done`.
+#[tauri::command]
+pub async fn agent_refresh_stream(app: AppHandle, id: Option<String>, deep: Option<bool>) -> Result<(), String> {
+    let mut args = vec!["agent".to_string(), "refresh".to_string(), "--stream".to_string()];
+    if let Some(i) = id { if !i.is_empty() { args.push("--id".into()); args.push(i); } }
+    if deep.unwrap_or(false) { args.push("--deep".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    crate::cli::run_cli_streaming(&app, refs, "agent_refresh:progress", "agent_refresh:done")
+        .await
+        .map_err(err_to_string)
+}
+
 /// `openreply agent learn` — one autonomous learning pass (ingest + synthesize).
 #[tauri::command]
 pub async fn agent_learn(app: AppHandle, id: Option<String>, limit: Option<u32>) -> Result<Value, String> {

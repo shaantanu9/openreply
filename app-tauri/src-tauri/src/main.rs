@@ -351,6 +351,7 @@ fn main() {
             commands::agent_knowledge,
             commands::agent_chat,
             commands::agent_refresh,
+            commands::agent_refresh_stream,
             commands::agent_learn,
             commands::agent_learn_status,
             commands::agent_corpus,

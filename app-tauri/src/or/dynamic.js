@@ -302,8 +302,31 @@ export async function renderOverview(view) {
   view.querySelector("#ov-refresh").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
     b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
-    try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
-    catch (err) { toast("Refresh failed"); b.disabled = false; b.innerHTML = html; icons(); }
+    // Refresh = a multi-source collect (each source 30-240s) + a learning pass,
+    // i.e. MINUTES of work. The blocking `agent_refresh` was capped at the 120s
+    // IPC timeout, so it always timed out mid-fetch → dead spinner, "nothing
+    // new". Drive it via the streaming command instead (unbounded, live
+    // progress). Fall back to the blocking call in a plain browser / old shell.
+    if (!api.agentRefreshStream || !api.onEvent) {
+      try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
+      catch (err) { toast("Refresh failed"); b.disabled = false; b.innerHTML = html; icons(); }
+      return;
+    }
+    let unP = null, unD = null;
+    const cleanup = () => { try { unP && unP(); } catch (e) {} try { unD && unD(); } catch (e) {} unP = unD = null; };
+    try {
+      unP = await api.onEvent("agent_refresh:progress", (payload) => {
+        let ev; try { ev = typeof payload === "string" ? JSON.parse(payload) : payload; } catch (e) { return; }
+        const msg = ev && (ev.msg || ev.event); if (msg) b.title = "Refreshing… " + String(msg).slice(0, 90);
+      });
+      unD = await api.onEvent("agent_refresh:done", (payload) => {
+        let d = {}; try { d = typeof payload === "string" ? JSON.parse(payload) : (payload || {}); } catch (e) {}
+        cleanup(); b.title = "Refresh + learn";
+        if (d.code && d.code !== 0) { toast(d.hint || `Refresh failed (${d.code})`); b.disabled = false; b.innerHTML = html; icons(); }
+        else { toast("Knowledge refreshed + learned"); renderOverview(view); }
+      });
+      await api.agentRefreshStream(null, false);
+    } catch (err) { cleanup(); toast("Refresh failed: " + err); b.disabled = false; b.innerHTML = html; icons(); }
   };
 
   // Evolve the Goal Playbook from here (mirrors the Learning screen's button).

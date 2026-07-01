@@ -163,6 +163,11 @@ export const api = {
   agentParseUrl: (url) => call("agent_parse_url", { url }),
   agentUse: (id) => call("agent_use", { id }),
   agentRefresh: (id, deep) => call("agent_refresh", { id: id || null, deep: !!deep }),
+  // Streaming refresh: collect+learn is minutes long, so it spawns the job and
+  // drives the UI via `agent_refresh:progress` / `agent_refresh:done` events
+  // (never timeout-capped, unlike the blocking agentRefresh). Subscribe with
+  // `onEvent` before calling.
+  agentRefreshStream: (id, deep) => call("agent_refresh_stream", { id: id || null, deep: !!deep }),
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
   agentChat: (question, id, kCorpus, kGraph, conversationId, history) =>
     call("agent_chat", {
