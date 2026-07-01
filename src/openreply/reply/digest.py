@@ -562,7 +562,7 @@ def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
     db["reply_digest"].upsert(rec, pk="id")
     try:
         from ..research.competitor_intel.digest_hook import competitor_moves
-        _prod = a.get("product_id") or None
+        _prod = a.get("id")
         moves = competitor_moves(_prod) if _prod else []
     except Exception:
         moves = []
