@@ -132,3 +132,38 @@ def list_competitors(
         else db["product_competitors"].rows
     )
     return [_row_to_dict(r) for r in rows]
+
+
+_JSON_FIELDS = {"urls": "urls_json", "aliases": "aliases_json",
+                "subreddits": "subreddits_json", "source_config": "source_config_json"}
+_BOOL_FIELDS = {"daily_fetch", "in_opp_scan", "is_active"}
+_PLAIN_FIELDS = {"category", "status", "notes"}
+
+
+def update_competitor(product_id: str, name: str, **fields: Any) -> dict[str, Any] | None:
+    db = get_db()
+    if not get_competitor(product_id, name):
+        return None
+    patch: dict[str, Any] = {"updated_at": _now()}
+    for k, v in fields.items():
+        if k == "website":
+            cur = get_competitor(product_id, name)
+            urls = dict(cur["urls"]) if cur else {}
+            urls["website"] = v
+            patch["urls_json"] = json.dumps(urls)
+        elif k in _JSON_FIELDS:
+            patch[_JSON_FIELDS[k]] = json.dumps(v)
+        elif k in _BOOL_FIELDS:
+            patch[k] = 1 if v else 0
+        elif k in _PLAIN_FIELDS:
+            patch[k] = v
+    db["product_competitors"].update((product_id, name), patch)
+    return get_competitor(product_id, name)
+
+
+def remove_competitor(product_id: str, name: str) -> bool:
+    db = get_db()
+    if not get_competitor(product_id, name):
+        return False
+    db["product_competitors"].delete((product_id, name))
+    return True

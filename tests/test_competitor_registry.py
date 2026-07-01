@@ -30,3 +30,14 @@ def test_list_competitors_active_only():
     R.add_competitor("prodF", "X")
     rows = R.list_competitors(active_only=True)
     assert any(r["competitor_name"] == "X" for r in rows)
+
+def test_update_competitor():
+    R.add_competitor("prodU", "X", subreddits=["x"])
+    out = R.update_competitor("prodU", "X", daily_fetch=True, subreddits=["x", "xhq"])
+    assert out["daily_fetch"] is True
+    assert out["subreddits"] == ["x", "xhq"]
+
+def test_remove_competitor():
+    R.add_competitor("prodR", "Y")
+    assert R.remove_competitor("prodR", "Y") is True
+    assert R.get_competitor("prodR", "Y") is None

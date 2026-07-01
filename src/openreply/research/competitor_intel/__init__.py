@@ -5,4 +5,6 @@ from .registry import (  # noqa: F401
     competitor_topic,
     get_competitor,
     list_competitors,
+    remove_competitor,
+    update_competitor,
 )
