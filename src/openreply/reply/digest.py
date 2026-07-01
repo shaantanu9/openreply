@@ -149,6 +149,7 @@ def _row_to_dict(r: dict, *, cached: bool) -> dict:
         "feed": _loads(r.get("feed_json"), []),
         "sources": _loads(r.get("sources_json"), {}),
         "generated_at": r.get("created_at"),
+        "competitor_moves": [],
     }
 
 
@@ -443,7 +444,8 @@ def quick_digest(agent_id: str | None = None, *, n: int = 40) -> dict:
     a = get_agent(agent_id)
     if not a:
         return {"ok": False, "skipped": True, "reason": "no active agent",
-                "quick": True, "briefing": None, "feed": [], "sources": {}}
+                "quick": True, "briefing": None, "feed": [], "sources": {},
+                "competitor_moves": []}
     day = _today()
     # If today's full digest already exists, there's nothing to rush — hand it back.
     cached = current_digest(a["id"], day)
@@ -467,7 +469,8 @@ def quick_digest(agent_id: str | None = None, *, n: int = 40) -> dict:
             "feed": feed,
             "sources": {"by_category": by_category, "item_count": len(feed),
                         "llm": bool(briefing), "collected": False,
-                        "stale_briefing": bool(briefing)}}
+                        "stale_briefing": bool(briefing)},
+            "competitor_moves": []}
 
 
 def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
@@ -486,7 +489,8 @@ def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
     a = get_agent(agent_id)
     if not a:
         return {"ok": False, "skipped": True, "reason": "no active agent",
-                "briefing": None, "feed": [], "sources": {}}
+                "briefing": None, "feed": [], "sources": {},
+                "competitor_moves": []}
     day = _today()
 
     if not rebuild:
