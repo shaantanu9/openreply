@@ -1707,6 +1707,9 @@ def cmd_daemon() -> None:
 from .persona_cmds import persona_app
 app.add_typer(persona_app, name="persona")
 
+from .competitor_cmds import competitor_app  # noqa: E402
+app.add_typer(competitor_app, name="competitor")
+
 
 # ── Clarified-brief subcommands (2026-06-14) ─────────────────────────────────
 
