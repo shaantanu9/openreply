@@ -1658,7 +1658,7 @@ async function buildCompetitorsCard(el) {
       <p class="mb-3 mt-1 text-sm text-zinc-500 dark:text-zinc-400">Track competitor activity — complaints, gaps, and opportunities.</p>
       <div id="st-comp-list" class="space-y-2 text-sm">
         ${competitors.length ? competitors.map((c) => `
-          <div class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2" data-comp-name="${esc(c.name)}">
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2">
             <div class="min-w-0">
               <div class="truncate font-semibold text-zinc-900 dark:text-white">${esc(c.name)}</div>
               ${c.website ? `<div class="truncate text-xs text-zinc-400">${esc(c.website)}</div>` : ""}
@@ -1691,15 +1691,15 @@ async function buildCompetitorsCard(el) {
     el.querySelectorAll("[data-run]").forEach((b) => b.onclick = async () => {
       const name = b.getAttribute("data-run");
       b.disabled = true; b.textContent = "Running…";
-      try { await api.competitorRun(pid, name); toast(`Ran ${name}`); load(); }
-      catch (e) { toast("Run failed: " + e); b.disabled = false; b.textContent = "Run now"; }
+      try { await api.competitorRun(pid, name); toast(`Ran ${name}`); await load(); }
+      catch (e) { toast("Run failed: " + esc(String(e))); b.disabled = false; b.textContent = "Run now"; }
     });
 
     // Wire remove buttons
     el.querySelectorAll("[data-rm]").forEach((b) => b.onclick = async () => {
       const name = b.getAttribute("data-rm");
-      try { await api.competitorRemove(pid, name); toast(`Removed ${name}`); load(); }
-      catch (e) { toast("Remove failed: " + e); }
+      try { await api.competitorRemove(pid, name); toast(`Removed ${name}`); await load(); }
+      catch (e) { toast("Remove failed: " + esc(String(e))); }
     });
 
     // Wire enrich button
@@ -1738,7 +1738,7 @@ async function buildCompetitorsCard(el) {
       try {
         await api.competitorAdd(pid, name, website, dailyFetch);
         toast(`Added ${name}`);
-        load();
+        await load();
       } catch (e) { msg.innerHTML = `<span class="text-rose-500">Add failed: ${esc(String(e))}</span>`; }
     };
 
