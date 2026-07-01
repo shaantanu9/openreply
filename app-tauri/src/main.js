@@ -48,7 +48,14 @@ async function gateCheck(reqKey) {
 // DOM, so background work (commands, polling, timers) keeps running.
 // We keep one portal per (tab, hash) so navigating back to a recently-viewed
 // screen is instant — like a browser's back/forward cache.
-const tabRenderQueue = new Map();
+// Per-tab render generation. The LATEST render for a tab wins: each render bumps
+// its tab's counter and bails at its await points if a newer render superseded
+// it. We intentionally do NOT serialize by chaining on the previous render's
+// promise — a render whose `await DYN[key](portal)` stalls (e.g. a cold/stuck
+// sidecar spawn) would never resolve, and every later navigation chained on it
+// would freeze the tab forever. Generation checks give correct latest-wins
+// semantics without that hang.
+const tabRenderGen = new Map();
 const MAX_PORTALS_PER_TAB = 5;
 
 function getPortal(tabId, hash) {
@@ -71,7 +78,7 @@ function cleanupTabPortals(tabId) {
     if (el.__orCleanup) { try { el.__orCleanup(); } catch (e) { console.error("[cleanup]", e); } }
     el.remove();
   });
-  tabRenderQueue.delete(tabId);
+  tabRenderGen.delete(tabId);
 }
 
 function prunePortals(tabId, keepHash) {
@@ -110,65 +117,65 @@ async function render() {
   const portal = getPortal(tabId, hash);
   if (!portal) return;
 
-  // Serialize renders per tab so two rapid navigations on the same tab don't
-  // interleave and leave stale DOM. Renders for different tabs run in parallel.
-  const previous = tabRenderQueue.get(tabId) || Promise.resolve();
-  const current = previous.then(async () => {
-    const key = await gateCheck(currentKey());
-    const full = FULL_SCREENS.has(key);
-    const useDyn = api.isTauri() && DYN[key];
-    const effKey = useDyn ? key : (VIEWS[key] ? key : "agents");
+  // Latest-render-wins: bump this tab's generation; if a newer render for the
+  // same tab starts while we're awaiting, this one bails at the next checkpoint
+  // instead of clobbering the newer content. No promise-chaining, so a stalled
+  // render can never freeze the tab (see tabRenderGen above).
+  const gen = (tabRenderGen.get(tabId) || 0) + 1;
+  tabRenderGen.set(tabId, gen);
+  const superseded = () => tabRenderGen.get(tabId) !== gen;
 
-    const stillActive = tabStore.getActive()?.id === tabId;
+  const key = await gateCheck(currentKey());
+  if (superseded()) return;
+  const full = FULL_SCREENS.has(key);
+  const useDyn = api.isTauri() && DYN[key];
+  const effKey = useDyn ? key : (VIEWS[key] ? key : "agents");
 
-    // Only update the shared shell / visible portal if this tab is still the
-    // active one. Background tabs continue rendering but must not steal the UI.
-    if (stillActive) {
-      mountShell(effKey, full);
+  // Only update the shared shell / visible portal if this tab is still the
+  // active one. Background tabs continue rendering but must not steal the UI.
+  if (tabStore.getActive()?.id === tabId) {
+    mountShell(effKey, full);
 
-      // Show this tab's portal for this hash, hide the others.
-      const host = document.getElementById("main-content");
-      host.querySelectorAll("div[data-tab-id]").forEach((el) => {
-        const matches = el.dataset.tabId === tabId && el.dataset.hash === hash;
-        el.style.display = matches ? "" : "none";
-        if (matches) el.dataset.lastShown = String(Date.now());
-      });
-      prunePortals(tabId, hash);
-    }
-
-    const needsRender = !portal.dataset.loaded || String(active.reloadTs || "") !== (portal.dataset.reloadTs || "");
-
-    if (needsRender) {
-      // Tear down live hooks for the old content before replacing it.
-      if (portal.__orCleanup) { try { portal.__orCleanup(); } catch (e) { console.error("[cleanup]", e); } portal.__orCleanup = null; }
-      portal.innerHTML = "";
-      delete portal.dataset.loaded;
-      portal.dataset.reloadTs = String(active.reloadTs || "");
-
-      if (useDyn) {
-        portal.className = "tab-view w-full max-w-6xl flex-1 px-8 py-7";
-        portal.innerHTML = skeletonFor(key);
-        try { await DYN[key](portal); } catch (e) { console.error("[dyn]", key, e); portal.innerHTML = `<div class="m-8 rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${String(e)}</div>`; }
-        // Dynamic screens overwrite className; restore the scroll container class.
-        portal.classList.add("tab-view");
-      } else {
-        const v = VIEWS[effKey];
-        portal.className = `tab-view ${v.main || "w-full max-w-6xl flex-1 px-8 py-7"}`;
-        portal.innerHTML = v.html;
-        try { if (v.init) v.init(); } catch (e) { console.error("[view init]", effKey, e); }
-      }
-      drawIcons();
-      portal.dataset.loaded = "true";
-    }
-
-    // After render (or after showing an existing portal), update the tab title.
-    tabStore.setTitle(tabId, titleForHash(hash));
-  });
-
-  tabRenderQueue.set(tabId, current);
-  try { await current; } finally {
-    if (tabRenderQueue.get(tabId) === current) tabRenderQueue.delete(tabId);
+    // Show this tab's portal for this hash, hide the others.
+    const host = document.getElementById("main-content");
+    host?.querySelectorAll("div[data-tab-id]").forEach((el) => {
+      const matches = el.dataset.tabId === tabId && el.dataset.hash === hash;
+      el.style.display = matches ? "" : "none";
+      if (matches) el.dataset.lastShown = String(Date.now());
+    });
+    prunePortals(tabId, hash);
   }
+
+  const needsRender = !portal.dataset.loaded || String(active.reloadTs || "") !== (portal.dataset.reloadTs || "");
+
+  if (needsRender) {
+    // Tear down live hooks for the old content before replacing it.
+    if (portal.__orCleanup) { try { portal.__orCleanup(); } catch (e) { console.error("[cleanup]", e); } portal.__orCleanup = null; }
+    portal.innerHTML = "";
+    delete portal.dataset.loaded;
+    portal.dataset.reloadTs = String(active.reloadTs || "");
+
+    if (useDyn) {
+      portal.className = "tab-view w-full max-w-6xl flex-1 px-8 py-7";
+      portal.innerHTML = skeletonFor(key);
+      try { await DYN[key](portal); } catch (e) { console.error("[dyn]", key, e); portal.innerHTML = `<div class="m-8 rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${String(e)}</div>`; }
+      // A newer navigation for this tab took over while we awaited the (slow)
+      // dynamic render — drop this stale result instead of marking it loaded.
+      if (superseded()) return;
+      // Dynamic screens overwrite className; restore the scroll container class.
+      portal.classList.add("tab-view");
+    } else {
+      const v = VIEWS[effKey];
+      portal.className = `tab-view ${v.main || "w-full max-w-6xl flex-1 px-8 py-7"}`;
+      portal.innerHTML = v.html;
+      try { if (v.init) v.init(); } catch (e) { console.error("[view init]", effKey, e); }
+    }
+    drawIcons();
+    portal.dataset.loaded = "true";
+  }
+
+  // After render (or after showing an existing portal), update the tab title.
+  tabStore.setTitle(tabId, titleForHash(hash));
 }
 
 // Warm the SWR cache for the screens the user is most likely to open next, so
@@ -247,11 +254,24 @@ function initTabs() {
   // When the active tab changes (focus, close, open, etc.), silently update the
   // URL and re-render the corresponding screen.
   let knownTabIds = new Set(tabStore.getAll().map((t) => t.id));
+  let lastActiveId = tabStore.getActive()?.id || null;
+  let lastReloadTs = tabStore.getActive()?.reloadTs || null;
   tabStore.subscribe(() => {
     const active = tabStore.getActive();
     if (!active) return;
+    const activeChanged = active.id !== lastActiveId;
+    const reloadChanged = (active.reloadTs || null) !== lastReloadTs;
+    lastActiveId = active.id;
+    lastReloadTs = active.reloadTs || null;
     if (location.hash !== active.hash) {
       history.replaceState(null, "", active.hash);
+      render();
+    } else if (activeChanged || reloadChanged) {
+      // The active tab changed (or was reloaded) without the URL hash changing —
+      // e.g. focusing another tab that shares this hash, or ⌘R reload. Re-render
+      // so the correct tab's portal is shown instead of leaving the old one up.
+      // (setTitle/saveState notifications change neither id nor reloadTs, so this
+      // can't loop with the setTitle() call at the end of render().)
       render();
     }
     // Clean up portals for tabs that have been closed.
