@@ -5670,6 +5670,7 @@ export async function renderCompetitors(view) {
             </div>
           </div>`).join("")}</div>
       </div>`).join("");
+    icons();
   }
 
   // ── Tab 3: Comparison ─────────────────────────────────────────────────────
@@ -5730,9 +5731,8 @@ export async function renderCompetitors(view) {
     if (!el) return;
     el.innerHTML = `<div class="rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">
       Couldn't load — ${esc(msg)}
-      <button id="ci-retry" class="ml-2 underline text-rose-400">Retry</button></div>`;
-    const r = document.getElementById("ci-retry");
-    if (r) r.onclick = retryFn;
+      <button class="ml-2 underline text-rose-400 ci-retry">Retry</button></div>`;
+    el.querySelector(".ci-retry")?.addEventListener("click", retryFn);
   }
 
   // Initial load.
