@@ -33,7 +33,8 @@ def test_resolve_sources_upgrades_legacy_pack():
     comp = {"source_config": {"enabled_adapters": list(sweep._LEGACY_DEFAULT_PACK)}}
     resolved = sweep._resolve_sources(comp, None)
     assert resolved == list(registry.DEFAULT_SOURCE_PACK)
-    assert "alternativeto" not in resolved  # Cloudflare-blocked id dropped
+    assert "hn" in resolved              # legacy "hackernews" replaced by working set
+    assert "gnews" in resolved           # new reliable source pulled in
 
 
 def test_resolve_sources_honors_custom_config_but_filters_invalid():

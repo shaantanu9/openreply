@@ -177,6 +177,53 @@ def _parse_review_page(html_text: str, domain: str) -> list[dict]:
     return rows
 
 
+def _web_review_fallback(query: str, limit: int) -> list[dict]:
+    """When Trustpilot's Cloudflare wall blocks the direct fetch, mine
+    review/complaint signal from free web search instead (DuckDuckGo + Google
+    News). Lower fidelity than native reviews, but keeps the "customer
+    complaint" signal flowing into competitor analysis instead of returning 0.
+    """
+    items: list[dict] = []
+    for q in (f"{query} reviews", f"{query} complaints", f"{query} problems"):
+        try:
+            from .duckduckgo import fetch_duckduckgo
+            items.extend(fetch_duckduckgo(q, limit=12))
+        except Exception:
+            pass
+        try:
+            from .gnews import fetch_gnews
+            items.extend(fetch_gnews(q, limit=8))
+        except Exception:
+            pass
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for it in items:
+        url = it.get("url") or it.get("permalink") or ""
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        rows.append({
+            "id": f"tpweb_{hash(url) & 0xFFFFFFFF:08x}",
+            "sub": f"trustpilot:{query}",
+            "source_type": "trustpilot",
+            "author": it.get("author") or "[web]",
+            "title": (it.get("title") or "")[:200],
+            "selftext": (it.get("selftext") or "")[:1500],
+            "url": url,
+            "score": 0,
+            "upvote_ratio": None,
+            "num_comments": 0,
+            "created_utc": float(it.get("created_utc") or 0.0),
+            "is_self": 1, "over_18": 0,
+            "flair": "web-review",
+            "permalink": None,
+            "fetched_at": _now_iso(),
+        })
+        if len(rows) >= limit:
+            break
+    return rows
+
+
 def fetch_trustpilot(
     query: str,
     pages: int = 3,
@@ -189,24 +236,26 @@ def fetch_trustpilot(
         pages: number of review pages to fetch (each ~20 reviews)
         limit: hard cap on rows returned
 
-    Returns list of post-shaped dicts ready for `upsert_posts`. Empty
-    list on any failure (missing brand, Cloudflare block, etc.).
+    Returns list of post-shaped dicts ready for `upsert_posts`. Falls back to
+    free web-search review signal if Trustpilot's Cloudflare wall blocks the
+    direct fetch; empty list only when both yield nothing.
     """
     domain = _search_domain(query)
-    if not domain:
-        return []
     collected: list[dict] = []
-    for page in range(1, max(1, pages) + 1):
-        url = _REVIEWS.format(domain=domain)
-        html_text = _get(url, params={"page": page} if page > 1 else None)
-        if not html_text:
-            break
-        rows = _parse_review_page(html_text, domain)
-        if not rows:
-            break
-        collected.extend(rows)
-        if len(collected) >= limit:
-            collected = collected[:limit]
-            break
-        time.sleep(_SLEEP_PER_PAGE)
-    return collected
+    if domain:
+        for page in range(1, max(1, pages) + 1):
+            url = _REVIEWS.format(domain=domain)
+            html_text = _get(url, params={"page": page} if page > 1 else None)
+            if not html_text:
+                break
+            rows = _parse_review_page(html_text, domain)
+            if not rows:
+                break
+            collected.extend(rows)
+            if len(collected) >= limit:
+                return collected[:limit]
+            time.sleep(_SLEEP_PER_PAGE)
+    if collected:
+        return collected
+    # Cloudflare-blocked (or brand not on Trustpilot) → web-search fallback.
+    return _web_review_fallback(query, limit)

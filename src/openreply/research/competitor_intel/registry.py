@@ -17,8 +17,8 @@ from ...core.db import get_db
 #     Overflow Q&A, Dev.to, Google News, DuckDuckGo web, and product/listing RSS.
 # NOTE: use the canonical adapter ids from sources.collect_adapter.SOURCES.
 #   - "hn" (NOT "hackernews" — though an alias now covers that too)
-#   - "alternativeto" is intentionally NOT default: Cloudflare bot-blocks unauth
-#     clients so it returns 0. Still available opt-in per-competitor.
+#   - "alternativeto" now works keyless: its Cloudflare-blocked API falls back
+#     to free web-search competitor discovery (see sources/alternativeto.py).
 #   - "producthunt" needs PH_TOKEN; it degrades to 0 cleanly when unset.
 DEFAULT_SOURCE_PACK: list[str] = [
     # customer-feedback tier
@@ -26,6 +26,8 @@ DEFAULT_SOURCE_PACK: list[str] = [
     # fast-free-reliable tier
     "hn", "reddit_free", "stackoverflow", "devto",
     "gnews", "duckduckgo", "rss_products", "rss_listings",
+    # competitor-discovery tier (keyless web-search based)
+    "alternativeto",
 ]
 
 

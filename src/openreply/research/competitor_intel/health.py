@@ -39,9 +39,10 @@ _CREDENTIAL_ENV: dict[str, tuple[str, ...]] = {
     "truthsocial": ("TRUTHSOCIAL_TOKEN",),
 }
 
-# Sources known to be anti-bot blocked (Cloudflare 403) from most IPs. Kept
-# available opt-in but flagged so the reason is honest.
-_KNOWN_BLOCKED = {"alternativeto", "trustpilot", "scholar"}
+# Sources known to be anti-bot blocked (Cloudflare 403) from most IPs with no
+# fallback path. (alternativeto + trustpilot are NOT here — both now fall back to
+# keyless web-search discovery when their Cloudflare-gated API/site is blocked.)
+_KNOWN_BLOCKED = {"scholar"}
 
 
 def _has_connected_key(src: str) -> bool:
