@@ -39,9 +39,9 @@ def enrich_seed(name: str, *, website: str = "", provider: str | None = None) ->
     if isinstance(data.get("aliases"), list):
         out["aliases"] = [str(x) for x in data["aliases"]][:5]
     if isinstance(data.get("subreddits"), list):
-        out["subreddits"] = [str(x).lstrip("r/").strip("/") for x in data["subreddits"]][:3]
+        out["subreddits"] = [str(x).removeprefix("r/").strip("/") for x in data["subreddits"]][:3]
     if isinstance(data.get("urls"), dict):
         out["urls"] = {k: str(v) for k, v in data["urls"].items() if str(v).startswith("http")}
-    if isinstance(data.get("category"), str):
-        out["category"] = data["category"]
+    if data.get("category") is not None:
+        out["category"] = str(data["category"])
     return out
