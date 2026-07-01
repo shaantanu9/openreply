@@ -1033,6 +1033,44 @@ def init_schema(db: Database) -> None:
         db["product_sweeps"].create_index(["product_id"])
         db["product_sweeps"].create_index(["product_id", "run_at"])
 
+    # ── Competitor Intelligence: extend product_competitors + snapshots table.
+    if "product_competitors" in db.table_names():
+        _cc_cols = {c.name for c in db["product_competitors"].columns}
+        _cc_adds = {
+            "slug": "TEXT",
+            "topic": "TEXT",
+            "aliases_json": "TEXT",
+            "subreddits_json": "TEXT",
+            "source_config_json": "TEXT",
+            "status": "TEXT DEFAULT 'active'",
+            "daily_fetch": "INTEGER DEFAULT 0",
+            "in_opp_scan": "INTEGER DEFAULT 1",
+            "notes": "TEXT",
+            "updated_at": "TEXT",
+        }
+        for _col, _decl in _cc_adds.items():
+            if _col not in _cc_cols:
+                db.executescript(
+                    f"ALTER TABLE product_competitors ADD COLUMN {_col} {_decl}"
+                )
+
+    if "competitor_snapshots" not in db.table_names():
+        db["competitor_snapshots"].create(
+            {
+                "id": int,
+                "product_id": str,
+                "competitor_name": str,
+                "sweep_id": int,
+                "created_at": str,
+                "metrics_json": str,
+                "summary": str,
+                "delta_json": str,
+            },
+            pk="id",
+        )
+        db["competitor_snapshots"].create_index(["product_id", "competitor_name"])
+        db["competitor_snapshots"].create_index(["created_at"])
+
     # Zombie sweep: any fetch row with ended_at=NULL older than 10 min is a
     # crashed/killed collect that never ran its teardown. Closing these out
     # on startup prevents the UI from showing a stale "Collecting…" chip
