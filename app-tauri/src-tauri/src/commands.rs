@@ -4138,5 +4138,5 @@ pub async fn x_account_remove(app: AppHandle, handle: String) -> Result<Value, S
 /// the internal reaper so the frontend "Stop" button can halt a long fetch.
 #[tauri::command]
 pub async fn cancel_refresh(app: AppHandle) -> Result<bool, String> {
-    Ok(crate::cli::cancel_active_stream(&app))
+    Ok(crate::cli::cancel_active_job_silent(&app))
 }

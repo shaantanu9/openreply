@@ -2321,6 +2321,7 @@ export async function renderKnowledge(view) {
        <div id="kn-graph" class="text-sm text-zinc-500">${skelRows(4)}</div>
        <div id="kn-build-msg" class="mt-2 text-xs"></div></div>`;
   document.getElementById("kn-refresh").onclick = async (e) => {
+    if (fetchStore.getState().running) { toast("A fetch is already in progress — try again in a moment."); return; }
     e.target.textContent = "Refreshing…"; e.target.disabled = true;
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed"); renderKnowledge(view); }
     catch (err) { toast("Refresh failed"); e.target.disabled = false; e.target.textContent = "↻ Refresh now"; }
@@ -4957,6 +4958,7 @@ export async function renderLibrary(view) {
   view.querySelector("#lib-q").oninput = debounce((e) => { S.query = e.target.value.trim(); load(true); });
   view.querySelector("#lib-more").querySelector("button").onclick = () => { S.limit += 60; load(true); };
   view.querySelector("#lib-refresh").onclick = async (e) => {
+    if (fetchStore.getState().running) { toast("A fetch is already in progress — try again in a moment."); return; }
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML; b.textContent = "Fetching… (a minute)";
     try { await api.agentRefresh(null, false); toast("Fetched latest"); } catch (err) { toast("Fetch failed"); }
     b.disabled = false; b.innerHTML = html; icons(); load(true);
