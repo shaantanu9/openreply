@@ -453,6 +453,34 @@ pub async fn reply_set_status(app: AppHandle, opportunity: String, status: Strin
         .map_err(err_to_string)
 }
 
+/// `openreply reply learn-dismissals` — infer short reasons for recently-skipped
+/// opportunities that don't have one yet (the agent learning from your skips).
+#[tauri::command]
+pub async fn reply_learn_dismissals(app: AppHandle, limit: Option<u32>) -> Result<Value, String> {
+    let lim = limit.unwrap_or(8).to_string();
+    run_cli(&app, vec!["reply", "learn-dismissals", "--limit", &lim, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// `openreply reply set-dismiss-reason -o <id> --reason <r>` — user corrects the
+/// learned dismiss reason (strongest teaching signal; re-distills the playbook).
+#[tauri::command]
+pub async fn reply_set_dismiss_reason(app: AppHandle, opportunity: String, reason: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "set-dismiss-reason", "-o", &opportunity, "--reason", &reason, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
+/// `openreply reply restore -o <id>` — un-skip a dismissed opportunity (clears the
+/// dismissal and moves it back to `new`).
+#[tauri::command]
+pub async fn reply_restore(app: AppHandle, opportunity: String) -> Result<Value, String> {
+    run_cli(&app, vec!["reply", "restore", "-o", &opportunity, "--json"])
+        .await
+        .map_err(err_to_string)
+}
+
 /// `openreply reply save-draft -o <id> --text <t>` — persist a user-edited reply
 /// as a new versioned draft (+ compliance re-check).
 #[tauri::command]
@@ -4104,4 +4132,11 @@ pub async fn x_account_save_to_library(
 #[tauri::command]
 pub async fn x_account_remove(app: AppHandle, handle: String) -> Result<Value, String> {
     run_cli(&app, vec!["x-account", "remove", &handle, "--json"]).await.map_err(err_to_string)
+}
+
+/// Cancel the currently-running streaming job (e.g. a refresh/collect). Wraps
+/// the internal reaper so the frontend "Stop" button can halt a long fetch.
+#[tauri::command]
+pub async fn cancel_refresh(app: AppHandle) -> Result<bool, String> {
+    Ok(crate::cli::cancel_active_stream(&app))
 }

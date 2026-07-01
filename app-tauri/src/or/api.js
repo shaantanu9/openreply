@@ -168,6 +168,8 @@ export const api = {
   // (never timeout-capped, unlike the blocking agentRefresh). Subscribe with
   // `onEvent` before calling.
   agentRefreshStream: (id, deep) => call("agent_refresh_stream", { id: id || null, deep: !!deep }),
+  // Cancel the active streaming job (refresh/collect) — powers the global fetch chip's Stop button.
+  cancelRefresh: () => call("cancel_refresh"),
   agentKnowledge: (id) => call("agent_knowledge", { id: id || null }),
   agentChat: (question, id, kCorpus, kGraph, conversationId, history) =>
     call("agent_chat", {
@@ -313,6 +315,15 @@ export const api = {
   subCheck: (sub, text) => call("sub_check", { sub, text }),
   replySetStatus: (opportunity, status) => {
     const p = call("reply_set_status", { opportunity, status });
+    p.then(() => { try { window.dispatchEvent(new CustomEvent("or-inbox-changed")); } catch (e) {} }).catch(() => {});
+    return p;
+  },
+  // dismiss-reason learning: the agent infers WHY you skipped, you can correct it,
+  // and Restore un-skips a dismissed opportunity.
+  replyLearnDismissals: (limit) => call("reply_learn_dismissals", { limit: limit || 8 }),
+  replySetDismissReason: (opportunity, reason) => call("reply_set_dismiss_reason", { opportunity, reason }),
+  replyRestore: (opportunity) => {
+    const p = call("reply_restore", { opportunity });
     p.then(() => { try { window.dispatchEvent(new CustomEvent("or-inbox-changed")); } catch (e) {} }).catch(() => {});
     return p;
   },

@@ -1,6 +1,7 @@
 // OpenReply shell for the Tauri app — sidebar + theme + Lucide + toast/modal.
 // Ported from the prototype's app.js, adapted for the SPA (hash routes, driven by main.js).
 import { api } from "./api.js";
+import { store as fetchStore } from "./fetchStatus.js";
 
 const NAV = [
   { sec: null, items: [['agents', 'layout-grid', 'Agents']] },
@@ -345,6 +346,39 @@ export function mountShell(routeKey, full) {
 
   // Live agents: replace the static switcher with real agents from the backend.
   if (api.isTauri()) { hydrateAgents(routeKey); refreshInboxBadge().catch(() => {}); }
+  mountFetchChip();
+}
+
+// Persistent global "fetch chip" — bottom-right pill that shows live
+// Refresh + Learn progress (fed by the fetchStatus store, itself fed by the
+// app-level agent_refresh:progress/done listener in main.js) on EVERY screen,
+// not just Overview. Hidden while idle. Safe to call on every mountShell()
+// since it no-ops past the first mount (subscribes once, element reused).
+let fetchChipMounted = false;
+export function mountFetchChip() {
+  let el = document.getElementById("fetch-chip");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "fetch-chip";
+    el.className = "fixed bottom-4 right-4 z-50 hidden items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold shadow-lg dark:border-zinc-700 dark:bg-zinc-900";
+    document.body.appendChild(el);
+  }
+  if (fetchChipMounted) return;
+  fetchChipMounted = true;
+  fetchStore.subscribe((s) => {
+    if (!s.running) { el.classList.add("hidden"); el.classList.remove("flex"); return; }
+    el.classList.remove("hidden"); el.classList.add("flex");
+    const n = Object.keys(s.sources).length;
+    el.innerHTML =
+      `<i data-lucide="loader" class="h-3.5 w-3.5 animate-spin text-reddit"></i>` +
+      `<span class="cursor-pointer" data-fetch-open>Fetching… ${s.sourcesDone}/${n || "…"} · ${s.totalPosts} posts</span>` +
+      `<button data-fetch-stop class="ml-1 rounded px-1.5 py-0.5 text-rose-500 hover:bg-rose-500/10">Stop</button>`;
+    if (window.refreshIcons) window.refreshIcons(); else drawIcons();
+  });
+  el.addEventListener("click", (e) => {
+    if (e.target.closest("[data-fetch-stop]")) { api.cancelRefresh().catch(() => {}); return; }
+    if (e.target.closest("[data-fetch-open]")) location.hash = "#/";
+  });
 }
 
 async function hydrateAgents(routeKey) {
