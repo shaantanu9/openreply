@@ -1,6 +1,7 @@
 """Competitor Intelligence package."""
 from .compare import build_comparison  # noqa: F401
 from .enrich import enrich_seed  # noqa: F401
+from .health import check_source, check_sources  # noqa: F401
 from .registry import (  # noqa: F401
     DEFAULT_SOURCE_PACK,
     add_competitor,

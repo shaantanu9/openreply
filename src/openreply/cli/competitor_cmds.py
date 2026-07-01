@@ -68,6 +68,16 @@ def cmd_run(
     _emit(CI.run_competitor_sweep(product_id, name, provider=provider), as_json)
 
 
+@competitor_app.command("sources-health")
+def cmd_sources_health(
+    keyword: str = typer.Option("Notion", "--keyword", help="Test brand to probe with."),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Probe every source in the default pack and show which actually return
+    data (and why the rest don't)."""
+    _emit(CI.check_sources(keyword), as_json)
+
+
 @competitor_app.command("findings")
 def cmd_findings(
     product_id: str = typer.Option(..., "--product-id"),

@@ -1077,6 +1077,9 @@ def run_xiaoyuzhou(topic_or_keywords: str | list[str], limit: int = 1) -> int:
 # Dispatch map for the collect orchestrator
 SOURCES: dict[str, Any] = {
     "hn": run_hn,
+    "hackernews": run_hn,   # alias — some source packs (competitor DEFAULT_SOURCE_PACK)
+                            # spell it out; keep both keys valid so the source is
+                            # never silently dropped as "unknown source".
     "appstore": run_appstore,
     "playstore": run_playstore,
     "scholar": run_scholar,

@@ -72,6 +72,44 @@ def _enrich_graph(topic) -> None:
         pass
 
 
+# ── Source resolution ─────────────────────────────────────────────────────────
+# The historical competitor default pack (pre-2026-07-01). Competitors added
+# before the fix have this exact list frozen in source_config_json — it silently
+# dropped Hacker News (wrong "hackernews" key) and wasted a slot on the
+# Cloudflare-blocked "alternativeto". When we detect a competitor still carrying
+# this stale pack verbatim (i.e. they never hand-picked sources), transparently
+# upgrade them to the new reliable DEFAULT_SOURCE_PACK.
+_LEGACY_DEFAULT_PACK = {
+    "appstore", "playstore", "trustpilot", "alternativeto",
+    "producthunt", "reddit_free", "hackernews", "stackoverflow",
+}
+
+
+def _resolve_sources(comp: dict, sources: list[str] | None) -> list[str]:
+    """Pick the source list for a sweep, healing stale/invalid entries.
+
+    Precedence: explicit ``sources`` arg → competitor's configured adapters →
+    DEFAULT_SOURCE_PACK. A configured list equal to the legacy default is treated
+    as "unconfigured" and upgraded. Any id not registered in the collect adapter
+    is dropped so it can't be logged as an "unknown source".
+    """
+    from ...sources.collect_adapter import SOURCES
+
+    if sources:
+        chosen = list(sources)
+    else:
+        configured = comp.get("source_config", {}).get("enabled_adapters") or []
+        if not configured or set(configured) == _LEGACY_DEFAULT_PACK:
+            chosen = list(registry.DEFAULT_SOURCE_PACK)
+        else:
+            chosen = list(configured)
+
+    # Normalize + validate. dict.fromkeys keeps order while de-duping (the "hn"
+    # alias means a legacy "hackernews" would otherwise collapse into "hn" twice).
+    valid = [s for s in dict.fromkeys(chosen) if s in SOURCES]
+    return valid or list(registry.DEFAULT_SOURCE_PACK)
+
+
 # ── Snapshot helpers ─────────────────────────────────────────────────────────
 def latest_snapshot(product_id: str, competitor_name: str) -> dict[str, Any] | None:
     db = get_db()
@@ -124,7 +162,7 @@ def run_competitor_sweep(
     if not comp:
         return {"ok": False, "error": "competitor not found"}
     topic = comp["topic"]
-    src = sources or (comp.get("source_config", {}).get("enabled_adapters") or registry.DEFAULT_SOURCE_PACK)
+    src = _resolve_sources(comp, sources)
     keywords = [competitor_name, *comp.get("aliases", [])]
 
     fetched = _collect(topic, src, keywords, provider, progress)

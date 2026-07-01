@@ -35,7 +35,10 @@ def fetch_gnews(query: str, limit: int = 50, lang: str = "en", country: str = "U
     # Google News RSS expects hl=<lang> (e.g. "en"), not "en-US".
     params = {"q": query, "hl": lang, "gl": country, "ceid": f"{country}:{lang}"}
     try:
-        r = httpx.get(url, params=params, headers=DEFAULT_HEADERS, timeout=20)
+        # Google News RSS 302-redirects to a regional/consent host; without
+        # follow_redirects httpx returns an empty 302 body → 0 entries.
+        r = httpx.get(url, params=params, headers=DEFAULT_HEADERS, timeout=20,
+                      follow_redirects=True)
         r.raise_for_status()
     except httpx.HTTPError:
         return []

@@ -8,9 +8,24 @@ from typing import Any
 
 from ...core.db import get_db
 
+# Competitor sweep default sources. Chosen so a sweep reliably pulls from MANY
+# databases even when the credential-gated / Cloudflare-flaky review sites return
+# nothing. Split into two tiers:
+#   • Customer-feedback tier (highest signal when they work): app/play reviews,
+#     Trustpilot web reviews, Product Hunt launch reactions.
+#   • Fast-free-reliable tier (always returns something): HN, Reddit, Stack
+#     Overflow Q&A, Dev.to, Google News, DuckDuckGo web, and product/listing RSS.
+# NOTE: use the canonical adapter ids from sources.collect_adapter.SOURCES.
+#   - "hn" (NOT "hackernews" — though an alias now covers that too)
+#   - "alternativeto" is intentionally NOT default: Cloudflare bot-blocks unauth
+#     clients so it returns 0. Still available opt-in per-competitor.
+#   - "producthunt" needs PH_TOKEN; it degrades to 0 cleanly when unset.
 DEFAULT_SOURCE_PACK: list[str] = [
-    "appstore", "playstore", "trustpilot", "alternativeto",
-    "producthunt", "reddit_free", "hackernews", "stackoverflow",
+    # customer-feedback tier
+    "appstore", "playstore", "trustpilot", "producthunt",
+    # fast-free-reliable tier
+    "hn", "reddit_free", "stackoverflow", "devto",
+    "gnews", "duckduckgo", "rss_products", "rss_listings",
 ]
 
 

@@ -54,6 +54,16 @@ def openreply_competitor_run(product_id: str, name: str, provider: str | None = 
 
 
 @competitor_server.tool()
+def openreply_competitor_sources_health(keyword: str = "Notion") -> dict:
+    """Probe every source in the competitor default pack and report which
+    return data (and why the rest don't) — diagnoses "opportunity fetch only
+    pulled from a few databases"."""
+    from ...research import competitor_intel as CI
+
+    return CI.check_sources(keyword)
+
+
+@competitor_server.tool()
 def openreply_competitor_findings(product_id: str, name: str = None) -> list:
     """List competitor complaints/feature-gaps (findings)."""
     from ...research import competitor_intel as CI
