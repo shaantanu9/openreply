@@ -30,7 +30,15 @@ def openreply_competitor_list(product_id: str, active_only: bool = False) -> lis
 
 
 @competitor_server.tool()
-def openreply_competitor_enrich(name: str, website: str = "", provider: str = None) -> dict:
+def openreply_competitor_get(product_id: str, name: str) -> dict:
+    """Get one tracked competitor's full config."""
+    from ...research import competitor_intel as CI
+
+    return CI.get_competitor(product_id, name)
+
+
+@competitor_server.tool()
+def openreply_competitor_enrich(name: str, website: str = "", provider: str | None = None) -> dict:
     """Auto-suggest aliases/subreddits/URLs for a competitor name."""
     from ...research.competitor_intel.enrich import enrich_seed
 
@@ -38,7 +46,7 @@ def openreply_competitor_enrich(name: str, website: str = "", provider: str = No
 
 
 @competitor_server.tool()
-def openreply_competitor_run(product_id: str, name: str, provider: str = None) -> dict:
+def openreply_competitor_run(product_id: str, name: str, provider: str | None = None) -> dict:
     """Run a competitor sweep (fetch + analyze + snapshot)."""
     from ...research import competitor_intel as CI
 
@@ -62,7 +70,7 @@ def openreply_competitor_opportunities(product_id: str, name: str = None) -> lis
 
 
 @competitor_server.tool()
-def openreply_competitor_compare(product_id: str, provider: str = None) -> dict:
+def openreply_competitor_compare(product_id: str, provider: str | None = None) -> dict:
     """Head-to-head: your product vs each competitor."""
     from ...research import competitor_intel as CI
 

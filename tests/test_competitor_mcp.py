@@ -1,15 +1,21 @@
 """Test competitor_tools MCP sub-server registration."""
+import openreply.mcp.tools.competitor_tools as CT
 
 
 def test_competitor_server_registers_tools():
-    """Verify competitor_server imports and exposes tool dict."""
-    from openreply.mcp.tools.competitor_tools import competitor_server
-
-    # FastMCP stores tools; assert our names are present.
-    names = set()
-    for attr in ("_tools", "tools"):
-        t = getattr(competitor_server, attr, None)
-        if isinstance(t, dict):
-            names |= set(t.keys())
-    # Fallback: the module must at least import and expose the server object.
-    assert competitor_server is not None
+    """Verify all 10 competitor tools are defined and callable."""
+    assert CT.competitor_server is not None
+    expected = [
+        "openreply_competitor_add",
+        "openreply_competitor_list",
+        "openreply_competitor_get",
+        "openreply_competitor_enrich",
+        "openreply_competitor_run",
+        "openreply_competitor_findings",
+        "openreply_competitor_opportunities",
+        "openreply_competitor_compare",
+        "openreply_competitor_set_action",
+        "openreply_competitor_remove",
+    ]
+    for name in expected:
+        assert callable(getattr(CT, name, None)), f"missing tool {name}"
