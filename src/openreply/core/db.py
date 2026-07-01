@@ -272,7 +272,25 @@ get_db.cache_clear = _cache_clear  # type: ignore[attr-defined]
 
 
 def init_schema(db: Database) -> None:
-    """Idempotent schema creation + additive migrations."""
+    """Idempotent schema creation + additive migrations.
+
+    Fast-path guard: the full DDL + additive-migration sweep (dozens of
+    ``table_names()`` probes AND a write+commit zombie-sweep on ``fetches``)
+    runs exactly ONCE per process. Repeat calls return immediately.
+
+    Why this matters: ``credentials.get_credential`` / ``cookie_header`` /
+    ``has_credential`` each call ``init_schema`` on every invocation. During a
+    ``reply find`` scan that fans out ~17 source adapters + N reddit worker
+    threads, every thread hit this function, and each re-ran the write+commit —
+    serializing all of them on SQLite's single-writer lock. The scan then blew
+    past its 35s/40s budgets, never reached the persist step, and the UI's
+    ``reply_find:done`` never fired → "loading works but nothing new appears".
+    The one-time work already happened under get_db()'s ``_schema_lock`` guard,
+    so a repeat call here is pure redundancy. (We only READ the flag — get_db
+    holds ``_schema_lock`` while calling us and sets the flag right after, so we
+    must not take that lock ourselves.)"""
+    if _schema_inited:
+        return
     if "posts" not in db.table_names():
         db["posts"].create(
             {
