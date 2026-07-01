@@ -43,7 +43,21 @@ fn sidecar_absolute(app: &tauri::AppHandle) -> Option<PathBuf> {
             }
         }
     }
-    // Fall back to a well-known bundled location.
+    // Packaged app: the Tauri externalBin wrapper `openreply-cli` sits next to
+    // the app binary (Contents/MacOS/). Mirrors cli.rs::resolve_bundled_sidecar.
+    // Without this fallback, `schedule_install` failed in every non-dev build
+    // with "could not resolve sidecar binary path" — so "daily frequency" could
+    // never be turned on from an installed DMG.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for name in ["openreply-cli", "openreply-cli.exe"] {
+                let cand = dir.join(name);
+                if cand.exists() {
+                    return Some(cand);
+                }
+            }
+        }
+    }
     let _ = app;
     None
 }
@@ -129,6 +143,16 @@ pub fn uninstall() -> Result<Value, String> {
 pub fn status() -> Result<Value, String> {
     let path = plist_path().ok_or("no home directory")?;
     let installed = path.exists();
+    // Recover the configured cadence from the plist's <StartInterval> (seconds)
+    // so the Settings pane can show the true interval instead of defaulting the
+    // label to "every 24h" on every reload.
+    let interval_hours = std::fs::read_to_string(&path).ok().and_then(|body| {
+        let key = body.find("<key>StartInterval</key>")?;
+        let rest = &body[key..];
+        let a = rest.find("<integer>")? + "<integer>".len();
+        let b = rest[a..].find("</integer>")?;
+        rest[a..a + b].trim().parse::<u32>().ok()
+    }).map(|secs| (secs / 3600).max(1));
     // Ask launchctl if it's actually loaded.
     let loaded = Command::new("launchctl")
         .arg("list")
@@ -140,6 +164,7 @@ pub fn status() -> Result<Value, String> {
     Ok(json!({
         "installed": installed,
         "loaded": loaded,
+        "interval_hours": interval_hours,
         "path": path.to_string_lossy(),
     }))
 }
