@@ -1,9 +1,15 @@
 # Competitor Intelligence — Design Spec
 
 **Date:** 2026-07-01
-**Status:** Approved design (pre-implementation)
+**Status:** Approved design (pre-implementation) · **Revised after codebase mapping (2026-07-01)**
 **Author:** brainstormed with Claude
 **Scope:** New user-driven, seed-based competitor research + tracking workflow for OpenReply, grounded in cited posts and wired into chat, knowledge graph, memory palace, reply, and the opportunity/content engine.
+
+> **Codebase-reality addendum (added after mapping the real code — FEATURES.md was stale):**
+> - There is already an **unused scaffolding** for product/competitor tracking: `products` (each linked to a `topic`), `product_competitors` (product_id, competitor_name, urls_json{website,appstore,subreddit}, category, is_active), `product_signals` (signal_type incl. `competitor_release`/`competitor_vulnerability`, severity, confidence, evidence_post_ids, related_competitor, suggested_action, user_action lifecycle: dismissed|acted|snoozed|hypothesis), and `product_sweeps` (run history). **These tables exist in `core/db.py` schema but NO code reads/writes them and there is no sweep engine.** We build the logic on top of them (extending columns), not a fresh `competitors` table.
+> - `collect(topic, sources=[...], extra_keywords=[...])` in `research/collect.py` **already is a fetch orchestrator** — it fans out to source adapters and tags results into `topic_posts(topic, post_id)`. Tagging a post to a topic automatically flows it into the shared `posts` store, the memory palace (`retrieval/palace.py`), and (via `enrich_from_llm(topic)`) the knowledge graph, and makes it chat-retrievable. **So we reuse `collect()` instead of writing a fetch orchestrator.**
+> - **Actually reusable (verified):** `research/gaps.py:find_gaps(topic,…)` (painpoints/complaints/feature-gaps), `graph/semantic.py:upsert_semantic()`/`enrich_from_llm()`, `retrieval/palace.py:search_posts()`, `reply/opportunity.py` (find/list/set_status), `reply/generate.py:generate_reply()`, `reply/content.py:generate_content(kind="followup_reply")`, `reply/rank.py:fuse_and_rank()`, `mcp/jobs.py` (submit/get/list).
+> - **Does NOT exist (must build or descope):** sentiment-by-source (**build** — needed for the Complaints tab), root-cause/5-Whys (**descope to §11**), real RICE/Kano/MoSCoW (**descope** — use `fuse_and_rank` + signal severity for ranking in v1).
 
 ---
 
@@ -56,54 +62,54 @@ Each unit answers: *what does it do, how is it used, what does it depend on* —
 
 ## 3. Data model
 
-New tables + two additive columns. All migrations are **guarded/idempotent**, matching the existing schema-migration pattern in the repo.
+**Build on the existing (unused) `product_*` scaffolding** rather than a fresh `competitors` table. All migrations are **guarded/idempotent** using the repo's established pattern: check `db.table_names()` before `.create()`, and `{c.name for c in db[table].columns}` before each `ALTER TABLE … ADD COLUMN` (see `core/db.py:343`, `:512`).
 
+**Extend `product_competitors`** (additive nullable columns):
 ```
-competitors
-  id            INTEGER PK
-  name          TEXT
-  slug          TEXT UNIQUE
-  aliases       JSON   -- ["notion.so", "@NotionHQ", "Notion Labs"]
-  website_url   TEXT
-  urls          JSON   -- [{kind:"producthunt", url:"..."}, {kind:"appstore", url:"..."}, ...]
-  subreddits    JSON   -- ["Notion", "NotionSo"]
-  source_config JSON   -- {enabled_adapters:[...], params:{...}}  (curated pack pre-selected)
-  status        TEXT   -- active | paused
-  daily_fetch   BOOLEAN
-  in_opp_scan   BOOLEAN
-  notes         TEXT
-  created_at    TEXT
-  updated_at    TEXT
+product_competitors  (existing PK: product_id, competitor_name)
+  urls_json      TEXT   -- EXISTING: {"website":..,"appstore":..,"subreddit":..}
+                        --   → widen usage to also hold producthunt/playstore/trustpilot/g2 + free-form pasted URLs
+  + slug          TEXT   -- stable id for the competitor's topic
+  + topic         TEXT   -- the topic string its fetched posts are tagged under, e.g. "competitor:notion"
+  + aliases_json  TEXT   -- ["notion.so","@NotionHQ","Notion Labs"]
+  + subreddits_json TEXT -- ["Notion","NotionSo"]
+  + source_config_json TEXT -- {enabled_adapters:[...], params:{...}} (curated pack pre-selected)
+  + status        TEXT   -- active | paused  (distinct from is_active)
+  + daily_fetch   INTEGER DEFAULT 0
+  + in_opp_scan   INTEGER DEFAULT 1
+  + notes         TEXT
+  + updated_at    TEXT
+```
 
-competitor_snapshots            -- one row per run per competitor (enables deltas)
-  id            INTEGER PK
-  competitor_id INTEGER FK
-  run_id        TEXT
-  created_at    TEXT
-  metrics       JSON  -- {complaint_count, sentiment_score, top_painpoints[],
-                      --  mentions_by_source{}, share_of_voice}
-  summary       TEXT
-  delta         JSON  -- vs previous snapshot: {new_complaints, sentiment_change, new_features[]}
+**Reuse `product_signals`** as the unified findings + opportunities store (it already has the exact shape we need — evidence, severity, related_competitor, suggested_action, and the `user_action` lifecycle: dismissed|acted|snoozed|hypothesis):
+```
+product_signals  (existing)  -- one row per finding/opportunity, each cited via evidence_post_ids
+  signal_type    -- reuse + extend the enum:
+                 --   complaint | feature_gap | churn_trigger | praise   (Complaints tab)
+                 --   competitor_vulnerability                            (Opportunities tab = "what we can build")
+  related_competitor  -- the competitor_name (already exists)
+  evidence_post_ids   -- JSON array of post ids (already exists) → citations
+  severity, confidence, title, description, suggested_action  (already exist)
+  user_action         -- lifecycle (already exists)
+```
 
-competitor_findings             -- individual complaints / praise / gaps, each cited
+**New `competitor_snapshots`** (per-competitor per-run metrics for deltas — `product_sweeps` is per-product run history and stays as-is for run bookkeeping):
+```
+competitor_snapshots
   id             INTEGER PK
-  competitor_id  INTEGER FK
-  snapshot_id    INTEGER FK
-  kind           TEXT   -- complaint | praise | feature_gap | churn_trigger
-  text           TEXT
-  painpoint_cluster TEXT
-  sentiment      REAL
-  severity       INTEGER
-  source_type    TEXT
-  post_id        INTEGER FK -> posts   -- for in-corpus citation
-  url            TEXT                  -- for direct-URL citation
+  product_id     TEXT
+  competitor_name TEXT
+  sweep_id       INTEGER   -- FK → product_sweeps.id (the run)
   created_at     TEXT
-
-posts          += competitor_id  (INTEGER, nullable)  -- so chat/graph/memory pick it up
-opportunities  += competitor_id  (INTEGER, nullable)  -- reuse existing lifecycle, don't fork it
+  metrics_json   TEXT  -- {complaint_count, sentiment_score, top_painpoints[],
+                       --  mentions_by_source{}, share_of_voice}
+  summary        TEXT
+  delta_json     TEXT  -- vs previous snapshot: {new_complaints, sentiment_change, new_features[]}
 ```
 
-**Decision:** reuse the existing `opportunities` lifecycle table (save / draft / replied / dismiss + Inbox + Analytics funnel) by adding a nullable `competitor_id`, rather than a parallel table. Competitor-sourced opportunities flow through the same funnel the user already built (§21).
+**Posts need no new column** — a competitor's posts are scoped by being tagged to its `topic` in the existing `topic_posts(topic, post_id)` table (via `collect(topic=…)` / `_tag_posts`). That is what makes them flow into corpus/palace/graph/chat automatically. **Do NOT add `competitor_id` to `posts`.**
+
+**Decision (revised):** the earlier plan to add `competitor_id` to `posts`/`opportunities` is dropped — the topic-tagging mechanism (`topic_posts`) already provides corpus scoping, and `product_signals` already provides the opportunity/finding lifecycle. This is less invasive and reuses more.
 
 ---
 
@@ -185,13 +191,28 @@ Because fetched posts land in the shared `posts` store tagged `competitor_id`:
 
 ---
 
-## 8. Reuse vs. build
+## 8. Reuse vs. build (revised to match real code)
 
-**Reuse (no new logic):** all 42 fetch adapters; painpoint / sentiment_by_source / root_cause / rice / kano / moscow / solutions modules; opportunity lifecycle; content/reply engine; graph; memory palace; jobs queue; Daily Update digest.
+**Reuse (verified to exist, no new logic):**
+- `research/collect.py:collect(topic, sources=[...], extra_keywords=[...])` — the fetch orchestrator (fans out to adapters, tags `topic_posts`).
+- all 42 fetch adapters (incl. `producthunt`, `appstore`, `playstore`, `trustpilot`, `alternativeto`, `web_reader`).
+- `research/gaps.py:find_gaps(topic,…)` / `run_extractor(...)` — painpoints / complaints / feature-gaps / diy.
+- `graph/semantic.py:upsert_semantic()` / `enrich_from_llm(topic)` — knowledge-graph nodes+edges.
+- `retrieval/palace.py:upsert_posts_many()` / `search_posts()` — memory palace (auto-synced on `upsert_posts`).
+- `reply/opportunity.py:find_opportunities()/list_opportunities()/set_status()` — opportunity lifecycle.
+- `reply/generate.py:generate_reply()` and `reply/content.py:generate_content(kind="followup_reply")` — reply/build drafting.
+- `reply/rank.py:fuse_and_rank()` — engagement/freshness ranking (used in place of RICE for v1).
+- `reply/digest.py:build_digest()` (+ `CATEGORY_SOURCES`) — Daily Update.
+- `mcp/jobs.py:submit()/get()/list_jobs()` — async jobs.
+- existing `products`/`product_competitors`/`product_signals`/`product_sweeps` tables + `topic_posts`.
 
-**Build new:** competitor registry + tables + migrations; seed enricher; fetch orchestrator (thin — calls adapters); snapshot/delta engine; the 3-tab Tauri screen; Settings "Competitors" section; pipeline-hook registration; MCP sub-server + CLI group.
+**Build new:**
+- schema migrations: extend `product_competitors` columns + new `competitor_snapshots` table (§3).
+- `research/competitor_intel/` package: registry (CRUD over `product_competitors`), seed enricher, **sentiment classifier** (`analyze/sentiment.py`, LLM per-source — does not exist), the sweep runner (orchestrates `collect` → `find_gaps` → sentiment → `product_signals` → snapshot/delta), comparison builder.
+- surfaces: 3-tab Tauri screen (`renderCompetitors` in `dynamic.js` + `DYN` route + `shell.js` nav), Settings "Competitors" card, Rust commands (`commands.rs` + `main.rs` `generate_handler!`), `api.js` wrappers, CLI `competitor_cmds.py` (+ `add_typer` in `cli/main.py`), MCP `mcp/tools/competitor_tools.py` (+ `mcp.mount()` in `mcp/server.py`).
+- pipeline hooks: competitor sweep participates in daily fetch + opportunity scan.
 
-Roughly **80% reuse / 20% new** — the new part is orchestration + UI.
+Roughly **65% reuse / 35% new** — the new part is the sweep runner + sentiment + UI. (Down from the original "80%" estimate because sentiment/root-cause/RICE turned out not to exist.)
 
 ---
 
@@ -220,4 +241,6 @@ Roughly **80% reuse / 20% new** — the new part is orchestration + UI.
 
 - Proactive **alerts** on competitor complaint spikes (fast-follow after tracking lands).
 - New scraper adapters — the curated pack is covered by existing adapters; only add adapters if a user's pasted URL is from an unsupported host.
-- Automated competitor *discovery* suggestions (the existing `global_competitors` already covers bottom-up discovery; this feature is top-down/seed-driven).
+- Automated competitor *discovery* suggestions (bottom-up); this feature is top-down/seed-driven.
+- **Root-cause / 5-Whys** on competitor painpoints — the module does not exist in the codebase; deferred. v1 surfaces painpoint clusters + severity from `find_gaps` instead.
+- **Full RICE / Kano / MoSCoW** scoring UI — those modules do not exist. v1 ranks opportunities with the existing `reply/rank.py:fuse_and_rank()` (engagement + freshness) plus `product_signals.severity`. A real RICE layer is a fast-follow.
