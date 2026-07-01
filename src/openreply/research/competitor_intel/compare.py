@@ -13,10 +13,15 @@ def _now() -> str:
 
 
 def _product_topic(product_id: str) -> str | None:
-    from ...core.db import get_db
+    # The `products` table is never populated; resolve the topic via the agent
+    # record instead — `product_id` is the agent id.
+    try:
+        from ...reply.agent import get_agent
 
-    rows = list(get_db()["products"].rows_where("id = ?", [product_id], limit=1))
-    return rows[0].get("topic") if rows else None
+        a = get_agent(product_id)
+        return a.get("topic") if a else None
+    except Exception:
+        return None
 
 
 def _sentiment(topic: str, provider: str | None):

@@ -13,6 +13,35 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ── Real find_gaps shape helpers ─────────────────────────────────────────────
+# find_gaps() returns items where the title key is `painpoint`/`product`/`feature`
+# (NOT `label`), evidence is `example_post_ids` (NOT `evidence_post_ids`), and
+# severity is a STRING "low"/"medium"/"high" (NOT a float).
+
+_SEV = {"low": 0.3, "medium": 0.6, "high": 0.9}
+
+
+def _severity_to_float(v) -> float:
+    if v is None:
+        return 0.5
+    if isinstance(v, (int, float)):
+        try:
+            return max(0.0, min(1.0, float(v)))
+        except Exception:
+            return 0.5
+    return _SEV.get(str(v).strip().lower(), 0.5)
+
+
+def _gap_fields(it: dict) -> tuple[str, str, list, float]:
+    title = (it.get("painpoint") or it.get("product") or it.get("feature")
+             or it.get("title") or it.get("label") or "")
+    desc = (it.get("evidence") or it.get("complaint") or it.get("user_quote")
+            or it.get("summary") or it.get("description") or "")
+    posts = it.get("example_post_ids") or it.get("evidence_post_ids") or []
+    sev = _severity_to_float(it.get("severity"))
+    return str(title)[:200], str(desc), list(posts), sev
+
+
 # ── Isolated wrappers (monkeypatched in tests) ────────────────────────────────
 def _collect(topic, sources, keywords, provider, progress) -> dict[str, Any]:
     from ..collect import collect
@@ -105,21 +134,23 @@ def run_competitor_sweep(
 
     n_find = n_opp = 0
     for pp in gaps.get("painpoints", []) + gaps.get("product_complaints", []):
+        title, desc, posts, sev = _gap_fields(pp)
         signals.write_signal(
             product_id, competitor_name, signal_type="complaint",
-            title=pp.get("label", "")[:200], description=pp.get("summary", ""),
-            severity=float(pp.get("severity") if pp.get("severity") is not None else 0.5),
-            evidence_post_ids=pp.get("evidence_post_ids", []),
+            title=title, description=desc,
+            severity=sev,
+            evidence_post_ids=posts,
         )
         n_find += 1
     for fw in gaps.get("feature_wishes", []):
+        title, desc, posts, sev = _gap_fields(fw)
         signals.write_signal(
             product_id, competitor_name, signal_type=signals.OPPORTUNITY_KIND,
-            title=fw.get("label", "")[:200],
-            description=fw.get("summary", ""),
-            suggested_action=f"Build what this competitor lacks: {fw.get('label', '')}".strip().rstrip(':'),
-            severity=float(fw.get("severity") if fw.get("severity") is not None else 0.5),
-            evidence_post_ids=fw.get("evidence_post_ids", []),
+            title=title,
+            description=desc,
+            suggested_action=f"Build what this competitor lacks: {title}".rstrip(': '),
+            severity=sev,
+            evidence_post_ids=posts,
         )
         n_opp += 1
 
@@ -127,7 +158,7 @@ def run_competitor_sweep(
     metrics = {
         "complaint_count": complaint_count,
         "sentiment_score": sent.get("overall", 0.0),
-        "top_painpoints": [p.get("label") for p in gaps.get("painpoints", [])[:5]],
+        "top_painpoints": [_gap_fields(p)[0] for p in gaps.get("painpoints", [])[:5]],
         "mentions_by_source": {k: v.get("n", 0) for k, v in sent.get("by_source", {}).items()},
         "posts_fetched": fetched.get("posts_fetched", 0),
     }
