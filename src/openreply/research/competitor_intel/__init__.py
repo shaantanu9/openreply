@@ -9,3 +9,5 @@ from .registry import (  # noqa: F401
     remove_competitor,
     update_competitor,
 )
+from .sweep import run_competitor_sweep, latest_snapshot  # noqa: F401
+from .signals import list_findings, list_opportunities, set_signal_action, write_signal  # noqa: F401
