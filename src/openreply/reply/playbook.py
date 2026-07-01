@@ -147,11 +147,29 @@ def evolve_playbook(agent_id: str | None = None, provider: str | None = None,
     mem_txt = "\n".join(f"- {(m.get('lesson') or '')[:200]}" for m in mems[:12])
     belief_txt = "\n".join(f"- {(b.get('statement') or '')[:200]}" for b in beliefs[:10])
     try:
-        from .feedback import feedback_counts
+        from .feedback import feedback_counts, learned_examples
         fb = feedback_counts(a["id"])
+        ex = learned_examples(a["id"])
     except Exception:
         fb = {}
-    fb_txt = f"engaged={fb.get('engaged', 0)} dismissed={fb.get('dismissed', 0)}"
+        ex = {"engaged": [], "dismissed": []}
+    # Feed the ACTUAL examples (not just counts) so the model generalizes patterns:
+    # what kinds of posts you engaged with, and — crucially — WHY you skipped
+    # others (user-corrected reasons flagged, since they're the truest signal).
+    _eng_lines = "\n".join(
+        f"  · engaged: {e['title']}" + (f" (r/{e['sub']})" if e.get("sub") else "")
+        for e in ex.get("engaged", [])) or "  (none yet)"
+    _dis_lines = "\n".join(
+        f"  · skipped: {d['title']}"
+        + (f" (r/{d['sub']})" if d.get("sub") else "")
+        + (f" — WHY: {d['reason']}" if d.get("reason") else "")
+        + (" [user-confirmed]" if d.get("src") == "user" else "")
+        for d in ex.get("dismissed", [])) or "  (none yet)"
+    fb_txt = (
+        f"engaged={fb.get('engaged', 0)} dismissed={fb.get('dismissed', 0)}\n"
+        f"Posts the user ENGAGED with (do more like these):\n{_eng_lines}\n"
+        f"Posts the user SKIPPED and why (avoid patterns like these):\n{_dis_lines}"
+    )
     diffs = _edit_diffs(db, a["id"])
     diff_txt = "\n".join(f"BEFORE: {d['before']}\nAFTER: {d['after']}" for d in diffs)
 

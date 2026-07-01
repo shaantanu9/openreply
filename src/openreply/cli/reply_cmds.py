@@ -13,6 +13,7 @@ import typer
 
 from ..reply import alerts as _alerts
 from ..reply import brand as _brand
+from ..reply import feedback as _fb
 from ..reply import generate as _gen
 from ..reply import geo as _geo
 from ..reply import opportunity as _opp
@@ -149,6 +150,40 @@ def set_status_cmd(
 ):
     """Move an opportunity through its lifecycle (save / dismiss / mark replied)."""
     _out(_opp.set_status(opportunity, status), json_)
+
+
+@reply_app.command("learn-dismissals")
+def learn_dismissals_cmd(
+    limit: int = typer.Option(8, help="Max dismissals to reason about per call (bounds LLM cost)"),
+    provider: str = typer.Option(None),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Infer a short reason for recently-skipped opportunities that don't have one
+    yet — the agent 'learning' from your skips. Batched + capped."""
+    from ..reply.agent import active_id
+    _out(_fb.learn_pending_dismissals(active_id(), limit=limit, provider=provider or None), json_)
+
+
+@reply_app.command("set-dismiss-reason")
+def set_dismiss_reason_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Dismissed opportunity id"),
+    reason: str = typer.Option(..., "--reason", help="Your corrected 'why I skipped this' reason"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Correct/improve the learned dismiss reason (the strongest teaching signal —
+    triggers a playbook re-distill)."""
+    _out(_fb.set_dismiss_reason(opportunity, reason), json_)
+
+
+@reply_app.command("restore")
+def restore_cmd(
+    opportunity: str = typer.Option(..., "--opportunity", "-o", help="Dismissed opportunity id"),
+    json_: bool = typer.Option(True, "--json/--no-json"),
+):
+    """Un-skip a dismissed opportunity: clears the dismissal (so it's no longer
+    suppressed or teaching 'avoid') and moves it back to `new`."""
+    _fb.un_dismiss(opportunity)
+    _out(_opp.set_status(opportunity, "new"), json_)
 
 
 @reply_app.command("save-draft")
